@@ -16,6 +16,51 @@ use crate::media::provide_media_cache;
 pub type Rooms = Signal<Vector<RoomSummary>>;
 /// Currently open room.
 pub type Selected = Signal<Option<OwnedRoomId>>;
+/// The space currently selected in the rail, or `None` for Home.
+pub type SelectedSpace = Signal<Option<OwnedRoomId>>;
+
+/// Rooms visible for the current space selection.
+///
+/// Discord-like rule: Home (`selected_space` is `None`) shows rooms that are
+/// not in any space (this covers DMs, which are never in a space, and any
+/// ungrouped rooms). Selecting a space shows the rooms that list it — or one
+/// of its nested spaces — as a parent, so a space's whole subtree shows up
+/// under one badge.
+pub fn rooms_in_scope(
+    rooms: &Vector<RoomSummary>,
+    selected_space: Option<&OwnedRoomId>,
+) -> Vec<RoomSummary> {
+    let Some(space_id) = selected_space else {
+        return rooms
+            .iter()
+            .filter(|room| !room.is_space && room.parent_spaces.is_empty())
+            .cloned()
+            .collect();
+    };
+
+    // Grow the scope to every space reachable from the selected one through
+    // nested `m.space.parent` relationships.
+    let mut scope = std::collections::HashSet::new();
+    scope.insert(space_id.clone());
+    loop {
+        let mut grew = false;
+        for space in rooms.iter().filter(|room| room.is_space) {
+            if !scope.contains(&space.id) && space.parent_spaces.iter().any(|p| scope.contains(p)) {
+                scope.insert(space.id.clone());
+                grew = true;
+            }
+        }
+        if !grew {
+            break;
+        }
+    }
+
+    rooms
+        .iter()
+        .filter(|room| !room.is_space && room.parent_spaces.iter().any(|p| scope.contains(p)))
+        .cloned()
+        .collect()
+}
 
 #[component]
 pub fn Shell(session: Session) -> Element {
@@ -23,6 +68,7 @@ pub fn Shell(session: Session) -> Element {
     provide_media_cache();
     let mut rooms: Rooms = use_context_provider(|| Signal::new(Vector::new()));
     let mut selected: Selected = use_context_provider(|| Signal::new(None));
+    let selected_space: SelectedSpace = use_context_provider(|| Signal::new(None));
     let mut load_error = use_signal(|| None::<String>);
     let mut switcher_open = use_signal(|| false);
 
@@ -43,17 +89,17 @@ pub fn Shell(session: Session) -> Element {
         }
     });
 
-    // Open the most recent room on first load, like Discord does.
+    // Keep the open room inside the current space scope: pick the first
+    // room in scope on load, and again whenever the rail selection changes
+    // the scope out from under the open room (like Discord does).
     use_effect(move || {
-        if selected.peek().is_none() {
-            let first = rooms
-                .read()
-                .iter()
-                .find(|room| !room.is_space)
-                .map(|room| room.id.clone());
-            if first.is_some() {
-                selected.set(first);
-            }
+        let in_scope = rooms_in_scope(&rooms.read(), selected_space.read().as_ref());
+        let still_open = selected
+            .peek()
+            .as_ref()
+            .is_some_and(|id| in_scope.iter().any(|room| &room.id == id));
+        if !still_open {
+            selected.set(in_scope.first().map(|room| room.id.clone()));
         }
     });
 

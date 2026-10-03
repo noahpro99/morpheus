@@ -1,26 +1,46 @@
 use dioxus::prelude::*;
 
-use super::shell::Rooms;
+use super::shell::{Rooms, SelectedSpace};
 use crate::media::Avatar;
 
-/// Left-most column: Home plus one badge per space. Space filtering lands in
-/// phase 2; today the badges are informational.
+/// Left-most column: Home plus one badge per top-level space. Clicking a
+/// badge filters the room list to that space's subtree; see
+/// [`super::shell::rooms_in_scope`] for the exact rule.
 #[component]
 pub fn Rail() -> Element {
     let rooms = use_context::<Rooms>();
+    let mut selected_space = use_context::<SelectedSpace>();
+
+    // Only top-level spaces get their own badge; a nested space's rooms show
+    // up when its top-level ancestor is selected instead.
     let spaces: Vec<_> = rooms
         .read()
         .iter()
-        .filter(|room| room.is_space)
+        .filter(|room| room.is_space && room.parent_spaces.is_empty())
         .cloned()
         .collect();
+    let current = selected_space();
 
     rsx! {
         nav { class: "rail",
-            button { class: "rail-item selected", title: "Home", "M" }
+            button {
+                class: "rail-item",
+                class: if current.is_none() { "selected" },
+                title: "Home",
+                onclick: move |_| selected_space.set(None),
+                "M"
+            }
             div { class: "rail-divider" }
             for space in spaces {
-                button { key: "{space.id}", class: "rail-item", title: "{space.name}",
+                button {
+                    key: "{space.id}",
+                    class: "rail-item",
+                    class: if current.as_ref() == Some(&space.id) { "selected" },
+                    title: "{space.name}",
+                    onclick: {
+                        let id = space.id.clone();
+                        move |_| selected_space.set(Some(id.clone()))
+                    },
                     Avatar { media: space.avatar.clone(), fallback: space.name.clone(), size: 48 }
                 }
             }
