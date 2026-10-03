@@ -1,0 +1,37 @@
+use crate::OwnedRoomId;
+
+/// Everything that can go wrong inside the core.
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("core runtime task failed: {0}")]
+    Join(#[from] tokio::task::JoinError),
+
+    #[error("stored session is unreadable: {0}")]
+    SessionFormat(#[from] serde_json::Error),
+
+    #[error("could not build Matrix client: {0}")]
+    ClientBuild(#[from] matrix_sdk::ClientBuildError),
+
+    #[error("Matrix error: {0}")]
+    Matrix(#[from] matrix_sdk::Error),
+
+    #[error("sync error: {0}")]
+    Sync(#[from] matrix_sdk_ui::sync_service::Error),
+
+    #[error("room list error: {0}")]
+    RoomList(#[from] matrix_sdk_ui::room_list_service::Error),
+
+    #[error("timeline error: {0}")]
+    Timeline(#[from] matrix_sdk_ui::timeline::Error),
+
+    #[error("login succeeded but the client has no session")]
+    NoSession,
+
+    #[error("unknown room {0}")]
+    UnknownRoom(OwnedRoomId),
+}
+
+pub type Result<T, E = Error> = std::result::Result<T, E>;

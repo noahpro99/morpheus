@@ -1,0 +1,48 @@
+[workspace]
+resolver = "3"
+members = ["crates/core", "crates/ui", "crates/e2e", "apps/desktop", "apps/mobile"]
+# `cargo build` / `cargo test` cover desktop by default; mobile builds via `dx`.
+default-members = ["crates/core", "crates/ui", "apps/desktop"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/noahpro/morpheus"
+
+[workspace.dependencies]
+morpheus-core = { path = "crates/core" }
+morpheus-ui = { path = "crates/ui" }
+
+matrix-sdk = "0.19.1"
+matrix-sdk-ui = "0.19.1"
+dioxus = "0.7.10"
+
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time", "fs"] }
+futures-util = "0.3"
+eyeball-im = "0.9"
+imbl = "7"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+directories = "6"
+anyhow = "1"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+expect_used = "warn"
+dbg_macro = "warn"
+todo = "warn"
+
+# Our crates compile fast; the heavy dependencies (matrix-sdk, crypto, webview) get optimised once.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3

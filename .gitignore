@@ -1,0 +1,7 @@
+/target
+/.direnv
+/result
+/.dev-data
+/dev/homeserver/data
+/dev/homeserver/.seeded
+*.log

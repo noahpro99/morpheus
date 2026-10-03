@@ -1,0 +1,23 @@
+//! Visual building blocks. Each file is one region of the Discord-style shell.
+
+mod composer;
+mod login;
+mod members;
+mod rail;
+mod room_list;
+mod shell;
+mod timeline;
+
+pub use login::Login;
+pub use shell::Shell;
+
+use dioxus::prelude::*;
+
+#[component]
+pub fn Splash() -> Element {
+    rsx! {
+        main { class: "centered",
+            div { class: "splash", "Morpheus" }
+        }
+    }
+}

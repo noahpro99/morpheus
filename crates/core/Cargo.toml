@@ -1,0 +1,24 @@
+[package]
+name = "morpheus-core"
+description = "UI-free Matrix client core for Morpheus: sessions, room list, timelines."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+matrix-sdk = { workspace = true }
+matrix-sdk-ui = { workspace = true }
+tokio = { workspace = true }
+futures-util = { workspace = true }
+eyeball-im = { workspace = true }
+imbl = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tracing-subscriber = { workspace = true }
+
+[lints]
+workspace = true

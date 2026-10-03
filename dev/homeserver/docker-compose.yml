@@ -1,0 +1,21 @@
+# Local Synapse for development. Managed through `just hs-*` recipes.
+services:
+  synapse:
+    image: matrixdotorg/synapse:latest
+    container_name: morpheus-synapse
+    restart: unless-stopped
+    ports:
+      - "8008:8008"
+    volumes:
+      - ./data:/data
+    environment:
+      SYNAPSE_SERVER_NAME: localhost
+      SYNAPSE_REPORT_STATS: "no"
+      # Run as the host user so generated files are editable without sudo.
+      UID: ${MORPHEUS_UID:-1000}
+      GID: ${MORPHEUS_GID:-100}
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8008/health')"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
