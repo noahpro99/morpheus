@@ -58,16 +58,19 @@ timeline → send.
 - [ ] Spaces rail filters the room list
 - [x] DMs section; unread (bold) and mention badges
 - [x] Members panel grouped by power level (presence pending)
-- [ ] Typing indicators, "new messages" marker
+- [x] Typing indicators (debounced notices, names resolved)
+- [ ] "New messages" marker
 - [x] Read receipts sent when a room is viewed
 - [ ] Room header actions: search, pinned, settings
 - [ ] Desktop notifications
-- [ ] Keyboard navigation (Ctrl+K room switcher, Alt+↑/↓)
+- [x] Ctrl+K room switcher
+- [ ] Alt+↑/↓ room navigation
 
 ### 3. Rich content
 - [x] Markdown composer, sanitised HTML rendering (ruma-html)
 - [x] Reactions (view and toggle)
-- [ ] Replies, threads, edits, deletes
+- [x] Replies (with quoted previews), edits, deletes
+- [ ] Threads
 - [ ] Emoji picker, mentions autocomplete
 - [ ] Attachment upload with drag-and-drop and paste
 

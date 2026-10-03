@@ -1,11 +1,11 @@
 use dioxus::prelude::*;
 use morpheus_core::{
-    MediaRef, Message, MessageKind, OpenTimeline, OwnedRoomId, Reaction, Session, TimelineEntry,
-    Vector,
+    MediaRef, Message, MessageId, MessageKind, OpenTimeline, OwnedRoomId, Reaction, ReplyPreview,
+    Session, TimelineEntry, Vector,
 };
 use tracing::{error, warn};
 
-use super::composer::ActiveTimeline;
+use super::composer::{ActiveTimeline, ComposerMode, Draft, Mode};
 use crate::{
     format::{calendar_date, clock_time},
     media::{Avatar, use_thumbnail},
@@ -167,7 +167,46 @@ fn group_rows(entries: &Vector<TimelineEntry>) -> Vec<Row<'_>> {
 #[component]
 fn MessageRow(message: Message, show_header: bool) -> Element {
     let timeline = use_context::<ActiveTimeline>();
+    let mut mode = use_context::<Mode>();
+    let mut draft = use_context::<Draft>();
     let time = clock_time(message.timestamp_ms);
+
+    let start_reply = {
+        let message = message.clone();
+        move |_| {
+            if let MessageId::Event(event_id) = &message.id {
+                mode.set(Some(ComposerMode::Reply {
+                    event_id: event_id.clone(),
+                    sender_name: message.sender_name.clone(),
+                    summary: message.kind.summary(),
+                }));
+            }
+        }
+    };
+    let start_edit = {
+        let message = message.clone();
+        move |_| {
+            let original = message.kind.plain_body().unwrap_or_default().to_owned();
+            draft.set(original.clone());
+            mode.set(Some(ComposerMode::Edit {
+                id: message.id.clone(),
+                original,
+            }));
+        }
+    };
+    let delete = {
+        let id = message.id.clone();
+        move |_| {
+            let Some(active) = timeline() else { return };
+            let id = id.clone();
+            spawn(async move {
+                if let Err(err) = active.redact(id).await {
+                    warn!(%err, "delete failed");
+                }
+            });
+        }
+    };
+    let can_reply = matches!(message.id, MessageId::Event(_)) && !message.is_local_echo;
 
     if let MessageKind::State(text) = &message.kind {
         return rsx! {
@@ -204,12 +243,14 @@ fn MessageRow(message: Message, show_header: bool) -> Element {
                         span { class: "sender", "{message.sender_name}" }
                         span { class: "time", "{time}" }
                     }
+                    ReplyQuote { reply: message.in_reply_to.clone() }
                     MessageBody { kind: message.kind.clone(), edited: message.is_edited }
                     Reactions { reactions: message.reactions.clone(), on_toggle: react.clone() }
                 }
             } else {
                 span { class: "time gutter", "{time}" }
                 div { class: "message-main",
+                    ReplyQuote { reply: message.in_reply_to.clone() }
                     MessageBody { kind: message.kind.clone(), edited: message.is_edited }
                     Reactions { reactions: message.reactions.clone(), on_toggle: react.clone() }
                 }
@@ -226,6 +267,15 @@ fn MessageRow(message: Message, show_header: bool) -> Element {
                             },
                             "{key}"
                         }
+                    }
+                    if can_reply {
+                        button { class: "action reply", title: "Reply", onclick: start_reply, "↩" }
+                    }
+                    if message.can_edit {
+                        button { class: "action edit", title: "Edit", onclick: start_edit, "✏️" }
+                    }
+                    if message.is_own && can_reply {
+                        button { class: "action delete", title: "Delete", onclick: delete, "🗑" }
                     }
                 }
             }
@@ -316,6 +366,18 @@ fn ImageBody(body: String, media: MediaRef, width: Option<u32>, height: Option<u
         match url() {
             Some(src) => rsx! { img { class: "image", style: "{aspect}", src: "{src}", alt: "{body}", title: "{body}" } },
             None => rsx! { div { class: "image placeholder", style: "{aspect}", "{body}" } },
+        }
+    }
+}
+
+#[component]
+fn ReplyQuote(reply: Option<ReplyPreview>) -> Element {
+    let Some(reply) = reply else { return rsx! {} };
+    rsx! {
+        div { class: "reply-quote", title: "{reply.event_id}",
+            span { "↩" }
+            b { "{reply.sender_name.as_deref().unwrap_or(\"…\")}" }
+            span { "{reply.summary.as_deref().unwrap_or(\"Loading…\")}" }
         }
     }
 }

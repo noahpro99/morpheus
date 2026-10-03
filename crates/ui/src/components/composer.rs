@@ -1,13 +1,34 @@
 use dioxus::prelude::*;
-use morpheus_core::TimelineHandle;
+use morpheus_core::{MessageId, OwnedEventId, TimelineHandle};
+use tracing::warn;
 
 /// Shared between the timeline (which owns the handle) and the composer.
 pub type ActiveTimeline = Signal<Option<TimelineHandle>>;
 
+/// What the next Enter in the composer does besides sending plain text.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ComposerMode {
+    Reply {
+        event_id: OwnedEventId,
+        sender_name: String,
+        summary: String,
+    },
+    Edit {
+        id: MessageId,
+        original: String,
+    },
+}
+
+/// Set by message hover actions; cleared by Esc, cancel, or send.
+pub type Mode = Signal<Option<ComposerMode>>;
+/// The draft text, exposed so "edit" can pre-fill it.
+pub type Draft = Signal<String>;
+
 #[component]
 pub fn Composer(room_name: String) -> Element {
     let timeline = use_context::<ActiveTimeline>();
-    let mut draft = use_signal(String::new);
+    let mut mode = use_context::<Mode>();
+    let mut draft = use_context::<Draft>();
     let mut error = use_signal(|| None::<String>);
 
     let mut send = move || {
@@ -17,12 +38,40 @@ pub fn Composer(room_name: String) -> Element {
             return;
         }
         draft.set(String::new());
+        let action = mode.take();
         spawn(async move {
-            match handle.send_text(body).await {
+            let _ = handle.stop_typing().await;
+            let result = match action {
+                None => handle.send_text(body).await,
+                Some(ComposerMode::Reply { event_id, .. }) => {
+                    handle.send_reply(body, event_id).await
+                }
+                Some(ComposerMode::Edit { id, .. }) => handle.edit(id, body).await,
+            };
+            match result {
                 Ok(()) => error.set(None),
                 Err(err) => error.set(Some(err.to_string())),
             }
         });
+    };
+
+    let on_input = move |e: FormEvent| {
+        draft.set(e.value());
+        if let Some(handle) = timeline()
+            && !e.value().is_empty()
+        {
+            spawn(async move {
+                if let Err(err) = handle.renew_typing().await {
+                    warn!(%err, "typing notice failed");
+                }
+            });
+        }
+    };
+
+    let mut cancel = move || {
+        if mode.take().is_some() {
+            draft.set(String::new());
+        }
     };
 
     rsx! {
@@ -30,16 +79,32 @@ pub fn Composer(room_name: String) -> Element {
             if let Some(message) = error() {
                 p { class: "error", "{message}" }
             }
+            if let Some(active) = mode() {
+                div { class: "composer-banner",
+                    match &active {
+                        ComposerMode::Reply { sender_name, summary, .. } => rsx! {
+                            span { class: "banner-label", "Replying to " b { "{sender_name}" } }
+                            span { class: "banner-preview", "{summary}" }
+                        },
+                        ComposerMode::Edit { .. } => rsx! {
+                            span { class: "banner-label", "Editing message" }
+                        },
+                    }
+                    button { class: "ghost", title: "Cancel (Esc)", onclick: move |_| cancel(), "✕" }
+                }
+            }
             input {
                 r#type: "text",
                 placeholder: "Message #{room_name}",
                 value: "{draft}",
                 disabled: timeline().is_none(),
-                oninput: move |e| draft.set(e.value()),
+                oninput: on_input,
                 onkeydown: move |e| {
                     if e.key() == Key::Enter && !e.modifiers().shift() {
                         e.prevent_default();
                         send();
+                    } else if e.key() == Key::Escape {
+                        cancel();
                     }
                 },
             }

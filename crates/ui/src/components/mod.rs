@@ -6,6 +6,7 @@ mod members;
 mod rail;
 mod room_list;
 mod shell;
+mod switcher;
 mod timeline;
 
 pub use login::Login;

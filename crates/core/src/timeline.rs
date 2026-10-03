@@ -13,10 +13,18 @@ use matrix_sdk_ui::timeline::{
     EventTimelineItem, MembershipChange, MsgLikeKind, RoomExt, Timeline, TimelineDetails,
     TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem,
 };
+use std::collections::HashSet;
+
+use matrix_sdk::{
+    room::edit::EditedContent, ruma::events::room::message::RoomMessageEventContentWithoutRelation,
+};
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::{debug, warn};
 
-use crate::{Core, CoreFuture, Error, MediaRef, OwnedRoomId, OwnedUserId, Session, VectorDiff};
+use crate::{
+    Core, CoreFuture, Error, MediaRef, OwnedRoomId, OwnedUserId, Session, VectorDiff,
+    typing::TypingNotice,
+};
 
 /// Messages fetched when a room is opened for the first time.
 const INITIAL_BACKFILL: u16 = 40;
@@ -63,8 +71,20 @@ pub struct Message {
     pub is_own: bool,
     pub is_local_echo: bool,
     pub is_edited: bool,
+    /// Own, already-sent text messages can be edited.
+    pub can_edit: bool,
     pub reactions: Vec<Reaction>,
+    pub in_reply_to: Option<ReplyPreview>,
     pub kind: MessageKind,
+}
+
+/// The message this one replies to, as far as the SDK has loaded it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReplyPreview {
+    pub event_id: OwnedEventId,
+    /// `None` until the replied-to event has been fetched.
+    pub sender_name: Option<String>,
+    pub summary: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -124,6 +144,14 @@ impl TimelineEntry {
 }
 
 impl Message {
+    /// The event id to pass to `fetch_details_for_event`, for remote events.
+    fn event_id_for_fetch(&self) -> Option<OwnedEventId> {
+        match &self.id {
+            MessageId::Event(event_id) => Some(event_id.clone()),
+            MessageId::Transaction(_) => None,
+        }
+    }
+
     fn from_event(
         unique_id: String,
         event: &EventTimelineItem,
@@ -160,6 +188,25 @@ impl Message {
             })
             .unwrap_or_default();
 
+        let in_reply_to = event.content().in_reply_to().map(|details| {
+            let embedded = match &details.event {
+                TimelineDetails::Ready(embedded) => Some(embedded),
+                _ => None,
+            };
+            ReplyPreview {
+                event_id: details.event_id.clone(),
+                sender_name: embedded.map(|e| {
+                    match &e.sender_profile {
+                        TimelineDetails::Ready(profile) => profile.display_name.clone(),
+                        _ => None,
+                    }
+                    .unwrap_or_else(|| e.sender.localpart().to_owned())
+                }),
+                summary: embedded
+                    .map(|e| MessageKind::from_content(&e.content, e.sender.localpart()).summary()),
+            }
+        });
+
         let kind = MessageKind::from_content(event.content(), &sender_name);
 
         Self {
@@ -172,13 +219,40 @@ impl Message {
             is_own: event.is_own(),
             is_local_echo: event.is_local_echo(),
             is_edited: event.content().as_message().is_some_and(|m| m.is_edited()),
+            can_edit: event.is_editable() && event.content().as_message().is_some(),
             reactions,
+            in_reply_to,
             kind,
         }
     }
 }
 
 impl MessageKind {
+    /// One-line plain-text rendering, for reply quotes and room previews.
+    pub fn summary(&self) -> String {
+        match self {
+            Self::Text { body, .. } | Self::Notice { body, .. } | Self::Emote { body, .. } => {
+                body.clone()
+            }
+            Self::Image { body, .. } => format!("🖼 {body}"),
+            Self::File { body } => format!("📎 {body}"),
+            Self::Redacted => "Message deleted".into(),
+            Self::UnableToDecrypt => "Unable to decrypt".into(),
+            Self::State(text) => text.clone(),
+            Self::Unsupported(what) => format!("Unsupported: {what}"),
+        }
+    }
+
+    /// The editable source text, if this is a text-like message.
+    pub fn plain_body(&self) -> Option<&str> {
+        match self {
+            Self::Text { body, .. } | Self::Notice { body, .. } | Self::Emote { body, .. } => {
+                Some(body)
+            }
+            _ => None,
+        }
+    }
+
     /// `sender_name` is the subject for state changes made by the sender.
     fn from_content(content: &TimelineItemContent, sender_name: &str) -> Self {
         match content {
@@ -296,8 +370,9 @@ fn describe_state(event_type: &StateEventType) -> String {
 /// Actions on an open timeline. Clone freely; all clones share the timeline.
 #[derive(Clone)]
 pub struct TimelineHandle {
-    core: Core,
-    timeline: Arc<Timeline>,
+    pub(crate) core: Core,
+    pub(crate) timeline: Arc<Timeline>,
+    pub(crate) typing: TypingNotice,
     /// Aborts the diff-forwarding task when the last handle is dropped.
     _forwarder: Arc<AbortOnDrop>,
 }
@@ -336,6 +411,40 @@ impl TimelineHandle {
         let content = RoomMessageEventContent::text_markdown(body);
         self.core.run(async move {
             timeline.send(content.into()).await?;
+            Ok(())
+        })
+    }
+
+    /// Reply to `in_reply_to` with markdown `body`.
+    pub fn send_reply(&self, body: String, in_reply_to: OwnedEventId) -> CoreFuture<()> {
+        let timeline = self.timeline.clone();
+        let content = RoomMessageEventContentWithoutRelation::text_markdown(body);
+        self.core.run(async move {
+            timeline.send_reply(content, in_reply_to).await?;
+            Ok(())
+        })
+    }
+
+    /// Replace the text of one of the user's own messages.
+    pub fn edit(&self, message: MessageId, body: String) -> CoreFuture<()> {
+        let timeline = self.timeline.clone();
+        let content =
+            EditedContent::RoomMessage(RoomMessageEventContentWithoutRelation::text_markdown(body));
+        self.core.run(async move {
+            timeline
+                .edit(&TimelineEventItemId::from(&message), content)
+                .await?;
+            Ok(())
+        })
+    }
+
+    /// Delete (redact) a message.
+    pub fn redact(&self, message: MessageId) -> CoreFuture<()> {
+        let timeline = self.timeline.clone();
+        self.core.run(async move {
+            timeline
+                .redact(&TimelineEventItemId::from(&message), None)
+                .await?;
             Ok(())
         })
     }
@@ -395,18 +504,41 @@ impl Session {
             };
             let _ = tx.send(vec![reset]);
 
-            let forwarder = core.spawn(async move {
-                pin_mut!(stream);
-                while let Some(diffs) = stream.next().await {
-                    let diffs: Vec<_> = diffs
-                        .into_iter()
-                        .map(|diff| {
-                            diff.map(|item| TimelineEntry::from_item(&item, own_user.as_ref()))
-                        })
-                        .collect();
-                    if tx.send(diffs).is_err() {
-                        debug!(%room_id, "timeline consumer dropped, stopping");
-                        break;
+            let forwarder = core.spawn({
+                let timeline = timeline.clone();
+                async move {
+                    pin_mut!(stream);
+                    // Replied-to events the SDK has not loaded yet; fetched once each.
+                    let mut requested_replies: HashSet<OwnedEventId> = HashSet::new();
+                    while let Some(diffs) = stream.next().await {
+                        let diffs: Vec<_> = diffs
+                            .into_iter()
+                            .map(|diff| {
+                                diff.map(|item| {
+                                    let entry = TimelineEntry::from_item(&item, own_user.as_ref());
+                                    if let TimelineEntry::Message(message) = &entry
+                                        && let Some(reply) = &message.in_reply_to
+                                        && reply.summary.is_none()
+                                        && let Some(event_id) = message.event_id_for_fetch()
+                                        && requested_replies.insert(event_id.clone())
+                                    {
+                                        let timeline = timeline.clone();
+                                        tokio::spawn(async move {
+                                            if let Err(err) =
+                                                timeline.fetch_details_for_event(&event_id).await
+                                            {
+                                                debug!(%err, "could not fetch reply details");
+                                            }
+                                        });
+                                    }
+                                    entry
+                                })
+                            })
+                            .collect();
+                        if tx.send(diffs).is_err() {
+                            debug!(%room_id, "timeline consumer dropped, stopping");
+                            break;
+                        }
                     }
                 }
             });
@@ -422,6 +554,7 @@ impl Session {
                 handle: TimelineHandle {
                     core,
                     timeline,
+                    typing: TypingNotice::default(),
                     _forwarder: Arc::new(AbortOnDrop(forwarder)),
                 },
                 updates: TimelineUpdates { rx },
