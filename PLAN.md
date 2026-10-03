@@ -55,7 +55,7 @@ timeline → send.
 - [ ] Error toasts instead of inline `<p class="error">`
 
 ### 2. The Discord shell
-- [ ] Spaces rail filters the room list
+- [x] Spaces rail filters the room list
 - [x] DMs section; unread (bold) and mention badges
 - [x] Members panel grouped by power level (presence pending)
 - [x] Typing indicators (debounced notices, names resolved)

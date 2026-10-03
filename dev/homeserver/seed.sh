@@ -47,6 +47,38 @@ ensure_room() {
   echo "$room_id"
 }
 
+# ensure_space <alias-localpart> <name> <topic> -> prints room id
+ensure_space() {
+  local alias="$1" name="$2" topic="$3" room_id
+  if room_id=$(curl -fsS "$HS_URL/_matrix/client/v3/directory/room/%23$alias:localhost" 2>/dev/null | jq -r .room_id); then
+    echo "  = #$alias ($room_id)" >&2
+  else
+    room_id=$(api "$ALICE" POST /_matrix/client/v3/createRoom "$(jq -nc \
+      --arg a "$alias" --arg n "$name" --arg t "$topic" \
+      '{room_alias_name:$a, name:$n, topic:$t, preset:"public_chat", creation_content:{type:"m.space"}, invite:["@bob:localhost","@carol:localhost"]}')" | jq -r .room_id)
+    api "$BOB" POST "/_matrix/client/v3/join/$room_id" '{}' >/dev/null
+    api "$CAROL" POST "/_matrix/client/v3/join/$room_id" '{}' >/dev/null
+    echo "  + #$alias ($room_id)" >&2
+  fi
+  echo "$room_id"
+}
+
+# add_space_child <token> <space-room-id> <child-room-id>
+# Sets m.space.child on the space, pointing at the child room.
+add_space_child() {
+  api "$1" PUT "/_matrix/client/v3/rooms/$2/state/m.space.child/$3" \
+    "$(jq -nc '{via:["localhost"]}')" >/dev/null
+}
+
+# add_space_parent <token> <room-id> <space-room-id>
+# Sets m.space.parent on the room, pointing at the space. Together with
+# add_space_child this makes the relationship reciprocal, as the spec
+# recommends: https://spec.matrix.org/latest/client-server-api/#mspaceparent-relationships
+add_space_parent() {
+  api "$1" PUT "/_matrix/client/v3/rooms/$2/state/m.space.parent/$3" \
+    "$(jq -nc '{via:["localhost"], canonical:true}')" >/dev/null
+}
+
 # say <token> <room> <text>
 say() {
   api "$1" PUT "/_matrix/client/v3/rooms/$2/send/m.room.message/seed-$(date +%s%N)" \
@@ -76,6 +108,12 @@ echo "rooms:"
 GENERAL=$(ensure_room general "general" "Where everything starts")
 RANDOM_ROOM=$(ensure_room random "random" "Off-topic")
 DEV=$(ensure_room dev "dev" "Building Morpheus")
+
+echo "spaces:"
+ENGINEERING=$(ensure_space engineering "Engineering" "Everything about building Morpheus")
+add_space_child "$ALICE" "$ENGINEERING" "$DEV"
+add_space_parent "$ALICE" "$DEV" "$ENGINEERING"
+echo "  + #dev is a child of #engineering (space); #general and #random stay outside it"
 
 if [[ ! -f "$HS_DIR/.seeded" ]]; then
   echo "profiles:"

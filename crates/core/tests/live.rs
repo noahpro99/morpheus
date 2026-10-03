@@ -198,3 +198,74 @@ async fn typing_notifications_propagate_between_users() {
     .await;
     assert!(result.is_ok(), "alice never saw bob typing");
 }
+
+/// `dev/homeserver/seed.sh` puts #dev inside the "Engineering" space and
+/// leaves #general and #random outside any space. `RoomSummary::parent_spaces`
+/// should reflect that reciprocal `m.space.parent`/`m.space.child` relationship.
+#[tokio::test]
+async fn room_summaries_expose_space_membership() {
+    let Some(env) = env() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping live test");
+        return;
+    };
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter("morpheus=debug,warn")
+        .try_init();
+
+    let core = Core::new(fresh_data_dir()).expect("core");
+    let session = core
+        .login(LoginRequest {
+            homeserver: env.homeserver,
+            username: env.user,
+            password: env.password,
+        })
+        .await
+        .expect("login");
+
+    let mut room_updates = session.room_list().await.expect("room list");
+    let mut rooms = Vector::new();
+    drive(
+        &mut rooms,
+        async || room_updates.next().await,
+        |rooms| {
+            // Wait for all the rooms involved, with #dev's parent space
+            // relationship resolved (it arrives asynchronously).
+            let names: Vec<_> = rooms.iter().map(|r| r.name.as_str()).collect();
+            names.contains(&SEEDED_ROOM)
+                && names.contains(&"random")
+                && names.contains(&"Engineering")
+                && rooms
+                    .iter()
+                    .any(|r| r.name == "dev" && !r.parent_spaces.is_empty())
+        },
+    )
+    .await;
+
+    let engineering = rooms
+        .iter()
+        .find(|r| r.is_space && r.name == "Engineering")
+        .expect("engineering space in room list");
+    let dev = rooms.iter().find(|r| r.name == "dev").expect("dev room");
+    let general = rooms
+        .iter()
+        .find(|r| r.name == SEEDED_ROOM)
+        .expect("general room");
+    let random = rooms
+        .iter()
+        .find(|r| r.name == "random")
+        .expect("random room");
+
+    assert_eq!(
+        dev.parent_spaces,
+        vec![engineering.id.clone()],
+        "dev is in Engineering"
+    );
+    assert!(
+        general.parent_spaces.is_empty(),
+        "general has no parent space"
+    );
+    assert!(
+        random.parent_spaces.is_empty(),
+        "random has no parent space"
+    );
+}

@@ -1,8 +1,8 @@
 use futures_util::{StreamExt, pin_mut};
-use matrix_sdk::Room;
+use matrix_sdk::{Room, room::ParentSpace};
 use matrix_sdk_ui::room_list_service::filters::new_filter_non_left;
 use tokio::sync::mpsc;
-use tracing::debug;
+use tracing::{debug, warn};
 
 use crate::{CoreFuture, MediaRef, OwnedRoomId, Session, VectorDiff};
 
@@ -21,16 +21,22 @@ pub struct RoomSummary {
     pub member_count: u64,
     pub unread_messages: u64,
     pub highlight_count: u64,
+    /// Spaces this room lists as a parent via `m.space.parent`, filtered to
+    /// relationships the room itself considers legitimate (reciprocated by
+    /// the parent, or set by someone with power to do so). Nested spaces are
+    /// not expanded here: a room only lists its direct parents.
+    pub parent_spaces: Vec<OwnedRoomId>,
 }
 
 impl RoomSummary {
-    fn from_room(room: Room) -> Self {
+    async fn from_room(room: Room) -> Self {
         let name = room
             .cached_display_name()
             .map(|n| n.to_string())
             .filter(|n| !n.is_empty())
             .unwrap_or_else(|| room.room_id().to_string());
         let counts = room.unread_notification_counts();
+        let parent_spaces = parent_spaces(&room).await;
 
         Self {
             id: room.room_id().to_owned(),
@@ -42,7 +48,93 @@ impl RoomSummary {
             member_count: room.joined_members_count(),
             unread_messages: room.num_unread_messages(),
             highlight_count: counts.highlight_count,
+            parent_spaces,
         }
+    }
+}
+
+/// Resolve the `m.space.parent` relationships this room advertises, from
+/// local state only (no network calls). Illegitimate relationships (the
+/// parent does not recognize the child back, and the sender of the
+/// `m.space.parent` event has no power to set it) are dropped, per the
+/// spec's recommendation that clients ignore those when building the space
+/// tree.
+async fn parent_spaces(room: &Room) -> Vec<OwnedRoomId> {
+    let stream = match room.parent_spaces().await {
+        Ok(stream) => stream,
+        Err(err) => {
+            warn!(room_id = %room.room_id(), %err, "could not resolve parent spaces");
+            return Vec::new();
+        }
+    };
+
+    stream
+        .filter_map(|result| async move {
+            match result {
+                Ok(ParentSpace::Reciprocal(parent) | ParentSpace::WithPowerlevel(parent)) => {
+                    Some(parent.room_id().to_owned())
+                }
+                Ok(ParentSpace::Unverifiable(id)) => Some(id),
+                Ok(ParentSpace::Illegitimate(_)) => None,
+                Err(err) => {
+                    warn!(room_id = %room.room_id(), %err, "could not check a parent space");
+                    None
+                }
+            }
+        })
+        .collect()
+        .await
+}
+
+/// Transforms a `VectorDiff<T>` into a `VectorDiff<U>` with an async mapping
+/// function, applied to any contained items. Mirrors [`VectorDiff::map`],
+/// which only accepts a synchronous closure.
+async fn map_diff_async<T: Clone, U: Clone, F, Fut>(diff: VectorDiff<T>, f: F) -> VectorDiff<U>
+where
+    F: Fn(T) -> Fut,
+    Fut: std::future::Future<Output = U>,
+{
+    async fn map_values<T: Clone, U: Clone, F, Fut>(
+        values: imbl::Vector<T>,
+        f: &F,
+    ) -> imbl::Vector<U>
+    where
+        F: Fn(T) -> Fut,
+        Fut: std::future::Future<Output = U>,
+    {
+        let mut mapped = imbl::Vector::new();
+        for value in values {
+            mapped.push_back(f(value).await);
+        }
+        mapped
+    }
+
+    match diff {
+        VectorDiff::Append { values } => VectorDiff::Append {
+            values: map_values(values, &f).await,
+        },
+        VectorDiff::Clear => VectorDiff::Clear,
+        VectorDiff::PushFront { value } => VectorDiff::PushFront {
+            value: f(value).await,
+        },
+        VectorDiff::PushBack { value } => VectorDiff::PushBack {
+            value: f(value).await,
+        },
+        VectorDiff::PopFront => VectorDiff::PopFront,
+        VectorDiff::PopBack => VectorDiff::PopBack,
+        VectorDiff::Insert { index, value } => VectorDiff::Insert {
+            index,
+            value: f(value).await,
+        },
+        VectorDiff::Set { index, value } => VectorDiff::Set {
+            index,
+            value: f(value).await,
+        },
+        VectorDiff::Remove { index } => VectorDiff::Remove { index },
+        VectorDiff::Truncate { length } => VectorDiff::Truncate { length },
+        VectorDiff::Reset { values } => VectorDiff::Reset {
+            values: map_values(values, &f).await,
+        },
     }
 }
 
@@ -75,11 +167,14 @@ impl Session {
                 pin_mut!(stream);
 
                 while let Some(diffs) = stream.next().await {
-                    let diffs: Vec<_> = diffs
-                        .into_iter()
-                        .map(|diff| diff.map(|item| RoomSummary::from_room(item.into_inner())))
-                        .collect();
-                    if tx.send(diffs).is_err() {
+                    let mut mapped = Vec::with_capacity(diffs.len());
+                    for diff in diffs {
+                        mapped.push(
+                            map_diff_async(diff, |item| RoomSummary::from_room(item.into_inner()))
+                                .await,
+                        );
+                    }
+                    if tx.send(mapped).is_err() {
                         debug!("room list consumer dropped, stopping");
                         break;
                     }
