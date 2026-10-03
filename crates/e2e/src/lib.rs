@@ -222,6 +222,16 @@ impl App {
         self.eval(&js).await.map(drop)
     }
 
+    /// Dispatch a keyboard shortcut (e.g. Ctrl+K) on an element.
+    pub async fn shortcut(&mut self, selector: &str, key: &str, ctrl: bool) -> Result<()> {
+        let js = format!(
+            "{}.dispatchEvent(new KeyboardEvent('keydown', {{ key: {}, ctrlKey: {ctrl}, bubbles: true, cancelable: true }}));",
+            query(selector),
+            js_str(key)
+        );
+        self.eval(&js).await.map(drop)
+    }
+
     pub async fn submit(&mut self, form_selector: &str) -> Result<()> {
         self.eval(&format!("{}.requestSubmit();", query(form_selector)))
             .await

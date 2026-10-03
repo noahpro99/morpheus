@@ -19,6 +19,7 @@ mod members;
 mod rooms;
 mod session;
 mod timeline;
+mod typing;
 
 pub use core::Core;
 pub use error::{Error, Result};
@@ -31,10 +32,11 @@ pub use members::{Member, MemberRole};
 pub use rooms::{RoomListUpdates, RoomSummary};
 pub use session::{LoginRequest, Session};
 pub use timeline::{
-    Message, MessageId, MessageKind, OpenTimeline, Reaction, TimelineEntry, TimelineHandle,
-    TimelineUpdates,
+    Message, MessageId, MessageKind, OpenTimeline, Reaction, ReplyPreview, TimelineEntry,
+    TimelineHandle, TimelineUpdates,
 };
+pub use typing::TypingUpdates;
 
 pub use eyeball_im::VectorDiff;
 pub use imbl::Vector;
-pub use matrix_sdk::ruma::{OwnedRoomId, OwnedUserId, RoomId, UserId};
+pub use matrix_sdk::ruma::{OwnedEventId, OwnedRoomId, OwnedUserId, RoomId, UserId};

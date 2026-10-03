@@ -121,3 +121,80 @@ async fn login_list_rooms_read_and_send() {
     })
     .await;
 }
+
+#[tokio::test]
+async fn typing_notifications_propagate_between_users() {
+    let Some(env) = env() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping live test");
+        return;
+    };
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter("morpheus=debug,warn")
+        .try_init();
+
+    let login = |user: &str, password: &str| {
+        let hs = env.homeserver.clone();
+        let (user, password) = (user.to_owned(), password.to_owned());
+        async move {
+            let core = Core::new(fresh_data_dir()).expect("core");
+            core.login(LoginRequest {
+                homeserver: hs,
+                username: user,
+                password,
+            })
+            .await
+            .expect("login")
+        }
+    };
+    let alice = login("alice", "alice-password").await;
+    let bob = login("bob", "bob-password").await;
+
+    // Both find #general through their room lists.
+    let mut alice_rooms = alice.room_list().await.expect("room list");
+    let mut rooms = Vector::new();
+    drive(
+        &mut rooms,
+        async || alice_rooms.next().await,
+        |rooms| rooms.iter().any(|r| r.name == SEEDED_ROOM),
+    )
+    .await;
+    let general = rooms
+        .iter()
+        .find(|r| r.name == SEEDED_ROOM)
+        .expect("general")
+        .id
+        .clone();
+
+    let mut bob_rooms = bob.room_list().await.expect("bob room list");
+    let mut rooms = Vector::new();
+    drive(
+        &mut rooms,
+        async || bob_rooms.next().await,
+        |rooms| rooms.iter().any(|r| r.id == general),
+    )
+    .await;
+
+    let mut typing = alice
+        .typing(general.clone())
+        .await
+        .expect("typing subscription");
+    let bob_timeline = bob.timeline(general).await.expect("bob timeline");
+
+    // Keep renewing while waiting, in case the first notice races the subscription.
+    let result = timeout(WAIT, async {
+        loop {
+            bob_timeline
+                .handle
+                .renew_typing()
+                .await
+                .expect("renew typing");
+            match timeout(Duration::from_secs(3), typing.next()).await {
+                Ok(Some(names)) if names.iter().any(|n| n == "bob") => break names,
+                Ok(Some(_)) | Err(_) => continue,
+                Ok(None) => panic!("typing stream ended"),
+            }
+        }
+    })
+    .await;
+    assert!(result.is_ok(), "alice never saw bob typing");
+}

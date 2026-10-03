@@ -18,7 +18,10 @@ just desktop            # dx serve with hot reload
 ```
 
 Log in with `alice` / `alice-password`. Open a second window as another user
-with `just desktop-as bob` to watch messages flow between them.
+with `just desktop-as bob` to watch messages and typing flow between them.
+
+Shortcuts: `Ctrl+K` jumps to a room, `Enter` sends, `Esc` cancels a reply or edit.
+Hover a message for reactions, reply, edit and delete.
 
 ## Testing
 

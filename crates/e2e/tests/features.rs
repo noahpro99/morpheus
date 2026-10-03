@@ -27,6 +27,9 @@ async fn login_and_open(app: &mut App, room: &str) {
     app.wait_for_text(".chat-header h2", room, DEFAULT_WAIT)
         .await
         .expect("room header");
+    app.wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
+        .await
+        .expect("composer ready");
 }
 
 #[tokio::test]
@@ -82,6 +85,20 @@ async fn media_rich_text_reactions_and_members() {
     app.wait_for_text(".chat-header .member-count", "3", DEFAULT_WAIT)
         .await
         .expect("member count");
+
+    // Earlier runs may have left our ❤️ on the server; start from "off".
+    let heart_mine = "return [...document.querySelectorAll('.reaction.mine')].some(el => el.textContent.includes('❤️'));";
+    if app.eval(heart_mine).await.expect("eval").as_bool() == Some(true) {
+        app.eval("[...document.querySelectorAll('.reaction.mine')].find(b => b.textContent.includes('❤️')).click();")
+            .await
+            .expect("clear leftover heart");
+        app.wait_for_js(
+            &format!("{{ const on = (() => {{ {heart_mine} }})(); return !on; }}"),
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("leftover heart cleared");
+    }
 
     // Toggle a reaction on via the hover bar, then off via the chip.
     app.eval(
