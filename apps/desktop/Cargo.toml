@@ -1,0 +1,20 @@
+[package]
+name = "morpheus-desktop"
+description = "Morpheus desktop app (Dioxus webview renderer)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+# Enables the in-app test bridge used by `just e2e`.
+e2e = ["morpheus-ui/e2e"]
+
+[dependencies]
+dioxus = { workspace = true, features = ["desktop"] }
+morpheus-ui = { workspace = true }
+directories = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[lints]
+workspace = true

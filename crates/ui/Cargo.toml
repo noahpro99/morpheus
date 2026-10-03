@@ -1,0 +1,22 @@
+[package]
+name = "morpheus-ui"
+description = "Shared Dioxus UI for Morpheus. Platform crates pick the renderer."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+# Test bridge that evaluates JavaScript in the webview on request. See src/e2e.rs.
+e2e = ["dep:tokio", "dep:serde", "dep:serde_json"]
+
+[dependencies]
+# No platform feature here on purpose: apps/desktop and apps/mobile choose.
+dioxus = { workspace = true }
+morpheus-core = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true, optional = true, features = ["net", "io-util"] }
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+
+[lints]
+workspace = true

@@ -1,0 +1,6 @@
+[application]
+name = "morpheus"
+
+[bundle]
+identifier = "dev.morpheus.mobile"
+publisher = "Morpheus"
