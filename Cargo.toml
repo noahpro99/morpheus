@@ -14,7 +14,7 @@ repository = "https://github.com/noahpro/morpheus"
 morpheus-core = { path = "crates/core" }
 morpheus-ui = { path = "crates/ui" }
 
-matrix-sdk = "0.19.1"
+matrix-sdk = { version = "0.19.1", features = ["markdown"] }
 matrix-sdk-ui = "0.19.1"
 dioxus = "0.7.10"
 
@@ -29,6 +29,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 directories = "6"
 anyhow = "1"
+base64 = "0.22"
+ruma-html = "0.9"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

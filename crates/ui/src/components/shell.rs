@@ -9,6 +9,7 @@ use super::{
     room_list::RoomList,
     timeline::TimelineView,
 };
+use crate::media::provide_media_cache;
 
 /// Rooms as the core reports them, kept in sync for the whole shell.
 pub type Rooms = Signal<Vector<RoomSummary>>;
@@ -18,6 +19,7 @@ pub type Selected = Signal<Option<OwnedRoomId>>;
 #[component]
 pub fn Shell(session: Session) -> Element {
     use_context_provider(|| session.clone());
+    provide_media_cache();
     let mut rooms: Rooms = use_context_provider(|| Signal::new(Vector::new()));
     let mut selected: Selected = use_context_provider(|| Signal::new(None));
     let mut load_error = use_signal(|| None::<String>);
@@ -74,7 +76,10 @@ pub fn Shell(session: Session) -> Element {
                     },
                 }
             }
-            Members {}
+            match current() {
+                Some(room) => rsx! { Members { room_id: room.id.clone() } },
+                None => rsx! { aside { class: "members" } },
+            }
         }
     }
 }
@@ -91,6 +96,7 @@ fn ChatRoom(room: RoomSummary) -> Element {
             if let Some(topic) = room.topic.as_deref() {
                 span { class: "topic", "{topic}" }
             }
+            span { class: "member-count", title: "Members", "👥 {room.member_count}" }
         }
         TimelineView { room_id: room.id.clone() }
         Composer { room_name: room.name.clone() }

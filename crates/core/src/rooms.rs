@@ -4,7 +4,7 @@ use matrix_sdk_ui::room_list_service::filters::new_filter_non_left;
 use tokio::sync::mpsc;
 use tracing::debug;
 
-use crate::{CoreFuture, OwnedRoomId, Session, VectorDiff};
+use crate::{CoreFuture, MediaRef, OwnedRoomId, Session, VectorDiff};
 
 /// How many rooms the room list fetches before the UI asks for more.
 const PAGE_SIZE: usize = 200;
@@ -15,7 +15,10 @@ pub struct RoomSummary {
     pub id: OwnedRoomId,
     pub name: String,
     pub topic: Option<String>,
+    pub avatar: Option<MediaRef>,
     pub is_space: bool,
+    pub is_dm: bool,
+    pub member_count: u64,
     pub unread_messages: u64,
     pub highlight_count: u64,
 }
@@ -33,7 +36,10 @@ impl RoomSummary {
             id: room.room_id().to_owned(),
             name,
             topic: room.topic(),
+            avatar: room.avatar_url().map(MediaRef::from_mxc),
             is_space: room.is_space(),
+            is_dm: room.direct_targets_length() > 0,
+            member_count: room.joined_members_count(),
             unread_messages: room.num_unread_messages(),
             highlight_count: counts.highlight_count,
         }

@@ -19,5 +19,6 @@ mod e2e {
     }
 }
 mod format;
+mod media;
 
 pub use app::{App, AppConfig};

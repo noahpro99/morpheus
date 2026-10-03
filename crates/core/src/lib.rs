@@ -14,6 +14,8 @@
 
 mod core;
 mod error;
+mod media;
+mod members;
 mod rooms;
 mod session;
 mod timeline;
@@ -24,10 +26,13 @@ pub use error::{Error, Result};
 /// A future produced by the core. Boxed so the deeply nested SDK types never
 /// leak into dependents, and `Send` so any executor can drive it.
 pub type CoreFuture<T> = futures_util::future::BoxFuture<'static, Result<T>>;
+pub use media::{Media, MediaRef};
+pub use members::{Member, MemberRole};
 pub use rooms::{RoomListUpdates, RoomSummary};
 pub use session::{LoginRequest, Session};
 pub use timeline::{
-    Message, MessageKind, OpenTimeline, TimelineEntry, TimelineHandle, TimelineUpdates,
+    Message, MessageId, MessageKind, OpenTimeline, Reaction, TimelineEntry, TimelineHandle,
+    TimelineUpdates,
 };
 
 pub use eyeball_im::VectorDiff;

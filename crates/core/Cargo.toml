@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 matrix-sdk = { workspace = true }
 matrix-sdk-ui = { workspace = true }
+ruma-html = { workspace = true }
 tokio = { workspace = true }
 futures-util = { workspace = true }
 eyeball-im = { workspace = true }

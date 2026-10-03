@@ -278,6 +278,27 @@ impl App {
         &self.data_dir
     }
 
+    /// Wait until some element matching `selector` has exactly this trimmed text.
+    pub async fn wait_for_exact_text(
+        &mut self,
+        selector: &str,
+        text: &str,
+        timeout: Duration,
+    ) -> Result<()> {
+        let js = format!(
+            "return [...document.querySelectorAll({})].some(el => el.textContent.trim() === {});",
+            js_str(selector),
+            js_str(text)
+        );
+        self.wait_until(timeout, &format!("{selector} with text {text:?}"), &js)
+            .await
+    }
+
+    /// Wait until a JavaScript predicate (it must `return` a boolean) holds.
+    pub async fn wait_for_js(&mut self, predicate_js: &str, timeout: Duration) -> Result<()> {
+        self.wait_until(timeout, predicate_js, predicate_js).await
+    }
+
     /// Poll a JavaScript predicate (it must `return` a boolean) until it holds.
     async fn wait_until(
         &mut self,
