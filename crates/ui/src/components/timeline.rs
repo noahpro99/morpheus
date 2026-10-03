@@ -1,14 +1,23 @@
 use dioxus::prelude::*;
 use morpheus_core::{
-    Message, MessageKind, OpenTimeline, OwnedRoomId, Session, TimelineEntry, Vector,
+    MediaRef, Message, MessageKind, OpenTimeline, OwnedRoomId, Reaction, Session, TimelineEntry,
+    Vector,
 };
-use tracing::error;
+use tracing::{error, warn};
 
 use super::composer::ActiveTimeline;
-use crate::format::{calendar_date, clock_time};
+use crate::{
+    format::{calendar_date, clock_time},
+    media::{Avatar, use_thumbnail},
+};
 
 /// Messages from the same sender within this window collapse under one header.
 const GROUP_WINDOW_MS: u64 = 5 * 60 * 1000;
+/// Start loading older history when the view is this close to the top.
+const PAGINATE_THRESHOLD_PX: f64 = 400.0;
+const PAGE_SIZE: u16 = 40;
+/// One-click reactions offered on hover.
+const QUICK_REACTIONS: [&str; 3] = ["👍", "❤️", "😂"];
 
 /// One room's messages. The parent sets `key` to the room id, so switching
 /// rooms remounts this component and drops the previous subscription.
@@ -19,6 +28,7 @@ pub fn TimelineView(room_id: OwnedRoomId) -> Element {
     let mut handle = use_context::<ActiveTimeline>();
     let mut load_error = use_signal(|| None::<String>);
     let mut reached_start = use_signal(|| false);
+    let mut paginating = use_signal(|| false);
 
     use_future(move || {
         let session = session.clone();
@@ -29,10 +39,17 @@ pub fn TimelineView(room_id: OwnedRoomId) -> Element {
                     handle: opened,
                     mut updates,
                 }) => {
-                    handle.set(Some(opened));
+                    handle.set(Some(opened.clone()));
                     while let Some(diffs) = updates.next().await {
                         entries
                             .with_mut(|list| diffs.into_iter().for_each(|diff| diff.apply(list)));
+                        // The SDK only sends a receipt when the latest event moved forward.
+                        let receipt = opened.clone();
+                        spawn(async move {
+                            if let Err(err) = receipt.mark_as_read().await {
+                                warn!(%err, "read receipt failed");
+                            }
+                        });
                     }
                 }
                 Err(err) => {
@@ -43,31 +60,45 @@ pub fn TimelineView(room_id: OwnedRoomId) -> Element {
         }
     });
 
-    let load_older = move |_| {
+    let mut load_older = move || {
         let Some(active) = handle() else { return };
+        if paginating() || reached_start() {
+            return;
+        }
+        paginating.set(true);
         spawn(async move {
-            match active.paginate_backwards(40).await {
+            match active.paginate_backwards(PAGE_SIZE).await {
                 Ok(hit_start) => reached_start.set(hit_start),
                 Err(err) => load_error.set(Some(err.to_string())),
             }
+            paginating.set(false);
         });
     };
 
-    let rows = group_rows(&entries.read());
+    // `column-reverse` makes scrollTop run from 0 (bottom) to negative (top).
+    let on_scroll = move |evt: Event<ScrollData>| {
+        let distance_to_top =
+            f64::from(evt.scroll_height()) - f64::from(evt.client_height()) + evt.scroll_top();
+        if distance_to_top < PAGINATE_THRESHOLD_PX {
+            load_older();
+        }
+    };
+
     let at_start = reached_start()
         || entries
             .read()
             .iter()
             .any(|entry| matches!(entry, TimelineEntry::TimelineStart));
+    let entries_now = entries.read();
+    let rows = group_rows(&entries_now);
 
     rsx! {
-        // `column-reverse` keeps the view pinned to the newest message, so we
-        // render newest-first and let CSS flip it.
-        section { class: "timeline",
+        // Rendered newest-first; CSS flips it and keeps the view pinned to the bottom.
+        section { class: "timeline", onscroll: on_scroll,
             for row in rows.into_iter().rev() {
                 match row {
                     Row::Message { message, show_header } => rsx! {
-                        MessageRow { key: "{message.id}", message, show_header }
+                        MessageRow { key: "{message.unique_id}", message: message.clone(), show_header }
                     },
                     Row::Date(label) => rsx! {
                         div { key: "date-{label}", class: "date-divider", span { "{label}" } }
@@ -81,21 +112,26 @@ pub fn TimelineView(room_id: OwnedRoomId) -> Element {
             if let Some(message) = load_error() {
                 p { class: "error", "{message}" }
             }
-            if !at_start && handle().is_some() {
-                button { class: "ghost load-older", onclick: load_older, "Load older messages" }
+            if paginating() {
+                p { class: "muted loading", "Loading older messages…" }
+            } else if !at_start && handle().is_some() {
+                button { class: "ghost load-older", onclick: move |_| load_older(), "Load older messages" }
             }
         }
     }
 }
 
-enum Row {
-    Message { message: Message, show_header: bool },
+enum Row<'a> {
+    Message {
+        message: &'a Message,
+        show_header: bool,
+    },
     Date(String),
     Start,
 }
 
 /// Decide which messages get a sender header and turn dividers into labels.
-fn group_rows(entries: &Vector<TimelineEntry>) -> Vec<Row> {
+fn group_rows(entries: &Vector<TimelineEntry>) -> Vec<Row<'_>> {
     let mut rows = Vec::with_capacity(entries.len());
     let mut previous: Option<&Message> = None;
 
@@ -109,7 +145,7 @@ fn group_rows(entries: &Vector<TimelineEntry>) -> Vec<Row> {
                         && !matches!(message.kind, MessageKind::State(_))
                 });
                 rows.push(Row::Message {
-                    message: message.clone(),
+                    message,
                     show_header: !continues,
                 });
                 previous = Some(message);
@@ -130,6 +166,7 @@ fn group_rows(entries: &Vector<TimelineEntry>) -> Vec<Row> {
 
 #[component]
 fn MessageRow(message: Message, show_header: bool) -> Element {
+    let timeline = use_context::<ActiveTimeline>();
     let time = clock_time(message.timestamp_ms);
 
     if let MessageKind::State(text) = &message.kind {
@@ -141,6 +178,19 @@ fn MessageRow(message: Message, show_header: bool) -> Element {
         };
     }
 
+    let react = {
+        let id = message.id.clone();
+        move |key: &str| {
+            let Some(active) = timeline() else { return };
+            let (id, key) = (id.clone(), key.to_owned());
+            spawn(async move {
+                if let Err(err) = active.toggle_reaction(id, key).await {
+                    warn!(%err, "reaction failed");
+                }
+            });
+        }
+    };
+
     rsx! {
         div {
             class: "message",
@@ -148,18 +198,60 @@ fn MessageRow(message: Message, show_header: bool) -> Element {
             class: if message.is_local_echo { "pending" },
             class: if message.is_own { "own" },
             if show_header {
-                div { class: "avatar", "{message.sender_name.chars().next().unwrap_or('?')}" }
+                Avatar { media: message.sender_avatar.clone(), fallback: message.sender_name.clone(), size: 40 }
                 div { class: "message-main",
                     div { class: "message-meta",
                         span { class: "sender", "{message.sender_name}" }
                         span { class: "time", "{time}" }
                     }
                     MessageBody { kind: message.kind.clone(), edited: message.is_edited }
+                    Reactions { reactions: message.reactions.clone(), on_toggle: react.clone() }
                 }
             } else {
                 span { class: "time gutter", "{time}" }
                 div { class: "message-main",
                     MessageBody { kind: message.kind.clone(), edited: message.is_edited }
+                    Reactions { reactions: message.reactions.clone(), on_toggle: react.clone() }
+                }
+            }
+            if !message.is_local_echo {
+                div { class: "actions",
+                    for key in QUICK_REACTIONS {
+                        button {
+                            class: "action",
+                            title: "React with {key}",
+                            onclick: {
+                                let react = react.clone();
+                                move |_| react(key)
+                            },
+                            "{key}"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn Reactions(reactions: Vec<Reaction>, on_toggle: Callback<&'static str>) -> Element {
+    if reactions.is_empty() {
+        return rsx! {};
+    }
+    rsx! {
+        div { class: "reactions",
+            for reaction in reactions {
+                button {
+                    key: "{reaction.key}",
+                    class: "reaction",
+                    class: if reaction.mine { "mine" },
+                    onclick: {
+                        // Keys outlive the click handler; leaking the few distinct emoji is fine.
+                        let key: &'static str = Box::leak(reaction.key.clone().into_boxed_str());
+                        move |_| on_toggle(key)
+                    },
+                    span { class: "reaction-key", "{reaction.key}" }
+                    span { class: "reaction-count", "{reaction.count}" }
                 }
             }
         }
@@ -170,16 +262,60 @@ fn MessageRow(message: Message, show_header: bool) -> Element {
 fn MessageBody(kind: MessageKind, edited: bool) -> Element {
     let edited_tag = if edited { " (edited)" } else { "" };
     match kind {
-        MessageKind::Text(body) => {
-            rsx! { p { class: "body", "{body}" span { class: "edited", "{edited_tag}" } } }
+        MessageKind::Text { body, html } => {
+            rsx! { RichText { class: "body", body, html, edited_tag } }
         }
-        MessageKind::Notice(body) => rsx! { p { class: "body notice", "{body}" } },
-        MessageKind::Emote(body) => rsx! { p { class: "body emote", "{body}" } },
-        MessageKind::Image { body } => rsx! { p { class: "body attachment", "🖼 {body}" } },
+        MessageKind::Notice { body, html } => {
+            rsx! { RichText { class: "body notice", body, html, edited_tag } }
+        }
+        MessageKind::Emote { body, html } => {
+            rsx! { RichText { class: "body emote", body, html, edited_tag } }
+        }
+        MessageKind::Image {
+            body,
+            media,
+            width,
+            height,
+        } => rsx! { ImageBody { body, media, width, height } },
         MessageKind::File { body } => rsx! { p { class: "body attachment", "📎 {body}" } },
         MessageKind::Redacted => rsx! { p { class: "body muted", "Message deleted" } },
         MessageKind::UnableToDecrypt => rsx! { p { class: "body muted", "Unable to decrypt" } },
         MessageKind::State(text) => rsx! { p { class: "body muted", "{text}" } },
         MessageKind::Unsupported(what) => rsx! { p { class: "body muted", "Unsupported: {what}" } },
+    }
+}
+
+/// Sanitised HTML when the sender provided it, plain text otherwise.
+#[component]
+fn RichText(
+    class: &'static str,
+    body: String,
+    html: Option<String>,
+    edited_tag: &'static str,
+) -> Element {
+    match html {
+        Some(html) => rsx! {
+            div { class: "{class} rich",
+                div { dangerous_inner_html: "{html}" }
+                span { class: "edited", "{edited_tag}" }
+            }
+        },
+        None => rsx! { p { class: "{class}", "{body}" span { class: "edited", "{edited_tag}" } } },
+    }
+}
+
+#[component]
+fn ImageBody(body: String, media: MediaRef, width: Option<u32>, height: Option<u32>) -> Element {
+    let url = use_thumbnail(Some(media), 800, 600);
+    let aspect = match (width, height) {
+        (Some(w), Some(h)) if h > 0 => format!("aspect-ratio: {w} / {h};"),
+        _ => String::new(),
+    };
+
+    rsx! {
+        match url() {
+            Some(src) => rsx! { img { class: "image", style: "{aspect}", src: "{src}", alt: "{body}", title: "{body}" } },
+            None => rsx! { div { class: "image placeholder", style: "{aspect}", "{body}" } },
+        }
     }
 }

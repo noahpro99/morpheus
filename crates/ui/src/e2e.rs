@@ -83,8 +83,20 @@ pub fn E2eBridge() -> Element {
     rsx! {}
 }
 
+/// How many eval channel objects to pin on the JS side.
+const PINNED_EVALS: usize = 64;
+
 async fn evaluate(request: Request) -> Response {
-    match document::eval(&request.js).await {
+    // dioxus-desktop frees an eval's result slot when the JS channel object is
+    // garbage-collected, which can happen before Rust reads the result and
+    // surfaces as `EvalError::Finished`. Pinning the channel for a while
+    // closes that window; old ones are released as the ring rolls over.
+    let js = format!(
+        "window.__morpheusEvals = window.__morpheusEvals || []; window.__morpheusEvals.push(dioxus); \
+         if (window.__morpheusEvals.length > {PINNED_EVALS}) window.__morpheusEvals.shift();\n{}",
+        request.js
+    );
+    match document::eval(&js).await {
         Ok(value) => Response {
             id: request.id,
             ok: true,

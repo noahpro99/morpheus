@@ -1,18 +1,22 @@
 use std::sync::Arc;
 
 use futures_util::{StreamExt, pin_mut};
-use matrix_sdk::ruma::events::{
-    StateEventType,
-    room::message::{MessageType, RoomMessageEventContent},
+use matrix_sdk::ruma::{
+    OwnedEventId, OwnedTransactionId,
+    api::client::receipt::create_receipt::v3::ReceiptType,
+    events::{
+        StateEventType,
+        room::message::{FormattedBody, MessageFormat, MessageType, RoomMessageEventContent},
+    },
 };
 use matrix_sdk_ui::timeline::{
     EventTimelineItem, MembershipChange, MsgLikeKind, RoomExt, Timeline, TimelineDetails,
-    TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem,
+    TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem,
 };
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::{debug, warn};
 
-use crate::{Core, CoreFuture, Error, OwnedRoomId, OwnedUserId, Session, VectorDiff};
+use crate::{Core, CoreFuture, Error, MediaRef, OwnedRoomId, OwnedUserId, Session, VectorDiff};
 
 /// Messages fetched when a room is opened for the first time.
 const INITIAL_BACKFILL: u16 = 40;
@@ -20,34 +24,77 @@ const INITIAL_BACKFILL: u16 = 40;
 /// One row of a room timeline.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TimelineEntry {
-    Message(Message),
-    DateDivider { timestamp_ms: u64 },
+    /// Boxed: messages are large and the timeline is a persistent vector of entries.
+    Message(Box<Message>),
+    DateDivider {
+        timestamp_ms: u64,
+    },
     ReadMarker,
     TimelineStart,
 }
 
-/// A rendered-ready event. Owned and cheap to compare so UIs can diff it.
+/// Addressable identity of a message: remote events by event id, unsent
+/// local echoes by transaction id.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum MessageId {
+    Event(OwnedEventId),
+    Transaction(OwnedTransactionId),
+}
+
+impl From<&MessageId> for TimelineEventItemId {
+    fn from(id: &MessageId) -> Self {
+        match id {
+            MessageId::Event(event_id) => Self::EventId(event_id.clone()),
+            MessageId::Transaction(txn_id) => Self::TransactionId(txn_id.clone()),
+        }
+    }
+}
+
+/// A render-ready event. Owned and cheap to compare so UIs can diff it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Message {
-    /// Stable identity across local echo → remote echo transitions.
-    pub id: String,
-    pub event_id: Option<String>,
+    /// Stable render key across local echo → remote echo transitions.
+    pub unique_id: String,
+    pub id: MessageId,
     pub sender: OwnedUserId,
     pub sender_name: String,
+    pub sender_avatar: Option<MediaRef>,
     pub timestamp_ms: u64,
     pub is_own: bool,
     pub is_local_echo: bool,
     pub is_edited: bool,
+    pub reactions: Vec<Reaction>,
     pub kind: MessageKind,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Reaction {
+    pub key: String,
+    pub count: usize,
+    /// Whether the current user reacted with this key.
+    pub mine: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MessageKind {
-    Text(String),
-    Notice(String),
-    Emote(String),
+    /// `html` is sanitised and safe to inject; `body` is the plain fallback.
+    Text {
+        body: String,
+        html: Option<String>,
+    },
+    Notice {
+        body: String,
+        html: Option<String>,
+    },
+    Emote {
+        body: String,
+        html: Option<String>,
+    },
     Image {
         body: String,
+        media: MediaRef,
+        width: Option<u32>,
+        height: Option<u32>,
     },
     File {
         body: String,
@@ -60,39 +107,72 @@ pub enum MessageKind {
 }
 
 impl TimelineEntry {
-    fn from_item(item: &TimelineItem) -> Self {
+    fn from_item(item: &TimelineItem, own_user: Option<&OwnedUserId>) -> Self {
         match item.kind() {
             TimelineItemKind::Virtual(VirtualTimelineItem::DateDivider(ts)) => Self::DateDivider {
                 timestamp_ms: ts.0.into(),
             },
             TimelineItemKind::Virtual(VirtualTimelineItem::ReadMarker) => Self::ReadMarker,
             TimelineItemKind::Virtual(VirtualTimelineItem::TimelineStart) => Self::TimelineStart,
-            TimelineItemKind::Event(event) => {
-                Self::Message(Message::from_event(item.unique_id().0.clone(), event))
-            }
+            TimelineItemKind::Event(event) => Self::Message(Box::new(Message::from_event(
+                item.unique_id().0.clone(),
+                event,
+                own_user,
+            ))),
         }
     }
 }
 
 impl Message {
-    fn from_event(id: String, event: &EventTimelineItem) -> Self {
-        let sender_name = match event.sender_profile() {
-            TimelineDetails::Ready(profile) => profile.display_name.clone(),
+    fn from_event(
+        unique_id: String,
+        event: &EventTimelineItem,
+        own_user: Option<&OwnedUserId>,
+    ) -> Self {
+        let profile = match event.sender_profile() {
+            TimelineDetails::Ready(profile) => Some(profile),
             _ => None,
-        }
-        .unwrap_or_else(|| event.sender().localpart().to_owned());
+        };
+        let sender_name = profile
+            .and_then(|p| p.display_name.clone())
+            .unwrap_or_else(|| event.sender().localpart().to_owned());
+        let sender_avatar = profile
+            .and_then(|p| p.avatar_url.clone())
+            .map(MediaRef::from_mxc);
+
+        let id = match event.identifier() {
+            TimelineEventItemId::EventId(event_id) => MessageId::Event(event_id),
+            TimelineEventItemId::TransactionId(txn_id) => MessageId::Transaction(txn_id),
+        };
+
+        let reactions = event
+            .content()
+            .reactions()
+            .map(|by_key| {
+                by_key
+                    .iter()
+                    .map(|(key, senders)| Reaction {
+                        key: key.clone(),
+                        count: senders.len(),
+                        mine: own_user.is_some_and(|me| senders.contains_key(me)),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
 
         let kind = MessageKind::from_content(event.content(), &sender_name);
 
         Self {
+            unique_id,
             id,
-            event_id: event.event_id().map(ToString::to_string),
             sender: event.sender().to_owned(),
             sender_name,
+            sender_avatar,
             timestamp_ms: event.timestamp().0.into(),
             is_own: event.is_own(),
             is_local_echo: event.is_local_echo(),
             is_edited: event.content().as_message().is_some_and(|m| m.is_edited()),
+            reactions,
             kind,
         }
     }
@@ -104,11 +184,31 @@ impl MessageKind {
         match content {
             TimelineItemContent::MsgLike(msg_like) => match &msg_like.kind {
                 MsgLikeKind::Message(message) => match message.msgtype() {
-                    MessageType::Text(text) => Self::Text(text.body.clone()),
-                    MessageType::Notice(notice) => Self::Notice(notice.body.clone()),
-                    MessageType::Emote(emote) => Self::Emote(emote.body.clone()),
+                    MessageType::Text(text) => Self::Text {
+                        body: text.body.clone(),
+                        html: sanitized_html(text.formatted.as_ref()),
+                    },
+                    MessageType::Notice(notice) => Self::Notice {
+                        body: notice.body.clone(),
+                        html: sanitized_html(notice.formatted.as_ref()),
+                    },
+                    MessageType::Emote(emote) => Self::Emote {
+                        body: emote.body.clone(),
+                        html: sanitized_html(emote.formatted.as_ref()),
+                    },
                     MessageType::Image(image) => Self::Image {
                         body: image.body.clone(),
+                        media: MediaRef::from_source(image.source.clone()),
+                        width: image
+                            .info
+                            .as_ref()
+                            .and_then(|i| i.width)
+                            .and_then(uint_to_u32),
+                        height: image
+                            .info
+                            .as_ref()
+                            .and_then(|i| i.height)
+                            .and_then(uint_to_u32),
                     },
                     MessageType::File(file) => Self::File {
                         body: file.body.clone(),
@@ -149,6 +249,14 @@ impl MessageKind {
     }
 }
 
+/// Strip everything the Matrix spec does not allow in formatted bodies.
+fn sanitized_html(formatted: Option<&FormattedBody>) -> Option<String> {
+    let formatted = formatted.filter(|f| f.format == MessageFormat::Html)?;
+    let html = ruma_html::Html::parse(&formatted.body);
+    html.sanitize();
+    Some(html.to_string())
+}
+
 fn describe_membership(change: Option<MembershipChange>) -> &'static str {
     match change {
         Some(MembershipChange::Joined) => "joined the room",
@@ -166,6 +274,22 @@ fn describe_membership(change: Option<MembershipChange>) -> &'static str {
         Some(MembershipChange::KnockRetracted) => "retracted their knock",
         Some(MembershipChange::KnockDenied) => "had their knock denied",
         _ => "changed their membership",
+    }
+}
+
+fn describe_state(event_type: &StateEventType) -> String {
+    match event_type {
+        StateEventType::RoomCreate => "created the room".into(),
+        StateEventType::RoomName => "changed the room name".into(),
+        StateEventType::RoomTopic => "changed the topic".into(),
+        StateEventType::RoomAvatar => "changed the room icon".into(),
+        StateEventType::RoomCanonicalAlias => "changed the room address".into(),
+        StateEventType::RoomJoinRules => "changed who can join".into(),
+        StateEventType::RoomHistoryVisibility => "changed history visibility".into(),
+        StateEventType::RoomPowerLevels => "changed permissions".into(),
+        StateEventType::RoomEncryption => "enabled encryption".into(),
+        StateEventType::RoomPinnedEvents => "changed pinned messages".into(),
+        other => format!("changed {other}"),
     }
 }
 
@@ -205,12 +329,24 @@ impl TimelineUpdates {
 }
 
 impl TimelineHandle {
-    /// Send a plain-text message. It shows up in the stream as a local echo first.
+    /// Send a message. Markdown is rendered to HTML when it contains any
+    /// formatting; plain text otherwise. Shows up as a local echo first.
     pub fn send_text(&self, body: String) -> CoreFuture<()> {
         let timeline = self.timeline.clone();
-        let content = RoomMessageEventContent::text_plain(body);
+        let content = RoomMessageEventContent::text_markdown(body);
         self.core.run(async move {
             timeline.send(content.into()).await?;
+            Ok(())
+        })
+    }
+
+    /// Add or remove the current user's reaction with `key` on a message.
+    pub fn toggle_reaction(&self, message: MessageId, key: String) -> CoreFuture<()> {
+        let timeline = self.timeline.clone();
+        self.core.run(async move {
+            timeline
+                .toggle_reaction(&TimelineEventItemId::from(&message), &key)
+                .await?;
             Ok(())
         })
     }
@@ -221,6 +357,13 @@ impl TimelineHandle {
         self.core
             .run(async move { Ok(timeline.paginate_backwards(count).await?) })
     }
+
+    /// Send a public read receipt for the latest event, if it moved forward.
+    pub fn mark_as_read(&self) -> CoreFuture<bool> {
+        let timeline = self.timeline.clone();
+        self.core
+            .run(async move { Ok(timeline.mark_as_read(ReceiptType::Read).await?) })
+    }
 }
 
 impl Session {
@@ -230,6 +373,7 @@ impl Session {
         let core = self.core.clone();
         let client = self.client.clone();
         let sync = self.sync.clone();
+        let own_user = self.user_id();
 
         self.core.run(async move {
             let room = client
@@ -246,7 +390,7 @@ impl Session {
             let reset = VectorDiff::Reset {
                 values: initial
                     .iter()
-                    .map(|item| TimelineEntry::from_item(item))
+                    .map(|item| TimelineEntry::from_item(item, own_user.as_ref()))
                     .collect(),
             };
             let _ = tx.send(vec![reset]);
@@ -256,7 +400,9 @@ impl Session {
                 while let Some(diffs) = stream.next().await {
                     let diffs: Vec<_> = diffs
                         .into_iter()
-                        .map(|diff| diff.map(|item| TimelineEntry::from_item(&item)))
+                        .map(|diff| {
+                            diff.map(|item| TimelineEntry::from_item(&item, own_user.as_ref()))
+                        })
                         .collect();
                     if tx.send(diffs).is_err() {
                         debug!(%room_id, "timeline consumer dropped, stopping");
@@ -284,18 +430,6 @@ impl Session {
     }
 }
 
-fn describe_state(event_type: &StateEventType) -> String {
-    match event_type {
-        StateEventType::RoomCreate => "created the room".into(),
-        StateEventType::RoomName => "changed the room name".into(),
-        StateEventType::RoomTopic => "changed the topic".into(),
-        StateEventType::RoomAvatar => "changed the room icon".into(),
-        StateEventType::RoomCanonicalAlias => "changed the room address".into(),
-        StateEventType::RoomJoinRules => "changed who can join".into(),
-        StateEventType::RoomHistoryVisibility => "changed history visibility".into(),
-        StateEventType::RoomPowerLevels => "changed permissions".into(),
-        StateEventType::RoomEncryption => "enabled encryption".into(),
-        StateEventType::RoomPinnedEvents => "changed pinned messages".into(),
-        other => format!("changed {other}"),
-    }
+fn uint_to_u32(value: matrix_sdk::ruma::UInt) -> Option<u32> {
+    u32::try_from(u64::from(value)).ok()
 }

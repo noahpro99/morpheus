@@ -18,21 +18,6 @@ pub fn calendar_date(timestamp_ms: u64) -> String {
     format!("{y:04}-{m:02}-{d:02}")
 }
 
-/// Two-letter badge for a room or space name, e.g. "General Chat" → "GC".
-pub fn initials(name: &str) -> String {
-    let mut chars = name
-        .split(|c: char| c.is_whitespace() || c == '-' || c == '_')
-        .filter_map(|word| word.chars().next())
-        .filter(|c| c.is_alphanumeric());
-    let first = chars.next();
-    let second = chars.next();
-    match (first, second) {
-        (Some(a), Some(b)) => format!("{a}{b}").to_uppercase(),
-        (Some(a), None) => a.to_uppercase().to_string(),
-        _ => "#".into(),
-    }
-}
-
 fn local_utc_offset_secs() -> i64 {
     // The webview runtime exposes no timezone API to Rust without extra
     // crates; honour an explicit override and otherwise assume UTC.
@@ -65,13 +50,5 @@ mod tests {
         assert_eq!(calendar_date(0), "1970-01-01");
         assert_eq!(calendar_date(1_700_000_000_000), "2023-11-14");
         assert_eq!(clock_time(1_700_000_000_000), "22:13");
-    }
-
-    #[test]
-    fn initials_handle_edge_cases() {
-        assert_eq!(initials("General Chat"), "GC");
-        assert_eq!(initials("dev"), "D");
-        assert_eq!(initials("!!!"), "#");
-        assert_eq!(initials("rust-lang"), "RL");
     }
 }

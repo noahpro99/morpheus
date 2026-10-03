@@ -46,24 +46,28 @@ Workspace, flake, dev Synapse, seeding, live test, login → room list →
 timeline → send.
 
 ### 1. Read and write well
-- [ ] Avatars (room, user) via the SDK media API with an on-disk thumbnail cache
-- [ ] Image/video/file messages rendered inline, downloads
-- [ ] Scroll-anchored back-pagination (replace the "Load older" button)
+- [x] Avatars (room, user) via the SDK media API (SDK disk cache + in-memory data-URL cache)
+- [x] Image messages rendered inline as thumbnails
+- [ ] Video/file messages, downloads, full-size image viewer
+- [x] Scroll-triggered back-pagination (button remains as a fallback)
 - [ ] Proper local time zone handling (replace `format.rs` shims with `jiff`)
 - [ ] Virtualised timeline once rooms with >2k loaded items appear
 - [ ] Error toasts instead of inline `<p class="error">`
 
 ### 2. The Discord shell
-- [ ] Spaces rail filters the room list; DMs section; unread/mention badges
-- [ ] Members panel with presence and power levels
-- [ ] Typing indicators, read receipts, "new messages" marker
+- [ ] Spaces rail filters the room list
+- [x] DMs section; unread (bold) and mention badges
+- [x] Members panel grouped by power level (presence pending)
+- [ ] Typing indicators, "new messages" marker
+- [x] Read receipts sent when a room is viewed
 - [ ] Room header actions: search, pinned, settings
 - [ ] Desktop notifications
 - [ ] Keyboard navigation (Ctrl+K room switcher, Alt+↑/↓)
 
 ### 3. Rich content
-- [ ] Markdown composer, sanitised HTML rendering
-- [ ] Reactions, replies, threads, edits, deletes
+- [x] Markdown composer, sanitised HTML rendering (ruma-html)
+- [x] Reactions (view and toggle)
+- [ ] Replies, threads, edits, deletes
 - [ ] Emoji picker, mentions autocomplete
 - [ ] Attachment upload with drag-and-drop and paste
 
@@ -95,3 +99,4 @@ timeline → send.
 ## Open questions
 - Dioxus webview on NixOS/Wayland needs `WEBKIT_DISABLE_DMABUF_RENDERER=1` (set in the flake). Revisit when webkitgtk fixes land.
 - Sliding sync requires a homeserver with MSC4186. Synapse and Conduit-family servers have it; document the fallback story for others.
+- dioxus-desktop frees an eval's result slot when the JS channel object is garbage-collected, which can race the Rust-side read and surface as `EvalError::Finished`. The e2e bridge pins recent channel objects to work around it; worth an upstream issue.

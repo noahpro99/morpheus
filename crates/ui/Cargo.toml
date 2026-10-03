@@ -14,6 +14,7 @@ e2e = ["dep:tokio", "dep:serde", "dep:serde_json"]
 dioxus = { workspace = true }
 morpheus-core = { workspace = true }
 tracing = { workspace = true }
+base64 = { workspace = true }
 tokio = { workspace = true, optional = true, features = ["net", "io-util"] }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }

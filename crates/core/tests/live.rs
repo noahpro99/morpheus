@@ -102,7 +102,7 @@ async fn login_list_rooms_read_and_send() {
     let mut updates = opened.updates;
     let mut items = Vector::new();
     let has_body = |items: &Vector<TimelineEntry>, body: &str| {
-        items.iter().any(|e| matches!(e, TimelineEntry::Message(m) if matches!(&m.kind, MessageKind::Text(t) if t == body)))
+        items.iter().any(|e| matches!(e, TimelineEntry::Message(m) if matches!(&m.kind, MessageKind::Text { body: t, .. } if t == body)))
     };
     drive(
         &mut items,
@@ -116,7 +116,7 @@ async fn login_list_rooms_read_and_send() {
     opened.handle.send_text(body.clone()).await.expect("send");
     drive(&mut items, async || updates.next().await, |items| {
         items.iter().any(|e| {
-            matches!(e, TimelineEntry::Message(m) if !m.is_local_echo && m.is_own && matches!(&m.kind, MessageKind::Text(t) if *t == body))
+            matches!(e, TimelineEntry::Message(m) if !m.is_local_echo && m.is_own && matches!(&m.kind, MessageKind::Text { body: t, .. } if *t == body))
         })
     })
     .await;
