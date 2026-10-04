@@ -5,6 +5,7 @@
 //! lives here so both apps stay pixel-consistent.
 
 mod app;
+mod attach;
 mod components;
 #[cfg(feature = "e2e")]
 mod e2e;

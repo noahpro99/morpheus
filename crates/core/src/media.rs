@@ -1,10 +1,18 @@
+use std::path::{Path, PathBuf};
+
+use directories::UserDirs;
 use matrix_sdk::{
     media::{MediaFormat, MediaRequestParameters, MediaThumbnailSettings},
     ruma::{OwnedMxcUri, UInt, events::room::MediaSource},
 };
+use tokio::fs;
 use tracing::debug;
 
 use crate::{CoreFuture, Session};
+
+/// Overrides the Downloads directory; used by e2e tests so downloads land in
+/// a disposable, inspectable location instead of the real user directory.
+const DOWNLOAD_DIR_ENV: &str = "MORPHEUS_DOWNLOAD_DIR";
 
 /// A reference to a piece of media (avatar, image, file) that the core can fetch.
 ///
@@ -118,5 +126,117 @@ impl Session {
             };
             Ok(Some(Media { bytes }))
         })
+    }
+
+    /// Download the full file behind `media` into the user's Downloads
+    /// directory (or `MORPHEUS_DOWNLOAD_DIR`, if set), suffixing the file
+    /// name with `(1)`, `(2)`, ... when it already exists. Returns the path
+    /// actually written.
+    pub fn download(&self, media: MediaRef, suggested_name: String) -> CoreFuture<PathBuf> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            let media_client = client.media();
+            let request = MediaRequestParameters {
+                source: media.source,
+                format: MediaFormat::File,
+            };
+            let bytes = media_client.get_media_content(&request, true).await?;
+
+            let dir = downloads_dir();
+            fs::create_dir_all(&dir).await?;
+            let path = unique_path(&dir, &suggested_name).await;
+            fs::write(&path, &bytes).await?;
+            Ok(path)
+        })
+    }
+}
+
+fn downloads_dir() -> PathBuf {
+    if let Some(dir) = std::env::var_os(DOWNLOAD_DIR_ENV) {
+        return PathBuf::from(dir);
+    }
+    UserDirs::new()
+        .and_then(|dirs| dirs.download_dir().map(Path::to_path_buf))
+        .unwrap_or_else(std::env::temp_dir)
+}
+
+/// `dir/suggested_name`, or `dir/<stem> (1).<ext>`, `(2)`, ... if that name
+/// is already taken. Strips any path components from `suggested_name` so a
+/// crafted file name cannot escape `dir`.
+async fn unique_path(dir: &Path, suggested_name: &str) -> PathBuf {
+    let safe_name = Path::new(suggested_name)
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| "attachment".to_owned());
+
+    let named = Path::new(&safe_name);
+    let stem = named
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "attachment".to_owned());
+    let extension = named.extension().map(|s| s.to_string_lossy().into_owned());
+
+    let mut candidate = dir.join(&safe_name);
+    let mut attempt = 1u32;
+    while fs::try_exists(&candidate).await.unwrap_or(false) {
+        let name = match &extension {
+            Some(extension) => format!("{stem} ({attempt}).{extension}"),
+            None => format!("{stem} ({attempt})"),
+        };
+        candidate = dir.join(name);
+        attempt += 1;
+    }
+    candidate
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn first_download_keeps_the_suggested_name() {
+        let dir = std::env::temp_dir().join(format!("morpheus-media-test-{}", uuid()));
+        tokio::fs::create_dir_all(&dir).await.unwrap_or_default();
+
+        let path = unique_path(&dir, "notes.txt").await;
+        assert_eq!(path, dir.join("notes.txt"));
+
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    #[tokio::test]
+    async fn repeated_downloads_suffix_instead_of_colliding() {
+        let dir = std::env::temp_dir().join(format!("morpheus-media-test-{}", uuid()));
+        tokio::fs::create_dir_all(&dir).await.unwrap_or_default();
+        tokio::fs::write(dir.join("notes.txt"), b"first")
+            .await
+            .unwrap_or_default();
+        tokio::fs::write(dir.join("notes (1).txt"), b"second")
+            .await
+            .unwrap_or_default();
+
+        let path = unique_path(&dir, "notes.txt").await;
+        assert_eq!(path, dir.join("notes (2).txt"));
+
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    #[tokio::test]
+    async fn path_components_in_the_suggested_name_are_stripped() {
+        let dir = std::env::temp_dir().join(format!("morpheus-media-test-{}", uuid()));
+        tokio::fs::create_dir_all(&dir).await.unwrap_or_default();
+
+        let path = unique_path(&dir, "../../etc/passwd").await;
+        assert_eq!(path, dir.join("passwd"));
+
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    fn uuid() -> u128 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or_default()
     }
 }
