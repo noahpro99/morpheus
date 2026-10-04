@@ -1,25 +1,37 @@
 use dioxus::prelude::*;
 use morpheus_core::{RoomSummary, Session};
 
-use super::shell::{Rooms, Selected};
+use super::shell::{Rooms, Selected, SelectedSpace, rooms_in_scope};
 use crate::media::Avatar;
 
 #[component]
 pub fn RoomList(error: Option<String>) -> Element {
     let session = use_context::<Session>();
     let rooms = use_context::<Rooms>();
+    let selected_space = use_context::<SelectedSpace>();
     let mut session_slot = use_context::<Signal<Option<Session>>>();
 
     let user = session
         .user_id()
         .map(|id| id.to_string())
         .unwrap_or_default();
-    let (dms, channels): (Vec<RoomSummary>, Vec<RoomSummary>) = rooms
-        .read()
-        .iter()
-        .filter(|room| !room.is_space)
-        .cloned()
-        .partition(|room| room.is_dm);
+    let (dms, channels): (Vec<RoomSummary>, Vec<RoomSummary>) =
+        rooms_in_scope(&rooms.read(), selected_space().as_ref())
+            .into_iter()
+            .partition(|room| room.is_dm);
+
+    // Sidebar header: the selected space's name, or "Morpheus" for Home.
+    let header_title = selected_space().map_or_else(
+        || "Morpheus".to_string(),
+        |space_id| {
+            rooms
+                .read()
+                .iter()
+                .find(|room| room.id == space_id)
+                .map(|room| room.name.clone())
+                .unwrap_or_else(|| "Space".to_string())
+        },
+    );
 
     let logout = move |_| {
         let Some(active) = session_slot.take() else {
@@ -34,14 +46,14 @@ pub fn RoomList(error: Option<String>) -> Element {
 
     rsx! {
         aside { class: "sidebar",
-            header { class: "sidebar-header", h2 { "Morpheus" } }
+            header { class: "sidebar-header", h2 { "{header_title}" } }
 
             div { class: "room-list",
                 if let Some(message) = error {
                     p { class: "error", "{message}" }
                 }
                 if dms.is_empty() && channels.is_empty() {
-                    p { class: "muted pad", "No rooms yet." }
+                    p { class: "muted pad", "No rooms here." }
                 }
                 if !dms.is_empty() {
                     h4 { class: "section", "Direct messages" }
