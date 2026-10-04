@@ -1,3 +1,5 @@
+use std::{path::PathBuf, time::Duration};
+
 use dioxus::prelude::*;
 use morpheus_core::{
     MediaRef, Message, MessageId, MessageKind, OpenTimeline, OwnedRoomId, Reaction, ReplyPreview,
@@ -7,7 +9,8 @@ use tracing::{error, warn};
 
 use super::composer::{ActiveTimeline, ComposerMode, Draft, Mode};
 use crate::{
-    format::{calendar_date, clock_time},
+    attach::open_with_system,
+    format::{calendar_date, clock_time, human_duration, human_size},
     media::{Avatar, use_thumbnail},
 };
 
@@ -327,7 +330,27 @@ fn MessageBody(kind: MessageKind, edited: bool) -> Element {
             width,
             height,
         } => rsx! { ImageBody { body, media, width, height } },
-        MessageKind::File { body } => rsx! { p { class: "body attachment", "📎 {body}" } },
+        MessageKind::File {
+            body,
+            media,
+            size,
+            mime,
+        } => rsx! { FileBody { body, media, size, mime } },
+        MessageKind::Video {
+            body,
+            media,
+            thumbnail,
+            width,
+            height,
+            duration,
+        } => rsx! { VideoBody { body, media, thumbnail, width, height, duration } },
+        MessageKind::Audio {
+            body,
+            media,
+            size,
+            mime,
+            duration,
+        } => rsx! { AudioBody { body, media, size, mime, duration } },
         MessageKind::Redacted => rsx! { p { class: "body muted", "Message deleted" } },
         MessageKind::UnableToDecrypt => rsx! { p { class: "body muted", "Unable to decrypt" } },
         MessageKind::State(text) => rsx! { p { class: "body muted", "{text}" } },
@@ -366,6 +389,174 @@ fn ImageBody(body: String, media: MediaRef, width: Option<u32>, height: Option<u
         match url() {
             Some(src) => rsx! { img { class: "image", style: "{aspect}", src: "{src}", alt: "{body}", title: "{body}" } },
             None => rsx! { div { class: "image placeholder", style: "{aspect}", "{body}" } },
+        }
+    }
+}
+
+/// What a download/upload-less attachment action is doing right now.
+#[derive(Clone, PartialEq)]
+enum DownloadStatus {
+    Idle,
+    Downloading,
+    Saved(PathBuf),
+    Failed(String),
+}
+
+/// "Download" button shown on file and audio cards. Downloads into the
+/// user's Downloads directory and reports where it landed.
+#[component]
+fn DownloadButton(media: MediaRef, suggested_name: String) -> Element {
+    let session = use_context::<Session>();
+    let mut status = use_signal(|| DownloadStatus::Idle);
+
+    let start = move |_| {
+        let session = session.clone();
+        let media = media.clone();
+        let suggested_name = suggested_name.clone();
+        status.set(DownloadStatus::Downloading);
+        spawn(async move {
+            status.set(match session.download(media, suggested_name).await {
+                Ok(path) => DownloadStatus::Saved(path),
+                Err(err) => DownloadStatus::Failed(err.to_string()),
+            });
+        });
+    };
+
+    match status() {
+        DownloadStatus::Idle => rsx! {
+            button { class: "ghost attachment-download", onclick: start, "Download" }
+        },
+        DownloadStatus::Downloading => rsx! {
+            span { class: "attachment-status muted", "Downloading…" }
+        },
+        DownloadStatus::Saved(path) => rsx! {
+            span { class: "attachment-status", title: "{path.display()}", "Saved to {path.display()}" }
+        },
+        DownloadStatus::Failed(message) => rsx! {
+            span { class: "attachment-status error", "{message}" }
+        },
+    }
+}
+
+/// File attachment: icon, name, human-readable size, and a download action.
+#[component]
+fn FileBody(body: String, media: MediaRef, size: Option<u64>, mime: Option<String>) -> Element {
+    let _ = mime;
+    let size_label = size.map(human_size);
+
+    rsx! {
+        div { class: "attachment-card",
+            span { class: "attachment-icon", "📎" }
+            div { class: "attachment-info",
+                span { class: "attachment-name", title: "{body}", "{body}" }
+                if let Some(size_label) = size_label {
+                    span { class: "attachment-size muted", "{size_label}" }
+                }
+            }
+            DownloadButton { media, suggested_name: body.clone() }
+        }
+    }
+}
+
+/// Audio attachment: a simple row with duration/size and a download action.
+#[component]
+fn AudioBody(
+    body: String,
+    media: MediaRef,
+    size: Option<u64>,
+    mime: Option<String>,
+    duration: Option<Duration>,
+) -> Element {
+    let _ = mime;
+    let meta = [duration.map(human_duration), size.map(human_size)]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join(" · ");
+
+    rsx! {
+        div { class: "attachment-card audio",
+            span { class: "attachment-icon", "🎵" }
+            div { class: "attachment-info",
+                span { class: "attachment-name", title: "{body}", "{body}" }
+                if !meta.is_empty() {
+                    span { class: "attachment-size muted", "{meta}" }
+                }
+            }
+            DownloadButton { media, suggested_name: body.clone() }
+        }
+    }
+}
+
+/// "Play" button shown on video cards: downloads the file (if needed) and
+/// hands it to the OS's default player via its registered file handler.
+#[component]
+fn PlayButton(media: MediaRef, suggested_name: String) -> Element {
+    let session = use_context::<Session>();
+    let mut status = use_signal(|| DownloadStatus::Idle);
+    let working = matches!(status(), DownloadStatus::Downloading);
+
+    let start = move |_| {
+        let session = session.clone();
+        let media = media.clone();
+        let suggested_name = suggested_name.clone();
+        status.set(DownloadStatus::Downloading);
+        spawn(async move {
+            let outcome = match session.download(media, suggested_name).await {
+                Ok(path) => match open_with_system(&path) {
+                    Ok(()) => DownloadStatus::Saved(path),
+                    Err(err) => DownloadStatus::Failed(err),
+                },
+                Err(err) => DownloadStatus::Failed(err.to_string()),
+            };
+            status.set(outcome);
+        });
+    };
+
+    rsx! {
+        button {
+            class: "play-button",
+            title: "Play",
+            disabled: working,
+            onclick: start,
+            if working { "…" } else { "▶" }
+        }
+        if let DownloadStatus::Failed(message) = status() {
+            span { class: "attachment-status error", "{message}" }
+        }
+    }
+}
+
+/// Video attachment: its thumbnail with a play button overlaid, and the
+/// clip's duration.
+#[component]
+fn VideoBody(
+    body: String,
+    media: MediaRef,
+    thumbnail: Option<MediaRef>,
+    width: Option<u32>,
+    height: Option<u32>,
+    duration: Option<Duration>,
+) -> Element {
+    let thumb_url = use_thumbnail(thumbnail.or_else(|| Some(media.clone())), 480, 320);
+    let aspect = match (width, height) {
+        (Some(w), Some(h)) if h > 0 => format!("aspect-ratio: {w} / {h};"),
+        _ => String::new(),
+    };
+    let duration_label = duration.map(human_duration);
+
+    rsx! {
+        div { class: "video-card", style: "{aspect}",
+            match thumb_url() {
+                Some(src) => rsx! { img { class: "video-thumb", src: "{src}", alt: "{body}", title: "{body}" } },
+                None => rsx! { div { class: "image placeholder", "{body}" } },
+            }
+            div { class: "video-overlay",
+                PlayButton { media, suggested_name: body.clone() }
+                if let Some(duration_label) = duration_label {
+                    span { class: "video-duration", "{duration_label}" }
+                }
+            }
         }
     }
 }

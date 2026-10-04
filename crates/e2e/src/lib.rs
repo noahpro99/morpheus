@@ -39,6 +39,7 @@ pub struct App {
     writer: OwnedWriteHalf,
     next_id: u64,
     data_dir: PathBuf,
+    download_dir: PathBuf,
     log_path: PathBuf,
     homeserver: String,
 }
@@ -72,6 +73,11 @@ impl App {
 
     async fn launch_with_data_dir(homeserver: &str, data_dir: PathBuf) -> Result<Self> {
         std::fs::create_dir_all(&data_dir)?;
+        // A disposable, test-local stand-in for the real Downloads directory
+        // (see `MORPHEUS_DOWNLOAD_DIR` in `morpheus-core`), so downloads can
+        // be asserted on without touching the machine's real one.
+        let download_dir = data_dir.join("downloads");
+        std::fs::create_dir_all(&download_dir)?;
         let port = free_port().await?;
         let bin = binary_path()?;
         let log_path = data_dir.join("app.log");
@@ -80,6 +86,7 @@ impl App {
         let child = Command::new(&bin)
             .env("MORPHEUS_E2E_PORT", port.to_string())
             .env("MORPHEUS_DATA_DIR", &data_dir)
+            .env("MORPHEUS_DOWNLOAD_DIR", &download_dir)
             .env("MORPHEUS_HOMESERVER", homeserver)
             .env(
                 "RUST_LOG",
@@ -99,6 +106,7 @@ impl App {
             writer,
             next_id: 1,
             data_dir,
+            download_dir,
             log_path,
             homeserver: homeserver.to_owned(),
         })
@@ -286,6 +294,12 @@ impl App {
 
     pub fn data_dir(&self) -> &Path {
         &self.data_dir
+    }
+
+    /// The disposable stand-in for the Downloads directory (`MORPHEUS_DOWNLOAD_DIR`)
+    /// that this app instance was launched with.
+    pub fn download_dir(&self) -> &Path {
+        &self.download_dir
     }
 
     /// Wait until some element matching `selector` has exactly this trimmed text.

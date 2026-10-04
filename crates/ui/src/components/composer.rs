@@ -2,6 +2,8 @@ use dioxus::prelude::*;
 use morpheus_core::{MessageId, OwnedEventId, TimelineHandle};
 use tracing::warn;
 
+use crate::attach::pick_attachment;
+
 /// Shared between the timeline (which owns the handle) and the composer.
 pub type ActiveTimeline = Signal<Option<TimelineHandle>>;
 
@@ -74,6 +76,19 @@ pub fn Composer(room_name: String) -> Element {
         }
     };
 
+    let attach = move |_| {
+        let Some(handle) = timeline() else { return };
+        spawn(async move {
+            let Some(path) = pick_attachment().await else {
+                return;
+            };
+            match handle.send_attachment(path).await {
+                Ok(()) => error.set(None),
+                Err(err) => error.set(Some(err.to_string())),
+            }
+        });
+    };
+
     rsx! {
         footer { class: "composer",
             if let Some(message) = error() {
@@ -93,20 +108,30 @@ pub fn Composer(room_name: String) -> Element {
                     button { class: "ghost", title: "Cancel (Esc)", onclick: move |_| cancel(), "✕" }
                 }
             }
-            input {
-                r#type: "text",
-                placeholder: "Message #{room_name}",
-                value: "{draft}",
-                disabled: timeline().is_none(),
-                oninput: on_input,
-                onkeydown: move |e| {
-                    if e.key() == Key::Enter && !e.modifiers().shift() {
-                        e.prevent_default();
-                        send();
-                    } else if e.key() == Key::Escape {
-                        cancel();
-                    }
-                },
+            div { class: "composer-row",
+                button {
+                    class: "attach-button",
+                    title: "Attach a file",
+                    r#type: "button",
+                    disabled: timeline().is_none(),
+                    onclick: attach,
+                    "📎"
+                }
+                input {
+                    r#type: "text",
+                    placeholder: "Message #{room_name}",
+                    value: "{draft}",
+                    disabled: timeline().is_none(),
+                    oninput: on_input,
+                    onkeydown: move |e| {
+                        if e.key() == Key::Enter && !e.modifiers().shift() {
+                            e.prevent_default();
+                            send();
+                        } else if e.key() == Key::Escape {
+                            cancel();
+                        }
+                    },
+                }
             }
         }
     }
