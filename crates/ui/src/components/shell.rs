@@ -8,6 +8,7 @@ use super::{
     rail::Rail,
     room_list::RoomList,
     switcher::QuickSwitcher,
+    thread::{ActiveThread, ThreadPanel},
     timeline::TimelineView,
 };
 use crate::media::provide_media_cache;
@@ -23,6 +24,7 @@ pub fn Shell(session: Session) -> Element {
     provide_media_cache();
     let mut rooms: Rooms = use_context_provider(|| Signal::new(Vector::new()));
     let mut selected: Selected = use_context_provider(|| Signal::new(None));
+    let mut active_thread: ActiveThread = use_context_provider(|| Signal::new(None));
     let mut load_error = use_signal(|| None::<String>);
     let mut switcher_open = use_signal(|| false);
 
@@ -62,6 +64,12 @@ pub fn Shell(session: Session) -> Element {
         rooms.read().iter().find(|room| room.id == id).cloned()
     });
 
+    // A thread belongs to the room it was opened from; close it when switching rooms.
+    use_effect(move || {
+        selected();
+        active_thread.set(None);
+    });
+
     // Global shortcuts. The shell is focusable so keys reach it even when no input has focus.
     let on_key = move |e: Event<KeyboardData>| {
         let ctrl = e.modifiers().ctrl() || e.modifiers().meta();
@@ -87,9 +95,10 @@ pub fn Shell(session: Session) -> Element {
                     },
                 }
             }
-            match current() {
-                Some(room) => rsx! { Members { room_id: room.id.clone() } },
-                None => rsx! { aside { class: "members" } },
+            match (current(), active_thread()) {
+                (Some(room), Some(root)) => rsx! { ThreadPanel { room_id: room.id.clone(), root } },
+                (Some(room), None) => rsx! { Members { room_id: room.id.clone() } },
+                (None, _) => rsx! { aside { class: "members" } },
             }
             if switcher_open() {
                 QuickSwitcher { open: switcher_open }

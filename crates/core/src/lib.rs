@@ -32,8 +32,8 @@ pub use members::{Member, MemberRole};
 pub use rooms::{RoomListUpdates, RoomSummary};
 pub use session::{LoginRequest, Session};
 pub use timeline::{
-    Message, MessageId, MessageKind, OpenTimeline, Reaction, ReplyPreview, TimelineEntry,
-    TimelineHandle, TimelineUpdates,
+    Message, MessageId, MessageKind, OpenTimeline, Reaction, ReplyPreview, ThreadSummary,
+    TimelineEntry, TimelineHandle, TimelineUpdates,
 };
 pub use typing::TypingUpdates;
 
