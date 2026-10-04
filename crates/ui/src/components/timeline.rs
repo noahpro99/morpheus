@@ -1,11 +1,14 @@
 use dioxus::prelude::*;
 use morpheus_core::{
-    MediaRef, Message, MessageId, MessageKind, OpenTimeline, OwnedRoomId, Reaction, ReplyPreview,
-    Session, TimelineEntry, Vector,
+    MediaRef, Message, MessageId, MessageKind, OpenTimeline, OwnedEventId, OwnedRoomId, Reaction,
+    ReplyPreview, Session, ThreadSummary, TimelineEntry, Vector,
 };
 use tracing::{error, warn};
 
-use super::composer::{ActiveTimeline, ComposerMode, Draft, Mode};
+use super::{
+    composer::{ActiveTimeline, ComposerMode, Draft, Mode},
+    thread::ActiveThread,
+};
 use crate::{
     format::{calendar_date, clock_time},
     media::{Avatar, use_thumbnail},
@@ -22,7 +25,10 @@ const QUICK_REACTIONS: [&str; 3] = ["👍", "❤️", "😂"];
 /// One room's messages. The parent sets `key` to the room id, so switching
 /// rooms remounts this component and drops the previous subscription.
 #[component]
-pub fn TimelineView(room_id: OwnedRoomId) -> Element {
+pub fn TimelineView(
+    room_id: OwnedRoomId,
+    #[props(default)] root_event_id: Option<OwnedEventId>,
+) -> Element {
     let session = use_context::<Session>();
     let mut entries = use_signal(Vector::<TimelineEntry>::new);
     let mut handle = use_context::<ActiveTimeline>();
@@ -33,8 +39,13 @@ pub fn TimelineView(room_id: OwnedRoomId) -> Element {
     use_future(move || {
         let session = session.clone();
         let room_id = room_id.clone();
+        let root_event_id = root_event_id.clone();
         async move {
-            match session.timeline(room_id).await {
+            let opened = match root_event_id {
+                Some(root_event_id) => session.thread(room_id, root_event_id).await,
+                None => session.timeline(room_id).await,
+            };
+            match opened {
                 Ok(OpenTimeline {
                     handle: opened,
                     mut updates,
@@ -165,11 +176,21 @@ fn group_rows(entries: &Vector<TimelineEntry>) -> Vec<Row<'_>> {
 }
 
 #[component]
-fn MessageRow(message: Message, show_header: bool) -> Element {
+pub(crate) fn MessageRow(message: Message, show_header: bool) -> Element {
     let timeline = use_context::<ActiveTimeline>();
     let mut mode = use_context::<Mode>();
     let mut draft = use_context::<Draft>();
+    let mut active_thread = use_context::<ActiveThread>();
     let time = clock_time(message.timestamp_ms);
+
+    let open_thread = {
+        let message = message.clone();
+        move |_| active_thread.set(Some(message.clone()))
+    };
+    let open_thread_chip = {
+        let message = message.clone();
+        move |()| active_thread.set(Some(message.clone()))
+    };
 
     let start_reply = {
         let message = message.clone();
@@ -246,6 +267,7 @@ fn MessageRow(message: Message, show_header: bool) -> Element {
                     ReplyQuote { reply: message.in_reply_to.clone() }
                     MessageBody { kind: message.kind.clone(), edited: message.is_edited }
                     Reactions { reactions: message.reactions.clone(), on_toggle: react.clone() }
+                    ThreadChip { thread: message.thread.clone(), on_open: open_thread_chip.clone() }
                 }
             } else {
                 span { class: "time gutter", "{time}" }
@@ -253,6 +275,7 @@ fn MessageRow(message: Message, show_header: bool) -> Element {
                     ReplyQuote { reply: message.in_reply_to.clone() }
                     MessageBody { kind: message.kind.clone(), edited: message.is_edited }
                     Reactions { reactions: message.reactions.clone(), on_toggle: react.clone() }
+                    ThreadChip { thread: message.thread.clone(), on_open: open_thread_chip.clone() }
                 }
             }
             if !message.is_local_echo {
@@ -270,6 +293,7 @@ fn MessageRow(message: Message, show_header: bool) -> Element {
                     }
                     if can_reply {
                         button { class: "action reply", title: "Reply", onclick: start_reply, "↩" }
+                        button { class: "action thread", title: "Reply in thread", onclick: open_thread, "🧵" }
                     }
                     if message.can_edit {
                         button { class: "action edit", title: "Edit", onclick: start_edit, "✏️" }
@@ -303,6 +327,26 @@ fn Reactions(reactions: Vec<Reaction>, on_toggle: Callback<&'static str>) -> Ele
                     span { class: "reaction-key", "{reaction.key}" }
                     span { class: "reaction-count", "{reaction.count}" }
                 }
+            }
+        }
+    }
+}
+
+/// Chip under a thread root summarising its replies; opens the thread panel.
+#[component]
+fn ThreadChip(thread: Option<ThreadSummary>, on_open: Callback<()>) -> Element {
+    let Some(thread) = thread else { return rsx! {} };
+    let count_label = if thread.reply_count == 1 {
+        "1 reply".to_owned()
+    } else {
+        format!("{} replies", thread.reply_count)
+    };
+    rsx! {
+        button { class: "thread-chip", onclick: move |_| on_open(()),
+            span { class: "thread-chip-icon", "🧵" }
+            span { class: "thread-chip-count", "{count_label}" }
+            if let Some(name) = &thread.latest_sender_name {
+                span { class: "thread-chip-latest", "· last from {name}" }
             }
         }
     }

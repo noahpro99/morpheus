@@ -11,7 +11,8 @@ use matrix_sdk::ruma::{
 };
 use matrix_sdk_ui::timeline::{
     EventTimelineItem, MembershipChange, MsgLikeKind, RoomExt, Timeline, TimelineDetails,
-    TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem,
+    TimelineEventItemId, TimelineFocus, TimelineItem, TimelineItemContent, TimelineItemKind,
+    VirtualTimelineItem,
 };
 use std::collections::HashSet;
 
@@ -75,7 +76,22 @@ pub struct Message {
     pub can_edit: bool,
     pub reactions: Vec<Reaction>,
     pub in_reply_to: Option<ReplyPreview>,
+    /// Set when this message is a reply within a thread (not the root).
+    pub thread_root: Option<OwnedEventId>,
+    /// Set on a thread's root message, summarising its replies.
+    pub thread: Option<ThreadSummary>,
     pub kind: MessageKind,
+}
+
+/// Summary of a thread, attached to its root message.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ThreadSummary {
+    pub root_event_id: OwnedEventId,
+    pub reply_count: u32,
+    /// `None` until the latest reply's sender has been resolved locally.
+    pub latest_sender_name: Option<String>,
+    /// `None` until the latest reply's content has been resolved locally.
+    pub latest_summary: Option<String>,
 }
 
 /// The message this one replies to, as far as the SDK has loaded it.
@@ -207,6 +223,31 @@ impl Message {
             }
         });
 
+        let thread_root = event.content().thread_root();
+
+        let thread = event.content().thread_summary().and_then(|summary| {
+            let root_event_id = event.event_id()?.to_owned();
+            let latest = match &summary.latest_event {
+                TimelineDetails::Ready(embedded) => Some(embedded.as_ref()),
+                _ => None,
+            };
+            let latest_sender_name = latest.map(|e| {
+                match &e.sender_profile {
+                    TimelineDetails::Ready(profile) => profile.display_name.clone(),
+                    _ => None,
+                }
+                .unwrap_or_else(|| e.sender.localpart().to_owned())
+            });
+            let latest_summary = latest
+                .map(|e| MessageKind::from_content(&e.content, e.sender.localpart()).summary());
+            Some(ThreadSummary {
+                root_event_id,
+                reply_count: summary.num_replies,
+                latest_sender_name,
+                latest_summary,
+            })
+        });
+
         let kind = MessageKind::from_content(event.content(), &sender_name);
 
         Self {
@@ -222,6 +263,8 @@ impl Message {
             can_edit: event.is_editable() && event.content().as_message().is_some(),
             reactions,
             in_reply_to,
+            thread_root,
+            thread,
             kind,
         }
     }
@@ -476,9 +519,28 @@ impl TimelineHandle {
 }
 
 impl Session {
-    /// Open a room's timeline. Subscribes the room in sliding sync and kicks
-    /// off an initial back-fill so it is not empty on first render.
+    /// Open a room's live timeline. Subscribes the room in sliding sync and
+    /// kicks off an initial back-fill so it is not empty on first render.
     pub fn timeline(&self, room_id: OwnedRoomId) -> CoreFuture<OpenTimeline> {
+        self.open_timeline(room_id, None)
+    }
+
+    /// Open a thread's timeline: the replies to `root_event_id`, focused and
+    /// filtered the same way a permalink would be. Sending through the
+    /// returned handle posts into the thread.
+    pub fn thread(
+        &self,
+        room_id: OwnedRoomId,
+        root_event_id: OwnedEventId,
+    ) -> CoreFuture<OpenTimeline> {
+        self.open_timeline(room_id, Some(root_event_id))
+    }
+
+    fn open_timeline(
+        &self,
+        room_id: OwnedRoomId,
+        thread_root: Option<OwnedEventId>,
+    ) -> CoreFuture<OpenTimeline> {
         let core = self.core.clone();
         let client = self.client.clone();
         let sync = self.sync.clone();
@@ -492,7 +554,15 @@ impl Session {
                 .set_room_subscriptions(&[&room_id])
                 .await;
 
-            let timeline = Arc::new(room.timeline().await?);
+            let timeline = Arc::new(match thread_root {
+                Some(root_event_id) => {
+                    room.timeline_builder()
+                        .with_focus(TimelineFocus::Thread { root_event_id })
+                        .build()
+                        .await?
+                }
+                None => room.timeline().await?,
+            });
             let (initial, stream) = timeline.subscribe().await;
 
             let (tx, rx) = mpsc::unbounded_channel();
