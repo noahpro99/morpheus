@@ -303,8 +303,9 @@ h1, h2, h3, p { margin: 0; }
 .message.system .time { width: 40px; flex: none; text-align: right; }
 
 .composer { padding: 0 16px 20px; }
+.composer-row { display: flex; align-items: center; gap: 8px; }
 .composer input {
-  width: 100%;
+  flex: 1;
   padding: 12px 16px;
   border: 0;
   border-radius: var(--radius);
@@ -312,6 +313,17 @@ h1, h2, h3, p { margin: 0; }
   outline: none;
 }
 .composer input::placeholder { color: var(--text-faint); }
+.attach-button {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font-size: 1.1rem;
+  color: var(--text-muted);
+}
+.attach-button:hover { background: var(--bg-hover); color: var(--text); }
 
 /* ---- Members ------------------------------------------------------------- */
 
@@ -413,6 +425,86 @@ img.avatar { object-fit: cover; }
   min-height: 80px;
   color: var(--text-faint);
   font-size: 0.85rem;
+}
+
+/* Attachments: files, audio, video */
+.attachment-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+  padding: 10px 12px;
+  max-width: min(360px, 100%);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+}
+.attachment-icon { font-size: 1.4rem; flex: none; }
+.attachment-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.attachment-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.attachment-size { font-size: 0.8rem; }
+.attachment-download {
+  flex: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: var(--bg-input);
+  font-size: 0.85rem;
+}
+.attachment-download:hover { background: var(--bg-hover); }
+.attachment-status {
+  flex: none;
+  max-width: 160px;
+  font-size: 0.8rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-muted);
+}
+.attachment-status.error { color: var(--danger); }
+
+.video-card {
+  position: relative;
+  display: block;
+  max-width: min(420px, 100%);
+  max-height: 360px;
+  margin-top: 4px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-input);
+}
+.video-thumb { display: block; width: 100%; height: 100%; object-fit: cover; }
+.video-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.25);
+}
+.play-button {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(20, 23, 32, 0.75);
+  font-size: 1.2rem;
+}
+.play-button:hover { background: rgba(20, 23, 32, 0.9); }
+.video-duration {
+  position: absolute;
+  bottom: 8px;
+  right: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.6);
+  font-size: 0.75rem;
 }
 
 /* Members */
