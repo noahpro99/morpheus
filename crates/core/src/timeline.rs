@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use futures_util::{StreamExt, pin_mut};
 use matrix_sdk::ruma::{
@@ -10,8 +10,9 @@ use matrix_sdk::ruma::{
     },
 };
 use matrix_sdk_ui::timeline::{
-    EventTimelineItem, MembershipChange, MsgLikeKind, RoomExt, Timeline, TimelineDetails,
-    TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem,
+    AttachmentConfig, EventTimelineItem, MembershipChange, MsgLikeKind, RoomExt, Timeline,
+    TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind,
+    VirtualTimelineItem,
 };
 use std::collections::HashSet;
 
@@ -118,6 +119,24 @@ pub enum MessageKind {
     },
     File {
         body: String,
+        media: MediaRef,
+        size: Option<u64>,
+        mime: Option<String>,
+    },
+    Video {
+        body: String,
+        media: MediaRef,
+        thumbnail: Option<MediaRef>,
+        width: Option<u32>,
+        height: Option<u32>,
+        duration: Option<Duration>,
+    },
+    Audio {
+        body: String,
+        media: MediaRef,
+        size: Option<u64>,
+        mime: Option<String>,
+        duration: Option<Duration>,
     },
     Redacted,
     UnableToDecrypt,
@@ -235,7 +254,9 @@ impl MessageKind {
                 body.clone()
             }
             Self::Image { body, .. } => format!("🖼 {body}"),
-            Self::File { body } => format!("📎 {body}"),
+            Self::File { body, .. } => format!("📎 {body}"),
+            Self::Video { body, .. } => format!("🎞 {body}"),
+            Self::Audio { body, .. } => format!("🎵 {body}"),
             Self::Redacted => "Message deleted".into(),
             Self::UnableToDecrypt => "Unable to decrypt".into(),
             Self::State(text) => text.clone(),
@@ -286,6 +307,36 @@ impl MessageKind {
                     },
                     MessageType::File(file) => Self::File {
                         body: file.body.clone(),
+                        media: MediaRef::from_source(file.source.clone()),
+                        size: file.info.as_ref().and_then(|i| i.size).map(u64::from),
+                        mime: file.info.as_ref().and_then(|i| i.mimetype.clone()),
+                    },
+                    MessageType::Video(video) => Self::Video {
+                        body: video.body.clone(),
+                        media: MediaRef::from_source(video.source.clone()),
+                        thumbnail: video
+                            .info
+                            .as_ref()
+                            .and_then(|i| i.thumbnail_source.clone())
+                            .map(MediaRef::from_source),
+                        width: video
+                            .info
+                            .as_ref()
+                            .and_then(|i| i.width)
+                            .and_then(uint_to_u32),
+                        height: video
+                            .info
+                            .as_ref()
+                            .and_then(|i| i.height)
+                            .and_then(uint_to_u32),
+                        duration: video.info.as_ref().and_then(|i| i.duration),
+                    },
+                    MessageType::Audio(audio) => Self::Audio {
+                        body: audio.body.clone(),
+                        media: MediaRef::from_source(audio.source.clone()),
+                        size: audio.info.as_ref().and_then(|i| i.size).map(u64::from),
+                        mime: audio.info.as_ref().and_then(|i| i.mimetype.clone()),
+                        duration: audio.info.as_ref().and_then(|i| i.duration),
                     },
                     other => Self::Unsupported(other.msgtype().to_owned()),
                 },
@@ -444,6 +495,19 @@ impl TimelineHandle {
         self.core.run(async move {
             timeline
                 .redact(&TimelineEventItemId::from(&message), None)
+                .await?;
+            Ok(())
+        })
+    }
+
+    /// Upload `path` and send it as an attachment, picking the message type
+    /// (file/image/video/audio) from its guessed MIME type.
+    pub fn send_attachment(&self, path: PathBuf) -> CoreFuture<()> {
+        let timeline = self.timeline.clone();
+        self.core.run(async move {
+            let mime = mime_guess::from_path(&path).first_or_octet_stream();
+            timeline
+                .send_attachment(path, mime, AttachmentConfig::default())
                 .await?;
             Ok(())
         })
