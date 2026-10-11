@@ -1,7 +1,9 @@
+use std::{cell::RefCell, rc::Rc};
+
 use dioxus::prelude::*;
 use morpheus_core::{
     MediaRef, Message, MessageId, MessageKind, OpenTimeline, OwnedRoomId, Reaction, ReplyPreview,
-    Session, TimelineEntry, Vector,
+    Session, TimelineEntry, TimelineHandle, Vector,
 };
 use tracing::{error, warn};
 
@@ -29,10 +31,30 @@ pub fn TimelineView(room_id: OwnedRoomId) -> Element {
     let mut load_error = use_signal(|| None::<String>);
     let mut reached_start = use_signal(|| false);
     let mut paginating = use_signal(|| false);
+    // The message to draw the "NEW" divider above, captured once from the SDK's
+    // read-marker position when the room is opened. It stays fixed for the rest
+    // of this viewing session; it is not recomputed as later diffs arrive, so
+    // the divider does not chase the user down the timeline.
+    let mut new_marker = use_signal(|| None::<String>);
+    let mut marker_captured = use_signal(|| false);
+    let mut caught_up = use_signal(|| false);
+    // Plain (non-signal) handle to the open timeline. Leaving the room (it
+    // remounts on room switch) fires a fully-read receipt on cleanup, without
+    // touching reactive state while the component is being torn down.
+    let handle_cell = use_hook(|| Rc::new(RefCell::new(None::<TimelineHandle>)));
+    use_drop({
+        let handle_cell = handle_cell.clone();
+        move || {
+            if let Some(active) = handle_cell.borrow_mut().take() {
+                let _ = active.mark_as_fully_read();
+            }
+        }
+    });
 
     use_future(move || {
         let session = session.clone();
         let room_id = room_id.clone();
+        let handle_cell = handle_cell.clone();
         async move {
             match session.timeline(room_id).await {
                 Ok(OpenTimeline {
@@ -40,13 +62,35 @@ pub fn TimelineView(room_id: OwnedRoomId) -> Element {
                     mut updates,
                 }) => {
                     handle.set(Some(opened.clone()));
+                    *handle_cell.borrow_mut() = Some(opened.clone());
                     while let Some(diffs) = updates.next().await {
                         entries
                             .with_mut(|list| diffs.into_iter().for_each(|diff| diff.apply(list)));
+
+                        // The read-marker virtual item only reflects the fully-read
+                        // position as of opening the room, so capture it once.
+                        if !marker_captured() {
+                            marker_captured.set(true);
+                            new_marker.set(first_unread_after_marker(&entries.read()));
+                        }
+
+                        // Sending a message means the user is caught up: drop the
+                        // divider and advance the fully-read marker for next time.
+                        if !caught_up()
+                            && entries
+                                .read()
+                                .iter()
+                                .any(|entry| matches!(entry, TimelineEntry::Message(m) if m.is_own && m.is_local_echo))
+                        {
+                            caught_up.set(true);
+                            new_marker.set(None);
+                            let _ = opened.mark_as_fully_read();
+                        }
+
                         // The SDK only sends a receipt when the latest event moved forward.
                         let receipt = opened.clone();
                         spawn(async move {
-                            if let Err(err) = receipt.mark_as_read().await {
+                            if let Err(err) = receipt.send_read_receipt().await {
                                 warn!(%err, "read receipt failed");
                             }
                         });
@@ -90,7 +134,8 @@ pub fn TimelineView(room_id: OwnedRoomId) -> Element {
             .iter()
             .any(|entry| matches!(entry, TimelineEntry::TimelineStart));
     let entries_now = entries.read();
-    let rows = group_rows(&entries_now);
+    let marker = new_marker();
+    let rows = group_rows(&entries_now, marker.as_deref());
 
     rsx! {
         // Rendered newest-first; CSS flips it and keeps the view pinned to the bottom.
@@ -106,6 +151,12 @@ pub fn TimelineView(room_id: OwnedRoomId) -> Element {
                     Row::Start => rsx! {
                         div { class: "timeline-start", "This is the beginning of the room." }
                     },
+                    Row::New => {
+                        let key = "new-divider";
+                        rsx! {
+                            div { key: "{key}", class: "new-divider", span { "NEW" } }
+                        }
+                    }
                 }
             }
 
@@ -128,16 +179,25 @@ enum Row<'a> {
     },
     Date(String),
     Start,
+    /// The Discord-style "new messages" divider.
+    New,
 }
 
 /// Decide which messages get a sender header and turn dividers into labels.
-fn group_rows(entries: &Vector<TimelineEntry>) -> Vec<Row<'_>> {
+/// `marker` is the `unique_id` of the message the "NEW" divider belongs above,
+/// if any is still showing.
+fn group_rows<'a>(entries: &'a Vector<TimelineEntry>, marker: Option<&str>) -> Vec<Row<'a>> {
     let mut rows = Vec::with_capacity(entries.len());
     let mut previous: Option<&Message> = None;
 
     for entry in entries {
         match entry {
             TimelineEntry::Message(message) => {
+                if marker == Some(message.unique_id.as_str()) {
+                    rows.push(Row::New);
+                    // Always show a header right after the divider, like Discord does.
+                    previous = None;
+                }
                 let continues = previous.is_some_and(|prev| {
                     prev.sender == message.sender
                         && message.timestamp_ms.saturating_sub(prev.timestamp_ms) < GROUP_WINDOW_MS
@@ -162,6 +222,21 @@ fn group_rows(entries: &Vector<TimelineEntry>) -> Vec<Row<'_>> {
         }
     }
     rows
+}
+
+/// The `unique_id` of the first message after the SDK's read-marker virtual
+/// item, i.e. the first message that was still unread when the room opened.
+fn first_unread_after_marker(entries: &Vector<TimelineEntry>) -> Option<String> {
+    let marker_idx = entries
+        .iter()
+        .position(|entry| matches!(entry, TimelineEntry::ReadMarker))?;
+    entries
+        .iter()
+        .skip(marker_idx + 1)
+        .find_map(|entry| match entry {
+            TimelineEntry::Message(message) => Some(message.unique_id.clone()),
+            _ => None,
+        })
 }
 
 #[component]
