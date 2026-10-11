@@ -147,6 +147,20 @@ react() {
     "$(jq -nc --arg e "$3" --arg k "$4" '{"m.relates_to":{rel_type:"m.annotation", event_id:$e, key:$k}}')" >/dev/null
 }
 
+# say_get_id <token> <room> <text> -> prints event id
+say_get_id() {
+  api "$1" PUT "/_matrix/client/v3/rooms/$2/send/m.room.message/seed-$(date +%s%N)" \
+    "$(jq -nc --arg b "$3" '{msgtype:"m.text", body:$b}')" | jq -r .event_id
+}
+
+# thread_reply <token> <room> <root-event-id> <fallback-event-id> <text> -> prints event id
+thread_reply() {
+  api "$1" PUT "/_matrix/client/v3/rooms/$2/send/m.room.message/seed-$(date +%s%N)" \
+    "$(jq -nc --arg b "$5" --arg root "$3" --arg fallback "$4" \
+      '{msgtype:"m.text", body:$b, "m.relates_to":{rel_type:"m.thread", event_id:$root, is_falling_back:true, "m.in_reply_to":{event_id:$fallback}}}')" \
+    | jq -r .event_id
+}
+
 echo "rooms:"
 GENERAL=$(ensure_room general "general" "Where everything starts")
 RANDOM_ROOM=$(ensure_room random "random" "Off-topic")
@@ -182,6 +196,13 @@ if [[ ! -f "$HS_DIR/.seeded" ]]; then
   react "$ALICE" "$GENERAL" "$LAST" "👍"
   react "$BOB" "$GENERAL" "$LAST" "👍"
   react "$BOB" "$GENERAL" "$LAST" "🎉"
+
+  echo "thread:"
+  THREAD_ROOT=$(say_get_id "$ALICE" "$GENERAL" "Let's plan Q4 in this thread")
+  THREAD_REPLY_1=$(thread_reply "$BOB" "$GENERAL" "$THREAD_ROOT" "$THREAD_ROOT" "I think threads should ship first")
+  thread_reply "$CAROL" "$GENERAL" "$THREAD_ROOT" "$THREAD_REPLY_1" "Agreed, then the emoji picker" >/dev/null
+  echo "  + thread seeded"
+
   for i in $(seq 1 80); do say "$BOB" "$RANDOM_ROOM" "random filler message $i"; done
   say "$CAROL" "$DEV" "sliding sync is working if you can read this"
   say "$ALICE" "$DEV" "next: avatars and media"
