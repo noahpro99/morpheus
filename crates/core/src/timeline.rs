@@ -468,10 +468,27 @@ impl TimelineHandle {
     }
 
     /// Send a public read receipt for the latest event, if it moved forward.
-    pub fn mark_as_read(&self) -> CoreFuture<bool> {
+    ///
+    /// This only drives the "seen" indicator other users see; it has no
+    /// effect on the fully-read marker or the "new messages" divider.
+    pub fn send_read_receipt(&self) -> CoreFuture<bool> {
         let timeline = self.timeline.clone();
         self.core
             .run(async move { Ok(timeline.mark_as_read(ReceiptType::Read).await?) })
+    }
+
+    /// Advance the fully-read marker to the latest event.
+    ///
+    /// This is what positions the SDK's read-marker virtual item (rendered as
+    /// the "new messages" divider): the divider sits just above the first
+    /// event that was still unread *before* this call. Callers should send
+    /// this once a room has actually been caught up with — e.g. when leaving
+    /// it or sending a message — not on every incoming message, otherwise the
+    /// marker would advance out from under the user before they can see it.
+    pub fn mark_as_fully_read(&self) -> CoreFuture<bool> {
+        let timeline = self.timeline.clone();
+        self.core
+            .run(async move { Ok(timeline.mark_as_read(ReceiptType::FullyRead).await?) })
     }
 }
 

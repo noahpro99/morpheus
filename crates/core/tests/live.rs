@@ -198,3 +198,113 @@ async fn typing_notifications_propagate_between_users() {
     .await;
     assert!(result.is_ok(), "alice never saw bob typing");
 }
+
+#[tokio::test]
+async fn fully_read_marker_sits_above_first_unread_and_clears_when_caught_up() {
+    let Some(env) = env() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping live test");
+        return;
+    };
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter("morpheus=debug,warn")
+        .try_init();
+
+    let login = |user: &str, password: &str| {
+        let hs = env.homeserver.clone();
+        let (user, password) = (user.to_owned(), password.to_owned());
+        async move {
+            let core = Core::new(fresh_data_dir()).expect("core");
+            core.login(LoginRequest {
+                homeserver: hs,
+                username: user,
+                password,
+            })
+            .await
+            .expect("login")
+        }
+    };
+    let alice = login("alice", "alice-password").await;
+    let bob = login("bob", "bob-password").await;
+
+    // Both find #general through their room lists.
+    let mut alice_rooms = alice.room_list().await.expect("alice room list");
+    let mut rooms = Vector::new();
+    drive(
+        &mut rooms,
+        async || alice_rooms.next().await,
+        |rooms| rooms.iter().any(|r| r.name == SEEDED_ROOM),
+    )
+    .await;
+    let general = rooms
+        .iter()
+        .find(|r| r.name == SEEDED_ROOM)
+        .expect("general")
+        .id
+        .clone();
+
+    let mut bob_rooms = bob.room_list().await.expect("bob room list");
+    let mut rooms = Vector::new();
+    drive(
+        &mut rooms,
+        async || bob_rooms.next().await,
+        |rooms| rooms.iter().any(|r| r.id == general),
+    )
+    .await;
+
+    // Alice opens the room first (as if she'd left it open), then bob posts
+    // a brand new message she hasn't seen yet.
+    let alice_opened = alice
+        .timeline(general.clone())
+        .await
+        .expect("alice timeline");
+    let mut alice_updates = alice_opened.updates;
+    let mut alice_items = Vector::new();
+
+    let bob_opened = bob.timeline(general).await.expect("bob timeline");
+    let body = format!("marker test {}", std::process::id());
+    bob_opened
+        .handle
+        .send_text(body.clone())
+        .await
+        .expect("bob send");
+
+    let has_body = |items: &Vector<TimelineEntry>, body: &str| {
+        items.iter().any(|e| matches!(e, TimelineEntry::Message(m) if matches!(&m.kind, MessageKind::Text { body: t, .. } if t == body)))
+    };
+    drive(
+        &mut alice_items,
+        async || alice_updates.next().await,
+        |items| has_body(items, &body),
+    )
+    .await;
+
+    // The read-marker virtual item should sit chronologically before (above)
+    // bob's still-unread message.
+    let marker_before_message = |items: &Vector<TimelineEntry>| {
+        let marker_idx = items
+            .iter()
+            .position(|e| matches!(e, TimelineEntry::ReadMarker));
+        let message_idx = items.iter().position(|e| {
+            matches!(e, TimelineEntry::Message(m) if matches!(&m.kind, MessageKind::Text { body: t, .. } if *t == body))
+        });
+        matches!((marker_idx, message_idx), (Some(mi), Some(gi)) if mi < gi)
+    };
+    assert!(
+        marker_before_message(&alice_items),
+        "the NEW marker should sit above bob's unread message"
+    );
+
+    // Catching up (what happens when alice leaves the room, or sends a
+    // message of her own) advances the marker past the message.
+    alice_opened
+        .handle
+        .mark_as_fully_read()
+        .await
+        .expect("mark fully read");
+    drive(
+        &mut alice_items,
+        async || alice_updates.next().await,
+        |items| !marker_before_message(items),
+    )
+    .await;
+}
