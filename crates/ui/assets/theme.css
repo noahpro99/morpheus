@@ -501,3 +501,100 @@ img.avatar { object-fit: cover; }
   cursor: pointer;
 }
 .switcher-item.active, .switcher-item:hover { background: var(--bg-selected); }
+
+/* Lightbox */
+.lightbox-overlay {
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.85);
+  z-index: 20;
+  outline: none;
+}
+.lightbox {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  max-width: min(92vw, 1200px);
+  max-height: 92vh;
+}
+.lightbox-image-wrap {
+  position: relative;
+  display: grid;
+  place-items: center;
+  max-width: 100%;
+  max-height: calc(92vh - 60px);
+}
+.lightbox-image {
+  display: block;
+  max-width: min(92vw, 1200px);
+  max-height: calc(92vh - 60px);
+  object-fit: contain;
+  border-radius: 6px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+}
+.lightbox-loading {
+  min-width: 240px;
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+  color: var(--text-faint);
+  font-size: 0.9rem;
+}
+.lightbox-loading-badge {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.6);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+.lightbox-close {
+  position: absolute;
+  top: -40px;
+  right: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 6px;
+}
+.lightbox-close:hover { color: var(--text); }
+.lightbox-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 0;
+  background: rgba(0, 0, 0, 0.45);
+  color: var(--text);
+  font-size: 1.8rem;
+  line-height: 1;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.lightbox-nav:hover { background: rgba(0, 0, 0, 0.65); }
+.lightbox-nav.prev { left: 8px; }
+.lightbox-nav.next { right: 8px; }
+.lightbox-caption {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 100%;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+.lightbox-filename {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text);
+}
+.lightbox-dims, .lightbox-count { color: var(--text-faint); white-space: nowrap; }
+.image { cursor: zoom-in; }
