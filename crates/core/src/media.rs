@@ -150,7 +150,6 @@ impl Session {
         })
     }
 
-
     /// Fetch the full-resolution file for a piece of media, e.g. for a
     /// lightbox view. The SDK caches the result on disk.
     pub fn media_file(&self, media: MediaRef) -> CoreFuture<Option<Media>> {
