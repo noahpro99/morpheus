@@ -12,8 +12,7 @@ use matrix_sdk::ruma::{
 use matrix_sdk_ui::timeline::{
     AttachmentConfig, EventTimelineItem, MembershipChange, MsgLikeKind, RoomExt, Timeline,
     TimelineDetails, TimelineEventItemId, TimelineFocus, TimelineItem, TimelineItemContent,
-    TimelineItemKind,
-    VirtualTimelineItem,
+    TimelineItemKind, VirtualTimelineItem,
 };
 use std::collections::HashSet;
 
