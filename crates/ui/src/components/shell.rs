@@ -4,6 +4,7 @@ use tracing::error;
 
 use super::{
     composer::{ActiveTimeline, Composer, Draft, Mode},
+    lightbox::{Lightbox, provide_lightbox},
     members::Members,
     rail::Rail,
     room_list::RoomList,
@@ -160,6 +161,7 @@ fn ChatRoom(room: RoomSummary) -> Element {
     use_context_provider(|| ActiveTimeline::new(None));
     use_context_provider(|| Mode::new(None));
     use_context_provider(|| Draft::new(String::new()));
+    provide_lightbox();
     let mut typing = use_signal(Vec::<String>::new);
 
     use_future({
@@ -192,6 +194,7 @@ fn ChatRoom(room: RoomSummary) -> Element {
         TimelineView { room_id: room.id.clone() }
         TypingLine { names: typing() }
         Composer { room_name: room.name.clone() }
+        Lightbox {}
     }
 }
 

@@ -134,6 +134,44 @@ async fn media_rich_text_reactions_and_members() {
 }
 
 #[tokio::test]
+async fn clicking_image_opens_lightbox() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch(&hs).await.expect("launch app");
+    login_and_open(&mut app, "general").await;
+
+    // Open the seeded inline image thumbnail.
+    app.wait_for(".message img.image", DEFAULT_WAIT)
+        .await
+        .expect("inline image");
+    app.click(".message img.image").await.expect("click image");
+
+    // The lightbox appears with the full-resolution image as a data URL.
+    app.wait_for(".lightbox-overlay", DEFAULT_WAIT)
+        .await
+        .expect("lightbox opens");
+    app.wait_for_js(
+        "const img = document.querySelector('.lightbox-image'); return !!img && img.src.startsWith('data:image/');",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("full-size image loaded as a data URL");
+
+    // Esc closes it.
+    app.press(".lightbox-overlay", "Escape")
+        .await
+        .expect("escape");
+    app.wait_for_js(
+        "return document.querySelector('.lightbox-overlay') === null;",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("lightbox closes");
+}
+
+#[tokio::test]
 async fn scrolling_up_loads_older_history() {
     let Some(hs) = homeserver() else {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
