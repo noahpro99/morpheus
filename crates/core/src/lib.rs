@@ -30,7 +30,7 @@ pub type CoreFuture<T> = futures_util::future::BoxFuture<'static, Result<T>>;
 pub use media::{Media, MediaRef};
 pub use members::{Member, MemberRole};
 pub use rooms::{RoomListUpdates, RoomSummary};
-pub use session::{LoginRequest, Session};
+pub use session::{LoginFlows, LoginRequest, Session};
 pub use timeline::{
     Message, MessageId, MessageKind, OpenTimeline, Reaction, ReplyPreview, ThreadSummary,
     TimelineEntry, TimelineHandle, TimelineUpdates,

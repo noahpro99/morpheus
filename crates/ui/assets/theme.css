@@ -751,3 +751,13 @@ img.avatar { object-fit: cover; }
 }
 .new-divider::before { content: ""; flex: 1; height: 1px; background: var(--danger); }
 .new-divider span { padding: 0 6px; border-radius: 4px; background: var(--danger); color: white; }
+
+.login button.secondary {
+  margin-top: 0;
+  padding: 12px;
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  font-weight: 600;
+}
+.login button.secondary:hover:not(:disabled) { background: var(--bg-hover); }
+.login .status { font-size: 0.85rem; }

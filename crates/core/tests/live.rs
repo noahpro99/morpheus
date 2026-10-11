@@ -555,3 +555,18 @@ async fn fully_read_marker_sits_above_first_unread_and_clears_when_caught_up() {
     )
     .await;
 }
+
+#[tokio::test]
+async fn homeserver_advertises_password_login() {
+    let Some(env) = env() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping live test");
+        return;
+    };
+    let core = Core::new(fresh_data_dir()).expect("core");
+    let flows = core
+        .login_flows(env.homeserver.clone())
+        .await
+        .expect("login flows");
+    eprintln!("{} offers: {flows:?}", env.homeserver);
+    assert!(flows.password, "password login should be offered");
+}

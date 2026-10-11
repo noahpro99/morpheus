@@ -18,6 +18,9 @@ pub enum Error {
     #[error("Matrix error: {0}")]
     Matrix(#[from] matrix_sdk::Error),
 
+    #[error("Matrix HTTP error: {0}")]
+    Http(#[from] matrix_sdk::HttpError),
+
     #[error("sync error: {0}")]
     Sync(#[from] matrix_sdk_ui::sync_service::Error),
 
