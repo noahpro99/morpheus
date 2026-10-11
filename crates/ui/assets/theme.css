@@ -737,3 +737,17 @@ img.avatar { object-fit: cover; }
 }
 .lightbox-dims, .lightbox-count { color: var(--text-faint); white-space: nowrap; }
 .image { cursor: zoom-in; }
+
+/* "New messages" divider */
+.new-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 16px 2px;
+  color: var(--danger);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+.new-divider::before { content: ""; flex: 1; height: 1px; background: var(--danger); }
+.new-divider span { padding: 0 6px; border-radius: 4px; background: var(--danger); color: white; }
