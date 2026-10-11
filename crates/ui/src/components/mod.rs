@@ -7,6 +7,7 @@ mod rail;
 mod room_list;
 mod shell;
 mod switcher;
+mod thread;
 mod timeline;
 
 pub use login::Login;

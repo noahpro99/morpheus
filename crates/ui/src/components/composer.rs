@@ -27,7 +27,7 @@ pub type Mode = Signal<Option<ComposerMode>>;
 pub type Draft = Signal<String>;
 
 #[component]
-pub fn Composer(room_name: String) -> Element {
+pub fn Composer(room_name: String, #[props(default)] placeholder: Option<String>) -> Element {
     let timeline = use_context::<ActiveTimeline>();
     let mut mode = use_context::<Mode>();
     let mut draft = use_context::<Draft>();
@@ -89,6 +89,8 @@ pub fn Composer(room_name: String) -> Element {
         });
     };
 
+    let placeholder_text = placeholder.unwrap_or_else(|| format!("Message #{room_name}"));
+
     rsx! {
         footer { class: "composer",
             if let Some(message) = error() {
@@ -119,7 +121,7 @@ pub fn Composer(room_name: String) -> Element {
                 }
                 input {
                     r#type: "text",
-                    placeholder: "Message #{room_name}",
+                    placeholder: "{placeholder_text}",
                     value: "{draft}",
                     disabled: timeline().is_none(),
                     oninput: on_input,

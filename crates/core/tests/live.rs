@@ -6,12 +6,16 @@
 
 use std::time::Duration;
 
-use morpheus_core::{Core, LoginRequest, MessageKind, TimelineEntry, Vector, VectorDiff};
+use morpheus_core::{
+    Core, LoginRequest, MessageId, MessageKind, TimelineEntry, Vector, VectorDiff,
+};
 use tokio::time::timeout;
 
 const WAIT: Duration = Duration::from_secs(30);
 const SEEDED_ROOM: &str = "general";
 const SEEDED_MESSAGE: &str = "Welcome to Morpheus";
+const SEEDED_THREAD_ROOT: &str = "Let's plan Q4 in this thread";
+const SEEDED_THREAD_REPLY: &str = "I think threads should ship first";
 
 struct TestEnv {
     homeserver: String,
@@ -120,6 +124,112 @@ async fn login_list_rooms_read_and_send() {
         })
     })
     .await;
+}
+
+#[tokio::test]
+async fn opening_a_thread_timeline_shows_replies_and_posts_into_it() {
+    let Some(env) = env() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping live test");
+        return;
+    };
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter("morpheus=debug,warn")
+        .try_init();
+
+    let core = Core::new(fresh_data_dir()).expect("core");
+    let session = core
+        .login(LoginRequest {
+            homeserver: env.homeserver,
+            username: env.user.clone(),
+            password: env.password,
+        })
+        .await
+        .expect("login");
+
+    let mut room_updates = session.room_list().await.expect("room list");
+    let mut rooms = Vector::new();
+    drive(
+        &mut rooms,
+        async || room_updates.next().await,
+        |rooms| rooms.iter().any(|r| r.name == SEEDED_ROOM),
+    )
+    .await;
+    let general = rooms
+        .iter()
+        .find(|r| r.name == SEEDED_ROOM)
+        .expect("general room")
+        .id
+        .clone();
+
+    // Find the seeded thread root in the live timeline to get its event id.
+    let opened = session
+        .timeline(general.clone())
+        .await
+        .expect("open timeline");
+    let mut updates = opened.updates;
+    let mut items = Vector::new();
+    let is_root = |m: &morpheus_core::Message| matches!(&m.kind, MessageKind::Text { body, .. } if body == SEEDED_THREAD_ROOT);
+    drive(
+        &mut items,
+        async || updates.next().await,
+        |items| {
+            items
+                .iter()
+                .any(|e| matches!(e, TimelineEntry::Message(m) if is_root(m)))
+        },
+    )
+    .await;
+    let root_event_id = items
+        .iter()
+        .find_map(|e| match e {
+            TimelineEntry::Message(m) if is_root(m) => match &m.id {
+                MessageId::Event(id) => Some(id.clone()),
+                MessageId::Transaction(_) => None,
+            },
+            _ => None,
+        })
+        .expect("thread root event id");
+
+    // Open its thread: the seeded reply should be there.
+    let thread = session
+        .thread(general.clone(), root_event_id.clone())
+        .await
+        .expect("open thread");
+    let mut thread_updates = thread.updates;
+    let mut thread_items = Vector::new();
+    drive(&mut thread_items, async || thread_updates.next().await, |items| {
+        items.iter().any(|e| matches!(e, TimelineEntry::Message(m) if matches!(&m.kind, MessageKind::Text { body, .. } if body == SEEDED_THREAD_REPLY)))
+    })
+    .await;
+
+    // Sending through the thread handle posts into the thread, not the room.
+    let body = format!("live thread test {}", std::process::id());
+    thread
+        .handle
+        .send_text(body.clone())
+        .await
+        .expect("send into thread");
+    drive(&mut thread_items, async || thread_updates.next().await, |items| {
+        items.iter().any(|e| {
+            matches!(e, TimelineEntry::Message(m) if !m.is_local_echo && m.is_own && matches!(&m.kind, MessageKind::Text { body: t, .. } if *t == body))
+        })
+    })
+    .await;
+
+    // And the sent message is tagged with the thread it belongs to.
+    let sent = thread_items
+        .iter()
+        .find_map(|e| match e {
+            TimelineEntry::Message(m)
+                if !m.is_local_echo
+                    && matches!(&m.kind, MessageKind::Text { body: t, .. } if *t == body) =>
+            {
+                Some(m.clone())
+            }
+            _ => None,
+        })
+        .expect("sent message");
+    assert_eq!(sent.thread_root, Some(root_event_id));
 }
 
 #[tokio::test]

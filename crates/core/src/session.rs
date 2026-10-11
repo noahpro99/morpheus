@@ -1,6 +1,8 @@
 use std::{path::Path, sync::Arc};
 
-use matrix_sdk::{Client, authentication::matrix::MatrixSession, store::RoomLoadSettings};
+use matrix_sdk::{
+    Client, ThreadingSupport, authentication::matrix::MatrixSession, store::RoomLoadSettings,
+};
 use matrix_sdk_ui::sync_service::SyncService;
 use serde::{Deserialize, Serialize};
 use tracing::info;
@@ -89,6 +91,9 @@ async fn build_client(data_dir: &Path, homeserver: &str) -> Result<Client> {
     Ok(Client::builder()
         .homeserver_url(homeserver)
         .sqlite_store(data_dir.join(STORE_DIR), None)
+        .with_threading_support(ThreadingSupport::Enabled {
+            with_subscriptions: false,
+        })
         .build()
         .await?)
 }
