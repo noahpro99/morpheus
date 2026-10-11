@@ -149,6 +149,28 @@ impl Session {
             Ok(path)
         })
     }
+
+
+    /// Fetch the full-resolution file for a piece of media, e.g. for a
+    /// lightbox view. The SDK caches the result on disk.
+    pub fn media_file(&self, media: MediaRef) -> CoreFuture<Option<Media>> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            let media_client = client.media();
+            let key = media.key.clone();
+            let request = MediaRequestParameters {
+                source: media.source,
+                format: MediaFormat::File,
+            };
+            match media_client.get_media_content(&request, true).await {
+                Ok(bytes) => Ok(Some(Media { bytes })),
+                Err(err) => {
+                    debug!(%err, key, "full media fetch failed");
+                    Ok(None)
+                }
+            }
+        })
+    }
 }
 
 fn downloads_dir() -> PathBuf {
