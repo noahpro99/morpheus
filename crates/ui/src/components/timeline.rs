@@ -82,7 +82,8 @@ pub fn TimelineView(
         let handle_cell = handle_cell.clone();
         move || {
             if let Some(active) = handle_cell.borrow_mut().take() {
-                let _ = active.mark_as_fully_read();
+                // The core spawns the task before returning; the handle is not needed.
+                drop(active.mark_as_fully_read());
             }
         }
     });
@@ -125,7 +126,7 @@ pub fn TimelineView(
                         {
                             caught_up.set(true);
                             new_marker.set(None);
-                            let _ = opened.mark_as_fully_read();
+                            drop(opened.mark_as_fully_read());
                         }
 
                         // The SDK only sends a receipt when the latest event moved forward.

@@ -1,7 +1,13 @@
 use std::{path::Path, sync::Arc};
 
 use matrix_sdk::{
-    Client, ThreadingSupport, authentication::matrix::MatrixSession, store::RoomLoadSettings,
+    Client, ThreadingSupport,
+    authentication::matrix::MatrixSession,
+    ruma::api::client::{
+        session::get_login_types::v3::LoginType,
+        uiaa::{EmailUserIdentifier, UserIdentifier},
+    },
+    store::RoomLoadSettings,
 };
 use matrix_sdk_ui::sync_service::SyncService;
 use serde::{Deserialize, Serialize};
@@ -11,6 +17,8 @@ use crate::{Core, CoreFuture, Error, OwnedUserId, Result};
 
 const SESSION_FILE: &str = "session.json";
 const STORE_DIR: &str = "store";
+/// Throwaway store used only to query a server before logging in.
+const PROBE_STORE_DIR: &str = "probe-store";
 const DEVICE_NAME: &str = "Morpheus";
 
 /// Credentials for a password login.
@@ -37,6 +45,13 @@ struct StoredSession {
     session: MatrixSession,
 }
 
+/// Which sign-in methods a homeserver offers.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct LoginFlows {
+    pub password: bool,
+    pub sso: bool,
+}
+
 impl Core {
     /// Restore the previous session from disk, if there is one.
     pub fn restore_session(&self) -> CoreFuture<Option<Session>> {
@@ -59,37 +74,106 @@ impl Core {
         })
     }
 
+    /// Ask a homeserver which login methods it supports. Resolves the
+    /// server name through `.well-known` like a login would.
+    pub fn login_flows(&self, homeserver: String) -> CoreFuture<LoginFlows> {
+        let core = self.clone();
+        self.run(async move {
+            let client = Client::builder()
+                .server_name_or_homeserver_url(&homeserver)
+                .sqlite_store(core.data_dir().join(PROBE_STORE_DIR), None)
+                .build()
+                .await?;
+            let types = client.matrix_auth().get_login_types().await?;
+            let mut flows = LoginFlows::default();
+            for flow in types.flows {
+                match flow {
+                    LoginType::Password(_) => flows.password = true,
+                    LoginType::Sso(_) => flows.sso = true,
+                    _ => {}
+                }
+            }
+            Ok(flows)
+        })
+    }
+
     /// Log in with a password and persist the resulting session.
+    ///
+    /// `username` may be a localpart, a full Matrix ID, or the account's
+    /// email address.
     pub fn login(&self, request: LoginRequest) -> CoreFuture<Session> {
         let core = self.clone();
         self.run(async move {
-            let client = build_client(core.data_dir(), &request.homeserver).await?;
+            let client = fresh_client(core.data_dir(), &request.homeserver).await?;
+            let auth = client.matrix_auth();
+            let login = if is_email(&request.username) {
+                let email =
+                    UserIdentifier::Email(EmailUserIdentifier::new(request.username.clone()));
+                auth.login_identifier(email, &request.password)
+            } else {
+                auth.login_username(&request.username, &request.password)
+            };
+            login.initial_device_display_name(DEVICE_NAME).await?;
+            info!(user = %request.username, "logged in with password");
+
+            persist_and_start(core, client, request.homeserver).await
+        })
+    }
+
+    /// Log in through the homeserver's single sign-on page. Opens the
+    /// system browser and waits for it to redirect back to a loopback port.
+    pub fn login_sso(&self, homeserver: String) -> CoreFuture<Session> {
+        let core = self.clone();
+        self.run(async move {
+            let client = fresh_client(core.data_dir(), &homeserver).await?;
             client
                 .matrix_auth()
-                .login_username(&request.username, &request.password)
+                .login_sso(|url| async move {
+                    info!(%url, "opening browser for single sign-on");
+                    open::that_detached(&url)
+                        .map_err(|err| matrix_sdk::Error::UnknownError(Box::new(err)))
+                })
                 .initial_device_display_name(DEVICE_NAME)
                 .await?;
+            info!("logged in with single sign-on");
 
-            let session = client.matrix_auth().session().ok_or(Error::NoSession)?;
-            let stored = StoredSession {
-                homeserver: request.homeserver,
-                session,
-            };
-            tokio::fs::write(
-                core.data_dir().join(SESSION_FILE),
-                serde_json::to_vec_pretty(&stored)?,
-            )
-            .await?;
-            info!(user = %request.username, "logged in");
-
-            Session::start(core, client).await
+            persist_and_start(core, client, homeserver).await
         })
     }
 }
 
+fn is_email(username: &str) -> bool {
+    !username.starts_with('@') && username.contains('@') && username.contains('.')
+}
+
+/// A client for an account that is not logged in yet. Wipes any store left
+/// behind by a previous account so the SDK does not refuse the new one.
+async fn fresh_client(data_dir: &Path, homeserver: &str) -> Result<Client> {
+    let store = data_dir.join(STORE_DIR);
+    if tokio::fs::try_exists(&store).await.unwrap_or(false) {
+        tokio::fs::remove_dir_all(&store).await?;
+    }
+    build_client(data_dir, homeserver).await
+}
+
+async fn persist_and_start(core: Core, client: Client, homeserver: String) -> Result<Session> {
+    let session = client.matrix_auth().session().ok_or(Error::NoSession)?;
+    let stored = StoredSession {
+        homeserver,
+        session,
+    };
+    tokio::fs::write(
+        core.data_dir().join(SESSION_FILE),
+        serde_json::to_vec_pretty(&stored)?,
+    )
+    .await?;
+    Session::start(core, client).await
+}
+
 async fn build_client(data_dir: &Path, homeserver: &str) -> Result<Client> {
     Ok(Client::builder()
-        .homeserver_url(homeserver)
+        // Accepts "matrix.org" or a full URL and follows `.well-known`.
+        .server_name_or_homeserver_url(homeserver)
         .sqlite_store(data_dir.join(STORE_DIR), None)
         .with_threading_support(ThreadingSupport::Enabled {
             with_subscriptions: false,
@@ -125,6 +209,8 @@ impl Session {
             sync.stop().await;
             client.logout().await?;
             let _ = tokio::fs::remove_file(core.data_dir().join(SESSION_FILE)).await;
+            // Drop the account's local data too, so another account can sign in cleanly.
+            let _ = tokio::fs::remove_dir_all(core.data_dir().join(STORE_DIR)).await;
             Ok(())
         })
     }
