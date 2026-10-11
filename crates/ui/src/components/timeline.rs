@@ -5,7 +5,10 @@ use morpheus_core::{
 };
 use tracing::{error, warn};
 
-use super::composer::{ActiveTimeline, ComposerMode, Draft, Mode};
+use super::{
+    composer::{ActiveTimeline, ComposerMode, Draft, Mode},
+    lightbox::{LightboxImage, LightboxImages, LightboxIndex},
+};
 use crate::{
     format::{calendar_date, clock_time},
     media::{Avatar, use_thumbnail},
@@ -29,6 +32,34 @@ pub fn TimelineView(room_id: OwnedRoomId) -> Element {
     let mut load_error = use_signal(|| None::<String>);
     let mut reached_start = use_signal(|| false);
     let mut paginating = use_signal(|| false);
+    let mut gallery = use_context::<LightboxImages>();
+
+    // Keep the lightbox's gallery in step with the images currently loaded
+    // in this room's timeline, so the arrow keys can walk between them.
+    let gallery_images = use_memo(move || {
+        entries
+            .read()
+            .iter()
+            .filter_map(|entry| match entry {
+                TimelineEntry::Message(message) => match &message.kind {
+                    MessageKind::Image {
+                        body,
+                        media,
+                        width,
+                        height,
+                    } => Some(LightboxImage {
+                        media: media.clone(),
+                        body: body.clone(),
+                        width: *width,
+                        height: *height,
+                    }),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    });
+    use_effect(move || gallery.set(gallery_images()));
 
     use_future(move || {
         let session = session.clone();
@@ -356,15 +387,32 @@ fn RichText(
 
 #[component]
 fn ImageBody(body: String, media: MediaRef, width: Option<u32>, height: Option<u32>) -> Element {
-    let url = use_thumbnail(Some(media), 800, 600);
+    let mut lightbox_index = use_context::<LightboxIndex>();
+    let gallery = use_context::<LightboxImages>();
+    let url = use_thumbnail(Some(media.clone()), 800, 600);
     let aspect = match (width, height) {
         (Some(w), Some(h)) if h > 0 => format!("aspect-ratio: {w} / {h};"),
         _ => String::new(),
     };
 
+    let open = move |_| {
+        let key = media.key().to_owned();
+        let index = gallery.read().iter().position(|img| img.media.key() == key);
+        lightbox_index.set(index);
+    };
+
     rsx! {
         match url() {
-            Some(src) => rsx! { img { class: "image", style: "{aspect}", src: "{src}", alt: "{body}", title: "{body}" } },
+            Some(src) => rsx! {
+                img {
+                    class: "image",
+                    style: "{aspect}",
+                    src: "{src}",
+                    alt: "{body}",
+                    title: "{body}",
+                    onclick: open,
+                }
+            },
             None => rsx! { div { class: "image placeholder", style: "{aspect}", "{body}" } },
         }
     }

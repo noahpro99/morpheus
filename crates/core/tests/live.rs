@@ -198,3 +198,71 @@ async fn typing_notifications_propagate_between_users() {
     .await;
     assert!(result.is_ok(), "alice never saw bob typing");
 }
+
+#[tokio::test]
+async fn fetch_full_image_media() {
+    let Some(env) = env() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping live test");
+        return;
+    };
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter("morpheus=debug,warn")
+        .try_init();
+
+    let core = Core::new(fresh_data_dir()).expect("core");
+    let session = core
+        .login(LoginRequest {
+            homeserver: env.homeserver,
+            username: env.user,
+            password: env.password,
+        })
+        .await
+        .expect("login");
+
+    let mut room_updates = session.room_list().await.expect("room list");
+    let mut rooms = Vector::new();
+    drive(
+        &mut rooms,
+        async || room_updates.next().await,
+        |rooms| rooms.iter().any(|r| r.name == SEEDED_ROOM),
+    )
+    .await;
+    let general = rooms
+        .iter()
+        .find(|r| r.name == SEEDED_ROOM)
+        .expect("general room")
+        .id
+        .clone();
+
+    let opened = session.timeline(general).await.expect("open timeline");
+    let mut updates = opened.updates;
+    let mut items = Vector::new();
+    let find_image = |items: &Vector<TimelineEntry>| {
+        items.iter().find_map(|e| match e {
+            TimelineEntry::Message(m) => match &m.kind {
+                MessageKind::Image { media, .. } => Some(media.clone()),
+                _ => None,
+            },
+            _ => None,
+        })
+    };
+    drive(
+        &mut items,
+        async || updates.next().await,
+        |items| find_image(items).is_some(),
+    )
+    .await;
+    let media = find_image(&items).expect("seeded image message");
+
+    let fetched = session
+        .media_file(media)
+        .await
+        .expect("media_file call")
+        .expect("full image bytes");
+    assert!(!fetched.bytes.is_empty(), "full image is non-empty");
+    assert!(
+        fetched.mime().starts_with("image/"),
+        "sniffed mime should be an image type, got {}",
+        fetched.mime()
+    );
+}

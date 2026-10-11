@@ -11,10 +11,13 @@ use morpheus_core::{MediaRef, Session};
 
 /// `(media key, width, height)` → data URL.
 type Cache = Signal<HashMap<(String, u32, u32), Rc<str>>>;
+/// media key → data URL, for full-resolution files (the lightbox).
+type FullCache = Signal<HashMap<String, Rc<str>>>;
 
 /// Install once near the root of the logged-in shell.
 pub fn provide_media_cache() {
     use_context_provider(|| Cache::new(HashMap::new()));
+    use_context_provider(|| FullCache::new(HashMap::new()));
 }
 
 /// Resolve a thumbnail to a data URL. `None` while loading or when unavailable.
@@ -36,6 +39,44 @@ pub fn use_thumbnail(media: Option<MediaRef>, width: u32, height: u32) -> Memo<O
                 .await
                 .ok()
                 .flatten()?;
+            let url: Rc<str> = format!(
+                "data:{};base64,{}",
+                fetched.mime(),
+                STANDARD.encode(&fetched.bytes)
+            )
+            .into();
+            cache.write().insert(cache_key, url.clone());
+            Some(url)
+        }
+    }));
+
+    use_memo(move || {
+        if let Some(key) = &key
+            && let Some(url) = cache.read().get(key)
+        {
+            return Some(url.clone());
+        }
+        fetch.read().clone().flatten()
+    })
+}
+
+/// Resolve a media's full-resolution file to a data URL. `None` while
+/// loading or when unavailable. Used by the lightbox; thumbnails use
+/// [`use_thumbnail`] instead.
+pub fn use_full_media(media: Option<MediaRef>) -> Memo<Option<Rc<str>>> {
+    let session = use_context::<Session>();
+    let mut cache = use_context::<FullCache>();
+    let key = media.as_ref().map(|m| m.key().to_owned());
+
+    let fetch = use_resource(use_reactive!(|media| {
+        let session = session.clone();
+        async move {
+            let media = media?;
+            let cache_key = media.key().to_owned();
+            if let Some(url) = cache.peek().get(&cache_key) {
+                return Some(url.clone());
+            }
+            let fetched = session.media_file(media).await.ok().flatten()?;
             let url: Rc<str> = format!(
                 "data:{};base64,{}",
                 fetched.mime(),
