@@ -1388,3 +1388,26 @@ button.sender:hover { text-decoration: underline; }
 .login-logo { color: var(--accent); align-self: center; margin-bottom: 4px; }
 .rail-dms .logo { color: var(--text); }
 .rail-dms.selected .logo, .rail-dms:hover .logo { color: white; }
+
+/* ---- invites ---- */
+.invite-row { cursor: pointer; }
+.invite-row .invite-text { display: flex; flex-direction: column; min-width: 0; flex: 1; line-height: 1.15; }
+.invite-row .invite-from { font-size: 0.72rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.invite-accept, .invite-decline {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border-radius: 50%; padding: 0; flex: none;
+  background: var(--bg-hover); color: var(--text-muted);
+}
+.invite-accept:hover { background: var(--green, #23a559); color: #fff; }
+.invite-decline:hover { background: var(--danger, #da373c); color: #fff; }
+.invite-card {
+  margin: auto;
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  padding: 32px; text-align: center; max-width: 420px;
+}
+.invite-card h2 { margin: 4px 0 0; }
+.invite-card .topic { color: var(--text-muted); }
+.invite-card .settings-actions { justify-content: center; }
+.invite-card .invite-accept, .invite-card .invite-decline { width: auto; height: auto; border-radius: var(--radius); padding: 8px 16px; }
+.inbox-invite { display: flex; align-items: center; gap: 6px; }
+.inbox-invite .inbox-open { flex: 1; text-align: left; background: none; padding: 0; }

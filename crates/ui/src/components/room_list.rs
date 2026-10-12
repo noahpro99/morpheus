@@ -2,6 +2,7 @@ use dioxus::prelude::*;
 use morpheus_core::{NotifyMode, OwnedRoomId, RoomSummary, Session};
 
 use super::context_menu::{MenuItem, copy_to_clipboard, open_menu, open_menu_at};
+use super::invites::{InviteRow, pending_invites};
 use super::space_menu::space_menu;
 use super::room_dialogs::{OpenRoomDialog, RoomDialog};
 use super::shell::{Rooms, Scope, Selected, SelectedSpace, UiPrefs, go_to, rooms_in_scope};
@@ -36,6 +37,8 @@ pub fn RoomList(error: Option<String>) -> Element {
         _ => Vec::new(),
     };
     let category_of = |room: &RoomSummary| categories.iter().find(|(id, _)| room.parent_spaces.contains(id)).cloned();
+    // Invites show in every scope, like Discord's pending list.
+    let invites = pending_invites(&rooms.read());
     let no_rooms = channels.is_empty();
     let (uncategorised, categorised): (Vec<RoomSummary>, Vec<RoomSummary>) =
         channels.into_iter().partition(|room| category_of(room).is_none());
@@ -89,6 +92,12 @@ pub fn RoomList(error: Option<String>) -> Element {
             div { class: "room-list",
                 if let Some(message) = error {
                     p { class: "error", "{message}" }
+                }
+                if !invites.is_empty() {
+                    h4 { class: "section invites", "Invites" }
+                    for room in invites {
+                        InviteRow { key: "{room.id}", room }
+                    }
                 }
                 if dms.is_empty() && no_rooms {
                     p { class: "muted pad",

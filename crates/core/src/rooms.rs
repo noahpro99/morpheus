@@ -2,7 +2,7 @@ use futures_util::{StreamExt, pin_mut};
 use matrix_sdk_ui::timeline::RoomExt as _;
 
 use matrix_sdk::{
-    Room,
+    Room, RoomState,
     notification_settings::{IsEncrypted, IsOneToOne, NotificationSettings, RoomNotificationMode},
     room::ParentSpace,
     ruma::{
@@ -43,10 +43,31 @@ pub struct RoomSummary {
     /// the parent, or set by someone with power to do so). Nested spaces are
     /// not expanded here: a room only lists its direct parents.
     pub parent_spaces: Vec<OwnedRoomId>,
+    /// A pending invite: not joined yet, so there is no timeline to show.
+    pub invited: bool,
+    /// Who sent the invite (display name, else user ID); only for invites.
+    pub inviter: Option<String>,
 }
 
 impl RoomSummary {
     async fn from_room(room: Room, settings: &NotificationSettings) -> Self {
+        let invited = room.state() == RoomState::Invited;
+        let inviter = if invited {
+            match room.invite_details().await {
+                Ok(details) => Some(
+                    details
+                        .inviter
+                        .map(|member| member.name().to_owned())
+                        .unwrap_or_else(|| details.inviter_id.to_string()),
+                ),
+                Err(err) => {
+                    debug!(room_id = %room.room_id(), %err, "invite details unavailable");
+                    None
+                }
+            }
+        } else {
+            None
+        };
         let muted = matches!(
             settings.get_user_defined_room_notification_mode(room.room_id()).await,
             Some(RoomNotificationMode::Mute)
@@ -78,7 +99,24 @@ impl RoomSummary {
             marked_unread: room.is_marked_unread(),
             muted,
             parent_spaces,
+            invited,
+            inviter,
         }
+    }
+}
+
+impl Session {
+    /// Accept an invite (or join a public room). The room list flips the
+    /// entry from invited to joined on the next sync.
+    pub fn join_room(&self, room_id: OwnedRoomId) -> CoreFuture<()> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            let room = client
+                .get_room(&room_id)
+                .ok_or_else(|| crate::Error::UnknownRoom(room_id.clone()))?;
+            room.join().await?;
+            Ok(())
+        })
     }
 }
 

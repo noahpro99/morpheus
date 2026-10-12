@@ -4,9 +4,10 @@
 //! provides them.
 
 use dioxus::prelude::*;
-use morpheus_core::{OwnedRoomId, Session};
+use morpheus_core::{OwnedRoomId, RoomSummary, Session};
 use tracing::warn;
 
+use super::invites::InboxInvites;
 use super::shell::{NavHistory, Rooms, Scope, Selected, SelectedSpace, go_to, scope_for};
 use crate::WindowControls;
 use crate::icons::{CHEVRON_LEFT, CHEVRON_RIGHT, CIRCLE_HELP, INBOX, Icon, Logo, MINUS, SQUARE, X};
@@ -77,7 +78,7 @@ pub fn TitleBar() -> Element {
     let unread = rooms
         .read()
         .iter()
-        .filter(|r| !r.is_space && (r.unread_messages > 0 || r.highlight_count > 0 || r.marked_unread))
+        .filter(|r| !r.is_space && !r.invited && (r.unread_messages > 0 || r.highlight_count > 0 || r.marked_unread))
         .count();
     // For tests and debugging: the visited rooms by name.
     let history_names = nav()
@@ -194,7 +195,7 @@ pub fn InboxPanel() -> Element {
     let mut items: Vec<_> = rooms
         .read()
         .iter()
-        .filter(|r| !r.is_space && (r.unread_messages > 0 || r.highlight_count > 0 || r.marked_unread))
+        .filter(|r| !r.is_space && !r.invited && (r.unread_messages > 0 || r.highlight_count > 0 || r.marked_unread))
         .cloned()
         .collect();
     items.sort_by(|a, b| b.highlight_count.cmp(&a.highlight_count).then_with(|| a.name.cmp(&b.name)));
@@ -222,6 +223,12 @@ pub fn InboxPanel() -> Element {
                     if !items.is_empty() {
                         button { class: "ghost", onclick: mark_all, "Mark all as read" }
                     }
+                }
+                InboxInvites {
+                    on_open: move |room: RoomSummary| {
+                        go_to(room.id.clone());
+                        close();
+                    },
                 }
                 if items.is_empty() {
                     p { class: "muted pad", "You're all caught up." }

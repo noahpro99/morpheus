@@ -73,7 +73,8 @@ pub fn Rail() -> Element {
     let unread_dms = rooms
         .read()
         .iter()
-        .filter(|room| room.is_dm && room.highlight_count > 0)
+        // Pending invites count here too, like Discord's DM pill.
+        .filter(|room| room.invited || (room.is_dm && room.highlight_count > 0))
         .count();
     let entries = layout(&prefs.read(), &spaces);
     let space_by_id = |id: &OwnedRoomId| spaces.iter().find(|s| &s.id == id).cloned();

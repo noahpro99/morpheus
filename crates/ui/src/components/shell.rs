@@ -6,6 +6,7 @@ use super::{
     composer::{ActiveTimeline, Composer, Draft, Mode},
     context_menu::{ContextMenu, ContextMenuLayer, MenuState},
     hotkeys::{Hotkey, HotkeyRequest, LISTENER_JS},
+    invites::InviteCard,
     lightbox::{EscapeTick, Escapes, Lightbox, LightboxOpen, LightboxShown, provide_lightbox},
     members::Members,
     message_dialogs::{
@@ -170,18 +171,19 @@ pub type SelectedSpace = Signal<Scope>;
 /// list it (or one of its nested spaces) as a parent, so a space's whole
 /// subtree shows up under one badge.
 pub fn rooms_in_scope(rooms: &Vector<RoomSummary>, scope: &Scope) -> Vec<RoomSummary> {
+    // Invites are listed separately (see `invites.rs`), never as rooms.
     let space_id = match scope {
         Scope::Dms => {
             return rooms
                 .iter()
-                .filter(|room| room.is_dm && !room.is_space)
+                .filter(|room| room.is_dm && !room.is_space && !room.invited)
                 .cloned()
                 .collect();
         }
         Scope::Rooms => {
             return rooms
                 .iter()
-                .filter(|room| !room.is_space && !room.is_dm && room.parent_spaces.is_empty())
+                .filter(|room| !room.is_space && !room.is_dm && !room.invited && room.parent_spaces.is_empty())
                 .cloned()
                 .collect();
         }
@@ -207,7 +209,7 @@ pub fn rooms_in_scope(rooms: &Vector<RoomSummary>, scope: &Scope) -> Vec<RoomSum
 
     rooms
         .iter()
-        .filter(|room| !room.is_space && room.parent_spaces.iter().any(|p| scope.contains(p)))
+        .filter(|room| !room.is_space && !room.invited && room.parent_spaces.iter().any(|p| scope.contains(p)))
         .cloned()
         .collect()
 }
@@ -300,10 +302,11 @@ pub fn Shell(session: Session) -> Element {
         let in_scope = rooms_in_scope(&rooms.read(), &selected_space.read());
         // A room we just created (or a DM just opened) is selected before the
         // list has it; leave that alone rather than bouncing elsewhere.
+        // Invites show in every scope, so an open invite stays put too.
         let unknown = selected
             .peek()
             .as_ref()
-            .is_some_and(|id| !rooms.read().iter().any(|room| &room.id == id));
+            .is_some_and(|id| !rooms.read().iter().any(|room| &room.id == id && !room.invited));
         if unknown {
             return;
         }
@@ -485,6 +488,7 @@ pub fn Shell(session: Session) -> Element {
             main { class: "chat",
                 match current() {
                     // Keyed on the room id so switching rooms remounts the timeline.
+                    Some(room) if room.invited => rsx! { InviteCard { key: "invite-{room.id}", room } },
                     Some(room) => rsx! { ChatRoom { key: "{room.id}", room } },
                     None => rsx! {
                         div { class: "empty-state",
