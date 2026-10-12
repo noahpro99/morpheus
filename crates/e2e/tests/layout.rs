@@ -145,8 +145,10 @@ async fn profile_modal_opens_from_sender_member_and_footer() {
     .await
     .expect("profile closed by the button");
 
-    // From the footer chip: our own profile.
+    // From the footer chip: its menu, then our own profile.
     app.click(".profile-chip").await.expect("click footer");
+    app.wait_for(".context-menu", DEFAULT_WAIT).await.expect("account menu");
+    app.click_text(".context-item", "View profile").await.expect("view profile");
     app.wait_for_text(".profile-modal .profile-id", "@alice:localhost", DEFAULT_WAIT)
         .await
         .expect("own profile");

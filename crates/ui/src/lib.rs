@@ -21,5 +21,7 @@ mod e2e {
 }
 mod format;
 mod media;
+mod window;
 
 pub use app::{App, AppConfig};
+pub use window::WindowControls;

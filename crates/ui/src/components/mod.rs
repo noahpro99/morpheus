@@ -15,6 +15,7 @@ mod shell;
 mod switcher;
 mod thread;
 mod timeline;
+mod titlebar;
 
 pub use login::Login;
 pub use shell::Shell;

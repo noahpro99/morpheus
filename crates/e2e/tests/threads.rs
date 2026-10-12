@@ -62,8 +62,9 @@ async fn thread_panel_shows_replies_and_posts_a_new_one() {
 
     const ROOT: &str = "Let's plan Q4 in this thread";
 
-    // The seeded thread root carries a chip summarising its replies.
-    app.wait_for_text(".message .body", ROOT, DEFAULT_WAIT)
+    // The seeded thread root carries a chip summarising its replies. It is
+    // far up the room by now, so scroll until it is revealed.
+    app.reveal_message(ROOT, DEFAULT_WAIT)
         .await
         .expect("thread root seeded");
     app.wait_for_text(".thread-chip", "repl", DEFAULT_WAIT)
