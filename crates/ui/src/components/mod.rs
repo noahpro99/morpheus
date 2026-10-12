@@ -2,6 +2,7 @@
 
 mod composer;
 mod context_menu;
+mod emoji;
 mod hotkeys;
 mod invites;
 mod lightbox;

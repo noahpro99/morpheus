@@ -696,6 +696,7 @@ fn ChatRoom(room: RoomSummary) -> Element {
             room_name: room.name.clone(),
             placeholder: room.is_dm.then(|| format!("Message @{}", room.name)),
             accepts_drops: true,
+            room_id: Some(room.id.clone()),
         }
         Lightbox {}
     }

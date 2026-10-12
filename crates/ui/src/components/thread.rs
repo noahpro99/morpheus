@@ -60,7 +60,7 @@ pub fn ThreadPanel(room_id: OwnedRoomId, root: Message) -> Element {
                 room_id: room_id.clone(),
                 root_event_id: Some(root_event_id),
             }
-            Composer { room_name: String::new(), placeholder: Some("Reply in thread".to_owned()) }
+            Composer { room_name: String::new(), placeholder: Some("Reply in thread".to_owned()), room_id: Some(room_id.clone()) }
         }
     }
 }

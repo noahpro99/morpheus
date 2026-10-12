@@ -1420,3 +1420,24 @@ button.sender:hover { text-decoration: underline; }
   border: 3px dashed var(--accent); font-size: 1.4rem; font-weight: 600;
 }
 body.dropping .drop-hint { display: flex; }
+
+/* ---- composer autocomplete and emoji panel ---- */
+.composer { position: relative; }
+.autocomplete, .emoji-panel {
+  position: absolute; left: 16px; right: 16px; bottom: calc(100% - 8px);
+  background: var(--bg-elevated); border: 1px solid var(--border, rgba(255,255,255,0.08));
+  border-radius: var(--radius-lg); box-shadow: 0 8px 24px rgba(0,0,0,0.4); padding: 6px; z-index: 20;
+}
+.autocomplete { display: flex; flex-direction: column; gap: 2px; max-height: 260px; overflow-y: auto; }
+.autocomplete-item {
+  display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: var(--radius-sm);
+  text-align: left; color: var(--text); background: none;
+}
+.autocomplete-item .emoji { font-size: 1.1rem; width: 24px; text-align: center; }
+.autocomplete-item .muted { font-size: 0.8rem; }
+.autocomplete-item:hover, .autocomplete-item.active { background: var(--bg-hover); }
+.emoji-panel { left: auto; width: 340px; display: grid; grid-template-columns: repeat(10, 1fr); gap: 2px; max-height: 300px; overflow-y: auto; }
+.emoji-panel button { font-size: 1.25rem; padding: 4px 0; border-radius: var(--radius-sm); background: none; }
+.emoji-panel button:hover { background: var(--bg-hover); }
+.emoji-button { width: 36px; height: 36px; border-radius: var(--radius-sm); display: grid; place-items: center; background: none; color: var(--text-muted); flex: none; }
+.emoji-button:hover, .emoji-button.active { color: var(--text); background: var(--bg-hover); }
