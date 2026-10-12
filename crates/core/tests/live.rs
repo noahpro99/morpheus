@@ -700,14 +700,26 @@ async fn self_verification_emoji_sas_between_two_devices() {
     wait_for_done(&mut outgoing).await;
     wait_for_done(&mut incoming_handle).await;
 
-    let a_devices = device_a.own_devices().await.expect("A's devices");
-    let b_devices = device_b.own_devices().await.expect("B's devices");
+    // The trust change is persisted just after the `Done` signal, so poll briefly.
+    let sees_other_verified = |session: Session| async move {
+        timeout(WAIT, async {
+            loop {
+                let devices = session.own_devices().await.expect("devices");
+                if devices.iter().any(|d| !d.is_current && d.verified) {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(250)).await;
+            }
+        })
+        .await
+        .is_ok()
+    };
     assert!(
-        a_devices.iter().any(|d| !d.is_current && d.verified),
-        "A should see B as verified: {a_devices:?}"
+        sees_other_verified(device_a).await,
+        "A should see B as verified"
     );
     assert!(
-        b_devices.iter().any(|d| !d.is_current && d.verified),
-        "B should see A as verified: {b_devices:?}"
+        sees_other_verified(device_b).await,
+        "B should see A as verified"
     );
 }
