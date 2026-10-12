@@ -933,3 +933,51 @@ async fn mutual_rooms_lists_rooms_shared_with_a_user() {
     eprintln!("mutual rooms with bob: {mutual:?}");
     assert!(mutual.iter().any(|(id, _)| *id == general), "general is shared with bob");
 }
+
+#[tokio::test]
+async fn invites_name_the_inviter_and_can_be_declined_then_accepted() {
+    let Some(env) = env() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping live test");
+        return;
+    };
+    let login = |user: &str| {
+        let core = Core::new(fresh_data_dir()).expect("core");
+        core.login(LoginRequest {
+            homeserver: env.homeserver.clone(),
+            username: user.into(),
+            password: format!("{user}-password"),
+        })
+    };
+    let alice = login("alice").await.expect("alice");
+    let bob = login("bob").await.expect("bob");
+    let name = format!("live invite {}", std::process::id());
+    let room_id = alice
+        .create_room(name.clone(), String::new(), None)
+        .await
+        .expect("create room");
+    let bob_id: morpheus_core::OwnedUserId = "@bob:localhost".parse().expect("user id");
+    alice.invite(room_id.clone(), bob_id.clone()).await.expect("invite");
+
+    let mut rooms = Vector::new();
+    let mut updates = bob.room_list().await.expect("room list");
+    let pending = |rooms: &Vector<morpheus_core::RoomSummary>| {
+        rooms.iter().any(|r| r.id == room_id && r.invited && r.name == name)
+    };
+    drive(&mut rooms, async || updates.next().await, pending).await;
+    let invite = rooms.iter().find(|r| r.id == room_id).expect("invite listed");
+    assert_eq!(invite.name, name);
+    assert_eq!(invite.inviter.as_deref(), Some("alice"), "inviter named");
+
+    // Decline: the invite leaves the list.
+    bob.leave_room(room_id.clone()).await.expect("decline");
+    drive(&mut rooms, async || updates.next().await, |rooms| !rooms.iter().any(|r| r.id == room_id)).await;
+
+    // Invite again and accept: the entry flips to joined.
+    alice.invite(room_id.clone(), bob_id).await.expect("re-invite");
+    drive(&mut rooms, async || updates.next().await, pending).await;
+    bob.join_room(room_id.clone()).await.expect("accept");
+    drive(&mut rooms, async || updates.next().await, |rooms| {
+        rooms.iter().any(|r| r.id == room_id && !r.invited)
+    })
+    .await;
+}

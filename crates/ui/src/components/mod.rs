@@ -3,6 +3,7 @@
 mod composer;
 mod context_menu;
 mod hotkeys;
+mod invites;
 mod lightbox;
 mod login;
 mod members;
