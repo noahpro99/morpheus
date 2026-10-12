@@ -154,3 +154,51 @@ async fn profile_modal_opens_from_sender_member_and_footer() {
         .await
         .expect("marked as own");
 }
+
+/// Navigating to a room focuses the composer so you can type immediately.
+#[tokio::test]
+async fn composer_is_focused_after_navigating() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch(&hs).await.expect("launch app");
+    login_and_open(&mut app, "general").await;
+    let focused = "return document.activeElement === document.querySelector('.composer input');";
+    app.wait_for_js(focused, DEFAULT_WAIT)
+        .await
+        .expect("composer focused after opening general");
+    app.open_room("random").await.expect("switch");
+    app.wait_for_js(focused, DEFAULT_WAIT)
+        .await
+        .expect("composer focused after switching to random");
+}
+
+/// Big rooms render a page of members at a time; the rest come on request.
+#[tokio::test]
+async fn member_list_is_windowed_for_big_rooms() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch(&hs).await.expect("launch app");
+    login_and_open(&mut app, "crowd").await;
+    app.wait_for_text(".members-header", "Members — 152", DEFAULT_WAIT)
+        .await
+        .expect("full count in the header");
+    assert_eq!(
+        app.count(".members .member").await.expect("count"),
+        100,
+        "only the first page of rows is rendered"
+    );
+    app.wait_for_text(".show-more-members", "53 hidden", DEFAULT_WAIT)
+        .await
+        .expect("show more button");
+    app.click(".show-more-members").await.expect("show more");
+    app.wait_for_js(
+        "return document.querySelectorAll('.members .member').length === 153 && document.querySelector('.show-more-members') === null;",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("everyone listed after one click");
+}
