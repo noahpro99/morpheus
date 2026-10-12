@@ -981,3 +981,34 @@ async fn invites_name_the_inviter_and_can_be_declined_then_accepted() {
     })
     .await;
 }
+
+/// Runs only where a Secret Service answers (`MORPHEUS_TEST_KEYRING=1`).
+#[tokio::test]
+async fn keyring_store_round_trips_a_session() {
+    let Some(env) = env() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping live test");
+        return;
+    };
+    if std::env::var_os("MORPHEUS_TEST_KEYRING").is_none() {
+        eprintln!("MORPHEUS_TEST_KEYRING not set; skipping keyring test");
+        return;
+    }
+    let dir = fresh_data_dir();
+    let core = Core::with_session_store(&dir, SessionStoreKind::Keyring).expect("core");
+    let session = core
+        .login(LoginRequest {
+            homeserver: env.homeserver.clone(),
+            username: "alice".into(),
+            password: "alice-password".into(),
+        })
+        .await
+        .expect("login");
+    assert!(!dir.join("session.enc").exists(), "keyring store writes no file");
+    drop(session);
+    let core = Core::with_session_store(&dir, SessionStoreKind::Keyring).expect("core again");
+    let restored = core.restore_session().await.expect("restore").expect("a stored session");
+    assert_eq!(restored.user_id().map(|u| u.to_string()).as_deref(), Some("@alice:localhost"));
+    restored.logout().await.expect("logout");
+    let core = Core::with_session_store(&dir, SessionStoreKind::Keyring).expect("core after logout");
+    assert!(core.restore_session().await.expect("restore after logout").is_none(), "entry cleared");
+}
