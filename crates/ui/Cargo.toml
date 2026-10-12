@@ -7,7 +7,7 @@ license.workspace = true
 
 [features]
 # Test bridge that evaluates JavaScript in the webview on request. See src/e2e.rs.
-e2e = ["dep:tokio", "dep:serde", "dep:serde_json"]
+e2e = ["dep:tokio", "dep:serde"]
 
 [dependencies]
 # No platform feature here on purpose: apps/desktop and apps/mobile choose.
@@ -17,7 +17,7 @@ tracing = { workspace = true }
 base64 = { workspace = true }
 tokio = { workspace = true, optional = true, features = ["net", "io-util"] }
 serde = { workspace = true, optional = true }
-serde_json = { workspace = true, optional = true }
+serde_json = { workspace = true }
 rfd = { workspace = true }
 open = { workspace = true }
 

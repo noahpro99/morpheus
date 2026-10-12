@@ -1,6 +1,7 @@
 use dioxus::prelude::*;
 use morpheus_core::{Member, MemberRole, OwnedRoomId, Session};
 
+use super::context_menu::{MenuItem, copy_to_clipboard, open_menu};
 use super::profile::open_profile;
 use crate::media::Avatar;
 
@@ -36,6 +37,20 @@ pub fn Members(room_id: OwnedRoomId) -> Element {
                                             onclick: {
                                                 let user_id = member.user_id.clone();
                                                 move |_| open_profile(user_id.clone())
+                                            },
+                                            oncontextmenu: {
+                                                let user_id = member.user_id.clone();
+                                                move |e| {
+                                                    let (profile_id, copy_id) = (user_id.clone(), user_id.to_string());
+                                                    open_menu(
+                                                        &e,
+                                                        vec![
+                                                            MenuItem::new("View profile", move || open_profile(profile_id.clone())),
+                                                            MenuItem::new("Copy user ID", move || copy_to_clipboard(&copy_id)),
+                                                        ],
+                                                        None,
+                                                    );
+                                                }
                                             },
                                             Avatar { media: member.avatar.clone(), fallback: member.name.clone(), size: 32 }
                                             span { class: "member-name", "{member.name}" }

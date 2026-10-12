@@ -224,7 +224,15 @@ impl App {
                 bail!("no room named {name:?} in any space");
             }
         }
-        self.click_text(".room", name).await?;
+        // The list can re-render between the check and the click (the room
+        // list service resets it while it settles), so retry the click.
+        let click = format!(
+            "const el = [...document.querySelectorAll('.room')].find(el => el.textContent.includes({})); \
+             if (!el) return false; el.click(); return true;",
+            js_str(name)
+        );
+        self.wait_until(DEFAULT_WAIT, "room row to click", &click)
+            .await?;
         self.wait_for_text(".chat-header h2", name, DEFAULT_WAIT)
             .await
     }
@@ -233,6 +241,17 @@ impl App {
         self.eval(&format!("{}.click();", query(selector)))
             .await
             .map(drop)
+    }
+
+    /// Right-click an element: a bubbling `contextmenu` event at its centre.
+    pub async fn right_click(&mut self, selector: &str) -> Result<()> {
+        let js = format!(
+            "const el = {}; const r = el.getBoundingClientRect(); \
+             el.dispatchEvent(new MouseEvent('contextmenu', {{ bubbles: true, cancelable: true, button: 2, \
+             clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 }}));",
+            query(selector)
+        );
+        self.eval(&js).await.map(drop)
     }
 
     /// Click the first `selector` element whose text contains `needle`.

@@ -1,12 +1,13 @@
 use dioxus::prelude::*;
 
-use super::shell::{Rooms, Selected};
+use super::shell::{Rooms, Selected, SelectedSpace, scope_for};
 
 /// Ctrl+K quick switcher: type to filter rooms, arrows to move, Enter to open.
 #[component]
 pub fn QuickSwitcher(open: Signal<bool>) -> Element {
     let rooms = use_context::<Rooms>();
     let mut selected = use_context::<Selected>();
+    let mut selected_space = use_context::<SelectedSpace>();
     let mut query = use_signal(String::new);
     let mut cursor = use_signal(|| 0usize);
 
@@ -34,6 +35,11 @@ pub fn QuickSwitcher(open: Signal<bool>) -> Element {
         let matches = matches.clone();
         move |index: usize| {
             if let Some(room) = matches.get(index) {
+                // Scope first, so the shell does not bounce the selection back.
+                let scope = scope_for(&rooms.read(), room);
+                if scope != *selected_space.peek() {
+                    selected_space.set(scope);
+                }
                 selected.set(Some(room.id.clone()));
             }
             close();

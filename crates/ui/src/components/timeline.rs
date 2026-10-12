@@ -9,6 +9,8 @@ use tracing::{error, warn};
 
 use super::{
     composer::{ActiveTimeline, ComposerMode, Draft, Mode},
+    context_menu::{MenuItem, copy_to_clipboard, open_menu},
+    shell::Selected,
     lightbox::{LightboxImage, LightboxImages, LightboxIndex},
     profile::open_profile,
     thread::ActiveThread,
@@ -31,7 +33,7 @@ const PAGE_SIZE: u16 = 40;
 const INITIAL_WINDOW: usize = 120;
 const WINDOW_STEP: usize = 100;
 /// One-click reactions offered on hover.
-const QUICK_REACTIONS: [&str; 3] = ["👍", "❤️", "😂"];
+pub(crate) const QUICK_REACTIONS: [&str; 3] = ["👍", "❤️", "😂"];
 
 /// One room's messages. The parent sets `key` to the room id, so switching
 /// rooms remounts this component and drops the previous subscription.
@@ -435,9 +437,86 @@ pub(crate) fn MessageRow(message: Message, show_header: bool) -> Element {
         }
     };
 
+    // Right-click: the same actions as the hover bar, plus copy.
+    let on_context = {
+        let message = message.clone();
+        let react = react.clone();
+        let selected = use_context::<Selected>();
+        move |e: Event<MouseData>| {
+            let mut items = Vec::new();
+            if can_reply {
+                items.push(MenuItem::new("Reply", {
+                    let message = message.clone();
+                    move || {
+                        let mut mode = mode;
+                        if let MessageId::Event(event_id) = &message.id {
+                            mode.set(Some(ComposerMode::Reply {
+                                event_id: event_id.clone(),
+                                sender_name: message.sender_name.clone(),
+                                summary: message.kind.summary(),
+                            }));
+                        }
+                    }
+                }));
+                items.push(MenuItem::new("Reply in thread", {
+                    let message = message.clone();
+                    move || {
+                        let mut active_thread = active_thread;
+                        active_thread.set(Some(message.clone()));
+                    }
+                }));
+            }
+            if message.can_edit {
+                items.push(MenuItem::new("Edit message", {
+                    let message = message.clone();
+                    move || {
+                        let (mut draft, mut mode) = (draft, mode);
+                        let original = message.kind.plain_body().unwrap_or_default().to_owned();
+                        draft.set(original.clone());
+                        mode.set(Some(ComposerMode::Edit {
+                            id: message.id.clone(),
+                            original,
+                        }));
+                    }
+                }));
+            }
+            if let Some(text) = message.kind.plain_body().filter(|t| !t.is_empty()) {
+                let text = text.to_owned();
+                items.push(MenuItem::new("Copy text", move || copy_to_clipboard(&text)));
+            }
+            if let (MessageId::Event(event_id), Some(room_id)) = (&message.id, selected.peek().as_ref()) {
+                let link = format!("https://matrix.to/#/{room_id}/{event_id}");
+                items.push(MenuItem::new("Copy message link", move || copy_to_clipboard(&link)));
+            }
+            if message.is_own && can_reply {
+                items.push(
+                    MenuItem::new("Delete message", {
+                        let id = message.id.clone();
+                        move || {
+                            let Some(active) = timeline() else { return };
+                            let id = id.clone();
+                            spawn(async move {
+                                if let Err(err) = active.redact(id).await {
+                                    warn!(%err, "delete failed");
+                                }
+                            });
+                        }
+                    })
+                    .danger(),
+                );
+            }
+            let quick: Rc<dyn Fn(&'static str)> = Rc::new({
+                let react = react.clone();
+                move |key| react(key)
+            });
+            open_menu(&e, items, (!message.is_local_echo).then_some(quick));
+        }
+    };
+
     rsx! {
         div {
             class: "message",
+            oncontextmenu: on_context,
             class: if show_header { "with-header" },
             class: if message.is_local_echo { "pending" },
             class: if message.is_own { "own" },

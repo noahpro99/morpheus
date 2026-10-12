@@ -1,6 +1,7 @@
 use dioxus::prelude::*;
 use morpheus_core::{RoomSummary, Session};
 
+use super::context_menu::{MenuItem, copy_to_clipboard, open_menu};
 use super::profile::open_profile;
 use super::settings::SettingsOpen;
 use super::shell::{Rooms, Scope, Selected, SelectedSpace, rooms_in_scope};
@@ -120,13 +121,43 @@ pub fn RoomList(error: Option<String>) -> Element {
 
 #[component]
 fn RoomRow(room: RoomSummary) -> Element {
+    let session = use_context::<Session>();
     let mut selected = use_context::<Selected>();
     let is_selected = selected().as_ref() == Some(&room.id);
     let id = room.id.clone();
 
+    let on_context = {
+        let room_id = room.id.clone();
+        move |e: Event<MouseData>| {
+            let link = format!("https://matrix.to/#/{room_id}");
+            let leave = {
+                let session = session.clone();
+                let room_id = room_id.clone();
+                move || {
+                    let session = session.clone();
+                    let room_id = room_id.clone();
+                    spawn(async move {
+                        if let Err(err) = session.leave_room(room_id).await {
+                            tracing::warn!(%err, "leaving the room failed");
+                        }
+                    });
+                }
+            };
+            open_menu(
+                &e,
+                vec![
+                    MenuItem::new("Copy link", move || copy_to_clipboard(&link)),
+                    MenuItem::new("Leave room", leave).danger(),
+                ],
+                None,
+            );
+        }
+    };
+
     rsx! {
         button {
             class: "room",
+            oncontextmenu: on_context,
             class: if room.is_dm { "dm" },
             class: if is_selected { "selected" },
             class: if room.unread_messages > 0 { "unread" },

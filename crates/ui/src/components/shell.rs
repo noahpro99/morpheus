@@ -4,6 +4,7 @@ use tracing::error;
 
 use super::{
     composer::{ActiveTimeline, Composer, Draft, Mode},
+    context_menu::{ContextMenu, ContextMenuLayer, MenuState},
     lightbox::{Lightbox, provide_lightbox},
     members::Members,
     profile::{OpenProfile, ProfileModal, ProfileTarget},
@@ -112,6 +113,7 @@ pub fn Shell(session: Session) -> Element {
     let mut verification: ActiveVerification = use_context_provider(|| Signal::new(None));
     let members_open: MembersOpen = use_context_provider(|| Signal::new(MembersShown(true)));
     let mut open_profile: OpenProfile = use_context_provider(|| Signal::new(ProfileTarget::default()));
+    let mut context_menu: ContextMenu = use_context_provider(|| Signal::new(MenuState::default()));
 
     // Incoming verification requests from the user's other devices pop the settings dialog.
     use_future({
@@ -188,7 +190,9 @@ pub fn Shell(session: Session) -> Element {
         } else if e.key() == Key::Escape {
             // Escape closes whichever modal is open, top-most first. A running
             // verification keeps going in the background.
-            if open_profile().0.is_some() {
+            if context_menu().0.is_some() {
+                context_menu.set(MenuState::default());
+            } else if open_profile().0.is_some() {
                 open_profile.set(ProfileTarget::default());
             } else if settings_open() {
                 settings_open.set(false);
@@ -209,6 +213,12 @@ pub fn Shell(session: Session) -> Element {
             class: if side_column == SideColumn::None { "no-side" },
             tabindex: "-1",
             onkeydown: on_key,
+            // Targets open their own menu and stop the event; everything else
+            // gets no native menu at all.
+            oncontextmenu: move |e| {
+                e.prevent_default();
+                context_menu.set(MenuState::default());
+            },
             Rail {}
             RoomList { error: load_error() }
             main { class: "chat",
@@ -237,6 +247,7 @@ pub fn Shell(session: Session) -> Element {
             if let Some(user_id) = open_profile().0 {
                 ProfileModal { user_id }
             }
+            ContextMenuLayer {}
         }
     }
 }
@@ -316,4 +327,29 @@ enum SideColumn {
     Thread,
     Members,
     None,
+}
+
+/// The rail scope a room belongs to: DMs, Rooms, or its top-level space.
+/// Used when something other than the rail opens a room (the quick switcher),
+/// so the sidebar follows instead of bouncing the selection back.
+pub fn scope_for(rooms: &Vector<RoomSummary>, room: &RoomSummary) -> Scope {
+    if room.is_dm {
+        return Scope::Dms;
+    }
+    let mut current = room.parent_spaces.first().cloned();
+    let mut hops = 0;
+    while let Some(space_id) = current {
+        let Some(space) = rooms.iter().find(|r| r.id == space_id) else {
+            return Scope::Rooms;
+        };
+        match space.parent_spaces.first() {
+            None => return Scope::Space(space_id),
+            Some(parent) if hops < 16 => {
+                hops += 1;
+                current = Some(parent.clone());
+            }
+            Some(_) => return Scope::Rooms,
+        }
+    }
+    Scope::Rooms
 }

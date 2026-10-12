@@ -245,6 +245,15 @@ async fn ctrl_k_switches_rooms() {
         0,
         "switcher closes"
     );
+    // #dev lives in the Engineering space: the rail follows, and the room
+    // stays open rather than bouncing back to the Rooms scope.
+    app.wait_for(".rail-item.selected[title=\"Engineering\"]", DEFAULT_WAIT)
+        .await
+        .expect("rail follows the switcher");
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    app.wait_for_text(".chat-header h2", "dev", Duration::from_secs(2))
+        .await
+        .expect("dev still open");
 
     app.shortcut(".composer input", "k", true)
         .await
