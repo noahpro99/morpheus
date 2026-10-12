@@ -4,7 +4,9 @@
 use dioxus::prelude::*;
 use morpheus_core::{History, OwnedRoomId, OwnedUserId, Privacy, Session};
 
-use super::shell::{MembersVersion, RailEntry, Rooms, Scope, SelectedSpace, UiPrefs, go_to, rooms_in_scope};
+use super::shell::{
+    MembersVersion, RailEntry, Rooms, Scope, SelectedSpace, UiPrefs, go_to, rooms_in_scope,
+};
 
 /// Which room dialog is open. Provided by the shell.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -89,7 +91,12 @@ pub fn EditRoomModal(room_id: OwnedRoomId) -> Element {
     let mut dialog = use_context::<OpenRoomDialog>();
     let current = rooms.read().iter().find(|r| r.id == room_id).cloned();
     let mut name = use_signal(|| current.as_ref().map(|r| r.name.clone()).unwrap_or_default());
-    let mut topic = use_signal(|| current.as_ref().and_then(|r| r.topic.clone()).unwrap_or_default());
+    let mut topic = use_signal(|| {
+        current
+            .as_ref()
+            .and_then(|r| r.topic.clone())
+            .unwrap_or_default()
+    });
     let mut busy = use_signal(|| false);
     let mut message = use_signal(|| None::<Result<&'static str, String>>);
     let mut close = move || dialog.set(RoomDialog::None);
@@ -171,7 +178,11 @@ pub fn CreateRoomModal() -> Element {
 
     let space = scope_signal().space_id().cloned();
     let space_name = space.as_ref().and_then(|id| {
-        rooms.read().iter().find(|r| &r.id == id).map(|r| r.name.clone())
+        rooms
+            .read()
+            .iter()
+            .find(|r| &r.id == id)
+            .map(|r| r.name.clone())
     });
     // Categories: spaces nested directly under this one.
     let categories: Vec<(OwnedRoomId, String)> = space
@@ -289,7 +300,13 @@ pub fn PrivacyModal(room_id: OwnedRoomId) -> Element {
             return;
         }
         busy.set(true);
-        let future = session.set_privacy(room_id.clone(), Privacy { public: public(), history: history() });
+        let future = session.set_privacy(
+            room_id.clone(),
+            Privacy {
+                public: public(),
+                history: history(),
+            },
+        );
         spawn(async move {
             match future.await {
                 Ok(()) => message.set(Some(Ok("Saved."))),
@@ -372,7 +389,11 @@ pub fn RoomProfileModal(room_id: OwnedRoomId) -> Element {
     let targets: Vec<OwnedRoomId> = {
         let list = rooms.read();
         let mut ids = vec![room_id.clone()];
-        ids.extend(rooms_in_scope(&list, &Scope::Space(room_id.clone())).into_iter().map(|r| r.id));
+        ids.extend(
+            rooms_in_scope(&list, &Scope::Space(room_id.clone()))
+                .into_iter()
+                .map(|r| r.id),
+        );
         ids
     };
     let save = {
@@ -404,7 +425,11 @@ pub fn RoomProfileModal(room_id: OwnedRoomId) -> Element {
             }
         });
     };
-    let picked = avatar_path().map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
+    let picked = avatar_path().map(|p| {
+        p.file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    });
 
     rsx! {
         div { class: "overlay", onclick: move |_| close(),
@@ -505,8 +530,15 @@ pub fn LeaveSpaceModal(space_id: OwnedRoomId) -> Element {
 
     let (name, children) = {
         let list = rooms.read();
-        let name = list.iter().find(|r| r.id == space_id).map(|r| r.name.clone()).unwrap_or_else(|| "this server".into());
-        let children: Vec<OwnedRoomId> = rooms_in_scope(&list, &Scope::Space(space_id.clone())).into_iter().map(|r| r.id).collect();
+        let name = list
+            .iter()
+            .find(|r| r.id == space_id)
+            .map(|r| r.name.clone())
+            .unwrap_or_else(|| "this server".into());
+        let children: Vec<OwnedRoomId> = rooms_in_scope(&list, &Scope::Space(space_id.clone()))
+            .into_iter()
+            .map(|r| r.id)
+            .collect();
         (name, children)
     };
     let count = children.len();

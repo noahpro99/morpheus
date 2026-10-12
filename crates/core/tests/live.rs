@@ -7,8 +7,8 @@
 use std::time::Duration;
 
 use morpheus_core::{
-    Core, LoginRequest, MessageId, MessageKind, Session, SessionStoreKind, TimelineEntry, Vector, VectorDiff,
-    VerificationHandle, VerificationStep,
+    Core, LoginRequest, MessageId, MessageKind, Session, SessionStoreKind, TimelineEntry, Vector,
+    VectorDiff, VerificationHandle, VerificationStep,
 };
 use tokio::time::timeout;
 
@@ -247,7 +247,8 @@ async fn typing_notifications_propagate_between_users() {
         let hs = env.homeserver.clone();
         let (user, password) = (user.to_owned(), password.to_owned());
         async move {
-            let core = Core::with_session_store(fresh_data_dir(), SessionStoreKind::File).expect("core");
+            let core =
+                Core::with_session_store(fresh_data_dir(), SessionStoreKind::File).expect("core");
             core.login(LoginRequest {
                 homeserver: hs,
                 username: user,
@@ -461,7 +462,8 @@ async fn fully_read_marker_sits_above_first_unread_and_clears_when_caught_up() {
         let hs = env.homeserver.clone();
         let (user, password) = (user.to_owned(), password.to_owned());
         async move {
-            let core = Core::with_session_store(fresh_data_dir(), SessionStoreKind::File).expect("core");
+            let core =
+                Core::with_session_store(fresh_data_dir(), SessionStoreKind::File).expect("core");
             core.login(LoginRequest {
                 homeserver: hs,
                 username: user,
@@ -644,7 +646,8 @@ async fn self_verification_emoji_sas_between_two_devices() {
         .try_init();
 
     let login = |hs: String, user: String, password: String| async move {
-        let core = Core::with_session_store(fresh_data_dir(), SessionStoreKind::File).expect("core");
+        let core =
+            Core::with_session_store(fresh_data_dir(), SessionStoreKind::File).expect("core");
         core.login(LoginRequest {
             homeserver: hs,
             username: user,
@@ -747,7 +750,10 @@ async fn profile_name_avatar_and_status_round_trip() {
     assert_eq!(before.user_id.as_str(), "@carol:localhost");
 
     let name = format!("Carol {}", std::process::id());
-    session.set_display_name(name.clone()).await.expect("set name");
+    session
+        .set_display_name(name.clone())
+        .await
+        .expect("set name");
     session
         .set_status(Some("In a meeting".into()))
         .await
@@ -771,7 +777,10 @@ async fn profile_name_avatar_and_status_round_trip() {
 
     // Clearing the status removes it again; restore the seeded name.
     session.set_status(None).await.expect("clear status");
-    session.set_display_name("carol".into()).await.expect("restore name");
+    session
+        .set_display_name("carol".into())
+        .await
+        .expect("restore name");
     let restored = session.own_profile().await.expect("profile");
     assert_eq!(restored.status, None);
     assert_eq!(restored.name, "carol");
@@ -812,31 +821,60 @@ async fn admin_can_kick_invite_ban_unban_and_change_roles() {
     };
     let carol: morpheus_core::OwnedUserId = "@carol:localhost".parse().expect("user id");
 
-    let perms = session.my_permissions(room_id.clone()).await.expect("perms");
+    let perms = session
+        .my_permissions(room_id.clone())
+        .await
+        .expect("perms");
     assert!(perms.can_kick && perms.can_ban && perms.can_invite && perms.can_change_roles);
 
-    let has_carol = |members: &Vec<morpheus_core::Member>| members.iter().any(|m| m.user_id == carol);
-    assert!(has_carol(&session.members(room_id.clone()).await.expect("members")));
+    let has_carol =
+        |members: &Vec<morpheus_core::Member>| members.iter().any(|m| m.user_id == carol);
+    assert!(has_carol(
+        &session.members(room_id.clone()).await.expect("members")
+    ));
 
     session
-        .set_role(room_id.clone(), carol.clone(), morpheus_core::MemberRole::Moderator)
+        .set_role(
+            room_id.clone(),
+            carol.clone(),
+            morpheus_core::MemberRole::Moderator,
+        )
         .await
         .expect("promote");
     let members = session.members(room_id.clone()).await.expect("members");
     let carol_member = members.iter().find(|m| m.user_id == carol).expect("carol");
     assert_eq!(carol_member.role, morpheus_core::MemberRole::Moderator);
     session
-        .set_role(room_id.clone(), carol.clone(), morpheus_core::MemberRole::Member)
+        .set_role(
+            room_id.clone(),
+            carol.clone(),
+            morpheus_core::MemberRole::Member,
+        )
         .await
         .expect("demote");
 
-    session.kick(room_id.clone(), carol.clone(), Some("test".into())).await.expect("kick");
+    session
+        .kick(room_id.clone(), carol.clone(), Some("test".into()))
+        .await
+        .expect("kick");
     // Inviting back works (she is kicked, not banned)...
-    session.invite(room_id.clone(), carol.clone()).await.expect("invite after kick");
+    session
+        .invite(room_id.clone(), carol.clone())
+        .await
+        .expect("invite after kick");
     // ...and banning then unbanning both succeed.
-    session.ban(room_id.clone(), carol.clone(), None).await.expect("ban");
-    session.unban(room_id.clone(), carol.clone()).await.expect("unban");
-    session.invite(room_id.clone(), carol.clone()).await.expect("invite after unban");
+    session
+        .ban(room_id.clone(), carol.clone(), None)
+        .await
+        .expect("ban");
+    session
+        .unban(room_id.clone(), carol.clone())
+        .await
+        .expect("unban");
+    session
+        .invite(room_id.clone(), carol.clone())
+        .await
+        .expect("invite after unban");
 
     // Blocking is account-wide and reversible.
     session.block(carol.clone(), true).await.expect("block");
@@ -858,9 +896,7 @@ async fn space_create_category_privacy_profile_and_leave() {
         return;
     };
     let _ = tracing_subscriber::fmt()
-        .with_env_filter(
-            std::env::var("RUST_LOG").unwrap_or_else(|_| "morpheus=debug,warn".into()),
-        )
+        .with_env_filter(std::env::var("RUST_LOG").unwrap_or_else(|_| "morpheus=debug,warn".into()))
         .try_init();
     let core = Core::with_session_store(fresh_data_dir(), SessionStoreKind::File).expect("core");
     let session = core
@@ -872,22 +908,45 @@ async fn space_create_category_privacy_profile_and_leave() {
         .await
         .expect("login");
     let t = std::time::Instant::now();
-    let server = session.create_space(format!("live srv {}", std::process::id()), None).await.expect("server");
-    eprintln!("server created in {:?} (before the room list sync)", t.elapsed());
+    let server = session
+        .create_space(format!("live srv {}", std::process::id()), None)
+        .await
+        .expect("server");
+    eprintln!(
+        "server created in {:?} (before the room list sync)",
+        t.elapsed()
+    );
     // Keep the room list alive so sync runs like it does in the app.
     let mut updates = session.room_list().await.expect("room list");
     let mut rooms = Vector::new();
-    drive(&mut rooms, async || updates.next().await, |rooms| !rooms.is_empty()).await;
+    drive(
+        &mut rooms,
+        async || updates.next().await,
+        |rooms| !rooms.is_empty(),
+    )
+    .await;
 
     let t = std::time::Instant::now();
-    let category = session.create_space("live category".into(), Some(server.clone())).await.expect("category");
+    let category = session
+        .create_space("live category".into(), Some(server.clone()))
+        .await
+        .expect("category");
     eprintln!("category created in {:?}", t.elapsed());
     let t = std::time::Instant::now();
-    let room = session.create_room("live chatter".into(), String::new(), Some(category.clone())).await.expect("room");
+    let room = session
+        .create_room("live chatter".into(), String::new(), Some(category.clone()))
+        .await
+        .expect("room");
     eprintln!("room created in {:?}", t.elapsed());
 
     session
-        .set_privacy(server.clone(), morpheus_core::Privacy { public: false, history: morpheus_core::History::Joined })
+        .set_privacy(
+            server.clone(),
+            morpheus_core::Privacy {
+                public: false,
+                history: morpheus_core::History::Joined,
+            },
+        )
         .await
         .expect("privacy");
     let privacy = session.privacy(server.clone()).await.expect("read privacy");
@@ -895,13 +954,23 @@ async fn space_create_category_privacy_profile_and_leave() {
     assert_eq!(privacy.history, morpheus_core::History::Joined);
 
     session
-        .set_room_profile(vec![server.clone(), room.clone()], "Alice (live)".into(), None)
+        .set_room_profile(
+            vec![server.clone(), room.clone()],
+            "Alice (live)".into(),
+            None,
+        )
         .await
         .expect("room profile");
-    let profile = session.room_profile(room.clone()).await.expect("read profile");
+    let profile = session
+        .room_profile(room.clone())
+        .await
+        .expect("read profile");
     assert_eq!(profile.name, "Alice (live)");
 
-    session.leave_space(server, vec![category, room]).await.expect("leave");
+    session
+        .leave_space(server, vec![category, room])
+        .await
+        .expect("leave");
 }
 
 /// Rooms in common are computed from locally known membership, so after the
@@ -923,15 +992,33 @@ async fn mutual_rooms_lists_rooms_shared_with_a_user() {
         .expect("login");
     let mut updates = session.room_list().await.expect("room list");
     let mut rooms = Vector::new();
-    drive(&mut rooms, async || updates.next().await, |rooms| rooms.iter().any(|r| r.name == "general")).await;
-    let general = rooms.iter().find(|r| r.name == "general").expect("general").id.clone();
+    drive(
+        &mut rooms,
+        async || updates.next().await,
+        |rooms| rooms.iter().any(|r| r.name == "general"),
+    )
+    .await;
+    let general = rooms
+        .iter()
+        .find(|r| r.name == "general")
+        .expect("general")
+        .id
+        .clone();
     let members = session.members(general.clone()).await.expect("members");
-    assert!(members.iter().any(|m| m.user_id.as_str() == "@bob:localhost"), "bob is in general");
+    assert!(
+        members
+            .iter()
+            .any(|m| m.user_id.as_str() == "@bob:localhost"),
+        "bob is in general"
+    );
 
     let bob: morpheus_core::OwnedUserId = "@bob:localhost".parse().expect("user id");
     let mutual = session.mutual_rooms(bob).await.expect("mutual");
     eprintln!("mutual rooms with bob: {mutual:?}");
-    assert!(mutual.iter().any(|(id, _)| *id == general), "general is shared with bob");
+    assert!(
+        mutual.iter().any(|(id, _)| *id == general),
+        "general is shared with bob"
+    );
 }
 
 #[tokio::test]
@@ -941,7 +1028,8 @@ async fn invites_name_the_inviter_and_can_be_declined_then_accepted() {
         return;
     };
     let login = |user: &str| {
-        let core = Core::with_session_store(fresh_data_dir(), SessionStoreKind::File).expect("core");
+        let core =
+            Core::with_session_store(fresh_data_dir(), SessionStoreKind::File).expect("core");
         core.login(LoginRequest {
             homeserver: env.homeserver.clone(),
             username: user.into(),
@@ -956,29 +1044,47 @@ async fn invites_name_the_inviter_and_can_be_declined_then_accepted() {
         .await
         .expect("create room");
     let bob_id: morpheus_core::OwnedUserId = "@bob:localhost".parse().expect("user id");
-    alice.invite(room_id.clone(), bob_id.clone()).await.expect("invite");
+    alice
+        .invite(room_id.clone(), bob_id.clone())
+        .await
+        .expect("invite");
 
     let mut rooms = Vector::new();
     let mut updates = bob.room_list().await.expect("room list");
     let pending = |rooms: &Vector<morpheus_core::RoomSummary>| {
-        rooms.iter().any(|r| r.id == room_id && r.invited && r.name == name)
+        rooms
+            .iter()
+            .any(|r| r.id == room_id && r.invited && r.name == name)
     };
     drive(&mut rooms, async || updates.next().await, pending).await;
-    let invite = rooms.iter().find(|r| r.id == room_id).expect("invite listed");
+    let invite = rooms
+        .iter()
+        .find(|r| r.id == room_id)
+        .expect("invite listed");
     assert_eq!(invite.name, name);
     assert_eq!(invite.inviter.as_deref(), Some("alice"), "inviter named");
 
     // Decline: the invite leaves the list.
     bob.leave_room(room_id.clone()).await.expect("decline");
-    drive(&mut rooms, async || updates.next().await, |rooms| !rooms.iter().any(|r| r.id == room_id)).await;
+    drive(
+        &mut rooms,
+        async || updates.next().await,
+        |rooms| !rooms.iter().any(|r| r.id == room_id),
+    )
+    .await;
 
     // Invite again and accept: the entry flips to joined.
-    alice.invite(room_id.clone(), bob_id).await.expect("re-invite");
+    alice
+        .invite(room_id.clone(), bob_id)
+        .await
+        .expect("re-invite");
     drive(&mut rooms, async || updates.next().await, pending).await;
     bob.join_room(room_id.clone()).await.expect("accept");
-    drive(&mut rooms, async || updates.next().await, |rooms| {
-        rooms.iter().any(|r| r.id == room_id && !r.invited)
-    })
+    drive(
+        &mut rooms,
+        async || updates.next().await,
+        |rooms| rooms.iter().any(|r| r.id == room_id && !r.invited),
+    )
     .await;
 }
 
@@ -1003,12 +1109,29 @@ async fn keyring_store_round_trips_a_session() {
         })
         .await
         .expect("login");
-    assert!(!dir.join("session.enc").exists(), "keyring store writes no file");
+    assert!(
+        !dir.join("session.enc").exists(),
+        "keyring store writes no file"
+    );
     drop(session);
     let core = Core::with_session_store(&dir, SessionStoreKind::Keyring).expect("core again");
-    let restored = core.restore_session().await.expect("restore").expect("a stored session");
-    assert_eq!(restored.user_id().map(|u| u.to_string()).as_deref(), Some("@alice:localhost"));
+    let restored = core
+        .restore_session()
+        .await
+        .expect("restore")
+        .expect("a stored session");
+    assert_eq!(
+        restored.user_id().map(|u| u.to_string()).as_deref(),
+        Some("@alice:localhost")
+    );
     restored.logout().await.expect("logout");
-    let core = Core::with_session_store(&dir, SessionStoreKind::Keyring).expect("core after logout");
-    assert!(core.restore_session().await.expect("restore after logout").is_none(), "entry cleared");
+    let core =
+        Core::with_session_store(&dir, SessionStoreKind::Keyring).expect("core after logout");
+    assert!(
+        core.restore_session()
+            .await
+            .expect("restore after logout")
+            .is_none(),
+        "entry cleared"
+    );
 }

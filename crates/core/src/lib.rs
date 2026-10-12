@@ -16,9 +16,9 @@ mod core;
 mod error;
 mod media;
 mod members;
+mod messages;
 mod notifications;
 mod people;
-mod messages;
 mod profile;
 mod recovery;
 mod rooms;
@@ -37,14 +37,14 @@ pub use error::{Error, Result};
 pub type CoreFuture<T> = futures_util::future::BoxFuture<'static, Result<T>>;
 pub use media::{Media, MediaRef};
 pub use members::{Member, MemberPermissions, MemberRole};
-pub use notifications::{Notification, NotificationUpdates};
 pub use messages::PinnedMessage;
+pub use notifications::{Notification, NotificationUpdates};
 pub use profile::Profile;
 pub use recovery::{EncryptionStatus, RecoveryAvailability};
 pub use rooms::{NotifyMode, RoomListUpdates, RoomSummary};
-pub use spaces::{History, Privacy, RoomProfile};
 pub use session::{LoginFlows, LoginRequest, Session};
 pub use session_store::SessionStoreKind;
+pub use spaces::{History, Privacy, RoomProfile};
 pub use timeline::{
     Message, MessageId, MessageKind, OpenTimeline, Reaction, ReplyPreview, ThreadSummary,
     TimelineEntry, TimelineHandle, TimelineUpdates,

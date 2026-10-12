@@ -297,6 +297,15 @@ for pair in "alice:$ALICE" "bob:$BOB" "carol:$CAROL"; do
 done
 echo "  = display names reset to alice, bob, carol"
 
+# Rooms purged by an earlier run leave their invites dangling; decline them all.
+for pair in "alice:$ALICE" "bob:$BOB" "carol:$CAROL"; do
+  u="${pair%%:*}"; tok="${pair#*:}"
+  for room_id in $(api "$tok" GET "/_matrix/client/v3/sync?timeout=0&filter=%7B%22room%22%3A%7B%22timeline%22%3A%7B%22limit%22%3A0%7D%7D%7D" | jq -r '.rooms.invite // {} | keys[]'); do
+    api "$tok" POST "/_matrix/client/v3/rooms/$room_id/leave" '{}' >/dev/null 2>&1 || true
+  done
+done
+echo "  = pending invites declined"
+
 if [[ ! -f "$HS_DIR/.seeded-firehose" ]]; then
   echo "firehose:"
   FIREHOSE=$(ensure_room firehose "firehose" "600 messages for performance tests")

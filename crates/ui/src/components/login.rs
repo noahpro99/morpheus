@@ -1,5 +1,5 @@
-use dioxus::prelude::*;
 use crate::icons::Logo;
+use dioxus::prelude::*;
 use morpheus_core::{Core, LoginFlows, LoginRequest, Session};
 
 use crate::AppConfig;

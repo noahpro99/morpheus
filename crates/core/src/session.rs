@@ -178,7 +178,11 @@ async fn persist_and_start(
     Session::start(core, client).await
 }
 
-async fn build_client(data_dir: &Path, homeserver: &str, passphrase: Option<&str>) -> Result<Client> {
+async fn build_client(
+    data_dir: &Path,
+    homeserver: &str,
+    passphrase: Option<&str>,
+) -> Result<Client> {
     Ok(Client::builder()
         // Accepts "matrix.org" or a full URL and follows `.well-known`.
         .server_name_or_homeserver_url(homeserver)

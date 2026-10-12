@@ -3,8 +3,8 @@
 
 use std::rc::Rc;
 
-use dioxus::prelude::*;
 use super::toast::report;
+use dioxus::prelude::*;
 use morpheus_core::{
     Device, EncryptionStatus, RecoveryAvailability, Session, VerificationActions,
     VerificationHandle, VerificationStep,

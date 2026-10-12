@@ -1,11 +1,13 @@
-use dioxus::prelude::*;
 use super::toast::report;
+use dioxus::prelude::*;
 use morpheus_core::{Notification, OwnedRoomId, RoomSummary, Session, Vector};
 
 use super::{
     composer::{ActiveTimeline, Composer, Draft, Mode},
     context_menu::{ContextMenu, ContextMenuLayer, MenuState},
-    hotkeys::{Drops, FILE_LISTENER_JS, FileDrops, Hotkey, HotkeyRequest, LISTENER_JS, parse_dropped},
+    hotkeys::{
+        Drops, FILE_LISTENER_JS, FileDrops, Hotkey, HotkeyRequest, LISTENER_JS, parse_dropped,
+    },
     invites::InviteCard,
     lightbox::{EscapeTick, Escapes, Lightbox, LightboxOpen, LightboxShown, provide_lightbox},
     members::Members,
@@ -97,7 +99,11 @@ impl Prefs {
                             return space.parse().ok().map(RailEntry::Space);
                         }
                         let id = item.get("folder")?.as_str()?.to_owned();
-                        let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("Folder").to_owned();
+                        let name = item
+                            .get("name")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("Folder")
+                            .to_owned();
                         let spaces = item
                             .get("spaces")
                             .and_then(|v| v.as_array())
@@ -109,7 +115,10 @@ impl Prefs {
             })
             .unwrap_or_default();
         Self {
-            hide_muted: value.get("hide_muted").and_then(|v| v.as_bool()).unwrap_or(false),
+            hide_muted: value
+                .get("hide_muted")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
             rail,
         }
     }
@@ -120,7 +129,9 @@ impl Prefs {
             .iter()
             .map(|entry| match entry {
                 RailEntry::Space(id) => serde_json::json!({ "space": id }),
-                RailEntry::Folder { id, name, spaces } => serde_json::json!({ "folder": id, "name": name, "spaces": spaces }),
+                RailEntry::Folder { id, name, spaces } => {
+                    serde_json::json!({ "folder": id, "name": name, "spaces": spaces })
+                }
             })
             .collect();
         serde_json::json!({ "hide_muted": self.hide_muted, "rail": rail })
@@ -128,13 +139,15 @@ impl Prefs {
 
     /// Remove a space from wherever it sits (dropping folders left empty).
     pub fn detach(&mut self, space: &OwnedRoomId) {
-        self.rail.retain(|e| !matches!(e, RailEntry::Space(id) if id == space));
+        self.rail
+            .retain(|e| !matches!(e, RailEntry::Space(id) if id == space));
         for entry in &mut self.rail {
             if let RailEntry::Folder { spaces, .. } = entry {
                 spaces.retain(|id| id != space);
             }
         }
-        self.rail.retain(|e| !matches!(e, RailEntry::Folder { spaces, .. } if spaces.is_empty()));
+        self.rail
+            .retain(|e| !matches!(e, RailEntry::Folder { spaces, .. } if spaces.is_empty()));
     }
 
     pub fn folder_mut(&mut self, folder_id: &str) -> Option<&mut Vec<OwnedRoomId>> {
@@ -146,8 +159,18 @@ impl Prefs {
 
     /// A fresh folder id (not a room id, just unique within the layout).
     pub fn new_folder_id(&self) -> String {
-        let n = self.rail.iter().filter(|e| matches!(e, RailEntry::Folder { .. })).count();
-        format!("folder-{}-{n}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0))
+        let n = self
+            .rail
+            .iter()
+            .filter(|e| matches!(e, RailEntry::Folder { .. }))
+            .count();
+        format!(
+            "folder-{}-{n}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis())
+                .unwrap_or(0)
+        )
     }
 }
 pub type UiPrefs = Signal<Prefs>;
@@ -200,7 +223,9 @@ pub fn rooms_in_scope(rooms: &Vector<RoomSummary>, scope: &Scope) -> Vec<RoomSum
         Scope::Rooms => {
             return rooms
                 .iter()
-                .filter(|room| !room.is_space && !room.is_dm && !room.invited && room.parent_spaces.is_empty())
+                .filter(|room| {
+                    !room.is_space && !room.is_dm && !room.invited && room.parent_spaces.is_empty()
+                })
                 .cloned()
                 .collect();
         }
@@ -226,7 +251,9 @@ pub fn rooms_in_scope(rooms: &Vector<RoomSummary>, scope: &Scope) -> Vec<RoomSum
 
     rooms
         .iter()
-        .filter(|room| !room.is_space && !room.invited && room.parent_spaces.iter().any(|p| scope.contains(p)))
+        .filter(|room| {
+            !room.is_space && !room.invited && room.parent_spaces.iter().any(|p| scope.contains(p))
+        })
         .cloned()
         .collect()
 }
@@ -244,11 +271,13 @@ pub fn Shell(session: Session) -> Element {
     let mut settings_open: SettingsOpen = use_context_provider(|| Signal::new(false));
     let mut verification: ActiveVerification = use_context_provider(|| Signal::new(None));
     let mut members_open: MembersOpen = use_context_provider(|| Signal::new(MembersShown(true)));
-    let mut open_profile: OpenProfile = use_context_provider(|| Signal::new(ProfileTarget::default()));
+    let mut open_profile: OpenProfile =
+        use_context_provider(|| Signal::new(ProfileTarget::default()));
     let mut context_menu: ContextMenu = use_context_provider(|| Signal::new(MenuState::default()));
     let mut editor: ProfileEditor = use_context_provider(|| Signal::new(Editor::None));
     let _mention: MentionRequest = use_context_provider(|| Signal::new(Mention::default()));
-    let mut message_dialog: OpenMessageDialog = use_context_provider(|| Signal::new(MessageDialog::None));
+    let mut message_dialog: OpenMessageDialog =
+        use_context_provider(|| Signal::new(MessageDialog::None));
     let mut room_dialog: OpenRoomDialog = use_context_provider(|| Signal::new(RoomDialog::None));
     let mut top_panel: OpenTopPanel = use_context_provider(|| Signal::new(TopPanel::None));
     let nav: NavHistory = use_context_provider(|| Signal::new(Nav::default()));
@@ -260,7 +289,8 @@ pub fn Shell(session: Session) -> Element {
     // Narrow (phone) layout: the page reports its width; one pane shows at a time.
     let mut narrow: NarrowWindow = use_context_provider(|| Signal::new(Narrow::default()));
     let mut chat_open: ChatOpen = use_context_provider(|| Signal::new(ChatInFront::default()));
-    let _members_version: MembersVersion = use_context_provider(|| Signal::new(MembersStamp::default()));
+    let _members_version: MembersVersion =
+        use_context_provider(|| Signal::new(MembersStamp::default()));
     // The platform's notifier skips the room on screen; tell it which that is.
     let open_room = use_context::<crate::AppConfig>().open_room;
     use_effect(move || {
@@ -357,10 +387,12 @@ pub fn Shell(session: Session) -> Element {
         // A room we just created (or a DM just opened) is selected before the
         // list has it; leave that alone rather than bouncing elsewhere.
         // Invites show in every scope, so an open invite stays put too.
-        let unknown = selected
-            .peek()
-            .as_ref()
-            .is_some_and(|id| !rooms.read().iter().any(|room| &room.id == id && !room.invited));
+        let unknown = selected.peek().as_ref().is_some_and(|id| {
+            !rooms
+                .read()
+                .iter()
+                .any(|room| &room.id == id && !room.invited)
+        });
         if unknown {
             return;
         }
@@ -440,23 +472,35 @@ pub fn Shell(session: Session) -> Element {
             }
             go_to(room.id.clone());
         };
-        let step = move |list: &[RoomSummary], step: isize, unread_only: bool| -> Option<RoomSummary> {
-            let candidates: Vec<&RoomSummary> = list
-                .iter()
-                .filter(|r| !unread_only || r.unread_messages > 0 || r.highlight_count > 0 || r.marked_unread)
-                .collect();
-            if candidates.is_empty() {
-                return None;
-            }
-            let current = selected.peek().clone();
-            let pos = list.iter().position(|r| Some(&r.id) == current.as_ref());
-            let next = match (pos, step.is_positive()) {
-                (Some(i), true) => candidates.iter().position(|r| list.iter().position(|x| x.id == r.id) > Some(i)).unwrap_or(0),
-                (Some(i), false) => candidates.iter().rposition(|r| list.iter().position(|x| x.id == r.id) < Some(i)).unwrap_or(candidates.len() - 1),
-                (None, _) => 0,
+        let step =
+            move |list: &[RoomSummary], step: isize, unread_only: bool| -> Option<RoomSummary> {
+                let candidates: Vec<&RoomSummary> = list
+                    .iter()
+                    .filter(|r| {
+                        !unread_only
+                            || r.unread_messages > 0
+                            || r.highlight_count > 0
+                            || r.marked_unread
+                    })
+                    .collect();
+                if candidates.is_empty() {
+                    return None;
+                }
+                let current = selected.peek().clone();
+                let pos = list.iter().position(|r| Some(&r.id) == current.as_ref());
+                let next = match (pos, step.is_positive()) {
+                    (Some(i), true) => candidates
+                        .iter()
+                        .position(|r| list.iter().position(|x| x.id == r.id) > Some(i))
+                        .unwrap_or(0),
+                    (Some(i), false) => candidates
+                        .iter()
+                        .rposition(|r| list.iter().position(|x| x.id == r.id) < Some(i))
+                        .unwrap_or(candidates.len() - 1),
+                    (None, _) => 0,
+                };
+                Some(candidates[next].clone())
             };
-            Some(candidates[next].clone())
-        };
         let scopes = move || {
             let mut all = vec![Scope::Dms, Scope::Rooms];
             all.extend(
@@ -479,8 +523,16 @@ pub fn Shell(session: Session) -> Element {
                 }
             }
             "switcher" => switcher_open.toggle(),
-            "shortcuts" => top_panel.set(if top_panel() == TopPanel::Help { TopPanel::None } else { TopPanel::Help }),
-            "inbox" => top_panel.set(if top_panel() == TopPanel::Inbox { TopPanel::None } else { TopPanel::Inbox }),
+            "shortcuts" => top_panel.set(if top_panel() == TopPanel::Help {
+                TopPanel::None
+            } else {
+                TopPanel::Help
+            }),
+            "inbox" => top_panel.set(if top_panel() == TopPanel::Inbox {
+                TopPanel::None
+            } else {
+                TopPanel::Inbox
+            }),
             "members" => members_open.with_mut(|m| m.0 = !m.0),
             "pins" => message_dialog.set(MessageDialog::Pinned),
             "settings" => settings_open.set(true),
@@ -491,14 +543,25 @@ pub fn Shell(session: Session) -> Element {
             "next_room" | "prev_room" | "next_unread" | "prev_unread" => {
                 let list = in_scope();
                 let forward = name.starts_with("next");
-                if let Some(room) = step(&list, if forward { 1 } else { -1 }, name.ends_with("unread")) {
+                if let Some(room) = step(
+                    &list,
+                    if forward { 1 } else { -1 },
+                    name.ends_with("unread"),
+                ) {
                     open(&room);
                 }
             }
             "next_scope" | "prev_scope" => {
                 let all = scopes();
-                let current = all.iter().position(|s| *s == *selected_space.peek()).unwrap_or(0);
-                let next = if name == "next_scope" { (current + 1) % all.len() } else { (current + all.len() - 1) % all.len() };
+                let current = all
+                    .iter()
+                    .position(|s| *s == *selected_space.peek())
+                    .unwrap_or(0);
+                let next = if name == "next_scope" {
+                    (current + 1) % all.len()
+                } else {
+                    (current + all.len() - 1) % all.len()
+                };
                 selected_space.set(all[next].clone());
             }
             "mark_scope_read" => {
@@ -525,6 +588,8 @@ pub fn Shell(session: Session) -> Element {
                         Some(file) => drops.with_mut(|d| d.0.push(file)),
                         None => tracing::warn!("ignoring an unreadable dropped file"),
                     }
+                } else if let Some(message) = name.strip_prefix("jserr:") {
+                    tracing::error!(%message, "javascript error in the page");
                 } else if let Some(flag) = name.strip_prefix("narrow:") {
                     let is_narrow = flag == "1";
                     if is_narrow != narrow.peek().0 {

@@ -57,7 +57,10 @@ impl Session {
         self.core.run(async move {
             let (tx, rx) = mpsc::unbounded_channel();
             let since = MilliSecondsSinceUnixEpoch::now();
-            let cutoff = since.0.checked_sub(UInt::from(STALE_AFTER_MS as u32)).unwrap_or(since.0);
+            let cutoff = since
+                .0
+                .checked_sub(UInt::from(STALE_AFTER_MS as u32))
+                .unwrap_or(since.0);
 
             // The handler is dropped with the client; a dropped consumer just
             // makes sends fail, which is fine.

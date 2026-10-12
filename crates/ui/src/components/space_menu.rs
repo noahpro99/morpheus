@@ -1,8 +1,8 @@
 //! The server menu: what clicking a space's name or right-clicking its rail
 //! badge offers. Discord's list, mapped onto Matrix spaces.
 
-use dioxus::prelude::*;
 use super::toast::report;
+use dioxus::prelude::*;
 use morpheus_core::{NotifyMode, RoomSummary, Session};
 
 use super::context_menu::{MenuItem, copy_to_clipboard};
@@ -36,21 +36,39 @@ pub fn space_menu(session: &Session, rooms: Rooms, space: &RoomSummary) -> Vec<M
             }
         }
     }));
-    items.push(MenuItem::new("Invite to server", {
-        let space_id = space_id.clone();
-        move || consume_context::<OpenRoomDialog>().set(RoomDialog::Invite(space_id.clone()))
-    }).icon(crate::icons::USER_PLUS));
     items.push(
-        MenuItem::new(if all_muted { "Unmute server" } else { "Mute server" }, {
-            let (session, ids) = (session.clone(), child_ids.clone());
-            let mode = if all_muted { NotifyMode::AllMessages } else { NotifyMode::Mute };
-            move || {
-                for id in ids.clone() {
-                    run("notification mode", session.set_notify_mode(id, mode));
-                }
-            }
+        MenuItem::new("Invite to server", {
+            let space_id = space_id.clone();
+            move || consume_context::<OpenRoomDialog>().set(RoomDialog::Invite(space_id.clone()))
         })
-        .icon(if all_muted { crate::icons::BELL } else { crate::icons::BELL_OFF }),
+        .icon(crate::icons::USER_PLUS),
+    );
+    items.push(
+        MenuItem::new(
+            if all_muted {
+                "Unmute server"
+            } else {
+                "Mute server"
+            },
+            {
+                let (session, ids) = (session.clone(), child_ids.clone());
+                let mode = if all_muted {
+                    NotifyMode::AllMessages
+                } else {
+                    NotifyMode::Mute
+                };
+                move || {
+                    for id in ids.clone() {
+                        run("notification mode", session.set_notify_mode(id, mode));
+                    }
+                }
+            },
+        )
+        .icon(if all_muted {
+            crate::icons::BELL
+        } else {
+            crate::icons::BELL_OFF
+        }),
     );
     let modes = [
         (NotifyMode::AllMessages, "All messages"),
@@ -82,29 +100,49 @@ pub fn space_menu(session: &Session, rooms: Rooms, space: &RoomSummary) -> Vec<M
         .checked(hide_muted)
         .icon(crate::icons::EYE_OFF),
     );
-    items.push(MenuItem::new("Server settings", {
-        let space_id = space_id.clone();
-        move || consume_context::<OpenRoomDialog>().set(RoomDialog::Edit(space_id.clone()))
-    }).icon(crate::icons::SETTINGS));
-    items.push(MenuItem::new("Privacy settings", {
-        let space_id = space_id.clone();
-        move || consume_context::<OpenRoomDialog>().set(RoomDialog::Privacy(space_id.clone()))
-    }).icon(crate::icons::LOCK));
-    items.push(MenuItem::new("Edit per-server profile", {
-        let space_id = space_id.clone();
-        move || consume_context::<OpenRoomDialog>().set(RoomDialog::RoomProfile(space_id.clone()))
-    }).icon(crate::icons::USER_COG));
-    items.push(MenuItem::new("Create channel", {
-        let space_id = space_id.clone();
-        move || {
-            consume_context::<SelectedSpace>().set(Scope::Space(space_id.clone()));
-            consume_context::<OpenRoomDialog>().set(RoomDialog::Create);
-        }
-    }).icon(crate::icons::PLUS));
-    items.push(MenuItem::new("Create category", {
-        let space_id = space_id.clone();
-        move || consume_context::<OpenRoomDialog>().set(RoomDialog::CreateSpace(Some(space_id.clone())))
-    }).icon(crate::icons::FOLDER_PLUS));
+    items.push(
+        MenuItem::new("Server settings", {
+            let space_id = space_id.clone();
+            move || consume_context::<OpenRoomDialog>().set(RoomDialog::Edit(space_id.clone()))
+        })
+        .icon(crate::icons::SETTINGS),
+    );
+    items.push(
+        MenuItem::new("Privacy settings", {
+            let space_id = space_id.clone();
+            move || consume_context::<OpenRoomDialog>().set(RoomDialog::Privacy(space_id.clone()))
+        })
+        .icon(crate::icons::LOCK),
+    );
+    items.push(
+        MenuItem::new("Edit per-server profile", {
+            let space_id = space_id.clone();
+            move || {
+                consume_context::<OpenRoomDialog>().set(RoomDialog::RoomProfile(space_id.clone()))
+            }
+        })
+        .icon(crate::icons::USER_COG),
+    );
+    items.push(
+        MenuItem::new("Create channel", {
+            let space_id = space_id.clone();
+            move || {
+                consume_context::<SelectedSpace>().set(Scope::Space(space_id.clone()));
+                consume_context::<OpenRoomDialog>().set(RoomDialog::Create);
+            }
+        })
+        .icon(crate::icons::PLUS),
+    );
+    items.push(
+        MenuItem::new("Create category", {
+            let space_id = space_id.clone();
+            move || {
+                consume_context::<OpenRoomDialog>()
+                    .set(RoomDialog::CreateSpace(Some(space_id.clone())))
+            }
+        })
+        .icon(crate::icons::FOLDER_PLUS),
+    );
     // Move to a folder (or out of one).
     {
         let layout = prefs.peek().clone();
@@ -112,12 +150,15 @@ pub fn space_menu(session: &Session, rooms: Rooms, space: &RoomSummary) -> Vec<M
             .rail
             .iter()
             .filter_map(|e| match e {
-                RailEntry::Folder { id, name, spaces } => Some((id.clone(), name.clone(), spaces.contains(&space_id))),
+                RailEntry::Folder { id, name, spaces } => {
+                    Some((id.clone(), name.clone(), spaces.contains(&space_id)))
+                }
                 _ => None,
             })
             .map(|(folder_id, name, inside)| {
                 MenuItem::new(name, {
-                    let (session, space_id, folder_id) = (session.clone(), space_id.clone(), folder_id.clone());
+                    let (session, space_id, folder_id) =
+                        (session.clone(), space_id.clone(), folder_id.clone());
                     move || {
                         prefs.with_mut(|p| {
                             p.detach(&space_id);
@@ -138,7 +179,11 @@ pub fn space_menu(session: &Session, rooms: Rooms, space: &RoomSummary) -> Vec<M
                 move || {
                     prefs.with_mut(|p| {
                         p.detach(&space_id);
-                        let folder = RailEntry::Folder { id: p.new_folder_id(), name: "New folder".into(), spaces: vec![space_id.clone()] };
+                        let folder = RailEntry::Folder {
+                            id: p.new_folder_id(),
+                            name: "New folder".into(),
+                            spaces: vec![space_id.clone()],
+                        };
                         p.rail.push(folder);
                     });
                     super::rail::save_prefs(&session, &prefs.peek());
@@ -164,24 +209,29 @@ pub fn space_menu(session: &Session, rooms: Rooms, space: &RoomSummary) -> Vec<M
     items.push(
         MenuItem::new("Leave server", {
             let space_id = space_id.clone();
-            move || consume_context::<OpenRoomDialog>().set(RoomDialog::LeaveSpace(space_id.clone()))
+            move || {
+                consume_context::<OpenRoomDialog>().set(RoomDialog::LeaveSpace(space_id.clone()))
+            }
         })
         .danger(),
     );
-    items.push(MenuItem::submenu(
-        "Copy server info",
-        vec![
-            MenuItem::new("Copy server ID", {
-                let id = space_id.to_string();
-                move || copy_to_clipboard(&id)
-            })
-            .icon(crate::icons::HASH),
-            MenuItem::new("Copy invite link", {
-                let link = format!("https://matrix.to/#/{space_id}");
-                move || copy_to_clipboard(&link)
-            })
-            .icon(crate::icons::LINK),
-        ],
-    ).icon(crate::icons::INFO));
+    items.push(
+        MenuItem::submenu(
+            "Copy server info",
+            vec![
+                MenuItem::new("Copy server ID", {
+                    let id = space_id.to_string();
+                    move || copy_to_clipboard(&id)
+                })
+                .icon(crate::icons::HASH),
+                MenuItem::new("Copy invite link", {
+                    let link = format!("https://matrix.to/#/{space_id}");
+                    move || copy_to_clipboard(&link)
+                })
+                .icon(crate::icons::LINK),
+            ],
+        )
+        .icon(crate::icons::INFO),
+    );
     items
 }

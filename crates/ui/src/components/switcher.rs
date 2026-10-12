@@ -63,7 +63,9 @@ pub fn QuickSwitcher(open: Signal<bool>) -> Element {
             .read()
             .iter()
             .filter(|room| {
-                !room.is_space && !room.invited && (needle.is_empty() || room.name.to_lowercase().contains(&needle))
+                !room.is_space
+                    && !room.invited
+                    && (needle.is_empty() || room.name.to_lowercase().contains(&needle))
             })
             .take(8)
             .cloned()
@@ -72,7 +74,9 @@ pub fn QuickSwitcher(open: Signal<bool>) -> Element {
         list.extend(
             Action::ALL
                 .into_iter()
-                .filter(|action| needle.is_empty() || action.label().to_lowercase().contains(&needle))
+                .filter(|action| {
+                    needle.is_empty() || action.label().to_lowercase().contains(&needle)
+                })
                 .map(Entry::Action),
         );
         list

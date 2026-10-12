@@ -3,12 +3,14 @@
 //! (rooms with unread or mentions), and window controls when the platform
 //! provides them.
 
-use dioxus::prelude::*;
 use super::toast::report;
+use dioxus::prelude::*;
 use morpheus_core::{OwnedRoomId, RoomSummary, Session};
 
 use super::invites::InboxInvites;
-use super::shell::{NavHistory, NoticeLog, Rooms, Scope, Selected, SelectedSpace, go_to, scope_for};
+use super::shell::{
+    NavHistory, NoticeLog, Rooms, Scope, Selected, SelectedSpace, go_to, scope_for,
+};
 use crate::WindowControls;
 use crate::icons::{CHEVRON_LEFT, CHEVRON_RIGHT, CIRCLE_HELP, INBOX, Icon, Logo, MINUS, SQUARE, X};
 
@@ -78,13 +80,24 @@ pub fn TitleBar() -> Element {
     let unread = rooms
         .read()
         .iter()
-        .filter(|r| !r.is_space && !r.invited && (r.unread_messages > 0 || r.highlight_count > 0 || r.marked_unread))
+        .filter(|r| {
+            !r.is_space
+                && !r.invited
+                && (r.unread_messages > 0 || r.highlight_count > 0 || r.marked_unread)
+        })
         .count();
     // For tests and debugging: the visited rooms by name.
     let history_names = nav()
         .entries
         .iter()
-        .map(|id| rooms.read().iter().find(|r| &r.id == id).map(|r| r.name.clone()).unwrap_or_else(|| "?".into()))
+        .map(|id| {
+            rooms
+                .read()
+                .iter()
+                .find(|r| &r.id == id)
+                .map(|r| r.name.clone())
+                .unwrap_or_else(|| "?".into())
+        })
         .collect::<Vec<_>>()
         .join(",");
 
@@ -99,7 +112,9 @@ pub fn TitleBar() -> Element {
                 _ => None,
             }
         };
-        let Some((index, room_id)) = target else { return };
+        let Some((index, room_id)) = target else {
+            return;
+        };
         nav.with_mut(|n| {
             n.index = index;
         });
@@ -195,10 +210,18 @@ pub fn InboxPanel() -> Element {
     let mut items: Vec<_> = rooms
         .read()
         .iter()
-        .filter(|r| !r.is_space && !r.invited && (r.unread_messages > 0 || r.highlight_count > 0 || r.marked_unread))
+        .filter(|r| {
+            !r.is_space
+                && !r.invited
+                && (r.unread_messages > 0 || r.highlight_count > 0 || r.marked_unread)
+        })
         .cloned()
         .collect();
-    items.sort_by(|a, b| b.highlight_count.cmp(&a.highlight_count).then_with(|| a.name.cmp(&b.name)));
+    items.sort_by(|a, b| {
+        b.highlight_count
+            .cmp(&a.highlight_count)
+            .then_with(|| a.name.cmp(&b.name))
+    });
 
     let mark_all = {
         let session = session.clone();
@@ -318,7 +341,9 @@ pub fn nav_jump(
             _ => None,
         }
     };
-    let Some((index, room_id)) = target else { return };
+    let Some((index, room_id)) = target else {
+        return;
+    };
     nav.with_mut(|n| n.index = index);
     let room_scope = rooms
         .read()
@@ -337,7 +362,14 @@ pub fn nav_jump(
 #[component]
 fn InboxMentions(on_open: Callback<OwnedRoomId>) -> Element {
     let notices = use_context::<NoticeLog>();
-    let mentions: Vec<_> = notices().0.iter().rev().filter(|n| n.is_mention).take(10).cloned().collect();
+    let mentions: Vec<_> = notices()
+        .0
+        .iter()
+        .rev()
+        .filter(|n| n.is_mention)
+        .take(10)
+        .cloned()
+        .collect();
     if mentions.is_empty() {
         return rsx! {};
     }

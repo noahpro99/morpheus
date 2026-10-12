@@ -69,7 +69,11 @@ fn main() {
         })
         .unwrap_or((1280.0, 800.0));
     let window = WindowBuilder::new()
-        .with_title(if under_test { "Morpheus (test)" } else { "Morpheus" })
+        .with_title(if under_test {
+            "Morpheus (test)"
+        } else {
+            "Morpheus"
+        })
         .with_focused(!under_test)
         // The shell draws its own Discord-style bar; see `DesktopRoot`.
         .with_decorations(false)
@@ -177,7 +181,10 @@ fn notifier(session: Session, focus: Focus, open_room: OpenRoom) {
     std::thread::Builder::new()
         .name("morpheus-notifier".into())
         .spawn(move || {
-            let runtime = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
+            let runtime = match tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            {
                 Ok(runtime) => runtime,
                 Err(err) => {
                     tracing::warn!(%err, "notifier runtime failed");
@@ -194,12 +201,18 @@ fn notifier(session: Session, focus: Focus, open_room: OpenRoom) {
                 };
                 while let Some(notice) = updates.next().await {
                     let looking = focus.0.load(Ordering::Relaxed)
-                        && open_room.lock().ok().is_some_and(|room| room.as_ref() == Some(&notice.room_id));
+                        && open_room
+                            .lock()
+                            .ok()
+                            .is_some_and(|room| room.as_ref() == Some(&notice.room_id));
                     if looking {
                         continue;
                     }
                     let title = if notice.is_mention {
-                        format!("{} mentioned you in {}", notice.sender_name, notice.room_name)
+                        format!(
+                            "{} mentioned you in {}",
+                            notice.sender_name, notice.room_name
+                        )
                     } else {
                         format!("{} in {}", notice.sender_name, notice.room_name)
                     };
@@ -234,7 +247,10 @@ fn notify(title: String, body: String) {
 /// bridge's brings a hidden window back, the way a tray click does. The
 /// hidden webview cannot take that request through the bridge itself.
 fn reopen_on_control_port(window: Arc<dioxus::desktop::tao::window::Window>) {
-    let Some(port) = std::env::var("MORPHEUS_E2E_PORT").ok().and_then(|p| p.parse::<u16>().ok()) else {
+    let Some(port) = std::env::var("MORPHEUS_E2E_PORT")
+        .ok()
+        .and_then(|p| p.parse::<u16>().ok())
+    else {
         return;
     };
     let listener = match std::net::TcpListener::bind(("127.0.0.1", port + 1)) {
@@ -289,13 +305,18 @@ fn install_tray() {
 /// The logo rendered to 64x64 RGBA (`assets/tray.png`, made with
 /// `rsvg-convert` from `crates/ui/assets/logo.svg`).
 fn tray_image() -> Result<TrayImage, String> {
-    let decoder = png::Decoder::new(std::io::Cursor::new(include_bytes!("../assets/tray.png").as_slice()));
+    let decoder = png::Decoder::new(std::io::Cursor::new(
+        include_bytes!("../assets/tray.png").as_slice(),
+    ));
     let mut reader = decoder.read_info().map_err(|e| e.to_string())?;
     let mut buf = vec![0; reader.output_buffer_size()];
     let info = reader.next_frame(&mut buf).map_err(|e| e.to_string())?;
     let rgba = match info.color_type {
         png::ColorType::Rgba => buf[..info.buffer_size()].to_vec(),
-        png::ColorType::Rgb => buf[..info.buffer_size()].chunks(3).flat_map(|p| [p[0], p[1], p[2], 255]).collect(),
+        png::ColorType::Rgb => buf[..info.buffer_size()]
+            .chunks(3)
+            .flat_map(|p| [p[0], p[1], p[2], 255])
+            .collect(),
         other => return Err(format!("unsupported tray png colour type {other:?}")),
     };
     TrayImage::from_rgba(rgba, info.width, info.height).map_err(|e| e.to_string())

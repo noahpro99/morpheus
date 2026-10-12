@@ -1,7 +1,7 @@
 use std::{cell::RefCell, path::PathBuf, rc::Rc, time::Duration};
 
-use dioxus::prelude::*;
 use super::toast::report;
+use dioxus::prelude::*;
 use morpheus_core::{
     MediaRef, Message, MessageId, MessageKind, OpenTimeline, OwnedEventId, OwnedRoomId, Reaction,
     ReplyPreview, Session, ThreadSummary, TimelineEntry, TimelineHandle, Vector,
@@ -11,10 +11,10 @@ use super::{
     composer::{ActiveTimeline, ComposerMode, Draft, Mode},
     context_menu::{MenuItem, copy_to_clipboard, open_menu},
     hotkeys::{Hotkey, HotkeyRequest},
+    lightbox::{LightboxImage, LightboxImages, LightboxIndex},
     message_dialogs::{MessageDialog, OpenMessageDialog, Pinned, PinnedRefresh},
     profile::open_profile_at,
     shell::{Rooms, Selected},
-    lightbox::{LightboxImage, LightboxImages, LightboxIndex},
     thread::ActiveThread,
 };
 use crate::{
@@ -38,8 +38,8 @@ const WINDOW_STEP: usize = 100;
 pub(crate) const QUICK_REACTIONS: [&str; 3] = ["👍", "❤️", "😂"];
 /// The "Add reaction" picker.
 const EMOJI_PICKER: [&str; 24] = [
-    "👍", "👎", "❤️", "😂", "😮", "😢", "😡", "🎉", "🔥", "👀", "🙏", "👏", "💯", "✅", "❌", "🤔", "😎",
-    "🥳", "🚀", "⭐", "💀", "🫡", "🤝", "💡",
+    "👍", "👎", "❤️", "😂", "😮", "😢", "😡", "🎉", "🔥", "👀", "🙏", "👏", "💯", "✅", "❌", "🤔",
+    "😎", "🥳", "🚀", "⭐", "💀", "🫡", "🤝", "💡",
 ];
 
 /// One room's messages. The parent sets `key` to the room id, so switching
@@ -131,10 +131,13 @@ pub fn TimelineView(
                         entries
                             .with_mut(|list| diffs.into_iter().for_each(|diff| diff.apply(list)));
                         if let Some(mut last_own) = last_own {
-                            let newest = entries.read().iter().rev().find_map(|entry| match entry {
-                                TimelineEntry::Message(m) if m.is_own && m.can_edit => Some((**m).clone()),
-                                _ => None,
-                            });
+                            let newest =
+                                entries.read().iter().rev().find_map(|entry| match entry {
+                                    TimelineEntry::Message(m) if m.is_own && m.can_edit => {
+                                        Some((**m).clone())
+                                    }
+                                    _ => None,
+                                });
                             if last_own.peek().0 != newest {
                                 last_own.set(LastOwn(newest));
                             }
@@ -230,7 +233,12 @@ pub fn TimelineView(
     let pin_to_bottom = move |behavior: ScrollBehavior| {
         if let Some(el) = container() {
             spawn(async move {
-                let _ = el.scroll(dioxus::html::geometry::PixelsVector2D::new(0.0, 0.0), behavior).await;
+                let _ = el
+                    .scroll(
+                        dioxus::html::geometry::PixelsVector2D::new(0.0, 0.0),
+                        behavior,
+                    )
+                    .await;
             });
         }
     };
@@ -559,12 +567,18 @@ pub(crate) fn MessageRow(message: Message, show_header: bool) -> Element {
                     .filter(|room| !room.is_space && &room.id != room_id)
                     .map(|room| {
                         MenuItem::new(
-                            if room.is_dm { format!("@{}", room.name) } else { format!("#{}", room.name) },
+                            if room.is_dm {
+                                format!("@{}", room.name)
+                            } else {
+                                format!("#{}", room.name)
+                            },
                             {
                                 let session = session.clone();
-                                let (from, event_id, to) = (room_id.clone(), event_id.clone(), room.id.clone());
+                                let (from, event_id, to) =
+                                    (room_id.clone(), event_id.clone(), room.id.clone());
                                 move || {
-                                    let future = session.forward(from.clone(), event_id.clone(), to.clone());
+                                    let future =
+                                        session.forward(from.clone(), event_id.clone(), to.clone());
                                     spawn(async move {
                                         if let Err(err) = future.await {
                                             report("forward", &err);
@@ -573,7 +587,11 @@ pub(crate) fn MessageRow(message: Message, show_header: bool) -> Element {
                                 }
                             },
                         )
-                        .icon(if room.is_dm { crate::icons::AT_SIGN } else { crate::icons::HASH })
+                        .icon(if room.is_dm {
+                            crate::icons::AT_SIGN
+                        } else {
+                            crate::icons::HASH
+                        })
                     })
                     .collect();
                 if !targets.is_empty() {
@@ -581,20 +599,27 @@ pub(crate) fn MessageRow(message: Message, show_header: bool) -> Element {
                 }
 
                 let pinned = consume_context::<Pinned>().peek().0.contains(event_id);
-                items.push(MenuItem::new(if pinned { "Unpin message" } else { "Pin message" }, {
-                    let session = session.clone();
-                    let (room_id, event_id) = (room_id.clone(), event_id.clone());
-                    move || {
-                        let future = session.pin(room_id.clone(), event_id.clone(), !pinned);
-                        let mut refresh = consume_context::<PinnedRefresh>();
-                        spawn(async move {
-                            if let Err(err) = future.await {
-                                report("pin", &err);
-                            }
-                            refresh += 1;
-                        });
-                    }
-                }));
+                items.push(MenuItem::new(
+                    if pinned {
+                        "Unpin message"
+                    } else {
+                        "Pin message"
+                    },
+                    {
+                        let session = session.clone();
+                        let (room_id, event_id) = (room_id.clone(), event_id.clone());
+                        move || {
+                            let future = session.pin(room_id.clone(), event_id.clone(), !pinned);
+                            let mut refresh = consume_context::<PinnedRefresh>();
+                            spawn(async move {
+                                if let Err(err) = future.await {
+                                    report("pin", &err);
+                                }
+                                refresh += 1;
+                            });
+                        }
+                    },
+                ));
                 items.push(MenuItem::new("Mark unread", {
                     let session = session.clone();
                     let room_id = room_id.clone();
@@ -614,7 +639,9 @@ pub(crate) fn MessageRow(message: Message, show_header: bool) -> Element {
             }
             if let Some((event_id, room_id)) = &sent {
                 let link = format!("https://matrix.to/#/{room_id}/{event_id}");
-                items.push(MenuItem::new("Copy message link", move || copy_to_clipboard(&link)));
+                items.push(MenuItem::new("Copy message link", move || {
+                    copy_to_clipboard(&link)
+                }));
             }
             // Only our own reactions can be taken back.
             let mine: Vec<&str> = message
@@ -645,7 +672,8 @@ pub(crate) fn MessageRow(message: Message, show_header: bool) -> Element {
             {
                 let event_id = event_id.clone();
                 items.push(MenuItem::new("Report message", move || {
-                    consume_context::<OpenMessageDialog>().set(MessageDialog::Report(event_id.clone()));
+                    consume_context::<OpenMessageDialog>()
+                        .set(MessageDialog::Report(event_id.clone()));
                 }));
             }
             if message.is_own && can_reply {
@@ -667,7 +695,9 @@ pub(crate) fn MessageRow(message: Message, show_header: bool) -> Element {
             }
             if let Some((event_id, _)) = &sent {
                 let id = event_id.to_string();
-                items.push(MenuItem::new("Copy message ID", move || copy_to_clipboard(&id)));
+                items.push(MenuItem::new("Copy message ID", move || {
+                    copy_to_clipboard(&id)
+                }));
             }
             let quick: Rc<dyn Fn(&'static str)> = Rc::new({
                 let react = react.clone();

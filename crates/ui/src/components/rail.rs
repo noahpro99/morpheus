@@ -1,5 +1,5 @@
-use dioxus::prelude::*;
 use super::toast::report;
+use dioxus::prelude::*;
 use morpheus_core::{OwnedRoomId, RoomSummary, Session};
 
 use super::context_menu::{MenuItem, open_menu};
@@ -28,14 +28,30 @@ fn layout(prefs: &Prefs, spaces: &[RoomSummary]) -> Vec<RailEntry> {
         .filter_map(|entry| match entry {
             // Spaces we left or never had drop out of the drawing.
             RailEntry::Space(id) => spaces.iter().any(|s| &s.id == id).then(|| entry.clone()),
-            RailEntry::Folder { id, name, spaces: members } => {
-                let present: Vec<OwnedRoomId> =
-                    members.iter().filter(|m| spaces.iter().any(|s| &s.id == *m)).cloned().collect();
-                (!present.is_empty()).then(|| RailEntry::Folder { id: id.clone(), name: name.clone(), spaces: present })
+            RailEntry::Folder {
+                id,
+                name,
+                spaces: members,
+            } => {
+                let present: Vec<OwnedRoomId> = members
+                    .iter()
+                    .filter(|m| spaces.iter().any(|s| &s.id == *m))
+                    .cloned()
+                    .collect();
+                (!present.is_empty()).then(|| RailEntry::Folder {
+                    id: id.clone(),
+                    name: name.clone(),
+                    spaces: present,
+                })
             }
         })
         .collect();
-    entries.extend(spaces.iter().filter(|s| !known(&s.id)).map(|s| RailEntry::Space(s.id.clone())));
+    entries.extend(
+        spaces
+            .iter()
+            .filter(|s| !known(&s.id))
+            .map(|s| RailEntry::Space(s.id.clone())),
+    );
     entries
 }
 
@@ -84,7 +100,9 @@ pub fn Rail() -> Element {
         let session = session.clone();
         let entries = entries.clone();
         move |(before, onto): (usize, Option<RailEntry>)| {
-            let Some(moved) = drag.peek().0.clone() else { return };
+            let Some(moved) = drag.peek().0.clone() else {
+                return;
+            };
             drag.set(Dragging::default());
             prefs.with_mut(|p| {
                 // Work on the drawn layout so unknown spaces have a position.
@@ -103,7 +121,11 @@ pub fn Rail() -> Element {
                             name: "New folder".into(),
                             spaces: vec![target.clone(), moved],
                         };
-                        let pos = p.rail.iter().position(|e| matches!(e, RailEntry::Space(s) if *s == target)).unwrap_or(p.rail.len());
+                        let pos = p
+                            .rail
+                            .iter()
+                            .position(|e| matches!(e, RailEntry::Space(s) if *s == target))
+                            .unwrap_or(p.rail.len());
                         p.rail.remove(pos.min(p.rail.len().saturating_sub(1)));
                         p.rail.insert(pos.min(p.rail.len()), folder);
                     }
@@ -257,14 +279,23 @@ pub fn Rail() -> Element {
 /// One space badge: click to scope, right-click for the server menu, drag
 /// to move; a drop on it starts a folder (or, inside a folder, joins it).
 #[component]
-fn SpaceBadge(space: RoomSummary, folder: Option<String>, selected: bool, on_drop: Callback<RailEntry>) -> Element {
+fn SpaceBadge(
+    space: RoomSummary,
+    folder: Option<String>,
+    selected: bool,
+    on_drop: Callback<RailEntry>,
+) -> Element {
     let mut selected_space = use_context::<SelectedSpace>();
     let session = use_context::<Session>();
     let rooms = use_context::<Rooms>();
     let mut drag = use_context::<RailDrag>();
     let id = space.id.clone();
     let target = match &folder {
-        Some(folder_id) => RailEntry::Folder { id: folder_id.clone(), name: String::new(), spaces: Vec::new() },
+        Some(folder_id) => RailEntry::Folder {
+            id: folder_id.clone(),
+            name: String::new(),
+            spaces: Vec::new(),
+        },
         None => RailEntry::Space(space.id.clone()),
     };
 

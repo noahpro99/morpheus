@@ -2,8 +2,8 @@
 //! (click for the account menu) and the settings gear. Shares its height and
 //! colour with the message box next to it.
 
-use dioxus::prelude::*;
 use super::toast::report;
+use dioxus::prelude::*;
 use morpheus_core::Session;
 
 use super::context_menu::{MenuItem, open_menu};
@@ -56,10 +56,16 @@ pub fn UserBar() -> Element {
             let mut editor = consume_context::<ProfileEditor>();
             let mut items = Vec::new();
             if let Some(id) = own.clone() {
-                items.push(MenuItem::new("View profile", move || open_profile(id.clone())));
+                items.push(MenuItem::new("View profile", move || {
+                    open_profile(id.clone())
+                }));
             }
-            items.push(MenuItem::new("Edit profile", move || editor.set(Editor::Profile)));
-            items.push(MenuItem::new("Set status", move || editor.set(Editor::Status)));
+            items.push(MenuItem::new("Edit profile", move || {
+                editor.set(Editor::Profile)
+            }));
+            items.push(MenuItem::new("Set status", move || {
+                editor.set(Editor::Status)
+            }));
             // Switching signs out and returns to the login screen; sessions for
             // several accounts are not stored side by side yet.
             items.push(MenuItem::new("Switch account", logout));

@@ -75,7 +75,10 @@ pub const GROUPS: &[(&str, &[(&str, &str)])] = &[
             ("Enter", "Send (Shift+Enter for a new line)"),
             ("↑ in an empty box", "Edit your last message"),
             ("Ctrl+Shift+U", "Attach a file"),
-            ("Esc", "Close what is open, or jump to the newest message and mark the room read"),
+            (
+                "Esc",
+                "Close what is open, or jump to the newest message and mark the room read",
+            ),
             ("Shift+Esc", "Mark every room in this scope as read"),
             ("Right-click", "Actions for a message, room, or member"),
         ],
@@ -115,6 +118,10 @@ window.addEventListener('paste', e => {
   const files = e.clipboardData ? [...e.clipboardData.files] : [];
   if (files.length) { e.preventDefault(); sendFiles(files); }
 }, true);
+// Page errors reach the Rust log; an exception inside the renderer's own
+// edit loop would otherwise freeze the UI silently.
+window.addEventListener('error', e => dioxus.send('jserr:' + e.message + ' @' + (e.filename || '') + ':' + e.lineno));
+window.addEventListener('unhandledrejection', e => dioxus.send('jserr:unhandled rejection: ' + (e.reason && e.reason.message || e.reason)));
 // Phone-width windows get a single-column layout (see shell.rs).
 // Measured on the shell element, not the window, so a test can box it.
 const shellEl = document.querySelector('.shell');
@@ -144,10 +151,16 @@ pub fn parse_dropped(payload: &str) -> Option<DroppedFile> {
     use base64::Engine as _;
     let value: serde_json::Value = serde_json::from_str(payload).ok()?;
     let data = value.get("data")?.as_str()?;
-    let bytes = base64::engine::general_purpose::STANDARD.decode(data).ok()?;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(data)
+        .ok()?;
     Some(DroppedFile {
         name: value.get("name")?.as_str().unwrap_or("file").to_owned(),
-        mime: value.get("mime").and_then(|m| m.as_str()).unwrap_or("").to_owned(),
+        mime: value
+            .get("mime")
+            .and_then(|m| m.as_str())
+            .unwrap_or("")
+            .to_owned(),
         bytes,
     })
 }

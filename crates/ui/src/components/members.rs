@@ -1,12 +1,12 @@
 use std::rc::Rc;
 
-use dioxus::prelude::*;
 use super::toast::report;
+use dioxus::prelude::*;
 use morpheus_core::{Member, MemberPermissions, MemberRole, OwnedRoomId, Session};
 
 use super::context_menu::{MenuItem, copy_to_clipboard, open_menu};
 use super::profile::{open_profile, open_profile_at};
-use super::shell::{Mention, MentionRequest, MembersVersion, Rooms, Scope, SelectedSpace, go_to};
+use super::shell::{MembersVersion, Mention, MentionRequest, Rooms, Scope, SelectedSpace, go_to};
 use crate::media::Avatar;
 
 /// Rows rendered at first. Big rooms have thousands of members, and every
@@ -153,7 +153,11 @@ pub(crate) fn member_menu(
     // Finishes a moderation action: log failures, refetch the list.
     let run = {
         let session = session.clone();
-        move |action: fn(&Session, OwnedRoomId, morpheus_core::OwnedUserId) -> morpheus_core::CoreFuture<()>,
+        move |action: fn(
+            &Session,
+            OwnedRoomId,
+            morpheus_core::OwnedUserId,
+        ) -> morpheus_core::CoreFuture<()>,
               what: &'static str,
               room_id: OwnedRoomId,
               user_id: morpheus_core::OwnedUserId| {
@@ -218,7 +222,11 @@ pub(crate) fn member_menu(
     }
 
     items.push(MenuItem::new(
-        if member.is_ignored { "Unblock" } else { "Block" },
+        if member.is_ignored {
+            "Unblock"
+        } else {
+            "Block"
+        },
         {
             let session = session.clone();
             let user_id = user_id.clone();
@@ -265,7 +273,14 @@ pub(crate) fn member_menu(
             MenuItem::new(format!("Kick {}", member.name), {
                 let run = run.clone();
                 let (room_id, user_id) = (room_id.clone(), user_id.clone());
-                move || run(|s, r, u| s.kick(r, u, None), "kick", room_id.clone(), user_id.clone())
+                move || {
+                    run(
+                        |s, r, u| s.kick(r, u, None),
+                        "kick",
+                        room_id.clone(),
+                        user_id.clone(),
+                    )
+                }
             })
             .danger(),
         );
@@ -275,7 +290,14 @@ pub(crate) fn member_menu(
             MenuItem::new(format!("Ban {}", member.name), {
                 let run = run.clone();
                 let (room_id, user_id) = (room_id.clone(), user_id.clone());
-                move || run(|s, r, u| s.ban(r, u, None), "ban", room_id.clone(), user_id.clone())
+                move || {
+                    run(
+                        |s, r, u| s.ban(r, u, None),
+                        "ban",
+                        room_id.clone(),
+                        user_id.clone(),
+                    )
+                }
             })
             .danger(),
         );
