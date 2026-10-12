@@ -12,9 +12,9 @@ use super::{
     context_menu::{MenuItem, copy_to_clipboard, open_menu},
     hotkeys::{Hotkey, HotkeyRequest},
     message_dialogs::{MessageDialog, OpenMessageDialog, Pinned, PinnedRefresh},
+    profile::open_profile_at,
     shell::{Rooms, Selected},
     lightbox::{LightboxImage, LightboxImages, LightboxIndex},
-    profile::open_profile,
     thread::ActiveThread,
 };
 use crate::{
@@ -688,7 +688,7 @@ pub(crate) fn MessageRow(message: Message, show_header: bool) -> Element {
                     title: "{message.sender}",
                     onclick: {
                         let sender = message.sender.clone();
-                        move |_| open_profile(sender.clone())
+                        move |e| open_profile_at(sender.clone(), &e)
                     },
                     Avatar { media: message.sender_avatar.clone(), fallback: message.sender_name.clone(), size: 40 }
                 }
@@ -699,7 +699,7 @@ pub(crate) fn MessageRow(message: Message, show_header: bool) -> Element {
                             title: "{message.sender}",
                             onclick: {
                                 let sender = message.sender.clone();
-                                move |_| open_profile(sender.clone())
+                                move |e| open_profile_at(sender.clone(), &e)
                             },
                             "{message.sender_name}"
                         }

@@ -13,8 +13,8 @@ use super::{
         ReactionsModal, ReportModal, use_pinned_fetcher,
     },
     profile::{
-        EditProfileModal, Editor, OpenProfile, ProfileEditor, ProfileModal, ProfileRefresh,
-        ProfileTarget, ProfileVersion, StatusModal,
+        EditProfileModal, Editor, OpenProfile, ProfileCard, ProfileEditor, ProfileModal,
+        ProfileRefresh, ProfileTarget, ProfileVersion, StatusModal,
     },
     rail::Rail,
     room_dialogs::{
@@ -441,8 +441,10 @@ pub fn Shell(session: Session) -> Element {
             if settings_open() {
                 Settings {}
             }
-            if let Some(user_id) = open_profile().0 {
-                ProfileModal { user_id }
+            match open_profile().0 {
+                Some(open) if open.full => rsx! { ProfileModal { user_id: open.user_id } },
+                Some(open) => rsx! { ProfileCard { open } },
+                None => rsx! {},
             }
             match editor() {
                 Editor::Profile => rsx! { EditProfileModal {} },

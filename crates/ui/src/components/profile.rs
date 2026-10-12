@@ -2,20 +2,47 @@
 //! in the right column, or the signed-in user's chip in the sidebar footer.
 
 use dioxus::prelude::*;
-use morpheus_core::{OwnedUserId, Session};
+use std::rc::Rc;
+
+use morpheus_core::{MemberRole, OwnedUserId, Session};
+use tracing::warn;
+
+use super::context_menu::{MenuItem, copy_to_clipboard, open_menu_at};
+use super::shell::{Rooms, Scope, Selected, SelectedSpace};
+use crate::icons::Icon;
 
 use crate::media::Avatar;
 
-/// The user whose profile is open, if any. Provided by the shell.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct ProfileTarget(pub Option<OwnedUserId>);
+/// The profile that is open, if any. Provided by the shell.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ProfileTarget(pub Option<ProfileOpen>);
 pub type OpenProfile = Signal<ProfileTarget>;
 
-/// Open the profile modal for `user_id` from any component under the shell.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProfileOpen {
+    pub user_id: OwnedUserId,
+    /// Where the card pops up (viewport px); `None` centres it.
+    pub at: Option<(f64, f64)>,
+    /// The full-page profile instead of the card.
+    pub full: bool,
+}
+
+/// Open the profile card for `user_id` from a menu item: it pops up where
+/// the menu was.
 pub fn open_profile(user_id: OwnedUserId) {
     // Not a hook: this runs from event handlers, so read the context directly.
-    let mut target = consume_context::<OpenProfile>();
-    target.set(ProfileTarget(Some(user_id)));
+    let at = consume_context::<super::context_menu::ContextMenu>().peek().position();
+    consume_context::<OpenProfile>().set(ProfileTarget(Some(ProfileOpen { user_id, at, full: false })));
+}
+
+/// Open the profile card next to a click.
+pub fn open_profile_at(user_id: OwnedUserId, e: &Event<MouseData>) {
+    let point = e.client_coordinates();
+    consume_context::<OpenProfile>().set(ProfileTarget(Some(ProfileOpen {
+        user_id,
+        at: Some((point.x, point.y)),
+        full: false,
+    })));
 }
 
 #[component]
@@ -25,11 +52,14 @@ pub fn ProfileModal(user_id: OwnedUserId) -> Element {
     let own = session.user_id().as_ref() == Some(&user_id);
 
     let refresh = use_context::<ProfileRefresh>();
-    let profile = use_resource(use_reactive!(|user_id| {
+    let profile = {
+        let session = session.clone();
+        use_resource(use_reactive!(|user_id| {
         let session = session.clone();
         let _ = refresh();
         async move { session.profile(user_id).await.map_err(|e| e.to_string()) }
-    }));
+    }))
+    };
     let mut close = move || target.set(ProfileTarget::default());
 
     // Show what we know right away; the fetch fills in the name and avatar.
@@ -266,6 +296,384 @@ pub fn StatusModal() -> Element {
                     button { r#type: "button", class: "secondary", disabled: busy(), onclick: move |_| apply(None), "Clear status" }
                     button { r#type: "button", class: "secondary", onclick: move |_| close(), "Close" }
                 }
+            }
+        }
+    }
+}
+
+/// The quick profile card: pops up by the click like a menu. Photo, names,
+/// status, mutual rooms, your note, their role here, a message box, and the
+/// moderation and more menus up top. "View full profile" opens the modal.
+#[component]
+pub fn ProfileCard(open: ProfileOpen) -> Element {
+    let session = use_context::<Session>();
+    let mut target = use_context::<OpenProfile>();
+    let refresh = use_context::<ProfileRefresh>();
+    let rooms = use_context::<Rooms>();
+    let selected = use_context::<Selected>();
+    let user_id = open.user_id.clone();
+    let own = session.user_id().as_ref() == Some(&user_id);
+    let mut close = move || target.set(ProfileTarget::default());
+    let mut note = use_signal(String::new);
+    let mut note_saved = use_signal(|| false);
+    let mut draft = use_signal(String::new);
+    let mut report = use_signal(|| false);
+    let mut blocked_now = use_signal(|| None::<bool>);
+
+    let profile = {
+        let session = session.clone();
+        use_resource(use_reactive!(|user_id| {
+        let session = session.clone();
+        let _ = refresh();
+        async move { session.profile(user_id).await.ok() }
+    }))
+    };
+    let mutual = {
+        let session = session.clone();
+        use_resource(use_reactive!(|user_id| {
+        let session = session.clone();
+        async move { session.mutual_rooms(user_id).await.unwrap_or_default() }
+    }))
+    };
+    let role = {
+        let session = session.clone();
+        use_resource(use_reactive!(|user_id| {
+        let session = session.clone();
+        let room_id = selected.peek().clone();
+        async move {
+            match room_id {
+                Some(room_id) => session.member_role(room_id, user_id).await.ok().flatten(),
+                None => None,
+            }
+        }
+    }))
+    };
+    let stored_note = {
+        let session = session.clone();
+        use_resource(use_reactive!(|user_id| {
+        let session = session.clone();
+        async move { session.note(user_id).await.unwrap_or_default() }
+    }))
+    };
+    let mut seeded = use_signal(|| false);
+    use_effect(move || {
+        if let Some(text) = stored_note()
+            && !*seeded.peek()
+        {
+            seeded.set(true);
+            note.set(text);
+        }
+    });
+    let blocked = {
+        let session = session.clone();
+        use_resource(use_reactive!(|user_id| {
+        let session = session.clone();
+        async move { session.is_blocked(user_id).await.unwrap_or(false) }
+    }))
+    };
+    let is_blocked = blocked_now().unwrap_or_else(|| blocked().unwrap_or(false));
+
+    let (name, avatar, status) = match profile().flatten() {
+        Some(p) => (p.name, p.avatar, p.status),
+        None => (user_id.localpart().to_owned(), None, None),
+    };
+
+    let save_note = {
+        let session = session.clone();
+        let user_id = user_id.clone();
+        move || {
+            let future = session.set_note(user_id.clone(), note());
+            spawn(async move {
+                if let Err(err) = future.await {
+                    warn!(%err, "saving the note failed");
+                } else {
+                    note_saved.set(true);
+                }
+            });
+        }
+    };
+    let send_message = {
+        let session = session.clone();
+        let user_id = user_id.clone();
+        move || {
+            let body = draft().trim().to_owned();
+            if body.is_empty() {
+                return;
+            }
+            let session = session.clone();
+            let user_id = user_id.clone();
+            let mut selected = consume_context::<Selected>();
+            let mut scope = consume_context::<SelectedSpace>();
+            spawn(async move {
+                match session.dm_with(user_id).await {
+                    Ok(dm) => {
+                        match session.timeline(dm.clone()).await {
+                            Ok(opened) => {
+                                if let Err(err) = opened.handle.send_text(body).await {
+                                    warn!(%err, "sending from the card failed");
+                                }
+                            }
+                            Err(err) => warn!(%err, "opening the DM failed"),
+                        }
+                        scope.set(Scope::Dms);
+                        selected.set(Some(dm));
+                        close();
+                    }
+                    Err(err) => warn!(%err, "no DM for the message"),
+                }
+            });
+        }
+    };
+
+    // "Mod view": the member menu for this user in the open room.
+    let mod_view = {
+        let session = session.clone();
+        let user_id = user_id.clone();
+        move |e: Event<MouseData>| {
+            e.stop_propagation();
+            let Some(room_id) = selected.peek().clone() else { return };
+            let session = session.clone();
+            let user_id = user_id.clone();
+            let point = e.client_coordinates();
+            spawn(async move {
+                let (members, perms) = (
+                    session.members(room_id.clone()).await.unwrap_or_default(),
+                    session.my_permissions(room_id.clone()).await.unwrap_or_default(),
+                );
+                let Some(member) = members.into_iter().find(|m| m.user_id == user_id) else { return };
+                let items = super::members::member_menu(&session, &room_id, &Rc::new(member), perms, false);
+                open_menu_at(point.x, point.y, items, None);
+            });
+        }
+    };
+
+    // The "…" menu.
+    let more = {
+        let session = session.clone();
+        let user_id = user_id.clone();
+        let open = open.clone();
+        move |e: Event<MouseData>| {
+            e.stop_propagation();
+            let point = e.client_coordinates();
+            let mut items = vec![
+                MenuItem::new("View full profile", {
+                    let open = open.clone();
+                    move || {
+                        consume_context::<OpenProfile>()
+                            .set(ProfileTarget(Some(ProfileOpen { full: true, ..open.clone() })));
+                    }
+                })
+                .icon(crate::icons::USER),
+                MenuItem::new("Share profile", {
+                    let link = format!("https://matrix.to/#/{user_id}");
+                    move || copy_to_clipboard(&link)
+                })
+                .icon(crate::icons::SHARE_2),
+            ];
+            if !own {
+                let targets: Vec<MenuItem> = rooms
+                    .read()
+                    .iter()
+                    .filter(|r| !r.is_dm)
+                    .map(|room| {
+                        MenuItem::new(if room.is_space { room.name.clone() } else { format!("#{}", room.name) }, {
+                            let session = session.clone();
+                            let (target, user_id) = (room.id.clone(), user_id.clone());
+                            move || {
+                                let future = session.invite(target.clone(), user_id.clone());
+                                spawn(async move {
+                                    if let Err(err) = future.await {
+                                        warn!(%err, "invite failed");
+                                    }
+                                });
+                            }
+                        })
+                        .icon(if room.is_space { crate::icons::FOLDER } else { crate::icons::HASH })
+                    })
+                    .collect();
+                if !targets.is_empty() {
+                    items.push(MenuItem::submenu("Invite to server", targets).icon(crate::icons::USER_PLUS));
+                }
+                items.push(
+                    MenuItem::new(if is_blocked { "Unblock" } else { "Block" }, {
+                        let session = session.clone();
+                        let user_id = user_id.clone();
+                        move || {
+                            let future = session.block(user_id.clone(), !is_blocked);
+                            spawn(async move {
+                                if let Err(err) = future.await {
+                                    warn!(%err, "block failed");
+                                } else {
+                                    blocked_now.set(Some(!is_blocked));
+                                }
+                            });
+                        }
+                    })
+                    .icon(crate::icons::BAN),
+                );
+                items.push(
+                    MenuItem::new("Report user profile", move || report.set(true)).icon(crate::icons::FLAG),
+                );
+            }
+            items.push(
+                MenuItem::submenu(
+                    "Copy user info",
+                    vec![
+                        MenuItem::new("Copy user ID", {
+                            let id = user_id.to_string();
+                            move || copy_to_clipboard(&id)
+                        })
+                        .icon(crate::icons::HASH),
+                        MenuItem::new("Copy profile link", {
+                            let link = format!("https://matrix.to/#/{user_id}");
+                            move || copy_to_clipboard(&link)
+                        })
+                        .icon(crate::icons::LINK),
+                    ],
+                )
+                .icon(crate::icons::COPY),
+            );
+            open_menu_at(point.x, point.y, items, None);
+        }
+    };
+
+    let style = match open.at {
+        Some((x, y)) => format!("left: {x}px; top: {y}px;"),
+        None => "left: 50%; top: 20%; transform: translateX(-50%);".to_string(),
+    };
+    // The room you are both in right now comes first.
+    let mut mutual_list = mutual().unwrap_or_default();
+    if let Some(here) = selected.peek().clone()
+        && let Some(pos) = mutual_list.iter().position(|(id, _)| *id == here)
+    {
+        let current = mutual_list.remove(pos);
+        mutual_list.insert(0, current);
+    }
+    let role_label = role().flatten().map(|r| match r {
+        MemberRole::Admin => "Admin",
+        MemberRole::Moderator => "Moderator",
+        MemberRole::Member => "Member",
+    });
+
+    rsx! {
+        div { class: "overlay panel-overlay card-overlay", onclick: move |_| close(),
+            div {
+                class: "profile-card",
+                style: "{style}",
+                tabindex: "-1",
+                autofocus: true,
+                onclick: move |e| e.stop_propagation(),
+                onmounted: move |_| { document::eval(CARD_CLAMP_JS); },
+                div { class: "profile-banner",
+                    div { class: "card-actions",
+                        if !own && selected().is_some() {
+                            button { class: "ghost card-button mod-view", title: "Mod view", onclick: mod_view, Icon { glyph: crate::icons::SHIELD_CHECK, size: 16 } }
+                        }
+                        button { class: "ghost card-button more", title: "More", onclick: more, Icon { glyph: crate::icons::ELLIPSIS, size: 16 } }
+                    }
+                }
+                div { class: "profile-body",
+                    Avatar { media: avatar, fallback: name.clone(), size: 72 }
+                    h2 { class: "profile-name", "{name}" }
+                    p { class: "profile-id muted", "{user_id}" }
+                    if let Some(status) = status {
+                        p { class: "profile-status", "{status}" }
+                    }
+                    div { class: "card-tags",
+                        if own { span { class: "tag", "This is you" } }
+                        if is_blocked { span { class: "tag warn", "Blocked" } }
+                        if let Some(role) = role_label { span { class: "tag", "{role}" } }
+                    }
+                    if !own {
+                        section { class: "card-section mutual",
+                            h4 { "Mutual rooms — {mutual_list.len()}" }
+                            if mutual_list.is_empty() {
+                                p { class: "muted", "None yet." }
+                            }
+                            for (id, room_name) in mutual_list.iter().take(8) {
+                                span { key: "{id}", class: "mutual-room", "#{room_name}" }
+                            }
+                        }
+                    }
+                    section { class: "card-section",
+                        h4 { "Note" }
+                        textarea {
+                            class: "note",
+                            name: "note",
+                            placeholder: "Only you can see this",
+                            value: "{note}",
+                            rows: "2",
+                            oninput: move |e| {
+                                note.set(e.value());
+                                note_saved.set(false);
+                            },
+                            onblur: {
+                                let save_note = save_note.clone();
+                                move |_| save_note()
+                            },
+                        }
+                        if note_saved() { span { class: "muted note-saved", "Saved" } }
+                    }
+                    if !own {
+                        input {
+                            class: "card-message",
+                            name: "message",
+                            placeholder: "Message @{name}",
+                            value: "{draft}",
+                            oninput: move |e| draft.set(e.value()),
+                            onkeydown: {
+                                let send_message = send_message.clone();
+                                move |e| {
+                                    if e.key() == Key::Enter {
+                                        e.prevent_default();
+                                        send_message();
+                                    }
+                                }
+                            },
+                        }
+                    }
+                }
+                if report() {
+                    ReportUserForm { user_id: user_id.clone(), on_done: move |()| report.set(false) }
+                }
+            }
+        }
+    }
+}
+
+const CARD_CLAMP_JS: &str = "const c = document.querySelector('.profile-card'); if (!c) return; \
+    const r = c.getBoundingClientRect(); \
+    if (r.right > innerWidth - 8) c.style.left = Math.max(8, innerWidth - r.width - 8) + 'px'; \
+    if (r.bottom > innerHeight - 8) c.style.top = Math.max(8, innerHeight - r.height - 8) + 'px';";
+
+#[component]
+fn ReportUserForm(user_id: OwnedUserId, on_done: Callback<()>) -> Element {
+    let session = use_context::<Session>();
+    let mut reason = use_signal(String::new);
+    let mut message = use_signal(|| None::<Result<&'static str, String>>);
+    let submit = move |evt: FormEvent| {
+        evt.prevent_default();
+        let future = session.report_user(user_id.clone(), reason());
+        spawn(async move {
+            match future.await {
+                Ok(()) => message.set(Some(Ok("Reported to the server admins."))),
+                Err(err) => message.set(Some(Err(err.to_string()))),
+            }
+        });
+    };
+    rsx! {
+        form { class: "report-user", onsubmit: submit,
+            label { "Report this user"
+                input { name: "reason", placeholder: "What is wrong?", value: "{reason}", oninput: move |e| reason.set(e.value()) }
+            }
+            match message() {
+                Some(Ok(text)) => rsx! { p { class: "ok", "{text}" } },
+                Some(Err(text)) => rsx! { p { class: "error", "{text}" } },
+                None => rsx! {},
+            }
+            div { class: "settings-actions",
+                button { r#type: "submit", class: "danger", "Report" }
+                button { r#type: "button", class: "secondary", onclick: move |_| on_done(()), "Cancel" }
             }
         }
     }

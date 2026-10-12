@@ -16,6 +16,7 @@ mod core;
 mod error;
 mod media;
 mod members;
+mod people;
 mod messages;
 mod profile;
 mod recovery;

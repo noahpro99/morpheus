@@ -5,7 +5,7 @@ use morpheus_core::{Member, MemberPermissions, MemberRole, OwnedRoomId, Session}
 use tracing::warn;
 
 use super::context_menu::{MenuItem, copy_to_clipboard, open_menu};
-use super::profile::open_profile;
+use super::profile::{open_profile, open_profile_at};
 use super::shell::{Mention, MentionRequest, MembersVersion, Rooms, Scope, Selected, SelectedSpace};
 use crate::media::Avatar;
 
@@ -13,8 +13,9 @@ use crate::media::Avatar;
 /// rendered row fetches an avatar, so the list grows only on request.
 const MEMBERS_PAGE: usize = 100;
 
-/// Bumped after a moderation action so the list refetches.
-type Refresh = Signal<u32>;
+/// Bumped after a moderation action so the list refetches (shared with the
+/// profile card, which bumps it too).
+type Refresh = MembersVersion;
 
 /// Right column: joined members grouped by role.
 ///
@@ -25,12 +26,11 @@ pub fn Members(room_id: OwnedRoomId, member_count: u64) -> Element {
     let session = use_context::<Session>();
     let session2 = session.clone();
     let mut shown = use_signal(|| MEMBERS_PAGE);
-    let refresh: Refresh = use_signal(|| 0);
+    let refresh: Refresh = use_context::<MembersVersion>();
 
-    let version = use_context::<MembersVersion>();
     let members = use_resource(use_reactive!(|room_id, member_count| {
         let session = session.clone();
-        let _ = (refresh(), member_count, version());
+        let _ = (refresh(), member_count);
         async move { session.members(room_id).await.map_err(|e| e.to_string()) }
     }));
     let permissions = use_resource(use_reactive!(|room_id| {
@@ -102,7 +102,7 @@ fn MemberRow(
         let room_id = room_id.clone();
         let session = session.clone();
         move |e: Event<MouseData>| {
-            let items = member_menu(&session, &room_id, &member, permissions, own, refresh);
+            let items = member_menu(&session, &room_id, &member, permissions, own);
             open_menu(&e, items, None);
         }
     };
@@ -114,7 +114,7 @@ fn MemberRow(
             title: "{member.user_id}",
             onclick: {
                 let user_id = member.user_id.clone();
-                move |_| open_profile(user_id.clone())
+                move |e| open_profile_at(user_id.clone(), &e)
             },
             oncontextmenu: on_context,
             Avatar { media: member.avatar.clone(), fallback: member.name.clone(), size: 32 }
@@ -128,14 +128,14 @@ fn MemberRow(
 
 /// The right-click menu for a member: everything Discord offers that Matrix
 /// has an equivalent for, gated by the signed-in user's power level.
-fn member_menu(
+pub(crate) fn member_menu(
     session: &Session,
     room_id: &OwnedRoomId,
     member: &Rc<Member>,
     permissions: MemberPermissions,
     own: bool,
-    refresh: Refresh,
 ) -> Vec<MenuItem> {
+    let refresh: Refresh = consume_context::<MembersVersion>();
     let user_id = member.user_id.clone();
     let mut items = vec![MenuItem::new("Profile", {
         let user_id = user_id.clone();
@@ -163,7 +163,7 @@ fn member_menu(
                 if let Err(err) = future.await {
                     warn!(%err, what, "member action failed");
                 }
-                refresh += 1;
+                refresh.with_mut(|v| v.0 += 1);
             });
         }
     };
@@ -231,7 +231,7 @@ fn member_menu(
                     if let Err(err) = future.await {
                         warn!(%err, "block failed");
                     }
-                    refresh += 1;
+                    refresh.with_mut(|v| v.0 += 1);
                 });
             }
         },
@@ -252,7 +252,7 @@ fn member_menu(
                             if let Err(err) = future.await {
                                 warn!(%err, "role change failed");
                             }
-                            refresh += 1;
+                            refresh.with_mut(|v| v.0 += 1);
                         });
                     }
                 })

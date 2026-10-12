@@ -903,3 +903,33 @@ async fn space_create_category_privacy_profile_and_leave() {
 
     session.leave_space(server, vec![category, room]).await.expect("leave");
 }
+
+/// Rooms in common are computed from locally known membership, so after the
+/// members of a room were loaded it must list that room.
+#[tokio::test]
+async fn mutual_rooms_lists_rooms_shared_with_a_user() {
+    let Some(env) = env() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping live test");
+        return;
+    };
+    let core = Core::new(fresh_data_dir()).expect("core");
+    let session = core
+        .login(LoginRequest {
+            homeserver: env.homeserver,
+            username: "alice".into(),
+            password: "alice-password".into(),
+        })
+        .await
+        .expect("login");
+    let mut updates = session.room_list().await.expect("room list");
+    let mut rooms = Vector::new();
+    drive(&mut rooms, async || updates.next().await, |rooms| rooms.iter().any(|r| r.name == "general")).await;
+    let general = rooms.iter().find(|r| r.name == "general").expect("general").id.clone();
+    let members = session.members(general.clone()).await.expect("members");
+    assert!(members.iter().any(|m| m.user_id.as_str() == "@bob:localhost"), "bob is in general");
+
+    let bob: morpheus_core::OwnedUserId = "@bob:localhost".parse().expect("user id");
+    let mutual = session.mutual_rooms(bob).await.expect("mutual");
+    eprintln!("mutual rooms with bob: {mutual:?}");
+    assert!(mutual.iter().any(|(id, _)| *id == general), "general is shared with bob");
+}

@@ -50,7 +50,7 @@ impl MemberRole {
         }
     }
 
-    fn from_sdk(role: RoomMemberRole) -> Self {
+    pub(crate) fn from_sdk(role: RoomMemberRole) -> Self {
         match role {
             RoomMemberRole::Creator | RoomMemberRole::Administrator => Self::Admin,
             RoomMemberRole::Moderator => Self::Moderator,
@@ -276,7 +276,7 @@ async fn settle_ignored(client: &matrix_sdk::Client, user_id: &matrix_sdk::ruma:
     tracing::debug!(%user_id, "ignore list change not reflected locally before the deadline");
 }
 
-async fn is_ignored(client: &matrix_sdk::Client, user_id: &matrix_sdk::ruma::UserId) -> bool {
+pub(crate) async fn is_ignored(client: &matrix_sdk::Client, user_id: &matrix_sdk::ruma::UserId) -> bool {
     client
         .account()
         .account_data::<IgnoredUserListEventContent>()

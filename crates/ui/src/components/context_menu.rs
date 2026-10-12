@@ -94,6 +94,13 @@ pub struct Menu {
 pub struct MenuState(pub Option<Rc<Menu>>);
 pub type ContextMenu = Signal<MenuState>;
 
+impl MenuState {
+    /// Where the open menu sits, for things that pop up in its place.
+    pub fn position(&self) -> Option<(f64, f64)> {
+        self.0.as_ref().map(|m| (m.x, m.y))
+    }
+}
+
 /// Open a menu at the pointer for a right-click event. Swallows the event so
 /// the shell's catch-all handler does not close it again.
 pub fn open_menu(
