@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
+use super::toast::report;
 use morpheus_core::{Member, MessageId, OwnedEventId, OwnedRoomId, Session, TimelineHandle};
-use tracing::warn;
 
 use super::emoji;
 use super::hotkeys::{FileDrops, Hotkey, HotkeyRequest};
@@ -99,7 +99,6 @@ pub fn Composer(
     let timeline = use_context::<ActiveTimeline>();
     let mut mode = use_context::<Mode>();
     let mut draft = use_context::<Draft>();
-    let mut error = use_signal(|| None::<String>);
     let session = use_context::<Session>();
     // Autocomplete: the rows on offer and which one is highlighted. Members
     // are fetched the first time an `@` is typed.
@@ -124,7 +123,7 @@ pub fn Composer(
                             suggestions.set(suggest(&text, members.peek().as_deref()));
                             active.set(0);
                         }
-                        Err(err) => warn!(%err, "members for mention autocomplete failed"),
+                        Err(err) => report("members for mention autocomplete", &err),
                     }
                 });
             }
@@ -153,7 +152,7 @@ pub fn Composer(
         spawn(async move {
             for file in files {
                 if let Err(err) = handle.send_attachment_bytes(file.name, file.mime, file.bytes).await {
-                    error.set(Some(err.to_string()));
+                    report("Upload", &err);
                 }
             }
         });
@@ -206,9 +205,8 @@ pub fn Composer(
                 }
                 Some(ComposerMode::Edit { id, .. }) => handle.edit(id, body).await,
             };
-            match result {
-                Ok(()) => error.set(None),
-                Err(err) => error.set(Some(err.to_string())),
+            if let Err(err) = result {
+                report("Sending", &err);
             }
         });
     };
@@ -221,7 +219,7 @@ pub fn Composer(
         {
             spawn(async move {
                 if let Err(err) = handle.renew_typing().await {
-                    warn!(%err, "typing notice failed");
+                    report("typing notice", &err);
                 }
             });
         }
@@ -239,9 +237,8 @@ pub fn Composer(
             let Some(path) = pick_attachment().await else {
                 return;
             };
-            match handle.send_attachment(path).await {
-                Ok(()) => error.set(None),
-                Err(err) => error.set(Some(err.to_string())),
+            if let Err(err) = handle.send_attachment(path).await {
+                report("Attaching", &err);
             }
         });
     };
@@ -274,9 +271,6 @@ pub fn Composer(
 
     rsx! {
         footer { class: "composer",
-            if let Some(message) = error() {
-                p { class: "error", "{message}" }
-            }
             if let Some(active) = mode() {
                 div { class: "composer-banner",
                     match &active {

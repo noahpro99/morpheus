@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
+use super::toast::report;
 use morpheus_core::{OwnedRoomId, RoomSummary, Session};
-use tracing::warn;
 
 use super::context_menu::{MenuItem, open_menu};
 use super::room_dialogs::{OpenRoomDialog, RoomDialog};
@@ -44,7 +44,7 @@ pub fn save_prefs(session: &Session, prefs: &Prefs) {
     let future = session.set_ui_prefs(prefs.to_json());
     spawn(async move {
         if let Err(err) = future.await {
-            warn!(%err, "saving the rail layout failed");
+            report("saving the rail layout", &err);
         }
     });
 }

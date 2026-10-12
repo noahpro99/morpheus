@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
+use super::toast::report;
 use morpheus_core::{Notification, OwnedRoomId, RoomSummary, Session, Vector};
-use tracing::error;
 
 use super::{
     composer::{ActiveTimeline, Composer, Draft, Mode},
@@ -28,6 +28,7 @@ use super::{
     thread::{ActiveThread, ThreadPanel},
     timeline::{LastOwn, LastOwnMessage, TimelineView},
     titlebar::{HelpModal, InboxPanel, Nav, OpenTopPanel, TitleBar, TopPanel, nav_jump},
+    toast::{ToastLayer, ToastList, Toasts},
     user_bar::UserBar,
 };
 use crate::WindowControls;
@@ -247,6 +248,7 @@ pub fn Shell(session: Session) -> Element {
     let mut escapes: EscapeTick = use_context_provider(|| Signal::new(Escapes(0)));
     let mut prefs: UiPrefs = use_context_provider(|| Signal::new(Prefs::default()));
     let _drag: RailDrag = use_context_provider(|| Signal::new(Dragging::default()));
+    let _toasts: Toasts = use_context_provider(|| Signal::new(ToastList::default()));
     let _members_version: MembersVersion = use_context_provider(|| Signal::new(MembersStamp::default()));
     // New messages from other people: logged for the inbox, and raised as an
     // OS notification unless they land in the room being looked at.
@@ -259,7 +261,7 @@ pub fn Shell(session: Session) -> Element {
                 let mut updates = match session.notifications().await {
                     Ok(updates) => updates,
                     Err(err) => {
-                        error!(%err, "notification subscription failed");
+                        report("notification subscription", &err);
                         return;
                     }
                 };
@@ -332,7 +334,7 @@ pub fn Shell(session: Session) -> Element {
                     }
                 }
                 Err(err) => {
-                    error!(%err, "room list failed");
+                    report("room list", &err);
                     load_error.set(Some(err.to_string()));
                 }
             }
@@ -491,7 +493,7 @@ pub fn Shell(session: Session) -> Element {
                     let future = session.mark_room_read(room.id);
                     spawn(async move {
                         if let Err(err) = future.await {
-                            tracing::warn!(%err, "mark read failed");
+                            report("mark read", &err);
                         }
                     });
                 }
@@ -535,6 +537,7 @@ pub fn Shell(session: Session) -> Element {
             },
             TitleBar {}
             div { class: "drop-hint", "Drop to upload" }
+            ToastLayer {}
             // Mirror of what was announced, for the test bridge.
             ul { class: "notification-log", hidden: true,
                 for (index, notice) in notices().0.iter().enumerate() {
@@ -631,7 +634,7 @@ fn ChatRoom(room: RoomSummary) -> Element {
             if flagged {
                 spawn(async move {
                     if let Err(err) = session.mark_unread(room_id, false).await {
-                        error!(%err, "clearing the unread flag failed");
+                        report("clearing the unread flag", &err);
                     }
                 });
             }
@@ -657,7 +660,7 @@ fn ChatRoom(room: RoomSummary) -> Element {
                             typing.set(names);
                         }
                     }
-                    Err(err) => error!(%err, "typing subscription failed"),
+                    Err(err) => report("typing subscription", &err),
                 }
             }
         }

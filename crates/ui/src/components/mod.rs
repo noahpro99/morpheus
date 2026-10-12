@@ -21,6 +21,7 @@ mod thread;
 mod timeline;
 mod user_bar;
 mod titlebar;
+mod toast;
 
 pub use login::Login;
 pub use shell::Shell;

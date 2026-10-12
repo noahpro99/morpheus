@@ -2,10 +2,10 @@
 //! in the right column, or the signed-in user's chip in the sidebar footer.
 
 use dioxus::prelude::*;
+
 use std::rc::Rc;
 
 use morpheus_core::{MemberRole, OwnedUserId, Session};
-use tracing::warn;
 
 use super::context_menu::{MenuItem, copy_to_clipboard, open_menu_at};
 use super::shell::{Rooms, Scope, Selected, SelectedSpace, go_to};
@@ -385,7 +385,7 @@ pub fn ProfileCard(open: ProfileOpen) -> Element {
             let future = session.set_note(user_id.clone(), note());
             spawn(async move {
                 if let Err(err) = future.await {
-                    warn!(%err, "saving the note failed");
+                    super::toast::report("saving the note", &err);
                 } else {
                     note_saved.set(true);
                 }
@@ -409,16 +409,16 @@ pub fn ProfileCard(open: ProfileOpen) -> Element {
                         match session.timeline(dm.clone()).await {
                             Ok(opened) => {
                                 if let Err(err) = opened.handle.send_text(body).await {
-                                    warn!(%err, "sending from the card failed");
+                                    super::toast::report("sending from the card", &err);
                                 }
                             }
-                            Err(err) => warn!(%err, "opening the DM failed"),
+                            Err(err) => super::toast::report("opening the DM", &err),
                         }
                         scope.set(Scope::Dms);
                         go_to(dm);
                         close();
                     }
-                    Err(err) => warn!(%err, "no DM for the message"),
+                    Err(err) => super::toast::report("no DM for the message", &err),
                 }
             });
         }
@@ -482,7 +482,7 @@ pub fn ProfileCard(open: ProfileOpen) -> Element {
                                 let future = session.invite(target.clone(), user_id.clone());
                                 spawn(async move {
                                     if let Err(err) = future.await {
-                                        warn!(%err, "invite failed");
+                                        super::toast::report("invite", &err);
                                     }
                                 });
                             }
@@ -501,7 +501,7 @@ pub fn ProfileCard(open: ProfileOpen) -> Element {
                             let future = session.block(user_id.clone(), !is_blocked);
                             spawn(async move {
                                 if let Err(err) = future.await {
-                                    warn!(%err, "block failed");
+                                    super::toast::report("block", &err);
                                 } else {
                                     blocked_now.set(Some(!is_blocked));
                                 }

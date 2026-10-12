@@ -4,11 +4,11 @@
 use std::rc::Rc;
 
 use dioxus::prelude::*;
+use super::toast::report;
 use morpheus_core::{
     Device, EncryptionStatus, RecoveryAvailability, Session, VerificationActions,
     VerificationHandle, VerificationStep,
 };
-use tracing::warn;
 
 /// Whether the settings modal is open. Provided by the shell.
 pub type SettingsOpen = Signal<bool>;
@@ -259,7 +259,7 @@ pub fn VerificationPanel(verification: Rc<Verification>) -> Element {
     let run = move |future: morpheus_core::CoreFuture<()>| {
         spawn(async move {
             if let Err(err) = future.await {
-                warn!(%err, "verification action failed");
+                report("verification action", &err);
             }
         });
     };

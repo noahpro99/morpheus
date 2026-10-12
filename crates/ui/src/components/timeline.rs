@@ -1,11 +1,11 @@
 use std::{cell::RefCell, path::PathBuf, rc::Rc, time::Duration};
 
 use dioxus::prelude::*;
+use super::toast::report;
 use morpheus_core::{
     MediaRef, Message, MessageId, MessageKind, OpenTimeline, OwnedEventId, OwnedRoomId, Reaction,
     ReplyPreview, Session, ThreadSummary, TimelineEntry, TimelineHandle, Vector,
 };
-use tracing::{error, warn};
 
 use super::{
     composer::{ActiveTimeline, ComposerMode, Draft, Mode},
@@ -169,14 +169,14 @@ pub fn TimelineView(
                             let receipt = opened.clone();
                             spawn(async move {
                                 if let Err(err) = receipt.send_read_receipt().await {
-                                    warn!(%err, "read receipt failed");
+                                    report("read receipt", &err);
                                 }
                             });
                         }
                     }
                 }
                 Err(err) => {
-                    error!(%err, "opening timeline failed");
+                    report("opening timeline", &err);
                     load_error.set(Some(err.to_string()));
                 }
             }
@@ -447,7 +447,7 @@ pub(crate) fn MessageRow(message: Message, show_header: bool) -> Element {
             let id = id.clone();
             spawn(async move {
                 if let Err(err) = active.redact(id).await {
-                    warn!(%err, "delete failed");
+                    report("delete", &err);
                 }
             });
         }
@@ -470,7 +470,7 @@ pub(crate) fn MessageRow(message: Message, show_header: bool) -> Element {
             let (id, key) = (id.clone(), key.to_owned());
             spawn(async move {
                 if let Err(err) = active.toggle_reaction(id, key).await {
-                    warn!(%err, "reaction failed");
+                    report("reaction", &err);
                 }
             });
         }
@@ -565,7 +565,7 @@ pub(crate) fn MessageRow(message: Message, show_header: bool) -> Element {
                                     let future = session.forward(from.clone(), event_id.clone(), to.clone());
                                     spawn(async move {
                                         if let Err(err) = future.await {
-                                            warn!(%err, "forward failed");
+                                            report("forward", &err);
                                         }
                                     });
                                 }
@@ -587,7 +587,7 @@ pub(crate) fn MessageRow(message: Message, show_header: bool) -> Element {
                         let mut refresh = consume_context::<PinnedRefresh>();
                         spawn(async move {
                             if let Err(err) = future.await {
-                                warn!(%err, "pin failed");
+                                report("pin", &err);
                             }
                             refresh += 1;
                         });
@@ -600,7 +600,7 @@ pub(crate) fn MessageRow(message: Message, show_header: bool) -> Element {
                         let future = session.mark_unread(room_id.clone(), true);
                         spawn(async move {
                             if let Err(err) = future.await {
-                                warn!(%err, "mark unread failed");
+                                report("mark unread", &err);
                             }
                         });
                     }
@@ -655,7 +655,7 @@ pub(crate) fn MessageRow(message: Message, show_header: bool) -> Element {
                             let id = id.clone();
                             spawn(async move {
                                 if let Err(err) = active.redact(id).await {
-                                    warn!(%err, "delete failed");
+                                    report("delete", &err);
                                 }
                             });
                         }
