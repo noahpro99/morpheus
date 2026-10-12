@@ -17,7 +17,10 @@ use super::{
         ProfileTarget, ProfileVersion, StatusModal,
     },
     rail::Rail,
-    room_dialogs::{CreateRoomModal, EditRoomModal, InviteModal, OpenRoomDialog, RoomDialog},
+    room_dialogs::{
+        CreateRoomModal, CreateSpaceModal, EditRoomModal, InviteModal, LeaveSpaceModal,
+        OpenRoomDialog, PrivacyModal, RoomDialog, RoomProfileModal,
+    },
     room_list::RoomList,
     settings::{ActiveVerification, Settings, SettingsOpen, track_verification},
     switcher::QuickSwitcher,
@@ -43,6 +46,30 @@ pub struct Mention(pub Option<String>);
 pub type MentionRequest = Signal<Mention>;
 /// Visited rooms for the title bar's back and forward buttons.
 pub type NavHistory = Signal<Nav>;
+
+/// Layout preferences synced through account data (`dev.morpheus.ui`).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Prefs {
+    pub hide_muted: bool,
+}
+
+impl Prefs {
+    pub fn from_json(value: &serde_json::Value) -> Self {
+        Self {
+            hide_muted: value.get("hide_muted").and_then(|v| v.as_bool()).unwrap_or(false),
+        }
+    }
+
+    pub fn to_json(&self) -> serde_json::Value {
+        serde_json::json!({ "hide_muted": self.hide_muted })
+    }
+}
+pub type UiPrefs = Signal<Prefs>;
+/// Bumped when member state changed outside the members panel (nicknames),
+/// so it refetches.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct MembersStamp(pub u32);
+pub type MembersVersion = Signal<MembersStamp>;
 /// What the sidebar lists: direct messages, ungrouped rooms, or one space.
 /// Its own type, not a bare `Option<OwnedRoomId>`: Dioxus context is keyed by
 /// type, and sharing a type with [`Selected`] made room clicks land on the
@@ -140,6 +167,19 @@ pub fn Shell(session: Session) -> Element {
     let mut nav: NavHistory = use_context_provider(|| Signal::new(Nav::default()));
     let lightbox_open: LightboxOpen = use_context_provider(|| Signal::new(LightboxShown(false)));
     let mut escapes: EscapeTick = use_context_provider(|| Signal::new(Escapes(0)));
+    let mut prefs: UiPrefs = use_context_provider(|| Signal::new(Prefs::default()));
+    let _members_version: MembersVersion = use_context_provider(|| Signal::new(MembersStamp::default()));
+    use_future({
+        let session = session.clone();
+        move || {
+            let session = session.clone();
+            async move {
+                if let Ok(value) = session.ui_prefs().await {
+                    prefs.set(Prefs::from_json(&value));
+                }
+            }
+        }
+    });
     // Every room the user lands in becomes a history entry (back/forward).
     use_effect(move || {
         if let Some(room_id) = selected() {
@@ -191,6 +231,15 @@ pub fn Shell(session: Session) -> Element {
     // the scope out from under the open room (like Discord does).
     use_effect(move || {
         let in_scope = rooms_in_scope(&rooms.read(), &selected_space.read());
+        // A room we just created (or a DM just opened) is selected before the
+        // list has it; leave that alone rather than bouncing elsewhere.
+        let unknown = selected
+            .peek()
+            .as_ref()
+            .is_some_and(|id| !rooms.read().iter().any(|room| &room.id == id));
+        if unknown {
+            return;
+        }
         let still_open = selected
             .peek()
             .as_ref()
@@ -410,6 +459,10 @@ pub fn Shell(session: Session) -> Element {
                 RoomDialog::Invite(room_id) => rsx! { InviteModal { room_id } },
                 RoomDialog::Edit(room_id) => rsx! { EditRoomModal { room_id } },
                 RoomDialog::Create => rsx! { CreateRoomModal {} },
+                RoomDialog::Privacy(room_id) => rsx! { PrivacyModal { room_id } },
+                RoomDialog::RoomProfile(room_id) => rsx! { RoomProfileModal { room_id } },
+                RoomDialog::CreateSpace(parent) => rsx! { CreateSpaceModal { parent } },
+                RoomDialog::LeaveSpace(space_id) => rsx! { LeaveSpaceModal { space_id } },
                 RoomDialog::None => rsx! {},
             }
             ContextMenuLayer {}

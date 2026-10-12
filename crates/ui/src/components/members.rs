@@ -6,7 +6,7 @@ use tracing::warn;
 
 use super::context_menu::{MenuItem, copy_to_clipboard, open_menu};
 use super::profile::open_profile;
-use super::shell::{Mention, MentionRequest, Rooms, Scope, Selected, SelectedSpace};
+use super::shell::{Mention, MentionRequest, MembersVersion, Rooms, Scope, Selected, SelectedSpace};
 use crate::media::Avatar;
 
 /// Rows rendered at first. Big rooms have thousands of members, and every
@@ -27,9 +27,10 @@ pub fn Members(room_id: OwnedRoomId, member_count: u64) -> Element {
     let mut shown = use_signal(|| MEMBERS_PAGE);
     let refresh: Refresh = use_signal(|| 0);
 
+    let version = use_context::<MembersVersion>();
     let members = use_resource(use_reactive!(|room_id, member_count| {
         let session = session.clone();
-        let _ = (refresh(), member_count);
+        let _ = (refresh(), member_count, version());
         async move { session.members(room_id).await.map_err(|e| e.to_string()) }
     }));
     let permissions = use_resource(use_reactive!(|room_id| {

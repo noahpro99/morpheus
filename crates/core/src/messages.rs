@@ -16,7 +16,7 @@ pub struct PinnedMessage {
 }
 
 impl Session {
-    fn room(&self, room_id: &OwnedRoomId) -> crate::Result<matrix_sdk::Room> {
+    pub(crate) fn room(&self, room_id: &OwnedRoomId) -> crate::Result<matrix_sdk::Room> {
         self.client
             .get_room(room_id)
             .ok_or_else(|| Error::UnknownRoom(room_id.clone()))

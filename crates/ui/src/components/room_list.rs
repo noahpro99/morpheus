@@ -1,9 +1,10 @@
 use dioxus::prelude::*;
-use morpheus_core::{NotifyMode, RoomSummary, Session};
+use morpheus_core::{NotifyMode, OwnedRoomId, RoomSummary, Session};
 
-use super::context_menu::{MenuItem, copy_to_clipboard, open_menu_at};
+use super::context_menu::{MenuItem, copy_to_clipboard, open_menu, open_menu_at};
+use super::space_menu::space_menu;
 use super::room_dialogs::{OpenRoomDialog, RoomDialog};
-use super::shell::{Rooms, Scope, Selected, SelectedSpace, rooms_in_scope};
+use super::shell::{Rooms, Scope, Selected, SelectedSpace, UiPrefs, rooms_in_scope};
 use crate::icons::Icon;
 use crate::media::Avatar;
 
@@ -11,12 +12,43 @@ use crate::media::Avatar;
 pub fn RoomList(error: Option<String>) -> Element {
     let rooms = use_context::<Rooms>();
     let selected_space = use_context::<SelectedSpace>();
+    let selected = use_context::<Selected>();
+    let prefs = use_context::<UiPrefs>();
+    let session = use_context::<Session>();
 
     let scope = selected_space();
+    let hide_muted = prefs().hide_muted;
+    let open_room = selected();
     let (dms, channels): (Vec<RoomSummary>, Vec<RoomSummary>) =
         rooms_in_scope(&rooms.read(), &scope)
             .into_iter()
+            // "Hide muted channels" keeps the open room visible.
+            .filter(|room| !hide_muted || !room.muted || Some(&room.id) == open_room.as_ref())
             .partition(|room| room.is_dm);
+    // Inside a space, rooms under a nested space ("category") group under its name.
+    let categories: Vec<(OwnedRoomId, String)> = match &scope {
+        Scope::Space(space_id) => rooms
+            .read()
+            .iter()
+            .filter(|r| r.is_space && r.parent_spaces.contains(space_id))
+            .map(|r| (r.id.clone(), r.name.clone()))
+            .collect(),
+        _ => Vec::new(),
+    };
+    let category_of = |room: &RoomSummary| categories.iter().find(|(id, _)| room.parent_spaces.contains(id)).cloned();
+    let no_rooms = channels.is_empty();
+    let (uncategorised, categorised): (Vec<RoomSummary>, Vec<RoomSummary>) =
+        channels.into_iter().partition(|room| category_of(room).is_none());
+
+    // Clicking the space name opens the server menu.
+    let header_menu = {
+        let scope = scope.clone();
+        move |e: Event<MouseData>| {
+            let Scope::Space(space_id) = &scope else { return };
+            let Some(space) = rooms.read().iter().find(|r| &r.id == space_id).cloned() else { return };
+            open_menu(&e, space_menu(&session, rooms, &space), None);
+        }
+    };
 
     // Sidebar header: what the rail selected.
     let header_title = match &scope {
@@ -35,7 +67,15 @@ pub fn RoomList(error: Option<String>) -> Element {
     rsx! {
         aside { class: "sidebar",
             header { class: "sidebar-header",
-                h2 { "{header_title}" }
+                h2 {
+                    class: if matches!(scope, Scope::Space(_)) { "server-name" },
+                    onclick: header_menu.clone(),
+                    oncontextmenu: header_menu,
+                    "{header_title}"
+                    if matches!(scope, Scope::Space(_)) {
+                        Icon { glyph: crate::icons::CHEVRON_RIGHT, size: 14, class: "server-caret" }
+                    }
+                }
                 if scope != Scope::Dms {
                     button {
                         class: "ghost create-room-button",
@@ -50,7 +90,7 @@ pub fn RoomList(error: Option<String>) -> Element {
                 if let Some(message) = error {
                     p { class: "error", "{message}" }
                 }
-                if dms.is_empty() && channels.is_empty() {
+                if dms.is_empty() && no_rooms {
                     p { class: "muted pad",
                         match scope {
                             Scope::Dms => "No direct messages yet.",
@@ -66,12 +106,25 @@ pub fn RoomList(error: Option<String>) -> Element {
                         RoomRow { key: "{room.id}", room }
                     }
                 }
-                if !channels.is_empty() {
+                if !uncategorised.is_empty() {
                     if grouped {
                         h4 { class: "section", "Rooms" }
                     }
-                    for room in channels {
+                    for room in uncategorised {
                         RoomRow { key: "{room.id}", room }
+                    }
+                }
+                for (category_id, category_name) in categories.iter() {
+                    {
+                        let members: Vec<RoomSummary> = categorised.iter().filter(|r| r.parent_spaces.contains(category_id)).cloned().collect();
+                        rsx! {
+                            if !members.is_empty() {
+                                h4 { key: "{category_id}", class: "section category", "{category_name}" }
+                                for room in members {
+                                    RoomRow { key: "{room.id}", room }
+                                }
+                            }
+                        }
                     }
                 }
             }

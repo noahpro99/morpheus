@@ -1,6 +1,12 @@
 use dioxus::prelude::*;
 
+use morpheus_core::Session;
+
+use super::context_menu::open_menu;
+use super::room_dialogs::{OpenRoomDialog, RoomDialog};
 use super::shell::{Rooms, Scope, SelectedSpace};
+use super::space_menu::space_menu;
+use crate::icons::{Icon, PLUS};
 use crate::media::Avatar;
 
 /// Left-most column: direct messages, ungrouped rooms, then one badge per
@@ -10,6 +16,7 @@ use crate::media::Avatar;
 pub fn Rail() -> Element {
     let rooms = use_context::<Rooms>();
     let mut selected_space = use_context::<SelectedSpace>();
+    let session = use_context::<Session>();
 
     // Only top-level spaces get their own badge; a nested space's rooms show
     // up when its top-level ancestor is selected instead.
@@ -58,8 +65,19 @@ pub fn Rail() -> Element {
                         let id = space.id.clone();
                         move |_| selected_space.set(Scope::Space(id.clone()))
                     },
+                    oncontextmenu: {
+                        let space = space.clone();
+                        let session = session.clone();
+                        move |e| open_menu(&e, space_menu(&session, rooms, &space), None)
+                    },
                     Avatar { media: space.avatar.clone(), fallback: space.name.clone(), size: 48 }
                 }
+            }
+            button {
+                class: "rail-item rail-add",
+                title: "Create a server",
+                onclick: move |_| consume_context::<OpenRoomDialog>().set(RoomDialog::CreateSpace(None)),
+                Icon { glyph: PLUS, size: 22 }
             }
         }
     }

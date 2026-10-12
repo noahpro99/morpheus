@@ -272,6 +272,19 @@ for u in bob carol; do
 done
 echo "  = bob and carol are members again"
 
+# Garbage-collect rooms the tests create (servers, categories, rooms made
+# through the UI or the core live tests). Keeps the server small and fast.
+echo "gc:"
+GC_COUNT=0
+while read -r room_id name; do
+  case "$name" in
+    "srv "*|"live srv"*|"live category"|"live chatter"|"Text channels"|"chatter"|"curl "*|"e2e room"*|"space room"*)
+      api "$ALICE" DELETE "/_synapse/admin/v1/rooms/$room_id" '{"purge": true}' >/dev/null 2>&1 || true
+      GC_COUNT=$((GC_COUNT + 1));;
+  esac
+done < <(api "$ALICE" GET "/_synapse/admin/v1/rooms?limit=500" | jq -r '.rooms[] | "\(.room_id) \(.name // "")"')
+echo "  - removed $GC_COUNT leftover test rooms"
+
 if [[ ! -f "$HS_DIR/.seeded-firehose" ]]; then
   echo "firehose:"
   FIREHOSE=$(ensure_room firehose "firehose" "600 messages for performance tests")

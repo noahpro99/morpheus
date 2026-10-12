@@ -12,6 +12,7 @@ mod rail;
 mod room_dialogs;
 mod room_list;
 mod settings;
+mod space_menu;
 mod shell;
 mod switcher;
 mod thread;
