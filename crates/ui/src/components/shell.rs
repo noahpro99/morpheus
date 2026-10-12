@@ -28,6 +28,10 @@ pub type Selected = Signal<Option<OwnedRoomId>>;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MembersShown(pub bool);
 pub type MembersOpen = Signal<MembersShown>;
+/// A display name to insert into the composer (member menu "Mention").
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Mention(pub Option<String>);
+pub type MentionRequest = Signal<Mention>;
 /// What the sidebar lists: direct messages, ungrouped rooms, or one space.
 /// Its own type, not a bare `Option<OwnedRoomId>`: Dioxus context is keyed by
 /// type, and sharing a type with [`Selected`] made room clicks land on the
@@ -118,6 +122,7 @@ pub fn Shell(session: Session) -> Element {
     let mut open_profile: OpenProfile = use_context_provider(|| Signal::new(ProfileTarget::default()));
     let mut context_menu: ContextMenu = use_context_provider(|| Signal::new(MenuState::default()));
     let mut editor: ProfileEditor = use_context_provider(|| Signal::new(Editor::None));
+    let _mention: MentionRequest = use_context_provider(|| Signal::new(Mention::default()));
     let _refresh: ProfileRefresh = use_context_provider(|| Signal::new(ProfileVersion::default()));
 
     // Incoming verification requests from the user's other devices pop the settings dialog.
@@ -242,7 +247,7 @@ pub fn Shell(session: Session) -> Element {
             }
             match (side_column, current(), active_thread()) {
                 (SideColumn::Thread, Some(room), Some(root)) => rsx! { ThreadPanel { room_id: room.id.clone(), root } },
-                (SideColumn::Members, Some(room), _) => rsx! { Members { room_id: room.id.clone() } },
+                (SideColumn::Members, Some(room), _) => rsx! { Members { room_id: room.id.clone(), member_count: room.member_count } },
                 _ => rsx! {},
             }
             if switcher_open() {

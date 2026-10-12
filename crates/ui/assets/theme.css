@@ -1033,3 +1033,29 @@ button.sender:hover { text-decoration: underline; }
 .profile-editor input:focus { border-color: var(--accent); }
 .profile-editor-avatar { display: flex; align-items: center; gap: 14px; }
 .profile-status { margin-top: 2px; font-size: 0.9rem; }
+
+/* ---- Context submenus ------------------------------------------------------ */
+
+.context-item.has-submenu {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: default;
+}
+.submenu-arrow { color: var(--text-faint); margin-left: 12px; }
+.context-submenu {
+  display: none;
+  position: absolute;
+  top: -6px;
+  left: 100%;
+  margin-left: 2px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.context-item.has-submenu:hover > .context-submenu { display: flex; }
+.context-item.checked::after { content: "✓"; float: right; color: var(--accent); }
+.context-item.has-submenu:hover { background: var(--accent-strong); color: white; }
+.context-item.has-submenu:hover > .submenu-arrow { color: white; }
+.member.blocked { opacity: 0.6; }
+.member .tag { margin-left: auto; font-size: 0.65rem; }

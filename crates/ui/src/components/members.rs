@@ -1,24 +1,43 @@
+use std::rc::Rc;
+
 use dioxus::prelude::*;
-use morpheus_core::{Member, MemberRole, OwnedRoomId, Session};
+use morpheus_core::{Member, MemberPermissions, MemberRole, OwnedRoomId, Session};
+use tracing::warn;
 
 use super::context_menu::{MenuItem, copy_to_clipboard, open_menu};
 use super::profile::open_profile;
+use super::shell::{Mention, MentionRequest, Rooms, Scope, Selected, SelectedSpace};
 use crate::media::Avatar;
 
 /// Rows rendered at first. Big rooms have thousands of members, and every
 /// rendered row fetches an avatar, so the list grows only on request.
 const MEMBERS_PAGE: usize = 100;
 
-/// Right column: joined members grouped by role.
-#[component]
-pub fn Members(room_id: OwnedRoomId) -> Element {
-    let session = use_context::<Session>();
-    let mut shown = use_signal(|| MEMBERS_PAGE);
+/// Bumped after a moderation action so the list refetches.
+type Refresh = Signal<u32>;
 
-    let members = use_resource(use_reactive!(|room_id| {
+/// Right column: joined members grouped by role.
+///
+/// `member_count` comes from the room summary so the list refetches when
+/// someone joins or leaves.
+#[component]
+pub fn Members(room_id: OwnedRoomId, member_count: u64) -> Element {
+    let session = use_context::<Session>();
+    let session2 = session.clone();
+    let mut shown = use_signal(|| MEMBERS_PAGE);
+    let refresh: Refresh = use_signal(|| 0);
+
+    let members = use_resource(use_reactive!(|room_id, member_count| {
         let session = session.clone();
+        let _ = (refresh(), member_count);
         async move { session.members(room_id).await.map_err(|e| e.to_string()) }
     }));
+    let permissions = use_resource(use_reactive!(|room_id| {
+        let session = session2.clone();
+        let _ = refresh();
+        async move { session.my_permissions(room_id).await.unwrap_or_default() }
+    }));
+    let permissions = permissions().unwrap_or_default();
 
     rsx! {
         aside { class: "members",
@@ -41,7 +60,13 @@ pub fn Members(room_id: OwnedRoomId) -> Element {
                                             h3 { "{role.label()} — {total}" }
                                         }
                                         for member in group {
-                                            MemberRow { key: "{member.user_id}", member: member.clone() }
+                                            MemberRow {
+                                                key: "{member.user_id}",
+                                                member: member.clone(),
+                                                room_id: room_id.clone(),
+                                                permissions,
+                                                refresh,
+                                            }
                                         }
                                     }
                                 }
@@ -62,31 +87,209 @@ pub fn Members(room_id: OwnedRoomId) -> Element {
 }
 
 #[component]
-fn MemberRow(member: Member) -> Element {
+fn MemberRow(
+    member: Member,
+    room_id: OwnedRoomId,
+    permissions: MemberPermissions,
+    refresh: Refresh,
+) -> Element {
+    let session = use_context::<Session>();
+    let own = session.user_id().as_ref() == Some(&member.user_id);
+
+    let on_context = {
+        let member = Rc::new(member.clone());
+        let room_id = room_id.clone();
+        let session = session.clone();
+        move |e: Event<MouseData>| {
+            let items = member_menu(&session, &room_id, &member, permissions, own, refresh);
+            open_menu(&e, items, None);
+        }
+    };
+
     rsx! {
         button {
             class: "member",
+            class: if member.is_ignored { "blocked" },
             title: "{member.user_id}",
             onclick: {
                 let user_id = member.user_id.clone();
                 move |_| open_profile(user_id.clone())
             },
-            oncontextmenu: {
-                let user_id = member.user_id.clone();
-                move |e| {
-                    let (profile_id, copy_id) = (user_id.clone(), user_id.to_string());
-                    open_menu(
-                        &e,
-                        vec![
-                            MenuItem::new("View profile", move || open_profile(profile_id.clone())),
-                            MenuItem::new("Copy user ID", move || copy_to_clipboard(&copy_id)),
-                        ],
-                        None,
-                    );
-                }
-            },
+            oncontextmenu: on_context,
             Avatar { media: member.avatar.clone(), fallback: member.name.clone(), size: 32 }
             span { class: "member-name", "{member.name}" }
+            if member.is_ignored {
+                span { class: "tag", title: "You blocked this user", "blocked" }
+            }
         }
+    }
+}
+
+/// The right-click menu for a member: everything Discord offers that Matrix
+/// has an equivalent for, gated by the signed-in user's power level.
+fn member_menu(
+    session: &Session,
+    room_id: &OwnedRoomId,
+    member: &Rc<Member>,
+    permissions: MemberPermissions,
+    own: bool,
+    refresh: Refresh,
+) -> Vec<MenuItem> {
+    let user_id = member.user_id.clone();
+    let mut items = vec![MenuItem::new("Profile", {
+        let user_id = user_id.clone();
+        move || open_profile(user_id.clone())
+    })];
+
+    if own {
+        items.push(MenuItem::new("Copy user ID", {
+            let id = user_id.to_string();
+            move || copy_to_clipboard(&id)
+        }));
+        return items;
+    }
+
+    // Finishes a moderation action: log failures, refetch the list.
+    let run = {
+        let session = session.clone();
+        move |action: fn(&Session, OwnedRoomId, morpheus_core::OwnedUserId) -> morpheus_core::CoreFuture<()>,
+              what: &'static str,
+              room_id: OwnedRoomId,
+              user_id: morpheus_core::OwnedUserId| {
+            let future = action(&session, room_id, user_id);
+            spawn(async move {
+                let mut refresh = refresh;
+                if let Err(err) = future.await {
+                    warn!(%err, what, "member action failed");
+                }
+                refresh += 1;
+            });
+        }
+    };
+
+    items.push(MenuItem::new("Mention", {
+        let name = member.name.clone();
+        move || consume_context::<MentionRequest>().set(Mention(Some(name.clone())))
+    }));
+    items.push(MenuItem::new("Message", {
+        let session = session.clone();
+        let user_id = user_id.clone();
+        move || {
+            let session = session.clone();
+            let user_id = user_id.clone();
+            let mut selected = consume_context::<Selected>();
+            let mut scope = consume_context::<SelectedSpace>();
+            spawn(async move {
+                match session.dm_with(user_id).await {
+                    Ok(dm) => {
+                        scope.set(Scope::Dms);
+                        selected.set(Some(dm));
+                    }
+                    Err(err) => warn!(%err, "opening a DM failed"),
+                }
+            });
+        }
+    }));
+
+    // Invite to another room: every joined room we may invite to.
+    let rooms = consume_context::<Rooms>();
+    let targets: Vec<MenuItem> = rooms
+        .read()
+        .iter()
+        .filter(|room| !room.is_space && !room.is_dm && &room.id != room_id)
+        .map(|room| {
+            MenuItem::new(format!("#{}", room.name), {
+                let session = session.clone();
+                let (target, user_id) = (room.id.clone(), user_id.clone());
+                move || {
+                    let future = session.invite(target.clone(), user_id.clone());
+                    spawn(async move {
+                        if let Err(err) = future.await {
+                            warn!(%err, "invite failed");
+                        }
+                    });
+                }
+            })
+        })
+        .collect();
+    if !targets.is_empty() {
+        items.push(MenuItem::submenu("Invite to room", targets));
+    }
+
+    items.push(MenuItem::new(
+        if member.is_ignored { "Unblock" } else { "Block" },
+        {
+            let session = session.clone();
+            let user_id = user_id.clone();
+            let blocked = !member.is_ignored;
+            move || {
+                let future = session.block(user_id.clone(), blocked);
+                spawn(async move {
+                    let mut refresh = refresh;
+                    if let Err(err) = future.await {
+                        warn!(%err, "block failed");
+                    }
+                    refresh += 1;
+                });
+            }
+        },
+    ));
+
+    if permissions.can_change_roles && permissions.outranks(member) {
+        let roles = [MemberRole::Member, MemberRole::Moderator, MemberRole::Admin]
+            .into_iter()
+            .filter(|role| role.power_level() <= permissions.power_level)
+            .map(|role| {
+                MenuItem::new(role_name(role), {
+                    let session = session.clone();
+                    let (room_id, user_id) = (room_id.clone(), user_id.clone());
+                    move || {
+                        let future = session.set_role(room_id.clone(), user_id.clone(), role);
+                        spawn(async move {
+                            let mut refresh = refresh;
+                            if let Err(err) = future.await {
+                                warn!(%err, "role change failed");
+                            }
+                            refresh += 1;
+                        });
+                    }
+                })
+                .checked(role == member.role)
+            })
+            .collect();
+        items.push(MenuItem::submenu("Roles", roles));
+    }
+    if permissions.can_kick && permissions.outranks(member) {
+        items.push(
+            MenuItem::new(format!("Kick {}", member.name), {
+                let run = run.clone();
+                let (room_id, user_id) = (room_id.clone(), user_id.clone());
+                move || run(|s, r, u| s.kick(r, u, None), "kick", room_id.clone(), user_id.clone())
+            })
+            .danger(),
+        );
+    }
+    if permissions.can_ban && permissions.outranks(member) {
+        items.push(
+            MenuItem::new(format!("Ban {}", member.name), {
+                let run = run.clone();
+                let (room_id, user_id) = (room_id.clone(), user_id.clone());
+                move || run(|s, r, u| s.ban(r, u, None), "ban", room_id.clone(), user_id.clone())
+            })
+            .danger(),
+        );
+    }
+    items.push(MenuItem::new("Copy user ID", {
+        let id = user_id.to_string();
+        move || copy_to_clipboard(&id)
+    }));
+    items
+}
+
+fn role_name(role: MemberRole) -> &'static str {
+    match role {
+        MemberRole::Admin => "Admin",
+        MemberRole::Moderator => "Moderator",
+        MemberRole::Member => "Member",
     }
 }

@@ -2,6 +2,7 @@ use dioxus::prelude::*;
 use morpheus_core::{MessageId, OwnedEventId, TimelineHandle};
 use tracing::warn;
 
+use super::shell::{Mention, MentionRequest};
 use crate::attach::pick_attachment;
 
 /// Shared between the timeline (which owns the handle) and the composer.
@@ -35,6 +36,24 @@ pub fn Composer(room_name: String, #[props(default)] placeholder: Option<String>
     // Focus the box as soon as the room is ready to send, so navigating to a
     // room (or opening a thread) lets you type straight away.
     let mut input_el = use_signal(|| None::<std::rc::Rc<MountedData>>);
+    // "Mention" from a member's menu drops their name into the box.
+    let mut mention = use_context::<MentionRequest>();
+    use_effect(move || {
+        if let Some(name) = mention().0 {
+            mention.set(Mention::default());
+            let mut text = draft.peek().clone();
+            if !text.is_empty() && !text.ends_with(' ') {
+                text.push(' ');
+            }
+            text.push_str(&format!("@{name} "));
+            draft.set(text);
+            if let Some(el) = input_el.peek().clone() {
+                spawn(async move {
+                    let _ = el.set_focus(true).await;
+                });
+            }
+        }
+    });
     use_effect(move || {
         if timeline().is_some()
             && let Some(el) = input_el()

@@ -244,15 +244,41 @@ impl App {
     }
 
     /// Scroll the timeline to its top repeatedly (revealing windowed rows and
-    /// paginating) until a message body contains `text`.
-    pub async fn reveal_message(&mut self, text: &str, timeout: Duration) -> Result<()> {
-        let found = format!(
-            "const t = document.querySelector('.timeline'); if (!t) return false; \
-             if ([...t.querySelectorAll('.message .body')].some(el => el.textContent.includes({}))) return true; \
-             t.scrollTop = -t.scrollHeight; return false;",
+    /// paginating) until `predicate_js` (a JS body returning a boolean) holds.
+    pub async fn reveal(&mut self, what: &str, predicate_js: &str, timeout: Duration) -> Result<()> {
+        let js = format!(
+            "if ((() => {{ {predicate_js} }})()) return true; \
+             const t = document.querySelector('.timeline'); if (t) t.scrollTop = -t.scrollHeight; return false;"
+        );
+        self.wait_until(timeout, &format!("{what} after scrolling up"), &js)
+            .await
+    }
+
+    /// [`Self::reveal`] for an element matching `selector`.
+    pub async fn reveal_element(&mut self, selector: &str, timeout: Duration) -> Result<()> {
+        let predicate = format!("return document.querySelector({}) !== null;", js_str(selector));
+        self.reveal(&format!("element matching {selector}"), &predicate, timeout)
+            .await
+    }
+
+    /// [`Self::reveal`] for an element matching `selector` whose text contains `text`.
+    pub async fn reveal_text(&mut self, selector: &str, text: &str, timeout: Duration) -> Result<()> {
+        let predicate = format!(
+            "return [...document.querySelectorAll({})].some(el => el.textContent.includes({}));",
+            js_str(selector),
             js_str(text)
         );
-        self.wait_until(timeout, &format!("message {text:?} after scrolling up"), &found)
+        self.reveal(&format!("{selector} containing {text:?}"), &predicate, timeout)
+            .await
+    }
+
+    /// [`Self::reveal`] for a message whose body contains `text`.
+    pub async fn reveal_message(&mut self, text: &str, timeout: Duration) -> Result<()> {
+        let predicate = format!(
+            "return [...document.querySelectorAll('.message .body')].some(el => el.textContent.includes({}));",
+            js_str(text)
+        );
+        self.reveal(&format!("message {text:?}"), &predicate, timeout)
             .await
     }
 

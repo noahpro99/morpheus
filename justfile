@@ -33,11 +33,12 @@ e2e-build:
     dx build --package morpheus-desktop --features e2e
 
 # Playwright-style tests through the real window (needs `just hs-up hs-seed`)
-e2e: e2e-build
+e2e: e2e-build hs-seed
     MORPHEUS_TEST_HOMESERVER={{hs}} cargo test -p morpheus-e2e -- --nocapture --test-threads=1
 
-# One e2e test file with per-step timings, e.g. `just e2e-one perf` (no rebuild; run `just e2e-build` after UI changes)
-e2e-one file:
+# One e2e test file with per-step timings, e.g. `just e2e-one perf` (no rebuild; run `just e2e-build` after UI changes).
+# Reseeds first: the moderation tests kick and ban users and the seed puts them back.
+e2e-one file: hs-seed
     MORPHEUS_TEST_HOMESERVER={{hs}} MORPHEUS_E2E_TIMINGS=1 cargo test -p morpheus-e2e --test {{file}} -- --nocapture --test-threads=1
 
 # Everything CI would run

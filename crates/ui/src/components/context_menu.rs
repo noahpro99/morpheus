@@ -11,10 +11,16 @@ use dioxus::prelude::*;
 
 use super::timeline::QUICK_REACTIONS;
 
+type Action = Rc<RefCell<dyn FnMut()>>;
+
 pub struct MenuItem {
-    pub label: String,
-    pub danger: bool,
-    pub run: Rc<RefCell<dyn FnMut()>>,
+    label: String,
+    danger: bool,
+    /// Shown with a check mark (the current choice in a submenu).
+    checked: bool,
+    run: Option<Action>,
+    /// A flyout opened on hover; the item itself does nothing when clicked.
+    children: Vec<Rc<MenuItem>>,
 }
 
 impl MenuItem {
@@ -22,7 +28,20 @@ impl MenuItem {
         Self {
             label: label.into(),
             danger: false,
-            run: Rc::new(RefCell::new(run)),
+            checked: false,
+            run: Some(Rc::new(RefCell::new(run))),
+            children: Vec::new(),
+        }
+    }
+
+    /// An item that opens `children` in a flyout.
+    pub fn submenu(label: impl Into<String>, children: Vec<MenuItem>) -> Self {
+        Self {
+            label: label.into(),
+            danger: false,
+            checked: false,
+            run: None,
+            children: children.into_iter().map(Rc::new).collect(),
         }
     }
 
@@ -30,12 +49,17 @@ impl MenuItem {
         self.danger = true;
         self
     }
+
+    pub fn checked(mut self, checked: bool) -> Self {
+        self.checked = checked;
+        self
+    }
 }
 
 pub struct Menu {
     x: f64,
     y: f64,
-    items: Vec<MenuItem>,
+    items: Vec<Rc<MenuItem>>,
     /// Quick-reaction row at the top (messages only).
     react: Option<Rc<dyn Fn(&'static str)>>,
 }
@@ -59,7 +83,7 @@ pub fn open_menu(
     menu.set(MenuState(Some(Rc::new(Menu {
         x: point.x,
         y: point.y,
-        items,
+        items: items.into_iter().map(Rc::new).collect(),
         react,
     }))));
 }
@@ -81,11 +105,14 @@ const CLAMP_JS: &str = "const m = document.querySelector('.context-menu'); if (!
 
 #[component]
 pub fn ContextMenuLayer() -> Element {
-    let mut menu = use_context::<ContextMenu>();
+    let menu = use_context::<ContextMenu>();
     let Some(open) = menu().0 else {
         return rsx! {};
     };
-    let mut close = move || menu.set(MenuState::default());
+    let close = move || {
+        let mut menu = menu;
+        menu.set(MenuState::default());
+    };
 
     rsx! {
         div {
@@ -121,19 +148,41 @@ pub fn ContextMenuLayer() -> Element {
                         }
                     }
                 }
-                for item in open.items.iter() {
-                    button {
-                        class: "context-item",
-                        class: if item.danger { "danger" },
-                        role: "menuitem",
-                        onclick: {
-                            let run = item.run.clone();
-                            move |_| {
+                {entries(&open.items, close)}
+            }
+        }
+    }
+}
+
+/// Rows of a menu; a row with children renders its flyout inline (CSS shows
+/// it on hover).
+fn entries(items: &[Rc<MenuItem>], close: impl FnMut() + Copy + 'static) -> Element {
+    rsx! {
+        for item in items.iter().cloned() {
+            if item.children.is_empty() {
+                button {
+                    class: "context-item",
+                    class: if item.danger { "danger" },
+                    class: if item.checked { "checked" },
+                    role: "menuitem",
+                    onclick: {
+                        let item = item.clone();
+                        move |_| {
+                            let mut close = close;
+                            if let Some(run) = &item.run {
                                 (run.borrow_mut())();
-                                close();
                             }
-                        },
-                        "{item.label}"
+                            close();
+                        }
+                    },
+                    "{item.label}"
+                }
+            } else {
+                div { class: "context-item has-submenu", role: "menuitem", "aria-haspopup": "true",
+                    span { "{item.label}" }
+                    span { class: "submenu-arrow", "›" }
+                    div { class: "context-menu context-submenu", role: "menu",
+                        {entries(&item.children, close)}
                     }
                 }
             }

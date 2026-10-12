@@ -49,16 +49,17 @@ async fn media_rich_text_reactions_and_members() {
         .await
         .expect("member avatar image");
 
-    // Sanitised HTML bodies render as markup, not escaped text.
-    app.wait_for_text(".message .rich strong", "fast", DEFAULT_WAIT)
+    // Sanitised HTML bodies render as markup, not escaped text. The seeded
+    // rows are old by now, so scroll up until they are revealed.
+    app.reveal_text(".message .rich strong", "fast", DEFAULT_WAIT)
         .await
         .expect("bold html");
-    app.wait_for_text(".message .rich pre code", "fn main", DEFAULT_WAIT)
+    app.reveal_text(".message .rich pre code", "fn main", DEFAULT_WAIT)
         .await
         .expect("code block");
 
     // Inline image thumbnail.
-    app.wait_for(".message img.image", DEFAULT_WAIT)
+    app.reveal_element(".message img.image", DEFAULT_WAIT)
         .await
         .expect("inline image");
 
@@ -142,8 +143,8 @@ async fn clicking_image_opens_lightbox() {
     let mut app = App::launch(&hs).await.expect("launch app");
     login_and_open(&mut app, "general").await;
 
-    // Open the seeded inline image thumbnail.
-    app.wait_for(".message img.image", DEFAULT_WAIT)
+    // Open the seeded inline image thumbnail (old by now: scroll up to it).
+    app.reveal_element(".message img.image", DEFAULT_WAIT)
         .await
         .expect("inline image");
     app.click(".message img.image").await.expect("click image");

@@ -103,7 +103,7 @@ async fn message_menu_replies_reacts_and_offers_edit_delete() {
         .expect("composer shows the reply banner");
 
     // Someone else's message: no edit or delete.
-    app.right_click(".message:not(.own)").await.expect("right-click other");
+    app.right_click(".message:not(.own):not(.system)").await.expect("right-click other");
     app.wait_for(".context-menu", DEFAULT_WAIT).await.expect("menu");
     let labels = app
         .eval("return [...document.querySelectorAll('.context-item')].map(e => e.textContent).join('|');")
@@ -142,7 +142,7 @@ async fn room_and_member_menus_and_no_native_menu() {
     app.wait_for_text(".context-item", "Copy user ID", DEFAULT_WAIT)
         .await
         .expect("member menu");
-    app.click_text(".context-item", "View profile")
+    app.click_text(".context-item", "Profile")
         .await
         .expect("view profile");
     app.wait_for(".profile-modal", DEFAULT_WAIT)
