@@ -109,4 +109,9 @@ async fn inbox_lists_unread_rooms_and_opens_them() {
         .await
         .expect("inbox closed");
     alice.wait_for_text(".message .body", &ping, DEFAULT_WAIT).await.expect("bob's ping visible");
+    // Reading the room clears it from the inbox.
+    alice
+        .wait_for_js("return document.querySelector('.inbox-badge') === null;", DEFAULT_WAIT)
+        .await
+        .expect("badge clears once the room is read");
 }

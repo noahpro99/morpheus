@@ -109,6 +109,7 @@ pub fn TimelineView(
         let root_event_id = root_event_id.clone();
         let handle_cell = handle_cell.clone();
         async move {
+            let is_thread = root_event_id.is_some();
             let opened = match root_event_id {
                 Some(root_event_id) => session.thread(room_id, root_event_id).await,
                 None => session.timeline(room_id).await,
@@ -146,13 +147,17 @@ pub fn TimelineView(
                             drop(opened.mark_as_fully_read());
                         }
 
-                        // The SDK only sends a receipt when the latest event moved forward.
-                        let receipt = opened.clone();
-                        spawn(async move {
-                            if let Err(err) = receipt.send_read_receipt().await {
-                                warn!(%err, "read receipt failed");
-                            }
-                        });
+                        // The SDK only sends a receipt when the latest event moved
+                        // forward. Thread timelines are skipped: the server rejects
+                        // threaded receipts for events outside the thread.
+                        if !is_thread {
+                            let receipt = opened.clone();
+                            spawn(async move {
+                                if let Err(err) = receipt.send_read_receipt().await {
+                                    warn!(%err, "read receipt failed");
+                                }
+                            });
+                        }
                     }
                 }
                 Err(err) => {

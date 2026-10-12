@@ -31,6 +31,25 @@ pub fn provide_lightbox() {
 pub fn Lightbox() -> Element {
     let images = use_context::<LightboxImages>();
     let mut index = use_context::<LightboxIndex>();
+    // Tell the shell when we are open, and close on the Escape it routes here.
+    let mut shown = use_context::<LightboxOpen>();
+    let escapes = use_context::<EscapeTick>();
+    use_effect(move || {
+        let open = index().is_some();
+        if shown.peek().0 != open {
+            shown.set(LightboxShown(open));
+        }
+    });
+    let mut seen = use_signal(|| escapes.peek().0);
+    use_effect(move || {
+        let tick = escapes().0;
+        if tick != *seen.peek() {
+            seen.set(tick);
+            if index.peek().is_some() {
+                index.set(None);
+            }
+        }
+    });
 
     let Some(current) = index() else {
         return rsx! {};
@@ -73,7 +92,6 @@ pub fn Lightbox() -> Element {
             autofocus: true,
             onclick: move |_| close(),
             onkeydown: move |e| match e.key() {
-                Key::Escape => close(),
                 Key::ArrowLeft => go(-1),
                 Key::ArrowRight => go(1),
                 _ => {}
@@ -120,3 +138,14 @@ pub fn Lightbox() -> Element {
         }
     }
 }
+
+/// Whether a lightbox is open anywhere, so the shell's Escape handling can
+/// hand that press to the lightbox instead of the next modal down.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct LightboxShown(pub bool);
+pub type LightboxOpen = Signal<LightboxShown>;
+
+/// Bumped by the shell for every Escape it routes to the lightbox.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Escapes(pub u32);
+pub type EscapeTick = Signal<Escapes>;

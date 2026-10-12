@@ -52,6 +52,12 @@ pub fn QuickSwitcher(open: Signal<bool>) -> Element {
                 input {
                     r#type: "text",
                     autofocus: true,
+                    // `autofocus` is unreliable in the webview; focus explicitly.
+                    onmounted: move |e| {
+                        spawn(async move {
+                            let _ = e.data().set_focus(true).await;
+                        });
+                    },
                     placeholder: "Jump to a room…",
                     value: "{query}",
                     oninput: move |e| {
@@ -61,7 +67,6 @@ pub fn QuickSwitcher(open: Signal<bool>) -> Element {
                     onkeydown: {
                         let mut choose = choose.clone();
                         move |e| match e.key() {
-                        Key::Escape => close(),
                         Key::ArrowDown => cursor.set(cursor_now + 1),
                         Key::ArrowUp => cursor.set(cursor_now.saturating_sub(1)),
                         Key::Enter => {
