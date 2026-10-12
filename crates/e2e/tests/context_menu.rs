@@ -149,11 +149,11 @@ async fn room_and_member_menus_and_no_native_menu() {
     app.click_text(".context-item", "Profile")
         .await
         .expect("view profile");
-    app.wait_for(".profile-modal", DEFAULT_WAIT)
+    app.wait_for(".profile-card", DEFAULT_WAIT)
         .await
         .expect("profile opened from the menu");
     menu_closed(&mut app).await;
-    app.press(".profile-modal", "Escape").await.expect("close profile");
+    app.press("body", "Escape").await.expect("close profile");
 
     // Right-clicking dead space never shows the webview's own menu.
     let prevented = app

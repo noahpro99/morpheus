@@ -116,15 +116,15 @@ async fn profile_modal_opens_from_sender_member_and_footer() {
         .expect("sender text")
         .unwrap_or_default();
     app.click(".message button.sender").await.expect("click sender");
-    app.wait_for_text(".profile-modal .profile-name", &sender, DEFAULT_WAIT)
+    app.wait_for_text(".profile-card .profile-name", &sender, DEFAULT_WAIT)
         .await
         .expect("profile shows the sender's name");
-    app.wait_for_text(".profile-modal .profile-id", ":localhost", DEFAULT_WAIT)
+    app.wait_for_text(".profile-card .profile-id", ":localhost", DEFAULT_WAIT)
         .await
         .expect("profile shows the Matrix ID");
-    app.press(".profile-modal", "Escape").await.expect("escape");
+    app.press("body", "Escape").await.expect("escape");
     app.wait_for_js(
-        "return document.querySelector('.profile-modal') === null;",
+        "return document.querySelector('.profile-card') === null && document.querySelector('.profile-modal') === null;",
         DEFAULT_WAIT,
     )
     .await
@@ -134,12 +134,12 @@ async fn profile_modal_opens_from_sender_member_and_footer() {
     app.click_text(".members .member", "carol")
         .await
         .expect("click carol");
-    app.wait_for_text(".profile-modal .profile-id", "@carol:localhost", DEFAULT_WAIT)
+    app.wait_for_text(".profile-card .profile-id", "@carol:localhost", DEFAULT_WAIT)
         .await
         .expect("carol's profile");
-    app.click(".profile-close").await.expect("close button");
+    app.click(".card-overlay").await.expect("click outside");
     app.wait_for_js(
-        "return document.querySelector('.profile-modal') === null;",
+        "return document.querySelector('.profile-card') === null && document.querySelector('.profile-modal') === null;",
         DEFAULT_WAIT,
     )
     .await
@@ -149,10 +149,10 @@ async fn profile_modal_opens_from_sender_member_and_footer() {
     app.click(".profile-chip").await.expect("click footer");
     app.wait_for(".context-menu", DEFAULT_WAIT).await.expect("account menu");
     app.click_text(".context-item", "View profile").await.expect("view profile");
-    app.wait_for_text(".profile-modal .profile-id", "@alice:localhost", DEFAULT_WAIT)
+    app.wait_for_text(".profile-card .profile-id", "@alice:localhost", DEFAULT_WAIT)
         .await
         .expect("own profile");
-    app.wait_for_text(".profile-modal", "This is you", DEFAULT_WAIT)
+    app.wait_for_text(".profile-card", "This is you", DEFAULT_WAIT)
         .await
         .expect("marked as own");
 }

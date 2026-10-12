@@ -1283,3 +1283,54 @@ button.sender:hover { text-decoration: underline; }
   background: var(--bg-input);
   color: var(--text);
 }
+
+/* ---- Profile card ------------------------------------------------------------ */
+
+.card-overlay { place-items: unset; padding: 0; }
+.profile-card {
+  position: fixed;
+  width: 340px;
+  max-height: 85vh;
+  overflow-y: auto;
+  border-radius: var(--radius-xl);
+  background: var(--bg-sidebar);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  outline: none;
+  z-index: 25;
+}
+.profile-card .profile-banner { height: 64px; position: relative; }
+.card-actions { position: absolute; top: 8px; right: 8px; display: flex; gap: 4px; }
+.card-button { color: white; background: rgba(0, 0, 0, 0.35); width: 28px; height: 28px; padding: 0; display: grid; place-items: center; }
+.card-button:hover { background: rgba(0, 0, 0, 0.55); }
+.profile-card .profile-body { padding: 0 16px 16px; gap: 6px; }
+.profile-card .profile-body .avatar { margin-top: -36px; border-width: 4px; font-size: 1.7rem; }
+.card-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+.card-section { width: 100%; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--bg-elevated); display: flex; flex-direction: column; gap: 6px; }
+.card-section h4 { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-faint); }
+.mutual-room { display: inline-block; margin: 0 6px 4px 0; padding: 2px 8px; border-radius: var(--radius-sm); background: var(--bg-elevated); font-size: 0.85rem; }
+.note {
+  width: 100%;
+  resize: vertical;
+  padding: 8px 10px;
+  border: 1px solid var(--bg-elevated);
+  border-radius: var(--radius);
+  background: var(--bg-input);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+  outline: none;
+}
+.note:focus { border-color: var(--accent); }
+.note-saved { font-size: 0.75rem; }
+.card-message {
+  width: 100%;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  outline: none;
+}
+.report-user { padding: 0 16px 16px; display: flex; flex-direction: column; gap: 8px; }
+.report-user label { display: flex; flex-direction: column; gap: 6px; font-size: 0.85rem; color: var(--text-muted); }
+.report-user input { padding: 8px 10px; border: 1px solid var(--bg-elevated); border-radius: var(--radius); background: var(--bg-input); outline: none; }

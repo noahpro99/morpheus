@@ -86,10 +86,10 @@ async fn account_menu_edits_name_sets_status_and_signs_out() {
         .expect("status editor closes on save");
     open_chip_menu(&mut app).await;
     app.click_text(".context-item", "View profile").await.expect("view profile");
-    app.wait_for_text(".profile-modal .profile-status", "In a meeting", DEFAULT_WAIT)
+    app.wait_for_text(".profile-card .profile-status", "In a meeting", DEFAULT_WAIT)
         .await
         .expect("status on the profile");
-    app.press(".profile-modal", "Escape").await.expect("close profile");
+    app.press("body", "Escape").await.expect("close profile");
 
     // Restore the seeded name and clear the status so reruns start clean.
     open_chip_menu(&mut app).await;
