@@ -2,7 +2,9 @@ use dioxus::prelude::*;
 use morpheus_core::{MessageId, OwnedEventId, TimelineHandle};
 use tracing::warn;
 
+use super::hotkeys::{Hotkey, HotkeyRequest};
 use super::shell::{Mention, MentionRequest};
+use super::timeline::LastOwnMessage;
 use crate::attach::pick_attachment;
 
 /// Shared between the timeline (which owns the handle) and the composer.
@@ -107,7 +109,7 @@ pub fn Composer(room_name: String, #[props(default)] placeholder: Option<String>
         }
     };
 
-    let attach = move |_| {
+    let attach = move |_: ()| {
         let Some(handle) = timeline() else { return };
         spawn(async move {
             let Some(path) = pick_attachment().await else {
@@ -119,6 +121,30 @@ pub fn Composer(room_name: String, #[props(default)] placeholder: Option<String>
             }
         });
     };
+
+    // Shortcuts the shell hands over: attach a file, edit the last message.
+    let mut hotkey = use_context::<HotkeyRequest>();
+    let last_own = use_hook(try_consume_context::<LastOwnMessage>);
+    use_effect(move || {
+        match hotkey() {
+            Some(Hotkey::Attach) => {
+                hotkey.set(None);
+                attach(());
+            }
+            Some(Hotkey::EditLast) => {
+                hotkey.set(None);
+                if let Some(message) = last_own.and_then(|m| m.peek().clone()) {
+                    let original = message.kind.plain_body().unwrap_or_default().to_owned();
+                    draft.set(original.clone());
+                    mode.set(Some(ComposerMode::Edit {
+                        id: message.id.clone(),
+                        original,
+                    }));
+                }
+            }
+            _ => {}
+        }
+    });
 
     let placeholder_text = placeholder.unwrap_or_else(|| format!("Message #{room_name}"));
 
@@ -147,7 +173,7 @@ pub fn Composer(room_name: String, #[props(default)] placeholder: Option<String>
                     title: "Attach a file",
                     r#type: "button",
                     disabled: timeline().is_none(),
-                    onclick: attach,
+                    onclick: move |_| attach(()),
                     "📎"
                 }
                 input {

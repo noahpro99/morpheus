@@ -265,13 +265,15 @@ pub fn HelpModal() -> Element {
     rsx! {
         div { class: "overlay", onclick: move |_| close(),
             div { class: "message-dialog help-dialog", tabindex: "-1", autofocus: true, onclick: move |e| e.stop_propagation(),
-                h2 { "Help" }
-                dl { class: "help-list",
-                    dt { "Ctrl+K" } dd { "Jump to any room." }
-                    dt { "Esc" } dd { "Close the menu or dialog on top." }
-                    dt { "Right-click" } dd { "Actions for a message, a room, or a member." }
-                    dt { "Enter" } dd { "Send; Shift+Enter for a new line." }
-                    dt { "Back / Forward" } dd { "Walk through the rooms you visited." }
+                h2 { "Keyboard shortcuts" }
+                for (group, rows) in super::hotkeys::GROUPS {
+                    h3 { class: "help-group", "{group}" }
+                    dl { class: "help-list",
+                        for (keys, what) in rows.iter() {
+                            dt { "{keys}" }
+                            dd { "{what}" }
+                        }
+                    }
                 }
                 p { class: "muted", "Morpheus is a Matrix client: your account lives on your homeserver and works in any Matrix app." }
                 div { class: "settings-actions",
@@ -280,4 +282,38 @@ pub fn HelpModal() -> Element {
             }
         }
     }
+}
+
+/// Move the history cursor by `step` and open that room, switching scope
+/// first so the shell does not bounce the selection back out of it.
+pub fn nav_jump(
+    step: isize,
+    mut nav: NavHistory,
+    rooms: Rooms,
+    mut scope: SelectedSpace,
+    mut selected: Selected,
+) {
+    let target = {
+        let current = nav.peek();
+        match current.index.checked_add_signed(step) {
+            Some(i) if i < current.entries.len() => Some((i, current.entries[i].clone())),
+            _ => None,
+        }
+    };
+    let Some((index, room_id)) = target else { return };
+    nav.with_mut(|n| {
+        n.index = index;
+        n.jumping = true;
+    });
+    let room_scope = rooms
+        .read()
+        .iter()
+        .find(|r| r.id == room_id)
+        .map(|room| scope_for(&rooms.read(), room));
+    if let Some(room_scope) = room_scope
+        && room_scope != *scope.peek()
+    {
+        scope.set(room_scope);
+    }
+    selected.set(Some(room_id));
 }

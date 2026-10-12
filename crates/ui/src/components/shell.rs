@@ -5,6 +5,7 @@ use tracing::error;
 use super::{
     composer::{ActiveTimeline, Composer, Draft, Mode},
     context_menu::{ContextMenu, ContextMenuLayer, MenuState},
+    hotkeys::{Hotkey, HotkeyRequest, LISTENER_JS},
     lightbox::{EscapeTick, Escapes, Lightbox, LightboxOpen, LightboxShown, provide_lightbox},
     members::Members,
     message_dialogs::{
@@ -21,8 +22,8 @@ use super::{
     settings::{ActiveVerification, Settings, SettingsOpen, track_verification},
     switcher::QuickSwitcher,
     thread::{ActiveThread, ThreadPanel},
-    timeline::TimelineView,
-    titlebar::{HelpModal, InboxPanel, Nav, OpenTopPanel, TitleBar, TopPanel},
+    timeline::{LastOwnMessage, TimelineView},
+    titlebar::{HelpModal, InboxPanel, Nav, OpenTopPanel, TitleBar, TopPanel, nav_jump},
 };
 use crate::media::{Avatar, provide_media_cache};
 
@@ -120,13 +121,13 @@ pub fn Shell(session: Session) -> Element {
     provide_media_cache();
     let mut rooms: Rooms = use_context_provider(|| Signal::new(Vector::new()));
     let mut selected: Selected = use_context_provider(|| Signal::new(None));
-    let selected_space: SelectedSpace = use_context_provider(|| Signal::new(Scope::default()));
+    let mut selected_space: SelectedSpace = use_context_provider(|| Signal::new(Scope::default()));
     let mut active_thread: ActiveThread = use_context_provider(|| Signal::new(None));
     let mut load_error = use_signal(|| None::<String>);
     let mut switcher_open = use_signal(|| false);
     let mut settings_open: SettingsOpen = use_context_provider(|| Signal::new(false));
     let mut verification: ActiveVerification = use_context_provider(|| Signal::new(None));
-    let members_open: MembersOpen = use_context_provider(|| Signal::new(MembersShown(true)));
+    let mut members_open: MembersOpen = use_context_provider(|| Signal::new(MembersShown(true)));
     let mut open_profile: OpenProfile = use_context_provider(|| Signal::new(ProfileTarget::default()));
     let mut context_menu: ContextMenu = use_context_provider(|| Signal::new(MenuState::default()));
     let mut editor: ProfileEditor = use_context_provider(|| Signal::new(Editor::None));
@@ -165,6 +166,7 @@ pub fn Shell(session: Session) -> Element {
         }
     });
 
+    let session_for_keys = session.clone();
     use_future(move || {
         let session = session.clone();
         async move {
@@ -219,7 +221,8 @@ pub fn Shell(session: Session) -> Element {
     // Escape closes whichever modal is open, top-most first. A running
     // verification keeps going in the background. Driven by a window-level
     // listener (below) so it works whatever has focus.
-    let mut close_top_modal = move || {
+    // Returns whether anything was open to close.
+    let mut close_top_modal = move || -> bool {
         if lightbox_open().0 {
             escapes.with_mut(|e| e.0 += 1);
         } else if context_menu().0.is_some() {
@@ -238,25 +241,104 @@ pub fn Shell(session: Session) -> Element {
             settings_open.set(false);
         } else if switcher_open() {
             switcher_open.set(false);
+        } else {
+            return false;
+        }
+        true
+    };
+    // Keyboard shortcuts (Discord's set; see hotkeys.rs). The JS listener
+    // names the combo; everything the shell owns is handled here, the rest
+    // is handed to the owning component through `HotkeyRequest`.
+    let mut hotkey: HotkeyRequest = use_context_provider(|| Signal::new(None));
+    let mut dispatch = move |name: String| {
+        let session = session_for_keys.clone();
+        // Rooms as the sidebar lists them, for next/previous.
+        let in_scope = move || rooms_in_scope(&rooms.read(), &selected_space.read());
+        let mut open = move |room: &RoomSummary| {
+            let room_scope = scope_for(&rooms.read(), room);
+            if room_scope != *selected_space.peek() {
+                selected_space.set(room_scope);
+            }
+            selected.set(Some(room.id.clone()));
+        };
+        let step = move |list: &[RoomSummary], step: isize, unread_only: bool| -> Option<RoomSummary> {
+            let candidates: Vec<&RoomSummary> = list
+                .iter()
+                .filter(|r| !unread_only || r.unread_messages > 0 || r.highlight_count > 0 || r.marked_unread)
+                .collect();
+            if candidates.is_empty() {
+                return None;
+            }
+            let current = selected.peek().clone();
+            let pos = list.iter().position(|r| Some(&r.id) == current.as_ref());
+            let next = match (pos, step.is_positive()) {
+                (Some(i), true) => candidates.iter().position(|r| list.iter().position(|x| x.id == r.id) > Some(i)).unwrap_or(0),
+                (Some(i), false) => candidates.iter().rposition(|r| list.iter().position(|x| x.id == r.id) < Some(i)).unwrap_or(candidates.len() - 1),
+                (None, _) => 0,
+            };
+            Some(candidates[next].clone())
+        };
+        let scopes = move || {
+            let mut all = vec![Scope::Dms, Scope::Rooms];
+            all.extend(
+                rooms
+                    .read()
+                    .iter()
+                    .filter(|r| r.is_space && r.parent_spaces.is_empty())
+                    .map(|r| Scope::Space(r.id.clone())),
+            );
+            all
+        };
+        match name.as_str() {
+            "escape" => {
+                if !close_top_modal() {
+                    hotkey.set(Some(Hotkey::JumpToBottom));
+                }
+            }
+            "switcher" => switcher_open.toggle(),
+            "shortcuts" => top_panel.set(if top_panel() == TopPanel::Help { TopPanel::None } else { TopPanel::Help }),
+            "inbox" => top_panel.set(if top_panel() == TopPanel::Inbox { TopPanel::None } else { TopPanel::Inbox }),
+            "members" => members_open.with_mut(|m| m.0 = !m.0),
+            "pins" => message_dialog.set(MessageDialog::Pinned),
+            "settings" => settings_open.set(true),
+            "attach" => hotkey.set(Some(Hotkey::Attach)),
+            "edit_last" => hotkey.set(Some(Hotkey::EditLast)),
+            "back" => nav_jump(-1, nav, rooms, selected_space, selected),
+            "forward" => nav_jump(1, nav, rooms, selected_space, selected),
+            "next_room" | "prev_room" | "next_unread" | "prev_unread" => {
+                let list = in_scope();
+                let forward = name.starts_with("next");
+                if let Some(room) = step(&list, if forward { 1 } else { -1 }, name.ends_with("unread")) {
+                    open(&room);
+                }
+            }
+            "next_scope" | "prev_scope" => {
+                let all = scopes();
+                let current = all.iter().position(|s| *s == *selected_space.peek()).unwrap_or(0);
+                let next = if name == "next_scope" { (current + 1) % all.len() } else { (current + all.len() - 1) % all.len() };
+                selected_space.set(all[next].clone());
+            }
+            "mark_scope_read" => {
+                for room in in_scope() {
+                    let future = session.mark_room_read(room.id);
+                    spawn(async move {
+                        if let Err(err) = future.await {
+                            tracing::warn!(%err, "mark read failed");
+                        }
+                    });
+                }
+            }
+            _ => {}
         }
     };
-    use_future(move || async move {
-        let mut listener = document::eval(
-            "window.addEventListener('keydown', e => { if (e.key === 'Escape') dioxus.send(true); });",
-        );
-        while listener.recv::<bool>().await.is_ok() {
-            close_top_modal();
-        }
+    use_hook(move || {
+        spawn(async move {
+            let mut listener = document::eval(LISTENER_JS);
+            while let Ok(name) = listener.recv::<String>().await {
+                dispatch(name);
+            }
+        })
     });
-
-    // Global shortcuts. The shell is focusable so keys reach it even when no input has focus.
-    let on_key = move |e: Event<KeyboardData>| {
-        let ctrl = e.modifiers().ctrl() || e.modifiers().meta();
-        if ctrl && matches!(e.key(), Key::Character(ref c) if c.eq_ignore_ascii_case("k")) {
-            e.prevent_default();
-            switcher_open.toggle();
-        }
-    };
     let side_column = match (current(), active_thread(), members_open().0) {
         (Some(_), Some(_), _) => SideColumn::Thread,
         (Some(_), None, true) => SideColumn::Members,
@@ -268,7 +350,6 @@ pub fn Shell(session: Session) -> Element {
             class: "shell",
             class: if side_column == SideColumn::None { "no-side" },
             tabindex: "-1",
-            onkeydown: on_key,
             // Targets open their own menu and stop the event; everything else
             // gets no native menu at all.
             oncontextmenu: move |e| {
@@ -360,6 +441,7 @@ fn ChatRoom(room: RoomSummary) -> Element {
     use_context_provider(|| ActiveTimeline::new(None));
     use_context_provider(|| Mode::new(None));
     use_context_provider(|| Draft::new(String::new()));
+    use_context_provider(|| LastOwnMessage::new(None));
     provide_lightbox();
     let mut typing = use_signal(Vec::<String>::new);
 

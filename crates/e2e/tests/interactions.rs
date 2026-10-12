@@ -82,7 +82,7 @@ async fn reply_edit_and_delete_own_messages() {
     let pid = std::process::id();
 
     // Reply to a seeded message: banner shows the target, the sent message carries a quote.
-    app.wait_for_text(".message .body", "sliding sync is working", DEFAULT_WAIT)
+    app.reveal_message("sliding sync is working", DEFAULT_WAIT)
         .await
         .expect("seeded");
     click_action_until(

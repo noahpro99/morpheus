@@ -326,6 +326,16 @@ impl App {
         self.eval(&js).await.map(drop)
     }
 
+    /// Dispatch a key combo with any of Ctrl, Alt and Shift held.
+    pub async fn key_combo(&mut self, selector: &str, key: &str, ctrl: bool, alt: bool, shift: bool) -> Result<()> {
+        let js = format!(
+            "{}.dispatchEvent(new KeyboardEvent('keydown', {{ key: {}, ctrlKey: {ctrl}, altKey: {alt}, shiftKey: {shift}, bubbles: true, cancelable: true }}));",
+            query(selector),
+            js_str(key)
+        );
+        self.eval(&js).await.map(drop)
+    }
+
     /// Dispatch a keyboard shortcut (e.g. Ctrl+K) on an element.
     pub async fn shortcut(&mut self, selector: &str, key: &str, ctrl: bool) -> Result<()> {
         let js = format!(
