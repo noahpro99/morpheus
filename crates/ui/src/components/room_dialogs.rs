@@ -4,7 +4,7 @@
 use dioxus::prelude::*;
 use morpheus_core::{History, OwnedRoomId, OwnedUserId, Privacy, Session};
 
-use super::shell::{MembersVersion, Rooms, Scope, Selected, SelectedSpace, rooms_in_scope};
+use super::shell::{MembersVersion, RailEntry, Rooms, Scope, Selected, SelectedSpace, UiPrefs, rooms_in_scope};
 
 /// Which room dialog is open. Provided by the shell.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -22,6 +22,8 @@ pub enum RoomDialog {
     CreateSpace(Option<OwnedRoomId>),
     /// Confirm leaving a space and all its rooms.
     LeaveSpace(OwnedRoomId),
+    /// Rename a rail folder (by its layout id).
+    RenameFolder(String),
 }
 pub type OpenRoomDialog = Signal<RoomDialog>;
 
@@ -538,6 +540,56 @@ pub fn LeaveSpaceModal(space_id: OwnedRoomId) -> Element {
                 div { class: "settings-actions",
                     button { class: "danger", disabled: busy(), onclick: leave, "Leave server" }
                     button { class: "secondary", onclick: move |_| close(), "Cancel" }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+pub fn RenameFolderModal(folder_id: String) -> Element {
+    let session = use_context::<Session>();
+    let mut dialog = use_context::<OpenRoomDialog>();
+    let mut prefs = use_context::<UiPrefs>();
+    let current = prefs
+        .read()
+        .rail
+        .iter()
+        .find_map(|e| match e {
+            RailEntry::Folder { id, name, .. } if *id == folder_id => Some(name.clone()),
+            _ => None,
+        })
+        .unwrap_or_default();
+    let mut name = use_signal(|| current);
+    let mut close = move || dialog.set(RoomDialog::None);
+    let submit = move |evt: FormEvent| {
+        evt.prevent_default();
+        let new_name = name().trim().to_owned();
+        if new_name.is_empty() {
+            return;
+        }
+        prefs.with_mut(|p| {
+            for entry in &mut p.rail {
+                if let RailEntry::Folder { id, name, .. } = entry
+                    && *id == folder_id
+                {
+                    *name = new_name.clone();
+                }
+            }
+        });
+        super::rail::save_prefs(&session, &prefs.peek());
+        close();
+    };
+    rsx! {
+        div { class: "overlay", onclick: move |_| close(),
+            form { class: "message-dialog room-dialog rename-folder-dialog", tabindex: "-1", autofocus: true, onclick: move |e| e.stop_propagation(), onsubmit: submit,
+                h2 { "Rename folder" }
+                label { "Name"
+                    input { name: "name", value: "{name}", oninput: move |e| name.set(e.value()) }
+                }
+                div { class: "settings-actions",
+                    button { r#type: "submit", class: "primary", "Save" }
+                    button { r#type: "button", class: "secondary", onclick: move |_| close(), "Cancel" }
                 }
             }
         }

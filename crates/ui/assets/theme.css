@@ -1334,3 +1334,20 @@ button.sender:hover { text-decoration: underline; }
 .report-user { padding: 0 16px 16px; display: flex; flex-direction: column; gap: 8px; }
 .report-user label { display: flex; flex-direction: column; gap: 6px; font-size: 0.85rem; color: var(--text-muted); }
 .report-user input { padding: 8px 10px; border: 1px solid var(--bg-elevated); border-radius: var(--radius); background: var(--bg-input); outline: none; }
+
+/* ---- Rail: drag, drop, folders --------------------------------------------- */
+
+.rail-drop { width: 32px; height: 4px; margin: -2px 0; border-radius: 2px; transition: background 120ms ease, height 120ms ease; }
+.rail-drop.active { height: 8px; margin: 0; }
+.rail-drop.active:hover { background: var(--accent); }
+.space-badge.dragging { opacity: 0.4; }
+.rail-folder { display: flex; flex-direction: column; align-items: center; gap: 8px; border-radius: var(--radius-xl); }
+.rail-folder.open { background: rgba(255, 255, 255, 0.04); padding-bottom: 8px; }
+.rail-folder.has-current .folder-badge { color: var(--accent); }
+.folder-badge { background: rgba(124, 140, 255, 0.12); color: var(--accent); }
+.folder-badge:hover { border-radius: 16px; background: rgba(124, 140, 255, 0.2); color: var(--accent); }
+.folder-grid { display: grid; grid-template-columns: 18px 18px; gap: 3px; }
+.folder-grid .avatar { width: 18px !important; height: 18px !important; font-size: 0.55rem !important; border-radius: 50%; }
+.folder-items { display: flex; flex-direction: column; gap: 8px; }
+.folder-items .rail-item { width: 40px; height: 40px; }
+.folder-items .rail-item .avatar { font-size: 0.95rem !important; }
