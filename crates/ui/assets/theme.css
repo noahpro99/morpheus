@@ -968,3 +968,40 @@ button.sender:hover { text-decoration: underline; }
 .skeleton-row { pointer-events: none; }
 .skeleton-row .avatar.skeleton { background-color: var(--bg-elevated); }
 .body.undecrypted { width: 55%; max-width: 420px; min-width: 120px; }
+
+/* ---- Context menu ---------------------------------------------------------- */
+
+.context-backdrop { position: fixed; inset: 0; z-index: 30; }
+.context-menu {
+  position: fixed;
+  min-width: 188px;
+  padding: 6px;
+  border-radius: 8px;
+  background: var(--bg-rail);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 31;
+}
+.context-item {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 5px;
+  text-align: left;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+.context-item:hover { background: var(--accent-strong); color: white; }
+.context-item.danger { color: var(--danger); }
+.context-item.danger:hover { background: var(--danger); color: white; }
+.context-reactions {
+  display: flex;
+  gap: 4px;
+  padding: 2px 4px 6px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--bg-elevated);
+}
+.context-reaction { padding: 4px 8px; border-radius: 6px; font-size: 1.1rem; }
+.context-reaction:hover { background: var(--bg-selected); }

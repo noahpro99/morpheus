@@ -191,3 +191,17 @@ impl Session {
         })
     }
 }
+
+impl Session {
+    /// Leave a room. The room list drops it on the next sync.
+    pub fn leave_room(&self, room_id: OwnedRoomId) -> CoreFuture<()> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            let room = client
+                .get_room(&room_id)
+                .ok_or_else(|| crate::Error::UnknownRoom(room_id.clone()))?;
+            room.leave().await?;
+            Ok(())
+        })
+    }
+}
