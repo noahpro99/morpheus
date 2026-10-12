@@ -53,7 +53,7 @@ timeline → send.
 - [ ] Proper local time zone handling (replace `format.rs` shims with `jiff`)
 - [ ] Virtualised timeline once rooms with >2k loaded items appear
 - [ ] Auto-fill short histories: when the first sync hands over fewer rows than fit on screen there is nothing to scroll, so older messages need the "Load older messages" button. Paginating automatically races the room subscription's first response (which can reset the timeline); needs the SDK to settle first.
-- [ ] Error toasts instead of inline `<p class="error">`
+- [x] Error toasts for failed actions (bottom-right, click to dismiss); dialogs keep inline validation
 
 ### 2. The Discord shell
 - [x] Spaces rail filters the room list; DMs and Rooms get their own rail buttons
@@ -63,7 +63,7 @@ timeline → send.
 - [x] "New messages" marker
 - [x] Read receipts sent when a room is viewed
 - [ ] Room header actions: search, pinned, settings
-- [ ] Desktop notifications
+- [x] Desktop notifications via the SDK latest-events stream (push actions included); mentions flagged; inbox lists recent mentions
 - [x] Ctrl+K room switcher (follows the room into its space scope)
 - [x] Profile modal (sender, member, own footer chip); Escape closes every modal
 - [x] Styled right-click menus for messages, rooms, members; native menu suppressed
@@ -81,21 +81,21 @@ timeline → send.
 - [ ] Friends list: Matrix has no friend relationship; could map to a "favourite people" list in account data
 - [ ] Mod view page (Discord's): a per-user moderation sheet across rooms
 - [ ] Multi-account: store sessions side by side so "Switch account" swaps without signing in again
-- [ ] Invites: list pending invites with accept/decline (today invites only reach other clients)
+- [x] Invites: sidebar section, chat-column card, inbox block, rail badge; accept joins, decline leaves
 - [ ] Per-user nicknames: Discord's friend nicknames have no Matrix equivalent; a local-only alias store could stand in
 - [x] Timeline pinned to the newest message on open, "Jump to present" button
 - [x] Skeleton placeholders while loading and for messages still waiting on keys
 - [x] SSO login (browser hand-off) alongside password and email sign-in
 - [x] Timing: slow core ops logged, e2e driver timings (`MORPHEUS_E2E_TIMINGS=1`)
-- [ ] Alt+↑/↓ room navigation
+- [x] Alt+↑/↓ room navigation (and the rest of Discord's set, Ctrl+/)
 
 ### 3. Rich content
 - [x] Markdown composer, sanitised HTML rendering (ruma-html)
 - [x] Reactions (view and toggle)
 - [x] Replies (with quoted previews), edits, deletes
 - [x] Threads
-- [ ] Emoji picker, mentions autocomplete
-- [ ] Attachment upload with drag-and-drop and paste (button upload works)
+- [x] Emoji panel, `:code` emoji and `@name` mention autocomplete in the composer
+- [x] Attachment upload by button, drag-and-drop (hint overlay) and paste
 
 ### 4. Encryption UX
 - [x] Device verification between own devices (emoji SAS) from the settings modal
@@ -105,9 +105,10 @@ timeline → send.
 - [ ] Shields on messages, device list
 
 ### 5. Mobile
-- [ ] Android app-private data dir via `ndk-context` + JNI; iOS equivalent
-- [ ] Single-column navigation (rooms → chat → members) with back gestures
-- [ ] Touch targets, safe areas, keyboard avoidance
+- [x] Android app-private data dir via `ndk-context` + JNI (`Context.getFilesDir()`), iOS Documents; written, not yet exercised on a device
+- [x] Single-column navigation on phone-width windows (rooms → chat → members/thread) with back buttons and Escape/back; the shared shell does it, so the mobile app gets every desktop feature as is. Swipe-back gesture still to do.
+- [x] Larger touch targets and safe-area insets in the narrow layout
+- [ ] Keyboard avoidance on Android (adjustResize) and iOS, verified on devices
 - [ ] UnifiedPush notifications
 - [ ] iOS build on a Mac runner
 

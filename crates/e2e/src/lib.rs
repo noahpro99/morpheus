@@ -60,7 +60,14 @@ impl App {
     /// Launch a fresh app (empty data dir) pointed at `homeserver`.
     pub async fn launch(homeserver: &str) -> Result<Self> {
         let data_dir = std::env::temp_dir().join(format!("morpheus-e2e-{}", unique()));
-        Self::launch_with_data_dir(homeserver, data_dir).await
+        Self::launch_with_data_dir(homeserver, data_dir, None).await
+    }
+
+    /// Launch with a window of `width` x `height` logical pixels, e.g. a
+    /// phone-sized one for the narrow layout.
+    pub async fn launch_sized(homeserver: &str, width: u32, height: u32) -> Result<Self> {
+        let data_dir = std::env::temp_dir().join(format!("morpheus-e2e-{}", unique()));
+        Self::launch_with_data_dir(homeserver, data_dir, Some((width, height))).await
     }
 
     /// Relaunch on the same data directory, e.g. to test session restore.
@@ -70,10 +77,10 @@ impl App {
         let _ = self.child.kill().await;
         // Keep the data dir: `Drop` would delete it.
         std::mem::forget(self);
-        Self::launch_with_data_dir(&homeserver, data_dir).await
+        Self::launch_with_data_dir(&homeserver, data_dir, None).await
     }
 
-    async fn launch_with_data_dir(homeserver: &str, data_dir: PathBuf) -> Result<Self> {
+    async fn launch_with_data_dir(homeserver: &str, data_dir: PathBuf, size: Option<(u32, u32)>) -> Result<Self> {
         keep_test_windows_unfocused();
         std::fs::create_dir_all(&data_dir)?;
         // A disposable, test-local stand-in for the real Downloads directory
@@ -86,7 +93,11 @@ impl App {
         let log_path = data_dir.join("app.log");
         let log = std::fs::File::create(&log_path)?;
 
-        let child = Command::new(&bin)
+        let mut command = Command::new(&bin);
+        if let Some((width, height)) = size {
+            command.env("MORPHEUS_E2E_SIZE", format!("{width}x{height}"));
+        }
+        let child = command
             .env("MORPHEUS_E2E_PORT", port.to_string())
             .env("MORPHEUS_DATA_DIR", &data_dir)
             .env("MORPHEUS_DOWNLOAD_DIR", &download_dir)

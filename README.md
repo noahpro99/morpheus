@@ -63,7 +63,9 @@ puts kicked or banned test users back into `#moderation`).
 
 E2E files map to features: `chat`, `spaces`, `features`, `interactions`, `attachments`, `threads`,
 `new_messages_marker`, `settings`, `perf`, `layout`, `scrolling`, `context_menu`, `account`,
-`moderation`, `message_menu`, `room_menu`, `hotkeys`, `space_menu`, `profile_card`, `rail`.
+`moderation`, `message_menu`, `room_menu`, `hotkeys`, `space_menu`, `profile_card`, `rail`,
+`titlebar`, `invites`, `notifications`, `autocomplete`, `toasts`, `mobile_layout` (the phone
+layout, driven on the desktop build inside a phone-sized box).
 
 Keyboard shortcuts follow Discord's defaults; press Ctrl+/ in the app for the list.
 With `MORPHEUS_E2E_TIMINGS=1` the driver prints how long every wait took, and

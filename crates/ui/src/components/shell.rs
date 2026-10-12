@@ -42,6 +42,15 @@ pub struct Notices(pub Vec<Notification>);
 pub type NoticeLog = Signal<Notices>;
 const NOTICE_CAP: usize = 50;
 
+/// Phone-width window (reported by the page): one pane at a time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Narrow(pub bool);
+pub type NarrowWindow = Signal<Narrow>;
+/// Narrow layout: whether the chat pane is in front of the room list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ChatInFront(pub bool);
+pub type ChatOpen = Signal<ChatInFront>;
+
 /// Rooms as the core reports them, kept in sync for the whole shell.
 pub type Rooms = Signal<Vector<RoomSummary>>;
 /// Currently open room.
@@ -249,6 +258,9 @@ pub fn Shell(session: Session) -> Element {
     let mut prefs: UiPrefs = use_context_provider(|| Signal::new(Prefs::default()));
     let _drag: RailDrag = use_context_provider(|| Signal::new(Dragging::default()));
     let _toasts: Toasts = use_context_provider(|| Signal::new(ToastList::default()));
+    // Narrow (phone) layout: the page reports its width; one pane shows at a time.
+    let mut narrow: NarrowWindow = use_context_provider(|| Signal::new(Narrow::default()));
+    let mut chat_open: ChatOpen = use_context_provider(|| Signal::new(ChatInFront::default()));
     let _members_version: MembersVersion = use_context_provider(|| Signal::new(MembersStamp::default()));
     // New messages from other people: logged for the inbox, and raised as an
     // OS notification unless they land in the room being looked at.
@@ -369,7 +381,7 @@ pub fn Shell(session: Session) -> Element {
                 "re-picking the open room"
             );
             match in_scope.first() {
-                Some(room) => go_to(room.id.clone()),
+                Some(room) => select(room.id.clone()),
                 None => selected.set(None),
             }
         }
@@ -461,7 +473,11 @@ pub fn Shell(session: Session) -> Element {
         };
         match name.as_str() {
             "escape" => {
-                if !close_top_modal() {
+                if close_top_modal() {
+                } else if narrow.peek().0 && chat_open.peek().0 {
+                    // On a phone, Escape (the back key) steps back to the list.
+                    chat_open.set(ChatInFront(false));
+                } else {
                     hotkey.set(Some(Hotkey::JumpToBottom));
                 }
             }
@@ -512,6 +528,14 @@ pub fn Shell(session: Session) -> Element {
                         Some(file) => drops.with_mut(|d| d.0.push(file)),
                         None => tracing::warn!("ignoring an unreadable dropped file"),
                     }
+                } else if let Some(flag) = name.strip_prefix("narrow:") {
+                    let is_narrow = flag == "1";
+                    if is_narrow != narrow.peek().0 {
+                        narrow.set(Narrow(is_narrow));
+                        // A phone starts on the room list with the member
+                        // list tucked away; widening again restores it.
+                        members_open.set(MembersShown(!is_narrow));
+                    }
                 } else {
                     dispatch(name);
                 }
@@ -523,11 +547,23 @@ pub fn Shell(session: Session) -> Element {
         (Some(_), None, true) => SideColumn::Members,
         _ => SideColumn::None,
     };
+    // Which pane a phone shows: the list, the chat, or the side panel.
+    let pane = if !narrow().0 {
+        "all"
+    } else if current().is_none() || !chat_open().0 {
+        "rooms"
+    } else if side_column != SideColumn::None {
+        "side"
+    } else {
+        "chat"
+    };
 
     rsx! {
         div {
             class: "shell",
             class: if side_column == SideColumn::None { "no-side" },
+            class: if narrow().0 { "narrow" },
+            "data-pane": pane,
             tabindex: "-1",
             // Targets open their own menu and stop the event; everything else
             // gets no native menu at all.
@@ -566,10 +602,31 @@ pub fn Shell(session: Session) -> Element {
                     },
                 }
             }
-            match (side_column, current(), active_thread()) {
-                (SideColumn::Thread, Some(room), Some(root)) => rsx! { ThreadPanel { room_id: room.id.clone(), root } },
-                (SideColumn::Members, Some(room), _) => rsx! { Members { room_id: room.id.clone(), member_count: room.member_count } },
-                _ => rsx! {},
+            if side_column != SideColumn::None {
+                div { class: "side-pane",
+                    if narrow().0 {
+                        div { class: "pane-bar",
+                            button {
+                                class: "ghost pane-back",
+                                title: "Back to the chat",
+                                onclick: move |_| {
+                                    if active_thread.peek().is_some() {
+                                        active_thread.set(None);
+                                    } else {
+                                        members_open.set(MembersShown(false));
+                                    }
+                                },
+                                Icon { glyph: crate::icons::CHEVRON_LEFT, size: 18 }
+                                "Back"
+                            }
+                        }
+                    }
+                    match (side_column, current(), active_thread()) {
+                        (SideColumn::Thread, Some(room), Some(root)) => rsx! { ThreadPanel { room_id: room.id.clone(), root } },
+                        (SideColumn::Members, Some(room), _) => rsx! { Members { room_id: room.id.clone(), member_count: room.member_count } },
+                        _ => rsx! {},
+                    }
+                }
             }
             }
             match top_panel() {
@@ -618,6 +675,8 @@ pub fn Shell(session: Session) -> Element {
 #[component]
 fn ChatRoom(room: RoomSummary) -> Element {
     let session = use_context::<Session>();
+    let narrow = use_context::<NarrowWindow>();
+    let mut chat_open = use_context::<ChatOpen>();
     // Menus built from this room's signals must not outlive it.
     use_drop(move || consume_context::<ContextMenu>().set(MenuState::default()));
     let mut members_open = use_context::<MembersOpen>();
@@ -668,6 +727,14 @@ fn ChatRoom(room: RoomSummary) -> Element {
 
     rsx! {
         header { class: "chat-header",
+            if narrow().0 {
+                button {
+                    class: "ghost pane-back",
+                    title: "Back to rooms",
+                    onclick: move |_| chat_open.set(ChatInFront(false)),
+                    Icon { glyph: crate::icons::CHEVRON_LEFT, size: 18 }
+                }
+            }
             if room.is_dm {
                 Avatar { media: room.avatar.clone(), fallback: room.name.clone(), size: 24 }
             } else {
@@ -752,6 +819,14 @@ pub fn scope_for(rooms: &Vector<RoomSummary>, room: &RoomSummary) -> Scope {
 /// Open a room and remember the visit for back/forward. Every navigation
 /// that is not itself back/forward goes through here.
 pub fn go_to(room_id: OwnedRoomId) {
+    select(room_id);
+    // On a phone the chat pane comes forward; on a desktop this is unused.
+    consume_context::<ChatOpen>().set(ChatInFront(true));
+}
+
+/// Open a room without bringing the chat pane forward (the shell's own
+/// re-pick on load and scope changes).
+pub fn select(room_id: OwnedRoomId) {
     let mut nav = consume_context::<NavHistory>();
     nav.with_mut(|n| n.record(room_id.clone()));
     consume_context::<Selected>().set(Some(room_id));
