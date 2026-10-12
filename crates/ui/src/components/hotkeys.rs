@@ -109,6 +109,16 @@ window.addEventListener('paste', e => {
   const files = e.clipboardData ? [...e.clipboardData.files] : [];
   if (files.length) { e.preventDefault(); sendFiles(files); }
 }, true);
+// Phone-width windows get a single-column layout (see shell.rs).
+// Measured on the shell element, not the window, so a test can box it.
+const shellEl = document.querySelector('.shell');
+let wasNarrow = null;
+const reportWidth = () => {
+  const n = (shellEl ? shellEl.clientWidth : innerWidth) <= 640;
+  if (n !== wasNarrow) { wasNarrow = n; dioxus.send('narrow:' + (n ? '1' : '0')); }
+};
+if (shellEl && window.ResizeObserver) new ResizeObserver(reportWidth).observe(shellEl); else window.addEventListener('resize', reportWidth);
+reportWidth();
 "#;
 
 /// A file dropped on or pasted into the window, waiting for the composer.

@@ -30,12 +30,20 @@ fn main() {
     // the developer is typing into. A distinct title lets the e2e driver
     // (and a compositor rule) tell them apart from a real session.
     let under_test = std::env::var_os("MORPHEUS_E2E_PORT").is_some();
+    // Tests can ask for a phone-sized window to exercise the narrow layout.
+    let (width, height) = std::env::var("MORPHEUS_E2E_SIZE")
+        .ok()
+        .and_then(|s| {
+            let (w, h) = s.split_once('x')?;
+            Some((w.parse::<f64>().ok()?, h.parse::<f64>().ok()?))
+        })
+        .unwrap_or((1280.0, 800.0));
     let window = WindowBuilder::new()
         .with_title(if under_test { "Morpheus (test)" } else { "Morpheus" })
         .with_focused(!under_test)
         // The shell draws its own Discord-style bar; see `DesktopRoot`.
         .with_decorations(false)
-        .with_inner_size(LogicalSize::new(1280.0, 800.0));
+        .with_inner_size(LogicalSize::new(width, height));
 
     LaunchBuilder::new()
         .with_context(config)
@@ -67,7 +75,20 @@ fn DesktopRoot() -> Element {
         notify: Rc::new(notify),
         close: Rc::new(move || window.close()),
     });
-    rsx! { morpheus_ui::App {} }
+    // A test can box the app to a phone-sized viewport, since a tiling
+    // compositor ignores the requested window size.
+    let boxed = std::env::var("MORPHEUS_E2E_SIZE").ok();
+    rsx! {
+        if let Some(size) = boxed {
+            div {
+                class: "viewport-box",
+                style: "width: {size.split('x').next().unwrap_or(\"1280\")}px; height: {size.split('x').nth(1).unwrap_or(\"800\")}px; overflow: hidden;",
+                morpheus_ui::App {}
+            }
+        } else {
+            morpheus_ui::App {}
+        }
+    }
 }
 
 /// Raise an OS notification. Off the UI thread, since the D-Bus round trip

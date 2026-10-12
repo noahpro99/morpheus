@@ -11,5 +11,18 @@ morpheus-ui = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
-[lints]
-workspace = true
+[target.'cfg(target_os = "android")'.dependencies]
+ndk-context = "0.1"
+jni = "0.21"
+
+[lints.rust]
+# The workspace forbids unsafe code; the Android data-dir lookup needs two
+# raw-pointer wraps (see src/main.rs), so this crate warns instead and
+# allows them in that one function.
+unsafe_code = "warn"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+expect_used = "warn"
+dbg_macro = "warn"

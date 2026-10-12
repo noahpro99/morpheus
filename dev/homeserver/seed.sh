@@ -278,7 +278,7 @@ echo "gc:"
 GC_COUNT=0
 while read -r room_id name; do
   case "$name" in
-    "srv "*|"live srv"*|"live category"|"live chatter"|"Text channels"|"chatter"|"curl "*|"e2e room"*|"space room"*)
+    "srv "*|"live srv"*|"live category"|"live chatter"|"live invite"*|"Text channels"|"chatter"|"curl "*|"e2e room"*|"space room"*)
       # A purge leaves pending invites behind; decline them first.
       for tok in "$BOB" "$CAROL"; do api "$tok" POST "/_matrix/client/v3/rooms/$room_id/leave" '{}' >/dev/null 2>&1 || true; done
       api "$ALICE" DELETE "/_synapse/admin/v1/rooms/$room_id" '{"purge": true}' >/dev/null 2>&1 || true

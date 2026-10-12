@@ -69,14 +69,14 @@ h1, h2, h3, p { margin: 0; }
 .shell {
   display: grid;
   grid-template-columns: var(--rail-w) var(--sidebar-w) 1fr var(--members-w);
-  height: 100vh;
+  height: 100%;
   overflow: hidden;
 }
 
 .centered {
   display: grid;
   place-items: center;
-  height: 100vh;
+  height: 100%;
   background: radial-gradient(ellipse at top, #202538 0%, var(--bg-rail) 70%);
 }
 
@@ -1450,3 +1450,30 @@ body.dropping .drop-hint { display: flex; }
   font-size: 0.9rem; cursor: pointer; animation: toast-in 160ms ease-out;
 }
 @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+/* ---- side pane wrapper (members or thread) ---- */
+.side-pane { grid-area: side; display: flex; flex-direction: column; min-height: 0; }
+.side-pane > .members, .side-pane > .thread-panel { grid-area: auto; flex: 1; min-height: 0; }
+.pane-bar { display: flex; align-items: center; height: 48px; padding: 0 8px; box-shadow: 0 1px 0 rgba(0, 0, 0, 0.3); }
+.pane-back { display: inline-flex; align-items: center; gap: 4px; padding: 6px 10px; border-radius: var(--radius-sm); }
+
+/* ---- narrow (phone) layout: one pane at a time ---- */
+.shell.narrow .shell-body {
+  grid-template-columns: var(--rail-w) 1fr;
+  grid-template-areas: "rail sidebar" "user user";
+}
+.shell.narrow[data-pane="chat"] .shell-body,
+.shell.narrow[data-pane="side"] .shell-body { grid-template-columns: 1fr; grid-template-areas: "chat"; grid-template-rows: 1fr; }
+.shell.narrow[data-pane="side"] .shell-body { grid-template-areas: "side"; }
+.shell.narrow[data-pane="rooms"] .chat, .shell.narrow[data-pane="rooms"] .side-pane,
+.shell.narrow[data-pane="chat"] .rail, .shell.narrow[data-pane="chat"] .sidebar, .shell.narrow[data-pane="chat"] .user-bar, .shell.narrow[data-pane="chat"] .side-pane,
+.shell.narrow[data-pane="side"] .rail, .shell.narrow[data-pane="side"] .sidebar, .shell.narrow[data-pane="side"] .user-bar, .shell.narrow[data-pane="side"] .chat { display: none; }
+.shell.narrow .titlebar { padding-top: env(safe-area-inset-top); height: auto; min-height: 32px; }
+.shell.narrow .composer { padding-bottom: calc(var(--bottom-gap) + env(safe-area-inset-bottom)); }
+.shell.narrow .user-bar { margin-bottom: calc(var(--bottom-gap) + env(safe-area-inset-bottom)); }
+.shell.narrow .room { padding: 10px 8px; }
+.shell.narrow .rail-item { width: 48px; height: 48px; }
+.shell.narrow .composer-row { min-height: 52px; }
+.shell.narrow .chat-header .member-toggle, .shell.narrow .chat-header .pin-toggle { min-width: 40px; min-height: 40px; }
+.shell.narrow .toast-layer { left: 16px; right: 16px; max-width: none; }
+.shell.narrow .profile-card { left: 8px !important; right: 8px; width: auto; }
