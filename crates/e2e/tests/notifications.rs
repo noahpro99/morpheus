@@ -21,6 +21,7 @@ async fn login(app: &mut App, user: &str) {
 async fn send(app: &mut App, text: &str) {
     app.type_into(".composer input", text).await.expect("type");
     app.press(".composer input", "Enter").await.expect("send");
+    app.wait_for_exact_text(".message.own:not(.pending) .body", text, DEFAULT_WAIT).await.expect("message sent");
 }
 
 #[tokio::test]

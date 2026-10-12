@@ -148,7 +148,7 @@ pub fn Composer(
             return;
         }
         let Some(handle) = timeline.peek().clone() else { return };
-        let files = drops.write().0.drain(..).collect::<Vec<_>>();
+        let files = std::mem::take(&mut drops.write().0);
         spawn(async move {
             for file in files {
                 if let Err(err) = handle.send_attachment_bytes(file.name, file.mime, file.bytes).await {
