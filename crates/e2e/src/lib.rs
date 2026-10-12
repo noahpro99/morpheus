@@ -91,6 +91,8 @@ impl App {
             .env("MORPHEUS_DATA_DIR", &data_dir)
             .env("MORPHEUS_DOWNLOAD_DIR", &download_dir)
             .env("MORPHEUS_HOMESERVER", homeserver)
+            // Never touch the developer's real keyring from a test run.
+            .env("MORPHEUS_SESSION_STORE", "file")
             .env(
                 "RUST_LOG",
                 std::env::var("RUST_LOG").unwrap_or_else(|_| "morpheus=debug,warn".into()),
