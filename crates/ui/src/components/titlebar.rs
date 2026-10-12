@@ -9,6 +9,7 @@ use tracing::warn;
 
 use super::shell::{NavHistory, Rooms, Scope, Selected, SelectedSpace, scope_for};
 use crate::WindowControls;
+use crate::icons::{CHEVRON_LEFT, CHEVRON_RIGHT, CIRCLE_HELP, INBOX, Icon, MINUS, SQUARE, X};
 
 /// Which top-bar panel is open. Provided by the shell.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -140,7 +141,7 @@ pub fn TitleBar() -> Element {
                     disabled: !nav().can_go_back(),
                     onmousedown: move |e| e.stop_propagation(),
                     onclick: move |_| jump(-1),
-                    "‹"
+                    Icon { glyph: CHEVRON_LEFT, size: 18 }
                 }
                 button {
                     class: "ghost nav-button",
@@ -148,7 +149,7 @@ pub fn TitleBar() -> Element {
                     disabled: !nav().can_go_forward(),
                     onmousedown: move |e| e.stop_propagation(),
                     onclick: move |_| jump(1),
-                    "›"
+                    Icon { glyph: CHEVRON_RIGHT, size: 18 }
                 }
             }
             div { class: "titlebar-title", "{title}" }
@@ -158,23 +159,23 @@ pub fn TitleBar() -> Element {
                     title: "Help",
                     onmousedown: move |e| e.stop_propagation(),
                     onclick: move |_| panel.set(if panel() == TopPanel::Help { TopPanel::None } else { TopPanel::Help }),
-                    "?"
+                    Icon { glyph: CIRCLE_HELP, size: 16 }
                 }
                 button {
                     class: "ghost titlebar-button inbox-button",
                     title: "Inbox",
                     onmousedown: move |e| e.stop_propagation(),
                     onclick: move |_| panel.set(if panel() == TopPanel::Inbox { TopPanel::None } else { TopPanel::Inbox }),
-                    "✉"
+                    Icon { glyph: INBOX, size: 16 }
                     if unread > 0 {
                         span { class: "rail-badge inbox-badge", "{unread}" }
                     }
                 }
                 if let Some(controls) = controls.clone() {
                     div { class: "window-controls", onmousedown: move |e| e.stop_propagation(),
-                        button { class: "ghost", title: "Minimize", onclick: { let c = controls.clone(); move |_| (c.minimize)() }, "–" }
-                        button { class: "ghost", title: "Maximize", onclick: { let c = controls.clone(); move |_| (c.toggle_maximize)() }, "▢" }
-                        button { class: "ghost close", title: "Close", onclick: move |_| (controls.close)(), "✕" }
+                        button { class: "ghost", title: "Minimize", onclick: { let c = controls.clone(); move |_| (c.minimize)() }, Icon { glyph: MINUS, size: 14 } }
+                        button { class: "ghost", title: "Maximize", onclick: { let c = controls.clone(); move |_| (c.toggle_maximize)() }, Icon { glyph: SQUARE, size: 13 } }
+                        button { class: "ghost close", title: "Close", onclick: move |_| (controls.close)(), Icon { glyph: X, size: 14 } }
                     }
                 }
             }

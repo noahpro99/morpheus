@@ -25,6 +25,7 @@ use super::{
     timeline::{LastOwnMessage, TimelineView},
     titlebar::{HelpModal, InboxPanel, Nav, OpenTopPanel, TitleBar, TopPanel, nav_jump},
 };
+use crate::icons::Icon;
 use crate::media::{Avatar, provide_media_cache};
 
 /// Rooms as the core reports them, kept in sync for the whole shell.
@@ -478,14 +479,16 @@ fn ChatRoom(room: RoomSummary) -> Element {
                 class: "ghost pin-toggle",
                 title: "Pinned messages",
                 onclick: move |_| message_dialog.set(MessageDialog::Pinned),
-                "📌 {pinned().0.len()}"
+                Icon { glyph: crate::icons::PIN, size: 16 }
+                "{pinned().0.len()}"
             }
             button {
                 class: "ghost member-toggle",
                 class: if members_open().0 { "active" },
                 title: "Toggle member list",
                 onclick: move |_| members_open.with_mut(|shown| shown.0 = !shown.0),
-                "👥 {room.member_count}"
+                Icon { glyph: crate::icons::USERS, size: 16 }
+                "{room.member_count}"
             }
         }
         TimelineView { room_id: room.id.clone() }

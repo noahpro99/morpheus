@@ -10,6 +10,7 @@ use std::{cell::RefCell, rc::Rc};
 use dioxus::prelude::*;
 
 use super::timeline::QUICK_REACTIONS;
+use crate::icons::Icon;
 
 type Action = Rc<RefCell<dyn FnMut()>>;
 
@@ -23,6 +24,8 @@ pub struct MenuItem {
     children: Vec<Rc<MenuItem>>,
     /// Lay the flyout out as a grid (emoji pickers).
     grid: bool,
+    /// Glyph in front of the label; falls back to [`default_icon`].
+    icon: Option<&'static str>,
 }
 
 impl MenuItem {
@@ -34,6 +37,7 @@ impl MenuItem {
             run: Some(Rc::new(RefCell::new(run))),
             children: Vec::new(),
             grid: false,
+            icon: None,
         }
     }
 
@@ -46,6 +50,7 @@ impl MenuItem {
             run: None,
             children: children.into_iter().map(Rc::new).collect(),
             grid: false,
+            icon: None,
         }
     }
 
@@ -64,6 +69,15 @@ impl MenuItem {
     pub fn checked(mut self, checked: bool) -> Self {
         self.checked = checked;
         self
+    }
+
+    pub fn icon(mut self, glyph: &'static str) -> Self {
+        self.icon = Some(glyph);
+        self
+    }
+
+    fn glyph(&self) -> Option<&'static str> {
+        self.icon.or_else(|| default_icon(&self.label))
     }
 }
 
@@ -187,6 +201,7 @@ fn entries(items: &[Rc<MenuItem>], close: impl FnMut() + Copy + 'static) -> Elem
                     class: if item.danger { "danger" },
                     class: if item.checked { "checked" },
                     role: "menuitem",
+                    class: if item.glyph().is_none() { "no-icon" },
                     onclick: {
                         let item = item.clone();
                         move |_| {
@@ -197,11 +212,17 @@ fn entries(items: &[Rc<MenuItem>], close: impl FnMut() + Copy + 'static) -> Elem
                             close();
                         }
                     },
-                    "{item.label}"
+                    if let Some(glyph) = item.glyph() {
+                        Icon { glyph, size: 16, class: "menu-icon" }
+                    }
+                    span { class: "menu-label", "{item.label}" }
                 }
             } else {
                 div { class: "context-item has-submenu", role: "menuitem", "aria-haspopup": "true",
-                    span { "{item.label}" }
+                    if let Some(glyph) = item.glyph() {
+                        Icon { glyph, size: 16, class: "menu-icon" }
+                    }
+                    span { class: "menu-label", "{item.label}" }
                     span { class: "submenu-arrow", "›" }
                     div { class: "context-menu context-submenu", class: if item.grid { "grid" }, role: "menu",
                         {entries(&item.children, close)}
@@ -210,4 +231,61 @@ fn entries(items: &[Rc<MenuItem>], close: impl FnMut() + Copy + 'static) -> Elem
             }
         }
     }
+}
+
+/// Icons by label, so every menu gets glyphs without each builder naming
+/// them. Prefix matches cover labels with names in them ("Kick carol").
+fn default_icon(label: &str) -> Option<&'static str> {
+    use crate::icons::*;
+    let table: &[(&str, &str)] = &[
+        ("Add reaction", SMILE_PLUS),
+        ("View reactions", EYE),
+        ("Remove reactions", CIRCLE_MINUS),
+        ("Remove all my reactions", CIRCLE_MINUS),
+        ("Reply in thread", MESSAGES_SQUARE),
+        ("Reply", REPLY),
+        ("Edit message", PENCIL),
+        ("Edit room", PENCIL),
+        ("Edit profile", PENCIL),
+        ("Copy text", COPY),
+        ("Copy message link", LINK),
+        ("Copy link", LINK),
+        ("Copy message ID", HASH),
+        ("Copy room ID", HASH),
+        ("Copy user ID", HASH),
+        ("Forward to", FORWARD),
+        ("Unpin message", PIN_OFF),
+        ("Pin message", PIN),
+        ("Mark unread", MAIL),
+        ("Mark as read", CHECK_CHECK),
+        ("Report message", FLAG),
+        ("Delete message", TRASH_2),
+        ("View profile", USER),
+        ("Profile", USER),
+        ("Mention", AT_SIGN),
+        ("Message", MESSAGE_CIRCLE),
+        ("Invite to room", USER_PLUS),
+        ("Invite people", USER_PLUS),
+        ("Unblock", BAN),
+        ("Block", BAN),
+        ("Roles", SHIELD),
+        ("Kick", USER_X),
+        ("Ban", GAVEL),
+        ("Notifications", BELL),
+        ("Create room", PLUS),
+        ("Leave room", LOG_OUT),
+        ("Set status", SMILE),
+        ("Switch account", USERS),
+        ("Sign out", LOG_OUT),
+        ("All messages", BELL),
+        ("Only mentions", AT_SIGN),
+        ("Mute", BELL_OFF),
+        ("Member", USER),
+        ("Moderator", SHIELD),
+        ("Admin", SHIELD_CHECK),
+    ];
+    table
+        .iter()
+        .find(|(prefix, _)| label.starts_with(prefix))
+        .map(|(_, glyph)| *glyph)
 }

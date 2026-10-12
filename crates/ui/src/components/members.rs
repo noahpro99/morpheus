@@ -210,6 +210,7 @@ fn member_menu(
                     });
                 }
             })
+            .icon(crate::icons::HASH)
         })
         .collect();
     if !targets.is_empty() {

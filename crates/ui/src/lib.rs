@@ -20,6 +20,7 @@ mod e2e {
     }
 }
 mod format;
+pub mod icons;
 mod media;
 mod window;
 
