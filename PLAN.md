@@ -105,7 +105,8 @@ timeline → send.
 - [ ] Shields on messages, device list
 
 ### 5. Mobile
-- [x] Android app-private data dir via `ndk-context` + JNI (`Context.getFilesDir()`), iOS Documents; written, not yet exercised on a device
+- [x] Android app-private data dir via `ndk-context` + JNI (`Context.getFilesDir()`), iOS Documents; type-checks for `aarch64-linux-android` (`just android-check`), not yet exercised on a device
+- [ ] Mobile file picker (Android intent / iOS document picker): `rfd` is desktop-only, the attach button is a no-op on phones; paste works
 - [x] Single-column navigation on phone-width windows (rooms → chat → members/thread) with back buttons and Escape/back; the shared shell does it, so the mobile app gets every desktop feature as is. Swipe-back gesture still to do.
 - [x] Larger touch targets and safe-area insets in the narrow layout
 - [ ] Keyboard avoidance on Android (adjustResize) and iOS, verified on devices

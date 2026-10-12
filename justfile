@@ -60,6 +60,10 @@ desktop-release:
 android:
     dx serve --package morpheus-mobile --platform android
 
+# Type-check the mobile crate for Android without an emulator (needs `nix develop .#android`, or runs it)
+android-check:
+    nix develop .#android -c cargo check -p morpheus-mobile --target aarch64-linux-android
+
 # Wipe local app data (sessions, caches) for all dev profiles
 clean-data:
     rm -rf .dev-data

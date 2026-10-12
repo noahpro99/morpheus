@@ -81,6 +81,11 @@ just android
 
 Builds and runs on a connected device or a running emulator. iOS requires a Mac.
 
+`just android-check` type-checks the mobile crate for `aarch64-linux-android` without a
+device. The mobile app is the same shell as the desktop one: on a phone-width window it
+shows one pane at a time (rooms, chat, members or thread) with back buttons, which
+`just e2e-one mobile_layout` drives on the desktop build inside a phone-sized box.
+
 ## Storage
 
 Everything the Matrix SDK caches (room state, crypto keys, event and media
