@@ -6,7 +6,7 @@ use std::{
 
 use tokio::runtime::Runtime;
 
-use crate::{CoreFuture, Result};
+use crate::{CoreFuture, Result, SessionStoreKind};
 
 /// Operations slower than this are logged at warn level with their call site.
 const SLOW_OP: std::time::Duration = std::time::Duration::from_millis(750);
@@ -21,11 +21,24 @@ struct Inner {
     /// `Option` only so `Drop` can take it and shut it down without blocking.
     runtime: Option<Runtime>,
     data_dir: PathBuf,
+    /// Where session credentials go; `None` decides at runtime (see
+    /// `session_store::resolve`).
+    session_store_kind: Option<SessionStoreKind>,
 }
 
 impl Core {
     /// Create a core that persists everything under `data_dir`.
     pub fn new(data_dir: impl Into<PathBuf>) -> Result<Self> {
+        Self::build(data_dir, None)
+    }
+
+    /// Like [`Core::new`] with the session credential store pinned instead
+    /// of probing the OS keyring (tests use the encrypted file).
+    pub fn with_session_store(data_dir: impl Into<PathBuf>, kind: SessionStoreKind) -> Result<Self> {
+        Self::build(data_dir, Some(kind))
+    }
+
+    fn build(data_dir: impl Into<PathBuf>, session_store_kind: Option<SessionStoreKind>) -> Result<Self> {
         let data_dir = data_dir.into();
         std::fs::create_dir_all(&data_dir)?;
 
@@ -38,12 +51,17 @@ impl Core {
             inner: Arc::new(Inner {
                 runtime: Some(runtime),
                 data_dir,
+                session_store_kind,
             }),
         })
     }
 
     pub fn data_dir(&self) -> &Path {
         &self.inner.data_dir
+    }
+
+    pub(crate) fn session_store_kind(&self) -> Option<SessionStoreKind> {
+        self.inner.session_store_kind
     }
 
     /// Run a fallible future on the core runtime.

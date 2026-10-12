@@ -78,3 +78,14 @@ just android
 ```
 
 Builds and runs on a connected device or a running emulator. iOS requires a Mac.
+
+## Storage
+
+Everything the Matrix SDK caches (room state, crypto keys, event and media
+caches) lives in SQLite databases under the data directory (`MORPHEUS_DATA_DIR`,
+else the XDG data dir), encrypted with a per-install passphrase. That
+passphrase and the login tokens go to the OS keyring (Secret Service on Linux,
+Keychain on macOS, Credential Manager on Windows). With no keyring daemon
+answering, an encrypted file under the data dir stands in and a warning is
+logged. `MORPHEUS_SESSION_STORE=keyring` or `=file` forces one; test runs use
+the file so they never touch your keyring.

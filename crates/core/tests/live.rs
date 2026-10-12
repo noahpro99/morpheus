@@ -7,7 +7,7 @@
 use std::time::Duration;
 
 use morpheus_core::{
-    Core, LoginRequest, MessageId, MessageKind, Session, TimelineEntry, Vector, VectorDiff,
+    Core, LoginRequest, MessageId, MessageKind, Session, SessionStoreKind, TimelineEntry, Vector, VectorDiff,
     VerificationHandle, VerificationStep,
 };
 use tokio::time::timeout;
@@ -74,7 +74,7 @@ async fn login_list_rooms_read_and_send() {
         .with_env_filter("morpheus=debug,warn")
         .try_init();
 
-    let core = Core::new(fresh_data_dir()).expect("core");
+    let core = Core::with_session_store(fresh_data_dir(), SessionStoreKind::File).expect("core");
     let session = core
         .login(LoginRequest {
             homeserver: env.homeserver,
@@ -137,7 +137,7 @@ async fn opening_a_thread_timeline_shows_replies_and_posts_into_it() {
         .with_env_filter("morpheus=debug,warn")
         .try_init();
 
-    let core = Core::new(fresh_data_dir()).expect("core");
+    let core = Core::with_session_store(fresh_data_dir(), SessionStoreKind::File).expect("core");
     let session = core
         .login(LoginRequest {
             homeserver: env.homeserver,
@@ -247,7 +247,7 @@ async fn typing_notifications_propagate_between_users() {
         let hs = env.homeserver.clone();
         let (user, password) = (user.to_owned(), password.to_owned());
         async move {
-            let core = Core::new(fresh_data_dir()).expect("core");
+            let core = Core::with_session_store(fresh_data_dir(), SessionStoreKind::File).expect("core");
             core.login(LoginRequest {
                 homeserver: hs,
                 username: user,
@@ -323,7 +323,7 @@ async fn room_summaries_expose_space_membership() {
         .with_env_filter("morpheus=debug,warn")
         .try_init();
 
-    let core = Core::new(fresh_data_dir()).expect("core");
+    let core = Core::with_session_store(fresh_data_dir(), SessionStoreKind::File).expect("core");
     let session = core
         .login(LoginRequest {
             homeserver: env.homeserver,
@@ -390,7 +390,7 @@ async fn fetch_full_image_media() {
         .with_env_filter("morpheus=debug,warn")
         .try_init();
 
-    let core = Core::new(fresh_data_dir()).expect("core");
+    let core = Core::with_session_store(fresh_data_dir(), SessionStoreKind::File).expect("core");
     let session = core
         .login(LoginRequest {
             homeserver: env.homeserver,
@@ -461,7 +461,7 @@ async fn fully_read_marker_sits_above_first_unread_and_clears_when_caught_up() {
         let hs = env.homeserver.clone();
         let (user, password) = (user.to_owned(), password.to_owned());
         async move {
-            let core = Core::new(fresh_data_dir()).expect("core");
+            let core = Core::with_session_store(fresh_data_dir(), SessionStoreKind::File).expect("core");
             core.login(LoginRequest {
                 homeserver: hs,
                 username: user,
@@ -563,7 +563,7 @@ async fn homeserver_advertises_password_login() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping live test");
         return;
     };
-    let core = Core::new(fresh_data_dir()).expect("core");
+    let core = Core::with_session_store(fresh_data_dir(), SessionStoreKind::File).expect("core");
     let flows = core
         .login_flows(env.homeserver.clone())
         .await
@@ -644,7 +644,7 @@ async fn self_verification_emoji_sas_between_two_devices() {
         .try_init();
 
     let login = |hs: String, user: String, password: String| async move {
-        let core = Core::new(fresh_data_dir()).expect("core");
+        let core = Core::with_session_store(fresh_data_dir(), SessionStoreKind::File).expect("core");
         core.login(LoginRequest {
             homeserver: hs,
             username: user,
@@ -733,7 +733,7 @@ async fn profile_name_avatar_and_status_round_trip() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping live test");
         return;
     };
-    let core = Core::new(fresh_data_dir()).expect("core");
+    let core = Core::with_session_store(fresh_data_dir(), SessionStoreKind::File).expect("core");
     let session = core
         .login(LoginRequest {
             homeserver: env.homeserver,
@@ -785,7 +785,7 @@ async fn admin_can_kick_invite_ban_unban_and_change_roles() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping live test");
         return;
     };
-    let core = Core::new(fresh_data_dir()).expect("core");
+    let core = Core::with_session_store(fresh_data_dir(), SessionStoreKind::File).expect("core");
     let session = core
         .login(LoginRequest {
             homeserver: env.homeserver,
@@ -862,7 +862,7 @@ async fn space_create_category_privacy_profile_and_leave() {
             std::env::var("RUST_LOG").unwrap_or_else(|_| "morpheus=debug,warn".into()),
         )
         .try_init();
-    let core = Core::new(fresh_data_dir()).expect("core");
+    let core = Core::with_session_store(fresh_data_dir(), SessionStoreKind::File).expect("core");
     let session = core
         .login(LoginRequest {
             homeserver: env.homeserver,
@@ -912,7 +912,7 @@ async fn mutual_rooms_lists_rooms_shared_with_a_user() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping live test");
         return;
     };
-    let core = Core::new(fresh_data_dir()).expect("core");
+    let core = Core::with_session_store(fresh_data_dir(), SessionStoreKind::File).expect("core");
     let session = core
         .login(LoginRequest {
             homeserver: env.homeserver,
@@ -941,7 +941,7 @@ async fn invites_name_the_inviter_and_can_be_declined_then_accepted() {
         return;
     };
     let login = |user: &str| {
-        let core = Core::new(fresh_data_dir()).expect("core");
+        let core = Core::with_session_store(fresh_data_dir(), SessionStoreKind::File).expect("core");
         core.login(LoginRequest {
             homeserver: env.homeserver.clone(),
             username: user.into(),

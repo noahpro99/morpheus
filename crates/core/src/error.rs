@@ -39,6 +39,12 @@ pub enum Error {
     #[error("unknown room {0}")]
     UnknownRoom(OwnedRoomId),
 
+    #[error("OS keyring error: {0}")]
+    Keyring(#[from] keyring::Error),
+
+    #[error("could not decrypt the stored session; its key is missing or the file is corrupt")]
+    SessionCrypto,
+
     #[error("no other device of this user was found to verify against")]
     NoOtherDevice,
 

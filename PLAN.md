@@ -101,7 +101,7 @@ timeline → send.
 - [x] Device verification between own devices (emoji SAS) from the settings modal
 - [x] Restore from key backup with a recovery key (settings modal)
 - [ ] QR verification, recovery key setup for new accounts
-- [ ] Store passphrase and tokens in the OS keyring (desktop) instead of `session.json`
+- [x] Tokens and the sqlite store passphrase live in the OS keyring (Secret Service / Keychain / Credential Manager), falling back to an encrypted file under the data dir when no keyring answers (`crates/core/src/session_store.rs`); an old plaintext `session.json` is migrated in and deleted. `MORPHEUS_SESSION_STORE=keyring|file` forces one; tests use the file.
 - [ ] Shields on messages, device list
 
 ### 5. Mobile
