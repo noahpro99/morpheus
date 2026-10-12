@@ -1,7 +1,8 @@
 use dioxus::prelude::*;
-use morpheus_core::{RoomSummary, Session};
+use morpheus_core::{NotifyMode, RoomSummary, Session};
 
-use super::context_menu::{MenuItem, copy_to_clipboard, open_menu};
+use super::context_menu::{MenuItem, copy_to_clipboard, open_menu, open_menu_at};
+use super::room_dialogs::{OpenRoomDialog, RoomDialog};
 use super::profile::{Editor, ProfileEditor, open_profile};
 use super::settings::SettingsOpen;
 use super::shell::{Rooms, Scope, Selected, SelectedSpace, rooms_in_scope};
@@ -87,7 +88,17 @@ pub fn RoomList(error: Option<String>) -> Element {
 
     rsx! {
         aside { class: "sidebar",
-            header { class: "sidebar-header", h2 { "{header_title}" } }
+            header { class: "sidebar-header",
+                h2 { "{header_title}" }
+                if scope != Scope::Dms {
+                    button {
+                        class: "ghost create-room-button",
+                        title: "Create room",
+                        onclick: move |_| consume_context::<OpenRoomDialog>().set(RoomDialog::Create),
+                        "+"
+                    }
+                }
+            }
 
             div { class: "room-list",
                 if let Some(message) = error {
@@ -141,31 +152,22 @@ fn RoomRow(room: RoomSummary) -> Element {
     let is_selected = selected().as_ref() == Some(&room.id);
     let id = room.id.clone();
 
+    // The menu needs the room's notification mode, so it is built after a
+    // quick (local) lookup and opened at the pointer's position.
     let on_context = {
         let room_id = room.id.clone();
+        let is_dm = room.is_dm;
         move |e: Event<MouseData>| {
-            let link = format!("https://matrix.to/#/{room_id}");
-            let leave = {
-                let session = session.clone();
-                let room_id = room_id.clone();
-                move || {
-                    let session = session.clone();
-                    let room_id = room_id.clone();
-                    spawn(async move {
-                        if let Err(err) = session.leave_room(room_id).await {
-                            tracing::warn!(%err, "leaving the room failed");
-                        }
-                    });
-                }
-            };
-            open_menu(
-                &e,
-                vec![
-                    MenuItem::new("Copy link", move || copy_to_clipboard(&link)),
-                    MenuItem::new("Leave room", leave).danger(),
-                ],
-                None,
-            );
+            e.prevent_default();
+            e.stop_propagation();
+            let point = e.client_coordinates();
+            let session = session.clone();
+            let room_id = room_id.clone();
+            spawn(async move {
+                let mode = session.notify_mode(room_id.clone()).await.ok();
+                let items = room_menu(&session, &room_id, is_dm, mode);
+                open_menu_at(point.x, point.y, items, None);
+            });
         }
     };
 
@@ -188,4 +190,72 @@ fn RoomRow(room: RoomSummary) -> Element {
             }
         }
     }
+}
+
+/// Runs a room action in the background and logs failures.
+fn run(what: &'static str, future: morpheus_core::CoreFuture<()>) {
+    spawn(async move {
+        if let Err(err) = future.await {
+            tracing::warn!(%err, what, "room action failed");
+        }
+    });
+}
+
+/// The right-click menu for a room row.
+fn room_menu(
+    session: &Session,
+    room_id: &morpheus_core::OwnedRoomId,
+    is_dm: bool,
+    mode: Option<NotifyMode>,
+) -> Vec<MenuItem> {
+    let mut items = vec![MenuItem::new("Mark as read", {
+        let (session, room_id) = (session.clone(), room_id.clone());
+        move || run("mark read", session.mark_room_read(room_id.clone()))
+    })];
+    if !is_dm {
+        items.push(MenuItem::new("Invite people", {
+            let room_id = room_id.clone();
+            move || consume_context::<OpenRoomDialog>().set(RoomDialog::Invite(room_id.clone()))
+        }));
+    }
+    let modes = [
+        (NotifyMode::AllMessages, "All messages"),
+        (NotifyMode::MentionsOnly, "Only mentions"),
+        (NotifyMode::Mute, "Mute"),
+    ]
+    .into_iter()
+    .map(|(choice, label)| {
+        MenuItem::new(label, {
+            let (session, room_id) = (session.clone(), room_id.clone());
+            move || run("notification mode", session.set_notify_mode(room_id.clone(), choice))
+        })
+        .checked(mode == Some(choice))
+    })
+    .collect();
+    items.push(MenuItem::submenu("Notifications", modes));
+    if !is_dm {
+        items.push(MenuItem::new("Edit room", {
+            let room_id = room_id.clone();
+            move || consume_context::<OpenRoomDialog>().set(RoomDialog::Edit(room_id.clone()))
+        }));
+        items.push(MenuItem::new("Create room", || {
+            consume_context::<OpenRoomDialog>().set(RoomDialog::Create);
+        }));
+    }
+    items.push(MenuItem::new("Copy link", {
+        let link = format!("https://matrix.to/#/{room_id}");
+        move || copy_to_clipboard(&link)
+    }));
+    items.push(MenuItem::new("Copy room ID", {
+        let id = room_id.to_string();
+        move || copy_to_clipboard(&id)
+    }));
+    items.push(
+        MenuItem::new("Leave room", {
+            let (session, room_id) = (session.clone(), room_id.clone());
+            move || run("leave", session.leave_room(room_id.clone()))
+        })
+        .danger(),
+    );
+    items
 }

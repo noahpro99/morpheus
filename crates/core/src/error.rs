@@ -48,6 +48,9 @@ pub enum Error {
     #[error("only messages can be forwarded")]
     NotForwardable,
 
+    #[error("{0}")]
+    Other(String),
+
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;

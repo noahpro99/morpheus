@@ -90,10 +90,21 @@ pub fn open_menu(
     e.prevent_default();
     e.stop_propagation();
     let point = e.client_coordinates();
+    open_menu_at(point.x, point.y, items, react);
+}
+
+/// Open a menu at viewport coordinates, for menus built after an async
+/// lookup (the event is long gone by then; call `prevent_default` first).
+pub fn open_menu_at(
+    x: f64,
+    y: f64,
+    items: Vec<MenuItem>,
+    react: Option<Rc<dyn Fn(&'static str)>>,
+) {
     let mut menu = consume_context::<ContextMenu>();
     menu.set(MenuState(Some(Rc::new(Menu {
-        x: point.x,
-        y: point.y,
+        x,
+        y,
         items: items.into_iter().map(Rc::new).collect(),
         react,
     }))));

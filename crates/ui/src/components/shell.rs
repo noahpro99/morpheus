@@ -16,6 +16,7 @@ use super::{
         ProfileTarget, ProfileVersion, StatusModal,
     },
     rail::Rail,
+    room_dialogs::{CreateRoomModal, EditRoomModal, InviteModal, OpenRoomDialog, RoomDialog},
     room_list::RoomList,
     settings::{ActiveVerification, Settings, SettingsOpen, track_verification},
     switcher::QuickSwitcher,
@@ -128,6 +129,7 @@ pub fn Shell(session: Session) -> Element {
     let mut editor: ProfileEditor = use_context_provider(|| Signal::new(Editor::None));
     let _mention: MentionRequest = use_context_provider(|| Signal::new(Mention::default()));
     let mut message_dialog: OpenMessageDialog = use_context_provider(|| Signal::new(MessageDialog::None));
+    let mut room_dialog: OpenRoomDialog = use_context_provider(|| Signal::new(RoomDialog::None));
     let pinned: Pinned = use_context_provider(|| Signal::new(PinnedIds::default()));
     let pinned_refresh: PinnedRefresh = use_context_provider(|| Signal::new(0));
     use_pinned_fetcher(session.clone(), selected, pinned_refresh, pinned);
@@ -212,6 +214,8 @@ pub fn Shell(session: Session) -> Element {
             // verification keeps going in the background.
             if context_menu().0.is_some() {
                 context_menu.set(MenuState::default());
+            } else if room_dialog() != RoomDialog::None {
+                room_dialog.set(RoomDialog::None);
             } else if message_dialog() != MessageDialog::None {
                 message_dialog.set(MessageDialog::None);
             } else if editor() != Editor::None {
@@ -281,6 +285,12 @@ pub fn Shell(session: Session) -> Element {
                 (MessageDialog::Report(event_id), _) => rsx! { ReportModal { event_id } },
                 (MessageDialog::Pinned, Some(room)) => rsx! { PinnedPanel { room_id: room.id.clone() } },
                 _ => rsx! {},
+            }
+            match room_dialog() {
+                RoomDialog::Invite(room_id) => rsx! { InviteModal { room_id } },
+                RoomDialog::Edit(room_id) => rsx! { EditRoomModal { room_id } },
+                RoomDialog::Create => rsx! { CreateRoomModal {} },
+                RoomDialog::None => rsx! {},
             }
             ContextMenuLayer {}
         }
