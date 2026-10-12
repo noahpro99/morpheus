@@ -5,7 +5,7 @@
 //! scope-owned callbacks, so the menu outlives any row that re-renders) and
 //! hands them to [`open_menu`]; [`ContextMenuLayer`] draws whatever is open.
 
-use std::rc::Rc;
+use std::{cell::RefCell, rc::Rc};
 
 use dioxus::prelude::*;
 
@@ -14,15 +14,15 @@ use super::timeline::QUICK_REACTIONS;
 pub struct MenuItem {
     pub label: String,
     pub danger: bool,
-    pub run: Rc<dyn Fn()>,
+    pub run: Rc<RefCell<dyn FnMut()>>,
 }
 
 impl MenuItem {
-    pub fn new(label: impl Into<String>, run: impl Fn() + 'static) -> Self {
+    pub fn new(label: impl Into<String>, run: impl FnMut() + 'static) -> Self {
         Self {
             label: label.into(),
             danger: false,
-            run: Rc::new(run),
+            run: Rc::new(RefCell::new(run)),
         }
     }
 
@@ -129,7 +129,7 @@ pub fn ContextMenuLayer() -> Element {
                         onclick: {
                             let run = item.run.clone();
                             move |_| {
-                                run();
+                                (run.borrow_mut())();
                                 close();
                             }
                         },

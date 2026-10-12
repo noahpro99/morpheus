@@ -3,6 +3,8 @@
 
 use matrix_sdk::ruma::{
     OwnedUserId,
+    api::client::presence::{get_presence, set_presence},
+    presence::PresenceState,
     profile::{AvatarUrl, DisplayName},
 };
 
@@ -14,6 +16,8 @@ pub struct Profile {
     /// Display name, falling back to the Matrix ID's local part.
     pub name: String,
     pub avatar: Option<MediaRef>,
+    /// Presence status message, when the server shares presence.
+    pub status: Option<String>,
 }
 
 impl Profile {
@@ -23,6 +27,7 @@ impl Profile {
             user_id,
             name,
             avatar: None,
+            status: None,
         }
     }
 }
@@ -57,7 +62,53 @@ impl Session {
                 .ok()
                 .flatten()
                 .map(MediaRef::from_mxc);
+            // Presence may be disabled server-side; that is not an error here.
+            profile.status = client
+                .send(get_presence::v3::Request::new(profile.user_id.clone()))
+                .await
+                .ok()
+                .and_then(|presence| presence.status_msg)
+                .filter(|s| !s.trim().is_empty());
             Ok(profile)
+        })
+    }
+}
+
+impl Session {
+    /// Change the signed-in user's display name.
+    pub fn set_display_name(&self, name: String) -> CoreFuture<()> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            let name = name.trim().to_owned();
+            client
+                .account()
+                .set_display_name((!name.is_empty()).then_some(name.as_str()))
+                .await?;
+            Ok(())
+        })
+    }
+
+    /// Upload an image file and make it the signed-in user's avatar.
+    pub fn set_avatar(&self, path: std::path::PathBuf) -> CoreFuture<()> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            let mime = mime_guess::from_path(&path).first_or_octet_stream();
+            let bytes = tokio::fs::read(&path).await?;
+            client.account().upload_avatar(&mime, bytes).await?;
+            Ok(())
+        })
+    }
+
+    /// Set (or clear, with `None`) the presence status message other users
+    /// see next to this account. Presence is set to online alongside it.
+    pub fn set_status(&self, status: Option<String>) -> CoreFuture<()> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            let user_id = client.user_id().ok_or(Error::NoSession)?.to_owned();
+            let mut request = set_presence::v3::Request::new(user_id, PresenceState::Online);
+            request.status_msg = status.map(|s| s.trim().to_owned()).filter(|s| !s.is_empty());
+            client.send(request).await?;
+            Ok(())
         })
     }
 }
