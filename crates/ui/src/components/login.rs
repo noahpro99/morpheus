@@ -10,6 +10,8 @@ pub fn Login(restore_error: Option<String>) -> Element {
     let mut session = use_context::<Signal<Option<Session>>>();
 
     let mut homeserver = use_signal(|| config.default_homeserver.clone());
+    // Only probed when the field settles (change event), not on every keystroke.
+    let mut probe_server = use_signal(|| config.default_homeserver.clone());
     let mut username = use_signal(String::new);
     let mut password = use_signal(String::new);
     let mut error = use_signal(|| restore_error);
@@ -21,7 +23,7 @@ pub fn Login(restore_error: Option<String>) -> Element {
         let core = core.clone();
         move || {
             let core = core.clone();
-            let server = homeserver();
+            let server = probe_server();
             async move {
                 if server.trim().is_empty() {
                     return LoginFlows::default();
@@ -95,6 +97,7 @@ pub fn Login(restore_error: Option<String>) -> Element {
                         placeholder: "matrix.org",
                         value: "{homeserver}",
                         oninput: move |e| homeserver.set(e.value()),
+                        onchange: move |e| probe_server.set(e.value()),
                     }
                 }
 

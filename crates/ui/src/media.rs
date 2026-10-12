@@ -10,9 +10,10 @@ use dioxus::prelude::*;
 use morpheus_core::{MediaRef, Session};
 
 /// `(media key, width, height)` → data URL.
-type Cache = Signal<HashMap<(String, u32, u32), Rc<str>>>;
+/// `None` remembers a failed fetch so dead media is not retried every render.
+type Cache = Signal<HashMap<(String, u32, u32), Option<Rc<str>>>>;
 /// media key → data URL, for full-resolution files (the lightbox).
-type FullCache = Signal<HashMap<String, Rc<str>>>;
+type FullCache = Signal<HashMap<String, Option<Rc<str>>>>;
 
 /// Install once near the root of the logged-in shell.
 pub fn provide_media_cache() {
@@ -31,30 +32,29 @@ pub fn use_thumbnail(media: Option<MediaRef>, width: u32, height: u32) -> Memo<O
         async move {
             let media = media?;
             let cache_key = (media.key().to_owned(), width, height);
-            if let Some(url) = cache.peek().get(&cache_key) {
-                return Some(url.clone());
+            if let Some(entry) = cache.peek().get(&cache_key) {
+                return entry.clone();
             }
-            let fetched = session
-                .thumbnail(media, width, height)
-                .await
-                .ok()
-                .flatten()?;
+            let Some(fetched) = session.thumbnail(media, width, height).await.ok().flatten() else {
+                cache.write().insert(cache_key, None);
+                return None;
+            };
             let url: Rc<str> = format!(
                 "data:{};base64,{}",
                 fetched.mime(),
                 STANDARD.encode(&fetched.bytes)
             )
             .into();
-            cache.write().insert(cache_key, url.clone());
+            cache.write().insert(cache_key, Some(url.clone()));
             Some(url)
         }
     }));
 
     use_memo(move || {
         if let Some(key) = &key
-            && let Some(url) = cache.read().get(key)
+            && let Some(entry) = cache.read().get(key)
         {
-            return Some(url.clone());
+            return entry.clone();
         }
         fetch.read().clone().flatten()
     })
@@ -73,26 +73,29 @@ pub fn use_full_media(media: Option<MediaRef>) -> Memo<Option<Rc<str>>> {
         async move {
             let media = media?;
             let cache_key = media.key().to_owned();
-            if let Some(url) = cache.peek().get(&cache_key) {
-                return Some(url.clone());
+            if let Some(entry) = cache.peek().get(&cache_key) {
+                return entry.clone();
             }
-            let fetched = session.media_file(media).await.ok().flatten()?;
+            let Some(fetched) = session.media_file(media).await.ok().flatten() else {
+                cache.write().insert(cache_key, None);
+                return None;
+            };
             let url: Rc<str> = format!(
                 "data:{};base64,{}",
                 fetched.mime(),
                 STANDARD.encode(&fetched.bytes)
             )
             .into();
-            cache.write().insert(cache_key, url.clone());
+            cache.write().insert(cache_key, Some(url.clone()));
             Some(url)
         }
     }));
 
     use_memo(move || {
         if let Some(key) = &key
-            && let Some(url) = cache.read().get(key)
+            && let Some(entry) = cache.read().get(key)
         {
-            return Some(url.clone());
+            return entry.clone();
         }
         fetch.read().clone().flatten()
     })
