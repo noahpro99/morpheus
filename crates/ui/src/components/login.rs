@@ -94,6 +94,7 @@ pub fn Login(restore_error: Option<String>) -> Element {
                 label { "Homeserver"
                     input {
                         r#type: "text",
+                        name: "homeserver",
                         placeholder: "matrix.org",
                         value: "{homeserver}",
                         oninput: move |e| homeserver.set(e.value()),
@@ -103,10 +104,10 @@ pub fn Login(restore_error: Option<String>) -> Element {
 
                 if flows_now.password {
                     label { "Username or email"
-                        input { r#type: "text", autofocus: true, value: "{username}", oninput: move |e| username.set(e.value()) }
+                        input { r#type: "text", name: "username", autofocus: true, value: "{username}", oninput: move |e| username.set(e.value()) }
                     }
                     label { "Password"
-                        input { r#type: "password", value: "{password}", oninput: move |e| password.set(e.value()) }
+                        input { r#type: "password", name: "password", value: "{password}", oninput: move |e| password.set(e.value()) }
                     }
                 }
 

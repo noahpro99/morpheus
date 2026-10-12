@@ -1,0 +1,145 @@
+//! Settings modal: encryption status, recovery key, device list, and emoji
+//! verification between two of the user's own devices.
+
+#![allow(clippy::expect_used)]
+
+use std::time::Duration;
+
+use morpheus_e2e::{App, DEFAULT_WAIT};
+
+fn homeserver() -> Option<String> {
+    std::env::var("MORPHEUS_TEST_HOMESERVER").ok()
+}
+
+async fn login(app: &mut App, user: &str, password: &str) {
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    app.type_into("form.login input[name=username]", user)
+        .await
+        .expect("username");
+    app.type_into("form.login input[name=password]", password)
+        .await
+        .expect("password");
+    app.submit("form.login").await.expect("submit");
+    app.wait_for(".shell", DEFAULT_WAIT)
+        .await
+        .expect("shell after login");
+}
+
+async fn open_settings(app: &mut App) {
+    app.click(".settings-button").await.expect("gear button");
+    app.wait_for(".settings", DEFAULT_WAIT)
+        .await
+        .expect("settings modal");
+}
+
+#[tokio::test]
+async fn settings_shows_devices_and_rejects_a_bad_recovery_key() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch(&hs).await.expect("launch app");
+    login(&mut app, "carol", "carol-password").await;
+    open_settings(&mut app).await;
+
+    app.wait_for_text(".settings-user", "@carol:localhost", DEFAULT_WAIT)
+        .await
+        .expect("account");
+    app.wait_for_text(".status-list", "not verified", DEFAULT_WAIT)
+        .await
+        .expect("unverified status");
+    app.wait_for_text(".device", "this device", DEFAULT_WAIT)
+        .await
+        .expect("current device listed");
+
+    app.type_into(".recovery-form input", "definitely not a recovery key")
+        .await
+        .expect("type key");
+    app.submit(".recovery-form").await.expect("submit key");
+    app.wait_for(".settings .error", DEFAULT_WAIT)
+        .await
+        .expect("recovery error shown");
+
+    app.click(".settings-header .ghost").await.expect("close");
+    app.wait_for_js(
+        "return document.querySelector('.settings') === null;",
+        Duration::from_secs(5),
+    )
+    .await
+    .expect("modal closed");
+}
+
+#[tokio::test]
+async fn emoji_verification_between_two_devices() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    // Two app instances logged in as the same user are two devices.
+    let mut a = App::launch(&hs).await.expect("launch A");
+    login(&mut a, "bob", "bob-password").await;
+    let mut b = App::launch(&hs).await.expect("launch B");
+    login(&mut b, "bob", "bob-password").await;
+    // Let both finish their first sync so A picks B as the most recent device.
+    a.wait_for(".room", DEFAULT_WAIT).await.expect("A synced");
+    b.wait_for(".room", DEFAULT_WAIT).await.expect("B synced");
+
+    open_settings(&mut a).await;
+    a.click_text(".settings button", "Verify with another")
+        .await
+        .expect("start verification");
+    a.wait_for_text(
+        ".verification",
+        "Waiting for your other device",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("A waiting");
+
+    // B gets the request pushed into its settings dialog.
+    b.wait_for_text(".verification", "wants to verify", DEFAULT_WAIT)
+        .await
+        .expect("B sees request");
+    b.click_text(".verification button", "Accept")
+        .await
+        .expect("B accepts");
+
+    a.wait_for(".emoji-grid", DEFAULT_WAIT)
+        .await
+        .expect("A emoji");
+    b.wait_for(".emoji-grid", DEFAULT_WAIT)
+        .await
+        .expect("B emoji");
+    let names =
+        "return [...document.querySelectorAll('.emoji-name')].map(e => e.textContent).join(',');";
+    let a_names = a.eval(names).await.expect("A names");
+    let b_names = b.eval(names).await.expect("B names");
+    assert_eq!(a_names, b_names, "both devices show the same emoji");
+
+    a.click_text(".verification button", "They match")
+        .await
+        .expect("A confirms");
+    b.click_text(".verification button", "They match")
+        .await
+        .expect("B confirms");
+    a.wait_for_text(".verification", "Verified", DEFAULT_WAIT)
+        .await
+        .expect("A done");
+    b.wait_for_text(".verification", "Verified", DEFAULT_WAIT)
+        .await
+        .expect("B done");
+
+    // The device list refreshes: the other device now shows as verified.
+    a.wait_for_js(
+        "return [...document.querySelectorAll('.device')].some(d => !d.textContent.includes('this device') && d.textContent.includes('verified') && !d.textContent.includes('unverified'));",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("A lists B as verified");
+
+    if let Some(path) = a.screenshot("verification").await.expect("screenshot") {
+        eprintln!("screenshot: {}", path.display());
+    }
+}

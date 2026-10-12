@@ -16,6 +16,7 @@ mod core;
 mod error;
 mod media;
 mod members;
+mod recovery;
 mod rooms;
 mod session;
 mod timeline;
@@ -30,6 +31,7 @@ pub use error::{Error, Result};
 pub type CoreFuture<T> = futures_util::future::BoxFuture<'static, Result<T>>;
 pub use media::{Media, MediaRef};
 pub use members::{Member, MemberRole};
+pub use recovery::{EncryptionStatus, RecoveryAvailability};
 pub use rooms::{RoomListUpdates, RoomSummary};
 pub use session::{LoginFlows, LoginRequest, Session};
 pub use timeline::{
@@ -37,7 +39,9 @@ pub use timeline::{
     TimelineEntry, TimelineHandle, TimelineUpdates,
 };
 pub use typing::TypingUpdates;
-pub use verification::{Device, VerificationHandle, VerificationStep, VerificationUpdates};
+pub use verification::{
+    Device, VerificationActions, VerificationHandle, VerificationStep, VerificationUpdates,
+};
 
 pub use eyeball_im::VectorDiff;
 pub use imbl::Vector;

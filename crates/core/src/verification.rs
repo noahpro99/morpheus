@@ -67,12 +67,19 @@ impl VerificationUpdates {
 
 /// Actions and live state for one verification flow, incoming or outgoing.
 pub struct VerificationHandle {
+    actions: VerificationActions,
+    rx: mpsc::UnboundedReceiver<VerificationStep>,
+    _forwarder: Arc<AbortOnDrop>,
+}
+
+/// The actions of a flow, separable from its step stream so a UI can keep
+/// the receiver in one task and the buttons elsewhere. Clone freely.
+#[derive(Clone)]
+pub struct VerificationActions {
     core: Core,
     request: VerificationRequest,
     sas: Arc<StdMutex<Option<SasVerification>>>,
     we_started: bool,
-    rx: mpsc::UnboundedReceiver<VerificationStep>,
-    _forwarder: Arc<AbortOnDrop>,
 }
 
 struct AbortOnDrop(JoinHandle<()>);
@@ -86,12 +93,39 @@ impl Drop for AbortOnDrop {
 impl VerificationHandle {
     /// Did this device start the flow (as opposed to receiving a request).
     pub fn we_started(&self) -> bool {
-        self.we_started
+        self.actions.we_started
     }
 
     /// Next step of the flow, or `None` once it can no longer change.
     pub async fn next(&mut self) -> Option<VerificationStep> {
         self.rx.recv().await
+    }
+
+    /// The flow's actions, usable independently of this receiver.
+    pub fn actions(&self) -> VerificationActions {
+        self.actions.clone()
+    }
+
+    pub fn accept(&self) -> CoreFuture<()> {
+        self.actions.accept()
+    }
+
+    pub fn confirm_match(&self) -> CoreFuture<()> {
+        self.actions.confirm_match()
+    }
+
+    pub fn mismatch(&self) -> CoreFuture<()> {
+        self.actions.mismatch()
+    }
+
+    pub fn cancel(&self) -> CoreFuture<()> {
+        self.actions.cancel()
+    }
+}
+
+impl VerificationActions {
+    pub fn we_started(&self) -> bool {
+        self.we_started
     }
 
     /// Accept an incoming request. Only meaningful when [`Self::we_started`] is `false`.
@@ -142,7 +176,9 @@ impl VerificationHandle {
     fn current_sas(&self) -> Option<SasVerification> {
         self.sas.lock().ok().and_then(|guard| guard.clone())
     }
+}
 
+impl VerificationHandle {
     /// Wrap a freshly created or received `VerificationRequest`, spawning the
     /// task that drives it and forwards [`VerificationStep`]s to the UI.
     fn spawn(core: Core, request: VerificationRequest, we_started: bool) -> Self {
@@ -158,10 +194,12 @@ impl VerificationHandle {
         });
 
         Self {
-            core,
-            request,
-            sas,
-            we_started,
+            actions: VerificationActions {
+                core,
+                request,
+                sas,
+                we_started,
+            },
             rx,
             _forwarder: Arc::new(AbortOnDrop(forwarder)),
         }

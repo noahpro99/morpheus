@@ -13,10 +13,10 @@ async fn login_and_open(app: &mut App, room: &str) {
     app.wait_for("form.login", DEFAULT_WAIT)
         .await
         .expect("login form");
-    app.type_into("form.login input[type=text]", "alice")
+    app.type_into("form.login input[name=username]", "alice")
         .await
         .expect("username");
-    app.type_into("form.login input[type=password]", "alice-password")
+    app.type_into("form.login input[name=password]", "alice-password")
         .await
         .expect("password");
     app.submit("form.login").await.expect("submit");

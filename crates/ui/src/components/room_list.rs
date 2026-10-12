@@ -1,6 +1,7 @@
 use dioxus::prelude::*;
 use morpheus_core::{RoomSummary, Session};
 
+use super::settings::SettingsOpen;
 use super::shell::{Rooms, Selected, SelectedSpace, rooms_in_scope};
 use crate::media::Avatar;
 
@@ -10,6 +11,7 @@ pub fn RoomList(error: Option<String>) -> Element {
     let rooms = use_context::<Rooms>();
     let selected_space = use_context::<SelectedSpace>();
     let mut session_slot = use_context::<Signal<Option<Session>>>();
+    let mut settings_open = use_context::<SettingsOpen>();
 
     let user = session
         .user_id()
@@ -72,6 +74,7 @@ pub fn RoomList(error: Option<String>) -> Element {
             footer { class: "sidebar-footer",
                 Avatar { media: None, fallback: user.trim_start_matches('@').to_owned(), size: 32 }
                 span { class: "user", "{user}" }
+                button { class: "ghost settings-button", title: "Settings", onclick: move |_| settings_open.set(true), "⚙" }
                 button { class: "ghost", title: "Sign out", onclick: logout, "⏻" }
             }
         }
