@@ -19,6 +19,45 @@ pub type SessionHook = Arc<dyn Fn(Session) + Send + Sync>;
 /// The room on screen, shared with platform code outside the UI runtime.
 pub type OpenRoom = Arc<Mutex<Option<OwnedRoomId>>>;
 
+/// Something the platform asks the UI to do, from outside its runtime (the
+/// tray menu).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AppCommand {
+    Acknowledgements,
+    CheckForUpdates,
+}
+
+/// A queue of [`AppCommand`]s any thread can push to; the shell drains it.
+/// Commands sent before sign-in wait for the shell.
+#[derive(Clone, Default)]
+pub struct AppCommands {
+    queue: Arc<Mutex<Vec<AppCommand>>>,
+    wake: Arc<tokio::sync::Notify>,
+}
+
+impl AppCommands {
+    pub fn send(&self, command: AppCommand) {
+        if let Ok(mut queue) = self.queue.lock() {
+            queue.push(command);
+        }
+        self.wake.notify_one();
+    }
+
+    pub(crate) async fn next(&self) -> AppCommand {
+        loop {
+            let waiting = self
+                .queue
+                .lock()
+                .ok()
+                .and_then(|mut queue| (!queue.is_empty()).then(|| queue.remove(0)));
+            if let Some(command) = waiting {
+                return command;
+            }
+            self.wake.notified().await;
+        }
+    }
+}
+
 /// Provided by the platform crate via `LaunchBuilder::with_context`.
 #[derive(Clone)]
 pub struct AppConfig {
@@ -26,6 +65,7 @@ pub struct AppConfig {
     pub default_homeserver: String,
     pub on_session: Option<SessionHook>,
     pub open_room: OpenRoom,
+    pub commands: AppCommands,
 }
 
 impl AppConfig {
@@ -35,6 +75,7 @@ impl AppConfig {
             default_homeserver,
             on_session: None,
             open_room: OpenRoom::default(),
+            commands: AppCommands::default(),
         }
     }
 }

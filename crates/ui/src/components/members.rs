@@ -4,9 +4,9 @@ use super::toast::report;
 use dioxus::prelude::*;
 use morpheus_core::{Member, MemberPermissions, MemberRole, OwnedRoomId, Session};
 
-use super::context_menu::{MenuItem, copy_to_clipboard, open_menu};
+use super::context_menu::{MenuItem, copy_to_clipboard, open_menu, open_menu_at};
 use super::profile::{open_profile, open_profile_at};
-use super::shell::{MembersVersion, Mention, MentionRequest, Rooms, Scope, SelectedSpace, go_to};
+use super::shell::{MembersVersion, Mention, MentionRequest, Scope, SelectedSpace, go_to};
 use crate::media::Avatar;
 
 /// Rows rendered at first. Big rooms have thousands of members, and every
@@ -195,30 +195,8 @@ pub(crate) fn member_menu(
         }
     }));
 
-    // Invite to another room: every joined room we may invite to.
-    let rooms = consume_context::<Rooms>();
-    let targets: Vec<MenuItem> = rooms
-        .read()
-        .iter()
-        .filter(|room| !room.is_space && !room.is_dm && &room.id != room_id)
-        .map(|room| {
-            MenuItem::new(format!("#{}", room.name), {
-                let session = session.clone();
-                let (target, user_id) = (room.id.clone(), user_id.clone());
-                move || {
-                    let future = session.invite(target.clone(), user_id.clone());
-                    spawn(async move {
-                        if let Err(err) = future.await {
-                            report("invite", &err);
-                        }
-                    });
-                }
-            })
-            .icon(crate::icons::HASH)
-        })
-        .collect();
-    if !targets.is_empty() {
-        items.push(MenuItem::submenu("Invite to room", targets));
+    if let Some(invite) = super::invites::invite_menu(session, &user_id, Some(room_id)) {
+        items.push(invite);
     }
 
     items.push(MenuItem::new(
@@ -315,4 +293,42 @@ fn role_name(role: MemberRole) -> &'static str {
         MemberRole::Moderator => "Moderator",
         MemberRole::Member => "Member",
     }
+}
+
+/// Right-click on a message's avatar or sender name: the same menu as the
+/// member list. The member and our permissions are looked up first, so the
+/// menu opens where the pointer was once they arrive.
+pub(crate) fn open_sender_menu(
+    session: &Session,
+    room_id: OwnedRoomId,
+    user_id: morpheus_core::OwnedUserId,
+    name: String,
+    e: &Event<MouseData>,
+) {
+    e.prevent_default();
+    e.stop_propagation();
+    let point = e.client_coordinates();
+    let session = session.clone();
+    let own = session.user_id().as_ref() == Some(&user_id);
+    spawn(async move {
+        let members = session.members(room_id.clone()).await.unwrap_or_default();
+        let permissions = session
+            .my_permissions(room_id.clone())
+            .await
+            .unwrap_or_default();
+        // Someone who has left still gets a menu (profile, message, block).
+        let member = members
+            .into_iter()
+            .find(|member| member.user_id == user_id)
+            .unwrap_or(Member {
+                user_id,
+                name,
+                avatar: None,
+                role: MemberRole::Member,
+                power_level: 0,
+                is_ignored: false,
+            });
+        let items = member_menu(&session, &room_id, &Rc::new(member), permissions, own);
+        open_menu_at(point.x, point.y, items, None);
+    });
 }

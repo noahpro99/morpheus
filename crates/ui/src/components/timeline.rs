@@ -12,6 +12,7 @@ use super::{
     context_menu::{MenuItem, copy_to_clipboard, open_menu},
     hotkeys::{Hotkey, HotkeyRequest},
     lightbox::{LightboxImage, LightboxImages, LightboxIndex},
+    members::open_sender_menu,
     message_dialogs::{MessageDialog, OpenMessageDialog, Pinned, PinnedRefresh},
     profile::open_profile_at,
     shell::{Rooms, Selected},
@@ -707,6 +708,19 @@ pub(crate) fn MessageRow(message: Message, show_header: bool) -> Element {
         }
     };
 
+    // Right-click on who sent it: the member menu, not the message menu.
+    let sender_menu = {
+        let session = use_context::<Session>();
+        let selected = use_context::<Selected>();
+        let (sender, name) = (message.sender.clone(), message.sender_name.clone());
+        move |e: Event<MouseData>| {
+            let Some(room_id) = selected.peek().clone() else {
+                return;
+            };
+            open_sender_menu(&session, room_id, sender.clone(), name.clone(), &e);
+        }
+    };
+
     rsx! {
         div {
             class: "message",
@@ -718,6 +732,7 @@ pub(crate) fn MessageRow(message: Message, show_header: bool) -> Element {
                 button {
                     class: "avatar-button",
                     title: "{message.sender}",
+                    oncontextmenu: sender_menu.clone(),
                     onclick: {
                         let sender = message.sender.clone();
                         move |e| open_profile_at(sender.clone(), &e)
@@ -729,6 +744,7 @@ pub(crate) fn MessageRow(message: Message, show_header: bool) -> Element {
                         button {
                             class: "sender",
                             title: "{message.sender}",
+                            oncontextmenu: sender_menu.clone(),
                             onclick: {
                                 let sender = message.sender.clone();
                                 move |e| open_profile_at(sender.clone(), &e)

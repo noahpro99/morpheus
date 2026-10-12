@@ -1223,7 +1223,8 @@ button.sender:hover { text-decoration: underline; }
 .rail { padding-bottom: 8px; }
 .sidebar .room-list { padding-bottom: 4px; }
 
-.composer { padding: 0 16px var(--bottom-gap); }
+/* 8px either side of the sidebar/chat edge: the pill's gear and the composer's + sit close together. */
+.composer { padding: 0 8px var(--bottom-gap); }
 .composer-row {
   min-height: var(--bottom-h);
   padding: 0 6px 0 4px;
@@ -1353,7 +1354,7 @@ button.sender:hover { text-decoration: underline; }
   height: auto;
   margin: 0;
   /* The pill's right edge sits as far from the sidebar/chat edge as the message box's left edge does. */
-  padding: 0 16px var(--bottom-gap) var(--bottom-gap);
+  padding: 0 8px var(--bottom-gap) 8px;
   border-radius: 0;
   background: linear-gradient(to right, var(--bg-rail) 0, var(--bg-rail) var(--rail-w), var(--bg-sidebar) var(--rail-w), var(--bg-sidebar) 100%);
 }
@@ -1374,8 +1375,10 @@ button.sender:hover { text-decoration: underline; }
 
 /* Clickable avatars: lift on hover, press down on mouse down. */
 .avatar-button, .member .avatar, .profile-chip .avatar { transition: transform 90ms ease, box-shadow 120ms ease; }
-.avatar-button:hover .avatar, .member:hover .avatar, .profile-chip:hover .avatar { box-shadow: 0 5px 14px rgba(0, 0, 0, 0.55); }
-.avatar-button:active .avatar, .member:active .avatar, .profile-chip:active .avatar { transform: translateY(2px); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4); }
+.avatar-button:hover .avatar, .member:hover .avatar { box-shadow: 0 5px 14px rgba(0, 0, 0, 0.55); }
+.avatar-button:active .avatar, .member:active .avatar { transform: translateY(2px); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4); }
+/* Your own chip brightens as a whole on hover; its avatar casts no shadow. */
+.profile-chip:active .avatar { transform: translateY(1px); }
 
 .logo { flex: none; }
 .titlebar-title { display: inline-flex; align-items: center; gap: 8px; }
@@ -1472,3 +1475,28 @@ body.dropping .drop-hint { display: flex; }
 .shell.narrow .chat-header .member-toggle, .shell.narrow .chat-header .pin-toggle { min-width: 40px; min-height: 40px; }
 .shell.narrow .toast-layer { left: 16px; right: 16px; max-width: none; }
 .shell.narrow .profile-card { left: 8px !important; right: 8px; width: auto; }
+
+/* ---- Palette avatars, image viewer animation -------------------------------- */
+
+.switcher-item .avatar { flex: none; }
+.switcher-item .kind { margin-left: auto; color: var(--text-faint); font-size: 0.8rem; }
+
+@keyframes lightbox-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes lightbox-zoom { from { opacity: 0; transform: scale(0.86); } to { opacity: 1; transform: scale(1); } }
+.lightbox-overlay { animation: lightbox-fade 160ms ease-out; }
+.lightbox { animation: lightbox-zoom 200ms cubic-bezier(0.2, 0.9, 0.3, 1.1); }
+@media (prefers-reduced-motion: reduce) { .lightbox-overlay, .lightbox { animation: none; } }
+.context-item .menu-avatar { display: grid; place-items: center; width: 20px; height: 20px; flex: none; }
+.context-item .menu-avatar .avatar { font-size: 0.6rem; }
+
+/* ---- Acknowledgements ------------------------------------------------------- */
+
+.about-version { font-weight: 700; font-size: 1.05rem; margin-bottom: 4px; }
+.about-headliners { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.about-headliners li { display: flex; flex-direction: column; gap: 2px; }
+.about-crates { list-style: none; margin: 0; padding: 0; columns: 2; column-gap: 24px; font-size: 0.85rem; }
+.about-crates li { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; break-inside: avoid; }
+.about-crates .crate-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The pill fills the band from the window edge to the sidebar/chat edge (the bar is a flex row). */
+.user-pill { flex: 1; min-width: 0; }

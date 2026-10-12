@@ -61,14 +61,26 @@ impl App {
     /// Launch a fresh app (empty data dir) pointed at `homeserver`.
     pub async fn launch(homeserver: &str) -> Result<Self> {
         let data_dir = std::env::temp_dir().join(format!("morpheus-e2e-{}", unique()));
-        Self::launch_with_data_dir(homeserver, data_dir, None).await
+        Self::launch_with_data_dir(homeserver, data_dir, None, &[]).await
+    }
+
+    /// Launch a fresh app with extra environment variables, e.g. to turn on
+    /// something test runs leave off.
+    pub async fn launch_with_env(homeserver: &str, env: &[(&str, &str)]) -> Result<Self> {
+        let data_dir = std::env::temp_dir().join(format!("morpheus-e2e-{}", unique()));
+        Self::launch_with_data_dir(homeserver, data_dir, None, env).await
+    }
+
+    /// The app's process ID, for finding it on the session bus.
+    pub fn pid(&self) -> Option<u32> {
+        self.child.id()
     }
 
     /// Launch with a window of `width` x `height` logical pixels, e.g. a
     /// phone-sized one for the narrow layout.
     pub async fn launch_sized(homeserver: &str, width: u32, height: u32) -> Result<Self> {
         let data_dir = std::env::temp_dir().join(format!("morpheus-e2e-{}", unique()));
-        Self::launch_with_data_dir(homeserver, data_dir, Some((width, height))).await
+        Self::launch_with_data_dir(homeserver, data_dir, Some((width, height)), &[]).await
     }
 
     /// Relaunch on the same data directory, e.g. to test session restore.
@@ -78,13 +90,14 @@ impl App {
         let _ = self.child.kill().await;
         // Keep the data dir: `Drop` would delete it.
         std::mem::forget(self);
-        Self::launch_with_data_dir(&homeserver, data_dir, None).await
+        Self::launch_with_data_dir(&homeserver, data_dir, None, &[]).await
     }
 
     async fn launch_with_data_dir(
         homeserver: &str,
         data_dir: PathBuf,
         size: Option<(u32, u32)>,
+        env: &[(&str, &str)],
     ) -> Result<Self> {
         keep_test_windows_unfocused();
         std::fs::create_dir_all(&data_dir)?;
@@ -99,6 +112,7 @@ impl App {
         let log = std::fs::File::create(&log_path)?;
 
         let mut command = Command::new(&bin);
+        command.envs(env.iter().copied());
         if let Some((width, height)) = size {
             command.env("MORPHEUS_E2E_SIZE", format!("{width}x{height}"));
         }

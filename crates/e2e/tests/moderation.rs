@@ -93,7 +93,7 @@ async fn admin_changes_roles_kicks_and_bans() {
         "Profile",
         "Mention",
         "Message",
-        "Invite to room",
+        "Invite to server",
         "Block",
         "Roles",
         "Kick carol",

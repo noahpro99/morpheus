@@ -233,7 +233,7 @@ async fn ctrl_k_switches_rooms() {
     app.type_into(".switcher input", "dev")
         .await
         .expect("filter");
-    app.wait_for_exact_text(".switcher-item.active", "#dev", Duration::from_secs(5))
+    app.wait_for_exact_text(".switcher-item.active .name", "dev", Duration::from_secs(5))
         .await
         .expect("dev highlighted");
     app.press(".switcher input", "Enter").await.expect("choose");

@@ -153,6 +153,13 @@ async fn clicking_image_opens_lightbox() {
     app.wait_for(".lightbox-overlay", DEFAULT_WAIT)
         .await
         .expect("lightbox opens");
+    // It zooms in rather than popping.
+    app.wait_for_js(
+        "return getComputedStyle(document.querySelector('.lightbox')).animationName === 'lightbox-zoom'",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("lightbox opens with an animation");
     app.wait_for_js(
         "const img = document.querySelector('.lightbox-image'); return !!img && img.src.startsWith('data:image/');",
         DEFAULT_WAIT,
@@ -192,7 +199,7 @@ async fn scrolling_up_loads_older_history() {
     .expect("oldest not loaded initially");
 
     // Keep scrolling to the top, like a user would, until the room start is reached.
-    for _ in 0..8 {
+    for _ in 0..20 {
         app.eval("const t = document.querySelector('.timeline'); t.scrollTop = -t.scrollHeight;")
             .await
             .expect("scroll");

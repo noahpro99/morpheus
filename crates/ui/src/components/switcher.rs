@@ -1,10 +1,12 @@
 use dioxus::prelude::*;
 use morpheus_core::RoomSummary;
 
+use super::about::{AboutOpen, AboutShown};
 use super::settings::SettingsOpen;
 use super::shell::{Rooms, SelectedSpace, go_to, scope_for};
 use super::titlebar::{OpenTopPanel, TopPanel};
-use crate::icons::{CIRCLE_HELP, INBOX, Icon, SETTINGS};
+use crate::icons::{CIRCLE_HELP, HEART, INBOX, Icon, REFRESH_CW, SETTINGS};
+use crate::media::Avatar;
 
 /// What a row in the palette does: open a room, or run an app action.
 #[derive(Clone, PartialEq)]
@@ -18,16 +20,26 @@ enum Action {
     Settings,
     Shortcuts,
     Inbox,
+    CheckForUpdates,
+    Acknowledgements,
 }
 
 impl Action {
-    const ALL: [Action; 3] = [Action::Settings, Action::Shortcuts, Action::Inbox];
+    const ALL: [Action; 5] = [
+        Action::Settings,
+        Action::Shortcuts,
+        Action::Inbox,
+        Action::CheckForUpdates,
+        Action::Acknowledgements,
+    ];
 
     fn label(self) -> &'static str {
         match self {
             Action::Settings => "Settings",
             Action::Shortcuts => "Keyboard shortcuts",
             Action::Inbox => "Inbox",
+            Action::CheckForUpdates => "Check for updates",
+            Action::Acknowledgements => "Acknowledgements",
         }
     }
 
@@ -36,6 +48,8 @@ impl Action {
             Action::Settings => SETTINGS,
             Action::Shortcuts => CIRCLE_HELP,
             Action::Inbox => INBOX,
+            Action::CheckForUpdates => REFRESH_CW,
+            Action::Acknowledgements => HEART,
         }
     }
 
@@ -44,6 +58,11 @@ impl Action {
             Action::Settings => consume_context::<SettingsOpen>().set(true),
             Action::Shortcuts => consume_context::<OpenTopPanel>().set(TopPanel::Help),
             Action::Inbox => consume_context::<OpenTopPanel>().set(TopPanel::Inbox),
+            // Through the shell: this palette closes (and takes its tasks along) at once.
+            Action::CheckForUpdates => consume_context::<crate::AppConfig>()
+                .commands
+                .send(crate::AppCommand::CheckForUpdates),
+            Action::Acknowledgements => consume_context::<AboutOpen>().set(AboutShown(true)),
         }
     }
 }
@@ -152,8 +171,9 @@ pub fn QuickSwitcher(open: Signal<bool>) -> Element {
                             },
                             match entry {
                                 Entry::Room(room) => rsx! {
-                                    span { class: "hash", if room.is_dm { "@" } else { "#" } }
-                                    span { "{room.name}" }
+                                    Avatar { media: room.avatar.clone(), fallback: room.name.clone(), size: 24 }
+                                    span { class: "name", "{room.name}" }
+                                    span { class: "kind", if room.is_dm { "Direct message" } else { "Room" } }
                                 },
                                 Entry::Action(action) => rsx! {
                                     Icon { glyph: action.icon(), size: 16, class: "hash" }

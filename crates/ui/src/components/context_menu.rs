@@ -11,6 +11,8 @@ use dioxus::prelude::*;
 
 use super::timeline::QUICK_REACTIONS;
 use crate::icons::Icon;
+use crate::media::Avatar;
+use morpheus_core::MediaRef;
 
 type Action = Rc<RefCell<dyn FnMut()>>;
 
@@ -26,6 +28,8 @@ pub struct MenuItem {
     grid: bool,
     /// Glyph in front of the label; falls back to [`default_icon`].
     icon: Option<&'static str>,
+    /// A picture in front of the label instead of a glyph (rooms, servers).
+    avatar: Option<(Option<MediaRef>, String)>,
 }
 
 impl MenuItem {
@@ -38,6 +42,7 @@ impl MenuItem {
             children: Vec::new(),
             grid: false,
             icon: None,
+            avatar: None,
         }
     }
 
@@ -51,6 +56,7 @@ impl MenuItem {
             children: children.into_iter().map(Rc::new).collect(),
             grid: false,
             icon: None,
+            avatar: None,
         }
     }
 
@@ -73,6 +79,12 @@ impl MenuItem {
 
     pub fn icon(mut self, glyph: &'static str) -> Self {
         self.icon = Some(glyph);
+        self
+    }
+
+    /// Show this picture (or the initial of `fallback`) in place of an icon.
+    pub fn avatar(mut self, media: Option<MediaRef>, fallback: impl Into<String>) -> Self {
+        self.avatar = Some((media, fallback.into()));
         self
     }
 
@@ -203,7 +215,7 @@ fn entries(items: &[Rc<MenuItem>], close: impl FnMut() + Copy + 'static) -> Elem
                     class: if item.danger { "danger" },
                     class: if item.checked { "checked" },
                     role: "menuitem",
-                    class: if item.glyph().is_none() { "no-icon" },
+                    class: if item.glyph().is_none() && item.avatar.is_none() { "no-icon" },
                     onclick: {
                         let item = item.clone();
                         move |_| {
@@ -214,7 +226,9 @@ fn entries(items: &[Rc<MenuItem>], close: impl FnMut() + Copy + 'static) -> Elem
                             close();
                         }
                     },
-                    if let Some(glyph) = item.glyph() {
+                    if let Some((media, fallback)) = item.avatar.clone() {
+                        span { class: "menu-avatar", Avatar { media, fallback, size: 20 } }
+                    } else if let Some(glyph) = item.glyph() {
                         Icon { glyph, size: 16, class: "menu-icon" }
                     }
                     span { class: "menu-label", "{item.label}" }

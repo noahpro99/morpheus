@@ -27,6 +27,7 @@ mod session_store;
 mod spaces;
 mod timeline;
 mod typing;
+mod updates;
 mod verification;
 
 pub use core::Core;
@@ -50,6 +51,7 @@ pub use timeline::{
     TimelineEntry, TimelineHandle, TimelineUpdates,
 };
 pub use typing::TypingUpdates;
+pub use updates::UpdateStatus;
 pub use verification::{
     Device, VerificationActions, VerificationHandle, VerificationStep, VerificationUpdates,
 };
