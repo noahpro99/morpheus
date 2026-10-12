@@ -2,6 +2,7 @@ use super::toast::report;
 use dioxus::prelude::*;
 use morpheus_core::{Notification, OwnedRoomId, RoomSummary, Session, Vector};
 
+use super::about::{AboutOpen, AboutShown, Acknowledgements, check_for_updates};
 use super::{
     composer::{ActiveTimeline, Composer, Draft, Mode},
     context_menu::{ContextMenu, ContextMenuLayer, MenuState},
@@ -291,6 +292,20 @@ pub fn Shell(session: Session) -> Element {
     let mut chat_open: ChatOpen = use_context_provider(|| Signal::new(ChatInFront::default()));
     let _members_version: MembersVersion =
         use_context_provider(|| Signal::new(MembersStamp::default()));
+    // Acknowledgements dialog; the tray menu and the palette open it.
+    let mut about_open: AboutOpen = use_context_provider(|| Signal::new(AboutShown::default()));
+    let commands = use_context::<crate::AppConfig>().commands;
+    use_future(move || {
+        let commands = commands.clone();
+        async move {
+            loop {
+                match commands.next().await {
+                    crate::AppCommand::Acknowledgements => about_open.set(AboutShown(true)),
+                    crate::AppCommand::CheckForUpdates => check_for_updates(),
+                }
+            }
+        }
+    });
     // The platform's notifier skips the room on screen; tell it which that is.
     let open_room = use_context::<crate::AppConfig>().open_room;
     use_effect(move || {
@@ -447,6 +462,8 @@ pub fn Shell(session: Session) -> Element {
             editor.set(Editor::None);
         } else if open_profile().0.is_some() {
             open_profile.set(ProfileTarget::default());
+        } else if about_open().0 {
+            about_open.set(AboutShown(false));
         } else if settings_open() {
             settings_open.set(false);
         } else if switcher_open() {
@@ -701,6 +718,9 @@ pub fn Shell(session: Session) -> Element {
             }
             if settings_open() {
                 Settings {}
+            }
+            if about_open().0 {
+                Acknowledgements {}
             }
             match open_profile().0 {
                 Some(open) if open.full => rsx! { ProfileModal { user_id: open.user_id } },

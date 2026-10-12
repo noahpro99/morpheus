@@ -14,16 +14,15 @@ use std::{
 use dioxus::desktop::{
     Config, LogicalSize, WindowBuilder, WindowCloseBehaviour,
     tao::event::{Event, WindowEvent},
-    trayicon::{
-        Icon as TrayImage, TrayIconBuilder,
-        menu::{Menu, MenuItem, PredefinedMenuItem},
-    },
-    use_tray_menu_event_handler, use_wry_event_handler,
+    use_wry_event_handler,
 };
 use dioxus::prelude::*;
 use morpheus_core::Session;
-use morpheus_ui::{AppConfig, OpenRoom, WindowControls};
+use morpheus_ui::{AppCommand, AppConfig, OpenRoom, WindowControls};
 use tracing_subscriber::EnvFilter;
+
+mod tray;
+use tray::TrayAction;
 
 const DEFAULT_HOMESERVER: &str = "http://localhost:8008";
 
@@ -100,24 +99,60 @@ fn main() {
 fn DesktopRoot() -> Element {
     let window = dioxus::desktop::use_window();
     let focus = use_context::<Focus>();
-    // Tray icon: left click shows the window (Dioxus does that), the menu
-    // reopens or quits. Test runs skip it: they open many windows.
-    use_hook(|| {
-        if std::env::var_os("MORPHEUS_E2E_PORT").is_none() {
-            install_tray();
-        }
-    });
-    use_tray_menu_event_handler({
-        let window = window.clone();
-        move |event| match event.id().0.as_str() {
-            "open" => {
-                window.window.set_visible(true);
-                window.window.set_focus();
+    // Tray icon (see `tray.rs`): a click opens the window, the menu offers
+    // the rest. Test runs skip it unless they ask; they open many windows.
+    let commands = use_context::<AppConfig>().commands;
+    let on_tray: tray::Handler = use_hook(|| {
+        let window = window.window.clone();
+        Arc::new(move |action| {
+            let show = || {
+                // tao proxies these to the GTK thread; the flag covers
+                // platforms where it does not.
+                SHOW_REQUESTED.store(true, Ordering::Relaxed);
+                window.set_visible(true);
+                window.set_focus();
+                window.request_redraw();
+            };
+            match action {
+                TrayAction::Open => show(),
+                TrayAction::CheckForUpdates => {
+                    commands.send(AppCommand::CheckForUpdates);
+                    show();
+                }
+                TrayAction::Acknowledgements => {
+                    commands.send(AppCommand::Acknowledgements);
+                    show();
+                }
+                TrayAction::Quit => std::process::exit(0),
             }
-            "quit" => std::process::exit(0),
-            _ => {}
+        })
+    });
+    let wanted = std::env::var_os("MORPHEUS_E2E_PORT").is_none()
+        || std::env::var_os("MORPHEUS_E2E_TRAY").is_some();
+    #[cfg(target_os = "linux")]
+    use_hook({
+        let on_tray = on_tray.clone();
+        move || {
+            if wanted {
+                tray::install(on_tray);
+            }
         }
     });
+    #[cfg(not(target_os = "linux"))]
+    {
+        use_hook(|| {
+            if wanted {
+                install_builtin_tray();
+            }
+        });
+        // Left click shows the window (Dioxus does that itself here).
+        dioxus::desktop::use_tray_menu_event_handler(move |event| {
+            let picked = event.id().0.parse::<usize>().ok();
+            if let Some(action) = picked.and_then(|index| TrayAction::MENU.get(index)) {
+                on_tray(*action);
+            }
+        });
+    }
     // Track focus for the notifier, and show the window when asked from
     // another thread (the tests' stand-in for a tray click).
     use_wry_event_handler({
@@ -272,56 +307,6 @@ fn reopen_on_control_port(window: Arc<dioxus::desktop::tao::window::Window>) {
     });
 }
 
-/// Put the logo in the system tray with an Open / Quit menu. The tray
-/// handle must stay alive, so it is parked in the component's context. On
-/// Linux this needs libayatana-appindicator; without it the app runs
-/// without a tray and says so in the log.
-fn install_tray() {
-    let menu = Menu::new();
-    if let Err(err) = menu.append_items(&[
-        &MenuItem::with_id("open", "Open Morpheus", true, None),
-        &PredefinedMenuItem::separator(),
-        &MenuItem::with_id("quit", "Quit", true, None),
-    ]) {
-        tracing::warn!(%err, "tray menu failed");
-        return;
-    }
-    let mut builder = TrayIconBuilder::new()
-        .with_menu(Box::new(menu))
-        .with_menu_on_left_click(false)
-        .with_tooltip("Morpheus");
-    match tray_image() {
-        Ok(icon) => builder = builder.with_icon(icon),
-        Err(err) => tracing::warn!(%err, "tray icon image failed, using none"),
-    }
-    match builder.build() {
-        Ok(tray) => {
-            provide_context(tray);
-        }
-        Err(err) => tracing::warn!(%err, "no tray icon"),
-    }
-}
-
-/// The logo rendered to 64x64 RGBA (`assets/tray.png`, made with
-/// `rsvg-convert` from `crates/ui/assets/logo.svg`).
-fn tray_image() -> Result<TrayImage, String> {
-    let decoder = png::Decoder::new(std::io::Cursor::new(
-        include_bytes!("../assets/tray.png").as_slice(),
-    ));
-    let mut reader = decoder.read_info().map_err(|e| e.to_string())?;
-    let mut buf = vec![0; reader.output_buffer_size()];
-    let info = reader.next_frame(&mut buf).map_err(|e| e.to_string())?;
-    let rgba = match info.color_type {
-        png::ColorType::Rgba => buf[..info.buffer_size()].to_vec(),
-        png::ColorType::Rgb => buf[..info.buffer_size()]
-            .chunks(3)
-            .flat_map(|p| [p[0], p[1], p[2], 255])
-            .collect(),
-        other => return Err(format!("unsupported tray png colour type {other:?}")),
-    };
-    TrayImage::from_rgba(rgba, info.width, info.height).map_err(|e| e.to_string())
-}
-
 /// `MORPHEUS_DATA_DIR` wins so several accounts can run side by side during
 /// development (see `just desktop-as`). Otherwise the XDG data dir.
 fn data_dir() -> PathBuf {
@@ -331,4 +316,42 @@ fn data_dir() -> PathBuf {
     directories::ProjectDirs::from("dev", "morpheus", "Morpheus")
         .map(|dirs| dirs.data_dir().to_owned())
         .unwrap_or_else(|| std::env::temp_dir().join("morpheus"))
+}
+
+/// The tray through Dioxus's built-in support (macOS, Windows), where a
+/// left click is reported. The handle must stay alive, so it is parked in
+/// the component's context.
+#[cfg(not(target_os = "linux"))]
+fn install_builtin_tray() {
+    use dioxus::desktop::trayicon::{
+        Icon, TrayIconBuilder,
+        menu::{Menu, MenuItem, PredefinedMenuItem},
+    };
+    let menu = Menu::new();
+    for (index, action) in TrayAction::MENU.into_iter().enumerate() {
+        if action == TrayAction::Quit {
+            let _ = menu.append(&PredefinedMenuItem::separator());
+        }
+        let item = MenuItem::with_id(index.to_string(), action.label(), true, None);
+        if let Err(err) = menu.append(&item) {
+            tracing::warn!(%err, "tray menu failed");
+            return;
+        }
+    }
+    let mut builder = TrayIconBuilder::new()
+        .with_menu(Box::new(menu))
+        .with_menu_on_left_click(false)
+        .with_tooltip("Morpheus");
+    match tray::logo_rgba().and_then(|(rgba, width, height)| {
+        Icon::from_rgba(rgba, width, height).map_err(|e| e.to_string())
+    }) {
+        Ok(icon) => builder = builder.with_icon(icon),
+        Err(err) => tracing::warn!(%err, "tray icon image failed, using none"),
+    }
+    match builder.build() {
+        Ok(tray) => {
+            provide_context(tray);
+        }
+        Err(err) => tracing::warn!(%err, "no tray icon"),
+    }
 }

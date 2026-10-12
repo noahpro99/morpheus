@@ -8,7 +8,7 @@ use std::rc::Rc;
 use morpheus_core::{MemberRole, OwnedUserId, Session};
 
 use super::context_menu::{MenuItem, copy_to_clipboard, open_menu_at};
-use super::shell::{Rooms, Scope, Selected, SelectedSpace, go_to};
+use super::shell::{Scope, Selected, SelectedSpace, go_to};
 use crate::icons::Icon;
 
 use crate::media::Avatar;
@@ -325,7 +325,6 @@ pub fn ProfileCard(open: ProfileOpen) -> Element {
     let session = use_context::<Session>();
     let mut target = use_context::<OpenProfile>();
     let refresh = use_context::<ProfileRefresh>();
-    let rooms = use_context::<Rooms>();
     let selected = use_context::<Selected>();
     let user_id = open.user_id.clone();
     let own = session.user_id().as_ref() == Some(&user_id);
@@ -496,42 +495,8 @@ pub fn ProfileCard(open: ProfileOpen) -> Element {
                 .icon(crate::icons::SHARE_2),
             ];
             if !own {
-                let targets: Vec<MenuItem> = rooms
-                    .read()
-                    .iter()
-                    .filter(|r| !r.is_dm)
-                    .map(|room| {
-                        MenuItem::new(
-                            if room.is_space {
-                                room.name.clone()
-                            } else {
-                                format!("#{}", room.name)
-                            },
-                            {
-                                let session = session.clone();
-                                let (target, user_id) = (room.id.clone(), user_id.clone());
-                                move || {
-                                    let future = session.invite(target.clone(), user_id.clone());
-                                    spawn(async move {
-                                        if let Err(err) = future.await {
-                                            super::toast::report("invite", &err);
-                                        }
-                                    });
-                                }
-                            },
-                        )
-                        .icon(if room.is_space {
-                            crate::icons::FOLDER
-                        } else {
-                            crate::icons::HASH
-                        })
-                    })
-                    .collect();
-                if !targets.is_empty() {
-                    items.push(
-                        MenuItem::submenu("Invite to server", targets)
-                            .icon(crate::icons::USER_PLUS),
-                    );
+                if let Some(invite) = super::invites::invite_menu(&session, &user_id, None) {
+                    items.push(invite);
                 }
                 items.push(
                     MenuItem::new(if is_blocked { "Unblock" } else { "Block" }, {

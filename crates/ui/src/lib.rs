@@ -24,5 +24,5 @@ pub mod icons;
 mod media;
 mod window;
 
-pub use app::{App, AppConfig, OpenRoom, SessionHook};
+pub use app::{App, AppCommand, AppCommands, AppConfig, OpenRoom, SessionHook};
 pub use window::WindowControls;

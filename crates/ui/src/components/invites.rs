@@ -4,8 +4,9 @@
 
 use super::toast::report;
 use dioxus::prelude::*;
-use morpheus_core::{OwnedRoomId, RoomSummary, Session};
+use morpheus_core::{OwnedRoomId, OwnedUserId, RoomSummary, Session};
 
+use super::context_menu::MenuItem;
 use super::shell::{Rooms, Selected, go_to};
 use crate::icons::{CHECK, Icon, X};
 use crate::media::Avatar;
@@ -178,4 +179,41 @@ pub fn InboxInvites(on_open: Callback<RoomSummary>) -> Element {
             }
         }
     }
+}
+
+/// "Invite to server" for a user's menu: every server (space) you are in,
+/// then the rooms that belong to no server, each with its picture. `skip` is
+/// the room the menu was opened in. `None` when there is nowhere to invite to.
+pub fn invite_menu(
+    session: &Session,
+    user_id: &OwnedUserId,
+    skip: Option<&OwnedRoomId>,
+) -> Option<MenuItem> {
+    let rooms = consume_context::<Rooms>();
+    let rooms = rooms.read();
+    let servers = rooms.iter().filter(|room| room.is_space && !room.invited);
+    let loose = rooms.iter().filter(|room| {
+        !room.is_space && !room.is_dm && !room.invited && room.parent_spaces.is_empty()
+    });
+    let targets: Vec<MenuItem> = servers
+        .chain(loose)
+        .filter(|room| Some(&room.id) != skip)
+        .map(|room| {
+            MenuItem::new(room.name.clone(), {
+                let session = session.clone();
+                let (target, user_id) = (room.id.clone(), user_id.clone());
+                move || {
+                    let future = session.invite(target.clone(), user_id.clone());
+                    spawn(async move {
+                        if let Err(err) = future.await {
+                            report("invite", &err);
+                        }
+                    });
+                }
+            })
+            .avatar(room.avatar.clone(), room.name.clone())
+        })
+        .collect();
+    (!targets.is_empty())
+        .then(|| MenuItem::submenu("Invite to server", targets).icon(crate::icons::USER_PLUS))
 }

@@ -1,5 +1,6 @@
 //! Visual building blocks. Each file is one region of the Discord-style shell.
 
+mod about;
 mod composer;
 mod context_menu;
 mod emoji;
