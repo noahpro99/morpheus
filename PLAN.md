@@ -48,31 +48,37 @@ timeline → send.
 ### 1. Read and write well
 - [x] Avatars (room, user) via the SDK media API (SDK disk cache + in-memory data-URL cache)
 - [x] Image messages rendered inline as thumbnails
-- [ ] Video/file messages, downloads, full-size image viewer
+- [x] Video/file messages, downloads, full-size image viewer
 - [x] Scroll-triggered back-pagination (button remains as a fallback)
 - [ ] Proper local time zone handling (replace `format.rs` shims with `jiff`)
 - [ ] Virtualised timeline once rooms with >2k loaded items appear
 - [ ] Error toasts instead of inline `<p class="error">`
 
 ### 2. The Discord shell
-- [x] Spaces rail filters the room list
+- [x] Spaces rail filters the room list; DMs and Rooms get their own rail buttons
 - [x] DMs section; unread (bold) and mention badges
-- [x] Members panel grouped by power level (presence pending)
+- [x] Members panel grouped by power level (presence pending); header toggle hides it
 - [x] Typing indicators (debounced notices, names resolved)
-- [ ] "New messages" marker
+- [x] "New messages" marker
 - [x] Read receipts sent when a room is viewed
 - [ ] Room header actions: search, pinned, settings
 - [ ] Desktop notifications
-- [x] Ctrl+K room switcher
+- [x] Ctrl+K room switcher (follows the room into its space scope)
+- [x] Profile modal (sender, member, own footer chip); Escape closes every modal
+- [x] Styled right-click menus for messages, rooms, members; native menu suppressed
+- [x] Timeline pinned to the newest message on open, "Jump to present" button
+- [x] Skeleton placeholders while loading and for messages still waiting on keys
+- [x] SSO login (browser hand-off) alongside password and email sign-in
+- [x] Timing: slow core ops logged, e2e driver timings (`MORPHEUS_E2E_TIMINGS=1`)
 - [ ] Alt+↑/↓ room navigation
 
 ### 3. Rich content
 - [x] Markdown composer, sanitised HTML rendering (ruma-html)
 - [x] Reactions (view and toggle)
 - [x] Replies (with quoted previews), edits, deletes
-- [ ] Threads
+- [x] Threads
 - [ ] Emoji picker, mentions autocomplete
-- [ ] Attachment upload with drag-and-drop and paste
+- [ ] Attachment upload with drag-and-drop and paste (button upload works)
 
 ### 4. Encryption UX
 - [x] Device verification between own devices (emoji SAS) from the settings modal
