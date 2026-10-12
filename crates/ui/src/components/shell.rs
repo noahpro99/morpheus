@@ -22,6 +22,7 @@ use super::{
     switcher::QuickSwitcher,
     thread::{ActiveThread, ThreadPanel},
     timeline::TimelineView,
+    titlebar::{HelpModal, InboxPanel, Nav, OpenTopPanel, TitleBar, TopPanel},
 };
 use crate::media::{Avatar, provide_media_cache};
 
@@ -37,6 +38,8 @@ pub type MembersOpen = Signal<MembersShown>;
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Mention(pub Option<String>);
 pub type MentionRequest = Signal<Mention>;
+/// Visited rooms for the title bar's back and forward buttons.
+pub type NavHistory = Signal<Nav>;
 /// What the sidebar lists: direct messages, ungrouped rooms, or one space.
 /// Its own type, not a bare `Option<OwnedRoomId>`: Dioxus context is keyed by
 /// type, and sharing a type with [`Selected`] made room clicks land on the
@@ -130,6 +133,14 @@ pub fn Shell(session: Session) -> Element {
     let _mention: MentionRequest = use_context_provider(|| Signal::new(Mention::default()));
     let mut message_dialog: OpenMessageDialog = use_context_provider(|| Signal::new(MessageDialog::None));
     let mut room_dialog: OpenRoomDialog = use_context_provider(|| Signal::new(RoomDialog::None));
+    let mut top_panel: OpenTopPanel = use_context_provider(|| Signal::new(TopPanel::None));
+    let mut nav: NavHistory = use_context_provider(|| Signal::new(Nav::default()));
+    // Every room the user lands in becomes a history entry (back/forward).
+    use_effect(move || {
+        if let Some(room_id) = selected() {
+            nav.with_mut(|n| n.record(room_id));
+        }
+    });
     let pinned: Pinned = use_context_provider(|| Signal::new(PinnedIds::default()));
     let pinned_refresh: PinnedRefresh = use_context_provider(|| Signal::new(0));
     use_pinned_fetcher(session.clone(), selected, pinned_refresh, pinned);
@@ -214,6 +225,8 @@ pub fn Shell(session: Session) -> Element {
             // verification keeps going in the background.
             if context_menu().0.is_some() {
                 context_menu.set(MenuState::default());
+            } else if top_panel() != TopPanel::None {
+                top_panel.set(TopPanel::None);
             } else if room_dialog() != RoomDialog::None {
                 room_dialog.set(RoomDialog::None);
             } else if message_dialog() != MessageDialog::None {
@@ -247,6 +260,8 @@ pub fn Shell(session: Session) -> Element {
                 e.prevent_default();
                 context_menu.set(MenuState::default());
             },
+            TitleBar {}
+            div { class: "shell-body",
             Rail {}
             RoomList { error: load_error() }
             main { class: "chat",
@@ -265,6 +280,12 @@ pub fn Shell(session: Session) -> Element {
                 (SideColumn::Thread, Some(room), Some(root)) => rsx! { ThreadPanel { room_id: room.id.clone(), root } },
                 (SideColumn::Members, Some(room), _) => rsx! { Members { room_id: room.id.clone(), member_count: room.member_count } },
                 _ => rsx! {},
+            }
+            }
+            match top_panel() {
+                TopPanel::Inbox => rsx! { InboxPanel {} },
+                TopPanel::Help => rsx! { HelpModal {} },
+                TopPanel::None => rsx! {},
             }
             if switcher_open() {
                 QuickSwitcher { open: switcher_open }

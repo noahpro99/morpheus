@@ -67,6 +67,15 @@ timeline → send.
 - [x] Ctrl+K room switcher (follows the room into its space scope)
 - [x] Profile modal (sender, member, own footer chip); Escape closes every modal
 - [x] Styled right-click menus for messages, rooms, members; native menu suppressed
+- [x] Message menu: emoji picker, view reactions, remove my reactions, forward, pin/unpin (+ pinned panel in the header), mark unread, report, copy text/link/ID, delete
+- [x] Member menu: profile, mention, message (DM), invite to room, block/unblock, roles, kick, ban, copy ID (gated by power level)
+- [x] Room menu: mark as read, invite people, notification mode (all / mentions / mute), edit name and topic, create room (in the scoped space), copy link/ID, leave
+- [x] Account menu on the footer chip: view/edit profile (name, avatar), presence status, switch account (signs out), sign out
+- [x] Composer focuses on navigation; member list windowed to 100 rows with show-more
+- [x] Custom title bar (no native decorations): back/forward through visited rooms, scope name, help, inbox of unread rooms, window controls and drag
+- [ ] Multi-account: store sessions side by side so "Switch account" swaps without signing in again
+- [ ] Invites: list pending invites with accept/decline (today invites only reach other clients)
+- [ ] Per-user nicknames: Discord's friend nicknames have no Matrix equivalent; a local-only alias store could stand in
 - [x] Timeline pinned to the newest message on open, "Jump to present" button
 - [x] Skeleton placeholders while loading and for messages still waiting on keys
 - [x] SSO login (browser hand-off) alongside password and email sign-in

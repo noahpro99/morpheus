@@ -58,6 +58,12 @@ Test windows are titled "Morpheus (test)" and open unfocused; on Hyprland the dr
 `nofocus` rules for that title so keystrokes never land in them mid-run (undo with a config reload).
 
 Run one file at a time with `just e2e-one <file>` (for example `just e2e-one perf`).
+`just e2e` and `just e2e-one` reseed the homeserver first (`just hs-seed` is idempotent and
+puts kicked or banned test users back into `#moderation`).
+
+E2E files map to features: `chat`, `spaces`, `features`, `interactions`, `attachments`, `threads`,
+`new_messages_marker`, `settings`, `perf`, `layout`, `scrolling`, `context_menu`, `account`,
+`moderation`, `message_menu`, `room_menu`.
 With `MORPHEUS_E2E_TIMINGS=1` the driver prints how long every wait took, and
 the core logs any operation slower than 750 ms with its call site, so slow
 spots show up in both the test output and the app log.

@@ -82,12 +82,12 @@ pub fn TimelineView(
             .collect::<Vec<_>>()
     });
     use_effect(move || gallery.set(gallery_images()));
-    // The message to draw the "NEW" divider above, captured once from the SDK's
-    // read-marker position when the room is opened. It stays fixed for the rest
-    // of this viewing session; it is not recomputed as later diffs arrive, so
-    // the divider does not chase the user down the timeline.
+    // The message to draw the "NEW" divider above, taken from the SDK's
+    // read-marker item the first time it shows up (the first batch may land
+    // before the SDK has placed it). Once captured it stays fixed for the
+    // rest of this viewing session, so the divider does not chase the user
+    // down the timeline.
     let mut new_marker = use_signal(|| None::<String>);
-    let mut marker_captured = use_signal(|| false);
     let mut caught_up = use_signal(|| false);
     // Plain (non-signal) handle to the open timeline. Leaving the room (it
     // remounts on room switch) fires a fully-read receipt on cleanup, without
@@ -124,11 +124,13 @@ pub fn TimelineView(
                         entries
                             .with_mut(|list| diffs.into_iter().for_each(|diff| diff.apply(list)));
 
-                        // The read-marker virtual item only reflects the fully-read
-                        // position as of opening the room, so capture it once.
-                        if !marker_captured() {
-                            marker_captured.set(true);
-                            new_marker.set(first_unread_after_marker(&entries.read()));
+                        // Capture the divider position as soon as the SDK has
+                        // placed its read marker, and never move it afterwards.
+                        if new_marker.peek().is_none()
+                            && !caught_up()
+                            && let Some(marker) = first_unread_after_marker(&entries.read())
+                        {
+                            new_marker.set(Some(marker));
                         }
 
                         // Sending a message means the user is caught up: drop the

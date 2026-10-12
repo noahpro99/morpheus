@@ -3,9 +3,11 @@
 
 use std::path::PathBuf;
 
+use std::rc::Rc;
+
 use dioxus::desktop::{Config, LogicalSize, WindowBuilder};
 use dioxus::prelude::*;
-use morpheus_ui::AppConfig;
+use morpheus_ui::{AppConfig, WindowControls};
 use tracing_subscriber::EnvFilter;
 
 const DEFAULT_HOMESERVER: &str = "http://localhost:8008";
@@ -31,12 +33,36 @@ fn main() {
     let window = WindowBuilder::new()
         .with_title(if under_test { "Morpheus (test)" } else { "Morpheus" })
         .with_focused(!under_test)
+        // The shell draws its own Discord-style bar; see `DesktopRoot`.
+        .with_decorations(false)
         .with_inner_size(LogicalSize::new(1280.0, 800.0));
 
     LaunchBuilder::new()
         .with_context(config)
         .with_cfg(Config::new().with_window(window).with_menu(None))
-        .launch(morpheus_ui::App);
+        .launch(DesktopRoot);
+}
+
+/// Wraps the shared app with the window controls its title bar needs.
+#[component]
+fn DesktopRoot() -> Element {
+    let window = dioxus::desktop::use_window();
+    use_context_provider(|| WindowControls {
+        drag: Rc::new({
+            let window = window.clone();
+            move || window.drag()
+        }),
+        minimize: Rc::new({
+            let window = window.clone();
+            move || window.window.set_minimized(true)
+        }),
+        toggle_maximize: Rc::new({
+            let window = window.clone();
+            move || window.window.set_maximized(!window.window.is_maximized())
+        }),
+        close: Rc::new(move || window.close()),
+    });
+    rsx! { morpheus_ui::App {} }
 }
 
 /// `MORPHEUS_DATA_DIR` wins so several accounts can run side by side during
