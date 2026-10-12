@@ -135,6 +135,7 @@ timeline → send.
 - **Live tests** (`crates/core/tests/live.rs`) against the seeded local Synapse: login, sliding sync, timeline back-fill, send and echo. These are the regression suite for the core.
 - **End-to-end UI tests** (`crates/e2e`, `just e2e`): a Playwright-style driver launches the real desktop binary built with the `e2e` feature, which exposes a loopback socket that evaluates JavaScript in the webview. Tests log in, switch rooms, send messages, verify session restore, and can screenshot the window.
 - **Manual multi-user** with `just desktop-as alice` and `just desktop-as bob` side by side.
+- **Known flakes when the whole suite runs back to back** (each file passes alone): the NEW-divider test, the scroll-to-newest check, and the two-device verification (app B has died on "They match" a few times; never with logs kept). Follow-up: isolate runs with fresh users per run (admin API) instead of the shared alice/bob/carol, and rerun failed files once before reporting.
 - Later: pixel-diff the e2e screenshots against golden images, and a `cargo test` harness that drives a `Core` without a homeserver via `matrix-sdk-test`.
 
 ## Open questions
