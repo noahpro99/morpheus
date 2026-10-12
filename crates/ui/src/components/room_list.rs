@@ -1,4 +1,5 @@
 use dioxus::prelude::*;
+use super::toast::report;
 use morpheus_core::{NotifyMode, OwnedRoomId, RoomSummary, Session};
 
 use super::context_menu::{MenuItem, copy_to_clipboard, open_menu, open_menu_at};
@@ -193,7 +194,7 @@ fn RoomRow(room: RoomSummary) -> Element {
 fn run(what: &'static str, future: morpheus_core::CoreFuture<()>) {
     spawn(async move {
         if let Err(err) = future.await {
-            tracing::warn!(%err, what, "room action failed");
+            report(what, &err);
         }
     });
 }

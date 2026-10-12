@@ -2,8 +2,8 @@
 //! badge offers. Discord's list, mapped onto Matrix spaces.
 
 use dioxus::prelude::*;
+use super::toast::report;
 use morpheus_core::{NotifyMode, RoomSummary, Session};
-use tracing::warn;
 
 use super::context_menu::{MenuItem, copy_to_clipboard};
 use super::room_dialogs::{OpenRoomDialog, RoomDialog};
@@ -12,7 +12,7 @@ use super::shell::{RailEntry, Rooms, Scope, SelectedSpace, UiPrefs, rooms_in_sco
 fn run(what: &'static str, future: morpheus_core::CoreFuture<()>) {
     spawn(async move {
         if let Err(err) = future.await {
-            warn!(%err, what, "space action failed");
+            report(what, &err);
         }
     });
 }

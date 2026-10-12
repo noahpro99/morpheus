@@ -1441,3 +1441,12 @@ body.dropping .drop-hint { display: flex; }
 .emoji-panel button:hover { background: var(--bg-hover); }
 .emoji-button { width: 36px; height: 36px; border-radius: var(--radius-sm); display: grid; place-items: center; background: none; color: var(--text-muted); flex: none; }
 .emoji-button:hover, .emoji-button.active { color: var(--text); background: var(--bg-hover); }
+
+/* ---- toasts ---- */
+.toast-layer { position: fixed; right: 16px; bottom: calc(var(--bottom-h) + 24px); display: flex; flex-direction: column; gap: 8px; z-index: 60; max-width: 360px; }
+.toast {
+  background: var(--bg-elevated); color: var(--text); border-left: 3px solid var(--danger);
+  padding: 10px 14px; border-radius: var(--radius); box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  font-size: 0.9rem; cursor: pointer; animation: toast-in 160ms ease-out;
+}
+@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }

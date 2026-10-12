@@ -3,8 +3,8 @@
 //! list then flips the entry to a joined room and the chat opens as usual.
 
 use dioxus::prelude::*;
+use super::toast::report;
 use morpheus_core::{OwnedRoomId, RoomSummary, Session};
-use tracing::warn;
 
 use super::shell::{Rooms, Selected, go_to};
 use crate::icons::{CHECK, Icon, X};
@@ -20,7 +20,7 @@ pub fn accept(session: &Session, room_id: OwnedRoomId) {
     let future = session.join_room(room_id);
     spawn(async move {
         if let Err(err) = future.await {
-            warn!(%err, "accepting an invite failed");
+            report("accepting an invite", &err);
         }
     });
 }
@@ -37,7 +37,7 @@ pub fn decline(session: &Session, room_id: OwnedRoomId) {
                     selected.set(None);
                 }
             }
-            Err(err) => warn!(%err, "declining an invite failed"),
+            Err(err) => report("declining an invite", &err),
         }
     });
 }

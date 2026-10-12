@@ -2,8 +2,8 @@
 //! message, and the room's pinned messages (also behind the header pin).
 
 use dioxus::prelude::*;
+use super::toast::report;
 use morpheus_core::{Message, OwnedEventId, OwnedRoomId, Session};
-use tracing::warn;
 
 use super::shell::Selected;
 
@@ -37,7 +37,7 @@ pub fn use_pinned_fetcher(session: Session, selected: Selected, refresh: PinnedR
         spawn(async move {
             match session.pinned_event_ids(room_id).await {
                 Ok(ids) => pinned.set(PinnedIds(ids)),
-                Err(err) => warn!(%err, "pinned events failed"),
+                Err(err) => report("pinned events", &err),
             }
         });
     });
@@ -164,7 +164,7 @@ pub fn PinnedPanel(room_id: OwnedRoomId) -> Element {
                                             let future = session.pin(room_id.clone(), event_id.clone(), false);
                                             spawn(async move {
                                                 if let Err(err) = future.await {
-                                                    warn!(%err, "unpin failed");
+                                                    report("unpin", &err);
                                                 }
                                                 refresh += 1;
                                             });

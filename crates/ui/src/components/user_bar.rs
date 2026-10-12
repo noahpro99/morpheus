@@ -3,6 +3,7 @@
 //! colour with the message box next to it.
 
 use dioxus::prelude::*;
+use super::toast::report;
 use morpheus_core::Session;
 
 use super::context_menu::{MenuItem, open_menu};
@@ -43,7 +44,7 @@ pub fn UserBar() -> Element {
         };
         spawn(async move {
             if let Err(err) = active.logout().await {
-                tracing::warn!(%err, "logout failed; session was dropped locally anyway");
+                report("logout failed; session was dropped locally anyway", &err);
             }
         });
     };

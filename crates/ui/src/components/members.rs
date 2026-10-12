@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 use dioxus::prelude::*;
+use super::toast::report;
 use morpheus_core::{Member, MemberPermissions, MemberRole, OwnedRoomId, Session};
-use tracing::warn;
 
 use super::context_menu::{MenuItem, copy_to_clipboard, open_menu};
 use super::profile::{open_profile, open_profile_at};
@@ -161,7 +161,7 @@ pub(crate) fn member_menu(
             spawn(async move {
                 let mut refresh = refresh;
                 if let Err(err) = future.await {
-                    warn!(%err, what, "member action failed");
+                    report(what, &err);
                 }
                 refresh.with_mut(|v| v.0 += 1);
             });
@@ -185,7 +185,7 @@ pub(crate) fn member_menu(
                         scope.set(Scope::Dms);
                         go_to(dm);
                     }
-                    Err(err) => warn!(%err, "opening a DM failed"),
+                    Err(err) => report("opening a DM", &err),
                 }
             });
         }
@@ -205,7 +205,7 @@ pub(crate) fn member_menu(
                     let future = session.invite(target.clone(), user_id.clone());
                     spawn(async move {
                         if let Err(err) = future.await {
-                            warn!(%err, "invite failed");
+                            report("invite", &err);
                         }
                     });
                 }
@@ -228,7 +228,7 @@ pub(crate) fn member_menu(
                 spawn(async move {
                     let mut refresh = refresh;
                     if let Err(err) = future.await {
-                        warn!(%err, "block failed");
+                        report("block", &err);
                     }
                     refresh.with_mut(|v| v.0 += 1);
                 });
@@ -249,7 +249,7 @@ pub(crate) fn member_menu(
                         spawn(async move {
                             let mut refresh = refresh;
                             if let Err(err) = future.await {
-                                warn!(%err, "role change failed");
+                                report("role change", &err);
                             }
                             refresh.with_mut(|v| v.0 += 1);
                         });

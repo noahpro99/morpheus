@@ -4,8 +4,8 @@
 //! provides them.
 
 use dioxus::prelude::*;
+use super::toast::report;
 use morpheus_core::{OwnedRoomId, RoomSummary, Session};
-use tracing::warn;
 
 use super::invites::InboxInvites;
 use super::shell::{NavHistory, NoticeLog, Rooms, Scope, Selected, SelectedSpace, go_to, scope_for};
@@ -208,7 +208,7 @@ pub fn InboxPanel() -> Element {
                 let future = session.mark_room_read(id);
                 spawn(async move {
                     if let Err(err) = future.await {
-                        warn!(%err, "mark read failed");
+                        report("mark read", &err);
                     }
                 });
             }
