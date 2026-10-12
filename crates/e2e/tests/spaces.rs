@@ -1,6 +1,6 @@
 //! The spaces rail through the real window: selecting a space filters the
-//! room list down to that space's rooms, Home shows ungrouped rooms, and the
-//! sidebar header follows the selection.
+//! room list down to that space's rooms, Rooms shows ungrouped rooms, DMs get
+//! their own button, and the sidebar header follows the selection.
 //!
 //! `dev/homeserver/seed.sh` puts #dev inside the "Engineering" space and
 //! leaves #general and #random outside any space, so the three rooms give
@@ -53,7 +53,7 @@ async fn space_badge_filters_the_room_list() {
     let mut app = App::launch(&hs).await.expect("launch app");
     login(&mut app).await;
 
-    // Home: #general and #random are ungrouped and show up; #dev lives
+    // Rooms: #general and #random are ungrouped and show up; #dev lives
     // inside the "Engineering" space and does not.
     app.wait_for_text(".room", "general", DEFAULT_WAIT)
         .await
@@ -64,8 +64,8 @@ async fn space_badge_filters_the_room_list() {
     assert!(!has_room(&mut app, "dev").await, "dev hidden at home");
     assert_eq!(
         app.text(".sidebar-header h2").await.expect("header"),
-        Some("Morpheus".to_string()),
-        "home header reads Morpheus"
+        Some("Rooms".to_string()),
+        "rooms header reads Rooms"
     );
     assert_eq!(
         app.count(".rail-item.selected")
@@ -112,11 +112,11 @@ async fn space_badge_filters_the_room_list() {
         .await
         .expect("dev header");
 
-    // Back to Home: #general and #random return, #dev disappears again.
-    app.click(".rail-item[title=\"Home\"]")
+    // Back to Rooms: #general and #random return, #dev disappears again.
+    app.click(".rail-item[title=\"Rooms\"]")
         .await
         .expect("click home");
-    app.wait_for_text(".sidebar-header h2", "Morpheus", DEFAULT_WAIT)
+    app.wait_for_text(".sidebar-header h2", "Rooms", DEFAULT_WAIT)
         .await
         .expect("header back to home");
     app.wait_for_text(".room", "general", DEFAULT_WAIT)
@@ -128,7 +128,7 @@ async fn space_badge_filters_the_room_list() {
 /// Regression: room clicks must change the open room, never the space scope.
 /// (The two context signals once shared a type and collided.)
 #[tokio::test]
-async fn clicking_rooms_keeps_the_home_scope() {
+async fn clicking_rooms_keeps_the_rooms_scope() {
     let Some(hs) = std::env::var("MORPHEUS_TEST_HOMESERVER").ok() else {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
@@ -154,10 +154,56 @@ async fn clicking_rooms_keeps_the_home_scope() {
             .await
             .expect("room opened");
         app.wait_for_js(
-            "return document.querySelector('.rail-item.selected')?.title === 'Home' && [...document.querySelectorAll('.room')].some(r => r.textContent.includes('random'));",
+            "return document.querySelector('.rail-item.selected')?.title === 'Rooms' && [...document.querySelectorAll('.room')].some(r => r.textContent.includes('random'));",
             std::time::Duration::from_secs(5),
         )
         .await
-        .expect("still in Home scope with all rooms listed");
+        .expect("still in Rooms scope with all rooms listed");
     }
+}
+
+/// The rail splits direct messages from rooms: the DMs button lists only
+/// DMs (with the other person's avatar, small), the Rooms button lists only
+/// ungrouped rooms, and the footer shows a display name rather than a Matrix ID.
+#[tokio::test]
+async fn dms_button_lists_direct_messages() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch(&hs).await.expect("launch app");
+    login(&mut app).await;
+    app.wait_for_text(".room", "general", DEFAULT_WAIT)
+        .await
+        .expect("rooms listed first");
+    assert!(!has_room(&mut app, "bob").await, "the DM is not a room");
+
+    app.click(".rail-item[title=\"Direct messages\"]")
+        .await
+        .expect("DMs button");
+    app.wait_for_text(".sidebar-header h2", "Direct messages", DEFAULT_WAIT)
+        .await
+        .expect("header follows the rail");
+    app.wait_for_text(".room.dm", "bob", DEFAULT_WAIT)
+        .await
+        .expect("the DM with bob is listed");
+    assert!(!has_room(&mut app, "general").await, "rooms stay out of DMs");
+    // Bob's profile photo stands in for the room avatar, at sidebar size.
+    app.wait_for_js(
+        "const a = document.querySelector('.room.dm img.avatar'); return a && a.clientHeight <= 24;",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("small DM avatar");
+
+    app.open_room("bob").await.expect("open the DM");
+
+    // Footer: display name, no Matrix ID.
+    let user = app
+        .text(".profile-chip .user")
+        .await
+        .expect("footer text")
+        .unwrap_or_default();
+    assert!(!user.contains('@'), "footer shows a display name, got {user:?}");
+    assert!(!user.is_empty(), "footer has a name");
 }

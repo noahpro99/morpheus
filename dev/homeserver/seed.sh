@@ -218,6 +218,23 @@ else
   echo "messages: already seeded (delete dev/homeserver/.seeded to re-seed)"
 fi
 
+# A direct message between alice and bob, flagged on both sides via m.direct
+# so clients treat it as a DM (Synapse's is_direct only marks the invite).
+if [[ ! -f "$HS_DIR/.seeded-dm" ]]; then
+  echo "dm:"
+  DM=$(api "$ALICE" POST /_matrix/client/v3/createRoom \
+    '{"is_direct":true, "preset":"trusted_private_chat", "invite":["@bob:localhost"]}' | jq -r .room_id)
+  api "$BOB" POST "/_matrix/client/v3/join/$DM" '{}' >/dev/null
+  api "$ALICE" PUT "/_matrix/client/v3/user/@alice:localhost/account_data/m.direct" \
+    "$(jq -nc --arg r "$DM" '{"@bob:localhost":[$r]}')" >/dev/null
+  api "$BOB" PUT "/_matrix/client/v3/user/@bob:localhost/account_data/m.direct" \
+    "$(jq -nc --arg r "$DM" '{"@alice:localhost":[$r]}')" >/dev/null
+  say "$BOB" "$DM" "hey alice, this is our dm"
+  say "$ALICE" "$DM" "hi bob"
+  touch "$HS_DIR/.seeded-dm"
+  echo "  + alice <-> bob ($DM)"
+fi
+
 if [[ ! -f "$HS_DIR/.seeded-firehose" ]]; then
   echo "firehose:"
   FIREHOSE=$(ensure_room firehose "firehose" "600 messages for performance tests")

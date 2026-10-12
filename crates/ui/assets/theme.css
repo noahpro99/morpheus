@@ -128,16 +128,36 @@ h1, h2, h3, p { margin: 0; }
   background: var(--bg-rail);
 }
 .rail-item {
+  position: relative;
   width: 48px;
   height: 48px;
+  padding: 0;
   display: grid;
   place-items: center;
+  overflow: hidden;
   border-radius: 50%;
   background: var(--bg-elevated);
+  color: var(--text-muted);
   font-weight: 700;
-  transition: border-radius 120ms ease, background 120ms ease;
+  font-size: 1.1rem;
+  transition: border-radius 120ms ease, background 120ms ease, color 120ms ease;
 }
-.rail-item:hover, .rail-item.selected { border-radius: 16px; background: var(--accent-strong); }
+.rail-item:hover, .rail-item.selected { border-radius: 16px; background: var(--accent-strong); color: var(--text); }
+/* Space avatars fill the badge and follow its circle-to-square shape. */
+.rail-item .avatar { width: 100% !important; height: 100% !important; border-radius: inherit; font-size: 1.1rem !important; }
+.rail-badge {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--danger);
+  color: white;
+  font-size: 0.65rem;
+  line-height: 16px;
+}
 .rail-divider { width: 32px; height: 2px; background: var(--bg-elevated); border-radius: 1px; }
 
 /* ---- Sidebar (rooms) ----------------------------------------------------- */
@@ -857,3 +877,18 @@ img.avatar { object-fit: cover; }
 .tag + .tag { margin-left: 0; }
 .tag.ok { background: rgba(79, 209, 165, 0.15); }
 .tag.warn { background: rgba(255, 176, 32, 0.15); }
+
+/* ---- Sidebar: DMs and the profile chip ----------------------------------- */
+
+.room.dm { padding: 5px 8px; }
+.room.dm .avatar { font-size: 0.7rem; }
+.profile-chip {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 4px;
+  border-radius: 6px;
+}
+.profile-chip .user { font-weight: 600; }

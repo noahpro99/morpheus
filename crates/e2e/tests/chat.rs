@@ -96,7 +96,7 @@ async fn session_survives_relaunch() {
         0,
         "no login form after restore"
     );
-    app.wait_for_text(".sidebar-footer .user", "@bob:localhost", DEFAULT_WAIT)
+    app.wait_for_text(".sidebar-footer .profile-chip[title=\"@bob:localhost\"] .user", "bob", DEFAULT_WAIT)
         .await
         .expect("bob is signed in");
 }
