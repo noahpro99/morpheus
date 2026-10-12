@@ -23,6 +23,8 @@ use crate::{
 const GROUP_WINDOW_MS: u64 = 5 * 60 * 1000;
 /// Start loading older history when the view is this close to the top.
 const PAGINATE_THRESHOLD_PX: f64 = 400.0;
+/// How far from the newest message (px) before the jump button appears.
+const JUMP_THRESHOLD_PX: f64 = 240.0;
 const PAGE_SIZE: u16 = 40;
 /// Rows rendered at first; the window grows as the user scrolls up, and only
 /// once it covers everything loaded do we ask the server for more.
@@ -173,6 +175,11 @@ pub fn TimelineView(
         });
     };
 
+    // The scroll container, for pinning to the bottom and the jump button.
+    let mut container = use_signal(|| None::<Rc<MountedData>>);
+    // True once the user has scrolled away from the newest message.
+    let mut scrolled_up = use_signal(|| false);
+
     // `column-reverse` makes scrollTop run from 0 (bottom) to negative (top).
     let on_scroll = move |evt: Event<ScrollData>| {
         let distance_to_top =
@@ -180,7 +187,29 @@ pub fn TimelineView(
         if distance_to_top < PAGINATE_THRESHOLD_PX {
             load_older();
         }
+        let away = -evt.scroll_top() > JUMP_THRESHOLD_PX;
+        if away != scrolled_up() {
+            scrolled_up.set(away);
+        }
     };
+
+    // Keep the newest message in view as content arrives unless the user has
+    // scrolled up. `column-reverse` normally does this by itself, but WebKit
+    // leaves the view wherever it was when rows are added to an empty
+    // container, which showed older messages after switching rooms.
+    let pin_to_bottom = move |behavior: ScrollBehavior| {
+        if let Some(el) = container() {
+            spawn(async move {
+                let _ = el.scroll(dioxus::html::geometry::PixelsVector2D::new(0.0, 0.0), behavior).await;
+            });
+        }
+    };
+    use_effect(move || {
+        let _ = entries.read().len();
+        if !*scrolled_up.peek() {
+            pin_to_bottom(ScrollBehavior::Instant);
+        }
+    });
 
     let at_start = reached_start()
         || entries
@@ -190,10 +219,19 @@ pub fn TimelineView(
     let entries_now = entries.read();
     let marker = new_marker();
     let rows = group_rows(&entries_now, marker.as_deref());
+    // Nothing from the SDK yet (not even the start marker): show placeholders
+    // instead of an empty column.
+    let loading = entries_now.is_empty() && load_error().is_none();
 
     rsx! {
         // Rendered newest-first; CSS flips it and keeps the view pinned to the bottom.
-        section { class: "timeline", onscroll: on_scroll,
+        section {
+            class: "timeline",
+            onscroll: on_scroll,
+            onmounted: move |e| container.set(Some(e.data())),
+            if loading {
+                SkeletonRows {}
+            }
             for row in rows.into_iter().rev().take(window()) {
                 match row {
                     Row::Message { message, show_header } => rsx! {
@@ -221,6 +259,34 @@ pub fn TimelineView(
                 p { class: "muted loading", "Loading older messages…" }
             } else if !at_start && handle().is_some() {
                 button { class: "ghost load-older", onclick: move |_| load_older(), "Load older messages" }
+            }
+        }
+        if scrolled_up() {
+            button {
+                class: "jump-to-bottom",
+                title: "Jump to the newest message",
+                onclick: move |_| pin_to_bottom(ScrollBehavior::Smooth),
+                "Jump to present ↓"
+            }
+        }
+    }
+}
+
+/// Grey placeholder rows shown while a timeline has nothing to show yet.
+#[component]
+fn SkeletonRows() -> Element {
+    // Widths vary so the column reads as messages, not a grid.
+    const LINES: [(u8, u8); 6] = [(45, 70), (30, 0), (60, 40), (25, 55), (50, 0), (35, 65)];
+    rsx! {
+        for (index, (first, second)) in LINES.iter().enumerate() {
+            div { key: "{index}", class: "message with-header skeleton-row", "aria-hidden": "true",
+                div { class: "avatar skeleton" }
+                div { class: "message-main",
+                    div { class: "skeleton skeleton-line", style: "width: {first}%" }
+                    if *second > 0 {
+                        div { class: "skeleton skeleton-line", style: "width: {second}%" }
+                    }
+                }
             }
         }
     }
@@ -527,7 +593,15 @@ fn MessageBody(kind: MessageKind, edited: bool) -> Element {
             duration,
         } => rsx! { AudioBody { body, media, size, mime, duration } },
         MessageKind::Redacted => rsx! { p { class: "body muted", "Message deleted" } },
-        MessageKind::UnableToDecrypt => rsx! { p { class: "body muted", "Unable to decrypt" } },
+        // Keys usually arrive shortly (backup, other device), so this reads as
+        // "still loading" rather than an error.
+        MessageKind::UnableToDecrypt => rsx! {
+            div {
+                class: "body skeleton skeleton-line undecrypted",
+                title: "Waiting for the keys to decrypt this message",
+                "aria-label": "Encrypted message, waiting for keys",
+            }
+        },
         MessageKind::State(text) => rsx! { p { class: "body muted", "{text}" } },
         MessageKind::Unsupported(what) => rsx! { p { class: "body muted", "Unsupported: {what}" } },
     }

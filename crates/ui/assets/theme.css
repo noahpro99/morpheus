@@ -242,6 +242,7 @@ h1, h2, h3, p { margin: 0; }
 /* ---- Chat ---------------------------------------------------------------- */
 
 .chat {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -598,6 +599,7 @@ img.avatar { object-fit: cover; }
 .thread-chip-latest { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 160px; }
 
 .thread-panel {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -935,3 +937,34 @@ button.sender:hover { text-decoration: underline; }
 .profile-name { margin-top: 8px; font-size: 1.25rem; }
 .profile-id { font-size: 0.85rem; }
 .profile-close { position: absolute; top: 8px; right: 8px; color: white; }
+
+/* ---- Timeline: jump button and skeletons ---------------------------------- */
+
+.jump-to-bottom {
+  position: absolute;
+  right: 24px;
+  bottom: 84px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--accent-strong);
+  color: white;
+  font-size: 0.8rem;
+  font-weight: 600;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  z-index: 2;
+}
+.jump-to-bottom:hover { background: var(--accent); }
+
+@keyframes shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--bg-elevated) 25%, rgba(255, 255, 255, 0.09) 50%, var(--bg-elevated) 75%);
+  background-size: 800px 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+.skeleton-line { height: 14px; margin: 5px 0; border-radius: 7px; }
+.skeleton-row { pointer-events: none; }
+.skeleton-row .avatar.skeleton { background-color: var(--bg-elevated); }
+.body.undecrypted { width: 55%; max-width: 420px; min-width: 120px; }
