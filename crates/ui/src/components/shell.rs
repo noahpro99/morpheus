@@ -5,7 +5,7 @@ use tracing::error;
 use super::{
     composer::{ActiveTimeline, Composer, Draft, Mode},
     context_menu::{ContextMenu, ContextMenuLayer, MenuState},
-    hotkeys::{Hotkey, HotkeyRequest, LISTENER_JS},
+    hotkeys::{Drops, FILE_LISTENER_JS, FileDrops, Hotkey, HotkeyRequest, LISTENER_JS, parse_dropped},
     invites::InviteCard,
     lightbox::{EscapeTick, Escapes, Lightbox, LightboxOpen, LightboxShown, provide_lightbox},
     members::Members,
@@ -499,11 +499,20 @@ pub fn Shell(session: Session) -> Element {
             _ => {}
         }
     };
+    // Dropped and pasted files arrive on the same channel, for the composer.
+    let mut drops: FileDrops = use_context_provider(|| Signal::new(Drops::default()));
     use_hook(move || {
         spawn(async move {
-            let mut listener = document::eval(LISTENER_JS);
+            let mut listener = document::eval(&format!("{LISTENER_JS}\n{FILE_LISTENER_JS}"));
             while let Ok(name) = listener.recv::<String>().await {
-                dispatch(name);
+                if let Some(payload) = name.strip_prefix("file:") {
+                    match parse_dropped(payload) {
+                        Some(file) => drops.with_mut(|d| d.0.push(file)),
+                        None => tracing::warn!("ignoring an unreadable dropped file"),
+                    }
+                } else {
+                    dispatch(name);
+                }
             }
         })
     });
@@ -525,6 +534,7 @@ pub fn Shell(session: Session) -> Element {
                 context_menu.set(MenuState::default());
             },
             TitleBar {}
+            div { class: "drop-hint", "Drop to upload" }
             // Mirror of what was announced, for the test bridge.
             ul { class: "notification-log", hidden: true,
                 for (index, notice) in notices().0.iter().enumerate() {
@@ -685,6 +695,7 @@ fn ChatRoom(room: RoomSummary) -> Element {
         Composer {
             room_name: room.name.clone(),
             placeholder: room.is_dm.then(|| format!("Message @{}", room.name)),
+            accepts_drops: true,
         }
         Lightbox {}
     }

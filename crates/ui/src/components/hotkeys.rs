@@ -85,3 +85,53 @@ pub const GROUPS: &[(&str, &[(&str, &str)])] = &[
         ],
     ),
 ];
+
+/// Dropped and pasted files, read in the page and handed over as
+/// `file:{name, mime, data(base64)}` on the same channel as the shortcuts.
+/// A `dropping` class on the body drives the "drop to upload" hint.
+pub const FILE_LISTENER_JS: &str = r#"
+const sendFiles = files => {
+  for (const f of files) {
+    const reader = new FileReader();
+    reader.onload = () => dioxus.send('file:' + JSON.stringify({ name: f.name || 'pasted', mime: f.type || '', data: String(reader.result).split(',')[1] || '' }));
+    reader.readAsDataURL(f);
+  }
+};
+const hasFiles = e => !!e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+window.addEventListener('dragenter', e => { if (hasFiles(e)) { e.preventDefault(); document.body.classList.add('dropping'); } }, true);
+window.addEventListener('dragover', e => { if (hasFiles(e)) { e.preventDefault(); document.body.classList.add('dropping'); } }, true);
+window.addEventListener('dragleave', e => { if (!e.relatedTarget || e.relatedTarget === document.documentElement) document.body.classList.remove('dropping'); }, true);
+window.addEventListener('drop', e => {
+  document.body.classList.remove('dropping');
+  if (e.dataTransfer && e.dataTransfer.files.length) { e.preventDefault(); e.stopPropagation(); sendFiles(e.dataTransfer.files); }
+}, true);
+window.addEventListener('paste', e => {
+  const files = e.clipboardData ? [...e.clipboardData.files] : [];
+  if (files.length) { e.preventDefault(); sendFiles(files); }
+}, true);
+"#;
+
+/// A file dropped on or pasted into the window, waiting for the composer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DroppedFile {
+    pub name: String,
+    pub mime: String,
+    pub bytes: Vec<u8>,
+}
+/// Files the composer of the open room should send.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Drops(pub Vec<DroppedFile>);
+pub type FileDrops = Signal<Drops>;
+
+/// Parse one `file:` message from the listener.
+pub fn parse_dropped(payload: &str) -> Option<DroppedFile> {
+    use base64::Engine as _;
+    let value: serde_json::Value = serde_json::from_str(payload).ok()?;
+    let data = value.get("data")?.as_str()?;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(data).ok()?;
+    Some(DroppedFile {
+        name: value.get("name")?.as_str().unwrap_or("file").to_owned(),
+        mime: value.get("mime").and_then(|m| m.as_str()).unwrap_or("").to_owned(),
+        bytes,
+    })
+}

@@ -2,7 +2,7 @@ use dioxus::prelude::*;
 use morpheus_core::{MessageId, OwnedEventId, TimelineHandle};
 use tracing::warn;
 
-use super::hotkeys::{Hotkey, HotkeyRequest};
+use super::hotkeys::{FileDrops, Hotkey, HotkeyRequest};
 use super::shell::{Mention, MentionRequest};
 use super::timeline::LastOwnMessage;
 use crate::attach::pick_attachment;
@@ -31,11 +31,33 @@ pub type Mode = Signal<Option<ComposerMode>>;
 pub type Draft = Signal<String>;
 
 #[component]
-pub fn Composer(room_name: String, #[props(default)] placeholder: Option<String>) -> Element {
+pub fn Composer(
+    room_name: String,
+    #[props(default)] placeholder: Option<String>,
+    /// Only the room's main composer sends dropped and pasted files; a
+    /// thread's composer leaves them alone so nothing is sent twice.
+    #[props(default)] accepts_drops: bool,
+) -> Element {
     let timeline = use_context::<ActiveTimeline>();
     let mut mode = use_context::<Mode>();
     let mut draft = use_context::<Draft>();
     let mut error = use_signal(|| None::<String>);
+    // Dropped and pasted files go out through this room's timeline.
+    let mut drops = use_context::<FileDrops>();
+    use_effect(move || {
+        if !accepts_drops || drops().0.is_empty() {
+            return;
+        }
+        let Some(handle) = timeline.peek().clone() else { return };
+        let files = drops.write().0.drain(..).collect::<Vec<_>>();
+        spawn(async move {
+            for file in files {
+                if let Err(err) = handle.send_attachment_bytes(file.name, file.mime, file.bytes).await {
+                    error.set(Some(err.to_string()));
+                }
+            }
+        });
+    });
     // Focus the box as soon as the room is ready to send, so navigating to a
     // room (or opening a thread) lets you type straight away.
     let mut input_el = use_signal(|| None::<std::rc::Rc<MountedData>>);

@@ -1413,3 +1413,10 @@ button.sender:hover { text-decoration: underline; }
 .inbox-invite .inbox-open { flex: 1; text-align: left; background: none; padding: 0; }
 .inbox-mention { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
 .inbox-mention .inbox-body { color: var(--text-muted); font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.drop-hint {
+  display: none; position: fixed; inset: 0; z-index: 50; pointer-events: none;
+  align-items: center; justify-content: center;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border: 3px dashed var(--accent); font-size: 1.4rem; font-weight: 600;
+}
+body.dropping .drop-hint { display: flex; }
