@@ -235,6 +235,19 @@ if [[ ! -f "$HS_DIR/.seeded-dm" ]]; then
   echo "  + alice <-> bob ($DM)"
 fi
 
+# An encrypted room holding one event no device can decrypt (the ciphertext
+# is made up), so the "waiting for keys" rendering has something to show.
+if [[ ! -f "$HS_DIR/.seeded-encrypted" ]]; then
+  echo "encrypted:"
+  ENCRYPTED=$(ensure_room encrypted "encrypted" "Megolm without the keys")
+  api "$ALICE" PUT "/_matrix/client/v3/rooms/$ENCRYPTED/state/m.room.encryption" \
+    '{"algorithm":"m.megolm.v1.aes-sha2"}' >/dev/null
+  api "$BOB" PUT "/_matrix/client/v3/rooms/$ENCRYPTED/send/m.room.encrypted/seed-utd-$(date +%s%N)" \
+    '{"algorithm":"m.megolm.v1.aes-sha2","ciphertext":"AwgAEnACgAkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","device_id":"SEEDDEVICE","sender_key":"c2VlZC1zZW5kZXIta2V5LXRoYXQtaXMtbm90LXJlYWwAAAAAAAA","session_id":"c2VlZC1zZXNzaW9uLWlkLW5vdC1yZWFsAAAAAAAAAAAAAAAAAAA"}' >/dev/null
+  touch "$HS_DIR/.seeded-encrypted"
+  echo "  + #encrypted with one undecryptable event"
+fi
+
 if [[ ! -f "$HS_DIR/.seeded-firehose" ]]; then
   echo "firehose:"
   FIREHOSE=$(ensure_room firehose "firehose" "600 messages for performance tests")
