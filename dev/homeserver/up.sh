@@ -19,6 +19,10 @@ enable_registration_without_verification: true
 # No rate limits while seeding / testing.
 rc_message: { per_second: 1000, burst_count: 1000 }
 rc_registration: { per_second: 1000, burst_count: 1000 }
+rc_room_creation: { per_second: 1000, burst_count: 1000 }
+rc_admin_redaction: { per_second: 1000, burst_count: 1000 }
+rc_reports: { per_second: 1000, burst_count: 1000 }
+rc_presence: { per_user: { per_second: 1000, burst_count: 1000 } }
 rc_login:
   address: { per_second: 1000, burst_count: 1000 }
   account: { per_second: 1000, burst_count: 1000 }

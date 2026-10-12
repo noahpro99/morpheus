@@ -1263,3 +1263,23 @@ button.sender:hover { text-decoration: underline; }
 .room, .member, .ghost { border-radius: var(--radius-sm); }
 .pinned-item, .attachment-card, .video-card, .image { border-radius: var(--radius); }
 .jump-to-bottom { border-radius: var(--radius-pill); }
+
+/* ---- Server menu, categories, rail add ------------------------------------- */
+
+.server-name { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; border-radius: var(--radius-sm); padding: 2px 6px; margin-left: -6px; }
+.server-name:hover { background: var(--bg-hover); }
+.server-caret { color: var(--text-faint); transform: rotate(90deg); }
+.section.category { margin-top: 14px; }
+.rail-add { background: transparent; border: 2px dashed var(--bg-elevated); color: var(--text-faint); }
+.rail-add:hover { border-color: var(--accent-strong); background: transparent; color: var(--accent); }
+.choice-group { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.choice-group legend { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 4px; }
+.choice { display: flex; align-items: center; gap: 8px; font-size: 0.95rem; cursor: pointer; }
+.choice input { accent-color: var(--accent); }
+.message-dialog select {
+  padding: 10px 12px;
+  border: 1px solid var(--bg-elevated);
+  border-radius: var(--radius);
+  background: var(--bg-input);
+  color: var(--text);
+}

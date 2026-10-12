@@ -21,6 +21,7 @@ mod profile;
 mod recovery;
 mod rooms;
 mod session;
+mod spaces;
 mod timeline;
 mod typing;
 mod verification;
@@ -37,6 +38,7 @@ pub use messages::PinnedMessage;
 pub use profile::Profile;
 pub use recovery::{EncryptionStatus, RecoveryAvailability};
 pub use rooms::{NotifyMode, RoomListUpdates, RoomSummary};
+pub use spaces::{History, Privacy, RoomProfile};
 pub use session::{LoginFlows, LoginRequest, Session};
 pub use timeline::{
     Message, MessageId, MessageKind, OpenTimeline, Reaction, ReplyPreview, ThreadSummary,

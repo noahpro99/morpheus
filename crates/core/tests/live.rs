@@ -848,3 +848,58 @@ async fn admin_can_kick_invite_ban_unban_and_change_roles() {
     let second = session.dm_with(bob).await.expect("dm again");
     assert_eq!(first, second);
 }
+
+/// Space lifecycle through the core: create a server, a category in it,
+/// a room in the category, privacy and per-room profile, then leave it all.
+#[tokio::test]
+async fn space_create_category_privacy_profile_and_leave() {
+    let Some(env) = env() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping live test");
+        return;
+    };
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(
+            std::env::var("RUST_LOG").unwrap_or_else(|_| "morpheus=debug,warn".into()),
+        )
+        .try_init();
+    let core = Core::new(fresh_data_dir()).expect("core");
+    let session = core
+        .login(LoginRequest {
+            homeserver: env.homeserver,
+            username: "alice".into(),
+            password: "alice-password".into(),
+        })
+        .await
+        .expect("login");
+    let t = std::time::Instant::now();
+    let server = session.create_space(format!("live srv {}", std::process::id()), None).await.expect("server");
+    eprintln!("server created in {:?} (before the room list sync)", t.elapsed());
+    // Keep the room list alive so sync runs like it does in the app.
+    let mut updates = session.room_list().await.expect("room list");
+    let mut rooms = Vector::new();
+    drive(&mut rooms, async || updates.next().await, |rooms| !rooms.is_empty()).await;
+
+    let t = std::time::Instant::now();
+    let category = session.create_space("live category".into(), Some(server.clone())).await.expect("category");
+    eprintln!("category created in {:?}", t.elapsed());
+    let t = std::time::Instant::now();
+    let room = session.create_room("live chatter".into(), String::new(), Some(category.clone())).await.expect("room");
+    eprintln!("room created in {:?}", t.elapsed());
+
+    session
+        .set_privacy(server.clone(), morpheus_core::Privacy { public: false, history: morpheus_core::History::Joined })
+        .await
+        .expect("privacy");
+    let privacy = session.privacy(server.clone()).await.expect("read privacy");
+    assert!(!privacy.public);
+    assert_eq!(privacy.history, morpheus_core::History::Joined);
+
+    session
+        .set_room_profile(vec![server.clone(), room.clone()], "Alice (live)".into(), None)
+        .await
+        .expect("room profile");
+    let profile = session.room_profile(room.clone()).await.expect("read profile");
+    assert_eq!(profile.name, "Alice (live)");
+
+    session.leave_space(server, vec![category, room]).await.expect("leave");
+}

@@ -3,7 +3,7 @@ use matrix_sdk_ui::timeline::RoomExt as _;
 
 use matrix_sdk::{
     Room,
-    notification_settings::{IsEncrypted, IsOneToOne, RoomNotificationMode},
+    notification_settings::{IsEncrypted, IsOneToOne, NotificationSettings, RoomNotificationMode},
     room::ParentSpace,
     ruma::{
         api::client::room::create_room::{self, v3::RoomPreset},
@@ -36,6 +36,8 @@ pub struct RoomSummary {
     pub highlight_count: u64,
     /// Flagged unread by the user (`m.marked_unread`), independent of counts.
     pub marked_unread: bool,
+    /// Notifications muted for this room (push rules).
+    pub muted: bool,
     /// Spaces this room lists as a parent via `m.space.parent`, filtered to
     /// relationships the room itself considers legitimate (reciprocated by
     /// the parent, or set by someone with power to do so). Nested spaces are
@@ -44,7 +46,11 @@ pub struct RoomSummary {
 }
 
 impl RoomSummary {
-    async fn from_room(room: Room) -> Self {
+    async fn from_room(room: Room, settings: &NotificationSettings) -> Self {
+        let muted = matches!(
+            settings.get_user_defined_room_notification_mode(room.room_id()).await,
+            Some(RoomNotificationMode::Mute)
+        );
         let name = room
             .cached_display_name()
             .map(|n| n.to_string())
@@ -70,6 +76,7 @@ impl RoomSummary {
             unread_messages: room.num_unread_messages(),
             highlight_count: counts.highlight_count,
             marked_unread: room.is_marked_unread(),
+            muted,
             parent_spaces,
         }
     }
@@ -178,6 +185,7 @@ impl Session {
     pub fn room_list(&self) -> CoreFuture<RoomListUpdates> {
         let core = self.core.clone();
         let sync = self.sync.clone();
+        let client = self.client.clone();
 
         self.core.run(async move {
             let list = sync.room_list_service().all_rooms().await?;
@@ -189,10 +197,12 @@ impl Session {
                 pin_mut!(stream);
 
                 while let Some(diffs) = stream.next().await {
+                    // Push rules can change between batches; read them once per batch.
+                    let settings = client.notification_settings().await;
                     let mut mapped = Vec::with_capacity(diffs.len());
                     for diff in diffs {
                         mapped.push(
-                            map_diff_async(diff, |item| RoomSummary::from_room(item.into_inner()))
+                            map_diff_async(diff, |item| RoomSummary::from_room(item.into_inner(), &settings))
                                 .await,
                         );
                     }
