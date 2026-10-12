@@ -133,6 +133,11 @@
                 shellHook = shellHook + ''
                   export ANDROID_NDK_HOME="$(ls -d "$ANDROID_HOME"/ndk/* | head -n1)"
                   export NDK_HOME="$ANDROID_NDK_HOME"
+                  # Let plain cargo (and the C deps behind the SDK) use the NDK toolchain too.
+                  NDK_BIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+                  NDK_CLANG="$(ls "$NDK_BIN"/aarch64-linux-android*-clang | sort -V | tail -n1)"
+                  export CC_aarch64_linux_android="$NDK_CLANG" CXX_aarch64_linux_android="$NDK_CLANG++"
+                  export AR_aarch64_linux_android="$NDK_BIN/llvm-ar" CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$NDK_CLANG"
                 '';
               }
             );
