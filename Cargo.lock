@@ -4444,8 +4444,12 @@ version = "0.1.0"
 dependencies = [
  "dioxus",
  "directories",
+ "morpheus-core",
  "morpheus-ui",
  "notify-rust",
+ "png 0.17.16",
+ "signal-hook",
+ "tokio",
  "tracing",
  "tracing-subscriber",
 ]

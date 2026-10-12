@@ -31,7 +31,6 @@ use super::{
     toast::{ToastLayer, ToastList, Toasts},
     user_bar::UserBar,
 };
-use crate::WindowControls;
 use crate::icons::Icon;
 use crate::media::{Avatar, provide_media_cache};
 
@@ -262,10 +261,15 @@ pub fn Shell(session: Session) -> Element {
     let mut narrow: NarrowWindow = use_context_provider(|| Signal::new(Narrow::default()));
     let mut chat_open: ChatOpen = use_context_provider(|| Signal::new(ChatInFront::default()));
     let _members_version: MembersVersion = use_context_provider(|| Signal::new(MembersStamp::default()));
-    // New messages from other people: logged for the inbox, and raised as an
-    // OS notification unless they land in the room being looked at.
+    // The platform's notifier skips the room on screen; tell it which that is.
+    let open_room = use_context::<crate::AppConfig>().open_room;
+    use_effect(move || {
+        if let Ok(mut slot) = open_room.lock() {
+            *slot = selected();
+        }
+    });
+    // New messages from other people, logged for the inbox and the tests.
     let mut notices: NoticeLog = use_context_provider(|| Signal::new(Notices::default()));
-    let controls = use_hook(try_consume_context::<WindowControls>);
     use_hook({
         let session = session.clone();
         move || {
@@ -277,17 +281,9 @@ pub fn Shell(session: Session) -> Element {
                         return;
                     }
                 };
+                // OS pop-ups are the platform's job (see `AppConfig::on_session`):
+                // this runtime stalls while the window is hidden, a thread does not.
                 while let Some(notice) = updates.next().await {
-                    let looking = selected.peek().as_ref() == Some(&notice.room_id)
-                        && controls.as_ref().is_some_and(|c| (c.is_focused)());
-                    if !looking && let Some(controls) = &controls {
-                        let title = if notice.is_mention {
-                            format!("{} mentioned you in {}", notice.sender_name, notice.room_name)
-                        } else {
-                            format!("{} in {}", notice.sender_name, notice.room_name)
-                        };
-                        (controls.notify)(title, notice.body_summary.clone());
-                    }
                     notices.with_mut(|log| {
                         if log.0.len() >= NOTICE_CAP {
                             log.0.remove(0);

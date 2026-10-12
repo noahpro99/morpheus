@@ -364,13 +364,8 @@ h1, h2, h3, p { margin: 0; }
 /* ---- Mobile ---------------------------------------------------------------
    Phase 5 replaces this with a real single-column navigation. For now the
    shell degrades to sidebar + chat so it is at least usable on a phone. */
-@media (max-width: 900px) {
-  .shell { grid-template-columns: var(--rail-w) var(--sidebar-w) 1fr; }
+@container (max-width: 900px) {
   .members { display: none; }
-}
-@media (max-width: 600px) {
-  .shell { grid-template-columns: 1fr; }
-  .rail, .sidebar { display: none; }
 }
 
 /* ---- Phase 1/2 additions ------------------------------------------------- */
@@ -1131,11 +1126,10 @@ button.sender:hover { text-decoration: underline; }
   grid-template-columns: var(--rail-w) var(--sidebar-w) 1fr var(--members-w);
 }
 .shell.no-side .shell-body { grid-template-columns: var(--rail-w) var(--sidebar-w) 1fr; }
-@media (max-width: 900px) {
+/* Breakpoints follow the shell's own width (a test may box it), not the viewport. */
+.shell { container-type: inline-size; }
+@container (max-width: 900px) {
   .shell-body { grid-template-columns: var(--rail-w) var(--sidebar-w) 1fr; }
-}
-@media (max-width: 600px) {
-  .shell-body { grid-template-columns: 1fr; }
 }
 .titlebar {
   height: 32px;
@@ -1358,7 +1352,8 @@ button.sender:hover { text-decoration: underline; }
 .user-bar {
   height: auto;
   margin: 0;
-  padding: 0 var(--bottom-gap) var(--bottom-gap);
+  /* The pill's right edge sits as far from the sidebar/chat edge as the message box's left edge does. */
+  padding: 0 16px var(--bottom-gap) var(--bottom-gap);
   border-radius: 0;
   background: linear-gradient(to right, var(--bg-rail) 0, var(--bg-rail) var(--rail-w), var(--bg-sidebar) var(--rail-w), var(--bg-sidebar) 100%);
 }

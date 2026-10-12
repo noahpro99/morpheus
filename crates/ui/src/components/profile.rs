@@ -646,13 +646,17 @@ const CARD_CLAMP_JS: &str = "const c = document.querySelector('.profile-card'); 
     const ax = parseFloat(c.dataset.ax), ay = parseFloat(c.dataset.ay); \
     const w = c.offsetWidth, h = c.offsetHeight, pad = 8; \
     let x, y; \
-    const anchor = ax >= 0 ? document.elementFromPoint(ax, ay) : null; \
+    /* The card's own backdrop covers the point; look beneath it. */ \
+    const anchor = ax >= 0 ? (document.elementsFromPoint(ax, ay).find(e => !e.closest('.card-overlay, .profile-card')) || null) : null; \
     const el = anchor ? (anchor.closest('.avatar-button, button.sender, .member, .profile-chip, .context-item') || anchor) : null; \
     if (el) { const r = el.getBoundingClientRect(); \
-      x = r.right + pad; if (x + w > innerWidth - pad) x = r.left - w - pad; \
-      if (x < pad) { x = pad; } \
+      /* Beside the avatar, on the side nearer the middle of the window, never over it. */ \
+      const mid = (r.left + r.right) / 2; \
+      x = mid < innerWidth / 2 ? r.right + pad : r.left - w - pad; \
+      if (x + w > innerWidth - pad) x = r.left - w - pad; \
+      if (x < pad) x = r.right + pad; \
       y = r.top; } \
-    else if (ax >= 0) { x = ax; y = ay; } \
+    else if (ax >= 0) { x = ax < innerWidth / 2 ? ax + 16 : ax - w - 16; y = ay; } \
     else { x = (innerWidth - w) / 2; y = innerHeight * 0.2; } \
     y = Math.max(pad, Math.min(y, innerHeight - h - pad)); \
     x = Math.max(pad, Math.min(x, innerWidth - w - pad)); \

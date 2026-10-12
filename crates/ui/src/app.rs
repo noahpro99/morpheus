@@ -1,18 +1,51 @@
-use std::path::PathBuf;
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 
 use dioxus::prelude::*;
-use morpheus_core::{Core, Session};
+use morpheus_core::{Core, OwnedRoomId, Session};
 
 use crate::{
     components::{Login, Shell, Splash},
     e2e::E2eBridge,
 };
 
+/// Called with every session that becomes active (restored or freshly logged
+/// in), so the platform can run work that must outlive the webview, such as
+/// OS notifications while the window is hidden.
+pub type SessionHook = Arc<dyn Fn(Session) + Send + Sync>;
+
+/// The room on screen, shared with platform code outside the UI runtime.
+pub type OpenRoom = Arc<Mutex<Option<OwnedRoomId>>>;
+
 /// Provided by the platform crate via `LaunchBuilder::with_context`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone)]
 pub struct AppConfig {
     pub data_dir: PathBuf,
     pub default_homeserver: String,
+    pub on_session: Option<SessionHook>,
+    pub open_room: OpenRoom,
+}
+
+impl AppConfig {
+    pub fn new(data_dir: PathBuf, default_homeserver: String) -> Self {
+        Self {
+            data_dir,
+            default_homeserver,
+            on_session: None,
+            open_room: OpenRoom::default(),
+        }
+    }
+}
+
+impl std::fmt::Debug for AppConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AppConfig")
+            .field("data_dir", &self.data_dir)
+            .field("default_homeserver", &self.default_homeserver)
+            .finish_non_exhaustive()
+    }
 }
 
 const THEME: Asset = asset!("/assets/theme.css");
@@ -39,6 +72,13 @@ pub fn App() -> Element {
 fn Boot(core: Core) -> Element {
     use_context_provider(|| core.clone());
     let mut session: Signal<Option<Session>> = use_context_provider(|| Signal::new(None));
+    // Hand each new session to the platform (see `SessionHook`).
+    let hook = use_context::<AppConfig>().on_session;
+    use_effect(move || {
+        if let (Some(hook), Some(active)) = (&hook, session()) {
+            hook(active);
+        }
+    });
 
     let restore = use_resource(move || {
         let core = core.clone();
