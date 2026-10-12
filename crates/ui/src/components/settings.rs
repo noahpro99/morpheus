@@ -32,14 +32,18 @@ impl PartialEq for Verification {
     }
 }
 
-/// Wrap a handle and start mirroring its steps. Returns `None` if the flow
-/// already ended.
+/// Wrap a handle and start mirroring its steps.
+///
+/// The step signal and the task feeding it belong to the app's root scope,
+/// not the caller's. A flow started from the settings modal must keep running
+/// and stay readable after the modal closes and reopens: owned by the modal's
+/// scope, the signal was dropped on close and the next read panicked.
 pub fn track_verification(mut handle: VerificationHandle, incoming: bool) -> Rc<Verification> {
-    let step = Signal::new(VerificationStep::Requested);
+    let step = Signal::new_in_scope(VerificationStep::Requested, ScopeId::APP);
     let mut step_writer = step;
     // Split: the task owns the receiving end; actions go through a clone.
     let actions = handle.actions();
-    spawn(async move {
+    dioxus::core::spawn_forever(async move {
         while let Some(next) = handle.next().await {
             step_writer.set(next);
         }

@@ -143,3 +143,78 @@ async fn emoji_verification_between_two_devices() {
         eprintln!("screenshot: {}", path.display());
     }
 }
+
+/// Regression: the step signal of a running verification used to be owned by
+/// the settings modal's scope, so closing the modal dropped it and reopening
+/// panicked the app ("called `Result::unwrap()` on an `Err` value: Dropped").
+#[tokio::test]
+async fn verification_survives_closing_and_reopening_settings() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut a = App::launch(&hs).await.expect("launch A");
+    login(&mut a, "bob", "bob-password").await;
+    let mut b = App::launch(&hs).await.expect("launch B");
+    login(&mut b, "bob", "bob-password").await;
+    a.wait_for(".room", DEFAULT_WAIT).await.expect("A synced");
+    b.wait_for(".room", DEFAULT_WAIT).await.expect("B synced");
+
+    open_settings(&mut a).await;
+    a.click_text(".settings button", "Verify with another")
+        .await
+        .expect("start verification");
+    a.wait_for_text(
+        ".verification",
+        "Waiting for your other device",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("A waiting");
+
+    // Close the modal mid-flow, then reopen it: the flow must still be there.
+    a.click(".settings-header button[title=Close]")
+        .await
+        .expect("close settings");
+    a.wait_for_js(
+        "return document.querySelector('.settings') === null;",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("settings closed");
+    open_settings(&mut a).await;
+    a.wait_for_text(
+        ".verification",
+        "Waiting for your other device",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("A still waiting after reopening");
+
+    // The reopened panel keeps following the flow.
+    b.wait_for_text(".verification", "wants to verify", DEFAULT_WAIT)
+        .await
+        .expect("B sees request");
+    b.click_text(".verification button", "Accept")
+        .await
+        .expect("B accepts");
+    a.wait_for(".emoji-grid", DEFAULT_WAIT)
+        .await
+        .expect("A emoji after reopening");
+    b.wait_for(".emoji-grid", DEFAULT_WAIT)
+        .await
+        .expect("B emoji");
+
+    a.click_text(".verification button", "They match")
+        .await
+        .expect("A confirms");
+    b.click_text(".verification button", "They match")
+        .await
+        .expect("B confirms");
+    a.wait_for_text(".verification", "Verified", DEFAULT_WAIT)
+        .await
+        .expect("A done");
+    b.wait_for_text(".verification", "Verified", DEFAULT_WAIT)
+        .await
+        .expect("B done");
+}
