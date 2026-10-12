@@ -50,7 +50,7 @@ async fn menu_closed(app: &mut App) {
 
 async fn click_submenu(app: &mut App, parent: &str, child: &str) {
     let js = format!(
-        "const p = [...document.querySelectorAll('.context-item.has-submenu')].find(el => el.firstElementChild.textContent === {}); \
+        "const p = [...document.querySelectorAll('.context-item.has-submenu')].find(el => el.querySelector('.menu-label')?.textContent === {}); \
          if (!p) throw new Error('no submenu ' + {}); \
          const c = [...p.querySelectorAll('.context-submenu .context-item')].find(el => el.textContent.trim() === {}); \
          if (!c) throw new Error('no child ' + {}); c.click();",
@@ -81,22 +81,23 @@ async fn room_menu_marks_read_and_sets_notification_mode() {
     login(&mut alice, "alice").await;
     alice.open_room("general").await.expect("open general");
 
-    // Bob posts in #moderation: it turns unread for alice.
+    // Bob posts in #random: it turns unread for alice. (#random, not
+    // #moderation: the moderation tests ban bob there.)
     let mut bob = App::launch(&hs).await.expect("launch bob");
     login(&mut bob, "bob").await;
-    bob.open_room("moderation").await.expect("bob opens moderation");
+    bob.open_room("random").await.expect("bob opens random");
     bob.wait_for(".composer input:not([disabled])", DEFAULT_WAIT).await.expect("composer");
     bob.type_into(".composer input", &format!("unread ping {}", std::process::id())).await.expect("type");
     bob.press(".composer input", "Enter").await.expect("send");
 
     alice
         .wait_for_js(
-            "return [...document.querySelectorAll('.room.unread')].some(r => r.textContent.includes('moderation'));",
+            "return [...document.querySelectorAll('.room.unread')].some(r => r.textContent.includes('random'));",
             DEFAULT_WAIT,
         )
         .await
-        .expect("moderation shows unread");
-    room_menu(&mut alice, "moderation").await;
+        .expect("random shows unread");
+    room_menu(&mut alice, "random").await;
     for label in ["Mark as read", "Invite people", "Notifications", "Edit room", "Create room", "Copy link", "Copy room ID", "Leave room"] {
         alice
             .wait_for_text(".context-item", label, Duration::from_secs(2))
@@ -107,23 +108,23 @@ async fn room_menu_marks_read_and_sets_notification_mode() {
     menu_closed(&mut alice).await;
     alice
         .wait_for_js(
-            "return ![...document.querySelectorAll('.room.unread')].some(r => r.textContent.includes('moderation'));",
+            "return ![...document.querySelectorAll('.room.unread')].some(r => r.textContent.includes('random'));",
             DEFAULT_WAIT,
         )
         .await
-        .expect("moderation no longer unread");
+        .expect("random no longer unread");
 
     // Notification mode round-trips through the push rules.
-    room_menu(&mut alice, "random").await;
+    room_menu(&mut alice, "general").await;
     click_submenu(&mut alice, "Notifications", "Mute").await;
     menu_closed(&mut alice).await;
     tokio::time::sleep(Duration::from_millis(500)).await;
-    room_menu(&mut alice, "random").await;
+    room_menu(&mut alice, "general").await;
     assert_eq!(checked_label(&mut alice).await, "Mute", "mute is the checked mode");
     click_submenu(&mut alice, "Notifications", "All messages").await;
     menu_closed(&mut alice).await;
     tokio::time::sleep(Duration::from_millis(500)).await;
-    room_menu(&mut alice, "random").await;
+    room_menu(&mut alice, "general").await;
     assert_eq!(checked_label(&mut alice).await, "All messages", "back to all messages");
     alice.press(".context-menu", "Escape").await.expect("escape");
 }

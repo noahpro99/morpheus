@@ -1179,3 +1179,15 @@ button.sender:hover { text-decoration: underline; }
 .help-list { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; }
 .help-list dt { font-family: var(--mono); font-size: 0.85rem; color: var(--accent); }
 .help-list dd { margin: 0; color: var(--text-muted); }
+
+/* ---- Icons ------------------------------------------------------------------ */
+
+.icon { flex: none; vertical-align: -3px; }
+.context-item { display: flex; align-items: center; gap: 10px; }
+.context-item.no-icon { padding-left: 36px; }
+.menu-icon { color: var(--text-faint); }
+.context-item:hover .menu-icon, .context-item.has-submenu:hover > .menu-icon { color: inherit; }
+.menu-label { flex: 1; }
+.context-submenu.grid .context-item { padding-left: 0; justify-content: center; }
+.member-toggle, .pin-toggle { display: inline-flex; align-items: center; gap: 5px; }
+.titlebar-button, .nav-button, .window-controls button { display: inline-flex; align-items: center; justify-content: center; }

@@ -6,6 +6,7 @@ use super::room_dialogs::{OpenRoomDialog, RoomDialog};
 use super::profile::{Editor, ProfileEditor, open_profile};
 use super::settings::SettingsOpen;
 use super::shell::{Rooms, Scope, Selected, SelectedSpace, rooms_in_scope};
+use crate::icons::Icon;
 use crate::media::Avatar;
 
 #[component]
@@ -95,7 +96,7 @@ pub fn RoomList(error: Option<String>) -> Element {
                         class: "ghost create-room-button",
                         title: "Create room",
                         onclick: move |_| consume_context::<OpenRoomDialog>().set(RoomDialog::Create),
-                        "+"
+                        Icon { glyph: crate::icons::PLUS, size: 18 }
                     }
                 }
             }
@@ -139,7 +140,7 @@ pub fn RoomList(error: Option<String>) -> Element {
                     Avatar { media: avatar, fallback: name.clone(), size: 32 }
                     span { class: "user", "{name}" }
                 }
-                button { class: "ghost settings-button", title: "Settings", onclick: move |_| settings_open.set(true), "⚙" }
+                button { class: "ghost settings-button", title: "Settings", onclick: move |_| settings_open.set(true), Icon { glyph: crate::icons::SETTINGS, size: 18 } }
             }
         }
     }

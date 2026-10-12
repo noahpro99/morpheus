@@ -571,6 +571,7 @@ pub(crate) fn MessageRow(message: Message, show_header: bool) -> Element {
                                 }
                             },
                         )
+                        .icon(if room.is_dm { crate::icons::AT_SIGN } else { crate::icons::HASH })
                     })
                     .collect();
                 if !targets.is_empty() {

@@ -64,7 +64,7 @@ async fn menu_closed(app: &mut App) {
 
 async fn click_submenu(app: &mut App, parent: &str, child: &str) {
     let js = format!(
-        "const p = [...document.querySelectorAll('.context-item.has-submenu')].find(el => el.firstElementChild.textContent === {}); \
+        "const p = [...document.querySelectorAll('.context-item.has-submenu')].find(el => el.querySelector('.menu-label')?.textContent === {}); \
          if (!p) throw new Error('no submenu ' + {}); \
          const c = [...p.querySelectorAll('.context-submenu .context-item')].find(el => el.textContent.trim() === {}); \
          if (!c) throw new Error('no child ' + {}); c.click();",
