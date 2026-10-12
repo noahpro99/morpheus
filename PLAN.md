@@ -118,6 +118,7 @@ timeline → send.
 - [ ] Measure cold start, scroll FPS, memory against the webview build
 
 ### 7. Always-on desktop presence
+- [x] Tray icon (logo, Open / Quit menu, left click shows the window); closing the window hides it and syncing and notifications continue. Still to do: autostart at login and a "start hidden" flag.
 - [ ] Tray icon with a background process that keeps syncing and raises desktop
       notifications while the window is closed; click to reopen, menu for quick
       status and quit. Needs a single-instance guard so a second launch focuses

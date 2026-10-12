@@ -12,8 +12,12 @@ e2e = ["morpheus-ui/e2e"]
 [dependencies]
 dioxus = { workspace = true, features = ["desktop"] }
 morpheus-ui = { workspace = true }
+morpheus-core = { workspace = true }
 directories = { workspace = true }
 notify-rust = { workspace = true }
+png = { workspace = true }
+tokio = { workspace = true }
+signal-hook = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 

@@ -17,11 +17,10 @@ fn main() {
         )
         .init();
 
-    let config = AppConfig {
-        data_dir: data_dir(),
-        default_homeserver: std::env::var("MORPHEUS_HOMESERVER")
-            .unwrap_or_else(|_| DEFAULT_HOMESERVER.into()),
-    };
+    let config = AppConfig::new(
+        data_dir(),
+        std::env::var("MORPHEUS_HOMESERVER").unwrap_or_else(|_| DEFAULT_HOMESERVER.into()),
+    );
     tracing::info!(?config.data_dir, "starting morpheus mobile");
 
     LaunchBuilder::new()

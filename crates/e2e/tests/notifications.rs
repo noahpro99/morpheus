@@ -37,6 +37,7 @@ async fn messages_from_others_are_announced_and_mentions_flagged() {
     let mut alice = App::launch(&hs).await.expect("launch alice");
     login(&mut alice, "alice").await;
     alice.open_room("general").await.expect("alice in #general");
+    alice.wait_for(".composer input:not([disabled])", DEFAULT_WAIT).await.expect("composer ready");
 
     let pid = std::process::id();
     let plain = format!("notify ping {pid}");

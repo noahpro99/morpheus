@@ -53,6 +53,7 @@
             librsvg
             at-spi2-atk
             xdotool # libxdo, needed by the desktop renderer (muda/tao)
+            libayatana-appindicator # system tray icon (tray-icon dlopens it)
             libxkbcommon
             wayland
             libGL

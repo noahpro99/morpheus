@@ -1,8 +1,55 @@
 use dioxus::prelude::*;
+use morpheus_core::RoomSummary;
 
+use super::settings::SettingsOpen;
 use super::shell::{Rooms, SelectedSpace, go_to, scope_for};
+use super::titlebar::{OpenTopPanel, TopPanel};
+use crate::icons::{CIRCLE_HELP, INBOX, Icon, SETTINGS};
 
-/// Ctrl+K quick switcher: type to filter rooms, arrows to move, Enter to open.
+/// What a row in the palette does: open a room, or run an app action.
+#[derive(Clone, PartialEq)]
+enum Entry {
+    Room(RoomSummary),
+    Action(Action),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Action {
+    Settings,
+    Shortcuts,
+    Inbox,
+}
+
+impl Action {
+    const ALL: [Action; 3] = [Action::Settings, Action::Shortcuts, Action::Inbox];
+
+    fn label(self) -> &'static str {
+        match self {
+            Action::Settings => "Settings",
+            Action::Shortcuts => "Keyboard shortcuts",
+            Action::Inbox => "Inbox",
+        }
+    }
+
+    fn icon(self) -> &'static str {
+        match self {
+            Action::Settings => SETTINGS,
+            Action::Shortcuts => CIRCLE_HELP,
+            Action::Inbox => INBOX,
+        }
+    }
+
+    fn run(self) {
+        match self {
+            Action::Settings => consume_context::<SettingsOpen>().set(true),
+            Action::Shortcuts => consume_context::<OpenTopPanel>().set(TopPanel::Help),
+            Action::Inbox => consume_context::<OpenTopPanel>().set(TopPanel::Inbox),
+        }
+    }
+}
+
+/// Ctrl+K command palette: type to filter rooms and actions, arrows to
+/// move, Enter to pick. Rooms come first; actions match on their label.
 #[component]
 pub fn QuickSwitcher(open: Signal<bool>) -> Element {
     let rooms = use_context::<Rooms>();
@@ -10,17 +57,25 @@ pub fn QuickSwitcher(open: Signal<bool>) -> Element {
     let mut query = use_signal(String::new);
     let mut cursor = use_signal(|| 0usize);
 
-    let matches: Vec<_> = {
+    let matches: Vec<Entry> = {
         let needle = query().to_lowercase();
-        rooms
+        let mut list: Vec<Entry> = rooms
             .read()
             .iter()
             .filter(|room| {
-                !room.is_space && (needle.is_empty() || room.name.to_lowercase().contains(&needle))
+                !room.is_space && !room.invited && (needle.is_empty() || room.name.to_lowercase().contains(&needle))
             })
             .take(8)
             .cloned()
-            .collect()
+            .map(Entry::Room)
+            .collect();
+        list.extend(
+            Action::ALL
+                .into_iter()
+                .filter(|action| needle.is_empty() || action.label().to_lowercase().contains(&needle))
+                .map(Entry::Action),
+        );
+        list
     };
     let cursor_now = cursor().min(matches.len().saturating_sub(1));
 
@@ -33,13 +88,17 @@ pub fn QuickSwitcher(open: Signal<bool>) -> Element {
     let choose = {
         let matches = matches.clone();
         move |index: usize| {
-            if let Some(room) = matches.get(index) {
-                // Scope first, so the shell does not bounce the selection back.
-                let scope = scope_for(&rooms.read(), room);
-                if scope != *selected_space.peek() {
-                    selected_space.set(scope);
+            match matches.get(index) {
+                Some(Entry::Room(room)) => {
+                    // Scope first, so the shell does not bounce the selection back.
+                    let scope = scope_for(&rooms.read(), room);
+                    if scope != *selected_space.peek() {
+                        selected_space.set(scope);
+                    }
+                    go_to(room.id.clone());
                 }
-                go_to(room.id.clone());
+                Some(Entry::Action(action)) => action.run(),
+                None => {}
             }
             close();
         }
@@ -57,7 +116,7 @@ pub fn QuickSwitcher(open: Signal<bool>) -> Element {
                             let _ = e.data().set_focus(true).await;
                         });
                     },
-                    placeholder: "Jump to a room…",
+                    placeholder: "Jump to a room or an action…",
                     value: "{query}",
                     oninput: move |e| {
                         query.set(e.value());
@@ -77,25 +136,30 @@ pub fn QuickSwitcher(open: Signal<bool>) -> Element {
                     },
                 }
                 ul { class: "switcher-results",
-                    for (index, room) in matches.iter().enumerate() {
+                    for (index, entry) in matches.iter().enumerate() {
                         li {
-                            key: "{room.id}",
+                            key: "{index}",
                             class: "switcher-item",
+                            class: if matches!(entry, Entry::Action(_)) { "action" },
                             class: if index == cursor_now { "active" },
                             onclick: {
                                 let mut choose = choose.clone();
                                 move |_| choose(index)
                             },
-                            if room.is_dm {
-                                span { class: "hash", "@" }
-                            } else {
-                                span { class: "hash", "#" }
+                            match entry {
+                                Entry::Room(room) => rsx! {
+                                    span { class: "hash", if room.is_dm { "@" } else { "#" } }
+                                    span { "{room.name}" }
+                                },
+                                Entry::Action(action) => rsx! {
+                                    Icon { glyph: action.icon(), size: 16, class: "hash" }
+                                    span { "{action.label()}" }
+                                },
                             }
-                            span { "{room.name}" }
                         }
                     }
                     if matches.is_empty() {
-                        li { class: "switcher-item muted", "No rooms match" }
+                        li { class: "switcher-item muted", "Nothing matches" }
                     }
                 }
             }

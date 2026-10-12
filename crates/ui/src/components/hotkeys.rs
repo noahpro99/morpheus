@@ -45,6 +45,12 @@ window.addEventListener('keydown', e => {
   else if (mod && !alt && key === ',') name = 'settings';
   else if (mod && !alt && shift && key === 'u') name = 'attach';
   else if (k === 'ArrowUp' && !mod && !alt && !shift && typing && t.value === '' && t.closest('.composer')) name = 'edit_last';
+  // Typing with nothing focused goes to the message box, as in Discord.
+  if (!name && !typing && !mod && !alt && k.length === 1 && !document.querySelector('.overlay, .context-menu, .card-overlay')) {
+    const box = document.querySelector('.composer input:not([disabled])');
+    if (box) { box.focus(); }
+    return;
+  }
   if (!name) return;
   if (name !== 'escape' && name !== 'edit_last') e.preventDefault();
   dioxus.send(name);

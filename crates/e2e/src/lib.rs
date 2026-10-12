@@ -129,6 +129,25 @@ impl App {
         })
     }
 
+    /// Whether the app process is still alive.
+    pub fn is_running(&mut self) -> bool {
+        matches!(self.child.try_wait(), Ok(None))
+    }
+
+    /// Show the window again after it was closed (hidden) through the title
+    /// bar, the way the tray does: the app reopens on SIGUSR1. A hidden
+    /// webview suspends its JavaScript (and the bridge with it), so this
+    /// goes around the bridge.
+    pub async fn show_window(&mut self) -> Result<()> {
+        let pid = self.child.id().context("app already exited")?;
+        let status = Command::new("kill").args(["-USR1", &pid.to_string()]).status().await?;
+        if !status.success() {
+            bail!("kill -USR1 {pid} failed");
+        }
+        sleep(Duration::from_millis(800)).await;
+        Ok(())
+    }
+
     /// Evaluate JavaScript in the webview. Use `return` to get a value back.
     pub async fn eval(&mut self, js: &str) -> Result<Value> {
         let id = self.next_id;
