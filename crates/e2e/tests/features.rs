@@ -82,7 +82,7 @@ async fn media_rich_text_reactions_and_members() {
             .await
             .unwrap_or_else(|e| panic!("member {name}: {e}"));
     }
-    app.wait_for_text(".chat-header .member-count", "3", DEFAULT_WAIT)
+    app.wait_for_text(".chat-header .member-toggle", "3", DEFAULT_WAIT)
         .await
         .expect("member count");
 

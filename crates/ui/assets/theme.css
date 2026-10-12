@@ -377,7 +377,7 @@ img.avatar { object-fit: cover; }
 }
 .section:first-child { margin-top: 4px; }
 
-.member-count { margin-left: auto; color: var(--text-muted); font-size: 0.85rem; }
+
 
 .loading { text-align: center; font-size: 0.85rem; padding: 8px; }
 
@@ -892,3 +892,9 @@ img.avatar { object-fit: cover; }
   border-radius: 6px;
 }
 .profile-chip .user { font-weight: 600; }
+
+/* ---- Members toggle -------------------------------------------------------- */
+
+.shell.no-side { grid-template-columns: var(--rail-w) var(--sidebar-w) 1fr; }
+.member-toggle { margin-left: auto; font-size: 0.85rem; }
+.member-toggle.active { color: var(--text); }
