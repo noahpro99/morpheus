@@ -243,7 +243,9 @@ pub fn TimelineView(
     use_effect(move || {
         if hotkey() == Some(Hotkey::JumpToBottom) && is_main_timeline {
             hotkey.set(None);
-            pin_to_bottom(ScrollBehavior::Smooth);
+            // Instant: a smooth scroll started right after another one (Esc
+            // twice) can be dropped by WebKit, leaving the view where it was.
+            pin_to_bottom(ScrollBehavior::Instant);
             if let Some(active) = handle.peek().clone() {
                 drop(active.mark_as_fully_read());
                 caught_up.set(true);

@@ -40,7 +40,6 @@ rand = "0.9"
 chacha20poly1305 = "0.11"
 tempfile = "3"
 png = "0.17"
-signal-hook = "0.3"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

@@ -17,7 +17,6 @@ directories = { workspace = true }
 notify-rust = { workspace = true }
 png = { workspace = true }
 tokio = { workspace = true }
-signal-hook = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 

@@ -33,7 +33,6 @@ async fn closing_the_window_keeps_syncing_and_announcing() {
     // Deferred: the webview stops answering the moment it hides, so the
     // eval must return before the click lands.
     bob.eval("setTimeout(() => document.querySelector('.titlebar button.close').click(), 50); return true;").await.expect("close");
-    eprintln!("[tray] closed");
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     assert!(bob.is_running(), "closing the window must not quit the app");
 
@@ -48,9 +47,7 @@ async fn closing_the_window_keeps_syncing_and_announcing() {
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
     // Reopen (what the tray does) and find the message announced meanwhile.
-    eprintln!("[tray] showing");
     bob.show_window().await.expect("show window");
-    eprintln!("[tray] shown");
     bob.wait_for_text(".notification-log li", &text, DEFAULT_WAIT).await.expect("announced while hidden");
     bob.wait_for(".composer input", DEFAULT_WAIT).await.expect("still usable");
 }

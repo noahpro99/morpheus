@@ -40,6 +40,7 @@ pub struct App {
     next_id: u64,
     data_dir: PathBuf,
     download_dir: PathBuf,
+    port: u16,
     log_path: PathBuf,
     homeserver: String,
     /// `(what, elapsed)` for every wait, printed when the app is dropped.
@@ -124,6 +125,7 @@ impl App {
             data_dir,
             download_dir,
             log_path,
+            port,
             homeserver: homeserver.to_owned(),
             timings: Vec::new(),
         })
@@ -135,15 +137,13 @@ impl App {
     }
 
     /// Show the window again after it was closed (hidden) through the title
-    /// bar, the way the tray does: the app reopens on SIGUSR1. A hidden
-    /// webview suspends its JavaScript (and the bridge with it), so this
-    /// goes around the bridge.
+    /// bar, the way the tray does: the desktop app listens on the port after
+    /// the bridge's for exactly this, since a hidden webview may not answer
+    /// through the bridge.
     pub async fn show_window(&mut self) -> Result<()> {
-        let pid = self.child.id().context("app already exited")?;
-        let status = Command::new("kill").args(["-USR1", &pid.to_string()]).status().await?;
-        if !status.success() {
-            bail!("kill -USR1 {pid} failed");
-        }
+        let _ = tokio::net::TcpStream::connect(("127.0.0.1", self.port + 1))
+            .await
+            .context("show-window control port")?;
         sleep(Duration::from_millis(800)).await;
         Ok(())
     }

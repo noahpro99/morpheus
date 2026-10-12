@@ -31,6 +31,10 @@ const DEFAULT_HOMESERVER: &str = "http://localhost:8008";
 #[derive(Clone)]
 struct Focus(Arc<AtomicBool>);
 
+/// Set by the control-port thread; the event loop shows the window on the main
+/// thread (GTK insists) at the next event, which the thread asks for.
+static SHOW_REQUESTED: AtomicBool = AtomicBool::new(false);
+
 fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -110,20 +114,27 @@ fn DesktopRoot() -> Element {
             _ => {}
         }
     });
-    // Track focus for the notifier, and reopen on SIGUSR1 (what a second
-    // launch or a script can send; the tests use it in place of a tray click).
-    use_wry_event_handler(move |event, _| {
-        if let Event::WindowEvent {
-            event: WindowEvent::Focused(focused),
-            ..
-        } = event
-        {
-            focus.0.store(*focused, Ordering::Relaxed);
+    // Track focus for the notifier, and show the window when asked from
+    // another thread (the tests' stand-in for a tray click).
+    use_wry_event_handler({
+        let window = window.window.clone();
+        move |event, _| {
+            if let Event::WindowEvent {
+                event: WindowEvent::Focused(focused),
+                ..
+            } = event
+            {
+                focus.0.store(*focused, Ordering::Relaxed);
+            }
+            if SHOW_REQUESTED.swap(false, Ordering::Relaxed) {
+                window.set_visible(true);
+                window.set_focus();
+            }
         }
     });
     use_hook({
         let window = window.window.clone();
-        move || reopen_on_signal(window)
+        move || reopen_on_control_port(window)
     });
 
     use_context_provider(|| WindowControls {
@@ -139,7 +150,9 @@ fn DesktopRoot() -> Element {
             let window = window.clone();
             move || window.window.set_maximized(!window.window.is_maximized())
         }),
-        close: Rc::new(move || window.close()),
+        // Hide rather than close: a programmatic close tears the webview down
+        // regardless of the close behaviour, which is the tray's job to avoid.
+        close: Rc::new(move || window.window.set_visible(false)),
     });
     // A test can box the app to a phone-sized viewport, since a tiling
     // compositor ignores the requested window size.
@@ -217,19 +230,28 @@ fn notify(title: String, body: String) {
     });
 }
 
-/// SIGUSR1 brings a hidden window back.
-fn reopen_on_signal(window: Arc<dioxus::desktop::tao::window::Window>) {
-    let mut signals = match signal_hook::iterator::Signals::new([signal_hook::consts::SIGUSR1]) {
-        Ok(signals) => signals,
+/// Under test (`MORPHEUS_E2E_PORT` set), a connection to the port after the
+/// bridge's brings a hidden window back, the way a tray click does. The
+/// hidden webview cannot take that request through the bridge itself.
+fn reopen_on_control_port(window: Arc<dioxus::desktop::tao::window::Window>) {
+    let Some(port) = std::env::var("MORPHEUS_E2E_PORT").ok().and_then(|p| p.parse::<u16>().ok()) else {
+        return;
+    };
+    let listener = match std::net::TcpListener::bind(("127.0.0.1", port + 1)) {
+        Ok(listener) => listener,
         Err(err) => {
-            tracing::warn!(%err, "SIGUSR1 handler not installed");
+            tracing::warn!(%err, "show-window control port not bound");
             return;
         }
     };
     std::thread::spawn(move || {
-        for _ in signals.forever() {
+        for _ in listener.incoming().flatten() {
+            // tao proxies these to the GTK thread, so they are safe here; the
+            // flag covers platforms where they are not.
+            SHOW_REQUESTED.store(true, Ordering::Relaxed);
             window.set_visible(true);
             window.set_focus();
+            window.request_redraw();
         }
     });
 }

@@ -8,6 +8,9 @@ use std::time::Duration;
 
 use morpheus_e2e::{App, DEFAULT_WAIT};
 
+/// Holds once the timeline has more history than fits on screen.
+const SCROLLABLE: &str = "const t = document.querySelector('.timeline'); return !!t && t.scrollHeight > t.clientHeight + 600;";
+
 fn homeserver() -> Option<String> {
     std::env::var("MORPHEUS_TEST_HOMESERVER").ok()
 }
@@ -104,6 +107,8 @@ async fn up_edits_last_message_and_escape_jumps_to_bottom() {
     app.press(".composer input", "Escape").await.expect("cancel edit");
 
     // Scroll up, then Esc with nothing open jumps back to the newest message.
+    // A tall window can show the whole first page; load enough history to scroll.
+    app.reveal("a scrollable timeline", SCROLLABLE, DEFAULT_WAIT).await.expect("history");
     app.eval("document.querySelector('.timeline').scrollTop = -2000;").await.expect("scroll up");
     app.wait_for(".jump-to-bottom", DEFAULT_WAIT).await.expect("scrolled away");
     app.press("body", "Escape").await.expect("escape");
