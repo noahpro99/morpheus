@@ -10,7 +10,8 @@ use tracing::{error, warn};
 use super::{
     composer::{ActiveTimeline, ComposerMode, Draft, Mode},
     context_menu::{MenuItem, copy_to_clipboard, open_menu},
-    shell::Selected,
+    message_dialogs::{MessageDialog, OpenMessageDialog, Pinned, PinnedRefresh},
+    shell::{Rooms, Selected},
     lightbox::{LightboxImage, LightboxImages, LightboxIndex},
     profile::open_profile,
     thread::ActiveThread,
@@ -34,6 +35,11 @@ const INITIAL_WINDOW: usize = 120;
 const WINDOW_STEP: usize = 100;
 /// One-click reactions offered on hover.
 pub(crate) const QUICK_REACTIONS: [&str; 3] = ["👍", "❤️", "😂"];
+/// The "Add reaction" picker.
+const EMOJI_PICKER: [&str; 24] = [
+    "👍", "👎", "❤️", "😂", "😮", "😢", "😡", "🎉", "🔥", "👀", "🙏", "👏", "💯", "✅", "❌", "🤔", "😎",
+    "🥳", "🚀", "⭐", "💀", "🫡", "🤝", "💡",
+];
 
 /// One room's messages. The parent sets `key` to the room id, so switching
 /// rooms remounts this component and drops the previous subscription.
@@ -480,13 +486,131 @@ pub(crate) fn MessageRow(message: Message, show_header: bool) -> Element {
                     }
                 }));
             }
+            // Everything below needs a sent event in a known room.
+            let sent = match (&message.id, selected.peek().as_ref()) {
+                (MessageId::Event(event_id), Some(room_id)) if !message.is_local_echo => {
+                    Some((event_id.clone(), room_id.clone()))
+                }
+                _ => None,
+            };
+            if sent.is_some() {
+                // A picker of common emoji; the quick row above has the top three.
+                let grid = EMOJI_PICKER
+                    .iter()
+                    .map(|key| {
+                        MenuItem::new(*key, {
+                            let react = react.clone();
+                            move || react(key)
+                        })
+                    })
+                    .collect();
+                items.push(MenuItem::grid("Add reaction", grid));
+                if !message.reactions.is_empty() {
+                    items.push(MenuItem::new("View reactions", {
+                        let message = message.clone();
+                        move || {
+                            consume_context::<OpenMessageDialog>()
+                                .set(MessageDialog::Reactions(Box::new(message.clone())));
+                        }
+                    }));
+                }
+            }
+            if let Some((event_id, room_id)) = &sent {
+                let session = consume_context::<Session>();
+                // Forward to any other joined room.
+                let targets: Vec<MenuItem> = consume_context::<Rooms>()
+                    .read()
+                    .iter()
+                    .filter(|room| !room.is_space && &room.id != room_id)
+                    .map(|room| {
+                        MenuItem::new(
+                            if room.is_dm { format!("@{}", room.name) } else { format!("#{}", room.name) },
+                            {
+                                let session = session.clone();
+                                let (from, event_id, to) = (room_id.clone(), event_id.clone(), room.id.clone());
+                                move || {
+                                    let future = session.forward(from.clone(), event_id.clone(), to.clone());
+                                    spawn(async move {
+                                        if let Err(err) = future.await {
+                                            warn!(%err, "forward failed");
+                                        }
+                                    });
+                                }
+                            },
+                        )
+                    })
+                    .collect();
+                if !targets.is_empty() {
+                    items.push(MenuItem::submenu("Forward to", targets));
+                }
+
+                let pinned = consume_context::<Pinned>().peek().0.contains(event_id);
+                items.push(MenuItem::new(if pinned { "Unpin message" } else { "Pin message" }, {
+                    let session = session.clone();
+                    let (room_id, event_id) = (room_id.clone(), event_id.clone());
+                    move || {
+                        let future = session.pin(room_id.clone(), event_id.clone(), !pinned);
+                        let mut refresh = consume_context::<PinnedRefresh>();
+                        spawn(async move {
+                            if let Err(err) = future.await {
+                                warn!(%err, "pin failed");
+                            }
+                            refresh += 1;
+                        });
+                    }
+                }));
+                items.push(MenuItem::new("Mark unread", {
+                    let session = session.clone();
+                    let room_id = room_id.clone();
+                    move || {
+                        let future = session.mark_unread(room_id.clone(), true);
+                        spawn(async move {
+                            if let Err(err) = future.await {
+                                warn!(%err, "mark unread failed");
+                            }
+                        });
+                    }
+                }));
+            }
             if let Some(text) = message.kind.plain_body().filter(|t| !t.is_empty()) {
                 let text = text.to_owned();
                 items.push(MenuItem::new("Copy text", move || copy_to_clipboard(&text)));
             }
-            if let (MessageId::Event(event_id), Some(room_id)) = (&message.id, selected.peek().as_ref()) {
+            if let Some((event_id, room_id)) = &sent {
                 let link = format!("https://matrix.to/#/{room_id}/{event_id}");
                 items.push(MenuItem::new("Copy message link", move || copy_to_clipboard(&link)));
+            }
+            // Only our own reactions can be taken back.
+            let mine: Vec<&str> = message
+                .reactions
+                .iter()
+                .filter(|r| r.mine)
+                .map(|r| r.key.as_str())
+                .collect();
+            if !mine.is_empty() {
+                let each: Vec<MenuItem> = mine
+                    .iter()
+                    .map(|key| {
+                        MenuItem::new(*key, {
+                            let (react, key) = (react.clone(), (*key).to_owned());
+                            move || react(&key)
+                        })
+                    })
+                    .collect();
+                items.push(MenuItem::submenu("Remove reactions", each));
+                items.push(MenuItem::new("Remove all my reactions", {
+                    let react = react.clone();
+                    let keys: Vec<String> = mine.iter().map(|k| (*k).to_owned()).collect();
+                    move || keys.iter().for_each(|key| react(key))
+                }));
+            }
+            if let Some((event_id, _)) = &sent
+                && !message.is_own
+            {
+                let event_id = event_id.clone();
+                items.push(MenuItem::new("Report message", move || {
+                    consume_context::<OpenMessageDialog>().set(MessageDialog::Report(event_id.clone()));
+                }));
             }
             if message.is_own && can_reply {
                 items.push(
@@ -504,6 +628,10 @@ pub(crate) fn MessageRow(message: Message, show_header: bool) -> Element {
                     })
                     .danger(),
                 );
+            }
+            if let Some((event_id, _)) = &sent {
+                let id = event_id.to_string();
+                items.push(MenuItem::new("Copy message ID", move || copy_to_clipboard(&id)));
             }
             let quick: Rc<dyn Fn(&'static str)> = Rc::new({
                 let react = react.clone();

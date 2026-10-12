@@ -21,6 +21,8 @@ pub struct MenuItem {
     run: Option<Action>,
     /// A flyout opened on hover; the item itself does nothing when clicked.
     children: Vec<Rc<MenuItem>>,
+    /// Lay the flyout out as a grid (emoji pickers).
+    grid: bool,
 }
 
 impl MenuItem {
@@ -31,6 +33,7 @@ impl MenuItem {
             checked: false,
             run: Some(Rc::new(RefCell::new(run))),
             children: Vec::new(),
+            grid: false,
         }
     }
 
@@ -42,7 +45,15 @@ impl MenuItem {
             checked: false,
             run: None,
             children: children.into_iter().map(Rc::new).collect(),
+            grid: false,
         }
+    }
+
+    /// A submenu whose children are laid out as a grid of short labels.
+    pub fn grid(label: impl Into<String>, children: Vec<MenuItem>) -> Self {
+        let mut item = Self::submenu(label, children);
+        item.grid = true;
+        item
     }
 
     pub fn danger(mut self) -> Self {
@@ -181,7 +192,7 @@ fn entries(items: &[Rc<MenuItem>], close: impl FnMut() + Copy + 'static) -> Elem
                 div { class: "context-item has-submenu", role: "menuitem", "aria-haspopup": "true",
                     span { "{item.label}" }
                     span { class: "submenu-arrow", "›" }
-                    div { class: "context-menu context-submenu", role: "menu",
+                    div { class: "context-menu context-submenu", class: if item.grid { "grid" }, role: "menu",
                         {entries(&item.children, close)}
                     }
                 }

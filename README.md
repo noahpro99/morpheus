@@ -54,6 +54,8 @@ app.screenshot("chat").await?; // target/e2e/chat.png on Hyprland
 
 Each test gets a fresh data directory and its own app process. Set
 `MORPHEUS_E2E_KEEP=1` to keep the data dir and `app.log` after a failure.
+Test windows are titled "Morpheus (test)" and open unfocused; on Hyprland the driver also adds
+`nofocus` rules for that title so keystrokes never land in them mid-run (undo with a config reload).
 
 Run one file at a time with `just e2e-one <file>` (for example `just e2e-one perf`).
 With `MORPHEUS_E2E_TIMINGS=1` the driver prints how long every wait took, and

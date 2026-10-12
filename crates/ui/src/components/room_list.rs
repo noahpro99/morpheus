@@ -175,7 +175,7 @@ fn RoomRow(room: RoomSummary) -> Element {
             oncontextmenu: on_context,
             class: if room.is_dm { "dm" },
             class: if is_selected { "selected" },
-            class: if room.unread_messages > 0 { "unread" },
+            class: if room.unread_messages > 0 || room.marked_unread { "unread" },
             onclick: move |_| selected.set(Some(id.clone())),
             if room.is_dm {
                 Avatar { media: room.avatar.clone(), fallback: room.name.clone(), size: 24 }

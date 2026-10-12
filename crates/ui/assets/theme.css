@@ -1059,3 +1059,52 @@ button.sender:hover { text-decoration: underline; }
 .context-item.has-submenu:hover > .submenu-arrow { color: white; }
 .member.blocked { opacity: 0.6; }
 .member .tag { margin-left: auto; font-size: 0.65rem; }
+
+/* ---- Message dialogs, pins, emoji grid ------------------------------------- */
+
+.context-submenu.grid {
+  display: none;
+  flex-direction: row;
+  flex-wrap: wrap;
+  width: 236px;
+}
+.context-item.has-submenu:hover > .context-submenu.grid { display: flex; }
+.context-submenu.grid .context-item { width: 36px; padding: 6px 0; text-align: center; font-size: 1.1rem; }
+.pin-toggle { margin-left: auto; font-size: 0.85rem; }
+.pin-toggle + .member-toggle { margin-left: 0; }
+.message-dialog {
+  width: min(440px, 90vw);
+  max-height: 80vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  border-radius: 12px;
+  background: var(--bg-sidebar);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+  outline: none;
+}
+.message-dialog h2 { font-size: 1.1rem; }
+.message-dialog label { display: flex; flex-direction: column; gap: 6px; font-size: 0.85rem; color: var(--text-muted); }
+.message-dialog input {
+  padding: 10px 12px;
+  border: 1px solid var(--bg-elevated);
+  border-radius: var(--radius);
+  background: var(--bg-input);
+  outline: none;
+}
+.message-dialog button.danger { background: var(--danger); color: white; padding: 8px 14px; border-radius: 6px; }
+.reaction-row { display: flex; align-items: baseline; gap: 12px; }
+.reaction-key { font-size: 1.2rem; }
+.reaction-senders { color: var(--text-muted); font-size: 0.9rem; }
+.pinned-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--bg-elevated);
+}
+.pinned-main { flex: 1; min-width: 0; }
+.pinned-main .body { white-space: pre-wrap; overflow-wrap: anywhere; }

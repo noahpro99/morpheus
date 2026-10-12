@@ -52,6 +52,7 @@ timeline → send.
 - [x] Scroll-triggered back-pagination (button remains as a fallback)
 - [ ] Proper local time zone handling (replace `format.rs` shims with `jiff`)
 - [ ] Virtualised timeline once rooms with >2k loaded items appear
+- [ ] Auto-fill short histories: when the first sync hands over fewer rows than fit on screen there is nothing to scroll, so older messages need the "Load older messages" button. Paginating automatically races the room subscription's first response (which can reset the timeline); needs the SDK to settle first.
 - [ ] Error toasts instead of inline `<p class="error">`
 
 ### 2. The Discord shell
@@ -97,6 +98,20 @@ timeline → send.
 ### 6. Native renderer
 - [ ] Evaluate Dioxus Native (Blitz) on desktop; gate behind a cargo feature
 - [ ] Measure cold start, scroll FPS, memory against the webview build
+
+### 7. Always-on desktop presence
+- [ ] Tray icon with a background process that keeps syncing and raises desktop
+      notifications while the window is closed; click to reopen, menu for quick
+      status and quit. Needs a single-instance guard so a second launch focuses
+      the running one.
+
+## Funding model (idea, not scheduled)
+- Feature bounties instead of (or alongside) plain donations: anyone can put
+  money behind a feature request. Once a maintainer approves the request the
+  backer pays part of it (half, say) up front and the rest when the feature
+  ships. Open questions: escrow/payment provider, refunds if a feature is
+  declined or abandoned, how backers vote on priority, whether to still accept
+  untied donations.
 
 ## Testing strategy
 

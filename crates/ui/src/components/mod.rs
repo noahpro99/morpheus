@@ -5,6 +5,7 @@ mod context_menu;
 mod lightbox;
 mod login;
 mod members;
+mod message_dialogs;
 mod profile;
 mod rail;
 mod room_list;

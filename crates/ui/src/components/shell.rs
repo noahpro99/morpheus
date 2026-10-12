@@ -7,6 +7,10 @@ use super::{
     context_menu::{ContextMenu, ContextMenuLayer, MenuState},
     lightbox::{Lightbox, provide_lightbox},
     members::Members,
+    message_dialogs::{
+        MessageDialog, OpenMessageDialog, Pinned, PinnedIds, PinnedPanel, PinnedRefresh,
+        ReactionsModal, ReportModal, use_pinned_fetcher,
+    },
     profile::{
         EditProfileModal, Editor, OpenProfile, ProfileEditor, ProfileModal, ProfileRefresh,
         ProfileTarget, ProfileVersion, StatusModal,
@@ -123,6 +127,10 @@ pub fn Shell(session: Session) -> Element {
     let mut context_menu: ContextMenu = use_context_provider(|| Signal::new(MenuState::default()));
     let mut editor: ProfileEditor = use_context_provider(|| Signal::new(Editor::None));
     let _mention: MentionRequest = use_context_provider(|| Signal::new(Mention::default()));
+    let mut message_dialog: OpenMessageDialog = use_context_provider(|| Signal::new(MessageDialog::None));
+    let pinned: Pinned = use_context_provider(|| Signal::new(PinnedIds::default()));
+    let pinned_refresh: PinnedRefresh = use_context_provider(|| Signal::new(0));
+    use_pinned_fetcher(session.clone(), selected, pinned_refresh, pinned);
     let _refresh: ProfileRefresh = use_context_provider(|| Signal::new(ProfileVersion::default()));
 
     // Incoming verification requests from the user's other devices pop the settings dialog.
@@ -185,10 +193,12 @@ pub fn Shell(session: Session) -> Element {
         rooms.read().iter().find(|room| room.id == id).cloned()
     });
 
-    // A thread belongs to the room it was opened from; close it when switching rooms.
+    // A thread belongs to the room it was opened from; close it when switching
+    // rooms, along with any menu built from that room's signals.
     use_effect(move || {
         selected();
         active_thread.set(None);
+        context_menu.set(MenuState::default());
     });
 
     // Global shortcuts. The shell is focusable so keys reach it even when no input has focus.
@@ -202,6 +212,8 @@ pub fn Shell(session: Session) -> Element {
             // verification keeps going in the background.
             if context_menu().0.is_some() {
                 context_menu.set(MenuState::default());
+            } else if message_dialog() != MessageDialog::None {
+                message_dialog.set(MessageDialog::None);
             } else if editor() != Editor::None {
                 editor.set(Editor::None);
             } else if open_profile().0.is_some() {
@@ -264,6 +276,12 @@ pub fn Shell(session: Session) -> Element {
                 Editor::Status => rsx! { StatusModal {} },
                 Editor::None => rsx! {},
             }
+            match (message_dialog(), current()) {
+                (MessageDialog::Reactions(message), _) => rsx! { ReactionsModal { message: *message } },
+                (MessageDialog::Report(event_id), _) => rsx! { ReportModal { event_id } },
+                (MessageDialog::Pinned, Some(room)) => rsx! { PinnedPanel { room_id: room.id.clone() } },
+                _ => rsx! {},
+            }
             ContextMenuLayer {}
         }
     }
@@ -273,6 +291,25 @@ pub fn Shell(session: Session) -> Element {
 fn ChatRoom(room: RoomSummary) -> Element {
     let session = use_context::<Session>();
     let mut members_open = use_context::<MembersOpen>();
+    let mut message_dialog = use_context::<OpenMessageDialog>();
+    let pinned = use_context::<Pinned>();
+    // Opening a room clears a manual unread flag, like reading does. Only on
+    // open (mount): flagging the room you are in keeps it flagged until you
+    // come back, as in Discord. The hook call itself is unconditional.
+    use_hook({
+        let session = session.clone();
+        let room_id = room.id.clone();
+        let flagged = room.marked_unread;
+        move || {
+            if flagged {
+                spawn(async move {
+                    if let Err(err) = session.mark_unread(room_id, false).await {
+                        error!(%err, "clearing the unread flag failed");
+                    }
+                });
+            }
+        }
+    });
     // Shared by the timeline (which fills it) and the composer (which sends through it).
     use_context_provider(|| ActiveTimeline::new(None));
     use_context_provider(|| Mode::new(None));
@@ -308,6 +345,12 @@ fn ChatRoom(room: RoomSummary) -> Element {
             h2 { "{room.name}" }
             if let Some(topic) = room.topic.as_deref() {
                 span { class: "topic", "{topic}" }
+            }
+            button {
+                class: "ghost pin-toggle",
+                title: "Pinned messages",
+                onclick: move |_| message_dialog.set(MessageDialog::Pinned),
+                "📌 {pinned().0.len()}"
             }
             button {
                 class: "ghost member-toggle",
