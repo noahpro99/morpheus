@@ -24,6 +24,7 @@ use super::{
     thread::{ActiveThread, ThreadPanel},
     timeline::{LastOwnMessage, TimelineView},
     titlebar::{HelpModal, InboxPanel, Nav, OpenTopPanel, TitleBar, TopPanel, nav_jump},
+    user_bar::UserBar,
 };
 use crate::icons::Icon;
 use crate::media::{Avatar, provide_media_cache};
@@ -361,6 +362,7 @@ pub fn Shell(session: Session) -> Element {
             div { class: "shell-body",
             Rail {}
             RoomList { error: load_error() }
+            UserBar {}
             main { class: "chat",
                 match current() {
                     // Keyed on the room id so switching rooms remounts the timeline.

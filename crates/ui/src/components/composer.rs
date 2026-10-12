@@ -6,6 +6,7 @@ use super::hotkeys::{Hotkey, HotkeyRequest};
 use super::shell::{Mention, MentionRequest};
 use super::timeline::LastOwnMessage;
 use crate::attach::pick_attachment;
+use crate::icons::{Icon, PLUS};
 
 /// Shared between the timeline (which owns the handle) and the composer.
 pub type ActiveTimeline = Signal<Option<TimelineHandle>>;
@@ -170,11 +171,11 @@ pub fn Composer(room_name: String, #[props(default)] placeholder: Option<String>
             div { class: "composer-row",
                 button {
                     class: "attach-button",
-                    title: "Attach a file",
+                    title: "Attach a file (Ctrl+Shift+U)",
                     r#type: "button",
                     disabled: timeline().is_none(),
                     onclick: move |_| attach(()),
-                    "📎"
+                    Icon { glyph: PLUS, size: 18 }
                 }
                 input {
                     onmounted: move |e| input_el.set(Some(e.data())),
