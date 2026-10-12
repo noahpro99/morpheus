@@ -4,6 +4,7 @@ mod composer;
 mod lightbox;
 mod login;
 mod members;
+mod profile;
 mod rail;
 mod room_list;
 mod settings;

@@ -1,6 +1,7 @@
 use dioxus::prelude::*;
 use morpheus_core::{RoomSummary, Session};
 
+use super::profile::open_profile;
 use super::settings::SettingsOpen;
 use super::shell::{Rooms, Scope, Selected, SelectedSpace, rooms_in_scope};
 use crate::media::Avatar;
@@ -96,7 +97,17 @@ pub fn RoomList(error: Option<String>) -> Element {
             }
 
             footer { class: "sidebar-footer",
-                div { class: "profile-chip", title: "{user_id}",
+                button {
+                    class: "profile-chip",
+                    title: "{user_id}",
+                    onclick: {
+                        let own = session.user_id();
+                        move |_| {
+                            if let Some(id) = own.clone() {
+                                open_profile(id);
+                            }
+                        }
+                    },
                     Avatar { media: avatar, fallback: name.clone(), size: 32 }
                     span { class: "user", "{name}" }
                 }

@@ -6,6 +6,7 @@ use super::{
     composer::{ActiveTimeline, Composer, Draft, Mode},
     lightbox::{Lightbox, provide_lightbox},
     members::Members,
+    profile::{OpenProfile, ProfileModal, ProfileTarget},
     rail::Rail,
     room_list::RoomList,
     settings::{ActiveVerification, Settings, SettingsOpen, track_verification},
@@ -110,6 +111,7 @@ pub fn Shell(session: Session) -> Element {
     let mut settings_open: SettingsOpen = use_context_provider(|| Signal::new(false));
     let mut verification: ActiveVerification = use_context_provider(|| Signal::new(None));
     let members_open: MembersOpen = use_context_provider(|| Signal::new(MembersShown(true)));
+    let mut open_profile: OpenProfile = use_context_provider(|| Signal::new(ProfileTarget::default()));
 
     // Incoming verification requests from the user's other devices pop the settings dialog.
     use_future({
@@ -186,7 +188,9 @@ pub fn Shell(session: Session) -> Element {
         } else if e.key() == Key::Escape {
             // Escape closes whichever modal is open, top-most first. A running
             // verification keeps going in the background.
-            if settings_open() {
+            if open_profile().0.is_some() {
+                open_profile.set(ProfileTarget::default());
+            } else if settings_open() {
                 settings_open.set(false);
             } else if switcher_open() {
                 switcher_open.set(false);
@@ -229,6 +233,9 @@ pub fn Shell(session: Session) -> Element {
             }
             if settings_open() {
                 Settings {}
+            }
+            if let Some(user_id) = open_profile().0 {
+                ProfileModal { user_id }
             }
         }
     }

@@ -1,6 +1,7 @@
 use dioxus::prelude::*;
 use morpheus_core::{Member, MemberRole, OwnedRoomId, Session};
 
+use super::profile::open_profile;
 use crate::media::Avatar;
 
 /// Right column: joined members grouped by role.
@@ -28,7 +29,14 @@ pub fn Members(room_id: OwnedRoomId) -> Element {
                                         h3 { "{role.label()} — {group.len()}" }
                                     }
                                     for member in group {
-                                        div { key: "{member.user_id}", class: "member", title: "{member.user_id}",
+                                        button {
+                                            key: "{member.user_id}",
+                                            class: "member",
+                                            title: "{member.user_id}",
+                                            onclick: {
+                                                let user_id = member.user_id.clone();
+                                                move |_| open_profile(user_id.clone())
+                                            },
                                             Avatar { media: member.avatar.clone(), fallback: member.name.clone(), size: 32 }
                                             span { class: "member-name", "{member.name}" }
                                         }
