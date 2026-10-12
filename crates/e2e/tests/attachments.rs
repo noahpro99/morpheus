@@ -109,3 +109,63 @@ async fn renders_and_downloads_attachments() {
         eprintln!("screenshot: {}", path.display());
     }
 }
+
+/// JS that builds a `File` from bytes and dispatches `event` ("drop" or
+/// "paste") carrying it on the window.
+fn file_event_js(event: &str, name: &str, mime: &str, bytes: &[u8]) -> String {
+    let bytes: Vec<String> = bytes.iter().map(|b| b.to_string()).collect();
+    let name = serde_json::to_string(name).expect("json");
+    let mime = serde_json::to_string(mime).expect("json");
+    let transfer = format!(
+        "const dt = new DataTransfer(); dt.items.add(new File([new Uint8Array([{}])], {name}, {{ type: {mime} }}));",
+        bytes.join(",")
+    );
+    match event {
+        "drop" => format!(
+            "{transfer} const target = document.querySelector('.chat'); \
+             target.dispatchEvent(new DragEvent('dragover', {{ bubbles: true, cancelable: true, dataTransfer: dt }})); \
+             target.dispatchEvent(new DragEvent('drop', {{ bubbles: true, cancelable: true, dataTransfer: dt }}));"
+        ),
+        _ => format!(
+            "{transfer} document.querySelector('.composer input').dispatchEvent(new ClipboardEvent('paste', {{ bubbles: true, cancelable: true, clipboardData: dt }}));"
+        ),
+    }
+}
+
+/// A 1x1 PNG.
+const TINY_PNG: &[u8] = &[
+    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0D, 0x49,
+    0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0xF8, 0xCF, 0xC0, 0x00, 0x00, 0x03, 0x01, 0x01, 0x00, 0x18, 0xDD, 0x8D, 0xB0,
+    0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+];
+
+#[tokio::test]
+async fn dropped_and_pasted_files_upload() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch(&hs).await.expect("launch app");
+    login_and_open(&mut app, "random").await;
+    let pid = std::process::id();
+
+    // Dragging a file over the window shows the hint; dropping it sends an image.
+    let image = format!("drop-{pid}.png");
+    app.eval(&file_event_js("drop", &image, "image/png", TINY_PNG)).await.expect("drop");
+    app.wait_for_js(
+        &format!(
+            "return [...document.querySelectorAll('.image')].some(el => el.alt === {0} || el.textContent.includes({0}))",
+            serde_json::to_string(&image).expect("json")
+        ),
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("dropped image in the timeline");
+    assert!(!app.eval("return document.body.classList.contains('dropping')").await.expect("eval").as_bool().unwrap_or(true), "hint hidden after the drop");
+
+    // Pasting a file sends it as a file attachment.
+    let text = format!("paste-{pid}.txt");
+    app.eval(&file_event_js("paste", &text, "text/plain", b"pasted contents")).await.expect("paste");
+    app.wait_for_text(".attachment-card .attachment-name", &text, DEFAULT_WAIT).await.expect("pasted file in the timeline");
+}
