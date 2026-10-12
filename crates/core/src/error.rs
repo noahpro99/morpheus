@@ -32,6 +32,12 @@ pub enum Error {
 
     #[error("unknown room {0}")]
     UnknownRoom(OwnedRoomId),
+
+    #[error("no other device of this user was found to verify against")]
+    NoOtherDevice,
+
+    #[error("this verification flow has not reached the emoji step yet")]
+    VerificationNotReady,
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
