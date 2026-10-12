@@ -6,6 +6,7 @@ mod login;
 mod members;
 mod rail;
 mod room_list;
+mod settings;
 mod shell;
 mod switcher;
 mod thread;

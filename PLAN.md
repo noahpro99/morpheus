@@ -75,8 +75,9 @@ timeline → send.
 - [ ] Attachment upload with drag-and-drop and paste
 
 ### 4. Encryption UX
-- [ ] Device verification (emoji SAS, QR)
-- [ ] Recovery key / secret storage setup
+- [x] Device verification between own devices (emoji SAS) from the settings modal
+- [x] Restore from key backup with a recovery key (settings modal)
+- [ ] QR verification, recovery key setup for new accounts
 - [ ] Store passphrase and tokens in the OS keyring (desktop) instead of `session.json`
 - [ ] Shields on messages, device list
 

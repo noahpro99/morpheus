@@ -8,6 +8,7 @@ use super::{
     members::Members,
     rail::Rail,
     room_list::RoomList,
+    settings::{ActiveVerification, Settings, SettingsOpen, track_verification},
     switcher::QuickSwitcher,
     thread::{ActiveThread, ThreadPanel},
     timeline::TimelineView,
@@ -74,6 +75,25 @@ pub fn Shell(session: Session) -> Element {
     let mut active_thread: ActiveThread = use_context_provider(|| Signal::new(None));
     let mut load_error = use_signal(|| None::<String>);
     let mut switcher_open = use_signal(|| false);
+    let mut settings_open: SettingsOpen = use_context_provider(|| Signal::new(false));
+    let mut verification: ActiveVerification = use_context_provider(|| Signal::new(None));
+
+    // Incoming verification requests from the user's other devices pop the settings dialog.
+    use_future({
+        let session = session.clone();
+        move || {
+            let session = session.clone();
+            async move {
+                let Ok(mut requests) = session.verification_requests().await else {
+                    return;
+                };
+                while let Some(handle) = requests.next().await {
+                    verification.set(Some(track_verification(handle, true)));
+                    settings_open.set(true);
+                }
+            }
+        }
+    });
 
     use_future(move || {
         let session = session.clone();
@@ -149,6 +169,9 @@ pub fn Shell(session: Session) -> Element {
             }
             if switcher_open() {
                 QuickSwitcher { open: switcher_open }
+            }
+            if settings_open() {
+                Settings {}
             }
         }
     }
