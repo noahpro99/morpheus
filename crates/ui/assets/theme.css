@@ -18,7 +18,16 @@
   --danger: #ff6b6b;
   --own: #b8c0ff;
 
+  /* Corner scale. Nested surfaces use the next size down so corners stay
+     concentric: inner radius = outer radius - padding. */
+  --radius-sm: 6px;
   --radius: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 999px;
+  /* The bottom band: the user pill and the message box share it. */
+  --bottom-h: 44px;
+  --bottom-gap: 12px;
   --rail-w: 72px;
   --sidebar-w: 248px;
   --members-w: 232px;
@@ -1191,3 +1200,66 @@ button.sender:hover { text-decoration: underline; }
 .context-submenu.grid .context-item { padding-left: 0; justify-content: center; }
 .member-toggle, .pin-toggle { display: inline-flex; align-items: center; gap: 5px; }
 .titlebar-button, .nav-button, .window-controls button { display: inline-flex; align-items: center; justify-content: center; }
+
+/* ---- Bottom band: user pill + message box ---------------------------------- */
+
+.shell-body {
+  grid-template-rows: 1fr auto;
+  grid-template-areas:
+    "rail sidebar chat side"
+    "user user chat side";
+}
+.shell.no-side .shell-body { grid-template-areas: "rail sidebar chat" "user user chat"; }
+.rail { grid-area: rail; }
+.sidebar { grid-area: sidebar; }
+.chat { grid-area: chat; }
+.members, .thread-panel { grid-area: side; }
+.user-bar {
+  grid-area: user;
+  height: var(--bottom-h);
+  margin: 0 var(--bottom-gap) var(--bottom-gap);
+  padding: 0 6px 0 4px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  gap: 8px;
+}
+.user-bar .profile-chip { height: 36px; padding: 2px 8px 2px 2px; border-radius: var(--radius-sm); }
+.user-bar .profile-chip .avatar { width: 32px; height: 32px; }
+.user-bar .settings-button { width: 32px; height: 32px; padding: 0; display: grid; place-items: center; border-radius: var(--radius-sm); }
+.rail { padding-bottom: 8px; }
+.sidebar .room-list { padding-bottom: 4px; }
+
+.composer { padding: 0 16px var(--bottom-gap); }
+.composer-row {
+  min-height: var(--bottom-h);
+  padding: 0 6px 0 4px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  gap: 6px;
+}
+.composer input { padding: 10px 8px 10px 4px; background: transparent; border-radius: 0; }
+.attach-button {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+}
+.attach-button:hover { background: var(--bg-selected); }
+.composer-banner { border-radius: var(--radius-lg) var(--radius-lg) 0 0; margin-bottom: 0; }
+.composer-banner + .composer-row { border-radius: 0 0 var(--radius-lg) var(--radius-lg); }
+.composer-banner + input { border-radius: 0; }
+.typing { height: 20px; }
+
+/* Concentric corners elsewhere: dialogs are xl with sm/md inside, menus lg with sm rows. */
+.context-menu { border-radius: var(--radius-lg); padding: 6px; }
+.context-item { border-radius: var(--radius-sm); }
+.context-reaction { border-radius: var(--radius-sm); }
+.inbox-panel { border-radius: var(--radius-lg); }
+.inbox-item { border-radius: var(--radius-sm); }
+.settings, .profile-modal, .profile-editor, .message-dialog, .switcher { border-radius: var(--radius-xl); }
+.profile-editor input, .message-dialog input, .recovery-form input, .login input { border-radius: var(--radius); }
+.settings-actions button, .profile-editor button, .message-dialog button, .verification button { border-radius: var(--radius); }
+.switcher-item { border-radius: var(--radius-sm); }
+.room, .member, .ghost { border-radius: var(--radius-sm); }
+.pinned-item, .attachment-card, .video-card, .image { border-radius: var(--radius); }
+.jump-to-bottom { border-radius: var(--radius-pill); }

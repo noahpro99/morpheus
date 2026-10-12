@@ -57,7 +57,7 @@ async fn login_browse_rooms_and_send() {
     app.wait_for_text(".chat-header h2", "dev", DEFAULT_WAIT)
         .await
         .expect("dev header");
-    app.wait_for_text(".message .body", "sliding sync is working", DEFAULT_WAIT)
+    app.reveal_message("sliding sync is working", DEFAULT_WAIT)
         .await
         .expect("dev history");
 
