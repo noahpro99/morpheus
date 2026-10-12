@@ -1,8 +1,8 @@
 //! Dialogs reached from a message's right-click menu: who reacted, report a
 //! message, and the room's pinned messages (also behind the header pin).
 
-use dioxus::prelude::*;
 use super::toast::report;
+use dioxus::prelude::*;
 use morpheus_core::{Message, OwnedEventId, OwnedRoomId, Session};
 
 use super::shell::Selected;
@@ -26,7 +26,12 @@ pub type Pinned = Signal<PinnedIds>;
 pub type PinnedRefresh = Signal<u32>;
 
 /// Install the pinned-ids fetcher. Call once in the shell.
-pub fn use_pinned_fetcher(session: Session, selected: Selected, refresh: PinnedRefresh, mut pinned: Pinned) {
+pub fn use_pinned_fetcher(
+    session: Session,
+    selected: Selected,
+    refresh: PinnedRefresh,
+    mut pinned: Pinned,
+) {
     use_effect(move || {
         let Some(room_id) = selected() else {
             pinned.set(PinnedIds::default());
@@ -85,7 +90,9 @@ pub fn ReportModal(event_id: OwnedEventId) -> Element {
 
     let submit = move |evt: FormEvent| {
         evt.prevent_default();
-        let Some(room_id) = selected.peek().clone() else { return };
+        let Some(room_id) = selected.peek().clone() else {
+            return;
+        };
         if busy() {
             return;
         }
@@ -136,7 +143,12 @@ pub fn PinnedPanel(room_id: OwnedRoomId) -> Element {
     let pinned = use_resource(use_reactive!(|room_id| {
         let session = fetcher.clone();
         let _ = refresh();
-        async move { session.pinned_messages(room_id).await.map_err(|e| e.to_string()) }
+        async move {
+            session
+                .pinned_messages(room_id)
+                .await
+                .map_err(|e| e.to_string())
+        }
     }));
 
     rsx! {

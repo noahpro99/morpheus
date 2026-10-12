@@ -24,7 +24,8 @@ impl Session {
                     continue;
                 }
                 if let Ok(Some(member)) = room.get_member_no_sync(&user_id).await
-                    && member.membership() == &matrix_sdk::ruma::events::room::member::MembershipState::Join
+                    && member.membership()
+                        == &matrix_sdk::ruma::events::room::member::MembershipState::Join
                 {
                     let name = room
                         .cached_display_name()
@@ -39,7 +40,11 @@ impl Session {
     }
 
     /// The user's role in a room, if they are a member.
-    pub fn member_role(&self, room_id: OwnedRoomId, user_id: OwnedUserId) -> CoreFuture<Option<MemberRole>> {
+    pub fn member_role(
+        &self,
+        room_id: OwnedRoomId,
+        user_id: OwnedUserId,
+    ) -> CoreFuture<Option<MemberRole>> {
         let room = self.room(&room_id);
         self.core.run(async move {
             let member = room?.get_member_no_sync(&user_id).await?;
@@ -85,7 +90,10 @@ impl Session {
         let client = self.client.clone();
         self.core.run(async move {
             client
-                .send(report_user::v3::Request::new(user_id, reason.trim().to_owned()))
+                .send(report_user::v3::Request::new(
+                    user_id,
+                    reason.trim().to_owned(),
+                ))
                 .await?;
             Ok(())
         })

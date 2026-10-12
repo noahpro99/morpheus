@@ -34,11 +34,17 @@ impl Core {
 
     /// Like [`Core::new`] with the session credential store pinned instead
     /// of probing the OS keyring (tests use the encrypted file).
-    pub fn with_session_store(data_dir: impl Into<PathBuf>, kind: SessionStoreKind) -> Result<Self> {
+    pub fn with_session_store(
+        data_dir: impl Into<PathBuf>,
+        kind: SessionStoreKind,
+    ) -> Result<Self> {
         Self::build(data_dir, Some(kind))
     }
 
-    fn build(data_dir: impl Into<PathBuf>, session_store_kind: Option<SessionStoreKind>) -> Result<Self> {
+    fn build(
+        data_dir: impl Into<PathBuf>,
+        session_store_kind: Option<SessionStoreKind>,
+    ) -> Result<Self> {
         let data_dir = data_dir.into();
         std::fs::create_dir_all(&data_dir)?;
 

@@ -69,7 +69,9 @@ impl RoomSummary {
             None
         };
         let muted = matches!(
-            settings.get_user_defined_room_notification_mode(room.room_id()).await,
+            settings
+                .get_user_defined_room_notification_mode(room.room_id())
+                .await,
             Some(RoomNotificationMode::Mute)
         );
         let name = room
@@ -83,7 +85,11 @@ impl RoomSummary {
         // DMs rarely set a room avatar; show the other person instead.
         let mut avatar = room.avatar_url();
         if avatar.is_none() && is_dm {
-            avatar = room.heroes().await.into_iter().find_map(|hero| hero.avatar_url);
+            avatar = room
+                .heroes()
+                .await
+                .into_iter()
+                .find_map(|hero| hero.avatar_url);
         }
 
         Self {
@@ -240,8 +246,10 @@ impl Session {
                     let mut mapped = Vec::with_capacity(diffs.len());
                     for diff in diffs {
                         mapped.push(
-                            map_diff_async(diff, |item| RoomSummary::from_room(item.into_inner(), &settings))
-                                .await,
+                            map_diff_async(diff, |item| {
+                                RoomSummary::from_room(item.into_inner(), &settings)
+                            })
+                            .await,
                         );
                     }
                     if tx.send(mapped).is_err() {
@@ -289,7 +297,9 @@ impl Session {
                 .ok_or_else(|| crate::Error::UnknownRoom(room_id.clone()))?;
             let timeline = room.timeline().await?;
             timeline
-                .mark_as_read(matrix_sdk::ruma::api::client::receipt::create_receipt::v3::ReceiptType::Read)
+                .mark_as_read(
+                    matrix_sdk::ruma::api::client::receipt::create_receipt::v3::ReceiptType::Read,
+                )
                 .await?;
             room.set_unread_flag(false).await?;
             Ok(())
@@ -304,10 +314,17 @@ impl Session {
                 .get_room(&room_id)
                 .ok_or_else(|| crate::Error::UnknownRoom(room_id.clone()))?;
             let settings = client.notification_settings().await;
-            let mode = match settings.get_user_defined_room_notification_mode(&room_id).await {
+            let mode = match settings
+                .get_user_defined_room_notification_mode(&room_id)
+                .await
+            {
                 Some(mode) => mode,
                 None => {
-                    let encrypted = room.latest_encryption_state().await.map(|s| s.is_encrypted()).unwrap_or(false);
+                    let encrypted = room
+                        .latest_encryption_state()
+                        .await
+                        .map(|s| s.is_encrypted())
+                        .unwrap_or(false);
                     settings
                         .get_default_room_notification_mode(
                             IsEncrypted::from(encrypted),
@@ -334,7 +351,12 @@ impl Session {
     }
 
     /// Rename a room and/or change its topic (`None` leaves a field alone).
-    pub fn edit_room(&self, room_id: OwnedRoomId, name: Option<String>, topic: Option<String>) -> CoreFuture<()> {
+    pub fn edit_room(
+        &self,
+        room_id: OwnedRoomId,
+        name: Option<String>,
+        topic: Option<String>,
+    ) -> CoreFuture<()> {
         let client = self.client.clone();
         self.core.run(async move {
             let room = client
@@ -352,7 +374,12 @@ impl Session {
 
     /// Create a room. Inside a space, the room is added as a child of it and
     /// links back, so it shows up under the space's badge.
-    pub fn create_room(&self, name: String, topic: String, space: Option<OwnedRoomId>) -> CoreFuture<OwnedRoomId> {
+    pub fn create_room(
+        &self,
+        name: String,
+        topic: String,
+        space: Option<OwnedRoomId>,
+    ) -> CoreFuture<OwnedRoomId> {
         let client = self.client.clone();
         self.core.run(async move {
             let server = client
@@ -377,7 +404,10 @@ impl Session {
                 && let Some(space_room) = client.get_room(&space_id)
             {
                 space_room
-                    .send_state_event_for_key(room.room_id(), SpaceChildEventContent::new(vec![server]))
+                    .send_state_event_for_key(
+                        room.room_id(),
+                        SpaceChildEventContent::new(vec![server]),
+                    )
                     .await?;
             }
             Ok(room.room_id().to_owned())

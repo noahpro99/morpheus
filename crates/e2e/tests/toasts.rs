@@ -16,20 +16,32 @@ async fn a_forbidden_pin_shows_a_toast_that_dismisses_on_click() {
         return;
     };
     let mut app = App::launch(&hs).await.expect("launch app");
-    app.wait_for("form.login", DEFAULT_WAIT).await.expect("login form");
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
     // bob is a plain member of #general: pinning needs moderator power.
-    app.type_into("form.login input[name=username]", "bob").await.expect("username");
-    app.type_into("form.login input[name=password]", "bob-password").await.expect("password");
+    app.type_into("form.login input[name=username]", "bob")
+        .await
+        .expect("username");
+    app.type_into("form.login input[name=password]", "bob-password")
+        .await
+        .expect("password");
     app.submit("form.login").await.expect("submit");
-    app.wait_for(".room", DEFAULT_WAIT).await.expect("rooms listed");
+    app.wait_for(".room", DEFAULT_WAIT)
+        .await
+        .expect("rooms listed");
     app.open_room("general").await.expect("open general");
-    app.wait_for(".composer input:not([disabled])", DEFAULT_WAIT).await.expect("composer ready");
+    app.wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
+        .await
+        .expect("composer ready");
 
     // Pin a message of bob's own, once it has an event id.
     let text = format!("toast {}", std::process::id());
     app.type_into(".composer input", &text).await.expect("type");
     app.press(".composer input", "Enter").await.expect("send");
-    app.wait_for_exact_text(".message.own:not(.pending) .body", &text, DEFAULT_WAIT).await.expect("message sent");
+    app.wait_for_exact_text(".message.own:not(.pending) .body", &text, DEFAULT_WAIT)
+        .await
+        .expect("message sent");
     let row = format!(
         "[...document.querySelectorAll('.message.own')].find(m => m.querySelector('.body')?.textContent === {})",
         serde_json::to_string(&text).expect("json")
@@ -39,9 +51,17 @@ async fn a_forbidden_pin_shows_a_toast_that_dismisses_on_click() {
     ))
     .await
     .expect("right-click");
-    app.wait_for_text(".context-item", "Pin message", DEFAULT_WAIT).await.expect("menu built");
-    app.click_text(".context-item", "Pin message").await.expect("pin");
-    app.wait_for_text(".toast", "Pin failed", DEFAULT_WAIT).await.expect("toast shown");
+    app.wait_for_text(".context-item", "Pin message", DEFAULT_WAIT)
+        .await
+        .expect("menu built");
+    app.click_text(".context-item", "Pin message")
+        .await
+        .expect("pin");
+    app.wait_for_text(".toast", "Pin failed", DEFAULT_WAIT)
+        .await
+        .expect("toast shown");
     app.click(".toast").await.expect("dismiss");
-    app.wait_for_js("return !document.querySelector('.toast')", DEFAULT_WAIT).await.expect("toast gone");
+    app.wait_for_js("return !document.querySelector('.toast')", DEFAULT_WAIT)
+        .await
+        .expect("toast gone");
 }

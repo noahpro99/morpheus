@@ -18,9 +18,12 @@ async fn login_and_open(app: &mut App, user: &str, room: &str) {
     app.type_into("form.login input[name=username]", user)
         .await
         .expect("username");
-    app.type_into("form.login input[name=password]", &format!("{user}-password"))
-        .await
-        .expect("password");
+    app.type_into(
+        "form.login input[name=password]",
+        &format!("{user}-password"),
+    )
+    .await
+    .expect("password");
     app.submit("form.login").await.expect("submit");
     app.wait_for(".room", DEFAULT_WAIT)
         .await
@@ -57,9 +60,12 @@ async fn open_menu_on(app: &mut App, row_js: &str) {
 }
 
 async fn menu_closed(app: &mut App) {
-    app.wait_for_js("return document.querySelector('.context-menu') === null;", DEFAULT_WAIT)
-        .await
-        .expect("menu closed");
+    app.wait_for_js(
+        "return document.querySelector('.context-menu') === null;",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("menu closed");
 }
 
 async fn click_submenu(app: &mut App, parent: &str, child: &str) {
@@ -99,18 +105,27 @@ async fn reactions_picker_viewer_and_removal() {
 
     // View reactions lists the sender.
     open_menu_on(&mut app, &row).await;
-    app.click_text(".context-item", "View reactions").await.expect("view");
+    app.click_text(".context-item", "View reactions")
+        .await
+        .expect("view");
     app.wait_for_text(".reactions-dialog .reaction-senders", "alice", DEFAULT_WAIT)
         .await
         .expect("alice listed under 🎉");
-    app.press(".reactions-dialog", "Escape").await.expect("escape");
-    app.wait_for_js("return document.querySelector('.reactions-dialog') === null;", DEFAULT_WAIT)
+    app.press(".reactions-dialog", "Escape")
         .await
-        .expect("dialog closed");
+        .expect("escape");
+    app.wait_for_js(
+        "return document.querySelector('.reactions-dialog') === null;",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("dialog closed");
 
     // Remove all my reactions.
     open_menu_on(&mut app, &row).await;
-    app.click_text(".context-item", "Remove all my reactions").await.expect("remove");
+    app.click_text(".context-item", "Remove all my reactions")
+        .await
+        .expect("remove");
     menu_closed(&mut app).await;
     app.wait_for_js(
         &format!("return {row}.querySelector('.reaction.mine') === null;"),
@@ -129,15 +144,21 @@ async fn reactions_picker_viewer_and_removal() {
     app.reveal_element(".message:not(.own):not(.system)", DEFAULT_WAIT)
         .await
         .expect("another sender's message");
-    app.right_click(".message:not(.own):not(.system)").await.expect("other");
+    app.right_click(".message:not(.own):not(.system)")
+        .await
+        .expect("other");
     app.wait_for_text(".context-item", "Report message", DEFAULT_WAIT)
         .await
         .expect("report offered on others' messages");
-    app.click_text(".context-item", "Report message").await.expect("report");
+    app.click_text(".context-item", "Report message")
+        .await
+        .expect("report");
     app.wait_for(".report-dialog input[name=reason]", DEFAULT_WAIT)
         .await
         .expect("report dialog");
-    app.type_into(".report-dialog input[name=reason]", "e2e test report").await.expect("reason");
+    app.type_into(".report-dialog input[name=reason]", "e2e test report")
+        .await
+        .expect("reason");
     app.submit(".report-dialog").await.expect("submit");
     app.wait_for_text(".report-dialog .ok", "Reported", DEFAULT_WAIT)
         .await
@@ -155,9 +176,13 @@ async fn pin_unpin_and_the_pinned_panel() {
     login_and_open(&mut app, "alice", "general").await;
 
     // Earlier failed runs may have left "pin me" messages pinned: sweep them.
-    app.wait_for(".pin-toggle", DEFAULT_WAIT).await.expect("pin toggle");
+    app.wait_for(".pin-toggle", DEFAULT_WAIT)
+        .await
+        .expect("pin toggle");
     app.click(".pin-toggle").await.expect("open pinned panel");
-    app.wait_for(".pinned-dialog", DEFAULT_WAIT).await.expect("panel");
+    app.wait_for(".pinned-dialog", DEFAULT_WAIT)
+        .await
+        .expect("panel");
     app.wait_for_js("return document.querySelector('.pinned-dialog .muted') !== null || document.querySelector('.pinned-item') !== null;", DEFAULT_WAIT)
         .await
         .expect("panel loaded");
@@ -168,10 +193,18 @@ async fn pin_unpin_and_the_pinned_panel() {
         .await
         .expect("leftovers unpinned");
     app.press(".pinned-dialog", "Escape").await.expect("escape");
-    app.wait_for_js("return document.querySelector('.pinned-dialog') === null;", DEFAULT_WAIT).await.expect("panel closed");
+    app.wait_for_js(
+        "return document.querySelector('.pinned-dialog') === null;",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("panel closed");
 
     let row = send_fresh(&mut app, "pin me").await;
-    let text = app.eval(&format!("return {row}.querySelector('.body').textContent;")).await.expect("text");
+    let text = app
+        .eval(&format!("return {row}.querySelector('.body').textContent;"))
+        .await
+        .expect("text");
     let text = text.as_str().unwrap_or_default().to_owned();
     let before: usize = app
         .text(".pin-toggle")
@@ -184,7 +217,9 @@ async fn pin_unpin_and_the_pinned_panel() {
         .unwrap_or(0);
 
     open_menu_on(&mut app, &row).await;
-    app.click_text(".context-item", "Pin message").await.expect("pin");
+    app.click_text(".context-item", "Pin message")
+        .await
+        .expect("pin");
     menu_closed(&mut app).await;
     app.wait_for_text(".pin-toggle", &(before + 1).to_string(), DEFAULT_WAIT)
         .await
@@ -231,7 +266,9 @@ async fn mark_unread_and_forward() {
 
     // Mark unread: the row stays bold after leaving, and clears on return.
     open_menu_on(&mut app, &row).await;
-    app.click_text(".context-item", "Mark unread").await.expect("mark unread");
+    app.click_text(".context-item", "Mark unread")
+        .await
+        .expect("mark unread");
     menu_closed(&mut app).await;
     app.wait_for(".room.selected.unread", DEFAULT_WAIT)
         .await

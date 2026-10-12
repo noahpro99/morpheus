@@ -10,9 +10,9 @@ use matrix_sdk::ruma::{
     },
 };
 use matrix_sdk_ui::timeline::{
-    AttachmentConfig, AttachmentSource, EventTimelineItem, MembershipChange, MsgLikeKind, RoomExt, Timeline,
-    TimelineDetails, TimelineEventItemId, TimelineFocus, TimelineItem, TimelineItemContent,
-    TimelineItemKind, VirtualTimelineItem,
+    AttachmentConfig, AttachmentSource, EventTimelineItem, MembershipChange, MsgLikeKind, RoomExt,
+    Timeline, TimelineDetails, TimelineEventItemId, TimelineFocus, TimelineItem,
+    TimelineItemContent, TimelineItemKind, VirtualTimelineItem,
 };
 use std::collections::HashSet;
 
@@ -561,7 +561,12 @@ impl TimelineHandle {
     /// Upload in-memory bytes (a dropped or pasted file) as an attachment.
     /// The message type follows `mime`, falling back to the file name's
     /// extension and then to a generic file.
-    pub fn send_attachment_bytes(&self, filename: String, mime: String, bytes: Vec<u8>) -> CoreFuture<()> {
+    pub fn send_attachment_bytes(
+        &self,
+        filename: String,
+        mime: String,
+        bytes: Vec<u8>,
+    ) -> CoreFuture<()> {
         let timeline = self.timeline.clone();
         self.core.run(async move {
             let mime = mime
@@ -570,7 +575,11 @@ impl TimelineHandle {
                 .filter(|m| m.type_() != mime_guess::mime::STAR)
                 .unwrap_or_else(|| mime_guess::from_path(&filename).first_or_octet_stream());
             timeline
-                .send_attachment(AttachmentSource::Data { bytes, filename }, mime, AttachmentConfig::default())
+                .send_attachment(
+                    AttachmentSource::Data { bytes, filename },
+                    mime,
+                    AttachmentConfig::default(),
+                )
                 .await?;
             Ok(())
         })

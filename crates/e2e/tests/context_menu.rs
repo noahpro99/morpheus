@@ -62,11 +62,20 @@ async fn message_menu_replies_reacts_and_offers_edit_delete() {
         "{mine}.dispatchEvent(new MouseEvent('contextmenu', {{ bubbles: true, cancelable: true, clientX: 400, clientY: 300 }}));"
     );
 
-    app.eval(&select_mine).await.expect("right-click own message");
+    app.eval(&select_mine)
+        .await
+        .expect("right-click own message");
     app.wait_for(".context-menu", DEFAULT_WAIT)
         .await
         .expect("menu opens");
-    for label in ["Reply", "Reply in thread", "Edit message", "Copy text", "Copy message link", "Delete message"] {
+    for label in [
+        "Reply",
+        "Reply in thread",
+        "Edit message",
+        "Copy text",
+        "Copy message link",
+        "Delete message",
+    ] {
         app.wait_for_text(".context-item", label, Duration::from_secs(2))
             .await
             .unwrap_or_else(|e| panic!("menu item {label}: {e}"));
@@ -83,8 +92,12 @@ async fn message_menu_replies_reacts_and_offers_edit_delete() {
 
     // React from the menu.
     app.eval(&select_mine).await.expect("right-click again");
-    app.wait_for(".context-menu", DEFAULT_WAIT).await.expect("menu");
-    app.click_text(".context-reaction", "👍").await.expect("thumbs up");
+    app.wait_for(".context-menu", DEFAULT_WAIT)
+        .await
+        .expect("menu");
+    app.click_text(".context-reaction", "👍")
+        .await
+        .expect("thumbs up");
     menu_closed(&mut app).await;
     app.wait_for_js(
         &format!("return {mine}.querySelector('.reaction.mine') !== null;"),
@@ -95,8 +108,12 @@ async fn message_menu_replies_reacts_and_offers_edit_delete() {
 
     // Reply from the menu puts the composer in reply mode.
     app.eval(&select_mine).await.expect("right-click again");
-    app.wait_for(".context-menu", DEFAULT_WAIT).await.expect("menu");
-    app.click_text(".context-item", "Reply").await.expect("reply");
+    app.wait_for(".context-menu", DEFAULT_WAIT)
+        .await
+        .expect("menu");
+    app.click_text(".context-item", "Reply")
+        .await
+        .expect("reply");
     menu_closed(&mut app).await;
     app.wait_for(".composer-banner", DEFAULT_WAIT)
         .await
@@ -107,14 +124,21 @@ async fn message_menu_replies_reacts_and_offers_edit_delete() {
     app.reveal_element(".message:not(.own):not(.system)", DEFAULT_WAIT)
         .await
         .expect("another sender's message");
-    app.right_click(".message:not(.own):not(.system)").await.expect("right-click other");
-    app.wait_for(".context-menu", DEFAULT_WAIT).await.expect("menu");
+    app.right_click(".message:not(.own):not(.system)")
+        .await
+        .expect("right-click other");
+    app.wait_for(".context-menu", DEFAULT_WAIT)
+        .await
+        .expect("menu");
     let labels = app
         .eval("return [...document.querySelectorAll('.context-item')].map(e => e.textContent).join('|');")
         .await
         .expect("labels");
     let labels = labels.as_str().unwrap_or_default().to_owned();
-    assert!(labels.contains("Reply") && !labels.contains("Delete") && !labels.contains("Edit"), "got {labels}");
+    assert!(
+        labels.contains("Reply") && !labels.contains("Delete") && !labels.contains("Edit"),
+        "got {labels}"
+    );
     // A click outside closes it.
     app.click(".context-backdrop").await.expect("click outside");
     menu_closed(&mut app).await;
@@ -142,7 +166,9 @@ async fn room_and_member_menus_and_no_native_menu() {
     app.wait_for(".members .member", DEFAULT_WAIT)
         .await
         .expect("members listed");
-    app.right_click(".members .member").await.expect("right-click member");
+    app.right_click(".members .member")
+        .await
+        .expect("right-click member");
     app.wait_for_text(".context-item", "Copy user ID", DEFAULT_WAIT)
         .await
         .expect("member menu");
@@ -163,6 +189,14 @@ async fn room_and_member_menus_and_no_native_menu() {
         )
         .await
         .expect("dispatch");
-    assert_eq!(prevented.as_bool(), Some(true), "native context menu suppressed");
-    assert_eq!(app.count(".context-menu").await.expect("count"), 0, "and no custom menu for dead space");
+    assert_eq!(
+        prevented.as_bool(),
+        Some(true),
+        "native context menu suppressed"
+    );
+    assert_eq!(
+        app.count(".context-menu").await.expect("count"),
+        0,
+        "and no custom menu for dead space"
+    );
 }

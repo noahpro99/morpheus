@@ -1,12 +1,12 @@
-use dioxus::prelude::*;
 use super::toast::report;
+use dioxus::prelude::*;
 use morpheus_core::{NotifyMode, OwnedRoomId, RoomSummary, Session};
 
 use super::context_menu::{MenuItem, copy_to_clipboard, open_menu, open_menu_at};
 use super::invites::{InviteRow, pending_invites};
-use super::space_menu::space_menu;
 use super::room_dialogs::{OpenRoomDialog, RoomDialog};
 use super::shell::{Rooms, Scope, Selected, SelectedSpace, UiPrefs, go_to, rooms_in_scope};
+use super::space_menu::space_menu;
 use crate::icons::Icon;
 use crate::media::Avatar;
 
@@ -37,19 +37,29 @@ pub fn RoomList(error: Option<String>) -> Element {
             .collect(),
         _ => Vec::new(),
     };
-    let category_of = |room: &RoomSummary| categories.iter().find(|(id, _)| room.parent_spaces.contains(id)).cloned();
+    let category_of = |room: &RoomSummary| {
+        categories
+            .iter()
+            .find(|(id, _)| room.parent_spaces.contains(id))
+            .cloned()
+    };
     // Invites show in every scope, like Discord's pending list.
     let invites = pending_invites(&rooms.read());
     let no_rooms = channels.is_empty();
-    let (uncategorised, categorised): (Vec<RoomSummary>, Vec<RoomSummary>) =
-        channels.into_iter().partition(|room| category_of(room).is_none());
+    let (uncategorised, categorised): (Vec<RoomSummary>, Vec<RoomSummary>) = channels
+        .into_iter()
+        .partition(|room| category_of(room).is_none());
 
     // Clicking the space name opens the server menu.
     let header_menu = {
         let scope = scope.clone();
         move |e: Event<MouseData>| {
-            let Scope::Space(space_id) = &scope else { return };
-            let Some(space) = rooms.read().iter().find(|r| &r.id == space_id).cloned() else { return };
+            let Scope::Space(space_id) = &scope else {
+                return;
+            };
+            let Some(space) = rooms.read().iter().find(|r| &r.id == space_id).cloned() else {
+                return;
+            };
             open_menu(&e, space_menu(&session, rooms, &space), None);
         }
     };
@@ -225,7 +235,12 @@ fn room_menu(
     .map(|(choice, label)| {
         MenuItem::new(label, {
             let (session, room_id) = (session.clone(), room_id.clone());
-            move || run("notification mode", session.set_notify_mode(room_id.clone(), choice))
+            move || {
+                run(
+                    "notification mode",
+                    session.set_notify_mode(room_id.clone(), choice),
+                )
+            }
         })
         .checked(mode == Some(choice))
     })

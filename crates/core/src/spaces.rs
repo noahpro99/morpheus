@@ -4,14 +4,13 @@ use matrix_sdk::ruma::{
     OwnedRoomId, OwnedUserId,
     api::client::room::create_room,
     events::{
-        AnyGlobalAccountDataEventContent, GlobalAccountDataEventType,
+        AnyGlobalAccountDataEventContent, GlobalAccountDataEventType, InitialStateEvent,
         room::{
             history_visibility::{HistoryVisibility, RoomHistoryVisibilityEventContent},
             join_rules::{JoinRule, RoomJoinRulesEventContent},
             member::RoomMemberEventContent,
         },
         space::{child::SpaceChildEventContent, parent::SpaceParentEventContent},
-        InitialStateEvent,
     },
     room::RoomType,
     serde::Raw,
@@ -65,8 +64,13 @@ impl Session {
         let room = self.room(&room_id);
         self.core.run(async move {
             let room = room?;
-            let rule = if privacy.public { JoinRule::Public } else { JoinRule::Invite };
-            room.send_state_event(RoomJoinRulesEventContent::new(rule)).await?;
+            let rule = if privacy.public {
+                JoinRule::Public
+            } else {
+                JoinRule::Invite
+            };
+            room.send_state_event(RoomJoinRulesEventContent::new(rule))
+                .await?;
             let visibility = match privacy.history {
                 History::Shared => HistoryVisibility::Shared,
                 History::Invited => HistoryVisibility::Invited,
@@ -88,7 +92,11 @@ impl Session {
     }
 
     /// Upload an image and make it the room's (or space's) avatar.
-    pub fn set_room_avatar(&self, room_id: OwnedRoomId, path: std::path::PathBuf) -> CoreFuture<()> {
+    pub fn set_room_avatar(
+        &self,
+        room_id: OwnedRoomId,
+        path: std::path::PathBuf,
+    ) -> CoreFuture<()> {
         let room = self.room(&room_id);
         self.core.run(async move {
             let mime = mime_guess::from_path(&path).first_or_octet_stream();
@@ -108,7 +116,9 @@ impl Session {
             Ok(match member {
                 Some(member) => RoomProfile {
                     name: member.name().to_owned(),
-                    avatar: member.avatar_url().map(|u| MediaRef::from_mxc(u.to_owned())),
+                    avatar: member
+                        .avatar_url()
+                        .map(|u| MediaRef::from_mxc(u.to_owned())),
                 },
                 None => RoomProfile {
                     name: me.localpart().to_owned(),
@@ -172,7 +182,11 @@ impl Session {
 
     /// Create a space, optionally nested under `parent` (a Discord-style
     /// "category").
-    pub fn create_space(&self, name: String, parent: Option<OwnedRoomId>) -> CoreFuture<OwnedRoomId> {
+    pub fn create_space(
+        &self,
+        name: String,
+        parent: Option<OwnedRoomId>,
+    ) -> CoreFuture<OwnedRoomId> {
         let client = self.client.clone();
         self.core.run(async move {
             let server = client
@@ -198,7 +212,10 @@ impl Session {
                 && let Some(parent_room) = client.get_room(&parent_id)
             {
                 parent_room
-                    .send_state_event_for_key(space.room_id(), SpaceChildEventContent::new(vec![server]))
+                    .send_state_event_for_key(
+                        space.room_id(),
+                        SpaceChildEventContent::new(vec![server]),
+                    )
                     .await?;
             }
             Ok(space.room_id().to_owned())
@@ -236,7 +253,8 @@ impl Session {
     pub fn set_ui_prefs(&self, prefs: Value) -> CoreFuture<()> {
         let client = self.client.clone();
         self.core.run(async move {
-            let raw: Raw<AnyGlobalAccountDataEventContent> = Raw::from_json(serde_json::value::to_raw_value(&prefs)?);
+            let raw: Raw<AnyGlobalAccountDataEventContent> =
+                Raw::from_json(serde_json::value::to_raw_value(&prefs)?);
             client
                 .account()
                 .set_account_data_raw(GlobalAccountDataEventType::from(UI_PREFS_TYPE), raw)

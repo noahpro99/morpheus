@@ -12,11 +12,22 @@ fn homeserver() -> Option<String> {
 }
 
 async fn login(app: &mut App, user: &str) {
-    app.wait_for("form.login", DEFAULT_WAIT).await.expect("login form");
-    app.type_into("form.login input[name=username]", user).await.expect("username");
-    app.type_into("form.login input[name=password]", &format!("{user}-password")).await.expect("password");
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    app.type_into("form.login input[name=username]", user)
+        .await
+        .expect("username");
+    app.type_into(
+        "form.login input[name=password]",
+        &format!("{user}-password"),
+    )
+    .await
+    .expect("password");
     app.submit("form.login").await.expect("submit");
-    app.wait_for(".room", DEFAULT_WAIT).await.expect("rooms listed");
+    app.wait_for(".room", DEFAULT_WAIT)
+        .await
+        .expect("rooms listed");
 }
 
 #[tokio::test]
@@ -39,15 +50,28 @@ async fn closing_the_window_keeps_syncing_and_announcing() {
     let mut alice = App::launch(&hs).await.expect("launch alice");
     login(&mut alice, "alice").await;
     alice.open_room("general").await.expect("alice in #general");
-    alice.wait_for(".composer input:not([disabled])", DEFAULT_WAIT).await.expect("composer ready");
+    alice
+        .wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
+        .await
+        .expect("composer ready");
     let text = format!("tray ping {}", std::process::id());
-    alice.type_into(".composer input", &text).await.expect("type");
+    alice
+        .type_into(".composer input", &text)
+        .await
+        .expect("type");
     alice.press(".composer input", "Enter").await.expect("send");
-    alice.wait_for_exact_text(".message.own:not(.pending) .body", &text, DEFAULT_WAIT).await.expect("sent");
+    alice
+        .wait_for_exact_text(".message.own:not(.pending) .body", &text, DEFAULT_WAIT)
+        .await
+        .expect("sent");
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
     // Reopen (what the tray does) and find the message announced meanwhile.
     bob.show_window().await.expect("show window");
-    bob.wait_for_text(".notification-log li", &text, DEFAULT_WAIT).await.expect("announced while hidden");
-    bob.wait_for(".composer input", DEFAULT_WAIT).await.expect("still usable");
+    bob.wait_for_text(".notification-log li", &text, DEFAULT_WAIT)
+        .await
+        .expect("announced while hidden");
+    bob.wait_for(".composer input", DEFAULT_WAIT)
+        .await
+        .expect("still usable");
 }

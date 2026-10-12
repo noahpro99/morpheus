@@ -14,14 +14,14 @@ mod rail;
 mod room_dialogs;
 mod room_list;
 mod settings;
-mod space_menu;
 mod shell;
+mod space_menu;
 mod switcher;
 mod thread;
 mod timeline;
-mod user_bar;
 mod titlebar;
 mod toast;
+mod user_bar;
 
 pub use login::Login;
 pub use shell::Shell;

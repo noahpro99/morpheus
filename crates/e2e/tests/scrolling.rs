@@ -61,7 +61,9 @@ async fn rooms_open_at_the_newest_message_and_jump_back_after_scrolling() {
 
     // Scroll up a few screens: the button appears.
     // A tall window can show the whole first page; load enough history to scroll.
-    app.reveal("a scrollable timeline", SCROLLABLE, DEFAULT_WAIT).await.expect("history");
+    app.reveal("a scrollable timeline", SCROLLABLE, DEFAULT_WAIT)
+        .await
+        .expect("history");
     app.eval("document.querySelector('.timeline').scrollTop = -2000;")
         .await
         .expect("scroll up");
@@ -97,7 +99,9 @@ async fn undecryptable_messages_render_as_placeholders() {
     let mut app = App::launch(&hs).await.expect("launch app");
     login(&mut app).await;
 
-    app.open_room("encrypted").await.expect("open encrypted room");
+    app.open_room("encrypted")
+        .await
+        .expect("open encrypted room");
     app.wait_for(".message .undecrypted.skeleton", DEFAULT_WAIT)
         .await
         .expect("a placeholder for the message without keys");
@@ -106,7 +110,10 @@ async fn undecryptable_messages_render_as_placeholders() {
         .await
         .expect("timeline text");
     assert!(
-        !text.as_str().unwrap_or_default().contains("Unable to decrypt"),
+        !text
+            .as_str()
+            .unwrap_or_default()
+            .contains("Unable to decrypt"),
         "no error text for messages still waiting on keys"
     );
     // Placeholders are inert: nothing to click or hover into actions.

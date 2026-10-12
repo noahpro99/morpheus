@@ -1,5 +1,5 @@
-use dioxus::prelude::*;
 use super::toast::report;
+use dioxus::prelude::*;
 use morpheus_core::{Member, MessageId, OwnedEventId, OwnedRoomId, Session, TimelineHandle};
 
 use super::emoji;
@@ -12,8 +12,14 @@ use crate::icons::{Icon, PLUS, SMILE};
 /// One row of the composer's autocomplete.
 #[derive(Debug, Clone, PartialEq)]
 enum Suggestion {
-    Emoji { emoji: &'static str, code: &'static str },
-    Member { name: String, user_id: String },
+    Emoji {
+        emoji: &'static str,
+        code: &'static str,
+    },
+    Member {
+        name: String,
+        user_id: String,
+    },
 }
 
 impl Suggestion {
@@ -92,9 +98,11 @@ pub fn Composer(
     #[props(default)] placeholder: Option<String>,
     /// Only the room's main composer sends dropped and pasted files; a
     /// thread's composer leaves them alone so nothing is sent twice.
-    #[props(default)] accepts_drops: bool,
+    #[props(default)]
+    accepts_drops: bool,
     /// The room whose members `@` completes; `None` disables mentions.
-    #[props(default)] room_id: Option<OwnedRoomId>,
+    #[props(default)]
+    room_id: Option<OwnedRoomId>,
 ) -> Element {
     let timeline = use_context::<ActiveTimeline>();
     let mut mode = use_context::<Mode>();
@@ -111,7 +119,8 @@ pub fn Composer(
         let session = session.clone();
         move || {
             let text = draft.peek().clone();
-            if last_word(&text).starts_with('@') && members.peek().is_none()
+            if last_word(&text).starts_with('@')
+                && members.peek().is_none()
                 && let Some(room_id) = room_id.clone()
             {
                 let session = session.clone();
@@ -133,7 +142,9 @@ pub fn Composer(
     };
     // Replace the word being typed with the chosen row.
     let mut accept = move |index: usize| {
-        let Some(choice) = suggestions.peek().get(index).cloned() else { return };
+        let Some(choice) = suggestions.peek().get(index).cloned() else {
+            return;
+        };
         let mut text = draft.peek().clone();
         let keep = text.len() - last_word(&text).len();
         text.truncate(keep);
@@ -147,11 +158,16 @@ pub fn Composer(
         if !accepts_drops || drops().0.is_empty() {
             return;
         }
-        let Some(handle) = timeline.peek().clone() else { return };
+        let Some(handle) = timeline.peek().clone() else {
+            return;
+        };
         let files = std::mem::take(&mut drops.write().0);
         spawn(async move {
             for file in files {
-                if let Err(err) = handle.send_attachment_bytes(file.name, file.mime, file.bytes).await {
+                if let Err(err) = handle
+                    .send_attachment_bytes(file.name, file.mime, file.bytes)
+                    .await
+                {
                     report("Upload", &err);
                 }
             }
@@ -256,25 +272,23 @@ pub fn Composer(
     // Shortcuts the shell hands over: attach a file, edit the last message.
     let mut hotkey = use_context::<HotkeyRequest>();
     let last_own = use_hook(try_consume_context::<LastOwnMessage>);
-    use_effect(move || {
-        match hotkey() {
-            Some(Hotkey::Attach) => {
-                hotkey.set(None);
-                attach(());
-            }
-            Some(Hotkey::EditLast) => {
-                hotkey.set(None);
-                if let Some(message) = last_own.and_then(|m| m.peek().0.clone()) {
-                    let original = message.kind.plain_body().unwrap_or_default().to_owned();
-                    draft.set(original.clone());
-                    mode.set(Some(ComposerMode::Edit {
-                        id: message.id.clone(),
-                        original,
-                    }));
-                }
-            }
-            _ => {}
+    use_effect(move || match hotkey() {
+        Some(Hotkey::Attach) => {
+            hotkey.set(None);
+            attach(());
         }
+        Some(Hotkey::EditLast) => {
+            hotkey.set(None);
+            if let Some(message) = last_own.and_then(|m| m.peek().0.clone()) {
+                let original = message.kind.plain_body().unwrap_or_default().to_owned();
+                draft.set(original.clone());
+                mode.set(Some(ComposerMode::Edit {
+                    id: message.id.clone(),
+                    original,
+                }));
+            }
+        }
+        _ => {}
     });
 
     let placeholder_text = placeholder.unwrap_or_else(|| format!("Message #{room_name}"));

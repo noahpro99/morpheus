@@ -11,17 +11,30 @@ fn homeserver() -> Option<String> {
 }
 
 async fn login(app: &mut App, user: &str) {
-    app.wait_for("form.login", DEFAULT_WAIT).await.expect("login form");
-    app.type_into("form.login input[name=username]", user).await.expect("username");
-    app.type_into("form.login input[name=password]", &format!("{user}-password")).await.expect("password");
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    app.type_into("form.login input[name=username]", user)
+        .await
+        .expect("username");
+    app.type_into(
+        "form.login input[name=password]",
+        &format!("{user}-password"),
+    )
+    .await
+    .expect("password");
     app.submit("form.login").await.expect("submit");
-    app.wait_for(".room", DEFAULT_WAIT).await.expect("room listed");
+    app.wait_for(".room", DEFAULT_WAIT)
+        .await
+        .expect("room listed");
 }
 
 async fn send(app: &mut App, text: &str) {
     app.type_into(".composer input", text).await.expect("type");
     app.press(".composer input", "Enter").await.expect("send");
-    app.wait_for_exact_text(".message.own:not(.pending) .body", text, DEFAULT_WAIT).await.expect("message sent");
+    app.wait_for_exact_text(".message.own:not(.pending) .body", text, DEFAULT_WAIT)
+        .await
+        .expect("message sent");
 }
 
 #[tokio::test]
@@ -37,12 +50,17 @@ async fn messages_from_others_are_announced_and_mentions_flagged() {
     let mut alice = App::launch(&hs).await.expect("launch alice");
     login(&mut alice, "alice").await;
     alice.open_room("general").await.expect("alice in #general");
-    alice.wait_for(".composer input:not([disabled])", DEFAULT_WAIT).await.expect("composer ready");
+    alice
+        .wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
+        .await
+        .expect("composer ready");
 
     let pid = std::process::id();
     let plain = format!("notify ping {pid}");
     send(&mut alice, &plain).await;
-    bob.wait_for_text(".notification-log li", &plain, DEFAULT_WAIT).await.expect("announced");
+    bob.wait_for_text(".notification-log li", &plain, DEFAULT_WAIT)
+        .await
+        .expect("announced");
     let flagged = bob
         .eval(&format!(
             "return [...document.querySelectorAll('.notification-log li')].find(li => li.textContent.includes({})).dataset.mention",
@@ -50,8 +68,14 @@ async fn messages_from_others_are_announced_and_mentions_flagged() {
         ))
         .await
         .expect("flag");
-    assert_eq!(flagged.as_str(), Some("false"), "a plain message is not a mention");
-    bob.wait_for_text(".notification-log li", "alice: ", DEFAULT_WAIT).await.expect("sender named");
+    assert_eq!(
+        flagged.as_str(),
+        Some("false"),
+        "a plain message is not a mention"
+    );
+    bob.wait_for_text(".notification-log li", "alice: ", DEFAULT_WAIT)
+        .await
+        .expect("sender named");
 
     let mention = format!("@bob look here {pid}");
     send(&mut alice, &mention).await;
@@ -66,9 +90,21 @@ async fn messages_from_others_are_announced_and_mentions_flagged() {
     .expect("mention flagged");
 
     // The inbox lists the mention and opens the room.
-    bob.click(".titlebar .inbox-button").await.expect("open inbox");
-    bob.wait_for_text(".inbox-mention", &mention, DEFAULT_WAIT).await.expect("mention in inbox");
-    bob.click_text(".inbox-mention", &mention).await.expect("open mention");
-    bob.wait_for_text(".chat-header h2", "general", DEFAULT_WAIT).await.expect("jumped to #general");
-    assert_eq!(bob.count(".inbox-panel").await.expect("count"), 0, "inbox closed");
+    bob.click(".titlebar .inbox-button")
+        .await
+        .expect("open inbox");
+    bob.wait_for_text(".inbox-mention", &mention, DEFAULT_WAIT)
+        .await
+        .expect("mention in inbox");
+    bob.click_text(".inbox-mention", &mention)
+        .await
+        .expect("open mention");
+    bob.wait_for_text(".chat-header h2", "general", DEFAULT_WAIT)
+        .await
+        .expect("jumped to #general");
+    assert_eq!(
+        bob.count(".inbox-panel").await.expect("count"),
+        0,
+        "inbox closed"
+    );
 }

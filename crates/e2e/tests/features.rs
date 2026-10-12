@@ -161,9 +161,7 @@ async fn clicking_image_opens_lightbox() {
     .expect("full-size image loaded as a data URL");
 
     // Esc closes it.
-    app.press("body", "Escape")
-        .await
-        .expect("escape");
+    app.press("body", "Escape").await.expect("escape");
     app.wait_for_js(
         "return document.querySelector('.lightbox-overlay') === null;",
         DEFAULT_WAIT,

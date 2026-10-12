@@ -106,7 +106,9 @@ impl Session {
         self.core.run(async move {
             let user_id = client.user_id().ok_or(Error::NoSession)?.to_owned();
             let mut request = set_presence::v3::Request::new(user_id, PresenceState::Online);
-            request.status_msg = status.map(|s| s.trim().to_owned()).filter(|s| !s.is_empty());
+            request.status_msg = status
+                .map(|s| s.trim().to_owned())
+                .filter(|s| !s.is_empty());
             client.send(request).await?;
             Ok(())
         })

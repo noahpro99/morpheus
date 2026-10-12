@@ -116,12 +116,7 @@ pub fn open_menu(
 
 /// Open a menu at viewport coordinates, for menus built after an async
 /// lookup (the event is long gone by then; call `prevent_default` first).
-pub fn open_menu_at(
-    x: f64,
-    y: f64,
-    items: Vec<MenuItem>,
-    react: Option<Rc<dyn Fn(&'static str)>>,
-) {
+pub fn open_menu_at(x: f64, y: f64, items: Vec<MenuItem>, react: Option<Rc<dyn Fn(&'static str)>>) {
     let mut menu = consume_context::<ContextMenu>();
     menu.set(MenuState(Some(Rc::new(Menu {
         x,

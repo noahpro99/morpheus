@@ -20,9 +20,12 @@ async fn login_and_open(app: &mut App, user: &str, room: &str) {
     app.type_into("form.login input[name=username]", user)
         .await
         .expect("username");
-    app.type_into("form.login input[name=password]", &format!("{user}-password"))
-        .await
-        .expect("password");
+    app.type_into(
+        "form.login input[name=password]",
+        &format!("{user}-password"),
+    )
+    .await
+    .expect("password");
     app.submit("form.login").await.expect("submit");
     app.wait_for(".room", DEFAULT_WAIT)
         .await
@@ -86,14 +89,27 @@ async fn admin_changes_roles_kicks_and_bans() {
     // Alice created the room: full moderation menu for carol.
     member_menu(&mut app, "carol").await;
     let labels = menu_labels(&mut app).await;
-    for needle in ["Profile", "Mention", "Message", "Invite to room", "Block", "Roles", "Kick carol", "Ban carol", "Copy user ID"] {
+    for needle in [
+        "Profile",
+        "Mention",
+        "Message",
+        "Invite to room",
+        "Block",
+        "Roles",
+        "Kick carol",
+        "Ban carol",
+        "Copy user ID",
+    ] {
         assert!(labels.contains(needle), "missing {needle} in {labels}");
     }
     // Her own row offers no moderation.
     app.press(".context-menu", "Escape").await.expect("escape");
     member_menu(&mut app, "alice").await;
     let own = menu_labels(&mut app).await;
-    assert!(!own.contains("Kick") && !own.contains("Roles") && !own.contains("Block"), "own row: {own}");
+    assert!(
+        !own.contains("Kick") && !own.contains("Roles") && !own.contains("Block"),
+        "own row: {own}"
+    );
     app.press(".context-menu", "Escape").await.expect("escape");
 
     // Promote carol to moderator, then back.
@@ -116,7 +132,9 @@ async fn admin_changes_roles_kicks_and_bans() {
 
     // Kick carol: she leaves the list.
     member_menu(&mut app, "carol").await;
-    app.click_text(".context-item.danger", "Kick carol").await.expect("kick");
+    app.click_text(".context-item.danger", "Kick carol")
+        .await
+        .expect("kick");
     app.wait_for_js(
         "return ![...document.querySelectorAll('.members .member')].some(el => el.textContent.includes('carol'));",
         DEFAULT_WAIT,
@@ -126,7 +144,9 @@ async fn admin_changes_roles_kicks_and_bans() {
 
     // Ban bob: same, and the count drops.
     member_menu(&mut app, "bob").await;
-    app.click_text(".context-item.danger", "Ban bob").await.expect("ban");
+    app.click_text(".context-item.danger", "Ban bob")
+        .await
+        .expect("ban");
     app.wait_for_js(
         "return ![...document.querySelectorAll('.members .member')].some(el => el.textContent.includes('bob'));",
         DEFAULT_WAIT,
@@ -150,10 +170,15 @@ async fn member_menu_mentions_messages_and_blocks() {
     // Carol is a plain member: no moderation on bob.
     member_menu(&mut app, "bob").await;
     let labels = menu_labels(&mut app).await;
-    assert!(!labels.contains("Kick") && !labels.contains("Ban") && !labels.contains("Roles"), "{labels}");
+    assert!(
+        !labels.contains("Kick") && !labels.contains("Ban") && !labels.contains("Roles"),
+        "{labels}"
+    );
 
     // Mention drops the name into the composer.
-    app.click_text(".context-item", "Mention").await.expect("mention");
+    app.click_text(".context-item", "Mention")
+        .await
+        .expect("mention");
     app.wait_for_js(
         "return document.querySelector('.composer input').value.includes('@bob');",
         DEFAULT_WAIT,
@@ -165,7 +190,9 @@ async fn member_menu_mentions_messages_and_blocks() {
     // earlier run may have left bob blocked, so start from unblocked.
     member_menu(&mut app, "bob").await;
     if menu_labels(&mut app).await.contains("Unblock") {
-        app.click_text(".context-item", "Unblock").await.expect("reset block");
+        app.click_text(".context-item", "Unblock")
+            .await
+            .expect("reset block");
         app.wait_for_js(
             "return document.querySelector('.members .member.blocked') === null;",
             DEFAULT_WAIT,
@@ -174,12 +201,16 @@ async fn member_menu_mentions_messages_and_blocks() {
         .expect("reset to unblocked");
         member_menu(&mut app, "bob").await;
     }
-    app.click_text(".context-item", "Block").await.expect("block");
+    app.click_text(".context-item", "Block")
+        .await
+        .expect("block");
     app.wait_for_text(".members .member.blocked", "bob", DEFAULT_WAIT)
         .await
         .expect("bob marked blocked");
     member_menu(&mut app, "bob").await;
-    app.click_text(".context-item", "Unblock").await.expect("unblock");
+    app.click_text(".context-item", "Unblock")
+        .await
+        .expect("unblock");
     app.wait_for_js(
         "return document.querySelector('.members .member.blocked') === null;",
         DEFAULT_WAIT,
@@ -189,11 +220,16 @@ async fn member_menu_mentions_messages_and_blocks() {
 
     // Message opens (creating if needed) the DM and moves the rail to DMs.
     member_menu(&mut app, "bob").await;
-    app.click_text(".context-item", "Message").await.expect("message");
+    app.click_text(".context-item", "Message")
+        .await
+        .expect("message");
     app.wait_for_text(".chat-header h2", "bob", Duration::from_secs(30))
         .await
         .expect("DM with bob opened");
-    app.wait_for(".rail-item.selected[title=\"Direct messages\"]", DEFAULT_WAIT)
-        .await
-        .expect("rail on DMs");
+    app.wait_for(
+        ".rail-item.selected[title=\"Direct messages\"]",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("rail on DMs");
 }

@@ -13,19 +13,36 @@ fn homeserver() -> Option<String> {
 }
 
 async fn login(app: &mut App, user: &str) {
-    app.wait_for("form.login", DEFAULT_WAIT).await.expect("login form");
-    app.type_into("form.login input[name=username]", user).await.expect("username");
-    app.type_into("form.login input[name=password]", &format!("{user}-password")).await.expect("password");
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    app.type_into("form.login input[name=username]", user)
+        .await
+        .expect("username");
+    app.type_into(
+        "form.login input[name=password]",
+        &format!("{user}-password"),
+    )
+    .await
+    .expect("password");
     app.submit("form.login").await.expect("submit");
-    app.wait_for(".room", DEFAULT_WAIT).await.expect("room listed");
+    app.wait_for(".room", DEFAULT_WAIT)
+        .await
+        .expect("room listed");
 }
 
 async fn create_server(app: &mut App, name: &str) {
     app.click(".rail-add").await.expect("rail plus");
-    app.wait_for(".create-space-dialog input[name=name]", DEFAULT_WAIT).await.expect("dialog");
-    app.type_into(".create-space-dialog input[name=name]", name).await.expect("name");
+    app.wait_for(".create-space-dialog input[name=name]", DEFAULT_WAIT)
+        .await
+        .expect("dialog");
+    app.type_into(".create-space-dialog input[name=name]", name)
+        .await
+        .expect("name");
     app.submit(".create-space-dialog").await.expect("create");
-    app.wait_for(&format!(".rail-item[title=\"{name}\"]"), DEFAULT_WAIT).await.expect("badge");
+    app.wait_for(&format!(".rail-item[title=\"{name}\"]"), DEFAULT_WAIT)
+        .await
+        .expect("badge");
 }
 
 /// Synthetic HTML5 drag: dragstart on the source, drop on the target.
@@ -44,13 +61,26 @@ async fn drag(app: &mut App, from: &str, to: &str) {
 }
 
 async fn leave_server(app: &mut App, name: &str) {
-    app.right_click(&format!(".rail-item[title=\"{name}\"]")).await.expect("badge menu");
-    app.wait_for(".context-menu", DEFAULT_WAIT).await.expect("menu");
-    app.click_text(".context-item.danger", "Leave server").await.expect("leave");
-    app.wait_for(".leave-space-dialog", DEFAULT_WAIT).await.expect("confirm");
-    app.click_text(".leave-space-dialog button", "Leave server").await.expect("confirm");
+    app.right_click(&format!(".rail-item[title=\"{name}\"]"))
+        .await
+        .expect("badge menu");
+    app.wait_for(".context-menu", DEFAULT_WAIT)
+        .await
+        .expect("menu");
+    app.click_text(".context-item.danger", "Leave server")
+        .await
+        .expect("leave");
+    app.wait_for(".leave-space-dialog", DEFAULT_WAIT)
+        .await
+        .expect("confirm");
+    app.click_text(".leave-space-dialog button", "Leave server")
+        .await
+        .expect("confirm");
     app.wait_for_js(
-        &format!("return document.querySelector('.rail-item[title={}]') === null;", serde_json::to_string(name).expect("json")),
+        &format!(
+            "return document.querySelector('.rail-item[title={}]') === null;",
+            serde_json::to_string(name).expect("json")
+        ),
         DEFAULT_WAIT,
     )
     .await
@@ -71,39 +101,73 @@ async fn servers_drag_into_folders_and_reorder() {
     create_server(&mut app, &b).await;
 
     // Drop b onto a: a folder appears holding both; open it to see them.
-    drag(&mut app, &format!(".rail-item[title=\"{b}\"]"), &format!(".rail-item[title=\"{a}\"]")).await;
+    drag(
+        &mut app,
+        &format!(".rail-item[title=\"{b}\"]"),
+        &format!(".rail-item[title=\"{a}\"]"),
+    )
+    .await;
     // Earlier runs may have left folders behind: work with the newest one and
     // give it a unique name right away.
-    app.wait_for(".rail-folder .folder-badge", DEFAULT_WAIT).await.expect("folder created");
+    app.wait_for(".rail-folder .folder-badge", DEFAULT_WAIT)
+        .await
+        .expect("folder created");
     let folder_name = format!("Work {pid}");
     app.eval("[...document.querySelectorAll('.rail-folder .folder-badge')].at(-1).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 30, clientY: 300 }));").await.expect("folder menu");
-    app.click_text(".context-item", "Rename folder").await.expect("rename");
-    app.wait_for(".rename-folder-dialog input[name=name]", DEFAULT_WAIT).await.expect("dialog");
-    app.type_into(".rename-folder-dialog input[name=name]", &folder_name).await.expect("name");
+    app.click_text(".context-item", "Rename folder")
+        .await
+        .expect("rename");
+    app.wait_for(".rename-folder-dialog input[name=name]", DEFAULT_WAIT)
+        .await
+        .expect("dialog");
+    app.type_into(".rename-folder-dialog input[name=name]", &folder_name)
+        .await
+        .expect("name");
     app.submit(".rename-folder-dialog").await.expect("save");
     let badge = format!(".rail-folder .folder-badge[title=\"{folder_name}\"]");
     app.wait_for(&badge, DEFAULT_WAIT).await.expect("renamed");
     app.click(&badge).await.expect("open folder");
-    app.wait_for(&format!(".rail-folder.open .folder-items .rail-item[title=\"{a}\"]"), DEFAULT_WAIT).await.expect("a inside");
-    app.wait_for(&format!(".rail-folder.open .folder-items .rail-item[title=\"{b}\"]"), DEFAULT_WAIT).await.expect("b inside");
-
+    app.wait_for(
+        &format!(".rail-folder.open .folder-items .rail-item[title=\"{a}\"]"),
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("a inside");
+    app.wait_for(
+        &format!(".rail-folder.open .folder-items .rail-item[title=\"{b}\"]"),
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("b inside");
 
     // Move b out through the server menu.
-    app.right_click(&format!(".folder-items .rail-item[title=\"{b}\"]")).await.expect("server menu");
-    app.wait_for(".context-menu", DEFAULT_WAIT).await.expect("menu");
+    app.right_click(&format!(".folder-items .rail-item[title=\"{b}\"]"))
+        .await
+        .expect("server menu");
+    app.wait_for(".context-menu", DEFAULT_WAIT)
+        .await
+        .expect("menu");
     app.eval("const p = [...document.querySelectorAll('.context-item.has-submenu')].find(el => el.querySelector('.menu-label')?.textContent === 'Move to'); \
               const c = [...p.querySelectorAll('.context-submenu .context-item')].find(el => el.querySelector('.menu-label')?.textContent === 'No folder'); c.click();")
         .await
         .expect("move out");
     app.wait_for_js(
-        &format!("return document.querySelector('.rail > .rail-item[title={}]') !== null;", serde_json::to_string(&b).expect("json")),
+        &format!(
+            "return document.querySelector('.rail > .rail-item[title={}]') !== null;",
+            serde_json::to_string(&b).expect("json")
+        ),
         DEFAULT_WAIT,
     )
     .await
     .expect("b is a top-level badge again");
 
     // Reorder: drop b on the first drop zone, so it comes before the folder.
-    drag(&mut app, &format!(".rail-item[title=\"{b}\"]"), ".rail-drop").await;
+    drag(
+        &mut app,
+        &format!(".rail-item[title=\"{b}\"]"),
+        ".rail-drop",
+    )
+    .await;
     app.wait_for_js(
         &format!("const items = [...document.querySelectorAll('.rail > .rail-item.space-badge, .rail > .rail-folder')]; return items[0]?.getAttribute('title') === {};", serde_json::to_string(&b).expect("json")),
         DEFAULT_WAIT,
@@ -113,8 +177,12 @@ async fn servers_drag_into_folders_and_reorder() {
 
     // The layout survives a relaunch (it lives in account data).
     let mut app = app.relaunch().await.expect("relaunch");
-    app.wait_for(".shell", DEFAULT_WAIT).await.expect("restored");
-    app.wait_for(&badge, DEFAULT_WAIT).await.expect("folder remembered");
+    app.wait_for(".shell", DEFAULT_WAIT)
+        .await
+        .expect("restored");
+    app.wait_for(&badge, DEFAULT_WAIT)
+        .await
+        .expect("folder remembered");
     app.wait_for_js(
         &format!("const items = [...document.querySelectorAll('.rail > .rail-item.space-badge, .rail > .rail-folder')]; return items[0]?.getAttribute('title') === {};", serde_json::to_string(&b).expect("json")),
         Duration::from_secs(10),
@@ -125,10 +193,22 @@ async fn servers_drag_into_folders_and_reorder() {
     // Ungroup, then clean up both servers. Wait for the room to settle first:
     // the shell closes menus whenever the open room changes, and right after
     // a relaunch the list is still re-picking.
-    app.wait_for(".composer input:not([disabled])", DEFAULT_WAIT).await.expect("room settled");
+    app.wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
+        .await
+        .expect("room settled");
     app.right_click(&badge).await.expect("folder menu");
-    app.click_text(".context-item", "Ungroup").await.expect("ungroup");
-    app.wait_for_js(&format!("return document.querySelector({}) === null;", serde_json::to_string(&badge).expect("json")), DEFAULT_WAIT).await.expect("folder gone");
+    app.click_text(".context-item", "Ungroup")
+        .await
+        .expect("ungroup");
+    app.wait_for_js(
+        &format!(
+            "return document.querySelector({}) === null;",
+            serde_json::to_string(&badge).expect("json")
+        ),
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("folder gone");
     leave_server(&mut app, &a).await;
     leave_server(&mut app, &b).await;
 }

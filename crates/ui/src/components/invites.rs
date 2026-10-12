@@ -2,8 +2,8 @@
 //! the timeline, and a block in the inbox. Accepting joins the room; the room
 //! list then flips the entry to a joined room and the chat opens as usual.
 
-use dioxus::prelude::*;
 use super::toast::report;
+use dioxus::prelude::*;
 use morpheus_core::{OwnedRoomId, RoomSummary, Session};
 
 use super::shell::{Rooms, Selected, go_to};
@@ -97,7 +97,13 @@ pub fn InviteRow(room: RoomSummary) -> Element {
 pub fn InviteCard(room: RoomSummary) -> Element {
     let session = use_context::<Session>();
     let inviter = room.inviter.clone().unwrap_or_else(|| "Someone".into());
-    let kind = if room.is_dm { "a direct message" } else if room.is_space { "a server" } else { "a room" };
+    let kind = if room.is_dm {
+        "a direct message"
+    } else if room.is_space {
+        "a server"
+    } else {
+        "a room"
+    };
     let id = room.id.clone();
     rsx! {
         section { class: "invite-card",

@@ -4,7 +4,8 @@ use matrix_sdk::{
     ruma::{
         Int,
         events::{
-            StateEventType, ignored_user_list::IgnoredUserListEventContent,
+            StateEventType,
+            ignored_user_list::IgnoredUserListEventContent,
             room::{member::MembershipState, power_levels::UserPowerLevel},
         },
     },
@@ -131,7 +132,12 @@ impl Session {
         })
     }
 
-    pub fn kick(&self, room_id: OwnedRoomId, user_id: OwnedUserId, reason: Option<String>) -> CoreFuture<()> {
+    pub fn kick(
+        &self,
+        room_id: OwnedRoomId,
+        user_id: OwnedUserId,
+        reason: Option<String>,
+    ) -> CoreFuture<()> {
         let client = self.client.clone();
         self.core.run(async move {
             let room = client
@@ -143,7 +149,12 @@ impl Session {
         })
     }
 
-    pub fn ban(&self, room_id: OwnedRoomId, user_id: OwnedUserId, reason: Option<String>) -> CoreFuture<()> {
+    pub fn ban(
+        &self,
+        room_id: OwnedRoomId,
+        user_id: OwnedUserId,
+        reason: Option<String>,
+    ) -> CoreFuture<()> {
         let client = self.client.clone();
         self.core.run(async move {
             let room = client
@@ -180,7 +191,12 @@ impl Session {
     }
 
     /// Give a member a role by setting the matching power level.
-    pub fn set_role(&self, room_id: OwnedRoomId, user_id: OwnedUserId, role: MemberRole) -> CoreFuture<()> {
+    pub fn set_role(
+        &self,
+        room_id: OwnedRoomId,
+        user_id: OwnedUserId,
+        role: MemberRole,
+    ) -> CoreFuture<()> {
         let client = self.client.clone();
         self.core.run(async move {
             let room = client
@@ -236,7 +252,11 @@ const SETTLE_DEADLINE: std::time::Duration = std::time::Duration::from_secs(8);
 const SETTLE_POLL: std::time::Duration = std::time::Duration::from_millis(100);
 
 /// Wait until the member's local membership state is one of `wanted`.
-async fn settle_membership(room: &matrix_sdk::Room, user_id: &matrix_sdk::ruma::UserId, wanted: MembershipState) {
+async fn settle_membership(
+    room: &matrix_sdk::Room,
+    user_id: &matrix_sdk::ruma::UserId,
+    wanted: MembershipState,
+) {
     let deadline = tokio::time::Instant::now() + SETTLE_DEADLINE;
     while tokio::time::Instant::now() < deadline {
         let now = match room.get_member_no_sync(user_id).await {
@@ -253,10 +273,15 @@ async fn settle_membership(room: &matrix_sdk::Room, user_id: &matrix_sdk::ruma::
 }
 
 /// Wait until the member's local power level equals `level`.
-async fn settle_power_level(room: &matrix_sdk::Room, user_id: &matrix_sdk::ruma::UserId, level: i64) {
+async fn settle_power_level(
+    room: &matrix_sdk::Room,
+    user_id: &matrix_sdk::ruma::UserId,
+    level: i64,
+) {
     let deadline = tokio::time::Instant::now() + SETTLE_DEADLINE;
     while tokio::time::Instant::now() < deadline {
-        if matches!(room.get_member_no_sync(user_id).await, Ok(Some(m)) if power_level_of(&m) == level) {
+        if matches!(room.get_member_no_sync(user_id).await, Ok(Some(m)) if power_level_of(&m) == level)
+        {
             return;
         }
         tokio::time::sleep(SETTLE_POLL).await;
@@ -265,7 +290,11 @@ async fn settle_power_level(room: &matrix_sdk::Room, user_id: &matrix_sdk::ruma:
 }
 
 /// Wait until the ignore list locally agrees with `blocked`.
-async fn settle_ignored(client: &matrix_sdk::Client, user_id: &matrix_sdk::ruma::UserId, blocked: bool) {
+async fn settle_ignored(
+    client: &matrix_sdk::Client,
+    user_id: &matrix_sdk::ruma::UserId,
+    blocked: bool,
+) {
     let deadline = tokio::time::Instant::now() + SETTLE_DEADLINE;
     while tokio::time::Instant::now() < deadline {
         if is_ignored(client, user_id).await == blocked {
@@ -276,7 +305,10 @@ async fn settle_ignored(client: &matrix_sdk::Client, user_id: &matrix_sdk::ruma:
     tracing::debug!(%user_id, "ignore list change not reflected locally before the deadline");
 }
 
-pub(crate) async fn is_ignored(client: &matrix_sdk::Client, user_id: &matrix_sdk::ruma::UserId) -> bool {
+pub(crate) async fn is_ignored(
+    client: &matrix_sdk::Client,
+    user_id: &matrix_sdk::ruma::UserId,
+) -> bool {
     client
         .account()
         .account_data::<IgnoredUserListEventContent>()

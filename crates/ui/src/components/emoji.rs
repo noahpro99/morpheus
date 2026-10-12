@@ -76,7 +76,11 @@ pub const EMOJI: &[(&str, &str)] = &[
 /// Emoji whose shortcode starts with (or contains) `query`, best first.
 pub fn search(query: &str) -> Vec<(&'static str, &'static str)> {
     let query = query.to_ascii_lowercase();
-    let mut starts: Vec<_> = EMOJI.iter().copied().filter(|(_, code)| code.starts_with(&query)).collect();
+    let mut starts: Vec<_> = EMOJI
+        .iter()
+        .copied()
+        .filter(|(_, code)| code.starts_with(&query))
+        .collect();
     let contains = EMOJI
         .iter()
         .copied()

@@ -43,15 +43,29 @@ async fn account_menu_edits_name_sets_status_and_signs_out() {
     login(&mut app, "bob", "bob-password").await;
 
     open_chip_menu(&mut app).await;
-    for label in ["View profile", "Edit profile", "Set status", "Switch account", "Sign out"] {
+    for label in [
+        "View profile",
+        "Edit profile",
+        "Set status",
+        "Switch account",
+        "Sign out",
+    ] {
         app.wait_for_text(".context-item", label, DEFAULT_WAIT)
             .await
             .unwrap_or_else(|e| panic!("menu item {label}: {e}"));
     }
-    assert_eq!(app.count(".sidebar-footer button[title=\"Sign out\"]").await.expect("count"), 0, "no separate sign-out button");
+    assert_eq!(
+        app.count(".sidebar-footer button[title=\"Sign out\"]")
+            .await
+            .expect("count"),
+        0,
+        "no separate sign-out button"
+    );
 
     // Edit the display name; the footer follows.
-    app.click_text(".context-item", "Edit profile").await.expect("edit profile");
+    app.click_text(".context-item", "Edit profile")
+        .await
+        .expect("edit profile");
     app.wait_for(".profile-editor input[name=displayname]", DEFAULT_WAIT)
         .await
         .expect("editor");
@@ -66,14 +80,21 @@ async fn account_menu_edits_name_sets_status_and_signs_out() {
     app.wait_for_text(".sidebar-footer .user", &name, DEFAULT_WAIT)
         .await
         .expect("footer shows the new name");
-    app.press(".profile-editor", "Escape").await.expect("escape");
-    app.wait_for_js("return document.querySelector('.profile-editor') === null;", DEFAULT_WAIT)
+    app.press(".profile-editor", "Escape")
         .await
-        .expect("editor closed");
+        .expect("escape");
+    app.wait_for_js(
+        "return document.querySelector('.profile-editor') === null;",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("editor closed");
 
     // Set a status; it shows on the profile.
     open_chip_menu(&mut app).await;
-    app.click_text(".context-item", "Set status").await.expect("set status");
+    app.click_text(".context-item", "Set status")
+        .await
+        .expect("set status");
     app.wait_for(".status-editor input[name=status]", DEFAULT_WAIT)
         .await
         .expect("status editor");
@@ -81,35 +102,65 @@ async fn account_menu_edits_name_sets_status_and_signs_out() {
         .await
         .expect("type status");
     app.submit(".status-editor").await.expect("save status");
-    app.wait_for_js("return document.querySelector('.status-editor') === null;", DEFAULT_WAIT)
-        .await
-        .expect("status editor closes on save");
+    app.wait_for_js(
+        "return document.querySelector('.status-editor') === null;",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("status editor closes on save");
     open_chip_menu(&mut app).await;
-    app.click_text(".context-item", "View profile").await.expect("view profile");
-    app.wait_for_text(".profile-card .profile-status", "In a meeting", DEFAULT_WAIT)
+    app.click_text(".context-item", "View profile")
         .await
-        .expect("status on the profile");
+        .expect("view profile");
+    app.wait_for_text(
+        ".profile-card .profile-status",
+        "In a meeting",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("status on the profile");
     app.press("body", "Escape").await.expect("close profile");
 
     // Restore the seeded name and clear the status so reruns start clean.
     open_chip_menu(&mut app).await;
-    app.click_text(".context-item", "Edit profile").await.expect("edit again");
-    app.wait_for(".profile-editor input[name=displayname]", DEFAULT_WAIT).await.expect("editor");
-    app.type_into(".profile-editor input[name=displayname]", "bob").await.expect("type");
-    app.submit(".profile-editor").await.expect("save");
-    app.wait_for_text(".sidebar-footer .user", "bob", DEFAULT_WAIT).await.expect("restored");
-    app.press(".profile-editor", "Escape").await.expect("escape");
-    open_chip_menu(&mut app).await;
-    app.click_text(".context-item", "Set status").await.expect("set status");
-    app.wait_for(".status-editor", DEFAULT_WAIT).await.expect("status editor");
-    app.click_text(".status-editor button", "Clear status").await.expect("clear");
-    app.wait_for_js("return document.querySelector('.status-editor') === null;", DEFAULT_WAIT)
+    app.click_text(".context-item", "Edit profile")
         .await
-        .expect("closed after clearing");
+        .expect("edit again");
+    app.wait_for(".profile-editor input[name=displayname]", DEFAULT_WAIT)
+        .await
+        .expect("editor");
+    app.type_into(".profile-editor input[name=displayname]", "bob")
+        .await
+        .expect("type");
+    app.submit(".profile-editor").await.expect("save");
+    app.wait_for_text(".sidebar-footer .user", "bob", DEFAULT_WAIT)
+        .await
+        .expect("restored");
+    app.press(".profile-editor", "Escape")
+        .await
+        .expect("escape");
+    open_chip_menu(&mut app).await;
+    app.click_text(".context-item", "Set status")
+        .await
+        .expect("set status");
+    app.wait_for(".status-editor", DEFAULT_WAIT)
+        .await
+        .expect("status editor");
+    app.click_text(".status-editor button", "Clear status")
+        .await
+        .expect("clear");
+    app.wait_for_js(
+        "return document.querySelector('.status-editor') === null;",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("closed after clearing");
 
     // Sign out from the menu returns to the login form.
     open_chip_menu(&mut app).await;
-    app.click_text(".context-item", "Sign out").await.expect("sign out");
+    app.click_text(".context-item", "Sign out")
+        .await
+        .expect("sign out");
     app.wait_for("form.login", DEFAULT_WAIT)
         .await
         .expect("back at the login form");

@@ -81,7 +81,11 @@ impl App {
         Self::launch_with_data_dir(&homeserver, data_dir, None).await
     }
 
-    async fn launch_with_data_dir(homeserver: &str, data_dir: PathBuf, size: Option<(u32, u32)>) -> Result<Self> {
+    async fn launch_with_data_dir(
+        homeserver: &str,
+        data_dir: PathBuf,
+        size: Option<(u32, u32)>,
+    ) -> Result<Self> {
         keep_test_windows_unfocused();
         std::fs::create_dir_all(&data_dir)?;
         // A disposable, test-local stand-in for the real Downloads directory
@@ -284,7 +288,12 @@ impl App {
 
     /// Scroll the timeline to its top repeatedly (revealing windowed rows and
     /// paginating) until `predicate_js` (a JS body returning a boolean) holds.
-    pub async fn reveal(&mut self, what: &str, predicate_js: &str, timeout: Duration) -> Result<()> {
+    pub async fn reveal(
+        &mut self,
+        what: &str,
+        predicate_js: &str,
+        timeout: Duration,
+    ) -> Result<()> {
         let js = format!(
             "if ((() => {{ {predicate_js} }})()) return true; \
              const t = document.querySelector('.timeline'); if (t) t.scrollTop = -t.scrollHeight; \
@@ -296,20 +305,32 @@ impl App {
 
     /// [`Self::reveal`] for an element matching `selector`.
     pub async fn reveal_element(&mut self, selector: &str, timeout: Duration) -> Result<()> {
-        let predicate = format!("return document.querySelector({}) !== null;", js_str(selector));
+        let predicate = format!(
+            "return document.querySelector({}) !== null;",
+            js_str(selector)
+        );
         self.reveal(&format!("element matching {selector}"), &predicate, timeout)
             .await
     }
 
     /// [`Self::reveal`] for an element matching `selector` whose text contains `text`.
-    pub async fn reveal_text(&mut self, selector: &str, text: &str, timeout: Duration) -> Result<()> {
+    pub async fn reveal_text(
+        &mut self,
+        selector: &str,
+        text: &str,
+        timeout: Duration,
+    ) -> Result<()> {
         let predicate = format!(
             "return [...document.querySelectorAll({})].some(el => el.textContent.includes({}));",
             js_str(selector),
             js_str(text)
         );
-        self.reveal(&format!("{selector} containing {text:?}"), &predicate, timeout)
-            .await
+        self.reveal(
+            &format!("{selector} containing {text:?}"),
+            &predicate,
+            timeout,
+        )
+        .await
     }
 
     /// [`Self::reveal`] for a message whose body contains `text`.
@@ -366,7 +387,14 @@ impl App {
     }
 
     /// Dispatch a key combo with any of Ctrl, Alt and Shift held.
-    pub async fn key_combo(&mut self, selector: &str, key: &str, ctrl: bool, alt: bool, shift: bool) -> Result<()> {
+    pub async fn key_combo(
+        &mut self,
+        selector: &str,
+        key: &str,
+        ctrl: bool,
+        alt: bool,
+        shift: bool,
+    ) -> Result<()> {
         let js = format!(
             "{}.dispatchEvent(new KeyboardEvent('keydown', {{ key: {}, ctrlKey: {ctrl}, altKey: {alt}, shiftKey: {shift}, bubbles: true, cancelable: true }}));",
             query(selector),

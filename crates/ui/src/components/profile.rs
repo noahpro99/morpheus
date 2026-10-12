@@ -31,8 +31,14 @@ pub struct ProfileOpen {
 /// the menu was.
 pub fn open_profile(user_id: OwnedUserId) {
     // Not a hook: this runs from event handlers, so read the context directly.
-    let at = consume_context::<super::context_menu::ContextMenu>().peek().position();
-    consume_context::<OpenProfile>().set(ProfileTarget(Some(ProfileOpen { user_id, at, full: false })));
+    let at = consume_context::<super::context_menu::ContextMenu>()
+        .peek()
+        .position();
+    consume_context::<OpenProfile>().set(ProfileTarget(Some(ProfileOpen {
+        user_id,
+        at,
+        full: false,
+    })));
 }
 
 /// Open the profile card next to a click.
@@ -55,17 +61,27 @@ pub fn ProfileModal(user_id: OwnedUserId) -> Element {
     let profile = {
         let session = session.clone();
         use_resource(use_reactive!(|user_id| {
-        let session = session.clone();
-        let _ = refresh();
-        async move { session.profile(user_id).await.map_err(|e| e.to_string()) }
-    }))
+            let session = session.clone();
+            let _ = refresh();
+            async move { session.profile(user_id).await.map_err(|e| e.to_string()) }
+        }))
     };
     let mut close = move || target.set(ProfileTarget::default());
 
     // Show what we know right away; the fetch fills in the name and avatar.
     let (name, avatar, status, error) = match &*profile.read() {
-        Some(Ok(profile)) => (profile.name.clone(), profile.avatar.clone(), profile.status.clone(), None),
-        Some(Err(err)) => (user_id.localpart().to_owned(), None, None, Some(err.clone())),
+        Some(Ok(profile)) => (
+            profile.name.clone(),
+            profile.avatar.clone(),
+            profile.status.clone(),
+            None,
+        ),
+        Some(Err(err)) => (
+            user_id.localpart().to_owned(),
+            None,
+            None,
+            Some(err.clone()),
+        ),
         None => (user_id.localpart().to_owned(), None, None, None),
     };
 
@@ -323,37 +339,37 @@ pub fn ProfileCard(open: ProfileOpen) -> Element {
     let profile = {
         let session = session.clone();
         use_resource(use_reactive!(|user_id| {
-        let session = session.clone();
-        let _ = refresh();
-        async move { session.profile(user_id).await.ok() }
-    }))
+            let session = session.clone();
+            let _ = refresh();
+            async move { session.profile(user_id).await.ok() }
+        }))
     };
     let mutual = {
         let session = session.clone();
         use_resource(use_reactive!(|user_id| {
-        let session = session.clone();
-        async move { session.mutual_rooms(user_id).await.unwrap_or_default() }
-    }))
+            let session = session.clone();
+            async move { session.mutual_rooms(user_id).await.unwrap_or_default() }
+        }))
     };
     let role = {
         let session = session.clone();
         use_resource(use_reactive!(|user_id| {
-        let session = session.clone();
-        let room_id = selected.peek().clone();
-        async move {
-            match room_id {
-                Some(room_id) => session.member_role(room_id, user_id).await.ok().flatten(),
-                None => None,
+            let session = session.clone();
+            let room_id = selected.peek().clone();
+            async move {
+                match room_id {
+                    Some(room_id) => session.member_role(room_id, user_id).await.ok().flatten(),
+                    None => None,
+                }
             }
-        }
-    }))
+        }))
     };
     let stored_note = {
         let session = session.clone();
         use_resource(use_reactive!(|user_id| {
-        let session = session.clone();
-        async move { session.note(user_id).await.unwrap_or_default() }
-    }))
+            let session = session.clone();
+            async move { session.note(user_id).await.unwrap_or_default() }
+        }))
     };
     let mut seeded = use_signal(|| false);
     use_effect(move || {
@@ -367,9 +383,9 @@ pub fn ProfileCard(open: ProfileOpen) -> Element {
     let blocked = {
         let session = session.clone();
         use_resource(use_reactive!(|user_id| {
-        let session = session.clone();
-        async move { session.is_blocked(user_id).await.unwrap_or(false) }
-    }))
+            let session = session.clone();
+            async move { session.is_blocked(user_id).await.unwrap_or(false) }
+        }))
     };
     let is_blocked = blocked_now().unwrap_or_else(|| blocked().unwrap_or(false));
 
@@ -430,17 +446,25 @@ pub fn ProfileCard(open: ProfileOpen) -> Element {
         let user_id = user_id.clone();
         move |e: Event<MouseData>| {
             e.stop_propagation();
-            let Some(room_id) = selected.peek().clone() else { return };
+            let Some(room_id) = selected.peek().clone() else {
+                return;
+            };
             let session = session.clone();
             let user_id = user_id.clone();
             let point = e.client_coordinates();
             spawn(async move {
                 let (members, perms) = (
                     session.members(room_id.clone()).await.unwrap_or_default(),
-                    session.my_permissions(room_id.clone()).await.unwrap_or_default(),
+                    session
+                        .my_permissions(room_id.clone())
+                        .await
+                        .unwrap_or_default(),
                 );
-                let Some(member) = members.into_iter().find(|m| m.user_id == user_id) else { return };
-                let items = super::members::member_menu(&session, &room_id, &Rc::new(member), perms, false);
+                let Some(member) = members.into_iter().find(|m| m.user_id == user_id) else {
+                    return;
+                };
+                let items =
+                    super::members::member_menu(&session, &room_id, &Rc::new(member), perms, false);
                 open_menu_at(point.x, point.y, items, None);
             });
         }
@@ -458,8 +482,10 @@ pub fn ProfileCard(open: ProfileOpen) -> Element {
                 MenuItem::new("View full profile", {
                     let open = open.clone();
                     move || {
-                        consume_context::<OpenProfile>()
-                            .set(ProfileTarget(Some(ProfileOpen { full: true, ..open.clone() })));
+                        consume_context::<OpenProfile>().set(ProfileTarget(Some(ProfileOpen {
+                            full: true,
+                            ..open.clone()
+                        })));
                     }
                 })
                 .icon(crate::icons::USER),
@@ -475,23 +501,37 @@ pub fn ProfileCard(open: ProfileOpen) -> Element {
                     .iter()
                     .filter(|r| !r.is_dm)
                     .map(|room| {
-                        MenuItem::new(if room.is_space { room.name.clone() } else { format!("#{}", room.name) }, {
-                            let session = session.clone();
-                            let (target, user_id) = (room.id.clone(), user_id.clone());
-                            move || {
-                                let future = session.invite(target.clone(), user_id.clone());
-                                spawn(async move {
-                                    if let Err(err) = future.await {
-                                        super::toast::report("invite", &err);
-                                    }
-                                });
-                            }
+                        MenuItem::new(
+                            if room.is_space {
+                                room.name.clone()
+                            } else {
+                                format!("#{}", room.name)
+                            },
+                            {
+                                let session = session.clone();
+                                let (target, user_id) = (room.id.clone(), user_id.clone());
+                                move || {
+                                    let future = session.invite(target.clone(), user_id.clone());
+                                    spawn(async move {
+                                        if let Err(err) = future.await {
+                                            super::toast::report("invite", &err);
+                                        }
+                                    });
+                                }
+                            },
+                        )
+                        .icon(if room.is_space {
+                            crate::icons::FOLDER
+                        } else {
+                            crate::icons::HASH
                         })
-                        .icon(if room.is_space { crate::icons::FOLDER } else { crate::icons::HASH })
                     })
                     .collect();
                 if !targets.is_empty() {
-                    items.push(MenuItem::submenu("Invite to server", targets).icon(crate::icons::USER_PLUS));
+                    items.push(
+                        MenuItem::submenu("Invite to server", targets)
+                            .icon(crate::icons::USER_PLUS),
+                    );
                 }
                 items.push(
                     MenuItem::new(if is_blocked { "Unblock" } else { "Block" }, {
@@ -511,7 +551,8 @@ pub fn ProfileCard(open: ProfileOpen) -> Element {
                     .icon(crate::icons::BAN),
                 );
                 items.push(
-                    MenuItem::new("Report user profile", move || report.set(true)).icon(crate::icons::FLAG),
+                    MenuItem::new("Report user profile", move || report.set(true))
+                        .icon(crate::icons::FLAG),
                 );
             }
             items.push(

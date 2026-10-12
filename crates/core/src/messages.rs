@@ -68,7 +68,12 @@ impl Session {
         })
     }
 
-    pub fn pin(&self, room_id: OwnedRoomId, event_id: OwnedEventId, pinned: bool) -> CoreFuture<()> {
+    pub fn pin(
+        &self,
+        room_id: OwnedRoomId,
+        event_id: OwnedEventId,
+        pinned: bool,
+    ) -> CoreFuture<()> {
         let room = self.room(&room_id);
         self.core.run(async move {
             let room = room?;
@@ -81,7 +86,10 @@ impl Session {
             // next sync; wait for it so callers can refetch right away.
             let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(8);
             while tokio::time::Instant::now() < deadline {
-                let now = room.pinned_event_ids().unwrap_or_default().contains(&event_id);
+                let now = room
+                    .pinned_event_ids()
+                    .unwrap_or_default()
+                    .contains(&event_id);
                 if now == pinned {
                     break;
                 }
@@ -92,7 +100,12 @@ impl Session {
     }
 
     /// Report a message to the homeserver admins.
-    pub fn report(&self, room_id: OwnedRoomId, event_id: OwnedEventId, reason: String) -> CoreFuture<()> {
+    pub fn report(
+        &self,
+        room_id: OwnedRoomId,
+        event_id: OwnedEventId,
+        reason: String,
+    ) -> CoreFuture<()> {
         let room = self.room(&room_id);
         self.core.run(async move {
             let reason = reason.trim().to_owned();
@@ -114,7 +127,12 @@ impl Session {
 
     /// Send a copy of a message to another room: the same content, minus any
     /// reply or thread relation.
-    pub fn forward(&self, from: OwnedRoomId, event_id: OwnedEventId, to: OwnedRoomId) -> CoreFuture<()> {
+    pub fn forward(
+        &self,
+        from: OwnedRoomId,
+        event_id: OwnedEventId,
+        to: OwnedRoomId,
+    ) -> CoreFuture<()> {
         let source = self.room(&from);
         let target = self.room(&to);
         self.core.run(async move {

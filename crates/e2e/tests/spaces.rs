@@ -187,7 +187,10 @@ async fn dms_button_lists_direct_messages() {
     app.wait_for_text(".room.dm", "bob", DEFAULT_WAIT)
         .await
         .expect("the DM with bob is listed");
-    assert!(!has_room(&mut app, "general").await, "rooms stay out of DMs");
+    assert!(
+        !has_room(&mut app, "general").await,
+        "rooms stay out of DMs"
+    );
     // Bob's profile photo stands in for the room avatar, at sidebar size.
     app.wait_for_js(
         "const a = document.querySelector('.room.dm img.avatar'); return a && a.clientHeight <= 24;",
@@ -204,6 +207,9 @@ async fn dms_button_lists_direct_messages() {
         .await
         .expect("footer text")
         .unwrap_or_default();
-    assert!(!user.contains('@'), "footer shows a display name, got {user:?}");
+    assert!(
+        !user.contains('@'),
+        "footer shows a display name, got {user:?}"
+    );
     assert!(!user.is_empty(), "footer has a name");
 }
