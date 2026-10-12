@@ -19,6 +19,10 @@ use crate::media::{Avatar, provide_media_cache};
 pub type Rooms = Signal<Vector<RoomSummary>>;
 /// Currently open room.
 pub type Selected = Signal<Option<OwnedRoomId>>;
+/// Whether the members column is shown (the header toggle flips it).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MembersShown(pub bool);
+pub type MembersOpen = Signal<MembersShown>;
 /// What the sidebar lists: direct messages, ungrouped rooms, or one space.
 /// Its own type, not a bare `Option<OwnedRoomId>`: Dioxus context is keyed by
 /// type, and sharing a type with [`Selected`] made room clicks land on the
@@ -105,6 +109,7 @@ pub fn Shell(session: Session) -> Element {
     let mut switcher_open = use_signal(|| false);
     let mut settings_open: SettingsOpen = use_context_provider(|| Signal::new(false));
     let mut verification: ActiveVerification = use_context_provider(|| Signal::new(None));
+    let members_open: MembersOpen = use_context_provider(|| Signal::new(MembersShown(true)));
 
     // Incoming verification requests from the user's other devices pop the settings dialog.
     use_future({
@@ -178,11 +183,28 @@ pub fn Shell(session: Session) -> Element {
         if ctrl && matches!(e.key(), Key::Character(ref c) if c.eq_ignore_ascii_case("k")) {
             e.prevent_default();
             switcher_open.toggle();
+        } else if e.key() == Key::Escape {
+            // Escape closes whichever modal is open, top-most first. A running
+            // verification keeps going in the background.
+            if settings_open() {
+                settings_open.set(false);
+            } else if switcher_open() {
+                switcher_open.set(false);
+            }
         }
+    };
+    let side_column = match (current(), active_thread(), members_open().0) {
+        (Some(_), Some(_), _) => SideColumn::Thread,
+        (Some(_), None, true) => SideColumn::Members,
+        _ => SideColumn::None,
     };
 
     rsx! {
-        div { class: "shell", tabindex: "-1", onkeydown: on_key,
+        div {
+            class: "shell",
+            class: if side_column == SideColumn::None { "no-side" },
+            tabindex: "-1",
+            onkeydown: on_key,
             Rail {}
             RoomList { error: load_error() }
             main { class: "chat",
@@ -197,10 +219,10 @@ pub fn Shell(session: Session) -> Element {
                     },
                 }
             }
-            match (current(), active_thread()) {
-                (Some(room), Some(root)) => rsx! { ThreadPanel { room_id: room.id.clone(), root } },
-                (Some(room), None) => rsx! { Members { room_id: room.id.clone() } },
-                (None, _) => rsx! { aside { class: "members" } },
+            match (side_column, current(), active_thread()) {
+                (SideColumn::Thread, Some(room), Some(root)) => rsx! { ThreadPanel { room_id: room.id.clone(), root } },
+                (SideColumn::Members, Some(room), _) => rsx! { Members { room_id: room.id.clone() } },
+                _ => rsx! {},
             }
             if switcher_open() {
                 QuickSwitcher { open: switcher_open }
@@ -215,6 +237,7 @@ pub fn Shell(session: Session) -> Element {
 #[component]
 fn ChatRoom(room: RoomSummary) -> Element {
     let session = use_context::<Session>();
+    let mut members_open = use_context::<MembersOpen>();
     // Shared by the timeline (which fills it) and the composer (which sends through it).
     use_context_provider(|| ActiveTimeline::new(None));
     use_context_provider(|| Mode::new(None));
@@ -251,7 +274,13 @@ fn ChatRoom(room: RoomSummary) -> Element {
             if let Some(topic) = room.topic.as_deref() {
                 span { class: "topic", "{topic}" }
             }
-            span { class: "member-count", title: "Members", "👥 {room.member_count}" }
+            button {
+                class: "ghost member-toggle",
+                class: if members_open().0 { "active" },
+                title: "Toggle member list",
+                onclick: move |_| members_open.with_mut(|shown| shown.0 = !shown.0),
+                "👥 {room.member_count}"
+            }
         }
         TimelineView { room_id: room.id.clone() }
         TypingLine { names: typing() }
@@ -272,4 +301,12 @@ fn TypingLine(names: Vec<String>) -> Element {
         [a, b, ..] => format!("{a}, {b} and others are typing…"),
     };
     rsx! { div { class: "typing", "{text}" } }
+}
+
+/// What the right-hand column holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SideColumn {
+    Thread,
+    Members,
+    None,
 }

@@ -146,7 +146,7 @@ pub fn Settings() -> Element {
 
     rsx! {
         div { class: "overlay", onclick: move |_| close(),
-            div { class: "settings", onclick: move |e| e.stop_propagation(),
+            div { class: "settings", tabindex: "-1", autofocus: true, onclick: move |e| e.stop_propagation(),
                 header { class: "settings-header",
                     h2 { "Settings" }
                     button { class: "ghost", title: "Close", onclick: move |_| close(), "✕" }
