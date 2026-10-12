@@ -5,7 +5,7 @@ use tracing::error;
 use super::{
     composer::{ActiveTimeline, Composer, Draft, Mode},
     context_menu::{ContextMenu, ContextMenuLayer, MenuState},
-    lightbox::{Lightbox, provide_lightbox},
+    lightbox::{EscapeTick, Escapes, Lightbox, LightboxOpen, LightboxShown, provide_lightbox},
     members::Members,
     message_dialogs::{
         MessageDialog, OpenMessageDialog, Pinned, PinnedIds, PinnedPanel, PinnedRefresh,
@@ -135,6 +135,8 @@ pub fn Shell(session: Session) -> Element {
     let mut room_dialog: OpenRoomDialog = use_context_provider(|| Signal::new(RoomDialog::None));
     let mut top_panel: OpenTopPanel = use_context_provider(|| Signal::new(TopPanel::None));
     let mut nav: NavHistory = use_context_provider(|| Signal::new(Nav::default()));
+    let lightbox_open: LightboxOpen = use_context_provider(|| Signal::new(LightboxShown(false)));
+    let mut escapes: EscapeTick = use_context_provider(|| Signal::new(Escapes(0)));
     // Every room the user lands in becomes a history entry (back/forward).
     use_effect(move || {
         if let Some(room_id) = selected() {
@@ -214,32 +216,45 @@ pub fn Shell(session: Session) -> Element {
         context_menu.set(MenuState::default());
     });
 
+    // Escape closes whichever modal is open, top-most first. A running
+    // verification keeps going in the background. Driven by a window-level
+    // listener (below) so it works whatever has focus.
+    let mut close_top_modal = move || {
+        if lightbox_open().0 {
+            escapes.with_mut(|e| e.0 += 1);
+        } else if context_menu().0.is_some() {
+            context_menu.set(MenuState::default());
+        } else if top_panel() != TopPanel::None {
+            top_panel.set(TopPanel::None);
+        } else if room_dialog() != RoomDialog::None {
+            room_dialog.set(RoomDialog::None);
+        } else if message_dialog() != MessageDialog::None {
+            message_dialog.set(MessageDialog::None);
+        } else if editor() != Editor::None {
+            editor.set(Editor::None);
+        } else if open_profile().0.is_some() {
+            open_profile.set(ProfileTarget::default());
+        } else if settings_open() {
+            settings_open.set(false);
+        } else if switcher_open() {
+            switcher_open.set(false);
+        }
+    };
+    use_future(move || async move {
+        let mut listener = document::eval(
+            "window.addEventListener('keydown', e => { if (e.key === 'Escape') dioxus.send(true); });",
+        );
+        while listener.recv::<bool>().await.is_ok() {
+            close_top_modal();
+        }
+    });
+
     // Global shortcuts. The shell is focusable so keys reach it even when no input has focus.
     let on_key = move |e: Event<KeyboardData>| {
         let ctrl = e.modifiers().ctrl() || e.modifiers().meta();
         if ctrl && matches!(e.key(), Key::Character(ref c) if c.eq_ignore_ascii_case("k")) {
             e.prevent_default();
             switcher_open.toggle();
-        } else if e.key() == Key::Escape {
-            // Escape closes whichever modal is open, top-most first. A running
-            // verification keeps going in the background.
-            if context_menu().0.is_some() {
-                context_menu.set(MenuState::default());
-            } else if top_panel() != TopPanel::None {
-                top_panel.set(TopPanel::None);
-            } else if room_dialog() != RoomDialog::None {
-                room_dialog.set(RoomDialog::None);
-            } else if message_dialog() != MessageDialog::None {
-                message_dialog.set(MessageDialog::None);
-            } else if editor() != Editor::None {
-                editor.set(Editor::None);
-            } else if open_profile().0.is_some() {
-                open_profile.set(ProfileTarget::default());
-            } else if settings_open() {
-                settings_open.set(false);
-            } else if switcher_open() {
-                switcher_open.set(false);
-            }
         }
     };
     let side_column = match (current(), active_thread(), members_open().0) {
