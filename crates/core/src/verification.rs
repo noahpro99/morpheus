@@ -189,6 +189,7 @@ async fn drive_request(
             },
         };
 
+        debug!(we_started, ?state, "verification request state");
         match state {
             VerificationRequestState::Created { .. }
             | VerificationRequestState::Requested { .. } => {
@@ -245,8 +246,17 @@ async fn drive_sas(sas: SasVerification, tx: &mpsc::UnboundedSender<Verification
             },
         };
 
+        debug!(we_started = sas.we_started(), ?state, "sas state");
         match state {
-            SasState::Created { .. } | SasState::Started { .. } | SasState::Accepted { .. } => {}
+            SasState::Started { .. } => {
+                // `Started` means the other side sent the start; we must accept
+                // before keys are exchanged. (`sas.we_started()` tracks who
+                // initiated the *request*, so it cannot be used here.)
+                if let Err(err) = sas.accept().await {
+                    warn!(%err, "could not accept SAS verification");
+                }
+            }
+            SasState::Created { .. } | SasState::Accepted { .. } => {}
             SasState::KeysExchanged { emojis, .. } => {
                 let Some(emojis) = emojis else {
                     // We only advertise support for the emoji method.
