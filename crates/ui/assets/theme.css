@@ -1411,3 +1411,5 @@ button.sender:hover { text-decoration: underline; }
 .invite-card .invite-accept, .invite-card .invite-decline { width: auto; height: auto; border-radius: var(--radius); padding: 8px 16px; }
 .inbox-invite { display: flex; align-items: center; gap: 6px; }
 .inbox-invite .inbox-open { flex: 1; text-align: left; background: none; padding: 0; }
+.inbox-mention { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.inbox-mention .inbox-body { color: var(--text-muted); font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }

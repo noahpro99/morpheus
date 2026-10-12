@@ -8,7 +8,7 @@ use morpheus_core::{OwnedRoomId, RoomSummary, Session};
 use tracing::warn;
 
 use super::invites::InboxInvites;
-use super::shell::{NavHistory, Rooms, Scope, Selected, SelectedSpace, go_to, scope_for};
+use super::shell::{NavHistory, NoticeLog, Rooms, Scope, Selected, SelectedSpace, go_to, scope_for};
 use crate::WindowControls;
 use crate::icons::{CHEVRON_LEFT, CHEVRON_RIGHT, CIRCLE_HELP, INBOX, Icon, Logo, MINUS, SQUARE, X};
 
@@ -230,6 +230,18 @@ pub fn InboxPanel() -> Element {
                         close();
                     },
                 }
+                InboxMentions {
+                    on_open: move |room_id: OwnedRoomId| {
+                        if let Some(room) = rooms.read().iter().find(|r| r.id == room_id).cloned() {
+                            let room_scope = scope_for(&rooms.read(), &room);
+                            if room_scope != *scope.peek() {
+                                scope.set(room_scope);
+                            }
+                        }
+                        go_to(room_id);
+                        close();
+                    },
+                }
                 if items.is_empty() {
                     p { class: "muted pad", "You're all caught up." }
                 }
@@ -319,4 +331,29 @@ pub fn nav_jump(
         scope.set(room_scope);
     }
     selected.set(Some(room_id));
+}
+
+/// Recent mentions, newest first, from what was announced since launch.
+#[component]
+fn InboxMentions(on_open: Callback<OwnedRoomId>) -> Element {
+    let notices = use_context::<NoticeLog>();
+    let mentions: Vec<_> = notices().0.iter().rev().filter(|n| n.is_mention).take(10).cloned().collect();
+    if mentions.is_empty() {
+        return rsx! {};
+    }
+    rsx! {
+        h4 { class: "section", "Mentions" }
+        for (index, notice) in mentions.into_iter().enumerate() {
+            button {
+                key: "{index}",
+                class: "inbox-item inbox-mention",
+                onclick: {
+                    let room_id = notice.room_id.clone();
+                    move |_| on_open.call(room_id.clone())
+                },
+                span { class: "inbox-name", "{notice.sender_name} in {notice.room_name}" }
+                span { class: "inbox-body", "{notice.body_summary}" }
+            }
+        }
+    }
 }

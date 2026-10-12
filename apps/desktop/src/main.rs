@@ -60,9 +60,33 @@ fn DesktopRoot() -> Element {
             let window = window.clone();
             move || window.window.set_maximized(!window.window.is_maximized())
         }),
+        is_focused: Rc::new({
+            let window = window.clone();
+            move || window.window.is_focused()
+        }),
+        notify: Rc::new(notify),
         close: Rc::new(move || window.close()),
     });
     rsx! { morpheus_ui::App {} }
+}
+
+/// Raise an OS notification. Off the UI thread, since the D-Bus round trip
+/// can stall when no notification daemon answers. Test runs never notify:
+/// they would pile real pop-ups on the developer's desktop.
+fn notify(title: String, body: String) {
+    if std::env::var_os("MORPHEUS_E2E_PORT").is_some() {
+        return;
+    }
+    std::thread::spawn(move || {
+        if let Err(err) = notify_rust::Notification::new()
+            .appname("Morpheus")
+            .summary(&title)
+            .body(&body)
+            .show()
+        {
+            tracing::warn!(%err, "desktop notification failed");
+        }
+    });
 }
 
 /// `MORPHEUS_DATA_DIR` wins so several accounts can run side by side during
