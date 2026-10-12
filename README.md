@@ -64,6 +64,8 @@ puts kicked or banned test users back into `#moderation`).
 E2E files map to features: `chat`, `spaces`, `features`, `interactions`, `attachments`, `threads`,
 `new_messages_marker`, `settings`, `perf`, `layout`, `scrolling`, `context_menu`, `account`,
 `moderation`, `message_menu`, `room_menu`.
+
+Keyboard shortcuts follow Discord's defaults; press Ctrl+/ in the app for the list.
 With `MORPHEUS_E2E_TIMINGS=1` the driver prints how long every wait took, and
 the core logs any operation slower than 750 ms with its call site, so slow
 spots show up in both the test output and the app log.

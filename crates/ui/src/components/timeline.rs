@@ -10,6 +10,7 @@ use tracing::{error, warn};
 use super::{
     composer::{ActiveTimeline, ComposerMode, Draft, Mode},
     context_menu::{MenuItem, copy_to_clipboard, open_menu},
+    hotkeys::{Hotkey, HotkeyRequest},
     message_dialogs::{MessageDialog, OpenMessageDialog, Pinned, PinnedRefresh},
     shell::{Rooms, Selected},
     lightbox::{LightboxImage, LightboxImages, LightboxIndex},
@@ -89,6 +90,11 @@ pub fn TimelineView(
     // down the timeline.
     let mut new_marker = use_signal(|| None::<String>);
     let mut caught_up = use_signal(|| false);
+    // The newest own, editable message, for "Up to edit" in the composer.
+    let last_own = use_hook(try_consume_context::<LastOwnMessage>);
+    // Escape with nothing open: back to the newest message, and mark read.
+    let mut hotkey = use_context::<HotkeyRequest>();
+    let is_main_timeline = root_event_id.is_none();
     // Plain (non-signal) handle to the open timeline. Leaving the room (it
     // remounts on room switch) fires a fully-read receipt on cleanup, without
     // touching reactive state while the component is being torn down.
@@ -124,6 +130,15 @@ pub fn TimelineView(
                     while let Some(diffs) = updates.next().await {
                         entries
                             .with_mut(|list| diffs.into_iter().for_each(|diff| diff.apply(list)));
+                        if let Some(mut last_own) = last_own {
+                            let newest = entries.read().iter().rev().find_map(|entry| match entry {
+                                TimelineEntry::Message(m) if m.is_own && m.can_edit => Some((**m).clone()),
+                                _ => None,
+                            });
+                            if *last_own.peek() != newest {
+                                last_own.set(newest);
+                            }
+                        }
 
                         // Capture the divider position as soon as the SDK has
                         // placed its read marker, and never move it afterwards.
@@ -223,6 +238,17 @@ pub fn TimelineView(
         let _ = entries.read().len();
         if !*scrolled_up.peek() {
             pin_to_bottom(ScrollBehavior::Instant);
+        }
+    });
+    use_effect(move || {
+        if hotkey() == Some(Hotkey::JumpToBottom) && is_main_timeline {
+            hotkey.set(None);
+            pin_to_bottom(ScrollBehavior::Smooth);
+            if let Some(active) = handle.peek().clone() {
+                drop(active.mark_as_fully_read());
+                caught_up.set(true);
+                new_marker.set(None);
+            }
         }
     });
 
@@ -1052,3 +1078,7 @@ fn ReplyQuote(reply: Option<ReplyPreview>) -> Element {
         }
     }
 }
+
+/// The newest message of ours that can still be edited, kept by the room's
+/// timeline for the composer's "Up to edit". Provided per room by the shell.
+pub type LastOwnMessage = Signal<Option<Message>>;
