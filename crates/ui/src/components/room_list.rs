@@ -4,7 +4,7 @@ use morpheus_core::{NotifyMode, OwnedRoomId, RoomSummary, Session};
 use super::context_menu::{MenuItem, copy_to_clipboard, open_menu, open_menu_at};
 use super::space_menu::space_menu;
 use super::room_dialogs::{OpenRoomDialog, RoomDialog};
-use super::shell::{Rooms, Scope, Selected, SelectedSpace, UiPrefs, rooms_in_scope};
+use super::shell::{Rooms, Scope, Selected, SelectedSpace, UiPrefs, go_to, rooms_in_scope};
 use crate::icons::Icon;
 use crate::media::Avatar;
 
@@ -136,7 +136,7 @@ pub fn RoomList(error: Option<String>) -> Element {
 #[component]
 fn RoomRow(room: RoomSummary) -> Element {
     let session = use_context::<Session>();
-    let mut selected = use_context::<Selected>();
+    let selected = use_context::<Selected>();
     let is_selected = selected().as_ref() == Some(&room.id);
     let id = room.id.clone();
 
@@ -166,7 +166,7 @@ fn RoomRow(room: RoomSummary) -> Element {
             class: if room.is_dm { "dm" },
             class: if is_selected { "selected" },
             class: if room.unread_messages > 0 || room.marked_unread { "unread" },
-            onclick: move |_| selected.set(Some(id.clone())),
+            onclick: move |_| go_to(id.clone()),
             if room.is_dm {
                 Avatar { media: room.avatar.clone(), fallback: room.name.clone(), size: 24 }
             } else {

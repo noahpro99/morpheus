@@ -135,8 +135,8 @@ pub fn TimelineView(
                                 TimelineEntry::Message(m) if m.is_own && m.can_edit => Some((**m).clone()),
                                 _ => None,
                             });
-                            if *last_own.peek() != newest {
-                                last_own.set(newest);
+                            if last_own.peek().0 != newest {
+                                last_own.set(LastOwn(newest));
                             }
                         }
 
@@ -1082,4 +1082,8 @@ fn ReplyQuote(reply: Option<ReplyPreview>) -> Element {
 
 /// The newest message of ours that can still be edited, kept by the room's
 /// timeline for the composer's "Up to edit". Provided per room by the shell.
-pub type LastOwnMessage = Signal<Option<Message>>;
+/// A newtype: Dioxus context is keyed by type, and `Signal<Option<Message>>`
+/// is already `ActiveThread` (sharing it made the thread chip set this).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct LastOwn(pub Option<Message>);
+pub type LastOwnMessage = Signal<LastOwn>;

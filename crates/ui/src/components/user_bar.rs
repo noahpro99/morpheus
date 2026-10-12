@@ -69,6 +69,7 @@ pub fn UserBar() -> Element {
 
     rsx! {
         footer { class: "sidebar-footer user-bar",
+            div { class: "user-pill",
             button {
                 class: "profile-chip",
                 title: "{user_id}",
@@ -78,6 +79,7 @@ pub fn UserBar() -> Element {
                 span { class: "user", "{name}" }
             }
             button { class: "ghost settings-button", title: "Settings", onclick: move |_| settings_open.set(true), Icon { glyph: SETTINGS, size: 18 } }
+            }
         }
     }
 }

@@ -6,7 +6,7 @@ use tracing::warn;
 
 use super::context_menu::{MenuItem, copy_to_clipboard, open_menu};
 use super::profile::{open_profile, open_profile_at};
-use super::shell::{Mention, MentionRequest, MembersVersion, Rooms, Scope, Selected, SelectedSpace};
+use super::shell::{Mention, MentionRequest, MembersVersion, Rooms, Scope, SelectedSpace, go_to};
 use crate::media::Avatar;
 
 /// Rows rendered at first. Big rooms have thousands of members, and every
@@ -178,13 +178,12 @@ pub(crate) fn member_menu(
         move || {
             let session = session.clone();
             let user_id = user_id.clone();
-            let mut selected = consume_context::<Selected>();
             let mut scope = consume_context::<SelectedSpace>();
             spawn(async move {
                 match session.dm_with(user_id).await {
                     Ok(dm) => {
                         scope.set(Scope::Dms);
-                        selected.set(Some(dm));
+                        go_to(dm);
                     }
                     Err(err) => warn!(%err, "opening a DM failed"),
                 }

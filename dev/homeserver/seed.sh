@@ -285,6 +285,16 @@ while read -r room_id name; do
 done < <(api "$ALICE" GET "/_synapse/admin/v1/rooms?limit=500" | jq -r '.rooms[] | "\(.room_id) \(.name // "")"')
 echo "  - removed $GC_COUNT leftover test rooms"
 
+# Tests rename users and set statuses; a run that dies midway leaves them
+# changed, and later tests match on the seeded names. Put them back each run.
+echo "names:"
+for pair in "alice:$ALICE" "bob:$BOB" "carol:$CAROL"; do
+  u="${pair%%:*}"; tok="${pair#*:}"
+  api "$tok" PUT "/_matrix/client/v3/profile/@$u:localhost/displayname" "$(jq -nc --arg n "$u" '{displayname:$n}')" >/dev/null
+  api "$tok" PUT "/_matrix/client/v3/presence/@$u:localhost/status" '{"presence":"online"}' >/dev/null 2>&1 || true
+done
+echo "  = display names reset to alice, bob, carol"
+
 if [[ ! -f "$HS_DIR/.seeded-firehose" ]]; then
   echo "firehose:"
   FIREHOSE=$(ensure_room firehose "firehose" "600 messages for performance tests")
