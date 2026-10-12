@@ -32,6 +32,18 @@ pub fn Composer(room_name: String, #[props(default)] placeholder: Option<String>
     let mut mode = use_context::<Mode>();
     let mut draft = use_context::<Draft>();
     let mut error = use_signal(|| None::<String>);
+    // Focus the box as soon as the room is ready to send, so navigating to a
+    // room (or opening a thread) lets you type straight away.
+    let mut input_el = use_signal(|| None::<std::rc::Rc<MountedData>>);
+    use_effect(move || {
+        if timeline().is_some()
+            && let Some(el) = input_el()
+        {
+            spawn(async move {
+                let _ = el.set_focus(true).await;
+            });
+        }
+    });
 
     let mut send = move || {
         let body = draft().trim().to_owned();
@@ -120,6 +132,7 @@ pub fn Composer(room_name: String, #[props(default)] placeholder: Option<String>
                     "📎"
                 }
                 input {
+                    onmounted: move |e| input_el.set(Some(e.data())),
                     r#type: "text",
                     placeholder: "{placeholder_text}",
                     value: "{draft}",

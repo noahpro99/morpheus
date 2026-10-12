@@ -248,6 +248,20 @@ if [[ ! -f "$HS_DIR/.seeded-encrypted" ]]; then
   echo "  + #encrypted with one undecryptable event"
 fi
 
+# A room with 150 extra members (admin API, no logins) so the member list's
+# windowing has something to window.
+if [[ ! -f "$HS_DIR/.seeded-crowd" ]]; then
+  echo "crowd:"
+  CROWD=$(ensure_room crowd "crowd" "150 members for the member list")
+  for i in $(seq -w 1 150); do
+    api "$ALICE" PUT "/_synapse/admin/v2/users/@crowd$i:localhost" \
+      "$(jq -nc --arg d "Crowd $i" '{password:"crowd-password", displayname:$d}')" >/dev/null
+    api "$ALICE" POST "/_synapse/admin/v1/join/$CROWD" "$(jq -nc --arg u "@crowd$i:localhost" '{user_id:$u}')" >/dev/null
+  done
+  touch "$HS_DIR/.seeded-crowd"
+  echo "  + 150 members joined #crowd"
+fi
+
 if [[ ! -f "$HS_DIR/.seeded-firehose" ]]; then
   echo "firehose:"
   FIREHOSE=$(ensure_room firehose "firehose" "600 messages for performance tests")
