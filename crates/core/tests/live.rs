@@ -776,3 +776,75 @@ async fn profile_name_avatar_and_status_round_trip() {
     assert_eq!(restored.status, None);
     assert_eq!(restored.name, "carol");
 }
+
+/// Moderation through the core: permissions, kick, invite back, ban, unban,
+/// and role changes, all on the seeded #moderation room (restored by seed).
+#[tokio::test]
+async fn admin_can_kick_invite_ban_unban_and_change_roles() {
+    let Some(env) = env() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping live test");
+        return;
+    };
+    let core = Core::new(fresh_data_dir()).expect("core");
+    let session = core
+        .login(LoginRequest {
+            homeserver: env.homeserver,
+            username: "alice".into(),
+            password: "alice-password".into(),
+        })
+        .await
+        .expect("login");
+    let room_id = {
+        let mut rooms = Vector::new();
+        let mut updates = session.room_list().await.expect("room list");
+        drive(
+            &mut rooms,
+            async || updates.next().await,
+            |rooms| rooms.iter().any(|r| r.name == "moderation"),
+        )
+        .await;
+        rooms
+            .iter()
+            .find(|r| r.name == "moderation")
+            .expect("moderation room")
+            .id
+            .clone()
+    };
+    let carol: morpheus_core::OwnedUserId = "@carol:localhost".parse().expect("user id");
+
+    let perms = session.my_permissions(room_id.clone()).await.expect("perms");
+    assert!(perms.can_kick && perms.can_ban && perms.can_invite && perms.can_change_roles);
+
+    let has_carol = |members: &Vec<morpheus_core::Member>| members.iter().any(|m| m.user_id == carol);
+    assert!(has_carol(&session.members(room_id.clone()).await.expect("members")));
+
+    session
+        .set_role(room_id.clone(), carol.clone(), morpheus_core::MemberRole::Moderator)
+        .await
+        .expect("promote");
+    let members = session.members(room_id.clone()).await.expect("members");
+    let carol_member = members.iter().find(|m| m.user_id == carol).expect("carol");
+    assert_eq!(carol_member.role, morpheus_core::MemberRole::Moderator);
+    session
+        .set_role(room_id.clone(), carol.clone(), morpheus_core::MemberRole::Member)
+        .await
+        .expect("demote");
+
+    session.kick(room_id.clone(), carol.clone(), Some("test".into())).await.expect("kick");
+    // Inviting back works (she is kicked, not banned)...
+    session.invite(room_id.clone(), carol.clone()).await.expect("invite after kick");
+    // ...and banning then unbanning both succeed.
+    session.ban(room_id.clone(), carol.clone(), None).await.expect("ban");
+    session.unban(room_id.clone(), carol.clone()).await.expect("unban");
+    session.invite(room_id.clone(), carol.clone()).await.expect("invite after unban");
+
+    // Blocking is account-wide and reversible.
+    session.block(carol.clone(), true).await.expect("block");
+    session.block(carol.clone(), false).await.expect("unblock");
+
+    // A DM lookup is stable: asking twice yields the same room.
+    let bob: morpheus_core::OwnedUserId = "@bob:localhost".parse().expect("user id");
+    let first = session.dm_with(bob.clone()).await.expect("dm");
+    let second = session.dm_with(bob).await.expect("dm again");
+    assert_eq!(first, second);
+}

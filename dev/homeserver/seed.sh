@@ -262,6 +262,16 @@ if [[ ! -f "$HS_DIR/.seeded-crowd" ]]; then
   echo "  + 150 members joined #crowd"
 fi
 
+# A room for moderation tests. Restored on every run: tests kick and ban
+# bob and carol here, so unban them and join them back each time.
+echo "moderation:"
+MODERATION=$(ensure_room moderation "moderation" "Kick and ban live here")
+for u in bob carol; do
+  api "$ALICE" POST "/_matrix/client/v3/rooms/$MODERATION/unban" "$(jq -nc --arg u "@$u:localhost" '{user_id:$u}')" >/dev/null 2>&1 || true
+  api "$ALICE" POST "/_synapse/admin/v1/join/$MODERATION" "$(jq -nc --arg u "@$u:localhost" '{user_id:$u}')" >/dev/null
+done
+echo "  = bob and carol are members again"
+
 if [[ ! -f "$HS_DIR/.seeded-firehose" ]]; then
   echo "firehose:"
   FIREHOSE=$(ensure_room firehose "firehose" "600 messages for performance tests")
