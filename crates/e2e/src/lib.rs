@@ -243,6 +243,19 @@ impl App {
             .map(drop)
     }
 
+    /// Scroll the timeline to its top repeatedly (revealing windowed rows and
+    /// paginating) until a message body contains `text`.
+    pub async fn reveal_message(&mut self, text: &str, timeout: Duration) -> Result<()> {
+        let found = format!(
+            "const t = document.querySelector('.timeline'); if (!t) return false; \
+             if ([...t.querySelectorAll('.message .body')].some(el => el.textContent.includes({}))) return true; \
+             t.scrollTop = -t.scrollHeight; return false;",
+            js_str(text)
+        );
+        self.wait_until(timeout, &format!("message {text:?} after scrolling up"), &found)
+            .await
+    }
+
     /// Right-click an element: a bubbling `contextmenu` event at its centre.
     pub async fn right_click(&mut self, selector: &str) -> Result<()> {
         let js = format!(
