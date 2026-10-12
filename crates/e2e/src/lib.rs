@@ -238,10 +238,16 @@ impl App {
             .await
     }
 
+    /// Click an element with a real-looking pointer position (its centre), so
+    /// handlers that anchor popups to the click behave as they do for a mouse.
     pub async fn click(&mut self, selector: &str) -> Result<()> {
-        self.eval(&format!("{}.click();", query(selector)))
-            .await
-            .map(drop)
+        let js = format!(
+            "const el = {}; const r = el.getBoundingClientRect(); \
+             el.dispatchEvent(new MouseEvent('click', {{ bubbles: true, cancelable: true, button: 0, \
+             clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 }}));",
+            query(selector)
+        );
+        self.eval(&js).await.map(drop)
     }
 
     /// Scroll the timeline to its top repeatedly (revealing windowed rows and
@@ -301,7 +307,8 @@ impl App {
         let js = format!(
             "const el = [...document.querySelectorAll({sel})].find(el => el.textContent.includes({text}));
              if (!el) throw new Error('no element matching ' + {sel} + ' with text ' + {text});
-             el.click();"
+             const r = el.getBoundingClientRect(); \
+             el.dispatchEvent(new MouseEvent('click', {{ bubbles: true, cancelable: true, button: 0, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 }}));"
         );
         self.eval(&js).await.map(drop)
     }
