@@ -1,12 +1,68 @@
 use dioxus::prelude::*;
-use morpheus_core::{MessageId, OwnedEventId, TimelineHandle};
+use morpheus_core::{Member, MessageId, OwnedEventId, OwnedRoomId, Session, TimelineHandle};
 use tracing::warn;
 
+use super::emoji;
 use super::hotkeys::{FileDrops, Hotkey, HotkeyRequest};
 use super::shell::{Mention, MentionRequest};
 use super::timeline::LastOwnMessage;
 use crate::attach::pick_attachment;
-use crate::icons::{Icon, PLUS};
+use crate::icons::{Icon, PLUS, SMILE};
+
+/// One row of the composer's autocomplete.
+#[derive(Debug, Clone, PartialEq)]
+enum Suggestion {
+    Emoji { emoji: &'static str, code: &'static str },
+    Member { name: String, user_id: String },
+}
+
+impl Suggestion {
+    /// What replaces the word being typed.
+    fn insert(&self) -> String {
+        match self {
+            Self::Emoji { emoji, .. } => format!("{emoji} "),
+            Self::Member { name, .. } => format!("@{name} "),
+        }
+    }
+}
+
+/// The word the caret sits in, taken as the draft's last word.
+fn last_word(draft: &str) -> &str {
+    draft.rsplit(char::is_whitespace).next().unwrap_or("")
+}
+
+/// Suggestions for the word being typed: `:code` from the emoji table,
+/// `@name` from the room's members.
+fn suggest(draft: &str, members: Option<&[Member]>) -> Vec<Suggestion> {
+    let word = last_word(draft);
+    if let Some(code) = word.strip_prefix(':') {
+        if code.len() < 2 {
+            return Vec::new();
+        }
+        return emoji::search(code)
+            .into_iter()
+            .take(8)
+            .map(|(emoji, code)| Suggestion::Emoji { emoji, code })
+            .collect();
+    }
+    if let Some(prefix) = word.strip_prefix('@') {
+        let prefix = prefix.to_lowercase();
+        return members
+            .unwrap_or_default()
+            .iter()
+            .filter(|m| {
+                m.name.to_lowercase().starts_with(&prefix)
+                    || m.user_id.localpart().to_lowercase().starts_with(&prefix)
+            })
+            .take(8)
+            .map(|m| Suggestion::Member {
+                name: m.name.clone(),
+                user_id: m.user_id.to_string(),
+            })
+            .collect();
+    }
+    Vec::new()
+}
 
 /// Shared between the timeline (which owns the handle) and the composer.
 pub type ActiveTimeline = Signal<Option<TimelineHandle>>;
@@ -37,11 +93,55 @@ pub fn Composer(
     /// Only the room's main composer sends dropped and pasted files; a
     /// thread's composer leaves them alone so nothing is sent twice.
     #[props(default)] accepts_drops: bool,
+    /// The room whose members `@` completes; `None` disables mentions.
+    #[props(default)] room_id: Option<OwnedRoomId>,
 ) -> Element {
     let timeline = use_context::<ActiveTimeline>();
     let mut mode = use_context::<Mode>();
     let mut draft = use_context::<Draft>();
     let mut error = use_signal(|| None::<String>);
+    let session = use_context::<Session>();
+    // Autocomplete: the rows on offer and which one is highlighted. Members
+    // are fetched the first time an `@` is typed.
+    let mut suggestions = use_signal(Vec::<Suggestion>::new);
+    let mut active = use_signal(|| 0usize);
+    let mut members = use_signal(|| None::<Vec<Member>>);
+    let mut emoji_open = use_signal(|| false);
+    let mut recompute = {
+        let room_id = room_id.clone();
+        let session = session.clone();
+        move || {
+            let text = draft.peek().clone();
+            if last_word(&text).starts_with('@') && members.peek().is_none()
+                && let Some(room_id) = room_id.clone()
+            {
+                let session = session.clone();
+                spawn(async move {
+                    match session.members(room_id).await {
+                        Ok(list) => {
+                            members.set(Some(list));
+                            let text = draft.peek().clone();
+                            suggestions.set(suggest(&text, members.peek().as_deref()));
+                            active.set(0);
+                        }
+                        Err(err) => warn!(%err, "members for mention autocomplete failed"),
+                    }
+                });
+            }
+            suggestions.set(suggest(&text, members.peek().as_deref()));
+            active.set(0);
+        }
+    };
+    // Replace the word being typed with the chosen row.
+    let mut accept = move |index: usize| {
+        let Some(choice) = suggestions.peek().get(index).cloned() else { return };
+        let mut text = draft.peek().clone();
+        let keep = text.len() - last_word(&text).len();
+        text.truncate(keep);
+        text.push_str(&choice.insert());
+        draft.set(text);
+        suggestions.set(Vec::new());
+    };
     // Dropped and pasted files go out through this room's timeline.
     let mut drops = use_context::<FileDrops>();
     use_effect(move || {
@@ -115,6 +215,7 @@ pub fn Composer(
 
     let on_input = move |e: FormEvent| {
         draft.set(e.value());
+        recompute();
         if let Some(handle) = timeline()
             && !e.value().is_empty()
         {
@@ -207,13 +308,95 @@ pub fn Composer(
                     disabled: timeline().is_none(),
                     oninput: on_input,
                     onkeydown: move |e| {
-                        if e.key() == Key::Enter && !e.modifiers().shift() {
-                            e.prevent_default();
-                            send();
-                        } else if e.key() == Key::Escape {
-                            cancel();
+                        let open = !suggestions.peek().is_empty();
+                        let count = suggestions.peek().len();
+                        match e.key() {
+                            Key::ArrowDown if open => {
+                                e.prevent_default();
+                                active.set((active() + 1) % count);
+                            }
+                            Key::ArrowUp if open => {
+                                e.prevent_default();
+                                active.set((active() + count - 1) % count);
+                            }
+                            Key::Enter | Key::Tab if open => {
+                                e.prevent_default();
+                                accept(active());
+                            }
+                            Key::Escape if open => {
+                                e.prevent_default();
+                                suggestions.set(Vec::new());
+                            }
+                            Key::Escape if emoji_open() => {
+                                e.prevent_default();
+                                emoji_open.set(false);
+                            }
+                            Key::Enter if !e.modifiers().shift() => {
+                                e.prevent_default();
+                                send();
+                            }
+                            Key::Escape => cancel(),
+                            _ => {}
                         }
                     },
+                }
+                button {
+                    class: "emoji-button",
+                    class: if emoji_open() { "active" },
+                    title: "Emoji",
+                    r#type: "button",
+                    disabled: timeline().is_none(),
+                    onclick: move |_| emoji_open.toggle(),
+                    Icon { glyph: SMILE, size: 20 }
+                }
+            }
+            if !suggestions().is_empty() {
+                div { class: "autocomplete", role: "listbox",
+                    for (index, row) in suggestions().iter().enumerate() {
+                        button {
+                            key: "{index}",
+                            class: "autocomplete-item",
+                            class: if index == active() { "active" },
+                            r#type: "button",
+                            // Keep the input focused while picking with the mouse.
+                            onmousedown: move |e| e.prevent_default(),
+                            onclick: move |_| accept(index),
+                            match row {
+                                Suggestion::Emoji { emoji, code } => rsx! {
+                                    span { class: "emoji", "{emoji}" }
+                                    span { ":{code}:" }
+                                },
+                                Suggestion::Member { name, user_id } => rsx! {
+                                    span { class: "emoji", "@" }
+                                    span { "{name}" }
+                                    span { class: "muted", "{user_id}" }
+                                },
+                            }
+                        }
+                    }
+                }
+            }
+            if emoji_open() {
+                div { class: "emoji-panel", role: "dialog",
+                    for (glyph, code) in emoji::EMOJI.iter().copied() {
+                        button {
+                            key: "{code}",
+                            title: "{code}",
+                            r#type: "button",
+                            onmousedown: move |e| e.prevent_default(),
+                            onclick: move |_| {
+                                let mut text = draft.peek().clone();
+                                if !text.is_empty() && !text.ends_with(' ') {
+                                    text.push(' ');
+                                }
+                                text.push_str(glyph);
+                                text.push(' ');
+                                draft.set(text);
+                                emoji_open.set(false);
+                            },
+                            "{glyph}"
+                        }
+                    }
                 }
             }
         }
