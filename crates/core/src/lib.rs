@@ -20,6 +20,7 @@ mod rooms;
 mod session;
 mod timeline;
 mod typing;
+mod verification;
 
 pub use core::Core;
 pub use error::{Error, Result};
@@ -36,7 +37,8 @@ pub use timeline::{
     TimelineEntry, TimelineHandle, TimelineUpdates,
 };
 pub use typing::TypingUpdates;
+pub use verification::{Device, VerificationHandle, VerificationStep, VerificationUpdates};
 
 pub use eyeball_im::VectorDiff;
 pub use imbl::Vector;
-pub use matrix_sdk::ruma::{OwnedEventId, OwnedRoomId, OwnedUserId, RoomId, UserId};
+pub use matrix_sdk::ruma::{OwnedDeviceId, OwnedEventId, OwnedRoomId, OwnedUserId, RoomId, UserId};
