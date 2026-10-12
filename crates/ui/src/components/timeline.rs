@@ -10,6 +10,7 @@ use tracing::{error, warn};
 use super::{
     composer::{ActiveTimeline, ComposerMode, Draft, Mode},
     lightbox::{LightboxImage, LightboxImages, LightboxIndex},
+    profile::open_profile,
     thread::ActiveThread,
 };
 use crate::{
@@ -375,10 +376,26 @@ pub(crate) fn MessageRow(message: Message, show_header: bool) -> Element {
             class: if message.is_local_echo { "pending" },
             class: if message.is_own { "own" },
             if show_header {
-                Avatar { media: message.sender_avatar.clone(), fallback: message.sender_name.clone(), size: 40 }
+                button {
+                    class: "avatar-button",
+                    title: "{message.sender}",
+                    onclick: {
+                        let sender = message.sender.clone();
+                        move |_| open_profile(sender.clone())
+                    },
+                    Avatar { media: message.sender_avatar.clone(), fallback: message.sender_name.clone(), size: 40 }
+                }
                 div { class: "message-main",
                     div { class: "message-meta",
-                        span { class: "sender", "{message.sender_name}" }
+                        button {
+                            class: "sender",
+                            title: "{message.sender}",
+                            onclick: {
+                                let sender = message.sender.clone();
+                                move |_| open_profile(sender.clone())
+                            },
+                            "{message.sender_name}"
+                        }
                         span { class: "time", "{time}" }
                     }
                     ReplyQuote { reply: message.in_reply_to.clone() }
