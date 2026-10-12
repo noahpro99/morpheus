@@ -7,9 +7,9 @@ use dioxus::prelude::*;
 use morpheus_core::{OwnedRoomId, Session};
 use tracing::warn;
 
-use super::shell::{NavHistory, Rooms, Scope, Selected, SelectedSpace, scope_for};
+use super::shell::{NavHistory, Rooms, Scope, Selected, SelectedSpace, go_to, scope_for};
 use crate::WindowControls;
-use crate::icons::{CHEVRON_LEFT, CHEVRON_RIGHT, CIRCLE_HELP, INBOX, Icon, MINUS, SQUARE, X};
+use crate::icons::{CHEVRON_LEFT, CHEVRON_RIGHT, CIRCLE_HELP, INBOX, Icon, Logo, MINUS, SQUARE, X};
 
 /// Which top-bar panel is open. Provided by the shell.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -26,9 +26,6 @@ pub type OpenTopPanel = Signal<TopPanel>;
 pub struct Nav {
     pub entries: Vec<OwnedRoomId>,
     pub index: usize,
-    /// Set while back/forward changes the selection, so the move is not
-    /// recorded as a new visit.
-    pub jumping: bool,
 }
 
 /// Keep at most this many visited rooms.
@@ -36,10 +33,6 @@ const HISTORY_CAP: usize = 50;
 
 impl Nav {
     pub fn record(&mut self, room: OwnedRoomId) {
-        if self.jumping {
-            self.jumping = false;
-            return;
-        }
         if self.entries.get(self.index) == Some(&room) {
             return;
         }
@@ -86,6 +79,13 @@ pub fn TitleBar() -> Element {
         .iter()
         .filter(|r| !r.is_space && (r.unread_messages > 0 || r.highlight_count > 0 || r.marked_unread))
         .count();
+    // For tests and debugging: the visited rooms by name.
+    let history_names = nav()
+        .entries
+        .iter()
+        .map(|id| rooms.read().iter().find(|r| &r.id == id).map(|r| r.name.clone()).unwrap_or_else(|| "?".into()))
+        .collect::<Vec<_>>()
+        .join(",");
 
     // Move the cursor and open that room (scope first, so the shell does not
     // bounce the selection back out of it).
@@ -101,7 +101,6 @@ pub fn TitleBar() -> Element {
         let Some((index, room_id)) = target else { return };
         nav.with_mut(|n| {
             n.index = index;
-            n.jumping = true;
         });
         let room_scope = rooms
             .read()
@@ -134,7 +133,7 @@ pub fn TitleBar() -> Element {
                     (controls.toggle_maximize)();
                 }
             },
-            div { class: "titlebar-nav",
+            div { class: "titlebar-nav", "data-nav": "{nav().index}/{nav().entries.len()}", "data-nav-entries": "{history_names}",
                 button {
                     class: "ghost nav-button",
                     title: "Back",
@@ -152,7 +151,7 @@ pub fn TitleBar() -> Element {
                     Icon { glyph: CHEVRON_RIGHT, size: 18 }
                 }
             }
-            div { class: "titlebar-title", "{title}" }
+            div { class: "titlebar-title", Logo { size: 16, class: "titlebar-logo" } "{title}" }
             div { class: "titlebar-actions",
                 button {
                     class: "ghost titlebar-button help-button",
@@ -188,7 +187,6 @@ pub fn TitleBar() -> Element {
 pub fn InboxPanel() -> Element {
     let rooms = use_context::<Rooms>();
     let session = use_context::<Session>();
-    let mut selected = use_context::<Selected>();
     let mut scope = use_context::<SelectedSpace>();
     let mut panel = use_context::<OpenTopPanel>();
     let mut close = move || panel.set(TopPanel::None);
@@ -239,7 +237,7 @@ pub fn InboxPanel() -> Element {
                                 if room_scope != *scope.peek() {
                                     scope.set(room_scope);
                                 }
-                                selected.set(Some(room.id.clone()));
+                                go_to(room.id.clone());
                                 close();
                             }
                         },
@@ -302,10 +300,7 @@ pub fn nav_jump(
         }
     };
     let Some((index, room_id)) = target else { return };
-    nav.with_mut(|n| {
-        n.index = index;
-        n.jumping = true;
-    });
+    nav.with_mut(|n| n.index = index);
     let room_scope = rooms
         .read()
         .iter()

@@ -225,7 +225,12 @@ fn entries(items: &[Rc<MenuItem>], close: impl FnMut() + Copy + 'static) -> Elem
                     span { class: "menu-label", "{item.label}" }
                 }
             } else {
-                div { class: "context-item has-submenu", role: "menuitem", "aria-haspopup": "true",
+                div {
+                    class: "context-item has-submenu",
+                    role: "menuitem",
+                    "aria-haspopup": "true",
+                    // Keep the flyout on screen: flip it up or to the left when needed.
+                    onmouseenter: move |_| { document::eval(SUBMENU_CLAMP_JS); },
                     if let Some(glyph) = item.glyph() {
                         Icon { glyph, size: 16, class: "menu-icon" }
                     }
@@ -296,3 +301,11 @@ fn default_icon(label: &str) -> Option<&'static str> {
         .find(|(prefix, _)| label.starts_with(prefix))
         .map(|(_, glyph)| *glyph)
 }
+
+/// Runs when a submenu parent is hovered: the flyout opens to the right and
+/// down by default; near an edge it opens up or to the left instead.
+const SUBMENU_CLAMP_JS: &str = "const sub = document.querySelector('.context-item.has-submenu:hover > .context-submenu'); if (!sub) return; \
+    sub.style.top = ''; sub.style.bottom = ''; sub.style.left = ''; sub.style.right = ''; \
+    const r = sub.getBoundingClientRect(); \
+    if (r.bottom > innerHeight - 8) { sub.style.top = 'auto'; sub.style.bottom = '-6px'; } \
+    if (r.right > innerWidth - 8) { sub.style.left = 'auto'; sub.style.right = '100%'; sub.style.marginRight = '2px'; }";

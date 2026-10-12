@@ -87,7 +87,8 @@ async fn card_mod_view_and_report_form() {
         return;
     };
     let mut app = App::launch(&hs).await.expect("launch app");
-    login_and_open(&mut app, "alice", "moderation").await;
+    // #general, not #moderation: the moderation tests kick carol from there.
+    login_and_open(&mut app, "alice", "general").await;
     open_card_for(&mut app, "carol").await;
 
     // Mod view is the member menu for this person, in this room.

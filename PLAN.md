@@ -73,6 +73,13 @@ timeline → send.
 - [x] Account menu on the footer chip: view/edit profile (name, avatar), presence status, switch account (signs out), sign out
 - [x] Composer focuses on navigation; member list windowed to 100 rows with show-more
 - [x] Custom title bar (no native decorations): back/forward through visited rooms, scope name, help, inbox of unread rooms, window controls and drag
+- [x] Keyboard shortcuts after Discord (Ctrl+/ lists them); Escape closes any modal from anywhere
+- [x] Lucide icons in every menu and header button; consistent corner-radius scale; bottom band (user pill + message box)
+- [x] Server menu (name click, badge right-click): mark read, invite, mute/notifications, hide muted, settings (name, topic, icon), privacy (join rule, history), per-server profile, create channel/category, move to folder, leave, copy info
+- [x] Rail: drag to reorder, folders (drop one badge on another), rename/ungroup; layout synced via account data
+- [x] Profile card popover (mutual rooms, note, role, message box, mod view, more menu) with the full modal behind "View full profile"
+- [ ] Friends list: Matrix has no friend relationship; could map to a "favourite people" list in account data
+- [ ] Mod view page (Discord's): a per-user moderation sheet across rooms
 - [ ] Multi-account: store sessions side by side so "Switch account" swaps without signing in again
 - [ ] Invites: list pending invites with accept/decline (today invites only reach other clients)
 - [ ] Per-user nicknames: Discord's friend nicknames have no Matrix equivalent; a local-only alias store could stand in

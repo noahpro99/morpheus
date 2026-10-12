@@ -134,7 +134,7 @@ pub fn Composer(room_name: String, #[props(default)] placeholder: Option<String>
             }
             Some(Hotkey::EditLast) => {
                 hotkey.set(None);
-                if let Some(message) = last_own.and_then(|m| m.peek().clone()) {
+                if let Some(message) = last_own.and_then(|m| m.peek().0.clone()) {
                     let original = message.kind.plain_body().unwrap_or_default().to_owned();
                     draft.set(original.clone());
                     mode.set(Some(ComposerMode::Edit {

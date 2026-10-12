@@ -8,7 +8,7 @@ use morpheus_core::{MemberRole, OwnedUserId, Session};
 use tracing::warn;
 
 use super::context_menu::{MenuItem, copy_to_clipboard, open_menu_at};
-use super::shell::{Rooms, Scope, Selected, SelectedSpace};
+use super::shell::{Rooms, Scope, Selected, SelectedSpace, go_to};
 use crate::icons::Icon;
 
 use crate::media::Avatar;
@@ -402,7 +402,6 @@ pub fn ProfileCard(open: ProfileOpen) -> Element {
             }
             let session = session.clone();
             let user_id = user_id.clone();
-            let mut selected = consume_context::<Selected>();
             let mut scope = consume_context::<SelectedSpace>();
             spawn(async move {
                 match session.dm_with(user_id).await {
@@ -416,7 +415,7 @@ pub fn ProfileCard(open: ProfileOpen) -> Element {
                             Err(err) => warn!(%err, "opening the DM failed"),
                         }
                         scope.set(Scope::Dms);
-                        selected.set(Some(dm));
+                        go_to(dm);
                         close();
                     }
                     Err(err) => warn!(%err, "no DM for the message"),
@@ -537,10 +536,10 @@ pub fn ProfileCard(open: ProfileOpen) -> Element {
         }
     };
 
-    let style = match open.at {
-        Some((x, y)) => format!("left: {x}px; top: {y}px;"),
-        None => "left: 50%; top: 20%; transform: translateX(-50%);".to_string(),
-    };
+    // Placed by `CARD_CLAMP_JS` once mounted: beside the element that was
+    // clicked (never over it) and always inside the window.
+    let (ax, ay) = open.at.unwrap_or((-1.0, -1.0));
+    let style = "left: -9999px; top: 0;".to_string();
     // The room you are both in right now comes first.
     let mut mutual_list = mutual().unwrap_or_default();
     if let Some(here) = selected.peek().clone()
@@ -560,6 +559,8 @@ pub fn ProfileCard(open: ProfileOpen) -> Element {
             div {
                 class: "profile-card",
                 style: "{style}",
+                "data-ax": "{ax}",
+                "data-ay": "{ay}",
                 tabindex: "-1",
                 autofocus: true,
                 onclick: move |e| e.stop_propagation(),
@@ -642,9 +643,20 @@ pub fn ProfileCard(open: ProfileOpen) -> Element {
 }
 
 const CARD_CLAMP_JS: &str = "const c = document.querySelector('.profile-card'); if (!c) return; \
-    const r = c.getBoundingClientRect(); \
-    if (r.right > innerWidth - 8) c.style.left = Math.max(8, innerWidth - r.width - 8) + 'px'; \
-    if (r.bottom > innerHeight - 8) c.style.top = Math.max(8, innerHeight - r.height - 8) + 'px';";
+    const ax = parseFloat(c.dataset.ax), ay = parseFloat(c.dataset.ay); \
+    const w = c.offsetWidth, h = c.offsetHeight, pad = 8; \
+    let x, y; \
+    const anchor = ax >= 0 ? document.elementFromPoint(ax, ay) : null; \
+    const el = anchor ? (anchor.closest('.avatar-button, button.sender, .member, .profile-chip, .context-item') || anchor) : null; \
+    if (el) { const r = el.getBoundingClientRect(); \
+      x = r.right + pad; if (x + w > innerWidth - pad) x = r.left - w - pad; \
+      if (x < pad) { x = pad; } \
+      y = r.top; } \
+    else if (ax >= 0) { x = ax; y = ay; } \
+    else { x = (innerWidth - w) / 2; y = innerHeight * 0.2; } \
+    y = Math.max(pad, Math.min(y, innerHeight - h - pad)); \
+    x = Math.max(pad, Math.min(x, innerWidth - w - pad)); \
+    c.style.left = x + 'px'; c.style.top = y + 'px';";
 
 #[component]
 fn ReportUserForm(user_id: OwnedUserId, on_done: Callback<()>) -> Element {

@@ -26,7 +26,7 @@
   --radius-xl: 16px;
   --radius-pill: 999px;
   /* The bottom band: the user pill and the message box share it. */
-  --bottom-h: 44px;
+  --bottom-h: 50px;
   --bottom-gap: 12px;
   --rail-w: 72px;
   --sidebar-w: 248px;
@@ -1351,3 +1351,40 @@ button.sender:hover { text-decoration: underline; }
 .folder-items { display: flex; flex-direction: column; gap: 8px; }
 .folder-items .rail-item { width: 40px; height: 40px; }
 .folder-items .rail-item .avatar { font-size: 0.95rem !important; }
+
+/* ---- Round two: pill background, avatar press, plain +, logo ---------------- */
+
+/* The band under the rail and sidebar keeps their colours; the pill floats on it. */
+.user-bar {
+  height: auto;
+  margin: 0;
+  padding: 0 var(--bottom-gap) var(--bottom-gap);
+  border-radius: 0;
+  background: linear-gradient(to right, var(--bg-rail) 0, var(--bg-rail) var(--rail-w), var(--bg-sidebar) var(--rail-w), var(--bg-sidebar) 100%);
+}
+.user-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--bottom-h);
+  padding: 0 6px 0 4px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+}
+.user-pill .profile-chip { height: 40px; }
+.user-pill .profile-chip .avatar { width: 34px; height: 34px; }
+.attach-button { background: transparent; }
+.attach-button:hover { background: var(--bg-hover); }
+.composer input { padding: 12px 8px 12px 4px; font-size: 1rem; }
+
+/* Clickable avatars: lift on hover, press down on mouse down. */
+.avatar-button, .member .avatar, .profile-chip .avatar { transition: transform 90ms ease, box-shadow 120ms ease; }
+.avatar-button:hover .avatar, .member:hover .avatar, .profile-chip:hover .avatar { box-shadow: 0 5px 14px rgba(0, 0, 0, 0.55); }
+.avatar-button:active .avatar, .member:active .avatar, .profile-chip:active .avatar { transform: translateY(2px); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4); }
+
+.logo { flex: none; }
+.titlebar-title { display: inline-flex; align-items: center; gap: 8px; }
+.titlebar-logo { color: var(--accent); }
+.login-logo { color: var(--accent); align-self: center; margin-bottom: 4px; }
+.rail-dms .logo { color: var(--text); }
+.rail-dms.selected .logo, .rail-dms:hover .logo { color: white; }

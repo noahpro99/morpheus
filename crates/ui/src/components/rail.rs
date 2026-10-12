@@ -6,7 +6,7 @@ use super::context_menu::{MenuItem, open_menu};
 use super::room_dialogs::{OpenRoomDialog, RoomDialog};
 use super::shell::{Prefs, RailEntry, Rooms, Scope, SelectedSpace, UiPrefs};
 use super::space_menu::space_menu;
-use crate::icons::{FOLDER, Icon, PLUS};
+use crate::icons::{FOLDER, Icon, Logo, PLUS};
 use crate::media::Avatar;
 
 /// What is being dragged in the rail, if anything.
@@ -123,9 +123,7 @@ pub fn Rail() -> Element {
                 class: if current == Scope::Dms { "selected" },
                 title: "Direct messages",
                 onclick: move |_| selected_space.set(Scope::Dms),
-                svg { view_box: "0 0 24 24", width: "24", height: "24", fill: "currentColor",
-                    path { d: "M12 3C6.5 3 2 6.9 2 11.7c0 2.6 1.3 4.9 3.4 6.5L4.5 21l3.9-1.9c1.1.3 2.3.5 3.6.5 5.5 0 10-3.9 10-8.9S17.5 3 12 3z" }
-                }
+                Logo { size: 30 }
                 if unread_dms > 0 {
                     span { class: "rail-badge", "{unread_dms}" }
                 }

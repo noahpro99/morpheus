@@ -1,4 +1,5 @@
 use dioxus::prelude::*;
+use crate::icons::Logo;
 use morpheus_core::{Core, LoginFlows, LoginRequest, Session};
 
 use crate::AppConfig;
@@ -88,6 +89,7 @@ pub fn Login(restore_error: Option<String>) -> Element {
     rsx! {
         main { class: "centered",
             form { class: "card login", onsubmit: submit,
+                Logo { size: 48, class: "login-logo" }
                 h1 { "Welcome back" }
                 p { class: "muted", "Sign in to your Matrix account" }
 

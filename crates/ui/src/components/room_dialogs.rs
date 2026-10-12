@@ -4,7 +4,7 @@
 use dioxus::prelude::*;
 use morpheus_core::{History, OwnedRoomId, OwnedUserId, Privacy, Session};
 
-use super::shell::{MembersVersion, RailEntry, Rooms, Scope, Selected, SelectedSpace, UiPrefs, rooms_in_scope};
+use super::shell::{MembersVersion, RailEntry, Rooms, Scope, SelectedSpace, UiPrefs, go_to, rooms_in_scope};
 
 /// Which room dialog is open. Provided by the shell.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -161,7 +161,6 @@ pub fn EditRoomModal(room_id: OwnedRoomId) -> Element {
 pub fn CreateRoomModal() -> Element {
     let session = use_context::<Session>();
     let mut dialog = use_context::<OpenRoomDialog>();
-    let mut selected = use_context::<Selected>();
     let mut scope_signal = use_context::<SelectedSpace>();
     let rooms = use_context::<Rooms>();
     let mut name = use_signal(String::new);
@@ -204,7 +203,7 @@ pub fn CreateRoomModal() -> Element {
                     Ok(room_id) => {
                         // Land in the new room, in the scope it belongs to.
                         scope_signal.set(space.map_or(Scope::Rooms, Scope::Space));
-                        selected.set(Some(room_id));
+                        go_to(room_id);
                         close();
                     }
                     Err(err) => error.set(Some(err.to_string())),

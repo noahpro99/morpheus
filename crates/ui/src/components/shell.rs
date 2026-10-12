@@ -25,7 +25,7 @@ use super::{
     settings::{ActiveVerification, Settings, SettingsOpen, track_verification},
     switcher::QuickSwitcher,
     thread::{ActiveThread, ThreadPanel},
-    timeline::{LastOwnMessage, TimelineView},
+    timeline::{LastOwn, LastOwnMessage, TimelineView},
     titlebar::{HelpModal, InboxPanel, Nav, OpenTopPanel, TitleBar, TopPanel, nav_jump},
     user_bar::UserBar,
 };
@@ -232,7 +232,7 @@ pub fn Shell(session: Session) -> Element {
     let mut message_dialog: OpenMessageDialog = use_context_provider(|| Signal::new(MessageDialog::None));
     let mut room_dialog: OpenRoomDialog = use_context_provider(|| Signal::new(RoomDialog::None));
     let mut top_panel: OpenTopPanel = use_context_provider(|| Signal::new(TopPanel::None));
-    let mut nav: NavHistory = use_context_provider(|| Signal::new(Nav::default()));
+    let nav: NavHistory = use_context_provider(|| Signal::new(Nav::default()));
     let lightbox_open: LightboxOpen = use_context_provider(|| Signal::new(LightboxShown(false)));
     let mut escapes: EscapeTick = use_context_provider(|| Signal::new(Escapes(0)));
     let mut prefs: UiPrefs = use_context_provider(|| Signal::new(Prefs::default()));
@@ -249,12 +249,10 @@ pub fn Shell(session: Session) -> Element {
             }
         }
     });
-    // Every room the user lands in becomes a history entry (back/forward).
-    use_effect(move || {
-        if let Some(room_id) = selected() {
-            nav.with_mut(|n| n.record(room_id));
-        }
-    });
+    // History is recorded by `go_to`, not by an effect on `selected`: an
+    // effect only runs after the next render and would miss a visit when two
+    // changes land before one.
+    let _ = nav;
     let pinned: Pinned = use_context_provider(|| Signal::new(PinnedIds::default()));
     let pinned_refresh: PinnedRefresh = use_context_provider(|| Signal::new(0));
     use_pinned_fetcher(session.clone(), selected, pinned_refresh, pinned);
@@ -321,7 +319,10 @@ pub fn Shell(session: Session) -> Element {
                 scope = ?selected_space.peek(),
                 "re-picking the open room"
             );
-            selected.set(in_scope.first().map(|room| room.id.clone()));
+            match in_scope.first() {
+                Some(room) => go_to(room.id.clone()),
+                None => selected.set(None),
+            }
         }
     });
 
@@ -331,11 +332,11 @@ pub fn Shell(session: Session) -> Element {
     });
 
     // A thread belongs to the room it was opened from; close it when switching
-    // rooms, along with any menu built from that room's signals.
+    // rooms. (Menus built from a room's signals close when that room's
+    // component unmounts, see `ChatRoom`.)
     use_effect(move || {
         selected();
         active_thread.set(None);
-        context_menu.set(MenuState::default());
     });
 
     // Escape closes whichever modal is open, top-most first. A running
@@ -379,7 +380,7 @@ pub fn Shell(session: Session) -> Element {
             if room_scope != *selected_space.peek() {
                 selected_space.set(room_scope);
             }
-            selected.set(Some(room.id.clone()));
+            go_to(room.id.clone());
         };
         let step = move |list: &[RoomSummary], step: isize, unread_only: bool| -> Option<RoomSummary> {
             let candidates: Vec<&RoomSummary> = list
@@ -545,6 +546,8 @@ pub fn Shell(session: Session) -> Element {
 #[component]
 fn ChatRoom(room: RoomSummary) -> Element {
     let session = use_context::<Session>();
+    // Menus built from this room's signals must not outlive it.
+    use_drop(move || consume_context::<ContextMenu>().set(MenuState::default()));
     let mut members_open = use_context::<MembersOpen>();
     let mut message_dialog = use_context::<OpenMessageDialog>();
     let pinned = use_context::<Pinned>();
@@ -569,7 +572,7 @@ fn ChatRoom(room: RoomSummary) -> Element {
     use_context_provider(|| ActiveTimeline::new(None));
     use_context_provider(|| Mode::new(None));
     use_context_provider(|| Draft::new(String::new()));
-    use_context_provider(|| LastOwnMessage::new(None));
+    use_context_provider(|| LastOwnMessage::new(LastOwn::default()));
     provide_lightbox();
     let mut typing = use_signal(Vec::<String>::new);
 
@@ -670,4 +673,12 @@ pub fn scope_for(rooms: &Vector<RoomSummary>, room: &RoomSummary) -> Scope {
         }
     }
     Scope::Rooms
+}
+
+/// Open a room and remember the visit for back/forward. Every navigation
+/// that is not itself back/forward goes through here.
+pub fn go_to(room_id: OwnedRoomId) {
+    let mut nav = consume_context::<NavHistory>();
+    nav.with_mut(|n| n.record(room_id.clone()));
+    consume_context::<Selected>().set(Some(room_id));
 }

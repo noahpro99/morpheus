@@ -181,8 +181,9 @@ async fn scrolling_up_loads_older_history() {
     let mut app = App::launch(&hs).await.expect("launch app");
     login_and_open(&mut app, "random").await;
 
-    // The newest page is there, the oldest message is not yet.
-    app.wait_for_exact_text(".message .body", "random filler message 80", DEFAULT_WAIT)
+    // The timeline has loaded (newer test traffic sits above the seeded
+    // filler by now); the oldest filler message is not there yet.
+    app.wait_for(".message .body", DEFAULT_WAIT)
         .await
         .expect("newest");
     app.wait_for_js(

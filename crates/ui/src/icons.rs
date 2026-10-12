@@ -80,3 +80,20 @@ pub const USERS: &str = r#"<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /
 pub const USER: &str = r#"<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /> <circle cx="12" cy="7" r="4" />"#;
 pub const USER_X: &str = r#"<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /> <circle cx="9" cy="7" r="4" /> <line x1="17" x2="22" y1="8" y2="13" /> <line x1="22" x2="17" y1="8" y2="13" />"#;
 pub const X: &str = r#"<path d="M18 6 6 18" /> <path d="m6 6 12 12" />"#;
+/// The Morpheus mark (two eyes), drawn in the current colour.
+pub const LOGO: &str = r#"<path d="M292.355 256.433 C293.616 220.336 330.594 192.33 374.949 193.878 C419.303 195.427 454.237 225.945 452.977 262.042 C451.716 298.139 414.738 326.145 370.384 324.596 C326.029 323.047 291.095 292.529 292.355 256.433 Z" fill="currentColor" stroke="none"/><path d="M219.639 256.433 C218.379 220.336 181.401 192.33 137.046 193.878 C92.692 195.427 57.757 225.945 59.018 262.042 C60.278 298.139 97.257 326.145 141.611 324.596 C185.965 323.047 220.9 292.529 219.639 256.433 Z" fill="currentColor" stroke="none"/><path d="M256 244.362 C267.533 244.362 276.546 249.185 280.826 260.398 C284.46 268.445 299.175 254.845 299.175 254.845" fill="none" stroke="currentColor" stroke-width="12"/><path d="M256 244.362 C244.465 244.362 235.45 249.183 231.169 260.398 C227.535 268.445 212.82 254.845 212.82 254.845" fill="none" stroke="currentColor" stroke-width="12"/>"#;
+
+/// The logo at `size` pixels in the current text colour.
+#[component]
+pub fn Logo(#[props(default = 24)] size: u32, #[props(default)] class: String) -> Element {
+    rsx! {
+        svg {
+            class: "logo {class}",
+            view_box: "0 0 512 512",
+            width: "{size}",
+            height: "{size}",
+            "aria-label": "Morpheus",
+            dangerous_inner_html: "{LOGO}",
+        }
+    }
+}

@@ -45,13 +45,10 @@ async fn renders_and_downloads_attachments() {
     login_and_open(&mut app, "dev").await;
 
     // File card: icon, name and a working download.
-    app.wait_for_text(
-        ".attachment-card .attachment-name",
-        "release-notes.txt",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("file card");
+    // Seeded long ago: scroll up until the card is revealed.
+    app.reveal_text(".attachment-card .attachment-name", "release-notes.txt", DEFAULT_WAIT)
+        .await
+        .expect("file card");
     app.wait_for_text(".attachment-card .attachment-size", "B", DEFAULT_WAIT)
         .await
         .expect("human-readable file size");
