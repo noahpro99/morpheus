@@ -723,3 +723,56 @@ async fn self_verification_emoji_sas_between_two_devices() {
         "B should see A as verified"
     );
 }
+
+/// Display name, avatar upload and presence status round-trip through the
+/// profile API. Runs as carol so the alice display name other tests match
+/// on stays untouched.
+#[tokio::test]
+async fn profile_name_avatar_and_status_round_trip() {
+    let Some(env) = env() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping live test");
+        return;
+    };
+    let core = Core::new(fresh_data_dir()).expect("core");
+    let session = core
+        .login(LoginRequest {
+            homeserver: env.homeserver,
+            username: "carol".into(),
+            password: "carol-password".into(),
+        })
+        .await
+        .expect("login");
+
+    let before = session.own_profile().await.expect("profile");
+    assert_eq!(before.user_id.as_str(), "@carol:localhost");
+
+    let name = format!("Carol {}", std::process::id());
+    session.set_display_name(name.clone()).await.expect("set name");
+    session
+        .set_status(Some("In a meeting".into()))
+        .await
+        .expect("set status");
+
+    // A 1x1 PNG is enough for the upload path.
+    let png = base64::Engine::decode(
+        &base64::engine::general_purpose::STANDARD,
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+    )
+    .expect("png");
+    let path = fresh_data_dir().with_extension("png");
+    std::fs::write(&path, png).expect("write png");
+    session.set_avatar(path.clone()).await.expect("set avatar");
+    let _ = std::fs::remove_file(path);
+
+    let after = session.own_profile().await.expect("profile");
+    assert_eq!(after.name, name);
+    assert!(after.avatar.is_some(), "avatar uploaded");
+    assert_eq!(after.status.as_deref(), Some("In a meeting"));
+
+    // Clearing the status removes it again; restore the seeded name.
+    session.set_status(None).await.expect("clear status");
+    session.set_display_name("carol".into()).await.expect("restore name");
+    let restored = session.own_profile().await.expect("profile");
+    assert_eq!(restored.status, None);
+    assert_eq!(restored.name, "carol");
+}

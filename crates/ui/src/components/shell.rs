@@ -7,7 +7,10 @@ use super::{
     context_menu::{ContextMenu, ContextMenuLayer, MenuState},
     lightbox::{Lightbox, provide_lightbox},
     members::Members,
-    profile::{OpenProfile, ProfileModal, ProfileTarget},
+    profile::{
+        EditProfileModal, Editor, OpenProfile, ProfileEditor, ProfileModal, ProfileRefresh,
+        ProfileTarget, ProfileVersion, StatusModal,
+    },
     rail::Rail,
     room_list::RoomList,
     settings::{ActiveVerification, Settings, SettingsOpen, track_verification},
@@ -114,6 +117,8 @@ pub fn Shell(session: Session) -> Element {
     let members_open: MembersOpen = use_context_provider(|| Signal::new(MembersShown(true)));
     let mut open_profile: OpenProfile = use_context_provider(|| Signal::new(ProfileTarget::default()));
     let mut context_menu: ContextMenu = use_context_provider(|| Signal::new(MenuState::default()));
+    let mut editor: ProfileEditor = use_context_provider(|| Signal::new(Editor::None));
+    let _refresh: ProfileRefresh = use_context_provider(|| Signal::new(ProfileVersion::default()));
 
     // Incoming verification requests from the user's other devices pop the settings dialog.
     use_future({
@@ -192,6 +197,8 @@ pub fn Shell(session: Session) -> Element {
             // verification keeps going in the background.
             if context_menu().0.is_some() {
                 context_menu.set(MenuState::default());
+            } else if editor() != Editor::None {
+                editor.set(Editor::None);
             } else if open_profile().0.is_some() {
                 open_profile.set(ProfileTarget::default());
             } else if settings_open() {
@@ -246,6 +253,11 @@ pub fn Shell(session: Session) -> Element {
             }
             if let Some(user_id) = open_profile().0 {
                 ProfileModal { user_id }
+            }
+            match editor() {
+                Editor::Profile => rsx! { EditProfileModal {} },
+                Editor::Status => rsx! { StatusModal {} },
+                Editor::None => rsx! {},
             }
             ContextMenuLayer {}
         }
