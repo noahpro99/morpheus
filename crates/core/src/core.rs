@@ -8,6 +8,9 @@ use tokio::runtime::Runtime;
 
 use crate::{CoreFuture, Result};
 
+/// Operations slower than this are logged at warn level with their call site.
+const SLOW_OP: std::time::Duration = std::time::Duration::from_millis(750);
+
 /// Entry point of the core. Cheap to clone; all clones share one runtime.
 #[derive(Clone)]
 pub struct Core {
@@ -47,13 +50,31 @@ impl Core {
     ///
     /// The returned future only awaits a join handle, so it can be polled from
     /// any executor (Dioxus, a test harness, ...).
+    #[track_caller]
     pub(crate) fn run<T, F>(&self, fut: F) -> CoreFuture<T>
     where
         T: Send + 'static,
         F: Future<Output = Result<T>> + Send + 'static,
     {
+        // Named after the call site so slow operations are easy to attribute.
+        let site = std::panic::Location::caller();
+        let op = format!(
+            "{}:{}",
+            site.file().rsplit('/').next().unwrap_or(site.file()),
+            site.line()
+        );
         let join = self.runtime().spawn(fut);
-        Box::pin(async move { join.await? })
+        Box::pin(async move {
+            let started = std::time::Instant::now();
+            let result = join.await?;
+            let elapsed = started.elapsed();
+            if elapsed > SLOW_OP {
+                tracing::warn!(%op, ?elapsed, "slow core operation");
+            } else {
+                tracing::trace!(%op, ?elapsed, "core operation");
+            }
+            result
+        })
     }
 
     /// Fire-and-forget a task on the core runtime.

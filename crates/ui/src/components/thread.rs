@@ -3,6 +3,7 @@ use morpheus_core::{Message, MessageId, OwnedRoomId};
 
 use super::{
     composer::{ActiveTimeline, Composer, Draft, Mode},
+    lightbox::{Lightbox, provide_lightbox},
     timeline::{MessageRow, TimelineView},
 };
 
@@ -20,6 +21,8 @@ pub fn ThreadPanel(room_id: OwnedRoomId, root: Message) -> Element {
     use_context_provider(|| ActiveTimeline::new(None));
     let mut mode = use_context_provider(|| Mode::new(None));
     let mut draft = use_context_provider(|| Draft::new(String::new()));
+    // The thread timeline has its own image gallery, like a room does.
+    provide_lightbox();
 
     let MessageId::Event(root_event_id) = root.id.clone() else {
         // Local echoes cannot be thread roots; nothing sensible to open.
@@ -51,6 +54,7 @@ pub fn ThreadPanel(room_id: OwnedRoomId, root: Message) -> Element {
             div { class: "thread-panel-divider",
                 span { "{reply_count_label(&root)}" }
             }
+            Lightbox {}
             TimelineView {
                 key: "{root_event_id}",
                 room_id: room_id.clone(),

@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 
-use super::shell::{Rooms, SelectedSpace};
+use super::shell::{Rooms, SelectedSpace, SpaceScope};
 use crate::media::Avatar;
 
 /// Left-most column: Home plus one badge per top-level space. Clicking a
@@ -19,7 +19,7 @@ pub fn Rail() -> Element {
         .filter(|room| room.is_space && room.parent_spaces.is_empty())
         .cloned()
         .collect();
-    let current = selected_space();
+    let current = selected_space().0;
 
     rsx! {
         nav { class: "rail",
@@ -27,7 +27,7 @@ pub fn Rail() -> Element {
                 class: "rail-item",
                 class: if current.is_none() { "selected" },
                 title: "Home",
-                onclick: move |_| selected_space.set(None),
+                onclick: move |_| selected_space.set(SpaceScope(None)),
                 "M"
             }
             div { class: "rail-divider" }
@@ -39,7 +39,7 @@ pub fn Rail() -> Element {
                     title: "{space.name}",
                     onclick: {
                         let id = space.id.clone();
-                        move |_| selected_space.set(Some(id.clone()))
+                        move |_| selected_space.set(SpaceScope(Some(id.clone())))
                     },
                     Avatar { media: space.avatar.clone(), fallback: space.name.clone(), size: 48 }
                 }

@@ -20,7 +20,12 @@ pub type Rooms = Signal<Vector<RoomSummary>>;
 /// Currently open room.
 pub type Selected = Signal<Option<OwnedRoomId>>;
 /// The space currently selected in the rail, or `None` for Home.
-pub type SelectedSpace = Signal<Option<OwnedRoomId>>;
+/// Which space the sidebar is scoped to (`None` is Home). A newtype, not a bare
+/// `Option<OwnedRoomId>`: Dioxus context is keyed by type, and sharing a type
+/// with [`Selected`] made room clicks land on the space signal.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SpaceScope(pub Option<OwnedRoomId>);
+pub type SelectedSpace = Signal<SpaceScope>;
 
 /// Rooms visible for the current space selection.
 ///
@@ -71,7 +76,7 @@ pub fn Shell(session: Session) -> Element {
     provide_media_cache();
     let mut rooms: Rooms = use_context_provider(|| Signal::new(Vector::new()));
     let mut selected: Selected = use_context_provider(|| Signal::new(None));
-    let selected_space: SelectedSpace = use_context_provider(|| Signal::new(None));
+    let selected_space: SelectedSpace = use_context_provider(|| Signal::new(SpaceScope::default()));
     let mut active_thread: ActiveThread = use_context_provider(|| Signal::new(None));
     let mut load_error = use_signal(|| None::<String>);
     let mut switcher_open = use_signal(|| false);
@@ -116,12 +121,19 @@ pub fn Shell(session: Session) -> Element {
     // room in scope on load, and again whenever the rail selection changes
     // the scope out from under the open room (like Discord does).
     use_effect(move || {
-        let in_scope = rooms_in_scope(&rooms.read(), selected_space.read().as_ref());
+        let in_scope = rooms_in_scope(&rooms.read(), selected_space.read().0.as_ref());
         let still_open = selected
             .peek()
             .as_ref()
             .is_some_and(|id| in_scope.iter().any(|room| &room.id == id));
         if !still_open {
+            tracing::debug!(
+                previous = ?selected.peek(),
+                in_scope = in_scope.len(),
+                rooms = rooms.peek().len(),
+                space = ?selected_space.peek().0,
+                "re-picking the open room"
+            );
             selected.set(in_scope.first().map(|room| room.id.clone()));
         }
     });
