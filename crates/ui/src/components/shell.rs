@@ -13,37 +13,60 @@ use super::{
     thread::{ActiveThread, ThreadPanel},
     timeline::TimelineView,
 };
-use crate::media::provide_media_cache;
+use crate::media::{Avatar, provide_media_cache};
 
 /// Rooms as the core reports them, kept in sync for the whole shell.
 pub type Rooms = Signal<Vector<RoomSummary>>;
 /// Currently open room.
 pub type Selected = Signal<Option<OwnedRoomId>>;
-/// The space currently selected in the rail, or `None` for Home.
-/// Which space the sidebar is scoped to (`None` is Home). A newtype, not a bare
-/// `Option<OwnedRoomId>`: Dioxus context is keyed by type, and sharing a type
-/// with [`Selected`] made room clicks land on the space signal.
+/// What the sidebar lists: direct messages, ungrouped rooms, or one space.
+/// Its own type, not a bare `Option<OwnedRoomId>`: Dioxus context is keyed by
+/// type, and sharing a type with [`Selected`] made room clicks land on the
+/// scope signal.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct SpaceScope(pub Option<OwnedRoomId>);
-pub type SelectedSpace = Signal<SpaceScope>;
+pub enum Scope {
+    /// Direct messages (rooms with a DM target).
+    Dms,
+    /// Rooms that are not DMs and not inside any space.
+    #[default]
+    Rooms,
+    /// A top-level space and everything nested under it.
+    Space(OwnedRoomId),
+}
 
-/// Rooms visible for the current space selection.
+impl Scope {
+    pub fn space_id(&self) -> Option<&OwnedRoomId> {
+        match self {
+            Self::Space(id) => Some(id),
+            _ => None,
+        }
+    }
+}
+pub type SelectedSpace = Signal<Scope>;
+
+/// Rooms visible for the current scope.
 ///
-/// Discord-like rule: Home (`selected_space` is `None`) shows rooms that are
-/// not in any space (this covers DMs, which are never in a space, and any
-/// ungrouped rooms). Selecting a space shows the rooms that list it — or one
-/// of its nested spaces — as a parent, so a space's whole subtree shows up
-/// under one badge.
-pub fn rooms_in_scope(
-    rooms: &Vector<RoomSummary>,
-    selected_space: Option<&OwnedRoomId>,
-) -> Vec<RoomSummary> {
-    let Some(space_id) = selected_space else {
-        return rooms
-            .iter()
-            .filter(|room| !room.is_space && room.parent_spaces.is_empty())
-            .cloned()
-            .collect();
+/// Discord-like rule: `Dms` lists direct messages, `Rooms` lists rooms that
+/// are neither DMs nor inside any space, and a space shows the rooms that
+/// list it (or one of its nested spaces) as a parent, so a space's whole
+/// subtree shows up under one badge.
+pub fn rooms_in_scope(rooms: &Vector<RoomSummary>, scope: &Scope) -> Vec<RoomSummary> {
+    let space_id = match scope {
+        Scope::Dms => {
+            return rooms
+                .iter()
+                .filter(|room| room.is_dm && !room.is_space)
+                .cloned()
+                .collect();
+        }
+        Scope::Rooms => {
+            return rooms
+                .iter()
+                .filter(|room| !room.is_space && !room.is_dm && room.parent_spaces.is_empty())
+                .cloned()
+                .collect();
+        }
+        Scope::Space(id) => id,
     };
 
     // Grow the scope to every space reachable from the selected one through
@@ -76,7 +99,7 @@ pub fn Shell(session: Session) -> Element {
     provide_media_cache();
     let mut rooms: Rooms = use_context_provider(|| Signal::new(Vector::new()));
     let mut selected: Selected = use_context_provider(|| Signal::new(None));
-    let selected_space: SelectedSpace = use_context_provider(|| Signal::new(SpaceScope::default()));
+    let selected_space: SelectedSpace = use_context_provider(|| Signal::new(Scope::default()));
     let mut active_thread: ActiveThread = use_context_provider(|| Signal::new(None));
     let mut load_error = use_signal(|| None::<String>);
     let mut switcher_open = use_signal(|| false);
@@ -121,7 +144,7 @@ pub fn Shell(session: Session) -> Element {
     // room in scope on load, and again whenever the rail selection changes
     // the scope out from under the open room (like Discord does).
     use_effect(move || {
-        let in_scope = rooms_in_scope(&rooms.read(), selected_space.read().0.as_ref());
+        let in_scope = rooms_in_scope(&rooms.read(), &selected_space.read());
         let still_open = selected
             .peek()
             .as_ref()
@@ -131,7 +154,7 @@ pub fn Shell(session: Session) -> Element {
                 previous = ?selected.peek(),
                 in_scope = in_scope.len(),
                 rooms = rooms.peek().len(),
-                space = ?selected_space.peek().0,
+                scope = ?selected_space.peek(),
                 "re-picking the open room"
             );
             selected.set(in_scope.first().map(|room| room.id.clone()));
@@ -219,7 +242,11 @@ fn ChatRoom(room: RoomSummary) -> Element {
 
     rsx! {
         header { class: "chat-header",
-            span { class: "hash", "#" }
+            if room.is_dm {
+                Avatar { media: room.avatar.clone(), fallback: room.name.clone(), size: 24 }
+            } else {
+                span { class: "hash", "#" }
+            }
             h2 { "{room.name}" }
             if let Some(topic) = room.topic.as_deref() {
                 span { class: "topic", "{topic}" }
@@ -228,7 +255,10 @@ fn ChatRoom(room: RoomSummary) -> Element {
         }
         TimelineView { room_id: room.id.clone() }
         TypingLine { names: typing() }
-        Composer { room_name: room.name.clone() }
+        Composer {
+            room_name: room.name.clone(),
+            placeholder: room.is_dm.then(|| format!("Message @{}", room.name)),
+        }
         Lightbox {}
     }
 }

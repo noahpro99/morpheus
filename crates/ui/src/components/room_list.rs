@@ -2,7 +2,7 @@ use dioxus::prelude::*;
 use morpheus_core::{RoomSummary, Session};
 
 use super::settings::SettingsOpen;
-use super::shell::{Rooms, Selected, SelectedSpace, rooms_in_scope};
+use super::shell::{Rooms, Scope, Selected, SelectedSpace, rooms_in_scope};
 use crate::media::Avatar;
 
 #[component]
@@ -13,27 +13,42 @@ pub fn RoomList(error: Option<String>) -> Element {
     let mut session_slot = use_context::<Signal<Option<Session>>>();
     let mut settings_open = use_context::<SettingsOpen>();
 
-    let user = session
+    let user_id = session
         .user_id()
         .map(|id| id.to_string())
         .unwrap_or_default();
+    // The footer shows the display name and avatar, never the raw Matrix ID.
+    let profile = use_resource({
+        let session = session.clone();
+        move || {
+            let session = session.clone();
+            async move { session.own_profile().await.ok() }
+        }
+    });
+    let (name, avatar) = match profile().flatten() {
+        Some(profile) => (profile.name, profile.avatar),
+        None => (user_id.trim_start_matches('@').to_owned(), None),
+    };
+
+    let scope = selected_space();
     let (dms, channels): (Vec<RoomSummary>, Vec<RoomSummary>) =
-        rooms_in_scope(&rooms.read(), selected_space().0.as_ref())
+        rooms_in_scope(&rooms.read(), &scope)
             .into_iter()
             .partition(|room| room.is_dm);
 
-    // Sidebar header: the selected space's name, or "Morpheus" for Home.
-    let header_title = selected_space().0.map_or_else(
-        || "Morpheus".to_string(),
-        |space_id| {
-            rooms
-                .read()
-                .iter()
-                .find(|room| room.id == space_id)
-                .map(|room| room.name.clone())
-                .unwrap_or_else(|| "Space".to_string())
-        },
-    );
+    // Sidebar header: what the rail selected.
+    let header_title = match &scope {
+        Scope::Dms => "Direct messages".to_string(),
+        Scope::Rooms => "Rooms".to_string(),
+        Scope::Space(space_id) => rooms
+            .read()
+            .iter()
+            .find(|room| &room.id == space_id)
+            .map(|room| room.name.clone())
+            .unwrap_or_else(|| "Space".to_string()),
+    };
+    // Inside a space both kinds can appear, so label the groups there.
+    let grouped = matches!(scope, Scope::Space(_));
 
     let logout = move |_| {
         let Some(active) = session_slot.take() else {
@@ -55,16 +70,25 @@ pub fn RoomList(error: Option<String>) -> Element {
                     p { class: "error", "{message}" }
                 }
                 if dms.is_empty() && channels.is_empty() {
-                    p { class: "muted pad", "No rooms here." }
+                    p { class: "muted pad",
+                        match scope {
+                            Scope::Dms => "No direct messages yet.",
+                            _ => "No rooms here.",
+                        }
+                    }
                 }
                 if !dms.is_empty() {
-                    h4 { class: "section", "Direct messages" }
+                    if grouped {
+                        h4 { class: "section", "Direct messages" }
+                    }
                     for room in dms {
                         RoomRow { key: "{room.id}", room }
                     }
                 }
                 if !channels.is_empty() {
-                    h4 { class: "section", "Rooms" }
+                    if grouped {
+                        h4 { class: "section", "Rooms" }
+                    }
                     for room in channels {
                         RoomRow { key: "{room.id}", room }
                     }
@@ -72,8 +96,10 @@ pub fn RoomList(error: Option<String>) -> Element {
             }
 
             footer { class: "sidebar-footer",
-                Avatar { media: None, fallback: user.trim_start_matches('@').to_owned(), size: 32 }
-                span { class: "user", "{user}" }
+                div { class: "profile-chip", title: "{user_id}",
+                    Avatar { media: avatar, fallback: name.clone(), size: 32 }
+                    span { class: "user", "{name}" }
+                }
                 button { class: "ghost settings-button", title: "Settings", onclick: move |_| settings_open.set(true), "⚙" }
                 button { class: "ghost", title: "Sign out", onclick: logout, "⏻" }
             }
@@ -90,6 +116,7 @@ fn RoomRow(room: RoomSummary) -> Element {
     rsx! {
         button {
             class: "room",
+            class: if room.is_dm { "dm" },
             class: if is_selected { "selected" },
             class: if room.unread_messages > 0 { "unread" },
             onclick: move |_| selected.set(Some(id.clone())),

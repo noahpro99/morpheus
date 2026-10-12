@@ -37,14 +37,20 @@ impl RoomSummary {
             .unwrap_or_else(|| room.room_id().to_string());
         let counts = room.unread_notification_counts();
         let parent_spaces = parent_spaces(&room).await;
+        let is_dm = room.direct_targets_length() > 0;
+        // DMs rarely set a room avatar; show the other person instead.
+        let mut avatar = room.avatar_url();
+        if avatar.is_none() && is_dm {
+            avatar = room.heroes().await.into_iter().find_map(|hero| hero.avatar_url);
+        }
 
         Self {
             id: room.room_id().to_owned(),
             name,
             topic: room.topic(),
-            avatar: room.avatar_url().map(MediaRef::from_mxc),
+            avatar: avatar.map(MediaRef::from_mxc),
             is_space: room.is_space(),
-            is_dm: room.direct_targets_length() > 0,
+            is_dm,
             member_count: room.joined_members_count(),
             unread_messages: room.num_unread_messages(),
             highlight_count: counts.highlight_count,
