@@ -118,11 +118,8 @@ timeline → send.
 - [ ] Measure cold start, scroll FPS, memory against the webview build
 
 ### 7. Always-on desktop presence
-- [x] Tray icon (logo, Open / Quit menu, left click shows the window); closing the window hides it and syncing and notifications continue. Still to do: autostart at login and a "start hidden" flag.
-- [ ] Tray icon with a background process that keeps syncing and raises desktop
-      notifications while the window is closed; click to reopen, menu for quick
-      status and quit. Needs a single-instance guard so a second launch focuses
-      the running one.
+- [x] Tray icon (logo, Open / Quit menu, left click shows the window); closing the window hides it; syncing and OS notifications continue on a desktop-side thread (the webview's runtime stalls while hidden) and the UI catches up on reopen.
+- [ ] Tray follow-ups: autostart at login, a "start hidden" flag, a single-instance guard so a second launch focuses the running one.
 
 ## Funding model (idea, not scheduled)
 - Feature bounties instead of (or alongside) plain donations: anyone can put
@@ -138,7 +135,7 @@ timeline → send.
 - **Live tests** (`crates/core/tests/live.rs`) against the seeded local Synapse: login, sliding sync, timeline back-fill, send and echo. These are the regression suite for the core.
 - **End-to-end UI tests** (`crates/e2e`, `just e2e`): a Playwright-style driver launches the real desktop binary built with the `e2e` feature, which exposes a loopback socket that evaluates JavaScript in the webview. Tests log in, switch rooms, send messages, verify session restore, and can screenshot the window.
 - **Manual multi-user** with `just desktop-as alice` and `just desktop-as bob` side by side.
-- **Known flakes when the whole suite runs back to back** (each file passes alone): the NEW-divider test, the scroll-to-newest check, and the two-device verification (app B has died on "They match" a few times; never with logs kept). Follow-up: isolate runs with fresh users per run (admin API) instead of the shared alice/bob/carol, and rerun failed files once before reporting.
+- **Flakes**: the scroll-to-newest and Esc-jump tests used to depend on the test window being short enough for the first page to overflow (a tiled window's size follows the developer's layout); they now load history until the timeline scrolls. Still watched: the NEW-divider test when the suite runs back to back, and the two-device verification (app B has died on "They match" a few times; never with logs kept). Follow-up: isolate runs with fresh users per run (admin API) instead of the shared alice/bob/carol, and rerun failed files once before reporting.
 - Later: pixel-diff the e2e screenshots against golden images, and a `cargo test` harness that drives a `Core` without a homeserver via `matrix-sdk-test`.
 
 ## Open questions

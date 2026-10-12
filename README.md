@@ -64,8 +64,8 @@ puts kicked or banned test users back into `#moderation`).
 E2E files map to features: `chat`, `spaces`, `features`, `interactions`, `attachments`, `threads`,
 `new_messages_marker`, `settings`, `perf`, `layout`, `scrolling`, `context_menu`, `account`,
 `moderation`, `message_menu`, `room_menu`, `hotkeys`, `space_menu`, `profile_card`, `rail`,
-`titlebar`, `invites`, `notifications`, `autocomplete`, `toasts`, `mobile_layout` (the phone
-layout, driven on the desktop build inside a phone-sized box).
+`titlebar`, `invites`, `notifications`, `autocomplete`, `toasts`, `focus`, `tray`, `mobile_layout`
+(the phone layout, driven on the desktop build inside a phone-sized box).
 
 Keyboard shortcuts follow Discord's defaults; press Ctrl+/ in the app for the list.
 With `MORPHEUS_E2E_TIMINGS=1` the driver prints how long every wait took, and
@@ -96,3 +96,11 @@ Keychain on macOS, Credential Manager on Windows). With no keyring daemon
 answering, an encrypted file under the data dir stands in and a warning is
 logged. `MORPHEUS_SESSION_STORE=keyring` or `=file` forces one; test runs use
 the file so they never touch your keyring.
+
+## Tray
+
+Closing the window hides it; Morpheus keeps syncing and raising notifications
+from the tray (the logo, with Open and Quit in its menu; a left click reopens).
+Quit from the tray menu to stop it. The tray needs `libayatana-appindicator`
+on Linux, which the dev shell provides; without it the app runs with no tray
+and says so in the log.

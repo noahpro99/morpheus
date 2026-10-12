@@ -308,7 +308,7 @@ pub fn TimelineView(
             button {
                 class: "jump-to-bottom",
                 title: "Jump to the newest message",
-                onclick: move |_| pin_to_bottom(ScrollBehavior::Smooth),
+                onclick: move |_| pin_to_bottom(ScrollBehavior::Instant),
                 "Jump to present ↓"
             }
         }
