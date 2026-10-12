@@ -1,5 +1,18 @@
 use futures_util::{StreamExt, pin_mut};
-use matrix_sdk::{Room, room::ParentSpace};
+use matrix_sdk_ui::timeline::RoomExt as _;
+
+use matrix_sdk::{
+    Room,
+    notification_settings::{IsEncrypted, IsOneToOne, RoomNotificationMode},
+    room::ParentSpace,
+    ruma::{
+        api::client::room::create_room::{self, v3::RoomPreset},
+        events::{
+            InitialStateEvent,
+            space::{child::SpaceChildEventContent, parent::SpaceParentEventContent},
+        },
+    },
+};
 use matrix_sdk_ui::room_list_service::filters::new_filter_non_left;
 use tokio::sync::mpsc;
 use tracing::{debug, warn};
@@ -206,5 +219,138 @@ impl Session {
             room.leave().await?;
             Ok(())
         })
+    }
+}
+
+/// How a room notifies, mirroring the push-rule modes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotifyMode {
+    AllMessages,
+    MentionsOnly,
+    Mute,
+}
+
+impl Session {
+    /// Clear a room's unread state: send a read receipt for the latest event
+    /// and drop any manual unread flag.
+    pub fn mark_room_read(&self, room_id: OwnedRoomId) -> CoreFuture<()> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            let room = client
+                .get_room(&room_id)
+                .ok_or_else(|| crate::Error::UnknownRoom(room_id.clone()))?;
+            let timeline = room.timeline().await?;
+            timeline
+                .mark_as_read(matrix_sdk::ruma::api::client::receipt::create_receipt::v3::ReceiptType::Read)
+                .await?;
+            room.set_unread_flag(false).await?;
+            Ok(())
+        })
+    }
+
+    /// The room's effective notification mode (user override or the default).
+    pub fn notify_mode(&self, room_id: OwnedRoomId) -> CoreFuture<NotifyMode> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            let room = client
+                .get_room(&room_id)
+                .ok_or_else(|| crate::Error::UnknownRoom(room_id.clone()))?;
+            let settings = client.notification_settings().await;
+            let mode = match settings.get_user_defined_room_notification_mode(&room_id).await {
+                Some(mode) => mode,
+                None => {
+                    let encrypted = room.latest_encryption_state().await.map(|s| s.is_encrypted()).unwrap_or(false);
+                    settings
+                        .get_default_room_notification_mode(
+                            IsEncrypted::from(encrypted),
+                            IsOneToOne::from(room.active_members_count() == 2),
+                        )
+                        .await
+                }
+            };
+            Ok(NotifyMode::from_sdk(mode))
+        })
+    }
+
+    pub fn set_notify_mode(&self, room_id: OwnedRoomId, mode: NotifyMode) -> CoreFuture<()> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            client
+                .notification_settings()
+                .await
+                .set_room_notification_mode(&room_id, mode.to_sdk())
+                .await
+                .map_err(|err| crate::Error::Other(err.to_string()))?;
+            Ok(())
+        })
+    }
+
+    /// Rename a room and/or change its topic (`None` leaves a field alone).
+    pub fn edit_room(&self, room_id: OwnedRoomId, name: Option<String>, topic: Option<String>) -> CoreFuture<()> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            let room = client
+                .get_room(&room_id)
+                .ok_or_else(|| crate::Error::UnknownRoom(room_id.clone()))?;
+            if let Some(name) = name.map(|n| n.trim().to_owned()).filter(|n| !n.is_empty()) {
+                room.set_name(name).await?;
+            }
+            if let Some(topic) = topic {
+                room.set_room_topic(topic.trim()).await?;
+            }
+            Ok(())
+        })
+    }
+
+    /// Create a room. Inside a space, the room is added as a child of it and
+    /// links back, so it shows up under the space's badge.
+    pub fn create_room(&self, name: String, topic: String, space: Option<OwnedRoomId>) -> CoreFuture<OwnedRoomId> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            let server = client
+                .user_id()
+                .ok_or(crate::Error::NoSession)?
+                .server_name()
+                .to_owned();
+            let mut request = create_room::v3::Request::new();
+            request.name = Some(name.trim().to_owned());
+            let topic = topic.trim();
+            request.topic = (!topic.is_empty()).then(|| topic.to_owned());
+            request.preset = Some(RoomPreset::PublicChat);
+            if let Some(space_id) = &space {
+                let parent = InitialStateEvent::new(
+                    space_id.clone(),
+                    SpaceParentEventContent::new(vec![server.clone()]),
+                );
+                request.initial_state = vec![parent.to_raw_any()];
+            }
+            let room = client.create_room(request).await?;
+            if let Some(space_id) = space
+                && let Some(space_room) = client.get_room(&space_id)
+            {
+                space_room
+                    .send_state_event_for_key(room.room_id(), SpaceChildEventContent::new(vec![server]))
+                    .await?;
+            }
+            Ok(room.room_id().to_owned())
+        })
+    }
+}
+
+impl NotifyMode {
+    fn from_sdk(mode: RoomNotificationMode) -> Self {
+        match mode {
+            RoomNotificationMode::AllMessages => Self::AllMessages,
+            RoomNotificationMode::MentionsAndKeywordsOnly => Self::MentionsOnly,
+            RoomNotificationMode::Mute => Self::Mute,
+        }
+    }
+
+    fn to_sdk(self) -> RoomNotificationMode {
+        match self {
+            Self::AllMessages => RoomNotificationMode::AllMessages,
+            Self::MentionsOnly => RoomNotificationMode::MentionsAndKeywordsOnly,
+            Self::Mute => RoomNotificationMode::Mute,
+        }
     }
 }

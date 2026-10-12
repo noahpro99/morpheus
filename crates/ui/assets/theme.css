@@ -1108,3 +1108,6 @@ button.sender:hover { text-decoration: underline; }
 }
 .pinned-main { flex: 1; min-width: 0; }
 .pinned-main .body { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.sidebar-header { justify-content: space-between; }
+.create-room-button { font-size: 1.1rem; line-height: 1; padding: 4px 8px; }

@@ -8,6 +8,7 @@ mod members;
 mod message_dialogs;
 mod profile;
 mod rail;
+mod room_dialogs;
 mod room_list;
 mod settings;
 mod shell;
