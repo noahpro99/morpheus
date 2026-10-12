@@ -16,10 +16,10 @@ use super::{
         EditProfileModal, Editor, OpenProfile, ProfileCard, ProfileEditor, ProfileModal,
         ProfileRefresh, ProfileTarget, ProfileVersion, StatusModal,
     },
-    rail::Rail,
+    rail::{Dragging, Rail, RailDrag},
     room_dialogs::{
         CreateRoomModal, CreateSpaceModal, EditRoomModal, InviteModal, LeaveSpaceModal,
-        OpenRoomDialog, PrivacyModal, RoomDialog, RoomProfileModal,
+        OpenRoomDialog, PrivacyModal, RenameFolderModal, RoomDialog, RoomProfileModal,
     },
     room_list::RoomList,
     settings::{ActiveVerification, Settings, SettingsOpen, track_verification},
@@ -51,17 +51,85 @@ pub type NavHistory = Signal<Nav>;
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Prefs {
     pub hide_muted: bool,
+    /// Rail order: spaces and folders of spaces. Spaces missing here are
+    /// appended in the order the server lists them.
+    pub rail: Vec<RailEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RailEntry {
+    Space(OwnedRoomId),
+    Folder {
+        id: String,
+        name: String,
+        spaces: Vec<OwnedRoomId>,
+    },
 }
 
 impl Prefs {
     pub fn from_json(value: &serde_json::Value) -> Self {
+        let rail = value
+            .get("rail")
+            .and_then(|v| v.as_array())
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| {
+                        if let Some(space) = item.get("space").and_then(|v| v.as_str()) {
+                            return space.parse().ok().map(RailEntry::Space);
+                        }
+                        let id = item.get("folder")?.as_str()?.to_owned();
+                        let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("Folder").to_owned();
+                        let spaces = item
+                            .get("spaces")
+                            .and_then(|v| v.as_array())
+                            .map(|s| s.iter().filter_map(|v| v.as_str()?.parse().ok()).collect())
+                            .unwrap_or_default();
+                        Some(RailEntry::Folder { id, name, spaces })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
         Self {
             hide_muted: value.get("hide_muted").and_then(|v| v.as_bool()).unwrap_or(false),
+            rail,
         }
     }
 
     pub fn to_json(&self) -> serde_json::Value {
-        serde_json::json!({ "hide_muted": self.hide_muted })
+        let rail: Vec<serde_json::Value> = self
+            .rail
+            .iter()
+            .map(|entry| match entry {
+                RailEntry::Space(id) => serde_json::json!({ "space": id }),
+                RailEntry::Folder { id, name, spaces } => serde_json::json!({ "folder": id, "name": name, "spaces": spaces }),
+            })
+            .collect();
+        serde_json::json!({ "hide_muted": self.hide_muted, "rail": rail })
+    }
+
+    /// Remove a space from wherever it sits (dropping folders left empty).
+    pub fn detach(&mut self, space: &OwnedRoomId) {
+        self.rail.retain(|e| !matches!(e, RailEntry::Space(id) if id == space));
+        for entry in &mut self.rail {
+            if let RailEntry::Folder { spaces, .. } = entry {
+                spaces.retain(|id| id != space);
+            }
+        }
+        self.rail.retain(|e| !matches!(e, RailEntry::Folder { spaces, .. } if spaces.is_empty()));
+    }
+
+    pub fn folder_mut(&mut self, folder_id: &str) -> Option<&mut Vec<OwnedRoomId>> {
+        self.rail.iter_mut().find_map(|e| match e {
+            RailEntry::Folder { id, spaces, .. } if id == folder_id => Some(spaces),
+            _ => None,
+        })
+    }
+
+    /// A fresh folder id (not a room id, just unique within the layout).
+    pub fn new_folder_id(&self) -> String {
+        let n = self.rail.iter().filter(|e| matches!(e, RailEntry::Folder { .. })).count();
+        format!("folder-{}-{n}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0))
     }
 }
 pub type UiPrefs = Signal<Prefs>;
@@ -168,6 +236,7 @@ pub fn Shell(session: Session) -> Element {
     let lightbox_open: LightboxOpen = use_context_provider(|| Signal::new(LightboxShown(false)));
     let mut escapes: EscapeTick = use_context_provider(|| Signal::new(Escapes(0)));
     let mut prefs: UiPrefs = use_context_provider(|| Signal::new(Prefs::default()));
+    let _drag: RailDrag = use_context_provider(|| Signal::new(Dragging::default()));
     let _members_version: MembersVersion = use_context_provider(|| Signal::new(MembersStamp::default()));
     use_future({
         let session = session.clone();
@@ -465,6 +534,7 @@ pub fn Shell(session: Session) -> Element {
                 RoomDialog::RoomProfile(room_id) => rsx! { RoomProfileModal { room_id } },
                 RoomDialog::CreateSpace(parent) => rsx! { CreateSpaceModal { parent } },
                 RoomDialog::LeaveSpace(space_id) => rsx! { LeaveSpaceModal { space_id } },
+                RoomDialog::RenameFolder(folder_id) => rsx! { RenameFolderModal { folder_id } },
                 RoomDialog::None => rsx! {},
             }
             ContextMenuLayer {}

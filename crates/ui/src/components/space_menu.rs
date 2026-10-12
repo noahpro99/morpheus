@@ -7,7 +7,7 @@ use tracing::warn;
 
 use super::context_menu::{MenuItem, copy_to_clipboard};
 use super::room_dialogs::{OpenRoomDialog, RoomDialog};
-use super::shell::{Rooms, Scope, SelectedSpace, UiPrefs, rooms_in_scope};
+use super::shell::{RailEntry, Rooms, Scope, SelectedSpace, UiPrefs, rooms_in_scope};
 
 fn run(what: &'static str, future: morpheus_core::CoreFuture<()>) {
     spawn(async move {
@@ -105,6 +105,62 @@ pub fn space_menu(session: &Session, rooms: Rooms, space: &RoomSummary) -> Vec<M
         let space_id = space_id.clone();
         move || consume_context::<OpenRoomDialog>().set(RoomDialog::CreateSpace(Some(space_id.clone())))
     }).icon(crate::icons::FOLDER_PLUS));
+    // Move to a folder (or out of one).
+    {
+        let layout = prefs.peek().clone();
+        let mut targets: Vec<MenuItem> = layout
+            .rail
+            .iter()
+            .filter_map(|e| match e {
+                RailEntry::Folder { id, name, spaces } => Some((id.clone(), name.clone(), spaces.contains(&space_id))),
+                _ => None,
+            })
+            .map(|(folder_id, name, inside)| {
+                MenuItem::new(name, {
+                    let (session, space_id, folder_id) = (session.clone(), space_id.clone(), folder_id.clone());
+                    move || {
+                        prefs.with_mut(|p| {
+                            p.detach(&space_id);
+                            if let Some(members) = p.folder_mut(&folder_id) {
+                                members.push(space_id.clone());
+                            }
+                        });
+                        super::rail::save_prefs(&session, &prefs.peek());
+                    }
+                })
+                .checked(inside)
+                .icon(crate::icons::FOLDER)
+            })
+            .collect();
+        targets.push(
+            MenuItem::new("New folder", {
+                let (session, space_id) = (session.clone(), space_id.clone());
+                move || {
+                    prefs.with_mut(|p| {
+                        p.detach(&space_id);
+                        let folder = RailEntry::Folder { id: p.new_folder_id(), name: "New folder".into(), spaces: vec![space_id.clone()] };
+                        p.rail.push(folder);
+                    });
+                    super::rail::save_prefs(&session, &prefs.peek());
+                }
+            })
+            .icon(crate::icons::FOLDER_PLUS),
+        );
+        targets.push(
+            MenuItem::new("No folder", {
+                let (session, space_id) = (session.clone(), space_id.clone());
+                move || {
+                    prefs.with_mut(|p| {
+                        p.detach(&space_id);
+                        p.rail.push(RailEntry::Space(space_id.clone()));
+                    });
+                    super::rail::save_prefs(&session, &prefs.peek());
+                }
+            })
+            .icon(crate::icons::MOVE),
+        );
+        items.push(MenuItem::submenu("Move to", targets).icon(crate::icons::MOVE));
+    }
     items.push(
         MenuItem::new("Leave server", {
             let space_id = space_id.clone();
