@@ -18,12 +18,12 @@ pub fn RoomList(error: Option<String>) -> Element {
         .map(|id| id.to_string())
         .unwrap_or_default();
     let (dms, channels): (Vec<RoomSummary>, Vec<RoomSummary>) =
-        rooms_in_scope(&rooms.read(), selected_space().as_ref())
+        rooms_in_scope(&rooms.read(), selected_space().0.as_ref())
             .into_iter()
             .partition(|room| room.is_dm);
 
     // Sidebar header: the selected space's name, or "Morpheus" for Home.
-    let header_title = selected_space().map_or_else(
+    let header_title = selected_space().0.map_or_else(
         || "Morpheus".to_string(),
         |space_id| {
             rooms

@@ -20,10 +20,10 @@ async fn login_and_open(app: &mut App, room: &str) {
         .await
         .expect("password");
     app.submit("form.login").await.expect("submit");
-    app.wait_for_text(".room", room, DEFAULT_WAIT)
+    app.wait_for(".room", DEFAULT_WAIT)
         .await
         .expect("room listed");
-    app.click_text(".room", room).await.expect("open room");
+    app.open_room(room).await.expect("open room");
     app.wait_for_text(".chat-header h2", room, DEFAULT_WAIT)
         .await
         .expect("room header");

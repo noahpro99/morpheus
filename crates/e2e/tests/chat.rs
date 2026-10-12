@@ -40,9 +40,7 @@ async fn login_browse_rooms_and_send() {
     app.wait_for_text(".room", "general", DEFAULT_WAIT)
         .await
         .expect("general in room list");
-    app.click_text(".room", "general")
-        .await
-        .expect("click general");
+    app.open_room("general").await.expect("click general");
     app.wait_for_text(".chat-header h2", "general", DEFAULT_WAIT)
         .await
         .expect("general header");
@@ -51,7 +49,7 @@ async fn login_browse_rooms_and_send() {
         .expect("seeded message");
 
     // Switch rooms.
-    app.click_text(".room", "dev").await.expect("click dev");
+    app.open_room("dev").await.expect("click dev");
     app.wait_for_text(".chat-header h2", "dev", DEFAULT_WAIT)
         .await
         .expect("dev header");

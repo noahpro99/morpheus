@@ -107,7 +107,7 @@ async fn space_badge_filters_the_room_list() {
     );
 
     // Opening #dev works like any other room.
-    app.click_text(".room", "dev").await.expect("open dev");
+    app.open_room("dev").await.expect("open dev");
     app.wait_for_text(".chat-header h2", "dev", DEFAULT_WAIT)
         .await
         .expect("dev header");
@@ -123,4 +123,41 @@ async fn space_badge_filters_the_room_list() {
         .await
         .expect("general back");
     assert!(!has_room(&mut app, "dev").await, "dev hidden again at home");
+}
+
+/// Regression: room clicks must change the open room, never the space scope.
+/// (The two context signals once shared a type and collided.)
+#[tokio::test]
+async fn clicking_rooms_keeps_the_home_scope() {
+    let Some(hs) = std::env::var("MORPHEUS_TEST_HOMESERVER").ok() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch(&hs).await.expect("launch app");
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    app.type_into("form.login input[name=username]", "alice")
+        .await
+        .expect("username");
+    app.type_into("form.login input[name=password]", "alice-password")
+        .await
+        .expect("password");
+    app.submit("form.login").await.expect("submit");
+    app.wait_for_text(".room", "random", DEFAULT_WAIT)
+        .await
+        .expect("rooms listed");
+
+    for room in ["general", "random", "general"] {
+        app.open_room(room).await.expect("click room");
+        app.wait_for_text(".chat-header h2", room, DEFAULT_WAIT)
+            .await
+            .expect("room opened");
+        app.wait_for_js(
+            "return document.querySelector('.rail-item.selected')?.title === 'Home' && [...document.querySelectorAll('.room')].some(r => r.textContent.includes('random'));",
+            std::time::Duration::from_secs(5),
+        )
+        .await
+        .expect("still in Home scope with all rooms listed");
+    }
 }

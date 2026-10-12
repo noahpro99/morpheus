@@ -23,6 +23,10 @@ const GROUP_WINDOW_MS: u64 = 5 * 60 * 1000;
 /// Start loading older history when the view is this close to the top.
 const PAGINATE_THRESHOLD_PX: f64 = 400.0;
 const PAGE_SIZE: u16 = 40;
+/// Rows rendered at first; the window grows as the user scrolls up, and only
+/// once it covers everything loaded do we ask the server for more.
+const INITIAL_WINDOW: usize = 120;
+const WINDOW_STEP: usize = 100;
 /// One-click reactions offered on hover.
 const QUICK_REACTIONS: [&str; 3] = ["👍", "❤️", "😂"];
 
@@ -146,7 +150,14 @@ pub fn TimelineView(
         }
     });
 
+    let mut window = use_signal(|| INITIAL_WINDOW);
+
     let mut load_older = move || {
+        // Reveal already-loaded rows before fetching more history.
+        if window() < entries.read().len() {
+            window += WINDOW_STEP;
+            return;
+        }
         let Some(active) = handle() else { return };
         if paginating() || reached_start() {
             return;
@@ -182,7 +193,7 @@ pub fn TimelineView(
     rsx! {
         // Rendered newest-first; CSS flips it and keeps the view pinned to the bottom.
         section { class: "timeline", onscroll: on_scroll,
-            for row in rows.into_iter().rev() {
+            for row in rows.into_iter().rev().take(window()) {
                 match row {
                     Row::Message { message, show_header } => rsx! {
                         MessageRow { key: "{message.unique_id}", message: message.clone(), show_header }

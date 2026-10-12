@@ -218,6 +218,14 @@ else
   echo "messages: already seeded (delete dev/homeserver/.seeded to re-seed)"
 fi
 
+if [[ ! -f "$HS_DIR/.seeded-firehose" ]]; then
+  echo "firehose:"
+  FIREHOSE=$(ensure_room firehose "firehose" "600 messages for performance tests")
+  for i in $(seq 1 600); do say "$BOB" "$FIREHOSE" "firehose message $i"; done
+  touch "$HS_DIR/.seeded-firehose"
+  echo "  + 600 messages"
+fi
+
 cat <<INFO
 
 ready. log in with:

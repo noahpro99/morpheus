@@ -20,10 +20,10 @@ async fn login_and_open(app: &mut App, user: &str, password: &str, room: &str) {
         .await
         .expect("password");
     app.submit("form.login").await.expect("submit");
-    app.wait_for_text(".room", room, DEFAULT_WAIT)
+    app.wait_for(".room", DEFAULT_WAIT)
         .await
         .expect("room listed");
-    app.click_text(".room", room).await.expect("open room");
+    app.open_room(room).await.expect("open room");
     app.wait_for_text(".chat-header h2", room, DEFAULT_WAIT)
         .await
         .expect("room header");
@@ -68,10 +68,7 @@ async fn new_message_marker_appears_above_unread_and_clears_on_send() {
         .expect("bob's message echoed");
 
     // Alice switches into #general: the NEW divider should sit above bob's message.
-    alice
-        .click_text(".room", "general")
-        .await
-        .expect("open general");
+    alice.open_room("general").await.expect("open general");
     alice
         .wait_for_text(".chat-header h2", "general", DEFAULT_WAIT)
         .await

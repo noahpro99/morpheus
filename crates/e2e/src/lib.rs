@@ -42,6 +42,8 @@ pub struct App {
     download_dir: PathBuf,
     log_path: PathBuf,
     homeserver: String,
+    /// `(what, elapsed)` for every wait, printed when the app is dropped.
+    timings: Vec<(String, Duration)>,
 }
 
 #[derive(Deserialize)]
@@ -109,6 +111,7 @@ impl App {
             download_dir,
             log_path,
             homeserver: homeserver.to_owned(),
+            timings: Vec::new(),
         })
     }
 
@@ -190,6 +193,39 @@ impl App {
             js_str(needle)
         );
         self.wait_until(timeout, &format!("{selector} containing {needle:?}"), &js)
+            .await
+    }
+
+    /// Open a room by name. Rooms inside a space are hidden in Home, so if
+    /// the row is not visible this clicks through the space badges to find it.
+    pub async fn open_room(&mut self, name: &str) -> Result<()> {
+        let visible = format!(
+            "return [...document.querySelectorAll('.room')].some(el => el.textContent.includes({}));",
+            js_str(name)
+        );
+        if !self.eval(&visible).await?.as_bool().unwrap_or(false) {
+            let badges = self.count(".rail-item").await?;
+            let mut found = false;
+            for index in 0..badges {
+                self.eval(&format!(
+                    "document.querySelectorAll('.rail-item')[{index}].click();"
+                ))
+                .await?;
+                if self
+                    .wait_until(Duration::from_secs(3), "room in space", &visible)
+                    .await
+                    .is_ok()
+                {
+                    found = true;
+                    break;
+                }
+            }
+            if !found {
+                bail!("no room named {name:?} in any space");
+            }
+        }
+        self.click_text(".room", name).await?;
+        self.wait_for_text(".chat-header h2", name, DEFAULT_WAIT)
             .await
     }
 
@@ -330,9 +366,11 @@ impl App {
         what: &str,
         predicate_js: &str,
     ) -> Result<()> {
-        let deadline = Instant::now() + timeout;
+        let started = Instant::now();
+        let deadline = started + timeout;
         loop {
             if self.eval(predicate_js).await?.as_bool().unwrap_or(false) {
+                self.timings.push((what.to_owned(), started.elapsed()));
                 return Ok(());
             }
             if Instant::now() >= deadline {
@@ -346,8 +384,28 @@ impl App {
     }
 }
 
+impl App {
+    /// Every wait so far, as `(what, elapsed)`, in order.
+    pub fn timings(&self) -> &[(String, Duration)] {
+        &self.timings
+    }
+
+    /// Print the slowest waits of this session to stderr.
+    pub fn report_timings(&self, label: &str) {
+        let mut sorted: Vec<_> = self.timings.iter().collect();
+        sorted.sort_by_key(|entry| std::cmp::Reverse(entry.1));
+        eprintln!("[timing] {label}: {} waits, slowest:", self.timings.len());
+        for (what, elapsed) in sorted.iter().take(8) {
+            eprintln!("[timing]   {elapsed:>8.3?}  {what}");
+        }
+    }
+}
+
 impl Drop for App {
     fn drop(&mut self) {
+        if std::env::var_os("MORPHEUS_E2E_TIMINGS").is_some() {
+            self.report_timings("app");
+        }
         let _ = self.child.start_kill();
         if std::env::var_os("MORPHEUS_E2E_KEEP").is_none() {
             let _ = std::fs::remove_dir_all(&self.data_dir);
