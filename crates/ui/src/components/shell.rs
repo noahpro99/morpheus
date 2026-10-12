@@ -429,6 +429,7 @@ pub fn Shell(session: Session) -> Element {
     // is handed to the owning component through `HotkeyRequest`.
     let mut hotkey: HotkeyRequest = use_context_provider(|| Signal::new(None));
     let mut dispatch = move |name: String| {
+        tracing::debug!(%name, "hotkey");
         let session = session_for_keys.clone();
         // Rooms as the sidebar lists them, for next/previous.
         let in_scope = move || rooms_in_scope(&rooms.read(), &selected_space.read());
