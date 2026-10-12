@@ -102,7 +102,11 @@ async fn message_menu_replies_reacts_and_offers_edit_delete() {
         .await
         .expect("composer shows the reply banner");
 
-    // Someone else's message: no edit or delete.
+    // Someone else's message: no edit or delete. Recent rows may all be
+    // ours, so scroll up until another sender shows.
+    app.reveal_element(".message:not(.own):not(.system)", DEFAULT_WAIT)
+        .await
+        .expect("another sender's message");
     app.right_click(".message:not(.own):not(.system)").await.expect("right-click other");
     app.wait_for(".context-menu", DEFAULT_WAIT).await.expect("menu");
     let labels = app

@@ -109,6 +109,8 @@ pub struct Reaction {
     pub count: usize,
     /// Whether the current user reacted with this key.
     pub mine: bool,
+    /// Who reacted, for the "view reactions" dialog.
+    pub senders: Vec<OwnedUserId>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -217,6 +219,7 @@ impl Message {
                         key: key.clone(),
                         count: senders.len(),
                         mine: own_user.is_some_and(|me| senders.contains_key(me)),
+                        senders: senders.keys().cloned().collect(),
                     })
                     .collect()
             })

@@ -24,8 +24,13 @@ fn main() {
     };
     tracing::info!(?config.data_dir, "starting morpheus desktop");
 
+    // Test runs open many windows; they must not steal focus from whatever
+    // the developer is typing into. A distinct title lets the e2e driver
+    // (and a compositor rule) tell them apart from a real session.
+    let under_test = std::env::var_os("MORPHEUS_E2E_PORT").is_some();
     let window = WindowBuilder::new()
-        .with_title("Morpheus")
+        .with_title(if under_test { "Morpheus (test)" } else { "Morpheus" })
+        .with_focused(!under_test)
         .with_inner_size(LogicalSize::new(1280.0, 800.0));
 
     LaunchBuilder::new()

@@ -44,6 +44,10 @@ pub enum Error {
 
     #[error("this verification flow has not reached the emoji step yet")]
     VerificationNotReady,
+
+    #[error("only messages can be forwarded")]
+    NotForwardable,
+
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;

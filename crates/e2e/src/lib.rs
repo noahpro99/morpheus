@@ -74,6 +74,7 @@ impl App {
     }
 
     async fn launch_with_data_dir(homeserver: &str, data_dir: PathBuf) -> Result<Self> {
+        keep_test_windows_unfocused();
         std::fs::create_dir_all(&data_dir)?;
         // A disposable, test-local stand-in for the real Downloads directory
         // (see `MORPHEUS_DOWNLOAD_DIR` in `morpheus-core`), so downloads can
@@ -248,7 +249,8 @@ impl App {
     pub async fn reveal(&mut self, what: &str, predicate_js: &str, timeout: Duration) -> Result<()> {
         let js = format!(
             "if ((() => {{ {predicate_js} }})()) return true; \
-             const t = document.querySelector('.timeline'); if (t) t.scrollTop = -t.scrollHeight; return false;"
+             const t = document.querySelector('.timeline'); if (t) t.scrollTop = -t.scrollHeight; \
+             document.querySelector('.load-older')?.click(); return false;"
         );
         self.wait_until(timeout, &format!("{what} after scrolling up"), &js)
             .await
@@ -532,4 +534,26 @@ async fn connect(port: u16, log_path: &Path) -> Result<TcpStream> {
         }
         sleep(POLL).await;
     }
+}
+
+/// On Hyprland, stop test windows from grabbing keyboard focus: a run opens
+/// many of them and keystrokes meant for the terminal otherwise land in the
+/// app (breaking logins). Applied once per process; a no-op elsewhere.
+fn keep_test_windows_unfocused() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        if std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_none() {
+            return;
+        }
+        for rule in [
+            "noinitialfocus, title:^(Morpheus \\(test\\))$",
+            "nofocus, title:^(Morpheus \\(test\\))$",
+        ] {
+            let _ = std::process::Command::new("hyprctl")
+                .args(["keyword", "windowrulev2", rule])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status();
+        }
+    });
 }

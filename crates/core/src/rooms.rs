@@ -21,6 +21,8 @@ pub struct RoomSummary {
     pub member_count: u64,
     pub unread_messages: u64,
     pub highlight_count: u64,
+    /// Flagged unread by the user (`m.marked_unread`), independent of counts.
+    pub marked_unread: bool,
     /// Spaces this room lists as a parent via `m.space.parent`, filtered to
     /// relationships the room itself considers legitimate (reciprocated by
     /// the parent, or set by someone with power to do so). Nested spaces are
@@ -54,6 +56,7 @@ impl RoomSummary {
             member_count: room.joined_members_count(),
             unread_messages: room.num_unread_messages(),
             highlight_count: counts.highlight_count,
+            marked_unread: room.is_marked_unread(),
             parent_spaces,
         }
     }
