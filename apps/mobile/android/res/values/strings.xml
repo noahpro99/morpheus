@@ -1,0 +1,4 @@
+<resources>
+    <!-- dx names the app after the crate ("MorpheusMobile"). -->
+    <string name="app_name">Morpheus</string>
+</resources>

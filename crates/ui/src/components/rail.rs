@@ -146,7 +146,8 @@ pub fn Rail() -> Element {
                 class: if current == Scope::Dms { "selected" },
                 title: "Direct messages",
                 onclick: move |_| selected_space.set(Scope::Dms),
-                Logo { size: 30 }
+                // The mark is a wide, flat shape: draw it large so it fills the circle.
+                Logo { size: 40 }
                 if unread_dms > 0 {
                     span { class: "rail-badge", "{unread_dms}" }
                 }
