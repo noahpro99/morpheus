@@ -6,6 +6,7 @@ mod context_menu;
 mod emoji;
 mod hotkeys;
 mod invites;
+mod keys;
 mod lightbox;
 mod login;
 mod members;

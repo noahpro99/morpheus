@@ -3,6 +3,7 @@
 
 use std::rc::Rc;
 
+use super::keys::{KeysRefresh, SettingsFocus, SettingsTarget};
 use super::toast::report;
 use dioxus::prelude::*;
 use morpheus_core::{
@@ -89,6 +90,7 @@ pub fn Settings() -> Element {
             && matches!(*v.step.read(), VerificationStep::Done)
         {
             refresh += 1;
+            bump_keys();
         }
     });
 
@@ -136,6 +138,7 @@ pub fn Settings() -> Element {
                                 .into(),
                         )));
                         refresh += 1;
+                        bump_keys();
                     }
                     Err(err) => recovery_message.set(Some(Err(err.to_string()))),
                 }
@@ -183,6 +186,17 @@ pub fn Settings() -> Element {
                                     placeholder: "EsTx xxxx xxxx …",
                                     value: "{recovery_key}",
                                     oninput: move |e| recovery_key.set(e.value()),
+                                    // Opened from "Enter recovery key": straight to typing.
+                                    onmounted: move |e| {
+                                        if let Some(mut target) = try_consume_context::<SettingsTarget>()
+                                            && *target.peek() == SettingsFocus::RecoveryKey
+                                        {
+                                            target.set(SettingsFocus::None);
+                                            spawn(async move {
+                                                let _ = e.data().set_focus(true).await;
+                                            });
+                                        }
+                                    },
                                 }
                             }
                             button { r#type: "submit", class: "secondary", disabled: busy(), "Restore from backup" }
@@ -302,5 +316,13 @@ pub fn VerificationPanel(verification: Rc<Verification>) -> Element {
                 },
             }
         }
+    }
+}
+
+/// Re-check whether this device can read encrypted history (the chat's
+/// locked-messages notice), after a verification or recovery succeeded.
+fn bump_keys() {
+    if let Some(mut keys) = try_consume_context::<KeysRefresh>() {
+        keys.with_mut(|stamp| stamp.0 += 1);
     }
 }
