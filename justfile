@@ -61,13 +61,24 @@ android:
     rm -rf target/dx/morpheus-mobile/debug/android/app/app/src/main/jniLibs/x86_64
     nix develop .#android -c dx serve --package morpheus-mobile --platform android
 
+# Fresh install on a plugged-in phone: uninstall (wipes its sign-in and data), build for ARM, install, launch.
+# With the emulator also running, name the phone: `ANDROID_SERIAL=<id from adb devices> just android-reinstall`
+android-reinstall:
+    rm -rf target/dx/morpheus-mobile/debug/android/app/app/src/main/jniLibs/x86_64
+    nix develop .#android -c dx build --package morpheus-mobile --platform android --target aarch64-linux-android
+    -nix develop .#android -c adb uninstall dev.morpheus.mobile
+    nix develop .#android -c adb install target/dx/morpheus-mobile/debug/android/app/app/build/outputs/apk/debug/app-debug.apk
+    nix develop .#android -c adb shell am start -n dev.morpheus.mobile/dev.dioxus.main.MainActivity
+
 # Create the virtual phone (once; downloads the emulator and a system image, a few GB): a Pixel-sized Android 14 device in ~/.android/avd
 android-avd:
     nix develop .#android-emulator -c bash -c 'echo no | avdmanager create avd --force -n morpheus -d pixel_7 -k "system-images;android-34;google_apis;x86_64"'
+    # Software rendering and 2 GB made it crawl: give it RAM, cores and the GPU.
+    sed -i 's/^hw.ramSize=.*/hw.ramSize=4G/; s/^hw.cpu.ncore=.*/hw.cpu.ncore=8/; s/^vm.heapSize=.*/vm.heapSize=512M/; s/^hw.gpu.enabled=.*/hw.gpu.enabled=yes/; s/^hw.gpu.mode=.*/hw.gpu.mode=host/; s/^hw.keyboard=.*/hw.keyboard=yes/' ~/.android/avd/morpheus.avd/config.ini
 
 # Boot the virtual phone in its own window (KVM-accelerated); the app reaches the dev homeserver at http://10.0.2.2:8008
 android-emulator:
-    nix develop .#android-emulator -c emulator -avd morpheus -netdelay none -netspeed full
+    nix develop .#android-emulator -c env LD_LIBRARY_PATH=/run/opengl-driver/lib emulator -avd morpheus -gpu host -netdelay none -netspeed full
 
 # Run on the virtual phone (start it with `just android-emulator` first)
 android-virtual:
@@ -85,6 +96,10 @@ e2e-android-build:
 # Drive the app on the virtual phone (`just android-emulator` and `just e2e-android-build` first)
 e2e-android: hs-seed
     nix develop .#android-emulator -c env MORPHEUS_E2E_ANDROID=1 ANDROID_SERIAL="${ANDROID_SERIAL:-emulator-5554}" cargo test -p morpheus-e2e --test android -- --nocapture --test-threads=1
+
+# The whole e2e suite with the phone standing in for the first app of each test (other users run on desktop)
+e2e-android-all: hs-seed
+    nix develop .#android-emulator -c env MORPHEUS_E2E_ANDROID=1 ANDROID_SERIAL="${ANDROID_SERIAL:-emulator-5554}" MORPHEUS_TEST_HOMESERVER={{hs}} cargo test -p morpheus-e2e --no-fail-fast -- --test-threads=1
 
 # Type-check the mobile crate for Android without an emulator (needs `nix develop .#android`, or runs it)
 android-check:
