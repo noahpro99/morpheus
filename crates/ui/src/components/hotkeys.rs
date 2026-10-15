@@ -161,6 +161,47 @@ window.addEventListener('paste', e => {
     if (timer) { cancel(); fired = true; buzz(); }
   }, true);
 })();
+// Android's back key: the app's web view goes back in page history when it
+// can, else leaves the app. Keep one history entry while there is something
+// to back out of (a menu, a dialog, a card, an edit, a pane past the room
+// list) and turn going back into Escape, which closes the top-most thing.
+// With nothing open there is no entry, so back leaves the app as usual.
+(() => {
+  const OPEN = '.overlay, .context-menu, .card-overlay, .lightbox-overlay, .composer-banner, .composer .autocomplete, .composer .emoji-panel';
+  const backable = () => {
+    if (document.querySelector(OPEN)) return true;
+    const shell = document.querySelector('.shell');
+    return !!shell && shell.classList.contains('narrow') && (shell.dataset.pane === 'chat' || shell.dataset.pane === 'side');
+  };
+  let guarded = false, unwinding = false, queued = false;
+  const sync = () => {
+    queued = false;
+    if (unwinding) return;
+    const want = backable();
+    if (want && !guarded) { history.pushState({ morpheusBack: true }, ''); guarded = true; }
+    else if (!want && guarded) { guarded = false; unwinding = true; history.back(); }
+  };
+  const schedule = () => { if (!queued) { queued = true; queueMicrotask(sync); } };
+  window.addEventListener('popstate', () => {
+    if (unwinding) { unwinding = false; schedule(); return; }
+    guarded = false;
+    // An edit, reply or suggestion list in the message box goes first, even
+    // when the box lost focus (it does when the phone's keyboard hides).
+    const busyBox = [...document.querySelectorAll('.composer')].find(c => c.querySelector('.composer-banner, .autocomplete, .emoji-panel'));
+    const el = (busyBox && busyBox.querySelector('input'))
+      || (document.activeElement && document.activeElement !== document.body ? document.activeElement : document.body);
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    schedule();
+  });
+  new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-pane'] });
+  schedule();
+})();
+// Tapping your own pill gives a small buzz on phones, like Discord's.
+window.addEventListener('click', e => {
+  if (e.target.closest && e.target.closest('.user-pill .profile-chip')) {
+    try { if (navigator.vibrate) navigator.vibrate(10); } catch (_) {}
+  }
+}, true);
 // Page errors reach the Rust log; an exception inside the renderer's own
 // edit loop would otherwise freeze the UI silently.
 window.addEventListener('error', e => dioxus.send('jserr:' + e.message + ' @' + (e.filename || '') + ':' + e.lineno));

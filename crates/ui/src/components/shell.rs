@@ -286,6 +286,7 @@ pub fn Shell(session: Session) -> Element {
     let mut escapes: EscapeTick = use_context_provider(|| Signal::new(Escapes(0)));
     let mut prefs: UiPrefs = use_context_provider(|| Signal::new(Prefs::default()));
     let _drag: RailDrag = use_context_provider(|| Signal::new(Dragging::default()));
+    let has_window = use_hook(|| try_consume_context::<crate::WindowControls>().is_some());
     let _toasts: Toasts = use_context_provider(|| Signal::new(ToastList::default()));
     // Narrow (phone) layout: the page reports its width; one pane shows at a time.
     let mut narrow: NarrowWindow = use_context_provider(|| Signal::new(Narrow::default()));
@@ -533,8 +534,15 @@ pub fn Shell(session: Session) -> Element {
             "escape" => {
                 if close_top_modal() {
                 } else if narrow.peek().0 && chat_open.peek().0 {
-                    // On a phone, Escape (the back key) steps back to the list.
-                    chat_open.set(ChatInFront(false));
+                    // On a phone, Escape (the back key) steps back one pane:
+                    // a thread or the members to the chat, the chat to the list.
+                    if active_thread.peek().is_some() {
+                        active_thread.set(None);
+                    } else if members_open.peek().0 {
+                        members_open.set(MembersShown(false));
+                    } else {
+                        chat_open.set(ChatInFront(false));
+                    }
                 } else {
                     hotkey.set(Some(Hotkey::JumpToBottom));
                 }
@@ -650,7 +658,10 @@ pub fn Shell(session: Session) -> Element {
                 e.prevent_default();
                 context_menu.set(MenuState::default());
             },
-            TitleBar {}
+            // A window to drag and close needs the desktop bar; a phone has neither.
+            if has_window {
+                TitleBar {}
+            }
             div { class: "drop-hint", "Drop to upload" }
             ToastLayer {}
             // Mirror of what was announced, for the test bridge.
