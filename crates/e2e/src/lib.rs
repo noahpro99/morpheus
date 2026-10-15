@@ -772,6 +772,7 @@ impl App {
         // A forwarded port accepts even before the app listens, so only a
         // stream that answers an eval counts.
         let deadline = Instant::now() + LAUNCH_TIMEOUT;
+        let mut restarted = false;
         loop {
             if let Ok(stream) = TcpStream::connect(("127.0.0.1", port)).await {
                 // Logs stay on the device (`adb logcat`); the directory
@@ -803,6 +804,13 @@ impl App {
                 }
                 // Not answering yet; dropping it must not stop the app.
                 app.android = false;
+            }
+            // A cold start occasionally never brings the bridge up; one
+            // restart halfway through has always been enough.
+            if !restarted && Instant::now() >= deadline - LAUNCH_TIMEOUT / 2 {
+                restarted = true;
+                let _ = adb(&["shell", "am", "force-stop", ANDROID_PACKAGE]);
+                let _ = adb(&["shell", "am", "start", "-W", "-n", ANDROID_ACTIVITY]);
             }
             if Instant::now() >= deadline {
                 let log = adb(&["logcat", "-d", "-t", "200"]).unwrap_or_default();

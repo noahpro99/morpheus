@@ -53,9 +53,22 @@ async fn new_message_marker_appears_above_unread_and_clears_on_send() {
         return;
     };
 
-    // Alice looks at #dev while bob posts in #general.
+    // Alice catches up on #general first (earlier tests leave unread messages
+    // there, and the divider rightly sits above the oldest of those), then
+    // looks at #dev while bob posts in #general. Leaving a room marks it read.
     let mut alice = App::launch(&hs).await.expect("launch alice");
-    login_and_open(&mut alice, "alice", "alice-password", "dev").await;
+    login_and_open(&mut alice, "alice", "alice-password", "general").await;
+    alice
+        .wait_for(".message .body", DEFAULT_WAIT)
+        .await
+        .expect("general loaded");
+    alice.open_room("dev").await.expect("open dev");
+    alice
+        .wait_for_text(".chat-header h2", "dev", DEFAULT_WAIT)
+        .await
+        .expect("dev header");
+    // The fully-read marker goes out when #general is left; let it land.
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
     let mut bob = App::launch(&hs).await.expect("launch bob");
     login_and_open(&mut bob, "bob", "bob-password", "general").await;
