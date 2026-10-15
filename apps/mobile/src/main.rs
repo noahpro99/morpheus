@@ -34,6 +34,8 @@ fn main() {
             push::on_session(session, dir.clone())
         }));
     }
+    #[cfg(target_os = "android")]
+    push::watch_open_room(config.data_dir.clone(), config.commands.clone());
     tracing::info!(?config.data_dir, "starting morpheus mobile");
 
     LaunchBuilder::new()

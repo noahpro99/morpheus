@@ -71,16 +71,15 @@ class MorpheusPushService : PushService() {
         manager.createNotificationChannel(
             NotificationChannel(CHANNEL, "Messages", NotificationManager.IMPORTANCE_HIGH)
         )
-        val open = packageManager.getLaunchIntentForPackage(packageName)?.apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        // Through OpenRoomActivity, which tells the app which room to show.
+        val open = Intent(this, OpenRoomActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
             putExtra("room_id", roomId)
         }
-        val tap = open?.let {
-            PendingIntent.getActivity(
-                this, roomId.hashCode(), it,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-        }
+        val tap = PendingIntent.getActivity(
+            this, roomId.hashCode(), open,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
         val icon = resources.getIdentifier("ic_notification", "drawable", packageName)
             .takeIf { it != 0 } ?: applicationInfo.icon
         val text = if (unread > 1) "$unread unread messages" else "New message"
