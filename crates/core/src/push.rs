@@ -128,24 +128,6 @@ fn origin_of(url: &str) -> Option<String> {
     Some(format!("{scheme}://{host}"))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::origin_of;
-
-    #[test]
-    fn origins() {
-        assert_eq!(
-            origin_of("https://ntfy.sh/upAbc?x=1").as_deref(),
-            Some("https://ntfy.sh")
-        );
-        assert_eq!(
-            origin_of("http://127.0.0.1:8080/up").as_deref(),
-            Some("http://127.0.0.1:8080")
-        );
-        assert_eq!(origin_of("nonsense"), None);
-    }
-}
-
 impl Session {
     /// `(room id, name)` for every joined room, for push notifications that
     /// arrive with ids only.
@@ -164,5 +146,22 @@ impl Session {
                 })
                 .collect())
         })
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::origin_of;
+
+    #[test]
+    fn origins() {
+        assert_eq!(
+            origin_of("https://ntfy.sh/upAbc?x=1").as_deref(),
+            Some("https://ntfy.sh")
+        );
+        assert_eq!(
+            origin_of("http://127.0.0.1:8080/up").as_deref(),
+            Some("http://127.0.0.1:8080")
+        );
+        assert_eq!(origin_of("nonsense"), None);
     }
 }
