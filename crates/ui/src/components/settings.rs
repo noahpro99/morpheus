@@ -4,6 +4,9 @@
 use std::rc::Rc;
 
 use super::keys::{KeysRefresh, SettingsFocus, SettingsTarget};
+
+/// How long a finished verification shows its success before stepping aside.
+const VERIFIED_NOTE_SECS: u64 = 3;
 use super::toast::report;
 use dioxus::prelude::*;
 use morpheus_core::{
@@ -270,6 +273,24 @@ pub fn VerificationPanel(verification: Rc<Verification>) -> Element {
     let step = (verification.step)();
     let handle = verification.handle.clone();
 
+    // A finished verification shows its success for a moment, then makes way
+    // for the settings (which now list this device as verified).
+    let finished = matches!(step, VerificationStep::Done);
+    use_effect(use_reactive!(|finished| {
+        if finished {
+            spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(VERIFIED_NOTE_SECS)).await;
+                if active
+                    .peek()
+                    .as_ref()
+                    .is_some_and(|v| matches!(*v.step.peek(), VerificationStep::Done))
+                {
+                    active.set(None);
+                }
+            });
+        }
+    }));
+
     let run = move |future: morpheus_core::CoreFuture<()>| {
         spawn(async move {
             if let Err(err) = future.await {
@@ -306,9 +327,9 @@ pub fn VerificationPanel(verification: Rc<Verification>) -> Element {
                     }
                 },
                 VerificationStep::Confirmed => rsx! { p { "Waiting for your other device to confirm…" } },
+                // Nothing to dismiss: the panel steps aside by itself (see above).
                 VerificationStep::Done => rsx! {
                     p { class: "ok", "Verified. Encrypted messages will now sync between your devices." }
-                    button { class: "secondary", onclick: move |_| active.set(None), "Close" }
                 },
                 VerificationStep::Cancelled(reason) => rsx! {
                     p { class: "error", "Verification cancelled: {reason}" }
