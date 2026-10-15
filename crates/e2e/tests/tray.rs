@@ -36,7 +36,7 @@ async fn closing_the_window_keeps_syncing_and_announcing() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
-    let mut bob = App::launch(&hs).await.expect("launch bob");
+    let mut bob = App::launch_desktop(&hs).await.expect("launch bob");
     login(&mut bob, "bob").await;
     bob.open_room("random").await.expect("bob in #random");
 
@@ -47,7 +47,7 @@ async fn closing_the_window_keeps_syncing_and_announcing() {
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     assert!(bob.is_running(), "closing the window must not quit the app");
 
-    let mut alice = App::launch(&hs).await.expect("launch alice");
+    let mut alice = App::launch_desktop(&hs).await.expect("launch alice");
     login(&mut alice, "alice").await;
     alice.open_room("general").await.expect("alice in #general");
     alice

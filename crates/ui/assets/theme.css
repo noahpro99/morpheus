@@ -1500,3 +1500,10 @@ body.dropping .drop-hint { display: flex; }
 
 /* The pill fills the band from the window edge to the sidebar/chat edge (the bar is a flex row). */
 .user-pill { flex: 1; min-width: 0; }
+
+/* Touch screens: press-and-hold opens our menus, so the webview's own text
+   selection and callout stay out of the way (typing fields keep theirs). */
+@media (pointer: coarse) {
+  .shell { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  .shell input, .shell textarea { -webkit-user-select: text; user-select: text; }
+}

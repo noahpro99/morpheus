@@ -4,3 +4,6 @@ name = "morpheus"
 [bundle]
 identifier = "dev.morpheus.mobile"
 publisher = "Morpheus"
+
+[android.permissions]
+"android.permission.VIBRATE" = { description = "A short buzz when press-and-hold opens a menu" }

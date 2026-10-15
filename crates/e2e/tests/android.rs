@@ -11,6 +11,15 @@ fn enabled() -> bool {
     std::env::var_os("MORPHEUS_E2E_ANDROID").is_some()
 }
 
+/// Puts a finger down on the first room and keeps it there; records
+/// vibrations in `window.__buzz` and leaves the matching lift in `__lift`.
+const HOLD_ROOM_JS: &str = "window.__buzz = []; navigator.vibrate = ms => { window.__buzz.push(ms); return true; }; \
+    const el = document.querySelector('.room'); const r = el.getBoundingClientRect(); \
+    const t = new Touch({ identifier: 1, target: el, clientX: r.left + 30, clientY: r.top + r.height / 2 }); \
+    window.__lift = new TouchEvent('touchend', { bubbles: true, cancelable: true, changedTouches: [t] }); \
+    el.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, cancelable: true, touches: [t], targetTouches: [t], changedTouches: [t] })); \
+    return true;";
+
 async fn pane(app: &mut App, expected: &str) {
     app.wait_for_js(
         &format!("return document.querySelector('.shell').dataset.pane === '{expected}'"),
@@ -57,6 +66,35 @@ async fn phone_signs_in_navigates_and_sends() {
         .expect("narrow layout on a phone");
     pane(&mut app, "rooms").await;
     shot(&mut app, "android-rooms").await;
+
+    // Press and hold is right-click, with a buzz; lifting keeps the menu.
+    app.eval(HOLD_ROOM_JS).await.expect("touch down on a room");
+    app.wait_for(".context-menu", DEFAULT_WAIT)
+        .await
+        .expect("holding opens the room menu");
+    app.eval("document.dispatchEvent(window.__lift); return true;")
+        .await
+        .expect("lift");
+    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+    let state = app
+        .eval("return [window.__buzz.length, !!document.querySelector('.context-menu')];")
+        .await
+        .expect("state");
+    assert_eq!(
+        state,
+        serde_json::json!([1, true]),
+        "one buzz, menu still open after lifting"
+    );
+    shot(&mut app, "android-hold-menu").await;
+    app.key_combo("body", "Escape", false, false, false)
+        .await
+        .expect("close menu");
+    app.wait_for_js(
+        "return !document.querySelector('.context-menu')",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("menu closed");
 
     // Into a room, send, see it echoed.
     app.click_text(".room", "general")

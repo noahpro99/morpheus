@@ -10,6 +10,7 @@
 use std::{
     path::{Path, PathBuf},
     process::Stdio,
+    sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
 };
 
@@ -63,6 +64,9 @@ struct Response {
 impl App {
     /// Launch a fresh app (empty data dir) pointed at `homeserver`.
     pub async fn launch(homeserver: &str) -> Result<Self> {
+        if let Some(app) = Self::try_phone().await? {
+            return Ok(app);
+        }
         let data_dir = std::env::temp_dir().join(format!("morpheus-e2e-{}", unique()));
         Self::launch_with_data_dir(homeserver, data_dir, None, &[]).await
     }
@@ -82,12 +86,24 @@ impl App {
     /// Launch with a window of `width` x `height` logical pixels, e.g. a
     /// phone-sized one for the narrow layout.
     pub async fn launch_sized(homeserver: &str, width: u32, height: u32) -> Result<Self> {
+        // A phone is phone-sized; a test that asks for a wide window wants a desktop.
+        if width < 900
+            && let Some(app) = Self::try_phone().await?
+        {
+            return Ok(app);
+        }
         let data_dir = std::env::temp_dir().join(format!("morpheus-e2e-{}", unique()));
         Self::launch_with_data_dir(homeserver, data_dir, Some((width, height)), &[]).await
     }
 
     /// Relaunch on the same data directory, e.g. to test session restore.
     pub async fn relaunch(mut self) -> Result<Self> {
+        if self.android {
+            // Same app data; `Drop` stops the app and frees the phone.
+            drop(self);
+            PHONE_BUSY.store(true, Ordering::SeqCst);
+            return Self::start_android(false).await;
+        }
         let data_dir = self.data_dir.clone();
         let homeserver = self.homeserver.clone();
         if let Some(child) = &mut self.child {
@@ -578,6 +594,7 @@ impl Drop for App {
         if self.android {
             let _ = adb(&["shell", "am", "force-stop", ANDROID_PACKAGE]);
             let _ = adb(&["forward", "--remove", &format!("tcp:{}", self.port)]);
+            PHONE_BUSY.store(false, Ordering::SeqCst);
         }
         if std::env::var_os("MORPHEUS_E2E_KEEP").is_none() {
             let _ = std::fs::remove_dir_all(&self.data_dir);
@@ -670,6 +687,9 @@ fn keep_test_windows_unfocused() {
     });
 }
 
+/// Whether a test currently holds the phone.
+static PHONE_BUSY: AtomicBool = AtomicBool::new(false);
+
 /// The mobile app's package and activity (see `apps/mobile`).
 pub const ANDROID_PACKAGE: &str = "dev.morpheus.mobile";
 const ANDROID_ACTIVITY: &str = "dev.morpheus.mobile/dev.dioxus.main.MainActivity";
@@ -706,8 +726,40 @@ impl App {
     /// its data cleared, and connect to its bridge through `adb forward`.
     /// The app's own default homeserver applies (the host, from an emulator).
     pub async fn launch_android() -> Result<Self> {
-        adb(&["shell", "pm", "clear", ANDROID_PACKAGE])
-            .context("clearing the app's data (is it installed, and is a device attached?)")?;
+        PHONE_BUSY.store(true, Ordering::SeqCst);
+        Self::start_android(true).await
+    }
+
+    /// Launch on the desktop even in a phone run: for what only the desktop
+    /// app has (downloads to disk, the tray, a wide window).
+    pub async fn launch_desktop(homeserver: &str) -> Result<Self> {
+        let data_dir = std::env::temp_dir().join(format!("morpheus-e2e-{}", unique()));
+        Self::launch_with_data_dir(homeserver, data_dir, None, &[]).await
+    }
+
+    /// In a phone run (`MORPHEUS_E2E_ANDROID`), the first app a test
+    /// launches goes to the phone; later ones (other users) are desktop
+    /// windows, as there is only one phone.
+    async fn try_phone() -> Result<Option<Self>> {
+        if std::env::var_os("MORPHEUS_E2E_ANDROID").is_none()
+            || PHONE_BUSY.swap(true, Ordering::SeqCst)
+        {
+            return Ok(None);
+        }
+        match Self::start_android(true).await {
+            Ok(app) => Ok(Some(app)),
+            Err(err) => {
+                PHONE_BUSY.store(false, Ordering::SeqCst);
+                Err(err)
+            }
+        }
+    }
+
+    async fn start_android(clear: bool) -> Result<Self> {
+        if clear {
+            adb(&["shell", "pm", "clear", ANDROID_PACKAGE])
+                .context("clearing the app's data (is it installed, and is a device attached?)")?;
+        }
         adb(&["shell", "am", "start", "-W", "-n", ANDROID_ACTIVITY]).context("starting the app")?;
         let port = free_port().await?;
         adb(&[

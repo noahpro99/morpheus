@@ -118,6 +118,43 @@ window.addEventListener('paste', e => {
   const files = e.clipboardData ? [...e.clipboardData.files] : [];
   if (files.length) { e.preventDefault(); sendFiles(files); }
 }, true);
+// Touch screens: press and hold is right-click, with a short buzz. A finger
+// that moves is scrolling, not holding. If the webview raises its own
+// long-press contextmenu first, that one opens the menu instead.
+(() => {
+  const HOLD_MS = 450, SLOP_PX = 10;
+  let timer = null, start = null, fired = false;
+  const cancel = () => { clearTimeout(timer); timer = null; };
+  const buzz = () => { try { if (navigator.vibrate) navigator.vibrate(12); } catch (_) {} };
+  window.addEventListener('touchstart', e => {
+    cancel();
+    fired = false;
+    if (e.touches.length !== 1) return;
+    const t = e.touches[0];
+    start = { x: t.clientX, y: t.clientY, target: e.target };
+    timer = setTimeout(() => {
+      timer = null;
+      fired = true;
+      buzz();
+      start.target.dispatchEvent(new MouseEvent('contextmenu', {
+        bubbles: true, cancelable: true, button: 2, clientX: start.x, clientY: start.y,
+      }));
+    }, HOLD_MS);
+  }, { passive: true, capture: true });
+  window.addEventListener('touchmove', e => {
+    if (!timer || !start) return;
+    const t = e.touches[0];
+    if (Math.hypot(t.clientX - start.x, t.clientY - start.y) > SLOP_PX) cancel();
+  }, { passive: true, capture: true });
+  // Lifting after a hold must not also tap whatever the menu opened over.
+  window.addEventListener('touchend', e => { cancel(); if (fired) { e.preventDefault(); fired = false; } }, { capture: true });
+  window.addEventListener('touchcancel', cancel, { capture: true });
+  window.addEventListener('contextmenu', e => {
+    if (!e.isTrusted || !start) return;
+    if (fired) { e.preventDefault(); e.stopPropagation(); return; }
+    if (timer) { cancel(); fired = true; buzz(); }
+  }, true);
+})();
 // Page errors reach the Rust log; an exception inside the renderer's own
 // edit loop would otherwise freeze the UI silently.
 window.addEventListener('error', e => dioxus.send('jserr:' + e.message + ' @' + (e.filename || '') + ':' + e.lineno));
