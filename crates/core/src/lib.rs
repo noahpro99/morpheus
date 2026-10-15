@@ -43,7 +43,7 @@ pub use notifications::{Notification, NotificationUpdates};
 pub use profile::Profile;
 pub use recovery::{EncryptionStatus, RecoveryAvailability};
 pub use rooms::{NotifyMode, RoomListUpdates, RoomSummary};
-pub use session::{LoginFlows, LoginRequest, Session};
+pub use session::{LoginFlows, LoginRequest, Session, UrlOpener};
 pub use session_store::SessionStoreKind;
 pub use spaces::{History, Privacy, RoomProfile};
 pub use timeline::{

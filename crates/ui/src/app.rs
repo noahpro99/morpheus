@@ -66,6 +66,9 @@ pub struct AppConfig {
     pub on_session: Option<SessionHook>,
     pub open_room: OpenRoom,
     pub commands: AppCommands,
+    /// How to show a URL in the browser (single sign-on). `None` uses the
+    /// desktop opener; Android supplies an intent.
+    pub open_url: Option<morpheus_core::UrlOpener>,
 }
 
 impl AppConfig {
@@ -76,6 +79,7 @@ impl AppConfig {
             on_session: None,
             open_room: OpenRoom::default(),
             commands: AppCommands::default(),
+            open_url: None,
         }
     }
 }

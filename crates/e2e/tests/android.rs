@@ -136,3 +136,75 @@ async fn phone_signs_in_navigates_and_sends() {
         .expect("back to rooms");
     pane(&mut app, "rooms").await;
 }
+
+/// A real homeserver over HTTPS: typing matrix.org (no need to leave the
+/// field) offers single sign-on, and nothing fails on the way. Needs internet.
+/// Android checks certificates through the platform, which the app has to
+/// set up itself; without that the probe panicked and no SSO button showed.
+#[tokio::test]
+async fn phone_offers_single_sign_on_for_matrix_org() {
+    if !enabled() {
+        eprintln!("MORPHEUS_E2E_ANDROID not set; skipping the Android test");
+        return;
+    }
+    let mut app = App::launch_android().await.expect("launch on Android");
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    app.type_into("form.login input[name=homeserver]", "matrix.org")
+        .await
+        .expect("homeserver");
+    app.wait_for_text("form.login button", "single sign-on", DEFAULT_WAIT)
+        .await
+        .expect("SSO offered for matrix.org");
+    shot(&mut app, "android-login-sso").await;
+    let error = app
+        .eval("return document.querySelector('form.login .error')?.textContent ?? null;")
+        .await
+        .expect("error text");
+    assert_eq!(
+        error,
+        serde_json::Value::Null,
+        "login screen shows an error"
+    );
+
+    // Tapping it hands the sign-in page to the phone's browser (an Android
+    // VIEW intent), and the app waits for the browser to come back.
+    let _ = std::process::Command::new("adb")
+        .args(["logcat", "-c"])
+        .status();
+    app.click_text("form.login button", "single sign-on")
+        .await
+        .expect("tap SSO");
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let log = std::process::Command::new("adb")
+            .args(["logcat", "-d", "-s", "ActivityTaskManager:I"])
+            .output()
+            .map(|out| String::from_utf8_lossy(&out.stdout).into_owned())
+            .unwrap_or_default();
+        if log.contains("act=android.intent.action.VIEW") {
+            break;
+        }
+        let error = app
+            .eval("return document.querySelector('form.login .error')?.textContent ?? null;")
+            .await
+            .unwrap_or_default();
+        assert_eq!(error, serde_json::Value::Null, "tapping SSO failed");
+        assert!(
+            std::time::Instant::now() < deadline,
+            "no browser opened for single sign-on"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+    // Back to the app (the browser stays open behind it).
+    let _ = std::process::Command::new("adb")
+        .args([
+            "shell",
+            "am",
+            "start",
+            "-n",
+            "dev.morpheus.mobile/dev.dioxus.main.MainActivity",
+        ])
+        .status();
+}
