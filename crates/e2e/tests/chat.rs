@@ -92,9 +92,33 @@ async fn session_survives_relaunch() {
         .expect("rooms synced");
 
     let mut app = app.relaunch().await.expect("relaunch");
-    app.wait_for(".shell", DEFAULT_WAIT)
-        .await
-        .expect("restored straight into the shell");
+    // While the session restores, the splash shows the logo, not the name.
+    let mut saw_splash = false;
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let state = app
+            .eval(
+                "const s = document.querySelector('.splash'); \
+                 return [!!s, !!(s && s.querySelector('svg.splash-logo')), s ? s.textContent.trim() : '', !!document.querySelector('.shell')];",
+            )
+            .await
+            .expect("splash state");
+        let [splash, logo, text, shell] = [&state[0], &state[1], &state[2], &state[3]];
+        if splash == true {
+            saw_splash = true;
+            assert_eq!(logo, true, "the splash shows the logo");
+            assert_eq!(text, "", "the splash shows no name");
+        }
+        if shell == true {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "never restored into the shell"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    eprintln!("splash seen while restoring: {saw_splash}");
     assert_eq!(
         app.count("form.login").await.expect("count"),
         0,
