@@ -200,7 +200,9 @@ fn DesktopRoot() -> Element {
         if let Some(size) = boxed {
             div {
                 class: "viewport-box",
-                style: "width: {size.split('x').next().unwrap_or(\"1280\")}px; height: {size.split('x').nth(1).unwrap_or(\"800\")}px; overflow: hidden;",
+                // The transform makes the box hold fixed overlays (menus, dialogs)
+                // the way a phone screen would.
+                style: "width: {size.split('x').next().unwrap_or(\"1280\")}px; height: {size.split('x').nth(1).unwrap_or(\"800\")}px; overflow: hidden; transform: translateZ(0);",
                 morpheus_ui::App {}
             }
         } else {

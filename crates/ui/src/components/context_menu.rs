@@ -156,6 +156,13 @@ const CLAMP_JS: &str = "const m = document.querySelector('.context-menu'); if (!
 #[component]
 pub fn ContextMenuLayer() -> Element {
     let menu = use_context::<ContextMenu>();
+    let sheet = try_use_context::<super::shell::NarrowWindow>().is_some_and(|narrow| narrow().0);
+    // The submenu shown in place inside a sheet; reset whenever a menu opens.
+    let mut sub = use_signal(|| None::<usize>);
+    use_effect(move || {
+        let _ = menu.read();
+        sub.set(None);
+    });
     let Some(open) = menu().0 else {
         return rsx! {};
     };
@@ -163,6 +170,76 @@ pub fn ContextMenuLayer() -> Element {
         let mut menu = menu;
         menu.set(MenuState::default());
     };
+
+    // Phone layout: a full-width sheet on the bottom edge instead of a
+    // pop-up by the pointer, and submenus open in place (no hover on touch).
+    if sheet {
+        let shown = sub().and_then(|index| open.items.get(index).cloned());
+        return rsx! {
+            div {
+                class: "context-backdrop sheet-backdrop",
+                onclick: move |_| close(),
+                oncontextmenu: move |e| {
+                    e.prevent_default();
+                    close();
+                },
+                div {
+                    class: "context-menu sheet",
+                    role: "menu",
+                    onclick: move |e| e.stop_propagation(),
+                    div { class: "sheet-handle", "aria-hidden": "true" }
+                    if let Some(item) = shown {
+                        button {
+                            class: "context-item sheet-back",
+                            onclick: move |_| sub.set(None),
+                            Icon { glyph: crate::icons::CHEVRON_LEFT, size: 18, class: "menu-icon" }
+                            span { class: "menu-label", "{item.label}" }
+                        }
+                        div { class: if item.grid { "sheet-items grid" } else { "sheet-items" },
+                            {entries(&item.children, close)}
+                        }
+                    } else {
+                        if let Some(react) = open.react.clone() {
+                            div { class: "context-reactions",
+                                for key in QUICK_REACTIONS {
+                                    button {
+                                        class: "context-reaction",
+                                        title: "React with {key}",
+                                        onclick: {
+                                            let react = react.clone();
+                                            move |_| {
+                                                react(key);
+                                                close();
+                                            }
+                                        },
+                                        "{key}"
+                                    }
+                                }
+                            }
+                        }
+                        div { class: "sheet-items",
+                            for (index, item) in open.items.iter().cloned().enumerate() {
+                                if item.children.is_empty() {
+                                    {entries(std::slice::from_ref(&item), close)}
+                                } else {
+                                    button {
+                                        class: "context-item has-submenu",
+                                        role: "menuitem",
+                                        onclick: move |_| sub.set(Some(index)),
+                                        if let Some(glyph) = item.glyph() {
+                                            Icon { glyph, size: 16, class: "menu-icon" }
+                                        }
+                                        span { class: "menu-label", "{item.label}" }
+                                        span { class: "submenu-arrow", "›" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        };
+    }
 
     rsx! {
         div {
