@@ -111,6 +111,7 @@ timeline → send.
 - [ ] Mobile file picker (Android intent / iOS document picker): `rfd` is desktop-only, the attach button is a no-op on phones; paste works
 - [x] Single-column navigation on phone-width windows (rooms → chat → members/thread) with back buttons and Escape/back; the shared shell does it, so the mobile app gets every desktop feature as is. Swipe-back gesture still to do.
 - [x] Larger touch targets and safe-area insets in the narrow layout
+- [ ] Text selection is broken (reported on the phone, 2026-10-15); revisit later. Touch screens currently turn off selection outside typing fields so press-and-hold can open menus; messages need a "Select text" path instead.
 - [ ] Keyboard avoidance on Android (adjustResize) and iOS, verified on devices
 - [ ] UnifiedPush notifications
 - [ ] iOS build on a Mac runner

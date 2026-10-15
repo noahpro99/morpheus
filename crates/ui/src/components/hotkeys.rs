@@ -223,6 +223,76 @@ window.addEventListener('paste', e => {
   document.addEventListener('load', all, true);
   new MutationObserver(all).observe(document.head, { childList: true, subtree: true });
 })();
+// Swipes on touch screens. A bottom sheet follows the finger down and closes
+// past a third of its height (or on a quick flick). A rightward swipe across
+// the chat or side pane slides it away and steps back one pane, as the back
+// key does; mostly-vertical drags stay scrolls.
+(() => {
+  const SLOP = 12;
+  // Something on top (a dialog, menu, card, image) takes the gesture instead.
+  const OPEN_FOR_SWIPE = '.overlay, .context-menu, .card-overlay, .lightbox-overlay';
+  let g = null;
+  const narrowPane = () => {
+    const shell = document.querySelector('.shell');
+    return shell && shell.classList.contains('narrow') ? shell.dataset.pane : null;
+  };
+  const settle = (el, transform) => {
+    el.style.transition = 'transform 160ms ease-out';
+    el.style.transform = transform;
+    setTimeout(() => { el.style.transition = ''; if (!transform) el.style.transform = ''; }, 170);
+  };
+  window.addEventListener('touchstart', e => {
+    g = null;
+    if (e.touches.length !== 1) return;
+    const t = e.touches[0];
+    const sheet = e.target.closest && e.target.closest('.context-menu.sheet');
+    if (sheet) {
+      if (sheet.scrollTop <= 0) g = { kind: 'sheet', el: sheet, x: t.clientX, y: t.clientY, at: Date.now(), d: 0, axis: null };
+      return;
+    }
+    const pane = narrowPane();
+    if ((pane === 'chat' || pane === 'side') && !document.querySelector(OPEN_FOR_SWIPE)) {
+      const el = document.querySelector(pane === 'side' ? '.side-pane' : '.chat');
+      if (el) g = { kind: 'pane', el, x: t.clientX, y: t.clientY, at: Date.now(), d: 0, axis: null };
+    }
+  }, { passive: true, capture: true });
+  window.addEventListener('touchmove', e => {
+    if (!g) return;
+    const t = e.touches[0];
+    const dx = t.clientX - g.x, dy = t.clientY - g.y;
+    if (!g.axis) {
+      if (Math.abs(dx) < SLOP && Math.abs(dy) < SLOP) return;
+      g.axis = Math.abs(dx) > Math.abs(dy) * 1.5 ? 'x' : 'y';
+    }
+    if (g.kind === 'sheet' && g.axis === 'y') {
+      g.d = Math.max(0, dy);
+      g.el.style.transition = 'none';
+      g.el.style.transform = `translateY(${g.d}px)`;
+    } else if (g.kind === 'pane' && g.axis === 'x') {
+      g.d = Math.max(0, dx);
+      g.el.style.transition = 'none';
+      g.el.style.transform = `translateX(${g.d}px)`;
+    }
+  }, { passive: true, capture: true });
+  window.addEventListener('touchend', () => {
+    if (!g || g.d <= 0) { g = null; return; }
+    const { kind, el, d, at } = g;
+    g = null;
+    const fast = d > 40 && d / Math.max(1, Date.now() - at) > 0.6;
+    if (kind === 'sheet') {
+      if (fast || d > el.offsetHeight / 3) {
+        settle(el, 'translateY(100%)');
+        setTimeout(() => { const b = document.querySelector('.sheet-backdrop'); if (b) b.click(); }, 150);
+      } else settle(el, '');
+    } else {
+      if (fast || d > el.offsetWidth / 3) {
+        settle(el, 'translateX(100%)');
+        setTimeout(() => { el.style.transform = ''; dioxus.send('escape'); }, 150);
+      } else settle(el, '');
+    }
+  }, { capture: true });
+  window.addEventListener('touchcancel', () => { if (g) settle(g.el, ''); g = null; }, { capture: true });
+})();
 // Tapping your own pill gives a small buzz on phones, like Discord's.
 window.addEventListener('click', e => {
   if (e.target.closest && e.target.closest('.user-pill .profile-chip')) {
