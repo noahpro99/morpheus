@@ -27,7 +27,13 @@ window.addEventListener('keydown', e => {
   const k = e.key, mod = e.ctrlKey || e.metaKey, alt = e.altKey, shift = e.shiftKey;
   const key = k.length === 1 ? k.toLowerCase() : k;
   let name = null;
-  if (k === 'Escape' && shift) name = 'mark_scope_read';
+  // Escape in the message box closes what the box has open (an edit, a reply,
+  // suggestions, the emoji panel) and nothing else; on a phone it would
+  // otherwise also step back to the room list.
+  const composerEl = t && t.closest ? t.closest('.composer') : null;
+  const boxBusy = !!composerEl && !!composerEl.querySelector('.composer-banner, .autocomplete, .emoji-panel');
+  if (k === 'Escape' && boxBusy) name = null;
+  else if (k === 'Escape' && shift) name = 'mark_scope_read';
   else if (k === 'Escape') name = 'escape';
   else if (mod && !alt && !shift && key === 'k') name = 'switcher';
   else if (mod && !alt && key === '/') name = 'shortcuts';

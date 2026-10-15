@@ -147,7 +147,8 @@ pub fn EditProfileModal() -> Element {
             async move { session.own_profile().await.ok() }
         }
     });
-    // Seed the field once; a late fetch must not clobber what was typed.
+    // Seed the field once, unless the user has already typed (see `oninput`):
+    // a late fetch must not put the old name back for Save to store.
     let mut seeded = use_signal(|| false);
     use_effect(move || {
         if let Some(Some(profile)) = current()
@@ -220,7 +221,15 @@ pub fn EditProfileModal() -> Element {
                     button { r#type: "button", class: "secondary", disabled: busy(), onclick: pick_avatar, "Change avatar…" }
                 }
                 label { "Display name"
-                    input { name: "displayname", value: "{name}", oninput: move |e| name.set(e.value()) }
+                    input {
+                        name: "displayname",
+                        value: "{name}",
+                        // Typing wins over a fetch that lands late (slow phone links).
+                        oninput: move |e| {
+                            seeded.set(true);
+                            name.set(e.value());
+                        },
+                    }
                 }
                 match message() {
                     Some(Ok(text)) => rsx! { p { class: "ok", "{text}" } },
@@ -302,7 +311,16 @@ pub fn StatusModal() -> Element {
                 },
                 h2 { "Set status" }
                 label { "What are you up to?"
-                    input { name: "status", placeholder: "In a meeting", value: "{status}", oninput: move |e| status.set(e.value()) }
+                    input {
+                        name: "status",
+                        placeholder: "In a meeting",
+                        value: "{status}",
+                        // Typing wins over a fetch that lands late.
+                        oninput: move |e| {
+                            seeded.set(true);
+                            status.set(e.value());
+                        },
+                    }
                 }
                 if let Some(text) = error() {
                     p { class: "error", "{text}" }

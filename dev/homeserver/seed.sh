@@ -314,6 +314,16 @@ if [[ ! -f "$HS_DIR/.seeded-firehose" ]]; then
   echo "  + 600 messages"
 fi
 
+# Every test login leaves a device behind (alice had 1300+), and each one
+# adds key queries to every sync and fans out verification requests. Last
+# step, since it also signs out the tokens this script used.
+# alice last: her token is the admin one doing the deleting.
+for u in bob carol alice; do
+  ids=$(api "$ALICE" GET "/_synapse/admin/v2/users/@$u:localhost/devices" | jq -c "[.devices[].device_id]")
+  api "$ALICE" POST "/_synapse/admin/v2/users/@$u:localhost/delete_devices" "$(jq -nc --argjson d "$ids" '{devices:$d}')" >/dev/null
+done
+echo "  = old devices removed"
+
 cat <<INFO
 
 ready. log in with:

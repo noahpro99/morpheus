@@ -159,6 +159,9 @@ pub enum MessageKind {
     UnableToDecrypt,
     /// A membership or state change, already phrased as a sentence.
     State(String),
+    /// A member changed their display name or avatar. Clients hide these by
+    /// default (Discord never shows them, Element hides them).
+    ProfileChange,
     Unsupported(String),
 }
 
@@ -305,6 +308,7 @@ impl MessageKind {
             Self::Redacted => "Message deleted".into(),
             Self::UnableToDecrypt => "Unable to decrypt".into(),
             Self::State(text) => text.clone(),
+            Self::ProfileChange => "updated their profile".into(),
             Self::Unsupported(what) => format!("Unsupported: {what}"),
         }
     }
@@ -398,9 +402,7 @@ impl MessageKind {
                     .unwrap_or_else(|| change.user_id().to_string());
                 Self::State(format!("{who} {}", describe_membership(change.change())))
             }
-            TimelineItemContent::ProfileChange(_) => {
-                Self::State(format!("{sender_name} updated their profile"))
-            }
+            TimelineItemContent::ProfileChange(_) => Self::ProfileChange,
             TimelineItemContent::OtherState(state) => Self::State(format!(
                 "{sender_name} {}",
                 describe_state(&state.content().event_type())
