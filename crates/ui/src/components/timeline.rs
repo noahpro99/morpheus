@@ -994,7 +994,20 @@ fn RichText(
                 span { class: "edited", "{edited_tag}" }
             }
         },
-        None => rsx! { p { class: "{class}", "{body}" span { class: "edited", "{edited_tag}" } } },
+        // Bare URLs become links; the shell hands clicks to the browser.
+        None => rsx! {
+            p { class: "{class}",
+                for (index, segment) in crate::linkify::segments(&body).into_iter().enumerate() {
+                    match segment {
+                        crate::linkify::Segment::Text(text) => rsx! { span { key: "{index}", "{text}" } },
+                        crate::linkify::Segment::Link { text, url } => rsx! {
+                            a { key: "{index}", class: "link", href: "{url}", rel: "noopener", "{text}" }
+                        },
+                    }
+                }
+                span { class: "edited", "{edited_tag}" }
+            }
+        },
     }
 }
 

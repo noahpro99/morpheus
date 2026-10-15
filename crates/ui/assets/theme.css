@@ -1557,3 +1557,8 @@ body.dropping .drop-hint { display: flex; }
 .context-menu.sheet .context-reactions { justify-content: space-around; padding: 4px 0 8px; }
 .context-menu.sheet .context-reaction { font-size: 1.5rem; padding: 6px 10px; }
 .context-menu.sheet .menu-avatar { width: 24px; height: 24px; }
+
+/* ---- Links in messages ------------------------------------------------------ */
+
+.body a, .body a.link { color: #8fa0ff; text-decoration: none; word-break: break-word; }
+.body a:hover { text-decoration: underline; }

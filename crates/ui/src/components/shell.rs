@@ -317,6 +317,9 @@ pub fn Shell(session: Session) -> Element {
     });
     // New messages from other people, logged for the inbox and the tests.
     let mut notices: NoticeLog = use_context_provider(|| Signal::new(Notices::default()));
+    // Links handed to the browser; test runs read this instead of a browser opening.
+    let mut opened_links = use_signal(Vec::<String>::new);
+    let open_url = use_context::<crate::AppConfig>().open_url;
     use_hook({
         let session = session.clone();
         move || {
@@ -614,6 +617,9 @@ pub fn Shell(session: Session) -> Element {
                         Some(file) => drops.with_mut(|d| d.0.push(file)),
                         None => tracing::warn!("ignoring an unreadable dropped file"),
                     }
+                } else if let Some(url) = name.strip_prefix("open:") {
+                    open_link(url, open_url.as_ref());
+                    opened_links.with_mut(|links| links.push(url.to_owned()));
                 } else if let Some(message) = name.strip_prefix("jserr:") {
                     tracing::error!(%message, "javascript error in the page");
                 } else if let Some(flag) = name.strip_prefix("narrow:") {
@@ -666,6 +672,11 @@ pub fn Shell(session: Session) -> Element {
             div { class: "drop-hint", "Drop to upload" }
             ToastLayer {}
             // Mirror of what was announced, for the test bridge.
+            ul { class: "link-log", hidden: true,
+                for (index, url) in opened_links().iter().enumerate() {
+                    li { key: "{index}", "{url}" }
+                }
+            }
             ul { class: "notification-log", hidden: true,
                 for (index, notice) in notices().0.iter().enumerate() {
                     li {
@@ -924,4 +935,21 @@ pub fn select(room_id: OwnedRoomId) {
     let mut nav = consume_context::<NavHistory>();
     nav.with_mut(|n| n.record(room_id.clone()));
     consume_context::<Selected>().set(Some(room_id));
+}
+
+/// Show a web link in the browser: the platform's opener (Android's intent),
+/// else the desktop default. Test runs never open a browser on the
+/// developer's desktop; the shell's link log records the hand-off instead.
+fn open_link(url: &str, open_url: Option<&morpheus_core::UrlOpener>) {
+    if std::env::var_os("MORPHEUS_E2E_PORT").is_some() {
+        tracing::info!(%url, "link click (test run, not opened)");
+        return;
+    }
+    let result = match open_url {
+        Some(open) => open(url),
+        None => open::that_detached(url),
+    };
+    if let Err(err) = result {
+        report("opening the link", &err);
+    }
 }

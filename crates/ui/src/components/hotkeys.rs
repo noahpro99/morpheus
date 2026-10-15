@@ -293,6 +293,72 @@ window.addEventListener('paste', e => {
   }, { capture: true });
   window.addEventListener('touchcancel', () => { if (g) settle(g.el, ''); g = null; }, { capture: true });
 })();
+// Links. Formatted messages arrive as HTML, where bare URLs are plain text:
+// link them (the same rules as `linkify.rs`, which handles plain messages).
+// And every web link opens outside the app: the click goes to the shell,
+// which hands it to the browser, instead of navigating this page.
+(() => {
+  const URL_RE = /(^|[^\w/.])((?:https?:\/\/|www\.)[^\s<]+)/gi;
+  const trim = link => {
+    for (;;) {
+      const last = link[link.length - 1];
+      const count = c => link.split(c).length - 1;
+      const drop = '.,;:!?\'">'.includes(last)
+        || (last === ')' && count(')') > count('('))
+        || (last === ']' && count(']') > count('['))
+        || (last === '}' && count('}') > count('{'));
+      if (!last || !drop) return link;
+      link = link.slice(0, -1);
+    }
+  };
+  const linkify = root => {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode: n => n.parentElement.closest('a, code, pre') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
+    });
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    for (const node of nodes) {
+      const text = node.nodeValue;
+      URL_RE.lastIndex = 0;
+      if (!URL_RE.test(text)) continue;
+      URL_RE.lastIndex = 0;
+      const frag = document.createDocumentFragment();
+      let at = 0, m;
+      while ((m = URL_RE.exec(text))) {
+        const start = m.index + m[1].length;
+        const link = trim(m[2]);
+        const minimum = link.toLowerCase().startsWith('www.') ? 4 : link.indexOf('//') + 2;
+        if (link.length <= minimum) continue;
+        frag.append(text.slice(at, start));
+        const a = document.createElement('a');
+        a.className = 'link';
+        a.href = link.toLowerCase().startsWith('www.') ? 'https://' + link : link;
+        a.rel = 'noopener';
+        a.textContent = link;
+        frag.append(a);
+        at = start + link.length;
+        URL_RE.lastIndex = at;
+      }
+      if (at === 0) continue;
+      frag.append(text.slice(at));
+      node.replaceWith(frag);
+    }
+  };
+  const scan = () => document.querySelectorAll('.body.rich > div').forEach(linkify);
+  let queued = false;
+  new MutationObserver(() => {
+    if (!queued) { queued = true; requestAnimationFrame(() => { queued = false; scan(); }); }
+  }).observe(document.body, { childList: true, subtree: true, characterData: true });
+  scan();
+  window.addEventListener('click', e => {
+    const a = e.target.closest && e.target.closest('a[href]');
+    if (!a || !a.closest('.shell')) return;
+    if (!/^(https?:|mailto:)/i.test(a.href)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dioxus.send('open:' + a.href);
+  }, true);
+})();
 // Tapping your own pill gives a small buzz on phones, like Discord's.
 window.addEventListener('click', e => {
   if (e.target.closest && e.target.closest('.user-pill .profile-chip')) {

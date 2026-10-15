@@ -21,6 +21,7 @@ mod e2e {
 }
 mod format;
 pub mod icons;
+mod linkify;
 mod media;
 mod window;
 
