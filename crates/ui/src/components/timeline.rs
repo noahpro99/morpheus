@@ -11,6 +11,7 @@ use super::{
     composer::{ActiveTimeline, ComposerMode, Draft, Mode},
     context_menu::{MenuItem, copy_to_clipboard, open_menu},
     hotkeys::{Hotkey, HotkeyRequest},
+    keys::{DeviceKeys, KeyBanner},
     lightbox::{LightboxImage, LightboxImages, LightboxIndex},
     members::open_sender_menu,
     message_dialogs::{MessageDialog, OpenMessageDialog, Pinned, PinnedRefresh},
@@ -101,6 +102,7 @@ pub fn TimelineView(
     // Escape with nothing open: back to the newest message, and mark read.
     let mut hotkey = use_context::<HotkeyRequest>();
     let is_main_timeline = root_event_id.is_none();
+    let device_keys = try_use_context::<DeviceKeys>();
     // Plain (non-signal) handle to the open timeline. Leaving the room (it
     // remounts on room switch) fires a fully-read receipt on cleanup, without
     // touching reactive state while the component is being torn down.
@@ -324,8 +326,17 @@ pub fn TimelineView(
     // Nothing from the SDK yet (not even the start marker): show placeholders
     // instead of an empty column.
     let loading = entries_now.is_empty() && load_error().is_none();
+    // Messages this device cannot read: say how to unlock them (main chat only).
+    let show_key_banner = is_main_timeline
+        && device_keys.is_some_and(|keys| keys().locked)
+        && entries_now.iter().any(|entry| {
+            matches!(entry, TimelineEntry::Message(m) if matches!(m.kind, MessageKind::UnableToDecrypt))
+        });
 
     rsx! {
+        if show_key_banner {
+            KeyBanner {}
+        }
         // Rendered newest-first; CSS flips it and keeps the view pinned to the bottom.
         section {
             class: "timeline",
@@ -903,6 +914,7 @@ fn ThreadChip(thread: Option<ThreadSummary>, on_open: Callback<()>) -> Element {
 #[component]
 fn MessageBody(kind: MessageKind, edited: bool) -> Element {
     let edited_tag = if edited { " (edited)" } else { "" };
+    let locked = try_use_context::<DeviceKeys>().is_some_and(|keys| keys().locked);
     match kind {
         MessageKind::Text { body, html } => {
             rsx! { RichText { class: "body", body, html, edited_tag } }
@@ -941,8 +953,18 @@ fn MessageBody(kind: MessageKind, edited: bool) -> Element {
             duration,
         } => rsx! { AudioBody { body, media, size, mime, duration } },
         MessageKind::Redacted => rsx! { p { class: "body muted", "Message deleted" } },
-        // Keys usually arrive shortly (backup, other device), so this reads as
-        // "still loading" rather than an error.
+        // On a device that can read encrypted history, keys usually arrive
+        // shortly (backup, other device): a loading shimmer. On one that
+        // cannot (not verified, no recovery key) they never will until the
+        // user acts, so say so instead of looking like it is loading.
+        MessageKind::UnableToDecrypt if locked => rsx! {
+            p {
+                class: "body muted undecrypted locked",
+                title: "Verify this device or enter your recovery key to read it",
+                crate::icons::Icon { glyph: crate::icons::LOCK, size: 14 }
+                " Encrypted message — this device has no key for it yet"
+            }
+        },
         MessageKind::UnableToDecrypt => rsx! {
             div {
                 class: "body skeleton skeleton-line undecrypted",

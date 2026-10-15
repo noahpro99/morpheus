@@ -4,8 +4,6 @@
 
 #![allow(clippy::expect_used)]
 
-use std::time::Duration;
-
 use morpheus_e2e::{App, DEFAULT_WAIT};
 
 /// Holds once the timeline has more history than fits on screen.
@@ -90,8 +88,11 @@ async fn rooms_open_at_the_newest_message_and_jump_back_after_scrolling() {
     }
 }
 
+/// A device without the keys (a fresh sign-in, nothing verified) must say
+/// so: locked rows instead of an endless loading shimmer, and a notice with
+/// the two ways in, each opening the place to do it.
 #[tokio::test]
-async fn undecryptable_messages_render_as_placeholders() {
+async fn locked_messages_say_how_to_unlock_them() {
     let Some(hs) = homeserver() else {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
@@ -102,25 +103,45 @@ async fn undecryptable_messages_render_as_placeholders() {
     app.open_room("encrypted")
         .await
         .expect("open encrypted room");
-    app.wait_for(".message .undecrypted.skeleton", DEFAULT_WAIT)
+    app.wait_for(".message .undecrypted.locked", DEFAULT_WAIT)
         .await
-        .expect("a placeholder for the message without keys");
-    let text = app
-        .eval("return document.querySelector('.timeline').textContent;")
+        .expect("a locked row for the message without keys");
+    app.wait_for_text(".message .undecrypted.locked", "Encrypted", DEFAULT_WAIT)
         .await
-        .expect("timeline text");
-    assert!(
-        !text
-            .as_str()
-            .unwrap_or_default()
-            .contains("Unable to decrypt"),
-        "no error text for messages still waiting on keys"
+        .expect("the row says it is encrypted");
+    let shimmer = app
+        .eval("return getComputedStyle(document.querySelector('.undecrypted')).animationName;")
+        .await
+        .expect("animation");
+    assert_ne!(
+        shimmer,
+        serde_json::json!("shimmer"),
+        "locked rows must not look like loading"
     );
-    // Placeholders are inert: nothing to click or hover into actions.
-    app.wait_for_js(
-        "return getComputedStyle(document.querySelector('.undecrypted')).animationName === 'shimmer';",
-        Duration::from_secs(5),
+
+    app.wait_for_text(".key-banner", "this device", DEFAULT_WAIT)
+        .await
+        .expect("a notice explains the locked messages");
+    if let Some(path) = app.screenshot("locked-messages").await.expect("screenshot") {
+        eprintln!("screenshot: {}", path.display());
+    }
+    app.wait_for_text(
+        ".key-banner button",
+        "Verify with another device",
+        DEFAULT_WAIT,
     )
     .await
-    .expect("placeholder shimmers");
+    .expect("verify offered");
+    app.click_text(".key-banner button", "Enter recovery key")
+        .await
+        .expect("recovery offered");
+    app.wait_for(".settings .recovery-form input", DEFAULT_WAIT)
+        .await
+        .expect("settings open at the recovery key");
+    app.wait_for_js(
+        "return document.activeElement === document.querySelector('.settings .recovery-form input');",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("the recovery key field is focused");
 }
