@@ -109,6 +109,19 @@ async fn pictures_menus_and_spacing() {
         "gear to attach button gap is {gap}px"
     );
 
+    // The logo on the DMs button fills its circle rather than floating in it.
+    let fill = app
+        .eval(
+            "const b = document.querySelector('.rail-dms').getBoundingClientRect(), \
+               l = document.querySelector('.rail-dms .logo').getBoundingClientRect(); \
+               return l.width / b.width;",
+        )
+        .await
+        .expect("dms logo")
+        .as_f64()
+        .expect("number");
+    assert!(fill >= 0.8, "DMs logo fills {fill:.2} of its circle");
+
     // Your own avatar gets no shadow when the chip is hovered.
     let shadowed = app
         .eval("return [...document.styleSheets].flatMap(s => [...s.cssRules]).some(r => \

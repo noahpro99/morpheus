@@ -61,11 +61,28 @@ android:
     rm -rf target/dx/morpheus-mobile/debug/android/app/app/src/main/jniLibs/x86_64
     nix develop .#android -c dx serve --package morpheus-mobile --platform android
 
+# dx 0.7 writes its own placeholder launcher icon on every build and has no
+# setting for it: put the Morpheus icon (apps/mobile/android/res) in its place
+# and let gradle repackage the APK.
+_android-icons:
+    cp -r apps/mobile/android/res/. target/dx/morpheus-mobile/debug/android/app/app/src/main/res/
+    cd target/dx/morpheus-mobile/debug/android/app && ./gradlew assembleDebug -q
+
+# Update the app on a plugged-in phone, keeping its sign-in and data.
+# With the emulator also running, name the phone: `ANDROID_SERIAL=<id> just android-update`
+android-update:
+    rm -rf target/dx/morpheus-mobile/debug/android/app/app/src/main/jniLibs/x86_64
+    nix develop .#android -c dx build --package morpheus-mobile --platform android --target aarch64-linux-android
+    nix develop .#android -c just _android-icons
+    nix develop .#android -c adb install -r target/dx/morpheus-mobile/debug/android/app/app/build/outputs/apk/debug/app-debug.apk
+    nix develop .#android -c adb shell am start -n dev.morpheus.mobile/dev.dioxus.main.MainActivity
+
 # Fresh install on a plugged-in phone: uninstall (wipes its sign-in and data), build for ARM, install, launch.
 # With the emulator also running, name the phone: `ANDROID_SERIAL=<id from adb devices> just android-reinstall`
 android-reinstall:
     rm -rf target/dx/morpheus-mobile/debug/android/app/app/src/main/jniLibs/x86_64
     nix develop .#android -c dx build --package morpheus-mobile --platform android --target aarch64-linux-android
+    nix develop .#android -c just _android-icons
     -nix develop .#android -c adb uninstall dev.morpheus.mobile
     nix develop .#android -c adb install target/dx/morpheus-mobile/debug/android/app/app/build/outputs/apk/debug/app-debug.apk
     nix develop .#android -c adb shell am start -n dev.morpheus.mobile/dev.dioxus.main.MainActivity
@@ -90,6 +107,7 @@ e2e-android-build:
     # dx reuses one gradle project per app: drop the phone's ARM library so it is not bundled too.
     rm -rf target/dx/morpheus-mobile/debug/android/app/app/src/main/jniLibs/arm64-v8a
     nix develop .#android-emulator -c dx build --package morpheus-mobile --platform android --target x86_64-linux-android --features e2e
+    nix develop .#android-emulator -c just _android-icons
     -nix develop .#android-emulator -c adb -s "${ANDROID_SERIAL:-emulator-5554}" uninstall dev.morpheus.mobile
     nix develop .#android-emulator -c adb -s "${ANDROID_SERIAL:-emulator-5554}" install -r target/dx/morpheus-mobile/debug/android/app/app/build/outputs/apk/debug/app-debug.apk
 
