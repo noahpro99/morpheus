@@ -102,7 +102,7 @@ impl App {
             // Same app data; `Drop` stops the app and frees the phone.
             drop(self);
             PHONE_BUSY.store(true, Ordering::SeqCst);
-            return Self::start_android(false).await;
+            return Self::start_android(false, &[]).await;
         }
         let data_dir = self.data_dir.clone();
         let homeserver = self.homeserver.clone();
@@ -727,7 +727,14 @@ impl App {
     /// The app's own default homeserver applies (the host, from an emulator).
     pub async fn launch_android() -> Result<Self> {
         PHONE_BUSY.store(true, Ordering::SeqCst);
-        Self::start_android(true).await
+        Self::start_android(true, &[]).await
+    }
+
+    /// [`Self::launch_android`] with runtime permissions granted before the
+    /// app starts (so no permission prompt covers it).
+    pub async fn launch_android_granting(permissions: &[&str]) -> Result<Self> {
+        PHONE_BUSY.store(true, Ordering::SeqCst);
+        Self::start_android(true, permissions).await
     }
 
     /// Launch on the desktop even in a phone run: for what only the desktop
@@ -746,7 +753,7 @@ impl App {
         {
             return Ok(None);
         }
-        match Self::start_android(true).await {
+        match Self::start_android(true, &[]).await {
             Ok(app) => Ok(Some(app)),
             Err(err) => {
                 PHONE_BUSY.store(false, Ordering::SeqCst);
@@ -755,11 +762,24 @@ impl App {
         }
     }
 
-    async fn start_android(clear: bool) -> Result<Self> {
+    async fn start_android(clear: bool, permissions: &[&str]) -> Result<Self> {
         if clear {
             adb(&["shell", "pm", "clear", ANDROID_PACKAGE])
                 .context("clearing the app's data (is it installed, and is a device attached?)")?;
         }
+        for permission in permissions {
+            adb(&["shell", "pm", "grant", ANDROID_PACKAGE, permission])
+                .with_context(|| format!("granting {permission}"))?;
+        }
+        // The app asks for this on first launch; the system prompt would sit
+        // over the page and take the test's taps. Older builds lack it.
+        let _ = adb(&[
+            "shell",
+            "pm",
+            "grant",
+            ANDROID_PACKAGE,
+            "android.permission.POST_NOTIFICATIONS",
+        ]);
         adb(&["shell", "am", "start", "-W", "-n", ANDROID_ACTIVITY]).context("starting the app")?;
         let port = free_port().await?;
         adb(&[

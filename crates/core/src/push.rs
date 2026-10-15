@@ -145,3 +145,24 @@ mod tests {
         assert_eq!(origin_of("nonsense"), None);
     }
 }
+
+impl Session {
+    /// `(room id, name)` for every joined room, for push notifications that
+    /// arrive with ids only.
+    pub fn room_names(&self) -> CoreFuture<Vec<(String, String)>> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            Ok(client
+                .joined_rooms()
+                .into_iter()
+                .map(|room| {
+                    let name = room
+                        .cached_display_name()
+                        .map(|name| name.to_string())
+                        .unwrap_or_else(|| room.room_id().to_string());
+                    (room.room_id().to_string(), name)
+                })
+                .collect())
+        })
+    }
+}

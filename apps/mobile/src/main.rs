@@ -8,6 +8,9 @@ use dioxus::prelude::*;
 use morpheus_ui::AppConfig;
 use tracing_subscriber::EnvFilter;
 
+#[cfg(target_os = "android")]
+mod push;
+
 const DEFAULT_HOMESERVER: &str = "http://10.0.2.2:8008"; // host machine from the Android emulator
 
 fn main() {
@@ -25,6 +28,11 @@ fn main() {
     #[cfg(target_os = "android")]
     {
         config.open_url = Some(std::sync::Arc::new(android::open_url));
+        // Push notifications through the phone's UnifiedPush app (see push.rs).
+        let dir = config.data_dir.clone();
+        config.on_session = Some(std::sync::Arc::new(move |session| {
+            push::on_session(session, dir.clone())
+        }));
     }
     tracing::info!(?config.data_dir, "starting morpheus mobile");
 

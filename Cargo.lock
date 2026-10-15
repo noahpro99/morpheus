@@ -4490,8 +4490,11 @@ version = "0.1.0"
 dependencies = [
  "dioxus",
  "jni 0.21.1",
+ "morpheus-core",
  "morpheus-ui",
  "ndk-context",
+ "serde_json",
+ "tokio",
  "tracing",
  "tracing-subscriber",
 ]

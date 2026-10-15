@@ -62,10 +62,13 @@ android:
     nix develop .#android -c dx serve --package morpheus-mobile --platform android
 
 # dx 0.7 writes its own placeholder launcher icon on every build and has no
-# setting for it: put the Morpheus icon (apps/mobile/android/res) in its place
-# and let gradle repackage the APK.
-_android-icons:
+# setting for extra sources: put the Morpheus icon, name and Kotlin (the
+# UnifiedPush service, apps/mobile/android) in place and let gradle repackage.
+_android-extras:
     cp -r apps/mobile/android/res/. target/dx/morpheus-mobile/debug/android/app/app/src/main/res/
+    mkdir -p target/dx/morpheus-mobile/debug/android/app/app/src/main/kotlin
+    cp -r apps/mobile/android/kotlin/. target/dx/morpheus-mobile/debug/android/app/app/src/main/kotlin/
+    grep -q MorpheusPushService target/dx/morpheus-mobile/debug/android/app/app/src/main/AndroidManifest.xml || sed -i '/<\/application>/e cat apps/mobile/android/manifest-application.xml' target/dx/morpheus-mobile/debug/android/app/app/src/main/AndroidManifest.xml
     cd target/dx/morpheus-mobile/debug/android/app && ./gradlew assembleDebug -q
 
 # Update the app on a plugged-in phone, keeping its sign-in and data.
@@ -73,7 +76,7 @@ _android-icons:
 android-update:
     rm -rf target/dx/morpheus-mobile/debug/android/app/app/src/main/jniLibs/x86_64
     nix develop .#android -c dx build --package morpheus-mobile --platform android --target aarch64-linux-android
-    nix develop .#android -c just _android-icons
+    nix develop .#android -c just _android-extras
     nix develop .#android -c adb install -r target/dx/morpheus-mobile/debug/android/app/app/build/outputs/apk/debug/app-debug.apk
     nix develop .#android -c adb shell am start -n dev.morpheus.mobile/dev.dioxus.main.MainActivity
 
@@ -82,7 +85,7 @@ android-update:
 android-reinstall:
     rm -rf target/dx/morpheus-mobile/debug/android/app/app/src/main/jniLibs/x86_64
     nix develop .#android -c dx build --package morpheus-mobile --platform android --target aarch64-linux-android
-    nix develop .#android -c just _android-icons
+    nix develop .#android -c just _android-extras
     -nix develop .#android -c adb uninstall dev.morpheus.mobile
     nix develop .#android -c adb install target/dx/morpheus-mobile/debug/android/app/app/build/outputs/apk/debug/app-debug.apk
     nix develop .#android -c adb shell am start -n dev.morpheus.mobile/dev.dioxus.main.MainActivity
@@ -107,13 +110,17 @@ e2e-android-build:
     # dx reuses one gradle project per app: drop the phone's ARM library so it is not bundled too.
     rm -rf target/dx/morpheus-mobile/debug/android/app/app/src/main/jniLibs/arm64-v8a
     nix develop .#android-emulator -c dx build --package morpheus-mobile --platform android --target x86_64-linux-android --features e2e
-    nix develop .#android-emulator -c just _android-icons
+    nix develop .#android-emulator -c just _android-extras
     -nix develop .#android-emulator -c adb -s "${ANDROID_SERIAL:-emulator-5554}" uninstall dev.morpheus.mobile
     nix develop .#android-emulator -c adb -s "${ANDROID_SERIAL:-emulator-5554}" install -r target/dx/morpheus-mobile/debug/android/app/app/build/outputs/apk/debug/app-debug.apk
 
 # Drive the app on the virtual phone (`just android-emulator` and `just e2e-android-build` first)
 e2e-android: hs-seed
     nix develop .#android-emulator -c env MORPHEUS_E2E_ANDROID=1 ANDROID_SERIAL="${ANDROID_SERIAL:-emulator-5554}" cargo test -p morpheus-e2e --test android -- --nocapture --test-threads=1
+
+# Push notifications end to end on the virtual phone: needs Sunup installed and opened once on it, and internet
+e2e-android-push: hs-seed
+    nix develop .#android-emulator -c env MORPHEUS_E2E_ANDROID=1 MORPHEUS_E2E_PUSH=1 ANDROID_SERIAL="${ANDROID_SERIAL:-emulator-5554}" MORPHEUS_TEST_HOMESERVER={{hs}} cargo test -p morpheus-e2e --test android push -- --nocapture
 
 # The whole e2e suite with the phone standing in for the first app of each test (other users run on desktop)
 e2e-android-all: hs-seed

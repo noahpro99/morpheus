@@ -438,3 +438,133 @@ async fn phone_back_key_closes_and_steps_back() {
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     }
 }
+
+/// Run `adb shell` and return what it printed.
+fn adb_shell(args: &[&str]) -> String {
+    std::process::Command::new("adb")
+        .arg("shell")
+        .args(args)
+        .output()
+        .map(|out| String::from_utf8_lossy(&out.stdout).into_owned())
+        .unwrap_or_default()
+}
+
+/// Push notifications end to end: the app registers with the phone's
+/// UnifiedPush app (Sunup) and with the homeserver, and a message sent while
+/// it is in the background shows as an Android notification naming the room.
+/// Needs Sunup on the phone and internet (the homeserver pushes through
+/// UnifiedPush's public gateway to Mozilla's push service), so it runs only
+/// with `MORPHEUS_E2E_PUSH=1`.
+#[tokio::test]
+async fn phone_gets_push_notifications_in_the_background() {
+    if !enabled() || std::env::var_os("MORPHEUS_E2E_PUSH").is_none() {
+        eprintln!(
+            "MORPHEUS_E2E_ANDROID and MORPHEUS_E2E_PUSH not both set; skipping the push test"
+        );
+        return;
+    }
+    let hs = std::env::var("MORPHEUS_TEST_HOMESERVER").expect("MORPHEUS_TEST_HOMESERVER for bob");
+    let mut alice = App::launch_android_granting(&["android.permission.POST_NOTIFICATIONS"])
+        .await
+        .expect("launch on Android");
+    alice
+        .wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    alice
+        .type_into("form.login input[name=username]", "alice")
+        .await
+        .expect("username");
+    alice
+        .type_into("form.login input[name=password]", "alice-password")
+        .await
+        .expect("password");
+    alice.submit("form.login").await.expect("submit");
+    alice
+        .wait_for(".room", DEFAULT_WAIT)
+        .await
+        .expect("rooms listed");
+
+    // The app registered with Sunup and then with the homeserver.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(90);
+    loop {
+        let status = adb_shell(&[
+            "run-as",
+            "dev.morpheus.mobile",
+            "cat",
+            "files/morpheus/push_status",
+        ]);
+        if status.contains("registered via") {
+            eprintln!("push status: {}", status.trim());
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "push never registered; status: {status:?}"
+        );
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    }
+
+    // The notification names the room from the list the app keeps.
+    let names = adb_shell(&[
+        "run-as",
+        "dev.morpheus.mobile",
+        "cat",
+        "files/morpheus/room_names.json",
+    ]);
+    assert!(names.contains("general"), "room names not written: {names}");
+
+    // Leave the app; bob posts in #general from the desktop.
+    let _ = adb_shell(&["input", "keyevent", "KEYCODE_HOME"]);
+    let mut bob = App::launch(&hs).await.expect("launch bob");
+    bob.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("bob login form");
+    bob.type_into("form.login input[name=username]", "bob")
+        .await
+        .expect("username");
+    bob.type_into("form.login input[name=password]", "bob-password")
+        .await
+        .expect("password");
+    bob.submit("form.login").await.expect("submit");
+    bob.wait_for(".room", DEFAULT_WAIT)
+        .await
+        .expect("bob rooms");
+    bob.open_room("general").await.expect("bob in general");
+    bob.wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
+        .await
+        .expect("composer");
+    let text = format!("push ping {}", std::process::id());
+    bob.type_into(".composer input", &text).await.expect("type");
+    bob.press(".composer input", "Enter").await.expect("send");
+    let sent = std::time::Instant::now();
+
+    // Delivery goes homeserver → gateway → Mozilla → Sunup; usually seconds,
+    // but a push service may hold messages until its next reconnect.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(240);
+    loop {
+        let shown = adb_shell(&["dumpsys", "notification", "--noredact"]);
+        let ours = shown
+            .split("NotificationRecord(")
+            .any(|record| record.contains("pkg=dev.morpheus.mobile") && record.contains("general"));
+        if ours {
+            eprintln!("notification after {:?}", sent.elapsed());
+            break;
+        }
+        if std::time::Instant::now() >= deadline {
+            let records: Vec<&str> = shown
+                .split("NotificationRecord(")
+                .filter(|record| record.contains("dev.morpheus.mobile"))
+                .collect();
+            panic!(
+                "no Morpheus notification for #general; {} Morpheus records, dump {} bytes: {:?}",
+                records.len(),
+                shown.len(),
+                records
+                    .first()
+                    .map(|r| r.chars().take(600).collect::<String>())
+            );
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    }
+}
