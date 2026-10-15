@@ -1,6 +1,7 @@
 //! Shell layout and modal behaviour: the member list toggle in the chat
 //! header, and Escape closing whichever modal is open.
 
+// Desktop layout (member column beside the chat, window controls): phone runs keep it on desktop.
 #![allow(clippy::expect_used)]
 
 use morpheus_e2e::{App, DEFAULT_WAIT};
@@ -32,7 +33,7 @@ async fn member_toggle_hides_and_shows_the_member_list() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
-    let mut app = App::launch(&hs).await.expect("launch app");
+    let mut app = App::launch_desktop(&hs).await.expect("launch app");
     login_and_open(&mut app, "general").await;
 
     app.wait_for_text(".members .member", "alice", DEFAULT_WAIT)
@@ -67,7 +68,7 @@ async fn escape_closes_open_modals() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
-    let mut app = App::launch(&hs).await.expect("launch app");
+    let mut app = App::launch_desktop(&hs).await.expect("launch app");
     login_and_open(&mut app, "general").await;
 
     // Settings.
@@ -107,7 +108,7 @@ async fn profile_modal_opens_from_sender_member_and_footer() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
-    let mut app = App::launch(&hs).await.expect("launch app");
+    let mut app = App::launch_desktop(&hs).await.expect("launch app");
     login_and_open(&mut app, "general").await;
 
     // From a message header.
@@ -182,7 +183,7 @@ async fn composer_is_focused_after_navigating() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
-    let mut app = App::launch(&hs).await.expect("launch app");
+    let mut app = App::launch_desktop(&hs).await.expect("launch app");
     login_and_open(&mut app, "general").await;
     let focused = "return document.activeElement === document.querySelector('.composer input');";
     app.wait_for_js(focused, DEFAULT_WAIT)
@@ -201,7 +202,7 @@ async fn member_list_is_windowed_for_big_rooms() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
-    let mut app = App::launch(&hs).await.expect("launch app");
+    let mut app = App::launch_desktop(&hs).await.expect("launch app");
     login_and_open(&mut app, "crowd").await;
     app.wait_for_text(".members-header", "Members — 152", DEFAULT_WAIT)
         .await

@@ -3,6 +3,7 @@
 //! (bob and carol are unbanned and rejoined) so the kick and ban stick only
 //! until the next seed run.
 
+// Desktop layout (member column beside the chat, window controls): phone runs keep it on desktop.
 #![allow(clippy::expect_used)]
 
 use std::time::Duration;
@@ -83,7 +84,7 @@ async fn admin_changes_roles_kicks_and_bans() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
-    let mut app = App::launch(&hs).await.expect("launch app");
+    let mut app = App::launch_desktop(&hs).await.expect("launch app");
     login_and_open(&mut app, "alice", "moderation").await;
 
     // Alice created the room: full moderation menu for carol.
@@ -164,7 +165,7 @@ async fn member_menu_mentions_messages_and_blocks() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
-    let mut app = App::launch(&hs).await.expect("launch app");
+    let mut app = App::launch_desktop(&hs).await.expect("launch app");
     login_and_open(&mut app, "carol", "general").await;
 
     // Carol is a plain member: no moderation on bob.

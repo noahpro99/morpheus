@@ -38,7 +38,7 @@ async fn media_rich_text_reactions_and_members() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
-    let mut app = App::launch(&hs).await.expect("launch app");
+    let mut app = App::launch_desktop(&hs).await.expect("launch app");
     login_and_open(&mut app, "general").await;
 
     // Avatars resolve to real images for senders, and the room icon shows in the header area.

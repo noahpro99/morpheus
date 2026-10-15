@@ -38,9 +38,11 @@ async fn big_room_opens_and_switches_quickly() {
 
     // Open the big room: time until its newest message is on screen.
     app.open_room("firehose").await.expect("open firehose");
-    app.wait_for_exact_text(".message .body", "firehose message 600", DEFAULT_WAIT)
+    // Test runs rename bob in every room he is in, so the newest page the
+    // server hands over can be all (hidden) profile changes; scroll up.
+    app.reveal_message("firehose message 600", DEFAULT_WAIT)
         .await
-        .expect("newest visible");
+        .expect("newest message visible");
     let rendered = app
         .eval("return document.querySelectorAll('.message').length;")
         .await

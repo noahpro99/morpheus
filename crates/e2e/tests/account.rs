@@ -90,6 +90,26 @@ async fn account_menu_edits_name_sets_status_and_signs_out() {
     .await
     .expect("editor closed");
 
+    // Put the seeded name back straight away: later tests (and later steps
+    // here, if they fail) look for "bob".
+    open_chip_menu(&mut app).await;
+    app.click_text(".context-item", "Edit profile")
+        .await
+        .expect("edit again");
+    app.wait_for(".profile-editor input[name=displayname]", DEFAULT_WAIT)
+        .await
+        .expect("editor");
+    app.type_into(".profile-editor input[name=displayname]", "bob")
+        .await
+        .expect("type");
+    app.submit(".profile-editor").await.expect("save");
+    app.wait_for_text(".sidebar-footer .user", "bob", DEFAULT_WAIT)
+        .await
+        .expect("restored");
+    app.press(".profile-editor", "Escape")
+        .await
+        .expect("escape");
+
     // Set a status; it shows on the profile.
     open_chip_menu(&mut app).await;
     app.click_text(".context-item", "Set status")
@@ -121,24 +141,7 @@ async fn account_menu_edits_name_sets_status_and_signs_out() {
     .expect("status on the profile");
     app.press("body", "Escape").await.expect("close profile");
 
-    // Restore the seeded name and clear the status so reruns start clean.
-    open_chip_menu(&mut app).await;
-    app.click_text(".context-item", "Edit profile")
-        .await
-        .expect("edit again");
-    app.wait_for(".profile-editor input[name=displayname]", DEFAULT_WAIT)
-        .await
-        .expect("editor");
-    app.type_into(".profile-editor input[name=displayname]", "bob")
-        .await
-        .expect("type");
-    app.submit(".profile-editor").await.expect("save");
-    app.wait_for_text(".sidebar-footer .user", "bob", DEFAULT_WAIT)
-        .await
-        .expect("restored");
-    app.press(".profile-editor", "Escape")
-        .await
-        .expect("escape");
+    // Clear the status so reruns start clean.
     open_chip_menu(&mut app).await;
     app.click_text(".context-item", "Set status")
         .await

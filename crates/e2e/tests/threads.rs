@@ -57,7 +57,7 @@ async fn thread_panel_shows_replies_and_posts_a_new_one() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
-    let mut app = App::launch(&hs).await.expect("launch app");
+    let mut app = App::launch_desktop(&hs).await.expect("launch app");
     login_and_open(&mut app, "general").await;
 
     const ROOT: &str = "Let's plan Q4 in this thread";

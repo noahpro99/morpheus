@@ -48,7 +48,7 @@ async fn shortcuts_navigate_rooms_scopes_history_and_panels() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
-    let mut app = App::launch(&hs).await.expect("launch app");
+    let mut app = App::launch_desktop(&hs).await.expect("launch app");
     login_and_open(&mut app, "general").await;
 
     // Ctrl+/ lists the shortcuts; Esc closes it.
@@ -200,10 +200,17 @@ async fn up_edits_last_message_and_escape_jumps_to_bottom() {
         .await
         .expect("scrolled away");
     app.press("body", "Escape").await.expect("escape");
-    app.wait_for_js(
-        "return document.querySelector('.jump-to-bottom') === null;",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("back at the bottom");
+    // On a phone Escape is the back key: it returns to the room list instead.
+    let phone = app
+        .eval("return !!document.querySelector('.shell.narrow');")
+        .await
+        .expect("layout");
+    let expected = if phone == true {
+        "return document.querySelector('.shell').dataset.pane === 'rooms';"
+    } else {
+        "return document.querySelector('.jump-to-bottom') === null;"
+    };
+    app.wait_for_js(expected, DEFAULT_WAIT)
+        .await
+        .expect("back at the bottom (desktop) or the room list (phone)");
 }

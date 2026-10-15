@@ -31,6 +31,11 @@ const PAGINATE_THRESHOLD_PX: f64 = 400.0;
 /// How far from the newest message (px) before the jump button appears.
 const JUMP_THRESHOLD_PX: f64 = 240.0;
 const PAGE_SIZE: u16 = 40;
+/// Quiet time after the last timeline update before checking whether the
+/// column needs more history to fill it.
+const AUTO_FILL_SETTLE_MS: u64 = 400;
+/// Most automatic history pages per room open (rooms full of hidden events).
+const AUTO_FILL_MAX_PAGES: u32 = 15;
 /// Rows rendered at first; the window grows as the user scrolls up, and only
 /// once it covers everything loaded do we ask the server for more.
 const INITIAL_WINDOW: usize = 120;
@@ -190,8 +195,14 @@ pub fn TimelineView(
     let mut window = use_signal(|| INITIAL_WINDOW);
 
     let mut load_older = move || {
-        // Reveal already-loaded rows before fetching more history.
-        if window() < entries.read().len() {
+        // Reveal already-loaded rows before fetching more history. Hidden
+        // entries (profile changes) do not count: they never become rows.
+        let shown = entries
+            .read()
+            .iter()
+            .filter(|entry| !matches!(entry, TimelineEntry::Message(m) if matches!(m.kind, MessageKind::ProfileChange)))
+            .count();
+        if window() < shown {
             window += WINDOW_STEP;
             return;
         }
@@ -248,6 +259,45 @@ pub fn TimelineView(
         if !*scrolled_up.peek() {
             pin_to_bottom(ScrollBehavior::Instant);
         }
+    });
+    // Auto-fill: when what is shown does not fill the column (a short first
+    // page, or one that is all hidden profile changes) there is nothing to
+    // scroll, so fetch older history until it does or the room starts. Waits
+    // for updates to settle first: paginating while the room subscription's
+    // first response lands can reset the timeline. Capped per room open.
+    let mut auto_pages = use_signal(|| 0u32);
+    let mut settle = use_signal(|| 0u64);
+    use_effect(move || {
+        let _ = (entries.read().len(), paginating());
+        let generation = *settle.peek() + 1;
+        settle.set(generation);
+        spawn(async move {
+            tokio::time::sleep(Duration::from_millis(AUTO_FILL_SETTLE_MS)).await;
+            let at_start = *reached_start.peek()
+                || entries
+                    .peek()
+                    .iter()
+                    .any(|entry| matches!(entry, TimelineEntry::TimelineStart));
+            if *settle.peek() != generation
+                || *paginating.peek()
+                || at_start
+                || entries.peek().is_empty()
+                || *auto_pages.peek() >= AUTO_FILL_MAX_PAGES
+            {
+                return;
+            }
+            let Some(el) = container.peek().clone() else {
+                return;
+            };
+            let (Ok(scroll), Ok(rect)) = (el.get_scroll_size().await, el.get_client_rect().await)
+            else {
+                return;
+            };
+            if scroll.height <= rect.height() + PAGINATE_THRESHOLD_PX {
+                auto_pages += 1;
+                load_older();
+            }
+        });
     });
     use_effect(move || {
         if hotkey() == Some(Hotkey::JumpToBottom) && is_main_timeline {
@@ -361,11 +411,20 @@ enum Row<'a> {
 fn group_rows<'a>(entries: &'a Vector<TimelineEntry>, marker: Option<&str>) -> Vec<Row<'a>> {
     let mut rows = Vec::with_capacity(entries.len());
     let mut previous: Option<&Message> = None;
+    // A divider meant for a hidden row goes above the next visible one.
+    let mut marker_pending = false;
 
     for entry in entries {
         match entry {
+            // Name and avatar changes stay out of the chat, as in Discord.
+            TimelineEntry::Message(message)
+                if matches!(message.kind, MessageKind::ProfileChange) =>
+            {
+                marker_pending |= marker == Some(message.unique_id.as_str());
+            }
             TimelineEntry::Message(message) => {
-                if marker == Some(message.unique_id.as_str()) {
+                if std::mem::take(&mut marker_pending) || marker == Some(message.unique_id.as_str())
+                {
                     rows.push(Row::New);
                     // Always show a header right after the divider, like Discord does.
                     previous = None;
@@ -892,6 +951,8 @@ fn MessageBody(kind: MessageKind, edited: bool) -> Element {
             }
         },
         MessageKind::State(text) => rsx! { p { class: "body muted", "{text}" } },
+        // Never rendered: `group_rows` drops them.
+        MessageKind::ProfileChange => rsx! {},
         MessageKind::Unsupported(what) => rsx! { p { class: "body muted", "Unsupported: {what}" } },
     }
 }
@@ -1135,3 +1196,52 @@ fn ReplyQuote(reply: Option<ReplyPreview>) -> Element {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct LastOwn(pub Option<Message>);
 pub type LastOwnMessage = Signal<LastOwn>;
+
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod tests {
+    use super::*;
+
+    fn message(id: &str, kind: MessageKind) -> TimelineEntry {
+        TimelineEntry::Message(Box::new(Message {
+            unique_id: id.to_owned(),
+            id: MessageId::Event(OwnedEventId::try_from(format!("${id}")).expect("event id")),
+            sender: morpheus_core::OwnedUserId::try_from("@bob:localhost").expect("user id"),
+            sender_name: "bob".into(),
+            sender_avatar: None,
+            timestamp_ms: 0,
+            is_own: false,
+            is_local_echo: false,
+            is_edited: false,
+            can_edit: false,
+            reactions: Vec::new(),
+            in_reply_to: None,
+            thread_root: None,
+            thread: None,
+            kind,
+        }))
+    }
+
+    #[test]
+    fn profile_changes_are_hidden_and_the_new_divider_moves_past_them() {
+        let entries: Vector<TimelineEntry> = [
+            message("a", MessageKind::State("bob joined".into())),
+            message("b", MessageKind::ProfileChange),
+            message("c", MessageKind::ProfileChange),
+            message("d", MessageKind::State("bob left".into())),
+        ]
+        .into_iter()
+        .collect();
+        let rows = group_rows(&entries, Some("b"));
+        let shape: Vec<&str> = rows
+            .iter()
+            .map(|row| match row {
+                Row::Message { message, .. } => message.unique_id.as_str(),
+                Row::New => "NEW",
+                Row::Date(_) => "date",
+                Row::Start => "start",
+            })
+            .collect();
+        assert_eq!(shape, ["a", "NEW", "d"]);
+    }
+}

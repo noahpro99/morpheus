@@ -1,6 +1,7 @@
 //! The profile card: mutual rooms, a private note, messaging from the card,
 //! the more menu (full profile, block), and the report form.
 
+// Desktop layout (member column beside the chat, window controls): phone runs keep it on desktop.
 #![allow(clippy::expect_used)]
 
 use std::time::Duration;
@@ -53,7 +54,7 @@ async fn card_shows_mutual_rooms_saves_a_note_and_messages() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
-    let mut app = App::launch(&hs).await.expect("launch app");
+    let mut app = App::launch_desktop(&hs).await.expect("launch app");
     login_and_open(&mut app, "alice", "general").await;
     open_card_for(&mut app, "bob").await;
 
@@ -146,7 +147,7 @@ async fn card_mod_view_and_report_form() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
-    let mut app = App::launch(&hs).await.expect("launch app");
+    let mut app = App::launch_desktop(&hs).await.expect("launch app");
     // #general, not #moderation: the moderation tests kick carol from there.
     login_and_open(&mut app, "alice", "general").await;
     open_card_for(&mut app, "carol").await;

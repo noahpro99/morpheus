@@ -1,6 +1,7 @@
 //! The custom title bar: scope title, back/forward through visited rooms,
 //! the inbox of unread rooms, help, and window controls.
 
+// Desktop layout (member column beside the chat, window controls): phone runs keep it on desktop.
 #![allow(clippy::expect_used)]
 
 use std::time::Duration;
@@ -36,7 +37,7 @@ async fn titlebar_title_history_help_and_controls() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
-    let mut app = App::launch(&hs).await.expect("launch app");
+    let mut app = App::launch_desktop(&hs).await.expect("launch app");
     login(&mut app, "alice").await;
 
     // The bar sits above everything and names the scope.
@@ -132,11 +133,11 @@ async fn inbox_lists_unread_rooms_and_opens_them() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
-    let mut alice = App::launch(&hs).await.expect("launch alice");
+    let mut alice = App::launch_desktop(&hs).await.expect("launch alice");
     login(&mut alice, "alice").await;
     alice.open_room("general").await.expect("general");
 
-    let mut bob = App::launch(&hs).await.expect("launch bob");
+    let mut bob = App::launch_desktop(&hs).await.expect("launch bob");
     login(&mut bob, "bob").await;
     bob.open_room("random").await.expect("bob in random");
     bob.wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
