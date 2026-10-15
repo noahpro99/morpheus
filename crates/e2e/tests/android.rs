@@ -567,4 +567,49 @@ async fn phone_gets_push_notifications_in_the_background() {
         }
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     }
+
+    // Tapping the notification opens Morpheus on that room.
+    let _ = adb_shell(&["cmd", "statusbar", "expand-notifications"]);
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    let _ = adb_shell(&["uiautomator", "dump", "/sdcard/morpheus-ui.xml"]);
+    let screen = adb_shell(&["cat", "/sdcard/morpheus-ui.xml"]);
+    // The notification's title node (text="general") sits inside its row;
+    // the row is what takes the tap, so tap the middle of that row.
+    let bounds_of = |node: &str| -> Option<[i64; 4]> {
+        let raw = node.split("bounds=\"").nth(1)?.split('"').next()?;
+        let numbers: Vec<i64> = raw
+            .split(|c: char| !c.is_ascii_digit())
+            .filter(|part| !part.is_empty())
+            .filter_map(|part| part.parse().ok())
+            .collect();
+        Some([
+            *numbers.first()?,
+            *numbers.get(1)?,
+            *numbers.get(2)?,
+            *numbers.get(3)?,
+        ])
+    };
+    let nodes: Vec<&str> = screen.split("<node ").collect();
+    let title = nodes
+        .iter()
+        .find(|node| node.contains("text=\"general\"") && node.contains("android:id/title"))
+        .and_then(|node| bounds_of(node))
+        .unwrap_or_else(|| panic!("no Morpheus notification in the shade"));
+    let row = nodes
+        .iter()
+        .filter(|node| node.contains("expandableNotificationRow"))
+        .filter_map(|node| bounds_of(node))
+        .find(|b| b[1] <= title[1] && title[3] <= b[3])
+        .expect("the notification row");
+    let (x, y) = ((row[0] + row[2]) / 2, (row[1] + row[3]) / 2);
+    eprintln!("tapping the notification row at {x},{y}");
+    shot(&mut alice, "android-shade").await;
+    let _ = adb_shell(&["input", "tap", &x.to_string(), &y.to_string()]);
+    alice
+        .wait_for_js(
+            "return document.querySelector('.shell').dataset.pane === 'chat' && document.querySelector('.chat-header h2')?.textContent.includes('general');",
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("tapping the notification opens #general");
 }

@@ -121,3 +121,26 @@ async fn sync(session: &Session, dir: &Path, empty_passes: &mut u32) {
         }
     }
 }
+
+/// How often to look for a room a tapped notification asked for.
+const OPEN_ROOM_POLL: Duration = Duration::from_millis(400);
+
+/// The notification trampoline (`OpenRoomActivity`) leaves the room id in
+/// `open_room`; hand it to the shell, which shows that room.
+pub fn watch_open_room(data_dir: PathBuf, commands: morpheus_ui::AppCommands) {
+    let path = data_dir.join("open_room");
+    let spawned = std::thread::Builder::new()
+        .name("morpheus-open-room".into())
+        .spawn(move || {
+            loop {
+                if let Some(room) = read(&path) {
+                    let _ = std::fs::remove_file(&path);
+                    commands.send(morpheus_ui::AppCommand::OpenRoom(room));
+                }
+                std::thread::sleep(OPEN_ROOM_POLL);
+            }
+        });
+    if let Err(err) = spawned {
+        tracing::warn!(%err, "open-room watcher failed");
+    }
+}

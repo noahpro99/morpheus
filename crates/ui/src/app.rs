@@ -21,10 +21,12 @@ pub type OpenRoom = Arc<Mutex<Option<OwnedRoomId>>>;
 
 /// Something the platform asks the UI to do, from outside its runtime (the
 /// tray menu).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppCommand {
     Acknowledgements,
     CheckForUpdates,
+    /// Show this room (its Matrix id), e.g. from a tapped notification.
+    OpenRoom(String),
 }
 
 /// A queue of [`AppCommand`]s any thread can push to; the shell drains it.

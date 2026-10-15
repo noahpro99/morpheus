@@ -68,7 +68,9 @@ _android-extras:
     cp -r apps/mobile/android/res/. target/dx/morpheus-mobile/debug/android/app/app/src/main/res/
     mkdir -p target/dx/morpheus-mobile/debug/android/app/app/src/main/kotlin
     cp -r apps/mobile/android/kotlin/. target/dx/morpheus-mobile/debug/android/app/app/src/main/kotlin/
-    grep -q MorpheusPushService target/dx/morpheus-mobile/debug/android/app/app/src/main/AndroidManifest.xml || sed -i '/<\/application>/e cat apps/mobile/android/manifest-application.xml' target/dx/morpheus-mobile/debug/android/app/app/src/main/AndroidManifest.xml
+    # Our manifest entries, replaced on every build (dx does not always rewrite the file).
+    sed -i '/<!-- morpheus:begin -->/,/<!-- morpheus:end -->/d' target/dx/morpheus-mobile/debug/android/app/app/src/main/AndroidManifest.xml
+    sed -i '/<\/application>/e cat apps/mobile/android/manifest-application.xml' target/dx/morpheus-mobile/debug/android/app/app/src/main/AndroidManifest.xml
     cd target/dx/morpheus-mobile/debug/android/app && ./gradlew assembleDebug -q
 
 # Update the app on a plugged-in phone, keeping its sign-in and data.

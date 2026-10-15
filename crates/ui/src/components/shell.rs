@@ -43,6 +43,8 @@ use crate::media::{Avatar, provide_media_cache};
 pub struct Notices(pub Vec<Notification>);
 pub type NoticeLog = Signal<Notices>;
 const NOTICE_CAP: usize = 50;
+/// Quarter-second looks for a room asked for before the list has it (~10 s).
+const OPEN_ROOM_TRIES: u32 = 40;
 
 /// Phone-width window (reported by the page): one pane at a time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -304,6 +306,34 @@ pub fn Shell(session: Session) -> Element {
                 match commands.next().await {
                     crate::AppCommand::Acknowledgements => about_open.set(AboutShown(true)),
                     crate::AppCommand::CheckForUpdates => check_for_updates(),
+                    crate::AppCommand::OpenRoom(id) => {
+                        // A notification tap can start the app: give the room
+                        // list a moment to arrive.
+                        let mut target = None;
+                        for _ in 0..OPEN_ROOM_TRIES {
+                            target = rooms
+                                .peek()
+                                .iter()
+                                .find(|room| room.id.as_str() == id)
+                                .cloned();
+                            if target.is_some() {
+                                break;
+                            }
+                            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                        }
+                        match target {
+                            Some(room) => {
+                                let scope = scope_for(&rooms.peek(), &room);
+                                if scope != *selected_space.peek() {
+                                    selected_space.set(scope);
+                                }
+                                go_to(room.id);
+                            }
+                            None => {
+                                tracing::warn!(%id, "asked to open a room that is not in the list")
+                            }
+                        }
+                    }
                 }
             }
         }
