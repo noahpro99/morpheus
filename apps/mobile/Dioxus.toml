@@ -7,3 +7,10 @@ publisher = "Morpheus"
 
 [android.permissions]
 "android.permission.VIBRATE" = { description = "A short buzz when press-and-hold opens a menu" }
+"android.permission.POST_NOTIFICATIONS" = { description = "Notifications for new messages" }
+
+[android]
+# UnifiedPush: the app registers with the phone's push app (Sunup, ntfy, …).
+# 3.0.x: later releases are built with Kotlin 2.2+, which dx 0.7's Kotlin 2.0
+# compiler cannot read.
+gradle_dependencies = ["org.unifiedpush.android:connector:3.0.10"]

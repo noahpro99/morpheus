@@ -1,0 +1,8 @@
+        <!-- Morpheus push notifications (apps/mobile/android/kotlin). Inserted by
+             `just _android-extras`: dx 0.7 ignores [android.raw] application. -->
+        <service android:name="dev.morpheus.mobile.MorpheusPushService" android:exported="false">
+            <intent-filter>
+                <action android:name="org.unifiedpush.android.connector.PUSH_EVENT" />
+            </intent-filter>
+        </service>
+        <provider android:name="dev.morpheus.mobile.PushStartup" android:authorities="dev.morpheus.mobile.pushstartup" android:exported="false" />

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Morpheus mark for the status bar: white, which Android tints;
+     scaled to fill most of the 24dp notification icon.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+    <group
+        android:pivotX="256"
+        android:pivotY="259"
+        android:scaleX="1.15"
+        android:scaleY="1.15">
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M292.355 256.433 C293.616 220.336 330.594 192.33 374.949 193.878 C419.303 195.427 454.237 225.945 452.977 262.042 C451.716 298.139 414.738 326.145 370.384 324.596 C326.029 323.047 291.095 292.529 292.355 256.433 Z" />
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M219.639 256.433 C218.379 220.336 181.401 192.33 137.046 193.878 C92.692 195.427 57.757 225.945 59.018 262.042 C60.278 298.139 97.257 326.145 141.611 324.596 C185.965 323.047 220.9 292.529 219.639 256.433 Z" />
+        <path
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="8"
+            android:strokeLineCap="round"
+            android:pathData="M256 244.362 C267.533 244.362 276.546 249.185 280.826 260.398 C284.46 268.445 299.175 254.845 299.175 254.845" />
+        <path
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="8"
+            android:strokeLineCap="round"
+            android:pathData="M256 244.362 C244.465 244.362 235.45 249.183 231.169 260.398 C227.535 268.445 212.82 254.845 212.82 254.845" />
+    </group>
+</vector>
