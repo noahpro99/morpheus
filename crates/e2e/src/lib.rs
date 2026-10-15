@@ -34,7 +34,10 @@ pub const DEFAULT_WAIT: Duration = Duration::from_secs(30);
 
 /// A running instance of the app under test. Killed on drop.
 pub struct App {
-    child: Child,
+    /// The desktop process; `None` for an app driven on an Android device.
+    child: Option<Child>,
+    /// Driving the mobile app on the device `adb` talks to.
+    android: bool,
     reader: Lines<BufReader<OwnedReadHalf>>,
     writer: OwnedWriteHalf,
     next_id: u64,
@@ -73,7 +76,7 @@ impl App {
 
     /// The app's process ID, for finding it on the session bus.
     pub fn pid(&self) -> Option<u32> {
-        self.child.id()
+        self.child.as_ref().and_then(Child::id)
     }
 
     /// Launch with a window of `width` x `height` logical pixels, e.g. a
@@ -87,7 +90,9 @@ impl App {
     pub async fn relaunch(mut self) -> Result<Self> {
         let data_dir = self.data_dir.clone();
         let homeserver = self.homeserver.clone();
-        let _ = self.child.kill().await;
+        if let Some(child) = &mut self.child {
+            let _ = child.kill().await;
+        }
         // Keep the data dir: `Drop` would delete it.
         std::mem::forget(self);
         Self::launch_with_data_dir(&homeserver, data_dir, None, &[]).await
@@ -136,7 +141,8 @@ impl App {
         let stream = connect(port, &log_path).await?;
         let (reader, writer) = stream.into_split();
         Ok(Self {
-            child,
+            child: Some(child),
+            android: false,
             reader: BufReader::new(reader).lines(),
             writer,
             next_id: 1,
@@ -151,7 +157,13 @@ impl App {
 
     /// Whether the app process is still alive.
     pub fn is_running(&mut self) -> bool {
-        matches!(self.child.try_wait(), Ok(None))
+        if self.android {
+            return adb(&["shell", "pidof", ANDROID_PACKAGE])
+                .is_some_and(|pid| !pid.trim().is_empty());
+        }
+        self.child
+            .as_mut()
+            .is_some_and(|child| matches!(child.try_wait(), Ok(None)))
     }
 
     /// Show the window again after it was closed (hidden) through the title
@@ -438,7 +450,10 @@ impl App {
     /// Best effort: works on Hyprland with `grim` available and returns
     /// `None` elsewhere so tests stay portable.
     pub async fn screenshot(&mut self, name: &str) -> Result<Option<PathBuf>> {
-        let Some(pid) = self.child.id() else {
+        if self.android {
+            return android_screenshot(name);
+        }
+        let Some(pid) = self.child.as_ref().and_then(Child::id) else {
             return Ok(None);
         };
         let Ok(clients) = std::process::Command::new("hyprctl")
@@ -557,7 +572,13 @@ impl Drop for App {
         if std::env::var_os("MORPHEUS_E2E_TIMINGS").is_some() {
             self.report_timings("app");
         }
-        let _ = self.child.start_kill();
+        if let Some(child) = &mut self.child {
+            let _ = child.start_kill();
+        }
+        if self.android {
+            let _ = adb(&["shell", "am", "force-stop", ANDROID_PACKAGE]);
+            let _ = adb(&["forward", "--remove", &format!("tcp:{}", self.port)]);
+        }
         if std::env::var_os("MORPHEUS_E2E_KEEP").is_none() {
             let _ = std::fs::remove_dir_all(&self.data_dir);
         }
@@ -647,4 +668,97 @@ fn keep_test_windows_unfocused() {
                 .status();
         }
     });
+}
+
+/// The mobile app's package and activity (see `apps/mobile`).
+pub const ANDROID_PACKAGE: &str = "dev.morpheus.mobile";
+const ANDROID_ACTIVITY: &str = "dev.morpheus.mobile/dev.dioxus.main.MainActivity";
+/// Where the mobile app's bridge listens on the device (`crates/ui/src/e2e.rs`).
+const ANDROID_BRIDGE_PORT: u16 = 47100;
+
+/// Run `adb` with `args`; its stdout when it succeeds.
+fn adb(args: &[&str]) -> Option<String> {
+    let output = std::process::Command::new("adb").args(args).output().ok()?;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+/// `adb exec-out screencap` into `target/e2e/<name>.png`.
+fn android_screenshot(name: &str) -> Result<Option<PathBuf>> {
+    let output = std::process::Command::new("adb")
+        .args(["exec-out", "screencap", "-p"])
+        .output()?;
+    if !output.status.success() || output.stdout.is_empty() {
+        return Ok(None);
+    }
+    let dir = workspace_root()?.join("target/e2e");
+    std::fs::create_dir_all(&dir)?;
+    let path = dir.join(format!("{name}.png"));
+    std::fs::write(&path, output.stdout)?;
+    Ok(Some(path))
+}
+
+impl App {
+    /// Start the mobile app (built with `--features e2e` and installed, see
+    /// `just e2e-android-build`) on the device or emulator `adb` sees, with
+    /// its data cleared, and connect to its bridge through `adb forward`.
+    /// The app's own default homeserver applies (the host, from an emulator).
+    pub async fn launch_android() -> Result<Self> {
+        adb(&["shell", "pm", "clear", ANDROID_PACKAGE])
+            .context("clearing the app's data (is it installed, and is a device attached?)")?;
+        adb(&["shell", "am", "start", "-W", "-n", ANDROID_ACTIVITY]).context("starting the app")?;
+        let port = free_port().await?;
+        adb(&[
+            "forward",
+            &format!("tcp:{port}"),
+            &format!("tcp:{ANDROID_BRIDGE_PORT}"),
+        ])
+        .context("adb forward")?;
+
+        // A forwarded port accepts even before the app listens, so only a
+        // stream that answers an eval counts.
+        let deadline = Instant::now() + LAUNCH_TIMEOUT;
+        loop {
+            if let Ok(stream) = TcpStream::connect(("127.0.0.1", port)).await {
+                // Logs stay on the device (`adb logcat`); the directory
+                // only keeps the driver's bookkeeping consistent.
+                let data_dir = std::env::temp_dir().join(format!("morpheus-e2e-{}", unique()));
+                let download_dir = data_dir.join("downloads");
+                std::fs::create_dir_all(&download_dir)?;
+                let log_path = data_dir.join("app.log");
+                std::fs::write(&log_path, "")?;
+                let (reader, writer) = stream.into_split();
+                let mut app = Self {
+                    child: None,
+                    android: true,
+                    reader: BufReader::new(reader).lines(),
+                    writer,
+                    next_id: 1,
+                    data_dir,
+                    download_dir,
+                    log_path,
+                    port,
+                    homeserver: String::new(),
+                    timings: Vec::new(),
+                };
+                if tokio::time::timeout(Duration::from_secs(3), app.eval("return 1"))
+                    .await
+                    .is_ok_and(|answer| answer.is_ok())
+                {
+                    return Ok(app);
+                }
+                // Not answering yet; dropping it must not stop the app.
+                app.android = false;
+            }
+            if Instant::now() >= deadline {
+                let log = adb(&["logcat", "-d", "-t", "200"]).unwrap_or_default();
+                bail!(
+                    "the Android app did not open its e2e bridge within {LAUNCH_TIMEOUT:?}\n--- logcat ---\n{log}"
+                );
+            }
+            sleep(Duration::from_millis(500)).await;
+        }
+    }
 }

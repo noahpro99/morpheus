@@ -58,6 +58,7 @@ desktop-release:
 
 # Run on a plugged-in Android phone (USB debugging on; check with `adb devices`)
 android:
+    rm -rf target/dx/morpheus-mobile/debug/android/app/app/src/main/jniLibs/x86_64
     nix develop .#android -c dx serve --package morpheus-mobile --platform android
 
 # Create the virtual phone (once; downloads the emulator and a system image, a few GB): a Pixel-sized Android 14 device in ~/.android/avd
@@ -70,7 +71,20 @@ android-emulator:
 
 # Run on the virtual phone (start it with `just android-emulator` first)
 android-virtual:
+    rm -rf target/dx/morpheus-mobile/debug/android/app/app/src/main/jniLibs/arm64-v8a
     nix develop .#android-emulator -c dx serve --package morpheus-mobile --platform android
+
+# Build the mobile app with the test bridge for the virtual phone and install it (the emulator must be running)
+e2e-android-build:
+    # dx reuses one gradle project per app: drop the phone's ARM library so it is not bundled too.
+    rm -rf target/dx/morpheus-mobile/debug/android/app/app/src/main/jniLibs/arm64-v8a
+    nix develop .#android-emulator -c dx build --package morpheus-mobile --platform android --target x86_64-linux-android --features e2e
+    -nix develop .#android-emulator -c adb -s "${ANDROID_SERIAL:-emulator-5554}" uninstall dev.morpheus.mobile
+    nix develop .#android-emulator -c adb -s "${ANDROID_SERIAL:-emulator-5554}" install -r target/dx/morpheus-mobile/debug/android/app/app/build/outputs/apk/debug/app-debug.apk
+
+# Drive the app on the virtual phone (`just android-emulator` and `just e2e-android-build` first)
+e2e-android: hs-seed
+    nix develop .#android-emulator -c env MORPHEUS_E2E_ANDROID=1 ANDROID_SERIAL="${ANDROID_SERIAL:-emulator-5554}" cargo test -p morpheus-e2e --test android -- --nocapture --test-threads=1
 
 # Type-check the mobile crate for Android without an emulator (needs `nix develop .#android`, or runs it)
 android-check:

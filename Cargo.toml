@@ -57,3 +57,13 @@ opt-level = 1
 
 [profile.dev.package."*"]
 opt-level = 3
+
+# dx builds phone apps with this profile. Full debug info made a 1 GB APK
+# that no longer fits an emulator's data partition; line tables keep
+# backtraces readable for our crates.
+[profile.android-dev]
+inherits = "dev"
+debug = "line-tables-only"
+
+[profile.android-dev.package."*"]
+debug = false

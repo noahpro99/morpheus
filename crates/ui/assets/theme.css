@@ -361,11 +361,11 @@ h1, h2, h3, p { margin: 0; }
 .members-header { height: 48px; display: flex; align-items: center; padding: 0 16px; }
 .members-header h3 { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
 
-/* ---- Mobile ---------------------------------------------------------------
-   Phase 5 replaces this with a real single-column navigation. For now the
-   shell degrades to sidebar + chat so it is at least usable on a phone. */
+/* ---- Medium widths -----------------------------------------------------------
+   Between phone and full desktop the member column gives way to the chat.
+   Phone layouts (.narrow) show members as their own pane instead. */
 @container (max-width: 900px) {
-  .members { display: none; }
+  .shell:not(.narrow) .members { display: none; }
 }
 
 /* ---- Phase 1/2 additions ------------------------------------------------- */

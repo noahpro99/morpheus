@@ -5,6 +5,10 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+# The in-app test bridge, for driving the app on an emulator (`just e2e-android`).
+e2e = ["morpheus-ui/e2e"]
+
 [dependencies]
 dioxus = { workspace = true, features = ["mobile"] }
 morpheus-ui = { workspace = true }

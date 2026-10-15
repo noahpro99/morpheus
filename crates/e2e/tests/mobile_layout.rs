@@ -109,6 +109,10 @@ async fn narrow_window_shows_one_pane_at_a_time() {
     app.wait_for(".side-pane .members", DEFAULT_WAIT)
         .await
         .expect("members pane");
+    // Shown, not just present: a medium-width rule once hid it here.
+    app.wait_for_js(&visible(".side-pane .member"), DEFAULT_WAIT)
+        .await
+        .expect("members visible");
     app.click(".side-pane .pane-back")
         .await
         .expect("back from members");
