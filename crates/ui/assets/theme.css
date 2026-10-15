@@ -89,11 +89,11 @@ h1, h2, h3, p { margin: 0; }
 }
 
 .splash {
-  font-size: 2rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
   color: var(--accent);
+  display: grid;
+  place-items: center;
 }
+.splash-logo { width: min(160px, 40vw); height: auto; }
 
 /* ---- Login --------------------------------------------------------------- */
 

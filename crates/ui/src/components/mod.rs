@@ -34,7 +34,9 @@ use dioxus::prelude::*;
 pub fn Splash() -> Element {
     rsx! {
         main { class: "centered",
-            div { class: "splash", "Morpheus" }
+            div { class: "splash", role: "img", "aria-label": "Morpheus",
+                crate::icons::Logo { size: 160, class: "splash-logo" }
+            }
         }
     }
 }
