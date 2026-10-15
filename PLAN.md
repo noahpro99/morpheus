@@ -106,6 +106,8 @@ timeline → send.
 
 ### 5. Mobile
 - [x] Android app-private data dir via `ndk-context` + JNI (`Context.getFilesDir()`), iOS Documents; type-checks for `aarch64-linux-android` (`just android-check`), not yet exercised on a device
+- [x] Android emulator e2e: `just android-emulator` (headless works too), `just e2e-android-build`, `just e2e-android`; the driver reaches the app's bridge (fixed port 47100 on Android) through `adb forward` and screenshots with `screencap`. Also runs on a plugged-in phone (`ANDROID_SERIAL`).
+- [x] Installed and launched on a Pixel 8 Pro (`just android`)
 - [ ] Mobile file picker (Android intent / iOS document picker): `rfd` is desktop-only, the attach button is a no-op on phones; paste works
 - [x] Single-column navigation on phone-width windows (rooms → chat → members/thread) with back buttons and Escape/back; the shared shell does it, so the mobile app gets every desktop feature as is. Swipe-back gesture still to do.
 - [x] Larger touch targets and safe-area insets in the narrow layout

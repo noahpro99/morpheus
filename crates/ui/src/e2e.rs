@@ -15,6 +15,7 @@ use tokio::{
 use tracing::{info, warn};
 
 const PORT_ENV: &str = "MORPHEUS_E2E_PORT";
+const ANDROID_PORT: u16 = 47100;
 
 #[derive(Deserialize)]
 struct Request {
@@ -36,8 +37,11 @@ struct Response {
 #[component]
 pub fn E2eBridge() -> Element {
     use_future(|| async {
+        // An Android app gets no environment from the test, so a build with
+        // the bridge listens on a fixed port there (`adb forward` reaches it).
         let Some(port) = std::env::var(PORT_ENV)
             .ok()
+            .or_else(|| cfg!(target_os = "android").then(|| ANDROID_PORT.to_string()))
             .and_then(|p| p.parse::<u16>().ok())
         else {
             return;
