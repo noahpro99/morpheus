@@ -17,10 +17,15 @@ fn main() {
         )
         .init();
 
-    let config = AppConfig::new(
+    #[allow(unused_mut)]
+    let mut config = AppConfig::new(
         data_dir(),
         std::env::var("MORPHEUS_HOMESERVER").unwrap_or_else(|_| DEFAULT_HOMESERVER.into()),
     );
+    #[cfg(target_os = "android")]
+    {
+        config.open_url = Some(std::sync::Arc::new(android::open_url));
+    }
     tracing::info!(?config.data_dir, "starting morpheus mobile");
 
     LaunchBuilder::new()
@@ -62,7 +67,7 @@ fn platform_data_dir() -> Option<PathBuf> {
 mod android {
     use std::path::PathBuf;
 
-    use jni::objects::{JObject, JString};
+    use jni::objects::{JObject, JString, JValue};
 
     #[allow(unsafe_code)]
     pub fn files_dir() -> Option<PathBuf> {
@@ -84,5 +89,54 @@ mod android {
             .ok()?;
         let path: String = env.get_string(&JString::from(path)).ok()?.into();
         Some(PathBuf::from(path).join("morpheus"))
+    }
+
+    /// Show `url` in the browser: an `ACTION_VIEW` intent started from the
+    /// app's context (single sign-on). The desktop opener cannot work here.
+    #[allow(unsafe_code)]
+    pub fn open_url(url: &str) -> std::io::Result<()> {
+        let failed = |what: &str| std::io::Error::other(format!("opening the browser: {what}"));
+        let ctx = ndk_context::android_context();
+        // SAFETY: as in `files_dir`.
+        let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }.map_err(|_| failed("no VM"))?;
+        let mut env = vm.attach_current_thread().map_err(|_| failed("attach"))?;
+        let context = unsafe { JObject::from_raw(ctx.context().cast()) };
+        let result = (|| -> jni::errors::Result<()> {
+            let url = env.new_string(url)?;
+            let uri = env
+                .call_static_method(
+                    "android/net/Uri",
+                    "parse",
+                    "(Ljava/lang/String;)Landroid/net/Uri;",
+                    &[JValue::Object(&url)],
+                )?
+                .l()?;
+            let action = env.new_string("android.intent.action.VIEW")?;
+            let intent = env.new_object(
+                "android/content/Intent",
+                "(Ljava/lang/String;Landroid/net/Uri;)V",
+                &[JValue::Object(&action), JValue::Object(&uri)],
+            )?;
+            // Started from outside an activity's own call stack.
+            const FLAG_ACTIVITY_NEW_TASK: i32 = 0x1000_0000;
+            env.call_method(
+                &intent,
+                "addFlags",
+                "(I)Landroid/content/Intent;",
+                &[JValue::Int(FLAG_ACTIVITY_NEW_TASK)],
+            )?;
+            env.call_method(
+                &context,
+                "startActivity",
+                "(Landroid/content/Intent;)V",
+                &[JValue::Object(&intent)],
+            )?;
+            Ok(())
+        })();
+        if result.is_err() {
+            // No browser installed (ActivityNotFoundException) and the like.
+            let _ = env.exception_clear();
+        }
+        result.map_err(|err| failed(&err.to_string()))
     }
 }

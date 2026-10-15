@@ -79,7 +79,7 @@ impl Core {
     pub fn login_flows(&self, homeserver: String) -> CoreFuture<LoginFlows> {
         let core = self.clone();
         self.run(async move {
-            let client = Client::builder()
+            let client = tls_roots(Client::builder())
                 .server_name_or_homeserver_url(&homeserver)
                 .sqlite_store(core.data_dir().join(PROBE_STORE_DIR), None)
                 .build()
@@ -122,7 +122,14 @@ impl Core {
 
     /// Log in through the homeserver's single sign-on page. Opens the
     /// system browser and waits for it to redirect back to a loopback port.
-    pub fn login_sso(&self, homeserver: String) -> CoreFuture<Session> {
+    ///
+    /// `open_url` shows the sign-in page; `None` uses the desktop's default
+    /// opener (Android has none a Rust process can use).
+    pub fn login_sso(
+        &self,
+        homeserver: String,
+        open_url: Option<UrlOpener>,
+    ) -> CoreFuture<Session> {
         let core = self.clone();
         self.run(async move {
             let (client, passphrase) = fresh_client(core.data_dir(), &homeserver).await?;
@@ -130,8 +137,11 @@ impl Core {
                 .matrix_auth()
                 .login_sso(|url| async move {
                     info!(%url, "opening browser for single sign-on");
-                    open::that_detached(&url)
-                        .map_err(|err| matrix_sdk::Error::UnknownError(Box::new(err)))
+                    match &open_url {
+                        Some(open) => open(&url),
+                        None => open::that_detached(&url),
+                    }
+                    .map_err(|err| matrix_sdk::Error::UnknownError(Box::new(err)))
                 })
                 .initial_device_display_name(DEVICE_NAME)
                 .await?;
@@ -183,7 +193,7 @@ async fn build_client(
     homeserver: &str,
     passphrase: Option<&str>,
 ) -> Result<Client> {
-    Ok(Client::builder()
+    Ok(tls_roots(Client::builder())
         // Accepts "matrix.org" or a full URL and follows `.well-known`.
         .server_name_or_homeserver_url(homeserver)
         .sqlite_store(data_dir.join(STORE_DIR), passphrase)
@@ -237,3 +247,28 @@ impl PartialEq for Session {
         self.client.session_meta() == other.client.session_meta()
     }
 }
+
+/// How server certificates are checked. The default is the platform's own
+/// verifier, which on Android needs a JNI and Kotlin setup the app does not
+/// ship: every HTTPS request panicked ("expect rustls-platform-verifier to be
+/// installed"). Android builds check against the Mozilla root list instead,
+/// so certificates only the phone's own store trusts (a company CA) are not
+/// accepted there.
+fn tls_roots(builder: matrix_sdk::ClientBuilder) -> matrix_sdk::ClientBuilder {
+    #[cfg(target_os = "android")]
+    {
+        let roots = webpki_root_certs::TLS_SERVER_ROOT_CERTS
+            .iter()
+            .filter_map(|der| matrix_sdk::reqwest::Certificate::from_der(der).ok())
+            .collect();
+        builder
+            .disable_built_in_root_certificates()
+            .add_root_certificates(roots)
+    }
+    #[cfg(not(target_os = "android"))]
+    builder
+}
+
+/// Shows a URL in the user's browser. Platforms supply one where the
+/// desktop opener does not work (Android, through an intent).
+pub type UrlOpener = std::sync::Arc<dyn Fn(&str) -> std::io::Result<()> + Send + Sync>;
