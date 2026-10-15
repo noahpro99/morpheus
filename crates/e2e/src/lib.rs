@@ -904,3 +904,46 @@ impl App {
         self.tap("[data-e2e-tap]").await
     }
 }
+
+impl App {
+    /// A real finger swipe on the phone between two page points (CSS pixels),
+    /// over `ms` milliseconds.
+    pub async fn swipe(&mut self, from: (f64, f64), to: (f64, f64), ms: u32) -> Result<()> {
+        if !self.android {
+            bail!("swipes need the Android app");
+        }
+        let metrics = self.eval("return [devicePixelRatio, innerHeight];").await?;
+        let [scale, inner] = metrics
+            .as_array()
+            .and_then(|v| Some([v.first()?.as_f64()?, v.get(1)?.as_f64()?]))
+            .ok_or_else(|| anyhow!("no page metrics"))?;
+        let (status_bar, screen_height) = screen_metrics();
+        let top = if inner * scale + status_bar <= screen_height + 1.0 {
+            status_bar
+        } else {
+            0.0
+        };
+        let point = |(x, y): (f64, f64)| ((x * scale).round(), (top + y * scale).round());
+        let ((x1, y1), (x2, y2)) = (point(from), point(to));
+        adb(&[
+            "shell",
+            "input",
+            "swipe",
+            &x1.to_string(),
+            &y1.to_string(),
+            &x2.to_string(),
+            &y2.to_string(),
+            &ms.to_string(),
+        ])
+        .ok_or_else(|| anyhow!("adb swipe failed"))?;
+        Ok(())
+    }
+
+    /// The page's size in CSS pixels.
+    pub async fn page_size(&mut self) -> Result<(f64, f64)> {
+        let size = self.eval("return [innerWidth, innerHeight];").await?;
+        size.as_array()
+            .and_then(|v| Some((v.first()?.as_f64()?, v.get(1)?.as_f64()?)))
+            .ok_or_else(|| anyhow!("no page size"))
+    }
+}

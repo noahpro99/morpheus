@@ -118,15 +118,23 @@ async fn phone_signs_in_navigates_and_sends() {
     app.wait_for_js(&shown_item("Mark as read"), DEFAULT_WAIT)
         .await
         .expect("back at the main list");
-    app.key_combo("body", "Escape", false, false, false)
+    // Dragging the sheet down by its handle dismisses it.
+    let top = app
+        .eval("return document.querySelector('.context-menu.sheet').getBoundingClientRect().top;")
         .await
-        .expect("close menu");
+        .expect("sheet top")
+        .as_f64()
+        .expect("number");
+    let (width, height) = app.page_size().await.expect("page size");
+    app.swipe((width / 2.0, top + 10.0), (width / 2.0, height - 4.0), 250)
+        .await
+        .expect("swipe the sheet down");
     app.wait_for_js(
         "return !document.querySelector('.context-menu')",
         DEFAULT_WAIT,
     )
     .await
-    .expect("menu closed");
+    .expect("a swipe down closes the sheet");
 
     // Into a room, send, see it echoed.
     app.click_text(".room", "general")
@@ -159,13 +167,16 @@ async fn phone_signs_in_navigates_and_sends() {
     .await
     .expect("members visible");
     shot(&mut app, "android-members").await;
-    app.click(".side-pane .pane-back")
+    // Swiping right steps back a pane: members to the chat, the chat to
+    // the room list (as the back buttons do).
+    let (width, height) = app.page_size().await.expect("page size");
+    app.swipe((24.0, height / 2.0), (width - 24.0, height / 2.0), 200)
         .await
-        .expect("back from members");
+        .expect("swipe right from members");
     pane(&mut app, "chat").await;
-    app.click(".chat-header .pane-back")
+    app.swipe((24.0, height / 2.0), (width - 24.0, height / 2.0), 200)
         .await
-        .expect("back to rooms");
+        .expect("swipe right from the chat");
     pane(&mut app, "rooms").await;
 }
 
