@@ -20,6 +20,20 @@ const HOLD_ROOM_JS: &str = "window.__buzz = []; navigator.vibrate = ms => { wind
     el.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, cancelable: true, touches: [t], targetTouches: [t], changedTouches: [t] })); \
     return true;";
 
+/// The open menu is a sheet: full width, on the bottom edge of the page.
+const SHEET_JS: &str = "const m = document.querySelector('.context-menu.sheet'); if (!m) return false; \
+    const r = m.getBoundingClientRect(), s = document.querySelector('.shell').getBoundingClientRect(); \
+    return Math.abs(r.left - s.left) < 1 && Math.abs(r.right - s.right) < 1 && Math.abs(r.bottom - s.bottom) < 2;";
+
+/// A menu row with `label` that is actually on screen (submenus are in the
+/// page before they open).
+fn shown_item(label: &str) -> String {
+    format!(
+        "return [...document.querySelectorAll('.context-menu .context-item')].some(e => e.textContent.includes({}) && e.offsetParent !== null && e.getBoundingClientRect().height > 0);",
+        serde_json::to_string(label).expect("json")
+    )
+}
+
 async fn pane(app: &mut App, expected: &str) {
     app.wait_for_js(
         &format!("return document.querySelector('.shell').dataset.pane === '{expected}'"),
@@ -86,6 +100,24 @@ async fn phone_signs_in_navigates_and_sends() {
         "one buzz, menu still open after lifting"
     );
     shot(&mut app, "android-hold-menu").await;
+
+    // On a phone the menu is a full-width sheet on the bottom edge, and a
+    // submenu opens in place (no hover on a touch screen), with a way back.
+    app.wait_for_js(SHEET_JS, DEFAULT_WAIT)
+        .await
+        .expect("the menu is a bottom sheet");
+    app.tap_text(".context-menu.sheet .context-item", "Notifications")
+        .await
+        .expect("tap Notifications");
+    app.wait_for_js(&shown_item("Only mentions"), DEFAULT_WAIT)
+        .await
+        .expect("the submenu opens in the sheet");
+    app.tap(".context-menu.sheet .sheet-back")
+        .await
+        .expect("back to the menu");
+    app.wait_for_js(&shown_item("Mark as read"), DEFAULT_WAIT)
+        .await
+        .expect("back at the main list");
     app.key_combo("body", "Escape", false, false, false)
         .await
         .expect("close menu");
@@ -265,6 +297,20 @@ async fn phone_back_key_closes_and_steps_back() {
         .await
         .expect("rooms listed");
     pane(&mut app, "rooms").await;
+
+    // Taps do not count as hovers: the app's styles keep no :hover rules on
+    // a device that cannot hover.
+    let hover_rules = app
+        .eval("const walk = list => [...list.cssRules].flatMap(r => r.cssRules && !r.selectorText ? walk(r) : [r]); \
+               return [...document.styleSheets].flatMap(s => { try { return walk(s); } catch (_) { return []; } }) \
+               .filter(r => (r.selectorText || '').includes(':hover')).length;")
+        .await
+        .expect("hover rules");
+    assert_eq!(
+        hover_rules,
+        serde_json::json!(0),
+        "hover styles on a touch screen"
+    );
 
     // No desktop title bar on a phone; the pill is a thumb-sized target.
     assert_eq!(

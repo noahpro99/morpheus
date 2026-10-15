@@ -196,6 +196,33 @@ window.addEventListener('paste', e => {
   new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-pane'] });
   schedule();
 })();
+// Touch screens cannot hover, but browsers apply :hover to whatever was last
+// tapped and leave it there. Where the device cannot hover, drop the :hover
+// selectors from the app's styles (as each stylesheet arrives) so a tap never
+// leaves a row, button or message looking hovered.
+(() => {
+  if (!matchMedia('(hover: none)').matches) return;
+  const done = new WeakSet();
+  const strip = list => {
+    for (let i = list.cssRules.length - 1; i >= 0; i--) {
+      const rule = list.cssRules[i];
+      if (rule.cssRules && !rule.selectorText) { strip(rule); continue; }
+      if (!rule.selectorText || !rule.selectorText.includes(':hover')) continue;
+      const keep = rule.selectorText.split(',').filter(s => !s.includes(':hover'));
+      if (keep.length) rule.selectorText = keep.join(',');
+      else list.deleteRule(i);
+    }
+  };
+  const all = () => {
+    for (const sheet of document.styleSheets) {
+      if (done.has(sheet)) continue;
+      try { strip(sheet); done.add(sheet); } catch (_) { /* not loaded yet, or cross-origin */ }
+    }
+  };
+  all();
+  document.addEventListener('load', all, true);
+  new MutationObserver(all).observe(document.head, { childList: true, subtree: true });
+})();
 // Tapping your own pill gives a small buzz on phones, like Discord's.
 window.addEventListener('click', e => {
   if (e.target.closest && e.target.closest('.user-pill .profile-chip')) {

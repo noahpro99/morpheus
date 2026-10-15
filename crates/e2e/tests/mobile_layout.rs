@@ -78,6 +78,24 @@ async fn narrow_window_shows_one_pane_at_a_time() {
         "sidebar visible"
     );
 
+    // Menus are full-width bottom sheets at phone width.
+    app.right_click(".room").await.expect("right-click a room");
+    app.wait_for_js(
+        "const m = document.querySelector('.context-menu.sheet'); if (!m) return false; const r = m.getBoundingClientRect(), s = document.querySelector('.shell').getBoundingClientRect(); return Math.abs(r.left - s.left) < 1 && Math.abs(r.right - s.right) < 1 && Math.abs(r.bottom - s.bottom) < 2;",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("the room menu is a bottom sheet");
+    app.key_combo("body", "Escape", false, false, false)
+        .await
+        .expect("close the sheet");
+    app.wait_for_js(
+        "return !document.querySelector('.context-menu');",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("sheet closed");
+
     // Tapping a room brings the chat forward, with a back button.
     app.click_text(".room", "general")
         .await
