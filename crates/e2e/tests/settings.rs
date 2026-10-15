@@ -130,6 +130,19 @@ async fn emoji_verification_between_two_devices() {
     b.wait_for_text(".verification", "Verified", DEFAULT_WAIT)
         .await
         .expect("B done");
+    // Success needs no dismissing: no Close button, and the panel steps
+    // aside by itself, leaving the device shown as verified.
+    assert_eq!(
+        a.count(".verification button").await.expect("buttons"),
+        0,
+        "a finished verification offers no buttons"
+    );
+    a.wait_for_js(
+        "return !document.querySelector('.verification');",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("the finished panel goes away by itself");
 
     // The device list refreshes: the other device now shows as verified.
     a.wait_for_js(
