@@ -113,7 +113,7 @@ async fn phone_signs_in_navigates_and_sends() {
     shot(&mut app, "android-chat").await;
 
     // Members are their own pane; back buttons walk out again.
-    app.click(".chat-header .member-toggle")
+    app.tap(".chat-header .member-toggle")
         .await
         .expect("members");
     pane(&mut app, "side").await;
@@ -207,4 +207,177 @@ async fn phone_offers_single_sign_on_for_matrix_org() {
             "dev.morpheus.mobile/dev.dioxus.main.MainActivity",
         ])
         .status();
+}
+
+/// Android's back key (the real one, through `adb`), after a person's
+/// pause rather than the instant the last thing appeared.
+fn back_key() {
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    let _ = std::process::Command::new("adb")
+        .args(["shell", "input", "keyevent", "KEYCODE_BACK"])
+        .status();
+}
+
+/// Whether the on-screen keyboard is up (it takes the next back press).
+fn keyboard_shown() -> bool {
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    std::process::Command::new("adb")
+        .args(["shell", "dumpsys", "input_method"])
+        .output()
+        .map(|out| String::from_utf8_lossy(&out.stdout).contains("mIsInputViewShown=true"))
+        .unwrap_or(false)
+}
+
+async fn gone(app: &mut App, selector: &str, what: &str) {
+    app.wait_for_js(
+        &format!(
+            "return !document.querySelector({});",
+            serde_json::to_string(selector).expect("json")
+        ),
+        DEFAULT_WAIT,
+    )
+    .await
+    .unwrap_or_else(|e| panic!("back closes {what}: {e}"));
+}
+
+/// Phone chrome and the back key: no desktop title bar, a tall pill that
+/// buzzes when tapped, and back closing whatever is open (menus, dialogs,
+/// cards, an edit, the side pane), then stepping chat → rooms, then leaving
+/// the app.
+#[tokio::test]
+async fn phone_back_key_closes_and_steps_back() {
+    if !enabled() {
+        eprintln!("MORPHEUS_E2E_ANDROID not set; skipping the Android test");
+        return;
+    }
+    let mut app = App::launch_android().await.expect("launch on Android");
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    app.type_into("form.login input[name=username]", "alice")
+        .await
+        .expect("username");
+    app.type_into("form.login input[name=password]", "alice-password")
+        .await
+        .expect("password");
+    app.submit("form.login").await.expect("submit");
+    app.wait_for(".room", DEFAULT_WAIT)
+        .await
+        .expect("rooms listed");
+    pane(&mut app, "rooms").await;
+
+    // No desktop title bar on a phone; the pill is a thumb-sized target.
+    assert_eq!(
+        app.count(".titlebar").await.expect("count"),
+        0,
+        "title bar on a phone"
+    );
+    let pill = app
+        .eval("return document.querySelector('.user-pill').getBoundingClientRect().height;")
+        .await
+        .expect("pill")
+        .as_f64()
+        .expect("number");
+    assert!(pill >= 60.0, "pill is {pill}px tall");
+
+    // Tapping your pill buzzes and opens the account menu; back closes it.
+    app.eval("window.__buzz = []; navigator.vibrate = ms => { window.__buzz.push(ms); return true; }; return true;")
+        .await
+        .expect("stub vibrate");
+    app.tap(".user-pill .profile-chip").await.expect("tap pill");
+    app.wait_for(".context-menu", DEFAULT_WAIT)
+        .await
+        .expect("account menu");
+    let buzzes = app
+        .eval("return window.__buzz.length;")
+        .await
+        .expect("buzz");
+    assert_eq!(buzzes, serde_json::json!(1), "tapping the pill buzzes");
+    back_key();
+    gone(&mut app, ".context-menu", "the account menu").await;
+
+    // Settings (a modal) closes on back.
+    app.tap(".user-pill .settings-button")
+        .await
+        .expect("settings");
+    app.wait_for(".settings", DEFAULT_WAIT)
+        .await
+        .expect("settings open");
+    back_key();
+    gone(&mut app, ".settings", "settings").await;
+    pane(&mut app, "rooms").await;
+
+    // Into a room; back from the member pane returns to the chat.
+    app.tap_text(".room", "general")
+        .await
+        .expect("open general");
+    pane(&mut app, "chat").await;
+    app.wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
+        .await
+        .expect("composer ready");
+    app.tap(".chat-header .member-toggle")
+        .await
+        .expect("members");
+    pane(&mut app, "side").await;
+    back_key();
+    pane(&mut app, "chat").await;
+
+    // A profile card from a message avatar closes on back.
+    app.eval("const v = [...document.querySelectorAll('.message .avatar-button')].find(b => { const r = b.getBoundingClientRect(); return r.top > 80 && r.bottom < innerHeight - 120; }); v.setAttribute('data-avatar-visible', ''); return true;")
+        .await
+        .expect("a visible avatar");
+    app.tap("[data-avatar-visible]").await.expect("avatar");
+    app.wait_for(".profile-card", DEFAULT_WAIT)
+        .await
+        .expect("card");
+    back_key();
+    gone(&mut app, ".profile-card", "the profile card").await;
+    pane(&mut app, "chat").await;
+
+    // Back cancels an edit before it leaves the room.
+    let text = format!("back key {}", std::process::id());
+    app.type_into(".composer input", &text).await.expect("type");
+    app.press(".composer input", "Enter").await.expect("send");
+    app.wait_for_exact_text(".message.own:not(.pending) .body", &text, DEFAULT_WAIT)
+        .await
+        .expect("sent");
+    app.press(".composer input", "ArrowUp")
+        .await
+        .expect("edit last");
+    app.wait_for(".composer-banner", DEFAULT_WAIT)
+        .await
+        .expect("editing");
+    // Editing raises the keyboard; Android spends the first back on closing it.
+    if keyboard_shown() {
+        back_key();
+    }
+    back_key();
+    gone(&mut app, ".composer-banner", "the edit").await;
+    pane(&mut app, "chat").await;
+
+    // Back from the chat goes to the room list, then out of the app.
+    back_key();
+    pane(&mut app, "rooms").await;
+    back_key();
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let top = std::process::Command::new("adb")
+            .args(["shell", "dumpsys", "activity", "activities"])
+            .output()
+            .map(|out| String::from_utf8_lossy(&out.stdout).into_owned())
+            .unwrap_or_default();
+        let resumed = top
+            .lines()
+            .find(|line| line.contains("ResumedActivity"))
+            .unwrap_or_default()
+            .to_owned();
+        if !resumed.contains("dev.morpheus.mobile") {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "back on the room list should leave the app: {resumed}"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
 }

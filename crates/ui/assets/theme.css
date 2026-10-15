@@ -1507,3 +1507,10 @@ body.dropping .drop-hint { display: flex; }
   .shell { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
   .shell input, .shell textarea { -webkit-user-select: text; user-select: text; }
 }
+
+/* Phones: a thumb-sized pill. */
+.shell.narrow .user-pill { height: 64px; padding: 0 10px 0 8px; }
+.shell.narrow .user-pill .profile-chip { height: 54px; }
+.shell.narrow .user-pill .profile-chip .avatar { width: 42px; height: 42px; }
+.shell.narrow .user-pill .profile-chip .user { font-size: 1.05rem; }
+.shell.narrow .user-pill .settings-button { width: 44px; height: 44px; }

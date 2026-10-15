@@ -822,3 +822,85 @@ impl App {
         }
     }
 }
+
+impl App {
+    /// A real finger tap on the element's centre (Android), so the page sees
+    /// a user gesture (Chrome lets back skip history entries made without
+    /// one); `click` elsewhere.
+    pub async fn tap(&mut self, selector: &str) -> Result<()> {
+        if !self.android {
+            return self.click(selector).await;
+        }
+        let rect = self
+            .eval(&format!(
+                "const r = {}.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2, devicePixelRatio, innerHeight];",
+                query(selector)
+            ))
+            .await?;
+        let [x, y, scale, inner] = rect
+            .as_array()
+            .and_then(|v| {
+                Some([
+                    v.first()?.as_f64()?,
+                    v.get(1)?.as_f64()?,
+                    v.get(2)?.as_f64()?,
+                    v.get(3)?.as_f64()?,
+                ])
+            })
+            .ok_or_else(|| anyhow!("no position for {selector}"))?;
+        // The page starts below the status bar unless it is drawn edge to edge.
+        let (status_bar, screen_height) = screen_metrics();
+        let top = if inner * scale + status_bar <= screen_height + 1.0 {
+            status_bar
+        } else {
+            0.0
+        };
+        let (sx, sy) = ((x * scale).round(), (top + y * scale).round());
+        adb(&["shell", "input", "tap", &sx.to_string(), &sy.to_string()])
+            .ok_or_else(|| anyhow!("adb tap failed"))?;
+        Ok(())
+    }
+}
+
+/// `(status bar bottom, screen height)` in device pixels, from `dumpsys`.
+fn screen_metrics() -> (f64, f64) {
+    static METRICS: std::sync::OnceLock<(f64, f64)> = std::sync::OnceLock::new();
+    *METRICS.get_or_init(|| {
+        let window = adb(&["shell", "dumpsys", "window"]).unwrap_or_default();
+        // "InsetsSource id=… type=statusBars frame=[0,0][1080,136] …"
+        let status_bar = window
+            .lines()
+            .find(|line| line.contains("type=statusBars frame="))
+            .and_then(|line| line.split("frame=").nth(1))
+            .and_then(|frame| frame.split("][").nth(1))
+            .and_then(|corner| corner.split([',', ']']).nth(1))
+            .and_then(|bottom| bottom.parse().ok())
+            .unwrap_or(0.0);
+        // "Physical size: 1080x2400"
+        let screen_height = adb(&["shell", "wm", "size"])
+            .unwrap_or_default()
+            .rsplit('x')
+            .next()
+            .and_then(|h| h.trim().parse().ok())
+            .unwrap_or(f64::MAX);
+        (status_bar, screen_height)
+    })
+}
+
+impl App {
+    /// [`Self::tap`] on the first `selector` match whose text contains `needle`.
+    pub async fn tap_text(&mut self, selector: &str, needle: &str) -> Result<()> {
+        self.eval(&format!(
+            "document.querySelectorAll('[data-e2e-tap]').forEach(e => e.removeAttribute('data-e2e-tap')); \
+             const el = [...document.querySelectorAll({})].find(e => e.textContent.includes({})); \
+             if (!el) throw new Error('no element matching ' + {} + ' with text ' + {}); \
+             el.setAttribute('data-e2e-tap', ''); return true;",
+            js_str(selector),
+            js_str(needle),
+            js_str(selector),
+            js_str(needle)
+        ))
+        .await?;
+        self.tap("[data-e2e-tap]").await
+    }
+}
