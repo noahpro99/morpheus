@@ -56,9 +56,21 @@ desktop-as profile:
 desktop-release:
     dx build --package morpheus-desktop --release
 
-# Run on Android (emulator or device). Needs `nix develop .#android`
+# Run on a plugged-in Android phone (USB debugging on; check with `adb devices`)
 android:
-    dx serve --package morpheus-mobile --platform android
+    nix develop .#android -c dx serve --package morpheus-mobile --platform android
+
+# Create the virtual phone (once; downloads the emulator and a system image, a few GB): a Pixel-sized Android 14 device in ~/.android/avd
+android-avd:
+    nix develop .#android-emulator -c bash -c 'echo no | avdmanager create avd --force -n morpheus -d pixel_7 -k "system-images;android-34;google_apis;x86_64"'
+
+# Boot the virtual phone in its own window (KVM-accelerated); the app reaches the dev homeserver at http://10.0.2.2:8008
+android-emulator:
+    nix develop .#android-emulator -c emulator -avd morpheus -netdelay none -netspeed full
+
+# Run on the virtual phone (start it with `just android-emulator` first)
+android-virtual:
+    nix develop .#android-emulator -c dx serve --package morpheus-mobile --platform android
 
 # Type-check the mobile crate for Android without an emulator (needs `nix develop .#android`, or runs it)
 android-check:

@@ -87,19 +87,8 @@
             export XDG_DATA_DIRS="$GSETTINGS_SCHEMAS_PATH''${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
             echo "morpheus dev shell — run 'just' to list commands"
           '';
-        in
-        {
-          default = pkgs.mkShell (
-            commonEnv
-            // {
-              nativeBuildInputs = tools ++ [ toolchain ];
-              buildInputs = guiLibs;
-              inherit shellHook;
-            }
-          );
-
-          # `nix develop .#android` — adds the Android SDK/NDK and Rust targets for `dx serve --platform android`.
-          android =
+          androidShell =
+            withEmulator:
             let
               androidToolchain = toolchain.override {
                 targets = [
@@ -109,11 +98,19 @@
               };
               androidSdk =
                 (pkgs.androidenv.composeAndroidPackages {
-                  platformVersions = [ "35" ];
-                  buildToolsVersions = [ "35.0.0" ];
+                  # dx 0.7's gradle template compiles against 34; the SDK in the
+                  # store is read-only, so gradle cannot fetch what is missing.
+                  # System images follow the platform list, so keep it to one.
+                  platformVersions = [ "34" ];
+                  buildToolsVersions = [
+                    "34.0.0"
+                    "35.0.0"
+                  ];
                   includeNDK = true;
-                  includeEmulator = false;
-                  includeSystemImages = false;
+                  includeEmulator = withEmulator;
+                  includeSystemImages = withEmulator;
+                  systemImageTypes = [ "google_apis" ];
+                  abiVersions = [ "x86_64" ];
                 }).androidsdk;
               androidHome = "${androidSdk}/libexec/android-sdk";
             in
@@ -139,9 +136,29 @@
                   NDK_CLANG="$(ls "$NDK_BIN"/aarch64-linux-android*-clang | sort -V | tail -n1)"
                   export CC_aarch64_linux_android="$NDK_CLANG" CXX_aarch64_linux_android="$NDK_CLANG++"
                   export AR_aarch64_linux_android="$NDK_BIN/llvm-ar" CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$NDK_CLANG"
+                  # The emulator is x86_64.
+                  NDK_CLANG_X86="$(ls "$NDK_BIN"/x86_64-linux-android*-clang | sort -V | tail -n1)"
+                  export CC_x86_64_linux_android="$NDK_CLANG_X86" CXX_x86_64_linux_android="$NDK_CLANG_X86++"
+                  export AR_x86_64_linux_android="$NDK_BIN/llvm-ar" CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER="$NDK_CLANG_X86"
                 '';
               }
             );
+        in
+        {
+          default = pkgs.mkShell (
+            commonEnv
+            // {
+              nativeBuildInputs = tools ++ [ toolchain ];
+              buildInputs = guiLibs;
+              inherit shellHook;
+            }
+          );
+          # `nix develop .#android` — the Android SDK/NDK and Rust targets for
+          # `dx serve --platform android` on a plugged-in phone.
+          android = androidShell false;
+          # `nix develop .#android-emulator` — the same plus the emulator and an
+          # x86_64 system image (a few GB) for the virtual phone.
+          android-emulator = androidShell true;
         }
       );
     };
