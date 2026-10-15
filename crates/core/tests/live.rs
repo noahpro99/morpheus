@@ -1135,3 +1135,90 @@ async fn keyring_store_round_trips_a_session() {
         "entry cleared"
     );
 }
+
+/// Serves `{"unifiedpush":{"gateway":"matrix"}}` at the Matrix gateway path,
+/// like a push server with a built-in gateway (ntfy). Returns its origin.
+async fn gateway_push_server() -> String {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .expect("bind");
+    let port = listener.local_addr().expect("addr").port();
+    tokio::spawn(async move {
+        while let Ok((mut socket, _)) = listener.accept().await {
+            let mut request = [0u8; 2048];
+            let _ = socket.read(&mut request).await;
+            let body = r#"{"unifiedpush":{"gateway":"matrix"}}"#;
+            let reply = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            let _ = socket.write_all(reply.as_bytes()).await;
+        }
+    });
+    format!("http://127.0.0.1:{port}")
+}
+
+#[tokio::test]
+async fn push_endpoints_register_a_pusher_through_the_right_gateway() {
+    let Some(env) = env() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping live test");
+        return;
+    };
+    let core = Core::with_session_store(fresh_data_dir(), SessionStoreKind::File).expect("core");
+    let session = core
+        .login(LoginRequest {
+            homeserver: env.homeserver,
+            username: "carol".into(),
+            password: "carol-password".into(),
+        })
+        .await
+        .expect("login");
+
+    // A push server without its own gateway (Sunup's) goes through the
+    // public UnifiedPush gateway.
+    let nonce = std::process::id();
+    let plain = format!("https://push.example.invalid/wpush/{nonce}");
+    let gateway = session
+        .register_push(plain.clone(), "Morpheus test".into())
+        .await
+        .expect("register");
+    assert_eq!(gateway, morpheus_core::DEFAULT_PUSH_GATEWAY);
+
+    // One with a built-in gateway (ntfy) is used directly.
+    let origin = gateway_push_server().await;
+    let own = format!("{origin}/up{nonce}");
+    let gateway = session
+        .register_push(own.clone(), "Morpheus test".into())
+        .await
+        .expect("register");
+    assert_eq!(gateway, format!("{origin}/_matrix/push/v1/notify"));
+
+    let pushers = session.push_registrations().await.expect("pushers");
+    for (endpoint, gateway) in [
+        (&plain, morpheus_core::DEFAULT_PUSH_GATEWAY.to_owned()),
+        (&own, format!("{origin}/_matrix/push/v1/notify")),
+    ] {
+        let found = pushers
+            .iter()
+            .find(|p| &p.pushkey == endpoint)
+            .unwrap_or_else(|| panic!("no pusher for {endpoint} in {pushers:?}"));
+        assert_eq!(found.app_id, morpheus_core::PUSH_APP_ID);
+        assert_eq!(found.gateway, gateway);
+    }
+
+    // Unregistering removes it again.
+    for endpoint in [&plain, &own] {
+        session
+            .unregister_push(endpoint.clone())
+            .await
+            .expect("unregister");
+    }
+    let pushers = session.push_registrations().await.expect("pushers");
+    assert!(
+        !pushers
+            .iter()
+            .any(|p| p.pushkey == plain || p.pushkey == own),
+        "pushers left behind: {pushers:?}"
+    );
+}
