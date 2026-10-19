@@ -237,7 +237,7 @@ pub fn TimelineView(
         let shown = entries
             .read()
             .iter()
-            .filter(|entry| !matches!(entry, TimelineEntry::Message(m) if matches!(m.kind, MessageKind::ProfileChange)))
+            .filter(|entry| !matches!(entry, TimelineEntry::Message(m) if m.kind.is_hidden()))
             .count();
         if window() < shown {
             window += WINDOW_STEP;
@@ -278,7 +278,7 @@ pub fn TimelineView(
                     .peek()
                     .iter()
                     .rev()
-                    .filter(|entry| !matches!(entry, TimelineEntry::Message(m) if matches!(m.kind, MessageKind::ProfileChange)))
+                    .filter(|entry| !matches!(entry, TimelineEntry::Message(m) if m.kind.is_hidden()))
                     .position(|entry| matches!(entry, TimelineEntry::Message(m) if matches!(&m.id, MessageId::Event(id) if id.as_str() == target)));
                 if let Some(from_newest) = from_newest {
                     if *window.peek() <= from_newest + JUMP_MARGIN {
@@ -514,10 +514,9 @@ fn group_rows<'a>(entries: &'a Vector<TimelineEntry>, marker: Option<&str>) -> V
 
     for entry in entries {
         match entry {
-            // Name and avatar changes stay out of the chat, as in Discord.
-            TimelineEntry::Message(message)
-                if matches!(message.kind, MessageKind::ProfileChange) =>
-            {
+            // Name and avatar changes stay out of the chat, as in Discord, and
+            // so do calls' joins, leaves and keys (the sidebar shows calls).
+            TimelineEntry::Message(message) if message.kind.is_hidden() => {
                 marker_pending |= marker == Some(message.unique_id.as_str());
             }
             TimelineEntry::Message(message) => {
@@ -1085,7 +1084,7 @@ fn MessageBody(kind: MessageKind, edited: bool) -> Element {
         },
         MessageKind::State(text) => rsx! { p { class: "body muted", "{text}" } },
         // Never rendered: `group_rows` drops them.
-        MessageKind::ProfileChange => rsx! {},
+        MessageKind::ProfileChange | MessageKind::CallPlumbing => rsx! {},
         MessageKind::Unsupported(what) => rsx! { p { class: "body muted", "Unsupported: {what}" } },
     }
 }

@@ -27,6 +27,10 @@ use crate::{
     typing::TypingNotice,
 };
 
+/// Calls' event types (Element Call's): device memberships and media keys.
+const CALL_MEMBER_EVENT: &str = "org.matrix.msc3401.call.member";
+const CALL_KEYS_EVENT: &str = "io.element.call.encryption_keys";
+
 /// Messages fetched when a room is opened for the first time.
 const INITIAL_BACKFILL: u16 = 40;
 
@@ -164,6 +168,10 @@ pub enum MessageKind {
     /// A member changed their display name or avatar. Clients hide these by
     /// default (Discord never shows them, Element hides them).
     ProfileChange,
+    /// Calls' plumbing: a device joining or leaving a call (membership
+    /// state) or sharing its media key. No row of its own (the sidebar shows
+    /// who is in a call), but kept so read markers can still land on it.
+    CallPlumbing,
     Unsupported(String),
 }
 
@@ -298,6 +306,11 @@ impl Message {
 }
 
 impl MessageKind {
+    /// Kept in the timeline but never drawn as a row.
+    pub fn is_hidden(&self) -> bool {
+        matches!(self, Self::ProfileChange | Self::CallPlumbing)
+    }
+
     /// One-line plain-text rendering, for reply quotes and room previews.
     pub fn summary(&self) -> String {
         match self {
@@ -312,6 +325,7 @@ impl MessageKind {
             Self::UnableToDecrypt => "Unable to decrypt".into(),
             Self::State(text) => text.clone(),
             Self::ProfileChange => "updated their profile".into(),
+            Self::CallPlumbing => "call".into(),
             Self::Unsupported(what) => format!("Unsupported: {what}"),
         }
     }
@@ -397,6 +411,9 @@ impl MessageKind {
                 MsgLikeKind::Sticker(_) => Self::Unsupported("sticker".into()),
                 MsgLikeKind::Poll(_) => Self::Unsupported("poll".into()),
                 MsgLikeKind::LiveLocation(_) => Self::Unsupported("live location".into()),
+                MsgLikeKind::Other(other) if other.event_type().to_string() == CALL_KEYS_EVENT => {
+                    Self::CallPlumbing
+                }
                 MsgLikeKind::Other(_) => Self::Unsupported("message".into()),
             },
             TimelineItemContent::MembershipChange(change) => {
@@ -406,6 +423,11 @@ impl MessageKind {
                 Self::State(format!("{who} {}", describe_membership(change.change())))
             }
             TimelineItemContent::ProfileChange(_) => Self::ProfileChange,
+            TimelineItemContent::OtherState(state)
+                if state.content().event_type().to_string() == CALL_MEMBER_EVENT =>
+            {
+                Self::CallPlumbing
+            }
             TimelineItemContent::OtherState(state) => Self::State(format!(
                 "{sender_name} {}",
                 describe_state(&state.content().event_type())
@@ -681,16 +703,10 @@ impl Session {
                 Some(root_event_id) => {
                     room.timeline_builder()
                         .with_focus(TimelineFocus::Thread { root_event_id })
-                        .event_filter(shown_event)
                         .build()
                         .await?
                 }
-                None => {
-                    room.timeline_builder()
-                        .event_filter(shown_event)
-                        .build()
-                        .await?
-                }
+                None => room.timeline().await?,
             });
             let (initial, stream) = timeline.subscribe().await;
 
@@ -805,20 +821,6 @@ impl Shield {
             reason: reason.to_owned(),
         })
     }
-}
-
-/// What timelines show: the SDK's default, minus calls' plumbing: memberships
-/// (each join and leave is a state event; the sidebar shows who is in a
-/// call) and media keys.
-fn shown_event(
-    event: &matrix_sdk::ruma::events::AnySyncTimelineEvent,
-    rules: &matrix_sdk::ruma::room_version_rules::RoomVersionRules,
-) -> bool {
-    let kind = event.event_type().to_string();
-    if kind == "org.matrix.msc3401.call.member" || kind == "io.element.call.encryption_keys" {
-        return false;
-    }
-    matrix_sdk_ui::timeline::default_event_filter(event, rules)
 }
 
 impl Session {
