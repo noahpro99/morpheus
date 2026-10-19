@@ -90,7 +90,14 @@ async fn sync(session: &Session, dir: &Path, empty_passes: &mut u32) {
     }
 
     let endpoint = read(&dir.join("push_endpoint"));
-    let registered_path = dir.join("push_registered");
+    // One record per account: each account on the device registers the
+    // phone's endpoint for itself (switching accounts keeps the others').
+    let user = session
+        .user_id()
+        .map(|id| id.to_string())
+        .unwrap_or_default()
+        .replace([':', '@'], "_");
+    let registered_path = dir.join(format!("push_registered_{user}"));
     let registered = read(&registered_path);
     if endpoint == registered {
         return;

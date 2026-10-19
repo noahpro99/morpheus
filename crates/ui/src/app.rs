@@ -143,7 +143,17 @@ fn Boot(core: Core) -> Element {
 
     match (&*restore.read(), session()) {
         (None, _) => rsx! { Splash {} },
-        (Some(_), Some(active)) => rsx! { Shell { session: active } },
+        // Keyed by account: switching accounts builds a fresh shell around
+        // the new session instead of keeping the old one in its context.
+        // (Keys only count in a list, hence the list of one.)
+        (Some(_), Some(active)) => rsx! {
+            for active in [active] {
+                Shell {
+                    key: "{active.user_id().map(|id| id.to_string()).unwrap_or_default()}",
+                    session: active,
+                }
+            }
+        },
         (Some(result), None) => rsx! { Login { restore_error: result.clone().err() } },
     }
 }

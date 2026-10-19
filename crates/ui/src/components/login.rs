@@ -22,6 +22,32 @@ pub fn Login(restore_error: Option<String>) -> Element {
     let mut password = use_signal(String::new);
     let mut error = use_signal(|| restore_error);
     let mut busy = use_signal(|| None::<&'static str>);
+    // An account already on this device (added another from its menu).
+    let accounts = use_resource({
+        let core = core.clone();
+        move || {
+            let core = core.clone();
+            async move { core.accounts().await.unwrap_or_default() }
+        }
+    });
+    let stored = accounts()
+        .unwrap_or_default()
+        .into_iter()
+        .find(|account| account.active)
+        .map(|account| account.user_id.to_string());
+    let back = {
+        let core = core.clone();
+        move |_| {
+            let core = core.clone();
+            spawn(async move {
+                match core.restore_session().await {
+                    Ok(Some(active)) => session.set(Some(active)),
+                    Ok(None) => {}
+                    Err(err) => error.set(Some(err.to_string())),
+                }
+            });
+        }
+    };
 
     // Ask the server what it supports whenever the homeserver field settles:
     // on leaving the field, or a moment after typing stops (on a phone the
@@ -160,6 +186,16 @@ pub fn Login(restore_error: Option<String>) -> Element {
                         disabled: busy().is_some(),
                         onclick: sso,
                         "Sign in with single sign-on"
+                    }
+                }
+                // Here to add an account: the signed-in one is still stored.
+                if let Some(account) = stored.as_ref() {
+                    button {
+                        r#type: "button",
+                        class: "secondary back-to-account",
+                        disabled: busy().is_some(),
+                        onclick: back,
+                        "Back to {account}"
                     }
                 }
                 if probing {

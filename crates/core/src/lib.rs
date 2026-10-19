@@ -12,6 +12,7 @@
 //! [`Vector`]. Both the room list and a room timeline use the same shape, so
 //! UI code has exactly one way of consuming incremental updates.
 
+mod accounts;
 mod core;
 mod error;
 mod media;
@@ -37,6 +38,7 @@ pub use error::{Error, Result};
 /// A future produced by the core. Boxed so the deeply nested SDK types never
 /// leak into dependents, and `Send` so any executor can drive it.
 pub type CoreFuture<T> = futures_util::future::BoxFuture<'static, Result<T>>;
+pub use accounts::SavedAccount;
 pub use media::{Media, MediaRef};
 pub use members::{Member, MemberPermissions, MemberRole};
 pub use messages::PinnedMessage;
