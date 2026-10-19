@@ -470,6 +470,7 @@ fn livekit_identities(user_id: &OwnedUserId, device_id: &str) -> Vec<String> {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used)]
 mod tests {
     use super::*;
 
