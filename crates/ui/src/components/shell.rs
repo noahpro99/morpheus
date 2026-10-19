@@ -751,6 +751,17 @@ pub fn Shell(session: Session) -> Element {
         (Some(_), None, true) => SideColumn::Members,
         _ => SideColumn::None,
     };
+    // On a phone with a chat in front, the member list waits parked off the
+    // right edge so a leftward swipe can pull it in under the finger.
+    let parked_members = narrow().0
+        && chat_open().0
+        && side_column == SideColumn::None
+        && current().is_some_and(|room| !room.invited);
+    let rendered_side = if parked_members {
+        SideColumn::Members
+    } else {
+        side_column
+    };
     // Which pane a phone shows: the list, the chat, or the side panel.
     let pane = if !narrow().0 {
         "all"
@@ -815,8 +826,9 @@ pub fn Shell(session: Session) -> Element {
                     },
                 }
             }
-            if side_column != SideColumn::None {
+            if rendered_side != SideColumn::None {
                 div { class: "side-pane",
+                    class: if parked_members { "parked" },
                     if narrow().0 {
                         div { class: "pane-bar",
                             button {
@@ -834,7 +846,7 @@ pub fn Shell(session: Session) -> Element {
                             }
                         }
                     }
-                    match (side_column, current(), active_thread()) {
+                    match (rendered_side, current(), active_thread()) {
                         (SideColumn::Thread, Some(room), Some(root)) => rsx! { ThreadPanel { room_id: room.id.clone(), root } },
                         (SideColumn::Members, Some(room), _) => rsx! { Members { room_id: room.id.clone(), member_count: room.member_count } },
                         _ => rsx! {},

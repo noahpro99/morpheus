@@ -109,11 +109,11 @@ timeline → send.
 - [x] Android emulator e2e: `just android-emulator` (headless works too), `just e2e-android-build`, `just e2e-android`; the driver reaches the app's bridge (fixed port 47100 on Android) through `adb forward` and screenshots with `screencap`. Also runs on a plugged-in phone (`ANDROID_SERIAL`).
 - [x] Installed and launched on a Pixel 8 Pro (`just android`)
 - [ ] Mobile file picker (Android intent / iOS document picker): `rfd` is desktop-only, the attach button is a no-op on phones; paste works
-- [x] Single-column navigation on phone-width windows (rooms → chat → members/thread) with back buttons and Escape/back; the shared shell does it, so the mobile app gets every desktop feature as is. Swipe-back gesture still to do.
+- [x] Single-column navigation on phone-width windows (rooms → chat → members/thread) with back buttons and Escape/back; the shared shell does it, so the mobile app gets every desktop feature as is. Panes stack and slide with the finger (see below).
 - [x] Larger touch targets and safe-area insets in the narrow layout
 - [ ] Text selection is broken (reported on the phone, 2026-10-15); revisit later. Touch screens currently turn off selection outside typing fields so press-and-hold can open menus; messages need a "Select text" path instead.
 - [ ] Swipe down to close a bottom sheet: a first version is in (sheet follows the finger, closes past a third or on a flick; phone e2e test), but the Pixel build predates it; check it feels right on the device.
-- [ ] Pane swipes like Discord: swipe left to open a thread (or the side pane) and right to close it, with the panes moving exactly with the finger (the next pane sliding in alongside, not a blank gap), settling or snapping back on release. Today only a rightward swipe exists and it slides the current pane away over an empty background.
+- [x] Pane swipes like Discord: the chat slides in over the room list; a rightward drag moves the top pane with the finger, revealing the one underneath (members → chat → list); a leftward drag on the list brings the last chat back, and on the chat pulls in the parked member list. Phone e2e tests hold a real finger mid-drag. Opening a thread by swipe is not done (which thread would it be?).
 - [ ] Keyboard avoidance on Android (adjustResize) and iOS, verified on devices
 - [ ] UnifiedPush notifications
 - [ ] iOS build on a Mac runner

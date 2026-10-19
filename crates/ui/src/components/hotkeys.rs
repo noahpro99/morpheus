@@ -288,6 +288,12 @@ window.addEventListener('paste', e => {
     if (!g.axis) {
       if (Math.abs(dx) < SLOP && Math.abs(dy) < SLOP) return;
       g.axis = Math.abs(dx) > Math.abs(dy) * 1.5 ? 'x' : 'y';
+      // On the chat, leftward pulls in the parked member list instead.
+      if (g.axis === 'x' && g.kind === 'back' && dx < 0 && narrowPane() === 'chat') {
+        const side = document.querySelector('.side-pane.parked');
+        if (side) { g.kind = 'forward'; g.el = side; g.then = 'members'; }
+        else { g = null; return; }
+      }
     }
     if (g.kind === 'sheet' && g.axis === 'y') {
       g.d = Math.max(0, dy);
@@ -305,7 +311,7 @@ window.addEventListener('paste', e => {
   }, { passive: true, capture: true });
   window.addEventListener('touchend', () => {
     if (!g || g.d <= 0) { g = null; return; }
-    const { kind, el, d, at } = g;
+    const { kind, el, d, at, then: next } = g;
     g = null;
     const fast = d > 40 && d / Math.max(1, Date.now() - at) > 0.6;
     const far = d > (kind === 'sheet' ? el.offsetHeight : el.offsetWidth) / 3;
@@ -317,7 +323,7 @@ window.addEventListener('paste', e => {
       if (fast || far) settle(el, 'translateX(100%)', () => dioxus.send('escape'));
       else settle(el, 'translateX(0)');
     } else {
-      if (fast || far) settle(el, 'translateX(0)', () => dioxus.send('chat_front'));
+      if (fast || far) settle(el, 'translateX(0)', () => dioxus.send(next || 'chat_front'));
       else settle(el, 'translateX(100%)');
     }
   }, { capture: true });
