@@ -36,6 +36,9 @@ async fn startup_options_write_the_autostart_entry() {
     app.wait_for(".room", DEFAULT_WAIT).await.expect("rooms");
 
     app.click(".settings-button").await.expect("gear");
+    app.wait_for_text(".settings-nav button", "Startup", DEFAULT_WAIT)
+        .await
+        .expect("Startup listed on desktop");
     app.click_text(".settings-nav button", "Startup")
         .await
         .expect("Startup page");
