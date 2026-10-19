@@ -459,6 +459,10 @@ impl Session {
                 request.initial_state = vec![parent.to_raw_any()];
             }
             let room = client.create_room(request).await?;
+            // Anyone in the room may join its calls.
+            if let Err(err) = crate::calls::allow_calls(&room).await {
+                tracing::warn!(%err, "could not allow calls in the new room");
+            }
             if let Some(space_id) = space
                 && let Some(space_room) = client.get_room(&space_id)
             {

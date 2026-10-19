@@ -166,6 +166,33 @@ GENERAL=$(ensure_room general "general" "Where everything starts")
 RANDOM_ROOM=$(ensure_room random "random" "Off-topic")
 DEV=$(ensure_room dev "dev" "Building Morpheus")
 
+# Calls: members post their call membership as state, which needs power
+# level 0 for it (rooms Morpheus creates set this; older rooms get it here).
+allow_calls() {
+  local pl
+  pl=$(api "$ALICE" GET "/_matrix/client/v3/rooms/$1/state/m.room.power_levels/")
+  if [[ $(jq -r '.events["org.matrix.msc3401.call.member"] // "unset"' <<<"$pl") != "0" ]]; then
+    api "$ALICE" PUT "/_matrix/client/v3/rooms/$1/state/m.room.power_levels/" \
+      "$(jq -c '.events["org.matrix.msc3401.call.member"] = 0' <<<"$pl")" >/dev/null
+    echo "  + calls allowed in $1" >&2
+  fi
+}
+for room in "$GENERAL" "$RANDOM_ROOM" "$DEV"; do allow_calls "$room"; done
+
+# Test runs that died mid-call leave memberships behind; hang them up.
+clear_calls() {
+  local key token
+  for key in $(api "$ALICE" GET "/_matrix/client/v3/rooms/$1/state" \
+      | jq -r '.[] | select(.type=="org.matrix.msc3401.call.member" and .content.device_id != null) | .state_key'); do
+    case "$key" in
+      *@alice:*) token=$ALICE ;; *@bob:*) token=$BOB ;; *@carol:*) token=$CAROL ;; *) continue ;;
+    esac
+    api "$token" PUT "/_matrix/client/v3/rooms/$1/state/org.matrix.msc3401.call.member/$(jq -rn --arg k "$key" '$k|@uri')" '{}' >/dev/null
+    echo "  - hung up $key" >&2
+  done
+}
+for room in "$GENERAL" "$RANDOM_ROOM" "$DEV"; do clear_calls "$room"; done
+
 echo "spaces:"
 ENGINEERING=$(ensure_space engineering "Engineering" "Everything about building Morpheus")
 add_space_child "$ALICE" "$ENGINEERING" "$DEV"
