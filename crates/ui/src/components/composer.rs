@@ -204,8 +204,11 @@ pub fn Composer(
             }
         }
     });
+    // Not on a phone: focusing raises the keyboard over the room just opened.
+    let phone = try_use_context::<super::shell::NarrowWindow>();
     use_effect(move || {
         if timeline().is_some()
+            && !phone.is_some_and(|narrow| narrow.peek().0)
             && let Some(el) = input_el()
         {
             spawn(async move {

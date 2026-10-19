@@ -1543,17 +1543,35 @@ body.dropping .drop-hint { display: flex; }
 .pane-bar { display: flex; align-items: center; height: 48px; padding: 0 8px; box-shadow: 0 1px 0 rgba(0, 0, 0, 0.3); }
 .pane-back { display: inline-flex; align-items: center; gap: 4px; padding: 6px 10px; border-radius: var(--radius-sm); }
 
-/* ---- narrow (phone) layout: one pane at a time ---- */
+/* ---- narrow (phone) layout: stacked panes ----
+   The room list is the base; the chat and the side pane are layers over it
+   that slide in from the right (the chat waits just off-screen). Swipes
+   drag the top layer with the finger, revealing the one underneath. */
 .shell.narrow .shell-body {
+  position: relative;
+  /* clip, not hidden: a hidden box can still be scrolled, and focusing the
+     parked chat's message box scrolled it into view over the list. */
+  overflow: clip;
   grid-template-columns: var(--rail-w) 1fr;
   grid-template-areas: "rail sidebar" "user user";
 }
-.shell.narrow[data-pane="chat"] .shell-body,
-.shell.narrow[data-pane="side"] .shell-body { grid-template-columns: 1fr; grid-template-areas: "chat"; grid-template-rows: 1fr; }
-.shell.narrow[data-pane="side"] .shell-body { grid-template-areas: "side"; }
-.shell.narrow[data-pane="rooms"] .chat, .shell.narrow[data-pane="rooms"] .side-pane,
-.shell.narrow[data-pane="chat"] .rail, .shell.narrow[data-pane="chat"] .sidebar, .shell.narrow[data-pane="chat"] .user-bar, .shell.narrow[data-pane="chat"] .side-pane,
-.shell.narrow[data-pane="side"] .rail, .shell.narrow[data-pane="side"] .sidebar, .shell.narrow[data-pane="side"] .user-bar, .shell.narrow[data-pane="side"] .chat { display: none; }
+.shell.narrow .chat, .shell.narrow .side-pane {
+  position: absolute;
+  /* Not the desktop grid slot: that area does not exist on a phone. */
+  grid-area: auto;
+  inset: 0;
+  background: var(--bg-chat);
+  transition: none;
+  box-shadow: -10px 0 24px rgba(0, 0, 0, 0.35);
+}
+.shell.narrow .chat { z-index: 2; }
+.shell.narrow.panes-ready .chat, .shell.narrow.panes-ready .side-pane { transition: transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 240ms; }
+.shell.narrow .side-pane { z-index: 3; animation: pane-in 240ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.shell.narrow[data-pane="rooms"] .chat { transform: translateX(100%); box-shadow: none; }
+@keyframes pane-in { from { transform: translateX(100%); } to { transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .shell.narrow.panes-ready .chat, .shell.narrow.panes-ready .side-pane, .shell.narrow .side-pane { transition: none; animation: none; }
+}
 .shell.narrow .titlebar { padding-top: env(safe-area-inset-top); height: auto; min-height: 32px; }
 .shell.narrow .composer { padding-bottom: calc(var(--bottom-gap) + env(safe-area-inset-bottom)); }
 .shell.narrow .user-bar { margin-bottom: calc(var(--bottom-gap) + env(safe-area-inset-bottom)); }
