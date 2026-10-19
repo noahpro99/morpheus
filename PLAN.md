@@ -124,7 +124,7 @@ timeline → send.
 
 ### 7. Always-on desktop presence
 - [x] Tray icon (logo, Open / Quit menu, left click shows the window); closing the window hides it; syncing and OS notifications continue on a desktop-side thread (the webview's runtime stalls while hidden) and the UI catches up on reopen.
-- [ ] Tray follow-ups: autostart at login, a "start hidden" flag. (Done: a single-instance guard per data dir on Unix: a second launch shows the running window and exits.)
+- [x] Tray follow-ups: Settings → Startup (desktop) opens Morpheus at sign-in through an XDG autostart entry, optionally hidden in the tray (`--hidden`); one Morpheus per data dir on Unix (a second launch shows the running window and exits). Autostart on macOS/Windows not done.
 
 ## Funding model (idea, not scheduled)
 - Feature bounties instead of (or alongside) plain donations: anyone can put

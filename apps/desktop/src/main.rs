@@ -63,6 +63,7 @@ fn main() {
     // the developer is typing into. A distinct title lets the e2e driver
     // (and a compositor rule) tell them apart from a real session.
     let under_test = std::env::var_os("MORPHEUS_E2E_PORT").is_some();
+    let start_hidden = std::env::args().any(|arg| arg == morpheus_ui::autostart::HIDDEN_FLAG);
     // Tests can ask for a phone-sized window to exercise the narrow layout.
     let (width, height) = std::env::var("MORPHEUS_E2E_SIZE")
         .ok()
@@ -78,6 +79,8 @@ fn main() {
             "Morpheus"
         })
         .with_focused(!under_test)
+        // Started at sign-in with "Start hidden in the tray": straight to the tray.
+        .with_visible(!start_hidden)
         // The shell draws its own Discord-style bar; see `DesktopRoot`.
         .with_decorations(false)
         .with_inner_size(LogicalSize::new(width, height));
@@ -391,11 +394,25 @@ mod single_instance {
 
     /// `false` when another Morpheus already runs on `data_dir` (it has been
     /// asked to show itself, and this process should exit).
+    /// The socket for `data_dir`: in the runtime dir, named after a hash of
+    /// the data dir (socket paths are limited to about a hundred bytes, which
+    /// a data dir can exceed).
+    #[cfg(unix)]
+    fn socket_path(data_dir: &Path) -> std::path::PathBuf {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        data_dir.hash(&mut hasher);
+        let dir = std::env::var_os("XDG_RUNTIME_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(std::env::temp_dir);
+        dir.join(format!("morpheus-{:016x}-{SOCKET}", hasher.finish()))
+    }
+
     pub fn claim(data_dir: &Path) -> bool {
         #[cfg(unix)]
         {
             use std::io::Write;
-            let path = data_dir.join(SOCKET);
+            let path = socket_path(data_dir);
             if let Ok(mut running) = UnixStream::connect(&path) {
                 let _ = running.write_all(b"show\n");
                 return false;
