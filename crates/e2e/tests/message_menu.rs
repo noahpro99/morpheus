@@ -49,9 +49,14 @@ async fn send_fresh(app: &mut App, tag: &str) -> String {
 }
 
 async fn open_menu_on(app: &mut App, row_js: &str) {
-    app.eval(&format!(
-        "{row_js}.dispatchEvent(new MouseEvent('contextmenu', {{ bubbles: true, cancelable: true, clientX: 420, clientY: 320 }}));"
-    ))
+    // Retried: the row can be re-rendered (a timeline reset) right after sending.
+    app.wait_for_js(
+        &format!(
+            "const row = {row_js}; if (!row) return false; \
+             row.dispatchEvent(new MouseEvent('contextmenu', {{ bubbles: true, cancelable: true, clientX: 420, clientY: 320 }})); return true;"
+        ),
+        DEFAULT_WAIT,
+    )
     .await
     .expect("right-click");
     app.wait_for(".context-menu", DEFAULT_WAIT)

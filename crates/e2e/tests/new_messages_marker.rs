@@ -69,6 +69,9 @@ async fn new_message_marker_appears_above_unread_and_clears_on_send() {
         .expect("dev header");
     // The fully-read marker goes out when #general is left; let it land.
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    // And from elsewhere (alice's other device) it moved on to a reaction
+    // she took back: an event with no row of its own. It must still count.
+    fully_read_on_a_redaction(&hs, "general");
 
     let mut bob = App::launch(&hs).await.expect("launch bob");
     login_and_open(&mut bob, "bob", "bob-password", "general").await;
@@ -97,7 +100,9 @@ async fn new_message_marker_appears_above_unread_and_clears_on_send() {
         // What the newest rows were instead (this has failed only in long runs).
         let rows = alice
             .eval(
-                "return [...document.querySelectorAll('.timeline > *')].slice(0, 12) \
+                "const all = [...document.querySelectorAll('.timeline > *')]; \
+                 const d = all.findIndex(r => r.classList.contains('new-divider')); \
+                 return 'divider at ' + d + ' of ' + all.length + '\\n' + all.slice(0, 12).concat(d > 11 ? all.slice(d - 2, d + 3) : []) \
                  .map(r => r.className + ': ' + r.textContent.trim().slice(0, 60)).join('\\n');",
             )
             .await
@@ -126,4 +131,88 @@ async fn new_message_marker_appears_above_unread_and_clears_on_send() {
         )
         .await
         .expect("divider cleared after sending");
+}
+
+/// As alice on another device (`curl`): react to the newest message in
+/// `room`, take the reaction back, and mark the redaction fully read, which
+/// is what reading a room whose last event is a removed reaction leaves.
+fn fully_read_on_a_redaction(hs: &str, room: &str) {
+    let curl = |args: &[&str]| -> serde_json::Value {
+        let out = std::process::Command::new("curl")
+            .arg("-sf")
+            .args(args)
+            .output()
+            .expect("curl");
+        assert!(out.status.success(), "curl {args:?}");
+        serde_json::from_slice(&out.stdout).unwrap_or_default()
+    };
+    let login = curl(&[
+        "-X",
+        "POST",
+        &format!("{hs}/_matrix/client/v3/login"),
+        "-d",
+        r#"{"type":"m.login.password","identifier":{"type":"m.id.user","user":"alice"},"password":"alice-password"}"#,
+    ]);
+    let auth = format!(
+        "Authorization: Bearer {}",
+        login["access_token"].as_str().expect("token")
+    );
+    let room_id = curl(&[&format!(
+        "{hs}/_matrix/client/v3/directory/room/%23{room}:localhost"
+    )])["room_id"]
+        .as_str()
+        .expect("room id")
+        .to_owned();
+    let newest = curl(&[
+        "-H",
+        &auth,
+        &format!(
+            "{hs}/_matrix/client/v3/rooms/{room_id}/messages?dir=b&limit=1&filter=%7B%22types%22%3A%5B%22m.room.message%22%5D%7D"
+        ),
+    ])["chunk"][0]["event_id"]
+        .as_str()
+        .expect("newest message")
+        .to_owned();
+    let txn = std::process::id();
+    let reaction = curl(&[
+        "-X",
+        "PUT",
+        "-H",
+        &auth,
+        &format!("{hs}/_matrix/client/v3/rooms/{room_id}/send/m.reaction/r{txn}"),
+        "-d",
+        &serde_json::json!({ "m.relates_to": { "rel_type": "m.annotation", "event_id": newest, "key": "👀" } })
+            .to_string(),
+    ])["event_id"]
+        .as_str()
+        .expect("reaction")
+        .to_owned();
+    let redaction = curl(&[
+        "-X",
+        "PUT",
+        "-H",
+        &auth,
+        &format!("{hs}/_matrix/client/v3/rooms/{room_id}/redact/{reaction}/x{txn}"),
+        "-d",
+        "{}",
+    ])["event_id"]
+        .as_str()
+        .expect("redaction")
+        .to_owned();
+    curl(&[
+        "-X",
+        "POST",
+        "-H",
+        &auth,
+        &format!("{hs}/_matrix/client/v3/rooms/{room_id}/read_markers"),
+        "-d",
+        &serde_json::json!({ "m.fully_read": redaction, "m.read": redaction }).to_string(),
+    ]);
+    curl(&[
+        "-X",
+        "POST",
+        "-H",
+        &auth,
+        &format!("{hs}/_matrix/client/v3/logout"),
+    ]);
 }

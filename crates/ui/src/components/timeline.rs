@@ -55,6 +55,13 @@ const EMOJI_PICKER: [&str; 24] = [
     "😎", "🥳", "🚀", "⭐", "💀", "🫡", "🤝", "💡",
 ];
 
+thread_local! {
+    /// Rooms marked unread while open: no read receipts from this visit
+    /// (sending one clears the flag), until the room is opened again.
+    static KEPT_UNREAD: std::cell::RefCell<std::collections::HashSet<OwnedRoomId>> =
+        std::cell::RefCell::new(std::collections::HashSet::new());
+}
+
 /// One room's messages. The parent sets `key` to the room id, so switching
 /// rooms remounts this component and drops the previous subscription.
 #[component]
@@ -65,6 +72,11 @@ pub fn TimelineView(
     let session = use_context::<Session>();
     let mut entries = use_signal(Vector::<TimelineEntry>::new);
     let mut handle = use_context::<ActiveTimeline>();
+    // A fresh visit reads the room again, even if it was marked unread here.
+    use_hook({
+        let room_id = room_id.clone();
+        move || KEPT_UNREAD.with_borrow_mut(|rooms| rooms.remove(&room_id))
+    });
     let mut load_error = use_signal(|| None::<String>);
     let mut reached_start = use_signal(|| false);
     let mut paginating = use_signal(|| false);
@@ -131,8 +143,8 @@ pub fn TimelineView(
         async move {
             let is_thread = root_event_id.is_some();
             let opened = match root_event_id {
-                Some(root_event_id) => session.thread(room_id, root_event_id).await,
-                None => session.timeline(room_id).await,
+                Some(root_event_id) => session.thread(room_id.clone(), root_event_id).await,
+                None => session.timeline(room_id.clone()).await,
             };
             match opened {
                 Ok(OpenTimeline {
@@ -141,6 +153,12 @@ pub fn TimelineView(
                 }) => {
                     handle.set(Some(opened.clone()));
                     *handle_cell.borrow_mut() = Some(opened.clone());
+                    // Where the user read up to, for when the SDK draws no marker (it
+                    // only can when that event has a row of its own).
+                    let read_at = match is_thread {
+                        true => None,
+                        false => session.fully_read_at(room_id.clone()).await.ok().flatten(),
+                    };
                     while let Some(diffs) = updates.next().await {
                         entries
                             .with_mut(|list| diffs.into_iter().for_each(|diff| diff.apply(list)));
@@ -162,6 +180,9 @@ pub fn TimelineView(
                         if new_marker.peek().is_none()
                             && !caught_up()
                             && let Some(marker) = first_unread_after_marker(&entries.read())
+                                .or_else(|| {
+                                    read_at.and_then(|at| first_unread_since(&entries.read(), at))
+                                })
                         {
                             new_marker.set(Some(marker));
                         }
@@ -181,8 +202,11 @@ pub fn TimelineView(
 
                         // The SDK only sends a receipt when the latest event moved
                         // forward. Thread timelines are skipped: the server rejects
-                        // threaded receipts for events outside the thread.
-                        if !is_thread {
+                        // threaded receipts for events outside the thread. A room
+                        // marked unread while open stays so (a receipt clears the
+                        // flag) until the next visit.
+                        if !is_thread && !KEPT_UNREAD.with_borrow(|rooms| rooms.contains(&room_id))
+                        {
                             let receipt = opened.clone();
                             spawn(async move {
                                 if let Err(err) = receipt.send_read_receipt().await {
@@ -539,6 +563,17 @@ fn first_unread_after_marker(entries: &Vector<TimelineEntry>) -> Option<String> 
         })
 }
 
+/// The first message from someone else sent after `read_at` (ms): where the
+/// divider goes when the read marker sits on an event without a row.
+fn first_unread_since(entries: &Vector<TimelineEntry>, read_at: u64) -> Option<String> {
+    entries.iter().find_map(|entry| match entry {
+        TimelineEntry::Message(message) if !message.is_own && message.timestamp_ms > read_at => {
+            Some(message.unique_id.clone())
+        }
+        _ => None,
+    })
+}
+
 #[component]
 pub(crate) fn MessageRow(message: Message, show_header: bool) -> Element {
     let timeline = use_context::<ActiveTimeline>();
@@ -759,6 +794,7 @@ pub(crate) fn MessageRow(message: Message, show_header: bool) -> Element {
                     let session = session.clone();
                     let room_id = room_id.clone();
                     move || {
+                        KEPT_UNREAD.with_borrow_mut(|rooms| rooms.insert(room_id.clone()));
                         let future = session.mark_unread(room_id.clone(), true);
                         spawn(async move {
                             if let Err(err) = future.await {
