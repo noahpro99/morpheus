@@ -108,3 +108,12 @@ pub fn NicknameEditor(user_id: OwnedUserId, current: String) -> Element {
         }
     }
 }
+
+/// A room's name as you see it: a DM goes by your nickname for the person.
+pub fn room_title(map: &NickMap, room: &morpheus_core::RoomSummary) -> String {
+    room.dm_user
+        .as_ref()
+        .filter(|_| room.is_dm)
+        .and_then(|user| map.0.get(user.as_str()).cloned())
+        .unwrap_or_else(|| room.name.clone())
+}

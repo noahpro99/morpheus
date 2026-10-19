@@ -410,6 +410,9 @@ pub fn ProfileCard(open: ProfileOpen) -> Element {
         Some(p) => (p.name, p.avatar, p.status),
         None => (user_id.localpart().to_owned(), None, None),
     };
+    // Your nickname for them leads; their own name goes beside it.
+    let nickname = try_use_context::<super::nicknames::Nicknames>()
+        .and_then(|map| map().0.get(user_id.as_str()).cloned());
 
     let save_note = {
         let session = session.clone();
@@ -599,7 +602,12 @@ pub fn ProfileCard(open: ProfileOpen) -> Element {
                 }
                 div { class: "profile-body",
                     Avatar { media: avatar, fallback: name.clone(), size: 72 }
-                    h2 { class: "profile-name", "{name}" }
+                    if let Some(nick) = nickname.as_ref() {
+                        h2 { class: "profile-name", "{nick}" }
+                        p { class: "profile-realname muted", "{name}" }
+                    } else {
+                        h2 { class: "profile-name", "{name}" }
+                    }
                     p { class: "profile-id muted", "{user_id}" }
                     if let Some(status) = status {
                         p { class: "profile-status", "{status}" }
