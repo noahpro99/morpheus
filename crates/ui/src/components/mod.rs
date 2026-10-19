@@ -15,6 +15,7 @@ mod profile;
 mod rail;
 mod room_dialogs;
 mod room_list;
+mod search;
 mod settings;
 mod shell;
 mod space_menu;

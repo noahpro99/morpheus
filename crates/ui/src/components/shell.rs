@@ -65,6 +65,16 @@ pub type Selected = Signal<Option<OwnedRoomId>>;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MembersShown(pub bool);
 pub type MembersOpen = Signal<MembersShown>;
+/// Whether the room search panel is open (it takes the side column).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct SearchShown(pub bool);
+pub type SearchOpen = Signal<SearchShown>;
+/// A message to scroll to and highlight in the open chat (its event id).
+/// (Wrapped: contexts are found by type, and a bare `Signal<bool>` or
+/// `Signal<Option<String>>` would collide with other contexts.)
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct JumpTarget(pub Option<String>);
+pub type JumpTo = Signal<JumpTarget>;
 /// A display name to insert into the composer (member menu "Mention").
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Mention(pub Option<String>);
@@ -321,6 +331,8 @@ pub fn Shell(session: Session) -> Element {
     let mut settings_page: OpenSettingsPage = use_context_provider(|| Signal::new(None));
     let mut verification: ActiveVerification = use_context_provider(|| Signal::new(None));
     let mut members_open: MembersOpen = use_context_provider(|| Signal::new(MembersShown(true)));
+    let mut search_open: SearchOpen = use_context_provider(|| Signal::new(SearchShown(false)));
+    use_context_provider(|| Signal::new(JumpTarget(None)) as JumpTo);
     let mut open_profile: OpenProfile =
         use_context_provider(|| Signal::new(ProfileTarget::default()));
     let mut context_menu: ContextMenu = use_context_provider(|| Signal::new(MenuState::default()));
@@ -641,6 +653,9 @@ pub fn Shell(session: Session) -> Element {
         match name.as_str() {
             "escape" => {
                 if close_top_modal() {
+                } else if search_open.peek().0 && active_thread.peek().is_none() {
+                    // The search panel closes like a dialog would.
+                    search_open.set(SearchShown(false));
                 } else if narrow.peek().0 && chat_open.peek().0 {
                     // On a phone, Escape (the back key) steps back one pane:
                     // a thread or the members to the chat, the chat to the list.
@@ -750,9 +765,15 @@ pub fn Shell(session: Session) -> Element {
             }
         })
     });
-    let side_column = match (current(), active_thread(), members_open().0) {
-        (Some(_), Some(_), _) => SideColumn::Thread,
-        (Some(_), None, true) => SideColumn::Members,
+    let side_column = match (
+        current(),
+        active_thread(),
+        search_open().0,
+        members_open().0,
+    ) {
+        (Some(_), Some(_), _, _) => SideColumn::Thread,
+        (Some(_), None, true, _) => SideColumn::Search,
+        (Some(_), None, false, true) => SideColumn::Members,
         _ => SideColumn::None,
     };
     // On a phone with a chat in front, the member list waits parked off the
@@ -841,6 +862,8 @@ pub fn Shell(session: Session) -> Element {
                                 onclick: move |_| {
                                     if active_thread.peek().is_some() {
                                         active_thread.set(None);
+                                    } else if search_open.peek().0 {
+                                        search_open.set(SearchShown(false));
                                     } else {
                                         members_open.set(MembersShown(false));
                                     }
@@ -853,6 +876,7 @@ pub fn Shell(session: Session) -> Element {
                     match (rendered_side, current(), active_thread()) {
                         (SideColumn::Thread, Some(room), Some(root)) => rsx! { ThreadPanel { room_id: room.id.clone(), root } },
                         (SideColumn::Members, Some(room), _) => rsx! { Members { room_id: room.id.clone(), member_count: room.member_count } },
+                        (SideColumn::Search, Some(room), _) => rsx! { super::search::SearchPanel { key: "{room.id}", room_id: room.id.clone() } },
                         _ => rsx! {},
                     }
                 }
@@ -912,6 +936,7 @@ fn ChatRoom(room: RoomSummary) -> Element {
     // Menus built from this room's signals must not outlive it.
     use_drop(move || consume_context::<ContextMenu>().set(MenuState::default()));
     let mut members_open = use_context::<MembersOpen>();
+    let mut search_open = use_context::<SearchOpen>();
     let mut message_dialog = use_context::<OpenMessageDialog>();
     let pinned = use_context::<Pinned>();
     // Opening a room clears a manual unread flag, like reading does. Only on
@@ -977,6 +1002,13 @@ fn ChatRoom(room: RoomSummary) -> Element {
                 span { class: "topic", "{topic}" }
             }
             button {
+                class: "ghost search-toggle",
+                class: if search_open().0 { "active" },
+                title: "Search this room",
+                onclick: move |_| search_open.with_mut(|s| s.0 = !s.0),
+                Icon { glyph: crate::icons::SEARCH, size: 16 }
+            }
+            button {
                 class: "ghost pin-toggle",
                 title: "Pinned messages",
                 onclick: move |_| message_dialog.set(MessageDialog::Pinned),
@@ -1019,6 +1051,7 @@ fn TypingLine(names: Vec<String>) -> Element {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SideColumn {
     Thread,
+    Search,
     Members,
     None,
 }

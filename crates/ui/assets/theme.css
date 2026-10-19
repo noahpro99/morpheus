@@ -1705,3 +1705,19 @@ body.dropping .drop-hint { display: flex; }
 /* A recovery key just created in Settings. */
 .recovery-key-new { margin: 12px 0; padding: 12px; border-radius: var(--radius-lg); background: var(--bg-elevated); display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
 .recovery-key-new code { font-family: var(--mono); font-size: 0.95rem; letter-spacing: 0.04em; word-break: break-word; user-select: all; -webkit-user-select: all; }
+
+/* ---- Room search (side column) ---------------------------------------------- */
+
+.search-panel { display: flex; flex-direction: column; gap: 8px; padding: 12px; min-height: 0; flex: 1; background: var(--bg-members); overflow: hidden; }
+.search-panel input[name=search] { width: 100%; padding: 8px 10px; border-radius: var(--radius); background: var(--bg-input); color: var(--text); border: 1px solid var(--bg-elevated); }
+.search-note { font-size: 0.8rem; }
+.search-results { list-style: none; margin: 0; padding: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.search-hit { padding: 8px 10px; border-radius: var(--radius); cursor: pointer; background: var(--bg-chat); }
+.search-hit:hover { background: var(--bg-hover); }
+.search-meta { display: flex; gap: 8px; align-items: baseline; font-size: 0.8rem; }
+.search-sender { font-weight: 600; color: var(--text); }
+.search-time { color: var(--text-faint); }
+.search-body { margin: 4px 0 0; font-size: 0.9rem; color: var(--text-muted); word-break: break-word; }
+.chat-header .search-toggle.active { color: var(--text); background: var(--bg-selected); }
+/* A message jumped to from search: a brief glow. */
+.message.jump-target { background: rgba(124, 140, 255, 0.18); transition: background 400ms; }
