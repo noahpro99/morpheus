@@ -90,10 +90,23 @@ async fn new_message_marker_appears_above_unread_and_clears_on_send() {
         .wait_for_text(".message .body", &body, DEFAULT_WAIT)
         .await
         .expect("bob's message visible");
-    alice
+    if let Err(err) = alice
         .wait_for_js(&marker_above_message_js(&body), DEFAULT_WAIT)
         .await
-        .expect("NEW divider shown above bob's message");
+    {
+        // What the newest rows were instead (this has failed only in long runs).
+        let rows = alice
+            .eval(
+                "return [...document.querySelectorAll('.timeline > *')].slice(0, 12) \
+                 .map(r => r.className + ': ' + r.textContent.trim().slice(0, 60)).join('\\n');",
+            )
+            .await
+            .unwrap_or_default();
+        panic!(
+            "NEW divider shown above bob's message: {err}\nnewest rows:\n{}",
+            rows.as_str().unwrap_or_default()
+        );
+    }
 
     // Sending a message means alice is caught up: the divider drops immediately.
     let own_body = format!("caught up {}", std::process::id());
