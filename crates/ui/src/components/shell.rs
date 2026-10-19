@@ -349,6 +349,7 @@ pub fn Shell(session: Session) -> Element {
     let _drag: RailDrag = use_context_provider(|| Signal::new(Dragging::default()));
     let has_window = use_hook(|| try_consume_context::<crate::WindowControls>().is_some());
     super::keys::provide_key_tracking(session.clone());
+    let mut nickname_target = super::nicknames::provide_nicknames(session.clone());
     let _toasts: Toasts = use_context_provider(|| Signal::new(ToastList::default()));
     // Narrow (phone) layout: the page reports its width; one pane shows at a time.
     let mut narrow: NarrowWindow = use_context_provider(|| Signal::new(Narrow::default()));
@@ -587,6 +588,8 @@ pub fn Shell(session: Session) -> Element {
                 settings_open.set(false);
                 settings_page.set(None);
             }
+        } else if nickname_target().0.is_some() {
+            nickname_target.set(super::nicknames::NicknameTarget(None));
         } else if switcher_open() {
             switcher_open.set(false);
         } else {
@@ -889,6 +892,9 @@ pub fn Shell(session: Session) -> Element {
             }
             if switcher_open() {
                 QuickSwitcher { open: switcher_open }
+            }
+            if let Some((user_id, current)) = nickname_target().0 {
+                super::nicknames::NicknameEditor { user_id, current }
             }
             if settings_open() {
                 Settings {}

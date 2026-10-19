@@ -11,6 +11,7 @@ mod lightbox;
 mod login;
 mod members;
 mod message_dialogs;
+mod nicknames;
 mod profile;
 mod rail;
 mod room_dialogs;
