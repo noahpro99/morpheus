@@ -330,3 +330,86 @@ fn tls_roots(builder: matrix_sdk::ClientBuilder) -> matrix_sdk::ClientBuilder {
 /// Shows a URL in the user's browser. Platforms supply one where the
 /// desktop opener does not work (Android, through an intent).
 pub type UrlOpener = std::sync::Arc<dyn Fn(&str) -> std::io::Result<()> + Send + Sync>;
+
+/// What a push notification can show for one message: who, where, what.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NotificationPreview {
+    pub sender: String,
+    pub room: String,
+    pub body: String,
+    pub is_dm: bool,
+}
+
+impl Core {
+    /// Fetch and decrypt one pushed message for its notification, without
+    /// starting the app's sync: for a push that arrives while the app is
+    /// closed. Uses the SDK's notification client, which takes a cross-process
+    /// lock on the account's stores. `None` when there is nothing to show
+    /// (filtered out by push rules, redacted, not found).
+    pub fn preview_notification(
+        &self,
+        room_id: String,
+        event_id: String,
+    ) -> CoreFuture<Option<NotificationPreview>> {
+        let core = self.clone();
+        self.run(async move {
+            use matrix_sdk::ruma::events::{
+                AnySyncMessageLikeEvent, AnySyncTimelineEvent, SyncMessageLikeEvent,
+            };
+            use matrix_sdk_ui::notification_client::{
+                NotificationClient, NotificationEvent, NotificationProcessSetup, NotificationStatus,
+            };
+            let room_id: crate::OwnedRoomId = room_id
+                .parse()
+                .map_err(|_| Error::Other(format!("not a room id: {room_id}")))?;
+            let event_id: matrix_sdk::ruma::OwnedEventId = event_id
+                .parse()
+                .map_err(|_| Error::Other(format!("not an event id: {event_id}")))?;
+
+            let blocking = core.clone();
+            let (dir, stored) =
+                tokio::task::spawn_blocking(move || -> Result<(PathBuf, Option<StoredSession>)> {
+                    let dir = blocking.active_account_dir();
+                    let stored =
+                        session_store::resolve(&dir, blocking.session_store_kind()).load()?;
+                    Ok((dir, stored))
+                })
+                .await??;
+            let Some(stored) = stored else {
+                return Ok(None);
+            };
+            let client =
+                build_client(&dir, &stored.homeserver, Some(&stored.store_passphrase)).await?;
+            client
+                .matrix_auth()
+                .restore_session(stored.session, RoomLoadSettings::default())
+                .await?;
+            let notifications =
+                NotificationClient::new(client, NotificationProcessSetup::MultipleProcesses)
+                    .await
+                    .map_err(|err| Error::Other(format!("notification client: {err}")))?;
+            let status = notifications
+                .get_notification(&room_id, &event_id)
+                .await
+                .map_err(|err| Error::Other(format!("fetching the notification: {err}")))?;
+            let NotificationStatus::Event(item) = status else {
+                return Ok(None);
+            };
+            let body = match &item.event {
+                NotificationEvent::Timeline(event) => match event.as_ref() {
+                    AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::RoomMessage(
+                        SyncMessageLikeEvent::Original(message),
+                    )) => message.content.body().to_owned(),
+                    _ => "New message".to_owned(),
+                },
+                NotificationEvent::Invite(_) => "Invited you".to_owned(),
+            };
+            Ok(Some(NotificationPreview {
+                sender: item.sender_display_name.clone().unwrap_or_default(),
+                room: item.room_computed_display_name.clone(),
+                body,
+                is_dm: item.is_direct_message_room,
+            }))
+        })
+    }
+}
