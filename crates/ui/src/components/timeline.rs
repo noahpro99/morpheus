@@ -546,6 +546,12 @@ pub(crate) fn MessageRow(message: Message, show_header: bool) -> Element {
     let mut draft = use_context::<Draft>();
     let mut active_thread = use_context::<ActiveThread>();
     let time = clock_time(message.timestamp_ms);
+    // Your nickname for the sender, if you gave them one.
+    let shown_sender = try_use_context::<super::nicknames::Nicknames>()
+        .map(|map| {
+            super::nicknames::shown_name(&map(), message.sender.as_str(), &message.sender_name)
+        })
+        .unwrap_or_else(|| message.sender_name.clone());
 
     let open_thread = {
         let message = message.clone();
@@ -881,7 +887,7 @@ pub(crate) fn MessageRow(message: Message, show_header: bool) -> Element {
                                 let sender = message.sender.clone();
                                 move |e| open_profile_at(sender.clone(), &e)
                             },
-                            "{message.sender_name}"
+                            "{shown_sender}"
                         }
                         span { class: "time", "{time}" }
                         MsgShield { shield: message.shield.clone() }

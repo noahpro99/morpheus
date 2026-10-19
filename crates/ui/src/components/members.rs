@@ -96,6 +96,9 @@ fn MemberRow(
 ) -> Element {
     let session = use_context::<Session>();
     let own = session.user_id().as_ref() == Some(&member.user_id);
+    let shown = try_use_context::<super::nicknames::Nicknames>()
+        .map(|map| super::nicknames::shown_name(&map(), member.user_id.as_str(), &member.name))
+        .unwrap_or_else(|| member.name.clone());
 
     let on_context = {
         let member = Rc::new(member.clone());
@@ -118,7 +121,7 @@ fn MemberRow(
             },
             oncontextmenu: on_context,
             Avatar { media: member.avatar.clone(), fallback: member.name.clone(), size: 32 }
-            span { class: "member-name", "{member.name}" }
+            span { class: "member-name", "{shown}" }
             if member.is_ignored {
                 span { class: "tag", title: "You blocked this user", "blocked" }
             }
@@ -172,6 +175,14 @@ pub(crate) fn member_menu(
         }
     };
 
+    items.push(MenuItem::new("Set nickname…", {
+        let (user_id, name) = (user_id.clone(), member.name.clone());
+        move || {
+            consume_context::<super::nicknames::EditNickname>().set(
+                super::nicknames::NicknameTarget(Some((user_id.clone(), name.clone()))),
+            )
+        }
+    }));
     items.push(MenuItem::new("Mention", {
         let name = member.name.clone();
         move || consume_context::<MentionRequest>().set(Mention(Some(name.clone())))

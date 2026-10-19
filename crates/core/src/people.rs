@@ -12,6 +12,7 @@ use serde_json::Value;
 use crate::{CoreFuture, MemberRole, Session};
 
 const NOTES_TYPE: &str = "dev.morpheus.notes";
+const NICKNAMES_TYPE: &str = "dev.morpheus.nicknames";
 
 impl Session {
     /// Joined rooms (not spaces) that both of you are in, by name.
@@ -108,12 +109,56 @@ impl Session {
 }
 
 async fn read_notes(client: &matrix_sdk::Client) -> crate::Result<serde_json::Map<String, Value>> {
+    read_map(client, NOTES_TYPE).await
+}
+
+/// A user-id-keyed map of strings kept in private account data.
+async fn read_map(
+    client: &matrix_sdk::Client,
+    kind: &str,
+) -> crate::Result<serde_json::Map<String, Value>> {
     let raw = client
         .account()
-        .account_data_raw(GlobalAccountDataEventType::from(NOTES_TYPE))
+        .account_data_raw(GlobalAccountDataEventType::from(kind))
         .await?;
     Ok(raw
         .and_then(|raw| raw.deserialize_as::<Value>().ok())
         .and_then(|v| v.as_object().cloned())
         .unwrap_or_default())
+}
+
+impl Session {
+    /// Your nicknames for people, by user id (account data, synced across
+    /// your devices, seen by nobody else).
+    pub fn nicknames(&self) -> CoreFuture<std::collections::HashMap<String, String>> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            Ok(read_map(&client, NICKNAMES_TYPE)
+                .await?
+                .into_iter()
+                .filter_map(|(user, name)| Some((user, name.as_str()?.to_owned())))
+                .collect())
+        })
+    }
+
+    /// Set (or, empty, clear) your nickname for a user.
+    pub fn set_nickname(&self, user_id: OwnedUserId, nickname: String) -> CoreFuture<()> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            let mut names = read_map(&client, NICKNAMES_TYPE).await?;
+            let nickname = nickname.trim();
+            if nickname.is_empty() {
+                names.remove(user_id.as_str());
+            } else {
+                names.insert(user_id.to_string(), Value::String(nickname.to_owned()));
+            }
+            let raw: Raw<AnyGlobalAccountDataEventContent> =
+                Raw::from_json(serde_json::value::to_raw_value(&Value::Object(names))?);
+            client
+                .account()
+                .set_account_data_raw(GlobalAccountDataEventType::from(NICKNAMES_TYPE), raw)
+                .await?;
+            Ok(())
+        })
+    }
 }
