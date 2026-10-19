@@ -29,6 +29,11 @@ use matrix_sdk::ruma::{
         },
     },
 };
+use matrix_sdk::{
+    deserialized_responses::EncryptionInfo,
+    event_handler::{EventHandlerDropGuard, RawEvent},
+    ruma::events::AnySyncTimelineEvent,
+};
 use serde_json::{Value, json};
 use tracing::debug;
 
@@ -48,6 +53,9 @@ pub struct CallCredentials {
     pub jwt: String,
     /// The service that issued it (advertised in the membership event).
     pub service_url: String,
+    /// In an encrypted room, the media is too: this device's fresh key,
+    /// to share with the room ([`Session::send_call_key`]).
+    pub media_key: Option<Vec<u8>>,
 }
 
 impl Session {
@@ -88,6 +96,18 @@ impl Session {
                 (None, None) => return Err(Error::Other("no call service answered".into())),
             };
             ensure_calls_allowed(&room, &user_id).await?;
+            let mut credentials = credentials;
+            let encrypted = room
+                .latest_encryption_state()
+                .await
+                .map(|state| state.is_encrypted())
+                .unwrap_or(false);
+            if encrypted {
+                use rand::RngCore as _;
+                let mut key = vec![0u8; 16];
+                rand::rng().fill_bytes(&mut key);
+                credentials.media_key = Some(key);
+            }
             let state_key = member_state_key(user_id.clone(), device_id.as_str());
 
             // If this device vanishes (crash, battery, network), the
@@ -144,8 +164,15 @@ impl Session {
             let client = session.client.clone();
             let user_id = client.user_id().ok_or(Error::NoSession)?.to_owned();
             let device_id = client.device_id().ok_or(Error::NoSession)?.to_owned();
-            if let Some(delay_id) = stop_heartbeat(&user_id, &room_id) {
-                let _ = update_delay(&client, delay_id, UpdateAction::Cancel).await;
+            // The scheduled leave, sent now: one request, so nothing is lost if
+            // the app dies right after (cancelling it and then sending a leave
+            // could leave a ghost for hours).
+            if let Some(delay_id) = stop_heartbeat(&user_id, &room_id)
+                && update_delay(&client, delay_id, UpdateAction::Send)
+                    .await
+                    .is_ok()
+            {
+                return Ok(());
             }
             room.send_state_event_for_key(
                 &member_state_key(user_id, device_id.as_str()),
@@ -293,6 +320,7 @@ async fn livekit_token(
                 livekit_url: field("url")?,
                 jwt: field("jwt")?,
                 service_url: service.to_owned(),
+                media_key: None,
             });
         }
         last = format!("call service said {status}: {text}");
@@ -369,15 +397,24 @@ async fn ensure_calls_allowed(room: &matrix_sdk::Room, user_id: &OwnedUserId) ->
         .power_levels()
         .await
         .map_err(|err| Error::Other(format!("reading power levels: {err}")))?;
+    let needed = levels
+        .events
+        .get(&StateEventType::CallMember.to_string().into())
+        .copied()
+        .unwrap_or(levels.state_default);
+    if levels.users_default >= needed {
+        return Ok(());
+    }
+    // Members can't join; whoever may change that turns calls on for all.
+    if levels.user_can_send_state(user_id, StateEventType::RoomPowerLevels) {
+        return allow_calls(room).await;
+    }
     if levels.user_can_send_state(user_id, StateEventType::CallMember) {
         return Ok(());
     }
-    if !levels.user_can_send_state(user_id, StateEventType::RoomPowerLevels) {
-        return Err(Error::Other(
-            "calls aren't allowed in this room; an admin can turn them on by joining one".into(),
-        ));
-    }
-    allow_calls(room).await
+    Err(Error::Other(
+        "calls aren't allowed in this room; an admin can turn them on by joining one".into(),
+    ))
 }
 
 /// Let every member join calls in `room` (power level 0 for the membership).
@@ -483,4 +520,121 @@ mod tests {
         assert_eq!(ids[1], "@alice:localhost:DEV1");
         assert_eq!(ids[0], "mZs3Bdzfyu9aKeiedvidIcX5EmK9NtRPyMb9gc3ISa8");
     }
+}
+
+/// Element Call's event for sharing a device's media key with the room.
+const KEYS_EVENT: &str = "io.element.call.encryption_keys";
+
+/// Someone's media key for a room's encrypted call.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CallKey {
+    pub user_id: OwnedUserId,
+    pub device_id: String,
+    pub index: u32,
+    pub key: Vec<u8>,
+    /// The LiveKit identities it applies to (see [`CallMember`]).
+    pub livekit_identities: Vec<String>,
+}
+
+/// Media keys arriving for one room.
+pub struct CallKeyUpdates {
+    rx: tokio::sync::mpsc::UnboundedReceiver<CallKey>,
+    _handle: EventHandlerDropGuard,
+}
+
+impl CallKeyUpdates {
+    pub async fn next(&mut self) -> Option<CallKey> {
+        self.rx.recv().await
+    }
+}
+
+impl Session {
+    /// Share this device's media key with everyone in `room_id`'s call, as
+    /// an (encrypted) room event, Element Call's way.
+    pub fn send_call_key(&self, room_id: OwnedRoomId, key: Vec<u8>) -> CoreFuture<()> {
+        let session = self.clone();
+        self.core.run(async move {
+            use base64::Engine as _;
+            let room = session.room(&room_id)?;
+            let device_id = session
+                .client
+                .device_id()
+                .ok_or(Error::NoSession)?
+                .to_string();
+            let sent_ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or_default();
+            let content = json!({
+                "keys": [{
+                    "index": 0,
+                    "key": base64::engine::general_purpose::STANDARD_NO_PAD.encode(&key),
+                }],
+                "device_id": device_id,
+                "call_id": "",
+                "sent_ts": sent_ts,
+            });
+            room.send_raw(KEYS_EVENT, content).await?;
+            Ok(())
+        })
+    }
+
+    /// Media keys others share in `room_id`. Only keys that arrived
+    /// encrypted count: in the clear, anyone could claim to be anyone.
+    pub fn call_keys(&self, room_id: OwnedRoomId) -> CoreFuture<CallKeyUpdates> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+            let handle = client.add_room_event_handler(
+                &room_id,
+                move |event: AnySyncTimelineEvent,
+                      encryption: Option<EncryptionInfo>,
+                      raw: RawEvent| {
+                    let tx = tx.clone();
+                    async move {
+                        if event.event_type().to_string() != KEYS_EVENT || encryption.is_none() {
+                            return;
+                        }
+                        for key in keys_in(event.sender(), &raw) {
+                            let _ = tx.send(key);
+                        }
+                    }
+                },
+            );
+            Ok(CallKeyUpdates {
+                rx,
+                _handle: client.event_handler_drop_guard(handle),
+            })
+        })
+    }
+}
+
+fn keys_in(sender: &matrix_sdk::ruma::UserId, raw: &RawEvent) -> Vec<CallKey> {
+    use base64::Engine as _;
+    let Ok(event) = serde_json::from_str::<Value>(raw.0.get()) else {
+        return Vec::new();
+    };
+    let content = &event["content"];
+    let Some(device_id) = content["device_id"].as_str() else {
+        return Vec::new();
+    };
+    let user_id = sender.to_owned();
+    content["keys"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| {
+            let encoded = entry["key"].as_str()?;
+            let key = base64::engine::general_purpose::STANDARD_NO_PAD
+                .decode(encoded.trim_end_matches('='))
+                .ok()?;
+            Some(CallKey {
+                livekit_identities: livekit_identities(&user_id, device_id),
+                user_id: user_id.clone(),
+                device_id: device_id.to_owned(),
+                index: entry["index"].as_u64().unwrap_or(0) as u32,
+                key,
+            })
+        })
+        .collect()
 }

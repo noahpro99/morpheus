@@ -148,3 +148,61 @@ async fn join_a_call_see_who_is_in_it_mute_and_hang_up() {
         .await
         .expect("bob hangs up");
 }
+
+/// In an encrypted room the audio is encrypted end to end; each app shares
+/// its key over Matrix (encrypted), so the two still hear each other.
+#[tokio::test]
+async fn encrypted_rooms_encrypt_the_call_and_both_sides_still_hear() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    // #encrypted starts without calls allowed (the seed resets it): alice,
+    // an admin, turns them on by joining, and bob can then join too.
+    // Both devices exist before either sends, so room keys reach both.
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    login_and_open(&mut alice, "alice", "encrypted").await;
+    let mut bob = App::launch(&hs).await.expect("launch bob");
+    login_and_open(&mut bob, "bob", "encrypted").await;
+
+    alice
+        .click(".chat-header .call-button")
+        .await
+        .expect("call");
+    alice
+        .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("alice connected");
+    bob.click(".chat-header .call-button").await.expect("join");
+    bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("bob connected");
+
+    let hears = |who: &str| {
+        format!(
+            "return (document.querySelector('.voice-panel')?.dataset.heard || '').split(' ').includes('@{who}:localhost');"
+        )
+    };
+    bob.wait_for_js(&hears("alice"), DEFAULT_WAIT)
+        .await
+        .expect("bob hears alice (decrypted)");
+    alice
+        .wait_for_js(&hears("bob"), DEFAULT_WAIT)
+        .await
+        .expect("alice hears bob (decrypted)");
+
+    alice
+        .click(".voice-panel .hang-up")
+        .await
+        .expect("alice hangs up");
+    bob.click(".voice-panel .hang-up")
+        .await
+        .expect("bob hangs up");
+    // Nobody left behind in the call.
+    bob.wait_for_js(
+        "return !document.querySelector('.room.selected + .room-call');",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("the call empties");
+}

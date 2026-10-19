@@ -27,6 +27,8 @@ pub struct CallState {
     pub connected: bool,
     /// Who is speaking now, this account included.
     pub speaking: Vec<OwnedUserId>,
+    /// Whose audio arrives, decrypted (test tones only; see `AudioMode::Tone`).
+    pub heard: Vec<OwnedUserId>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -86,6 +88,7 @@ pub fn join_call(session: Session, room_id: OwnedRoomId, room_name: String) {
             room_name,
             connected: false,
             speaking: Vec::new(),
+            heard: Vec::new(),
         })));
         let wanted = room_id.clone();
         let still_wanted = move || {
@@ -104,12 +107,30 @@ pub fn join_call(session: Session, room_id: OwnedRoomId, room_name: String) {
                 return;
             }
         };
-        let connected = Call::connect(
-            &credentials.livekit_url,
-            &credentials.jwt,
-            AudioMode::from_env(),
-        )
-        .await;
+        // Keys others share, subscribed before ours goes out so no answer is missed.
+        let mut keys = match &credentials.media_key {
+            Some(_) => session.call_keys(room_id.clone()).await.ok(),
+            None => None,
+        };
+        let connected = match credentials.media_key.clone() {
+            Some(key) => {
+                Call::connect_encrypted(
+                    &credentials.livekit_url,
+                    &credentials.jwt,
+                    AudioMode::from_env(),
+                    key,
+                )
+                .await
+            }
+            None => {
+                Call::connect(
+                    &credentials.livekit_url,
+                    &credentials.jwt,
+                    AudioMode::from_env(),
+                )
+                .await
+            }
+        };
         let (call, mut events) = match connected {
             Ok(connected) => connected,
             Err(err) => {
@@ -128,7 +149,7 @@ pub fn join_call(session: Session, room_id: OwnedRoomId, room_name: String) {
             return;
         }
         let flags = *voice.peek();
-        call.set_muted(flags.muted);
+        call.set_muted(flags.muted || flags.deafened);
         call.set_deafened(flags.deafened);
         let mut people: HashMap<String, OwnedUserId> = HashMap::new();
         if let Some(me) = session.user_id() {
@@ -140,13 +161,55 @@ pub fn join_call(session: Session, room_id: OwnedRoomId, room_name: String) {
                 state.connected = true;
             }
         });
+        // Our media key, to everyone in the call (again whenever someone joins).
+        let share_key = {
+            let (session, room_id, key) = (
+                session.clone(),
+                room_id.clone(),
+                credentials.media_key.clone(),
+            );
+            move || {
+                let (session, room_id) = (session.clone(), room_id.clone());
+                let key = key.clone();
+                async move {
+                    if let Some(key) = key
+                        && let Err(err) = session.send_call_key(room_id, key).await
+                    {
+                        report("sharing the call's media key", &err);
+                    }
+                }
+            }
+        };
+        share_key().await;
 
-        while let Some(event) = events.recv().await {
+        loop {
+            let event = tokio::select! {
+                event = events.recv() => match event {
+                    Some(event) => event,
+                    None => return,
+                },
+                Some(key) = async {
+                    match keys.as_mut() {
+                        Some(keys) => keys.next().await,
+                        None => std::future::pending().await,
+                    }
+                } => {
+                    if let Some(call) = media.0.borrow().as_ref() {
+                        for identity in &key.livekit_identities {
+                            call.set_key(identity, key.key.clone());
+                        }
+                    }
+                    continue;
+                }
+            };
             if !still_wanted() {
                 return;
             }
             match event {
-                CallEvent::Joined(_) => refresh_people(&session, &room_id, &mut people).await,
+                CallEvent::Joined(_) => {
+                    refresh_people(&session, &room_id, &mut people).await;
+                    share_key().await;
+                }
                 CallEvent::Speaking(identities) => {
                     if identities.iter().any(|id| !people.contains_key(id)) {
                         refresh_people(&session, &room_id, &mut people).await;
@@ -161,12 +224,29 @@ pub fn join_call(session: Session, room_id: OwnedRoomId, room_name: String) {
                         }
                     });
                 }
+                // Test tones only: whose audio actually arrives (decrypted).
+                CallEvent::Heard(ref identity) | CallEvent::Quiet(ref identity) => {
+                    if !people.contains_key(identity) {
+                        refresh_people(&session, &room_id, &mut people).await;
+                    }
+                    let heard = matches!(event, CallEvent::Heard(_));
+                    if let Some(user) = people.get(identity).cloned() {
+                        active.with_mut(|slot| {
+                            if let Some(state) = slot.0.as_mut() {
+                                state.heard.retain(|u| *u != user);
+                                if heard {
+                                    state.heard.push(user);
+                                }
+                            }
+                        });
+                    }
+                }
                 CallEvent::Disconnected(reason) => {
                     report("the call dropped", &reason);
                     leave(&session, active, &media).await;
                     return;
                 }
-                _ => {}
+                CallEvent::Left(_) => {}
             }
         }
     });
@@ -188,13 +268,14 @@ async fn leave(session: &Session, mut active: ActiveCall, media: &CallMedia) {
     if active.try_peek().is_ok() {
         active.set(CallSlot(None));
     }
-    if let Some(call) = call {
-        call.leave().await;
-    }
+    // Matrix first: that is what everyone else sees.
     if let Some(room) = room
         && let Err(err) = session.leave_call(room).await
     {
         report("leaving the call", &err);
+    }
+    if let Some(call) = call {
+        call.leave().await;
     }
 }
 
@@ -291,8 +372,14 @@ pub fn VoicePanel() -> Element {
         return rsx! {};
     };
     let room_id = call.room_id.clone();
+    let heard = call
+        .heard
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(" ");
     rsx! {
-        div { class: "voice-panel",
+        div { class: "voice-panel", "data-heard": "{heard}",
             div { class: "voice-status",
                 span { class: "voice-state", class: if call.connected { "connected" },
                     if call.connected { "Voice connected" } else { "Connecting…" }

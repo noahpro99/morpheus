@@ -98,3 +98,61 @@ async fn one_participant_hears_the_other_until_they_mute() {
     .await;
     listener.leave().await;
 }
+
+#[tokio::test]
+async fn encrypted_audio_is_heard_only_with_the_speakers_key() {
+    let Some(url) = livekit() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping media test");
+        return;
+    };
+    let room = format!("e2ee-test-{}", std::process::id());
+    let speaker_key = b"0123456789abcdef".to_vec();
+
+    let (speaker, _speaker_events) = Call::connect_encrypted(
+        &url,
+        &token(&room, "speaker"),
+        AudioMode::Tone,
+        speaker_key.clone(),
+    )
+    .await
+    .expect("speaker connects");
+    let (friend, mut friend_events) = Call::connect_encrypted(
+        &url,
+        &token(&room, "friend"),
+        AudioMode::Tone,
+        b"fedcba9876543210".to_vec(),
+    )
+    .await
+    .expect("friend connects");
+    let (_snoop, mut snoop_events) = Call::connect_encrypted(
+        &url,
+        &token(&room, "snoop"),
+        AudioMode::Tone,
+        b"snoopsnoopsnoop!".to_vec(),
+    )
+    .await
+    .expect("snoop connects");
+
+    // The friend was given the speaker's key (over Matrix, in the app).
+    friend.set_key("speaker", speaker_key);
+    wait_for(
+        &mut friend_events,
+        "the speaker's audio, decrypted",
+        |e| matches!(e, CallEvent::Heard(who) if who == "speaker"),
+    )
+    .await;
+
+    // Without it, the speaker's audio never decrypts into anything.
+    let heard = timeout(Duration::from_secs(4), async {
+        loop {
+            match snoop_events.recv().await {
+                Some(CallEvent::Heard(who)) if who == "speaker" => return,
+                Some(_) => {}
+                None => std::future::pending::<()>().await,
+            }
+        }
+    })
+    .await;
+    assert!(heard.is_err(), "audio heard without the key");
+    speaker.leave().await;
+}

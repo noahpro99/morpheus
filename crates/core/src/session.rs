@@ -254,6 +254,11 @@ impl Session {
         self.client.user_id().map(ToOwned::to_owned)
     }
 
+    /// This device's ID.
+    pub fn device_id(&self) -> Option<String> {
+        self.client.device_id().map(ToString::to_string)
+    }
+
     pub fn homeserver(&self) -> String {
         self.client.homeserver().to_string()
     }

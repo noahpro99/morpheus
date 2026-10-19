@@ -799,13 +799,15 @@ impl Shield {
     }
 }
 
-/// What timelines show: the SDK's default, minus call memberships (each
-/// join and leave is a state event; the sidebar shows who is in a call).
+/// What timelines show: the SDK's default, minus calls' plumbing: memberships
+/// (each join and leave is a state event; the sidebar shows who is in a
+/// call) and media keys.
 fn shown_event(
     event: &matrix_sdk::ruma::events::AnySyncTimelineEvent,
     rules: &matrix_sdk::ruma::room_version_rules::RoomVersionRules,
 ) -> bool {
-    if event.event_type().to_string() == "org.matrix.msc3401.call.member" {
+    let kind = event.event_type().to_string();
+    if kind == "org.matrix.msc3401.call.member" || kind == "io.element.call.encryption_keys" {
         return false;
     }
     matrix_sdk_ui::timeline::default_event_filter(event, rules)
