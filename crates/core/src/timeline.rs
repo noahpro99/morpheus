@@ -673,10 +673,16 @@ impl Session {
                 Some(root_event_id) => {
                     room.timeline_builder()
                         .with_focus(TimelineFocus::Thread { root_event_id })
+                        .event_filter(shown_event)
                         .build()
                         .await?
                 }
-                None => room.timeline().await?,
+                None => {
+                    room.timeline_builder()
+                        .event_filter(shown_event)
+                        .build()
+                        .await?
+                }
             });
             let (initial, stream) = timeline.subscribe().await;
 
@@ -791,4 +797,16 @@ impl Shield {
             reason: reason.to_owned(),
         })
     }
+}
+
+/// What timelines show: the SDK's default, minus call memberships (each
+/// join and leave is a state event; the sidebar shows who is in a call).
+fn shown_event(
+    event: &matrix_sdk::ruma::events::AnySyncTimelineEvent,
+    rules: &matrix_sdk::ruma::room_version_rules::RoomVersionRules,
+) -> bool {
+    if event.event_type().to_string() == "org.matrix.msc3401.call.member" {
+        return false;
+    }
+    matrix_sdk_ui::timeline::default_event_filter(event, rules)
 }

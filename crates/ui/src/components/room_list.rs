@@ -164,7 +164,7 @@ pub fn RoomList(error: Option<String>) -> Element {
                     }
                 }
             }
-
+            super::call::VoicePanel {}
         }
     }
 }
@@ -195,6 +195,7 @@ fn RoomRow(room: RoomSummary) -> Element {
     rsx! {
         button {
             class: "room",
+            "data-room": "{room.id}",
             oncontextmenu: on_context,
             class: if room.is_dm { "dm" },
             class: if is_selected { "selected" },
@@ -208,6 +209,13 @@ fn RoomRow(room: RoomSummary) -> Element {
             span { class: "room-name", "{title}" }
             if room.highlight_count > 0 {
                 span { class: "badge", "{room.highlight_count}" }
+            }
+        }
+        if !room.call_participants.is_empty() {
+            super::call::RoomCall {
+                room_id: room.id.clone(),
+                room_name: room.name.clone(),
+                participants: room.call_participants.clone(),
             }
         }
     }

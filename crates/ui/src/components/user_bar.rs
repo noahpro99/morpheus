@@ -10,7 +10,7 @@ use morpheus_core::{Core, Session};
 use super::context_menu::{MenuItem, open_menu};
 use super::profile::{Editor, ProfileEditor, ProfileRefresh, open_profile};
 use super::settings::SettingsOpen;
-use crate::icons::{Icon, SETTINGS};
+use crate::icons::{HEADPHONE_OFF, HEADPHONES, Icon, MIC, MIC_OFF, SETTINGS};
 use crate::media::Avatar;
 
 #[component]
@@ -19,6 +19,7 @@ pub fn UserBar() -> Element {
     let session_slot = use_context::<Signal<Option<Session>>>();
     let mut settings_open = use_context::<SettingsOpen>();
     let refresh = use_context::<ProfileRefresh>();
+    let voice = use_context::<super::call::Voice>();
 
     let user_id = session
         .user_id()
@@ -155,6 +156,28 @@ pub fn UserBar() -> Element {
                 oncontextmenu: account_menu,
                 Avatar { media: avatar, fallback: name.clone(), size: 32 }
                 span { class: "user", "{name}" }
+            }
+            button {
+                class: "ghost mute-button",
+                class: if voice().muted || voice().deafened { "active" },
+                title: if voice().muted { "Unmute" } else { "Mute" },
+                onclick: move |_| {
+                    let flags = voice();
+                    // Unmuting while deafened undeafens too, as in Discord.
+                    let muted = !(flags.muted || flags.deafened);
+                    super::call::set_voice(muted, flags.deafened && muted);
+                },
+                Icon { glyph: if voice().muted || voice().deafened { MIC_OFF } else { MIC }, size: 18 }
+            }
+            button {
+                class: "ghost deafen-button",
+                class: if voice().deafened { "active" },
+                title: if voice().deafened { "Undeafen" } else { "Deafen" },
+                onclick: move |_| {
+                    let flags = voice();
+                    super::call::set_voice(flags.muted, !flags.deafened);
+                },
+                Icon { glyph: if voice().deafened { HEADPHONE_OFF } else { HEADPHONES }, size: 18 }
             }
             button { class: "ghost settings-button", title: "Settings", onclick: move |_| settings_open.set(true), Icon { glyph: SETTINGS, size: 18 } }
             }

@@ -1743,3 +1743,56 @@ body.dropping .drop-hint { display: flex; }
 .friend-actions button { padding: 6px 12px; border-radius: var(--radius); }
 .friend-actions .secondary { background: var(--bg-elevated); }
 .friends-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+
+/* ---- Calls ---- */
+.chat-header .call-button.active { color: var(--green, #23a559); background: var(--bg-selected); }
+/* Who is in a room's call, under its row: Discord's voice channel list. */
+.room-call {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 8px 4px 32px;
+  cursor: pointer;
+}
+.call-participant {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 6px;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+.room-call:hover .call-participant { color: var(--text); }
+.call-participant .avatar { border-radius: 50%; box-shadow: 0 0 0 2px transparent; transition: box-shadow 0.12s; }
+.call-participant.speaking .avatar { box-shadow: 0 0 0 2px var(--green, #23a559); }
+.call-participant.speaking { color: var(--text); }
+.call-participant-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The call this account is in, at the bottom of the sidebar. */
+.voice-panel {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 8px 8px;
+  padding: 8px 8px 8px 12px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+}
+.voice-status { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.voice-state { font-size: 0.85rem; font-weight: 600; color: var(--text-muted); }
+.voice-state.connected { color: var(--green, #23a559); }
+.voice-room {
+  all: unset;
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.voice-room:hover { color: var(--text); text-decoration: underline; }
+.voice-panel .hang-up { width: 32px; height: 32px; padding: 0; display: grid; place-items: center; border-radius: var(--radius-sm); }
+.voice-panel .hang-up:hover { color: var(--danger); }
+.user-bar .mute-button, .user-bar .deafen-button { width: 32px; height: 32px; padding: 0; display: grid; place-items: center; border-radius: var(--radius-sm); }
+.user-bar .mute-button.active, .user-bar .deafen-button.active { color: var(--danger); }

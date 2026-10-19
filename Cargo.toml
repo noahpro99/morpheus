@@ -13,6 +13,7 @@ repository = "https://github.com/noahpro/morpheus"
 [workspace.dependencies]
 morpheus-core = { path = "crates/core" }
 morpheus-ui = { path = "crates/ui" }
+morpheus-call = { path = "crates/call" }
 
 matrix-sdk = { version = "0.19.1", features = ["markdown", "sso-login", "experimental-search"] }
 matrix-sdk-ui = "0.19.1"
