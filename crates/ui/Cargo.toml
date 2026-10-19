@@ -19,6 +19,8 @@ tokio = { workspace = true, features = ["time", "sync"] }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true }
 open = { workspace = true }
+# Local time: reads the system time zone (/etc/localtime, TZ, Android's tzdata).
+jiff = "0.2"
 
 # Native file dialogs exist on desktop only; mobile picks files through the
 # platform (PLAN.md phase 5).
