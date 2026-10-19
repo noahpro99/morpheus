@@ -617,9 +617,14 @@ async fn phone_gets_push_notifications_in_the_background() {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(240);
     loop {
         let shown = adb_shell(&["dumpsys", "notification", "--noredact"]);
-        let ours = shown
-            .split("NotificationRecord(")
-            .any(|record| record.contains("pkg=dev.morpheus.mobile") && record.contains("general"));
+        let ours = shown.split("NotificationRecord(").any(|record| {
+            // Who wrote what, in which room (the app is still running, so it
+            // has decrypted the message; a push alone carries only ids).
+            record.contains("pkg=dev.morpheus.mobile")
+                && record.contains("general")
+                && record.contains("bob")
+                && record.contains(&text)
+        });
         if ours {
             eprintln!("notification after {:?}", sent.elapsed());
             break;
@@ -646,7 +651,7 @@ async fn phone_gets_push_notifications_in_the_background() {
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     let _ = adb_shell(&["uiautomator", "dump", "/sdcard/morpheus-ui.xml"]);
     let screen = adb_shell(&["cat", "/sdcard/morpheus-ui.xml"]);
-    // The notification's title node (text="general") sits inside its row;
+    // The notification's title node ("bob in general") sits inside its row;
     // the row is what takes the tap, so tap the middle of that row.
     let bounds_of = |node: &str| -> Option<[i64; 4]> {
         let raw = node.split("bounds=\"").nth(1)?.split('"').next()?;
@@ -665,7 +670,7 @@ async fn phone_gets_push_notifications_in_the_background() {
     let nodes: Vec<&str> = screen.split("<node ").collect();
     let title = nodes
         .iter()
-        .find(|node| node.contains("text=\"general\"") && node.contains("android:id/title"))
+        .find(|node| node.contains(" in general\"") && node.contains("android:id/title"))
         .and_then(|node| bounds_of(node))
         .unwrap_or_else(|| panic!("no Morpheus notification in the shade"));
     let row = nodes
@@ -710,6 +715,9 @@ async fn phone_attach_button_picks_and_uploads_a_file() {
     app.wait_for(".room", DEFAULT_WAIT)
         .await
         .expect("rooms listed");
+    app.wait_for_text(".room", "random", DEFAULT_WAIT)
+        .await
+        .expect("random listed");
     app.tap_text(".room", "random").await.expect("open random");
     pane(&mut app, "chat").await;
     app.wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
@@ -776,6 +784,9 @@ async fn phone_keyboard_keeps_the_message_box_visible() {
     app.wait_for(".room", DEFAULT_WAIT)
         .await
         .expect("rooms listed");
+    app.wait_for_text(".room", "general", DEFAULT_WAIT)
+        .await
+        .expect("general listed");
     app.tap_text(".room", "general")
         .await
         .expect("open general");
