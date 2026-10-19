@@ -1710,6 +1710,7 @@ body.dropping .drop-hint { display: flex; }
 
 .search-panel { display: flex; flex-direction: column; gap: 8px; padding: 12px; min-height: 0; flex: 1; background: var(--bg-members); overflow: hidden; }
 .search-panel input[name=search] { width: 100%; padding: 8px 10px; border-radius: var(--radius); background: var(--bg-input); color: var(--text); border: 1px solid var(--bg-elevated); }
+.search-panel input[name=search]:focus, .nickname-editor input:focus { outline: none; border-color: var(--accent); }
 .search-note { font-size: 0.8rem; }
 .search-results { list-style: none; margin: 0; padding: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
 .search-hit { padding: 8px 10px; border-radius: var(--radius); cursor: pointer; background: var(--bg-chat); }
