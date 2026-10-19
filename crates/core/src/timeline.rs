@@ -812,3 +812,27 @@ fn shown_event(
     }
     matrix_sdk_ui::timeline::default_event_filter(event, rules)
 }
+
+impl Session {
+    /// When the user last read `room_id` up to (their fully-read marker's
+    /// event time, ms). The timeline's own marker only shows when that event
+    /// has a row; a removed reaction or a deletion does not, so the UI places
+    /// the "new messages" divider from this instead.
+    pub fn fully_read_at(&self, room_id: OwnedRoomId) -> CoreFuture<Option<u64>> {
+        let session = self.clone();
+        self.core.run(async move {
+            use matrix_sdk::ruma::events::fully_read::FullyReadEventContent;
+            let room = session.room(&room_id)?;
+            let Some(raw) = room.account_data_static::<FullyReadEventContent>().await? else {
+                return Ok(None);
+            };
+            let event_id = raw.deserialize()?.content.event_id;
+            let event = room.load_or_fetch_event(&event_id, None).await?;
+            Ok(event
+                .raw()
+                .get_field::<u64>("origin_server_ts")
+                .ok()
+                .flatten())
+        })
+    }
+}
