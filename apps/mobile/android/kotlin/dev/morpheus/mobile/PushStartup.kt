@@ -34,7 +34,9 @@ class PushStartup : ContentProvider() {
                 }
             }
 
-            override fun onActivityCreated(activity: Activity, state: Bundle?) {}
+            override fun onActivityCreated(activity: Activity, state: Bundle?) {
+                appStarted = true
+            }
             override fun onActivityStarted(activity: Activity) {}
             override fun onActivityPaused(activity: Activity) {
                 visible = false
@@ -61,6 +63,14 @@ class PushStartup : ContentProvider() {
          */
         @Volatile
         var visible = false
+
+        /**
+         * Whether the app (and so its Rust side, syncing) started in this
+         * process. A push can start the process on its own, with only the
+         * push service running.
+         */
+        @Volatile
+        var appStarted = false
     }
 
     override fun query(uri: Uri, projection: Array<out String>?, selection: String?, args: Array<out String>?, sort: String?): Cursor? = null

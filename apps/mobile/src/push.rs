@@ -221,3 +221,55 @@ fn prune(dir: &Path) {
         }
     }
 }
+
+/// Called by `MorpheusPushService` (Kotlin) when a push arrives while the app
+/// is closed: decrypt that one message for the notification, without
+/// starting the app. Returns JSON `{sender, room, body, dm}`, or null when
+/// there is nothing to show.
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_morpheus_mobile_MorpheusPushService_previewNative<'local>(
+    mut env: jni::JNIEnv<'local>,
+    _class: jni::objects::JClass<'local>,
+    data_dir: jni::objects::JString<'local>,
+    room_id: jni::objects::JString<'local>,
+    event_id: jni::objects::JString<'local>,
+) -> jni::sys::jstring {
+    let mut text = |value: &jni::objects::JString<'local>| -> Option<String> {
+        env.get_string(value).ok().map(Into::into)
+    };
+    let (Some(dir), Some(room), Some(event)) = (text(&data_dir), text(&room_id), text(&event_id))
+    else {
+        return std::ptr::null_mut();
+    };
+    let preview = preview(PathBuf::from(dir), room, event);
+    match preview.and_then(|json| env.new_string(json).ok()) {
+        Some(value) => value.into_raw(),
+        None => std::ptr::null_mut(),
+    }
+}
+
+fn preview(dir: PathBuf, room_id: String, event_id: String) -> Option<String> {
+    let core = morpheus_core::Core::new(dir).ok()?;
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .ok()?;
+    let found = runtime.block_on(core.preview_notification(room_id, event_id));
+    match found {
+        Ok(Some(preview)) => Some(
+            serde_json::json!({
+                "sender": preview.sender,
+                "room": preview.room,
+                "body": preview.body,
+                "dm": preview.is_dm,
+            })
+            .to_string(),
+        ),
+        Ok(None) => None,
+        Err(err) => {
+            tracing::warn!(%err, "previewing a pushed message failed");
+            None
+        }
+    }
+}

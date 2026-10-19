@@ -690,6 +690,42 @@ async fn phone_gets_push_notifications_in_the_background() {
         )
         .await
         .expect("tapping the notification opens #general");
+
+    // With the app closed (Android killed it in the background), a push still
+    // shows who wrote what: the push service decrypts it itself.
+    let _ = adb_shell(&["input", "keyevent", "KEYCODE_HOME"]);
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    // Killed as Android reclaims memory (a force-stop would block pushes).
+    let pid = adb_shell(&["pidof", "dev.morpheus.mobile"]);
+    let _ = adb_shell(&["run-as", "dev.morpheus.mobile", "kill", "-9", pid.trim()]);
+    let _ = adb_shell(&["cmd", "notification", "cancel_all"]);
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    assert!(
+        adb_shell(&["pidof", "dev.morpheus.mobile"])
+            .trim()
+            .is_empty(),
+        "the app should not be running"
+    );
+    let cold_text = format!("while you were away {}", std::process::id());
+    bob.type_into(".composer input", &cold_text)
+        .await
+        .expect("type");
+    bob.press(".composer input", "Enter").await.expect("send");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(90);
+    loop {
+        let shown = adb_shell(&["dumpsys", "notification", "--noredact"]);
+        if shown
+            .split("NotificationRecord(")
+            .any(|record| record.contains("pkg=dev.morpheus.mobile") && record.contains(&cold_text))
+        {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "no notification with the message text while the app was closed"
+        );
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    }
 }
 
 /// The attach button opens Android's file picker, and a picked file is
