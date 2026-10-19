@@ -1222,3 +1222,48 @@ async fn push_endpoints_register_a_pusher_through_the_right_gateway() {
         "pushers left behind: {pushers:?}"
     );
 }
+
+#[tokio::test]
+async fn default_notification_modes_round_trip() {
+    use morpheus_core::NotifyMode;
+    let Some(env) = env() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping live test");
+        return;
+    };
+    let core = Core::with_session_store(fresh_data_dir(), SessionStoreKind::File).expect("core");
+    let session = core
+        .login(LoginRequest {
+            homeserver: env.homeserver,
+            username: "carol".into(),
+            password: "carol-password".into(),
+        })
+        .await
+        .expect("login");
+
+    for dm in [false, true] {
+        let before = session.default_notify_mode(dm).await.expect("read");
+        let other = if before == NotifyMode::AllMessages {
+            NotifyMode::MentionsOnly
+        } else {
+            NotifyMode::AllMessages
+        };
+        session
+            .set_default_notify_mode(dm, other)
+            .await
+            .expect("set");
+        assert_eq!(
+            session.default_notify_mode(dm).await.expect("read"),
+            other,
+            "dm={dm}"
+        );
+        session
+            .set_default_notify_mode(dm, before)
+            .await
+            .expect("restore");
+        assert_eq!(
+            session.default_notify_mode(dm).await.expect("read"),
+            before,
+            "dm={dm}"
+        );
+    }
+}

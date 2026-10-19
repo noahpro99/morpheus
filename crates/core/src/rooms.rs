@@ -337,6 +337,54 @@ impl Session {
         })
     }
 
+    /// The account-wide default for direct messages (`dm`) or group rooms,
+    /// as the encrypted-room rule has it (the setter keeps both in step):
+    /// the same reading as the SDK's, on rules fetched from the server.
+    pub fn default_notify_mode(&self, dm: bool) -> CoreFuture<NotifyMode> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            // From the server: the synced copy lags right after a change.
+            let rules = client
+                .send(matrix_sdk::ruma::api::client::push::get_pushrules_all::v3::Request::new())
+                .await
+                .map_err(|err| crate::Error::Other(format!("reading push rules: {err}")))?
+                .global;
+            let id = if dm {
+                ".m.rule.encrypted_room_one_to_one"
+            } else {
+                ".m.rule.encrypted"
+            };
+            let notifies = rules
+                .get(matrix_sdk::ruma::push::RuleKind::Underride, id)
+                .is_some_and(|rule| rule.enabled() && rule.triggers_notification());
+            Ok(if notifies {
+                NotifyMode::AllMessages
+            } else {
+                NotifyMode::MentionsOnly
+            })
+        })
+    }
+
+    /// Set the default for direct messages (`dm`) or group rooms, encrypted
+    /// or not. Only all messages or mentions make sense as a default.
+    pub fn set_default_notify_mode(&self, dm: bool, mode: NotifyMode) -> CoreFuture<()> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            let settings = client.notification_settings().await;
+            for encrypted in [IsEncrypted::Yes, IsEncrypted::No] {
+                settings
+                    .set_default_room_notification_mode(
+                        encrypted,
+                        IsOneToOne::from(dm),
+                        mode.to_sdk(),
+                    )
+                    .await
+                    .map_err(|err| crate::Error::Other(err.to_string()))?;
+            }
+            Ok(())
+        })
+    }
+
     pub fn set_notify_mode(&self, room_id: OwnedRoomId, mode: NotifyMode) -> CoreFuture<()> {
         let client = self.client.clone();
         self.core.run(async move {

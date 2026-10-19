@@ -30,6 +30,8 @@ pub enum SettingsFocus {
     #[default]
     None,
     RecoveryKey,
+    /// The Security & Privacy page (verifying this device).
+    Security,
 }
 pub type SettingsTarget = Signal<SettingsFocus>;
 
@@ -79,7 +81,10 @@ pub fn KeyBanner() -> Element {
             div { class: "key-banner-actions",
                 button {
                     class: "primary",
-                    onclick: move |_| settings_open.set(true),
+                    onclick: move |_| {
+                        target.set(SettingsFocus::Security);
+                        settings_open.set(true);
+                    },
                     Icon { glyph: SHIELD_CHECK, size: 16 }
                     "Verify with another device"
                 }
