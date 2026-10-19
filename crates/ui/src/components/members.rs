@@ -175,6 +175,19 @@ pub(crate) fn member_menu(
         }
     };
 
+    let is_friend = try_consume_context::<super::friends::Friends>()
+        .is_some_and(|friends| friends.peek().0.contains(&user_id));
+    items.push(MenuItem::new(
+        if is_friend {
+            "Remove friend"
+        } else {
+            "Add friend"
+        },
+        {
+            let (session, user_id) = (session.clone(), user_id.clone());
+            move || super::friends::set_friend(&session, user_id.clone(), !is_friend)
+        },
+    ));
     items.push(MenuItem::new("Set nickname…", {
         let (user_id, name) = (user_id.clone(), member.name.clone());
         move || {

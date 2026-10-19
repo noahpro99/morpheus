@@ -78,7 +78,7 @@ timeline → send.
 - [x] Server menu (name click, badge right-click): mark read, invite, mute/notifications, hide muted, settings (name, topic, icon), privacy (join rule, history), per-server profile, create channel/category, move to folder, leave, copy info
 - [x] Rail: drag to reorder, folders (drop one badge on another), rename/ungroup; layout synced via account data
 - [x] Profile card popover (mutual rooms, note, role, message box, mod view, more menu) with the full modal behind "View full profile"
-- [ ] Friends list: Matrix has no friend relationship; could map to a "favourite people" list in account data
+- [x] Friends: a private list in account data (`dev.morpheus.friends`); "Add friend"/"Remove friend" in a person's menu; a Friends page at the top of the DMs lists them (avatar, name or nickname, status) with Message and Remove. No friend requests (Matrix has no such thing).
 - [ ] Mod view page (Discord's): a per-user moderation sheet across rooms
 - [x] Multi-account: each account in its own folder (the first in the data dir, more under `accounts/<n>`); "Switch account" lists them and swaps without signing in, "Add an account" keeps the current one (the login screen offers a way back); signing out moves to the next. Core live test + e2e.
 - [x] Invites: sidebar section, chat-column card, inbox block, rail badge; accept joins, decline leaves

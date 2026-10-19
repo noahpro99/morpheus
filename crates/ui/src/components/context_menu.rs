@@ -362,6 +362,8 @@ fn default_icon(label: &str) -> Option<&'static str> {
         ("Profile", USER),
         ("Mention", AT_SIGN),
         ("Set nickname…", PENCIL),
+        ("Add friend", USER_PLUS),
+        ("Remove friend", USER_X),
         ("Message", MESSAGE_CIRCLE),
         ("Invite to room", USER_PLUS),
         ("Invite people", USER_PLUS),

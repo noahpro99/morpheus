@@ -13,6 +13,7 @@ use crate::{CoreFuture, MemberRole, Session};
 
 const NOTES_TYPE: &str = "dev.morpheus.notes";
 const NICKNAMES_TYPE: &str = "dev.morpheus.nicknames";
+const FRIENDS_TYPE: &str = "dev.morpheus.friends";
 
 impl Session {
     /// Joined rooms (not spaces) that both of you are in, by name.
@@ -161,4 +162,53 @@ impl Session {
             Ok(())
         })
     }
+}
+
+impl Session {
+    /// Your friends (a private list in account data; Matrix has no
+    /// friendship of its own), in the order you added them.
+    pub fn friends(&self) -> CoreFuture<Vec<OwnedUserId>> {
+        let client = self.client.clone();
+        self.core
+            .run(async move { Ok(read_friends(&client).await) })
+    }
+
+    /// Add (`true`) or remove a friend.
+    pub fn set_friend(&self, user_id: OwnedUserId, friend: bool) -> CoreFuture<()> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            let mut friends = read_friends(&client).await;
+            friends.retain(|id| *id != user_id);
+            if friend {
+                friends.push(user_id);
+            }
+            let list: Vec<Value> = friends
+                .iter()
+                .map(|id| Value::String(id.to_string()))
+                .collect();
+            let raw: Raw<AnyGlobalAccountDataEventContent> = Raw::from_json(
+                serde_json::value::to_raw_value(&serde_json::json!({ "users": list }))?,
+            );
+            client
+                .account()
+                .set_account_data_raw(GlobalAccountDataEventType::from(FRIENDS_TYPE), raw)
+                .await?;
+            Ok(())
+        })
+    }
+}
+
+async fn read_friends(client: &matrix_sdk::Client) -> Vec<OwnedUserId> {
+    let raw = client
+        .account()
+        .account_data_raw(GlobalAccountDataEventType::from(FRIENDS_TYPE))
+        .await
+        .ok()
+        .flatten();
+    raw.and_then(|raw| raw.deserialize_as::<Value>().ok())
+        .and_then(|value| value.get("users")?.as_array().cloned())
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|id| id.as_str()?.parse().ok())
+        .collect()
 }

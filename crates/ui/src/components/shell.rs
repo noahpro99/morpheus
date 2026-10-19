@@ -350,6 +350,7 @@ pub fn Shell(session: Session) -> Element {
     let has_window = use_hook(|| try_consume_context::<crate::WindowControls>().is_some());
     super::keys::provide_key_tracking(session.clone());
     let mut nickname_target = super::nicknames::provide_nicknames(session.clone());
+    let (_, friends_open) = super::friends::provide_friends(session.clone());
     let _toasts: Toasts = use_context_provider(|| Signal::new(ToastList::default()));
     // Narrow (phone) layout: the page reports its width; one pane shows at a time.
     let mut narrow: NarrowWindow = use_context_provider(|| Signal::new(Narrow::default()));
@@ -769,7 +770,7 @@ pub fn Shell(session: Session) -> Element {
         })
     });
     let side_column = match (
-        current(),
+        current().filter(|_| !friends_open().0),
         active_thread(),
         search_open().0,
         members_open().0,
@@ -793,7 +794,7 @@ pub fn Shell(session: Session) -> Element {
     // Which pane a phone shows: the list, the chat, or the side panel.
     let pane = if !narrow().0 {
         "all"
-    } else if current().is_none() || !chat_open().0 {
+    } else if (current().is_none() && !friends_open().0) || !chat_open().0 {
         "rooms"
     } else if side_column != SideColumn::None {
         "side"
@@ -843,6 +844,8 @@ pub fn Shell(session: Session) -> Element {
             UserBar {}
             main { class: "chat",
                 match current() {
+                    // The Friends page (top of the DMs) takes the chat area.
+                    _ if friends_open().0 => rsx! { super::friends::FriendsPage {} },
                     // Keyed on the room id so switching rooms remounts the timeline.
                     Some(room) if room.invited => rsx! { InviteCard { key: "invite-{room.id}", room } },
                     Some(room) => rsx! { ChatRoom { key: "{room.id}", room } },
@@ -1108,6 +1111,10 @@ pub fn scope_for(rooms: &Vector<RoomSummary>, room: &RoomSummary) -> Scope {
 /// Open a room and remember the visit for back/forward. Every navigation
 /// that is not itself back/forward goes through here.
 pub fn go_to(room_id: OwnedRoomId) {
+    // Going to a room leaves the Friends page.
+    if let Some(mut friends) = try_consume_context::<super::friends::FriendsOpen>() {
+        friends.set(super::friends::FriendsShown(false));
+    }
     select(room_id);
     // On a phone the chat pane comes forward; on a desktop this is unused.
     consume_context::<ChatOpen>().set(ChatInFront(true));

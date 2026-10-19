@@ -1727,3 +1727,18 @@ body.dropping .drop-hint { display: flex; }
 .msg-shield.red { color: var(--danger); }
 .msg-shield.grey { color: var(--text-faint); }
 .message-main > .msg-shield { float: right; margin: 2px 0 0 8px; }
+
+/* ---- Friends page (top of the DMs) ------------------------------------------- */
+
+.friends-page { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.friend-list { list-style: none; margin: 0; padding: 8px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.friend { display: flex; align-items: center; gap: 12px; padding: 10px 8px; border-radius: var(--radius); border-top: 1px solid var(--bg-elevated); }
+.friend:first-child { border-top: 0; }
+.friend:hover { background: var(--bg-hover); }
+.friend-text { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.friend-name { font-weight: 600; }
+.friend-status { font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.friend-actions { display: flex; gap: 6px; }
+.friend-actions button { padding: 6px 12px; border-radius: var(--radius); }
+.friend-actions .secondary { background: var(--bg-elevated); }
+.friends-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }

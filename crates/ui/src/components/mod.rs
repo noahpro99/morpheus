@@ -4,6 +4,7 @@ mod about;
 mod composer;
 mod context_menu;
 mod emoji;
+mod friends;
 mod hotkeys;
 mod invites;
 mod keys;
