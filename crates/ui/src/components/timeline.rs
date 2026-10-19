@@ -41,6 +41,12 @@ const AUTO_FILL_MAX_PAGES: u32 = 15;
 /// once it covers everything loaded do we ask the server for more.
 const INITIAL_WINDOW: usize = 120;
 const WINDOW_STEP: usize = 100;
+/// History pages to load looking for a message to jump to.
+const JUMP_MAX_PAGES: usize = 30;
+/// Rows kept rendered beyond a jumped-to message.
+const JUMP_MARGIN: usize = 20;
+/// How long a jumped-to message stays highlighted.
+const JUMP_HIGHLIGHT_MS: u64 = 2500;
 /// One-click reactions offered on hover.
 pub(crate) const QUICK_REACTIONS: [&str; 3] = ["👍", "❤️", "😂"];
 /// The "Add reaction" picker.
@@ -226,6 +232,57 @@ pub fn TimelineView(
     let mut container = use_signal(|| None::<Rc<MountedData>>);
     // True once the user has scrolled away from the newest message.
     let mut scrolled_up = use_signal(|| false);
+
+    // Jump to a message (a search result): reveal it, paging back through
+    // history if it is not loaded yet, then scroll to it and highlight it.
+    let jump = try_use_context::<super::shell::JumpTo>();
+    use_effect(move || {
+        let Some(mut jump) = jump else { return };
+        let Some(target) = jump().0 else { return };
+        if !is_main_timeline {
+            return;
+        }
+        spawn(async move {
+            for _ in 0..JUMP_MAX_PAGES {
+                // Rows from the newest, as rendered (hidden entries skipped).
+                let from_newest = entries
+                    .peek()
+                    .iter()
+                    .rev()
+                    .filter(|entry| !matches!(entry, TimelineEntry::Message(m) if matches!(m.kind, MessageKind::ProfileChange)))
+                    .position(|entry| matches!(entry, TimelineEntry::Message(m) if matches!(&m.id, MessageId::Event(id) if id.as_str() == target)));
+                if let Some(from_newest) = from_newest {
+                    if *window.peek() <= from_newest + JUMP_MARGIN {
+                        window.set(from_newest + JUMP_MARGIN + 1);
+                    }
+                    break;
+                }
+                let Some(active) = handle.peek().clone() else {
+                    break;
+                };
+                if *reached_start.peek() {
+                    break;
+                }
+                match active.paginate_backwards(PAGE_SIZE).await {
+                    Ok(hit_start) => reached_start.set(hit_start),
+                    Err(err) => {
+                        load_error.set(Some(err.to_string()));
+                        break;
+                    }
+                }
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+            // Let the rows render, then bring the message into view.
+            tokio::time::sleep(Duration::from_millis(80)).await;
+            let id = serde_json::to_string(&target).unwrap_or_default();
+            document::eval(&format!(
+                "const m = document.querySelector('.timeline [data-event-id=' + JSON.stringify({id}) + ']'); \
+                 if (m) {{ m.scrollIntoView({{ block: 'center' }}); m.classList.add('jump-target'); \
+                 setTimeout(() => m.classList.remove('jump-target'), {JUMP_HIGHLIGHT_MS}); }}"
+            ));
+            jump.set(super::shell::JumpTarget(None));
+        });
+    });
 
     // `column-reverse` makes scrollTop run from 0 (bottom) to negative (top).
     let on_scroll = move |evt: Event<ScrollData>| {
@@ -795,6 +852,10 @@ pub(crate) fn MessageRow(message: Message, show_header: bool) -> Element {
     rsx! {
         div {
             class: "message",
+            "data-event-id": match &message.id {
+                MessageId::Event(id) => id.to_string(),
+                MessageId::Transaction(_) => String::new(),
+            },
             oncontextmenu: on_context,
             class: if show_header { "with-header" },
             class: if message.is_local_echo { "pending" },
