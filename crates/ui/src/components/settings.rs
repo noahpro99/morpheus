@@ -31,15 +31,18 @@ pub enum SettingsPage {
     Notifications,
     Appearance,
     VoiceVideo,
+    /// Desktop only: opening at sign-in, starting hidden.
+    Startup,
 }
 
 impl SettingsPage {
-    pub const ALL: [SettingsPage; 5] = [
+    pub const ALL: [SettingsPage; 6] = [
         SettingsPage::Account,
         SettingsPage::Security,
         SettingsPage::Notifications,
         SettingsPage::Appearance,
         SettingsPage::VoiceVideo,
+        SettingsPage::Startup,
     ];
 
     pub fn label(self) -> &'static str {
@@ -49,6 +52,7 @@ impl SettingsPage {
             SettingsPage::Notifications => "Notifications",
             SettingsPage::Appearance => "Appearance",
             SettingsPage::VoiceVideo => "Voice & Video",
+            SettingsPage::Startup => "Startup",
         }
     }
 
@@ -59,6 +63,7 @@ impl SettingsPage {
             SettingsPage::Notifications => BELL,
             SettingsPage::Appearance => PALETTE,
             SettingsPage::VoiceVideo => MIC,
+            SettingsPage::Startup => crate::icons::SQUARE,
         }
     }
 }
@@ -154,6 +159,8 @@ pub fn Settings() -> Element {
         .unwrap_or_default();
     let mut page = use_context::<OpenSettingsPage>();
     let narrow = try_use_context::<NarrowWindow>().is_some_and(|n| n().0);
+    // A desktop window: only it has startup options.
+    let has_window = use_hook(|| try_consume_context::<crate::WindowControls>().is_some());
     let mut close = move || {
         open.set(false);
         page.set(None);
@@ -241,7 +248,7 @@ pub fn Settings() -> Element {
                         h2 { "Settings" }
                         button { class: "ghost settings-nav-close", title: "Close", onclick: move |_| close(), "✕" }
                     }
-                    for item in SettingsPage::ALL {
+                    for item in SettingsPage::ALL.into_iter().filter(|p| has_window || *p != SettingsPage::Startup) {
                         button {
                             class: "settings-nav-item",
                             class: if shown == Some(item) { "selected" },
@@ -330,6 +337,7 @@ pub fn Settings() -> Element {
                                 }
                             },
                             SettingsPage::Notifications => rsx! { NotificationsPage {} },
+                            SettingsPage::Startup => rsx! { StartupPage {} },
                             SettingsPage::Appearance => rsx! { AppearancePage {} },
                             SettingsPage::VoiceVideo => rsx! {
                                 section { class: "settings-section",
@@ -593,6 +601,53 @@ fn AppearancePage() -> Element {
                         span { class: "theme-name", "{theme.label()}" }
                     }
                 }
+            }
+        }
+    }
+}
+
+/// Desktop: open Morpheus when you sign in to the computer, maybe hidden.
+#[component]
+fn StartupPage() -> Element {
+    let mut current = use_signal(crate::autostart::read);
+    let mut note = use_signal(|| None::<String>);
+    let mut apply = move |wanted: crate::autostart::Autostart| match crate::autostart::write(wanted)
+    {
+        Ok(()) => {
+            current.set(crate::autostart::read());
+            note.set(None);
+        }
+        Err(err) => note.set(Some(err.to_string())),
+    };
+    rsx! {
+        section { class: "settings-section",
+            h3 { "When you sign in to your computer" }
+            match current() {
+                None => rsx! { p { class: "muted", "Starting with your computer isn't available on this system yet." } },
+                Some(state) => rsx! {
+                    label { class: "notify-choice",
+                        input {
+                            r#type: "checkbox",
+                            name: "autostart",
+                            checked: state.enabled,
+                            onchange: move |_| apply(crate::autostart::Autostart { enabled: !state.enabled, hidden: state.hidden }),
+                        }
+                        span { "Open Morpheus" }
+                    }
+                    label { class: "notify-choice",
+                        input {
+                            r#type: "checkbox",
+                            name: "start-hidden",
+                            checked: state.hidden,
+                            disabled: !state.enabled,
+                            onchange: move |_| apply(crate::autostart::Autostart { enabled: state.enabled, hidden: !state.hidden }),
+                        }
+                        span { "Start hidden in the tray" }
+                    }
+                },
+            }
+            if let Some(text) = note() {
+                p { class: "error", "{text}" }
             }
         }
     }

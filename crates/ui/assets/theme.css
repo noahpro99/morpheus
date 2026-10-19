@@ -873,6 +873,8 @@ img.avatar { object-fit: cover; }
 }
 .notify-choice input:checked { border-color: var(--accent); }
 .notify-choice input:checked::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.notify-choice input[type=checkbox], .notify-choice input[type=checkbox]:checked::after { border-radius: 3px; }
+.notify-choice input:disabled { opacity: 0.4; }
 .theme-options { display: flex; flex-wrap: wrap; gap: 12px; }
 .theme-option {
   display: flex;

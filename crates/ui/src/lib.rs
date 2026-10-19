@@ -6,6 +6,7 @@
 
 mod app;
 mod attach;
+pub mod autostart;
 mod components;
 #[cfg(feature = "e2e")]
 mod e2e;
