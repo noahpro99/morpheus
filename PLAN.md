@@ -62,7 +62,7 @@ timeline → send.
 - [x] Typing indicators (debounced notices, names resolved)
 - [x] "New messages" marker
 - [x] Read receipts sent when a room is viewed
-- [ ] Room header actions: settings. (Done: pinned; search: the header magnifier opens a panel over the SDK's local index (decrypted messages included, only what this device has loaded) and a result jumps to and highlights the message, paging back if needed.)
+- [x] Room header actions: a room-options button opens the room menu (edit, notifications, invite, leave…); pinned; search: the header magnifier opens a panel over the SDK's local index (decrypted messages included, only what this device has loaded) and a result jumps to and highlights the message, paging back if needed.)
 - [x] Desktop notifications via the SDK latest-events stream (push actions included); mentions flagged; inbox lists recent mentions
 - [x] Ctrl+K room switcher (follows the room into its space scope)
 - [x] Profile modal (sender, member, own footer chip); Escape closes every modal

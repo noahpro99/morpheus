@@ -931,6 +931,8 @@ pub fn Shell(session: Session) -> Element {
 #[component]
 fn ChatRoom(room: RoomSummary) -> Element {
     let session = use_context::<Session>();
+    // Kept for the header buttons; `session` goes into the typing watcher.
+    let header_session = session.clone();
     let narrow = use_context::<NarrowWindow>();
     let mut chat_open = use_context::<ChatOpen>();
     // Menus built from this room's signals must not outlive it.
@@ -1000,6 +1002,19 @@ fn ChatRoom(room: RoomSummary) -> Element {
             h2 { "{room.name}" }
             if let Some(topic) = room.topic.as_deref() {
                 span { class: "topic", "{topic}" }
+            }
+            button {
+                class: "ghost room-menu-button",
+                title: "Room options",
+                onclick: {
+                    let (session, room_id, is_dm) = (header_session.clone(), room.id.clone(), room.is_dm);
+                    move |e: Event<MouseData>| {
+                        e.stop_propagation();
+                        let at = e.client_coordinates();
+                        super::room_list::open_room_menu_at(&session, room_id.clone(), is_dm, at.x, at.y);
+                    }
+                },
+                Icon { glyph: crate::icons::ELLIPSIS, size: 16 }
             }
             button {
                 class: "ghost search-toggle",
