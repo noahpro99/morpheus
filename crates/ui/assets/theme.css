@@ -1721,3 +1721,9 @@ body.dropping .drop-hint { display: flex; }
 .chat-header .search-toggle.active { color: var(--text); background: var(--bg-selected); }
 /* A message jumped to from search: a brief glow. */
 .message.jump-target { background: rgba(124, 140, 255, 0.18); transition: background 400ms; }
+
+/* Message shields (encrypted rooms): a sender that couldn't be confirmed. */
+.msg-shield { display: inline-flex; vertical-align: middle; margin-left: 6px; cursor: help; }
+.msg-shield.red { color: var(--danger); }
+.msg-shield.grey { color: var(--text-faint); }
+.message-main > .msg-shield { float: right; margin: 2px 0 0 8px; }
