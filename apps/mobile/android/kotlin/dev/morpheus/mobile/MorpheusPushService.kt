@@ -50,12 +50,44 @@ class MorpheusPushService : PushService() {
         val unread = notification?.optJSONObject("counts")?.optInt("unread", 1) ?: 1
         if (notification != null && unread == 0) {
             Log.d(TAG, "caught up in $roomId: clearing its notification")
-            Log.d(TAG, "caught up in $roomId: clearing its notification")
             manager().cancel(roomId.hashCode())
             return
         }
-        Log.d(TAG, "showing a notification for $roomId (unread $unread)")
-        show(roomId, roomName(roomId), unread)
+        val eventId = notification?.optString("event_id").orEmpty()
+        // Off the main thread: wait briefly for the running app's notice.
+        Thread {
+            val notice = awaitNotice(eventId)
+            Log.d(TAG, "showing a notification for $roomId (unread $unread, notice ${notice != null})")
+            val room = notice?.optString("room")?.ifEmpty { null } ?: roomName(roomId)
+            val sender = notice?.optString("sender")?.ifEmpty { null }
+            val title = if (sender != null && room != null) "$sender in $room" else room
+            val text = notice?.optString("body")?.ifEmpty { null }
+                ?: if (unread > 1) "$unread unread messages" else "New message"
+            show(roomId, title, text)
+        }.start()
+    }
+
+    /**
+     * Who said what, from the app if it is running (`apps/mobile/src/push.rs`
+     * writes a notice per message it has decrypted). A push carries ids only;
+     * without the app there is nothing more to show.
+     */
+    private fun awaitNotice(eventId: String): JSONObject? {
+        if (eventId.isEmpty()) return null
+        val name = eventId.map { if (it.isLetterOrDigit() && it.code < 128) it else '_' }.joinToString("")
+        val file = File(File(dataDir(this), "notices"), name)
+        val until = System.currentTimeMillis() + NOTICE_WAIT_MS
+        while (System.currentTimeMillis() < until) {
+            if (file.exists()) {
+                return try {
+                    JSONObject(file.readText())
+                } catch (_: Exception) {
+                    null
+                }
+            }
+            Thread.sleep(150)
+        }
+        return null
     }
 
     private fun roomName(roomId: String): String? = try {
@@ -66,7 +98,7 @@ class MorpheusPushService : PushService() {
 
     private fun manager() = getSystemService(NotificationManager::class.java)
 
-    private fun show(roomId: String, room: String?, unread: Int) {
+    private fun show(roomId: String, title: String?, text: String) {
         val manager = manager()
         manager.createNotificationChannel(
             NotificationChannel(CHANNEL, "Messages", NotificationManager.IMPORTANCE_HIGH)
@@ -82,10 +114,9 @@ class MorpheusPushService : PushService() {
         )
         val icon = resources.getIdentifier("ic_notification", "drawable", packageName)
             .takeIf { it != 0 } ?: applicationInfo.icon
-        val text = if (unread > 1) "$unread unread messages" else "New message"
         val built = Notification.Builder(this, CHANNEL)
             .setSmallIcon(icon)
-            .setContentTitle(room ?: "Morpheus")
+            .setContentTitle(title ?: "Morpheus")
             .setContentText(text)
             .setAutoCancel(true)
             .setContentIntent(tap)
@@ -96,5 +127,7 @@ class MorpheusPushService : PushService() {
     companion object {
         const val CHANNEL = "messages"
         const val TAG = "MorpheusPush"
+        /** How long a push waits for the running app to say who wrote what. */
+        const val NOTICE_WAIT_MS = 4000L
     }
 }

@@ -22,6 +22,7 @@ static ACTIVE: OnceLock<Mutex<Option<Session>>> = OnceLock::new();
 /// Called for every session that becomes active. Starts the bridge thread
 /// the first time.
 pub fn on_session(session: Session, data_dir: PathBuf) {
+    write_notices(session.clone(), data_dir.join(NOTICES_DIR));
     let first = ACTIVE.get().is_none();
     let slot = ACTIVE.get_or_init(|| Mutex::new(None));
     if let Ok(mut active) = slot.lock() {
@@ -149,5 +150,74 @@ pub fn watch_open_room(data_dir: PathBuf, commands: morpheus_ui::AppCommands) {
         });
     if let Err(err) = spawned {
         tracing::warn!(%err, "open-room watcher failed");
+    }
+}
+
+/// Where notices for the push service go, one file per message.
+const NOTICES_DIR: &str = "notices";
+/// Notices older than this are cleared away.
+const NOTICE_TTL: Duration = Duration::from_secs(600);
+
+/// File name for a message's notice: its event id, made filename-safe (the
+/// Kotlin service does the same).
+fn notice_file(event_id: &str) -> String {
+    event_id
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect()
+}
+
+/// While the app runs it syncs, so it has every new message decrypted: write
+/// who said what for each one that should notify, for the push service
+/// (`MorpheusPushService`) to show when the matching push arrives. A push
+/// alone carries only ids.
+fn write_notices(session: Session, dir: PathBuf) {
+    let spawned = std::thread::Builder::new()
+        .name("morpheus-notices".into())
+        .spawn(move || {
+            let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            else {
+                return;
+            };
+            runtime.block_on(async move {
+                let Ok(mut updates) = session.notifications().await else {
+                    return;
+                };
+                let _ = std::fs::create_dir_all(&dir);
+                while let Some(notice) = updates.next().await {
+                    let body = serde_json::json!({
+                        "room_id": notice.room_id.to_string(),
+                        "room": notice.room_name,
+                        "sender": notice.sender_name,
+                        "body": notice.body_summary,
+                        "mention": notice.is_mention,
+                    });
+                    let _ =
+                        std::fs::write(dir.join(notice_file(&notice.event_id)), body.to_string());
+                    prune(&dir);
+                }
+            });
+        });
+    if let Err(err) = spawned {
+        tracing::warn!(%err, "notice writer failed");
+    }
+}
+
+fn prune(dir: &Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let old = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.elapsed().ok())
+            .is_some_and(|age| age > NOTICE_TTL);
+        if old {
+            let _ = std::fs::remove_file(entry.path());
+        }
     }
 }

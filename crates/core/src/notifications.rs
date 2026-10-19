@@ -28,6 +28,8 @@ const STALE_AFTER_MS: u64 = 60_000;
 /// A new, notification-worthy message from someone other than the current user.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Notification {
+    /// The message, so a push for it (which carries ids only) can be matched.
+    pub event_id: String,
     pub room_id: OwnedRoomId,
     pub room_name: String,
     pub sender_name: String,
@@ -126,6 +128,7 @@ async fn notification_for(
         .unwrap_or_else(|| room.room_id().to_string());
 
     Some(Notification {
+        event_id: event.event_id.to_string(),
         room_id: room.room_id().to_owned(),
         room_name,
         sender_name,
