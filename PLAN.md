@@ -52,7 +52,7 @@ timeline → send.
 - [x] Scroll-triggered back-pagination (button remains as a fallback)
 - [ ] Proper local time zone handling (replace `format.rs` shims with `jiff`)
 - [ ] Virtualised timeline once rooms with >2k loaded items appear
-- [ ] Auto-fill short histories: when the first sync hands over fewer rows than fit on screen there is nothing to scroll, so older messages need the "Load older messages" button. Paginating automatically races the room subscription's first response (which can reset the timeline); needs the SDK to settle first.
+- [x] Auto-fill short histories: when the first sync hands over fewer rows than fit on screen there is nothing to scroll, so older messages need the "Load older messages" button. Paginating automatically races the room subscription's first response (which can reset the timeline); needs the SDK to settle first.
 - [x] Error toasts for failed actions (bottom-right, click to dismiss); dialogs keep inline validation
 
 ### 2. The Discord shell
@@ -108,14 +108,14 @@ timeline → send.
 - [x] Android app-private data dir via `ndk-context` + JNI (`Context.getFilesDir()`), iOS Documents; type-checks for `aarch64-linux-android` (`just android-check`), not yet exercised on a device
 - [x] Android emulator e2e: `just android-emulator` (headless works too), `just e2e-android-build`, `just e2e-android`; the driver reaches the app's bridge (fixed port 47100 on Android) through `adb forward` and screenshots with `screencap`. Also runs on a plugged-in phone (`ANDROID_SERIAL`).
 - [x] Installed and launched on a Pixel 8 Pro (`just android`)
-- [ ] Mobile file picker (Android intent / iOS document picker): `rfd` is desktop-only, the attach button is a no-op on phones; paste works
+- [x] Mobile file picker: on phones the attach button opens a file input from the tap (Android shows its own picker), and picked files go the way pasted ones do. Phone e2e test.
 - [x] Single-column navigation on phone-width windows (rooms → chat → members/thread) with back buttons and Escape/back; the shared shell does it, so the mobile app gets every desktop feature as is. Panes stack and slide with the finger (see below).
 - [x] Larger touch targets and safe-area insets in the narrow layout
 - [ ] Text selection is broken (reported on the phone, 2026-10-15); revisit later. Touch screens currently turn off selection outside typing fields so press-and-hold can open menus; messages need a "Select text" path instead.
 - [ ] Swipe down to close a bottom sheet: a first version is in (sheet follows the finger, closes past a third or on a flick; phone e2e test), but the Pixel build predates it; check it feels right on the device.
 - [x] Pane swipes like Discord: the chat slides in over the room list; a rightward drag moves the top pane with the finger, revealing the one underneath (members → chat → list); a leftward drag on the list brings the last chat back, and on the chat pulls in the parked member list. Phone e2e tests hold a real finger mid-drag. Opening a thread by swipe is not done (which thread would it be?).
 - [ ] Keyboard avoidance on Android (adjustResize) and iOS, verified on devices
-- [ ] UnifiedPush notifications
+- [x] UnifiedPush notifications (Sunup, ntfy…; tap opens the room). Message text in notifications needs background decryption: not yet.
 - [ ] iOS build on a Mac runner
 
 ### 6. Native renderer

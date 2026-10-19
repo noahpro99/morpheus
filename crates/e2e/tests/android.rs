@@ -686,3 +686,70 @@ async fn phone_gets_push_notifications_in_the_background() {
         .await
         .expect("tapping the notification opens #general");
 }
+
+/// The attach button opens Android's file picker, and a picked file is
+/// uploaded to the room (the picker's answer is stood in for by handing the
+/// file input a file, as the picker would).
+#[tokio::test]
+async fn phone_attach_button_picks_and_uploads_a_file() {
+    if !enabled() {
+        eprintln!("MORPHEUS_E2E_ANDROID not set; skipping the Android test");
+        return;
+    }
+    let mut app = App::launch_android().await.expect("launch on Android");
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    app.type_into("form.login input[name=username]", "alice")
+        .await
+        .expect("username");
+    app.type_into("form.login input[name=password]", "alice-password")
+        .await
+        .expect("password");
+    app.submit("form.login").await.expect("submit");
+    app.wait_for(".room", DEFAULT_WAIT)
+        .await
+        .expect("rooms listed");
+    app.tap_text(".room", "random").await.expect("open random");
+    pane(&mut app, "chat").await;
+    app.wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
+        .await
+        .expect("composer ready");
+
+    // A real tap: Android only shows its picker for one.
+    app.tap(".composer .attach-button")
+        .await
+        .expect("tap attach");
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let top = adb_shell(&["dumpsys", "activity", "activities"]);
+        let resumed = top
+            .lines()
+            .find(|line| line.contains("ResumedActivity"))
+            .unwrap_or_default()
+            .to_owned();
+        if resumed.contains("documentsui") || resumed.contains("photopicker") {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "no file picker opened: {resumed}"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+    back_key();
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+    let name = format!("phone-note-{}.txt", std::process::id());
+    app.eval(&format!(
+        "const input = document.getElementById('morpheus-file-input'); \
+         const dt = new DataTransfer(); dt.items.add(new File(['from the phone'], {name}, {{ type: 'text/plain' }})); \
+         input.files = dt.files; input.dispatchEvent(new Event('change')); return true;",
+        name = serde_json::to_string(&name).expect("json")
+    ))
+    .await
+    .expect("hand the input a file");
+    app.wait_for_text(".attachment-card .attachment-name", &name, DEFAULT_WAIT)
+        .await
+        .expect("the picked file is uploaded");
+}

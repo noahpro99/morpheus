@@ -720,7 +720,11 @@ pub fn Shell(session: Session) -> Element {
     let mut drops: FileDrops = use_context_provider(|| Signal::new(Drops::default()));
     use_hook(move || {
         spawn(async move {
-            let mut listener = document::eval(&format!("{LISTENER_JS}\n{FILE_LISTENER_JS}"));
+            // Phones pick files through the page (see FILE_LISTENER_JS).
+            let page_picker = cfg!(any(target_os = "android", target_os = "ios"));
+            let mut listener = document::eval(&format!(
+                "window.__morpheusPagePicker = {page_picker};\n{LISTENER_JS}\n{FILE_LISTENER_JS}"
+            ));
             while let Ok(name) = listener.recv::<String>().await {
                 if let Some(payload) = name.strip_prefix("file:") {
                     match parse_dropped(payload) {
