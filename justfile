@@ -71,6 +71,10 @@ _android-extras:
     # Our manifest entries, replaced on every build (dx does not always rewrite the file).
     sed -i '/<!-- morpheus:begin -->/,/<!-- morpheus:end -->/d' target/dx/morpheus-mobile/debug/android/app/app/src/main/AndroidManifest.xml
     sed -i '/<\/application>/e cat apps/mobile/android/manifest-application.xml' target/dx/morpheus-mobile/debug/android/app/app/src/main/AndroidManifest.xml
+    # Calls: libwebrtc's Java half (the native half is in libmain.so).
+    mkdir -p target/dx/morpheus-mobile/debug/android/app/app/libs
+    cp "$(find target -name libwebrtc.jar -path '*android*' -print -quit)" target/dx/morpheus-mobile/debug/android/app/app/libs/libwebrtc.jar
+    grep -q 'libs/libwebrtc.jar' target/dx/morpheus-mobile/debug/android/app/app/build.gradle.kts || sed -i 's|^dependencies {|dependencies {\n    implementation(files("libs/libwebrtc.jar"))|' target/dx/morpheus-mobile/debug/android/app/app/build.gradle.kts
     cd target/dx/morpheus-mobile/debug/android/app && ./gradlew assembleDebug -q
 
 # Update the app on a plugged-in phone, keeping its sign-in and data.

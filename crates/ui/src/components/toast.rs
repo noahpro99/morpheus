@@ -22,6 +22,8 @@ const TOAST_SECS: u64 = 6;
 thread_local! {
     /// The shell's toasts, for tasks that run outside any component
     /// (`spawn_forever`), where context lookups find nothing.
+    // Already const; clippy on the Android target misreads the macro.
+    #[allow(clippy::missing_const_for_thread_local)]
     static SHELL_TOASTS: std::cell::Cell<Option<Toasts>> = const { std::cell::Cell::new(None) };
 }
 

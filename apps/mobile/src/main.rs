@@ -28,6 +28,12 @@ fn main() {
     #[cfg(target_os = "android")]
     {
         config.open_url = Some(std::sync::Arc::new(android::open_url));
+        // Calls: WebRTC set up once; the microphone asked for at the first call.
+        android::init_webrtc();
+        config.microphone = Some(std::sync::Arc::new(android::microphone));
+        // Test builds send a tone instead (no environment to say so here).
+        #[cfg(feature = "e2e")]
+        morpheus_call::use_test_tone();
         // Push notifications through the phone's UnifiedPush app (see push.rs).
         let dir = config.data_dir.clone();
         config.on_session = Some(std::sync::Arc::new(move |session| {
@@ -149,4 +155,114 @@ mod android {
         }
         result.map_err(|err| failed(&err.to_string()))
     }
+
+    /// Calls: WebRTC needs the Java VM and the application context (for the
+    /// microphone and speakers) before any call starts.
+    #[allow(unsafe_code)]
+    pub fn init_webrtc() {
+        let ctx = ndk_context::android_context();
+        // SAFETY: as in `files_dir`.
+        let Ok(vm) = (unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }) else {
+            return;
+        };
+        let Ok(mut env) = vm.attach_current_thread() else {
+            return;
+        };
+        let context = unsafe { JObject::from_raw(ctx.context().cast()) };
+        let app = env
+            .call_method(
+                &context,
+                "getApplicationContext",
+                "()Landroid/content/Context;",
+                &[],
+            )
+            .and_then(|value| value.l());
+        let app = match app {
+            Ok(app) => app,
+            Err(_) => {
+                let _ = env.exception_clear();
+                context
+            }
+        };
+        if !morpheus_call::initialize_android_context(&vm, &app) {
+            tracing::warn!("WebRTC could not take the app context; calls may have no audio");
+        }
+    }
+
+    const RECORD_AUDIO: &str = "android.permission.RECORD_AUDIO";
+
+    /// Ask for the microphone (a runtime permission) and wait for the
+    /// answer: the system dialog shows over the app. `true` once granted.
+    #[allow(unsafe_code)]
+    pub fn microphone() -> bool {
+        let ctx = ndk_context::android_context();
+        // SAFETY: as in `files_dir`.
+        let Ok(vm) = (unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }) else {
+            return false;
+        };
+        let Ok(mut env) = vm.attach_current_thread() else {
+            return false;
+        };
+        let activity = unsafe { JObject::from_raw(ctx.context().cast()) };
+        let granted = |env: &mut jni::JNIEnv| -> bool {
+            let Ok(name) = env.new_string(RECORD_AUDIO) else {
+                return false;
+            };
+            let answer = env
+                .call_method(
+                    &activity,
+                    "checkSelfPermission",
+                    "(Ljava/lang/String;)I",
+                    &[JValue::Object(&name)],
+                )
+                .and_then(|value| value.i());
+            match answer {
+                Ok(state) => state == 0, // PackageManager.PERMISSION_GRANTED
+                Err(_) => {
+                    let _ = env.exception_clear();
+                    false
+                }
+            }
+        };
+        if granted(&mut env) {
+            return true;
+        }
+        let asked = (|| -> jni::errors::Result<()> {
+            let name = env.new_string(RECORD_AUDIO)?;
+            let names = env.new_object_array(1, "java/lang/String", &name)?;
+            env.call_method(
+                &activity,
+                "requestPermissions",
+                "([Ljava/lang/String;I)V",
+                &[JValue::Object(&names), JValue::Int(7302)],
+            )?;
+            Ok(())
+        })();
+        if asked.is_err() {
+            let _ = env.exception_clear();
+            return false;
+        }
+        // The dialog answers asynchronously; a minute is plenty to decide.
+        for _ in 0..240 {
+            std::thread::sleep(std::time::Duration::from_millis(250));
+            if granted(&mut env) {
+                return true;
+            }
+        }
+        false
+    }
+}
+
+/// Runs as Android loads the app's library, on a Java thread: the one place
+/// WebRTC can find its Java classes (`libwebrtc.jar`), which it looks up
+/// once here. Native threads only see the system's classes.
+#[cfg(target_os = "android")]
+#[unsafe(no_mangle)]
+#[allow(unsafe_code)]
+pub extern "system" fn JNI_OnLoad(
+    vm: jni::JavaVM,
+    _reserved: *mut std::ffi::c_void,
+) -> jni::sys::jint {
+    morpheus_call::initialize_android(&vm);
+    jni::sys::JNI_VERSION_1_6
 }

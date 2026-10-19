@@ -45,15 +45,30 @@ pub enum AudioMode {
 }
 
 impl AudioMode {
-    /// [`AudioMode::Tone`] when `MORPHEUS_CALL_AUDIO=tone` (test runs), else
-    /// the platform's devices.
+    /// [`AudioMode::Tone`] in test runs (`MORPHEUS_CALL_AUDIO=tone`, or
+    /// [`use_test_tone`] where there is no environment to set, Android),
+    /// else the platform's devices.
     pub fn from_env() -> Self {
+        if TEST_TONE.load(std::sync::atomic::Ordering::Relaxed) {
+            return Self::Tone;
+        }
         match std::env::var("MORPHEUS_CALL_AUDIO").as_deref() {
             Ok("tone") => Self::Tone,
             _ => Self::Platform,
         }
     }
 }
+
+static TEST_TONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Calls send a test tone and play nothing from now on (test builds).
+pub fn use_test_tone() {
+    TEST_TONE.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Android: WebRTC needs the Java VM and an app context before any call.
+#[cfg(target_os = "android")]
+pub use livekit::webrtc::android::{initialize_android, initialize_android_context};
 
 /// Something that happened in the call. Participants are LiveKit identities.
 #[derive(Debug, Clone, PartialEq, Eq)]

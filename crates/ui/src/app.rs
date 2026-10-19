@@ -19,6 +19,10 @@ pub type SessionHook = Arc<dyn Fn(Session) + Send + Sync>;
 /// The room on screen, shared with platform code outside the UI runtime.
 pub type OpenRoom = Arc<Mutex<Option<OwnedRoomId>>>;
 
+/// Ask for the microphone before a call; blocks until the user answers.
+/// `true` when the app may record.
+pub type MicrophoneAccess = Arc<dyn Fn() -> bool + Send + Sync>;
+
 /// Something the platform asks the UI to do, from outside its runtime (the
 /// tray menu).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -71,6 +75,8 @@ pub struct AppConfig {
     /// How to show a URL in the browser (single sign-on). `None` uses the
     /// desktop opener; Android supplies an intent.
     pub open_url: Option<morpheus_core::UrlOpener>,
+    /// Runtime permission for the microphone (Android). `None`: no need.
+    pub microphone: Option<MicrophoneAccess>,
 }
 
 impl AppConfig {
@@ -82,6 +88,7 @@ impl AppConfig {
             open_room: OpenRoom::default(),
             commands: AppCommands::default(),
             open_url: None,
+            microphone: None,
         }
     }
 }
