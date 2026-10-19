@@ -102,7 +102,7 @@ timeline → send.
 - [x] Restore from key backup with a recovery key (settings modal)
 - [ ] QR verification. (Done: recovery setup for accounts without a backup, Settings → Security & Privacy → Set up recovery, which shows the new key once; core live test + e2e.)
 - [x] Tokens and the sqlite store passphrase live in the OS keyring (Secret Service / Keychain / Credential Manager), falling back to an encrypted file under the data dir when no keyring answers (`crates/core/src/session_store.rs`); an old plaintext `session.json` is migrated in and deleted. `MORPHEUS_SESSION_STORE=keyring|file` forces one; tests use the file.
-- [ ] Shields on messages, device list
+- [x] Shields on messages: in encrypted rooms a message whose sender couldn't be confirmed (unsigned device, identity changed, …) shows a red or grey shield with the reason as its tooltip (lenient mode, as Element). Device list shows verified/unverified.
 
 ### 5. Mobile
 - [x] Android app-private data dir via `ndk-context` + JNI (`Context.getFilesDir()`), iOS Documents; type-checks for `aarch64-linux-android` (`just android-check`), not yet exercised on a device

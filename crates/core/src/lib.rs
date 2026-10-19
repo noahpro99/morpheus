@@ -53,7 +53,7 @@ pub use session::{LoginFlows, LoginRequest, Session, UrlOpener};
 pub use session_store::SessionStoreKind;
 pub use spaces::{History, Privacy, RoomProfile};
 pub use timeline::{
-    Message, MessageId, MessageKind, OpenTimeline, Reaction, ReplyPreview, ThreadSummary,
+    Message, MessageId, MessageKind, OpenTimeline, Reaction, ReplyPreview, Shield, ThreadSummary,
     TimelineEntry, TimelineHandle, TimelineUpdates,
 };
 pub use typing::TypingUpdates;

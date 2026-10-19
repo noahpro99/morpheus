@@ -71,11 +71,7 @@ impl Session {
         let client = self.client.clone();
         self.core.run(async move {
             let encryption = client.encryption();
-            if let Err(err) = encryption.bootstrap_cross_signing_if_needed(None).await {
-                // Accounts that already have cross-signing (or need a password
-                // to change it) carry on with backup alone.
-                tracing::debug!(%err, "cross-signing not bootstrapped");
-            }
+            bootstrap_cross_signing(&client).await;
             let key = encryption
                 .recovery()
                 .enable()
@@ -97,5 +93,29 @@ impl Session {
                 .await?;
             Ok(())
         })
+    }
+}
+
+impl Session {
+    /// Give the account a cross-signing identity if it has none (this device
+    /// becomes its first verified one). A no-op otherwise.
+    pub fn ensure_cross_signing(&self) -> CoreFuture<()> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            bootstrap_cross_signing(&client).await;
+            Ok(())
+        })
+    }
+}
+
+/// Accounts that already have cross-signing (or need a password to change
+/// it) carry on without.
+async fn bootstrap_cross_signing(client: &matrix_sdk::Client) {
+    if let Err(err) = client
+        .encryption()
+        .bootstrap_cross_signing_if_needed(None)
+        .await
+    {
+        tracing::debug!(%err, "cross-signing not bootstrapped");
     }
 }

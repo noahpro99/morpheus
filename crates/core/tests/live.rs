@@ -1564,3 +1564,91 @@ async fn messages_are_searchable_including_encrypted_ones() {
 fn env_user_name() -> String {
     std::env::var("MORPHEUS_TEST_USER").unwrap_or_else(|_| "alice".into())
 }
+
+#[tokio::test]
+async fn messages_from_unverified_sessions_carry_a_shield() {
+    let Some(env) = env() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping live test");
+        return;
+    };
+    let login = |user: &'static str| {
+        let core =
+            Core::with_session_store(fresh_data_dir(), SessionStoreKind::File).expect("core");
+        let request = LoginRequest {
+            homeserver: env.homeserver.clone(),
+            username: user.into(),
+            password: format!("{user}-password"),
+        };
+        async move { core.login(request).await.expect("login") }
+    };
+    let room_named = async |session: &Session, name: &str| {
+        let mut updates = session.room_list().await.expect("room list");
+        let mut rooms = Vector::new();
+        drive(
+            &mut rooms,
+            async || updates.next().await,
+            |rooms| rooms.iter().any(|r| r.name == name),
+        )
+        .await;
+        rooms
+            .iter()
+            .find(|r| r.name == name)
+            .expect("room")
+            .id
+            .clone()
+    };
+
+    // Bob is signed in first, so alice's message is encrypted for him too.
+    let bob = login("bob").await;
+    let bob_encrypted = room_named(&bob, "encrypted").await;
+    let mut opened = bob.timeline(bob_encrypted).await.expect("timeline");
+
+    // Alice has a cross-signing identity (from some session) and writes in
+    // #encrypted from another session she never verified.
+    login("alice")
+        .await
+        .ensure_cross_signing()
+        .await
+        .expect("alice's identity");
+    let alice = login("alice").await;
+    let encrypted = room_named(&alice, "encrypted").await;
+    let body = format!("shielded {}", std::process::id());
+    let alice_timeline = alice.timeline(encrypted).await.expect("timeline");
+    alice_timeline
+        .handle
+        .send_text(body.clone())
+        .await
+        .expect("send");
+
+    // Bob sees it with a shield explaining why.
+    let mut items = Vector::new();
+    let find = |items: &Vector<TimelineEntry>| {
+        items.iter().find_map(|e| match e {
+            TimelineEntry::Message(m) if matches!(&m.kind, MessageKind::Text { body: b, .. } if *b == body) => {
+                Some((**m).clone())
+            }
+            _ => None,
+        })
+    };
+    drive_back(&mut items, &mut opened, |items| {
+        find(items).is_some_and(|m| m.shield.is_some())
+    })
+    .await;
+    let shield = find(&items).and_then(|m| m.shield).expect("a shield");
+    assert!(!shield.reason.is_empty(), "{shield:?}");
+
+    // Unencrypted rooms carry none.
+    let general = room_named(&bob, SEEDED_ROOM).await;
+    let mut opened = bob.timeline(general).await.expect("timeline");
+    let mut items = Vector::new();
+    drive_back(&mut items, &mut opened, |items| {
+        items.iter().any(|e| matches!(e, TimelineEntry::Message(_)))
+    })
+    .await;
+    assert!(
+        items
+            .iter()
+            .all(|e| !matches!(e, TimelineEntry::Message(m) if m.shield.is_some())),
+        "no shields in an unencrypted room"
+    );
+}

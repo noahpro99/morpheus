@@ -81,6 +81,8 @@ pub struct Message {
     /// Set on a thread's root message, summarising its replies.
     pub thread: Option<ThreadSummary>,
     pub kind: MessageKind,
+    /// A warning about who really sent this (encrypted rooms only).
+    pub shield: Option<Shield>,
 }
 
 /// Summary of a thread, attached to its root message.
@@ -290,6 +292,7 @@ impl Message {
             thread_root,
             thread,
             kind,
+            shield: Shield::of(event),
         }
     }
 }
@@ -747,4 +750,45 @@ impl Session {
 
 fn uint_to_u32(value: matrix_sdk::ruma::UInt) -> Option<u32> {
     u32::try_from(u64::from(value)).ok()
+}
+
+/// Why a message in an encrypted room may not be what it seems: a red
+/// shield for real problems, grey for weaker ones. `None` on a message means
+/// nothing to flag.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Shield {
+    pub red: bool,
+    pub reason: String,
+}
+
+impl Shield {
+    fn of(event: &EventTimelineItem) -> Option<Self> {
+        use matrix_sdk_ui::timeline::{
+            TimelineEventShieldState, TimelineEventShieldStateCode as Code,
+        };
+        let (red, code) = match event.get_shield(false) {
+            TimelineEventShieldState::Red { code } => (true, code),
+            TimelineEventShieldState::Grey { code } => (false, code),
+            TimelineEventShieldState::None => return None,
+        };
+        let reason = match code {
+            Code::AuthenticityNotGuaranteed => {
+                "The authenticity of this encrypted message can't be guaranteed on this device."
+            }
+            Code::UnknownDevice => "Encrypted by an unknown or deleted device.",
+            Code::UnsignedDevice => "Encrypted by a device not verified by its owner.",
+            Code::UnverifiedIdentity => "Encrypted by a user you haven't verified.",
+            Code::VerificationViolation => {
+                "The sender's identity has changed since you verified them."
+            }
+            Code::MismatchedSender => {
+                "The sender doesn't match the device that encrypted this message."
+            }
+            Code::SentInClear => "Not encrypted.",
+        };
+        Some(Self {
+            red,
+            reason: reason.to_owned(),
+        })
+    }
 }

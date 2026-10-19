@@ -884,6 +884,7 @@ pub(crate) fn MessageRow(message: Message, show_header: bool) -> Element {
                             "{message.sender_name}"
                         }
                         span { class: "time", "{time}" }
+                        MsgShield { shield: message.shield.clone() }
                     }
                     ReplyQuote { reply: message.in_reply_to.clone() }
                     MessageBody { kind: message.kind.clone(), edited: message.is_edited }
@@ -893,6 +894,7 @@ pub(crate) fn MessageRow(message: Message, show_header: bool) -> Element {
             } else {
                 span { class: "time gutter", "{time}" }
                 div { class: "message-main",
+                    MsgShield { shield: message.shield.clone() }
                     ReplyQuote { reply: message.in_reply_to.clone() }
                     MessageBody { kind: message.kind.clone(), edited: message.is_edited }
                     Reactions { reactions: message.reactions.clone(), on_toggle: react.clone() }
@@ -1294,6 +1296,24 @@ fn ReplyQuote(reply: Option<ReplyPreview>) -> Element {
 pub struct LastOwn(pub Option<Message>);
 pub type LastOwnMessage = Signal<LastOwn>;
 
+/// A shield on a message whose sender couldn't be confirmed (encrypted rooms):
+/// red for real problems, grey otherwise; the tooltip says why.
+#[component]
+fn MsgShield(shield: Option<morpheus_core::Shield>) -> Element {
+    let Some(shield) = shield else {
+        return rsx! {};
+    };
+    rsx! {
+        span {
+            class: "msg-shield",
+            class: if shield.red { "red" } else { "grey" },
+            title: "{shield.reason}",
+            "aria-label": "{shield.reason}",
+            crate::icons::Icon { glyph: crate::icons::SHIELD, size: 14 }
+        }
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::expect_used)]
 mod tests {
@@ -1316,6 +1336,7 @@ mod tests {
             thread_root: None,
             thread: None,
             kind,
+            shield: None,
         }))
     }
 
