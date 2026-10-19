@@ -158,6 +158,9 @@ fn RoomRow(room: RoomSummary) -> Element {
     let session = use_context::<Session>();
     let selected = use_context::<Selected>();
     let is_selected = selected().as_ref() == Some(&room.id);
+    let title = try_use_context::<super::nicknames::Nicknames>()
+        .map(|map| super::nicknames::room_title(&map(), &room))
+        .unwrap_or_else(|| room.name.clone());
     let id = room.id.clone();
 
     // The menu needs the room's notification mode, so it is built after a
@@ -186,7 +189,7 @@ fn RoomRow(room: RoomSummary) -> Element {
             } else {
                 span { class: "hash", "#" }
             }
-            span { class: "room-name", "{room.name}" }
+            span { class: "room-name", "{title}" }
             if room.highlight_count > 0 {
                 span { class: "badge", "{room.highlight_count}" }
             }

@@ -82,7 +82,7 @@ timeline → send.
 - [ ] Mod view page (Discord's): a per-user moderation sheet across rooms
 - [x] Multi-account: each account in its own folder (the first in the data dir, more under `accounts/<n>`); "Switch account" lists them and swaps without signing in, "Add an account" keeps the current one (the login screen offers a way back); signing out moves to the next. Core live test + e2e.
 - [x] Invites: sidebar section, chat-column card, inbox block, rail badge; accept joins, decline leaves
-- [x] Per-user nicknames: "Set nickname…" in a person's menu; kept in private account data (`dev.morpheus.nicknames`), shown instead of display names on messages and in the member list. Not yet in DM room names, mentions or the profile card.
+- [x] Per-user nicknames: "Set nickname…" in a person's menu; kept in private account data (`dev.morpheus.nicknames`), shown instead of display names on messages and in the member list. Also DM room names (list and header) and the profile card (with their own name beneath). Not yet in mentions.
 - [x] Timeline pinned to the newest message on open, "Jump to present" button
 - [x] Skeleton placeholders while loading and for messages still waiting on keys
 - [x] SSO login (browser hand-off) alongside password and email sign-in

@@ -107,6 +107,27 @@ async fn nicknames_replace_display_names_and_follow_you() {
         .wait_for_text(".members .member", &nickname, DEFAULT_WAIT)
         .await
         .expect("member list shows the nickname");
+    // The profile card names them by it too (their own name alongside).
+    alice
+        .click_text(".members .member", &nickname)
+        .await
+        .expect("open bob's card");
+    alice
+        .wait_for_text(".profile-card", &nickname, DEFAULT_WAIT)
+        .await
+        .expect("card shows the nickname");
+    alice.press("body", "Escape").await.expect("close card");
+    // And so does the DM with them, in the room list.
+    alice.click(".rail-dms").await.expect("DMs");
+    alice
+        .wait_for_text(".room.dm", &nickname, DEFAULT_WAIT)
+        .await
+        .expect("the DM is listed under the nickname");
+    alice.open_room(&nickname).await.expect("back to a room");
+    alice
+        .wait_for_text(".chat-header h2", &nickname, DEFAULT_WAIT)
+        .await
+        .expect("the DM's header too");
 
     // Kept in the account: a restart still shows it.
     let mut alice = alice.relaunch().await.expect("relaunch");

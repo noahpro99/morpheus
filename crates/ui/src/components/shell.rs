@@ -939,6 +939,9 @@ fn ChatRoom(room: RoomSummary) -> Element {
     let session = use_context::<Session>();
     // Kept for the header buttons; `session` goes into the typing watcher.
     let header_session = session.clone();
+    let title = try_use_context::<super::nicknames::Nicknames>()
+        .map(|map| super::nicknames::room_title(&map(), &room))
+        .unwrap_or_else(|| room.name.clone());
     let narrow = use_context::<NarrowWindow>();
     let mut chat_open = use_context::<ChatOpen>();
     // Menus built from this room's signals must not outlive it.
@@ -1005,7 +1008,7 @@ fn ChatRoom(room: RoomSummary) -> Element {
             } else {
                 span { class: "hash", "#" }
             }
-            h2 { "{room.name}" }
+            h2 { "{title}" }
             if let Some(topic) = room.topic.as_deref() {
                 span { class: "topic", "{topic}" }
             }

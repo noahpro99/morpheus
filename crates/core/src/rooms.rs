@@ -17,7 +17,7 @@ use matrix_sdk_ui::room_list_service::filters::new_filter_non_left;
 use tokio::sync::mpsc;
 use tracing::{debug, warn};
 
-use crate::{CoreFuture, MediaRef, OwnedRoomId, Session, VectorDiff};
+use crate::{CoreFuture, MediaRef, OwnedRoomId, OwnedUserId, Session, VectorDiff};
 
 /// How many rooms the room list fetches before the UI asks for more.
 const PAGE_SIZE: usize = 200;
@@ -31,6 +31,8 @@ pub struct RoomSummary {
     pub avatar: Option<MediaRef>,
     pub is_space: bool,
     pub is_dm: bool,
+    /// The other person in a DM, for showing your nickname for them.
+    pub dm_user: Option<OwnedUserId>,
     pub member_count: u64,
     pub unread_messages: u64,
     pub highlight_count: u64,
@@ -82,6 +84,11 @@ impl RoomSummary {
         let counts = room.unread_notification_counts();
         let parent_spaces = parent_spaces(&room).await;
         let is_dm = room.direct_targets_length() > 0;
+        // Who a DM is with (the first target, for one-to-one chats).
+        let dm_user = room
+            .direct_targets()
+            .into_iter()
+            .find_map(|target| target.into_user_id());
         // DMs rarely set a room avatar; show the other person instead.
         let mut avatar = room.avatar_url();
         if avatar.is_none() && is_dm {
@@ -99,6 +106,7 @@ impl RoomSummary {
             avatar: avatar.map(MediaRef::from_mxc),
             is_space: room.is_space(),
             is_dm,
+            dm_user,
             member_count: room.joined_members_count(),
             unread_messages: room.num_unread_messages(),
             highlight_count: counts.highlight_count,
