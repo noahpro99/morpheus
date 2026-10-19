@@ -195,6 +195,11 @@ impl Call {
             }
         };
         let mic = LocalAudioTrack::create_audio_track("microphone", source);
+        // Encrypted calls: silent until the encryptor sits on the track, or the
+        // first frames would leave in the clear.
+        if keys.is_some() {
+            mic.mute();
+        }
         room.local_participant()
             .publish_track(
                 LocalTrack::Audio(mic.clone()),
@@ -206,6 +211,23 @@ impl Call {
             )
             .await
             .map_err(|err| Error::Connect(err.to_string()))?;
+        if keys.is_some() {
+            let me = room.local_participant().identity();
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            while !room
+                .e2ee_manager()
+                .frame_cryptors()
+                .keys()
+                .any(|(who, _)| *who == me)
+            {
+                if std::time::Instant::now() > deadline {
+                    let _ = room.close().await;
+                    return Err(Error::Connect("media encryption did not start".into()));
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            mic.unmute();
+        }
 
         let deafened = Arc::new(Mutex::new(false));
         tasks.push(tokio::spawn(forward_events(
@@ -368,13 +390,15 @@ async fn measure(track: RemoteAudioTrack, who: String, tx: UnboundedSender<CallE
     // Quiet only after a run of quiet frames: one lost packet is not silence.
     let mut quiet_frames = 0u32;
     loop {
-        let level = match tokio::time::timeout(Duration::from_millis(300), stream.next()).await {
-            Ok(Some(frame)) => rms(&frame.data),
+        // The tone itself, not just sound: media that fails to decrypt can
+        // still decode into noise, which is not hearing anyone.
+        let tone = match tokio::time::timeout(Duration::from_millis(300), stream.next()).await {
+            Ok(Some(frame)) => is_tone(&frame.data),
             Ok(None) => return,
             // Nothing at all arriving is quiet too.
-            Err(_) => 0.0,
+            Err(_) => false,
         };
-        quiet_frames = if level > 500.0 { 0 } else { quiet_frames + 1 };
+        quiet_frames = if tone { 0 } else { quiet_frames + 1 };
         let now = if hearing {
             quiet_frames < 20
         } else {
@@ -392,6 +416,16 @@ async fn measure(track: RemoteAudioTrack, who: String, tx: UnboundedSender<CallE
             }
         }
     }
+}
+
+/// Whether a 10 ms frame sounds like the test tone: loud enough, and
+/// crossing zero about as often as 440 Hz does (~9 times; noise, many more).
+fn is_tone(samples: &[i16]) -> bool {
+    let crossings = samples
+        .windows(2)
+        .filter(|pair| (pair[0] < 0) != (pair[1] < 0))
+        .count();
+    rms(samples) > 500.0 && (5..=14).contains(&crossings)
 }
 
 fn rms(samples: &[i16]) -> f32 {

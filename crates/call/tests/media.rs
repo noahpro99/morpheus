@@ -108,14 +108,7 @@ async fn encrypted_audio_is_heard_only_with_the_speakers_key() {
     let room = format!("e2ee-test-{}", std::process::id());
     let speaker_key = b"0123456789abcdef".to_vec();
 
-    let (speaker, _speaker_events) = Call::connect_encrypted(
-        &url,
-        &token(&room, "speaker"),
-        AudioMode::Tone,
-        speaker_key.clone(),
-    )
-    .await
-    .expect("speaker connects");
+    // The others are there first, listening from the speaker's very first frame.
     let (friend, mut friend_events) = Call::connect_encrypted(
         &url,
         &token(&room, "friend"),
@@ -124,14 +117,30 @@ async fn encrypted_audio_is_heard_only_with_the_speakers_key() {
     )
     .await
     .expect("friend connects");
-    let (_snoop, mut snoop_events) = Call::connect_encrypted(
+    // The snoop runs in its own process: WebRTC shares media keys between
+    // calls in one process, so an in-process snoop would borrow the friend's.
+    let snoop = tokio::process::Command::new(std::env::current_exe().expect("test binary"))
+        .args([
+            "--exact",
+            "snoop_without_the_key",
+            "--ignored",
+            "--nocapture",
+        ])
+        .env("MORPHEUS_SNOOP_ROOM", &room)
+        .env("MORPHEUS_SNOOP_URL", &url)
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("snoop process");
+    // Let it join before the speaker publishes.
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    let (speaker, _speaker_events) = Call::connect_encrypted(
         &url,
-        &token(&room, "snoop"),
+        &token(&room, "speaker"),
         AudioMode::Tone,
-        b"snoopsnoopsnoop!".to_vec(),
+        speaker_key.clone(),
     )
     .await
-    .expect("snoop connects");
+    .expect("speaker connects");
 
     // The friend was given the speaker's key (over Matrix, in the app).
     friend.set_key("speaker", speaker_key);
@@ -143,9 +152,38 @@ async fn encrypted_audio_is_heard_only_with_the_speakers_key() {
     .await;
 
     // Without it, the speaker's audio never decrypts into anything.
-    let heard = timeout(Duration::from_secs(4), async {
+    let snooped = snoop.wait_with_output().await.expect("snoop finishes");
+    let said = String::from_utf8_lossy(&snooped.stdout);
+    assert!(
+        said.contains("SNOOP SILENT"),
+        "audio heard without the key: {said}"
+    );
+    speaker.leave().await;
+}
+
+/// Run by `encrypted_audio_is_heard_only_with_the_speakers_key` in its own
+/// process: joins with a key of its own and reports whether it ever hears
+/// the speaker's tone.
+#[tokio::test]
+#[ignore = "helper, run by the encrypted media test"]
+async fn snoop_without_the_key() {
+    let (Ok(room), Ok(url)) = (
+        std::env::var("MORPHEUS_SNOOP_ROOM"),
+        std::env::var("MORPHEUS_SNOOP_URL"),
+    ) else {
+        return;
+    };
+    let (_snoop, mut events) = Call::connect_encrypted(
+        &url,
+        &token(&room, "snoop"),
+        AudioMode::Tone,
+        b"snoopsnoopsnoop!".to_vec(),
+    )
+    .await
+    .expect("snoop connects");
+    let heard = timeout(Duration::from_secs(8), async {
         loop {
-            match snoop_events.recv().await {
+            match events.recv().await {
                 Some(CallEvent::Heard(who)) if who == "speaker" => return,
                 Some(_) => {}
                 None => std::future::pending::<()>().await,
@@ -153,6 +191,12 @@ async fn encrypted_audio_is_heard_only_with_the_speakers_key() {
         }
     })
     .await;
-    assert!(heard.is_err(), "audio heard without the key");
-    speaker.leave().await;
+    println!(
+        "{}",
+        if heard.is_ok() {
+            "SNOOP HEARD"
+        } else {
+            "SNOOP SILENT"
+        }
+    );
 }
