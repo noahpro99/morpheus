@@ -753,3 +753,73 @@ async fn phone_attach_button_picks_and_uploads_a_file() {
         .await
         .expect("the picked file is uploaded");
 }
+
+/// Typing on a phone: tapping the message box raises the keyboard, and the
+/// box (and the newest message) stay visible above it.
+#[tokio::test]
+async fn phone_keyboard_keeps_the_message_box_visible() {
+    if !enabled() {
+        eprintln!("MORPHEUS_E2E_ANDROID not set; skipping the Android test");
+        return;
+    }
+    let mut app = App::launch_android().await.expect("launch on Android");
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    app.type_into("form.login input[name=username]", "alice")
+        .await
+        .expect("username");
+    app.type_into("form.login input[name=password]", "alice-password")
+        .await
+        .expect("password");
+    app.submit("form.login").await.expect("submit");
+    app.wait_for(".room", DEFAULT_WAIT)
+        .await
+        .expect("rooms listed");
+    app.tap_text(".room", "general")
+        .await
+        .expect("open general");
+    pane(&mut app, "chat").await;
+    app.wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
+        .await
+        .expect("composer ready");
+    let before = app
+        .eval("return innerHeight;")
+        .await
+        .expect("height")
+        .as_f64()
+        .expect("number");
+
+    app.tap(".composer input")
+        .await
+        .expect("tap the message box");
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    while !keyboard_shown() {
+        assert!(std::time::Instant::now() < deadline, "no keyboard");
+    }
+    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+    let state = app
+        .eval(
+            "const vv = window.visualViewport; const visible = vv ? vv.height + vv.offsetTop : innerHeight; \
+             const box = document.querySelector('.composer input').getBoundingClientRect(); \
+             const last = [...document.querySelectorAll('.message')].pop()?.getBoundingClientRect(); \
+             return [innerHeight, visible, box.bottom, last ? last.bottom : 0];",
+        )
+        .await
+        .expect("layout");
+    let [inner, visible, box_bottom, last_bottom] =
+        [0, 1, 2, 3].map(|i| state[i].as_f64().expect("number"));
+    assert!(
+        inner < before - 100.0,
+        "the page did not shrink for the keyboard ({before} → {inner})"
+    );
+    assert!(
+        box_bottom <= visible + 1.0,
+        "the message box is under the keyboard ({box_bottom} > {visible})"
+    );
+    assert!(
+        last_bottom <= box_bottom,
+        "the newest message is hidden ({last_bottom} > {box_bottom})"
+    );
+    shot(&mut app, "android-keyboard").await;
+}
