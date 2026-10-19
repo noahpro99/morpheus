@@ -58,7 +58,9 @@ class MorpheusPushService : PushService() {
         val eventId = notification?.optString("event_id").orEmpty()
         // Off the main thread: wait briefly for the running app's notice.
         Thread {
-            val notice = awaitNotice(eventId)
+            // A running app hands over what it decrypted; with the app closed,
+            // decrypt the message here (Rust, through JNI).
+            val notice = if (PushStartup.appStarted) awaitNotice(eventId) else coldPreview(roomId, eventId)
             Log.d(TAG, "showing a notification for $roomId (unread $unread, notice ${notice != null})")
             val room = notice?.optString("room")?.ifEmpty { null } ?: roomName(roomId)
             val sender = notice?.optString("sender")?.ifEmpty { null }
@@ -90,6 +92,17 @@ class MorpheusPushService : PushService() {
             Thread.sleep(150)
         }
         return null
+    }
+
+    /** Decrypt one message without the app running (`apps/mobile/src/push.rs`). */
+    private fun coldPreview(roomId: String, eventId: String): JSONObject? {
+        if (roomId.isEmpty() || eventId.isEmpty() || !nativeLoaded) return null
+        return try {
+            previewNative(dataDir(this).absolutePath, roomId, eventId)?.let { JSONObject(it) }
+        } catch (err: Throwable) {
+            Log.w(TAG, "preview failed: $err")
+            null
+        }
     }
 
     private fun roomName(roomId: String): String? = try {
@@ -131,5 +144,17 @@ class MorpheusPushService : PushService() {
         const val TAG = "MorpheusPush"
         /** How long a push waits for the running app to say who wrote what. */
         const val NOTICE_WAIT_MS = 4000L
+
+        /** The app's Rust library; already loaded if the app has run here. */
+        private val nativeLoaded: Boolean = try {
+            System.loadLibrary("main")
+            true
+        } catch (err: Throwable) {
+            Log.w(TAG, "native library not loaded: $err")
+            false
+        }
+
+        @JvmStatic
+        external fun previewNative(dataDir: String, roomId: String, eventId: String): String?
     }
 }

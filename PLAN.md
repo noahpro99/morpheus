@@ -115,7 +115,7 @@ timeline → send.
 - [ ] Swipe down to close a bottom sheet: a first version is in (sheet follows the finger, closes past a third or on a flick; phone e2e test), but the Pixel build predates it; check it feels right on the device.
 - [x] Pane swipes like Discord: the chat slides in over the room list; a rightward drag moves the top pane with the finger, revealing the one underneath (members → chat → list); a leftward drag on the list brings the last chat back, and on the chat pulls in the parked member list. Phone e2e tests hold a real finger mid-drag. Opening a thread by swipe is not done (which thread would it be?).
 - [x] Keyboard avoidance on Android: the page shrinks for the keyboard and the message box and newest message stay above it (phone e2e test). iOS still to verify.
-- [x] UnifiedPush notifications (Sunup, ntfy…; tap opens the room). While the app runs in the background they show sender and text (it hands its decrypted notices to the push service); once Android has closed the app they say "New message" (decrypting from the push service itself is not done).
+- [x] UnifiedPush notifications (Sunup, ntfy…; tap opens the room). They show sender and text: a running app hands over what it decrypted; with the app closed, the push service decrypts the message itself through the core (SDK notification client, via JNI). Phone e2e test covers both.
 - [ ] iOS build on a Mac runner
 
 ### 6. Native renderer
