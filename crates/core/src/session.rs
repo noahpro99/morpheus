@@ -222,6 +222,15 @@ async fn build_client(
         // Accepts "matrix.org" or a full URL and follows `.well-known`.
         .server_name_or_homeserver_url(homeserver)
         .sqlite_store(data_dir.join(STORE_DIR), passphrase)
+        // Local message search, decrypted messages included: encrypted on disk
+        // with the store's passphrase, next to the store.
+        .search_index_store(match passphrase {
+            Some(secret) => matrix_sdk::search_index::SearchIndexStoreKind::EncryptedDirectory(
+                data_dir.join(STORE_DIR).join("search"),
+                secret.to_owned(),
+            ),
+            None => matrix_sdk::search_index::SearchIndexStoreKind::InMemory,
+        })
         .with_threading_support(ThreadingSupport::Enabled {
             with_subscriptions: false,
         })

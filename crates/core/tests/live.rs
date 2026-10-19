@@ -1464,3 +1464,103 @@ async fn setting_up_recovery_lets_a_new_device_unlock_history() {
     second.recover(key).await.expect("recover with the key");
     wait_recovery(&second, RecoveryAvailability::Enabled).await;
 }
+
+#[tokio::test]
+async fn messages_are_searchable_including_encrypted_ones() {
+    let Some(env) = env() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping live test");
+        return;
+    };
+    let core = Core::with_session_store(fresh_data_dir(), SessionStoreKind::File).expect("core");
+    let session = core
+        .login(LoginRequest {
+            homeserver: env.homeserver,
+            username: env.user,
+            password: env.password,
+        })
+        .await
+        .expect("login");
+    let mut room_updates = session.room_list().await.expect("room list");
+    let mut rooms = Vector::new();
+    drive(
+        &mut rooms,
+        async || room_updates.next().await,
+        |rooms| rooms.iter().any(|r| r.name == SEEDED_ROOM),
+    )
+    .await;
+    let general = rooms
+        .iter()
+        .find(|r| r.name == SEEDED_ROOM)
+        .expect("general")
+        .id
+        .clone();
+
+    let word = format!("zebrafish{}", std::process::id());
+    let opened = session.timeline(general.clone()).await.expect("timeline");
+    opened
+        .handle
+        .send_text(format!("the {word} swims home"))
+        .await
+        .expect("send");
+
+    let deadline = std::time::Instant::now() + WAIT;
+    loop {
+        let hits = session
+            .search_room(general.clone(), word.clone(), 10)
+            .await
+            .expect("search");
+        if let Some(hit) = hits.first() {
+            assert!(hit.body.contains(&word), "{hit:?}");
+            assert_eq!(hit.sender_name, env_user_name(), "{hit:?}");
+            assert!(hit.timestamp_ms > 0);
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline, "never found {word}");
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    let none = session
+        .search_room(general, format!("nothing{word}"), 10)
+        .await
+        .expect("search");
+    assert!(none.is_empty(), "{none:?}");
+
+    // Encrypted rooms too: the index holds what this device decrypted.
+    drive(
+        &mut rooms,
+        async || room_updates.next().await,
+        |rooms| rooms.iter().any(|r| r.name == "encrypted"),
+    )
+    .await;
+    let encrypted = rooms
+        .iter()
+        .find(|r| r.name == "encrypted")
+        .expect("encrypted room")
+        .id
+        .clone();
+    let secret = format!("narwhal{}", std::process::id());
+    let opened = session.timeline(encrypted.clone()).await.expect("timeline");
+    opened
+        .handle
+        .send_text(format!("a {secret} in the dark"))
+        .await
+        .expect("send");
+    let deadline = std::time::Instant::now() + WAIT;
+    loop {
+        let hits = session
+            .search_room(encrypted.clone(), secret.clone(), 10)
+            .await
+            .expect("search");
+        if hits.iter().any(|hit| hit.body.contains(&secret)) {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "never found {secret} in the encrypted room"
+        );
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+}
+
+fn env_user_name() -> String {
+    std::env::var("MORPHEUS_TEST_USER").unwrap_or_else(|_| "alice".into())
+}
