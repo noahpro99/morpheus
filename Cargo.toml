@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/ui", "crates/e2e", "apps/desktop", "apps/mobile"]
+members = ["crates/core", "crates/call", "crates/ui", "crates/e2e", "apps/desktop", "apps/mobile"]
 # `cargo build` / `cargo test` cover desktop by default; mobile builds via `dx`.
 default-members = ["crates/core", "crates/ui", "apps/desktop"]
 

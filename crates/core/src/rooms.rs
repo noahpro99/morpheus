@@ -49,6 +49,8 @@ pub struct RoomSummary {
     pub invited: bool,
     /// Who sent the invite (display name, else user ID); only for invites.
     pub inviter: Option<String>,
+    /// Who is in the room's call (MatrixRTC), oldest first; empty when none.
+    pub call_participants: Vec<OwnedUserId>,
 }
 
 impl RoomSummary {
@@ -115,6 +117,7 @@ impl RoomSummary {
             parent_spaces,
             invited,
             inviter,
+            call_participants: crate::calls::call_participants(&room),
         }
     }
 }

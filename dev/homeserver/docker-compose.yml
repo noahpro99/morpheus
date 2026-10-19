@@ -6,6 +6,9 @@ services:
     restart: unless-stopped
     ports:
       - "8008:8008"
+      # Federation over TLS (self-signed): only the call token service uses
+      # it, to check the OpenID tokens clients hand it.
+      - "8448:8448"
     volumes:
       - ./data:/data
     environment:
@@ -19,3 +22,28 @@ services:
       interval: 3s
       timeout: 3s
       retries: 30
+
+  # Calls (MatrixRTC): the LiveKit SFU carries the media, and Element's token
+  # service swaps a Matrix OpenID token for a LiveKit one. Host networking so
+  # the SFU's ICE candidates are reachable and the token service finds
+  # Synapse at localhost:8448, as a real deployment would at its server name.
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: morpheus-livekit
+    restart: unless-stopped
+    network_mode: host
+    command: --dev --bind 0.0.0.0
+
+  lk-jwt:
+    image: ghcr.io/element-hq/lk-jwt-service:latest
+    container_name: morpheus-lk-jwt
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      LIVEKIT_URL: ws://localhost:7880
+      LIVEKIT_KEY: devkey
+      LIVEKIT_SECRET: secret
+      LIVEKIT_JWT_BIND: ":8080"
+      LIVEKIT_FULL_ACCESS_HOMESERVERS: localhost
+      # Synapse's federation certificate is self-signed.
+      LIVEKIT_INSECURE_SKIP_VERIFY_TLS: YES_I_KNOW_WHAT_I_AM_DOING

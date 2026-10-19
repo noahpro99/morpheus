@@ -36,6 +36,7 @@ rc_invites:
 YAML
 fi
 
+"$HS_DIR/calls-setup.sh"
 compose up -d
 echo -n "waiting for synapse"
 for _ in $(seq 1 60); do

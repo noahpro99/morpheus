@@ -1750,3 +1750,76 @@ async fn a_closed_app_can_preview_a_pushed_message() {
     assert_eq!(preview.room, "encrypted", "{preview:?}");
     assert!(preview.sender.contains("alice"), "{preview:?}");
 }
+
+#[tokio::test]
+async fn joining_a_call_gets_livekit_credentials_and_shows_in_the_room_list() {
+    let Some(env) = env() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping live test");
+        return;
+    };
+    let login = async |user: &str| {
+        let core =
+            Core::with_session_store(fresh_data_dir(), SessionStoreKind::File).expect("core");
+        core.login(LoginRequest {
+            homeserver: env.homeserver.clone(),
+            username: user.into(),
+            password: format!("{user}-password"),
+        })
+        .await
+        .expect("login")
+    };
+    let alice = login("alice").await;
+    let bob = login("bob").await;
+
+    let mut alice_rooms = alice.room_list().await.expect("room list");
+    let mut rooms = Vector::new();
+    drive(
+        &mut rooms,
+        async || alice_rooms.next().await,
+        |rooms| rooms.iter().any(|r| r.name == SEEDED_ROOM),
+    )
+    .await;
+    let general = rooms
+        .iter()
+        .find(|r| r.name == SEEDED_ROOM)
+        .expect("general")
+        .id
+        .clone();
+    let alice_id = alice.user_id().expect("user id");
+
+    // The homeserver names a LiveKit service; it hands out a token for the room.
+    let call = alice.join_call(general.clone()).await.expect("join call");
+    assert!(
+        call.livekit_url.starts_with("ws"),
+        "livekit url: {}",
+        call.livekit_url
+    );
+    assert!(!call.jwt.is_empty(), "a LiveKit token");
+
+    // Others see who is in the call, in their room list.
+    let mut bob_rooms = bob.room_list().await.expect("bob room list");
+    let mut rooms = Vector::new();
+    drive(
+        &mut rooms,
+        async || bob_rooms.next().await,
+        |rooms| {
+            rooms
+                .iter()
+                .any(|r| r.id == general && r.call_participants.contains(&alice_id))
+        },
+    )
+    .await;
+
+    // Hanging up takes them out again.
+    alice.leave_call(general.clone()).await.expect("leave call");
+    drive(
+        &mut rooms,
+        async || bob_rooms.next().await,
+        |rooms| {
+            rooms
+                .iter()
+                .any(|r| r.id == general && !r.call_participants.contains(&alice_id))
+        },
+    )
+    .await;
+}

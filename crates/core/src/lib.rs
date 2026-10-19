@@ -13,6 +13,7 @@
 //! UI code has exactly one way of consuming incremental updates.
 
 mod accounts;
+mod calls;
 mod core;
 mod error;
 mod media;
@@ -40,6 +41,7 @@ pub use error::{Error, Result};
 /// leak into dependents, and `Send` so any executor can drive it.
 pub type CoreFuture<T> = futures_util::future::BoxFuture<'static, Result<T>>;
 pub use accounts::SavedAccount;
+pub use calls::CallCredentials;
 pub use media::{Media, MediaRef};
 pub use members::{Member, MemberPermissions, MemberRole};
 pub use messages::PinnedMessage;

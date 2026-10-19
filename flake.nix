@@ -61,6 +61,19 @@
             openssl
             sqlite
             gsettings-desktop-schemas
+            alsa-lib # call audio (cpal)
+            libpulseaudio
+            pipewire
+            # libwebrtc (calls) loads these at runtime, for screen capture.
+            libx11
+            libxext
+            libxfixes
+            libxdamage
+            libxrandr
+            libxcomposite
+            libxtst
+            libdrm
+            libgbm
           ];
 
           tools = with pkgs; [
@@ -81,6 +94,10 @@
             # Without this webkitgtk often renders a blank window on NixOS + Wayland.
             WEBKIT_DISABLE_DMABUF_RENDERER = "1";
             MORPHEUS_HOMESERVER = "http://localhost:8008";
+            # Calls: libwebrtc (webrtc-sys) is built against Chromium's libc++ and
+            # needs a recent clang for the host; gcc stays the default elsewhere.
+            CC_x86_64_unknown_linux_gnu = "${pkgs.llvmPackages_21.clang}/bin/clang";
+            CXX_x86_64_unknown_linux_gnu = "${pkgs.llvmPackages_21.clang}/bin/clang++";
           };
 
           shellHook = ''
