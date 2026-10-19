@@ -64,6 +64,41 @@ async fn drive<T: Clone>(
     );
 }
 
+/// Like [`drive`] on a room timeline, paging back through history whenever
+/// updates go quiet: test runs keep posting, so seeded messages fall out of
+/// the first page.
+async fn drive_back(
+    items: &mut Vector<TimelineEntry>,
+    opened: &mut morpheus_core::OpenTimeline,
+    mut done: impl FnMut(&Vector<TimelineEntry>) -> bool,
+) {
+    let result = timeout(WAIT, async {
+        while !done(items) {
+            match timeout(Duration::from_millis(500), opened.updates.next()).await {
+                Ok(Some(diffs)) => diffs.into_iter().for_each(|diff| diff.apply(items)),
+                Ok(None) => break,
+                Err(_) => {
+                    if opened.handle.paginate_backwards(50).await.unwrap_or(true) {
+                        // At the start of the room: one last look, then give up.
+                        while let Ok(Some(diffs)) =
+                            timeout(Duration::from_millis(500), opened.updates.next()).await
+                        {
+                            diffs.into_iter().for_each(|diff| diff.apply(items));
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    })
+    .await;
+    assert!(
+        result.is_ok() && done(items),
+        "not found in the timeline; it had {} items",
+        items.len()
+    );
+}
+
 #[tokio::test]
 async fn login_list_rooms_read_and_send() {
     let Some(env) = env() else {
@@ -100,26 +135,23 @@ async fn login_list_rooms_read_and_send() {
         .expect("general room");
 
     // Timeline: wait for the seeded message to be back-filled.
-    let opened = session
+    let mut opened = session
         .timeline(general.id.clone())
         .await
         .expect("open timeline");
-    let mut updates = opened.updates;
     let mut items = Vector::new();
     let has_body = |items: &Vector<TimelineEntry>, body: &str| {
         items.iter().any(|e| matches!(e, TimelineEntry::Message(m) if matches!(&m.kind, MessageKind::Text { body: t, .. } if t == body)))
     };
-    drive(
-        &mut items,
-        async || updates.next().await,
-        |items| has_body(items, SEEDED_MESSAGE),
-    )
+    drive_back(&mut items, &mut opened, |items| {
+        has_body(items, SEEDED_MESSAGE)
+    })
     .await;
 
     // Send: our message must come back as a remote echo (not just the local one).
     let body = format!("live test {}", std::process::id());
     opened.handle.send_text(body.clone()).await.expect("send");
-    drive(&mut items, async || updates.next().await, |items| {
+    drive(&mut items, async || opened.updates.next().await, |items| {
         items.iter().any(|e| {
             matches!(e, TimelineEntry::Message(m) if !m.is_local_echo && m.is_own && matches!(&m.kind, MessageKind::Text { body: t, .. } if *t == body))
         })
@@ -163,22 +195,17 @@ async fn opening_a_thread_timeline_shows_replies_and_posts_into_it() {
         .clone();
 
     // Find the seeded thread root in the live timeline to get its event id.
-    let opened = session
+    let mut opened = session
         .timeline(general.clone())
         .await
         .expect("open timeline");
-    let mut updates = opened.updates;
     let mut items = Vector::new();
     let is_root = |m: &morpheus_core::Message| matches!(&m.kind, MessageKind::Text { body, .. } if body == SEEDED_THREAD_ROOT);
-    drive(
-        &mut items,
-        async || updates.next().await,
-        |items| {
-            items
-                .iter()
-                .any(|e| matches!(e, TimelineEntry::Message(m) if is_root(m)))
-        },
-    )
+    drive_back(&mut items, &mut opened, |items| {
+        items
+            .iter()
+            .any(|e| matches!(e, TimelineEntry::Message(m) if is_root(m)))
+    })
     .await;
     let root_event_id = items
         .iter()
@@ -416,8 +443,7 @@ async fn fetch_full_image_media() {
         .id
         .clone();
 
-    let opened = session.timeline(general).await.expect("open timeline");
-    let mut updates = opened.updates;
+    let mut opened = session.timeline(general).await.expect("open timeline");
     let mut items = Vector::new();
     let find_image = |items: &Vector<TimelineEntry>| {
         items.iter().find_map(|e| match e {
@@ -428,12 +454,7 @@ async fn fetch_full_image_media() {
             _ => None,
         })
     };
-    drive(
-        &mut items,
-        async || updates.next().await,
-        |items| find_image(items).is_some(),
-    )
-    .await;
+    drive_back(&mut items, &mut opened, |items| find_image(items).is_some()).await;
     let media = find_image(&items).expect("seeded image message");
 
     let fetched = session
