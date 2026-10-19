@@ -127,8 +127,13 @@ pub fn TimelineView(
     let handle_cell = use_hook(|| Rc::new(RefCell::new(None::<TimelineHandle>)));
     use_drop({
         let handle_cell = handle_cell.clone();
+        let room_id = room_id.clone();
         move || {
-            if let Some(active) = handle_cell.borrow_mut().take() {
+            // Not for a room marked unread here: any receipt clears the flag.
+            let kept_unread = KEPT_UNREAD.with_borrow(|rooms| rooms.contains(&room_id));
+            if let Some(active) = handle_cell.borrow_mut().take()
+                && !kept_unread
+            {
                 // The core spawns the task before returning; the handle is not needed.
                 drop(active.mark_as_fully_read());
             }

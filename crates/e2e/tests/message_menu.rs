@@ -278,6 +278,16 @@ async fn mark_unread_and_forward() {
     app.wait_for(".room.selected.unread", DEFAULT_WAIT)
         .await
         .expect("general flagged unread");
+    // Something new arrives while still in the room: it stays marked unread
+    // (a read receipt for it would clear the flag).
+    let news = format!("news {}", std::process::id());
+    post_as_bob(&homeserver().expect("homeserver"), "general", &news);
+    app.wait_for_text(".message .body", &news, DEFAULT_WAIT)
+        .await
+        .expect("bob's message arrives");
+    app.wait_for(".room.selected.unread", DEFAULT_WAIT)
+        .await
+        .expect("still flagged");
     app.open_room("random").await.expect("leave");
     app.wait_for_js(
         "return [...document.querySelectorAll('.room.unread')].some(r => r.textContent.includes('general'));",
@@ -301,4 +311,53 @@ async fn mark_unread_and_forward() {
     app.wait_for_text(".message.own .body", "forward me", DEFAULT_WAIT)
         .await
         .expect("forwarded copy in random");
+}
+
+/// Post `body` to `room` as bob, through the API (`curl`).
+fn post_as_bob(hs: &str, room: &str, body: &str) {
+    let curl = |args: &[&str]| -> serde_json::Value {
+        let out = std::process::Command::new("curl")
+            .arg("-sf")
+            .args(args)
+            .output()
+            .expect("curl");
+        assert!(out.status.success(), "curl {args:?}");
+        serde_json::from_slice(&out.stdout).unwrap_or_default()
+    };
+    let login = curl(&[
+        "-X",
+        "POST",
+        &format!("{hs}/_matrix/client/v3/login"),
+        "-d",
+        r#"{"type":"m.login.password","identifier":{"type":"m.id.user","user":"bob"},"password":"bob-password"}"#,
+    ]);
+    let auth = format!(
+        "Authorization: Bearer {}",
+        login["access_token"].as_str().expect("token")
+    );
+    let room_id = curl(&[&format!(
+        "{hs}/_matrix/client/v3/directory/room/%23{room}:localhost"
+    )])["room_id"]
+        .as_str()
+        .expect("room id")
+        .to_owned();
+    curl(&[
+        "-X",
+        "PUT",
+        "-H",
+        &auth,
+        &format!(
+            "{hs}/_matrix/client/v3/rooms/{room_id}/send/m.room.message/n{}",
+            std::process::id()
+        ),
+        "-d",
+        &serde_json::json!({ "msgtype": "m.text", "body": body }).to_string(),
+    ]);
+    curl(&[
+        "-X",
+        "POST",
+        "-H",
+        &auth,
+        &format!("{hs}/_matrix/client/v3/logout"),
+    ]);
 }
