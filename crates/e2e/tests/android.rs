@@ -214,6 +214,40 @@ async fn phone_signs_in_navigates_and_sends() {
     app.wait_for_text(".chat-header h2", "general", DEFAULT_WAIT)
         .await
         .expect("back in #general");
+
+    // A leftward drag on the chat pulls the member list in under the finger,
+    // with the chat still underneath; letting go opens it.
+    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+    app.drag_and_hold((width - inset, height / 2.0), (mid, height / 2.0))
+        .await
+        .expect("drag left half-way");
+    let during = app
+        .eval(&format!(
+            "const p = document.querySelector('.side-pane'); if (!p) return null; \
+             const m = new DOMMatrix(getComputedStyle(p).transform); \
+             const under = document.elementFromPoint({x}, {y}); \
+             return [Math.round(m.m41), !!(under && under.closest('.chat'))];",
+            x = mid / 2.0,
+            y = height / 2.0
+        ))
+        .await
+        .expect("mid-drag state");
+    let offset = during[0].as_f64().expect("side pane offset");
+    let travelled = width - inset - mid;
+    assert!(
+        (width - travelled - 40.0..=width - travelled + 40.0).contains(&offset),
+        "the member list follows the finger: it is {offset}px in, the finger moved {travelled}px"
+    );
+    assert_eq!(
+        during[1],
+        serde_json::json!(true),
+        "the chat shows underneath"
+    );
+    app.lift((mid, height / 2.0)).await.expect("lift");
+    pane(&mut app, "side").await;
+    app.wait_for(".side-pane .member", DEFAULT_WAIT)
+        .await
+        .expect("members open");
 }
 
 /// A real homeserver over HTTPS: typing matrix.org (no need to leave the

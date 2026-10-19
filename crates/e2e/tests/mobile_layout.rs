@@ -126,6 +126,14 @@ async fn narrow_window_shows_one_pane_at_a_time() {
     )
     .await
     .expect("chat over the list");
+    // The member list waits just off the right edge, for a leftward swipe.
+    app.wait_for_js(
+        "const p = document.querySelector('.side-pane.parked'); if (!p) return false; \
+         return new DOMMatrix(getComputedStyle(p).transform).m41 >= p.offsetWidth - 1 && !!p.querySelector('.members');",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("members parked beside the chat");
     app.click(".chat-header .pane-back").await.expect("back");
     pane(&mut app, "rooms").await;
 

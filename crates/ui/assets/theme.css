@@ -1568,6 +1568,7 @@ body.dropping .drop-hint { display: flex; }
 .shell.narrow.panes-ready .chat, .shell.narrow.panes-ready .side-pane { transition: transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 240ms; }
 .shell.narrow .side-pane { z-index: 3; animation: pane-in 240ms cubic-bezier(0.2, 0.8, 0.2, 1); }
 .shell.narrow[data-pane="rooms"] .chat { transform: translateX(100%); box-shadow: none; }
+.shell.narrow .side-pane.parked { transform: translateX(100%); box-shadow: none; animation: none; }
 @keyframes pane-in { from { transform: translateX(100%); } to { transform: none; } }
 @media (prefers-reduced-motion: reduce) {
   .shell.narrow.panes-ready .chat, .shell.narrow.panes-ready .side-pane, .shell.narrow .side-pane { transition: none; animation: none; }
