@@ -191,6 +191,12 @@ async fn encrypted_rooms_encrypt_the_call_and_both_sides_still_hear() {
         .await
         .expect("alice hears bob (decrypted)");
 
+    if alice.is_phone() {
+        alice
+            .click(".chat-header .pane-back")
+            .await
+            .expect("back to the list");
+    }
     alice
         .click(".voice-panel .hang-up")
         .await

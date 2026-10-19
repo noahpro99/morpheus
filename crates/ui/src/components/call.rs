@@ -80,6 +80,9 @@ pub fn join_call(session: Session, room_id: OwnedRoomId, room_name: String) {
     {
         return;
     }
+    let microphone = try_consume_context::<crate::AppConfig>()
+        .and_then(|config| config.microphone)
+        .filter(|_| AudioMode::from_env() == AudioMode::Platform);
     // Outlives whatever button started it.
     spawn_forever(async move {
         leave(&session, active, &media).await;
@@ -97,6 +100,19 @@ pub fn join_call(session: Session, room_id: OwnedRoomId, room_name: String) {
                 .is_ok_and(|slot| slot.0.as_ref().is_some_and(|c| c.room_id == wanted))
         };
 
+        // The phone asks once; without the microphone there is no call.
+        if let Some(ask) = microphone {
+            let allowed = tokio::task::spawn_blocking(move || ask())
+                .await
+                .unwrap_or(false);
+            if !allowed {
+                super::toast::toast("Calls need the microphone: allow it in the system settings.");
+                if still_wanted() {
+                    active.set(CallSlot(None));
+                }
+                return;
+            }
+        }
         let credentials = match session.join_call(room_id.clone()).await {
             Ok(credentials) => credentials,
             Err(err) => {

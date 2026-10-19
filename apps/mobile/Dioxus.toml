@@ -8,6 +8,8 @@ publisher = "Morpheus"
 [android.permissions]
 "android.permission.VIBRATE" = { description = "A short buzz when press-and-hold opens a menu" }
 "android.permission.POST_NOTIFICATIONS" = { description = "Notifications for new messages" }
+"android.permission.RECORD_AUDIO" = { description = "Your voice in calls" }
+"android.permission.MODIFY_AUDIO_SETTINGS" = { description = "Speaker and earpiece switching in calls" }
 
 [android]
 # UnifiedPush: the app registers with the phone's push app (Sunup, ntfy, …).

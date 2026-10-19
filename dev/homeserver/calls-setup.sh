@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Calls need more of Synapse than chat does; add it to an existing config once
 # (idempotent): a TLS federation listener with a self-signed certificate (the
-# token service checks OpenID tokens over federation), the LiveKit focus in
-# the client well-known, MSC4143 transports and MSC4140 delayed events.
+# token service checks OpenID tokens over federation), the LiveKit service as
+# an MSC4143 transport, and MSC4140 delayed events. Not in the client
+# well-known: that would also name the homeserver as localhost, which the
+# emulator cannot reach.
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 CONFIG="$HS_DIR/data/homeserver.yaml"
@@ -31,12 +33,6 @@ cat >>"$CONFIG" <<YAML
 $MARK
 tls_certificate_path: /data/tls.crt
 tls_private_key_path: /data/tls.key
-public_baseurl: http://localhost:8008/
-serve_client_wellknown: true
-extra_well_known_client_content:
-  org.matrix.msc4143.rtc_foci:
-    - type: livekit
-      livekit_service_url: http://localhost:8080
 matrix_rtc:
   transports:
     - type: livekit

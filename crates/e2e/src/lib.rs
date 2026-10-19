@@ -513,6 +513,11 @@ impl App {
         all[all.len().saturating_sub(lines)..].join("\n")
     }
 
+    /// Whether this app runs on the phone (emulator or device), not a desktop window.
+    pub fn is_phone(&self) -> bool {
+        self.android
+    }
+
     pub fn data_dir(&self) -> &Path {
         &self.data_dir
     }
@@ -766,6 +771,10 @@ impl App {
     }
 
     async fn start_android(clear: bool, permissions: &[&str]) -> Result<Self> {
+        // Before the phone signs in: pruning later would sign it out.
+        if let Ok(homeserver) = std::env::var("MORPHEUS_TEST_HOMESERVER") {
+            prune_test_devices(&homeserver);
+        }
         if clear {
             adb(&["shell", "pm", "clear", ANDROID_PACKAGE])
                 .context("clearing the app's data (is it installed, and is a device attached?)")?;
@@ -783,6 +792,18 @@ impl App {
             ANDROID_PACKAGE,
             "android.permission.POST_NOTIFICATIONS",
         ]);
+        let _ = adb(&[
+            "shell",
+            "pm",
+            "grant",
+            ANDROID_PACKAGE,
+            "android.permission.RECORD_AUDIO",
+        ]);
+        // Calls: the dev homeserver names its token service and LiveKit at
+        // localhost (8080, 7880-7881), which on the phone is the phone.
+        for port in ["8080", "7880", "7881"] {
+            let _ = adb(&["reverse", &format!("tcp:{port}"), &format!("tcp:{port}")]);
+        }
         adb(&["shell", "am", "start", "-W", "-n", ANDROID_ACTIVITY]).context("starting the app")?;
         let port = free_port().await?;
         adb(&[
@@ -1130,7 +1151,8 @@ pub fn new_account(homeserver: &str, name: &str) -> Result<String> {
 
 /// Every test login leaves a device on the dev homeserver, and a long run
 /// piles up dozens per user, which slows key sharing and sync until tests
-/// time out. Once per test process (before its first app starts), remove the
+/// time out. Once per test process (before its first app starts, phone or
+/// desktop), remove the
 /// seeded users' devices, as `just hs-seed` does. Best effort.
 fn prune_test_devices(homeserver: &str) {
     static ONCE: std::sync::Once = std::sync::Once::new();

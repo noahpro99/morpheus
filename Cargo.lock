@@ -5289,6 +5289,7 @@ version = "0.1.0"
 dependencies = [
  "dioxus",
  "jni 0.21.1",
+ "morpheus-call",
  "morpheus-core",
  "morpheus-ui",
  "ndk-context",
@@ -5296,6 +5297,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "webrtc-sys-build",
 ]
 
 [[package]]

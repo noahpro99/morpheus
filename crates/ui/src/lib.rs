@@ -27,5 +27,5 @@ mod linkify;
 mod media;
 mod window;
 
-pub use app::{App, AppCommand, AppCommands, AppConfig, OpenRoom, SessionHook};
+pub use app::{App, AppCommand, AppCommands, AppConfig, MicrophoneAccess, OpenRoom, SessionHook};
 pub use window::WindowControls;

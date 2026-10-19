@@ -16,7 +16,7 @@ morpheus-core = { workspace = true }
 morpheus-call = { workspace = true }
 tracing = { workspace = true }
 base64 = { workspace = true }
-tokio = { workspace = true, features = ["time", "sync", "macros"] }
+tokio = { workspace = true, features = ["time", "sync", "macros", "rt"] }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true }
 open = { workspace = true }
