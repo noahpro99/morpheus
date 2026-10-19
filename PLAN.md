@@ -114,7 +114,7 @@ timeline → send.
 - [ ] Text selection is broken (reported on the phone, 2026-10-15); revisit later. Touch screens currently turn off selection outside typing fields so press-and-hold can open menus; messages need a "Select text" path instead.
 - [ ] Swipe down to close a bottom sheet: a first version is in (sheet follows the finger, closes past a third or on a flick; phone e2e test), but the Pixel build predates it; check it feels right on the device.
 - [x] Pane swipes like Discord: the chat slides in over the room list; a rightward drag moves the top pane with the finger, revealing the one underneath (members → chat → list); a leftward drag on the list brings the last chat back, and on the chat pulls in the parked member list. Phone e2e tests hold a real finger mid-drag. Opening a thread by swipe is not done (which thread would it be?).
-- [ ] Keyboard avoidance on Android (adjustResize) and iOS, verified on devices
+- [x] Keyboard avoidance on Android: the page shrinks for the keyboard and the message box and newest message stay above it (phone e2e test). iOS still to verify.
 - [x] UnifiedPush notifications (Sunup, ntfy…; tap opens the room). Message text in notifications needs background decryption: not yet.
 - [ ] iOS build on a Mac runner
 
