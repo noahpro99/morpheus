@@ -1652,3 +1652,101 @@ async fn messages_from_unverified_sessions_carry_a_shield() {
         "no shields in an unencrypted room"
     );
 }
+
+#[tokio::test]
+async fn a_closed_app_can_preview_a_pushed_message() {
+    let Some(env) = env() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping live test");
+        return;
+    };
+    let room_named = async |session: &Session, name: &str| {
+        let mut updates = session.room_list().await.expect("room list");
+        let mut rooms = Vector::new();
+        drive(
+            &mut rooms,
+            async || updates.next().await,
+            |rooms| rooms.iter().any(|r| r.name == name),
+        )
+        .await;
+        rooms
+            .iter()
+            .find(|r| r.name == name)
+            .expect("room")
+            .id
+            .clone()
+    };
+    // Bob's device signs in (so messages are encrypted for it), then stops.
+    let bob_dir = fresh_data_dir();
+    let bob_core = Core::with_session_store(&bob_dir, SessionStoreKind::File).expect("core");
+    let bob = bob_core
+        .login(LoginRequest {
+            homeserver: env.homeserver.clone(),
+            username: "bob".into(),
+            password: "bob-password".into(),
+        })
+        .await
+        .expect("bob");
+    let encrypted = room_named(&bob, "encrypted").await;
+    bob.suspend().await.expect("bob stops");
+    drop(bob);
+    drop(bob_core);
+
+    // Alice writes in #encrypted.
+    let alice_core =
+        Core::with_session_store(fresh_data_dir(), SessionStoreKind::File).expect("core");
+    let alice = alice_core
+        .login(LoginRequest {
+            homeserver: env.homeserver,
+            username: "alice".into(),
+            password: "alice-password".into(),
+        })
+        .await
+        .expect("alice");
+    let body = format!("for your lock screen {}", std::process::id());
+    let _ = room_named(&alice, "encrypted").await;
+    let mut opened = alice.timeline(encrypted.clone()).await.expect("timeline");
+    opened.handle.send_text(body.clone()).await.expect("send");
+    let mut items = Vector::new();
+    let sent = |items: &Vector<TimelineEntry>| {
+        items.iter().find_map(|e| match e {
+            TimelineEntry::Message(m)
+                if !m.is_local_echo
+                    && matches!(&m.kind, MessageKind::Text { body: b, .. } if *b == body) =>
+            {
+                match &m.id {
+                    MessageId::Event(id) => Some(id.to_string()),
+                    MessageId::Transaction(_) => None,
+                }
+            }
+            _ => None,
+        })
+    };
+    drive(
+        &mut items,
+        async || opened.updates.next().await,
+        |items| sent(items).is_some(),
+    )
+    .await;
+    let event_id = sent(&items).expect("event id");
+
+    // A fresh core on bob's data, as a push would start it, previews it.
+    let cold = Core::with_session_store(&bob_dir, SessionStoreKind::File).expect("cold core");
+    let deadline = std::time::Instant::now() + WAIT;
+    let preview = loop {
+        match cold
+            .preview_notification(encrypted.to_string(), event_id.clone())
+            .await
+        {
+            Ok(Some(preview)) if preview.body.contains(&body) => break preview,
+            other => {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "no preview: {other:?}"
+                );
+                tokio::time::sleep(Duration::from_millis(500)).await;
+            }
+        }
+    };
+    assert_eq!(preview.room, "encrypted", "{preview:?}");
+    assert!(preview.sender.contains("alice"), "{preview:?}");
+}

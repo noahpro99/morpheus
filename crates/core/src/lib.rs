@@ -49,7 +49,7 @@ pub use push::{DEFAULT_PUSH_GATEWAY, PUSH_APP_ID, PushRegistration};
 pub use recovery::{EncryptionStatus, RecoveryAvailability};
 pub use rooms::{NotifyMode, RoomListUpdates, RoomSummary};
 pub use search::SearchHit;
-pub use session::{LoginFlows, LoginRequest, Session, UrlOpener};
+pub use session::{LoginFlows, LoginRequest, NotificationPreview, Session, UrlOpener};
 pub use session_store::SessionStoreKind;
 pub use spaces::{History, Privacy, RoomProfile};
 pub use timeline::{
