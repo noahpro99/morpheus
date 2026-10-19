@@ -26,7 +26,7 @@ use super::{
         OpenRoomDialog, PrivacyModal, RenameFolderModal, RoomDialog, RoomProfileModal,
     },
     room_list::RoomList,
-    settings::{ActiveVerification, Settings, SettingsOpen, track_verification},
+    settings::{ActiveVerification, OpenSettingsPage, Settings, SettingsOpen, track_verification},
     switcher::QuickSwitcher,
     thread::{ActiveThread, ThreadPanel},
     timeline::{LastOwn, LastOwnMessage, TimelineView},
@@ -70,10 +70,49 @@ pub type MentionRequest = Signal<Mention>;
 /// Visited rooms for the title bar's back and forward buttons.
 pub type NavHistory = Signal<Nav>;
 
+/// The colour themes (CSS variables in theme.css, under `:root[data-theme]`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Theme {
+    #[default]
+    Dark,
+    /// Black surfaces: easier on OLED phones at night.
+    Midnight,
+    Light,
+}
+
+impl Theme {
+    pub const ALL: [Theme; 3] = [Theme::Dark, Theme::Midnight, Theme::Light];
+
+    pub fn key(self) -> &'static str {
+        match self {
+            Theme::Dark => "dark",
+            Theme::Midnight => "midnight",
+            Theme::Light => "light",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Theme::Dark => "Dark",
+            Theme::Midnight => "Midnight",
+            Theme::Light => "Light",
+        }
+    }
+
+    fn from_key(key: &str) -> Self {
+        Self::ALL
+            .into_iter()
+            .find(|theme| theme.key() == key)
+            .unwrap_or_default()
+    }
+}
+
 /// Layout preferences synced through account data (`dev.morpheus.ui`).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Prefs {
     pub hide_muted: bool,
+    /// Colour theme, the same on every device signed in to the account.
+    pub theme: Theme,
     /// Rail order: spaces and folders of spaces. Spaces missing here are
     /// appended in the order the server lists them.
     pub rail: Vec<RailEntry>,
@@ -122,6 +161,11 @@ impl Prefs {
                 .get("hide_muted")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false),
+            theme: value
+                .get("theme")
+                .and_then(|v| v.as_str())
+                .map(Theme::from_key)
+                .unwrap_or_default(),
             rail,
         }
     }
@@ -137,7 +181,7 @@ impl Prefs {
                 }
             })
             .collect();
-        serde_json::json!({ "hide_muted": self.hide_muted, "rail": rail })
+        serde_json::json!({ "hide_muted": self.hide_muted, "rail": rail, "theme": self.theme.key() })
     }
 
     /// Remove a space from wherever it sits (dropping folders left empty).
@@ -272,6 +316,7 @@ pub fn Shell(session: Session) -> Element {
     let mut load_error = use_signal(|| None::<String>);
     let mut switcher_open = use_signal(|| false);
     let mut settings_open: SettingsOpen = use_context_provider(|| Signal::new(false));
+    let mut settings_page: OpenSettingsPage = use_context_provider(|| Signal::new(None));
     let mut verification: ActiveVerification = use_context_provider(|| Signal::new(None));
     let mut members_open: MembersOpen = use_context_provider(|| Signal::new(MembersShown(true)));
     let mut open_profile: OpenProfile =
@@ -384,6 +429,14 @@ pub fn Shell(session: Session) -> Element {
                 }
             }
         }
+    });
+    // The theme lives on the document root so overlays and the page
+    // background follow it too.
+    use_effect(move || {
+        let key = prefs().theme.key();
+        document::eval(&format!(
+            "document.documentElement.dataset.theme = '{key}';"
+        ));
     });
     // History is recorded by `go_to`, not by an effect on `selected`: an
     // effect only runs after the next render and would miss a visit when two
@@ -500,7 +553,13 @@ pub fn Shell(session: Session) -> Element {
         } else if about_open().0 {
             about_open.set(AboutShown(false));
         } else if settings_open() {
-            settings_open.set(false);
+            // On a phone a settings page steps back to the list first.
+            if narrow.peek().0 && settings_page.peek().is_some() {
+                settings_page.set(None);
+            } else {
+                settings_open.set(false);
+                settings_page.set(None);
+            }
         } else if switcher_open() {
             switcher_open.set(false);
         } else {

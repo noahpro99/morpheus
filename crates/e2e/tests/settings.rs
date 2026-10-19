@@ -34,6 +34,20 @@ async fn open_settings(app: &mut App) {
         .expect("settings modal");
 }
 
+/// Settings' Security & Privacy page: encryption, recovery, devices.
+async fn open_security(app: &mut App) {
+    open_settings(app).await;
+    app.click_text(".settings-nav button", "Security & Privacy")
+        .await
+        .expect("Security & Privacy");
+    app.wait_for(
+        ".settings-page .recovery-form, .settings-page .verification",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("security page");
+}
+
 #[tokio::test]
 async fn settings_shows_devices_and_rejects_a_bad_recovery_key() {
     let Some(hs) = homeserver() else {
@@ -47,6 +61,9 @@ async fn settings_shows_devices_and_rejects_a_bad_recovery_key() {
     app.wait_for_text(".settings-user", "@carol:localhost", DEFAULT_WAIT)
         .await
         .expect("account");
+    app.click_text(".settings-nav button", "Security & Privacy")
+        .await
+        .expect("Security & Privacy");
     app.wait_for_text(".status-list", "not verified", DEFAULT_WAIT)
         .await
         .expect("unverified status");
@@ -86,7 +103,7 @@ async fn emoji_verification_between_two_devices() {
     a.wait_for(".room", DEFAULT_WAIT).await.expect("A synced");
     b.wait_for(".room", DEFAULT_WAIT).await.expect("B synced");
 
-    open_settings(&mut a).await;
+    open_security(&mut a).await;
     a.click_text(".settings button", "Verify with another")
         .await
         .expect("start verification");
@@ -173,7 +190,7 @@ async fn verification_survives_closing_and_reopening_settings() {
     a.wait_for(".room", DEFAULT_WAIT).await.expect("A synced");
     b.wait_for(".room", DEFAULT_WAIT).await.expect("B synced");
 
-    open_settings(&mut a).await;
+    open_security(&mut a).await;
     a.click_text(".settings button", "Verify with another")
         .await
         .expect("start verification");

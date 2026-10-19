@@ -1,21 +1,72 @@
-//! Settings modal (gear button in the sidebar footer): account, encryption
-//! status, device verification, recovery key, and the device list.
+//! Settings (gear button in the sidebar footer): categories down the side,
+//! about 70% of a desktop window; full screen on a phone, list first. My
+//! Account, Security & Privacy (encryption, verification, recovery key,
+//! devices), Notifications (account-wide defaults, this device's delivery),
+//! Appearance (colour theme), Voice & Video.
 
 use std::rc::Rc;
 
-use super::keys::{KeysRefresh, SettingsFocus, SettingsTarget};
-
-/// How long a finished verification shows its success before stepping aside.
-const VERIFIED_NOTE_SECS: u64 = 3;
-use super::toast::report;
 use dioxus::prelude::*;
 use morpheus_core::{
-    Device, EncryptionStatus, RecoveryAvailability, Session, VerificationActions,
+    Device, EncryptionStatus, NotifyMode, RecoveryAvailability, Session, VerificationActions,
     VerificationHandle, VerificationStep,
 };
 
+use super::keys::{KeysRefresh, SettingsFocus, SettingsTarget};
+use super::shell::{NarrowWindow, Theme, UiPrefs};
+use super::toast::report;
+use crate::icons::{BELL, Icon, MIC, PALETTE, SHIELD, USER};
+
+/// How long a finished verification shows its success before stepping aside.
+const VERIFIED_NOTE_SECS: u64 = 3;
+
 /// Whether the settings modal is open. Provided by the shell.
 pub type SettingsOpen = Signal<bool>;
+
+/// The settings categories, in the order the side list shows them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsPage {
+    Account,
+    Security,
+    Notifications,
+    Appearance,
+    VoiceVideo,
+}
+
+impl SettingsPage {
+    pub const ALL: [SettingsPage; 5] = [
+        SettingsPage::Account,
+        SettingsPage::Security,
+        SettingsPage::Notifications,
+        SettingsPage::Appearance,
+        SettingsPage::VoiceVideo,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            SettingsPage::Account => "My Account",
+            SettingsPage::Security => "Security & Privacy",
+            SettingsPage::Notifications => "Notifications",
+            SettingsPage::Appearance => "Appearance",
+            SettingsPage::VoiceVideo => "Voice & Video",
+        }
+    }
+
+    fn glyph(self) -> &'static str {
+        match self {
+            SettingsPage::Account => USER,
+            SettingsPage::Security => SHIELD,
+            SettingsPage::Notifications => BELL,
+            SettingsPage::Appearance => PALETTE,
+            SettingsPage::VoiceVideo => MIC,
+        }
+    }
+}
+
+/// The page shown, if one is chosen: on a phone `None` is the list; on a
+/// desktop it means My Account. Provided by the shell, which steps a phone
+/// back from a page to the list on Escape / the back key.
+pub type OpenSettingsPage = Signal<Option<SettingsPage>>;
 
 /// The verification flow currently shown, if any. Incoming requests set this
 /// from the shell; the "Verify" button sets it from the modal.
@@ -101,7 +152,34 @@ pub fn Settings() -> Element {
         .user_id()
         .map(|id| id.to_string())
         .unwrap_or_default();
-    let mut close = move || open.set(false);
+    let mut page = use_context::<OpenSettingsPage>();
+    let narrow = try_use_context::<NarrowWindow>().is_some_and(|n| n().0);
+    let mut close = move || {
+        open.set(false);
+        page.set(None);
+    };
+    // Opened to verify or to enter the recovery key: that page.
+    use_effect(move || {
+        if let Some(mut target) = try_consume_context::<SettingsTarget>() {
+            let wanted = *target.peek();
+            match wanted {
+                SettingsFocus::RecoveryKey => page.set(Some(SettingsPage::Security)),
+                SettingsFocus::Security => {
+                    target.set(SettingsFocus::None);
+                    page.set(Some(SettingsPage::Security));
+                }
+                SettingsFocus::None => {}
+            }
+        }
+    });
+    // A desktop always shows a page (Security while a verification runs);
+    // a phone starts on the list.
+    let landing = if verification().is_some() {
+        SettingsPage::Security
+    } else {
+        SettingsPage::Account
+    };
+    let shown = page().or((!narrow).then_some(landing));
 
     let start_verification = {
         let session = session.clone();
@@ -151,73 +229,117 @@ pub fn Settings() -> Element {
     };
 
     rsx! {
-        div { class: "overlay", onclick: move |_| close(),
-            div { class: "settings", tabindex: "-1", autofocus: true, onclick: move |e| e.stop_propagation(),
-                header { class: "settings-header",
-                    h2 { "Settings" }
-                    button { class: "ghost", title: "Close", onclick: move |_| close(), "✕" }
-                }
-
-                section { class: "settings-section",
-                    h3 { "Account" }
-                    p { class: "settings-user", "{user}" }
-                    if let Some(Ok(status)) = &*status.read() {
-                        p { class: "muted", "This device: {status.device_id.as_ref().map(|d| d.to_string()).unwrap_or_default()}" }
+        div { class: "overlay settings-overlay", onclick: move |_| close(),
+            div {
+                class: "settings",
+                class: if shown.is_some() { "has-page" },
+                tabindex: "-1",
+                autofocus: true,
+                onclick: move |e| e.stop_propagation(),
+                nav { class: "settings-nav",
+                    header { class: "settings-nav-header",
+                        h2 { "Settings" }
+                        button { class: "ghost settings-nav-close", title: "Close", onclick: move |_| close(), "✕" }
                     }
-                }
-
-                section { class: "settings-section",
-                    h3 { "Encryption" }
-                    match &*status.read() {
-                        None => rsx! { p { class: "muted", "Checking…" } },
-                        Some(Err(err)) => rsx! { p { class: "error", "{err}" } },
-                        Some(Ok(status)) => rsx! { EncryptionSummary { status: status.clone() } },
-                    }
-
-                    if let Some(active) = verification() {
-                        VerificationPanel { verification: active }
-                    } else {
-                        div { class: "settings-actions",
-                            button { class: "primary", disabled: busy(), onclick: start_verification,
-                                "Verify with another signed-in device"
-                            }
+                    for item in SettingsPage::ALL {
+                        button {
+                            class: "settings-nav-item",
+                            class: if shown == Some(item) { "selected" },
+                            onclick: move |_| page.set(Some(item)),
+                            Icon { glyph: item.glyph(), size: 18 }
+                            span { "{item.label()}" }
                         }
-                        form { class: "recovery-form", onsubmit: submit_recovery,
-                            label { "Recovery key or passphrase"
-                                input {
-                                    r#type: "password",
-                                    placeholder: "EsTx xxxx xxxx …",
-                                    value: "{recovery_key}",
-                                    oninput: move |e| recovery_key.set(e.value()),
-                                    // Opened from "Enter recovery key": straight to typing.
-                                    onmounted: move |e| {
-                                        if let Some(mut target) = try_consume_context::<SettingsTarget>()
-                                            && *target.peek() == SettingsFocus::RecoveryKey
-                                        {
-                                            target.set(SettingsFocus::None);
-                                            spawn(async move {
-                                                let _ = e.data().set_focus(true).await;
-                                            });
-                                        }
-                                    },
+                    }
+                }
+                if let Some(current) = shown {
+                    section { class: "settings-page",
+                        header { class: "settings-header",
+                            button {
+                                class: "settings-back",
+                                title: "Back",
+                                onclick: move |_| page.set(None),
+                                Icon { glyph: crate::icons::CHEVRON_LEFT, size: 20 }
+                            }
+                            h2 { "{current.label()}" }
+                            button { class: "ghost", title: "Close", onclick: move |_| close(), "✕" }
+                        }
+                        match current {
+                            SettingsPage::Account => rsx! {
+                                section { class: "settings-section",
+                                    h3 { "Account" }
+                                    p { class: "settings-user", "{user}" }
+                                    if let Some(Ok(status)) = &*status.read() {
+                                        p { class: "muted", "This device: {status.device_id.as_ref().map(|d| d.to_string()).unwrap_or_default()}" }
+                                    }
                                 }
-                            }
-                            button { r#type: "submit", class: "secondary", disabled: busy(), "Restore from backup" }
-                        }
-                    }
-                    match recovery_message() {
-                        Some(Ok(message)) => rsx! { p { class: "ok", "{message}" } },
-                        Some(Err(message)) => rsx! { p { class: "error", "{message}" } },
-                        None => rsx! {},
-                    }
-                }
+                            },
+                            SettingsPage::Security => rsx! {
+                                section { class: "settings-section",
+                                    h3 { "Encryption" }
+                                    match &*status.read() {
+                                        None => rsx! { p { class: "muted", "Checking…" } },
+                                        Some(Err(err)) => rsx! { p { class: "error", "{err}" } },
+                                        Some(Ok(status)) => rsx! { EncryptionSummary { status: status.clone() } },
+                                    }
 
-                section { class: "settings-section",
-                    h3 { "Devices" }
-                    match &*devices.read() {
-                        None => rsx! { p { class: "muted", "Loading…" } },
-                        Some(Err(err)) => rsx! { p { class: "error", "{err}" } },
-                        Some(Ok(list)) => rsx! { DeviceList { devices: list.clone() } },
+                                    if let Some(active) = verification() {
+                                        VerificationPanel { verification: active }
+                                    } else {
+                                        div { class: "settings-actions",
+                                            button { class: "primary", disabled: busy(), onclick: start_verification.clone(),
+                                                "Verify with another signed-in device"
+                                            }
+                                        }
+                                        form { class: "recovery-form", onsubmit: submit_recovery.clone(),
+                                            label { "Recovery key or passphrase"
+                                                input {
+                                                    r#type: "password",
+                                                    placeholder: "EsTx xxxx xxxx …",
+                                                    value: "{recovery_key}",
+                                                    oninput: move |e| recovery_key.set(e.value()),
+                                                    // Opened from "Enter recovery key": straight to typing.
+                                                    onmounted: move |e| {
+                                                        if let Some(mut target) = try_consume_context::<SettingsTarget>()
+                                                            && *target.peek() == SettingsFocus::RecoveryKey
+                                                        {
+                                                            target.set(SettingsFocus::None);
+                                                            spawn(async move {
+                                                                let _ = e.data().set_focus(true).await;
+                                                            });
+                                                        }
+                                                    },
+                                                }
+                                            }
+                                            button { r#type: "submit", class: "secondary", disabled: busy(), "Restore from backup" }
+                                        }
+                                    }
+                                    match recovery_message() {
+                                        Some(Ok(message)) => rsx! { p { class: "ok", "{message}" } },
+                                        Some(Err(message)) => rsx! { p { class: "error", "{message}" } },
+                                        None => rsx! {},
+                                    }
+                                }
+
+                                section { class: "settings-section",
+                                    h3 { "Devices" }
+                                    match &*devices.read() {
+                                        None => rsx! { p { class: "muted", "Loading…" } },
+                                        Some(Err(err)) => rsx! { p { class: "error", "{err}" } },
+                                        Some(Ok(list)) => rsx! { DeviceList { devices: list.clone() } },
+                                    }
+                                }
+                            },
+                            SettingsPage::Notifications => rsx! { NotificationsPage {} },
+                            SettingsPage::Appearance => rsx! { AppearancePage {} },
+                            SettingsPage::VoiceVideo => rsx! {
+                                section { class: "settings-section",
+                                    h3 { "Calls" }
+                                    p { class: "muted",
+                                        "Voice and video calls aren't supported yet. Microphone, speaker and camera choices will live here once they are."
+                                    }
+                                }
+                            },
+                        }
                     }
                 }
             }
@@ -345,5 +467,133 @@ pub fn VerificationPanel(verification: Rc<Verification>) -> Element {
 fn bump_keys() {
     if let Some(mut keys) = try_consume_context::<KeysRefresh>() {
         keys.with_mut(|stamp| stamp.0 += 1);
+    }
+}
+
+/// Account-wide notification defaults, and how this device gets them.
+#[component]
+fn NotificationsPage() -> Element {
+    let data_dir = use_context::<crate::AppConfig>().data_dir;
+    // Written by the Android push bridge (apps/mobile/src/push.rs).
+    let push = std::fs::read_to_string(data_dir.join("push_status")).ok();
+    let device = if cfg!(target_os = "android") {
+        match push.as_deref().map(str::trim) {
+            Some(status) if status.starts_with("registered via ") => format!(
+                "Push notifications are on, through your UnifiedPush app ({}).",
+                status.trim_start_matches("registered via ")
+            ),
+            Some(status) => format!("Push notifications are not working: {status}"),
+            None => "Install a UnifiedPush app such as Sunup or ntfy to be notified while Morpheus is closed.".to_owned(),
+        }
+    } else {
+        "Morpheus shows a system notification when a message arrives while its window is in the background or hidden in the tray.".to_owned()
+    };
+    rsx! {
+        section { class: "settings-section",
+            h3 { "Default for rooms" }
+            p { class: "muted", "Rooms without their own setting follow these. Set a room's own from its menu." }
+            NotifyDefault { dm: true }
+            NotifyDefault { dm: false }
+        }
+        section { class: "settings-section",
+            h3 { "This device" }
+            p { class: "device-notifications", "{device}" }
+        }
+    }
+}
+
+/// One default (direct messages or group rooms): all messages or mentions.
+#[component]
+fn NotifyDefault(dm: bool) -> Element {
+    let session = use_context::<Session>();
+    let kind = if dm { "dm" } else { "group" };
+    let title = if dm { "Direct messages" } else { "Group rooms" };
+    let mut chosen = use_signal(|| None::<NotifyMode>);
+    let mut note = use_signal(|| None::<Result<&'static str, String>>);
+    let loaded = use_resource({
+        let session = session.clone();
+        move || {
+            let session = session.clone();
+            async move { session.default_notify_mode(dm).await.ok() }
+        }
+    });
+    let current = chosen().or_else(|| loaded().flatten());
+    let choices = [
+        (NotifyMode::AllMessages, "all", "All messages"),
+        (NotifyMode::MentionsOnly, "mentions", "Only mentions"),
+    ];
+    rsx! {
+        fieldset { class: "notify-default", "data-kind": "{kind}",
+            legend { "{title}" }
+            for (mode, value, label) in choices {
+                label { class: "notify-choice",
+                    input {
+                        r#type: "radio",
+                        name: "notify-{kind}",
+                        value: "{value}",
+                        checked: current == Some(mode),
+                        onchange: {
+                            let session = session.clone();
+                            move |_| {
+                                chosen.set(Some(mode));
+                                note.set(None);
+                                let session = session.clone();
+                                spawn(async move {
+                                    match session.set_default_notify_mode(dm, mode).await {
+                                        Ok(()) => note.set(Some(Ok("Saved"))),
+                                        Err(err) => note.set(Some(Err(err.to_string()))),
+                                    }
+                                });
+                            }
+                        },
+                    }
+                    span { "{label}" }
+                }
+            }
+            match note() {
+                Some(Ok(text)) => rsx! { span { class: "ok", "{text}" } },
+                Some(Err(text)) => rsx! { span { class: "error", "{text}" } },
+                None => rsx! {},
+            }
+        }
+    }
+}
+
+/// The colour theme, saved to account data so every device follows it.
+#[component]
+fn AppearancePage() -> Element {
+    let session = use_context::<Session>();
+    let mut prefs = use_context::<UiPrefs>();
+    let current = prefs().theme;
+    rsx! {
+        section { class: "settings-section",
+            h3 { "Theme" }
+            div { class: "theme-options",
+                for theme in Theme::ALL {
+                    button {
+                        class: "theme-option",
+                        class: if theme == current { "selected" },
+                        "data-theme": "{theme.key()}",
+                        onclick: {
+                            let session = session.clone();
+                            move |_| {
+                                prefs.with_mut(|p| p.theme = theme);
+                                let future = session.set_ui_prefs(prefs.peek().to_json());
+                                spawn(async move {
+                                    if let Err(err) = future.await {
+                                        report("saving the theme", &err);
+                                    }
+                                });
+                            }
+                        },
+                        span { class: "theme-swatch", "aria-hidden": "true",
+                            span { class: "theme-swatch-side" }
+                            span { class: "theme-swatch-chat" }
+                        }
+                        span { class: "theme-name", "{theme.label()}" }
+                    }
+                }
+            }
+        }
     }
 }
