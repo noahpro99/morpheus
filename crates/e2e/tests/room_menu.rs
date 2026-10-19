@@ -310,3 +310,28 @@ async fn create_edit_invite_and_leave_rooms() {
     .await
     .expect("room gone after leaving");
 }
+
+/// The chat header's room button opens the same menu as right-clicking the
+/// room, so its settings are one click away.
+#[tokio::test]
+async fn header_button_opens_the_room_menu() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch_desktop(&hs).await.expect("launch app");
+    login(&mut app, "alice").await;
+    app.open_room("random").await.expect("open random");
+    app.click(".chat-header .room-menu-button")
+        .await
+        .expect("header room button");
+    app.wait_for_text(".context-menu .context-item", "Edit room", DEFAULT_WAIT)
+        .await
+        .expect("room menu");
+    app.click_text(".context-menu .context-item", "Edit room")
+        .await
+        .expect("edit room");
+    app.wait_for(".edit-room-dialog", DEFAULT_WAIT)
+        .await
+        .expect("room editor");
+}

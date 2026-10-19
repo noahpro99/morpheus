@@ -169,13 +169,7 @@ fn RoomRow(room: RoomSummary) -> Element {
             e.prevent_default();
             e.stop_propagation();
             let point = e.client_coordinates();
-            let session = session.clone();
-            let room_id = room_id.clone();
-            spawn(async move {
-                let mode = session.notify_mode(room_id.clone()).await.ok();
-                let items = room_menu(&session, &room_id, is_dm, mode);
-                open_menu_at(point.x, point.y, items, None);
-            });
+            open_room_menu_at(&session, room_id.clone(), is_dm, point.x, point.y);
         }
     };
 
@@ -206,6 +200,24 @@ fn run(what: &'static str, future: morpheus_core::CoreFuture<()>) {
         if let Err(err) = future.await {
             report(what, &err);
         }
+    });
+}
+
+/// Open a room's menu at a point: what right-clicking its row shows, also
+/// behind the chat header's ellipsis. Built after a quick (local) lookup of
+/// the room's notification mode.
+pub fn open_room_menu_at(
+    session: &Session,
+    room_id: morpheus_core::OwnedRoomId,
+    is_dm: bool,
+    x: f64,
+    y: f64,
+) {
+    let session = session.clone();
+    spawn(async move {
+        let mode = session.notify_mode(room_id.clone()).await.ok();
+        let items = room_menu(&session, &room_id, is_dm, mode);
+        open_menu_at(x, y, items, None);
     });
 }
 
