@@ -1049,3 +1049,32 @@ impl App {
         Ok(())
     }
 }
+
+impl App {
+    /// Start the app again on this app's data directory, the way a user
+    /// launching it twice would, and wait up to `timeout` for that second
+    /// process to exit. `Some(status)` if it exited, `None` if it kept running
+    /// (it is killed then).
+    pub async fn launch_again(
+        &self,
+        timeout: Duration,
+    ) -> Result<Option<std::process::ExitStatus>> {
+        let port = free_port().await?;
+        let mut child = Command::new(binary_path()?)
+            .env("MORPHEUS_E2E_PORT", port.to_string())
+            .env("MORPHEUS_DATA_DIR", &self.data_dir)
+            .env("MORPHEUS_HOMESERVER", &self.homeserver)
+            .env("MORPHEUS_SESSION_STORE", "file")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .kill_on_drop(true)
+            .spawn()?;
+        match tokio::time::timeout(timeout, child.wait()).await {
+            Ok(status) => Ok(Some(status?)),
+            Err(_) => {
+                let _ = child.kill().await;
+                Ok(None)
+            }
+        }
+    }
+}

@@ -53,6 +53,10 @@ fn main() {
         let open_room = config.open_room.clone();
         move |session| notifier(session, focus.clone(), open_room.clone())
     }));
+    if !single_instance::claim(&config.data_dir) {
+        tracing::info!("Morpheus already runs on this data; showing its window instead");
+        return;
+    }
     tracing::info!(?config.data_dir, "starting morpheus desktop");
 
     // Test runs open many windows; they must not steal focus from whatever
@@ -174,6 +178,18 @@ fn DesktopRoot() -> Element {
     use_hook({
         let window = window.window.clone();
         move || reopen_on_control_port(window)
+    });
+    // A second launch on the same data shows this window.
+    use_hook({
+        let window = window.window.clone();
+        move || {
+            single_instance::on_show(move || {
+                SHOW_REQUESTED.store(true, Ordering::Relaxed);
+                window.set_visible(true);
+                window.set_focus();
+                window.request_redraw();
+            })
+        }
     });
 
     use_context_provider(|| WindowControls {
@@ -355,5 +371,60 @@ fn install_builtin_tray() {
             provide_context(tray);
         }
         Err(err) => tracing::warn!(%err, "no tray icon"),
+    }
+}
+
+/// One Morpheus per data directory: a second launch asks the running one to
+/// show its window over a socket there, then exits (Unix; elsewhere a second
+/// copy still starts).
+mod single_instance {
+    use std::path::Path;
+    use std::sync::OnceLock;
+
+    #[cfg(unix)]
+    use std::os::unix::net::{UnixListener, UnixStream};
+
+    const SOCKET: &str = "instance.sock";
+
+    #[cfg(unix)]
+    static LISTENER: OnceLock<UnixListener> = OnceLock::new();
+
+    /// `false` when another Morpheus already runs on `data_dir` (it has been
+    /// asked to show itself, and this process should exit).
+    pub fn claim(data_dir: &Path) -> bool {
+        #[cfg(unix)]
+        {
+            use std::io::Write;
+            let path = data_dir.join(SOCKET);
+            if let Ok(mut running) = UnixStream::connect(&path) {
+                let _ = running.write_all(b"show\n");
+                return false;
+            }
+            // Nobody answered: a leftover from a crash, or nothing yet.
+            let _ = std::fs::remove_file(&path);
+            match UnixListener::bind(&path) {
+                Ok(listener) => {
+                    let _ = LISTENER.set(listener);
+                }
+                Err(err) => tracing::warn!(%err, "single-instance socket not bound"),
+            }
+        }
+        #[cfg(not(unix))]
+        let _ = data_dir;
+        true
+    }
+
+    /// Call `show` for every later launch that asks.
+    pub fn on_show(show: impl Fn() + Send + 'static) {
+        #[cfg(unix)]
+        if let Some(listener) = LISTENER.get() {
+            std::thread::spawn(move || {
+                for _ in listener.incoming().flatten() {
+                    show();
+                }
+            });
+        }
+        #[cfg(not(unix))]
+        let _ = show;
     }
 }
