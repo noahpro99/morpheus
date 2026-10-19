@@ -350,8 +350,8 @@ pub fn TimelineView(
                     Row::Message { message, show_header } => rsx! {
                         MessageRow { key: "{message.unique_id}", message: message.clone(), show_header }
                     },
-                    Row::Date(label) => rsx! {
-                        div { key: "date-{label}", class: "date-divider", span { "{label}" } }
+                    Row::Date(label, at) => rsx! {
+                        div { key: "date-{at}", class: "date-divider", span { "{label}" } }
                     },
                     Row::Start => rsx! {
                         div { class: "timeline-start", "This is the beginning of the room." }
@@ -410,7 +410,8 @@ enum Row<'a> {
         message: &'a Message,
         show_header: bool,
     },
-    Date(String),
+    /// The label, and the timestamp that keys it (a label can repeat).
+    Date(String, u64),
     Start,
     /// The Discord-style "new messages" divider.
     New,
@@ -453,7 +454,7 @@ fn group_rows<'a>(entries: &'a Vector<TimelineEntry>, marker: Option<&str>) -> V
                 previous = Some(message);
             }
             TimelineEntry::DateDivider { timestamp_ms } => {
-                rows.push(Row::Date(calendar_date(*timestamp_ms)));
+                rows.push(Row::Date(calendar_date(*timestamp_ms), *timestamp_ms));
                 previous = None;
             }
             TimelineEntry::TimelineStart => {
@@ -1273,7 +1274,7 @@ mod tests {
             .map(|row| match row {
                 Row::Message { message, .. } => message.unique_id.as_str(),
                 Row::New => "NEW",
-                Row::Date(_) => "date",
+                Row::Date(..) => "date",
                 Row::Start => "start",
             })
             .collect();

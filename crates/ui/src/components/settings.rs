@@ -447,8 +447,10 @@ pub fn VerificationPanel(verification: Rc<Verification>) -> Element {
                 VerificationStep::Emojis(emojis) => rsx! {
                     p { "Compare these with your other device. They must match in the same order." }
                     ul { class: "emoji-grid",
-                        for (symbol, name) in emojis {
-                            li { key: "{name}", span { class: "emoji", "{symbol}" } span { class: "emoji-name", "{name}" } }
+                        // By position: the same emoji can come up twice in one code,
+                        // and duplicate keys crash the renderer.
+                        for (index, (symbol, name)) in emojis.into_iter().enumerate() {
+                            li { key: "{index}", span { class: "emoji", "{symbol}" } span { class: "emoji-name", "{name}" } }
                         }
                     }
                     div { class: "settings-actions",
