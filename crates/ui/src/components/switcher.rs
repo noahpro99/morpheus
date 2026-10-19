@@ -11,7 +11,7 @@ use crate::media::Avatar;
 /// What a row in the palette does: open a room, or run an app action.
 #[derive(Clone, PartialEq)]
 enum Entry {
-    Room(RoomSummary),
+    Room(Box<RoomSummary>),
     Action(Action),
 }
 
@@ -88,7 +88,7 @@ pub fn QuickSwitcher(open: Signal<bool>) -> Element {
             })
             .take(8)
             .cloned()
-            .map(Entry::Room)
+            .map(|room| Entry::Room(Box::new(room)))
             .collect();
         list.extend(
             Action::ALL

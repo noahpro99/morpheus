@@ -5305,6 +5305,7 @@ dependencies = [
  "base64 0.22.1",
  "dioxus",
  "jiff",
+ "morpheus-call",
  "morpheus-core",
  "open",
  "rfd",

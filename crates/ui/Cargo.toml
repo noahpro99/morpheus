@@ -13,6 +13,7 @@ e2e = ["dep:serde", "tokio/net", "tokio/io-util"]
 # No platform feature here on purpose: apps/desktop and apps/mobile choose.
 dioxus = { workspace = true }
 morpheus-core = { workspace = true }
+morpheus-call = { workspace = true }
 tracing = { workspace = true }
 base64 = { workspace = true }
 tokio = { workspace = true, features = ["time", "sync"] }

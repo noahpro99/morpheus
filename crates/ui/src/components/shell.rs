@@ -351,6 +351,7 @@ pub fn Shell(session: Session) -> Element {
     super::keys::provide_key_tracking(session.clone());
     let mut nickname_target = super::nicknames::provide_nicknames(session.clone());
     let (_, friends_open) = super::friends::provide_friends(session.clone());
+    super::call::provide_calls(session.clone());
     let _toasts: Toasts = use_context_provider(|| Signal::new(ToastList::default()));
     // Narrow (phone) layout: the page reports its width; one pane shows at a time.
     let mut narrow: NarrowWindow = use_context_provider(|| Signal::new(Narrow::default()));
@@ -942,6 +943,9 @@ fn ChatRoom(room: RoomSummary) -> Element {
     let session = use_context::<Session>();
     // Kept for the header buttons; `session` goes into the typing watcher.
     let header_session = session.clone();
+    let call_room = use_context::<super::call::ActiveCall>()()
+        .0
+        .map(|c| c.room_id);
     let title = try_use_context::<super::nicknames::Nicknames>()
         .map(|map| super::nicknames::room_title(&map(), &room))
         .unwrap_or_else(|| room.name.clone());
@@ -1014,6 +1018,25 @@ fn ChatRoom(room: RoomSummary) -> Element {
             h2 { "{title}" }
             if let Some(topic) = room.topic.as_deref() {
                 span { class: "topic", "{topic}" }
+            }
+            {
+                let in_this_call = call_room.as_ref() == Some(&room.id);
+                let (session, room_id, room_name) = (header_session.clone(), room.id.clone(), room.name.clone());
+                rsx! {
+                    button {
+                        class: "ghost call-button",
+                        class: if in_this_call { "active" },
+                        title: if in_this_call { "Leave the call" } else if room.call_participants.is_empty() { "Start a call" } else { "Join the call" },
+                        onclick: move |_| {
+                            if in_this_call {
+                                super::call::hang_up(session.clone());
+                            } else {
+                                super::call::join_call(session.clone(), room_id.clone(), room_name.clone());
+                            }
+                        },
+                        Icon { glyph: if in_this_call { crate::icons::PHONE_OFF } else { crate::icons::PHONE }, size: 16 }
+                    }
+                }
             }
             button {
                 class: "ghost room-menu-button",

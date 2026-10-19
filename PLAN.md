@@ -118,6 +118,17 @@ timeline → send.
 - [x] UnifiedPush notifications (Sunup, ntfy…; tap opens the room). They show sender and text: a running app hands over what it decrypted; with the app closed, the push service decrypts the message itself through the core (SDK notification client, via JNI). Phone e2e test covers both.
 - [ ] iOS build on a Mac runner
 
+### 5b. Calls (MatrixRTC, Element Call compatible signalling)
+- [x] Signalling in the core: the homeserver names a LiveKit token service (MSC4143 `rtc/transports`, else `org.matrix.msc4143.rtc_foci` in the well-known); an OpenID token buys a LiveKit token (`/get_token`, falling back to `/sfu/get`); each device posts `org.matrix.msc3401.call.member` (Element Call's state key and focus shape). Live tests.
+- [x] A device that vanishes drops out: an MSC4140 delayed leave, restarted every 4 s while the app runs, fires 10 s after it stops. Live test.
+- [x] Members may join calls: rooms Morpheus creates allow the membership at power level 0; an admin joining turns it on in older rooms; others are told why not.
+- [x] Media is native, not the webview (nixpkgs WebKitGTK has no WebRTC): `crates/call` wraps the LiveKit Rust SDK with WebRTC's own audio devices (echo cancellation, noise suppression). Tests send a tone (`MORPHEUS_CALL_AUDIO=tone`) and measure what arrives. Needs clang 21+ for libwebrtc (dev shell sets it).
+- [x] UI: phone button in the header joins (or leaves); people in a call are listed under the room in the sidebar with a ring while speaking, and clicking the list joins; voice panel above the user pill (state, room, hang up); mute and deafen in the user pill. Join/leave events stay out of the timeline. E2E test.
+- [x] Dev services: LiveKit (dev mode) and Element's lk-jwt-service beside Synapse (`just hs-up`); Synapse gets a TLS federation listener (self-signed) for the token service's OpenID check, delayed events and the well-known focus.
+- [ ] Android: RECORD_AUDIO, libwebrtc's JNI setup, LiveKit reachable from the phone.
+- [ ] Media encryption (Element Call's per-participant keys) — required to share calls with Element Call in encrypted rooms; until then Morpheus calls are only TLS-protected to the SFU.
+- [ ] Video and screen share; device pickers in Settings → Voice & Video; join/leave sounds; ringing for DMs (MSC4075 `m.rtc.notification`).
+
 ### 6. Native renderer
 - [ ] Evaluate Dioxus Native (Blitz) on desktop; gate behind a cargo feature
 - [ ] Measure cold start, scroll FPS, memory against the webview build

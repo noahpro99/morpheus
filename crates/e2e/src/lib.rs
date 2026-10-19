@@ -145,6 +145,8 @@ impl App {
             .env("MORPHEUS_HOMESERVER", homeserver)
             // Never touch the developer's real keyring from a test run.
             .env("MORPHEUS_SESSION_STORE", "file")
+            // Calls send a test tone and play nothing: no real microphone or speakers.
+            .env("MORPHEUS_CALL_AUDIO", "tone")
             .env(
                 "RUST_LOG",
                 std::env::var("RUST_LOG").unwrap_or_else(|_| "morpheus=debug,warn".into()),
@@ -1063,6 +1065,7 @@ impl App {
         let port = free_port().await?;
         let mut child = Command::new(binary_path()?)
             .env("MORPHEUS_E2E_PORT", port.to_string())
+            .env("MORPHEUS_CALL_AUDIO", "tone")
             .env("MORPHEUS_DATA_DIR", &self.data_dir)
             .env("MORPHEUS_HOMESERVER", &self.homeserver)
             .env("MORPHEUS_SESSION_STORE", "file")
