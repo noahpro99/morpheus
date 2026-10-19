@@ -8,6 +8,7 @@ mod app;
 mod attach;
 pub mod autostart;
 mod components;
+pub mod device_prefs;
 #[cfg(feature = "e2e")]
 mod e2e;
 #[cfg(not(feature = "e2e"))]

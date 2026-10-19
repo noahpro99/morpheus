@@ -51,7 +51,8 @@ fn main() {
     config.on_session = Some(Arc::new({
         let focus = focus.clone();
         let open_room = config.open_room.clone();
-        move |session| notifier(session, focus.clone(), open_room.clone())
+        let data_dir = config.data_dir.clone();
+        move |session| notifier(session, focus.clone(), open_room.clone(), data_dir.clone())
     }));
     if !single_instance::claim(&config.data_dir) {
         tracing::info!("Morpheus already runs on this data; showing its window instead");
@@ -233,7 +234,7 @@ fn DesktopRoot() -> Element {
 /// Consume the session's notification stream on a plain thread with its own
 /// small runtime, and raise OS notifications unless the user is looking at
 /// that room right now.
-fn notifier(session: Session, focus: Focus, open_room: OpenRoom) {
+fn notifier(session: Session, focus: Focus, open_room: OpenRoom, data_dir: PathBuf) {
     std::thread::Builder::new()
         .name("morpheus-notifier".into())
         .spawn(move || {
@@ -272,6 +273,11 @@ fn notifier(session: Session, focus: Focus, open_room: OpenRoom) {
                     } else {
                         format!("{} in {}", notice.sender_name, notice.room_name)
                     };
+                    // Checked each time: Settings can turn it off while running.
+                    if !morpheus_ui::device_prefs::notifications_enabled(&data_dir) {
+                        tracing::info!("notifications are off on this device; not shown");
+                        continue;
+                    }
                     notify(title, notice.body_summary);
                 }
             });

@@ -108,3 +108,78 @@ async fn messages_from_others_are_announced_and_mentions_flagged() {
         "inbox closed"
     );
 }
+
+/// Notifications can be turned off on one device (Settings → Notifications):
+/// the setting is kept on the device, and the system notifier stays quiet
+/// while it is off.
+#[tokio::test]
+async fn notifications_can_be_turned_off_on_this_device() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut bob = App::launch_desktop(&hs).await.expect("launch bob");
+    login(&mut bob, "bob").await;
+    bob.open_room("random").await.expect("bob reads #random");
+    let off = bob.data_dir().join("notifications_off");
+
+    bob.click(".settings-button").await.expect("gear");
+    bob.wait_for_text(".settings-nav button", "Notifications", DEFAULT_WAIT)
+        .await
+        .expect("settings");
+    bob.click_text(".settings-nav button", "Notifications")
+        .await
+        .expect("notifications page");
+    bob.wait_for(
+        ".settings-page input[name=device-notifications]:checked",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("on by default");
+    bob.click(".settings-page input[name=device-notifications]")
+        .await
+        .expect("turn off");
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    while !off.exists() {
+        assert!(std::time::Instant::now() < deadline, "setting not kept");
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+    bob.press("body", "Escape").await.expect("close settings");
+
+    // A message for bob is not shown by the system notifier now.
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    login(&mut alice, "alice").await;
+    alice.open_room("general").await.expect("alice in #general");
+    let text = format!("quiet please {}", std::process::id());
+    send(&mut alice, &text).await;
+    let log = bob.data_dir().join("app.log");
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let text = std::fs::read_to_string(&log).unwrap_or_default();
+        if text.contains("notifications are off on this device") {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "notifier not held back"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    }
+
+    // And back on.
+    bob.click(".settings-button").await.expect("gear");
+    bob.wait_for_text(".settings-nav button", "Notifications", DEFAULT_WAIT)
+        .await
+        .expect("settings");
+    bob.click_text(".settings-nav button", "Notifications")
+        .await
+        .expect("notifications page");
+    bob.click(".settings-page input[name=device-notifications]")
+        .await
+        .expect("turn on");
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    while off.exists() {
+        assert!(std::time::Instant::now() < deadline, "setting not cleared");
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+}
