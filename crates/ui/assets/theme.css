@@ -1701,3 +1701,7 @@ body.dropping .drop-hint { display: flex; }
   --own: #3d4fe0;
   color-scheme: light;
 }
+
+/* A recovery key just created in Settings. */
+.recovery-key-new { margin: 12px 0; padding: 12px; border-radius: var(--radius-lg); background: var(--bg-elevated); display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.recovery-key-new code { font-family: var(--mono); font-size: 0.95rem; letter-spacing: 0.04em; word-break: break-word; user-select: all; -webkit-user-select: all; }

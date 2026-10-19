@@ -188,6 +188,35 @@ pub fn Settings() -> Element {
     };
     let shown = page().or((!narrow).then_some(landing));
 
+    // A recovery key just created here, shown until Settings closes.
+    let mut new_key = use_signal(|| None::<String>);
+    let set_up_recovery = {
+        let session = session.clone();
+        move |_| {
+            if busy() {
+                return;
+            }
+            busy.set(true);
+            recovery_message.set(None);
+            let session = session.clone();
+            spawn(async move {
+                match session.enable_recovery().await {
+                    Ok(key) => {
+                        new_key.set(Some(key));
+                        refresh += 1;
+                        bump_keys();
+                    }
+                    Err(err) => recovery_message.set(Some(Err(err.to_string()))),
+                }
+                busy.set(false);
+            });
+        }
+    };
+    let backup_missing = matches!(
+        &*status.read(),
+        Some(Ok(status)) if status.recovery == RecoveryAvailability::Disabled
+    );
+
     let start_verification = {
         let session = session.clone();
         move |_| {
@@ -289,6 +318,26 @@ pub fn Settings() -> Element {
                                         Some(Ok(status)) => rsx! { EncryptionSummary { status: status.clone() } },
                                     }
 
+                                    if let Some(key) = new_key() {
+                                        div { class: "recovery-key-new",
+                                            p { strong { "Your recovery key" } }
+                                            p { class: "muted",
+                                                "Save it somewhere safe, like a password manager. With it, any new device can read your encrypted history; without it, history is lost if you lose all your signed-in devices."
+                                            }
+                                            code { "{key}" }
+                                            button {
+                                                class: "secondary",
+                                                onclick: move |_| super::context_menu::copy_to_clipboard(&key),
+                                                "Copy"
+                                            }
+                                        }
+                                    } else if backup_missing {
+                                        div { class: "settings-actions",
+                                            button { class: "primary setup-recovery", disabled: busy(), onclick: set_up_recovery,
+                                                "Set up recovery"
+                                            }
+                                        }
+                                    }
                                     if let Some(active) = verification() {
                                         VerificationPanel { verification: active }
                                     } else {

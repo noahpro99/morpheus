@@ -248,3 +248,47 @@ async fn verification_survives_closing_and_reopening_settings() {
         .await
         .expect("B done");
 }
+
+/// An account with no key backup can set one up from Settings: the recovery
+/// key is shown once to keep, and backup reads as connected.
+#[tokio::test]
+async fn new_account_sets_up_recovery_from_settings() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let user = morpheus_e2e::new_account(&hs, "recovery").expect("new account");
+    let mut app = App::launch(&hs).await.expect("launch app");
+    login(&mut app, &user, &format!("{user}-password")).await;
+    open_security(&mut app).await;
+    app.wait_for_text(".status-list", "No key backup", DEFAULT_WAIT)
+        .await
+        .expect("no backup yet");
+    app.click_text(".settings-page button", "Set up recovery")
+        .await
+        .expect("set up recovery");
+    app.wait_for(".recovery-key-new code", DEFAULT_WAIT)
+        .await
+        .expect("the new key is shown");
+    let key = app
+        .eval("return document.querySelector('.recovery-key-new code').textContent.trim();")
+        .await
+        .expect("key")
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
+    assert!(
+        key.split_whitespace().count() >= 8,
+        "a recovery key: {key:?}"
+    );
+    app.wait_for_text(".status-list", "Key backup connected", DEFAULT_WAIT)
+        .await
+        .expect("backup connected");
+    assert_eq!(
+        app.count(".settings-page button.setup-recovery")
+            .await
+            .expect("count"),
+        0,
+        "no second set-up offered"
+    );
+}

@@ -1371,3 +1371,96 @@ async fn two_accounts_side_by_side_switch_without_signing_in_again() {
     bob.logout().await.expect("logout bob");
     assert!(restarted.accounts().await.expect("accounts").is_empty());
 }
+
+/// A fresh account for one test run (through the admin API, as alice).
+async fn new_account(homeserver: &str, name: &str) -> String {
+    let http = matrix_sdk::reqwest::Client::new();
+    let body = serde_json::json!({
+        "type": "m.login.password",
+        "identifier": { "type": "m.id.user", "user": "alice" },
+        "password": "alice-password",
+    });
+    let login = http
+        .post(format!("{homeserver}/_matrix/client/v3/login"))
+        .header("content-type", "application/json")
+        .body(body.to_string())
+        .send()
+        .await
+        .expect("admin login")
+        .text()
+        .await
+        .expect("admin login body");
+    let login: serde_json::Value = serde_json::from_str(&login).expect("json");
+    let token = login["access_token"].as_str().expect("token").to_owned();
+    let user = format!("{name}-{}", std::process::id());
+    let status = http
+        .put(format!(
+            "{homeserver}/_synapse/admin/v2/users/@{user}:localhost"
+        ))
+        .bearer_auth(&token)
+        .header("content-type", "application/json")
+        .body(serde_json::json!({ "password": format!("{user}-password") }).to_string())
+        .send()
+        .await
+        .expect("create user")
+        .status();
+    assert!(status.is_success(), "creating {user}: {status}");
+    let _ = http
+        .post(format!("{homeserver}/_matrix/client/v3/logout"))
+        .bearer_auth(&token)
+        .send()
+        .await;
+    user
+}
+
+/// Wait until a session's recovery state is `want` (it reads "unknown"
+/// until the first sync has settled).
+async fn wait_recovery(session: &Session, want: morpheus_core::RecoveryAvailability) {
+    let deadline = std::time::Instant::now() + WAIT;
+    loop {
+        let status = session.encryption_status().await.expect("status");
+        if status.recovery == want {
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "wanted {want:?}, still {status:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(300)).await;
+    }
+}
+
+#[tokio::test]
+async fn setting_up_recovery_lets_a_new_device_unlock_history() {
+    use morpheus_core::RecoveryAvailability;
+    let Some(env) = env() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping live test");
+        return;
+    };
+    let user = new_account(&env.homeserver, "recovery").await;
+    let login = |dir| {
+        let core = Core::with_session_store(dir, SessionStoreKind::File).expect("core");
+        let request = LoginRequest {
+            homeserver: env.homeserver.clone(),
+            username: user.clone(),
+            password: format!("{user}-password"),
+        };
+        async move { core.login(request).await.expect("login") }
+    };
+
+    let first = login(fresh_data_dir()).await;
+    wait_recovery(&first, RecoveryAvailability::Disabled).await;
+
+    let key = first.enable_recovery().await.expect("enable recovery");
+    assert!(
+        key.split_whitespace().count() >= 8,
+        "a recovery key: {key:?}"
+    );
+    wait_recovery(&first, RecoveryAvailability::Enabled).await;
+
+    // A second device sees the backup and unlocks it with the key.
+    let second = login(fresh_data_dir()).await;
+    wait_recovery(&second, RecoveryAvailability::NeedsKey).await;
+    second.recover(key).await.expect("recover with the key");
+    wait_recovery(&second, RecoveryAvailability::Enabled).await;
+}

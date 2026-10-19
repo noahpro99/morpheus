@@ -1078,3 +1078,48 @@ impl App {
         }
     }
 }
+
+/// A fresh account on the dev homeserver for one test (created through the
+/// admin API as alice, with `curl`); signs in with `<name>-password`.
+pub fn new_account(homeserver: &str, name: &str) -> Result<String> {
+    let curl = |args: &[&str]| -> Result<String> {
+        let out = std::process::Command::new("curl")
+            .arg("-sf")
+            .args(args)
+            .output()?;
+        if !out.status.success() {
+            bail!("curl {args:?} failed");
+        }
+        Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+    };
+    let login = curl(&[
+        "-X",
+        "POST",
+        &format!("{homeserver}/_matrix/client/v3/login"),
+        "-d",
+        r#"{"type":"m.login.password","identifier":{"type":"m.id.user","user":"alice"},"password":"alice-password"}"#,
+    ])?;
+    let token: Value = serde_json::from_str(&login)?;
+    let token = token["access_token"]
+        .as_str()
+        .ok_or_else(|| anyhow!("no admin token"))?
+        .to_owned();
+    let user = format!("{name}-{}", unique());
+    curl(&[
+        "-X",
+        "PUT",
+        "-H",
+        &format!("Authorization: Bearer {token}"),
+        &format!("{homeserver}/_synapse/admin/v2/users/@{user}:localhost"),
+        "-d",
+        &json!({ "password": format!("{user}-password") }).to_string(),
+    ])?;
+    let _ = curl(&[
+        "-X",
+        "POST",
+        "-H",
+        &format!("Authorization: Bearer {token}"),
+        &format!("{homeserver}/_matrix/client/v3/logout"),
+    ]);
+    Ok(user)
+}

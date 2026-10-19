@@ -63,6 +63,28 @@ impl Session {
         })
     }
 
+    /// Turn on key backup and recovery for an account that has none, and
+    /// return the new recovery key for the user to keep. Sets up
+    /// cross-signing first if the account has none, so the key also restores
+    /// this identity on a new device.
+    pub fn enable_recovery(&self) -> CoreFuture<String> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            let encryption = client.encryption();
+            if let Err(err) = encryption.bootstrap_cross_signing_if_needed(None).await {
+                // Accounts that already have cross-signing (or need a password
+                // to change it) carry on with backup alone.
+                tracing::debug!(%err, "cross-signing not bootstrapped");
+            }
+            let key = encryption
+                .recovery()
+                .enable()
+                .wait_for_backups_to_upload()
+                .await?;
+            Ok(key)
+        })
+    }
+
     /// Restore cross-signing and room keys with a recovery key (or passphrase).
     /// Encrypted history becomes readable as keys are downloaded.
     pub fn recover(&self, recovery_key: String) -> CoreFuture<()> {
