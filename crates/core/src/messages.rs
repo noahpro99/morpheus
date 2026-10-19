@@ -119,6 +119,13 @@ impl Session {
     /// Flag a room as unread (or clear the flag) via `m.marked_unread`.
     pub fn mark_unread(&self, room_id: OwnedRoomId, unread: bool) -> CoreFuture<()> {
         let room = self.room(&room_id);
+        if let Ok(mut marked) = marked_at().lock() {
+            if unread {
+                marked.insert(room_id.clone(), std::time::Instant::now());
+            } else {
+                marked.remove(&room_id);
+            }
+        }
         self.core.run(async move {
             room?.set_unread_flag(unread).await?;
             Ok(())
@@ -153,5 +160,32 @@ impl Session {
             target?.send_raw(&event_type, content).await?;
             Ok(())
         })
+    }
+}
+
+/// When the user last marked each room unread (this process).
+fn marked_at()
+-> &'static std::sync::Mutex<std::collections::HashMap<OwnedRoomId, std::time::Instant>> {
+    static MARKED: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<OwnedRoomId, std::time::Instant>>,
+    > = std::sync::OnceLock::new();
+    MARKED.get_or_init(Default::default)
+}
+
+/// The SDK clears a room's unread flag after any receipt it sends. One that
+/// was already on its way when the user marked the room unread (say, for the
+/// message they had just sent) must not undo that: put the flag back.
+pub(crate) async fn keep_marked_unread(
+    room: &matrix_sdk::Room,
+    receipt_started: std::time::Instant,
+) {
+    let marked = marked_at()
+        .lock()
+        .ok()
+        .and_then(|marked| marked.get(room.room_id()).copied());
+    if marked.is_some_and(|at| at > receipt_started)
+        && let Err(err) = room.set_unread_flag(true).await
+    {
+        tracing::debug!(%err, "restoring the unread flag");
     }
 }

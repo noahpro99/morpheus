@@ -614,8 +614,12 @@ impl TimelineHandle {
     /// effect on the fully-read marker or the "new messages" divider.
     pub fn send_read_receipt(&self) -> CoreFuture<bool> {
         let timeline = self.timeline.clone();
-        self.core
-            .run(async move { Ok(timeline.mark_as_read(ReceiptType::Read).await?) })
+        self.core.run(async move {
+            let started = std::time::Instant::now();
+            let sent = timeline.mark_as_read(ReceiptType::Read).await?;
+            crate::messages::keep_marked_unread(timeline.room(), started).await;
+            Ok(sent)
+        })
     }
 
     /// Advance the fully-read marker to the latest event.
@@ -628,8 +632,12 @@ impl TimelineHandle {
     /// marker would advance out from under the user before they can see it.
     pub fn mark_as_fully_read(&self) -> CoreFuture<bool> {
         let timeline = self.timeline.clone();
-        self.core
-            .run(async move { Ok(timeline.mark_as_read(ReceiptType::FullyRead).await?) })
+        self.core.run(async move {
+            let started = std::time::Instant::now();
+            let sent = timeline.mark_as_read(ReceiptType::FullyRead).await?;
+            crate::messages::keep_marked_unread(timeline.room(), started).await;
+            Ok(sent)
+        })
     }
 }
 
