@@ -533,6 +533,10 @@ fn bump_keys() {
 #[component]
 fn NotificationsPage() -> Element {
     let data_dir = use_context::<crate::AppConfig>().data_dir;
+    let mut on_here = use_signal({
+        let data_dir = data_dir.clone();
+        move || crate::device_prefs::notifications_enabled(&data_dir)
+    });
     // Written by the Android push bridge (apps/mobile/src/push.rs).
     let push = std::fs::read_to_string(data_dir.join("push_status")).ok();
     let device = if cfg!(target_os = "android") {
@@ -556,7 +560,22 @@ fn NotificationsPage() -> Element {
         }
         section { class: "settings-section",
             h3 { "This device" }
-            p { class: "device-notifications", "{device}" }
+            label { class: "notify-choice",
+                input {
+                    r#type: "checkbox",
+                    name: "device-notifications",
+                    checked: on_here(),
+                    onchange: move |_| {
+                        let want = !on_here();
+                        match crate::device_prefs::set_notifications_enabled(&data_dir, want) {
+                            Ok(()) => on_here.set(want),
+                            Err(err) => report("saving the notification setting", &err),
+                        }
+                    },
+                }
+                span { "Notifications on this device" }
+            }
+            p { class: "device-notifications muted", "{device}" }
         }
     }
 }

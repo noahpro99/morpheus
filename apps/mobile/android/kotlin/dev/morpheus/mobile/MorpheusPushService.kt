@@ -40,6 +40,8 @@ class MorpheusPushService : PushService() {
         Log.d(TAG, "push: visible=${PushStartup.visible} decrypted=${message.decrypted} bytes=${message.content.size}")
         // On screen, the app shows the message itself.
         if (PushStartup.visible) return
+        // Turned off on this device (Settings → Notifications; `device_prefs.rs`).
+        if (File(dataDir(this), "notifications_off").exists()) return
         val notification = try {
             JSONObject(String(message.content)).optJSONObject("notification")
         } catch (_: Exception) {
