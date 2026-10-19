@@ -113,6 +113,22 @@ const sendFiles = files => {
   }
 };
 const hasFiles = e => !!e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+// Phones have no native picker the app can call (`attach.rs`): the attach
+// button opens a file input instead, from the tap itself (Android shows its
+// picker only for a real tap), and picked files go the way pasted ones do.
+(() => {
+  if (!window.__morpheusPagePicker) return;
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.multiple = true;
+  input.id = 'morpheus-file-input';
+  input.hidden = true;
+  input.addEventListener('change', () => { if (input.files.length) sendFiles(input.files); input.value = ''; });
+  document.body.append(input);
+  window.addEventListener('click', e => {
+    if (e.target.closest && e.target.closest('.composer .attach-button')) input.click();
+  }, true);
+})();
 window.addEventListener('dragenter', e => { if (hasFiles(e)) { e.preventDefault(); document.body.classList.add('dropping'); } }, true);
 window.addEventListener('dragover', e => { if (hasFiles(e)) { e.preventDefault(); document.body.classList.add('dropping'); } }, true);
 window.addEventListener('dragleave', e => { if (!e.relatedTarget || e.relatedTarget === document.documentElement) document.body.classList.remove('dropping'); }, true);
