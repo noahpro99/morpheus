@@ -57,9 +57,21 @@ pub fn set_friend(session: &Session, user_id: OwnedUserId, friend: bool) {
 #[component]
 pub fn FriendsPage() -> Element {
     let friends = use_context::<Friends>();
+    let narrow = try_use_context::<super::shell::NarrowWindow>();
     rsx! {
         section { class: "friends-page",
             header { class: "chat-header friends-header",
+                // A phone shows one pane: back to the list, as from a chat.
+                if narrow.is_some_and(|n| n().0) {
+                    button {
+                        class: "ghost pane-back",
+                        title: "Back to rooms",
+                        onclick: move |_| {
+                            consume_context::<super::shell::ChatOpen>().set(super::shell::ChatInFront(false));
+                        },
+                        crate::icons::Icon { glyph: crate::icons::CHEVRON_LEFT, size: 18 }
+                    }
+                }
                 h2 { "Friends" }
             }
             if friends().0.is_empty() {
