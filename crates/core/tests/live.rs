@@ -1823,3 +1823,74 @@ async fn joining_a_call_gets_livekit_credentials_and_shows_in_the_room_list() {
     )
     .await;
 }
+
+#[tokio::test]
+async fn a_device_that_vanishes_drops_out_of_the_call() {
+    let Some(env) = env() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping live test");
+        return;
+    };
+    let login = async |user: &str| {
+        let core =
+            Core::with_session_store(fresh_data_dir(), SessionStoreKind::File).expect("core");
+        let session = core
+            .login(LoginRequest {
+                homeserver: env.homeserver.clone(),
+                username: user.into(),
+                password: format!("{user}-password"),
+            })
+            .await
+            .expect("login");
+        (core, session)
+    };
+    let (alice_core, alice) = login("carol").await;
+    let (_bob_core, bob) = login("bob").await;
+    let carol_id = alice.user_id().expect("user id");
+
+    let mut bob_rooms = bob.room_list().await.expect("bob room list");
+    let mut rooms = Vector::new();
+    drive(
+        &mut rooms,
+        async || bob_rooms.next().await,
+        |rooms| rooms.iter().any(|r| r.name == SEEDED_ROOM),
+    )
+    .await;
+    let general = rooms
+        .iter()
+        .find(|r| r.name == SEEDED_ROOM)
+        .expect("general")
+        .id
+        .clone();
+
+    alice.join_call(general.clone()).await.expect("join call");
+    drive(
+        &mut rooms,
+        async || bob_rooms.next().await,
+        |rooms| {
+            rooms
+                .iter()
+                .any(|r| r.id == general && r.call_participants.contains(&carol_id))
+        },
+    )
+    .await;
+
+    // The app dies without hanging up (no leave sent): its runtime stops.
+    tokio::task::spawn_blocking(move || {
+        drop(alice);
+        drop(alice_core);
+    })
+    .await
+    .expect("drop");
+
+    // The homeserver hangs up for it once it stops checking in.
+    drive(
+        &mut rooms,
+        async || bob_rooms.next().await,
+        |rooms| {
+            rooms
+                .iter()
+                .any(|r| r.id == general && !r.call_participants.contains(&carol_id))
+        },
+    )
+    .await;
+}

@@ -41,7 +41,7 @@ pub use error::{Error, Result};
 /// leak into dependents, and `Send` so any executor can drive it.
 pub type CoreFuture<T> = futures_util::future::BoxFuture<'static, Result<T>>;
 pub use accounts::SavedAccount;
-pub use calls::CallCredentials;
+pub use calls::{CallCredentials, CallMember};
 pub use media::{Media, MediaRef};
 pub use members::{Member, MemberPermissions, MemberRole};
 pub use messages::PinnedMessage;

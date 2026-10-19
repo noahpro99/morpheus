@@ -5,14 +5,28 @@
 //! everyone in the room sees who is there. The media itself is LiveKit's
 //! business (`morpheus-call`).
 
-use std::time::Duration;
+use std::{
+    collections::HashMap,
+    sync::{Mutex, OnceLock},
+    time::Duration,
+};
 
 use matrix_sdk::ruma::{
     OwnedRoomId, OwnedUserId,
-    api::client::account::request_openid_token,
-    events::call::member::{
-        ActiveFocus, ActiveLivekitFocus, Application, CallApplicationContent,
-        CallMemberEventContent, CallMemberStateKey, CallScope, Focus, LivekitFocus,
+    api::client::{
+        account::request_openid_token,
+        delayed_events::{
+            DelayParameters, delayed_state_event,
+            update_delayed_event::{self, UpdateAction},
+        },
+        state::get_state_event_for_key,
+    },
+    events::{
+        StateEventType,
+        call::member::{
+            ActiveFocus, ActiveLivekitFocus, Application, CallApplicationContent,
+            CallMemberEventContent, CallMemberStateKey, CallScope, Focus, LivekitFocus,
+        },
     },
 };
 use serde_json::{Value, json};
@@ -73,6 +87,38 @@ impl Session {
                 (None, Some(err)) => return Err(err),
                 (None, None) => return Err(Error::Other("no call service answered".into())),
             };
+            ensure_calls_allowed(&room, &user_id).await?;
+            let state_key = member_state_key(user_id.clone(), device_id.as_str());
+
+            // If this device vanishes (crash, battery, network), the
+            // homeserver hangs up for it: a leave is scheduled now and
+            // postponed for as long as the app keeps checking in.
+            stop_heartbeat(&user_id, &room_id);
+            match client
+                .send(delayed_state_event::unstable::Request::new(
+                    room_id.clone(),
+                    state_key.as_ref().to_owned(),
+                    DelayParameters::Timeout {
+                        timeout: LEAVE_DELAY,
+                    },
+                    &CallMemberEventContent::new_empty(None),
+                )?)
+                .await
+            {
+                Ok(response) => {
+                    let heartbeat =
+                        tokio::spawn(heartbeat(client.clone(), response.delay_id.clone()));
+                    if let Ok(mut beats) = heartbeats().lock() {
+                        beats.insert(
+                            (user_id.clone(), room_id.clone()),
+                            (heartbeat, response.delay_id),
+                        );
+                    }
+                }
+                // Without delayed events (older homeservers) the membership
+                // simply expires, as it does for everyone after a few hours.
+                Err(err) => debug!(%err, "no delayed leave for the call"),
+            }
 
             let content = CallMemberEventContent::new(
                 Application::Call(CallApplicationContent::new(String::new(), CallScope::Room)),
@@ -85,8 +131,7 @@ impl Session {
                 None,
                 None,
             );
-            room.send_state_event_for_key(&member_state_key(user_id, device_id.as_str()), content)
-                .await?;
+            room.send_state_event_for_key(&state_key, content).await?;
             Ok(credentials)
         })
     }
@@ -99,6 +144,9 @@ impl Session {
             let client = session.client.clone();
             let user_id = client.user_id().ok_or(Error::NoSession)?.to_owned();
             let device_id = client.device_id().ok_or(Error::NoSession)?.to_owned();
+            if let Some(delay_id) = stop_heartbeat(&user_id, &room_id) {
+                let _ = update_delay(&client, delay_id, UpdateAction::Cancel).await;
+            }
             room.send_state_event_for_key(
                 &member_state_key(user_id, device_id.as_str()),
                 CallMemberEventContent::new_empty(None),
@@ -254,4 +302,184 @@ async fn livekit_token(
         }
     }
     Err(Error::Other(last))
+}
+
+/// How long after this device stops checking in the homeserver hangs up for it.
+const LEAVE_DELAY: Duration = Duration::from_secs(10);
+/// How often a device in a call checks in (well inside [`LEAVE_DELAY`]).
+const HEARTBEAT: Duration = Duration::from_secs(4);
+
+type Heartbeats = Mutex<HashMap<(OwnedUserId, OwnedRoomId), (tokio::task::JoinHandle<()>, String)>>;
+
+/// The running heartbeat (and delayed leave id) per account and room.
+fn heartbeats() -> &'static Heartbeats {
+    static HEARTBEATS: OnceLock<Heartbeats> = OnceLock::new();
+    HEARTBEATS.get_or_init(Default::default)
+}
+
+/// Stop checking in for a call; returns the delayed leave it kept postponed.
+fn stop_heartbeat(user_id: &OwnedUserId, room_id: &OwnedRoomId) -> Option<String> {
+    let (task, delay_id) = heartbeats()
+        .lock()
+        .ok()?
+        .remove(&(user_id.clone(), room_id.clone()))?;
+    task.abort();
+    Some(delay_id)
+}
+
+async fn heartbeat(client: matrix_sdk::Client, delay_id: String) {
+    let mut tick = tokio::time::interval(HEARTBEAT);
+    tick.tick().await;
+    loop {
+        tick.tick().await;
+        if let Err(err) = update_delay(&client, delay_id.clone(), UpdateAction::Restart).await {
+            debug!(%err, "call heartbeat");
+        }
+    }
+}
+
+/// Restart, send or cancel a delayed event (both unstable MSC4140 shapes).
+async fn update_delay(
+    client: &matrix_sdk::Client,
+    delay_id: String,
+    action: UpdateAction,
+) -> crate::Result<()> {
+    let newer = client
+        .send(update_delayed_event::unstable_v2::Request::new(
+            delay_id.clone(),
+            action.clone(),
+        ))
+        .await;
+    if newer.is_ok() {
+        return Ok(());
+    }
+    client
+        .send(update_delayed_event::unstable_v1::Request::new(
+            delay_id, action,
+        ))
+        .await?;
+    Ok(())
+}
+
+/// Members need permission to post their call membership (state). Rooms
+/// Morpheus creates allow it; in others an admin joining turns it on, and
+/// anyone else is told why they can't.
+async fn ensure_calls_allowed(room: &matrix_sdk::Room, user_id: &OwnedUserId) -> crate::Result<()> {
+    let levels = room
+        .power_levels()
+        .await
+        .map_err(|err| Error::Other(format!("reading power levels: {err}")))?;
+    if levels.user_can_send_state(user_id, StateEventType::CallMember) {
+        return Ok(());
+    }
+    if !levels.user_can_send_state(user_id, StateEventType::RoomPowerLevels) {
+        return Err(Error::Other(
+            "calls aren't allowed in this room; an admin can turn them on by joining one".into(),
+        ));
+    }
+    allow_calls(room).await
+}
+
+/// Let every member join calls in `room` (power level 0 for the membership).
+pub(crate) async fn allow_calls(room: &matrix_sdk::Room) -> crate::Result<()> {
+    // From the server, not the local store: a fresh room may not have
+    // synced yet, and writing back a partial event would wipe the rest.
+    let current = room
+        .client()
+        .send(get_state_event_for_key::v3::Request::new(
+            room.room_id().to_owned(),
+            StateEventType::RoomPowerLevels,
+            String::new(),
+        ))
+        .await?;
+    let mut content: Value = serde_json::from_str(current.event_or_content.get())?;
+    if !content.is_object() {
+        return Err(Error::Other("unexpected power levels".into()));
+    }
+    if content["events"][StateEventType::CallMember.to_string()] == json!(0) {
+        return Ok(());
+    }
+    if !content["events"].is_object() {
+        content["events"] = json!({});
+    }
+    content["events"][StateEventType::CallMember.to_string()] = json!(0);
+    room.send_state_event_raw("m.room.power_levels", "", content)
+        .await?;
+    Ok(())
+}
+
+/// One device in a room's call.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CallMember {
+    pub user_id: OwnedUserId,
+    pub device_id: String,
+    /// The LiveKit identities this device can show up as (the token
+    /// service derives them from the user and device), for matching
+    /// LiveKit's speaking reports to people.
+    pub livekit_identities: Vec<String>,
+}
+
+impl Session {
+    /// The devices currently in `room_id`'s call.
+    pub fn call_members(&self, room_id: OwnedRoomId) -> CoreFuture<Vec<CallMember>> {
+        let session = self.clone();
+        self.core.run(async move {
+            let room = session.room(&room_id)?;
+            let events = room
+                .get_state_events_static::<CallMemberEventContent>()
+                .await?;
+            let mut members = Vec::new();
+            for raw in events {
+                let Ok(matrix_sdk::deserialized_responses::SyncOrStrippedState::Sync(event)) =
+                    raw.deserialize()
+                else {
+                    continue;
+                };
+                let Some(original) = event.as_original() else {
+                    continue;
+                };
+                for membership in original
+                    .content
+                    .active_memberships(Some(original.origin_server_ts))
+                {
+                    let device_id = membership.device_id().to_string();
+                    let user_id = original.state_key.user_id().to_owned();
+                    members.push(CallMember {
+                        livekit_identities: livekit_identities(&user_id, &device_id),
+                        user_id,
+                        device_id,
+                    });
+                }
+            }
+            Ok(members)
+        })
+    }
+}
+
+/// What the token service names a device in LiveKit: `/get_token` hashes
+/// user, device and member id (ours is `{device}_m.call`); the older
+/// `/sfu/get` uses `user:device`.
+fn livekit_identities(user_id: &OwnedUserId, device_id: &str) -> Vec<String> {
+    use base64::Engine as _;
+    use sha2::Digest as _;
+    let member_id = format!("{device_id}_m.call");
+    let parts = json!([user_id.as_str(), device_id, member_id]).to_string();
+    let hashed = base64::engine::general_purpose::STANDARD_NO_PAD
+        .encode(sha2::Sha256::digest(parts.as_bytes()));
+    vec![hashed, format!("{user_id}:{device_id}")]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn livekit_identity_matches_the_token_service() {
+        // The service's own derivation (lk-jwt-service `legacy_livekit_identity_for`),
+        // checked against a token it issued on the dev server.
+        let user: OwnedUserId = "@alice:localhost".try_into().expect("user id");
+        let ids = livekit_identities(&user, "DEV1");
+        assert_eq!(ids[1], "@alice:localhost:DEV1");
+        assert_eq!(ids[0], "mZs3Bdzfyu9aKeiedvidIcX5EmK9NtRPyMb9gc3ISa8");
+    }
 }
