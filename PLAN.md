@@ -80,7 +80,7 @@ timeline → send.
 - [x] Profile card popover (mutual rooms, note, role, message box, mod view, more menu) with the full modal behind "View full profile"
 - [ ] Friends list: Matrix has no friend relationship; could map to a "favourite people" list in account data
 - [ ] Mod view page (Discord's): a per-user moderation sheet across rooms
-- [ ] Multi-account: store sessions side by side so "Switch account" swaps without signing in again
+- [x] Multi-account: each account in its own folder (the first in the data dir, more under `accounts/<n>`); "Switch account" lists them and swaps without signing in, "Add an account" keeps the current one (the login screen offers a way back); signing out moves to the next. Core live test + e2e.
 - [x] Invites: sidebar section, chat-column card, inbox block, rail badge; accept joins, decline leaves
 - [ ] Per-user nicknames: Discord's friend nicknames have no Matrix equivalent; a local-only alias store could stand in
 - [x] Timeline pinned to the newest message on open, "Jump to present" button

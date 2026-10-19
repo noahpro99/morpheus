@@ -1267,3 +1267,86 @@ async fn default_notification_modes_round_trip() {
         );
     }
 }
+
+#[tokio::test]
+async fn two_accounts_side_by_side_switch_without_signing_in_again() {
+    let Some(env) = env() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping live test");
+        return;
+    };
+    let dir = fresh_data_dir();
+    let core = Core::with_session_store(&dir, SessionStoreKind::File).expect("core");
+    let login = |user: &str| LoginRequest {
+        homeserver: env.homeserver.clone(),
+        username: user.into(),
+        password: format!("{user}-password"),
+    };
+    let user = |s: &Session| s.user_id().expect("user").localpart().to_owned();
+
+    let alice = core.login(login("alice")).await.expect("alice");
+    assert_eq!(user(&alice), "alice");
+    let accounts = core.accounts().await.expect("accounts");
+    assert_eq!(accounts.len(), 1);
+    assert!(accounts[0].active);
+
+    // Adding a second account leaves the first stored.
+    alice.suspend().await.expect("suspend alice");
+    let bob = core.login(login("bob")).await.expect("bob");
+    assert_eq!(user(&bob), "bob");
+    let accounts = core.accounts().await.expect("accounts");
+    let names: Vec<(String, bool)> = accounts
+        .iter()
+        .map(|a| (a.user_id.localpart().to_owned(), a.active))
+        .collect();
+    assert_eq!(names.len(), 2, "{names:?}");
+    assert!(names.contains(&("alice".into(), false)), "{names:?}");
+    assert!(names.contains(&("bob".into(), true)), "{names:?}");
+
+    // Switching back needs no password.
+    bob.suspend().await.expect("suspend bob");
+    let alice_key = accounts
+        .iter()
+        .find(|a| a.user_id.localpart() == "alice")
+        .expect("alice listed")
+        .key
+        .clone();
+    let alice = core
+        .switch_account(alice_key)
+        .await
+        .expect("switch")
+        .expect("alice restored");
+    assert_eq!(user(&alice), "alice");
+    let mut room_updates = alice.room_list().await.expect("room list");
+    let mut rooms = Vector::new();
+    drive(
+        &mut rooms,
+        async || room_updates.next().await,
+        |rooms| rooms.iter().any(|r| r.name == SEEDED_ROOM),
+    )
+    .await;
+
+    // The active account is what a restart restores.
+    alice.suspend().await.expect("suspend");
+    let restarted = Core::with_session_store(&dir, SessionStoreKind::File).expect("core");
+    let again = restarted
+        .restore_session()
+        .await
+        .expect("restore")
+        .expect("a session");
+    assert_eq!(user(&again), "alice");
+
+    // Signing out of one leaves the other, which becomes active.
+    again.logout().await.expect("logout alice");
+    let accounts = restarted.accounts().await.expect("accounts");
+    assert_eq!(accounts.len(), 1);
+    assert_eq!(accounts[0].user_id.localpart(), "bob");
+    assert!(accounts[0].active);
+    let bob = restarted
+        .restore_session()
+        .await
+        .expect("restore")
+        .expect("bob");
+    assert_eq!(user(&bob), "bob");
+    bob.logout().await.expect("logout bob");
+    assert!(restarted.accounts().await.expect("accounts").is_empty());
+}

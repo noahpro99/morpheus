@@ -3,8 +3,9 @@
 //! colour with the message box next to it.
 
 use super::toast::report;
+use dioxus::core::spawn_forever;
 use dioxus::prelude::*;
-use morpheus_core::Session;
+use morpheus_core::{Core, Session};
 
 use super::context_menu::{MenuItem, open_menu};
 use super::profile::{Editor, ProfileEditor, ProfileRefresh, open_profile};
@@ -37,16 +38,38 @@ pub fn UserBar() -> Element {
         None => (user_id.trim_start_matches('@').to_owned(), None),
     };
 
-    let logout = move || {
-        let mut session_slot = session_slot;
-        let Some(active) = session_slot.take() else {
-            return;
-        };
-        spawn(async move {
-            if let Err(err) = active.logout().await {
-                report("logout failed; session was dropped locally anyway", &err);
-            }
-        });
+    let core = use_context::<Core>();
+    // Accounts stored on this device, for "Switch account".
+    let accounts = use_resource({
+        let core = core.clone();
+        move || {
+            let core = core.clone();
+            async move { core.accounts().await.unwrap_or_default() }
+        }
+    });
+
+    // Signing out moves to the next stored account, if there is one.
+    let logout = {
+        let core = core.clone();
+        move || {
+            let mut session_slot = session_slot;
+            // Stays on screen until signed out, so whatever comes next (the
+            // next account, or the login screen) sees the account gone.
+            let Some(active) = session_slot.peek().clone() else {
+                return;
+            };
+            let core = core.clone();
+            // Outlives the menu that started it (closing the menu drops its tasks).
+            spawn_forever(async move {
+                if let Err(err) = active.logout().await {
+                    report("logout failed; session was dropped locally anyway", &err);
+                }
+                match core.restore_session().await {
+                    Ok(next) => session_slot.set(next),
+                    Err(err) => report("opening the next account", &err),
+                }
+            });
+        }
     };
 
     // Click (or right-click) on your own chip: account actions, Discord-style.
@@ -66,10 +89,58 @@ pub fn UserBar() -> Element {
             items.push(MenuItem::new("Set status", move || {
                 editor.set(Editor::Status)
             }));
-            // Switching signs out and returns to the login screen; sessions for
-            // several accounts are not stored side by side yet.
-            items.push(MenuItem::new("Switch account", logout));
-            items.push(MenuItem::new("Sign out", logout).danger());
+            // Every stored account (this one ticked), then adding another.
+            let mut switch: Vec<MenuItem> = accounts()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|account| {
+                    let label = account.user_id.to_string();
+                    let current = own.as_ref() == Some(&account.user_id);
+                    let key = account.key.clone();
+                    let core = core.clone();
+                    let session = session.clone();
+                    MenuItem::new(label.clone(), move || {
+                        if current {
+                            return;
+                        }
+                        let (core, session, key) = (core.clone(), session.clone(), key.clone());
+                        let mut session_slot = session_slot;
+                        // Outlives the menu that started it (closing the menu drops its tasks).
+                        spawn_forever(async move {
+                            if let Err(err) = session.suspend().await {
+                                report("pausing this account", &err);
+                            }
+                            match core.switch_account(key).await {
+                                Ok(Some(next)) => session_slot.set(Some(next)),
+                                Ok(None) => session_slot.set(None),
+                                Err(err) => report("switching account", &err),
+                            }
+                        });
+                    })
+                    .avatar(None, label.trim_start_matches('@').to_owned())
+                    .checked(current)
+                })
+                .collect();
+            switch.push(
+                MenuItem::new("Add an account", {
+                    let session = session.clone();
+                    move || {
+                        let session = session.clone();
+                        let mut session_slot = session_slot;
+                        // Outlives the menu that started it (closing the menu drops its tasks).
+                        spawn_forever(async move {
+                            // Stays signed in; the login screen offers a way back.
+                            if let Err(err) = session.suspend().await {
+                                report("pausing this account", &err);
+                            }
+                            session_slot.set(None);
+                        });
+                    }
+                })
+                .icon(crate::icons::USER_PLUS),
+            );
+            items.push(MenuItem::submenu("Switch account", switch));
+            items.push(MenuItem::new("Sign out", logout.clone()).danger());
             open_menu(&e, items, None);
         }
     };

@@ -1,4 +1,7 @@
-use std::{path::Path, sync::Arc};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use matrix_sdk::{
     Client, ThreadingSupport,
@@ -34,6 +37,8 @@ pub struct Session {
     pub(crate) core: Core,
     pub(crate) client: Client,
     pub(crate) sync: Arc<SyncService>,
+    /// The account's folder (see `accounts.rs`).
+    pub(crate) dir: PathBuf,
 }
 
 /// Which sign-in methods a homeserver offers.
@@ -50,27 +55,34 @@ impl Core {
     pub fn restore_session(&self) -> CoreFuture<Option<Session>> {
         let core = self.clone();
         self.run(async move {
-            let data_dir = core.data_dir().to_path_buf();
-            let kind = core.session_store_kind();
-            let stored = tokio::task::spawn_blocking(move || -> Result<Option<StoredSession>> {
-                let store = session_store::resolve(&data_dir, kind);
-                session_store::migrate_legacy_session(&data_dir, store.as_ref())?;
-                store.load()
-            })
-            .await??;
+            let blocking = core.clone();
+            let (dir, stored) =
+                tokio::task::spawn_blocking(move || -> Result<(PathBuf, Option<StoredSession>)> {
+                    let kind = blocking.session_store_kind();
+                    // Older builds kept a plaintext session in the data dir.
+                    let root = blocking.data_dir();
+                    session_store::migrate_legacy_session(
+                        root,
+                        session_store::resolve(root, kind).as_ref(),
+                    )?;
+                    let dir = blocking.active_account_dir();
+                    let stored = session_store::resolve(&dir, kind).load()?;
+                    Ok((dir, stored))
+                })
+                .await??;
             let Some(stored) = stored else {
                 return Ok(None);
             };
 
             let client =
-                build_client(core.data_dir(), &stored.homeserver, Some(&stored.store_passphrase)).await?;
+                build_client(&dir, &stored.homeserver, Some(&stored.store_passphrase)).await?;
             client
                 .matrix_auth()
                 .restore_session(stored.session, RoomLoadSettings::default())
                 .await?;
             info!(user = %client.user_id().map(ToString::to_string).unwrap_or_default(), "restored session");
 
-            Session::start(core, client).await.map(Some)
+            Session::start(core, client, dir).await.map(Some)
         })
     }
 
@@ -104,7 +116,8 @@ impl Core {
     pub fn login(&self, request: LoginRequest) -> CoreFuture<Session> {
         let core = self.clone();
         self.run(async move {
-            let (client, passphrase) = fresh_client(core.data_dir(), &request.homeserver).await?;
+            let dir = new_account_dir(&core).await?;
+            let (client, passphrase) = fresh_client(&dir, &request.homeserver).await?;
             let auth = client.matrix_auth();
             let login = if is_email(&request.username) {
                 let email =
@@ -116,7 +129,7 @@ impl Core {
             login.initial_device_display_name(DEVICE_NAME).await?;
             info!(user = %request.username, "logged in with password");
 
-            persist_and_start(core, client, request.homeserver, passphrase).await
+            persist_and_start(core, client, request.homeserver, passphrase, dir).await
         })
     }
 
@@ -132,7 +145,8 @@ impl Core {
     ) -> CoreFuture<Session> {
         let core = self.clone();
         self.run(async move {
-            let (client, passphrase) = fresh_client(core.data_dir(), &homeserver).await?;
+            let dir = new_account_dir(&core).await?;
+            let (client, passphrase) = fresh_client(&dir, &homeserver).await?;
             client
                 .matrix_auth()
                 .login_sso(|url| async move {
@@ -147,7 +161,7 @@ impl Core {
                 .await?;
             info!("logged in with single sign-on");
 
-            persist_and_start(core, client, homeserver, passphrase).await
+            persist_and_start(core, client, homeserver, passphrase, dir).await
         })
     }
 }
@@ -169,11 +183,18 @@ async fn fresh_client(data_dir: &Path, homeserver: &str) -> Result<(Client, Stri
     Ok((client, passphrase))
 }
 
+/// Blocking-safe: the folder a new sign-in goes into (see `accounts.rs`).
+async fn new_account_dir(core: &Core) -> Result<PathBuf> {
+    let core = core.clone();
+    tokio::task::spawn_blocking(move || core.free_account_dir()).await?
+}
+
 async fn persist_and_start(
     core: Core,
     client: Client,
     homeserver: String,
     store_passphrase: String,
+    dir: PathBuf,
 ) -> Result<Session> {
     let session = client.matrix_auth().session().ok_or(Error::NoSession)?;
     let stored = StoredSession {
@@ -181,11 +202,15 @@ async fn persist_and_start(
         session,
         store_passphrase,
     };
-    let data_dir = core.data_dir().to_path_buf();
     let kind = core.session_store_kind();
-    tokio::task::spawn_blocking(move || session_store::resolve(&data_dir, kind).save(&stored))
-        .await??;
-    Session::start(core, client).await
+    let (blocking, account_dir) = (core.clone(), dir.clone());
+    tokio::task::spawn_blocking(move || -> Result<()> {
+        session_store::resolve(&account_dir, kind).save(&stored)?;
+        // The account just signed in is the one to restore next time.
+        crate::accounts::write_active(blocking.data_dir(), &blocking.account_key(&account_dir))
+    })
+    .await??;
+    Session::start(core, client, dir).await
 }
 
 async fn build_client(
@@ -205,13 +230,14 @@ async fn build_client(
 }
 
 impl Session {
-    async fn start(core: Core, client: Client) -> Result<Self> {
+    async fn start(core: Core, client: Client, dir: PathBuf) -> Result<Self> {
         let sync = SyncService::builder(client.clone()).build().await?;
         sync.start().await;
         Ok(Self {
             core,
             client,
             sync: Arc::new(sync),
+            dir,
         })
     }
 
@@ -223,19 +249,42 @@ impl Session {
         self.client.homeserver().to_string()
     }
 
-    /// Stop syncing, invalidate the access token and forget the stored session.
+    /// Stop syncing but stay signed in, before switching to another account.
+    pub fn suspend(&self) -> CoreFuture<()> {
+        let sync = self.sync.clone();
+        self.core.run(async move {
+            sync.stop().await;
+            Ok(())
+        })
+    }
+
+    /// Stop syncing, invalidate the access token and forget the stored
+    /// session. Another stored account, if any, becomes the active one.
     pub fn logout(self) -> CoreFuture<()> {
-        let Self { core, client, sync } = self;
+        let Self {
+            core,
+            client,
+            sync,
+            dir,
+        } = self;
         let runner = core.clone();
         runner.run(async move {
             sync.stop().await;
             client.logout().await?;
-            let data_dir = core.data_dir().to_path_buf();
             let kind = core.session_store_kind();
-            tokio::task::spawn_blocking(move || session_store::resolve(&data_dir, kind).clear())
+            let account_dir = dir.clone();
+            tokio::task::spawn_blocking(move || session_store::resolve(&account_dir, kind).clear())
                 .await??;
             // Drop the account's local data too, so another account can sign in cleanly.
-            let _ = tokio::fs::remove_dir_all(core.data_dir().join(STORE_DIR)).await;
+            let _ = tokio::fs::remove_dir_all(dir.join(STORE_DIR)).await;
+            if dir != core.data_dir() {
+                let _ = tokio::fs::remove_dir_all(&dir).await;
+            }
+            tokio::task::spawn_blocking(move || {
+                let next = core.active_account_dir();
+                crate::accounts::write_active(core.data_dir(), &core.account_key(&next))
+            })
+            .await??;
             Ok(())
         })
     }
