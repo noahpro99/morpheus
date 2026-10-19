@@ -17,6 +17,7 @@ pub fn RoomList(error: Option<String>) -> Element {
     let selected = use_context::<Selected>();
     let prefs = use_context::<UiPrefs>();
     let session = use_context::<Session>();
+    let mut friends_open = use_context::<super::friends::FriendsOpen>();
 
     let scope = selected_space();
     let hide_muted = prefs().hide_muted;
@@ -116,6 +117,21 @@ pub fn RoomList(error: Option<String>) -> Element {
                             Scope::Dms => "No direct messages yet.",
                             _ => "No rooms here.",
                         }
+                    }
+                }
+                // The Friends page, at the top of the DMs (as in Discord).
+                if scope == Scope::Dms {
+                    button {
+                        class: "room friends-row",
+                        class: if friends_open().0 { "selected" },
+                        onclick: move |_| {
+                            friends_open.set(super::friends::FriendsShown(true));
+                            // On a phone, the page comes forward like a chat.
+                            consume_context::<super::shell::ChatOpen>()
+                                .set(super::shell::ChatInFront(true));
+                        },
+                        crate::icons::Icon { glyph: crate::icons::USERS, size: 18 }
+                        span { class: "room-name", "Friends" }
                     }
                 }
                 if !dms.is_empty() {
