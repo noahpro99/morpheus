@@ -851,6 +851,20 @@ impl App {
         if !self.android {
             return self.click(selector).await;
         }
+        // Panes slide on a phone: tap where the target has come to rest.
+        let where_js = format!(
+            "const r = {}.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.top)];",
+            query(selector)
+        );
+        let mut last = self.eval(&where_js).await?;
+        for _ in 0..20 {
+            sleep(Duration::from_millis(60)).await;
+            let now = self.eval(&where_js).await?;
+            if now == last {
+                break;
+            }
+            last = now;
+        }
         let rect = self
             .eval(&format!(
                 "const r = {}.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2, devicePixelRatio, innerHeight];",
@@ -965,5 +979,73 @@ impl App {
         size.as_array()
             .and_then(|v| Some((v.first()?.as_f64()?, v.get(1)?.as_f64()?)))
             .ok_or_else(|| anyhow!("no page size"))
+    }
+}
+
+impl App {
+    /// Screen pixels for a page point (CSS pixels) on the phone.
+    async fn screen_point(&mut self, (x, y): (f64, f64)) -> Result<(i64, i64)> {
+        let metrics = self.eval("return [devicePixelRatio, innerHeight];").await?;
+        let [scale, inner] = metrics
+            .as_array()
+            .and_then(|v| Some([v.first()?.as_f64()?, v.get(1)?.as_f64()?]))
+            .ok_or_else(|| anyhow!("no page metrics"))?;
+        let (status_bar, screen_height) = screen_metrics();
+        let top = if inner * scale + status_bar <= screen_height + 1.0 {
+            status_bar
+        } else {
+            0.0
+        };
+        // Whole pixels: `input motionevent` takes integers.
+        #[allow(clippy::cast_possible_truncation)]
+        Ok(((x * scale).round() as i64, (top + y * scale).round() as i64))
+    }
+
+    /// Put a finger down at `from` and drag it to `to` in small steps,
+    /// leaving it down: the page is mid-gesture until [`Self::lift`].
+    pub async fn drag_and_hold(&mut self, from: (f64, f64), to: (f64, f64)) -> Result<()> {
+        if !self.android {
+            bail!("drags need the Android app");
+        }
+        let (x1, y1) = self.screen_point(from).await?;
+        let (x2, y2) = self.screen_point(to).await?;
+        adb(&[
+            "shell",
+            "input",
+            "motionevent",
+            "DOWN",
+            &x1.to_string(),
+            &y1.to_string(),
+        ])
+        .ok_or_else(|| anyhow!("touch down failed"))?;
+        const STEPS: i64 = 8;
+        for step in 1..=STEPS {
+            let (x, y) = (x1 + (x2 - x1) * step / STEPS, y1 + (y2 - y1) * step / STEPS);
+            adb(&[
+                "shell",
+                "input",
+                "motionevent",
+                "MOVE",
+                &x.to_string(),
+                &y.to_string(),
+            ])
+            .ok_or_else(|| anyhow!("touch move failed"))?;
+        }
+        Ok(())
+    }
+
+    /// Lift the finger put down by [`Self::drag_and_hold`] at `at`.
+    pub async fn lift(&mut self, at: (f64, f64)) -> Result<()> {
+        let (x, y) = self.screen_point(at).await?;
+        adb(&[
+            "shell",
+            "input",
+            "motionevent",
+            "UP",
+            &x.to_string(),
+            &y.to_string(),
+        ])
+        .ok_or_else(|| anyhow!("touch up failed"))?;
+        Ok(())
     }
 }

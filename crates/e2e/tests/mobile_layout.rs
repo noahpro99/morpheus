@@ -36,6 +36,24 @@ fn visible(selector: &str) -> String {
     )
 }
 
+/// Which pane is in front at the middle of the app: "chat", "side" or "list".
+/// Panes stack on a phone, so "shown" means on top, not merely present.
+const FRONT_JS: &str = "const s = document.querySelector('.shell').getBoundingClientRect(); \
+    const el = document.elementFromPoint(s.left + s.width * 0.75, s.top + s.height / 2); \
+    if (!el) return null; \
+    if (el.closest('.side-pane')) return 'side'; \
+    if (el.closest('.chat')) return 'chat'; \
+    if (el.closest('.sidebar, .rail')) return 'list'; \
+    return el.className;";
+
+async fn front(app: &mut App, expected: &str) {
+    app.wait_for_js(
+        &format!("return ({{ f: () => {{ {FRONT_JS} }} }}).f() === '{expected}';"),
+        DEFAULT_WAIT,
+    )
+    .await
+    .unwrap_or_else(|e| panic!("{expected} in front: {e}"));
+}
 async fn pane(app: &mut App, expected: &str) {
     app.wait_for_js(
         &format!("return document.querySelector('.shell').dataset.pane === '{expected}'"),
@@ -61,22 +79,17 @@ async fn narrow_window_shows_one_pane_at_a_time() {
 
     // Starts on the room list; the chat is not shown.
     pane(&mut app, "rooms").await;
-    assert!(
-        !app.eval(&visible(".chat"))
-            .await
-            .expect("eval")
-            .as_bool()
-            .unwrap_or(true),
-        "chat hidden on the list pane"
-    );
-    assert!(
-        app.eval(&visible(".sidebar"))
-            .await
-            .expect("eval")
-            .as_bool()
-            .unwrap_or(false),
-        "sidebar visible"
-    );
+    front(&mut app, "list").await;
+    // The chat waits off to the right, ready to slide in over the list.
+    app.wait_for_js(
+        // The transform, not the measured box: WebKitGTK under fractional
+        // display scaling reports transformed boxes scaled.
+        "const c = document.querySelector('.chat'), cs = getComputedStyle(c); \
+         return new DOMMatrix(cs.transform).m41 >= c.offsetWidth - 1 && cs.position === 'absolute' && parseFloat(cs.transitionDuration) > 0;",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("chat parked to the right, layered, with a slide transition");
 
     // Menus are full-width bottom sheets at phone width.
     app.right_click(".room").await.expect("right-click a room");
@@ -104,14 +117,15 @@ async fn narrow_window_shows_one_pane_at_a_time() {
     app.wait_for(".chat-header .pane-back", DEFAULT_WAIT)
         .await
         .expect("back button");
-    assert!(
-        !app.eval(&visible(".sidebar"))
-            .await
-            .expect("eval")
-            .as_bool()
-            .unwrap_or(true),
-        "sidebar hidden on the chat pane"
-    );
+    // Slid over the list, which stays underneath.
+    front(&mut app, "chat").await;
+    app.wait_for_js(
+        "const c = document.querySelector('.chat'); \
+         return new DOMMatrix(getComputedStyle(c).transform).m41 === 0 && !!document.querySelector('.sidebar');",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("chat over the list");
     app.click(".chat-header .pane-back").await.expect("back");
     pane(&mut app, "rooms").await;
 

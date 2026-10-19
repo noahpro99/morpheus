@@ -43,6 +43,8 @@ use crate::media::{Avatar, provide_media_cache};
 pub struct Notices(pub Vec<Notification>);
 pub type NoticeLog = Signal<Notices>;
 const NOTICE_CAP: usize = 50;
+/// Wait after the phone layout applies before pane slides switch on.
+const PANES_SETTLE_MS: u64 = 300;
 /// Quarter-second looks for a room asked for before the list has it (~10 s).
 const OPEN_ROOM_TRIES: u32 = 40;
 
@@ -338,6 +340,19 @@ pub fn Shell(session: Session) -> Element {
     let _toasts: Toasts = use_context_provider(|| Signal::new(ToastList::default()));
     // Narrow (phone) layout: the page reports its width; one pane shows at a time.
     let mut narrow: NarrowWindow = use_context_provider(|| Signal::new(Narrow::default()));
+    // Pane slides are switched on a moment after the phone layout applies,
+    // so its first arrangement does not animate (the chat sliding away).
+    let mut panes_ready = use_signal(|| false);
+    use_effect(move || {
+        let is_narrow = narrow().0;
+        if is_narrow == *panes_ready.peek() {
+            return;
+        }
+        spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(PANES_SETTLE_MS)).await;
+            panes_ready.set(narrow.peek().0);
+        });
+    });
     let mut chat_open: ChatOpen = use_context_provider(|| Signal::new(ChatInFront::default()));
     let _members_version: MembersVersion =
         use_context_provider(|| Signal::new(MembersStamp::default()));
@@ -640,6 +655,12 @@ pub fn Shell(session: Session) -> Element {
                     hotkey.set(Some(Hotkey::JumpToBottom));
                 }
             }
+            // A phone's leftward swipe on the room list: the last chat again.
+            "chat_front" => {
+                if narrow.peek().0 && current.peek().is_some() {
+                    chat_open.set(ChatInFront(true));
+                }
+            }
             "switcher" => switcher_open.toggle(),
             "shortcuts" => top_panel.set(if top_panel() == TopPanel::Help {
                 TopPanel::None
@@ -746,6 +767,7 @@ pub fn Shell(session: Session) -> Element {
             class: "shell",
             class: if side_column == SideColumn::None { "no-side" },
             class: if narrow().0 { "narrow" },
+            class: if panes_ready() { "panes-ready" },
             "data-pane": pane,
             tabindex: "-1",
             // Targets open their own menu and stop the event; everything else

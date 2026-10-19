@@ -224,9 +224,11 @@ window.addEventListener('paste', e => {
   new MutationObserver(all).observe(document.head, { childList: true, subtree: true });
 })();
 // Swipes on touch screens. A bottom sheet follows the finger down and closes
-// past a third of its height (or on a quick flick). A rightward swipe across
-// the chat or side pane slides it away and steps back one pane, as the back
-// key does; mostly-vertical drags stay scrolls.
+// past a third of its height (or on a quick flick). On a phone the panes are
+// stacked layers (theme.css): a rightward drag on the chat or side pane moves
+// it with the finger, revealing the pane underneath, and steps back one pane
+// when let go far or fast enough; a leftward drag on the room list pulls the
+// last chat back in over it. Mostly-vertical drags stay scrolls.
 (() => {
   const SLOP = 12;
   // Something on top (a dialog, menu, card, image) takes the gesture instead.
@@ -236,24 +238,47 @@ window.addEventListener('paste', e => {
     const shell = document.querySelector('.shell');
     return shell && shell.classList.contains('narrow') ? shell.dataset.pane : null;
   };
-  const settle = (el, transform) => {
-    el.style.transition = 'transform 160ms ease-out';
+  // Finish the motion, then (if `then` changes the pane) hand the position
+  // back to the pane's CSS once the shell has switched, so nothing jumps.
+  const settle = (el, transform, then) => {
+    el.style.transition = 'transform 180ms ease-out';
     el.style.transform = transform;
-    setTimeout(() => { el.style.transition = ''; if (!transform) el.style.transform = ''; }, 170);
+    const release = () => {
+      el.style.transition = 'none';
+      el.style.transform = '';
+      requestAnimationFrame(() => { el.style.transition = ''; });
+    };
+    setTimeout(() => {
+      if (!then) { release(); return; }
+      const before = narrowPane();
+      then();
+      const started = Date.now();
+      const wait = () => {
+        if (narrowPane() !== before || Date.now() - started > 600) release();
+        else requestAnimationFrame(wait);
+      };
+      requestAnimationFrame(wait);
+    }, 190);
   };
   window.addEventListener('touchstart', e => {
     g = null;
     if (e.touches.length !== 1) return;
     const t = e.touches[0];
+    const start = { x: t.clientX, y: t.clientY, at: Date.now(), d: 0, axis: null };
     const sheet = e.target.closest && e.target.closest('.context-menu.sheet');
     if (sheet) {
-      if (sheet.scrollTop <= 0) g = { kind: 'sheet', el: sheet, x: t.clientX, y: t.clientY, at: Date.now(), d: 0, axis: null };
+      if (sheet.scrollTop <= 0) g = { kind: 'sheet', el: sheet, ...start };
       return;
     }
+    if (document.querySelector(OPEN_FOR_SWIPE)) return;
     const pane = narrowPane();
-    if ((pane === 'chat' || pane === 'side') && !document.querySelector(OPEN_FOR_SWIPE)) {
+    if (pane === 'chat' || pane === 'side') {
       const el = document.querySelector(pane === 'side' ? '.side-pane' : '.chat');
-      if (el) g = { kind: 'pane', el, x: t.clientX, y: t.clientY, at: Date.now(), d: 0, axis: null };
+      if (el) g = { kind: 'back', el, ...start };
+    } else if (pane === 'rooms') {
+      // Only when there is a chat to come back to.
+      const chat = document.querySelector('.chat');
+      if (chat && chat.querySelector('.chat-header')) g = { kind: 'forward', el: chat, ...start };
     }
   }, { passive: true, capture: true });
   window.addEventListener('touchmove', e => {
@@ -268,10 +293,14 @@ window.addEventListener('paste', e => {
       g.d = Math.max(0, dy);
       g.el.style.transition = 'none';
       g.el.style.transform = `translateY(${g.d}px)`;
-    } else if (g.kind === 'pane' && g.axis === 'x') {
+    } else if (g.kind === 'back' && g.axis === 'x') {
       g.d = Math.max(0, dx);
       g.el.style.transition = 'none';
       g.el.style.transform = `translateX(${g.d}px)`;
+    } else if (g.kind === 'forward' && g.axis === 'x') {
+      g.d = Math.max(0, -dx);
+      g.el.style.transition = 'none';
+      g.el.style.transform = `translateX(max(0px, calc(100% - ${g.d}px)))`;
     }
   }, { passive: true, capture: true });
   window.addEventListener('touchend', () => {
@@ -279,19 +308,20 @@ window.addEventListener('paste', e => {
     const { kind, el, d, at } = g;
     g = null;
     const fast = d > 40 && d / Math.max(1, Date.now() - at) > 0.6;
+    const far = d > (kind === 'sheet' ? el.offsetHeight : el.offsetWidth) / 3;
     if (kind === 'sheet') {
-      if (fast || d > el.offsetHeight / 3) {
-        settle(el, 'translateY(100%)');
-        setTimeout(() => { const b = document.querySelector('.sheet-backdrop'); if (b) b.click(); }, 150);
-      } else settle(el, '');
+      if (fast || far) {
+        settle(el, 'translateY(100%)', () => { const b = document.querySelector('.sheet-backdrop'); if (b) b.click(); });
+      } else settle(el, 'translateY(0)');
+    } else if (kind === 'back') {
+      if (fast || far) settle(el, 'translateX(100%)', () => dioxus.send('escape'));
+      else settle(el, 'translateX(0)');
     } else {
-      if (fast || d > el.offsetWidth / 3) {
-        settle(el, 'translateX(100%)');
-        setTimeout(() => { el.style.transform = ''; dioxus.send('escape'); }, 150);
-      } else settle(el, '');
+      if (fast || far) settle(el, 'translateX(0)', () => dioxus.send('chat_front'));
+      else settle(el, 'translateX(100%)');
     }
   }, { capture: true });
-  window.addEventListener('touchcancel', () => { if (g) settle(g.el, ''); g = null; }, { capture: true });
+  window.addEventListener('touchcancel', () => { if (g) settle(g.el, g.kind === 'forward' ? 'translateX(100%)' : 'none'); g = null; }, { capture: true });
 })();
 // Links. Formatted messages arrive as HTML, where bare URLs are plain text:
 // link them (the same rules as `linkify.rs`, which handles plain messages).

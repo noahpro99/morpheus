@@ -170,14 +170,50 @@ async fn phone_signs_in_navigates_and_sends() {
     // Swiping right steps back a pane: members to the chat, the chat to
     // the room list (as the back buttons do).
     let (width, height) = app.page_size().await.expect("page size");
-    app.swipe((24.0, height / 2.0), (width - 24.0, height / 2.0), 200)
+    // Clear of the screen edges, where Android's own back gesture takes the touch.
+    let inset = width * 0.15;
+    app.swipe((inset, height / 2.0), (width - inset, height / 2.0), 200)
         .await
         .expect("swipe right from members");
     pane(&mut app, "chat").await;
-    app.swipe((24.0, height / 2.0), (width - 24.0, height / 2.0), 200)
+    // Back again, slowly: half-way, the chat has moved with the finger and
+    // the room list shows in the gap it left.
+    let mid = width / 2.0;
+    app.drag_and_hold((inset, height / 2.0), (mid, height / 2.0))
         .await
-        .expect("swipe right from the chat");
+        .expect("drag half-way");
+    let during = app
+        .eval(&format!(
+            "const c = new DOMMatrix(getComputedStyle(document.querySelector('.chat')).transform); \
+             const under = document.elementFromPoint({x}, {y}); \
+             return [Math.round(c.m41), !!(under && under.closest('.sidebar, .rail'))];",
+            x = mid / 2.0,
+            y = height / 2.0
+        ))
+        .await
+        .expect("mid-drag state");
+    let left = during[0].as_f64().expect("left");
+    assert!(
+        (mid - inset - 40.0..=mid - inset + 40.0).contains(&left),
+        "the chat follows the finger: it is at {left}px, the finger moved {}px",
+        mid - inset
+    );
+    assert_eq!(
+        during[1],
+        serde_json::json!(true),
+        "the room list shows underneath"
+    );
+    app.lift((mid, height / 2.0)).await.expect("lift");
     pane(&mut app, "rooms").await;
+
+    // From the list, swiping the other way brings that channel back.
+    app.swipe((width - inset, height / 2.0), (inset, height / 2.0), 200)
+        .await
+        .expect("swipe left on the list");
+    pane(&mut app, "chat").await;
+    app.wait_for_text(".chat-header h2", "general", DEFAULT_WAIT)
+        .await
+        .expect("back in #general");
 }
 
 /// A real homeserver over HTTPS: typing matrix.org (no need to leave the
@@ -267,7 +303,7 @@ fn keyboard_shown() -> bool {
     std::process::Command::new("adb")
         .args(["shell", "dumpsys", "input_method"])
         .output()
-        .map(|out| String::from_utf8_lossy(&out.stdout).contains("mIsInputViewShown=true"))
+        .map(|out| String::from_utf8_lossy(&out.stdout).contains("mInputShown=true"))
         .unwrap_or(false)
 }
 
@@ -372,6 +408,9 @@ async fn phone_back_key_closes_and_steps_back() {
     app.wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
         .await
         .expect("composer ready");
+    // Opening a room does not raise the keyboard over it (Discord does not).
+    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+    assert!(!keyboard_shown(), "opening a room raised the keyboard");
     app.tap(".chat-header .member-toggle")
         .await
         .expect("members");
