@@ -2,6 +2,8 @@
 
 use std::time::Duration;
 
+use jiff::{Timestamp, tz::TimeZone};
+
 /// A byte count as `12.3 MB`, `850 KB`, `40 B`, ...
 pub fn human_size(bytes: u64) -> String {
     const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
@@ -24,45 +26,27 @@ pub fn human_duration(duration: Duration) -> String {
     format!("{}:{:02}", total_secs / 60, total_secs % 60)
 }
 
-/// `HH:MM` in the local timezone for a Unix timestamp in milliseconds.
+/// `HH:MM` in the device's time zone for a Unix timestamp in milliseconds.
 pub fn clock_time(timestamp_ms: u64) -> String {
-    let secs = timestamp_ms / 1000;
-    let offset = local_utc_offset_secs();
-    let local = secs as i64 + offset;
-    let minutes = local.rem_euclid(86_400) / 60;
-    format!("{:02}:{:02}", minutes / 60, minutes % 60)
+    clock_time_in(timestamp_ms, &TimeZone::system())
 }
 
-/// `YYYY-MM-DD` in the local timezone. Good enough for date dividers until we
-/// pull in a proper date library.
+/// `YYYY-MM-DD` in the device's time zone.
 pub fn calendar_date(timestamp_ms: u64) -> String {
-    let secs = timestamp_ms / 1000;
-    let days = (secs as i64 + local_utc_offset_secs()).div_euclid(86_400);
-    let (y, m, d) = civil_from_days(days);
-    format!("{y:04}-{m:02}-{d:02}")
+    calendar_date_in(timestamp_ms, &TimeZone::system())
 }
 
-fn local_utc_offset_secs() -> i64 {
-    // The webview runtime exposes no timezone API to Rust without extra
-    // crates; honour an explicit override and otherwise assume UTC.
-    std::env::var("MORPHEUS_UTC_OFFSET_SECS")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0)
+fn zoned(timestamp_ms: u64, zone: &TimeZone) -> Option<jiff::Zoned> {
+    let ms = i64::try_from(timestamp_ms).ok()?;
+    Some(Timestamp::from_millisecond(ms).ok()?.to_zoned(zone.clone()))
 }
 
-/// Howard Hinnant's days-from-civil inverse. Days since 1970-01-01.
-fn civil_from_days(z: i64) -> (i64, u32, u32) {
-    let z = z + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z.rem_euclid(146_097);
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
-    (if m <= 2 { y + 1 } else { y }, m, d)
+pub(crate) fn clock_time_in(timestamp_ms: u64, zone: &TimeZone) -> String {
+    zoned(timestamp_ms, zone).map_or_else(String::new, |at| at.strftime("%H:%M").to_string())
+}
+
+pub(crate) fn calendar_date_in(timestamp_ms: u64, zone: &TimeZone) -> String {
+    zoned(timestamp_ms, zone).map_or_else(String::new, |at| at.strftime("%Y-%m-%d").to_string())
 }
 
 #[cfg(test)]
@@ -71,9 +55,10 @@ mod tests {
 
     #[test]
     fn dates_round_trip_known_values() {
-        assert_eq!(calendar_date(0), "1970-01-01");
-        assert_eq!(calendar_date(1_700_000_000_000), "2023-11-14");
-        assert_eq!(clock_time(1_700_000_000_000), "22:13");
+        let utc = &jiff::tz::TimeZone::UTC;
+        assert_eq!(calendar_date_in(0, utc), "1970-01-01");
+        assert_eq!(calendar_date_in(1_700_000_000_000, utc), "2023-11-14");
+        assert_eq!(clock_time_in(1_700_000_000_000, utc), "22:13");
     }
 
     #[test]
@@ -87,5 +72,33 @@ mod tests {
     fn durations_render_as_minutes_seconds() {
         assert_eq!(human_duration(Duration::from_secs(5)), "0:05");
         assert_eq!(human_duration(Duration::from_secs(125)), "2:05");
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod zone_tests {
+    use super::{calendar_date_in, clock_time_in};
+    use jiff::tz::TimeZone;
+
+    const MS_2026_10_19_08_15_UTC: u64 = 1_792_397_700_000;
+
+    #[test]
+    fn times_are_shown_in_the_local_zone() {
+        let new_york = TimeZone::get("America/New_York").expect("zone");
+        assert_eq!(clock_time_in(MS_2026_10_19_08_15_UTC, &new_york), "04:15");
+        assert_eq!(
+            clock_time_in(MS_2026_10_19_08_15_UTC, &TimeZone::UTC),
+            "08:15"
+        );
+    }
+
+    #[test]
+    fn dates_follow_the_local_zone_across_midnight() {
+        let new_york = TimeZone::get("America/New_York").expect("zone");
+        // 02:00 UTC on the 19th is still the evening of the 18th in New York.
+        let early = MS_2026_10_19_08_15_UTC - 6 * 3_600_000 - 15 * 60_000;
+        assert_eq!(calendar_date_in(early, &new_york), "2026-10-18");
+        assert_eq!(calendar_date_in(early, &TimeZone::UTC), "2026-10-19");
     }
 }

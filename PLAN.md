@@ -50,7 +50,7 @@ timeline → send.
 - [x] Image messages rendered inline as thumbnails
 - [x] Video/file messages, downloads, full-size image viewer
 - [x] Scroll-triggered back-pagination (button remains as a fallback)
-- [ ] Proper local time zone handling (replace `format.rs` shims with `jiff`)
+- [x] Local time zones: `format.rs` uses `jiff` with the system zone (/etc/localtime on Linux, the device setting on Android); times were shown in UTC before.
 - [ ] Virtualised timeline once rooms with >2k loaded items appear
 - [x] Auto-fill short histories: when the first sync hands over fewer rows than fit on screen there is nothing to scroll, so older messages need the "Load older messages" button. Paginating automatically races the room subscription's first response (which can reset the timeline); needs the SDK to settle first.
 - [x] Error toasts for failed actions (bottom-right, click to dismiss); dialogs keep inline validation
