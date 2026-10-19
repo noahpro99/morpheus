@@ -19,10 +19,24 @@ pub type Toasts = Signal<ToastList>;
 /// How long a toast stays unless dismissed.
 const TOAST_SECS: u64 = 6;
 
+thread_local! {
+    /// The shell's toasts, for tasks that run outside any component
+    /// (`spawn_forever`), where context lookups find nothing.
+    static SHELL_TOASTS: std::cell::Cell<Option<Toasts>> = const { std::cell::Cell::new(None) };
+}
+
+/// Called by the shell as it provides its toasts.
+pub fn register_shell_toasts(toasts: Toasts) {
+    SHELL_TOASTS.with(|slot| slot.set(Some(toasts)));
+}
+
 /// Show `text` as a toast. Outside the shell (no toast context) it only logs.
 pub fn toast(text: impl Into<String>) {
     let text = text.into();
-    let Some(mut toasts) = try_consume_context::<Toasts>() else {
+    let toasts = try_consume_context::<Toasts>()
+        .or_else(|| SHELL_TOASTS.with(std::cell::Cell::get))
+        .filter(|toasts| toasts.try_peek().is_ok());
+    let Some(mut toasts) = toasts else {
         tracing::warn!(%text, "toast without a shell");
         return;
     };
@@ -32,9 +46,11 @@ pub fn toast(text: impl Into<String>) {
         list.items.push(Toast { id, text });
         id
     });
-    spawn(async move {
+    dioxus::core::spawn_forever(async move {
         tokio_sleep(std::time::Duration::from_secs(TOAST_SECS)).await;
-        toasts.with_mut(|list| list.items.retain(|t| t.id != id));
+        if toasts.try_peek().is_ok() {
+            toasts.with_mut(|list| list.items.retain(|t| t.id != id));
+        }
     });
 }
 

@@ -1894,3 +1894,68 @@ async fn a_device_that_vanishes_drops_out_of_the_call() {
     )
     .await;
 }
+
+#[tokio::test]
+async fn call_media_keys_travel_encrypted_to_the_room() {
+    let Some(env) = env() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping live test");
+        return;
+    };
+    let login = async |user: &str| {
+        let core =
+            Core::with_session_store(fresh_data_dir(), SessionStoreKind::File).expect("core");
+        core.login(LoginRequest {
+            homeserver: env.homeserver.clone(),
+            username: user.into(),
+            password: format!("{user}-password"),
+        })
+        .await
+        .expect("login")
+    };
+    let find = async |session: &Session| {
+        let mut updates = session.room_list().await.expect("room list");
+        let mut rooms = Vector::new();
+        drive(
+            &mut rooms,
+            async || updates.next().await,
+            |rooms| rooms.iter().any(|r| r.name == "encrypted"),
+        )
+        .await;
+        rooms
+            .iter()
+            .find(|r| r.name == "encrypted")
+            .expect("encrypted room")
+            .id
+            .clone()
+    };
+    // Bob's device exists before alice sends, so her room key reaches it.
+    let bob = login("bob").await;
+    let room = find(&bob).await;
+    let mut keys = bob.call_keys(room.clone()).await.expect("subscribe");
+
+    let alice = login("alice").await;
+    find(&alice).await;
+    let key = format!("key-{}", std::process::id()).into_bytes();
+    alice
+        .send_call_key(room.clone(), key.clone())
+        .await
+        .expect("send key");
+
+    let alice_id = alice.user_id().expect("alice");
+    let alice_device = alice.device_id().expect("device");
+    let got = timeout(WAIT, async {
+        loop {
+            let got = keys.next().await.expect("key stream");
+            if got.user_id == alice_id && got.device_id == alice_device {
+                return got;
+            }
+        }
+    })
+    .await
+    .expect("alice's key arrives");
+    assert_eq!(got.key, key);
+    assert!(
+        got.livekit_identities.len() >= 2,
+        "identities to apply it to"
+    );
+}

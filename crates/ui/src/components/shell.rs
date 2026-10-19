@@ -352,7 +352,9 @@ pub fn Shell(session: Session) -> Element {
     let mut nickname_target = super::nicknames::provide_nicknames(session.clone());
     let (_, friends_open) = super::friends::provide_friends(session.clone());
     super::call::provide_calls(session.clone());
-    let _toasts: Toasts = use_context_provider(|| Signal::new(ToastList::default()));
+    let toasts: Toasts = use_context_provider(|| Signal::new(ToastList::default()));
+    // Background tasks (calls, sign-out) run outside any component.
+    super::toast::register_shell_toasts(toasts);
     // Narrow (phone) layout: the page reports its width; one pane shows at a time.
     let mut narrow: NarrowWindow = use_context_provider(|| Signal::new(Narrow::default()));
     // Pane slides are switched on a moment after the phone layout applies,

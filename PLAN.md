@@ -126,7 +126,8 @@ timeline → send.
 - [x] UI: phone button in the header joins (or leaves); people in a call are listed under the room in the sidebar with a ring while speaking, and clicking the list joins; voice panel above the user pill (state, room, hang up); mute and deafen in the user pill. Join/leave events stay out of the timeline. E2E test.
 - [x] Dev services: LiveKit (dev mode) and Element's lk-jwt-service beside Synapse (`just hs-up`); Synapse gets a TLS federation listener (self-signed) for the token service's OpenID check, delayed events and the well-known focus.
 - [ ] Android: RECORD_AUDIO, libwebrtc's JNI setup, LiveKit reachable from the phone.
-- [ ] Media encryption (Element Call's per-participant keys) — required to share calls with Element Call in encrypted rooms; until then Morpheus calls are only TLS-protected to the SFU.
+- [x] Media encryption in encrypted rooms, Element Call's way: each device gets a fresh random key, shares it as an (encrypted) `io.element.call.encryption_keys` room event, again whenever someone joins; LiveKit frame encryption (AES-GCM, per-participant keys, LiveKit's default derivation). Keys that arrive unencrypted are ignored. Tests: media (right key hears, wrong key hears nothing), core (key arrives decrypted), e2e (two apps in #encrypted hear each other). Interop with Element Call itself still to try (it may have moved to to-device keys).
+- [x] Hanging up sends the scheduled leave at once (one request), so an app killed mid-hang-up leaves no ghost; the seed sweeps leftovers.
 - [ ] Video and screen share; device pickers in Settings → Voice & Video; join/leave sounds; ringing for DMs (MSC4075 `m.rtc.notification`).
 
 ### 6. Native renderer

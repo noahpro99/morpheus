@@ -19,6 +19,10 @@ use std::{
 
 use futures_util::StreamExt;
 use livekit::{
+    e2ee::{
+        E2eeOptions, EncryptionType,
+        key_provider::{KeyProvider, KeyProviderOptions},
+    },
     options::TrackPublishOptions,
     prelude::*,
     webrtc::{
@@ -99,6 +103,8 @@ fn runtime() -> &'static tokio::runtime::Runtime {
 /// less politely.
 pub struct Call {
     room: Arc<Room>,
+    /// Media keys, for encrypted calls.
+    keys: Option<KeyProvider>,
     mic: LocalAudioTrack,
     deafened: Arc<Mutex<bool>>,
     /// Keeps the platform devices open for the call's lifetime.
@@ -116,7 +122,22 @@ impl Call {
     ) -> Result<(Self, UnboundedReceiver<CallEvent>)> {
         let (url, token) = (url.to_owned(), token.to_owned());
         runtime()
-            .spawn(async move { Self::connect_here(url, token, mode).await })
+            .spawn(async move { Self::connect_here(url, token, mode, None).await })
+            .await?
+    }
+
+    /// Like [`Call::connect`], with media encrypted end to end: this device
+    /// encrypts with `own_key`, and hears others once given theirs
+    /// ([`Call::set_key`]). The keys travel over Matrix, encrypted.
+    pub async fn connect_encrypted(
+        url: &str,
+        token: &str,
+        mode: AudioMode,
+        own_key: Vec<u8>,
+    ) -> Result<(Self, UnboundedReceiver<CallEvent>)> {
+        let (url, token) = (url.to_owned(), token.to_owned());
+        runtime()
+            .spawn(async move { Self::connect_here(url, token, mode, Some(own_key)).await })
             .await?
     }
 
@@ -124,11 +145,25 @@ impl Call {
         url: String,
         token: String,
         mode: AudioMode,
+        own_key: Option<Vec<u8>>,
     ) -> Result<(Self, UnboundedReceiver<CallEvent>)> {
-        let (room, room_events) = Room::connect(&url, &token, RoomOptions::default())
+        // Element Call's settings: per-participant keys (no shared key), the
+        // LiveKit defaults for derivation and ratcheting, AES-GCM.
+        let keys = own_key
+            .as_ref()
+            .map(|_| KeyProvider::new(KeyProviderOptions::default()));
+        let mut options = RoomOptions::default();
+        options.encryption = keys.clone().map(|key_provider| E2eeOptions {
+            encryption_type: EncryptionType::Gcm,
+            key_provider,
+        });
+        let (room, room_events) = Room::connect(&url, &token, options)
             .await
             .map_err(|err| Error::Connect(err.to_string()))?;
         let room = Arc::new(room);
+        if let (Some(keys), Some(own_key)) = (&keys, own_key) {
+            keys.set_key(&room.local_participant().identity(), 0, own_key);
+        }
         let (tx, rx) = unbounded_channel();
         let mut tasks = Vec::new();
 
@@ -167,6 +202,7 @@ impl Call {
         Ok((
             Self {
                 room,
+                keys,
                 mic,
                 deafened,
                 _platform: platform,
@@ -188,6 +224,13 @@ impl Call {
     /// This device's LiveKit identity.
     pub fn identity(&self) -> String {
         self.room.local_participant().identity().to_string()
+    }
+
+    /// Hear `identity` in an encrypted call: their media key, as they sent it.
+    pub fn set_key(&self, identity: &str, key: Vec<u8>) {
+        if let Some(keys) = &self.keys {
+            keys.set_key(&ParticipantIdentity(identity.to_owned()), 0, key);
+        }
     }
 
     /// Stop (or resume) sending this device's audio.
