@@ -121,6 +121,7 @@ impl App {
         env: &[(&str, &str)],
     ) -> Result<Self> {
         keep_test_windows_unfocused();
+        prune_test_devices(homeserver);
         std::fs::create_dir_all(&data_dir)?;
         // A disposable, test-local stand-in for the real Downloads directory
         // (see `MORPHEUS_DOWNLOAD_DIR` in `morpheus-core`), so downloads can
@@ -1122,4 +1123,66 @@ pub fn new_account(homeserver: &str, name: &str) -> Result<String> {
         &format!("{homeserver}/_matrix/client/v3/logout"),
     ]);
     Ok(user)
+}
+
+/// Every test login leaves a device on the dev homeserver, and a long run
+/// piles up dozens per user, which slows key sharing and sync until tests
+/// time out. Once per test process (before its first app starts), remove the
+/// seeded users' devices, as `just hs-seed` does. Best effort.
+fn prune_test_devices(homeserver: &str) {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let curl = |args: &[&str]| -> Option<String> {
+            let out = std::process::Command::new("curl")
+                .arg("-sf")
+                .args(args)
+                .output()
+                .ok()?;
+            out.status
+                .success()
+                .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+        };
+        let Some(login) = curl(&[
+            "-X",
+            "POST",
+            &format!("{homeserver}/_matrix/client/v3/login"),
+            "-d",
+            r#"{"type":"m.login.password","identifier":{"type":"m.id.user","user":"alice"},"password":"alice-password"}"#,
+        ]) else {
+            return;
+        };
+        let Some(token) = serde_json::from_str::<Value>(&login)
+            .ok()
+            .and_then(|v| v["access_token"].as_str().map(str::to_owned))
+        else {
+            return;
+        };
+        let auth = format!("Authorization: Bearer {token}");
+        // alice last: her token is the one doing the deleting.
+        for user in ["bob", "carol", "alice"] {
+            let Some(list) = curl(&[
+                "-H",
+                &auth,
+                &format!("{homeserver}/_synapse/admin/v2/users/@{user}:localhost/devices"),
+            ]) else {
+                continue;
+            };
+            let ids: Vec<Value> = serde_json::from_str::<Value>(&list)
+                .ok()
+                .and_then(|v| v["devices"].as_array().cloned())
+                .unwrap_or_default()
+                .iter()
+                .filter_map(|d| d.get("device_id").cloned())
+                .collect();
+            let _ = curl(&[
+                "-X",
+                "POST",
+                "-H",
+                &auth,
+                &format!("{homeserver}/_synapse/admin/v2/users/@{user}:localhost/delete_devices"),
+                "-d",
+                &json!({ "devices": ids }).to_string(),
+            ]);
+        }
+    });
 }

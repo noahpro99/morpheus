@@ -60,17 +60,6 @@ async fn set_nickname(app: &mut App, member: &str, nickname: &str) {
     .expect("editor closes");
 }
 
-/// The sender shown on bob's message `text`.
-fn sender_of(text: &str) -> String {
-    format!(
-        "const rows = [...document.querySelectorAll('.timeline .message')]; \
-         const i = rows.findIndex(m => m.textContent.includes({})); \
-         for (let j = i; j >= 0; j--) {{ const s = rows[j].querySelector('.sender'); if (s) return s.textContent.trim(); }} \
-         return null;",
-        serde_json::to_string(text).expect("json")
-    )
-}
-
 #[tokio::test]
 async fn nicknames_replace_display_names_and_follow_you() {
     let Some(hs) = homeserver() else {
@@ -92,17 +81,18 @@ async fn nicknames_replace_display_names_and_follow_you() {
     let nickname = format!("Bobby {}", std::process::id());
     set_nickname(&mut alice, "bob", &nickname).await;
 
+    // Bob's messages are headed by the nickname, and none by his own name.
     alice
         .wait_for_js(
             &format!(
-                "return ({{ f: () => {{ {} }} }}).f() === {};",
-                sender_of(&text),
-                serde_json::to_string(&nickname).expect("json")
+                "const senders = [...document.querySelectorAll('.timeline .sender')].map(s => s.textContent.trim()); \
+                 return senders.includes({nick}) && !senders.includes('bob');",
+                nick = serde_json::to_string(&nickname).expect("json")
             ),
             DEFAULT_WAIT,
         )
         .await
-        .expect("bob's message shows the nickname");
+        .expect("bob's messages show the nickname");
     alice
         .wait_for_text(".members .member", &nickname, DEFAULT_WAIT)
         .await
