@@ -11,6 +11,9 @@ tokio = { workspace = true }
 futures-util = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
+# TLS for `wss://` call services: the app links both crypto backends, so
+# one must be chosen (see `runtime()`).
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
 
 [lints]
 workspace = true
@@ -18,3 +21,6 @@ workspace = true
 [dev-dependencies]
 livekit-api = { version = "0.9.0", default-features = false, features = ["access-token"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "process"] }
+# The app links rustls with both crypto backends (aws-lc-rs comes with the
+# Matrix SDK); the tests do too, so they meet the same ambiguity.
+rustls = { version = "0.23", default-features = false, features = ["aws-lc-rs", "ring"] }

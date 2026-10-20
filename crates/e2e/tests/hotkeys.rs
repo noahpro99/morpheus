@@ -214,3 +214,36 @@ async fn up_edits_last_message_and_escape_jumps_to_bottom() {
         .await
         .expect("back at the bottom (desktop) or the room list (phone)");
 }
+
+/// Ctrl+R reloads the app, as in Discord: the interface is built afresh
+/// (same account, no sign-in) and works.
+#[tokio::test]
+async fn ctrl_r_reloads_the_app() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch(&hs).await.expect("launch app");
+    login_and_open(&mut app, "random").await;
+    // A mark on the current interface, gone once it is rebuilt.
+    app.eval("document.querySelector('.shell').dataset.beforeReload = 'yes'; return true;")
+        .await
+        .expect("mark");
+    app.key_combo("body", "r", true, false, false)
+        .await
+        .expect("ctrl+r");
+    app.wait_for(".shell:not([data-before-reload])", DEFAULT_WAIT)
+        .await
+        .expect("rebuilt");
+    assert_eq!(
+        app.count("form.login").await.expect("count"),
+        0,
+        "still signed in"
+    );
+    app.wait_for(".room", DEFAULT_WAIT)
+        .await
+        .expect("rooms again");
+    app.open_room("general")
+        .await
+        .expect("works after reloading");
+}

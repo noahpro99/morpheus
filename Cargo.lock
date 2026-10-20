@@ -5224,6 +5224,7 @@ dependencies = [
  "futures-util",
  "livekit",
  "livekit-api",
+ "rustls",
  "thiserror 2.0.21",
  "tokio",
  "tracing",
