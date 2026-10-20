@@ -1959,3 +1959,100 @@ async fn call_media_keys_travel_encrypted_to_the_room() {
         "identities to apply it to"
     );
 }
+
+/// Calling someone in a direct message rings them (MSC4075
+/// `m.rtc.notification`); group rooms don't ring. Declining tells the caller.
+#[tokio::test]
+async fn a_call_in_a_direct_message_rings_and_can_be_declined() {
+    let Some(env) = env() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping live test");
+        return;
+    };
+    let login = async |user: &str| {
+        let core =
+            Core::with_session_store(fresh_data_dir(), SessionStoreKind::File).expect("core");
+        core.login(LoginRequest {
+            homeserver: env.homeserver.clone(),
+            username: user.into(),
+            password: format!("{user}-password"),
+        })
+        .await
+        .expect("login")
+    };
+    let alice = login("alice").await;
+    let bob = login("bob").await;
+    let bob_id = bob.user_id().expect("bob");
+    let mut alice_rooms = alice.room_list().await.expect("room list");
+    let mut rooms = Vector::new();
+    drive(
+        &mut rooms,
+        async || alice_rooms.next().await,
+        |rooms| {
+            rooms.iter().any(|r| r.name == SEEDED_ROOM)
+                && rooms.iter().any(|r| r.dm_user.as_ref() == Some(&bob_id))
+        },
+    )
+    .await;
+    let general = rooms
+        .iter()
+        .find(|r| r.name == SEEDED_ROOM)
+        .expect("general")
+        .id
+        .clone();
+    let dm = rooms
+        .iter()
+        .find(|r| r.dm_user.as_ref() == Some(&bob_id))
+        .expect("dm with bob")
+        .id
+        .clone();
+    let mut bob_rooms = bob.room_list().await.expect("bob room list");
+    let mut bob_rings = bob.ring_updates().await.expect("bob rings");
+    let mut alice_rings = alice.ring_updates().await.expect("alice rings");
+    // Let bob's sync get going.
+    let _ = timeout(Duration::from_secs(5), bob_rooms.next()).await;
+
+    // A group room's call rings nobody; the DM's rings bob.
+    alice
+        .join_call(general.clone())
+        .await
+        .expect("join general");
+    alice.join_call(dm.clone()).await.expect("call bob");
+    let ring = timeout(Duration::from_secs(20), async {
+        loop {
+            tokio::select! {
+                ring = bob_rings.next() => match ring.expect("rings end") {
+                    morpheus_core::Ringing::Incoming(call) => return call,
+                    other => eprintln!("skipping {other:?}"),
+                },
+                _ = bob_rooms.next() => {}
+            }
+        }
+    })
+    .await
+    .expect("bob's phone rings");
+    assert_eq!(ring.room_id, dm, "the ring is the DM's, not #general's");
+    assert_eq!(ring.caller, alice.user_id().expect("alice"));
+
+    // Bob declines; alice hears.
+    bob.decline_call(dm.clone(), ring.notification.clone())
+        .await
+        .expect("decline");
+    let declined = timeout(Duration::from_secs(20), async {
+        loop {
+            if let morpheus_core::Ringing::Declined {
+                room_id,
+                by,
+                notification,
+            } = alice_rings.next().await.expect("rings end")
+            {
+                return (room_id, by, notification);
+            }
+        }
+    })
+    .await
+    .expect("alice hears the decline");
+    assert_eq!(declined, (dm.clone(), bob_id, ring.notification));
+
+    alice.leave_call(dm).await.expect("hang up");
+    alice.leave_call(general).await.expect("leave general");
+}

@@ -18,6 +18,8 @@ pub enum Sound {
     Unmute,
     Deafen,
     Undeafen,
+    /// Someone is calling (repeats while it rings).
+    Ring,
 }
 
 impl Sound {
@@ -29,6 +31,7 @@ impl Sound {
             Self::Unmute => "unmute",
             Self::Deafen => "deafen",
             Self::Undeafen => "undeafen",
+            Self::Ring => "ring",
         }
     }
 
@@ -41,6 +44,7 @@ impl Sound {
             Self::Unmute => &[(659.25, 140)],
             Self::Deafen => &[(523.25, 90), (392.0, 160)],
             Self::Undeafen => &[(392.0, 90), (523.25, 160)],
+            Self::Ring => &[(659.25, 120), (830.61, 120), (987.77, 120), (1318.51, 320)],
         }
     }
 }
@@ -92,6 +96,7 @@ fn data_url(sound: Sound) -> &'static str {
             Sound::Unmute,
             Sound::Deafen,
             Sound::Undeafen,
+            Sound::Ring,
         ]
         .into_iter()
         .map(|s| {

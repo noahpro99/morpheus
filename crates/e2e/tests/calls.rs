@@ -335,3 +335,126 @@ async fn choose_the_microphone_and_speaker_for_calls() {
         .expect("connected");
     alice.click(".voice-panel .hang-up").await.expect("hang up");
 }
+
+/// Into the direct message with `who`, from the DM list.
+async fn open_dm(app: &mut App, who: &str) {
+    app.click(".rail-item[title=\"Direct messages\"]")
+        .await
+        .expect("direct messages");
+    app.open_room(who).await.expect("open the dm");
+}
+
+/// Calling someone in a DM rings them: a popup with the caller, a
+/// ringtone, accept and decline. Declining tells the caller and ends it.
+#[tokio::test]
+async fn a_call_in_a_dm_rings_the_other_person_who_can_answer_or_decline() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    login_and_open(&mut alice, "alice", "random").await;
+    let mut bob = App::launch(&hs).await.expect("launch bob");
+    login_and_open(&mut bob, "bob", "random").await;
+    open_dm(&mut alice, "bob").await;
+
+    // Alice calls; bob's app rings.
+    alice
+        .click(".chat-header .call-button")
+        .await
+        .expect("call bob");
+    bob.wait_for_text(".incoming-call", "alice", DEFAULT_WAIT)
+        .await
+        .expect("bob sees alice calling");
+    bob.wait_for_js(
+        "return (window.morpheusSounds ?? []).includes('ring');",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("a ringtone");
+    // The DM says so.
+    alice
+        .wait_for_text(".timeline", "alice started a call", DEFAULT_WAIT)
+        .await
+        .expect("started a call, in the timeline");
+
+    // Bob answers: he's in the call, and it stops ringing.
+    bob.click(".incoming-call .accept-call")
+        .await
+        .expect("accept");
+    bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("bob connected");
+    bob.wait_for_js(
+        "return !document.querySelector('.incoming-call');",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("ringing stops");
+    alice
+        .wait_for_js(&speaking("bob"), DEFAULT_WAIT)
+        .await
+        .expect("alice hears bob");
+    bob.click(".voice-panel .hang-up")
+        .await
+        .expect("bob hangs up");
+    alice
+        .click(".voice-panel .hang-up")
+        .await
+        .expect("alice hangs up");
+    alice
+        .wait_for_js(
+            "return !document.querySelector('.voice-panel');",
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("alice out");
+    // Once the room shows nobody in the call (the header redraws as it changes).
+    alice
+        .wait_for(
+            ".chat-header .call-button[title=\"Start a call\"]",
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("call empty");
+
+    // She calls again; this time bob declines, and her call ends.
+    alice
+        .click(".chat-header .call-button")
+        .await
+        .expect("call bob again");
+    alice
+        .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("alice waiting in the call");
+    bob.wait_for(".incoming-call .decline-call", DEFAULT_WAIT)
+        .await
+        .expect("rings again");
+    bob.click(".incoming-call .decline-call")
+        .await
+        .expect("decline");
+    bob.wait_for_js(
+        "return !document.querySelector('.incoming-call');",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("ringing stops");
+    alice
+        .wait_for_text(".toast", "bob declined the call", DEFAULT_WAIT)
+        .await
+        .expect("alice told");
+    alice
+        .wait_for_js(
+            "return !document.querySelector('.voice-panel');",
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("alice's call ends");
+    assert_eq!(
+        bob.eval("return document.body.textContent.includes('Unsupported');")
+            .await
+            .expect("text"),
+        serde_json::Value::Bool(false),
+        "rings or declines shown as unsupported"
+    );
+}

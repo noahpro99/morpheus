@@ -30,6 +30,12 @@ use crate::{
 /// Calls' event types (Element Call's): device memberships and media keys.
 const CALL_MEMBER_EVENT: &str = "org.matrix.msc3401.call.member";
 const CALL_KEYS_EVENT: &str = "io.element.call.encryption_keys";
+/// Message-like events calls send that get no row: media keys, declined rings.
+const CALL_PLUMBING_EVENTS: [&str; 3] = [
+    CALL_KEYS_EVENT,
+    "m.rtc.decline",
+    "org.matrix.msc4310.rtc.decline",
+];
 
 /// Messages fetched when a room is opened for the first time.
 const INITIAL_BACKFILL: u16 = 40;
@@ -169,7 +175,7 @@ pub enum MessageKind {
     /// default (Discord never shows them, Element hides them).
     ProfileChange,
     /// Calls' plumbing: a device joining or leaving a call (membership
-    /// state) or sharing its media key. No row of its own (the sidebar shows
+    /// state), sharing its media key, declining a ring. No row of its own (the sidebar shows
     /// who is in a call), but kept so read markers can still land on it.
     CallPlumbing,
     Unsupported(String),
@@ -411,7 +417,9 @@ impl MessageKind {
                 MsgLikeKind::Sticker(_) => Self::Unsupported("sticker".into()),
                 MsgLikeKind::Poll(_) => Self::Unsupported("poll".into()),
                 MsgLikeKind::LiveLocation(_) => Self::Unsupported("live location".into()),
-                MsgLikeKind::Other(other) if other.event_type().to_string() == CALL_KEYS_EVENT => {
+                MsgLikeKind::Other(other)
+                    if CALL_PLUMBING_EVENTS.contains(&other.event_type().to_string().as_str()) =>
+                {
                     Self::CallPlumbing
                 }
                 MsgLikeKind::Other(_) => Self::Unsupported("message".into()),
@@ -438,9 +446,9 @@ impl MessageKind {
             TimelineItemContent::FailedToParseState { event_type, .. } => {
                 Self::Unsupported(event_type.to_string())
             }
-            TimelineItemContent::CallInvite => Self::Unsupported("call".into()),
-            TimelineItemContent::RtcNotification { .. } => {
-                Self::Unsupported("call notification".into())
+            // A ring, as Discord puts it.
+            TimelineItemContent::CallInvite | TimelineItemContent::RtcNotification { .. } => {
+                Self::State(format!("{sender_name} started a call"))
             }
         }
     }
