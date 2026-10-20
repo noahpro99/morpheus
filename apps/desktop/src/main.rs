@@ -41,7 +41,9 @@ fn main() {
         )
         .init();
 
-    let focus = Focus(Arc::new(AtomicBool::new(true)));
+    // Unfocused until the window says otherwise: one started hidden in the
+    // tray never gets a focus event, and must still notify.
+    let focus = Focus(Arc::new(AtomicBool::new(false)));
     let mut config = AppConfig::new(
         data_dir(),
         std::env::var("MORPHEUS_HOMESERVER").unwrap_or_else(|_| DEFAULT_HOMESERVER.into()),
@@ -249,6 +251,11 @@ fn notifier(session: Session, focus: Focus, open_room: OpenRoom, data_dir: PathB
                 }
             };
             runtime.block_on(async move {
+                tokio::spawn(ring_notifier(
+                    session.clone(),
+                    focus.clone(),
+                    data_dir.clone(),
+                ));
                 let mut updates = match session.notifications().await {
                     Ok(updates) => updates,
                     Err(err) => {
@@ -284,6 +291,35 @@ fn notifier(session: Session, focus: Focus, open_room: OpenRoom, data_dir: PathB
         })
         .map(drop)
         .unwrap_or_else(|err| tracing::warn!(%err, "notifier thread failed"));
+}
+
+/// Someone calling while the window is in the background or hidden: say
+/// who (the ringtone plays in the app either way).
+async fn ring_notifier(session: Session, focus: Focus, data_dir: PathBuf) {
+    let mut rings = match session.ring_updates().await {
+        Ok(rings) => rings,
+        Err(err) => {
+            tracing::warn!(%err, "ring subscription failed");
+            return;
+        }
+    };
+    while let Some(ring) = rings.next().await {
+        let morpheus_core::Ringing::Incoming(call) = ring else {
+            continue;
+        };
+        if focus.0.load(Ordering::Relaxed)
+            || !morpheus_ui::device_prefs::notifications_enabled(&data_dir)
+        {
+            continue;
+        }
+        let name = match session.profile(call.caller.clone()).await {
+            Ok(profile) => profile.name,
+            Err(_) => call.caller.localpart().to_owned(),
+        };
+        let title = format!("{name} is calling");
+        tracing::info!(%title, "ring notification");
+        notify(title, "Open Morpheus to answer".into());
+    }
 }
 
 /// Raise an OS notification. Off the UI thread, since the D-Bus round trip
