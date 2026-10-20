@@ -93,6 +93,15 @@
             GIO_MODULE_DIR = "${pkgs.glib-networking}/lib/gio/modules";
             # Without this webkitgtk often renders a blank window on NixOS + Wayland.
             WEBKIT_DISABLE_DMABUF_RENDERER = "1";
+            # Sound in the webview (call chimes, later audio and video): webkitgtk
+            # plays through GStreamer, which finds its plugins here.
+            GST_PLUGIN_SYSTEM_PATH_1_0 =
+              with pkgs.gst_all_1;
+              pkgs.lib.makeSearchPathOutput "lib" "lib/gstreamer-1.0" [
+                gstreamer
+                gst-plugins-base
+                gst-plugins-good
+              ];
             MORPHEUS_HOMESERVER = "http://localhost:8008";
             # Calls: libwebrtc (webrtc-sys) is built against Chromium's libc++ and
             # needs a recent clang for the host; gcc stays the default elsewhere.

@@ -49,6 +49,14 @@ fn speaking(name: &str) -> String {
     )
 }
 
+/// The chimes played so far, in order (test runs only note them).
+fn chimes_are(expected: &[&str]) -> String {
+    format!(
+        "return (window.morpheusSounds ?? []).join(',') === {};",
+        serde_json::to_string(&expected.join(",")).expect("json"),
+    )
+}
+
 #[tokio::test]
 async fn join_a_call_see_who_is_in_it_mute_and_hang_up() {
     let Some(hs) = homeserver() else {
@@ -82,6 +90,10 @@ async fn join_a_call_see_who_is_in_it_mute_and_hang_up() {
         .wait_for_js(&in_call(&random_id, "alice"), DEFAULT_WAIT)
         .await
         .expect("alice listed under the room");
+    alice
+        .wait_for_js(&chimes_are(&["join"]), DEFAULT_WAIT)
+        .await
+        .expect("a chime as she joins");
 
     // Bob sees her there before joining, and joins.
     let mut bob = App::launch(&hs).await.expect("launch bob");
@@ -97,6 +109,13 @@ async fn join_a_call_see_who_is_in_it_mute_and_hang_up() {
         .wait_for_js(&in_call(&random_id, "bob"), DEFAULT_WAIT)
         .await
         .expect("alice sees bob join");
+    alice
+        .wait_for_js(&chimes_are(&["join", "join"]), DEFAULT_WAIT)
+        .await
+        .expect("a chime as bob joins");
+    bob.wait_for_js(&chimes_are(&["join"]), DEFAULT_WAIT)
+        .await
+        .expect("bob's own join chime");
 
     // Both send a tone, so both are speaking.
     bob.wait_for_js(&speaking("alice"), DEFAULT_WAIT)
@@ -122,6 +141,10 @@ async fn join_a_call_see_who_is_in_it_mute_and_hang_up() {
         .wait_for(".user-bar .mute-button.active", DEFAULT_WAIT)
         .await
         .expect("mute shows");
+    alice
+        .wait_for_js(&chimes_are(&["join", "join", "mute"]), DEFAULT_WAIT)
+        .await
+        .expect("a mute chime");
     bob.wait_for_js(
         &format!("return !(() => {{ {} }})();", speaking("alice")),
         DEFAULT_WAIT,
@@ -144,6 +167,13 @@ async fn join_a_call_see_who_is_in_it_mute_and_hang_up() {
     )
     .await
     .expect("alice gone from the call");
+    alice
+        .wait_for_js(&chimes_are(&["join", "join", "mute", "leave"]), DEFAULT_WAIT)
+        .await
+        .expect("a chime as she hangs up");
+    bob.wait_for_js(&chimes_are(&["join", "leave"]), DEFAULT_WAIT)
+        .await
+        .expect("a chime for bob as she leaves");
     bob.click(".voice-panel .hang-up")
         .await
         .expect("bob hangs up");

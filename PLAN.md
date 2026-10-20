@@ -130,7 +130,9 @@ timeline → send.
 - [x] Hanging up sends the scheduled leave at once (one request), so an app killed mid-hang-up leaves no ghost; the seed sweeps leftovers.
 - [x] Microphone and speaker pickers in Settings → Voice & Video (kept per device, a call going switches over; phones note that the system picks).
 - [ ] Android: speakerphone vs earpiece toggle (AudioManager), since WebRTC leaves routing to the system.
-- [ ] Video and screen share; join/leave sounds; ringing for DMs (MSC4075 `m.rtc.notification`).
+- [x] Chimes, Discord-style: you or someone else joins or leaves the call, mute, deafen (tones made in code, played by the webview; GStreamer plugins in the dev shell for webkitgtk).
+- [ ] Android: check the chimes play (WebView may want a user gesture: `setMediaPlaybackRequiresUserGesture(false)`).
+- [ ] Video and screen share; ringing for DMs (MSC4075 `m.rtc.notification`).
 
 ### 6. Native renderer
 - [ ] Evaluate Dioxus Native (Blitz) on desktop; gate behind a cargo feature
