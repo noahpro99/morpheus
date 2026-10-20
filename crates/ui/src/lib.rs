@@ -25,6 +25,7 @@ mod format;
 pub mod icons;
 mod linkify;
 mod media;
+mod sounds;
 mod window;
 
 pub use app::{App, AppCommand, AppCommands, AppConfig, MicrophoneAccess, OpenRoom, SessionHook};

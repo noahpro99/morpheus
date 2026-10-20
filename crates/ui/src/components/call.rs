@@ -17,6 +17,7 @@ use super::shell::go_to;
 use super::toast::report;
 use crate::icons::{Icon, PHONE_OFF};
 use crate::media::Avatar;
+use crate::sounds::{Sound, play};
 
 /// The call this account is in.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -179,6 +180,7 @@ pub fn join_call(session: Session, room_id: OwnedRoomId, room_name: String) {
                 state.connected = true;
             }
         });
+        play(Sound::Join);
         // Our media key, to everyone in the call (again whenever someone joins).
         let share_key = {
             let (session, room_id, key) = (
@@ -225,6 +227,7 @@ pub fn join_call(session: Session, room_id: OwnedRoomId, room_name: String) {
             }
             match event {
                 CallEvent::Joined(_) => {
+                    play(Sound::Join);
                     refresh_people(&session, &room_id, &mut people).await;
                     share_key().await;
                 }
@@ -264,7 +267,7 @@ pub fn join_call(session: Session, room_id: OwnedRoomId, room_name: String) {
                     leave(&session, active, &media).await;
                     return;
                 }
-                CallEvent::Left(_) => {}
+                CallEvent::Left(_) => play(Sound::Leave),
             }
         }
     });
@@ -285,6 +288,9 @@ async fn leave(session: &Session, mut active: ActiveCall, media: &CallMedia) {
         .and_then(|slot| slot.0.as_ref().map(|c| c.room_id.clone()));
     if active.try_peek().is_ok() {
         active.set(CallSlot(None));
+    }
+    if room.is_some() {
+        play(Sound::Leave);
     }
     // Matrix first: that is what everyone else sees.
     if let Some(room) = room
@@ -316,6 +322,16 @@ async fn refresh_people(
 pub fn set_voice(muted: bool, deafened: bool) {
     let mut voice = consume_context::<Voice>();
     let media = consume_context::<CallMedia>();
+    let before = *voice.peek();
+    if deafened != before.deafened {
+        play(if deafened {
+            Sound::Deafen
+        } else {
+            Sound::Undeafen
+        });
+    } else if muted != before.muted {
+        play(if muted { Sound::Mute } else { Sound::Unmute });
+    }
     voice.set(VoiceFlags { muted, deafened });
     if let Some(call) = media.0.borrow().as_ref() {
         call.set_muted(muted || deafened);
