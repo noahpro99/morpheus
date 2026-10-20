@@ -875,6 +875,8 @@ img.avatar { object-fit: cover; }
 .notify-choice input:checked::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
 .notify-choice input[type=checkbox], .notify-choice input[type=checkbox]:checked::after { border-radius: 3px; }
 .notify-choice input:disabled { opacity: 0.4; }
+.device-choice { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; font-size: 0.85rem; color: var(--text-muted); }
+.device-choice select { font-size: 0.95rem; max-width: 420px; }
 .theme-options { display: flex; flex-wrap: wrap; gap: 12px; }
 .theme-option {
   display: flex;
@@ -1361,7 +1363,7 @@ button.sender:hover { text-decoration: underline; }
 .choice-group legend { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 4px; }
 .choice { display: flex; align-items: center; gap: 8px; font-size: 0.95rem; cursor: pointer; }
 .choice input { accent-color: var(--accent); }
-.message-dialog select {
+.message-dialog select, .device-choice select {
   padding: 10px 12px;
   border: 1px solid var(--bg-elevated);
   border-radius: var(--radius);

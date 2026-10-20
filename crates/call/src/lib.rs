@@ -34,6 +34,12 @@ use livekit::{
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tracing::{debug, warn};
 
+mod devices;
+pub use devices::{
+    AudioDevice, AudioDevices, DeviceChoice, audio_devices, choose_audio_devices,
+    chosen_audio_devices,
+};
+
 /// Where the call's audio comes from and goes to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AudioMode {
@@ -122,8 +128,8 @@ pub struct Call {
     keys: Option<KeyProvider>,
     mic: LocalAudioTrack,
     deafened: Arc<Mutex<bool>>,
-    /// Keeps the platform devices open for the call's lifetime.
-    _platform: Option<PlatformAudio>,
+    /// The platform devices, open for the call's lifetime.
+    platform: Option<PlatformAudio>,
     tasks: Vec<tokio::task::JoinHandle<()>>,
 }
 
@@ -185,6 +191,9 @@ impl Call {
         let (source, platform) = match mode {
             AudioMode::Platform => {
                 let platform = PlatformAudio::new().map_err(|err| Error::Audio(err.to_string()))?;
+                if let Err(err) = devices::apply(&platform, false) {
+                    warn!(%err, "chosen device unavailable, using the default");
+                }
                 (platform.rtc_source(), Some(platform))
             }
             AudioMode::Tone => {
@@ -242,7 +251,7 @@ impl Call {
                 keys,
                 mic,
                 deafened,
-                _platform: platform,
+                platform,
                 tasks,
             },
             rx,
@@ -267,6 +276,14 @@ impl Call {
     pub fn set_key(&self, identity: &str, key: Vec<u8>) {
         if let Some(keys) = &self.keys {
             keys.set_key(&ParticipantIdentity(identity.to_owned()), 0, key);
+        }
+    }
+
+    /// Switch to the devices last chosen ([`choose_audio_devices`]).
+    pub fn use_chosen_devices(&self) -> Result<()> {
+        match &self.platform {
+            Some(platform) => devices::apply(platform, true),
+            None => Ok(()),
         }
     }
 

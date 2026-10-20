@@ -10,7 +10,7 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use dioxus::core::spawn_forever;
 use dioxus::prelude::*;
-use morpheus_call::{AudioMode, Call, CallEvent};
+use morpheus_call::{AudioMode, Call, CallEvent, DeviceChoice};
 use morpheus_core::{OwnedRoomId, OwnedUserId, Session};
 
 use super::shell::go_to;
@@ -53,6 +53,8 @@ pub fn provide_calls(session: Session) {
     let active: ActiveCall = use_context_provider(|| Signal::new(CallSlot::default()));
     use_context_provider(|| Signal::new(VoiceFlags::default()) as Voice);
     let media = use_context_provider(CallMedia::default);
+    let data_dir = use_context::<crate::AppConfig>().data_dir;
+    use_hook(|| morpheus_call::choose_audio_devices(crate::device_prefs::audio_devices(&data_dir)));
     use_drop(move || {
         let call = media.0.borrow_mut().take();
         let room = active.peek().0.as_ref().map(|c| c.room_id.clone());
@@ -318,6 +320,17 @@ pub fn set_voice(muted: bool, deafened: bool) {
     if let Some(call) = media.0.borrow().as_ref() {
         call.set_muted(muted || deafened);
         call.set_deafened(deafened);
+    }
+}
+
+/// Calls use these devices, the one going now included.
+pub fn use_devices(choice: DeviceChoice) {
+    morpheus_call::choose_audio_devices(choice);
+    let media = consume_context::<CallMedia>();
+    if let Some(call) = media.0.borrow().as_ref()
+        && let Err(err) = call.use_chosen_devices()
+    {
+        report("switching audio devices", &err);
     }
 }
 

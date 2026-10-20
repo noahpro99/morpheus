@@ -212,3 +212,93 @@ async fn encrypted_rooms_encrypt_the_call_and_both_sides_still_hear() {
     .await
     .expect("the call empties");
 }
+
+/// Choose a device in a picker (a `<select>`), as a person would.
+async fn choose(app: &mut App, picker: &str, id: &str) {
+    app.eval(&format!(
+        "const s = document.querySelector('.voice-devices select[name={picker}]'); \
+         s.value = {id}; s.dispatchEvent(new Event('change', {{ bubbles: true }}));",
+        id = serde_json::to_string(id).expect("json"),
+    ))
+    .await
+    .expect("choose device");
+}
+
+async fn open_voice_settings(app: &mut App) {
+    app.click(".settings-button").await.expect("gear");
+    app.wait_for_text(".settings-nav button", "Voice & Video", DEFAULT_WAIT)
+        .await
+        .expect("settings");
+    app.click_text(".settings-nav button", "Voice & Video")
+        .await
+        .expect("voice page");
+    // Test runs list stand-in devices (`AudioMode::Tone`).
+    app.wait_for_text(
+        ".voice-devices select[name=microphone] option",
+        "Test microphone 2",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("microphones listed");
+}
+
+/// Settings → Voice & Video picks the microphone and speaker; the choice is
+/// kept on the device, still there after a restart, and calls still connect.
+#[tokio::test]
+async fn choose_the_microphone_and_speaker_for_calls() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut alice = App::launch_desktop(&hs).await.expect("launch alice");
+    login_and_open(&mut alice, "alice", "random").await;
+    open_voice_settings(&mut alice).await;
+    choose(&mut alice, "microphone", "test-microphone-2").await;
+    choose(&mut alice, "speaker", "test-speaker-1").await;
+    let saved = alice.data_dir().join("audio_devices.json");
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let text = std::fs::read_to_string(&saved).unwrap_or_default();
+        if text.contains("test-microphone-2") && text.contains("test-speaker-1") {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "choice not kept: {text}"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+
+    // After a restart the pickers show the choice.
+    let mut alice = alice.relaunch().await.expect("relaunch");
+    alice.wait_for(".room", DEFAULT_WAIT).await.expect("rooms");
+    open_voice_settings(&mut alice).await;
+    let shown = alice
+        .eval(
+            "return [...document.querySelectorAll('.voice-devices select')].map(s => s.value).join(',');",
+        )
+        .await
+        .expect("read pickers");
+    assert_eq!(shown.as_str(), Some("test-microphone-2,test-speaker-1"));
+
+    // Back to the system default.
+    choose(&mut alice, "speaker", "").await;
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    while std::fs::read_to_string(&saved)
+        .unwrap_or_default()
+        .contains("test-speaker-1")
+    {
+        assert!(std::time::Instant::now() < deadline, "default not kept");
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+    alice.press("body", "Escape").await.expect("close settings");
+
+    // Calls still connect.
+    alice.open_room("random").await.expect("open #random");
+    alice.click(".call-button").await.expect("join");
+    alice
+        .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("connected");
+    alice.click(".voice-panel .hang-up").await.expect("hang up");
+}

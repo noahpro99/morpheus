@@ -388,14 +388,7 @@ pub fn Settings() -> Element {
                             SettingsPage::Notifications => rsx! { NotificationsPage {} },
                             SettingsPage::Startup => rsx! { StartupPage {} },
                             SettingsPage::Appearance => rsx! { AppearancePage {} },
-                            SettingsPage::VoiceVideo => rsx! {
-                                section { class: "settings-section",
-                                    h3 { "Calls" }
-                                    p { class: "muted",
-                                        "Voice and video calls aren't supported yet. Microphone, speaker and camera choices will live here once they are."
-                                    }
-                                }
-                            },
+                            SettingsPage::VoiceVideo => rsx! { VoicePage {} },
                         }
                     }
                 }
@@ -671,6 +664,77 @@ fn AppearancePage() -> Element {
                         span { class: "theme-name", "{theme.label()}" }
                     }
                 }
+            }
+        }
+    }
+}
+
+/// The microphone and speaker calls use, kept on this device. Phones choose
+/// for themselves, so they get a note instead.
+#[component]
+fn VoicePage() -> Element {
+    let data_dir = use_context::<crate::AppConfig>().data_dir;
+    let devices =
+        use_resource(|| morpheus_call::audio_devices(morpheus_call::AudioMode::from_env()));
+    let mut chosen = use_signal(morpheus_call::chosen_audio_devices);
+    let choose = use_callback(move |choice: morpheus_call::DeviceChoice| {
+        if let Err(err) = crate::device_prefs::set_audio_devices(&data_dir, &choice) {
+            report("saving the audio devices", &err);
+        }
+        super::call::use_devices(choice.clone());
+        chosen.set(choice);
+    });
+    let picker = |kind: &'static str,
+                  label: &'static str,
+                  list: Vec<morpheus_call::AudioDevice>,
+                  current: Option<String>| {
+        let current = current.unwrap_or_default();
+        rsx! {
+            label { class: "device-choice",
+                span { "{label}" }
+                select {
+                    name: "{kind}",
+                    onchange: move |e| {
+                        let id = Some(e.value()).filter(|id| !id.is_empty());
+                        let mut choice = chosen();
+                        if kind == "microphone" {
+                            choice.microphone = id;
+                        } else {
+                            choice.speaker = id;
+                        }
+                        choose.call(choice);
+                    },
+                    option { value: "", selected: current.is_empty(), "System default" }
+                    for device in list {
+                        option {
+                            value: "{device.id}",
+                            selected: device.id == current,
+                            "{device.name}"
+                        }
+                    }
+                }
+            }
+        }
+    };
+    rsx! {
+        section { class: "settings-section voice-devices",
+            h3 { "Devices" }
+            match devices() {
+                None => rsx! { p { class: "muted", "Looking for devices…" } },
+                Some(found) if found.microphones.is_empty() && found.speakers.is_empty() => rsx! {
+                    p { class: "muted",
+                        if cfg!(any(target_os = "android", target_os = "ios")) {
+                            "Your phone picks the microphone and speaker (or headset) for calls."
+                        } else {
+                            "No microphones or speakers found."
+                        }
+                    }
+                },
+                Some(found) => rsx! {
+                    {picker("microphone", "Microphone", found.microphones, chosen().microphone)}
+                    {picker("speaker", "Speaker", found.speakers, chosen().speaker)}
+                    p { class: "muted", "Used for calls on this device; a call going now switches over." }
+                },
             }
         }
     }
