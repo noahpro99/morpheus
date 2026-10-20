@@ -899,3 +899,77 @@ async fn phone_keyboard_keeps_the_message_box_visible() {
     );
     shot(&mut app, "android-keyboard").await;
 }
+
+/// The last call audio route Android logged (`updateCommunicationRoute`).
+fn last_route() -> String {
+    adb_shell(&["dumpsys", "audio"])
+        .lines()
+        .filter(|line| line.contains("updateCommunicationRoute"))
+        .last()
+        .unwrap_or_default()
+        .to_owned()
+}
+
+/// On a phone a call plays from the loudspeaker (as Discord's voice
+/// channels do); the voice panel switches it to the earpiece and back.
+#[tokio::test]
+async fn phone_calls_use_the_loudspeaker_and_switch_to_the_earpiece() {
+    if !enabled() {
+        eprintln!("MORPHEUS_E2E_ANDROID not set; skipping the Android test");
+        return;
+    }
+    let mut app = App::launch_android().await.expect("launch on Android");
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    app.type_into("form.login input[name=username]", "alice")
+        .await
+        .expect("username");
+    app.type_into("form.login input[name=password]", "alice-password")
+        .await
+        .expect("password");
+    app.submit("form.login").await.expect("submit");
+    app.wait_for(".room", DEFAULT_WAIT)
+        .await
+        .expect("rooms listed");
+    app.open_room("random").await.expect("open #random");
+    app.click(".chat-header .call-button").await.expect("call");
+    app.click(".chat-header .pane-back")
+        .await
+        .expect("back to the list");
+    app.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("in the call");
+
+    // Loudspeaker to start with.
+    app.wait_for(".voice-panel .speaker-button.active", DEFAULT_WAIT)
+        .await
+        .expect("speaker on");
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    while !last_route().contains("speaker") {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "audio not on the loudspeaker: {}",
+            last_route()
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    }
+
+    // To the earpiece.
+    app.click(".voice-panel .speaker-button")
+        .await
+        .expect("earpiece");
+    app.wait_for(".voice-panel .speaker-button:not(.active)", DEFAULT_WAIT)
+        .await
+        .expect("earpiece shown");
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    while last_route().contains("speaker") {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "audio still on the loudspeaker: {}",
+            last_route()
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    }
+    app.click(".voice-panel .hang-up").await.expect("hang up");
+}

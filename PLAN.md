@@ -129,7 +129,7 @@ timeline → send.
 - [x] Media encryption in encrypted rooms, Element Call's way: each device gets a fresh random key, shares it as an (encrypted) `io.element.call.encryption_keys` room event, again whenever someone joins; LiveKit frame encryption (AES-GCM, per-participant keys, LiveKit's default derivation). Keys that arrive unencrypted are ignored. Tests: media (right key hears, wrong key hears nothing), core (key arrives decrypted), e2e (two apps in #encrypted hear each other). Interop with Element Call itself still to try (it may have moved to to-device keys).
 - [x] Hanging up sends the scheduled leave at once (one request), so an app killed mid-hang-up leaves no ghost; the seed sweeps leftovers.
 - [x] Microphone and speaker pickers in Settings → Voice & Video (kept per device, a call going switches over; phones note that the system picks).
-- [ ] Android: speakerphone vs earpiece toggle (AudioManager), since WebRTC leaves routing to the system.
+- [x] Android: calls play from the loudspeaker (Discord-style); the voice panel switches to the earpiece and back (AudioManager over JNI).
 - [x] Chimes, Discord-style: you or someone else joins or leaves the call, mute, deafen (tones made in code, played by the webview; GStreamer plugins in the dev shell for webkitgtk).
 - [x] Android: chimes play in the WebView without a user gesture (checked on the emulator).
 - [x] Ringing in DMs (MSC4075 `m.rtc.notification`, sent and heard under the stable and unstable names): a popup with the caller, a ringtone, accept and decline (MSC4310 `m.rtc.decline`); the caller is told and hung up when declined; "alice started a call" in the timeline.
