@@ -128,7 +128,9 @@ timeline → send.
 - [x] Android: WebRTC set up in `JNI_OnLoad` (its Java classes are only found from a Java thread), `libwebrtc.jar` bundled by `_android-extras`, its JNI functions exported by the app's build script (webrtc-sys's own link arguments never reach the app), RECORD_AUDIO asked for at the first call. Phone runs reverse-forward the token service and LiveKit ports. Both call e2e tests pass with the phone as alice and desktop as bob (encrypted call included).
 - [x] Media encryption in encrypted rooms, Element Call's way: each device gets a fresh random key, shares it as an (encrypted) `io.element.call.encryption_keys` room event, again whenever someone joins; LiveKit frame encryption (AES-GCM, per-participant keys, LiveKit's default derivation). Keys that arrive unencrypted are ignored. Tests: media (right key hears, wrong key hears nothing), core (key arrives decrypted), e2e (two apps in #encrypted hear each other). Interop with Element Call itself still to try (it may have moved to to-device keys).
 - [x] Hanging up sends the scheduled leave at once (one request), so an app killed mid-hang-up leaves no ghost; the seed sweeps leftovers.
-- [ ] Video and screen share; device pickers in Settings → Voice & Video; join/leave sounds; ringing for DMs (MSC4075 `m.rtc.notification`).
+- [x] Microphone and speaker pickers in Settings → Voice & Video (kept per device, a call going switches over; phones note that the system picks).
+- [ ] Android: speakerphone vs earpiece toggle (AudioManager), since WebRTC leaves routing to the system.
+- [ ] Video and screen share; join/leave sounds; ringing for DMs (MSC4075 `m.rtc.notification`).
 
 ### 6. Native renderer
 - [ ] Evaluate Dioxus Native (Blitz) on desktop; gate behind a cargo feature
