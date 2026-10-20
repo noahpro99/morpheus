@@ -35,10 +35,28 @@ struct Focus(Arc<AtomicBool>);
 static SHOW_REQUESTED: AtomicBool = AtomicBool::new(false);
 
 fn main() {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| "morpheus=debug,warn".into()),
-        )
+    // The terminal, and a file in the data dir (`morpheus.log`, fresh each
+    // start) to read after something went wrong. Dioxus's signal-ownership
+    // warnings are pages long; they are left out.
+    use tracing_subscriber::Layer as _;
+    use tracing_subscriber::layer::SubscriberExt as _;
+    use tracing_subscriber::util::SubscriberInitExt as _;
+    let filter = || {
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+            "morpheus=debug,livekit=info,warn,dioxus_signals::warnings=off".into()
+        })
+    };
+    let log_file = std::fs::create_dir_all(data_dir())
+        .and_then(|()| std::fs::File::create(data_dir().join("morpheus.log")))
+        .ok();
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer().with_filter(filter()))
+        .with(log_file.map(|file| {
+            tracing_subscriber::fmt::layer()
+                .with_ansi(false)
+                .with_writer(std::sync::Mutex::new(file))
+                .with_filter(filter())
+        }))
         .init();
 
     // Unfocused until the window says otherwise: one started hidden in the

@@ -875,8 +875,28 @@ img.avatar { object-fit: cover; }
 .notify-choice input:checked::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
 .notify-choice input[type=checkbox], .notify-choice input[type=checkbox]:checked::after { border-radius: 3px; }
 .notify-choice input:disabled { opacity: 0.4; }
-.device-choice { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; font-size: 0.85rem; color: var(--text-muted); }
-.device-choice select { font-size: 0.95rem; max-width: 420px; }
+.device-choice { position: relative; display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; max-width: 420px; }
+.device-label { font-size: 0.85rem; color: var(--text-muted); }
+.device-current {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 10px 12px; border: 1px solid var(--bg-elevated); border-radius: var(--radius);
+  background: var(--bg-input); color: var(--text); font-size: 0.95rem; text-align: left; cursor: pointer;
+}
+.device-current span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.device-current.open { border-color: var(--accent); }
+.device-options {
+  position: absolute; top: 100%; left: 0; right: 0; z-index: 5; margin-top: 4px;
+  display: flex; flex-direction: column; max-height: 260px; overflow-y: auto;
+  background: var(--bg-elevated); border-radius: var(--radius); box-shadow: 0 8px 24px rgba(0,0,0,0.4); padding: 4px;
+}
+.device-option {
+  padding: 8px 10px; border: 0; border-radius: calc(var(--radius) - 2px); background: none;
+  color: var(--text); text-align: left; font-size: 0.95rem; cursor: pointer;
+}
+.device-option:hover { background: var(--bg-input); }
+.device-option.selected { color: var(--accent); font-weight: 600; }
+/* Native lists (the message dialog) are drawn by GTK, light by default. */
+.message-dialog select option { background: var(--bg-input); color: var(--text); }
 .theme-options { display: flex; flex-wrap: wrap; gap: 12px; }
 .theme-option {
   display: flex;
@@ -1363,7 +1383,7 @@ button.sender:hover { text-decoration: underline; }
 .choice-group legend { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 4px; }
 .choice { display: flex; align-items: center; gap: 8px; font-size: 0.95rem; cursor: pointer; }
 .choice input { accent-color: var(--accent); }
-.message-dialog select, .device-choice select {
+.message-dialog select {
   padding: 10px 12px;
   border: 1px solid var(--bg-elevated);
   border-radius: var(--radius);

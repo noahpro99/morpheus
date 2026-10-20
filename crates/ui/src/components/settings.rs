@@ -689,38 +689,6 @@ fn VoicePage() -> Element {
         super::call::use_devices(choice.clone());
         chosen.set(choice);
     });
-    let picker = |kind: &'static str,
-                  label: &'static str,
-                  list: Vec<morpheus_call::AudioDevice>,
-                  current: Option<String>| {
-        let current = current.unwrap_or_default();
-        rsx! {
-            label { class: "device-choice",
-                span { "{label}" }
-                select {
-                    name: "{kind}",
-                    onchange: move |e| {
-                        let id = Some(e.value()).filter(|id| !id.is_empty());
-                        let mut choice = chosen();
-                        if kind == "microphone" {
-                            choice.microphone = id;
-                        } else {
-                            choice.speaker = id;
-                        }
-                        choose.call(choice);
-                    },
-                    option { value: "", selected: current.is_empty(), "System default" }
-                    for device in list {
-                        option {
-                            value: "{device.id}",
-                            selected: device.id == current,
-                            "{device.name}"
-                        }
-                    }
-                }
-            }
-        }
-    };
     rsx! {
         section { class: "settings-section voice-devices",
             h3 { "Devices" }
@@ -736,10 +704,81 @@ fn VoicePage() -> Element {
                     }
                 },
                 Some(found) => rsx! {
-                    {picker("microphone", "Microphone", found.microphones, chosen().microphone)}
-                    {picker("speaker", "Speaker", found.speakers, chosen().speaker)}
+                    DevicePicker {
+                        kind: "microphone",
+                        label: "Microphone",
+                        devices: found.microphones,
+                        current: chosen().microphone,
+                        on_pick: move |id| {
+                            let mut choice = chosen();
+                            choice.microphone = id;
+                            choose.call(choice);
+                        },
+                    }
+                    DevicePicker {
+                        kind: "speaker",
+                        label: "Speaker",
+                        devices: found.speakers,
+                        current: chosen().speaker,
+                        on_pick: move |id| {
+                            let mut choice = chosen();
+                            choice.speaker = id;
+                            choose.call(choice);
+                        },
+                    }
                     p { class: "muted", "Used for calls on this device; a call going now switches over." }
                 },
+            }
+        }
+    }
+}
+
+/// One device list: the current choice, and the others below it when opened.
+/// Drawn by the app rather than the system, whose (GTK) lists ignore the theme.
+#[component]
+fn DevicePicker(
+    kind: &'static str,
+    label: &'static str,
+    devices: Vec<morpheus_call::AudioDevice>,
+    current: Option<String>,
+    on_pick: EventHandler<Option<String>>,
+) -> Element {
+    let mut open = use_signal(|| false);
+    let current_name = current
+        .as_ref()
+        .and_then(|id| devices.iter().find(|d| &d.id == id))
+        .map_or_else(|| "System default".to_owned(), |d| d.name.clone());
+    let options: Vec<(Option<String>, String)> =
+        std::iter::once((None, "System default".to_owned()))
+            .chain(devices.into_iter().map(|d| (Some(d.id), d.name)))
+            .collect();
+    rsx! {
+        div { class: "device-choice", "data-kind": "{kind}",
+            span { class: "device-label", "{label}" }
+            button {
+                class: "device-current",
+                class: if open() { "open" },
+                "data-id": "{current.clone().unwrap_or_default()}",
+                onclick: move |_| open.toggle(),
+                span { "{current_name}" }
+                Icon { glyph: crate::icons::CHEVRON_DOWN, size: 16 }
+            }
+            if open() {
+                div { class: "device-options", role: "listbox",
+                    for (id, name) in options {
+                        button {
+                            class: "device-option",
+                            class: if id == current { "selected" },
+                            role: "option",
+                            "data-id": "{id.clone().unwrap_or_default()}",
+                            onclick: move |_| {
+                                open.set(false);
+                                on_pick.call(id.clone());
+                            },
+                            "{name}"
+                        }
+                    }
+                }
             }
         }
     }
