@@ -132,7 +132,9 @@ timeline → send.
 - [ ] Android: speakerphone vs earpiece toggle (AudioManager), since WebRTC leaves routing to the system.
 - [x] Chimes, Discord-style: you or someone else joins or leaves the call, mute, deafen (tones made in code, played by the webview; GStreamer plugins in the dev shell for webkitgtk).
 - [ ] Android: check the chimes play (WebView may want a user gesture: `setMediaPlaybackRequiresUserGesture(false)`).
-- [ ] Video and screen share; ringing for DMs (MSC4075 `m.rtc.notification`).
+- [x] Ringing in DMs (MSC4075 `m.rtc.notification`, sent and heard under the stable and unstable names): a popup with the caller, a ringtone, accept and decline (MSC4310 `m.rtc.decline`); the caller is told and hung up when declined; "alice started a call" in the timeline.
+- [ ] Ringing when the app is in the background: a system notification (desktop) and a push (Android) for a ring.
+- [ ] Video and screen share.
 
 ### 6. Native renderer
 - [ ] Evaluate Dioxus Native (Blitz) on desktop; gate behind a cargo feature

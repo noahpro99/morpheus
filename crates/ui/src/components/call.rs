@@ -11,11 +11,11 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use dioxus::core::spawn_forever;
 use dioxus::prelude::*;
 use morpheus_call::{AudioMode, Call, CallEvent, DeviceChoice};
-use morpheus_core::{OwnedRoomId, OwnedUserId, Session};
+use morpheus_core::{IncomingCall, OwnedRoomId, OwnedUserId, Ringing, RoomSummary, Session};
 
 use super::shell::go_to;
 use super::toast::report;
-use crate::icons::{Icon, PHONE_OFF};
+use crate::icons::{Icon, PHONE, PHONE_OFF};
 use crate::media::Avatar;
 use crate::sounds::{Sound, play};
 
@@ -44,6 +44,15 @@ pub struct VoiceFlags {
 }
 pub type Voice = Signal<VoiceFlags>;
 
+/// Calls ringing this account (newest last).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct RingList(pub Vec<IncomingCall>);
+pub type Rings = Signal<RingList>;
+
+/// How long a ring may show before its caller turns up in the call (the
+/// ring and the membership can arrive in either order).
+const RING_GRACE_MS: u64 = 5_000;
+
 /// The media connection, while there is one.
 #[derive(Clone, Default)]
 struct CallMedia(Rc<RefCell<Option<Call>>>);
@@ -56,6 +65,38 @@ pub fn provide_calls(session: Session) {
     let media = use_context_provider(CallMedia::default);
     let data_dir = use_context::<crate::AppConfig>().data_dir;
     use_hook(|| morpheus_call::choose_audio_devices(crate::device_prefs::audio_devices(&data_dir)));
+    let mut rings: Rings = use_context_provider(|| Signal::new(RingList::default()));
+    use_future({
+        let (session, media) = (session.clone(), media.clone());
+        move || {
+            let (session, media) = (session.clone(), media.clone());
+            async move {
+                let mut updates = match session.ring_updates().await {
+                    Ok(updates) => updates,
+                    Err(err) => return report("listening for calls", &err),
+                };
+                while let Some(update) = updates.next().await {
+                    match update {
+                        Ringing::Incoming(call) => rings.with_mut(|list| {
+                            list.0.retain(|c| c.room_id != call.room_id);
+                            list.0.push(call);
+                        }),
+                        Ringing::Declined {
+                            room_id,
+                            by,
+                            notification,
+                        } => {
+                            rings
+                                .with_mut(|list| list.0.retain(|c| c.notification != notification));
+                            if session.user_id().as_ref() != Some(&by) {
+                                declined(&session, active, &media, room_id, by).await;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    });
     use_drop(move || {
         let call = media.0.borrow_mut().take();
         let room = active.peek().0.as_ref().map(|c| c.room_id.clone());
@@ -68,6 +109,38 @@ pub fn provide_calls(session: Session) {
             }
         });
     });
+}
+
+/// The person called said no: say so, and hang up if nobody else came.
+async fn declined(
+    session: &Session,
+    active: ActiveCall,
+    media: &CallMedia,
+    room_id: OwnedRoomId,
+    by: OwnedUserId,
+) {
+    let in_that_call = active
+        .peek()
+        .0
+        .as_ref()
+        .is_some_and(|c| c.room_id == room_id);
+    if !in_that_call {
+        return;
+    }
+    let name = match session.profile(by.clone()).await {
+        Ok(profile) => profile.name,
+        Err(_) => by.localpart().to_owned(),
+    };
+    super::toast::toast(format!("{name} declined the call"));
+    let me = session.user_id();
+    let alone = session
+        .call_members(room_id)
+        .await
+        .map(|members| members.iter().all(|m| Some(&m.user_id) == me.as_ref()))
+        .unwrap_or(true);
+    if alone {
+        leave(session, active, media).await;
+    }
 }
 
 /// Join `room_id`'s call, leaving any other first.
@@ -441,6 +514,124 @@ pub fn VoicePanel() -> Element {
                 title: "Disconnect",
                 onclick: move |_| hang_up(session.clone()),
                 Icon { glyph: PHONE_OFF, size: 18 }
+            }
+        }
+    }
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or_default()
+}
+
+/// The rings still worth answering: not expired, not for the call this
+/// account is in, and the caller still waiting in it.
+fn still_ringing(rings: &RingList, active: &CallSlot, rooms: &[RoomSummary]) -> Vec<IncomingCall> {
+    let now = now_ms();
+    rings
+        .0
+        .iter()
+        .filter(|ring| ring.rings_until > now)
+        .filter(|ring| active.0.as_ref().is_none_or(|c| c.room_id != ring.room_id))
+        .filter(|ring| {
+            let rang_at = ring.rings_until.saturating_sub(morpheus_core::RING_FOR_MS);
+            now.saturating_sub(rang_at) < RING_GRACE_MS
+                || rooms
+                    .iter()
+                    .find(|r| r.id == ring.room_id)
+                    .is_some_and(|r| r.call_participants.contains(&ring.caller))
+        })
+        .cloned()
+        .collect()
+}
+
+/// Someone calling: who, with answer and decline, while the ringtone plays.
+#[component]
+pub fn IncomingCalls() -> Element {
+    let mut rings = use_context::<Rings>();
+    let active = use_context::<ActiveCall>();
+    let rooms = use_context::<super::shell::Rooms>();
+    // Re-checked every second (rings expire, callers give up), ringing
+    // every other second.
+    let mut tick = use_signal(|| 0u64);
+    use_future(move || async move {
+        loop {
+            let ringing = still_ringing(
+                &rings.peek(),
+                &active.peek(),
+                &rooms.peek().iter().cloned().collect::<Vec<_>>(),
+            );
+            if ringing.is_empty() {
+                if !rings.peek().0.is_empty() {
+                    rings.with_mut(|list| list.0.retain(|r| ringing.contains(r)));
+                }
+            } else if *tick.peek() % 2 == 0 {
+                play(Sound::Ring);
+            }
+            tick += 1;
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        }
+    });
+    tick();
+    let rooms_now: Vec<RoomSummary> = rooms().iter().cloned().collect();
+    let ringing = still_ringing(&rings(), &active(), &rooms_now);
+    rsx! {
+        if !ringing.is_empty() {
+            div { class: "incoming-calls",
+                for call in ringing {
+                    IncomingCallCard {
+                        key: "{call.notification}",
+                        room: rooms_now.iter().find(|r| r.id == call.room_id).cloned(),
+                        call,
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn IncomingCallCard(call: IncomingCall, room: Option<RoomSummary>) -> Element {
+    let session = use_context::<Session>();
+    let mut rings = use_context::<Rings>();
+    let (name, avatar) = match &room {
+        Some(room) => (room.name.clone(), room.avatar.clone()),
+        None => (call.caller.localpart().to_owned(), None),
+    };
+    let accept = {
+        let (session, call, name) = (session.clone(), call.clone(), name.clone());
+        move |_| {
+            rings.with_mut(|list| list.0.retain(|r| r.notification != call.notification));
+            go_to(call.room_id.clone());
+            join_call(session.clone(), call.room_id.clone(), name.clone());
+        }
+    };
+    let decline = {
+        let (session, call) = (session.clone(), call.clone());
+        move |_| {
+            rings.with_mut(|list| list.0.retain(|r| r.notification != call.notification));
+            let future = session.decline_call(call.room_id.clone(), call.notification.clone());
+            spawn(async move {
+                if let Err(err) = future.await {
+                    report("declining the call", &err);
+                }
+            });
+        }
+    };
+    rsx! {
+        div { class: "incoming-call", "data-room": "{call.room_id}",
+            Avatar { media: avatar, fallback: name.clone(), size: 48 }
+            div { class: "incoming-call-text",
+                span { class: "incoming-call-name", "{name}" }
+                span { class: "incoming-call-what", "Incoming call…" }
+            }
+            button { class: "decline-call", title: "Decline", onclick: decline,
+                Icon { glyph: PHONE_OFF, size: 20 }
+            }
+            button { class: "accept-call", title: "Accept", onclick: accept,
+                Icon { glyph: PHONE, size: 20 }
             }
         }
     }

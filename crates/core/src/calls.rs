@@ -12,7 +12,7 @@ use std::{
 };
 
 use matrix_sdk::ruma::{
-    OwnedRoomId, OwnedUserId,
+    MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, OwnedUserId,
     api::client::{
         account::request_openid_token,
         delayed_events::{
@@ -22,10 +22,15 @@ use matrix_sdk::ruma::{
         state::get_state_event_for_key,
     },
     events::{
-        StateEventType,
+        Mentions, StateEventType,
         call::member::{
             ActiveFocus, ActiveLivekitFocus, Application, CallApplicationContent,
             CallMemberEventContent, CallMemberStateKey, CallScope, Focus, LivekitFocus,
+        },
+        relation::Reference,
+        rtc::{
+            decline::RtcDeclineEventContent,
+            notification::{NotificationType, RtcNotificationEventContent},
         },
     },
 };
@@ -151,7 +156,13 @@ impl Session {
                 None,
                 None,
             );
-            room.send_state_event_for_key(&state_key, content).await?;
+            let others_in_call = call_participants(&room).iter().any(|u| *u != user_id);
+            let membership = room.send_state_event_for_key(&state_key, content).await?;
+            if let Err(err) =
+                ring_if_direct(&room, &user_id, others_in_call, membership.event_id).await
+            {
+                debug!(%err, "could not ring");
+            }
             Ok(credentials)
         })
     }
@@ -637,4 +648,172 @@ fn keys_in(sender: &matrix_sdk::ruma::UserId, raw: &RawEvent) -> Vec<CallKey> {
             })
         })
         .collect()
+}
+
+/// How long a call rings before giving up (MSC4075's lifetime), in milliseconds.
+pub const RING_FOR_MS: u64 = 30_000;
+const RING_FOR: Duration = Duration::from_millis(RING_FOR_MS);
+
+/// A ring, by its stable and unstable (MSC4075) names.
+const RING_EVENTS: [&str; 2] = ["m.rtc.notification", "org.matrix.msc4075.rtc.notification"];
+/// A declined ring (MSC4310).
+const DECLINE_EVENTS: [&str; 2] = ["m.rtc.decline", "org.matrix.msc4310.rtc.decline"];
+
+/// A call ringing this account: someone started one in a direct message.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IncomingCall {
+    pub room_id: OwnedRoomId,
+    pub caller: OwnedUserId,
+    /// The ring (`m.rtc.notification`), which a decline answers.
+    pub notification: OwnedEventId,
+    /// When it stops ringing, in milliseconds since the Unix epoch.
+    pub rings_until: u64,
+}
+
+/// What happens to rings.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Ringing {
+    /// Someone is calling.
+    Incoming(IncomingCall),
+    /// A ring was declined: by the person called (the caller hears), or by
+    /// another of this account's devices (stop ringing here too).
+    Declined {
+        room_id: OwnedRoomId,
+        by: OwnedUserId,
+        notification: OwnedEventId,
+    },
+}
+
+/// Rings and declines as they arrive.
+pub struct RingUpdates {
+    rx: tokio::sync::mpsc::UnboundedReceiver<Ringing>,
+    _handle: EventHandlerDropGuard,
+}
+
+impl RingUpdates {
+    pub async fn next(&mut self) -> Option<Ringing> {
+        self.rx.recv().await
+    }
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or_default()
+}
+
+/// Ring the other person in a direct message, if nobody else is in its call
+/// yet. `membership` is the event that put this device in the call.
+async fn ring_if_direct(
+    room: &matrix_sdk::Room,
+    user_id: &OwnedUserId,
+    others_in_call: bool,
+    membership: OwnedEventId,
+) -> crate::Result<()> {
+    if others_in_call || room.direct_targets_length() == 0 {
+        return Ok(());
+    }
+    let mut content = RtcNotificationEventContent::new(
+        MilliSecondsSinceUnixEpoch::now(),
+        RING_FOR,
+        NotificationType::Ring,
+    );
+    let callee: Vec<OwnedUserId> = room
+        .direct_targets()
+        .into_iter()
+        .filter_map(|target| target.into_user_id())
+        .filter(|target| target != user_id)
+        .collect();
+    content.mentions = Some(Mentions::with_user_ids(callee));
+    content.relates_to = Some(Reference::new(membership));
+    room.send(content).await?;
+    debug!(room_id = %room.room_id(), "ringing");
+    Ok(())
+}
+
+impl Session {
+    /// Calls ringing this account, and declines of rings (its own and others').
+    pub fn ring_updates(&self) -> CoreFuture<RingUpdates> {
+        let client = self.client.clone();
+        let own_user = self.user_id();
+        self.core.run(async move {
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+            // One raw handler: rings and declines go out under unstable names
+            // (ruma sends `org.matrix.msc4075.rtc.notification`), and typed
+            // handlers only hear the stable ones.
+            let handle = client.add_event_handler(
+                move |event: AnySyncTimelineEvent, room: matrix_sdk::Room, raw: RawEvent| {
+                    let tx = tx.clone();
+                    let own_user = own_user.clone();
+                    async move {
+                        if room.state() != matrix_sdk::RoomState::Joined {
+                            return;
+                        }
+                        let kind = event.event_type().to_string();
+                        let Some(content) = serde_json::from_str::<Value>(raw.0.get())
+                            .ok()
+                            .map(|event| event["content"].clone())
+                        else {
+                            return;
+                        };
+                        let sent: u64 = event.origin_server_ts().get().into();
+                        if RING_EVENTS.contains(&kind.as_str()) {
+                            let Ok(ring) =
+                                serde_json::from_value::<RtcNotificationEventContent>(content)
+                            else {
+                                return;
+                            };
+                            let rings_until: u64 = ring
+                                .expiration_ts(event.origin_server_ts(), None)
+                                .get()
+                                .into();
+                            if own_user.as_deref() == Some(event.sender())
+                                || ring.notification_type != NotificationType::Ring
+                                || rings_until <= now_ms()
+                            {
+                                return;
+                            }
+                            let _ = tx.send(Ringing::Incoming(IncomingCall {
+                                room_id: room.room_id().to_owned(),
+                                caller: event.sender().to_owned(),
+                                notification: event.event_id().to_owned(),
+                                rings_until,
+                            }));
+                        } else if DECLINE_EVENTS.contains(&kind.as_str()) {
+                            // Old declines (catching up after a while away) mean nothing now.
+                            if now_ms().saturating_sub(sent) > RING_FOR.as_millis() as u64 {
+                                return;
+                            }
+                            let Ok(decline) =
+                                serde_json::from_value::<RtcDeclineEventContent>(content)
+                            else {
+                                return;
+                            };
+                            let _ = tx.send(Ringing::Declined {
+                                room_id: room.room_id().to_owned(),
+                                by: event.sender().to_owned(),
+                                notification: decline.relates_to.event_id,
+                            });
+                        }
+                    }
+                },
+            );
+            Ok(RingUpdates {
+                rx,
+                _handle: client.event_handler_drop_guard(handle),
+            })
+        })
+    }
+
+    /// Decline a call ringing this account (the caller hears, and this
+    /// account's other devices stop ringing).
+    pub fn decline_call(&self, room_id: OwnedRoomId, notification: OwnedEventId) -> CoreFuture<()> {
+        let session = self.clone();
+        self.core.run(async move {
+            let room = session.room(&room_id)?;
+            room.send(RtcDeclineEventContent::new(notification)).await?;
+            Ok(())
+        })
+    }
 }
