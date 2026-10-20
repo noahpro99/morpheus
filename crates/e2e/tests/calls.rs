@@ -246,15 +246,31 @@ async fn encrypted_rooms_encrypt_the_call_and_both_sides_still_hear() {
     .expect("the call empties");
 }
 
-/// Choose a device in a picker (a `<select>`), as a person would.
+/// Choose a device in a picker, as a person would: open it, pick one.
 async fn choose(app: &mut App, picker: &str, id: &str) {
-    app.eval(&format!(
-        "const s = document.querySelector('.voice-devices select[name={picker}]'); \
-         s.value = {id}; s.dispatchEvent(new Event('change', {{ bubbles: true }}));",
-        id = serde_json::to_string(id).expect("json"),
+    app.click(&format!(
+        ".voice-devices .device-choice[data-kind={picker}] .device-current"
     ))
     .await
-    .expect("choose device");
+    .expect("open the picker");
+    let option = format!(".device-choice[data-kind={picker}] .device-option[data-id=\"{id}\"]");
+    app.wait_for(&option, DEFAULT_WAIT)
+        .await
+        .expect("device listed");
+    // Readable: the text is not the colour of the list behind it.
+    let readable = app
+        .eval(&format!(
+            "const o = document.querySelector('{option}'), l = o.closest('.device-options'); \
+             return getComputedStyle(o).color !== getComputedStyle(l).backgroundColor;"
+        ))
+        .await
+        .expect("colours");
+    assert_eq!(
+        readable,
+        serde_json::Value::Bool(true),
+        "option text the colour of the list"
+    );
+    app.click(&option).await.expect("pick");
 }
 
 async fn open_voice_settings(app: &mut App) {
@@ -266,9 +282,8 @@ async fn open_voice_settings(app: &mut App) {
         .await
         .expect("voice page");
     // Test runs list stand-in devices (`AudioMode::Tone`).
-    app.wait_for_text(
-        ".voice-devices select[name=microphone] option",
-        "Test microphone 2",
+    app.wait_for(
+        ".voice-devices .device-choice[data-kind=microphone] .device-current",
         DEFAULT_WAIT,
     )
     .await
@@ -288,6 +303,19 @@ async fn choose_the_microphone_and_speaker_for_calls() {
     open_voice_settings(&mut alice).await;
     choose(&mut alice, "microphone", "test-microphone-2").await;
     choose(&mut alice, "speaker", "test-speaker-1").await;
+    alice
+        .click(".voice-devices .device-choice[data-kind=microphone] .device-current")
+        .await
+        .expect("reopen");
+    alice
+        .wait_for(".device-options", DEFAULT_WAIT)
+        .await
+        .expect("list open");
+    let _ = alice.screenshot("voice-devices").await;
+    alice
+        .click(".voice-devices .device-choice[data-kind=microphone] .device-current")
+        .await
+        .expect("close");
     let saved = alice.data_dir().join("audio_devices.json");
     let deadline = std::time::Instant::now() + DEFAULT_WAIT;
     loop {
@@ -308,7 +336,7 @@ async fn choose_the_microphone_and_speaker_for_calls() {
     open_voice_settings(&mut alice).await;
     let shown = alice
         .eval(
-            "return [...document.querySelectorAll('.voice-devices select')].map(s => s.value).join(',');",
+            "return [...document.querySelectorAll('.voice-devices .device-current')].map(s => s.dataset.id).join(',');",
         )
         .await
         .expect("read pickers");
