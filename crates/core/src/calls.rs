@@ -817,3 +817,8 @@ impl Session {
         })
     }
 }
+
+/// Whether an event of this type is a ring.
+pub(crate) fn is_ring(event_type: &str) -> bool {
+    RING_EVENTS.contains(&event_type)
+}

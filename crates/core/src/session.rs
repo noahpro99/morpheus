@@ -343,6 +343,8 @@ pub struct NotificationPreview {
     pub room: String,
     pub body: String,
     pub is_dm: bool,
+    /// A ring: someone calling (MSC4075).
+    pub is_call: bool,
 }
 
 impl Core {
@@ -400,7 +402,14 @@ impl Core {
             let NotificationStatus::Event(item) = status else {
                 return Ok(None);
             };
+            let is_call = match &item.event {
+                NotificationEvent::Timeline(event) => {
+                    crate::calls::is_ring(&event.event_type().to_string())
+                }
+                NotificationEvent::Invite(_) => false,
+            };
             let body = match &item.event {
+                _ if is_call => "Incoming call".to_owned(),
                 NotificationEvent::Timeline(event) => match event.as_ref() {
                     AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::RoomMessage(
                         SyncMessageLikeEvent::Original(message),
@@ -414,6 +423,7 @@ impl Core {
                 room: item.room_computed_display_name.clone(),
                 body,
                 is_dm: item.is_direct_message_room,
+                is_call,
             }))
         })
     }

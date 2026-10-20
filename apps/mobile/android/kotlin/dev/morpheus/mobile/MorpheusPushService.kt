@@ -6,6 +6,8 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.media.AudioAttributes
+import android.media.RingtoneManager
 import android.util.Log
 import org.json.JSONObject
 import org.unifiedpush.android.connector.FailedReason
@@ -64,6 +66,10 @@ class MorpheusPushService : PushService() {
             Log.d(TAG, "showing a notification for $roomId (unread $unread, notice ${notice != null})")
             val room = notice?.optString("room")?.ifEmpty { null } ?: roomName(roomId)
             val sender = notice?.optString("sender")?.ifEmpty { null }
+            if (notice?.optBoolean("call") == true) {
+                showCall(roomId, sender ?: room ?: "Someone")
+                return@Thread
+            }
             val title = if (sender != null && room != null) "$sender in $room" else room
             val text = notice?.optString("body")?.ifEmpty { null }
                 ?: if (unread > 1) "$unread unread messages" else "New message"
@@ -139,8 +145,47 @@ class MorpheusPushService : PushService() {
         manager.notify(roomId.hashCode(), built)
     }
 
+    /** Someone calling: rings like a phone call until answered or for half a minute. */
+    private fun showCall(roomId: String, caller: String) {
+        val manager = manager()
+        manager.createNotificationChannel(
+            NotificationChannel(CALL_CHANNEL, "Calls", NotificationManager.IMPORTANCE_HIGH).apply {
+                setSound(
+                    RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE),
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                        .build()
+                )
+            }
+        )
+        val open = Intent(this, OpenRoomActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            putExtra("room_id", roomId)
+        }
+        val tap = PendingIntent.getActivity(
+            this, ("call" + roomId).hashCode(), open,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val icon = resources.getIdentifier("ic_notification", "drawable", packageName)
+            .takeIf { it != 0 } ?: applicationInfo.icon
+        val built = Notification.Builder(this, CALL_CHANNEL)
+            .setSmallIcon(icon)
+            .setContentTitle("$caller is calling")
+            .setContentText("Tap to answer")
+            .setCategory(Notification.CATEGORY_CALL)
+            .setTimeoutAfter(RING_MS)
+            .setAutoCancel(true)
+            .setContentIntent(tap)
+            .build()
+        built.flags = built.flags or Notification.FLAG_INSISTENT
+        manager.notify(("call" + roomId).hashCode(), built)
+    }
+
     companion object {
         const val CHANNEL = "messages"
+        const val CALL_CHANNEL = "calls"
+        /** How long a ring lasts (MSC4075 lifetime, as Morpheus sends it). */
+        const val RING_MS = 30_000L
         const val TAG = "MorpheusPush"
         /** How long a push waits for the running app to say who wrote what. */
         const val NOTICE_WAIT_MS = 4000L

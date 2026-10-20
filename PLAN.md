@@ -131,10 +131,10 @@ timeline → send.
 - [x] Microphone and speaker pickers in Settings → Voice & Video (kept per device, a call going switches over; phones note that the system picks).
 - [ ] Android: speakerphone vs earpiece toggle (AudioManager), since WebRTC leaves routing to the system.
 - [x] Chimes, Discord-style: you or someone else joins or leaves the call, mute, deafen (tones made in code, played by the webview; GStreamer plugins in the dev shell for webkitgtk).
-- [ ] Android: check the chimes play (WebView may want a user gesture: `setMediaPlaybackRequiresUserGesture(false)`).
+- [x] Android: chimes play in the WebView without a user gesture (checked on the emulator).
 - [x] Ringing in DMs (MSC4075 `m.rtc.notification`, sent and heard under the stable and unstable names): a popup with the caller, a ringtone, accept and decline (MSC4310 `m.rtc.decline`); the caller is told and hung up when declined; "alice started a call" in the timeline.
 - [x] Ringing in the background, desktop: a system notification says who is calling.
-- [ ] Ringing in the background, Android: a push for a ring (the push service shows "X is calling").
+- [x] Ringing in the background, Android: a push for a ring shows "X is calling" on a Calls channel with the phone's ringtone (insistent, 30 s); works with the app closed (the push service previews it as a call) or running.
 - [ ] Video and screen share.
 
 ### 6. Native renderer

@@ -182,6 +182,7 @@ fn write_notices(session: Session, dir: PathBuf) {
                 return;
             };
             runtime.block_on(async move {
+                tokio::spawn(write_ring_notices(session.clone(), dir.clone()));
                 let Ok(mut updates) = session.notifications().await else {
                     return;
                 };
@@ -205,6 +206,35 @@ fn write_notices(session: Session, dir: PathBuf) {
     }
 }
 
+/// Rings get notices too, so a push for one (app in the background) says
+/// who is calling.
+async fn write_ring_notices(session: Session, dir: PathBuf) {
+    let Ok(mut rings) = session.ring_updates().await else {
+        return;
+    };
+    while let Some(ring) = rings.next().await {
+        let morpheus_core::Ringing::Incoming(call) = ring else {
+            continue;
+        };
+        let name = match session.profile(call.caller.clone()).await {
+            Ok(profile) => profile.name,
+            Err(_) => call.caller.localpart().to_owned(),
+        };
+        let body = serde_json::json!({
+            "room_id": call.room_id.to_string(),
+            "room": name,
+            "sender": name,
+            "body": "Incoming call",
+            "call": true,
+        });
+        let _ = std::fs::create_dir_all(&dir);
+        let _ = std::fs::write(
+            dir.join(notice_file(call.notification.as_str())),
+            body.to_string(),
+        );
+    }
+}
+
 fn prune(dir: &Path) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
@@ -224,7 +254,7 @@ fn prune(dir: &Path) {
 
 /// Called by `MorpheusPushService` (Kotlin) when a push arrives while the app
 /// is closed: decrypt that one message for the notification, without
-/// starting the app. Returns JSON `{sender, room, body, dm}`, or null when
+/// starting the app. Returns JSON `{sender, room, body, dm, call}`, or null when
 /// there is nothing to show.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
@@ -263,6 +293,7 @@ fn preview(dir: PathBuf, room_id: String, event_id: String) -> Option<String> {
                 "room": preview.room,
                 "body": preview.body,
                 "dm": preview.is_dm,
+                "call": preview.is_call,
             })
             .to_string(),
         ),
