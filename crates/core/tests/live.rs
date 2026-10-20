@@ -1980,7 +1980,16 @@ async fn a_call_in_a_direct_message_rings_and_can_be_declined() {
         .expect("login")
     };
     let alice = login("alice").await;
-    let bob = login("bob").await;
+    let bob_dir = fresh_data_dir();
+    let bob = Core::with_session_store(&bob_dir, SessionStoreKind::File)
+        .expect("core")
+        .login(LoginRequest {
+            homeserver: env.homeserver.clone(),
+            username: "bob".into(),
+            password: "bob-password".into(),
+        })
+        .await
+        .expect("login");
     let bob_id = bob.user_id().expect("bob");
     let mut alice_rooms = alice.room_list().await.expect("room list");
     let mut rooms = Vector::new();
@@ -2032,6 +2041,17 @@ async fn a_call_in_a_direct_message_rings_and_can_be_declined() {
     .expect("bob's phone rings");
     assert_eq!(ring.room_id, dm, "the ring is the DM's, not #general's");
     assert_eq!(ring.caller, alice.user_id().expect("alice"));
+
+    // A push for it, previewed with the app closed, reads as a call.
+    let cold = Core::with_session_store(&bob_dir, SessionStoreKind::File).expect("cold core");
+    let preview = cold
+        .preview_notification(dm.to_string(), ring.notification.to_string())
+        .await
+        .expect("preview")
+        .expect("something to show");
+    assert!(preview.is_call, "{preview:?}");
+    assert_eq!(preview.body, "Incoming call");
+    assert!(preview.sender.contains("alice"), "{preview:?}");
 
     // Bob declines; alice hears.
     bob.decline_call(dm.clone(), ring.notification.clone())

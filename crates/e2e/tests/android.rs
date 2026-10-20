@@ -726,6 +726,35 @@ async fn phone_gets_push_notifications_in_the_background() {
         );
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     }
+
+    // A call rings through too: bob calls alice in their DM, and the phone
+    // shows who is calling, on the calls channel (it rings like a phone).
+    bob.click(".rail-item[title=\"Direct messages\"]")
+        .await
+        .expect("bob's DMs");
+    bob.open_room("alice").await.expect("bob in the DM");
+    bob.click(".chat-header .call-button")
+        .await
+        .expect("bob calls");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(90);
+    loop {
+        let shown = adb_shell(&["dumpsys", "notification", "--noredact"]);
+        if shown.split("NotificationRecord(").any(|record| {
+            record.contains("pkg=dev.morpheus.mobile")
+                && record.contains("bob is calling")
+                && record.contains("channel=calls")
+        }) {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "no ringing notification for bob's call"
+        );
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    }
+    bob.click(".voice-panel .hang-up")
+        .await
+        .expect("bob hangs up");
 }
 
 /// The attach button opens Android's file picker, and a picked file is
