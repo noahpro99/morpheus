@@ -240,10 +240,7 @@ impl Session {
     pub fn ui_prefs(&self) -> CoreFuture<Value> {
         let client = self.client.clone();
         self.core.run(async move {
-            let raw = client
-                .account()
-                .account_data_raw(GlobalAccountDataEventType::from(UI_PREFS_TYPE))
-                .await?;
+            let raw = crate::people::read_account_data(&client, UI_PREFS_TYPE).await?;
             Ok(raw
                 .and_then(|raw| raw.deserialize_as::<Value>().ok())
                 .unwrap_or_else(|| Value::Object(Default::default())))
