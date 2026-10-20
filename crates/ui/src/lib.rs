@@ -28,5 +28,7 @@ mod media;
 mod sounds;
 mod window;
 
-pub use app::{App, AppCommand, AppCommands, AppConfig, MicrophoneAccess, OpenRoom, SessionHook};
+pub use app::{
+    App, AppCommand, AppCommands, AppConfig, MicrophoneAccess, OpenRoom, SessionHook, SpeakerRoute,
+};
 pub use window::WindowControls;

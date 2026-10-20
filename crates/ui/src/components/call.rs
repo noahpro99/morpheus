@@ -15,7 +15,7 @@ use morpheus_core::{IncomingCall, OwnedRoomId, OwnedUserId, Ringing, RoomSummary
 
 use super::shell::go_to;
 use super::toast::report;
-use crate::icons::{Icon, PHONE, PHONE_OFF};
+use crate::icons::{Icon, PHONE, PHONE_OFF, VOLUME_2};
 use crate::media::Avatar;
 use crate::sounds::{Sound, play};
 
@@ -41,6 +41,8 @@ pub type ActiveCall = Signal<CallSlot>;
 pub struct VoiceFlags {
     pub muted: bool,
     pub deafened: bool,
+    /// Phones: call audio from the earpiece instead of the loudspeaker.
+    pub earpiece: bool,
 }
 pub type Voice = Signal<VoiceFlags>;
 
@@ -53,6 +55,23 @@ pub type Rings = Signal<RingList>;
 /// ring and the membership can arrive in either order).
 const RING_GRACE_MS: u64 = 5_000;
 
+/// The platform's loudspeaker/earpiece switch (phones), for call tasks
+/// running outside any component (and on whichever thread the UI runs them).
+static SPEAKER_ROUTE: std::sync::Mutex<Option<crate::SpeakerRoute>> = std::sync::Mutex::new(None);
+
+/// Call audio to the loudspeaker or the earpiece, where the platform can.
+fn route_audio(loudspeaker: bool) {
+    let route = SPEAKER_ROUTE.lock().ok().and_then(|route| route.clone());
+    if let Some(route) = route {
+        route(loudspeaker);
+    }
+}
+
+/// Whether this platform can switch between loudspeaker and earpiece.
+pub fn has_earpiece() -> bool {
+    SPEAKER_ROUTE.lock().is_ok_and(|route| route.is_some())
+}
+
 /// The media connection, while there is one.
 #[derive(Clone, Default)]
 struct CallMedia(Rc<RefCell<Option<Call>>>);
@@ -63,7 +82,13 @@ pub fn provide_calls(session: Session) {
     let active: ActiveCall = use_context_provider(|| Signal::new(CallSlot::default()));
     use_context_provider(|| Signal::new(VoiceFlags::default()) as Voice);
     let media = use_context_provider(CallMedia::default);
-    let data_dir = use_context::<crate::AppConfig>().data_dir;
+    let config = use_context::<crate::AppConfig>();
+    let data_dir = config.data_dir.clone();
+    use_hook(|| {
+        if let Ok(mut route) = SPEAKER_ROUTE.lock() {
+            route.clone_from(&config.speakerphone);
+        }
+    });
     use_hook(|| morpheus_call::choose_audio_devices(crate::device_prefs::audio_devices(&data_dir)));
     let mut rings: Rings = use_context_provider(|| Signal::new(RingList::default()));
     use_future({
@@ -243,6 +268,7 @@ pub fn join_call(session: Session, room_id: OwnedRoomId, room_name: String) {
         let flags = *voice.peek();
         call.set_muted(flags.muted || flags.deafened);
         call.set_deafened(flags.deafened);
+        route_audio(!flags.earpiece);
         let mut people: HashMap<String, OwnedUserId> = HashMap::new();
         if let Some(me) = session.user_id() {
             people.insert(call.identity(), me);
@@ -373,6 +399,7 @@ async fn leave(session: &Session, mut active: ActiveCall, media: &CallMedia) {
     }
     if let Some(call) = call {
         call.leave().await;
+        route_audio(false);
     }
 }
 
@@ -405,10 +432,23 @@ pub fn set_voice(muted: bool, deafened: bool) {
     } else if muted != before.muted {
         play(if muted { Sound::Mute } else { Sound::Unmute });
     }
-    voice.set(VoiceFlags { muted, deafened });
+    voice.with_mut(|flags| {
+        flags.muted = muted;
+        flags.deafened = deafened;
+    });
     if let Some(call) = media.0.borrow().as_ref() {
         call.set_muted(muted || deafened);
         call.set_deafened(deafened);
+    }
+}
+
+/// Phones: call audio from the earpiece (held to the ear) or the loudspeaker.
+pub fn set_earpiece(earpiece: bool) {
+    let mut voice = consume_context::<Voice>();
+    let active = consume_context::<ActiveCall>();
+    voice.with_mut(|flags| flags.earpiece = earpiece);
+    if active.peek().0.as_ref().is_some_and(|c| c.connected) {
+        route_audio(!earpiece);
     }
 }
 
@@ -486,6 +526,7 @@ fn CallParticipant(user_id: OwnedUserId, speaking: bool) -> Element {
 pub fn VoicePanel() -> Element {
     let session = use_context::<Session>();
     let active = use_context::<ActiveCall>();
+    let earpiece = use_context::<Voice>()().earpiece;
     let Some(call) = active().0 else {
         return rsx! {};
     };
@@ -507,6 +548,15 @@ pub fn VoicePanel() -> Element {
                     title: "Go to the room",
                     onclick: move |_| go_to(room_id.clone()),
                     "{call.room_name}"
+                }
+            }
+            if has_earpiece() {
+                button {
+                    class: "ghost speaker-button",
+                    class: if !earpiece { "active" },
+                    title: if earpiece { "Earpiece (tap for the speaker)" } else { "Speaker (tap for the earpiece)" },
+                    onclick: move |_| set_earpiece(!earpiece),
+                    Icon { glyph: if earpiece { PHONE } else { VOLUME_2 }, size: 18 }
                 }
             }
             button {

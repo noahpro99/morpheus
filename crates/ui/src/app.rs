@@ -23,6 +23,9 @@ pub type OpenRoom = Arc<Mutex<Option<OwnedRoomId>>>;
 /// `true` when the app may record.
 pub type MicrophoneAccess = Arc<dyn Fn() -> bool + Send + Sync>;
 
+/// Send call audio to the loudspeaker (`true`) or the earpiece (phones).
+pub type SpeakerRoute = Arc<dyn Fn(bool) + Send + Sync>;
+
 /// Something the platform asks the UI to do, from outside its runtime (the
 /// tray menu).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -77,6 +80,8 @@ pub struct AppConfig {
     pub open_url: Option<morpheus_core::UrlOpener>,
     /// Runtime permission for the microphone (Android). `None`: no need.
     pub microphone: Option<MicrophoneAccess>,
+    /// Loudspeaker or earpiece for calls (phones). `None`: the system decides.
+    pub speakerphone: Option<SpeakerRoute>,
 }
 
 impl AppConfig {
@@ -89,6 +94,7 @@ impl AppConfig {
             commands: AppCommands::default(),
             open_url: None,
             microphone: None,
+            speakerphone: None,
         }
     }
 }

@@ -31,6 +31,7 @@ fn main() {
         // Calls: WebRTC set up once; the microphone asked for at the first call.
         android::init_webrtc();
         config.microphone = Some(std::sync::Arc::new(android::microphone));
+        config.speakerphone = Some(std::sync::Arc::new(android::speakerphone));
         // Test builds send a tone instead (no environment to say so here).
         #[cfg(feature = "e2e")]
         morpheus_call::use_test_tone();
@@ -190,6 +191,44 @@ mod android {
     }
 
     const RECORD_AUDIO: &str = "android.permission.RECORD_AUDIO";
+
+    /// Call audio out of the loudspeaker (`true`) or the earpiece, through
+    /// `AudioManager` (WebRTC leaves the route to the system: the earpiece).
+    #[allow(unsafe_code)]
+    pub fn speakerphone(on: bool) {
+        tracing::debug!(on, "call audio route");
+        let ctx = ndk_context::android_context();
+        // SAFETY: as in `files_dir`.
+        let Ok(vm) = (unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }) else {
+            return;
+        };
+        let Ok(mut env) = vm.attach_current_thread() else {
+            return;
+        };
+        let activity = unsafe { JObject::from_raw(ctx.context().cast()) };
+        let routed = (|| -> jni::errors::Result<()> {
+            let name = env.new_string("audio")?;
+            let manager = env
+                .call_method(
+                    &activity,
+                    "getSystemService",
+                    "(Ljava/lang/String;)Ljava/lang/Object;",
+                    &[JValue::Object(&name)],
+                )?
+                .l()?;
+            env.call_method(
+                &manager,
+                "setSpeakerphoneOn",
+                "(Z)V",
+                &[JValue::Bool(u8::from(on))],
+            )?;
+            Ok(())
+        })();
+        if let Err(err) = routed {
+            let _ = env.exception_clear();
+            tracing::warn!(%err, "could not route call audio");
+        }
+    }
 
     /// Ask for the microphone (a runtime permission) and wait for the
     /// answer: the system dialog shows over the app. `true` once granted.

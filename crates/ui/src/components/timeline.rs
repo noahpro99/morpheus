@@ -55,11 +55,27 @@ const EMOJI_PICKER: [&str; 24] = [
     "😎", "🥳", "🚀", "⭐", "💀", "🫡", "🤝", "💡",
 ];
 
-thread_local! {
-    /// Rooms marked unread while open: no read receipts from this visit
-    /// (sending one clears the flag), until the room is opened again.
-    static KEPT_UNREAD: std::cell::RefCell<std::collections::HashSet<OwnedRoomId>> =
-        std::cell::RefCell::new(std::collections::HashSet::new());
+/// Rooms marked unread while open: no read receipts from this visit
+/// (sending one clears the flag), until the room is opened again. Process-wide,
+/// not thread-local: on Android, event handlers and renders run on different
+/// threads.
+static KEPT_UNREAD: std::sync::Mutex<std::collections::BTreeSet<OwnedRoomId>> =
+    std::sync::Mutex::new(std::collections::BTreeSet::new());
+
+fn kept_unread(room_id: &OwnedRoomId) -> bool {
+    KEPT_UNREAD
+        .lock()
+        .is_ok_and(|rooms| rooms.contains(room_id))
+}
+
+fn keep_unread(room_id: OwnedRoomId, keep: bool) {
+    if let Ok(mut rooms) = KEPT_UNREAD.lock() {
+        if keep {
+            rooms.insert(room_id);
+        } else {
+            rooms.remove(&room_id);
+        }
+    }
 }
 
 /// One room's messages. The parent sets `key` to the room id, so switching
@@ -75,7 +91,7 @@ pub fn TimelineView(
     // A fresh visit reads the room again, even if it was marked unread here.
     use_hook({
         let room_id = room_id.clone();
-        move || KEPT_UNREAD.with_borrow_mut(|rooms| rooms.remove(&room_id))
+        move || keep_unread(room_id.clone(), false)
     });
     let mut load_error = use_signal(|| None::<String>);
     let mut reached_start = use_signal(|| false);
@@ -130,7 +146,7 @@ pub fn TimelineView(
         let room_id = room_id.clone();
         move || {
             // Not for a room marked unread here: any receipt clears the flag.
-            let kept_unread = KEPT_UNREAD.with_borrow(|rooms| rooms.contains(&room_id));
+            let kept_unread = kept_unread(&room_id);
             if let Some(active) = handle_cell.borrow_mut().take()
                 && !kept_unread
             {
@@ -210,8 +226,7 @@ pub fn TimelineView(
                         // threaded receipts for events outside the thread. A room
                         // marked unread while open stays so (a receipt clears the
                         // flag) until the next visit.
-                        if !is_thread && !KEPT_UNREAD.with_borrow(|rooms| rooms.contains(&room_id))
-                        {
+                        if !is_thread && !kept_unread(&room_id) {
                             let receipt = opened.clone();
                             spawn(async move {
                                 if let Err(err) = receipt.send_read_receipt().await {
@@ -798,7 +813,7 @@ pub(crate) fn MessageRow(message: Message, show_header: bool) -> Element {
                     let session = session.clone();
                     let room_id = room_id.clone();
                     move || {
-                        KEPT_UNREAD.with_borrow_mut(|rooms| rooms.insert(room_id.clone()));
+                        keep_unread(room_id.clone(), true);
                         let future = session.mark_unread(room_id.clone(), true);
                         spawn(async move {
                             if let Err(err) = future.await {
