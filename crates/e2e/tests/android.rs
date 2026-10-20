@@ -904,8 +904,7 @@ async fn phone_keyboard_keeps_the_message_box_visible() {
 fn last_route() -> String {
     adb_shell(&["dumpsys", "audio"])
         .lines()
-        .filter(|line| line.contains("updateCommunicationRoute"))
-        .last()
+        .rfind(|line| line.contains("updateCommunicationRoute"))
         .unwrap_or_default()
         .to_owned()
 }

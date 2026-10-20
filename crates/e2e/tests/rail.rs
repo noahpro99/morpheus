@@ -147,8 +147,7 @@ async fn servers_drag_into_folders_and_reorder() {
     app.wait_for(".context-menu", DEFAULT_WAIT)
         .await
         .expect("menu");
-    app.eval("const p = [...document.querySelectorAll('.context-item.has-submenu')].find(el => el.querySelector('.menu-label')?.textContent === 'Move to'); \
-              const c = [...p.querySelectorAll('.context-submenu .context-item')].find(el => el.querySelector('.menu-label')?.textContent === 'No folder'); c.click();")
+    app.click_submenu("Move to", "No folder")
         .await
         .expect("move out");
     app.wait_for_js(

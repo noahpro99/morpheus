@@ -113,15 +113,30 @@ async fn read_notes(client: &matrix_sdk::Client) -> crate::Result<serde_json::Ma
     read_map(client, NOTES_TYPE).await
 }
 
+/// Account data of `kind`, from the server: the local copy only catches up
+/// when sync delivers a change, so right after a write (or a restart before
+/// the first sync) it is stale, and a read-modify-write would drop entries.
+/// Offline, the local copy.
+pub(crate) async fn read_account_data(
+    client: &matrix_sdk::Client,
+    kind: &str,
+) -> crate::Result<Option<Raw<AnyGlobalAccountDataEventContent>>> {
+    let kind = GlobalAccountDataEventType::from(kind);
+    match client.account().fetch_account_data(kind.clone()).await {
+        Ok(raw) => Ok(raw),
+        Err(err) => {
+            tracing::debug!(%err, %kind, "account data from the local store");
+            Ok(client.account().account_data_raw(kind).await?)
+        }
+    }
+}
+
 /// A user-id-keyed map of strings kept in private account data.
 async fn read_map(
     client: &matrix_sdk::Client,
     kind: &str,
 ) -> crate::Result<serde_json::Map<String, Value>> {
-    let raw = client
-        .account()
-        .account_data_raw(GlobalAccountDataEventType::from(kind))
-        .await?;
+    let raw = read_account_data(client, kind).await?;
     Ok(raw
         .and_then(|raw| raw.deserialize_as::<Value>().ok())
         .and_then(|v| v.as_object().cloned())
@@ -199,12 +214,7 @@ impl Session {
 }
 
 async fn read_friends(client: &matrix_sdk::Client) -> Vec<OwnedUserId> {
-    let raw = client
-        .account()
-        .account_data_raw(GlobalAccountDataEventType::from(FRIENDS_TYPE))
-        .await
-        .ok()
-        .flatten();
+    let raw = read_account_data(client, FRIENDS_TYPE).await.ok().flatten();
     raw.and_then(|raw| raw.deserialize_as::<Value>().ok())
         .and_then(|value| value.get("users")?.as_array().cloned())
         .unwrap_or_default()

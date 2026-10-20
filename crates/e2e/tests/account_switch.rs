@@ -46,6 +46,24 @@ async fn account_menu(app: &mut App) {
 
 /// The labels in the "Switch account" submenu, the ticked one marked `*`.
 async fn switch_items(app: &mut App) -> Vec<String> {
+    // A phone's sheet shows a submenu once its row is tapped.
+    if app.is_phone() {
+        app.click_text(".context-menu.sheet .context-item", "Switch account")
+            .await
+            .expect("open the submenu");
+        app.wait_for(".context-menu.sheet .sheet-back", DEFAULT_WAIT)
+            .await
+            .expect("submenu shown");
+        let items = app
+            .eval("return [...document.querySelectorAll('.context-menu.sheet .sheet-items .context-item')].map(e => (e.classList.contains('checked') ? '*' : '') + e.textContent.trim());")
+            .await
+            .expect("submenu");
+        // Back to the top level, where a desktop menu would still be.
+        app.click(".context-menu.sheet .sheet-back")
+            .await
+            .expect("back");
+        return serde_json::from_value(items).expect("a Switch account submenu");
+    }
     let items = app
         .eval(
             "const p = [...document.querySelectorAll('.context-item.has-submenu')].find(el => el.querySelector('.menu-label')?.textContent === 'Switch account'); \
@@ -58,13 +76,9 @@ async fn switch_items(app: &mut App) -> Vec<String> {
 }
 
 async fn pick(app: &mut App, label: &str) {
-    let js = format!(
-        "const p = [...document.querySelectorAll('.context-item.has-submenu')].find(el => el.querySelector('.menu-label')?.textContent === 'Switch account'); \
-         const c = [...p.querySelectorAll('.context-submenu .context-item')].find(el => el.textContent.trim().includes({0})); \
-         if (!c) throw new Error('no ' + {0}); c.click();",
-        serde_json::to_string(label).expect("json")
-    );
-    app.eval(&js).await.expect("pick");
+    app.click_submenu("Switch account", label)
+        .await
+        .expect("pick");
 }
 
 #[tokio::test]

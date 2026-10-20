@@ -411,6 +411,48 @@ impl App {
         self.eval(&js).await.map(drop)
     }
 
+    /// Pick `child` from the open menu's `parent` submenu. On a desktop the
+    /// submenu is in the page under its row; a phone's sheet opens it in
+    /// place when the row is tapped. The child matches by its whole text or
+    /// label, else by containing `child`.
+    pub async fn click_submenu(&mut self, parent: &str, child: &str) -> Result<()> {
+        let (parent_js, child_js) = (js_str(parent), js_str(child));
+        let pick = |items: &str| {
+            format!(
+                "const items = {items}; \
+                 const label = el => (el.querySelector('.menu-label')?.textContent ?? el.textContent).trim(); \
+                 const c = items.find(el => el.textContent.trim() === {child_js} || label(el) === {child_js}) \
+                   ?? items.find(el => el.textContent.includes({child_js})); \
+                 if (!c) return false; c.click(); return true;"
+            )
+        };
+        let sheet = self.count(".context-menu.sheet").await? > 0;
+        // Already showing its items (a test read them first).
+        let open_already = sheet && self.count(".context-menu.sheet .sheet-back").await? > 0;
+        if sheet && !open_already {
+            let open = format!(
+                "const p = [...document.querySelectorAll('.context-menu.sheet .context-item')] \
+                   .find(el => (el.querySelector('.menu-label')?.textContent ?? el.textContent).trim() === {parent_js}); \
+                 if (!p) return false; p.click(); return true;"
+            );
+            self.wait_until(DEFAULT_WAIT, "submenu row", &open).await?;
+            self.wait_for(".context-menu.sheet .sheet-back", DEFAULT_WAIT)
+                .await?;
+        }
+        if sheet {
+            let js = pick(
+                "[...document.querySelectorAll('.context-menu.sheet .sheet-items .context-item')]",
+            );
+            return self.wait_until(DEFAULT_WAIT, "submenu item", &js).await;
+        }
+        let js = pick(&format!(
+            "(() => {{ const p = [...document.querySelectorAll('.context-item.has-submenu')] \
+               .find(el => el.querySelector('.menu-label')?.textContent === {parent_js}); \
+               return p ? [...p.querySelectorAll('.context-submenu .context-item')] : []; }})()"
+        ));
+        self.wait_until(DEFAULT_WAIT, "submenu item", &js).await
+    }
+
     /// Replace an input's value and fire `input` so the UI sees it.
     pub async fn type_into(&mut self, selector: &str, text: &str) -> Result<()> {
         let js = format!(

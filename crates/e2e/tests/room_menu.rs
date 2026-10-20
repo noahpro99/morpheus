@@ -55,20 +55,32 @@ async fn menu_closed(app: &mut App) {
 }
 
 async fn click_submenu(app: &mut App, parent: &str, child: &str) {
-    let js = format!(
-        "const p = [...document.querySelectorAll('.context-item.has-submenu')].find(el => el.querySelector('.menu-label')?.textContent === {}); \
-         if (!p) throw new Error('no submenu ' + {}); \
-         const c = [...p.querySelectorAll('.context-submenu .context-item')].find(el => el.textContent.trim() === {}); \
-         if (!c) throw new Error('no child ' + {}); c.click();",
-        serde_json::to_string(parent).expect("json"),
-        serde_json::to_string(parent).expect("json"),
-        serde_json::to_string(child).expect("json"),
-        serde_json::to_string(child).expect("json"),
-    );
-    app.eval(&js).await.expect("submenu click");
+    app.click_submenu(parent, child)
+        .await
+        .expect("submenu click");
 }
 
 async fn checked_label(app: &mut App) -> String {
+    // A phone's sheet shows the modes once the Notifications row is tapped.
+    if app.is_phone() {
+        app.click_text(".context-menu.sheet .context-item", "Notifications")
+            .await
+            .expect("notifications submenu");
+        app.wait_for(".context-menu.sheet .sheet-back", DEFAULT_WAIT)
+            .await
+            .expect("submenu shown");
+        let label = app
+            .eval("return [...document.querySelectorAll('.context-menu.sheet .sheet-items .context-item.checked')].map(e => e.textContent.trim()).join('|');")
+            .await
+            .expect("checked")
+            .as_str()
+            .unwrap_or_default()
+            .to_owned();
+        app.click(".context-menu.sheet .sheet-back")
+            .await
+            .expect("back");
+        return label;
+    }
     app.eval("return [...document.querySelectorAll('.context-submenu .context-item.checked')].map(e => e.textContent.trim()).join('|');")
         .await
         .expect("checked")

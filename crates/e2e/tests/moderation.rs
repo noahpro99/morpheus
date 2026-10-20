@@ -65,17 +65,9 @@ async fn menu_labels(app: &mut App) -> String {
 
 /// Hover a submenu item and click one of its children.
 async fn click_submenu(app: &mut App, parent: &str, child: &str) {
-    let js = format!(
-        "const p = [...document.querySelectorAll('.context-item.has-submenu')].find(el => el.textContent.includes({})); \
-         if (!p) throw new Error('no submenu ' + {}); \
-         const c = [...p.querySelectorAll('.context-submenu .context-item')].find(el => el.textContent.includes({})); \
-         if (!c) throw new Error('no child ' + {}); c.click();",
-        serde_json::to_string(parent).expect("json"),
-        serde_json::to_string(parent).expect("json"),
-        serde_json::to_string(child).expect("json"),
-        serde_json::to_string(child).expect("json"),
-    );
-    app.eval(&js).await.expect("submenu click");
+    app.click_submenu(parent, child)
+        .await
+        .expect("submenu click");
 }
 
 #[tokio::test]

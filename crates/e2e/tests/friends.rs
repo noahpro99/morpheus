@@ -28,6 +28,9 @@ async fn member_menu(app: &mut App, member: &str) {
 
 async fn open_friends(app: &mut App) {
     app.click(".rail-dms").await.expect("DMs");
+    app.wait_for(".sidebar .friends-row", DEFAULT_WAIT)
+        .await
+        .expect("Friends row");
     app.click(".sidebar .friends-row").await.expect("Friends");
     app.wait_for(".friends-page", DEFAULT_WAIT)
         .await

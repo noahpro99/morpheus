@@ -32,6 +32,12 @@ async fn open_settings(app: &mut App) {
     app.wait_for(".settings", DEFAULT_WAIT)
         .await
         .expect("settings modal");
+    // A phone starts on the list of pages; a desktop on My Account.
+    if app.is_phone() && app.count(".settings-page").await.unwrap_or(0) == 0 {
+        app.click_text(".settings-nav button", "My Account")
+            .await
+            .expect("My Account");
+    }
 }
 
 /// Settings' Security & Privacy page: encryption, recovery, devices.

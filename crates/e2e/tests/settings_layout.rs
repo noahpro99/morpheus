@@ -76,7 +76,7 @@ async fn desktop_settings_have_categories_themes_and_notification_defaults() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
-    let mut app = App::launch(&hs).await.expect("launch app");
+    let mut app = App::launch_desktop(&hs).await.expect("launch app");
     login(&mut app, "carol").await;
     open_settings(&mut app).await;
 

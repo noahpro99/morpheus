@@ -43,7 +43,7 @@ async fn messages_from_others_are_announced_and_mentions_flagged() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
-    let mut bob = App::launch(&hs).await.expect("launch bob");
+    let mut bob = App::launch_desktop(&hs).await.expect("launch bob");
     login(&mut bob, "bob").await;
     bob.open_room("random").await.expect("bob reads #random");
 

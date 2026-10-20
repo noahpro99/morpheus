@@ -194,6 +194,11 @@ clear_calls() {
   done
 }
 for room in "$GENERAL" "$RANDOM_ROOM" "$DEV" $ENC; do clear_calls "$room"; done
+# Friends lists start empty each run (tests add and remove them).
+for user in alice bob carol; do
+  token_var=${user^^}
+  api "${!token_var}" PUT "/_matrix/client/v3/user/@$user:localhost/account_data/dev.morpheus.friends" '{"users":[]}' >/dev/null
+done
 # #encrypted starts each run without calls allowed: the calls e2e test has
 # its admin turn them on by joining.
 if [[ -n "$ENC" ]]; then

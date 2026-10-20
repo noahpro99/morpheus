@@ -2076,3 +2076,62 @@ async fn a_call_in_a_direct_message_rings_and_can_be_declined() {
     alice.leave_call(dm).await.expect("hang up");
     alice.leave_call(general).await.expect("leave general");
 }
+
+/// Account data reads see a write at once, without waiting for sync: two
+/// friends added back to back are both kept, and a restart before the
+/// first sync still finds them.
+#[tokio::test]
+async fn friends_added_back_to_back_are_both_kept_and_seen_after_a_restart() {
+    let Some(env) = env() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping live test");
+        return;
+    };
+    let dir = fresh_data_dir();
+    let session = Core::with_session_store(&dir, SessionStoreKind::File)
+        .expect("core")
+        .login(LoginRequest {
+            homeserver: env.homeserver.clone(),
+            username: "carol".into(),
+            password: "carol-password".into(),
+        })
+        .await
+        .expect("login");
+    let bob: morpheus_core::OwnedUserId = "@bob:localhost".parse().expect("bob");
+    let alice: morpheus_core::OwnedUserId = "@alice:localhost".parse().expect("alice");
+    for who in [&bob, &alice] {
+        session.set_friend(who.clone(), false).await.expect("clear");
+    }
+    // No sync running: each read must come from the server.
+    session
+        .set_friend(bob.clone(), true)
+        .await
+        .expect("add bob");
+    session
+        .set_friend(alice.clone(), true)
+        .await
+        .expect("add alice");
+    let friends = session.friends().await.expect("friends");
+    assert!(
+        friends.contains(&bob) && friends.contains(&alice),
+        "{friends:?}"
+    );
+    drop(session);
+
+    let restored = Core::with_session_store(&dir, SessionStoreKind::File)
+        .expect("core")
+        .restore_session()
+        .await
+        .expect("restore")
+        .expect("a session");
+    let friends = restored.friends().await.expect("friends");
+    assert!(
+        friends.contains(&bob) && friends.contains(&alice),
+        "after a restart: {friends:?}"
+    );
+    for who in [&bob, &alice] {
+        restored
+            .set_friend(who.clone(), false)
+            .await
+            .expect("clean up");
+    }
+}

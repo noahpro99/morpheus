@@ -180,12 +180,17 @@ pub fn Settings() -> Element {
         }
     });
     // A desktop always shows a page (Security while a verification runs);
-    // a phone starts on the list.
+    // a phone starts on the list (on Security, when opened mid-verification).
     let landing = if verification().is_some() {
         SettingsPage::Security
     } else {
         SettingsPage::Account
     };
+    use_hook(move || {
+        if narrow && verification.peek().is_some() && page.peek().is_none() {
+            page.set(Some(SettingsPage::Security));
+        }
+    });
     let shown = page().or((!narrow).then_some(landing));
 
     // A recovery key just created here, shown until Settings closes.
