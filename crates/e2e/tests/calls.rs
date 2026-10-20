@@ -168,7 +168,10 @@ async fn join_a_call_see_who_is_in_it_mute_and_hang_up() {
     .await
     .expect("alice gone from the call");
     alice
-        .wait_for_js(&chimes_are(&["join", "join", "mute", "leave"]), DEFAULT_WAIT)
+        .wait_for_js(
+            &chimes_are(&["join", "join", "mute", "leave"]),
+            DEFAULT_WAIT,
+        )
         .await
         .expect("a chime as she hangs up");
     bob.wait_for_js(&chimes_are(&["join", "leave"]), DEFAULT_WAIT)
