@@ -372,6 +372,28 @@ async fn a_call_in_a_dm_rings_the_other_person_who_can_answer_or_decline() {
     )
     .await
     .expect("a ringtone");
+    // Bob's window is in the background: the system is told too (test runs
+    // log the notification instead of showing it).
+    if !bob.is_phone() {
+        let log = bob.data_dir().join("app.log");
+        let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+        while !std::fs::read_to_string(&log)
+            .unwrap_or_default()
+            .contains("alice is calling")
+        {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "no ring notification; log: {}",
+                std::fs::read_to_string(&log)
+                    .unwrap_or_default()
+                    .lines()
+                    .filter(|l| l.contains("ring") || l.contains("notif") || l.contains("WARN"))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        }
+    }
     // The DM says so.
     alice
         .wait_for_text(".timeline", "alice started a call", DEFAULT_WAIT)

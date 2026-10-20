@@ -133,7 +133,8 @@ timeline → send.
 - [x] Chimes, Discord-style: you or someone else joins or leaves the call, mute, deafen (tones made in code, played by the webview; GStreamer plugins in the dev shell for webkitgtk).
 - [ ] Android: check the chimes play (WebView may want a user gesture: `setMediaPlaybackRequiresUserGesture(false)`).
 - [x] Ringing in DMs (MSC4075 `m.rtc.notification`, sent and heard under the stable and unstable names): a popup with the caller, a ringtone, accept and decline (MSC4310 `m.rtc.decline`); the caller is told and hung up when declined; "alice started a call" in the timeline.
-- [ ] Ringing when the app is in the background: a system notification (desktop) and a push (Android) for a ring.
+- [x] Ringing in the background, desktop: a system notification says who is calling.
+- [ ] Ringing in the background, Android: a push for a ring (the push service shows "X is calling").
 - [ ] Video and screen share.
 
 ### 6. Native renderer
