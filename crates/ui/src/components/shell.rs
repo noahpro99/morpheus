@@ -687,6 +687,11 @@ pub fn Shell(session: Session) -> Element {
                 }
             }
             "switcher" => switcher_open.toggle(),
+            "reload" => {
+                if let Some(mut reloads) = try_consume_context::<crate::app::Reloads>() {
+                    reloads.with_mut(|r| r.0 += 1);
+                }
+            }
             "shortcuts" => top_panel.set(if top_panel() == TopPanel::Help {
                 TopPanel::None
             } else {

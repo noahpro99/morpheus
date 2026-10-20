@@ -128,10 +128,17 @@ pub fn App() -> Element {
     }
 }
 
+/// Bumped to rebuild the whole interface (Ctrl+R, as in Discord): the shell
+/// is keyed by it, so everything under it starts afresh on the same session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Reload(pub u32);
+pub type Reloads = Signal<Reload>;
+
 #[component]
 fn Boot(core: Core) -> Element {
     use_context_provider(|| core.clone());
     let mut session: Signal<Option<Session>> = use_context_provider(|| Signal::new(None));
+    let reloads: Reloads = use_context_provider(|| Signal::new(Reload(0)));
     // Hand each new session to the platform (see `SessionHook`).
     let hook = use_context::<AppConfig>().on_session;
     use_effect(move || {
@@ -162,7 +169,7 @@ fn Boot(core: Core) -> Element {
         (Some(_), Some(active)) => rsx! {
             for active in [active] {
                 Shell {
-                    key: "{active.user_id().map(|id| id.to_string()).unwrap_or_default()}",
+                    key: "{active.user_id().map(|id| id.to_string()).unwrap_or_default()}-{reloads().0}",
                     session: active,
                 }
             }

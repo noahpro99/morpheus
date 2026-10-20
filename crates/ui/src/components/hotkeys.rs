@@ -36,6 +36,7 @@ window.addEventListener('keydown', e => {
   else if (k === 'Escape' && shift) name = 'mark_scope_read';
   else if (k === 'Escape') name = 'escape';
   else if (mod && !alt && !shift && key === 'k') name = 'switcher';
+  else if (mod && !alt && !shift && key === 'r') name = 'reload';
   else if (mod && !alt && key === '/') name = 'shortcuts';
   else if (alt && !mod && !shift && k === 'ArrowUp') name = 'prev_room';
   else if (alt && !mod && !shift && k === 'ArrowDown') name = 'next_room';
@@ -97,6 +98,7 @@ pub const GROUPS: &[(&str, &[(&str, &str)])] = &[
             ("Ctrl+U", "Show or hide the member list"),
             ("Ctrl+,", "Settings"),
             ("Ctrl+/", "This list"),
+            ("Ctrl+R", "Reload the app"),
         ],
     ),
 ];

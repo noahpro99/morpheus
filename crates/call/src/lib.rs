@@ -110,6 +110,10 @@ const FRAME: usize = (SAMPLE_RATE / 100) as usize;
 fn runtime() -> &'static tokio::runtime::Runtime {
     static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
     RUNTIME.get_or_init(|| {
+        // The app links rustls with two crypto backends (ring here, aws-lc-rs
+        // with the Matrix SDK), so rustls cannot pick one for LiveKit's TLS
+        // by itself (it panics). Ring, unless something chose already.
+        let _ = rustls::crypto::ring::default_provider().install_default();
         #[allow(clippy::expect_used)]
         tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
