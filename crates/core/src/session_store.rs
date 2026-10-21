@@ -98,17 +98,27 @@ pub(crate) fn resolve(data_dir: &Path, forced: Option<SessionStoreKind>) -> Box<
     match forced.or_else(SessionStoreKind::from_env) {
         Some(SessionStoreKind::Keyring) => Box::new(KeyringStore::new(data_dir)),
         Some(SessionStoreKind::File) => Box::new(FileStore::new(data_dir)),
-        None => match keyring_available() {
-            Ok(()) => Box::new(KeyringStore::new(data_dir)),
-            Err(err) => {
-                warn!(
-                    error = %err,
-                    "OS keyring unavailable, falling back to encrypted file storage"
-                );
-                Box::new(FileStore::new(data_dir))
-            }
-        },
+        None if keyring_usable() => Box::new(KeyringStore::new(data_dir)),
+        None => Box::new(FileStore::new(data_dir)),
     }
+}
+
+/// Whether to use the keyring, probed once per process. Deciding again on
+/// every call let a passing keyring hiccup switch to the file backend, which
+/// holds no session for a keyring account: its folder then looked free, and
+/// the next sign-in wiped its store.
+fn keyring_usable() -> bool {
+    static USABLE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *USABLE.get_or_init(|| match keyring_available() {
+        Ok(()) => true,
+        Err(err) => {
+            warn!(
+                error = %err,
+                "OS keyring unavailable, falling back to encrypted file storage"
+            );
+            false
+        }
+    })
 }
 
 /// Round-trip a canary secret to check that a keyring backend actually

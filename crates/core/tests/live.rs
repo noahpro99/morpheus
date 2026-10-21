@@ -2135,3 +2135,96 @@ async fn friends_added_back_to_back_are_both_kept_and_seen_after_a_restart() {
             .expect("clean up");
     }
 }
+
+async fn sign_in_at(env: &TestEnv, dir: &std::path::Path, user: &str) -> Session {
+    Core::with_session_store(dir, SessionStoreKind::File)
+        .expect("core")
+        .login(LoginRequest {
+            homeserver: env.homeserver.clone(),
+            username: user.into(),
+            password: format!("{user}-password"),
+        })
+        .await
+        .expect("login")
+}
+
+/// A local store that cannot be decrypted (its passphrase is not the one
+/// saved with the account) is set aside with a clear message, and the
+/// account can simply sign in again, instead of failing at every start.
+#[tokio::test]
+async fn an_unreadable_store_is_set_aside_and_the_account_signs_in_again() {
+    let Some(env) = env() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping live test");
+        return;
+    };
+    let (dir, other) = (fresh_data_dir(), fresh_data_dir());
+    drop(sign_in_at(&env, &dir, "carol").await);
+    drop(sign_in_at(&env, &other, "carol").await);
+    // The account's store swapped for one made with another passphrase.
+    std::fs::remove_dir_all(dir.join("store")).expect("remove store");
+    std::fs::rename(other.join("store"), dir.join("store")).expect("swap store");
+
+    let core = Core::with_session_store(&dir, SessionStoreKind::File).expect("core");
+    let err = match core.restore_session().await {
+        Ok(_) => panic!("the store cannot be read"),
+        Err(err) => err.to_string(),
+    };
+    assert!(err.contains("sign in again"), "{err}");
+    assert!(!dir.join("store").exists(), "the store is set aside");
+    assert!(
+        std::fs::read_dir(&dir).expect("dir").flatten().any(|e| e
+            .file_name()
+            .to_string_lossy()
+            .starts_with("store.unreadable-")),
+        "kept, renamed"
+    );
+    // No dead end: nothing to restore, and signing in again works there.
+    assert!(core.restore_session().await.expect("restore").is_none());
+    let again = core
+        .login(LoginRequest {
+            homeserver: env.homeserver.clone(),
+            username: "carol".into(),
+            password: "carol-password".into(),
+        })
+        .await
+        .expect("signs in again");
+    assert!(dir.join("store").exists(), "in the same folder");
+    drop(again);
+}
+
+/// A folder that still holds a local store is never taken by a new sign-in
+/// (which starts with a fresh store), even when its credentials cannot be
+/// found: they may only be out of reach for a moment.
+#[tokio::test]
+async fn a_new_sign_in_never_takes_a_folder_that_holds_a_store() {
+    let Some(env) = env() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping live test");
+        return;
+    };
+    let dir = fresh_data_dir();
+    drop(sign_in_at(&env, &dir, "carol").await);
+    let before: Vec<_> = std::fs::read_dir(dir.join("store"))
+        .expect("store")
+        .flatten()
+        .map(|e| e.file_name())
+        .filter(|name| name.to_string_lossy().ends_with(".sqlite3"))
+        .collect();
+    // Credentials out of reach (a keyring that did not answer, say).
+    std::fs::remove_file(dir.join("session.enc")).expect("hide credentials");
+
+    drop(sign_in_at(&env, &dir, "bob").await);
+    assert!(
+        dir.join("accounts").join("1").join("store").exists(),
+        "the new account gets a folder of its own"
+    );
+    let after: Vec<_> = std::fs::read_dir(dir.join("store"))
+        .expect("store still there")
+        .flatten()
+        .map(|e| e.file_name())
+        .filter(|name| name.to_string_lossy().ends_with(".sqlite3"))
+        .collect();
+    assert!(
+        !before.is_empty() && before.iter().all(|f| after.contains(f)),
+        "store untouched: {before:?} -> {after:?}"
+    );
+}
