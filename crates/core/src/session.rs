@@ -12,7 +12,7 @@ use matrix_sdk::{
     store::RoomLoadSettings,
 };
 use matrix_sdk_ui::sync_service::SyncService;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::{
     Core, CoreFuture, Error, OwnedUserId, Result,
@@ -75,7 +75,13 @@ impl Core {
             };
 
             let client =
-                build_client(&dir, &stored.homeserver, Some(&stored.store_passphrase)).await?;
+                match build_client(&dir, &stored.homeserver, Some(&stored.store_passphrase)).await {
+                    Ok(client) => client,
+                    Err(err) if err.to_string().contains("store cipher") => {
+                        return Err(set_aside(&core, &dir, &stored, &err).await);
+                    }
+                    Err(err) => return Err(err),
+                };
             client
                 .matrix_auth()
                 .restore_session(stored.session, RoomLoadSettings::default())
@@ -126,7 +132,10 @@ impl Core {
             } else {
                 auth.login_username(&request.username, &request.password)
             };
-            login.initial_device_display_name(DEVICE_NAME).await?;
+            if let Err(err) = login.initial_device_display_name(DEVICE_NAME).await {
+                abandon(&core, client, &dir).await;
+                return Err(err.into());
+            }
             info!(user = %request.username, "logged in with password");
 
             persist_and_start(core, client, request.homeserver, passphrase, dir).await
@@ -147,7 +156,7 @@ impl Core {
         self.run(async move {
             let dir = new_account_dir(&core).await?;
             let (client, passphrase) = fresh_client(&dir, &homeserver).await?;
-            client
+            let signed_in = client
                 .matrix_auth()
                 .login_sso(|url| async move {
                     info!(%url, "opening browser for single sign-on");
@@ -158,7 +167,11 @@ impl Core {
                     .map_err(|err| matrix_sdk::Error::UnknownError(Box::new(err)))
                 })
                 .initial_device_display_name(DEVICE_NAME)
-                .await?;
+                .await;
+            if let Err(err) = signed_in {
+                abandon(&core, client, &dir).await;
+                return Err(err.into());
+            }
             info!("logged in with single sign-on");
 
             persist_and_start(core, client, homeserver, passphrase, dir).await
@@ -181,6 +194,57 @@ async fn fresh_client(data_dir: &Path, homeserver: &str) -> Result<(Client, Stri
     let passphrase = session_store::generate_passphrase();
     let client = build_client(data_dir, homeserver, Some(&passphrase)).await?;
     Ok((client, passphrase))
+}
+
+/// An account whose local store cannot be decrypted (its passphrase is not
+/// the one it was made with): nothing in it can be read, and the device's
+/// encryption keys are in it. Move it aside, sign that device out on the
+/// server (best effort: its keys are gone), forget its credentials, and ask
+/// for a fresh sign-in instead of failing at every start.
+async fn set_aside(core: &Core, dir: &Path, stored: &StoredSession, err: &Error) -> Error {
+    let user = stored.session.meta.user_id.to_string();
+    warn!(%user, %err, "local store unreadable; setting it aside");
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or_default();
+    let _ = tokio::fs::rename(
+        dir.join(STORE_DIR),
+        dir.join(format!("{STORE_DIR}.unreadable-{stamp}")),
+    )
+    .await;
+    if let Ok(client) = tls_roots(Client::builder())
+        .server_name_or_homeserver_url(&stored.homeserver)
+        .build()
+        .await
+        && client
+            .matrix_auth()
+            .restore_session(stored.session.clone(), RoomLoadSettings::default())
+            .await
+            .is_ok()
+    {
+        let _ = client.logout().await;
+    }
+    let (blocking, account_dir) = (core.clone(), dir.to_path_buf());
+    let _ = tokio::task::spawn_blocking(move || -> Result<()> {
+        session_store::resolve(&account_dir, blocking.session_store_kind()).clear()?;
+        let next = blocking.active_account_dir();
+        crate::accounts::write_active(blocking.data_dir(), &blocking.account_key(&next))
+    })
+    .await;
+    Error::Other(format!(
+        "Morpheus could not open its saved data for {user}, so it was set aside: sign in again."
+    ))
+}
+
+/// A sign-in that failed: drop the fresh store it made (and its folder, if
+/// it was a new one), so the folder can take the next sign-in.
+async fn abandon(core: &Core, client: Client, dir: &Path) {
+    drop(client);
+    let _ = tokio::fs::remove_dir_all(dir.join(STORE_DIR)).await;
+    if dir != core.data_dir() {
+        let _ = tokio::fs::remove_dir_all(dir).await;
+    }
 }
 
 /// Blocking-safe: the folder a new sign-in goes into (see `accounts.rs`).

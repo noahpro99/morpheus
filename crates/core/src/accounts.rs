@@ -97,15 +97,17 @@ impl Core {
         slot_dir(self.data_dir(), &key)
     }
 
-    /// Blocking: where a new sign-in goes: the first folder holding no
-    /// account (keeping the others), else a new one.
+    /// Blocking: where a new sign-in goes: the first folder holding neither an
+    /// account nor a local store (a sign-in starts with a fresh store, so a
+    /// folder with one is never reused: if its credentials were only out of
+    /// reach for a moment, its data would be lost), else a new one.
     pub(crate) fn free_account_dir(&self) -> Result<PathBuf> {
         let root = self.data_dir();
         let existing = slots(root);
-        if let Some(free) = existing
-            .iter()
-            .find(|key| matches!(self.stored(key), Ok(None)))
-        {
+        if let Some(free) = existing.iter().find(|key| {
+            matches!(self.stored(key), Ok(None))
+                && !slot_dir(root, key).join(session_store::STORE_DIR).exists()
+        }) {
             return Ok(slot_dir(root, free));
         }
         let next = existing
