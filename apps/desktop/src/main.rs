@@ -116,7 +116,8 @@ fn main() {
                 // Closing the window keeps Morpheus syncing in the tray, so
                 // notifications keep coming; the tray menu quits for real.
                 .with_close_behaviour(WindowCloseBehaviour::WindowHides)
-                .with_exits_when_last_window_closes(false),
+                .with_exits_when_last_window_closes(false)
+                .with_background_color((13, 15, 20, 255)),
         )
         .launch(DesktopRoot);
 }

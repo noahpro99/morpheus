@@ -135,6 +135,34 @@ async fn phone_signs_in_navigates_and_sends() {
     )
     .await
     .expect("a swipe down closes the sheet");
+    // It closes wherever the finger starts: on the dimmed page above it, or
+    // on one of its items.
+    for (start, from) in [("the backdrop", "above"), ("an item", "item")] {
+        app.right_click(".room").await.expect("open the room menu");
+        app.wait_for_js(SHEET_JS, DEFAULT_WAIT)
+            .await
+            .expect("the menu is a bottom sheet");
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        let y = app
+            .eval(&format!(
+                "const s = document.querySelector('.context-menu.sheet').getBoundingClientRect(); \
+                 const i = [...document.querySelectorAll('.context-menu.sheet .context-item')][0].getBoundingClientRect(); \
+                 return '{from}' === 'above' ? s.top / 2 : i.top + i.height / 2;"
+            ))
+            .await
+            .expect("start point")
+            .as_f64()
+            .expect("number");
+        app.swipe((width / 2.0, y), (width / 2.0, height - 4.0), 250)
+            .await
+            .expect("swipe down");
+        app.wait_for_js(
+            "return !document.querySelector('.context-menu')",
+            DEFAULT_WAIT,
+        )
+        .await
+        .unwrap_or_else(|e| panic!("a swipe down from {start} closes the sheet: {e}"));
+    }
 
     // Into a room, send, see it echoed.
     app.click_text(".room", "general")
