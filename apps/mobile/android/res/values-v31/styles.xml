@@ -1,0 +1,13 @@
+<resources>
+    <!-- Android 12+ draws its own splash screen from these: the logo in the
+         accent colour on the rail's dark, instead of a white screen with the
+         icon's dark background as a circle. -->
+    <style name="AppTheme" parent="@style/Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">@drawable/ic_launcher_background</item>
+        <item name="android:statusBarColor">#0D0F14</item>
+        <item name="android:navigationBarColor">#0D0F14</item>
+        <item name="android:windowSplashScreenBackground">#0D0F14</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">#0D0F14</item>
+    </style>
+</resources>

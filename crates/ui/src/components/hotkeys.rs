@@ -283,9 +283,11 @@ window.addEventListener('paste', e => {
     if (e.touches.length !== 1) return;
     const t = e.touches[0];
     const start = { x: t.clientX, y: t.clientY, at: Date.now(), d: 0, axis: null };
-    const sheet = e.target.closest && e.target.closest('.context-menu.sheet');
+    // With a sheet up, a drag anywhere moves it: on its items or the dimmed
+    // page around it alike.
+    const sheet = document.querySelector('.context-menu.sheet');
     if (sheet) {
-      if (sheet.scrollTop <= 0) g = { kind: 'sheet', el: sheet, ...start };
+      g = { kind: 'sheet', el: sheet, base: 0, ...start };
       return;
     }
     if (document.querySelector(OPEN_FOR_SWIPE)) return;
@@ -314,7 +316,10 @@ window.addEventListener('paste', e => {
       }
     }
     if (g.kind === 'sheet' && g.axis === 'y') {
-      g.d = Math.max(0, dy);
+      // A scrolled list scrolls back to its top first; the sheet follows
+      // the finger from there.
+      if (g.el.scrollTop > 0) { g.base = dy; return; }
+      g.d = Math.max(0, dy - g.base);
       g.el.style.transition = 'none';
       g.el.style.transform = `translateY(${g.d}px)`;
     } else if (g.kind === 'back' && g.axis === 'x') {

@@ -47,6 +47,8 @@ fn main() {
 
     LaunchBuilder::new()
         .with_context(config)
+        // The web view starts out the app's darkest surface, not white.
+        .with_cfg(dioxus::mobile::Config::new().with_background_color((13, 15, 20, 255)))
         .launch(morpheus_ui::App);
 }
 
