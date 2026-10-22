@@ -9,7 +9,7 @@ use matrix_sdk::ruma::{
 };
 use serde_json::Value;
 
-use crate::{CoreFuture, MemberRole, Session};
+use crate::{CoreFuture, Error, MemberRole, Session};
 
 const NOTES_TYPE: &str = "dev.morpheus.notes";
 const NICKNAMES_TYPE: &str = "dev.morpheus.nicknames";
@@ -186,6 +186,41 @@ impl Session {
         let client = self.client.clone();
         self.core
             .run(async move { Ok(read_friends(&client).await) })
+    }
+
+    /// Who someone typed means, as Discord's "Add Friend" takes it: a bare
+    /// username is someone on this account's server; `name:server` or a full
+    /// Matrix ID anyone. Errors when the server knows no such person.
+    pub fn find_user(&self, typed: String) -> CoreFuture<OwnedUserId> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            let typed = typed.trim().trim_start_matches('@');
+            if typed.is_empty() {
+                return Err(Error::Other("Type a username or a Matrix ID.".into()));
+            }
+            let full = if typed.contains(':') {
+                format!("@{typed}")
+            } else {
+                let server = client.user_id().map(|me| me.server_name().to_owned());
+                match server {
+                    Some(server) => format!("@{typed}:{server}"),
+                    None => return Err(Error::NoSession),
+                }
+            };
+            let not_found = || Error::Other(format!("No one is called {full}."));
+            let user_id = OwnedUserId::try_from(full.to_lowercase()).map_err(|_| not_found())?;
+            match client.account().fetch_user_profile_of(&user_id).await {
+                Ok(_) => Ok(user_id),
+                Err(err)
+                    if err
+                        .as_client_api_error()
+                        .is_some_and(|e| e.status_code.as_u16() == 404) =>
+                {
+                    Err(not_found())
+                }
+                Err(err) => Err(err.into()),
+            }
+        })
     }
 
     /// Add (`true`) or remove a friend.

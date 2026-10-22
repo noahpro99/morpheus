@@ -1,6 +1,7 @@
 //! Friends: a private list of people (account data; Matrix has no
-//! friendship). Added from a person's menu; the Friends page, opened from the
-//! top of the DMs, lists them with a way to message them.
+//! friendship). Added from a person's menu or by name; the Friends page, opened from the
+//! top of the DMs, lists them with a way to message them, and adds people by
+//! username (Discord's "Add Friend").
 
 use dioxus::prelude::*;
 use morpheus_core::{OwnedUserId, Session};
@@ -54,10 +55,25 @@ pub fn set_friend(session: &Session, user_id: OwnedUserId, friend: bool) {
     });
 }
 
+/// The Friends page's tabs, as in Discord.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FriendsTab {
+    All,
+    Add,
+}
+
 #[component]
 pub fn FriendsPage() -> Element {
     let friends = use_context::<Friends>();
     let narrow = try_use_context::<super::shell::NarrowWindow>();
+    // With no friends yet, the way to add one comes first.
+    let mut tab = use_signal(|| {
+        if friends.peek().0.is_empty() {
+            FriendsTab::Add
+        } else {
+            FriendsTab::All
+        }
+    });
     rsx! {
         section { class: "friends-page",
             header { class: "chat-header friends-header",
@@ -72,19 +88,116 @@ pub fn FriendsPage() -> Element {
                         crate::icons::Icon { glyph: crate::icons::CHEVRON_LEFT, size: 18 }
                     }
                 }
+                crate::icons::Icon { glyph: crate::icons::USERS, size: 18 }
                 h2 { "Friends" }
+                span { class: "friends-divider" }
+                button {
+                    class: "friends-tab all-friends-tab",
+                    class: if tab() == FriendsTab::All { "active" },
+                    onclick: move |_| tab.set(FriendsTab::All),
+                    "All"
+                }
+                button {
+                    class: "friends-tab add-friend-tab",
+                    class: if tab() == FriendsTab::Add { "active" },
+                    onclick: move |_| tab.set(FriendsTab::Add),
+                    "Add Friend"
+                }
             }
-            if friends().0.is_empty() {
+            if tab() == FriendsTab::Add {
+                AddFriend {}
+            } else if friends().0.is_empty() {
                 div { class: "empty-state",
                     h2 { "No friends yet" }
-                    p { class: "muted", "Add someone from their menu: right-click (or press and hold) their name." }
+                    p { class: "muted", "Add someone with the Add Friend button, or from their menu: right-click (or press and hold) their name." }
                 }
             } else {
+                h4 { class: "section friends-count", "All friends — {friends().0.len()}" }
                 ul { class: "friend-list",
                     for user_id in friends().0 {
                         FriendRow { key: "{user_id}", user_id }
                     }
                 }
+            }
+        }
+    }
+}
+
+/// What adding someone came to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Added {
+    Ok(String),
+    Failed(String),
+}
+
+/// Discord's Add Friend: type who, add them.
+#[component]
+fn AddFriend() -> Element {
+    let session = use_context::<Session>();
+    let mut friends = use_context::<Friends>();
+    let mut typed = use_signal(String::new);
+    let mut result = use_signal(|| None::<Added>);
+    let mut busy = use_signal(|| false);
+    let submit = move |e: Event<FormData>| {
+        e.prevent_default();
+        let text = typed();
+        if text.trim().is_empty() || busy() {
+            return;
+        }
+        let session = session.clone();
+        busy.set(true);
+        spawn(async move {
+            let outcome = async {
+                let user_id = session.find_user(text).await?;
+                if friends.peek().0.contains(&user_id) {
+                    return Ok(Added::Failed(format!("{user_id} is already your friend.")));
+                }
+                if session.user_id().as_ref() == Some(&user_id) {
+                    return Ok(Added::Failed("That is you.".to_owned()));
+                }
+                session.set_friend(user_id.clone(), true).await?;
+                friends.with_mut(|list| {
+                    list.0.retain(|id| *id != user_id);
+                    list.0.push(user_id.clone());
+                });
+                Ok::<_, morpheus_core::Error>(Added::Ok(format!("{user_id} is now your friend.")))
+            }
+            .await;
+            let outcome = outcome.unwrap_or_else(|err| Added::Failed(err.to_string()));
+            if matches!(outcome, Added::Ok(_)) {
+                typed.set(String::new());
+            }
+            result.set(Some(outcome));
+            busy.set(false);
+        });
+    };
+    rsx! {
+        div { class: "add-friend",
+            h3 { "Add Friend" }
+            p { class: "muted", "You can add friends with their username, or their full Matrix ID for someone on another server." }
+            form { class: "add-friend", onsubmit: submit,
+                input {
+                    r#type: "text",
+                    placeholder: "Username or @name:server",
+                    autocomplete: "off",
+                    spellcheck: "false",
+                    value: "{typed}",
+                    oninput: move |e| {
+                        typed.set(e.value());
+                        result.set(None);
+                    },
+                }
+                button {
+                    r#type: "submit",
+                    class: "primary",
+                    disabled: typed().trim().is_empty() || busy(),
+                    "Add Friend"
+                }
+            }
+            match result() {
+                Some(Added::Ok(text)) => rsx! { p { class: "add-friend-result ok", "{text}" } },
+                Some(Added::Failed(text)) => rsx! { p { class: "add-friend-result error", "{text}" } },
+                None => rsx! {},
             }
         }
     }
