@@ -780,6 +780,13 @@ impl App {
         Self::start_android(true, &[]).await
     }
 
+    /// [`Self::launch_android`] with the phone's real microphone and speakers
+    /// in calls, as a person's phone has (test builds otherwise send a tone).
+    pub async fn launch_android_with_real_audio() -> Result<Self> {
+        PHONE_BUSY.store(true, Ordering::SeqCst);
+        Self::start_android_with(true, &[], true).await
+    }
+
     /// [`Self::launch_android`] with runtime permissions granted before the
     /// app starts (so no permission prompt covers it).
     pub async fn launch_android_granting(permissions: &[&str]) -> Result<Self> {
@@ -813,6 +820,14 @@ impl App {
     }
 
     async fn start_android(clear: bool, permissions: &[&str]) -> Result<Self> {
+        Self::start_android_with(clear, permissions, false).await
+    }
+
+    async fn start_android_with(
+        clear: bool,
+        permissions: &[&str],
+        real_audio: bool,
+    ) -> Result<Self> {
         // Before the phone signs in: pruning later would sign it out.
         if let Ok(homeserver) = std::env::var("MORPHEUS_TEST_HOMESERVER") {
             prune_test_devices(&homeserver);
@@ -820,6 +835,28 @@ impl App {
         if clear {
             adb(&["shell", "pm", "clear", ANDROID_PACKAGE])
                 .context("clearing the app's data (is it installed, and is a device attached?)")?;
+        }
+        // The app looks for this in its files before choosing call audio.
+        if real_audio {
+            // (`adb shell` joins its arguments, so no quoting: two commands.)
+            adb(&[
+                "shell",
+                "run-as",
+                ANDROID_PACKAGE,
+                "mkdir",
+                "-p",
+                "files/morpheus",
+            ])
+            .and_then(|_| {
+                adb(&[
+                    "shell",
+                    "run-as",
+                    ANDROID_PACKAGE,
+                    "touch",
+                    "files/morpheus/real_audio",
+                ])
+            })
+            .context("marking the app for real call audio")?;
         }
         for permission in permissions {
             adb(&["shell", "pm", "grant", ANDROID_PACKAGE, permission])

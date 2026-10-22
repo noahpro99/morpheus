@@ -1000,3 +1000,62 @@ async fn phone_calls_use_the_loudspeaker_and_switch_to_the_earpiece() {
     }
     app.click(".voice-panel .hang-up").await.expect("hang up");
 }
+
+/// What Android logged about the app crashing since the crash log was cleared.
+fn crash_log() -> String {
+    adb_shell(&["logcat", "-b", "crash", "-d"])
+}
+
+/// Starting a call on a phone, with its real microphone and speakers (not
+/// the test tone): the app stays up and the call connects.
+#[tokio::test]
+async fn phone_starts_a_call_with_the_real_microphone_without_crashing() {
+    if !enabled() {
+        eprintln!("MORPHEUS_E2E_ANDROID not set; skipping the Android test");
+        return;
+    }
+    let _ = adb_shell(&["logcat", "-b", "crash", "-c"]);
+    let mut app = App::launch_android_with_real_audio()
+        .await
+        .expect("launch on Android");
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    app.type_into("form.login input[name=username]", "alice")
+        .await
+        .expect("username");
+    app.type_into("form.login input[name=password]", "alice-password")
+        .await
+        .expect("password");
+    app.submit("form.login").await.expect("submit");
+    app.wait_for(".room", DEFAULT_WAIT)
+        .await
+        .expect("rooms listed");
+    app.open_room("random").await.expect("open #random");
+    app.click(".chat-header .call-button").await.expect("call");
+    // Give a crash time to happen: the microphone opens as the call connects.
+    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    let crashed = crash_log();
+    assert!(
+        !crashed.contains("dev.morpheus.mobile"),
+        "the app crashed starting a call:\n{crashed}"
+    );
+    app.click(".chat-header .pane-back")
+        .await
+        .expect("back to the list (the app is still up)");
+    app.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("in the call");
+    app.click(".voice-panel .hang-up").await.expect("hang up");
+    app.wait_for_js(
+        "return !document.querySelector('.voice-panel');",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("out of the call");
+    let crashed = crash_log();
+    assert!(
+        !crashed.contains("dev.morpheus.mobile"),
+        "the app crashed in or after the call:\n{crashed}"
+    );
+}
