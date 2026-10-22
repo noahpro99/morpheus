@@ -32,9 +32,12 @@ fn main() {
         android::init_webrtc();
         config.microphone = Some(std::sync::Arc::new(android::microphone));
         config.speakerphone = Some(std::sync::Arc::new(android::speakerphone));
-        // Test builds send a tone instead (no environment to say so here).
+        // Test builds send a tone instead (no environment to say so here),
+        // unless a test marked the app for the real microphone.
         #[cfg(feature = "e2e")]
-        morpheus_call::use_test_tone();
+        if !config.data_dir.join("real_audio").exists() {
+            morpheus_call::use_test_tone();
+        }
         // Push notifications through the phone's UnifiedPush app (see push.rs).
         let dir = config.data_dir.clone();
         config.on_session = Some(std::sync::Arc::new(move |session| {
@@ -187,8 +190,37 @@ mod android {
                 context
             }
         };
-        if !morpheus_call::initialize_android_context(&vm, &app) {
-            tracing::warn!("WebRTC could not take the app context; calls may have no audio");
+        // WebRTC finds the context through its `ContextUtils` class, but its
+        // own lookup (`FindClass` from this natively attached thread) only
+        // sees the system's classes, not the app's: it failed, the context
+        // stayed null, and the first call with the real microphone crashed
+        // in WebRtcAudioManager. So: the VM for WebRTC, then the class
+        // through the app's own class loader, and its initialize, from here.
+        morpheus_call::initialize_android(&vm);
+        let initialized = (|| -> jni::errors::Result<()> {
+            let loader = env
+                .call_method(&app, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])?
+                .l()?;
+            let name = env.new_string("livekit.org.webrtc.ContextUtils")?;
+            let class = env
+                .call_method(
+                    &loader,
+                    "loadClass",
+                    "(Ljava/lang/String;)Ljava/lang/Class;",
+                    &[JValue::Object(&name)],
+                )?
+                .l()?;
+            env.call_static_method(
+                jni::objects::JClass::from(class),
+                "initialize",
+                "(Landroid/content/Context;)V",
+                &[JValue::Object(&app)],
+            )?;
+            Ok(())
+        })();
+        if let Err(err) = initialized {
+            let _ = env.exception_clear();
+            tracing::warn!(%err, "WebRTC could not take the app context; calls cannot use the microphone");
         }
     }
 
