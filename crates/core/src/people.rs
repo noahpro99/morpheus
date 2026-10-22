@@ -188,7 +188,7 @@ impl Session {
             .run(async move { Ok(read_friends(&client).await) })
     }
 
-    /// Who someone typed means, as Discord's "Add Friend" takes it: a bare
+    /// Who someone typed means (New Message): a bare
     /// username is someone on this account's server; `name:server` or a full
     /// Matrix ID anyone. Errors when the server knows no such person.
     pub fn find_user(&self, typed: String) -> CoreFuture<OwnedUserId> {

@@ -228,7 +228,25 @@ impl Session {
         let client = self.client.clone();
         self.core.run(async move {
             if let Some(room) = client.get_dm_room(&user_id) {
-                return Ok(room.room_id().to_owned());
+                // From the server if need be: a device just signed in has not
+                // loaded the room's members yet.
+                let theirs = room
+                    .get_member(&user_id)
+                    .await
+                    .ok()
+                    .flatten()
+                    .map(|member| member.membership().clone());
+                match theirs {
+                    // They left: ask them back, as messaging them means to.
+                    Some(MembershipState::Leave) => {
+                        room.invite_user_by_id(&user_id).await?;
+                        return Ok(room.room_id().to_owned());
+                    }
+                    // Banned: a fresh conversation.
+                    Some(MembershipState::Ban) => {}
+                    // In it, invited, or not known yet (a DM just made).
+                    _ => return Ok(room.room_id().to_owned()),
+                }
             }
             let room = client.create_dm(&user_id).await?;
             Ok(room.room_id().to_owned())

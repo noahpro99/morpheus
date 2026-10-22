@@ -219,13 +219,13 @@ async fn opening_a_thread_timeline_shows_replies_and_posts_into_it() {
         .expect("thread root event id");
 
     // Open its thread: the seeded reply should be there.
-    let thread = session
+    // (Paging back: every run adds a reply, so the seeded one gets older.)
+    let mut thread = session
         .thread(general.clone(), root_event_id.clone())
         .await
         .expect("open thread");
-    let mut thread_updates = thread.updates;
     let mut thread_items = Vector::new();
-    drive(&mut thread_items, async || thread_updates.next().await, |items| {
+    drive_back(&mut thread_items, &mut thread, |items| {
         items.iter().any(|e| matches!(e, TimelineEntry::Message(m) if matches!(&m.kind, MessageKind::Text { body, .. } if body == SEEDED_THREAD_REPLY)))
     })
     .await;
@@ -237,7 +237,7 @@ async fn opening_a_thread_timeline_shows_replies_and_posts_into_it() {
         .send_text(body.clone())
         .await
         .expect("send into thread");
-    drive(&mut thread_items, async || thread_updates.next().await, |items| {
+    drive(&mut thread_items, async || thread.updates.next().await, |items| {
         items.iter().any(|e| {
             matches!(e, TimelineEntry::Message(m) if !m.is_local_echo && m.is_own && matches!(&m.kind, MessageKind::Text { body: t, .. } if *t == body))
         })
@@ -530,6 +530,13 @@ async fn fully_read_marker_sits_above_first_unread_and_clears_when_caught_up() {
         .expect("alice timeline");
     let mut alice_updates = alice_opened.updates;
     let mut alice_items = Vector::new();
+    // Caught up to here first: earlier runs leave #general full of
+    // messages she never read, and her marker far out of view.
+    alice_opened
+        .handle
+        .mark_as_fully_read()
+        .await
+        .expect("catch up first");
 
     let bob_opened = bob.timeline(general).await.expect("bob timeline");
     let body = format!("marker test {}", std::process::id());
@@ -2008,13 +2015,18 @@ async fn a_call_in_a_direct_message_rings_and_can_be_declined() {
         .expect("general")
         .id
         .clone();
-    let dm = rooms
-        .iter()
-        .find(|r| r.dm_user.as_ref() == Some(&bob_id))
-        .expect("dm with bob")
-        .id
-        .clone();
+    // The DM with bob, with bob in it (earlier runs may have left one he
+    // walked out of: messaging him asks him back).
+    let dm = alice.dm_with(bob_id.clone()).await.expect("dm with bob");
     let mut bob_rooms = bob.room_list().await.expect("bob room list");
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    while bob.join_room(dm.clone()).await.is_err() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "bob could not join the DM"
+        );
+        let _ = timeout(Duration::from_millis(300), bob_rooms.next()).await;
+    }
     let mut bob_rings = bob.ring_updates().await.expect("bob rings");
     let mut alice_rings = alice.ring_updates().await.expect("alice rings");
     // Let bob's sync get going.
@@ -2227,4 +2239,57 @@ async fn a_new_sign_in_never_takes_a_folder_that_holds_a_store() {
         !before.is_empty() && before.iter().all(|f| after.contains(f)),
         "store untouched: {before:?} -> {after:?}"
     );
+}
+
+/// Messaging someone who left the DM with you asks them back (an invite),
+/// instead of writing into a room no one else is in ("Empty Room").
+#[tokio::test]
+async fn messaging_someone_who_left_the_dm_invites_them_back() {
+    let Some(env) = env() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping live test");
+        return;
+    };
+    let carol = sign_in_at(&env, &fresh_data_dir(), "carol").await;
+    let alice = sign_in_at(&env, &fresh_data_dir(), "alice").await;
+    // Carol's side syncs while this runs.
+    let mut rooms = carol.room_list().await.expect("room list");
+    let syncing = tokio::spawn(async move { while rooms.next().await.is_some() {} });
+    let mut alice_rooms = alice.room_list().await.expect("room list");
+    let alice_syncing = tokio::spawn(async move { while alice_rooms.next().await.is_some() {} });
+    // Joins once the invite reaches alice's device (or fails: not invited).
+    let join = async |room: morpheus_core::OwnedRoomId| {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        loop {
+            match alice.join_room(room.clone()).await {
+                Ok(()) => return Ok(()),
+                Err(err) if std::time::Instant::now() > deadline => return Err(err),
+                Err(_) => tokio::time::sleep(std::time::Duration::from_millis(200)).await,
+            }
+        }
+    };
+    let alice_id: morpheus_core::OwnedUserId = "@alice:localhost".parse().expect("user id");
+
+    let dm = carol.dm_with(alice_id.clone()).await.expect("dm");
+    join(dm.clone()).await.expect("alice joins");
+    alice.leave_room(dm.clone()).await.expect("alice leaves");
+    // Carol hears she left.
+    timeout(WAIT, async {
+        while carol
+            .members(dm.clone())
+            .await
+            .is_ok_and(|members| members.iter().any(|m| m.user_id == alice_id))
+        {
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        }
+    })
+    .await
+    .expect("carol sees alice leave");
+
+    // Messaging her again: she is asked back, so she can join.
+    let again = carol.dm_with(alice_id.clone()).await.expect("dm again");
+    join(again)
+        .await
+        .expect("alice was invited back and can join");
+    syncing.abort();
+    alice_syncing.abort();
 }
