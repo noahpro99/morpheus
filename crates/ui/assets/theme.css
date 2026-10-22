@@ -1926,3 +1926,108 @@ form.new-message button:disabled { opacity: 0.5; cursor: default; }
 .incoming-call .accept-call { background: var(--green, #23a559); }
 .incoming-call .decline-call { background: var(--danger); }
 .incoming-call button:hover { filter: brightness(1.1); }
+
+/* ---- Phones: the call fills the screen; minimized, a bar above the message box ---- */
+.call-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  display: flex;
+  flex-direction: column;
+  padding: env(safe-area-inset-top, 0) 0 env(safe-area-inset-bottom, 0);
+  background: var(--bg-rail);
+  color: var(--text);
+}
+.call-screen-header { flex: none; display: flex; align-items: center; gap: 4px; padding: 8px 12px; }
+.call-minimize { width: 44px; height: 44px; padding: 0; display: grid; place-items: center; border-radius: 50%; }
+.call-screen-room {
+  all: unset;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  cursor: pointer;
+}
+.call-screen-title { font-weight: 700; font-size: 1.05rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.call-screen-state { font-size: 0.8rem; color: var(--text-muted); }
+.call-screen-state.connected { color: var(--green, #23a559); }
+.call-tiles {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
+  grid-auto-rows: minmax(140px, 1fr);
+  gap: 8px;
+  padding: 8px 12px;
+  overflow-y: auto;
+}
+.call-tiles .video-tile { height: auto; width: 100%; aspect-ratio: auto; }
+.call-tiles .video-tile.screen { grid-column: 1 / -1; }
+.call-tile {
+  position: relative;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+}
+.call-tile .avatar { border-radius: 50%; box-shadow: 0 0 0 3px transparent; transition: box-shadow 0.12s; }
+.call-tile.speaking { box-shadow: inset 0 0 0 2px var(--green, #23a559); }
+.call-tile.speaking .avatar { box-shadow: 0 0 0 3px var(--green, #23a559); }
+.call-tile .video-name {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  max-width: calc(100% - 16px);
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.call-controls {
+  flex: none;
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  padding: 16px 12px 24px;
+  background: var(--bg-sidebar);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+}
+.call-control {
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+.call-control.active { background: var(--text); color: var(--bg-rail); }
+.call-control.mute-button.active { background: var(--danger); color: #fff; }
+.call-control.hang-up { background: var(--danger); color: #fff; }
+.call-control:disabled { opacity: 0.4; }
+.call-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 12px 6px;
+  padding: 8px 12px;
+  border: none;
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+}
+.call-bar.connected { color: var(--green, #23a559); }
+.call-bar-room { flex: 1; min-width: 0; color: var(--text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.call-bar-state { white-space: nowrap; }
+/* A phone header has no room for the topic. */
+.shell.narrow .chat-header .topic { display: none; }
