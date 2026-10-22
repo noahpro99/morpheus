@@ -169,7 +169,7 @@ async fn invites_are_listed_declined_and_accepted() {
         .await
         .expect("no longer pending");
     bob.open_room(&name).await.expect("joined room opens");
-    bob.wait_for(".composer input", DEFAULT_WAIT)
+    bob.wait_for(".composer .composer-input", DEFAULT_WAIT)
         .await
         .expect("composer for the joined room");
 }

@@ -27,7 +27,7 @@ async fn login_and_open(app: &mut App, room: &str) {
     app.wait_for_text(".chat-header h2", room, DEFAULT_WAIT)
         .await
         .expect("room header");
-    app.wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
+    app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
         .await
         .expect("composer ready");
 }
@@ -86,9 +86,10 @@ async fn thread_panel_shows_replies_and_posts_a_new_one() {
     app.wait_for_text(".thread-panel-root .body", ROOT, DEFAULT_WAIT)
         .await
         .expect("root message shown in panel");
-    app.wait_for_text(
-        ".thread-panel .message .body",
-        "I think threads should ship first",
+    // Every run adds a reply, so the seeded first one is further up each time.
+    app.reveal(
+        "first seeded reply",
+        "return [...document.querySelectorAll('.thread-panel .message .body')].some(b => b.textContent.includes('I think threads should ship first'));",
         DEFAULT_WAIT,
     )
     .await
@@ -110,16 +111,16 @@ async fn thread_panel_shows_replies_and_posts_a_new_one() {
 
     // Post a reply from the thread's own composer.
     app.wait_for(
-        ".thread-panel .composer input:not([disabled])",
+        ".thread-panel .composer .composer-input:not([disabled])",
         DEFAULT_WAIT,
     )
     .await
     .expect("thread composer ready");
     let reply = format!("thread reply from e2e {}", std::process::id());
-    app.type_into(".thread-panel .composer input", &reply)
+    app.type_into(".thread-panel .composer .composer-input", &reply)
         .await
         .expect("type reply");
-    app.press(".thread-panel .composer input", "Enter")
+    app.press(".thread-panel .composer .composer-input", "Enter")
         .await
         .expect("send reply");
     app.wait_for_text(

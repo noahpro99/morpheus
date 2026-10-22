@@ -158,7 +158,7 @@ async fn new_message_by_username_opens_a_dm() {
     )
     .await
     .unwrap_or_else(|e| panic!("the DM with alice opens: {e}"));
-    app.wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
+    app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
         .await
         .expect("ready to type");
 }

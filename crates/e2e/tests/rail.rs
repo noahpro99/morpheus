@@ -192,7 +192,7 @@ async fn servers_drag_into_folders_and_reorder() {
     // Ungroup, then clean up both servers. Wait for the room to settle first:
     // the shell closes menus whenever the open room changes, and right after
     // a relaunch the list is still re-picking.
-    app.wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
+    app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
         .await
         .expect("room settled");
     app.right_click(&badge).await.expect("folder menu");

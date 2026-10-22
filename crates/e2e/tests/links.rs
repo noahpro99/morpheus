@@ -12,8 +12,12 @@ fn homeserver() -> Option<String> {
 }
 
 async fn send(app: &mut App, text: &str) {
-    app.type_into(".composer input", text).await.expect("type");
-    app.press(".composer input", "Enter").await.expect("send");
+    app.type_into(".composer .composer-input", text)
+        .await
+        .expect("type");
+    app.press(".composer .composer-input", "Enter")
+        .await
+        .expect("send");
 }
 
 #[tokio::test]
@@ -37,7 +41,7 @@ async fn links_are_detected_and_open_outside_the_app() {
         .await
         .expect("rooms listed");
     app.open_room("random").await.expect("open random");
-    app.wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
+    app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
         .await
         .expect("composer ready");
 
@@ -66,7 +70,7 @@ async fn links_are_detected_and_open_outside_the_app() {
         .expect("the link was handed to the browser");
     let after = app.eval("return location.href;").await.expect("page url");
     assert_eq!(page, after, "clicking a link must not navigate the app");
-    app.wait_for(".composer input", DEFAULT_WAIT)
+    app.wait_for(".composer .composer-input", DEFAULT_WAIT)
         .await
         .expect("the app is still there");
 }

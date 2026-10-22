@@ -104,16 +104,18 @@ async fn room_menu_marks_read_and_sets_notification_mode() {
     let mut bob = App::launch(&hs).await.expect("launch bob");
     login(&mut bob, "bob").await;
     bob.open_room("random").await.expect("bob opens random");
-    bob.wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
+    bob.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
         .await
         .expect("composer");
     bob.type_into(
-        ".composer input",
+        ".composer .composer-input",
         &format!("unread ping {}", std::process::id()),
     )
     .await
     .expect("type");
-    bob.press(".composer input", "Enter").await.expect("send");
+    bob.press(".composer .composer-input", "Enter")
+        .await
+        .expect("send");
 
     alice
         .wait_for_js(

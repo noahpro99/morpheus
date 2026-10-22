@@ -30,7 +30,7 @@ async fn login_and_open(app: &mut App, user: &str, room: &str) {
         .await
         .expect("room listed");
     app.open_room(room).await.expect("open room");
-    app.wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
+    app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
         .await
         .expect("composer ready");
 }

@@ -31,7 +31,7 @@ async fn login_and_open(app: &mut App, user: &str, room: &str) {
         let _ = app.screenshot("open-room-failed").await;
         panic!("open room: {err}\nrows: {rows:?}");
     }
-    app.wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
+    app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
         .await
         .expect("composer");
 }

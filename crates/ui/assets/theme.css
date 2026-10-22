@@ -334,15 +334,21 @@ h1, h2, h3, p { margin: 0; }
 
 .composer { padding: 0 16px 20px; }
 .composer-row { display: flex; align-items: center; gap: 8px; }
-.composer input {
+.composer .composer-input {
   flex: 1;
   padding: 12px 16px;
+  resize: none;
+  font: inherit;
+  color: inherit;
+  line-height: 1.4;
+  max-height: 40vh;
+  overflow-y: auto;
   border: 0;
   border-radius: var(--radius);
   background: var(--bg-elevated);
   outline: none;
 }
-.composer input::placeholder { color: var(--text-faint); }
+.composer .composer-input::placeholder { color: var(--text-faint); }
 .attach-button {
   flex: none;
   width: 44px;
@@ -1344,7 +1350,7 @@ button.sender:hover { text-decoration: underline; }
   background: var(--bg-elevated);
   gap: 6px;
 }
-.composer input { padding: 10px 8px 10px 4px; background: transparent; border-radius: 0; }
+.composer .composer-input { padding: 10px 8px 10px 4px; background: transparent; border-radius: 0; align-self: center; }
 .attach-button {
   width: 36px;
   height: 36px;
@@ -1483,7 +1489,7 @@ button.sender:hover { text-decoration: underline; }
 .user-pill .profile-chip .avatar { width: 34px; height: 34px; }
 .attach-button { background: transparent; }
 .attach-button:hover { background: var(--bg-hover); }
-.composer input { padding: 12px 8px 12px 4px; font-size: 1rem; }
+.composer .composer-input { padding: 12px 8px 12px 4px; font-size: 1rem; }
 
 /* Clickable avatars: lift on hover, press down on mouse down. */
 .avatar-button, .member .avatar, .profile-chip .avatar { transition: transform 90ms ease, box-shadow 120ms ease; }
@@ -1551,6 +1557,9 @@ body.dropping .drop-hint { display: flex; }
 .emoji-panel button:hover { background: var(--bg-hover); }
 .emoji-button { width: 36px; height: 36px; border-radius: var(--radius-sm); display: grid; place-items: center; background: none; color: var(--text-muted); flex: none; }
 .emoji-button:hover, .emoji-button.active { color: var(--text); background: var(--bg-hover); }
+.send-button { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--bg-hover); color: var(--text-muted); }
+.send-button.ready { background: var(--accent); color: #fff; }
+.composer-row:has(.composer-input[rows]:not([rows="1"])) { align-items: flex-end; padding-bottom: 7px; }
 
 /* ---- toasts ---- */
 .toast-layer { position: fixed; right: 16px; bottom: calc(var(--bottom-h) + 24px); display: flex; flex-direction: column; gap: 8px; z-index: 60; max-width: 360px; }

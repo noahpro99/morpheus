@@ -140,12 +140,16 @@ async fn inbox_lists_unread_rooms_and_opens_them() {
     let mut bob = App::launch_desktop(&hs).await.expect("launch bob");
     login(&mut bob, "bob").await;
     bob.open_room("random").await.expect("bob in random");
-    bob.wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
+    bob.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
         .await
         .expect("composer");
     let ping = format!("inbox ping {}", std::process::id());
-    bob.type_into(".composer input", &ping).await.expect("type");
-    bob.press(".composer input", "Enter").await.expect("send");
+    bob.type_into(".composer .composer-input", &ping)
+        .await
+        .expect("type");
+    bob.press(".composer .composer-input", "Enter")
+        .await
+        .expect("send");
 
     alice
         .wait_for(".inbox-badge", DEFAULT_WAIT)

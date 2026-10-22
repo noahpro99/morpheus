@@ -32,7 +32,7 @@ async fn login_and_open(app: &mut App, user: &str, room: &str) {
         .await
         .expect("room listed");
     app.open_room(room).await.expect("open room");
-    app.wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
+    app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
         .await
         .expect("composer ready");
 }
@@ -173,7 +173,7 @@ async fn member_menu_mentions_messages_and_blocks() {
         .await
         .expect("mention");
     app.wait_for_js(
-        "return document.querySelector('.composer input').value.includes('@bob');",
+        "return document.querySelector('.composer .composer-input').value.includes('@bob');",
         DEFAULT_WAIT,
     )
     .await

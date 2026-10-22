@@ -29,7 +29,7 @@ async fn login_and_open(app: &mut App, user: &str, room: &str) {
         .await
         .expect("room listed");
     app.open_room(room).await.expect("open room");
-    app.wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
+    app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
         .await
         .expect("composer ready");
 }
@@ -37,8 +37,12 @@ async fn login_and_open(app: &mut App, user: &str, room: &str) {
 /// Send a message and return a JS expression selecting its row.
 async fn send_fresh(app: &mut App, tag: &str) -> String {
     let text = format!("{tag} {}", std::process::id());
-    app.type_into(".composer input", &text).await.expect("type");
-    app.press(".composer input", "Enter").await.expect("send");
+    app.type_into(".composer .composer-input", &text)
+        .await
+        .expect("type");
+    app.press(".composer .composer-input", "Enter")
+        .await
+        .expect("send");
     app.wait_for_exact_text(".message.own:not(.pending) .body", &text, DEFAULT_WAIT)
         .await
         .expect("message sent");

@@ -31,14 +31,18 @@ async fn a_forbidden_pin_shows_a_toast_that_dismisses_on_click() {
         .await
         .expect("rooms listed");
     app.open_room("general").await.expect("open general");
-    app.wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
+    app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
         .await
         .expect("composer ready");
 
     // Pin a message of bob's own, once it has an event id.
     let text = format!("toast {}", std::process::id());
-    app.type_into(".composer input", &text).await.expect("type");
-    app.press(".composer input", "Enter").await.expect("send");
+    app.type_into(".composer .composer-input", &text)
+        .await
+        .expect("type");
+    app.press(".composer .composer-input", "Enter")
+        .await
+        .expect("send");
     app.wait_for_exact_text(".message.own:not(.pending) .body", &text, DEFAULT_WAIT)
         .await
         .expect("message sent");

@@ -27,7 +27,7 @@ async fn login_and_open(app: &mut App, room: &str) {
     app.wait_for_text(".chat-header h2", room, DEFAULT_WAIT)
         .await
         .expect("room header");
-    app.wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
+    app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
         .await
         .expect("composer ready");
 }
@@ -123,8 +123,12 @@ async fn media_rich_text_reactions_and_members() {
 
     // Markdown is rendered on send.
     let body = format!("**bold** from e2e {}", std::process::id());
-    app.type_into(".composer input", &body).await.expect("type");
-    app.press(".composer input", "Enter").await.expect("enter");
+    app.type_into(".composer .composer-input", &body)
+        .await
+        .expect("type");
+    app.press(".composer .composer-input", "Enter")
+        .await
+        .expect("enter");
     app.wait_for_text(".message:not(.pending) .rich strong", "bold", DEFAULT_WAIT)
         .await
         .expect("markdown rendered");

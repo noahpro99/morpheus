@@ -28,14 +28,18 @@ async fn search_finds_a_message_and_jumps_to_it() {
     app.submit("form.login").await.expect("submit");
     app.wait_for(".room", DEFAULT_WAIT).await.expect("rooms");
     app.open_room("random").await.expect("open random");
-    app.wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
+    app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
         .await
         .expect("composer");
 
     let word = format!("okapi{}", std::process::id());
     let text = format!("an {word} in the forest");
-    app.type_into(".composer input", &text).await.expect("type");
-    app.press(".composer input", "Enter").await.expect("send");
+    app.type_into(".composer .composer-input", &text)
+        .await
+        .expect("type");
+    app.press(".composer .composer-input", "Enter")
+        .await
+        .expect("send");
     app.wait_for_exact_text(".message.own:not(.pending) .body", &text, DEFAULT_WAIT)
         .await
         .expect("sent");

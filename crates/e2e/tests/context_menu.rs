@@ -27,7 +27,7 @@ async fn login_and_open(app: &mut App, room: &str) {
         .await
         .expect("room listed");
     app.open_room(room).await.expect("open room");
-    app.wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
+    app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
         .await
         .expect("composer ready");
 }
@@ -52,8 +52,12 @@ async fn message_menu_replies_reacts_and_offers_edit_delete() {
 
     // A fresh own message so edit/delete apply and no reaction exists yet.
     let text = format!("context menu test {}", std::process::id());
-    app.type_into(".composer input", &text).await.expect("type");
-    app.press(".composer input", "Enter").await.expect("send");
+    app.type_into(".composer .composer-input", &text)
+        .await
+        .expect("type");
+    app.press(".composer .composer-input", "Enter")
+        .await
+        .expect("send");
     app.wait_for_exact_text(".message.own:not(.pending) .body", &text, DEFAULT_WAIT)
         .await
         .expect("message sent");

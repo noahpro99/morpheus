@@ -51,15 +51,18 @@ async fn closing_the_window_keeps_syncing_and_announcing() {
     login(&mut alice, "alice").await;
     alice.open_room("general").await.expect("alice in #general");
     alice
-        .wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
+        .wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
         .await
         .expect("composer ready");
     let text = format!("tray ping {}", std::process::id());
     alice
-        .type_into(".composer input", &text)
+        .type_into(".composer .composer-input", &text)
         .await
         .expect("type");
-    alice.press(".composer input", "Enter").await.expect("send");
+    alice
+        .press(".composer .composer-input", "Enter")
+        .await
+        .expect("send");
     alice
         .wait_for_exact_text(".message.own:not(.pending) .body", &text, DEFAULT_WAIT)
         .await
@@ -71,7 +74,7 @@ async fn closing_the_window_keeps_syncing_and_announcing() {
     bob.wait_for_text(".notification-log li", &text, DEFAULT_WAIT)
         .await
         .expect("announced while hidden");
-    bob.wait_for(".composer input", DEFAULT_WAIT)
+    bob.wait_for(".composer .composer-input", DEFAULT_WAIT)
         .await
         .expect("still usable");
 }

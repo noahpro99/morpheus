@@ -30,8 +30,12 @@ async fn login(app: &mut App, user: &str) {
 }
 
 async fn send(app: &mut App, text: &str) {
-    app.type_into(".composer input", text).await.expect("type");
-    app.press(".composer input", "Enter").await.expect("send");
+    app.type_into(".composer .composer-input", text)
+        .await
+        .expect("type");
+    app.press(".composer .composer-input", "Enter")
+        .await
+        .expect("send");
     app.wait_for_exact_text(".message.own:not(.pending) .body", text, DEFAULT_WAIT)
         .await
         .expect("message sent");
@@ -51,7 +55,7 @@ async fn messages_from_others_are_announced_and_mentions_flagged() {
     login(&mut alice, "alice").await;
     alice.open_room("general").await.expect("alice in #general");
     alice
-        .wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
+        .wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
         .await
         .expect("composer ready");
 

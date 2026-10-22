@@ -24,7 +24,7 @@ async fn login_and_open(app: &mut App, room: &str) {
         .await
         .expect("rooms listed");
     app.open_room(room).await.expect("open room");
-    app.wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
+    app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
         .await
         .expect("composer ready");
 }
@@ -39,15 +39,17 @@ async fn emoji_and_mention_autocomplete_and_emoji_panel() {
     login_and_open(&mut app, "general").await;
 
     // :fir → 🔥 fire, Enter inserts the emoji in place of the code.
-    app.type_into(".composer input", "hot :fir")
+    app.type_into(".composer .composer-input", "hot :fir")
         .await
         .expect("type code");
     app.wait_for_text(".autocomplete-item", "fire", DEFAULT_WAIT)
         .await
         .expect("emoji suggested");
-    app.press(".composer input", "Enter").await.expect("accept");
+    app.press(".composer .composer-input", "Enter")
+        .await
+        .expect("accept");
     app.wait_for_js(
-        "return document.querySelector('.composer input').value === 'hot 🔥 '",
+        "return document.querySelector('.composer .composer-input').value === 'hot 🔥 '",
         DEFAULT_WAIT,
     )
     .await
@@ -59,30 +61,30 @@ async fn emoji_and_mention_autocomplete_and_emoji_panel() {
     );
 
     // @bo → bob from the member list; Down then Enter picks the second row if any, Tab accepts.
-    app.type_into(".composer input", "hey @bo")
+    app.type_into(".composer .composer-input", "hey @bo")
         .await
         .expect("type mention");
     app.wait_for_text(".autocomplete-item", "bob", DEFAULT_WAIT)
         .await
         .expect("member suggested");
-    app.press(".composer input", "Tab")
+    app.press(".composer .composer-input", "Tab")
         .await
         .expect("accept with tab");
     app.wait_for_js(
-        "return document.querySelector('.composer input').value === 'hey @bob '",
+        "return document.querySelector('.composer .composer-input').value === 'hey @bob '",
         DEFAULT_WAIT,
     )
     .await
     .expect("mention inserted");
 
     // Escape closes suggestions without inserting.
-    app.type_into(".composer input", ":hea")
+    app.type_into(".composer .composer-input", ":hea")
         .await
         .expect("type code");
     app.wait_for(".autocomplete-item", DEFAULT_WAIT)
         .await
         .expect("suggested");
-    app.press(".composer input", "Escape")
+    app.press(".composer .composer-input", "Escape")
         .await
         .expect("escape");
     app.wait_for_js(
@@ -92,14 +94,16 @@ async fn emoji_and_mention_autocomplete_and_emoji_panel() {
     .await
     .expect("closed");
     app.wait_for_js(
-        "return document.querySelector('.composer input').value === ':hea'",
+        "return document.querySelector('.composer .composer-input').value === ':hea'",
         DEFAULT_WAIT,
     )
     .await
     .expect("draft kept");
 
     // The emoji panel inserts at the end and closes.
-    app.type_into(".composer input", "").await.expect("clear");
+    app.type_into(".composer .composer-input", "")
+        .await
+        .expect("clear");
     app.click(".emoji-button").await.expect("open panel");
     app.wait_for(".emoji-panel", DEFAULT_WAIT)
         .await
@@ -108,7 +112,7 @@ async fn emoji_and_mention_autocomplete_and_emoji_panel() {
         .await
         .expect("pick rocket");
     app.wait_for_js(
-        "return document.querySelector('.composer input').value === '🚀 '",
+        "return document.querySelector('.composer .composer-input').value === '🚀 '",
         DEFAULT_WAIT,
     )
     .await

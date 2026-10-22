@@ -27,7 +27,7 @@ async fn login(app: &mut App, user: &str) {
         .await
         .expect("rooms");
     app.open_room("encrypted").await.expect("open #encrypted");
-    app.wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
+    app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
         .await
         .expect("composer");
 }
@@ -46,10 +46,13 @@ async fn unverified_sessions_get_a_shield() {
 
     let text = format!("from a new session {}", std::process::id());
     alice
-        .type_into(".composer input", &text)
+        .type_into(".composer .composer-input", &text)
         .await
         .expect("type");
-    alice.press(".composer input", "Enter").await.expect("send");
+    alice
+        .press(".composer .composer-input", "Enter")
+        .await
+        .expect("send");
 
     let message = format!(
         "[...document.querySelectorAll('.message')].find(m => m.textContent.includes({}))",

@@ -185,7 +185,8 @@ async fn composer_is_focused_after_navigating() {
     };
     let mut app = App::launch_desktop(&hs).await.expect("launch app");
     login_and_open(&mut app, "general").await;
-    let focused = "return document.activeElement === document.querySelector('.composer input');";
+    let focused =
+        "return document.activeElement === document.querySelector('.composer .composer-input');";
     app.wait_for_js(focused, DEFAULT_WAIT)
         .await
         .expect("composer focused after opening general");

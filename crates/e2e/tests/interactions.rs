@@ -28,7 +28,7 @@ async fn login_and_open(app: &mut App, user: &str, password: &str, room: &str) {
     app.wait_for_text(".chat-header h2", room, DEFAULT_WAIT)
         .await
         .expect("room header");
-    app.wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
+    app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
         .await
         .expect("composer ready");
 }
@@ -94,10 +94,10 @@ async fn reply_edit_and_delete_own_messages() {
     )
     .await;
     let reply = format!("reply from e2e {pid}");
-    app.type_into(".composer input", &reply)
+    app.type_into(".composer .composer-input", &reply)
         .await
         .expect("type reply");
-    app.press(".composer input", "Enter")
+    app.press(".composer .composer-input", "Enter")
         .await
         .expect("send reply");
     app.wait_for_js(
@@ -118,10 +118,12 @@ async fn reply_edit_and_delete_own_messages() {
 
     // Edit: the composer pre-fills with the original, Enter saves, the row shows (edited).
     let original = format!("draft from e2e {pid}");
-    app.type_into(".composer input", &original)
+    app.type_into(".composer .composer-input", &original)
         .await
         .expect("type");
-    app.press(".composer input", "Enter").await.expect("send");
+    app.press(".composer .composer-input", "Enter")
+        .await
+        .expect("send");
     app.wait_for_text(".message:not(.pending) .body", &original, DEFAULT_WAIT)
         .await
         .expect("sent");
@@ -130,14 +132,14 @@ async fn reply_edit_and_delete_own_messages() {
         .await
         .expect("edit banner");
     assert_eq!(
-        app.value(".composer input").await.expect("value"),
+        app.value(".composer .composer-input").await.expect("value"),
         Some(original.clone())
     );
     let edited = format!("edited from e2e {pid}");
-    app.type_into(".composer input", &edited)
+    app.type_into(".composer .composer-input", &edited)
         .await
         .expect("type edit");
-    app.press(".composer input", "Enter")
+    app.press(".composer .composer-input", "Enter")
         .await
         .expect("save edit");
     app.wait_for_js(
@@ -189,7 +191,7 @@ async fn typing_indicator_shows_the_other_user() {
     let mut bob = App::launch(&hs).await.expect("launch bob");
     login_and_open(&mut bob, "bob", "bob-password", "general").await;
 
-    bob.type_into(".composer input", "typing something")
+    bob.type_into(".composer .composer-input", "typing something")
         .await
         .expect("bob types");
     alice
@@ -203,7 +205,7 @@ async fn typing_indicator_shows_the_other_user() {
     );
 
     // Sending clears the notice.
-    bob.press(".composer input", "Enter")
+    bob.press(".composer .composer-input", "Enter")
         .await
         .expect("bob sends");
     alice
@@ -224,7 +226,7 @@ async fn ctrl_k_switches_rooms() {
     let mut app = App::launch(&hs).await.expect("launch app");
     login_and_open(&mut app, "alice", "alice-password", "general").await;
 
-    app.shortcut(".composer input", "k", true)
+    app.shortcut(".composer .composer-input", "k", true)
         .await
         .expect("ctrl+k");
     app.wait_for(".switcher input", DEFAULT_WAIT)
@@ -255,7 +257,7 @@ async fn ctrl_k_switches_rooms() {
         .await
         .expect("dev still open");
 
-    app.shortcut(".composer input", "k", true)
+    app.shortcut(".composer .composer-input", "k", true)
         .await
         .expect("ctrl+k again");
     app.wait_for(".switcher input", DEFAULT_WAIT)

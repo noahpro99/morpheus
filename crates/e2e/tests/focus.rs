@@ -26,13 +26,13 @@ async fn login_and_open(app: &mut App, room: &str) {
         .await
         .expect("rooms listed");
     app.open_room(room).await.expect("open room");
-    app.wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
+    app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
         .await
         .expect("composer ready");
 }
 
 const COMPOSER_FOCUSED: &str =
-    "return document.activeElement === document.querySelector('.composer input')";
+    "return document.activeElement === document.querySelector('.composer .composer-input')";
 
 #[tokio::test]
 async fn typing_and_editing_focus_the_message_box() {
@@ -58,8 +58,12 @@ async fn typing_and_editing_focus_the_message_box() {
 
     // Editing a message of your own focuses the box with the text in it.
     let text = format!("focus {}", std::process::id());
-    app.type_into(".composer input", &text).await.expect("type");
-    app.press(".composer input", "Enter").await.expect("send");
+    app.type_into(".composer .composer-input", &text)
+        .await
+        .expect("type");
+    app.press(".composer .composer-input", "Enter")
+        .await
+        .expect("send");
     app.wait_for_exact_text(".message.own:not(.pending) .body", &text, DEFAULT_WAIT)
         .await
         .expect("sent");
@@ -83,14 +87,14 @@ async fn typing_and_editing_focus_the_message_box() {
         .expect("composer focused for the edit");
     app.wait_for_js(
         &format!(
-            "return document.querySelector('.composer input').value === {}",
+            "return document.querySelector('.composer .composer-input').value === {}",
             serde_json::to_string(&text).expect("json")
         ),
         DEFAULT_WAIT,
     )
     .await
     .expect("draft prefilled");
-    app.press(".composer input", "Escape")
+    app.press(".composer .composer-input", "Escape")
         .await
         .expect("cancel edit");
 }

@@ -26,7 +26,7 @@ async fn login_and_open(app: &mut App, user: &str, room: &str) {
     app.submit("form.login").await.expect("submit");
     app.wait_for(".room", DEFAULT_WAIT).await.expect("rooms");
     app.open_room(room).await.expect("open room");
-    app.wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
+    app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
         .await
         .expect("composer");
 }
@@ -69,8 +69,12 @@ async fn nicknames_replace_display_names_and_follow_you() {
     let mut bob = App::launch(&hs).await.expect("launch bob");
     login_and_open(&mut bob, "bob", "general").await;
     let text = format!("call me something {}", std::process::id());
-    bob.type_into(".composer input", &text).await.expect("type");
-    bob.press(".composer input", "Enter").await.expect("send");
+    bob.type_into(".composer .composer-input", &text)
+        .await
+        .expect("type");
+    bob.press(".composer .composer-input", "Enter")
+        .await
+        .expect("send");
 
     let mut alice = App::launch(&hs).await.expect("launch alice");
     login_and_open(&mut alice, "alice", "general").await;

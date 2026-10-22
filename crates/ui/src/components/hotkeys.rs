@@ -54,7 +54,7 @@ window.addEventListener('keydown', e => {
   else if (k === 'ArrowUp' && !mod && !alt && !shift && typing && t.value === '' && t.closest('.composer')) name = 'edit_last';
   // Typing with nothing focused goes to the message box, as in Discord.
   if (!name && !typing && !mod && !alt && k.length === 1 && !document.querySelector('.overlay, .context-menu, .card-overlay')) {
-    const box = document.querySelector('.composer input:not([disabled])');
+    const box = document.querySelector('.composer .composer-input:not([disabled])');
     if (box) { box.focus(); }
     return;
   }
@@ -206,13 +206,26 @@ window.addEventListener('paste', e => {
     // An edit, reply or suggestion list in the message box goes first, even
     // when the box lost focus (it does when the phone's keyboard hides).
     const busyBox = [...document.querySelectorAll('.composer')].find(c => c.querySelector('.composer-banner, .autocomplete, .emoji-panel'));
-    const el = (busyBox && busyBox.querySelector('input'))
+    const el = (busyBox && busyBox.querySelector('.composer-input'))
       || (document.activeElement && document.activeElement !== document.body ? document.activeElement : document.body);
     el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
     schedule();
   });
   new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-pane'] });
   schedule();
+})();
+// Phones: leaving a chat (back to the room list) puts the keyboard away,
+// which a focused box would otherwise keep up over the list.
+(() => {
+  let pane = null;
+  new MutationObserver(() => {
+    const shell = document.querySelector('.shell.narrow');
+    const now = shell ? shell.dataset.pane : null;
+    if (now === pane) return;
+    pane = now;
+    const el = document.activeElement;
+    if (now === 'rooms' && el && el.matches('input, textarea') && el.closest('.chat, .side-pane')) el.blur();
+  }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-pane'] });
 })();
 // Touch screens cannot hover, but browsers apply :hover to whatever was last
 // tapped and leave it there. Where the device cannot hover, drop the :hover

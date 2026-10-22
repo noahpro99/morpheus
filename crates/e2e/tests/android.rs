@@ -169,12 +169,16 @@ async fn phone_signs_in_navigates_and_sends() {
         .await
         .expect("open general");
     pane(&mut app, "chat").await;
-    app.wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
+    app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
         .await
         .expect("composer ready");
     let text = format!("from the phone {}", std::process::id());
-    app.type_into(".composer input", &text).await.expect("type");
-    app.press(".composer input", "Enter").await.expect("send");
+    app.type_into(".composer .composer-input", &text)
+        .await
+        .expect("type");
+    app.press(".composer .composer-input", "Enter")
+        .await
+        .expect("send");
     app.wait_for_exact_text(".message.own:not(.pending) .body", &text, DEFAULT_WAIT)
         .await
         .expect("sent and echoed");
@@ -467,7 +471,7 @@ async fn phone_back_key_closes_and_steps_back() {
         .await
         .expect("open general");
     pane(&mut app, "chat").await;
-    app.wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
+    app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
         .await
         .expect("composer ready");
     // Opening a room does not raise the keyboard over it (Discord does not).
@@ -494,12 +498,16 @@ async fn phone_back_key_closes_and_steps_back() {
 
     // Back cancels an edit before it leaves the room.
     let text = format!("back key {}", std::process::id());
-    app.type_into(".composer input", &text).await.expect("type");
-    app.press(".composer input", "Enter").await.expect("send");
+    app.type_into(".composer .composer-input", &text)
+        .await
+        .expect("type");
+    app.press(".composer .composer-input", "Enter")
+        .await
+        .expect("send");
     app.wait_for_exact_text(".message.own:not(.pending) .body", &text, DEFAULT_WAIT)
         .await
         .expect("sent");
-    app.press(".composer input", "ArrowUp")
+    app.press(".composer .composer-input", "ArrowUp")
         .await
         .expect("edit last");
     app.wait_for(".composer-banner", DEFAULT_WAIT)
@@ -632,12 +640,16 @@ async fn phone_gets_push_notifications_in_the_background() {
         .await
         .expect("bob rooms");
     bob.open_room("general").await.expect("bob in general");
-    bob.wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
+    bob.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
         .await
         .expect("composer");
     let text = format!("push ping {}", std::process::id());
-    bob.type_into(".composer input", &text).await.expect("type");
-    bob.press(".composer input", "Enter").await.expect("send");
+    bob.type_into(".composer .composer-input", &text)
+        .await
+        .expect("type");
+    bob.press(".composer .composer-input", "Enter")
+        .await
+        .expect("send");
     let sent = std::time::Instant::now();
 
     // Delivery goes homeserver → gateway → Mozilla → Sunup; usually seconds,
@@ -735,10 +747,12 @@ async fn phone_gets_push_notifications_in_the_background() {
         "the app should not be running"
     );
     let cold_text = format!("while you were away {}", std::process::id());
-    bob.type_into(".composer input", &cold_text)
+    bob.type_into(".composer .composer-input", &cold_text)
         .await
         .expect("type");
-    bob.press(".composer input", "Enter").await.expect("send");
+    bob.press(".composer .composer-input", "Enter")
+        .await
+        .expect("send");
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(90);
     loop {
         let shown = adb_shell(&["dumpsys", "notification", "--noredact"]);
@@ -813,7 +827,7 @@ async fn phone_attach_button_picks_and_uploads_a_file() {
         .expect("random listed");
     app.tap_text(".room", "random").await.expect("open random");
     pane(&mut app, "chat").await;
-    app.wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
+    app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
         .await
         .expect("composer ready");
 
@@ -884,7 +898,7 @@ async fn phone_keyboard_keeps_the_message_box_visible() {
         .await
         .expect("open general");
     pane(&mut app, "chat").await;
-    app.wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
+    app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
         .await
         .expect("composer ready");
     let before = app
@@ -894,7 +908,7 @@ async fn phone_keyboard_keeps_the_message_box_visible() {
         .as_f64()
         .expect("number");
 
-    app.tap(".composer input")
+    app.tap(".composer .composer-input")
         .await
         .expect("tap the message box");
     let deadline = std::time::Instant::now() + DEFAULT_WAIT;
@@ -905,7 +919,7 @@ async fn phone_keyboard_keeps_the_message_box_visible() {
     let state = app
         .eval(
             "const vv = window.visualViewport; const visible = vv ? vv.height + vv.offsetTop : innerHeight; \
-             const box = document.querySelector('.composer input').getBoundingClientRect(); \
+             const box = document.querySelector('.composer .composer-input').getBoundingClientRect(); \
              const last = [...document.querySelectorAll('.message')].pop()?.getBoundingClientRect(); \
              return [innerHeight, visible, box.bottom, last ? last.bottom : 0];",
         )
@@ -1046,6 +1060,15 @@ async fn phone_starts_a_call_with_the_real_microphone_without_crashing() {
     app.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
         .await
         .expect("in the call");
+    shot(&mut app, "android-call-list").await;
+    app.tap_text(".room", "random")
+        .await
+        .expect("back into the room");
+    pane(&mut app, "chat").await;
+    shot(&mut app, "android-call-room").await;
+    app.click(".chat-header .pane-back")
+        .await
+        .expect("back to the list");
     app.click(".voice-panel .hang-up").await.expect("hang up");
     app.wait_for_js(
         "return !document.querySelector('.voice-panel');",
@@ -1058,4 +1081,182 @@ async fn phone_starts_a_call_with_the_real_microphone_without_crashing() {
         !crashed.contains("dev.morpheus.mobile"),
         "the app crashed in or after the call:\n{crashed}"
     );
+}
+
+/// The phone's message box: the keyboard's Enter starts a new line, the send
+/// button beside the emoji button sends, and going back to the list puts
+/// the keyboard away.
+#[tokio::test]
+async fn phone_enter_is_a_new_line_the_send_button_sends_and_back_hides_the_keyboard() {
+    if !enabled() {
+        eprintln!("MORPHEUS_E2E_ANDROID not set; skipping the Android test");
+        return;
+    }
+    let mut app = App::launch_android().await.expect("launch on Android");
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    app.type_into("form.login input[name=username]", "alice")
+        .await
+        .expect("username");
+    app.type_into("form.login input[name=password]", "alice-password")
+        .await
+        .expect("password");
+    app.submit("form.login").await.expect("submit");
+    app.wait_for_text(".room", "general", DEFAULT_WAIT)
+        .await
+        .expect("general listed");
+    app.tap_text(".room", "general")
+        .await
+        .expect("open general");
+    pane(&mut app, "chat").await;
+    app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
+        .await
+        .expect("composer ready");
+    // The send button sits right after the emoji button.
+    let order = app
+        .eval("return [...document.querySelector('.composer-row').children].map(e => e.className.split(' ')[0]);")
+        .await
+        .expect("order");
+    let order: Vec<String> = serde_json::from_value(order).expect("names");
+    let emoji = order
+        .iter()
+        .position(|c| c == "emoji-button")
+        .expect("emoji button");
+    assert_eq!(
+        order.get(emoji + 1).map(String::as_str),
+        Some("send-button"),
+        "{order:?}"
+    );
+
+    app.tap(".composer .composer-input")
+        .await
+        .expect("tap the box");
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    while !keyboard_shown() {
+        assert!(std::time::Instant::now() < deadline, "no keyboard");
+    }
+    // Typed on the keyboard, with its Enter between the lines.
+    let run = std::process::id();
+    let _ = adb_shell(&["input", "text", &format!("first{run}")]);
+    let _ = adb_shell(&["input", "keyevent", "KEYCODE_ENTER"]);
+    let _ = adb_shell(&["input", "text", "second"]);
+    app.wait_for_js(
+        &format!("return document.querySelector('.composer .composer-input').value === 'first{run}\\nsecond';"),
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("Enter made a new line, and nothing was sent");
+    app.tap(".composer .send-button").await.expect("send");
+    app.wait_for_js(
+        &format!(
+            "return [...document.querySelectorAll('.message .body')].some(b => b.textContent.includes('first{run}') && b.textContent.includes('second'));"
+        ),
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("both lines sent as one message");
+    assert!(keyboard_shown(), "sending keeps the keyboard up");
+
+    // Back to the list: the keyboard goes.
+    app.tap(".chat-header .pane-back").await.expect("back");
+    pane(&mut app, "rooms").await;
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    while keyboard_shown() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the keyboard stayed up over the room list"
+        );
+    }
+}
+
+/// After the phone app has been in the background (Android freezes it),
+/// coming back to a chat shows new messages as they arrive.
+#[tokio::test]
+async fn phone_back_from_the_background_still_gets_messages_live() {
+    if !enabled() {
+        eprintln!("MORPHEUS_E2E_ANDROID not set; skipping the Android test");
+        return;
+    }
+    let Ok(hs) = std::env::var("MORPHEUS_TEST_HOMESERVER") else {
+        return;
+    };
+    let mut phone = App::launch_android().await.expect("launch on Android");
+    phone
+        .wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    phone
+        .type_into("form.login input[name=username]", "alice")
+        .await
+        .expect("username");
+    phone
+        .type_into("form.login input[name=password]", "alice-password")
+        .await
+        .expect("password");
+    phone.submit("form.login").await.expect("submit");
+    phone
+        .wait_for_text(".room", "general", DEFAULT_WAIT)
+        .await
+        .expect("general listed");
+    phone
+        .tap_text(".room", "general")
+        .await
+        .expect("open general");
+    pane(&mut phone, "chat").await;
+
+    let mut bob = App::launch_desktop(&hs).await.expect("launch bob");
+    bob.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    bob.type_into("form.login input[name=username]", "bob")
+        .await
+        .expect("username");
+    bob.type_into("form.login input[name=password]", "bob-password")
+        .await
+        .expect("password");
+    bob.submit("form.login").await.expect("submit");
+    bob.wait_for(".room", DEFAULT_WAIT).await.expect("rooms");
+    bob.open_room("general").await.expect("open general");
+    bob.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
+        .await
+        .expect("composer");
+    let run = std::process::id();
+    let send = async |bob: &mut App, text: &str| {
+        bob.type_into(".composer .composer-input", text)
+            .await
+            .expect("type");
+        bob.press(".composer .composer-input", "Enter")
+            .await
+            .expect("send");
+    };
+    send(&mut bob, &format!("before {run}")).await;
+    phone
+        .wait_for_text(".message .body", &format!("before {run}"), DEFAULT_WAIT)
+        .await
+        .expect("live before the break");
+
+    // Home, a while away (long enough for Android to freeze the app and the
+    // sync request to lapse), then back.
+    let _ = adb_shell(&["input", "keyevent", "KEYCODE_HOME"]);
+    tokio::time::sleep(std::time::Duration::from_secs(45)).await;
+    send(&mut bob, &format!("while away {run}")).await;
+    let _ = adb_shell(&[
+        "am",
+        "start",
+        "-n",
+        "dev.morpheus.mobile/dev.dioxus.main.MainActivity",
+    ]);
+    phone
+        .wait_for_text(".message .body", &format!("while away {run}"), DEFAULT_WAIT)
+        .await
+        .expect("what came while away shows on return");
+    for n in 0..3 {
+        let text = format!("after {n} {run}");
+        send(&mut bob, &text).await;
+        phone
+            .wait_for_text(".message .body", &text, DEFAULT_WAIT)
+            .await
+            .unwrap_or_else(|e| panic!("message {n} arrives live after the break: {e}"));
+    }
 }

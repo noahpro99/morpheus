@@ -30,7 +30,7 @@ async fn login_and_open(app: &mut App, room: &str) {
         .await
         .expect("room listed");
     app.open_room(room).await.expect("open room");
-    app.wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
+    app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
         .await
         .expect("composer ready");
 }
@@ -162,14 +162,18 @@ async fn up_edits_last_message_and_escape_jumps_to_bottom() {
     login_and_open(&mut app, "general").await;
 
     let text = format!("edit me {}", std::process::id());
-    app.type_into(".composer input", &text).await.expect("type");
-    app.press(".composer input", "Enter").await.expect("send");
+    app.type_into(".composer .composer-input", &text)
+        .await
+        .expect("type");
+    app.press(".composer .composer-input", "Enter")
+        .await
+        .expect("send");
     app.wait_for_exact_text(".message.own:not(.pending) .body", &text, DEFAULT_WAIT)
         .await
         .expect("sent");
 
     // Up in the empty box edits it: the banner shows and the text is back in the box.
-    app.key_combo(".composer input", "ArrowUp", false, false, false)
+    app.key_combo(".composer .composer-input", "ArrowUp", false, false, false)
         .await
         .expect("up");
     app.wait_for_text(".composer-banner", "Editing message", DEFAULT_WAIT)
@@ -177,14 +181,14 @@ async fn up_edits_last_message_and_escape_jumps_to_bottom() {
         .expect("edit mode");
     app.wait_for_js(
         &format!(
-            "return document.querySelector('.composer input').value === {};",
+            "return document.querySelector('.composer .composer-input').value === {};",
             serde_json::to_string(&text).expect("json")
         ),
         Duration::from_secs(5),
     )
     .await
     .expect("draft holds the message");
-    app.press(".composer input", "Escape")
+    app.press(".composer .composer-input", "Escape")
         .await
         .expect("cancel edit");
 

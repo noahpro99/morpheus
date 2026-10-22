@@ -63,13 +63,19 @@ async fn login_browse_rooms_and_send() {
 
     // Send a message and wait for the remote echo (no longer pending).
     let body = format!("hello from e2e {}", std::process::id());
-    app.type_into(".composer input", &body).await.expect("type");
-    app.press(".composer input", "Enter").await.expect("enter");
+    app.type_into(".composer .composer-input", &body)
+        .await
+        .expect("type");
+    app.press(".composer .composer-input", "Enter")
+        .await
+        .expect("enter");
     app.wait_for_text(".message:not(.pending) .body", &body, DEFAULT_WAIT)
         .await
         .expect("message echoed");
     assert_eq!(
-        app.text(".composer input").await.expect("composer"),
+        app.text(".composer .composer-input")
+            .await
+            .expect("composer"),
         Some(String::new()),
         "composer clears after send"
     );
@@ -154,4 +160,116 @@ async fn wrong_password_shows_error() {
         .await
         .expect("error shown");
     assert_eq!(app.count(".shell").await.expect("count"), 0);
+}
+
+/// Send `text` from the open room's message box.
+async fn send(app: &mut App, text: &str) {
+    app.type_into(".composer .composer-input", text)
+        .await
+        .expect("type");
+    app.press(".composer .composer-input", "Enter")
+        .await
+        .expect("send");
+}
+
+/// What someone looking at a conversation sees arrive, without touching
+/// anything: in a room, and in a direct message started with New Message.
+#[tokio::test]
+async fn messages_show_up_live_for_whoever_is_looking() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let run = std::process::id();
+    let mut bob = App::launch(&hs).await.expect("launch bob");
+    login(&mut bob, "bob", "bob-password").await;
+    let mut carol = App::launch(&hs).await.expect("launch carol");
+    login(&mut carol, "carol", "carol-password").await;
+
+    // In a room both have open.
+    bob.open_room("general").await.expect("bob opens general");
+    carol
+        .open_room("general")
+        .await
+        .expect("carol opens general");
+    carol
+        .wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
+        .await
+        .expect("composer");
+    let text = format!("live in general {run}");
+    send(&mut carol, &text).await;
+    bob.wait_for_text(".message .body", &text, DEFAULT_WAIT)
+        .await
+        .expect("bob sees it arrive in #general");
+
+    // In a DM carol starts with New Message.
+    carol.click(".rail-dms").await.expect("DMs");
+    carol
+        .wait_for(".sidebar .friends-row", DEFAULT_WAIT)
+        .await
+        .expect("Friends row");
+    carol.click(".sidebar .friends-row").await.expect("Friends");
+    carol
+        .wait_for(".friends-header .new-message-tab", DEFAULT_WAIT)
+        .await
+        .expect("Friends page");
+    carol
+        .click(".friends-header .new-message-tab")
+        .await
+        .expect("New Message");
+    carol
+        .type_into("form.new-message input", "bob")
+        .await
+        .expect("type");
+    carol.submit("form.new-message").await.expect("open");
+    carol
+        .wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
+        .await
+        .expect("carol in the DM");
+    let first = format!("hello bob {run}");
+    send(&mut carol, &first).await;
+
+    // Bob opens it (accepting, if it is new to him) and keeps looking.
+    bob.click(".rail-dms").await.expect("DMs");
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    let invited = bob
+        .eval("return [...document.querySelectorAll('.invite-row')].some(r => r.textContent.includes('carol'));")
+        .await
+        .expect("invites")
+        .as_bool()
+        .unwrap_or(false);
+    if invited {
+        bob.click_text(".invite-row", "carol")
+            .await
+            .expect("open invite");
+        bob.click(".invite-card .invite-accept")
+            .await
+            .expect("accept");
+    } else {
+        // Joined before (it may sit with the rooms, if his side never
+        // marked it as a DM).
+        bob.open_room("carol")
+            .await
+            .expect("open the DM with carol");
+    }
+    bob.wait_for_text(".message .body", &first, DEFAULT_WAIT)
+        .await
+        .expect("bob sees carol's first message");
+    for n in 0..3 {
+        let next = format!("and again {n} {run}");
+        send(&mut carol, &next).await;
+        bob.wait_for_text(".message .body", &next, DEFAULT_WAIT)
+            .await
+            .unwrap_or_else(|e| panic!("bob sees message {n} arrive while looking: {e}"));
+    }
+    // And the other way.
+    bob.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
+        .await
+        .expect("bob's composer");
+    let reply = format!("hi carol {run}");
+    send(&mut bob, &reply).await;
+    carol
+        .wait_for_text(".message .body", &reply, DEFAULT_WAIT)
+        .await
+        .expect("carol sees bob's reply arrive while looking");
 }

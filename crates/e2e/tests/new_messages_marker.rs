@@ -27,7 +27,7 @@ async fn login_and_open(app: &mut App, user: &str, password: &str, room: &str) {
     app.wait_for_text(".chat-header h2", room, DEFAULT_WAIT)
         .await
         .expect("room header");
-    app.wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
+    app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
         .await
         .expect("composer ready");
 }
@@ -77,8 +77,12 @@ async fn new_message_marker_appears_above_unread_and_clears_on_send() {
     login_and_open(&mut bob, "bob", "bob-password", "general").await;
 
     let body = format!("marker test {}", std::process::id());
-    bob.type_into(".composer input", &body).await.expect("type");
-    bob.press(".composer input", "Enter").await.expect("send");
+    bob.type_into(".composer .composer-input", &body)
+        .await
+        .expect("type");
+    bob.press(".composer .composer-input", "Enter")
+        .await
+        .expect("send");
     bob.wait_for_text(".message:not(.pending) .body", &body, DEFAULT_WAIT)
         .await
         .expect("bob's message echoed");
@@ -116,10 +120,13 @@ async fn new_message_marker_appears_above_unread_and_clears_on_send() {
     // Sending a message means alice is caught up: the divider drops immediately.
     let own_body = format!("caught up {}", std::process::id());
     alice
-        .type_into(".composer input", &own_body)
+        .type_into(".composer .composer-input", &own_body)
         .await
         .expect("type");
-    alice.press(".composer input", "Enter").await.expect("send");
+    alice
+        .press(".composer .composer-input", "Enter")
+        .await
+        .expect("send");
     alice
         .wait_for_text(".message:not(.pending) .body", &own_body, DEFAULT_WAIT)
         .await

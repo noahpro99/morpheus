@@ -70,7 +70,7 @@ async fn big_room_opens_and_switches_quickly() {
     app.wait_for_text(".chat-header h2", "general", DEFAULT_WAIT)
         .await
         .expect("general header");
-    app.wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
+    app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
         .await
         .expect("general ready");
     app.open_room("firehose").await.expect("back to firehose");

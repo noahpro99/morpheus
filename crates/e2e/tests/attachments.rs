@@ -27,7 +27,7 @@ async fn login_and_open(app: &mut App, room: &str) {
     app.wait_for_text(".chat-header h2", room, DEFAULT_WAIT)
         .await
         .expect("room header");
-    app.wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
+    app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
         .await
         .expect("composer ready");
 }
@@ -131,7 +131,7 @@ fn file_event_js(event: &str, name: &str, mime: &str, bytes: &[u8]) -> String {
              target.dispatchEvent(new DragEvent('drop', {{ bubbles: true, cancelable: true, dataTransfer: dt }}));"
         ),
         _ => format!(
-            "{transfer} document.querySelector('.composer input').dispatchEvent(new ClipboardEvent('paste', {{ bubbles: true, cancelable: true, clipboardData: dt }}));"
+            "{transfer} document.querySelector('.composer .composer-input').dispatchEvent(new ClipboardEvent('paste', {{ bubbles: true, cancelable: true, clipboardData: dt }}));"
         ),
     }
 }

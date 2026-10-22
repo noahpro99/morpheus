@@ -281,33 +281,6 @@ impl App {
     /// Open a room by name. Rooms inside a space are hidden in Home, so if
     /// the row is not visible this clicks through the space badges to find it.
     pub async fn open_room(&mut self, name: &str) -> Result<()> {
-        let visible = format!(
-            "return [...document.querySelectorAll('.room')].some(el => el.textContent.includes({}));",
-            js_str(name)
-        );
-        if !self.eval(&visible).await?.as_bool().unwrap_or(false) {
-            let badges = self.count(".rail-item").await?;
-            let mut found = false;
-            for index in 0..badges {
-                self.eval(&format!(
-                    "document.querySelectorAll('.rail-item')[{index}].click();"
-                ))
-                .await?;
-                if self
-                    .wait_until(Duration::from_secs(3), "room in space", &visible)
-                    .await
-                    .is_ok()
-                {
-                    found = true;
-                    break;
-                }
-            }
-            if !found {
-                bail!("no room named {name:?} in any space");
-            }
-        }
-        // The list can re-render between the check and the click (the room
-        // list service resets it while it settles), so retry the click.
         // An exact name first: "bob" is not "Empty Room (was bob)".
         let click = format!(
             "const want = {}; const rows = [...document.querySelectorAll('.room')]; \
@@ -316,8 +289,36 @@ impl App {
              if (!el) return false; el.click(); return true;",
             js_str(name)
         );
-        self.wait_until(DEFAULT_WAIT, "room row to click", &click)
-            .await?;
+        // The list can change under us: it re-renders while the room list
+        // service settles, and right after sign-in the app reopens the last
+        // room, switching the sidebar to its space (or the DMs). So: click
+        // the row if it is in the list now, else look through the spaces,
+        // and again until the deadline.
+        let deadline = Instant::now() + DEFAULT_WAIT;
+        loop {
+            if self.eval(&click).await?.as_bool().unwrap_or(false) {
+                break;
+            }
+            let badges = self.count(".rail-item").await?;
+            for index in 0..badges {
+                self.eval(&format!(
+                    "document.querySelectorAll('.rail-item')[{index}].click();"
+                ))
+                .await?;
+                sleep(Duration::from_millis(300)).await;
+                if self.eval(&click).await?.as_bool().unwrap_or(false) {
+                    return self
+                        .wait_for_text(".chat-header h2", name, DEFAULT_WAIT)
+                        .await;
+                }
+            }
+            if Instant::now() >= deadline {
+                let rows = self
+                    .eval("return [...document.querySelectorAll('.room')].map(r => r.className + ': ' + r.textContent).join(' | ');")
+                    .await;
+                bail!("no room named {name:?} in any space\nrows: {rows:?}");
+            }
+        }
         self.wait_for_text(".chat-header h2", name, DEFAULT_WAIT)
             .await
     }
@@ -344,8 +345,8 @@ impl App {
     ) -> Result<()> {
         let js = format!(
             "if ((() => {{ {predicate_js} }})()) return true; \
-             const t = document.querySelector('.timeline'); if (t) t.scrollTop = -t.scrollHeight; \
-             document.querySelector('.load-older')?.click(); return false;"
+             document.querySelectorAll('.timeline').forEach(t => {{ t.scrollTop = -t.scrollHeight; }}); \
+             document.querySelectorAll('.load-older').forEach(b => b.click()); return false;"
         );
         self.wait_until(timeout, &format!("{what} after scrolling up"), &js)
             .await
@@ -468,6 +469,19 @@ impl App {
 
     /// Dispatch a `keydown` for `key` (e.g. "Enter") on the element.
     pub async fn press(&mut self, selector: &str, key: &str) -> Result<()> {
+        // On a phone the keyboard's Enter is a new line in the message box;
+        // sending is the send button, so "Enter to send" taps it (unless a
+        // suggestion list is open, where Enter picks).
+        if self.android && key == "Enter" && selector.contains("composer-input") {
+            let js = format!(
+                "const box = {}; const composer = box.closest('.composer'); \
+                 if (composer.querySelector('.autocomplete')) {{ \
+                   box.dispatchEvent(new KeyboardEvent('keydown', {{ key: 'Enter', bubbles: true, cancelable: true }})); \
+                 }} else {{ composer.querySelector('.send-button').click(); }}",
+                query(selector)
+            );
+            return self.eval(&js).await.map(drop);
+        }
         let js = format!(
             "{}.dispatchEvent(new KeyboardEvent('keydown', {{ key: {}, bubbles: true, cancelable: true }}));",
             query(selector),
@@ -737,6 +751,16 @@ fn keep_test_windows_unfocused() {
                 .stderr(std::process::Stdio::null())
                 .status();
         }
+        // Hyprland 0.55+ with a Lua config refuses `keyword` ("can't work with
+        // non-legacy parsers"): the same rule through `eval`.
+        let _ = std::process::Command::new("hyprctl")
+            .args([
+                "eval",
+                "hl.window_rule({ name = \"morpheus-test\", match = { title = \"^(Morpheus \\\\(test\\\\))$\" }, no_initial_focus = true, no_focus = true })",
+            ])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
     });
 }
 
