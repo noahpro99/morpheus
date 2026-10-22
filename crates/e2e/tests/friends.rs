@@ -103,7 +103,7 @@ async fn friends_are_added_listed_messaged_and_removed() {
 }
 
 #[tokio::test]
-async fn add_friend_by_username_from_the_friends_page_like_discord() {
+async fn new_message_by_username_opens_a_dm() {
     let Some(hs) = homeserver() else {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
@@ -122,63 +122,43 @@ async fn add_friend_by_username_from_the_friends_page_like_discord() {
     app.wait_for(".room", DEFAULT_WAIT).await.expect("rooms");
     open_friends(&mut app).await;
 
-    // The green button in the page's header opens the form.
-    app.click(".friends-header .add-friend-tab")
+    // No "Add Friend" (Matrix has no friend requests): New Message instead.
+    assert_eq!(app.count(".add-friend-tab").await.expect("count"), 0);
+    app.click(".friends-header .new-message-tab")
         .await
-        .expect("Add Friend");
-    app.wait_for("form.add-friend input", DEFAULT_WAIT)
+        .expect("New Message");
+    app.wait_for("form.new-message input", DEFAULT_WAIT)
         .await
         .expect("the form");
-    // Someone who does not exist: said so, nothing added.
-    app.type_into("form.add-friend input", "nobody-here")
+    // Someone who does not exist: said so.
+    app.type_into("form.new-message input", "nobody-here")
         .await
         .expect("type");
-    app.submit("form.add-friend").await.expect("send");
+    app.submit("form.new-message").await.expect("send");
     app.wait_for_text(
-        ".add-friend .add-friend-result.error",
+        ".new-message .new-message-result.error",
         "nobody-here",
         DEFAULT_WAIT,
     )
     .await
     .expect("an unknown name is refused");
-    // A bare username means someone on this server.
-    app.type_into("form.add-friend input", "alice")
-        .await
-        .expect("type");
-    app.submit("form.add-friend").await.expect("send");
-    app.wait_for_text(".add-friend .add-friend-result.ok", "alice", DEFAULT_WAIT)
-        .await
-        .expect("added");
-    // A full Matrix ID works too.
-    app.type_into("form.add-friend input", "@bob:localhost")
-        .await
-        .expect("type");
-    app.submit("form.add-friend").await.expect("send");
-    app.wait_for_text(".add-friend .add-friend-result.ok", "bob", DEFAULT_WAIT)
-        .await
-        .expect("added by ID");
-    if let Some(path) = app.screenshot("add-friend").await.expect("screenshot") {
+    if let Some(path) = app.screenshot("new-message").await.expect("screenshot") {
         eprintln!("screenshot: {}", path.display());
     }
-
-    // Both on the All tab.
-    app.click(".friends-header .all-friends-tab")
+    // A bare username: the DM with them opens, ready to type in.
+    app.type_into("form.new-message input", "alice")
         .await
-        .expect("All");
-    app.wait_for_text(".friend-list .friend", "alice", DEFAULT_WAIT)
+        .expect("type");
+    app.submit("form.new-message").await.expect("send");
+    app.wait_for_js(
+        "return !document.querySelector('.friends-page') && !!document.querySelector('.chat-header h2') \
+         && document.querySelector('.chat-header h2').textContent.includes('alice') \
+         && !document.querySelector('.chat-header h2').textContent.includes('Empty Room');",
+        DEFAULT_WAIT,
+    )
+    .await
+    .unwrap_or_else(|e| panic!("the DM with alice opens: {e}"));
+    app.wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
         .await
-        .expect("alice listed");
-    app.wait_for_text(".friend-list .friend", "bob", DEFAULT_WAIT)
-        .await
-        .expect("bob listed");
-    // Removed again, so the others start with none.
-    for _ in 0..2 {
-        app.click_text(".friend-list .friend .friend-actions button", "Remove")
-            .await
-            .expect("Remove");
-        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-    }
-    app.wait_for_text(".friends-page .empty-state", "No friends yet", DEFAULT_WAIT)
-        .await
-        .expect("none left");
+        .expect("ready to type");
 }

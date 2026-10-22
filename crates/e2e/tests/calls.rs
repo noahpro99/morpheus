@@ -26,7 +26,11 @@ async fn login_and_open(app: &mut App, user: &str, room: &str) {
     .expect("password");
     app.submit("form.login").await.expect("submit");
     app.wait_for(".room", DEFAULT_WAIT).await.expect("rooms");
-    app.open_room(room).await.expect("open room");
+    if let Err(err) = app.open_room(room).await {
+        let rows = app.eval("return [...document.querySelectorAll('.room')].map(r => r.textContent).join(' | ');").await;
+        let _ = app.screenshot("open-room-failed").await;
+        panic!("open room: {err}\nrows: {rows:?}");
+    }
     app.wait_for(".composer input:not([disabled])", DEFAULT_WAIT)
         .await
         .expect("composer");

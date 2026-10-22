@@ -131,6 +131,10 @@ impl Session {
             let room = client
                 .get_room(&room_id)
                 .ok_or_else(|| crate::Error::UnknownRoom(room_id.clone()))?;
+            // Already in: nothing to do (a second tap, or another device).
+            if room.state() == matrix_sdk::RoomState::Joined {
+                return Ok(());
+            }
             room.join().await?;
             Ok(())
         })

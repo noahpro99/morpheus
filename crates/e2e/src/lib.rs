@@ -308,8 +308,11 @@ impl App {
         }
         // The list can re-render between the check and the click (the room
         // list service resets it while it settles), so retry the click.
+        // An exact name first: "bob" is not "Empty Room (was bob)".
         let click = format!(
-            "const el = [...document.querySelectorAll('.room')].find(el => el.textContent.includes({})); \
+            "const want = {}; const rows = [...document.querySelectorAll('.room')]; \
+             const el = rows.find(el => el.querySelector('.room-name')?.textContent.trim() === want) \
+               || rows.find(el => el.textContent.includes(want)); \
              if (!el) return false; el.click(); return true;",
             js_str(name)
         );

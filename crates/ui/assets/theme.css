@@ -1772,22 +1772,22 @@ body.dropping .drop-hint { display: flex; }
 .friends-tab { padding: 4px 10px; border-radius: var(--radius-sm); color: var(--text-muted); background: none; font-weight: 600; white-space: nowrap; }
 .friends-tab:hover { background: var(--bg-hover); color: var(--text); }
 .friends-tab.active { background: var(--bg-selected); color: var(--text); }
-.friends-tab.add-friend-tab { background: var(--green, #23a559); color: #fff; }
-.friends-tab.add-friend-tab.active { background: none; color: var(--green, #23a559); }
+.friends-tab.new-message-tab { background: var(--green, #23a559); color: #fff; }
+.friends-tab.new-message-tab.active { background: none; color: var(--green, #23a559); }
 .friends-count { padding: 16px 24px 4px; }
-div.add-friend { padding: 20px 24px; border-bottom: 1px solid var(--bg-selected); }
-div.add-friend h3 { margin: 0 0 4px; font-size: 1rem; text-transform: uppercase; letter-spacing: 0.02em; }
-div.add-friend > p.muted { margin: 0 0 16px; font-size: 0.9rem; }
-form.add-friend { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 14px; border-radius: var(--radius); background: var(--bg-input); border: 1px solid var(--bg-selected); }
-form.add-friend:focus-within { border-color: var(--accent); }
-form.add-friend input { flex: 1; min-width: 0; padding: 8px 0; background: none; border: 0; outline: none; color: var(--text); font-size: 1rem; }
-form.add-friend button { padding: 8px 16px; border-radius: var(--radius-sm); white-space: nowrap; background: var(--accent); color: #fff; font-weight: 600; }
-form.add-friend button:disabled { opacity: 0.5; cursor: default; }
-.add-friend-result { margin: 10px 0 0; font-size: 0.9rem; }
-.add-friend-result.ok { color: var(--green, #23a559); }
-.add-friend-result.error { color: var(--danger); }
+div.new-message { padding: 20px 24px; border-bottom: 1px solid var(--bg-selected); }
+div.new-message h3 { margin: 0 0 4px; font-size: 1rem; text-transform: uppercase; letter-spacing: 0.02em; }
+div.new-message > p.muted { margin: 0 0 16px; font-size: 0.9rem; }
+form.new-message { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 14px; border-radius: var(--radius); background: var(--bg-input); border: 1px solid var(--bg-selected); }
+form.new-message:focus-within { border-color: var(--accent); }
+form.new-message input { flex: 1; min-width: 0; padding: 8px 0; background: none; border: 0; outline: none; color: var(--text); font-size: 1rem; }
+form.new-message button { padding: 8px 16px; border-radius: var(--radius-sm); white-space: nowrap; background: var(--accent); color: #fff; font-weight: 600; }
+form.new-message button:disabled { opacity: 0.5; cursor: default; }
+.new-message-result { margin: 10px 0 0; font-size: 0.9rem; }
+.new-message-result.ok { color: var(--green, #23a559); }
+.new-message-result.error { color: var(--danger); }
 .shell.narrow .friends-header .friends-divider { display: none; }
-.shell.narrow div.add-friend { padding: 16px; }
+.shell.narrow div.new-message { padding: 16px; }
 
 /* ---- Calls ---- */
 .chat-header .call-button.active { color: var(--green, #23a559); background: var(--bg-selected); }
