@@ -662,7 +662,11 @@ pub fn Shell(session: Session) -> Element {
         };
         match name.as_str() {
             "escape" => {
-                if close_top_modal() {
+                let mut call_screen = consume_context::<super::call::CallScreenOpen>();
+                // On a phone the full-screen call comes down to its bar first.
+                if narrow.peek().0 && call_screen.peek().0 {
+                    call_screen.set(super::call::CallScreenShown(false));
+                } else if close_top_modal() {
                 } else if search_open.peek().0 && active_thread.peek().is_none() {
                     // The search panel closes like a dialog would.
                     search_open.set(SearchShown(false));
@@ -944,6 +948,9 @@ pub fn Shell(session: Session) -> Element {
                 RoomDialog::RenameFolder(folder_id) => rsx! { RenameFolderModal { folder_id } },
                 RoomDialog::None => rsx! {},
             }
+            if narrow().0 {
+                super::call::CallScreen {}
+            }
             ContextMenuLayer {}
         }
     }
@@ -1037,15 +1044,18 @@ fn ChatRoom(room: RoomSummary) -> Element {
                     button {
                         class: "ghost call-button",
                         class: if in_this_call { "active" },
-                        title: if in_this_call { "Leave the call" } else if room.call_participants.is_empty() { "Start a call" } else { "Join the call" },
+                        title: if in_this_call && narrow().0 { "Open the call" } else if in_this_call { "Leave the call" } else if room.call_participants.is_empty() { "Start a call" } else { "Join the call" },
                         onclick: move |_| {
-                            if in_this_call {
+                            if in_this_call && narrow.peek().0 {
+                                // A phone opens the call; hanging up is in there.
+                                super::call::show_call_screen(true);
+                            } else if in_this_call {
                                 super::call::hang_up(session.clone());
                             } else {
                                 super::call::join_call(session.clone(), room_id.clone(), room_name.clone());
                             }
                         },
-                        Icon { glyph: if in_this_call { crate::icons::PHONE_OFF } else { crate::icons::PHONE }, size: 16 }
+                        Icon { glyph: if in_this_call && !narrow().0 { crate::icons::PHONE_OFF } else { crate::icons::PHONE }, size: 16 }
                     }
                 }
             }
@@ -1085,9 +1095,15 @@ fn ChatRoom(room: RoomSummary) -> Element {
                 "{room.member_count}"
             }
         }
-        super::call::CallStage { room_id: room.id.clone() }
+        // A phone shows the call on its own screen.
+        if !narrow().0 {
+            super::call::CallStage { room_id: room.id.clone() }
+        }
         TimelineView { room_id: room.id.clone() }
         TypingLine { names: typing() }
+        if narrow().0 {
+            super::call::CallBar {}
+        }
         Composer {
             room_name: room.name.clone(),
             placeholder: room.is_dm.then(|| format!("Message @{}", room.name)),

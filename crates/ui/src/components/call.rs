@@ -16,7 +16,8 @@ use morpheus_core::{IncomingCall, OwnedRoomId, OwnedUserId, Ringing, RoomSummary
 use super::shell::go_to;
 use super::toast::report;
 use crate::icons::{
-    Icon, PHONE, PHONE_OFF, SCREEN_SHARE, SCREEN_SHARE_OFF, VIDEO, VIDEO_OFF, VOLUME_2,
+    CHEVRON_DOWN, CHEVRON_UP, Icon, MIC, MIC_OFF, PHONE, PHONE_OFF, SCREEN_SHARE,
+    SCREEN_SHARE_OFF, VIDEO, VIDEO_OFF, VOLUME_2,
 };
 use crate::media::Avatar;
 use crate::sounds::{Sound, play};
@@ -65,6 +66,11 @@ pub struct VoiceFlags {
 }
 pub type Voice = Signal<VoiceFlags>;
 
+/// Phones: the call fills the screen (else it is a bar above the message box).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CallScreenShown(pub bool);
+pub type CallScreenOpen = Signal<CallScreenShown>;
+
 /// Calls ringing this account (newest last).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RingList(pub Vec<IncomingCall>);
@@ -100,6 +106,7 @@ struct CallMedia(Rc<RefCell<Option<Call>>>);
 pub fn provide_calls(session: Session) {
     let active: ActiveCall = use_context_provider(|| Signal::new(CallSlot::default()));
     use_context_provider(|| Signal::new(VoiceFlags::default()) as Voice);
+    use_context_provider(|| Signal::new(CallScreenShown::default()) as CallScreenOpen);
     let media = use_context_provider(CallMedia::default);
     let config = use_context::<crate::AppConfig>();
     let data_dir = config.data_dir.clone();
@@ -199,6 +206,10 @@ pub fn join_call(session: Session, room_id: OwnedRoomId, room_name: String) {
         .is_some_and(|c| c.room_id == room_id)
     {
         return;
+    }
+    // A phone shows the call full screen, as Discord's app does.
+    if try_consume_context::<super::shell::NarrowWindow>().is_some_and(|narrow| narrow.peek().0) {
+        show_call_screen(true);
     }
     let microphone = try_consume_context::<crate::AppConfig>()
         .and_then(|config| config.microphone)
@@ -488,6 +499,19 @@ pub fn set_voice(muted: bool, deafened: bool) {
         call.set_muted(muted || deafened);
         call.set_deafened(deafened);
     }
+}
+
+/// Phones: fill the screen with the call, or shrink it to a bar.
+pub fn show_call_screen(shown: bool) {
+    if let Some(mut screen) = try_consume_context::<CallScreenOpen>() {
+        screen.set(CallScreenShown(shown));
+    }
+}
+
+/// Mute, or unmute (which undeafens too, as in Discord).
+fn toggle_mute(flags: VoiceFlags) {
+    let muted = !(flags.muted || flags.deafened);
+    set_voice(muted, flags.deafened && muted);
 }
 
 /// Phones: call audio from the earpiece (held to the ear) or the loudspeaker.
@@ -791,6 +815,155 @@ pub fn VoicePanel() -> Element {
                 onclick: move |_| hang_up(session.clone()),
                 Icon { glyph: PHONE_OFF, size: 18 }
             }
+        }
+    }
+}
+
+/// Phones: the call over everything. A tile per person (their camera when
+/// it is on, else their picture, ringed while they speak), shared screens
+/// first; mute, speaker, camera, and hang up along the bottom. Minimizing
+/// (or back) leaves the [`CallBar`].
+#[component]
+pub fn CallScreen() -> Element {
+    let session = use_context::<Session>();
+    let active = use_context::<ActiveCall>();
+    let shown = use_context::<CallScreenOpen>();
+    let voice = use_context::<Voice>();
+    let rooms = use_context::<super::shell::Rooms>();
+    let Some(call) = active().0.filter(|_| shown().0) else {
+        return rsx! {};
+    };
+    let mut people = rooms
+        .read()
+        .iter()
+        .find(|room| room.id == call.room_id)
+        .map(|room| room.call_participants.clone())
+        .unwrap_or_default();
+    if let Some(me) = session.user_id()
+        && !people.contains(&me)
+    {
+        people.insert(0, me);
+    }
+    let screens = call.video.iter().filter(|feed| feed.screen);
+    let cameras = call.video.iter().filter(|feed| !feed.screen);
+    let feeds: Vec<VideoFeed> = screens.chain(cameras.clone()).cloned().collect();
+    let without_camera: Vec<OwnedUserId> = people
+        .into_iter()
+        .filter(|user| !cameras.clone().any(|feed| &feed.user == user))
+        .collect();
+    let flags = voice();
+    let muted = flags.muted || flags.deafened;
+    let room_id = call.room_id.clone();
+    rsx! {
+        div { class: "call-screen",
+            header { class: "call-screen-header",
+                button {
+                    class: "ghost call-minimize",
+                    title: "Back to the chat",
+                    onclick: move |_| show_call_screen(false),
+                    Icon { glyph: CHEVRON_DOWN, size: 24 }
+                }
+                button {
+                    class: "call-screen-room",
+                    title: "Go to the room",
+                    onclick: move |_| {
+                        show_call_screen(false);
+                        go_to(room_id.clone());
+                    },
+                    span { class: "call-screen-title", "{call.room_name}" }
+                    span { class: "call-screen-state", class: if call.connected { "connected" },
+                        if call.connected { "Connected" } else { "Connecting…" }
+                    }
+                }
+            }
+            div { class: "call-tiles",
+                for feed in feeds {
+                    VideoTile { key: "{feed.key}", user: feed.user, feed: feed.key, screen: feed.screen }
+                }
+                for user in without_camera {
+                    CallTile {
+                        key: "{user}",
+                        speaking: call.speaking.contains(&user),
+                        user_id: user,
+                    }
+                }
+            }
+            div { class: "call-controls",
+                button {
+                    class: "call-control mute-button",
+                    class: if muted { "active" },
+                    title: if muted { "Unmute" } else { "Mute" },
+                    onclick: move |_| toggle_mute(voice()),
+                    Icon { glyph: if muted { MIC_OFF } else { MIC }, size: 24 }
+                }
+                if has_earpiece() {
+                    button {
+                        class: "call-control speaker-button",
+                        class: if !flags.earpiece { "active" },
+                        title: if flags.earpiece { "Earpiece (tap for the speaker)" } else { "Speaker (tap for the earpiece)" },
+                        onclick: move |_| set_earpiece(!flags.earpiece),
+                        Icon { glyph: if flags.earpiece { PHONE } else { VOLUME_2 }, size: 24 }
+                    }
+                }
+                if morpheus_call::can_send_video() {
+                    button {
+                        class: "call-control camera-button",
+                        class: if call.camera { "active" },
+                        title: if call.camera { "Turn off camera" } else { "Turn on camera" },
+                        disabled: !call.connected,
+                        onclick: {
+                            let (session, on) = (session.clone(), !call.camera);
+                            move |_| set_camera(session.clone(), on)
+                        },
+                        Icon { glyph: if call.camera { VIDEO } else { VIDEO_OFF }, size: 24 }
+                    }
+                }
+                button {
+                    class: "call-control hang-up",
+                    title: "Disconnect",
+                    onclick: move |_| {
+                        show_call_screen(false);
+                        hang_up(session.clone());
+                    },
+                    Icon { glyph: PHONE_OFF, size: 24 }
+                }
+            }
+        }
+    }
+}
+
+/// Someone in the call without a camera on: their picture, large.
+#[component]
+fn CallTile(user_id: OwnedUserId, speaking: bool) -> Element {
+    let (name, avatar) = use_person(&user_id);
+    rsx! {
+        div { class: "call-tile", class: if speaking { "speaking" }, "data-user": "{user_id}",
+            Avatar { media: avatar, fallback: name.clone(), size: 72 }
+            span { class: "video-name", "{name}" }
+        }
+    }
+}
+
+/// Phones, with the call minimized: above the message box, back to it.
+#[component]
+pub fn CallBar() -> Element {
+    let active = use_context::<ActiveCall>();
+    let shown = use_context::<CallScreenOpen>();
+    let Some(call) = active().0.filter(|_| !shown().0) else {
+        return rsx! {};
+    };
+    rsx! {
+        button {
+            class: "call-bar",
+            class: if call.connected { "connected" },
+            title: "Open the call",
+            onclick: move |_| show_call_screen(true),
+            Icon { glyph: VOLUME_2, size: 16 }
+            span { class: "call-bar-room", "{call.room_name}" }
+            span { class: "call-bar-state",
+                if call.connected { "In call" } else { "Connecting…" }
+            }
+            Icon { glyph: CHEVRON_UP, size: 16 }
         }
     }
 }

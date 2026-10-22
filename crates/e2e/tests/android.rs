@@ -1054,9 +1054,12 @@ async fn phone_starts_a_call_with_the_real_microphone_without_crashing() {
         !crashed.contains("dev.morpheus.mobile"),
         "the app crashed starting a call:\n{crashed}"
     );
+    app.tap(".call-screen .call-minimize")
+        .await
+        .expect("down from the call screen (the app is still up)");
     app.click(".chat-header .pane-back")
         .await
-        .expect("back to the list (the app is still up)");
+        .expect("back to the list");
     app.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
         .await
         .expect("in the call");
@@ -1259,4 +1262,96 @@ async fn phone_back_from_the_background_still_gets_messages_live() {
             .await
             .unwrap_or_else(|e| panic!("message {n} arrives live after the break: {e}"));
     }
+}
+
+/// A call on a phone fills the screen, as Discord's does: a tile for each
+/// person in it, and mute, speaker, and hang up along the bottom. Back (or
+/// the minimize button) shrinks it to a bar above the message box; the bar
+/// or the header's call button brings it back.
+#[tokio::test]
+async fn phone_call_fills_the_screen_and_minimizes_to_a_bar() {
+    if !enabled() {
+        eprintln!("MORPHEUS_E2E_ANDROID not set; skipping the Android test");
+        return;
+    }
+    let mut app = App::launch_android().await.expect("launch on Android");
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    app.type_into("form.login input[name=username]", "alice")
+        .await
+        .expect("username");
+    app.type_into("form.login input[name=password]", "alice-password")
+        .await
+        .expect("password");
+    app.submit("form.login").await.expect("submit");
+    app.wait_for(".room", DEFAULT_WAIT)
+        .await
+        .expect("rooms listed");
+    app.open_room("random").await.expect("open #random");
+    app.tap(".chat-header .call-button").await.expect("call");
+
+    // Full screen: the room's name, a tile for alice, the controls.
+    app.wait_for_text(".call-screen .call-screen-title", "random", DEFAULT_WAIT)
+        .await
+        .expect("the call screen");
+    app.wait_for_text(".call-screen .call-screen-state", "Connected", DEFAULT_WAIT)
+        .await
+        .expect("connected");
+    app.wait_for_text(".call-screen .call-tile", "alice", DEFAULT_WAIT)
+        .await
+        .expect("a tile for alice");
+    for control in [".mute-button", ".speaker-button", ".hang-up"] {
+        app.wait_for(&format!(".call-screen .call-controls {control}"), DEFAULT_WAIT)
+            .await
+            .unwrap_or_else(|e| panic!("{control} on the call screen: {e}"));
+    }
+    let covered = app
+        .eval(
+            "const r = document.querySelector('.call-screen').getBoundingClientRect(); \
+             return r.top <= 0 && r.left <= 0 && r.width >= innerWidth && r.height >= innerHeight;",
+        )
+        .await
+        .expect("measure");
+    assert_eq!(covered, serde_json::json!(true), "the call fills the screen");
+    shot(&mut app, "android-call-screen").await;
+
+    // Mute from the call screen.
+    app.tap(".call-screen .mute-button").await.expect("mute");
+    app.wait_for(".call-screen .mute-button.active", DEFAULT_WAIT)
+        .await
+        .expect("muted");
+    app.tap(".call-screen .mute-button").await.expect("unmute");
+    app.wait_for(".call-screen .mute-button:not(.active)", DEFAULT_WAIT)
+        .await
+        .expect("unmuted");
+
+    // Back minimizes to a bar in the chat, still in the call.
+    back_key();
+    gone(&mut app, ".call-screen", "the call screen").await;
+    pane(&mut app, "chat").await;
+    app.wait_for_text(".chat .call-bar", "random", DEFAULT_WAIT)
+        .await
+        .expect("the call bar");
+    shot(&mut app, "android-call-bar").await;
+    app.tap(".chat .call-bar").await.expect("open the call again");
+    app.wait_for(".call-screen", DEFAULT_WAIT)
+        .await
+        .expect("the call screen again");
+    app.tap(".call-screen .call-minimize").await.expect("minimize");
+    gone(&mut app, ".call-screen", "the call screen").await;
+    // The header's call button opens it rather than hanging up.
+    app.tap(".chat-header .call-button").await.expect("call button");
+    app.wait_for(".call-screen", DEFAULT_WAIT)
+        .await
+        .expect("the call screen from the header");
+
+    app.tap(".call-screen .hang-up").await.expect("hang up");
+    gone(&mut app, ".call-screen", "the call screen").await;
+    app.wait_for_js(
+        "return !document.querySelector('.voice-panel') && !document.querySelector('.call-bar');",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("out of the call");
 }
