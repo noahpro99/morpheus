@@ -508,3 +508,118 @@ async fn a_call_in_a_dm_rings_the_other_person_who_can_answer_or_decline() {
         "rings or declines shown as unsupported"
     );
 }
+
+/// Whether `user`'s video tile shows the test pattern: red on the left,
+/// blue on the right (what a test run's camera sends).
+fn shows_test_pattern(user: &str) -> String {
+    format!(
+        "const t = [...document.querySelectorAll('.call-stage .video-tile')].find(t => t.dataset.user === {user}); \
+         const i = t && t.querySelector('img.video'); \
+         if (!i || !i.complete || !i.naturalWidth) return false; \
+         const c = document.createElement('canvas'); c.width = i.naturalWidth; c.height = i.naturalHeight; \
+         const g = c.getContext('2d'); g.drawImage(i, 0, 0); \
+         const at = x => g.getImageData(Math.floor(c.width * x), Math.floor(c.height / 2), 1, 1).data; \
+         const l = at(0.25), r = at(0.75); \
+         return l[0] > 150 && l[2] < 100 && r[2] > 150 && r[0] < 100;",
+        user = serde_json::to_string(user).expect("json"),
+    )
+}
+
+#[tokio::test]
+async fn a_camera_turned_on_shows_to_everyone_in_the_call_until_turned_off() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    // An encrypted room: the video is end-to-end encrypted like the audio.
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    login_and_open(&mut alice, "alice", "encrypted").await;
+    let mut bob = App::launch(&hs).await.expect("launch bob");
+    login_and_open(&mut bob, "bob", "encrypted").await;
+    alice
+        .click(".chat-header .call-button")
+        .await
+        .expect("call");
+    alice
+        .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("alice connected");
+    bob.click(".chat-header .call-button").await.expect("join");
+    bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("bob connected");
+    // No cameras yet, so no stage.
+    assert_eq!(bob.count(".call-stage").await.expect("count"), 0);
+
+    // Alice turns hers on (the voice panel is with the room list on a phone).
+    if alice.is_phone() {
+        alice
+            .click(".chat-header .pane-back")
+            .await
+            .expect("back to the list");
+    }
+    alice
+        .click(".voice-panel .camera-button")
+        .await
+        .expect("camera on");
+    alice
+        .wait_for(".voice-panel .camera-button.active", DEFAULT_WAIT)
+        .await
+        .expect("the button shows it on");
+    if alice.is_phone() {
+        alice
+            .open_room("encrypted")
+            .await
+            .expect("back to the room");
+    }
+    // She sees herself, and bob sees her: the picture arrived, decrypted.
+    alice
+        .wait_for_js(&shows_test_pattern("@alice:localhost"), DEFAULT_WAIT)
+        .await
+        .expect("alice's self view");
+    bob.wait_for_js(&shows_test_pattern("@alice:localhost"), DEFAULT_WAIT)
+        .await
+        .expect("bob sees alice's camera");
+    bob.wait_for_text(".video-tile .video-name", "alice", DEFAULT_WAIT)
+        .await
+        .expect("her tile is named");
+    if let Some(path) = bob.screenshot("call-video").await.expect("screenshot") {
+        eprintln!("screenshot: {}", path.display());
+    }
+
+    // Off again: her tile goes, and with no cameras on, the stage.
+    if alice.is_phone() {
+        alice
+            .click(".chat-header .pane-back")
+            .await
+            .expect("back to the list");
+    }
+    alice
+        .click(".voice-panel .camera-button")
+        .await
+        .expect("camera off");
+    bob.wait_for_js(
+        "return !document.querySelector('.call-stage');",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("the stage goes when the camera does");
+    alice
+        .wait_for_js(
+            "return !document.querySelector('.call-stage');",
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("alice's self view goes too");
+
+    alice
+        .click(".voice-panel .hang-up")
+        .await
+        .expect("alice hangs up");
+    if bob.is_phone() {
+        bob.click(".chat-header .pane-back").await.expect("back");
+    }
+    bob.click(".voice-panel .hang-up")
+        .await
+        .expect("bob hangs up");
+}

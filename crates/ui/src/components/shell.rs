@@ -1085,6 +1085,7 @@ fn ChatRoom(room: RoomSummary) -> Element {
                 "{room.member_count}"
             }
         }
+        super::call::CallStage { room_id: room.id.clone() }
         TimelineView { room_id: room.id.clone() }
         TypingLine { names: typing() }
         Composer {

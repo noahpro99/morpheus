@@ -29,6 +29,7 @@ use livekit::{
         audio_frame::AudioFrame,
         audio_source::{AudioSourceOptions, native::NativeAudioSource},
         audio_stream::native::NativeAudioStream,
+        video_source::{RtcVideoSource, VideoResolution, native::NativeVideoSource},
     },
 };
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
@@ -39,6 +40,10 @@ pub use devices::{
     AudioDevice, AudioDevices, DeviceChoice, audio_devices, choose_audio_devices,
     chosen_audio_devices,
 };
+#[cfg(target_os = "linux")]
+mod camera;
+mod video;
+pub use video::{Frame, LOCAL_CAMERA, TEST_PATTERN, latest_frame};
 
 /// Where the call's audio comes from and goes to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,6 +72,11 @@ impl AudioMode {
 
 static TEST_TONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+/// Whether calls here can send video: a webcam on Linux, or the test pattern.
+pub fn can_send_video() -> bool {
+    cfg!(target_os = "linux") || AudioMode::from_env() == AudioMode::Tone
+}
+
 /// Calls send a test tone and play nothing from now on (test builds).
 pub fn use_test_tone() {
     TEST_TONE.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -89,6 +99,13 @@ pub enum CallEvent {
     Quiet(String),
     /// The connection is gone (kicked, server down, network lost).
     Disconnected(String),
+    /// Video from this participant started (`on`) or stopped arriving, shown
+    /// under `key` ([`latest_frame`]).
+    Video {
+        identity: String,
+        key: String,
+        on: bool,
+    },
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -97,6 +114,8 @@ pub enum Error {
     Connect(String),
     #[error("could not use the microphone: {0}")]
     Audio(String),
+    #[error("could not use the camera: {0}")]
+    Video(String),
     #[error("call runtime task failed: {0}")]
     Join(#[from] tokio::task::JoinError),
 }
@@ -134,6 +153,9 @@ pub struct Call {
     deafened: Arc<Mutex<bool>>,
     /// The platform devices, open for the call's lifetime.
     platform: Option<PlatformAudio>,
+    mode: AudioMode,
+    /// The camera, while it is on.
+    camera: Arc<tokio::sync::Mutex<Option<Camera>>>,
     tasks: Vec<tokio::task::JoinHandle<()>>,
 }
 
@@ -256,6 +278,8 @@ impl Call {
                 mic,
                 deafened,
                 platform,
+                mode,
+                camera: Arc::default(),
                 tasks,
             },
             rx,
@@ -318,6 +342,36 @@ impl Call {
         }
     }
 
+    /// Whether the camera is on.
+    pub fn camera_on(&self) -> bool {
+        self.camera
+            .try_lock()
+            .map_or(true, |camera| camera.is_some())
+    }
+
+    /// Turn the camera on (or off). What it sends shows under
+    /// [`LOCAL_CAMERA`] too.
+    pub fn set_camera(&self, on: bool) -> impl Future<Output = Result<()>> + 'static {
+        let (room, camera, mode) = (self.room.clone(), self.camera.clone(), self.mode);
+        let encrypted = self.keys.is_some();
+        async move {
+            runtime()
+                .spawn(async move {
+                    let mut camera = camera.lock().await;
+                    match (on, camera.take()) {
+                        (true, Some(running)) => *camera = Some(running),
+                        (true, None) => {
+                            *camera = Some(Camera::start(&room, mode, encrypted).await?)
+                        }
+                        (false, Some(running)) => running.stop(&room).await,
+                        (false, None) => {}
+                    }
+                    Ok(())
+                })
+                .await?
+        }
+    }
+
     /// Hang up.
     pub async fn leave(self) {
         let room = self.room.clone();
@@ -337,6 +391,101 @@ impl Drop for Call {
         for task in &self.tasks {
             task.abort();
         }
+        if let Ok(mut camera) = self.camera.try_lock()
+            && let Some(camera) = camera.take()
+        {
+            camera.halt();
+        }
+        video::forget(LOCAL_CAMERA);
+    }
+}
+
+/// The camera, published.
+struct Camera {
+    track: LocalVideoTrack,
+    stop: Arc<std::sync::atomic::AtomicBool>,
+}
+
+/// What a camera's frames come from.
+enum Feed {
+    TestPattern,
+    #[cfg(target_os = "linux")]
+    Device(camera::Camera),
+}
+
+impl Camera {
+    async fn start(room: &Room, mode: AudioMode, encrypted: bool) -> Result<Self> {
+        let (feed, resolution) = match mode {
+            AudioMode::Tone => {
+                let (width, height) = video::TEST_PATTERN;
+                (Feed::TestPattern, VideoResolution { width, height })
+            }
+            #[cfg(target_os = "linux")]
+            AudioMode::Platform => {
+                let device = tokio::task::spawn_blocking(camera::Camera::open)
+                    .await?
+                    .map_err(|err| Error::Video(err.to_string()))?;
+                let resolution = device.resolution();
+                (Feed::Device(device), resolution)
+            }
+            #[cfg(not(target_os = "linux"))]
+            AudioMode::Platform => {
+                return Err(Error::Video("no camera support on this device yet".into()));
+            }
+        };
+        let source = NativeVideoSource::new(resolution, false);
+        let track =
+            LocalVideoTrack::create_video_track("camera", RtcVideoSource::Native(source.clone()));
+        let publication = room
+            .local_participant()
+            .publish_track(
+                LocalTrack::Video(track.clone()),
+                TrackPublishOptions {
+                    source: TrackSource::Camera,
+                    ..Default::default()
+                },
+            )
+            .await
+            .map_err(|err| Error::Video(err.to_string()))?;
+        // Encrypted calls: no frames until the encryptor sits on the track,
+        // or the first would leave in the clear.
+        if encrypted {
+            let key = (room.local_participant().identity(), publication.sid());
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            while !room.e2ee_manager().frame_cryptors().contains_key(&key) {
+                if std::time::Instant::now() > deadline {
+                    let _ = room.local_participant().unpublish_track(&key.1).await;
+                    return Err(Error::Video("video encryption did not start".into()));
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        }
+        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        match feed {
+            Feed::TestPattern => {
+                tokio::spawn(video::play_test_pattern(source, stop.clone()));
+            }
+            #[cfg(target_os = "linux")]
+            Feed::Device(device) => device.run(source, stop.clone()),
+        }
+        Ok(Self { track, stop })
+    }
+
+    async fn stop(self, room: &Room) {
+        self.halt();
+        if let Err(err) = room
+            .local_participant()
+            .unpublish_track(&self.track.sid())
+            .await
+        {
+            debug!(%err, "unpublishing the camera");
+        }
+        video::forget(LOCAL_CAMERA);
+    }
+
+    /// Stop sending frames.
+    fn halt(&self) {
+        self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
     }
 }
 
@@ -394,6 +543,34 @@ async fn forward_events(
                     ));
                 }
                 continue;
+            }
+            RoomEvent::TrackSubscribed {
+                track: RemoteTrack::Video(track),
+                participant,
+                ..
+            } => {
+                let identity = participant.identity().to_string();
+                let key = format!("{identity}/{}", track.sid());
+                tokio::spawn(video::show_remote(track, key.clone()));
+                CallEvent::Video {
+                    identity,
+                    key,
+                    on: true,
+                }
+            }
+            RoomEvent::TrackUnsubscribed {
+                track: RemoteTrack::Video(track),
+                participant,
+                ..
+            } => {
+                let identity = participant.identity().to_string();
+                let key = format!("{identity}/{}", track.sid());
+                video::forget(&key);
+                CallEvent::Video {
+                    identity,
+                    key,
+                    on: false,
+                }
             }
             RoomEvent::Disconnected { reason } => CallEvent::Disconnected(format!("{reason:?}")),
             _ => continue,

@@ -200,3 +200,93 @@ async fn snoop_without_the_key() {
         }
     );
 }
+
+/// The colour at `(x, y)` of a JPEG, as (r, g, b).
+fn pixel(jpeg: &[u8], x: usize, y: usize) -> (u8, u8, u8) {
+    let mut decoder = zune_jpeg::JpegDecoder::new(std::io::Cursor::new(jpeg));
+    let rgb = decoder.decode().expect("a JPEG");
+    let (width, _) = decoder.dimensions().expect("dimensions");
+    let at = (y * width + x) * 3;
+    (rgb[at], rgb[at + 1], rgb[at + 2])
+}
+
+#[tokio::test]
+async fn a_camera_turned_on_is_seen_by_the_other_side_until_turned_off() {
+    let Some(url) = livekit() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping media test");
+        return;
+    };
+    let room = format!("video-test-{}", std::process::id());
+    let (alice_key, bob_key) = (b"0123456789abcdef".to_vec(), b"fedcba9876543210".to_vec());
+    let (viewer, mut events) =
+        Call::connect_encrypted(&url, &token(&room, "viewer"), AudioMode::Tone, bob_key)
+            .await
+            .expect("viewer connects");
+    let (camera, _camera_events) = Call::connect_encrypted(
+        &url,
+        &token(&room, "camera"),
+        AudioMode::Tone,
+        alice_key.clone(),
+    )
+    .await
+    .expect("camera connects");
+    viewer.set_key("camera", alice_key);
+
+    camera.set_camera(true).await.expect("camera on");
+    assert!(camera.camera_on());
+    // This device shows what it sends.
+    timeout(Duration::from_secs(5), async {
+        while morpheus_call::latest_frame(morpheus_call::LOCAL_CAMERA).is_none() {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("a self view");
+
+    let mut key = String::new();
+    wait_for(&mut events, "the camera's video", |e| match e {
+        CallEvent::Video {
+            identity,
+            key: k,
+            on: true,
+        } if identity == "camera" => {
+            key = k.clone();
+            true
+        }
+        _ => false,
+    })
+    .await;
+    // The picture arrives, decrypted: red on the left, blue on the right.
+    let frame = timeout(Duration::from_secs(20), async {
+        loop {
+            if let Some(frame) = morpheus_call::latest_frame(&key) {
+                let (w, h) = (frame.width as usize, frame.height as usize);
+                let (left, right) = (
+                    pixel(&frame.jpeg, w / 4, h / 2),
+                    pixel(&frame.jpeg, 3 * w / 4, h / 2),
+                );
+                if left.0 > 150 && left.2 < 100 && right.2 > 150 && right.0 < 100 {
+                    return frame;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await
+    .expect("the test pattern, decrypted, on the far side");
+    assert_eq!((frame.width, frame.height), morpheus_call::TEST_PATTERN);
+
+    // Off, it goes away on both sides.
+    camera.set_camera(false).await.expect("camera off");
+    assert!(!camera.camera_on());
+    assert!(morpheus_call::latest_frame(morpheus_call::LOCAL_CAMERA).is_none());
+    wait_for(
+        &mut events,
+        "the camera's video stopping",
+        |e| matches!(e, CallEvent::Video { identity, on: false, .. } if identity == "camera"),
+    )
+    .await;
+    assert!(morpheus_call::latest_frame(&key).is_none());
+    camera.leave().await;
+    viewer.leave().await;
+}
