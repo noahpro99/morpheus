@@ -20,7 +20,7 @@ use matrix_sdk::{
 use tokio::sync::mpsc;
 use tracing::debug;
 
-use crate::{CoreFuture, OwnedRoomId, Session};
+use crate::{CoreFuture, MediaRef, OwnedRoomId, Session};
 
 /// Messages older than this at subscription time are history, not news.
 const STALE_AFTER_MS: u64 = 60_000;
@@ -36,6 +36,10 @@ pub struct Notification {
     pub body_summary: String,
     /// Whether the user's push rules flagged this as a highlight (mention).
     pub is_mention: bool,
+    /// The sender's picture, for the notification's icon.
+    pub sender_avatar: Option<MediaRef>,
+    /// The photo, when the message is one.
+    pub image: Option<MediaRef>,
 }
 
 /// A live stream of [`Notification`]s across every joined room.
@@ -117,9 +121,18 @@ async fn notification_for(
     }
     let is_mention = actions.iter().any(Action::is_highlight);
 
-    let sender_name = match room.get_member_no_sync(&event.sender).await {
-        Ok(Some(member)) => member.name().to_owned(),
-        _ => event.sender.localpart().to_owned(),
+    let (sender_name, sender_avatar) = match room.get_member_no_sync(&event.sender).await {
+        Ok(Some(member)) => (
+            member.name().to_owned(),
+            member
+                .avatar_url()
+                .map(|uri| MediaRef::from_mxc(uri.to_owned())),
+        ),
+        _ => (event.sender.localpart().to_owned(), None),
+    };
+    let image = match &event.content.msgtype {
+        MessageType::Image(image) => Some(MediaRef::from_source(image.source.clone())),
+        _ => None,
     };
     let room_name = room
         .cached_display_name()
@@ -134,6 +147,8 @@ async fn notification_for(
         sender_name,
         body_summary: summarize(&event.content.msgtype),
         is_mention,
+        sender_avatar,
+        image,
     })
 }
 

@@ -154,6 +154,10 @@ async fn notifications_can_be_turned_off_on_this_device() {
     let mut alice = App::launch(&hs).await.expect("launch alice");
     login(&mut alice, "alice").await;
     alice.open_room("general").await.expect("alice in #general");
+    alice
+        .wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
+        .await
+        .expect("composer ready");
     let text = format!("quiet please {}", std::process::id());
     send(&mut alice, &text).await;
     let log = bob.data_dir().join("app.log");
@@ -186,4 +190,95 @@ async fn notifications_can_be_turned_off_on_this_device() {
         assert!(std::time::Instant::now() < deadline, "setting not cleared");
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     }
+}
+
+/// What the desktop app would have shown: under test it writes each
+/// notification to `shown-notifications.jsonl` instead of raising it.
+fn shown(app: &App) -> Vec<serde_json::Value> {
+    std::fs::read_to_string(app.data_dir().join("shown-notifications.jsonl"))
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|line| serde_json::from_str(line).ok())
+        .collect()
+}
+
+fn is_image(path: &serde_json::Value) -> bool {
+    path.as_str()
+        .and_then(|path| std::fs::read(path).ok())
+        .is_some_and(|bytes| {
+            bytes.starts_with(&[0x89, b'P', b'N', b'G']) || bytes.starts_with(&[0xFF, 0xD8, 0xFF])
+        })
+}
+
+const TINY_PNG: &[u8] = &[
+    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
+    0x89, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0xF8, 0xCF, 0xC0, 0x00,
+    0x00, 0x03, 0x01, 0x01, 0x00, 0x18, 0xDD, 0x8D, 0xB0, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E,
+    0x44, 0xAE, 0x42, 0x60, 0x82,
+];
+
+/// A notification carries the sender's picture, as Discord's do, and a
+/// photo sent shows in it too.
+#[tokio::test]
+async fn notifications_show_the_senders_picture_and_the_photo() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut bob = App::launch_desktop(&hs).await.expect("launch bob");
+    login(&mut bob, "bob").await;
+    bob.open_room("random").await.expect("bob reads #random");
+
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    login(&mut alice, "alice").await;
+    alice.open_room("general").await.expect("alice in #general");
+    alice
+        .wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
+        .await
+        .expect("composer ready");
+
+    let pid = std::process::id();
+    let text = format!("picture ping {pid}");
+    send(&mut alice, &text).await;
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    let notice = loop {
+        if let Some(notice) = shown(&bob)
+            .into_iter()
+            .find(|n| n["body"].as_str().is_some_and(|b| b.contains(&text)))
+        {
+            break notice;
+        }
+        assert!(std::time::Instant::now() < deadline, "not shown: {:?}", shown(&bob));
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    };
+    assert!(is_image(&notice["icon"]), "alice's picture as the icon: {notice}");
+
+    // A photo: the picture itself in the notification.
+    let photo = format!("photo-{pid}.png");
+    let bytes: Vec<String> = TINY_PNG.iter().map(|b| b.to_string()).collect();
+    alice
+        .eval(&format!(
+            "const dt = new DataTransfer(); dt.items.add(new File([new Uint8Array([{}])], {}, {{ type: 'image/png' }})); \
+             const target = document.querySelector('.chat'); \
+             target.dispatchEvent(new DragEvent('dragover', {{ bubbles: true, cancelable: true, dataTransfer: dt }})); \
+             target.dispatchEvent(new DragEvent('drop', {{ bubbles: true, cancelable: true, dataTransfer: dt }}));",
+            bytes.join(","),
+            serde_json::to_string(&photo).expect("json")
+        ))
+        .await
+        .expect("drop a photo");
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    let notice = loop {
+        if let Some(notice) = shown(&bob)
+            .into_iter()
+            .find(|n| n["body"].as_str().is_some_and(|b| b.contains(&photo)))
+        {
+            break notice;
+        }
+        assert!(std::time::Instant::now() < deadline, "photo not shown: {:?}", shown(&bob));
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    };
+    assert!(is_image(&notice["icon"]), "alice's picture: {notice}");
+    assert!(is_image(&notice["image"]), "the photo: {notice}");
 }
