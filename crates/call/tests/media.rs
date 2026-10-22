@@ -248,6 +248,7 @@ async fn a_camera_turned_on_is_seen_by_the_other_side_until_turned_off() {
         CallEvent::Video {
             identity,
             key: k,
+            screen: false,
             on: true,
         } if identity == "camera" => {
             key = k.clone();
@@ -274,7 +275,8 @@ async fn a_camera_turned_on_is_seen_by_the_other_side_until_turned_off() {
     })
     .await
     .expect("the test pattern, decrypted, on the far side");
-    assert_eq!((frame.width, frame.height), morpheus_call::TEST_PATTERN);
+    let pattern = morpheus_call::CAMERA_PATTERN;
+    assert_eq!((frame.width, frame.height), (pattern.width, pattern.height));
 
     // Off, it goes away on both sides.
     camera.set_camera(false).await.expect("camera off");
@@ -288,5 +290,62 @@ async fn a_camera_turned_on_is_seen_by_the_other_side_until_turned_off() {
     .await;
     assert!(morpheus_call::latest_frame(&key).is_none());
     camera.leave().await;
+    viewer.leave().await;
+}
+
+#[tokio::test]
+async fn a_shared_screen_is_seen_as_a_screen_by_the_other_side() {
+    let Some(url) = livekit() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping media test");
+        return;
+    };
+    let room = format!("screen-test-{}", std::process::id());
+    let (viewer, mut events) = Call::connect(&url, &token(&room, "viewer"), AudioMode::Tone)
+        .await
+        .expect("viewer connects");
+    let (sharer, _sharer_events) = Call::connect(&url, &token(&room, "sharer"), AudioMode::Tone)
+        .await
+        .expect("sharer connects");
+
+    sharer.set_screen_share(true).await.expect("share");
+    assert!(sharer.sharing_screen());
+    assert!(!sharer.camera_on(), "the screen is not the camera");
+    let mut key = String::new();
+    wait_for(&mut events, "the shared screen", |e| match e {
+        CallEvent::Video {
+            identity,
+            key: k,
+            screen: true,
+            on: true,
+        } if identity == "sharer" => {
+            key = k.clone();
+            true
+        }
+        _ => false,
+    })
+    .await;
+    // Green on the left, yellow on the right.
+    timeout(Duration::from_secs(20), async {
+        loop {
+            if let Some(frame) = morpheus_call::latest_frame(&key) {
+                let (w, h) = (frame.width as usize, frame.height as usize);
+                let left = pixel(&frame.jpeg, w / 4, h / 2);
+                let right = pixel(&frame.jpeg, 3 * w / 4, h / 2);
+                if left.1 > 150 && left.0 < 100 && right.0 > 150 && right.1 > 150 && right.2 < 100 {
+                    return;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await
+    .expect("the screen's pattern on the far side");
+
+    sharer.set_screen_share(false).await.expect("stop sharing");
+    wait_for(&mut events, "the screen going", |e| {
+        matches!(e, CallEvent::Video { identity, screen: true, on: false, .. } if identity == "sharer")
+    })
+    .await;
+    sharer.leave().await;
     viewer.leave().await;
 }

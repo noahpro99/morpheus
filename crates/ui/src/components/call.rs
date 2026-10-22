@@ -10,12 +10,14 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use dioxus::core::spawn_forever;
 use dioxus::prelude::*;
-use morpheus_call::{AudioMode, Call, CallEvent, DeviceChoice, LOCAL_CAMERA};
+use morpheus_call::{AudioMode, Call, CallEvent, DeviceChoice, LOCAL_CAMERA, LOCAL_SCREEN};
 use morpheus_core::{IncomingCall, OwnedRoomId, OwnedUserId, Ringing, RoomSummary, Session};
 
 use super::shell::go_to;
 use super::toast::report;
-use crate::icons::{Icon, PHONE, PHONE_OFF, VIDEO, VIDEO_OFF, VOLUME_2};
+use crate::icons::{
+    Icon, PHONE, PHONE_OFF, SCREEN_SHARE, SCREEN_SHARE_OFF, VIDEO, VIDEO_OFF, VOLUME_2,
+};
 use crate::media::Avatar;
 use crate::sounds::{Sound, play};
 
@@ -30,10 +32,14 @@ pub struct CallState {
     pub speaking: Vec<OwnedUserId>,
     /// Whose audio arrives, decrypted (test tones only; see `AudioMode::Tone`).
     pub heard: Vec<OwnedUserId>,
-    /// The video showing, this device's camera first.
+    /// The video showing: screens, then cameras, this device's first of each.
     pub video: Vec<VideoFeed>,
     /// This device's camera is on.
     pub camera: bool,
+    /// This device's screen is shared.
+    pub screen: bool,
+    /// The desktop is asking which screen to share.
+    pub choosing_screen: bool,
 }
 
 /// Someone's video, and where its pictures are ([`morpheus_call::latest_frame`]).
@@ -41,6 +47,8 @@ pub struct CallState {
 pub struct VideoFeed {
     pub user: OwnedUserId,
     pub key: String,
+    /// A shared screen, not a camera.
+    pub screen: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -206,6 +214,8 @@ pub fn join_call(session: Session, room_id: OwnedRoomId, room_name: String) {
             heard: Vec::new(),
             video: Vec::new(),
             camera: false,
+            screen: false,
+            choosing_screen: false,
         })));
         let wanted = room_id.clone();
         let still_wanted = move || {
@@ -374,7 +384,12 @@ pub fn join_call(session: Session, room_id: OwnedRoomId, room_name: String) {
                         });
                     }
                 }
-                CallEvent::Video { identity, key, on } => {
+                CallEvent::Video {
+                    identity,
+                    key,
+                    screen,
+                    on,
+                } => {
                     if !people.contains_key(&identity) {
                         refresh_people(&session, &room_id, &mut people).await;
                     }
@@ -383,7 +398,13 @@ pub fn join_call(session: Session, room_id: OwnedRoomId, room_name: String) {
                         if let Some(state) = slot.0.as_mut() {
                             state.video.retain(|feed| feed.key != key);
                             if on && let Some(user) = user {
-                                state.video.push(VideoFeed { user, key });
+                                let feed = VideoFeed { user, key, screen };
+                                if screen {
+                                    let at = state.video.iter().take_while(|f| f.screen).count();
+                                    state.video.insert(at, feed);
+                                } else {
+                                    state.video.push(feed);
+                                }
                             }
                         }
                     });
@@ -481,32 +502,78 @@ pub fn set_earpiece(earpiece: bool) {
 
 /// Turn this device's camera on or off in the call going.
 pub fn set_camera(session: Session, on: bool) {
+    set_video(session, false, on);
+}
+
+/// Share this device's screen in the call going, or stop. The desktop may
+/// ask which screen or window first; cancelling there just leaves it off.
+pub fn set_screen_share(session: Session, on: bool) {
+    set_video(session, true, on);
+}
+
+fn set_video(session: Session, screen: bool, on: bool) {
     let mut active = consume_context::<ActiveCall>();
     let media = consume_context::<CallMedia>();
-    let Some(switch) = media.0.borrow().as_ref().map(|call| call.set_camera(on)) else {
+    type Switch = std::pin::Pin<Box<dyn Future<Output = morpheus_call::Result<()>>>>;
+    let Some(switch) = media.0.borrow().as_ref().map(|call| -> Switch {
+        if screen {
+            Box::pin(call.set_screen_share(on))
+        } else {
+            Box::pin(call.set_camera(on))
+        }
+    }) else {
         return;
     };
+    let key = if screen { LOCAL_SCREEN } else { LOCAL_CAMERA };
+    if screen && on {
+        active.with_mut(|slot| {
+            if let Some(state) = slot.0.as_mut() {
+                state.choosing_screen = true;
+            }
+        });
+    }
     spawn_forever(async move {
-        if let Err(err) = switch.await {
-            report("turning the camera on", &err);
-            return;
-        }
+        let switched = switch.await;
         let me = session.user_id();
         active.with_mut(|slot| {
             if let Some(state) = slot.0.as_mut() {
-                state.camera = on;
-                state.video.retain(|feed| feed.key != LOCAL_CAMERA);
+                if screen {
+                    state.choosing_screen = false;
+                }
+                if switched.is_err() {
+                    return;
+                }
+                if screen {
+                    state.screen = on;
+                } else {
+                    state.camera = on;
+                }
+                state.video.retain(|feed| feed.key != key);
                 if on && let Some(user) = me {
+                    // Screens first, then cameras; this device's first of each.
+                    let at = if screen {
+                        0
+                    } else {
+                        state.video.iter().take_while(|feed| feed.screen).count()
+                    };
                     state.video.insert(
-                        0,
+                        at,
                         VideoFeed {
                             user,
-                            key: LOCAL_CAMERA.to_owned(),
+                            key: key.to_owned(),
+                            screen,
                         },
                     );
                 }
             }
         });
+        match switched {
+            // Changing one's mind in the screen picker is not a failure.
+            Err(err) if err.to_string().contains("cancelled") => {}
+            Err(err) if screen => report("sharing the screen", &err),
+            Err(err) => report("turning the camera on", &err),
+            Ok(()) => {}
+        }
     });
 }
 
@@ -599,7 +666,7 @@ pub fn CallStage(room_id: OwnedRoomId) -> Element {
     rsx! {
         div { class: "call-stage",
             for feed in call.video {
-                VideoTile { key: "{feed.key}", user: feed.user, feed: feed.key }
+                VideoTile { key: "{feed.key}", user: feed.user, feed: feed.key, screen: feed.screen }
             }
         }
     }
@@ -610,7 +677,7 @@ const VIDEO_POLL_MS: u64 = 1000 / 30;
 
 /// One person's video: the latest picture, as it comes.
 #[component]
-fn VideoTile(user: OwnedUserId, feed: String) -> Element {
+fn VideoTile(user: OwnedUserId, feed: String, screen: bool) -> Element {
     let (name, _) = use_person(&user);
     use_future({
         let feed = feed.clone();
@@ -641,11 +708,14 @@ fn VideoTile(user: OwnedUserId, feed: String) -> Element {
     rsx! {
         div {
             class: "video-tile",
-            class: if feed == LOCAL_CAMERA { "self" },
+            class: if feed == LOCAL_CAMERA || feed == LOCAL_SCREEN { "self" },
+            class: if screen { "screen" },
             "data-feed": "{feed}",
             "data-user": "{user}",
             img { class: "video", alt: "" }
-            span { class: "video-name", "{name}" }
+            span { class: "video-name",
+                if screen { "{name}'s screen" } else { "{name}" }
+            }
         }
     }
 }
@@ -700,6 +770,20 @@ pub fn VoicePanel() -> Element {
                 },
                 Icon { glyph: if call.camera { VIDEO } else { VIDEO_OFF }, size: 18 }
             }
+            }
+            if morpheus_call::can_share_screen() {
+                button {
+                    class: "ghost screen-button",
+                    class: if call.screen { "active" },
+                    class: if call.choosing_screen { "pending" },
+                    title: if call.screen { "Stop sharing your screen" } else { "Share your screen" },
+                    disabled: !call.connected || call.choosing_screen,
+                    onclick: {
+                        let (session, on) = (session.clone(), !call.screen);
+                        move |_| set_screen_share(session.clone(), on)
+                    },
+                    Icon { glyph: if call.screen { SCREEN_SHARE_OFF } else { SCREEN_SHARE }, size: 18 }
+                }
             }
             button {
                 class: "ghost hang-up",

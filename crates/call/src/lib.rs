@@ -13,7 +13,10 @@
 
 use std::{
     borrow::Cow,
-    sync::{Arc, Mutex, OnceLock},
+    sync::{
+        Arc, Mutex, OnceLock,
+        atomic::{AtomicBool, Ordering},
+    },
     time::Duration,
 };
 
@@ -42,8 +45,12 @@ pub use devices::{
 };
 #[cfg(target_os = "linux")]
 mod camera;
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+mod screen;
 mod video;
-pub use video::{Frame, LOCAL_CAMERA, TEST_PATTERN, latest_frame};
+pub use video::{
+    CAMERA_PATTERN, Frame, LOCAL_CAMERA, LOCAL_SCREEN, SCREEN_PATTERN, TestPattern, latest_frame,
+};
 
 /// Where the call's audio comes from and goes to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,6 +84,15 @@ pub fn can_send_video() -> bool {
     cfg!(target_os = "linux") || AudioMode::from_env() == AudioMode::Tone
 }
 
+/// Whether calls here can share the screen: desktops, or the test pattern.
+pub fn can_share_screen() -> bool {
+    cfg!(any(
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "windows"
+    )) || AudioMode::from_env() == AudioMode::Tone
+}
+
 /// Calls send a test tone and play nothing from now on (test builds).
 pub fn use_test_tone() {
     TEST_TONE.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -104,6 +120,8 @@ pub enum CallEvent {
     Video {
         identity: String,
         key: String,
+        /// A shared screen, not a camera.
+        screen: bool,
         on: bool,
     },
 }
@@ -155,7 +173,9 @@ pub struct Call {
     platform: Option<PlatformAudio>,
     mode: AudioMode,
     /// The camera, while it is on.
-    camera: Arc<tokio::sync::Mutex<Option<Camera>>>,
+    camera: Arc<tokio::sync::Mutex<Option<Outgoing>>>,
+    /// The shared screen, while it is.
+    screen: Arc<tokio::sync::Mutex<Option<Outgoing>>>,
     tasks: Vec<tokio::task::JoinHandle<()>>,
 }
 
@@ -280,6 +300,7 @@ impl Call {
                 platform,
                 mode,
                 camera: Arc::default(),
+                screen: Arc::default(),
                 tasks,
             },
             rx,
@@ -344,24 +365,51 @@ impl Call {
 
     /// Whether the camera is on.
     pub fn camera_on(&self) -> bool {
-        self.camera
+        self.sending(VideoKind::Camera)
+    }
+
+    /// Whether this device's screen is being shared.
+    pub fn sharing_screen(&self) -> bool {
+        self.sending(VideoKind::Screen)
+    }
+
+    fn sending(&self, kind: VideoKind) -> bool {
+        self.outgoing(kind)
             .try_lock()
-            .map_or(true, |camera| camera.is_some())
+            .map_or(true, |video| video.is_some())
+    }
+
+    fn outgoing(&self, kind: VideoKind) -> &Arc<tokio::sync::Mutex<Option<Outgoing>>> {
+        match kind {
+            VideoKind::Camera => &self.camera,
+            VideoKind::Screen => &self.screen,
+        }
     }
 
     /// Turn the camera on (or off). What it sends shows under
     /// [`LOCAL_CAMERA`] too.
     pub fn set_camera(&self, on: bool) -> impl Future<Output = Result<()>> + 'static {
-        let (room, camera, mode) = (self.room.clone(), self.camera.clone(), self.mode);
+        self.set_video(VideoKind::Camera, on)
+    }
+
+    /// Share this device's screen (or stop). Where the desktop asks which
+    /// screen or window (Wayland), this waits for the answer; cancelling is
+    /// an error. What it sends shows under [`LOCAL_SCREEN`] too.
+    pub fn set_screen_share(&self, on: bool) -> impl Future<Output = Result<()>> + 'static {
+        self.set_video(VideoKind::Screen, on)
+    }
+
+    fn set_video(&self, kind: VideoKind, on: bool) -> impl Future<Output = Result<()>> + 'static {
+        let (room, video, mode) = (self.room.clone(), self.outgoing(kind).clone(), self.mode);
         let encrypted = self.keys.is_some();
         async move {
             runtime()
                 .spawn(async move {
-                    let mut camera = camera.lock().await;
-                    match (on, camera.take()) {
-                        (true, Some(running)) => *camera = Some(running),
+                    let mut video = video.lock().await;
+                    match (on, video.take()) {
+                        (true, Some(running)) => *video = Some(running),
                         (true, None) => {
-                            *camera = Some(Camera::start(&room, mode, encrypted).await?)
+                            *video = Some(Outgoing::start(&room, kind, mode, encrypted).await?)
                         }
                         (false, Some(running)) => running.stop(&room).await,
                         (false, None) => {}
@@ -391,62 +439,126 @@ impl Drop for Call {
         for task in &self.tasks {
             task.abort();
         }
-        if let Ok(mut camera) = self.camera.try_lock()
-            && let Some(camera) = camera.take()
-        {
-            camera.halt();
+        for video in [&self.camera, &self.screen] {
+            if let Ok(mut video) = video.try_lock()
+                && let Some(video) = video.take()
+            {
+                video.halt();
+            }
         }
         video::forget(LOCAL_CAMERA);
+        video::forget(LOCAL_SCREEN);
     }
 }
 
-/// The camera, published.
-struct Camera {
+/// Video this device sends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum VideoKind {
+    Camera,
+    Screen,
+}
+
+/// The camera or the screen, published.
+struct Outgoing {
     track: LocalVideoTrack,
-    stop: Arc<std::sync::atomic::AtomicBool>,
+    kind: VideoKind,
+    stop: Arc<AtomicBool>,
 }
 
-/// What a camera's frames come from.
+/// Where outgoing frames come from.
 enum Feed {
-    TestPattern,
+    TestPattern(video::TestPattern),
     #[cfg(target_os = "linux")]
-    Device(camera::Camera),
+    Camera(camera::Camera),
+    /// Already capturing; frames go out once `sending` is set.
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    Screen(Arc<AtomicBool>),
 }
 
-impl Camera {
-    async fn start(room: &Room, mode: AudioMode, encrypted: bool) -> Result<Self> {
-        let (feed, resolution) = match mode {
-            AudioMode::Tone => {
-                let (width, height) = video::TEST_PATTERN;
-                (Feed::TestPattern, VideoResolution { width, height })
+/// How long the desktop's screen picker may take.
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+const PICKER_TIMEOUT: Duration = Duration::from_secs(180);
+
+impl Outgoing {
+    async fn start(room: &Room, kind: VideoKind, mode: AudioMode, encrypted: bool) -> Result<Self> {
+        let stop = Arc::new(AtomicBool::new(false));
+        let screen = kind == VideoKind::Screen;
+        let (feed, source) = match (mode, kind) {
+            (AudioMode::Tone, _) => {
+                let pattern = if screen {
+                    video::SCREEN_PATTERN
+                } else {
+                    video::CAMERA_PATTERN
+                };
+                let resolution = VideoResolution {
+                    width: pattern.width,
+                    height: pattern.height,
+                };
+                (
+                    Feed::TestPattern(pattern),
+                    NativeVideoSource::new(resolution, screen),
+                )
             }
             #[cfg(target_os = "linux")]
-            AudioMode::Platform => {
+            (AudioMode::Platform, VideoKind::Camera) => {
                 let device = tokio::task::spawn_blocking(camera::Camera::open)
                     .await?
                     .map_err(|err| Error::Video(err.to_string()))?;
-                let resolution = device.resolution();
-                (Feed::Device(device), resolution)
+                let source = NativeVideoSource::new(device.resolution(), false);
+                (Feed::Camera(device), source)
             }
-            #[cfg(not(target_os = "linux"))]
-            AudioMode::Platform => {
-                return Err(Error::Video("no camera support on this device yet".into()));
+            #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+            (AudioMode::Platform, VideoKind::Screen) => {
+                let source = NativeVideoSource::new(
+                    VideoResolution {
+                        width: 1920,
+                        height: 1080,
+                    },
+                    true,
+                );
+                let sending = Arc::new(AtomicBool::new(false));
+                let (started, first) = tokio::sync::oneshot::channel();
+                screen::run(source.clone(), stop.clone(), sending.clone(), started);
+                let first = tokio::time::timeout(PICKER_TIMEOUT, first).await;
+                match first {
+                    Ok(Ok(Ok(()))) => {}
+                    Ok(Ok(Err(why))) => return Err(Error::Video(why)),
+                    _ => {
+                        stop.store(true, Ordering::Relaxed);
+                        return Err(Error::Video("no picture from the screen".into()));
+                    }
+                }
+                (Feed::Screen(sending), source)
+            }
+            #[allow(unreachable_patterns)]
+            (AudioMode::Platform, _) => {
+                return Err(Error::Video("not available on this device yet".into()));
             }
         };
-        let source = NativeVideoSource::new(resolution, false);
+        let (name, track_source) = if screen {
+            ("screen", TrackSource::Screenshare)
+        } else {
+            ("camera", TrackSource::Camera)
+        };
         let track =
-            LocalVideoTrack::create_video_track("camera", RtcVideoSource::Native(source.clone()));
-        let publication = room
+            LocalVideoTrack::create_video_track(name, RtcVideoSource::Native(source.clone()));
+        let published = room
             .local_participant()
             .publish_track(
                 LocalTrack::Video(track.clone()),
                 TrackPublishOptions {
-                    source: TrackSource::Camera,
+                    source: track_source,
                     ..Default::default()
                 },
             )
-            .await
-            .map_err(|err| Error::Video(err.to_string()))?;
+            .await;
+        let publication = match published {
+            Ok(publication) => publication,
+            Err(err) => {
+                stop.store(true, Ordering::Relaxed);
+                return Err(Error::Video(err.to_string()));
+            }
+        };
         // Encrypted calls: no frames until the encryptor sits on the track,
         // or the first would leave in the clear.
         if encrypted {
@@ -454,21 +566,23 @@ impl Camera {
             let deadline = std::time::Instant::now() + Duration::from_secs(5);
             while !room.e2ee_manager().frame_cryptors().contains_key(&key) {
                 if std::time::Instant::now() > deadline {
+                    stop.store(true, Ordering::Relaxed);
                     let _ = room.local_participant().unpublish_track(&key.1).await;
                     return Err(Error::Video("video encryption did not start".into()));
                 }
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
         }
-        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
         match feed {
-            Feed::TestPattern => {
-                tokio::spawn(video::play_test_pattern(source, stop.clone()));
+            Feed::TestPattern(pattern) => {
+                tokio::spawn(video::play_test_pattern(pattern, source, stop.clone()));
             }
             #[cfg(target_os = "linux")]
-            Feed::Device(device) => device.run(source, stop.clone()),
+            Feed::Camera(device) => device.run(source, stop.clone()),
+            #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+            Feed::Screen(sending) => sending.store(true, Ordering::Relaxed),
         }
-        Ok(Self { track, stop })
+        Ok(Self { track, kind, stop })
     }
 
     async fn stop(self, room: &Room) {
@@ -478,14 +592,17 @@ impl Camera {
             .unpublish_track(&self.track.sid())
             .await
         {
-            debug!(%err, "unpublishing the camera");
+            debug!(%err, "unpublishing video");
         }
-        video::forget(LOCAL_CAMERA);
+        video::forget(match self.kind {
+            VideoKind::Camera => LOCAL_CAMERA,
+            VideoKind::Screen => LOCAL_SCREEN,
+        });
     }
 
     /// Stop sending frames.
     fn halt(&self) {
-        self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.stop.store(true, Ordering::Relaxed);
     }
 }
 
@@ -547,7 +664,7 @@ async fn forward_events(
             RoomEvent::TrackSubscribed {
                 track: RemoteTrack::Video(track),
                 participant,
-                ..
+                publication,
             } => {
                 let identity = participant.identity().to_string();
                 let key = format!("{identity}/{}", track.sid());
@@ -555,13 +672,14 @@ async fn forward_events(
                 CallEvent::Video {
                     identity,
                     key,
+                    screen: publication.source() == TrackSource::Screenshare,
                     on: true,
                 }
             }
             RoomEvent::TrackUnsubscribed {
                 track: RemoteTrack::Video(track),
                 participant,
-                ..
+                publication,
             } => {
                 let identity = participant.identity().to_string();
                 let key = format!("{identity}/{}", track.sid());
@@ -569,6 +687,7 @@ async fn forward_events(
                 CallEvent::Video {
                     identity,
                     key,
+                    screen: publication.source() == TrackSource::Screenshare,
                     on: false,
                 }
             }

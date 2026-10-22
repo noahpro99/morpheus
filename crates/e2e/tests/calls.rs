@@ -513,7 +513,7 @@ async fn a_call_in_a_dm_rings_the_other_person_who_can_answer_or_decline() {
 /// blue on the right (what a test run's camera sends).
 fn shows_test_pattern(user: &str) -> String {
     format!(
-        "const t = [...document.querySelectorAll('.call-stage .video-tile')].find(t => t.dataset.user === {user}); \
+        "const t = [...document.querySelectorAll('.call-stage .video-tile:not(.screen)')].find(t => t.dataset.user === {user}); \
          const i = t && t.querySelector('img.video'); \
          if (!i || !i.complete || !i.naturalWidth) return false; \
          const c = document.createElement('canvas'); c.width = i.naturalWidth; c.height = i.naturalHeight; \
@@ -619,6 +619,116 @@ async fn a_camera_turned_on_shows_to_everyone_in_the_call_until_turned_off() {
     if bob.is_phone() {
         bob.click(".chat-header .pane-back").await.expect("back");
     }
+    bob.click(".voice-panel .hang-up")
+        .await
+        .expect("bob hangs up");
+}
+
+/// Whether `user`'s shared screen shows the test run's screen pattern:
+/// green on the left, yellow on the right.
+fn shows_screen_pattern(user: &str) -> String {
+    format!(
+        "const t = [...document.querySelectorAll('.call-stage .video-tile.screen')].find(t => t.dataset.user === {user}); \
+         const i = t && t.querySelector('img.video'); \
+         if (!i || !i.complete || !i.naturalWidth) return false; \
+         const c = document.createElement('canvas'); c.width = i.naturalWidth; c.height = i.naturalHeight; \
+         const g = c.getContext('2d'); g.drawImage(i, 0, 0); \
+         const at = x => g.getImageData(Math.floor(c.width * x), Math.floor(c.height / 2), 1, 1).data; \
+         const l = at(0.25), r = at(0.75); \
+         return l[1] > 150 && l[0] < 100 && r[0] > 150 && r[1] > 150 && r[2] < 100;",
+        user = serde_json::to_string(user).expect("json"),
+    )
+}
+
+#[tokio::test]
+async fn a_shared_screen_shows_to_everyone_in_the_call_until_stopped() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    if alice.is_phone() {
+        eprintln!("phones do not share their screen yet; skipping");
+        return;
+    }
+    login_and_open(&mut alice, "alice", "random").await;
+    let mut bob = App::launch(&hs).await.expect("launch bob");
+    login_and_open(&mut bob, "bob", "random").await;
+    alice
+        .click(".chat-header .call-button")
+        .await
+        .expect("call");
+    alice
+        .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("alice connected");
+    bob.click(".chat-header .call-button").await.expect("join");
+    bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("bob connected");
+
+    alice
+        .click(".voice-panel .screen-button")
+        .await
+        .expect("share");
+    alice
+        .wait_for(".voice-panel .screen-button.active", DEFAULT_WAIT)
+        .await
+        .expect("the button shows it shared");
+    bob.wait_for_js(&shows_screen_pattern("@alice:localhost"), DEFAULT_WAIT)
+        .await
+        .expect("bob sees alice's screen");
+    bob.wait_for_text(
+        ".video-tile.screen .video-name",
+        "alice's screen",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("named as her screen");
+    alice
+        .wait_for_js(&shows_screen_pattern("@alice:localhost"), DEFAULT_WAIT)
+        .await
+        .expect("alice sees what she shares");
+    // Her camera too: the screen stays first.
+    alice
+        .click(".voice-panel .camera-button")
+        .await
+        .expect("camera on");
+    bob.wait_for_js(&shows_test_pattern("@alice:localhost"), DEFAULT_WAIT)
+        .await
+        .expect("and her camera");
+    let order = bob
+        .eval("return [...document.querySelectorAll('.call-stage .video-tile')].map(t => t.classList.contains('screen'));")
+        .await
+        .expect("order");
+    assert_eq!(order, serde_json::json!([true, false]), "screen first");
+    if let Some(path) = bob
+        .screenshot("call-screen-share")
+        .await
+        .expect("screenshot")
+    {
+        eprintln!("screenshot: {}", path.display());
+    }
+
+    alice
+        .click(".voice-panel .screen-button")
+        .await
+        .expect("stop sharing");
+    bob.wait_for_js(
+        "return !document.querySelector('.video-tile.screen');",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("her screen goes");
+    assert_eq!(
+        bob.count(".call-stage .video-tile").await.expect("count"),
+        1,
+        "her camera stays"
+    );
+    alice
+        .click(".voice-panel .hang-up")
+        .await
+        .expect("alice hangs up");
     bob.click(".voice-panel .hang-up")
         .await
         .expect("bob hangs up");
