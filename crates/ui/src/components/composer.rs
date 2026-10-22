@@ -7,7 +7,7 @@ use super::hotkeys::{FileDrops, Hotkey, HotkeyRequest};
 use super::shell::{Mention, MentionRequest};
 use super::timeline::LastOwnMessage;
 use crate::attach::pick_attachment;
-use crate::icons::{Icon, PLUS, SMILE};
+use crate::icons::{Icon, PLUS, SEND, SMILE};
 
 /// One row of the composer's autocomplete.
 #[derive(Debug, Clone, PartialEq)]
@@ -294,6 +294,8 @@ pub fn Composer(
         _ => {}
     });
 
+    // A phone (not a narrow desktop window): its keyboard's Enter is a new line.
+    let on_phone = cfg!(any(target_os = "android", target_os = "ios"));
     let placeholder_text = placeholder.unwrap_or_else(|| format!("Message #{room_name}"));
 
     rsx! {
@@ -321,9 +323,11 @@ pub fn Composer(
                     onclick: move |_| attach(()),
                     Icon { glyph: PLUS, size: 18 }
                 }
-                input {
+                // Grows with its lines (a few, then it scrolls).
+                textarea {
+                    class: "composer-input",
+                    rows: "{draft().lines().count().clamp(1, 8)}",
                     onmounted: move |e| input_el.set(Some(e.data())),
-                    r#type: "text",
                     placeholder: "{placeholder_text}",
                     value: "{draft}",
                     disabled: timeline().is_none(),
@@ -352,7 +356,13 @@ pub fn Composer(
                                 e.prevent_default();
                                 emoji_open.set(false);
                             }
-                            Key::Enter if !e.modifiers().shift() => {
+                            // On a phone Enter is a new line (the send button
+                            // sends), as in Discord's app; elsewhere it sends,
+                            // and Shift+Enter is the new line. A keyboard
+                            // plugged into a phone sends with Ctrl+Enter.
+                            Key::Enter if !e.modifiers().shift()
+                                && (!on_phone || e.modifiers().ctrl()) =>
+                            {
                                 e.prevent_default();
                                 send();
                             }
@@ -369,6 +379,19 @@ pub fn Composer(
                     disabled: timeline().is_none(),
                     onclick: move |_| emoji_open.toggle(),
                     Icon { glyph: SMILE, size: 20 }
+                }
+                if on_phone {
+                    button {
+                        class: "send-button",
+                        class: if !draft().trim().is_empty() { "ready" },
+                        title: "Send",
+                        r#type: "button",
+                        disabled: timeline().is_none() || draft().trim().is_empty(),
+                        // The keyboard stays up: tapping does not take focus.
+                        onmousedown: move |e| e.prevent_default(),
+                        onclick: move |_| send(),
+                        Icon { glyph: SEND, size: 18 }
+                    }
                 }
             }
             if !suggestions().is_empty() {
