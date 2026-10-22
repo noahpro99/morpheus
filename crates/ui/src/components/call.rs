@@ -10,12 +10,12 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use dioxus::core::spawn_forever;
 use dioxus::prelude::*;
-use morpheus_call::{AudioMode, Call, CallEvent, DeviceChoice};
+use morpheus_call::{AudioMode, Call, CallEvent, DeviceChoice, LOCAL_CAMERA};
 use morpheus_core::{IncomingCall, OwnedRoomId, OwnedUserId, Ringing, RoomSummary, Session};
 
 use super::shell::go_to;
 use super::toast::report;
-use crate::icons::{Icon, PHONE, PHONE_OFF, VOLUME_2};
+use crate::icons::{Icon, PHONE, PHONE_OFF, VIDEO, VIDEO_OFF, VOLUME_2};
 use crate::media::Avatar;
 use crate::sounds::{Sound, play};
 
@@ -30,6 +30,17 @@ pub struct CallState {
     pub speaking: Vec<OwnedUserId>,
     /// Whose audio arrives, decrypted (test tones only; see `AudioMode::Tone`).
     pub heard: Vec<OwnedUserId>,
+    /// The video showing, this device's camera first.
+    pub video: Vec<VideoFeed>,
+    /// This device's camera is on.
+    pub camera: bool,
+}
+
+/// Someone's video, and where its pictures are ([`morpheus_call::latest_frame`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VideoFeed {
+    pub user: OwnedUserId,
+    pub key: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -193,6 +204,8 @@ pub fn join_call(session: Session, room_id: OwnedRoomId, room_name: String) {
             connected: false,
             speaking: Vec::new(),
             heard: Vec::new(),
+            video: Vec::new(),
+            camera: false,
         })));
         let wanted = room_id.clone();
         let still_wanted = move || {
@@ -361,6 +374,20 @@ pub fn join_call(session: Session, room_id: OwnedRoomId, room_name: String) {
                         });
                     }
                 }
+                CallEvent::Video { identity, key, on } => {
+                    if !people.contains_key(&identity) {
+                        refresh_people(&session, &room_id, &mut people).await;
+                    }
+                    let user = people.get(&identity).cloned();
+                    active.with_mut(|slot| {
+                        if let Some(state) = slot.0.as_mut() {
+                            state.video.retain(|feed| feed.key != key);
+                            if on && let Some(user) = user {
+                                state.video.push(VideoFeed { user, key });
+                            }
+                        }
+                    });
+                }
                 CallEvent::Disconnected(reason) => {
                     report("the call dropped", &reason);
                     leave(&session, active, &media).await;
@@ -452,6 +479,37 @@ pub fn set_earpiece(earpiece: bool) {
     }
 }
 
+/// Turn this device's camera on or off in the call going.
+pub fn set_camera(session: Session, on: bool) {
+    let mut active = consume_context::<ActiveCall>();
+    let media = consume_context::<CallMedia>();
+    let Some(switch) = media.0.borrow().as_ref().map(|call| call.set_camera(on)) else {
+        return;
+    };
+    spawn_forever(async move {
+        if let Err(err) = switch.await {
+            report("turning the camera on", &err);
+            return;
+        }
+        let me = session.user_id();
+        active.with_mut(|slot| {
+            if let Some(state) = slot.0.as_mut() {
+                state.camera = on;
+                state.video.retain(|feed| feed.key != LOCAL_CAMERA);
+                if on && let Some(user) = me {
+                    state.video.insert(
+                        0,
+                        VideoFeed {
+                            user,
+                            key: LOCAL_CAMERA.to_owned(),
+                        },
+                    );
+                }
+            }
+        });
+    });
+}
+
 /// Calls use these devices, the one going now included.
 pub fn use_devices(choice: DeviceChoice) {
     morpheus_call::choose_audio_devices(choice);
@@ -495,8 +553,8 @@ pub fn RoomCall(
     }
 }
 
-#[component]
-fn CallParticipant(user_id: OwnedUserId, speaking: bool) -> Element {
+/// Someone's shown name (nickname first) and avatar.
+fn use_person(user_id: &OwnedUserId) -> (String, Option<morpheus_core::MediaRef>) {
     let session = use_context::<Session>();
     let profile = use_resource({
         let user_id = user_id.clone();
@@ -513,10 +571,81 @@ fn CallParticipant(user_id: OwnedUserId, speaking: bool) -> Element {
     let name = try_use_context::<super::nicknames::Nicknames>()
         .map(|map| super::nicknames::shown_name(&map(), user_id.as_str(), &name))
         .unwrap_or(name);
+    (name, avatar)
+}
+
+#[component]
+fn CallParticipant(user_id: OwnedUserId, speaking: bool) -> Element {
+    let (name, avatar) = use_person(&user_id);
     rsx! {
         div { class: "call-participant", class: if speaking { "speaking" },
             Avatar { media: avatar, fallback: name.clone(), size: 20 }
             span { class: "call-participant-name", "{name}" }
+        }
+    }
+}
+
+/// Above the chat of the room this account is calling in, while anyone's
+/// camera is on: a tile each.
+#[component]
+pub fn CallStage(room_id: OwnedRoomId) -> Element {
+    let active = use_context::<ActiveCall>();
+    let Some(call) = active().0.filter(|call| call.room_id == room_id) else {
+        return rsx! {};
+    };
+    if call.video.is_empty() {
+        return rsx! {};
+    }
+    rsx! {
+        div { class: "call-stage",
+            for feed in call.video {
+                VideoTile { key: "{feed.key}", user: feed.user, feed: feed.key }
+            }
+        }
+    }
+}
+
+/// How often a tile looks for a new picture.
+const VIDEO_POLL_MS: u64 = 1000 / 30;
+
+/// One person's video: the latest picture, as it comes.
+#[component]
+fn VideoTile(user: OwnedUserId, feed: String) -> Element {
+    let (name, _) = use_person(&user);
+    use_future({
+        let feed = feed.clone();
+        move || {
+            let feed = feed.clone();
+            async move {
+                let quoted = serde_json::to_string(&feed).unwrap_or_default();
+                let mut shown = 0;
+                loop {
+                    if let Some(frame) = morpheus_call::latest_frame(&feed)
+                        && frame.seq != shown
+                    {
+                        shown = frame.seq;
+                        let data = base64::Engine::encode(
+                            &base64::engine::general_purpose::STANDARD,
+                            frame.jpeg.as_slice(),
+                        );
+                        document::eval(&format!(
+                            "const t = [...document.querySelectorAll('.video-tile')].find(t => t.dataset.feed === {quoted}); \
+                             if (t) t.querySelector('img').src = 'data:image/jpeg;base64,{data}';"
+                        ));
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(VIDEO_POLL_MS)).await;
+                }
+            }
+        }
+    });
+    rsx! {
+        div {
+            class: "video-tile",
+            class: if feed == LOCAL_CAMERA { "self" },
+            "data-feed": "{feed}",
+            "data-user": "{user}",
+            img { class: "video", alt: "" }
+            span { class: "video-name", "{name}" }
         }
     }
 }
@@ -558,6 +687,19 @@ pub fn VoicePanel() -> Element {
                     onclick: move |_| set_earpiece(!earpiece),
                     Icon { glyph: if earpiece { PHONE } else { VOLUME_2 }, size: 18 }
                 }
+            }
+            if morpheus_call::can_send_video() {
+            button {
+                class: "ghost camera-button",
+                class: if call.camera { "active" },
+                title: if call.camera { "Turn off camera" } else { "Turn on camera" },
+                disabled: !call.connected,
+                onclick: {
+                    let (session, on) = (session.clone(), !call.camera);
+                    move |_| set_camera(session.clone(), on)
+                },
+                Icon { glyph: if call.camera { VIDEO } else { VIDEO_OFF }, size: 18 }
+            }
             }
             button {
                 class: "ghost hang-up",

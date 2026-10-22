@@ -1816,6 +1816,49 @@ body.dropping .drop-hint { display: flex; }
 .voice-room:hover { color: var(--text); text-decoration: underline; }
 .voice-panel .hang-up { width: 32px; height: 32px; padding: 0; display: grid; place-items: center; border-radius: var(--radius-sm); }
 .voice-panel .hang-up:hover { color: var(--danger); }
+.voice-panel .camera-button { width: 32px; height: 32px; padding: 0; display: grid; place-items: center; border-radius: var(--radius-sm); }
+.voice-panel .camera-button.active { color: var(--accent); }
+
+/* ---- Video in a call: a tile per camera, above the chat ---- */
+.call-stage {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  max-height: 45%;
+  padding: 8px 16px;
+  overflow-y: auto;
+  background: var(--bg-rail);
+  border-bottom: 1px solid var(--bg-selected);
+}
+.video-tile {
+  position: relative;
+  height: clamp(120px, 28vh, 270px);
+  aspect-ratio: 4 / 3;
+  max-width: 100%;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--bg-elevated);
+}
+.video-tile .video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.video-tile .video:not([src]) { visibility: hidden; }
+.video-tile .video-name {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  max-width: calc(100% - 16px);
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.shell.narrow .call-stage { padding: 8px; }
+.shell.narrow .video-tile { height: clamp(100px, 22vh, 200px); }
 .user-bar .mute-button, .user-bar .deafen-button { width: 32px; height: 32px; padding: 0; display: grid; place-items: center; border-radius: var(--radius-sm); }
 .user-bar .mute-button.active, .user-bar .deafen-button.active { color: var(--danger); }
 

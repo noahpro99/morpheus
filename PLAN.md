@@ -135,7 +135,9 @@ timeline → send.
 - [x] Ringing in DMs (MSC4075 `m.rtc.notification`, sent and heard under the stable and unstable names): a popup with the caller, a ringtone, accept and decline (MSC4310 `m.rtc.decline`); the caller is told and hung up when declined; "alice started a call" in the timeline.
 - [x] Ringing in the background, desktop: a system notification says who is calling.
 - [x] Ringing in the background, Android: a push for a ring shows "X is calling" on a Calls channel with the phone's ringtone (insistent, 30 s); works with the app closed (the push service previews it as a call) or running.
-- [ ] Video and screen share.
+- [x] Video: the camera button in the voice panel; everyone's cameras show as tiles above the chat of the call's room (self view included), end-to-end encrypted with the audio. Linux webcams through Video4Linux (YUYV); test runs send a red/blue test pattern. Call-crate test (decrypted pattern on the far side) + e2e.
+- [ ] Phone cameras (Camera2 over JNI).
+- [ ] Screen share (libwebrtc's desktop capturer; the PipeWire portal on Wayland).
 
 ### 6. Native renderer
 - [ ] Evaluate Dioxus Native (Blitz) on desktop; gate behind a cargo feature

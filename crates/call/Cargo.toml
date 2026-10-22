@@ -14,11 +14,18 @@ thiserror = { workspace = true }
 # TLS for `wss://` call services: the app links both crypto backends, so
 # one must be chosen (see `runtime()`).
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
+# Video frames for the interface (a web view shows JPEGs as they are).
+jpeg-encoder = "0.6"
+
+# The camera (Video4Linux, without C bindings to build).
+[target.'cfg(target_os = "linux")'.dependencies]
+linuxvideo = "0.3"
 
 [lints]
 workspace = true
 
 [dev-dependencies]
+zune-jpeg = "0.5"
 livekit-api = { version = "0.9.0", default-features = false, features = ["access-token"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "process"] }
 # The app links rustls with both crypto backends (aws-lc-rs comes with the
