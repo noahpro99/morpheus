@@ -1802,7 +1802,7 @@ body.dropping .drop-hint { display: flex; }
   background: var(--bg-elevated);
 }
 .voice-status { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.voice-state { font-size: 0.85rem; font-weight: 600; color: var(--text-muted); }
+.voice-state { font-size: 0.85rem; font-weight: 600; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .voice-state.connected { color: var(--green, #23a559); }
 .voice-room {
   all: unset;
@@ -1817,7 +1817,9 @@ body.dropping .drop-hint { display: flex; }
 .voice-panel .hang-up { width: 32px; height: 32px; padding: 0; display: grid; place-items: center; border-radius: var(--radius-sm); }
 .voice-panel .hang-up:hover { color: var(--danger); }
 .voice-panel .camera-button { width: 32px; height: 32px; padding: 0; display: grid; place-items: center; border-radius: var(--radius-sm); }
-.voice-panel .camera-button.active { color: var(--accent); }
+.voice-panel .camera-button, .voice-panel .screen-button { width: 32px; height: 32px; padding: 0; display: grid; place-items: center; border-radius: var(--radius-sm); }
+.voice-panel .camera-button.active, .voice-panel .screen-button.active { color: var(--accent); }
+.voice-panel .screen-button.pending { animation: ring-pulse 1.2s ease-in-out infinite; }
 
 /* ---- Video in a call: a tile per camera, above the chat ---- */
 .call-stage {
@@ -1842,6 +1844,8 @@ body.dropping .drop-hint { display: flex; }
   background: var(--bg-elevated);
 }
 .video-tile .video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.video-tile.screen { aspect-ratio: 16 / 9; background: #000; }
+.video-tile.screen .video { object-fit: contain; }
 .video-tile .video:not([src]) { visibility: hidden; }
 .video-tile .video-name {
   position: absolute;

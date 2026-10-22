@@ -5244,6 +5244,7 @@ dependencies = [
  "linuxvideo",
  "livekit",
  "livekit-api",
+ "pkg-config",
  "rustls",
  "thiserror 2.0.21",
  "tokio",

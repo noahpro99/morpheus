@@ -4,9 +4,8 @@
 //! ([`latest_frame`]) and asks again when it has drawn it. A web view draws
 //! a JPEG with no help, on every platform.
 //!
-//! In [`AudioMode::Tone`](crate::AudioMode::Tone) the camera is a test
-//! pattern ([`TEST_PATTERN`]): red on the left, blue on the right, so a test
-//! can tell the far side really sees it.
+//! In [`AudioMode::Tone`](crate::AudioMode::Tone) the camera and the screen
+//! are test patterns ([`CAMERA_PATTERN`], [`SCREEN_PATTERN`]).
 
 use std::{
     collections::HashMap,
@@ -31,8 +30,8 @@ use tracing::{debug, warn};
 /// This device's camera, as sent.
 pub const LOCAL_CAMERA: &str = "local/camera";
 
-/// The test pattern's size.
-pub const TEST_PATTERN: (u32, u32) = (320, 240);
+/// This device's screen, as shared.
+pub const LOCAL_SCREEN: &str = "local/screen";
 
 /// Frames per second shown (and sent, for the test pattern).
 pub(crate) const FPS: u64 = 15;
@@ -129,11 +128,45 @@ pub(crate) async fn show_remote(track: RemoteVideoTrack, key: String) {
     forget(&key);
 }
 
-/// Send the test pattern to `source` (and show it as this device's camera)
-/// until `stop` is set: red and blue halves, with a white bar sweeping
-/// across so every frame differs.
-pub(crate) async fn play_test_pattern(source: NativeVideoSource, stop: Arc<AtomicBool>) {
-    let (width, height) = TEST_PATTERN;
+/// A test run's stand-in for a camera or a screen: two colours side by side
+/// (so a test can tell the far side really sees it), with a white bar
+/// sweeping across so every frame differs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TestPattern {
+    pub width: u32,
+    pub height: u32,
+    /// Where this device shows it.
+    pub key: &'static str,
+    /// BT.601 (Y, U, V) of each half.
+    left: (u8, u8, u8),
+    right: (u8, u8, u8),
+}
+
+/// The camera in test runs: red on the left, blue on the right.
+pub const CAMERA_PATTERN: TestPattern = TestPattern {
+    width: 320,
+    height: 240,
+    key: LOCAL_CAMERA,
+    left: (81, 90, 240),
+    right: (41, 240, 110),
+};
+
+/// The shared screen in test runs: green on the left, yellow on the right.
+pub const SCREEN_PATTERN: TestPattern = TestPattern {
+    width: 480,
+    height: 270,
+    key: LOCAL_SCREEN,
+    left: (145, 54, 34),
+    right: (210, 16, 146),
+};
+
+/// Send `pattern` to `source` (and show it under its key) until `stop` is set.
+pub(crate) async fn play_test_pattern(
+    pattern: TestPattern,
+    source: NativeVideoSource,
+    stop: Arc<AtomicBool>,
+) {
+    let TestPattern { width, height, .. } = pattern;
     let mut tick = tokio::time::interval(Duration::from_millis(1000 / FPS));
     let mut n = 0u32;
     while !stop.load(Ordering::Relaxed) {
@@ -141,37 +174,32 @@ pub(crate) async fn play_test_pattern(source: NativeVideoSource, stop: Arc<Atomi
         let mut buffer = I420Buffer::new(width, height);
         let (stride_y, stride_u, stride_v) = buffer.strides();
         let bar = (n * 4) % width;
+        let colour = |col: u32| {
+            if col.abs_diff(bar) < 6 {
+                (235, 128, 128)
+            } else if col < width / 2 {
+                pattern.left
+            } else {
+                pattern.right
+            }
+        };
         let (y, u, v) = buffer.data_mut();
         for row in 0..height {
             for col in 0..width {
-                // BT.601: red is (81, 90, 240), blue (41, 240, 110), white (235, 128, 128).
-                let luma = if col.abs_diff(bar) < 6 {
-                    235
-                } else if col < width / 2 {
-                    81
-                } else {
-                    41
-                };
-                y[(row * stride_y + col) as usize] = luma;
+                y[(row * stride_y + col) as usize] = colour(col).0;
             }
         }
         for row in 0..height / 2 {
             for col in 0..width / 2 {
-                let (cu, cv) = if (col * 2).abs_diff(bar) < 6 {
-                    (128, 128)
-                } else if col < width / 4 {
-                    (90, 240)
-                } else {
-                    (240, 110)
-                };
+                let (_, cu, cv) = colour(col * 2);
                 u[(row * stride_u + col) as usize] = cu;
                 v[(row * stride_v + col) as usize] = cv;
             }
         }
         let frame = VideoFrame::new(VideoRotation::VideoRotation0, buffer);
         source.capture_frame(&frame);
-        keep(LOCAL_CAMERA, &frame.buffer);
+        keep(pattern.key, &frame.buffer);
         n = n.wrapping_add(1);
     }
-    forget(LOCAL_CAMERA);
+    forget(pattern.key);
 }
