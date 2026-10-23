@@ -64,7 +64,8 @@ pub use timeline::{
 pub use typing::TypingUpdates;
 pub use updates::UpdateStatus;
 pub use verification::{
-    Device, VerificationActions, VerificationHandle, VerificationStep, VerificationUpdates,
+    Device, QrImage, VerificationActions, VerificationHandle, VerificationStep,
+    VerificationUpdates,
 };
 
 pub use eyeball_im::VectorDiff;

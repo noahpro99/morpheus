@@ -39,6 +39,9 @@ pub struct Session {
     pub(crate) sync: Arc<SyncService>,
     /// The account's folder (see `accounts.rs`).
     pub(crate) dir: PathBuf,
+    /// This device can scan QR codes (a camera the app can read): verification
+    /// offers to scan the other device's code. See `set_can_scan_qr`.
+    pub(crate) can_scan_qr: Arc<std::sync::atomic::AtomicBool>,
 }
 
 /// Which sign-in methods a homeserver offers.
@@ -311,6 +314,7 @@ impl Session {
             client,
             sync: Arc::new(sync),
             dir,
+            can_scan_qr: Arc::default(),
         })
     }
 
@@ -344,6 +348,7 @@ impl Session {
             client,
             sync,
             dir,
+            can_scan_qr: _,
         } = self;
         let runner = core.clone();
         runner.run(async move {
