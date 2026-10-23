@@ -153,6 +153,9 @@ window.addEventListener('paste', e => {
   window.addEventListener('touchstart', e => {
     cancel();
     fired = false;
+    start = null;
+    // Selectable text keeps the system's own press and hold.
+    if (e.target.closest && e.target.closest('.selectable')) return;
     if (e.touches.length !== 1) return;
     const t = e.touches[0];
     start = { x: t.clientX, y: t.clientY, target: e.target };

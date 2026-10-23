@@ -111,7 +111,7 @@ timeline → send.
 - [x] Mobile file picker: on phones the attach button opens a file input from the tap (Android shows its own picker), and picked files go the way pasted ones do. Phone e2e test.
 - [x] Single-column navigation on phone-width windows (rooms → chat → members/thread) with back buttons and Escape/back; the shared shell does it, so the mobile app gets every desktop feature as is. Panes stack and slide with the finger (see below).
 - [x] Larger touch targets and safe-area insets in the narrow layout
-- [ ] Text selection is broken (reported on the phone, 2026-10-15); revisit later. Touch screens currently turn off selection outside typing fields so press-and-hold can open menus; messages need a "Select text" path instead.
+- [x] Text selection on phones: holding opens the message menu, whose Select text shows the message where holding selects it (system handles, Copy, Share); Copy all copies it whole. Phone e2e selects with a real held finger.
 - [ ] Swipe down to close a bottom sheet: a first version is in (sheet follows the finger, closes past a third or on a flick; phone e2e test), but the Pixel build predates it; check it feels right on the device.
 - [x] Pane swipes like Discord: the chat slides in over the room list; a rightward drag moves the top pane with the finger, revealing the one underneath (members → chat → list); a leftward drag on the list brings the last chat back, and on the chat pulls in the parked member list. Phone e2e tests hold a real finger mid-drag. Opening a thread by swipe is not done (which thread would it be?).
 - [x] Keyboard avoidance on Android: the page shrinks for the keyboard and the message box and newest message stay above it (phone e2e test). iOS still to verify.

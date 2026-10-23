@@ -934,6 +934,7 @@ pub fn Shell(session: Session) -> Element {
             match (message_dialog(), current()) {
                 (MessageDialog::Reactions(message), _) => rsx! { ReactionsModal { message: *message } },
                 (MessageDialog::Report(event_id), _) => rsx! { ReportModal { event_id } },
+                (MessageDialog::SelectText(text), _) => rsx! { super::message_dialogs::SelectTextModal { text } },
                 (MessageDialog::Pinned, Some(room)) => rsx! { PinnedPanel { room_id: room.id.clone() } },
                 _ => rsx! {},
             }
