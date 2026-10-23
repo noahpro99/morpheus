@@ -1355,3 +1355,111 @@ async fn phone_call_fills_the_screen_and_minimizes_to_a_bar() {
     .await
     .expect("out of the call");
 }
+
+/// The middle of the first element matching `selector` whose text has
+/// `needle`, in page coordinates.
+async fn middle_of(app: &mut App, selector: &str, needle: &str) -> (f64, f64) {
+    let at = app
+        .eval(&format!(
+            "const el = [...document.querySelectorAll({})].find(el => el.textContent.includes({})); \
+             if (!el) return null; el.scrollIntoView({{ block: 'center' }}); \
+             const r = el.getBoundingClientRect(); return [r.left + Math.min(r.width / 2, 40), r.top + r.height / 2];",
+            serde_json::to_string(selector).expect("json"),
+            serde_json::to_string(needle).expect("json")
+        ))
+        .await
+        .expect("measure");
+    let at = at
+        .as_array()
+        .unwrap_or_else(|| panic!("no {selector} with {needle:?}"));
+    (
+        at[0].as_f64().expect("x"),
+        at[1].as_f64().expect("y"),
+    )
+}
+
+/// A real finger held down at `at` for a second, then lifted.
+async fn hold(app: &mut App, at: (f64, f64)) {
+    app.drag_and_hold(at, at).await.expect("touch down");
+    tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+    app.lift(at).await.expect("lift");
+    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+}
+
+/// Press and hold opens a message's menu, so messages cannot be selected
+/// directly on a touch screen: the menu's Select text shows the message
+/// where holding selects it, with the system's handles and Copy.
+#[tokio::test]
+async fn phone_select_text_lets_a_message_be_selected() {
+    if !enabled() {
+        eprintln!("MORPHEUS_E2E_ANDROID not set; skipping the Android test");
+        return;
+    }
+    let mut app = App::launch_android().await.expect("launch on Android");
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    app.type_into("form.login input[name=username]", "alice")
+        .await
+        .expect("username");
+    app.type_into("form.login input[name=password]", "alice-password")
+        .await
+        .expect("password");
+    app.submit("form.login").await.expect("submit");
+    app.wait_for_text(".room", "general", DEFAULT_WAIT)
+        .await
+        .expect("general listed");
+    app.tap_text(".room", "general")
+        .await
+        .expect("open general");
+    pane(&mut app, "chat").await;
+    app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
+        .await
+        .expect("composer ready");
+    let text = format!("select these words {}", std::process::id());
+    app.type_into(".composer .composer-input", &text)
+        .await
+        .expect("type");
+    app.press(".composer .composer-input", "Enter")
+        .await
+        .expect("send");
+    app.wait_for_exact_text(".message.own:not(.pending) .body", &text, DEFAULT_WAIT)
+        .await
+        .expect("sent");
+    back_key(); // the keyboard
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+    let at = middle_of(&mut app, ".message .body", &text).await;
+    hold(&mut app, at).await;
+    app.wait_for_js(&shown_item("Select text"), DEFAULT_WAIT)
+        .await
+        .expect("Select text in the message menu");
+    app.tap_text(".context-menu .context-item", "Select text")
+        .await
+        .expect("Select text");
+    app.wait_for_text(".select-text .selectable", &text, DEFAULT_WAIT)
+        .await
+        .expect("the message, to select from");
+
+    // Holding there selects words, as anywhere else on the phone.
+    let at = middle_of(&mut app, ".select-text .selectable", &text).await;
+    hold(&mut app, at).await;
+    let selected = app
+        .eval("return [String(getSelection()), !!document.querySelector('.context-menu')];")
+        .await
+        .expect("selection");
+    shot(&mut app, "android-select-text").await;
+    let words = selected[0].as_str().unwrap_or_default();
+    assert!(
+        !words.trim().is_empty() && text.contains(words.trim()),
+        "holding selected nothing from the message: {selected}"
+    );
+    assert_eq!(selected[1], serde_json::json!(false), "no menu over the selection");
+
+    // Back closes it (after clearing the selection, if the system takes one press for that).
+    back_key();
+    if app.count(".select-text").await.expect("count") > 0 {
+        back_key();
+    }
+    gone(&mut app, ".select-text", "the select text sheet").await;
+}

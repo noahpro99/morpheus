@@ -1646,6 +1646,7 @@ body.dropping .drop-hint { display: flex; }
 @media (pointer: coarse) {
   .shell { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
   .shell input, .shell textarea { -webkit-user-select: text; user-select: text; }
+  .shell .selectable { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
 }
 
 /* Phones: a thumb-sized pill. */
@@ -2031,3 +2032,15 @@ form.new-message button:disabled { opacity: 0.5; cursor: default; }
 .call-bar-state { white-space: nowrap; }
 /* A phone header has no room for the topic. */
 .shell.narrow .chat-header .topic { display: none; }
+
+/* Touch screens: a message to select text from (holding elsewhere opens menus). */
+.select-text .selectable {
+  max-height: 50vh;
+  overflow-y: auto;
+  padding: 12px;
+  border-radius: var(--radius);
+  background: var(--bg-input);
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.45;
+}

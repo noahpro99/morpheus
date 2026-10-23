@@ -825,6 +825,14 @@ pub(crate) fn MessageRow(message: Message, show_header: bool) -> Element {
             }
             if let Some(text) = message.kind.plain_body().filter(|t| !t.is_empty()) {
                 let text = text.to_owned();
+                // Holding opens this menu on a phone, so selecting needs a way in.
+                if cfg!(any(target_os = "android", target_os = "ios")) {
+                    let text = text.clone();
+                    items.push(MenuItem::new("Select text", move || {
+                        consume_context::<OpenMessageDialog>()
+                            .set(MessageDialog::SelectText(text.clone()));
+                    }));
+                }
                 items.push(MenuItem::new("Copy text", move || copy_to_clipboard(&text)));
             }
             if let Some((event_id, room_id)) = &sent {

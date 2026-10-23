@@ -1,5 +1,6 @@
 //! Dialogs reached from a message's right-click menu: who reacted, report a
-//! message, and the room's pinned messages (also behind the header pin).
+//! message, select its text on a touch screen, and the room's pinned
+//! messages (also behind the header pin).
 
 use super::toast::report;
 use dioxus::prelude::*;
@@ -14,6 +15,8 @@ pub enum MessageDialog {
     None,
     Reactions(Box<Message>),
     Report(OwnedEventId),
+    /// Touch screens: a message shown where holding selects text.
+    SelectText(String),
     Pinned,
 }
 pub type OpenMessageDialog = Signal<MessageDialog>;
@@ -189,6 +192,40 @@ pub fn PinnedPanel(room_id: OwnedRoomId) -> Element {
                     },
                 }
                 div { class: "settings-actions",
+                    button { class: "secondary", onclick: move |_| close(), "Close" }
+                }
+            }
+        }
+    }
+}
+
+/// Touch screens hold for menus, so a message's text cannot be selected
+/// where it is: here holding selects, with the system's handles and Copy.
+#[component]
+pub fn SelectTextModal(text: String) -> Element {
+    let mut dialog = use_context::<OpenMessageDialog>();
+    let mut close = move || dialog.set(MessageDialog::None);
+    let all = text.clone();
+    rsx! {
+        div { class: "overlay", onclick: move |_| close(),
+            div {
+                class: "message-dialog select-text",
+                tabindex: "-1",
+                onclick: move |e| e.stop_propagation(),
+                // The system's own press-and-hold: no app menu over it.
+                oncontextmenu: move |e| e.stop_propagation(),
+                h2 { "Select text" }
+                p { class: "muted", "Press and hold to select." }
+                div { class: "selectable", "{text}" }
+                div { class: "settings-actions",
+                    button {
+                        class: "secondary",
+                        onclick: move |_| {
+                            super::context_menu::copy_to_clipboard(&all);
+                            close();
+                        },
+                        "Copy all"
+                    }
                     button { class: "secondary", onclick: move |_| close(), "Close" }
                 }
             }
