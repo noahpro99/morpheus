@@ -15,7 +15,7 @@ morpheus-core = { path = "crates/core" }
 morpheus-ui = { path = "crates/ui" }
 morpheus-call = { path = "crates/call" }
 
-matrix-sdk = { version = "0.19.1", features = ["markdown", "sso-login", "experimental-search"] }
+matrix-sdk = { version = "0.19.1", features = ["markdown", "sso-login", "experimental-search", "qrcode"] }
 matrix-sdk-ui = "0.19.1"
 dioxus = "0.7.10"
 

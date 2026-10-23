@@ -1,11 +1,11 @@
-//! Settings modal: encryption status, recovery key, device list, and emoji
-//! verification between two of the user's own devices.
+//! Settings modal: encryption status, recovery key, device list, and
+//! verification between two of the user's own devices, by emoji or QR code.
 
 #![allow(clippy::expect_used)]
 
 use std::time::Duration;
 
-use morpheus_e2e::{App, DEFAULT_WAIT};
+use morpheus_e2e::{App, DEFAULT_WAIT, new_account};
 
 fn homeserver() -> Option<String> {
     std::env::var("MORPHEUS_TEST_HOMESERVER").ok()
@@ -297,4 +297,98 @@ async fn new_account_sets_up_recovery_from_settings() {
         0,
         "no second set-up offered"
     );
+}
+
+/// QR verification: a device with a camera (here a headless one, standing
+/// in for a phone) asks to verify; the app shows a code instead of emoji,
+/// the device scans it, and the app confirms the other side said so.
+#[tokio::test]
+async fn qr_code_verification_with_a_device_that_scans() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    // A fresh account: its only other device is the scanner.
+    let user = new_account(&hs, "qr").expect("account");
+    let password = format!("{user}-password");
+    let mut app = App::launch(&hs).await.expect("launch app");
+    login(&mut app, &user, &password).await;
+
+    let dir = std::env::temp_dir().join(format!("morpheus-e2e-scanner-{user}"));
+    let core = morpheus_core::Core::with_session_store(dir, morpheus_core::SessionStoreKind::File)
+        .expect("core");
+    let phone = core
+        .login(morpheus_core::LoginRequest {
+            homeserver: hs.clone(),
+            username: user.clone(),
+            password: password.clone(),
+        })
+        .await
+        .expect("the scanner signs in");
+    phone.set_can_scan_qr(true);
+    // The phone is the account's established device, holding its
+    // cross-signing identity (which the code vouches with).
+    phone
+        .ensure_cross_signing()
+        .await
+        .expect("cross-signing on the phone");
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    while phone.own_devices().await.map(|d| d.len()).unwrap_or(0) < 2 {
+        assert!(std::time::Instant::now() < deadline, "the app's device never showed up");
+        tokio::time::sleep(Duration::from_millis(300)).await;
+    }
+    let mut scanner = phone
+        .request_self_verification()
+        .await
+        .expect("the scanner asks");
+
+    app.wait_for_text(".verification", "wants to verify", DEFAULT_WAIT)
+        .await
+        .expect("the app is asked");
+    app.click_text(".verification button", "Accept")
+        .await
+        .expect("accept");
+    app.wait_for(".verification .verification-qr svg", DEFAULT_WAIT)
+        .await
+        .expect("the app shows a code");
+    // Kept for a look (and a real scanner's read) after the run.
+    let svg = app
+        .eval("return document.querySelector('.verification-qr').innerHTML;")
+        .await
+        .expect("the code's picture");
+    let saved = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/e2e/verification-qr.svg");
+    let _ = std::fs::write(&saved, svg.as_str().unwrap_or_default());
+    let bytes: Vec<u8> = serde_json::from_value(
+        app.eval(
+            "return Array.from(atob(document.querySelector('.verification-qr').dataset.qr), c => c.charCodeAt(0));",
+        )
+        .await
+        .expect("the code's bytes"),
+    )
+    .expect("bytes");
+    scanner.actions().scan_qr(bytes).await.expect("scan");
+
+    app.wait_for(".verification .confirm-scanned", DEFAULT_WAIT)
+        .await
+        .expect("the app asks whether the other side says so");
+    app.click(".verification .confirm-scanned")
+        .await
+        .expect("yes");
+    app.wait_for_text(".verification", "Verified", DEFAULT_WAIT)
+        .await
+        .expect("the app is done");
+    tokio::time::timeout(DEFAULT_WAIT, async {
+        while let Some(step) = scanner.next().await {
+            match step {
+                morpheus_core::VerificationStep::Done => return,
+                morpheus_core::VerificationStep::Cancelled(reason) => {
+                    panic!("the scanner cancelled: {reason}")
+                }
+                _ => {}
+            }
+        }
+        panic!("the scanner's flow ended unfinished");
+    })
+    .await
+    .expect("the scanner is done");
 }

@@ -48,8 +48,11 @@ pub enum Error {
     #[error("no other device of this user was found to verify against")]
     NoOtherDevice,
 
-    #[error("this verification flow has not reached the emoji step yet")]
+    #[error("this verification flow has not reached that step yet")]
     VerificationNotReady,
+
+    #[error("that is not a verification QR code: {0}")]
+    Verification(String),
 
     #[error("only messages can be forwarded")]
     NotForwardable,

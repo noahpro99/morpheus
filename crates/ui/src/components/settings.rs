@@ -491,6 +491,27 @@ pub fn VerificationPanel(verification: Rc<Verification>) -> Element {
                     button { class: "secondary", onclick: { let h = handle.clone(); move |_| run(h.cancel()) }, "Cancel" }
                 },
                 VerificationStep::Ready => rsx! { p { "Connecting…" } },
+                VerificationStep::ShowQr(code) => rsx! {
+                    p { "Scan this code with your other device." }
+                    div {
+                        class: "verification-qr",
+                        // What the code holds, for test runs to scan it.
+                        "data-qr": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &code.data),
+                        dangerous_inner_html: qr_svg(&code),
+                    }
+                    div { class: "settings-actions",
+                        button { class: "secondary use-emoji", onclick: { let h = handle.clone(); move |_| run(h.use_emoji()) }, "Compare emoji instead" }
+                        button { class: "secondary", onclick: { let h = handle.clone(); move |_| run(h.cancel()) }, "Cancel" }
+                    }
+                },
+                VerificationStep::QrScanned => rsx! {
+                    p { "Your other device scanned the code. Does it say it verified this one?" }
+                    div { class: "settings-actions",
+                        button { class: "primary confirm-scanned", onclick: { let h = handle.clone(); move |_| run(h.confirm_scanned()) }, "Yes" }
+                        button { class: "danger", onclick: { let h = handle.clone(); move |_| run(h.cancel()) }, "No" }
+                    }
+                },
+                VerificationStep::Reciprocated => rsx! { p { "Scanned. Confirm on your other device…" } },
                 VerificationStep::Emojis(emojis) => rsx! {
                     p { "Compare these with your other device. They must match in the same order." }
                     ul { class: "emoji-grid",
@@ -517,6 +538,22 @@ pub fn VerificationPanel(verification: Rc<Verification>) -> Element {
             }
         }
     }
+}
+
+/// A verification code as SVG: dark modules on white, with the four-module
+/// quiet border scanners need, scaled to fit.
+fn qr_svg(code: &morpheus_core::QrImage) -> String {
+    const BORDER: usize = 4;
+    let size = code.width + 2 * BORDER;
+    let mut path = String::new();
+    for (index, _) in code.dark.iter().enumerate().filter(|(_, dark)| **dark) {
+        let (x, y) = (index % code.width + BORDER, index / code.width + BORDER);
+        path.push_str(&format!("M{x} {y}h1v1h-1z"));
+    }
+    format!(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 {size} {size}\" shape-rendering=\"crispEdges\">\
+         <rect width=\"{size}\" height=\"{size}\" fill=\"#fff\"/><path d=\"{path}\" fill=\"#000\"/></svg>"
+    )
 }
 
 /// Re-check whether this device can read encrypted history (the chat's

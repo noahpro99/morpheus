@@ -2293,3 +2293,124 @@ async fn messaging_someone_who_left_the_dm_invites_them_back() {
     syncing.abort();
     alice_syncing.abort();
 }
+
+/// Drive a verification handle until `want` picks a step out, skipping the rest.
+async fn wait_for_step<T>(
+    handle: &mut VerificationHandle,
+    what: &str,
+    want: impl Fn(VerificationStep) -> Option<T>,
+) -> T {
+    let result = timeout(WAIT, async {
+        loop {
+            match handle.next().await {
+                Some(VerificationStep::Cancelled(reason)) => {
+                    panic!("verification was cancelled: {reason}")
+                }
+                Some(step) => {
+                    if let Some(found) = want(step) {
+                        return found;
+                    }
+                }
+                None => panic!("verification stream ended before {what}"),
+            }
+        }
+    })
+    .await;
+    result.unwrap_or_else(|_| panic!("timed out waiting for {what}"))
+}
+
+/// QR verification: a device that can scan (A, a phone with a camera) asks;
+/// the other (B, a desktop) shows a code instead of starting emoji; A scans
+/// it, B confirms A said so, and both are verified.
+#[tokio::test]
+async fn self_verification_by_qr_code_between_two_devices() {
+    let Some(env) = env() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping live test");
+        return;
+    };
+    let login = |hs: String, user: String, password: String| async move {
+        let core =
+            Core::with_session_store(fresh_data_dir(), SessionStoreKind::File).expect("core");
+        core.login(LoginRequest {
+            homeserver: hs,
+            username: user,
+            password,
+        })
+        .await
+        .expect("login")
+    };
+    let device_a = login(
+        env.homeserver.clone(),
+        env.user.clone(),
+        env.password.clone(),
+    )
+    .await;
+    let device_b = login(env.homeserver, env.user, env.password).await;
+    device_a.set_can_scan_qr(true);
+    wait_for_second_device(&device_a).await;
+    wait_for_second_device(&device_b).await;
+
+    let mut incoming = device_b
+        .verification_requests()
+        .await
+        .expect("verification requests");
+    let mut outgoing = device_a
+        .request_self_verification()
+        .await
+        .expect("request self verification");
+    let mut incoming_handle = timeout(WAIT, incoming.next())
+        .await
+        .expect("timed out waiting for the incoming request")
+        .expect("incoming verification stream ended");
+    incoming_handle.accept().await.expect("accept");
+
+    // B shows a code, as A can scan.
+    let code = wait_for_step(&mut incoming_handle, "a QR code", |step| match step {
+        VerificationStep::ShowQr(code) => Some(code),
+        _ => None,
+    })
+    .await;
+    assert_eq!(code.dark.len(), code.width * code.width, "a square code");
+    assert!(code.dark.iter().any(|&d| d), "something drawn");
+
+    // A scans it, B is told and confirms.
+    outgoing
+        .actions()
+        .scan_qr(code.data.clone())
+        .await
+        .expect("scan");
+    wait_for_step(&mut outgoing, "reciprocating", |step| {
+        (step == VerificationStep::Reciprocated).then_some(())
+    })
+    .await;
+    wait_for_step(&mut incoming_handle, "being scanned", |step| {
+        (step == VerificationStep::QrScanned).then_some(())
+    })
+    .await;
+    incoming_handle
+        .actions()
+        .confirm_scanned()
+        .await
+        .expect("confirm on B");
+
+    wait_for_done(&mut outgoing).await;
+    wait_for_done(&mut incoming_handle).await;
+    let sees_other_verified = |session: Session| async move {
+        timeout(WAIT, async {
+            loop {
+                let devices = session.own_devices().await.expect("devices");
+                if devices.iter().any(|d| !d.is_current && d.verified) {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(250)).await;
+            }
+        })
+        .await
+        .is_ok()
+    };
+    // The scanner checked the code it read, so it trusts the device that
+    // showed it. The other way round needs the scanner signed by the
+    // account (a device holding its cross-signing keys, as a phone that
+    // verified long ago would): two fresh devices cannot show that here.
+    assert!(sees_other_verified(device_a).await, "A sees B verified");
+}
