@@ -82,7 +82,7 @@ timeline → send.
 - [x] Mod view (Discord's), from the profile card: one sheet for a person listing every room you share with their standing (role, invited, banned, not in the room) and the moderation you may do there (role, kick, ban, unban, with a reason), only where you outrank them. e2e on a fresh account joined through the admin API.
 - [x] Multi-account: each account in its own folder (the first in the data dir, more under `accounts/<n>`); "Switch account" lists them and swaps without signing in, "Add an account" keeps the current one (the login screen offers a way back); signing out moves to the next. Core live test + e2e.
 - [x] Invites: sidebar section, chat-column card, inbox block, rail badge; accept joins, decline leaves
-- [x] Per-user nicknames: "Set nickname…" in a person's menu; kept in private account data (`dev.morpheus.nicknames`), shown instead of display names on messages and in the member list. Also DM room names (list and header) and the profile card (with their own name beneath). Not yet in mentions.
+- [x] Per-user nicknames: "Set nickname…" in a person's menu; kept in private account data (`dev.morpheus.nicknames`), shown instead of display names on messages and in the member list. Also DM room names (list and header) and the profile card (with their own name beneath). Mentions: `@` finds people by nickname too (shown in the suggestion), inserting their display name so they are still pinged.
 - [x] Timeline pinned to the newest message on open, "Jump to present" button
 - [x] Skeleton placeholders while loading and for messages still waiting on keys
 - [x] SSO login (browser hand-off) alongside password and email sign-in

@@ -17,7 +17,10 @@ enum Suggestion {
         code: &'static str,
     },
     Member {
+        /// Their display name: what goes in the message, so they are pinged.
         name: String,
+        /// Your nickname for them, if you gave one.
+        nickname: Option<String>,
         user_id: String,
     },
 }
@@ -38,8 +41,13 @@ fn last_word(draft: &str) -> &str {
 }
 
 /// Suggestions for the word being typed: `:code` from the emoji table,
-/// `@name` from the room's members.
-fn suggest(draft: &str, members: Option<&[Member]>) -> Vec<Suggestion> {
+/// `@name` from the room's members, found by display name, ID, or your
+/// nickname for them.
+fn suggest(
+    draft: &str,
+    members: Option<&[Member]>,
+    nicknames: &super::nicknames::NickMap,
+) -> Vec<Suggestion> {
     let word = last_word(draft);
     if let Some(code) = word.strip_prefix(':') {
         if code.len() < 2 {
@@ -56,13 +64,16 @@ fn suggest(draft: &str, members: Option<&[Member]>) -> Vec<Suggestion> {
         return members
             .unwrap_or_default()
             .iter()
-            .filter(|m| {
+            .map(|m| (m, nicknames.0.get(m.user_id.as_str())))
+            .filter(|(m, nickname)| {
                 m.name.to_lowercase().starts_with(&prefix)
                     || m.user_id.localpart().to_lowercase().starts_with(&prefix)
+                    || nickname.is_some_and(|n| n.to_lowercase().starts_with(&prefix))
             })
             .take(8)
-            .map(|m| Suggestion::Member {
+            .map(|(m, nickname)| Suggestion::Member {
                 name: m.name.clone(),
+                nickname: nickname.cloned(),
                 user_id: m.user_id.to_string(),
             })
             .collect();
@@ -114,6 +125,12 @@ pub fn Composer(
     let mut active = use_signal(|| 0usize);
     let mut members = use_signal(|| None::<Vec<Member>>);
     let mut emoji_open = use_signal(|| false);
+    // Your nicknames for people: `@` finds them by those too.
+    let nicknames = move || {
+        try_consume_context::<super::nicknames::Nicknames>()
+            .map(|map| map.peek().clone())
+            .unwrap_or_default()
+    };
     let mut recompute = {
         let room_id = room_id.clone();
         let session = session.clone();
@@ -129,14 +146,14 @@ pub fn Composer(
                         Ok(list) => {
                             members.set(Some(list));
                             let text = draft.peek().clone();
-                            suggestions.set(suggest(&text, members.peek().as_deref()));
+                            suggestions.set(suggest(&text, members.peek().as_deref(), &nicknames()));
                             active.set(0);
                         }
                         Err(err) => report("members for mention autocomplete", &err),
                     }
                 });
             }
-            suggestions.set(suggest(&text, members.peek().as_deref()));
+            suggestions.set(suggest(&text, members.peek().as_deref(), &nicknames()));
             active.set(0);
         }
     };
@@ -410,7 +427,12 @@ pub fn Composer(
                                     span { class: "emoji", "{emoji}" }
                                     span { ":{code}:" }
                                 },
-                                Suggestion::Member { name, user_id } => rsx! {
+                                Suggestion::Member { name, nickname: Some(nickname), user_id } => rsx! {
+                                    span { class: "emoji", "@" }
+                                    span { "{nickname}" }
+                                    span { class: "muted", "{name} · {user_id}" }
+                                },
+                                Suggestion::Member { name, nickname: None, user_id } => rsx! {
                                     span { class: "emoji", "@" }
                                     span { "{name}" }
                                     span { class: "muted", "{user_id}" }
