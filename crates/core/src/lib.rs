@@ -46,7 +46,7 @@ pub use calls::{
     Ringing,
 };
 pub use media::{Media, MediaRef};
-pub use members::{Member, MemberPermissions, MemberRole};
+pub use members::{Member, MemberPermissions, MemberRole, ModRoom, Standing};
 pub use messages::PinnedMessage;
 pub use notifications::{Notification, NotificationUpdates};
 pub use profile::Profile;

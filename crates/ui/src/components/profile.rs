@@ -3,7 +3,6 @@
 
 use dioxus::prelude::*;
 
-use std::rc::Rc;
 
 use morpheus_core::{MemberRole, OwnedUserId, Session};
 
@@ -460,33 +459,14 @@ pub fn ProfileCard(open: ProfileOpen) -> Element {
         }
     };
 
-    // "Mod view": the member menu for this user in the open room.
+    // "Mod view": this person's moderation sheet, across your rooms.
     let mod_view = {
-        let session = session.clone();
         let user_id = user_id.clone();
         move |e: Event<MouseData>| {
             e.stop_propagation();
-            let Some(room_id) = selected.peek().clone() else {
-                return;
-            };
-            let session = session.clone();
-            let user_id = user_id.clone();
-            let point = e.client_coordinates();
-            spawn(async move {
-                let (members, perms) = (
-                    session.members(room_id.clone()).await.unwrap_or_default(),
-                    session
-                        .my_permissions(room_id.clone())
-                        .await
-                        .unwrap_or_default(),
-                );
-                let Some(member) = members.into_iter().find(|m| m.user_id == user_id) else {
-                    return;
-                };
-                let items =
-                    super::members::member_menu(&session, &room_id, &Rc::new(member), perms, false);
-                open_menu_at(point.x, point.y, items, None);
-            });
+            close();
+            consume_context::<super::room_dialogs::OpenRoomDialog>()
+                .set(super::room_dialogs::RoomDialog::ModView(user_id.clone()));
         }
     };
 

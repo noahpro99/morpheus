@@ -1213,28 +1213,7 @@ impl App {
 /// A fresh account on the dev homeserver for one test (created through the
 /// admin API as alice, with `curl`); signs in with `<name>-password`.
 pub fn new_account(homeserver: &str, name: &str) -> Result<String> {
-    let curl = |args: &[&str]| -> Result<String> {
-        let out = std::process::Command::new("curl")
-            .arg("-sf")
-            .args(args)
-            .output()?;
-        if !out.status.success() {
-            bail!("curl {args:?} failed");
-        }
-        Ok(String::from_utf8_lossy(&out.stdout).into_owned())
-    };
-    let login = curl(&[
-        "-X",
-        "POST",
-        &format!("{homeserver}/_matrix/client/v3/login"),
-        "-d",
-        r#"{"type":"m.login.password","identifier":{"type":"m.id.user","user":"alice"},"password":"alice-password"}"#,
-    ])?;
-    let token: Value = serde_json::from_str(&login)?;
-    let token = token["access_token"]
-        .as_str()
-        .ok_or_else(|| anyhow!("no admin token"))?
-        .to_owned();
+    let token = admin_token(homeserver)?;
     let user = format!("{name}-{}", unique());
     curl(&[
         "-X",
@@ -1253,6 +1232,57 @@ pub fn new_account(homeserver: &str, name: &str) -> Result<String> {
         &format!("{homeserver}/_matrix/client/v3/logout"),
     ]);
     Ok(user)
+}
+
+/// Put `user` (a local part) into `room` (an id or alias such as
+/// `#general:localhost`) through the admin API, no invite needed.
+pub fn admin_join(homeserver: &str, user: &str, room: &str) -> Result<()> {
+    let token = admin_token(homeserver)?;
+    let room = room.replace('#', "%23").replace(':', "%3A");
+    curl(&[
+        "-X",
+        "POST",
+        "-H",
+        &format!("Authorization: Bearer {token}"),
+        &format!("{homeserver}/_synapse/admin/v1/join/{room}"),
+        "-d",
+        &json!({ "user_id": format!("@{user}:localhost") }).to_string(),
+    ])?;
+    let _ = curl(&[
+        "-X",
+        "POST",
+        "-H",
+        &format!("Authorization: Bearer {token}"),
+        &format!("{homeserver}/_matrix/client/v3/logout"),
+    ]);
+    Ok(())
+}
+
+fn curl(args: &[&str]) -> Result<String> {
+    let out = std::process::Command::new("curl")
+        .arg("-sf")
+        .args(args)
+        .output()?;
+    if !out.status.success() {
+        bail!("curl {args:?} failed");
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+/// A fresh access token for alice, the dev homeserver's admin.
+fn admin_token(homeserver: &str) -> Result<String> {
+    let login = curl(&[
+        "-X",
+        "POST",
+        &format!("{homeserver}/_matrix/client/v3/login"),
+        "-d",
+        r#"{"type":"m.login.password","identifier":{"type":"m.id.user","user":"alice"},"password":"alice-password"}"#,
+    ])?;
+    let token: Value = serde_json::from_str(&login)?;
+    Ok(token["access_token"]
+        .as_str()
+        .ok_or_else(|| anyhow!("no admin token"))?
+        .to_owned())
 }
 
 /// Every test login leaves a device on the dev homeserver, and a long run

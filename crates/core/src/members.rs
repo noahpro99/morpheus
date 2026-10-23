@@ -79,6 +79,34 @@ impl MemberPermissions {
     }
 }
 
+/// Someone's standing in one room, for the mod view.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModRoom {
+    pub room_id: OwnedRoomId,
+    pub name: String,
+    pub standing: Standing,
+    /// Their raw power level there.
+    pub power_level: i64,
+    /// What the signed-in user may do there.
+    pub mine: MemberPermissions,
+}
+
+impl ModRoom {
+    /// Whether you outrank them here (moderation only works downwards).
+    pub fn outranked(&self) -> bool {
+        self.mine.power_level > self.power_level
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Standing {
+    Member(MemberRole),
+    Invited,
+    Banned,
+    /// Left or kicked.
+    Gone,
+}
+
 impl Session {
     /// Joined members of a room, admins first, then alphabetical.
     pub fn members(&self, room_id: OwnedRoomId) -> CoreFuture<Vec<Member>> {
@@ -119,16 +147,46 @@ impl Session {
                 .get_room(&room_id)
                 .ok_or_else(|| Error::UnknownRoom(room_id.clone()))?;
             let me = client.user_id().ok_or(Error::NoSession)?;
-            let Some(member) = room.get_member(me).await? else {
-                return Ok(MemberPermissions::default());
-            };
-            Ok(MemberPermissions {
-                power_level: power_level_of(&member),
-                can_kick: member.can_kick(),
-                can_ban: member.can_ban(),
-                can_invite: member.can_invite(),
-                can_change_roles: member.can_send_state(StateEventType::RoomPowerLevels),
-            })
+            permissions_in(&room, me).await
+        })
+    }
+
+    /// Mod view: where `user_id` stands in each room you share (rooms they
+    /// left or were banned from too), with your powers there, by room name.
+    pub fn mod_overview(&self, user_id: OwnedUserId) -> CoreFuture<Vec<ModRoom>> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            let me = client.user_id().ok_or(Error::NoSession)?.to_owned();
+            let mut rooms = Vec::new();
+            for room in client.joined_rooms() {
+                if room.is_space() {
+                    continue;
+                }
+                let Some(member) = room.get_member_no_sync(&user_id).await? else {
+                    continue;
+                };
+                let standing = match member.membership() {
+                    MembershipState::Join => Standing::Member(MemberRole::from_sdk(
+                        member.suggested_role_for_power_level(),
+                    )),
+                    MembershipState::Invite => Standing::Invited,
+                    MembershipState::Ban => Standing::Banned,
+                    _ => Standing::Gone,
+                };
+                let name = room
+                    .cached_display_name()
+                    .map(|name| name.to_string())
+                    .unwrap_or_else(|| room.room_id().to_string());
+                rooms.push(ModRoom {
+                    room_id: room.room_id().to_owned(),
+                    name,
+                    standing,
+                    power_level: power_level_of(&member),
+                    mine: permissions_in(&room, &me).await?,
+                });
+            }
+            rooms.sort_by_key(|room| room.name.to_lowercase());
+            Ok(rooms)
         })
     }
 
@@ -252,6 +310,23 @@ impl Session {
             Ok(room.room_id().to_owned())
         })
     }
+}
+
+/// The signed-in user's moderation powers in `room`.
+async fn permissions_in(
+    room: &matrix_sdk::Room,
+    me: &matrix_sdk::ruma::UserId,
+) -> Result<MemberPermissions, Error> {
+    let Some(member) = room.get_member(me).await? else {
+        return Ok(MemberPermissions::default());
+    };
+    Ok(MemberPermissions {
+        power_level: power_level_of(&member),
+        can_kick: member.can_kick(),
+        can_ban: member.can_ban(),
+        can_invite: member.can_invite(),
+        can_change_roles: member.can_send_state(StateEventType::RoomPowerLevels),
+    })
 }
 
 fn power_level_of(member: &matrix_sdk::room::RoomMember) -> i64 {
