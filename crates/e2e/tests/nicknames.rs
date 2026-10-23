@@ -143,3 +143,50 @@ async fn nicknames_replace_display_names_and_follow_you() {
         .await
         .expect("bob again");
 }
+
+/// Typing `@` finds people by the nickname you gave them too, and shows it;
+/// what goes in the message is their real name, so they are still pinged.
+#[tokio::test]
+async fn mentions_find_people_by_nickname() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut carol = App::launch(&hs).await.expect("launch carol");
+    login_and_open(&mut carol, "carol", "general").await;
+    // A run that failed half way leaves the nickname behind: start clean.
+    let leftover = carol
+        .wait_for_text(".members .member", "Zebedee", std::time::Duration::from_secs(3))
+        .await
+        .is_ok();
+    if leftover {
+        set_nickname(&mut carol, "Zebedee", "").await;
+    }
+    set_nickname(&mut carol, "bob", "Zebedee").await;
+
+    carol
+        .type_into(".composer .composer-input", "hi @zeb")
+        .await
+        .expect("type");
+    carol
+        .wait_for_text(".autocomplete-item", "Zebedee", DEFAULT_WAIT)
+        .await
+        .expect("bob found by his nickname");
+    carol
+        .press(".composer .composer-input", "Tab")
+        .await
+        .expect("accept");
+    carol
+        .wait_for_js(
+            "return document.querySelector('.composer .composer-input').value === 'hi @bob '",
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("his real name goes in, so he is pinged");
+
+    carol
+        .type_into(".composer .composer-input", "")
+        .await
+        .expect("clear");
+    set_nickname(&mut carol, "Zebedee", "").await;
+}
