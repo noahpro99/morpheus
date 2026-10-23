@@ -947,6 +947,7 @@ pub fn Shell(session: Session) -> Element {
                 RoomDialog::CreateSpace(parent) => rsx! { CreateSpaceModal { parent } },
                 RoomDialog::LeaveSpace(space_id) => rsx! { LeaveSpaceModal { space_id } },
                 RoomDialog::RenameFolder(folder_id) => rsx! { RenameFolderModal { folder_id } },
+                RoomDialog::ModView(user_id) => rsx! { super::mod_view::ModViewModal { user_id } },
                 RoomDialog::None => rsx! {},
             }
             if narrow().0 {

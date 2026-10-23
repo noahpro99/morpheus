@@ -26,6 +26,8 @@ pub enum RoomDialog {
     LeaveSpace(OwnedRoomId),
     /// Rename a rail folder (by its layout id).
     RenameFolder(String),
+    /// Mod view: one person's standing and moderation across your rooms.
+    ModView(OwnedUserId),
 }
 pub type OpenRoomDialog = Signal<RoomDialog>;
 

@@ -79,7 +79,7 @@ timeline → send.
 - [x] Rail: drag to reorder, folders (drop one badge on another), rename/ungroup; layout synced via account data
 - [x] Profile card popover (mutual rooms, note, role, message box, mod view, more menu) with the full modal behind "View full profile"
 - [x] Friends: a private list in account data (`dev.morpheus.friends`); "Add friend"/"Remove friend" in a person's menu; a Friends page at the top of the DMs lists them (avatar, name or nickname, status) with Message and Remove. No friend requests (Matrix has no such thing).
-- [ ] Mod view page (Discord's): a per-user moderation sheet across rooms
+- [x] Mod view (Discord's), from the profile card: one sheet for a person listing every room you share with their standing (role, invited, banned, not in the room) and the moderation you may do there (role, kick, ban, unban, with a reason), only where you outrank them. e2e on a fresh account joined through the admin API.
 - [x] Multi-account: each account in its own folder (the first in the data dir, more under `accounts/<n>`); "Switch account" lists them and swaps without signing in, "Add an account" keeps the current one (the login screen offers a way back); signing out moves to the next. Core live test + e2e.
 - [x] Invites: sidebar section, chat-column card, inbox block, rail badge; accept joins, decline leaves
 - [x] Per-user nicknames: "Set nickname…" in a person's menu; kept in private account data (`dev.morpheus.nicknames`), shown instead of display names on messages and in the member list. Also DM room names (list and header) and the profile card (with their own name beneath). Not yet in mentions.

@@ -13,6 +13,7 @@ mod lightbox;
 mod login;
 mod members;
 mod message_dialogs;
+mod mod_view;
 mod nicknames;
 mod profile;
 mod rail;
