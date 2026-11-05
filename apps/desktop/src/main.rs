@@ -24,7 +24,15 @@ use tracing_subscriber::EnvFilter;
 mod tray;
 use tray::TrayAction;
 
-const DEFAULT_HOMESERVER: &str = "http://localhost:8008";
+/// The homeserver the sign-in form suggests: the dev server in test builds
+/// (`just e2e-build`), matrix.org otherwise.
+fn default_homeserver() -> &'static str {
+    if cfg!(feature = "e2e") {
+        "http://localhost:8008"
+    } else {
+        "matrix.org"
+    }
+}
 
 /// Rust's allocations through mimalloc, which hands freed memory back to
 /// the system; glibc's malloc held on to most of what a big room freed.
@@ -69,7 +77,7 @@ fn main() {
     let focus = Focus(Arc::new(AtomicBool::new(false)));
     let mut config = AppConfig::new(
         data_dir(),
-        std::env::var("MORPHEUS_HOMESERVER").unwrap_or_else(|_| DEFAULT_HOMESERVER.into()),
+        std::env::var("MORPHEUS_HOMESERVER").unwrap_or_else(|_| default_homeserver().into()),
     );
     // OS notifications run on their own thread: the webview's runtime stops
     // while the window is hidden, and that is exactly when they matter.
@@ -591,5 +599,14 @@ mod single_instance {
         }
         #[cfg(not(unix))]
         let _ = show;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// A release suggests a real homeserver; the dev one is for test builds.
+    #[test]
+    fn suggests_matrix_org_outside_test_builds() {
+        assert_eq!(super::default_homeserver(), "matrix.org");
     }
 }
