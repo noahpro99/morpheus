@@ -52,12 +52,12 @@ expect_used = "warn"
 dbg_macro = "warn"
 todo = "warn"
 
-# Our crates compile fast; the heavy dependencies (matrix-sdk, crypto, webview) get optimised once.
 [profile.release]
 # Debug info is most of a release binary (178 MB → 123 MB without); function
 # names stay, for readable backtraces.
 strip = "debuginfo"
 
+# Our crates compile fast; the heavy dependencies (matrix-sdk, crypto, webview) get optimised once.
 [profile.dev]
 opt-level = 1
 
