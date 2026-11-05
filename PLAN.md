@@ -112,7 +112,7 @@ timeline → send.
 - [x] Single-column navigation on phone-width windows (rooms → chat → members/thread) with back buttons and Escape/back; the shared shell does it, so the mobile app gets every desktop feature as is. Panes stack and slide with the finger (see below).
 - [x] Larger touch targets and safe-area insets in the narrow layout
 - [x] Text selection on phones: holding opens the message menu, whose Select text shows the message where holding selects it (system handles, Copy, Share); Copy all copies it whole. Phone e2e selects with a real held finger.
-- [ ] Swipe down to close a bottom sheet: a first version is in (sheet follows the finger, closes past a third or on a flick; phone e2e test), but the Pixel build predates it; check it feels right on the device.
+- [x] Swipe down to close a bottom sheet (menus, the profile, the call screen), quick animations (panes 180 ms, sheets 150 ms); phone e2e.
 - [x] Pane swipes like Discord: the chat slides in over the room list; a rightward drag moves the top pane with the finger, revealing the one underneath (members → chat → list); a leftward drag on the list brings the last chat back, and on the chat pulls in the parked member list. Phone e2e tests hold a real finger mid-drag. Opening a thread by swipe is not done (which thread would it be?).
 - [x] Keyboard avoidance on Android: the page shrinks for the keyboard and the message box and newest message stay above it (phone e2e test). iOS still to verify.
 - [x] UnifiedPush notifications (Sunup, ntfy…; tap opens the room). They show sender and text: a running app hands over what it decrypted; with the app closed, the push service decrypts the message itself through the core (SDK notification client, via JNI). Phone e2e test covers both.
@@ -136,7 +136,7 @@ timeline → send.
 - [x] Ringing in the background, desktop: a system notification says who is calling.
 - [x] Ringing in the background, Android: a push for a ring shows "X is calling" on a Calls channel with the phone's ringtone (insistent, 30 s); works with the app closed (the push service previews it as a call) or running.
 - [x] Video: the camera button in the voice panel; everyone's cameras show as tiles above the chat of the call's room (self view included), end-to-end encrypted with the audio. Linux webcams through Video4Linux (YUYV); test runs send a red/blue test pattern. Call-crate test (decrypted pattern on the far side) + e2e.
-- [ ] Phone cameras (Camera2 over JNI).
+- [x] Phone cameras (Camera2 over JNI): the front camera (else the back one) in calls, upright as its sensor says; phone e2e with the emulator camera.
 - [x] Screen share: the button in the voice panel; on Wayland the desktop portal asks which screen or window (cancelling leaves it off). Shared screens show first, wider, named "<name>'s screen"; encrypted like the camera. Test runs send a green/yellow pattern; call-crate test + e2e.
 
 ### 6. Native renderer
