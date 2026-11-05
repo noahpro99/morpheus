@@ -307,6 +307,13 @@ window.addEventListener('paste', e => {
       g = { kind: 'sheet', el: sheet, base: 0, ...start };
       return;
     }
+    // The call screen goes down like a sheet (to its bar); nothing under it
+    // moves sideways.
+    const call = document.querySelector('.call-screen');
+    if (call) {
+      g = { kind: 'call', el: call, base: 0, ...start };
+      return;
+    }
     if (document.querySelector(OPEN_FOR_SWIPE)) return;
     const pane = narrowPane();
     if (pane === 'chat' || pane === 'side') {
@@ -332,7 +339,11 @@ window.addEventListener('paste', e => {
         else { g = null; return; }
       }
     }
-    if (g.kind === 'sheet' && g.axis === 'y') {
+    if (g.kind === 'call' && g.axis === 'y') {
+      g.d = Math.max(0, dy);
+      g.el.style.transition = 'none';
+      g.el.style.transform = `translateY(${g.d}px)`;
+    } else if (g.kind === 'sheet' && g.axis === 'y') {
       // A scrolled list scrolls back to its top first; the sheet follows
       // the finger from there.
       if (g.el.scrollTop > 0) { g.base = dy; return; }
@@ -354,8 +365,12 @@ window.addEventListener('paste', e => {
     const { kind, el, d, at, then: next } = g;
     g = null;
     const fast = d > 40 && d / Math.max(1, Date.now() - at) > 0.6;
-    const far = d > (kind === 'sheet' ? el.offsetHeight : el.offsetWidth) / 3;
-    if (kind === 'sheet') {
+    const far = d > (kind === 'sheet' || kind === 'call' ? el.offsetHeight : el.offsetWidth) / 3;
+    if (kind === 'call') {
+      // Back (Escape) takes a phone's call screen down to its bar.
+      if (fast || far) settle(el, 'translateY(100%)', () => dioxus.send('escape'));
+      else settle(el, 'translateY(0)');
+    } else if (kind === 'sheet') {
       if (fast || far) {
         settle(el, 'translateY(100%)', () => {
           // The profile sheet closes through its own backdrop, menus through theirs.
@@ -376,6 +391,42 @@ window.addEventListener('paste', e => {
     }
   }, { capture: true });
   window.addEventListener('touchcancel', () => { if (g) settle(g.el, g.kind === 'forward' ? 'translateX(100%)' : 'none'); g = null; }, { capture: true });
+})();
+// The call stage's height: its bottom edge is dragged. The height is a CSS
+// variable on the page (the stage comes and goes with the cameras) and is
+// remembered on this device.
+(() => {
+  const KEY = 'morpheus.callStageHeight';
+  const apply = h => {
+    const root = document.documentElement.style;
+    root.setProperty('--call-stage-h', h + 'px');
+    root.setProperty('--call-stage-max', 'none');
+    // The tiles fill it, less the stage's padding.
+    root.setProperty('--call-tile-h', Math.max(60, h - 16) + 'px');
+  };
+  try { const kept = parseFloat(localStorage.getItem(KEY)); if (kept > 0) apply(kept); } catch (_) {}
+  let drag = null;
+  window.addEventListener('mousedown', e => {
+    const edge = e.target.closest && e.target.closest('.call-stage-resize');
+    const stage = edge && edge.previousElementSibling;
+    if (!stage) return;
+    e.preventDefault();
+    drag = { y: e.clientY, h: stage.getBoundingClientRect().height };
+    document.body.classList.add('resizing-stage');
+  }, true);
+  window.addEventListener('mousemove', e => {
+    if (!drag) return;
+    const chat = document.querySelector('.chat');
+    const most = chat ? chat.clientHeight * 0.85 : 800;
+    drag.now = Math.round(Math.min(most, Math.max(80, drag.h + e.clientY - drag.y)));
+    apply(drag.now);
+  }, true);
+  window.addEventListener('mouseup', () => {
+    if (!drag) return;
+    if (drag.now) { try { localStorage.setItem(KEY, String(drag.now)); } catch (_) {} }
+    drag = null;
+    document.body.classList.remove('resizing-stage');
+  }, true);
 })();
 // Links. Formatted messages arrive as HTML, where bare URLs are plain text:
 // link them (the same rules as `linkify.rs`, which handles plain messages).
