@@ -517,7 +517,7 @@ async fn a_call_in_a_dm_rings_the_other_person_who_can_answer_or_decline() {
 /// blue on the right (what a test run's camera sends).
 fn shows_test_pattern(user: &str) -> String {
     format!(
-        "const t = [...document.querySelectorAll('.call-stage .video-tile:not(.screen)')].find(t => t.dataset.user === {user}); \
+        "const t = [...document.querySelectorAll('.video-tile:not(.screen)')].find(t => t.dataset.user === {user}); \
          const i = t && t.querySelector('img.video'); \
          if (!i || !i.complete || !i.naturalWidth) return false; \
          const c = document.createElement('canvas'); c.width = i.naturalWidth; c.height = i.naturalHeight; \
@@ -575,6 +575,15 @@ async fn a_camera_turned_on_shows_to_everyone_in_the_call_until_turned_off() {
             .open_room("encrypted")
             .await
             .expect("back to the room");
+        // The call's own screen, where a phone shows the video.
+        alice
+            .click(".chat-header .call-button")
+            .await
+            .expect("open the call");
+        alice
+            .wait_for(".call-screen", DEFAULT_WAIT)
+            .await
+            .expect("the call screen");
     }
     // She sees herself, and bob sees her: the picture arrived, decrypted.
     alice
@@ -587,21 +596,64 @@ async fn a_camera_turned_on_shows_to_everyone_in_the_call_until_turned_off() {
     bob.wait_for_text(".video-tile .video-name", "alice", DEFAULT_WAIT)
         .await
         .expect("her tile is named");
+    // Bob, camera off, has a tile too: his picture, beside her video.
+    bob.wait_for(
+        ".call-stage .call-tile[data-user=\"@bob:localhost\"] .avatar",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("a picture tile for bob on the stage");
     if let Some(path) = bob.screenshot("call-video").await.expect("screenshot") {
         eprintln!("screenshot: {}", path.display());
     }
-
-    // Off again: her tile goes, and with no cameras on, the stage.
+    // A phone stacks the two, one above the other, full width.
     if alice.is_phone() {
         alice
-            .click(".chat-header .pane-back")
+            .wait_for(".call-screen .call-tile[data-user=\"@bob:localhost\"]", DEFAULT_WAIT)
             .await
-            .expect("back to the list");
+            .expect("bob's tile on the phone");
+        let stacked = alice
+            .eval(
+                "const t = [...document.querySelectorAll('.call-tiles > *')].map(e => e.getBoundingClientRect()); \
+                 const w = document.querySelector('.call-tiles').clientWidth; \
+                 return t.length === 2 && t[1].top >= t[0].bottom - 1 && t.every(r => r.width > w * 0.8);",
+            )
+            .await
+            .expect("measure");
+        if let Some(path) = alice.screenshot("android-call-two").await.expect("screenshot") {
+            eprintln!("screenshot: {}", path.display());
+        }
+        assert_eq!(stacked, serde_json::json!(true), "the two tiles stack on a phone");
     }
-    alice
-        .click(".voice-panel .camera-button")
+
+    // The other way: bob's camera reaches alice.
+    bob.click(".voice-panel .camera-button")
         .await
-        .expect("camera off");
+        .expect("bob's camera on");
+    alice
+        .wait_for_js(&shows_test_pattern("@bob:localhost"), DEFAULT_WAIT)
+        .await
+        .expect("alice sees bob's camera");
+    if let Some(path) = alice.screenshot("call-video-other-way").await.expect("screenshot") {
+        eprintln!("screenshot: {}", path.display());
+    }
+    bob.click(".voice-panel .camera-button")
+        .await
+        .expect("bob's camera off");
+
+    // Off again: her tile goes, and with no cameras on, the stage.
+    let no_tile_for_alice = "return ![...document.querySelectorAll('.video-tile')].some(t => t.dataset.user === '@alice:localhost');";
+    if alice.is_phone() {
+        alice
+            .click(".call-screen .camera-button")
+            .await
+            .expect("camera off");
+    } else {
+        alice
+            .click(".voice-panel .camera-button")
+            .await
+            .expect("camera off");
+    }
     bob.wait_for_js(
         "return !document.querySelector('.call-stage');",
         DEFAULT_WAIT,
@@ -609,12 +661,19 @@ async fn a_camera_turned_on_shows_to_everyone_in_the_call_until_turned_off() {
     .await
     .expect("the stage goes when the camera does");
     alice
-        .wait_for_js(
-            "return !document.querySelector('.call-stage');",
-            DEFAULT_WAIT,
-        )
+        .wait_for_js(no_tile_for_alice, DEFAULT_WAIT)
         .await
         .expect("alice's self view goes too");
+    if alice.is_phone() {
+        alice
+            .click(".call-screen .call-minimize")
+            .await
+            .expect("down to the bar");
+        alice
+            .click(".chat-header .pane-back")
+            .await
+            .expect("back to the list");
+    }
 
     alice
         .click(".voice-panel .hang-up")
@@ -736,4 +795,69 @@ async fn a_shared_screen_shows_to_everyone_in_the_call_until_stopped() {
     bob.click(".voice-panel .hang-up")
         .await
         .expect("bob hangs up");
+}
+
+/// How many times the ringtone has played in `app`.
+async fn rings(app: &mut App) -> u64 {
+    app.eval("return (window.morpheusSounds ?? []).filter(s => s === 'ring').length;")
+        .await
+        .expect("sounds")
+        .as_u64()
+        .unwrap_or_default()
+}
+
+/// Answering a ring by joining the call some other way (the room's call
+/// button) ends the ringing for good: not only while in the call, but
+/// after hanging up with the caller still there.
+#[tokio::test]
+async fn joining_a_ringing_call_from_the_room_stops_the_ring_for_good() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    login_and_open(&mut alice, "alice", "random").await;
+    let mut bob = App::launch(&hs).await.expect("launch bob");
+    login_and_open(&mut bob, "bob", "random").await;
+    open_dm(&mut alice, "bob").await;
+    alice
+        .click(".chat-header .call-button")
+        .await
+        .expect("call bob");
+    bob.wait_for_text(".incoming-call", "alice", DEFAULT_WAIT)
+        .await
+        .expect("bob's app rings");
+
+    // Bob goes to the DM and joins from its header instead.
+    open_dm(&mut bob, "alice").await;
+    bob.click(".chat-header .call-button")
+        .await
+        .expect("join from the room");
+    bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("bob connected");
+    let joined = rings(&mut bob).await;
+    tokio::time::sleep(std::time::Duration::from_secs(4)).await;
+    assert_eq!(rings(&mut bob).await, joined, "it rang on in the call");
+
+    // Bob leaves, alice stays: still no ringing.
+    bob.click(".voice-panel .hang-up")
+        .await
+        .expect("bob hangs up");
+    bob.wait_for_js("return !document.querySelector('.voice-panel');", DEFAULT_WAIT)
+        .await
+        .expect("bob out");
+    tokio::time::sleep(std::time::Duration::from_secs(4)).await;
+    assert_eq!(
+        (rings(&mut bob).await, bob.count(".incoming-call").await.expect("count")),
+        (joined, 0),
+        "it rang again after hanging up"
+    );
+    // A phone hangs up from its call screen.
+    let hang_up = if alice.is_phone() {
+        ".call-screen .hang-up"
+    } else {
+        ".voice-panel .hang-up"
+    };
+    alice.click(hang_up).await.expect("alice hangs up");
 }

@@ -194,11 +194,37 @@ async fn declined(
     }
 }
 
+/// The call to join when asked to call in `room_id`. Someone can have
+/// several direct-message rooms with you (old ones, ones started from
+/// another app); if they are already calling you from one of the others,
+/// that is the call to join, not a second, empty one beside it.
+fn call_room_for(room_id: &OwnedRoomId, rooms: &[RoomSummary]) -> Option<(OwnedRoomId, String)> {
+    let here = rooms.iter().find(|r| &r.id == room_id)?;
+    let them = here.dm_user.as_ref().filter(|_| here.is_dm)?;
+    if here.call_participants.contains(them) {
+        return None;
+    }
+    rooms
+        .iter()
+        .find(|r| r.is_dm && r.id != *room_id && r.dm_user.as_ref() == Some(them) && r.call_participants.contains(them))
+        .map(|r| (r.id.clone(), r.name.clone()))
+}
+
 /// Join `room_id`'s call, leaving any other first.
 pub fn join_call(session: Session, room_id: OwnedRoomId, room_name: String) {
     let mut active = consume_context::<ActiveCall>();
     let voice = consume_context::<Voice>();
     let media = consume_context::<CallMedia>();
+    let (room_id, room_name) = match try_consume_context::<super::shell::Rooms>()
+        .and_then(|rooms| call_room_for(&room_id, &rooms.peek().iter().cloned().collect::<Vec<_>>()))
+    {
+        Some((elsewhere, name)) => {
+            tracing::info!(asked = %room_id, joining = %elsewhere, "they are calling from another DM: joining that call");
+            go_to(elsewhere.clone());
+            (elsewhere, name)
+        }
+        None => (room_id, room_name),
+    };
     if active
         .peek()
         .0
@@ -347,6 +373,11 @@ pub fn join_call(session: Session, room_id: OwnedRoomId, room_name: String) {
                         None => std::future::pending().await,
                     }
                 } => {
+                    if key.livekit_identities.is_empty() {
+                        // Nobody in the call to apply it to: their media
+                        // would stay undecryptable. Logged to find out why.
+                        tracing::warn!(user = %key.user_id, device = key.device_id, "call key from someone not (yet) in the call");
+                    }
                     if let Some(call) = media.0.borrow().as_ref() {
                         for identity in &key.livekit_identities {
                             call.set_key(identity, key.key.clone());
@@ -680,20 +711,58 @@ fn CallParticipant(user_id: OwnedUserId, speaking: bool) -> Element {
 /// camera is on: a tile each.
 #[component]
 pub fn CallStage(room_id: OwnedRoomId) -> Element {
+    let session = use_context::<Session>();
     let active = use_context::<ActiveCall>();
+    let rooms = use_context::<super::shell::Rooms>();
     let Some(call) = active().0.filter(|call| call.room_id == room_id) else {
         return rsx! {};
     };
     if call.video.is_empty() {
         return rsx! {};
     }
+    // Everyone gets a tile once anyone's camera is on: theirs, or their picture.
+    let (feeds, without_camera) = tiles(&call, &rooms.read(), session.user_id());
     rsx! {
         div { class: "call-stage",
-            for feed in call.video {
+            for feed in feeds {
                 VideoTile { key: "{feed.key}", user: feed.user, feed: feed.key, screen: feed.screen }
+            }
+            for user in without_camera {
+                CallTile {
+                    key: "{user}",
+                    speaking: call.speaking.contains(&user),
+                    user_id: user,
+                }
             }
         }
     }
+}
+
+/// A call's tiles: the video (shared screens first, then cameras), and
+/// the people in it with no camera on (this account first).
+fn tiles(
+    call: &CallState,
+    rooms: &morpheus_core::Vector<RoomSummary>,
+    me: Option<OwnedUserId>,
+) -> (Vec<VideoFeed>, Vec<OwnedUserId>) {
+    let mut people = rooms
+        .iter()
+        .find(|room| room.id == call.room_id)
+        .map(|room| room.call_participants.clone())
+        .unwrap_or_default();
+    if let Some(me) = me
+        && !people.contains(&me)
+    {
+        people.insert(0, me);
+    }
+    let screens = call.video.iter().filter(|feed| feed.screen);
+    let cameras = call.video.iter().filter(|feed| !feed.screen);
+    let feeds = screens.chain(cameras.clone()).cloned().collect();
+    let without_camera = people
+        .into_iter()
+        .filter(|user| !cameras.clone().any(|feed| &feed.user == user))
+        .collect();
+    (feeds, without_camera)
 }
 
 /// How often a tile looks for a new picture.
@@ -833,24 +902,7 @@ pub fn CallScreen() -> Element {
     let Some(call) = active().0.filter(|_| shown().0) else {
         return rsx! {};
     };
-    let mut people = rooms
-        .read()
-        .iter()
-        .find(|room| room.id == call.room_id)
-        .map(|room| room.call_participants.clone())
-        .unwrap_or_default();
-    if let Some(me) = session.user_id()
-        && !people.contains(&me)
-    {
-        people.insert(0, me);
-    }
-    let screens = call.video.iter().filter(|feed| feed.screen);
-    let cameras = call.video.iter().filter(|feed| !feed.screen);
-    let feeds: Vec<VideoFeed> = screens.chain(cameras.clone()).cloned().collect();
-    let without_camera: Vec<OwnedUserId> = people
-        .into_iter()
-        .filter(|user| !cameras.clone().any(|feed| &feed.user == user))
-        .collect();
+    let (feeds, without_camera) = tiles(&call, &rooms.read(), session.user_id());
     let flags = voice();
     let muted = flags.muted || flags.deafened;
     let room_id = call.room_id.clone();
@@ -1083,5 +1135,61 @@ fn IncomingCallCard(call: IncomingCall, room: Option<RoomSummary>) -> Element {
                 Icon { glyph: PHONE, size: 20 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod tests {
+    use super::*;
+
+    fn dm(id: &str, with: &str, in_call: &[&str]) -> RoomSummary {
+        RoomSummary {
+            id: OwnedRoomId::try_from(id).expect("room id"),
+            name: with.to_owned(),
+            topic: None,
+            avatar: None,
+            is_space: false,
+            is_dm: true,
+            dm_user: Some(OwnedUserId::try_from(with).expect("user id")),
+            member_count: 2,
+            unread_messages: 0,
+            highlight_count: 0,
+            marked_unread: false,
+            muted: false,
+            parent_spaces: Vec::new(),
+            invited: false,
+            inviter: None,
+            call_participants: in_call
+                .iter()
+                .map(|u| OwnedUserId::try_from(*u).expect("user id"))
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn calling_someone_already_calling_from_another_dm_joins_that_call() {
+        let rooms = [
+            dm("!new:x", "@bob:x", &[]),
+            dm("!old:x", "@bob:x", &["@bob:x"]),
+            dm("!carol:x", "@carol:x", &["@carol:x"]),
+        ];
+        let asked = OwnedRoomId::try_from("!new:x").expect("id");
+        assert_eq!(
+            call_room_for(&asked, &rooms).map(|(id, _)| id.to_string()),
+            Some("!old:x".to_owned())
+        );
+    }
+
+    #[test]
+    fn a_call_already_here_or_nowhere_else_stays_here() {
+        let both = [
+            dm("!new:x", "@bob:x", &["@bob:x"]),
+            dm("!old:x", "@bob:x", &["@bob:x"]),
+        ];
+        let asked = OwnedRoomId::try_from("!new:x").expect("id");
+        assert_eq!(call_room_for(&asked, &both), None);
+        let alone = [dm("!new:x", "@bob:x", &[]), dm("!old:x", "@bob:x", &[])];
+        assert_eq!(call_room_for(&asked, &alone), None);
     }
 }
