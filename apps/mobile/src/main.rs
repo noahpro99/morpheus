@@ -11,7 +11,15 @@ use tracing_subscriber::EnvFilter;
 #[cfg(target_os = "android")]
 mod push;
 
-const DEFAULT_HOMESERVER: &str = "http://10.0.2.2:8008"; // host machine from the Android emulator
+/// The homeserver the sign-in form suggests: in test builds the dev server
+/// on the machine running the emulator, matrix.org otherwise.
+fn default_homeserver() -> &'static str {
+    if cfg!(feature = "e2e") {
+        "http://10.0.2.2:8008"
+    } else {
+        "matrix.org"
+    }
+}
 
 fn main() {
     tracing_subscriber::fmt()
@@ -23,7 +31,7 @@ fn main() {
     #[allow(unused_mut)]
     let mut config = AppConfig::new(
         data_dir(),
-        std::env::var("MORPHEUS_HOMESERVER").unwrap_or_else(|_| DEFAULT_HOMESERVER.into()),
+        std::env::var("MORPHEUS_HOMESERVER").unwrap_or_else(|_| default_homeserver().into()),
     );
     #[cfg(target_os = "android")]
     {
@@ -457,4 +465,13 @@ pub extern "system" fn Java_dev_morpheus_mobile_CameraFeed_frame(
         u32::try_from(height).unwrap_or(0),
         u32::try_from(rotation).unwrap_or(0),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    /// A release suggests a real homeserver; the emulator's host is for test builds.
+    #[test]
+    fn suggests_matrix_org_outside_test_builds() {
+        assert_eq!(super::default_homeserver(), "matrix.org");
+    }
 }
