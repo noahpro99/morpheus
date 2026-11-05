@@ -548,9 +548,20 @@ pub struct CallKey {
     pub device_id: String,
     pub index: u32,
     pub key: Vec<u8>,
-    /// The LiveKit identities it applies to (see [`CallMember`]).
+    /// The LiveKit identities it applies to: the one its sender said it has
+    /// in the call, first, then those worked out from user and device (see
+    /// [`CallMember`]; apps that do not say).
     pub livekit_identities: Vec<String>,
+    /// The sender's LiveKit identity as it said (`IDENTITY_FIELD`).
+    pub livekit_identity: Option<String>,
 }
+
+/// Our field in the key event: the sender's own LiveKit identity, from its
+/// token. Token services do not all name devices the way the dev one does
+/// (matrix.org's names cannot be worked out from user and device, and its
+/// tokens let nobody tell LiveKit who they are), so the name travels with
+/// the key, encrypted.
+const IDENTITY_FIELD: &str = "dev.morpheus.livekit_identity";
 
 /// Media keys arriving for one room.
 pub struct CallKeyUpdates {
@@ -567,7 +578,13 @@ impl CallKeyUpdates {
 impl Session {
     /// Share this device's media key with everyone in `room_id`'s call, as
     /// an (encrypted) room event, Element Call's way.
-    pub fn send_call_key(&self, room_id: OwnedRoomId, key: Vec<u8>) -> CoreFuture<()> {
+    /// `livekit_identity` is this device's name in the call, from its token.
+    pub fn send_call_key(
+        &self,
+        room_id: OwnedRoomId,
+        key: Vec<u8>,
+        livekit_identity: String,
+    ) -> CoreFuture<()> {
         let session = self.clone();
         self.core.run(async move {
             use base64::Engine as _;
@@ -589,6 +606,7 @@ impl Session {
                 "device_id": device_id,
                 "call_id": "",
                 "sent_ts": sent_ts,
+                IDENTITY_FIELD: livekit_identity,
             });
             room.send_raw(KEYS_EVENT, content).await?;
             Ok(())
@@ -635,6 +653,9 @@ fn keys_in(sender: &matrix_sdk::ruma::UserId, raw: &RawEvent) -> Vec<CallKey> {
         return Vec::new();
     };
     let user_id = sender.to_owned();
+    let said = content[IDENTITY_FIELD].as_str().map(str::to_owned);
+    let mut identities: Vec<String> = said.iter().cloned().collect();
+    identities.extend(livekit_identities(&user_id, device_id));
     content["keys"]
         .as_array()
         .into_iter()
@@ -645,7 +666,8 @@ fn keys_in(sender: &matrix_sdk::ruma::UserId, raw: &RawEvent) -> Vec<CallKey> {
                 .decode(encoded.trim_end_matches('='))
                 .ok()?;
             Some(CallKey {
-                livekit_identities: livekit_identities(&user_id, device_id),
+                livekit_identities: identities.clone(),
+                livekit_identity: said.clone(),
                 user_id: user_id.clone(),
                 device_id: device_id.to_owned(),
                 index: entry["index"].as_u64().unwrap_or(0) as u32,

@@ -13,7 +13,6 @@
 
 use std::{
     borrow::Cow,
-    collections::HashMap,
     sync::{
         Arc, Mutex, OnceLock,
         atomic::{AtomicBool, Ordering},
@@ -107,14 +106,6 @@ pub use livekit::webrtc::android::{initialize_android, initialize_android_contex
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CallEvent {
     Joined(String),
-    /// Which Matrix user and device a participant is (what it told LiveKit,
-    /// [`Call::introduce`]): token services name participants in their own
-    /// ways, so this is how a name is matched to a person and their key.
-    Identified {
-        identity: String,
-        user_id: String,
-        device_id: String,
-    },
     Left(String),
     /// Who is speaking now (this device included), loudest first.
     Speaking(Vec<String>),
@@ -314,31 +305,6 @@ impl Call {
             },
             rx,
         ))
-    }
-
-    /// Tell everyone in the call which Matrix user and device this is.
-    /// Sent in the background: nothing waits on the server's answer.
-    pub fn introduce(&self, user_id: &str, device_id: &str) {
-        let room = self.room.clone();
-        let attributes = HashMap::from([
-            (USER_ATTRIBUTE.to_owned(), user_id.to_owned()),
-            (DEVICE_ATTRIBUTE.to_owned(), device_id.to_owned()),
-        ]);
-        runtime().spawn(async move {
-            if let Err(err) = room.local_participant().set_attributes(attributes).await {
-                warn!(%err, "could not tell the call who this is");
-            }
-        });
-    }
-
-    /// Who the others already in the call said they are ([`Call::introduce`]):
-    /// (LiveKit identity, Matrix user, device).
-    pub fn introduced(&self) -> Vec<(String, String, String)> {
-        self.room
-            .remote_participants()
-            .values()
-            .filter_map(|p| matrix_identity(&p.attributes()).map(|(user, device)| (p.identity().to_string(), user, device)))
-            .collect()
     }
 
     /// Everyone else in the call (LiveKit identities).
@@ -679,25 +645,7 @@ async fn forward_events(
         let out = match event {
             RoomEvent::ParticipantConnected(p) => {
                 info!(who = %p.identity(), "joined the call");
-                if let Some((user_id, device_id)) = matrix_identity(&p.attributes()) {
-                    let _ = tx.send(CallEvent::Identified {
-                        identity: p.identity().to_string(),
-                        user_id,
-                        device_id,
-                    });
-                }
                 CallEvent::Joined(p.identity().to_string())
-            }
-            RoomEvent::ParticipantAttributesChanged { participant, .. } => {
-                let Some((user_id, device_id)) = matrix_identity(&participant.attributes()) else {
-                    continue;
-                };
-                info!(who = %participant.identity(), user = user_id, device = device_id, "identified");
-                CallEvent::Identified {
-                    identity: participant.identity().to_string(),
-                    user_id,
-                    device_id,
-                }
             }
             RoomEvent::ParticipantDisconnected(p) => {
                 info!(who = %p.identity(), "left the call");
@@ -766,17 +714,6 @@ async fn forward_events(
             return;
         }
     }
-}
-
-/// The LiveKit attributes naming a participant's Matrix user and device.
-const USER_ATTRIBUTE: &str = "dev.morpheus.user_id";
-const DEVICE_ATTRIBUTE: &str = "dev.morpheus.device_id";
-
-fn matrix_identity(attributes: &HashMap<String, String>) -> Option<(String, String)> {
-    Some((
-        attributes.get(USER_ATTRIBUTE)?.clone(),
-        attributes.get(DEVICE_ATTRIBUTE)?.clone(),
-    ))
 }
 
 /// Report when audio from `who` starts and stops arriving.

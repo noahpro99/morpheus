@@ -1944,7 +1944,7 @@ async fn call_media_keys_travel_encrypted_to_the_room() {
     find(&alice).await;
     let key = format!("key-{}", std::process::id()).into_bytes();
     alice
-        .send_call_key(room.clone(), key.clone())
+        .send_call_key(room.clone(), key.clone(), "alice-in-the-call".to_owned())
         .await
         .expect("send key");
 
@@ -1961,9 +1961,11 @@ async fn call_media_keys_travel_encrypted_to_the_room() {
     .await
     .expect("alice's key arrives");
     assert_eq!(got.key, key);
-    assert!(
-        got.livekit_identities.len() >= 2,
-        "identities to apply it to"
+    // The name alice has in the call comes with it, first in line.
+    assert_eq!(got.livekit_identity.as_deref(), Some("alice-in-the-call"));
+    assert_eq!(
+        got.livekit_identities.first().map(String::as_str),
+        Some("alice-in-the-call")
     );
 }
 
