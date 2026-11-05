@@ -2104,3 +2104,20 @@ form.new-message button:disabled { opacity: 0.5; cursor: default; }
    their picture in the middle. */
 .call-stage .call-tile { height: clamp(120px, 28vh, 270px); aspect-ratio: 4 / 3; max-width: 100%; }
 .shell.narrow .call-stage .call-tile { height: clamp(100px, 22vh, 200px); }
+
+/* The stage's height, once its edge has been dragged (hotkeys.rs sets the
+   variables); its tiles fill it. */
+.call-stage { height: var(--call-stage-h, auto); max-height: var(--call-stage-max, 45%); }
+.call-stage .video-tile, .call-stage .call-tile { height: var(--call-tile-h, clamp(120px, 28vh, 270px)); }
+.call-stage-resize {
+  flex: none;
+  height: 6px;
+  margin-top: -3px;
+  position: relative;
+  z-index: 1;
+  cursor: ns-resize;
+  background: transparent;
+  transition: background 0.12s;
+}
+.call-stage-resize:hover, body.resizing-stage .call-stage-resize { background: var(--accent); }
+body.resizing-stage { cursor: ns-resize; user-select: none; -webkit-user-select: none; }

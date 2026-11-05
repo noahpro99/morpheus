@@ -863,6 +863,7 @@ async fn joining_a_ringing_call_from_the_room_stops_the_ring_for_good() {
         ".voice-panel .hang-up"
     };
     alice.click(hang_up).await.expect("alice hangs up");
+    out_of_call(&mut alice).await;
 }
 
 /// Already in a call, a ring shows its card but plays no ringtone over the
@@ -904,10 +905,12 @@ async fn a_ring_during_a_call_is_shown_but_silent() {
         ".voice-panel .hang-up"
     };
     bob.click(hang_up).await.expect("bob hangs up");
+    out_of_call(&mut bob).await;
     alice
         .click(".voice-panel .hang-up")
         .await
         .expect("alice hangs up");
+    out_of_call(&mut alice).await;
 }
 
 /// HMAC-SHA256 (RFC 2104), for signing LiveKit tokens as the dev server does.
@@ -1081,4 +1084,105 @@ async fn encrypted_calls_work_whatever_the_token_service_names_people() {
         .click(".voice-panel .hang-up")
         .await
         .expect("alice hangs up");
+    out_of_call(&mut alice).await;
+}
+
+/// The stage's height on screen.
+async fn stage_height(app: &mut App) -> f64 {
+    app.eval("return document.querySelector('.call-stage').getBoundingClientRect().height;")
+        .await
+        .expect("height")
+        .as_f64()
+        .expect("number")
+}
+
+/// The stage (everyone's video above the chat) is resized by dragging its
+/// bottom edge, and keeps that size the next time it shows.
+#[tokio::test]
+async fn the_call_stage_is_resized_by_dragging_its_edge() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut alice = App::launch_desktop(&hs).await.expect("launch alice");
+    login_and_open(&mut alice, "alice", "random").await;
+    alice
+        .click(".chat-header .call-button")
+        .await
+        .expect("call");
+    alice
+        .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("connected");
+    alice
+        .click(".voice-panel .camera-button")
+        .await
+        .expect("camera on");
+    alice
+        .wait_for(".call-stage + .call-stage-resize", DEFAULT_WAIT)
+        .await
+        .expect("the stage, with an edge to drag");
+    let before = stage_height(&mut alice).await;
+    // Press on the edge, move the mouse 200 px down, let go.
+    alice
+        .eval(
+            "const h = document.querySelector('.call-stage-resize').getBoundingClientRect(); \
+             const x = h.left + h.width / 2, y = h.top + h.height / 2; \
+             const at = (type, dy, target) => target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y + dy, buttons: 1 })); \
+             at('mousedown', 0, document.querySelector('.call-stage-resize')); \
+             for (let dy = 20; dy <= 200; dy += 20) at('mousemove', dy, window); \
+             at('mouseup', 200, window); return true;",
+        )
+        .await
+        .expect("drag");
+    let after = stage_height(&mut alice).await;
+    assert!(
+        (after - before - 200.0).abs() < 12.0,
+        "dragging the edge 200 px down made the stage {before} → {after} px"
+    );
+
+    // Off and on again: the same size.
+    alice
+        .click(".voice-panel .camera-button")
+        .await
+        .expect("camera off");
+    alice
+        .wait_for_js("return !document.querySelector('.call-stage');", DEFAULT_WAIT)
+        .await
+        .expect("stage gone");
+    alice
+        .click(".voice-panel .camera-button")
+        .await
+        .expect("camera on again");
+    alice
+        .wait_for(".call-stage .video-tile", DEFAULT_WAIT)
+        .await
+        .expect("stage again");
+    let again = stage_height(&mut alice).await;
+    assert!(
+        (again - after).abs() < 12.0,
+        "the stage forgot its size: {after} → {again} px"
+    );
+    if let Some(path) = alice.screenshot("call-stage-resized").await.expect("screenshot") {
+        eprintln!("screenshot: {}", path.display());
+    }
+    alice
+        .click(".voice-panel .hang-up")
+        .await
+        .expect("hang up");
+    out_of_call(&mut alice).await;
+}
+
+/// Hung up for good: the voice panel gone, and a moment for the leave to
+/// reach the call server. A test ending sooner kills the app mid-leave, and
+/// its ghost stays in the room until the server gives up on it, chiming
+/// "leave" in whichever test comes next.
+async fn out_of_call(app: &mut App) {
+    let _ = app
+        .wait_for_js(
+            "return !document.querySelector('.voice-panel') && !document.querySelector('.call-screen');",
+            DEFAULT_WAIT,
+        )
+        .await;
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 }

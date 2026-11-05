@@ -739,6 +739,9 @@ pub fn CallStage(room_id: OwnedRoomId) -> Element {
                 }
             }
         }
+        // Dragged to make the stage taller or shorter (hotkeys.rs does the
+        // dragging and remembers the height).
+        div { class: "call-stage-resize", title: "Drag to resize" }
     }
 }
 

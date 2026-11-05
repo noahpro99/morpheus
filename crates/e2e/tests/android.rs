@@ -1829,3 +1829,81 @@ async fn phone_gets_messages_live_again_after_losing_the_network() {
             .unwrap_or_else(|e| panic!("message {n} arrives live once the network is back: {e}"));
     }
 }
+
+/// The call screen goes down with a downward swipe, to its bar above the
+/// message box (still in the call). Sideways swipes do nothing there: they
+/// moved the panes hidden underneath (the member list slid in behind it).
+#[tokio::test]
+async fn phone_call_screen_swipes_down_and_not_sideways() {
+    if !enabled() {
+        eprintln!("MORPHEUS_E2E_ANDROID not set; skipping the Android test");
+        return;
+    }
+    let mut app = App::launch_android().await.expect("launch on Android");
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    app.type_into("form.login input[name=username]", "alice")
+        .await
+        .expect("username");
+    app.type_into("form.login input[name=password]", "alice-password")
+        .await
+        .expect("password");
+    app.submit("form.login").await.expect("submit");
+    app.wait_for(".room", DEFAULT_WAIT)
+        .await
+        .expect("rooms listed");
+    app.open_room("random").await.expect("open #random");
+    app.tap(".chat-header .call-button").await.expect("call");
+    app.wait_for_text(".call-screen .call-screen-state", "Connected", DEFAULT_WAIT)
+        .await
+        .expect("the call screen");
+    let (width, height) = app.page_size().await.expect("size");
+
+    // Sideways, either way, across the middle (from the very edge it is
+    // Android's own back gesture, which may close it): the call screen
+    // stays, and nothing moves under it.
+    for (from, to) in [
+        ((width * 0.85, height / 2.0), (width * 0.15, height / 2.0)),
+        ((width * 0.15, height / 2.0), (width * 0.85, height / 2.0)),
+    ] {
+        app.swipe(from, to, 200).await.expect("swipe sideways");
+        tokio::time::sleep(std::time::Duration::from_millis(700)).await;
+        assert_eq!(
+            app.count(".call-screen").await.expect("count"),
+            1,
+            "a sideways swipe closed the call screen"
+        );
+        pane(&mut app, "chat").await;
+        assert_eq!(
+            app.eval("return !!document.querySelector('.side-pane:not(.parked)');")
+                .await
+                .expect("side pane"),
+            serde_json::json!(false),
+            "the member list slid in under the call screen"
+        );
+    }
+
+    // Down: the bar, still in the call.
+    app.swipe((width / 2.0, height * 0.3), (width / 2.0, height - 10.0), 250)
+        .await
+        .expect("swipe down");
+    gone(&mut app, ".call-screen", "the call screen").await;
+    app.wait_for_text(".chat .call-bar", "random", DEFAULT_WAIT)
+        .await
+        .expect("down to the bar, still in the call");
+
+    app.tap(".chat .call-bar").await.expect("open again");
+    app.wait_for(".call-screen .hang-up", DEFAULT_WAIT)
+        .await
+        .expect("the call screen again");
+    let shifted = app
+        .eval("return getComputedStyle(document.querySelector('.call-screen')).transform;")
+        .await
+        .expect("transform");
+    assert!(
+        matches!(shifted.as_str(), Some("none") | Some("matrix(1, 0, 0, 1, 0, 0)")),
+        "it opened again where the swipe left it: {shifted}"
+    );
+    app.tap(".call-screen .hang-up").await.expect("hang up");
+}
