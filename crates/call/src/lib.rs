@@ -36,7 +36,7 @@ use livekit::{
     },
 };
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 mod devices;
 pub use devices::{
@@ -323,6 +323,7 @@ impl Call {
 
     /// Hear `identity` in an encrypted call: their media key, as they sent it.
     pub fn set_key(&self, identity: &str, key: Vec<u8>) {
+        info!(who = identity, encrypted = self.keys.is_some(), "call key received");
         if let Some(keys) = &self.keys {
             keys.set_key(&ParticipantIdentity(identity.to_owned()), 0, key);
         }
@@ -638,9 +639,22 @@ async fn forward_events(
     deafened: Arc<Mutex<bool>>,
 ) {
     while let Some(event) = events.recv().await {
+        // What happens in a call goes to the log: when someone cannot be
+        // heard or seen, it says whether they arrived, sent anything, and
+        // whether it decrypted.
         let out = match event {
-            RoomEvent::ParticipantConnected(p) => CallEvent::Joined(p.identity().to_string()),
-            RoomEvent::ParticipantDisconnected(p) => CallEvent::Left(p.identity().to_string()),
+            RoomEvent::ParticipantConnected(p) => {
+                info!(who = %p.identity(), "joined the call");
+                CallEvent::Joined(p.identity().to_string())
+            }
+            RoomEvent::ParticipantDisconnected(p) => {
+                info!(who = %p.identity(), "left the call");
+                CallEvent::Left(p.identity().to_string())
+            }
+            RoomEvent::E2eeStateChanged { participant, state } => {
+                info!(who = %participant.identity(), ?state, "call encryption");
+                continue;
+            }
             RoomEvent::ActiveSpeakersChanged { speakers } => {
                 CallEvent::Speaking(speakers.iter().map(|p| p.identity().to_string()).collect())
             }
@@ -649,6 +663,7 @@ async fn forward_events(
                 participant,
                 ..
             } => {
+                info!(who = %participant.identity(), track = %track.sid(), "audio arriving");
                 if deafened.lock().is_ok_and(|d| *d) {
                     track.disable();
                 }
@@ -668,6 +683,7 @@ async fn forward_events(
             } => {
                 let identity = participant.identity().to_string();
                 let key = format!("{identity}/{}", track.sid());
+                info!(who = %identity, track = %track.sid(), "video arriving");
                 tokio::spawn(video::show_remote(track, key.clone()));
                 CallEvent::Video {
                     identity,

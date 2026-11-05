@@ -1971,13 +1971,16 @@ form.new-message button:disabled { opacity: 0.5; cursor: default; }
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
+  /* One above the other, as a phone is tall; two across from three people. */
+  grid-template-columns: 1fr;
   grid-auto-rows: minmax(140px, 1fr);
   gap: 8px;
   padding: 8px 12px;
   overflow-y: auto;
 }
-.call-tiles .video-tile { height: auto; width: 100%; aspect-ratio: auto; }
+/* (.shell.narrow: over the phone rule giving video tiles a fixed height.) */
+.call-tiles .video-tile, .shell.narrow .call-tiles .video-tile { height: auto; width: 100%; aspect-ratio: auto; }
+.call-tiles:has(> :nth-child(3)) { grid-template-columns: 1fr 1fr; }
 .call-tiles .video-tile.screen { grid-column: 1 / -1; }
 .call-tile {
   position: relative;
@@ -2096,3 +2099,8 @@ form.new-message button:disabled { opacity: 0.5; cursor: default; }
 /* Verification QR code: white with its quiet border, big enough to scan. */
 .verification-qr { width: min(240px, 70vw); aspect-ratio: 1; margin: 8px auto; border-radius: var(--radius); overflow: hidden; }
 .verification-qr svg { display: block; width: 100%; height: 100%; }
+
+/* Desktop stage: someone without a camera is a tile like the video ones,
+   their picture in the middle. */
+.call-stage .call-tile { height: clamp(120px, 28vh, 270px); aspect-ratio: 4 / 3; max-width: 100%; }
+.shell.narrow .call-stage .call-tile { height: clamp(100px, 22vh, 200px); }
