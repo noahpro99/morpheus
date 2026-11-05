@@ -350,6 +350,8 @@ pub fn ProfileCard(open: ProfileOpen) -> Element {
     let mut note_saved = use_signal(|| false);
     let mut draft = use_signal(String::new);
     let mut report = use_signal(|| false);
+    // A phone shows it as a bottom sheet rising from the bottom edge.
+    let sheet = try_use_context::<super::shell::NarrowWindow>().is_some_and(|narrow| narrow().0);
     let mut blocked_now = use_signal(|| None::<bool>);
 
     let profile = {
@@ -562,17 +564,28 @@ pub fn ProfileCard(open: ProfileOpen) -> Element {
     });
 
     rsx! {
-        div { class: "overlay panel-overlay card-overlay", onclick: move |_| close(),
+        div {
+            class: "overlay panel-overlay card-overlay",
+            class: if sheet { "sheet-dim" },
+            onclick: move |_| close(),
             div {
                 class: "profile-card",
-                style: "{style}",
+                class: if sheet { "sheet" },
+                style: if !sheet { "{style}" },
                 "data-ax": "{ax}",
                 "data-ay": "{ay}",
                 tabindex: "-1",
                 autofocus: true,
                 onclick: move |e| e.stop_propagation(),
-                onmounted: move |_| { document::eval(CARD_CLAMP_JS); },
+                onmounted: move |_| {
+                    if !sheet {
+                        document::eval(CARD_CLAMP_JS);
+                    }
+                },
                 div { class: "profile-banner",
+                    if sheet {
+                        div { class: "sheet-handle" }
+                    }
                     div { class: "card-actions",
                         if !own && selected().is_some() {
                             button { class: "ghost card-button mod-view", title: "Mod view", onclick: mod_view, Icon { glyph: crate::icons::SHIELD_CHECK, size: 16 } }

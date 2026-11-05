@@ -1,6 +1,9 @@
 use std::{
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use matrix_sdk::{
@@ -37,6 +40,9 @@ pub struct Session {
     pub(crate) core: Core,
     pub(crate) client: Client,
     pub(crate) sync: Arc<SyncService>,
+    /// Syncing is wanted: false once suspended or signed out, so the
+    /// watchdog (`keep_syncing`) leaves a deliberate stop alone.
+    pub(crate) syncing: Arc<AtomicBool>,
     /// The account's folder (see `accounts.rs`).
     pub(crate) dir: PathBuf,
     /// This device can scan QR codes (a camera the app can read): verification
@@ -305,14 +311,55 @@ async fn build_client(
         .await?)
 }
 
+/// Longest wait between attempts to restart a failed sync.
+const SYNC_RETRY_MAX: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Syncing stops for good on an error the offline mode does not cover (and
+/// before it existed, on any lost connection: a phone then showed no new
+/// messages until the app was restarted). Start it again, backing off,
+/// for as long as the session wants it.
+async fn keep_syncing(sync: std::sync::Weak<SyncService>, syncing: Arc<AtomicBool>) {
+    use matrix_sdk_ui::sync_service::State;
+    let Some(mut states) = sync.upgrade().map(|sync| sync.state()) else {
+        return;
+    };
+    let mut wait = std::time::Duration::from_secs(1);
+    while let Some(state) = states.next().await {
+        match state {
+            State::Running => wait = std::time::Duration::from_secs(1),
+            State::Error(_) | State::Terminated if syncing.load(Ordering::Relaxed) => {
+                warn!(?state, ?wait, "sync stopped; starting it again");
+                tokio::time::sleep(wait).await;
+                wait = (wait * 2).min(SYNC_RETRY_MAX);
+                let Some(sync) = sync.upgrade() else { return };
+                if syncing.load(Ordering::Relaxed) {
+                    sync.start().await;
+                }
+            }
+            State::Offline => info!("offline; syncing resumes when the server answers"),
+            _ => {}
+        }
+    }
+}
+
 impl Session {
     async fn start(core: Core, client: Client, dir: PathBuf) -> Result<Self> {
-        let sync = SyncService::builder(client.clone()).build().await?;
+        // Offline mode: a failed sync waits for the server to answer again
+        // and carries on by itself.
+        let sync = Arc::new(
+            SyncService::builder(client.clone())
+                .with_offline_mode()
+                .build()
+                .await?,
+        );
         sync.start().await;
+        let syncing = Arc::new(AtomicBool::new(true));
+        core.spawn(keep_syncing(Arc::downgrade(&sync), syncing.clone()));
         Ok(Self {
             core,
             client,
-            sync: Arc::new(sync),
+            sync,
+            syncing,
             dir,
             can_scan_qr: Arc::default(),
         })
@@ -334,6 +381,7 @@ impl Session {
     /// Stop syncing but stay signed in, before switching to another account.
     pub fn suspend(&self) -> CoreFuture<()> {
         let sync = self.sync.clone();
+        self.syncing.store(false, Ordering::Relaxed);
         self.core.run(async move {
             sync.stop().await;
             Ok(())
@@ -347,9 +395,11 @@ impl Session {
             core,
             client,
             sync,
+            syncing,
             dir,
             can_scan_qr: _,
         } = self;
+        syncing.store(false, Ordering::Relaxed);
         let runner = core.clone();
         runner.run(async move {
             sync.stop().await;

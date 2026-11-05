@@ -301,7 +301,8 @@ window.addEventListener('paste', e => {
     const start = { x: t.clientX, y: t.clientY, at: Date.now(), d: 0, axis: null };
     // With a sheet up, a drag anywhere moves it: on its items or the dimmed
     // page around it alike.
-    const sheet = document.querySelector('.context-menu.sheet');
+    // A menu opened over the profile sheet is the one on top.
+    const sheet = document.querySelector('.context-menu.sheet') || document.querySelector('.profile-card.sheet');
     if (sheet) {
       g = { kind: 'sheet', el: sheet, base: 0, ...start };
       return;
@@ -356,14 +357,22 @@ window.addEventListener('paste', e => {
     const far = d > (kind === 'sheet' ? el.offsetHeight : el.offsetWidth) / 3;
     if (kind === 'sheet') {
       if (fast || far) {
-        settle(el, 'translateY(100%)', () => { const b = document.querySelector('.sheet-backdrop'); if (b) b.click(); });
+        settle(el, 'translateY(100%)', () => {
+          // The profile sheet closes through its own backdrop, menus through theirs.
+          const b = el.closest('.card-overlay') || document.querySelector('.sheet-backdrop');
+          if (b) b.click();
+        });
       } else settle(el, 'translateY(0)');
     } else if (kind === 'back') {
       if (fast || far) settle(el, 'translateX(100%)', () => dioxus.send('escape'));
       else settle(el, 'translateX(0)');
     } else {
-      if (fast || far) settle(el, 'translateX(0)', () => dioxus.send(next || 'chat_front'));
-      else settle(el, 'translateX(100%)');
+      if (fast || far) {
+        // Dragged in by hand: unparking it must not play its slide-in
+        // animation as well (it ran from the edge a second time).
+        if (next === 'members') el.style.animation = 'none';
+        settle(el, 'translateX(0)', () => dioxus.send(next || 'chat_front'));
+      } else settle(el, 'translateX(100%)');
     }
   }, { capture: true });
   window.addEventListener('touchcancel', () => { if (g) settle(g.el, g.kind === 'forward' ? 'translateX(100%)' : 'none'); g = null; }, { capture: true });

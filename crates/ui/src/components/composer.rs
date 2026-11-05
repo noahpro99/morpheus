@@ -242,16 +242,17 @@ pub fn Composer(
         }
         draft.set(String::new());
         let action = mode.take();
+        // Sending first: the message shows (greyed) the moment it is queued.
+        // Waiting on the typing notice before it held it back a round trip.
+        let sending = match action {
+            None => handle.send_text(body),
+            Some(ComposerMode::Reply { event_id, .. }) => handle.send_reply(body, event_id),
+            Some(ComposerMode::Edit { id, .. }) => handle.edit(id, body),
+        };
+        let typing = handle.stop_typing();
         spawn(async move {
-            let _ = handle.stop_typing().await;
-            let result = match action {
-                None => handle.send_text(body).await,
-                Some(ComposerMode::Reply { event_id, .. }) => {
-                    handle.send_reply(body, event_id).await
-                }
-                Some(ComposerMode::Edit { id, .. }) => handle.edit(id, body).await,
-            };
-            if let Err(err) = result {
+            let _ = typing.await;
+            if let Err(err) = sending.await {
                 report("Sending", &err);
             }
         });

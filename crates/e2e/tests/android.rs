@@ -275,11 +275,32 @@ async fn phone_signs_in_navigates_and_sends() {
         serde_json::json!(true),
         "the chat shows underneath"
     );
+    // Where the list sits on every frame from here: after the finger lifts
+    // it only travels on, never back to the edge to slide in again.
+    app.eval(
+        "window.__lefts = []; const until = performance.now() + 900; \
+         const look = () => { const p = document.querySelector('.side-pane'); \
+           if (p) window.__lefts.push(Math.round(p.getBoundingClientRect().left)); \
+           if (performance.now() < until) requestAnimationFrame(look); }; \
+         requestAnimationFrame(look); return true;",
+    )
+    .await
+    .expect("watch the list");
     app.lift((mid, height / 2.0)).await.expect("lift");
     pane(&mut app, "side").await;
     app.wait_for(".side-pane .member", DEFAULT_WAIT)
         .await
         .expect("members open");
+    tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+    let lefts: Vec<f64> = serde_json::from_value(
+        app.eval("return window.__lefts;").await.expect("positions"),
+    )
+    .expect("numbers");
+    let back = lefts.windows(2).find(|pair| pair[1] > pair[0] + 2.0);
+    assert!(
+        back.is_none(),
+        "the member list went back towards the edge ({back:?}) to slide in again: {lefts:?}"
+    );
 }
 
 /// A real homeserver over HTTPS: typing matrix.org (no need to leave the
@@ -1144,16 +1165,32 @@ async fn phone_enter_is_a_new_line_the_send_button_sends_and_back_hides_the_keyb
     let _ = adb_shell(&["input", "text", &format!("first{run}")]);
     let _ = adb_shell(&["input", "keyevent", "KEYCODE_ENTER"]);
     let _ = adb_shell(&["input", "text", "second"]);
-    app.wait_for_js(
-        &format!("return document.querySelector('.composer .composer-input').value === 'first{run}\\nsecond';"),
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("Enter made a new line, and nothing was sent");
+    // The keyboard's own suggestions may reword what `input text` types
+    // (it learns from every run): what matters is the two lines.
+    if let Err(err) = app
+        .wait_for_js(
+            "const v = document.querySelector('.composer .composer-input').value; \
+             return v.startsWith('f') && v.endsWith('\\nsecond');",
+            DEFAULT_WAIT,
+        )
+        .await
+    {
+        let value = app
+            .eval("return [document.querySelector('.composer .composer-input').value, document.activeElement && document.activeElement.className];")
+            .await;
+        shot(&mut app, "android-enter-failed").await;
+        panic!("Enter made a new line, and nothing was sent: {err}; the box holds {value:?}");
+    }
+    let first = app
+        .eval("return document.querySelector('.composer .composer-input').value.split('\\n')[0];")
+        .await
+        .expect("the first line");
+    let first = first.as_str().expect("text").to_owned();
     app.tap(".composer .send-button").await.expect("send");
     app.wait_for_js(
         &format!(
-            "return [...document.querySelectorAll('.message .body')].some(b => b.textContent.includes('first{run}') && b.textContent.includes('second'));"
+            "return [...document.querySelectorAll('.message .body')].some(b => b.textContent.includes({}) && b.textContent.includes('second'));",
+            serde_json::to_string(&first).expect("json")
         ),
         DEFAULT_WAIT,
     )
@@ -1462,4 +1499,314 @@ async fn phone_select_text_lets_a_message_be_selected() {
         back_key();
     }
     gone(&mut app, ".select-text", "the select text sheet").await;
+}
+
+/// Someone's profile on a phone is a bottom sheet: it rises from the bottom
+/// edge across the full width, their picture sits over the banner (not
+/// under it), and a downward swipe puts it away.
+#[tokio::test]
+async fn phone_profile_is_a_bottom_sheet() {
+    if !enabled() {
+        eprintln!("MORPHEUS_E2E_ANDROID not set; skipping the Android test");
+        return;
+    }
+    let mut app = App::launch_android().await.expect("launch on Android");
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    app.type_into("form.login input[name=username]", "alice")
+        .await
+        .expect("username");
+    app.type_into("form.login input[name=password]", "alice-password")
+        .await
+        .expect("password");
+    app.submit("form.login").await.expect("submit");
+    app.wait_for_text(".room", "general", DEFAULT_WAIT)
+        .await
+        .expect("general listed");
+    app.tap_text(".room", "general")
+        .await
+        .expect("open general");
+    pane(&mut app, "chat").await;
+    app.wait_for(".message .avatar-button", DEFAULT_WAIT)
+        .await
+        .expect("a sender's picture");
+    app.eval(
+        "const b = [...document.querySelectorAll('.message .avatar-button')].pop(); \
+         b.scrollIntoView({ block: 'center' }); return true;",
+    )
+    .await
+    .expect("scroll to a sender");
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    app.eval("[...document.querySelectorAll('.message .avatar-button')].pop().click(); return true;")
+        .await
+        .expect("open the profile");
+    app.wait_for(".profile-card", DEFAULT_WAIT)
+        .await
+        .expect("the profile");
+    // It slides up: give that time to finish before measuring.
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    let shape = app
+        .eval(
+            "const c = document.querySelector('.profile-card'); const r = c.getBoundingClientRect(); \
+             const a = c.querySelector('.profile-body .avatar').getBoundingClientRect(); \
+             const banner = c.querySelector('.profile-banner').getBoundingClientRect(); \
+             const x = a.left + a.width / 2, y = (a.top + banner.bottom) / 2; \
+             const top = document.elementFromPoint(x, y); \
+             return [c.classList.contains('sheet'), Math.round(r.left), Math.round(innerWidth - r.right), \
+                     Math.round(innerHeight - r.bottom), a.top < banner.bottom, \
+                     !!(top && top.closest('.avatar'))];",
+        )
+        .await
+        .expect("measure");
+    shot(&mut app, "android-profile-sheet").await;
+    assert_eq!(shape[0], serde_json::json!(true), "a sheet, not a floating card: {shape}");
+    assert_eq!(
+        (&shape[1], &shape[2], &shape[3]),
+        (&serde_json::json!(0), &serde_json::json!(0), &serde_json::json!(0)),
+        "edge to edge, on the bottom edge: {shape}"
+    );
+    assert_eq!(shape[4], serde_json::json!(true), "the picture overlaps the banner: {shape}");
+    assert_eq!(shape[5], serde_json::json!(true), "the picture is over the banner, not under: {shape}");
+
+    // Swiping it down puts it away.
+    let (width, height) = app.page_size().await.expect("size");
+    let top = app
+        .eval("return document.querySelector('.profile-card').getBoundingClientRect().top;")
+        .await
+        .expect("top")
+        .as_f64()
+        .expect("number");
+    app.swipe((width / 2.0, top + 10.0), (width / 2.0, height - 4.0), 250)
+        .await
+        .expect("swipe down");
+    gone(&mut app, ".profile-card", "the profile sheet").await;
+}
+
+/// A slow link to the homeserver: a proxy on `port` in front of it whose
+/// requests wait `delay` each while `slow` is set. (The emulator's own
+/// `network delay` leaves traffic to the host alone.)
+fn slow_proxy(
+    port: u16,
+    delay: std::time::Duration,
+) -> std::sync::Arc<std::sync::atomic::AtomicBool> {
+    use std::sync::atomic::Ordering;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let slow = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let listener = std::net::TcpListener::bind(("127.0.0.1", port)).expect("proxy port");
+    listener.set_nonblocking(true).expect("nonblocking");
+    let listener = tokio::net::TcpListener::from_std(listener).expect("listener");
+    let flag = slow.clone();
+    tokio::spawn(async move {
+        while let Ok((client, _)) = listener.accept().await {
+            let Ok(server) = tokio::net::TcpStream::connect(("127.0.0.1", 8008)).await else {
+                continue;
+            };
+            let (mut client_read, mut client_write) = client.into_split();
+            let (mut server_read, mut server_write) = server.into_split();
+            let flag = flag.clone();
+            tokio::spawn(async move {
+                let mut buf = vec![0; 64 * 1024];
+                while let Ok(n) = client_read.read(&mut buf).await {
+                    if n == 0 {
+                        break;
+                    }
+                    if flag.load(Ordering::Relaxed) {
+                        tokio::time::sleep(delay).await;
+                    }
+                    if server_write.write_all(&buf[..n]).await.is_err() {
+                        break;
+                    }
+                }
+            });
+            tokio::spawn(async move {
+                let _ = tokio::io::copy(&mut server_read, &mut client_write).await;
+            });
+        }
+    });
+    slow
+}
+
+/// Sending shows the message at once, greyed until the server has it, then
+/// as sent: no wait for the network before it appears, even a slow one.
+#[tokio::test]
+async fn phone_sent_messages_show_at_once_even_on_a_slow_network() {
+    if !enabled() {
+        eprintln!("MORPHEUS_E2E_ANDROID not set; skipping the Android test");
+        return;
+    }
+    let mut app = App::launch_android().await.expect("launch on Android");
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    // Signed in through the proxy, to slow the link down later.
+    let slow = slow_proxy(18008, std::time::Duration::from_millis(1500));
+    app.type_into("form.login input[name=homeserver]", "http://10.0.2.2:18008")
+        .await
+        .expect("homeserver");
+    app.type_into("form.login input[name=username]", "alice")
+        .await
+        .expect("username");
+    app.type_into("form.login input[name=password]", "alice-password")
+        .await
+        .expect("password");
+    app.submit("form.login").await.expect("submit");
+    app.wait_for_text(".room", "general", DEFAULT_WAIT)
+        .await
+        .expect("general listed");
+    app.tap_text(".room", "general")
+        .await
+        .expect("open general");
+    pane(&mut app, "chat").await;
+    app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
+        .await
+        .expect("composer ready");
+
+    slow.store(true, std::sync::atomic::Ordering::Relaxed);
+    let text = format!("right away {}", std::process::id());
+    app.type_into(".composer .composer-input", &text)
+        .await
+        .expect("type");
+    // When the send button is pressed, and when the message first shows.
+    app.eval(&format!(
+        "window.__shown = null; const text = {}; \
+         document.querySelector('.send-button').addEventListener('click', () => {{ window.__pressed = performance.now(); }}, {{ capture: true, once: true }}); \
+         const seen = () => [...document.querySelectorAll('.message.own .body')].some(b => b.textContent.includes(text)); \
+         new MutationObserver((_, o) => {{ if (seen()) {{ window.__shown = performance.now(); o.disconnect(); }} }}) \
+           .observe(document.body, {{ subtree: true, childList: true, characterData: true }}); \
+         return true;",
+        serde_json::to_string(&text).expect("json")
+    ))
+    .await
+    .expect("watch");
+    app.tap(".send-button").await.expect("send");
+    app.wait_for_js("return window.__shown !== null;", DEFAULT_WAIT)
+        .await
+        .expect("the message shows");
+    let waited = app
+        .eval("return window.__shown - window.__pressed;")
+        .await
+        .expect("timing")
+        .as_f64()
+        .expect("number");
+    let pending = app
+        .eval(&format!(
+            "return [...document.querySelectorAll('.message.own')].some(m => m.classList.contains('pending') && m.textContent.includes({}));",
+            serde_json::to_string(&text).expect("json")
+        ))
+        .await
+        .expect("pending");
+    shot(&mut app, "android-sending").await;
+    assert!(
+        waited < 500.0,
+        "the message took {waited:.0} ms to show after pressing send"
+    );
+    assert_eq!(pending, serde_json::json!(true), "greyed while the server has not got it");
+    slow.store(false, std::sync::atomic::Ordering::Relaxed);
+    app.wait_for_exact_text(".message.own:not(.pending) .body", &text, DEFAULT_WAIT)
+        .await
+        .expect("then shown as sent");
+}
+
+/// The emulator's network switched off (Wi-Fi and mobile data) for as long
+/// as this lives.
+struct NoNetwork;
+
+impl NoNetwork {
+    fn new() -> Self {
+        let _ = adb_shell(&["svc", "wifi", "disable"]);
+        let _ = adb_shell(&["svc", "data", "disable"]);
+        Self
+    }
+}
+
+impl Drop for NoNetwork {
+    fn drop(&mut self) {
+        let _ = adb_shell(&["svc", "wifi", "enable"]);
+        let _ = adb_shell(&["svc", "data", "enable"]);
+    }
+}
+
+/// A phone loses its network now and then (a tunnel, Wi-Fi to mobile data).
+/// Syncing failed then and never started again, so new messages only came
+/// with a restart of the app; now it carries on once the network is back.
+#[tokio::test]
+async fn phone_gets_messages_live_again_after_losing_the_network() {
+    if !enabled() {
+        eprintln!("MORPHEUS_E2E_ANDROID not set; skipping the Android test");
+        return;
+    }
+    let Ok(hs) = std::env::var("MORPHEUS_TEST_HOMESERVER") else {
+        return;
+    };
+    let mut phone = App::launch_android().await.expect("launch on Android");
+    phone
+        .wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    phone
+        .type_into("form.login input[name=username]", "alice")
+        .await
+        .expect("username");
+    phone
+        .type_into("form.login input[name=password]", "alice-password")
+        .await
+        .expect("password");
+    phone.submit("form.login").await.expect("submit");
+    phone
+        .wait_for_text(".room", "general", DEFAULT_WAIT)
+        .await
+        .expect("general listed");
+    phone
+        .tap_text(".room", "general")
+        .await
+        .expect("open general");
+    pane(&mut phone, "chat").await;
+
+    let mut bob = App::launch_desktop(&hs).await.expect("launch bob");
+    bob.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    bob.type_into("form.login input[name=username]", "bob")
+        .await
+        .expect("username");
+    bob.type_into("form.login input[name=password]", "bob-password")
+        .await
+        .expect("password");
+    bob.submit("form.login").await.expect("submit");
+    bob.wait_for(".room", DEFAULT_WAIT).await.expect("rooms");
+    bob.open_room("general").await.expect("open general");
+    bob.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
+        .await
+        .expect("composer");
+    let run = std::process::id();
+    let send = async |bob: &mut App, text: &str| {
+        bob.type_into(".composer .composer-input", text)
+            .await
+            .expect("type");
+        bob.press(".composer .composer-input", "Enter")
+            .await
+            .expect("send");
+    };
+    send(&mut bob, &format!("online {run}")).await;
+    phone
+        .wait_for_text(".message .body", &format!("online {run}"), DEFAULT_WAIT)
+        .await
+        .expect("live to start with");
+
+    // Long enough for the sync request under way to fail.
+    let offline = NoNetwork::new();
+    tokio::time::sleep(std::time::Duration::from_secs(40)).await;
+    let errors = phone.log_tail(400);
+    drop(offline);
+    eprintln!("sync while offline:\n{}", errors.lines().filter(|l| l.contains("sync")).take(20).collect::<Vec<_>>().join("\n"));
+
+    for n in 0..2 {
+        let text = format!("back online {n} {run}");
+        send(&mut bob, &text).await;
+        phone
+            .wait_for_text(".message .body", &text, std::time::Duration::from_secs(60))
+            .await
+            .unwrap_or_else(|e| panic!("message {n} arrives live once the network is back: {e}"));
+    }
 }
