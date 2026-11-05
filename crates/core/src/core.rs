@@ -48,7 +48,12 @@ impl Core {
         let data_dir = data_dir.into();
         std::fs::create_dir_all(&data_dir)?;
 
+        // A few threads, not one per CPU core (and as many again for blocking
+        // work): each costs memory, and the allocator keeps a pool per busy
+        // thread. A chat client's work is mostly waiting on the network.
         let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(4)
+            .max_blocking_threads(16)
             .enable_all()
             .thread_name("morpheus-core")
             .build()?;
