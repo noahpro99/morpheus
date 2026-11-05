@@ -2091,3 +2091,88 @@ async fn phone_camera_shows_on_the_desktop() {
         .expect("hang up");
     bob.click(".voice-panel .hang-up").await.expect("bob hangs up");
 }
+
+/// Seconds in a CSS time list's first entry ("0.24s, 0.24s" → 0.24).
+fn first_seconds(value: &serde_json::Value) -> f64 {
+    let text = value.as_str().unwrap_or_default();
+    let first = text.split(',').next().unwrap_or_default().trim();
+    first
+        .strip_suffix("ms")
+        .and_then(|ms| ms.parse::<f64>().ok().map(|ms| ms / 1000.0))
+        .or_else(|| first.strip_suffix('s').and_then(|s| s.parse().ok()))
+        .unwrap_or(f64::MAX)
+}
+
+/// Swipes feel quick: panes slide in 180 ms, a swipe let go finishes in
+/// 140 ms, and sheets rise in 150 ms (they were 240, 180 and 180–220).
+#[tokio::test]
+async fn phone_swipe_animations_are_quick() {
+    if !enabled() {
+        eprintln!("MORPHEUS_E2E_ANDROID not set; skipping the Android test");
+        return;
+    }
+    let mut app = App::launch_android().await.expect("launch on Android");
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    app.type_into("form.login input[name=username]", "alice")
+        .await
+        .expect("username");
+    app.type_into("form.login input[name=password]", "alice-password")
+        .await
+        .expect("password");
+    app.submit("form.login").await.expect("submit");
+    app.wait_for_text(".room", "general", DEFAULT_WAIT)
+        .await
+        .expect("general listed");
+    app.tap_text(".room", "general")
+        .await
+        .expect("open general");
+    pane(&mut app, "chat").await;
+
+    // The panes' slide.
+    let slide = app
+        .eval("return getComputedStyle(document.querySelector('.chat')).transitionDuration;")
+        .await
+        .expect("slide");
+    assert!(first_seconds(&slide) <= 0.18, "panes slide in {slide}");
+
+    // A swipe back let go: how long the pane takes to finish going.
+    app.eval(
+        "window.__settle = null; const chat = document.querySelector('.chat'); \
+         const look = () => { const t = chat.style.transition; \
+           if (t && t.includes('transform')) window.__settle = t; else requestAnimationFrame(look); }; \
+         requestAnimationFrame(look); return true;",
+    )
+    .await
+    .expect("watch");
+    let (width, height) = app.page_size().await.expect("size");
+    app.drag_and_hold((width * 0.2, height / 2.0), (width * 0.7, height / 2.0))
+        .await
+        .expect("drag");
+    app.lift((width * 0.7, height / 2.0)).await.expect("lift");
+    app.wait_for_js("return window.__settle !== null && !window.__settle.includes('none');", DEFAULT_WAIT)
+        .await
+        .expect("the swipe finishes");
+    let settle = app.eval("return window.__settle;").await.expect("settle");
+    let settle_s = settle
+        .as_str()
+        .unwrap_or_default()
+        .split_whitespace()
+        .find_map(|w| w.strip_suffix("ms").and_then(|ms| ms.parse::<f64>().ok()))
+        .unwrap_or(f64::MAX)
+        / 1000.0;
+    assert!(settle_s <= 0.14, "a let-go swipe finishes in {settle}");
+    pane(&mut app, "rooms").await;
+
+    // A menu sheet's rise.
+    app.eval(HOLD_ROOM_JS).await.expect("hold a room");
+    app.wait_for(".context-menu.sheet", DEFAULT_WAIT)
+        .await
+        .expect("the room menu");
+    let rise = app
+        .eval("return getComputedStyle(document.querySelector('.context-menu.sheet')).animationDuration;")
+        .await
+        .expect("rise");
+    assert!(first_seconds(&rise) <= 0.15, "sheets rise in {rise}");
+}
