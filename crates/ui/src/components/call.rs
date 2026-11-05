@@ -1068,7 +1068,9 @@ pub fn IncomingCalls() -> Element {
                 if !rings.peek().0.is_empty() {
                     rings.with_mut(|list| list.0.retain(|r| ringing.contains(r)));
                 }
-            } else if *tick.peek() % 2 == 0 {
+            } else if *tick.peek() % 2 == 0 && active.peek().0.is_none() {
+                // In a call already: the card shows, quietly, so the call
+                // you are in is not drowned out by a ringtone.
                 play(Sound::Ring);
             }
             tick += 1;
