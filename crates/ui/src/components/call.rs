@@ -330,24 +330,12 @@ pub fn join_call(session: Session, room_id: OwnedRoomId, room_name: String) {
         call.set_deafened(flags.deafened);
         route_audio(!flags.earpiece);
         let mut people: HashMap<String, OwnedUserId> = HashMap::new();
+        // This device's name in the call, sent along with its key: the token
+        // service's names cannot be worked out everywhere (matrix.org's
+        // cannot), so the others learn it from us.
+        let own_identity = call.identity();
         if let Some(me) = session.user_id() {
-            people.insert(call.identity(), me.clone());
-            // Who this is, for the others: the token service's name for a
-            // device cannot be worked out from its user and device everywhere
-            // (matrix.org's cannot), so everyone says who they are.
-            if let Some(device) = session.device_id() {
-                call.introduce(me.as_str(), &device);
-            }
-        }
-        // Each device's name in the call, as it said, and keys waiting for
-        // the name of the device they belong to.
-        let mut named: HashMap<(OwnedUserId, String), String> = HashMap::new();
-        let mut waiting: HashMap<(OwnedUserId, String), Vec<u8>> = HashMap::new();
-        for (identity, user, device) in call.introduced() {
-            if let Ok(user) = OwnedUserId::try_from(user) {
-                people.insert(identity.clone(), user.clone());
-                named.insert((user, device), identity);
-            }
+            people.insert(own_identity.clone(), me);
         }
         *media.0.borrow_mut() = Some(call);
         active.with_mut(|slot| {
@@ -365,10 +353,10 @@ pub fn join_call(session: Session, room_id: OwnedRoomId, room_name: String) {
             );
             move || {
                 let (session, room_id) = (session.clone(), room_id.clone());
-                let key = key.clone();
+                let (key, identity) = (key.clone(), own_identity.clone());
                 async move {
                     if let Some(key) = key
-                        && let Err(err) = session.send_call_key(room_id, key).await
+                        && let Err(err) = session.send_call_key(room_id, key, identity).await
                     {
                         report("sharing the call's media key", &err);
                     }
@@ -389,15 +377,16 @@ pub fn join_call(session: Session, room_id: OwnedRoomId, room_name: String) {
                         None => std::future::pending().await,
                     }
                 } => {
-                    let device = (key.user_id.clone(), key.device_id.clone());
+                    // Its sender's name in the call, when it says: who is
+                    // speaking under that name.
+                    if let Some(identity) = &key.livekit_identity {
+                        people.insert(identity.clone(), key.user_id.clone());
+                    }
                     if let Some(call) = media.0.borrow().as_ref() {
-                        // Under the name the device gave, and the names the
-                        // dev token service derives (for apps that do not say).
-                        for identity in named.get(&device).into_iter().chain(&key.livekit_identities) {
+                        for identity in &key.livekit_identities {
                             call.set_key(identity, key.key.clone());
                         }
                     }
-                    waiting.insert(device, key.key);
                     continue;
                 }
             };
@@ -405,23 +394,6 @@ pub fn join_call(session: Session, room_id: OwnedRoomId, room_name: String) {
                 return;
             }
             match event {
-                CallEvent::Identified {
-                    identity,
-                    user_id,
-                    device_id,
-                } => {
-                    let Ok(user) = OwnedUserId::try_from(user_id) else {
-                        continue;
-                    };
-                    people.insert(identity.clone(), user.clone());
-                    let device = (user, device_id);
-                    if let Some(key) = waiting.get(&device)
-                        && let Some(call) = media.0.borrow().as_ref()
-                    {
-                        call.set_key(&identity, key.clone());
-                    }
-                    named.insert(device, identity);
-                }
                 CallEvent::Joined(_) => {
                     play(Sound::Join);
                     refresh_people(&session, &room_id, &mut people).await;

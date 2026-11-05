@@ -937,6 +937,10 @@ fn renamed(jwt: &str, identity: &str) -> String {
     let mut claims: serde_json::Value =
         serde_json::from_slice(&b64.decode(payload).expect("payload")).expect("claims");
     claims["sub"] = serde_json::json!(identity);
+    // Nor may anyone set their own LiveKit metadata or attributes there.
+    if let Some(video) = claims["video"].as_object_mut() {
+        video.remove("canUpdateOwnMetadata");
+    }
     let signed = format!("{header}.{}", b64.encode(claims.to_string()));
     let signature = b64.encode(hmac_sha256(b"secret", signed.as_bytes()));
     format!("{signed}.{signature}")
@@ -944,7 +948,8 @@ fn renamed(jwt: &str, identity: &str) -> String {
 
 /// A token service that names each device in LiveKit its own way, as
 /// matrix.org's does (no name there can be worked out from the user and
-/// device): the dev service in front, each token renamed. Returns its URL.
+/// device), and lets nobody set their own LiveKit attributes: the dev
+/// service in front, each token renamed. Returns its URL.
 async fn renaming_token_service() -> String {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
