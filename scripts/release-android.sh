@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# A signed release APK for phones (arm64): target/release/morpheus-<version>-android-arm64.apk
+# A signed release APK for phones (arm64): target/dist/morpheus-<version>-android-arm64.apk
 #
 # Signed with the release key in ~/.config/morpheus/ (made on first use).
 # Keep that key: Android installs an update only over an app signed with
@@ -45,8 +45,8 @@ grep -q 'libs/libwebrtc.jar' "$app/app/build.gradle.kts" ||
 (cd "$app" && ./gradlew assembleRelease -q)
 
 unsigned=$(find "$app/app/build/outputs/apk/release" -name '*.apk' -print -quit)
-mkdir -p target/release
-out="target/release/morpheus-$version-android-arm64.apk"
+mkdir -p target/dist
+out="target/dist/morpheus-$version-android-arm64.apk"
 tools=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
 "$tools/zipalign" -f -p 4 "$unsigned" "$out.aligned"
 "$tools/apksigner" sign --ks "$keystore" --ks-pass "file:$password_file" --out "$out" "$out.aligned"

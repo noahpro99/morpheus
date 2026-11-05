@@ -185,6 +185,24 @@
           # `nix develop .#android-emulator` — the same plus the emulator and an
           # x86_64 system image (a few GB) for the virtual phone.
           android-emulator = androidShell true;
+          # `nix develop .#windows` — cross-builds the desktop app for Windows
+          # (MSVC, as LiveKit's prebuilt WebRTC is), through cargo-xwin:
+          # Microsoft's headers and libraries are downloaded on first use.
+          windows = pkgs.mkShell {
+            nativeBuildInputs = [
+              (toolchain.override { targets = [ "x86_64-pc-windows-msvc" ]; })
+              pkgs.cargo-xwin
+              pkgs.llvmPackages_21.clang-unwrapped
+              pkgs.llvmPackages_21.lld
+              pkgs.llvmPackages_21.llvm
+              pkgs.cmake
+              pkgs.nasm
+              pkgs.dioxus-cli
+              pkgs.just
+              pkgs.jq
+              pkgs.zip
+            ];
+          };
         }
       );
     };

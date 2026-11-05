@@ -2,6 +2,9 @@
 //! hands everything else to `morpheus_ui`. Also owns what must keep working
 //! while the window is hidden in the tray: OS notifications and reopening.
 
+// A window, not a console: release builds on Windows open no terminal.
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 use std::{
     path::{Path, PathBuf},
     rc::Rc,
@@ -538,10 +541,12 @@ fn install_builtin_tray() {
 /// copy still starts).
 mod single_instance {
     use std::path::Path;
-    use std::sync::OnceLock;
 
     #[cfg(unix)]
-    use std::os::unix::net::{UnixListener, UnixStream};
+    use std::{
+        os::unix::net::{UnixListener, UnixStream},
+        sync::OnceLock,
+    };
 
     const SOCKET: &str = "instance.sock";
 
