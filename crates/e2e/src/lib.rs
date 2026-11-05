@@ -32,6 +32,8 @@ const POLL: Duration = Duration::from_millis(100);
 
 /// Default wait for elements to appear; sync against a local homeserver is fast.
 pub const DEFAULT_WAIT: Duration = Duration::from_secs(30);
+/// How long one script in the app may take before the app counts as stuck.
+const EVAL_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// A running instance of the app under test. Killed on drop.
 pub struct App {
@@ -205,10 +207,15 @@ impl App {
         request.push('\n');
         self.writer.write_all(request.as_bytes()).await?;
 
-        let line = self
-            .reader
-            .next_line()
-            .await?
+        // An app that stops answering fails the test instead of hanging it.
+        let line = tokio::time::timeout(EVAL_TIMEOUT, self.reader.next_line())
+            .await
+            .map_err(|_| {
+                anyhow!(
+                    "the app did not answer for {EVAL_TIMEOUT:?}\n  js: {js}\n--- app log ---\n{}",
+                    self.log_tail(40)
+                )
+            })??
             .ok_or_else(|| anyhow!("app closed the bridge"))?;
         let response: Response = serde_json::from_str(&line).context("decoding bridge response")?;
         if response.id != id {
@@ -752,16 +759,63 @@ fn keep_test_windows_unfocused() {
                 .status();
         }
         // Hyprland 0.55+ with a Lua config refuses `keyword` ("can't work with
-        // non-legacy parsers"): the same rule through `eval`.
+        // non-legacy parsers"): the same rule through `eval`, which also
+        // opens the windows on a monitor of their own (below).
+        let place = test_workspace()
+            .map(|id| format!(", workspace = \"{id} silent\""))
+            .unwrap_or_default();
         let _ = std::process::Command::new("hyprctl")
             .args([
                 "eval",
-                "hl.window_rule({ name = \"morpheus-test\", match = { title = \"^(Morpheus \\\\(test\\\\))$\" }, no_initial_focus = true, no_focus = true })",
+                &format!(
+                    "hl.window_rule({{ name = \"morpheus-test\", match = {{ title = \"^(Morpheus \\\\(test\\\\))$\" }}, no_initial_focus = true, no_focus = true{place} }})"
+                ),
             ])
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .status();
     });
+}
+
+/// Hyprland's name for the monitor test windows open on.
+const TEST_MONITOR: &str = "MORPHEUS-TEST";
+
+/// A workspace on a monitor nobody looks at (a Hyprland headless output, far
+/// off to one side), for the test windows: they open there instead of on
+/// the workspace in use, never resizing the windows being worked in. A
+/// hidden workspace would not do: Hyprland stops drawing windows there, and
+/// their pages stop answering. Big, so windows side by side keep a desktop
+/// width. The workspace's number, once the monitor is set up.
+fn test_workspace() -> Option<i64> {
+    let hyprctl = |args: &[&str]| -> Option<String> {
+        let out = std::process::Command::new("hyprctl").args(args).output().ok()?;
+        out.status
+            .success()
+            .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+    };
+    let find = || -> Option<i64> {
+        let monitors: Value = serde_json::from_str(&hyprctl(&["-j", "monitors", "all"])?).ok()?;
+        monitors
+            .as_array()?
+            .iter()
+            .find(|m| m["name"] == TEST_MONITOR)
+            .and_then(|m| m["activeWorkspace"]["id"].as_i64())
+    };
+    if find().is_none() {
+        hyprctl(&["output", "create", "headless", TEST_MONITOR])?;
+    }
+    hyprctl(&[
+        "eval",
+        &format!(
+            "hl.monitor({{ output = \"{TEST_MONITOR}\", mode = \"3840x2160\", position = \"-20000x-20000\", scale = 1 }})"
+        ),
+    ]);
+    let id = find()?;
+    hyprctl(&[
+        "eval",
+        &format!("hl.dispatch(hl.dsp.workspace.rename({{ workspace = \"{id}\", name = \"morpheus-tests\" }}))"),
+    ]);
+    Some(id)
 }
 
 /// Whether a test currently holds the phone.

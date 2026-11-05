@@ -113,10 +113,13 @@ async fn join_a_call_see_who_is_in_it_mute_and_hang_up() {
         .wait_for_js(&in_call(&random_id, "bob"), DEFAULT_WAIT)
         .await
         .expect("alice sees bob join");
-    alice
+    if let Err(err) = alice
         .wait_for_js(&chimes_are(&["join", "join"]), DEFAULT_WAIT)
         .await
-        .expect("a chime as bob joins");
+    {
+        let heard = alice.eval("return (window.morpheusSounds ?? []).join(',');").await;
+        panic!("a chime as bob joins: {err}; alice heard {heard:?}");
+    }
     bob.wait_for_js(&chimes_are(&["join"]), DEFAULT_WAIT)
         .await
         .expect("bob's own join chime");
@@ -901,6 +904,174 @@ async fn a_ring_during_a_call_is_shown_but_silent() {
         ".voice-panel .hang-up"
     };
     bob.click(hang_up).await.expect("bob hangs up");
+    alice
+        .click(".voice-panel .hang-up")
+        .await
+        .expect("alice hangs up");
+}
+
+/// HMAC-SHA256 (RFC 2104), for signing LiveKit tokens as the dev server does.
+fn hmac_sha256(key: &[u8], message: &[u8]) -> Vec<u8> {
+    use sha2::{Digest, Sha256};
+    let mut block = [0u8; 64];
+    block[..key.len()].copy_from_slice(key);
+    let pad = |byte: u8| block.iter().map(|b| b ^ byte).collect::<Vec<u8>>();
+    let inner = Sha256::new()
+        .chain_update(pad(0x36))
+        .chain_update(message)
+        .finalize();
+    Sha256::new()
+        .chain_update(pad(0x5c))
+        .chain_update(inner)
+        .finalize()
+        .to_vec()
+}
+
+/// A LiveKit token as the dev token service made it, with the identity
+/// replaced by `identity` and signed again with the dev server's secret.
+fn renamed(jwt: &str, identity: &str) -> String {
+    use base64::Engine as _;
+    let b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    let mut parts = jwt.split('.');
+    let (header, payload) = (parts.next().expect("header"), parts.next().expect("payload"));
+    let mut claims: serde_json::Value =
+        serde_json::from_slice(&b64.decode(payload).expect("payload")).expect("claims");
+    claims["sub"] = serde_json::json!(identity);
+    let signed = format!("{header}.{}", b64.encode(claims.to_string()));
+    let signature = b64.encode(hmac_sha256(b"secret", signed.as_bytes()));
+    format!("{signed}.{signature}")
+}
+
+/// A token service that names each device in LiveKit its own way, as
+/// matrix.org's does (no name there can be worked out from the user and
+/// device): the dev service in front, each token renamed. Returns its URL.
+async fn renaming_token_service() -> String {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let url = format!("http://{}", listener.local_addr().expect("addr"));
+    tokio::spawn(async move {
+        let mut served = 0u32;
+        while let Ok((mut client, _)) = listener.accept().await {
+            served += 1;
+            let identity = format!("renamed-{served}-{}", std::process::id());
+            tokio::spawn(async move {
+                // One request: headers, then the body its length says.
+                let mut request = Vec::new();
+                let mut buf = [0u8; 8192];
+                let (head_end, length) = loop {
+                    let Ok(n) = client.read(&mut buf).await else { return };
+                    if n == 0 {
+                        return;
+                    }
+                    request.extend_from_slice(&buf[..n]);
+                    if let Some(end) = request.windows(4).position(|w| w == b"\r\n\r\n") {
+                        let head = String::from_utf8_lossy(&request[..end]).to_lowercase();
+                        let length = head
+                            .lines()
+                            .find_map(|l| l.strip_prefix("content-length:"))
+                            .and_then(|v| v.trim().parse::<usize>().ok())
+                            .unwrap_or(0);
+                        break (end + 4, length);
+                    }
+                };
+                while request.len() < head_end + length {
+                    let Ok(n) = client.read(&mut buf).await else { return };
+                    if n == 0 {
+                        break;
+                    }
+                    request.extend_from_slice(&buf[..n]);
+                }
+                let head = String::from_utf8_lossy(&request[..head_end]).to_string();
+                let path = head.split_whitespace().nth(1).unwrap_or("/").to_owned();
+                let body = String::from_utf8_lossy(&request[head_end..]).to_string();
+                let answer = tokio::process::Command::new("curl")
+                    .args(["-s", "-w", "\n%{http_code}", "-X", "POST", "-H", "Content-Type: application/json"])
+                    .arg(format!("http://localhost:8080{path}"))
+                    .args(["-d", &body])
+                    .output()
+                    .await
+                    .map(|out| String::from_utf8_lossy(&out.stdout).into_owned())
+                    .unwrap_or_default();
+                let (text, status) = answer.rsplit_once('\n').unwrap_or(("", "502"));
+                let text = match serde_json::from_str::<serde_json::Value>(text) {
+                    Ok(mut answer) if answer["jwt"].is_string() => {
+                        let jwt = answer["jwt"].as_str().unwrap_or_default().to_owned();
+                        answer["jwt"] = serde_json::json!(renamed(&jwt, &identity));
+                        answer.to_string()
+                    }
+                    _ => text.to_owned(),
+                };
+                let response = format!(
+                    "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{text}",
+                    text.len()
+                );
+                let _ = client.write_all(response.as_bytes()).await;
+            });
+        }
+    });
+    url
+}
+
+/// Two people in an encrypted call hear each other, and see each other
+/// speak, however the token service names them in LiveKit. On matrix.org
+/// the names are not the ones worked out from user and device, so each side
+/// filed the other's key under a name nobody had: nothing decrypted, and
+/// each saw only themselves speak.
+#[tokio::test]
+async fn encrypted_calls_work_whatever_the_token_service_names_people() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let service = renaming_token_service().await;
+    let env = [("MORPHEUS_LIVEKIT_SERVICE", service.as_str())];
+    let mut alice = App::launch_with_env(&hs, &env).await.expect("launch alice");
+    login_and_open(&mut alice, "alice", "encrypted").await;
+    let mut bob = App::launch_with_env(&hs, &env).await.expect("launch bob");
+    login_and_open(&mut bob, "bob", "encrypted").await;
+
+    alice
+        .click(".chat-header .call-button")
+        .await
+        .expect("call");
+    alice
+        .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("alice connected");
+    bob.click(".chat-header .call-button").await.expect("join");
+    bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("bob connected");
+
+    let hears = |who: &str| {
+        format!(
+            "return (document.querySelector('.voice-panel')?.dataset.heard || '').split(' ').includes('@{who}:localhost');"
+        )
+    };
+    bob.wait_for_js(&speaking("alice"), DEFAULT_WAIT)
+        .await
+        .expect("bob sees alice speak");
+    alice
+        .wait_for_js(&speaking("bob"), DEFAULT_WAIT)
+        .await
+        .expect("alice sees bob speak");
+    bob.wait_for_js(&hears("alice"), DEFAULT_WAIT)
+        .await
+        .expect("bob hears alice (decrypted)");
+    alice
+        .wait_for_js(&hears("bob"), DEFAULT_WAIT)
+        .await
+        .expect("alice hears bob (decrypted)");
+    // And a camera turned on reaches the other side, decrypted.
+    bob.click(".voice-panel .camera-button")
+        .await
+        .expect("bob's camera on");
+    alice
+        .wait_for_js(&shows_test_pattern("@bob:localhost"), DEFAULT_WAIT)
+        .await
+        .expect("alice sees bob's camera");
+
+    bob.click(".voice-panel .hang-up").await.expect("bob hangs up");
     alice
         .click(".voice-panel .hang-up")
         .await

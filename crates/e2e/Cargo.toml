@@ -16,6 +16,9 @@ tokio = { workspace = true, features = ["net", "io-util", "process"] }
 serde_json = { workspace = true }
 # A headless device of the account, for flows a second app cannot drive (scanning a QR code).
 morpheus-core = { workspace = true }
+# Re-signing LiveKit tokens in a test stand-in for a token service.
+base64 = { workspace = true }
+sha2 = "0.10"
 
 [lints]
 workspace = true
