@@ -26,6 +26,11 @@ use tray::TrayAction;
 
 const DEFAULT_HOMESERVER: &str = "http://localhost:8008";
 
+/// Rust's allocations through mimalloc, which hands freed memory back to
+/// the system; glibc's malloc held on to most of what a big room freed.
+#[global_allocator]
+static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 /// Window focus as the event loop reports it, readable from any thread.
 #[derive(Clone)]
 struct Focus(Arc<AtomicBool>);
@@ -106,6 +111,15 @@ fn main() {
         .with_decorations(false)
         .with_inner_size(LogicalSize::new(width, height));
 
+    // Dioxus runs on the runtime it finds; unasked it builds one with a
+    // thread per CPU core, which the UI does not need.
+    #[allow(clippy::expect_used)]
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .expect("the UI's runtime");
+    let _runtime = runtime.enter();
     LaunchBuilder::new()
         .with_context(config)
         .with_context(focus)

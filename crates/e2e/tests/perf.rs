@@ -87,3 +87,69 @@ async fn big_room_opens_and_switches_quickly() {
         .unwrap_or_default();
     assert!(slowest < SLOW, "slowest wait took {slowest:?}");
 }
+
+/// Memory and threads, after the big room is opened and scrolled through:
+/// a chat app needs a few threads, not one per CPU core for each of its
+/// runtimes (a 32-core machine had 146, and the allocator's per-thread
+/// pools swelled memory with them). The app's own process and WebKit's
+/// helpers count together. Desktop only (the test reads /proc).
+#[tokio::test]
+async fn threads_and_memory_stay_modest() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch_desktop(&hs).await.expect("launch app");
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    app.type_into("form.login input[name=username]", "alice")
+        .await
+        .expect("username");
+    app.type_into("form.login input[name=password]", "alice-password")
+        .await
+        .expect("password");
+    app.submit("form.login").await.expect("submit");
+    app.wait_for_text(".room", "firehose", DEFAULT_WAIT)
+        .await
+        .expect("firehose listed");
+    app.open_room("firehose").await.expect("open firehose");
+    app.reveal_message("firehose message 600", DEFAULT_WAIT)
+        .await
+        .expect("newest message visible");
+    for _ in 0..12 {
+        app.eval("const t = document.querySelector('.timeline'); t.scrollTop = -t.scrollHeight;")
+            .await
+            .expect("scroll");
+        tokio::time::sleep(Duration::from_millis(300)).await;
+    }
+    tokio::time::sleep(Duration::from_secs(2)).await;
+
+    let pid = app.pid().expect("the app's process");
+    let threads = std::fs::read_dir(format!("/proc/{pid}/task"))
+        .map(|tasks| tasks.count())
+        .unwrap_or_default();
+    let mut processes = vec![pid];
+    let mut at = 0;
+    while at < processes.len() {
+        let parent = processes[at];
+        at += 1;
+        if let Ok(children) =
+            std::fs::read_to_string(format!("/proc/{parent}/task/{parent}/children"))
+        {
+            processes.extend(children.split_whitespace().filter_map(|c| c.parse::<u32>().ok()));
+        }
+    }
+    let pss_kb = |pid: u32| -> u64 {
+        std::fs::read_to_string(format!("/proc/{pid}/smaps_rollup"))
+            .unwrap_or_default()
+            .lines()
+            .find_map(|l| l.strip_prefix("Pss:"))
+            .and_then(|v| v.split_whitespace().next()?.parse().ok())
+            .unwrap_or(0)
+    };
+    let total_mb = processes.iter().map(|p| pss_kb(*p)).sum::<u64>() / 1024;
+    eprintln!("[memory] {threads} threads, {total_mb} MB over {} processes", processes.len());
+    assert!(threads < 60, "{threads} threads in the app");
+    assert!(total_mb < 500, "{total_mb} MB for the app");
+}

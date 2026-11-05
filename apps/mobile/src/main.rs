@@ -49,6 +49,15 @@ fn main() {
     push::watch_open_room(config.data_dir.clone(), config.commands.clone());
     tracing::info!(?config.data_dir, "starting morpheus mobile");
 
+    // Dioxus runs on the runtime it finds; unasked it builds one with a
+    // thread per CPU core, which the UI does not need.
+    #[allow(clippy::expect_used)]
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .expect("the UI's runtime");
+    let _runtime = runtime.enter();
     LaunchBuilder::new()
         .with_context(config)
         // The web view starts out the app's darkest surface, not white.
