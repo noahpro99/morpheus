@@ -861,3 +861,48 @@ async fn joining_a_ringing_call_from_the_room_stops_the_ring_for_good() {
     };
     alice.click(hang_up).await.expect("alice hangs up");
 }
+
+/// Already in a call, a ring shows its card but plays no ringtone over the
+/// call you are in.
+#[tokio::test]
+async fn a_ring_during_a_call_is_shown_but_silent() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut alice = App::launch_desktop(&hs).await.expect("launch alice");
+    login_and_open(&mut alice, "alice", "random").await;
+    alice
+        .click(".chat-header .call-button")
+        .await
+        .expect("alice in a call");
+    alice
+        .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("alice connected");
+    let before = rings(&mut alice).await;
+
+    let mut bob = App::launch(&hs).await.expect("launch bob");
+    login_and_open(&mut bob, "bob", "random").await;
+    open_dm(&mut bob, "alice").await;
+    bob.click(".chat-header .call-button")
+        .await
+        .expect("bob calls alice");
+    alice
+        .wait_for_text(".incoming-call", "bob", DEFAULT_WAIT)
+        .await
+        .expect("alice sees bob calling");
+    tokio::time::sleep(std::time::Duration::from_secs(4)).await;
+    assert_eq!(rings(&mut alice).await, before, "it rang over her call");
+
+    let hang_up = if bob.is_phone() {
+        ".call-screen .hang-up"
+    } else {
+        ".voice-panel .hang-up"
+    };
+    bob.click(hang_up).await.expect("bob hangs up");
+    alice
+        .click(".voice-panel .hang-up")
+        .await
+        .expect("alice hangs up");
+}

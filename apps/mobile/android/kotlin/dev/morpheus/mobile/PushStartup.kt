@@ -3,6 +3,7 @@ package dev.morpheus.mobile
 import android.Manifest
 import android.app.Activity
 import android.app.Application
+import android.app.NotificationManager
 import android.content.ContentProvider
 import android.content.ContentValues
 import android.content.pm.PackageManager
@@ -26,6 +27,7 @@ class PushStartup : ContentProvider() {
 
             override fun onActivityResumed(activity: Activity) {
                 visible = true
+                stopRinging(activity)
                 if (done) return
                 done = true
                 askForNotifications(activity)
@@ -46,6 +48,18 @@ class PushStartup : ContentProvider() {
             override fun onActivityDestroyed(activity: Activity) {}
         })
         return true
+    }
+
+    /**
+     * A ringing call notification loops the ringtone (it is insistent) until
+     * it goes. Once the app is open it rings and answers in its own screen,
+     * so the system's ringing stops: it rang on behind the call before.
+     */
+    private fun stopRinging(activity: Activity) {
+        val manager = activity.getSystemService(NotificationManager::class.java) ?: return
+        manager.activeNotifications
+            .filter { it.notification.channelId == MorpheusPushService.CALL_CHANNEL }
+            .forEach { manager.cancel(it.tag, it.id) }
     }
 
     private fun askForNotifications(activity: Activity) {

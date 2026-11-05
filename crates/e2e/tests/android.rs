@@ -815,6 +815,25 @@ async fn phone_gets_push_notifications_in_the_background() {
         );
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     }
+    // Opening the app answers for the phone's ringtone: it stops (the app
+    // rings in its own way), rather than looping on behind it.
+    let _ = adb_shell(&[
+        "am",
+        "start",
+        "-n",
+        "dev.morpheus.mobile/dev.dioxus.main.MainActivity",
+    ]);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    while adb_shell(&["dumpsys", "notification", "--noredact"])
+        .split("NotificationRecord(")
+        .any(|record| record.contains("pkg=dev.morpheus.mobile") && record.contains("channel=calls"))
+    {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the ringing notification stayed (and rang on) with the app open"
+        );
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
     bob.click(".voice-panel .hang-up")
         .await
         .expect("bob hangs up");
