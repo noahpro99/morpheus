@@ -275,7 +275,7 @@ window.addEventListener('paste', e => {
   // Finish the motion, then (if `then` changes the pane) hand the position
   // back to the pane's CSS once the shell has switched, so nothing jumps.
   const settle = (el, transform, then) => {
-    el.style.transition = 'transform 180ms ease-out';
+    el.style.transition = 'transform 140ms ease-out';
     el.style.transform = transform;
     const release = () => {
       el.style.transition = 'none';
@@ -292,7 +292,7 @@ window.addEventListener('paste', e => {
         else requestAnimationFrame(wait);
       };
       requestAnimationFrame(wait);
-    }, 190);
+    }, 150);
   };
   window.addEventListener('touchstart', e => {
     g = null;

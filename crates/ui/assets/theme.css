@@ -1601,8 +1601,8 @@ body.dropping .drop-hint { display: flex; }
   box-shadow: -10px 0 24px rgba(0, 0, 0, 0.35);
 }
 .shell.narrow .chat { z-index: 2; }
-.shell.narrow.panes-ready .chat, .shell.narrow.panes-ready .side-pane { transition: transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 240ms; }
-.shell.narrow .side-pane { z-index: 3; animation: pane-in 240ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.shell.narrow.panes-ready .chat, .shell.narrow.panes-ready .side-pane { transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 180ms; }
+.shell.narrow .side-pane { z-index: 3; animation: pane-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1); }
 .shell.narrow[data-pane="rooms"] .chat { transform: translateX(100%); box-shadow: none; }
 .shell.narrow .side-pane.parked { transform: translateX(100%); box-shadow: none; animation: none; }
 @keyframes pane-in { from { transform: translateX(100%); } to { transform: none; } }
@@ -1625,7 +1625,7 @@ body.dropping .drop-hint { display: flex; }
   padding-bottom: env(safe-area-inset-bottom);
   border-radius: 16px 16px 0 0;
   box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.5);
-  animation: sheet-up 220ms cubic-bezier(0.2, 0.9, 0.3, 1);
+  animation: sheet-up 150ms cubic-bezier(0.2, 0.9, 0.3, 1);
 }
 .profile-card.sheet .profile-banner { height: 84px; border-radius: 16px 16px 0 0; }
 .profile-card.sheet .sheet-handle { position: absolute; top: 6px; left: 50%; margin: 0; transform: translateX(-50%); background: rgba(255, 255, 255, 0.55); }
@@ -1700,7 +1700,7 @@ body.dropping .drop-hint { display: flex; }
   padding: 6px 8px calc(12px + env(safe-area-inset-bottom));
   border-radius: 16px 16px 0 0;
   box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.5);
-  animation: sheet-up 180ms cubic-bezier(0.2, 0.9, 0.3, 1);
+  animation: sheet-up 150ms cubic-bezier(0.2, 0.9, 0.3, 1);
 }
 @keyframes sheet-up { from { transform: translateY(100%); } to { transform: none; } }
 @media (prefers-reduced-motion: reduce) { .context-menu.sheet, .sheet-backdrop { animation: none; } }
