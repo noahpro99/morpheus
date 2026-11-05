@@ -5316,9 +5316,11 @@ name = "morpheus-e2e"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "morpheus-core",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "tokio",
 ]
 

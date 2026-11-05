@@ -215,6 +215,11 @@ pub(crate) fn call_participants(room: &matrix_sdk::Room) -> Vec<OwnedUserId> {
 /// transports endpoint, else `org.matrix.msc4143.rtc_foci` in the client
 /// well-known (on the server name's domain, then on the homeserver itself).
 async fn livekit_services(client: &matrix_sdk::Client) -> Vec<String> {
+    // Tests stand a different token service in front (one naming people as
+    // matrix.org's does).
+    if let Ok(service) = std::env::var("MORPHEUS_LIVEKIT_SERVICE") {
+        return vec![service];
+    }
     let http = client.http_client();
     let homeserver = client.homeserver().to_string();
     let homeserver = homeserver.trim_end_matches('/');
