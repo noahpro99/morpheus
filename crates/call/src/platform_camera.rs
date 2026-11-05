@@ -114,6 +114,7 @@ pub fn camera_frame(
             dst_v[row * stride_v + col] = v.get(at).copied().unwrap_or(128);
         }
     }
+    let degrees = rotation;
     let rotation = match rotation {
         90 => VideoRotation::VideoRotation90,
         180 => VideoRotation::VideoRotation180,
@@ -125,6 +126,7 @@ pub fn camera_frame(
     let every = Duration::from_millis(1000 / video::FPS);
     if sink.shown.is_none_or(|at| at.elapsed() >= every) {
         sink.shown = Some(Instant::now());
-        video::keep(LOCAL_CAMERA, &frame.buffer);
+        // The preview turned upright; the call gets the rotation with the frame.
+        video::keep_turned(LOCAL_CAMERA, &frame.buffer, degrees);
     }
 }

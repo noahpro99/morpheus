@@ -2073,6 +2073,29 @@ async fn phone_camera_shows_on_the_desktop() {
     bob.wait_for_js(picture, DEFAULT_WAIT)
         .await
         .expect("bob sees the phone's camera");
+    // Upright: the sensor is mounted turned (90° on the emulator, as on
+    // most phones), so a 640×480 picture stands as portrait, taller than
+    // wide, on both sides. The phone's own preview showed it sideways.
+    let shape = "const t = [...document.querySelectorAll('.video-tile')].find(t => t.dataset.user === '@alice:localhost'); \
+         const i = t && t.querySelector('img.video'); \
+         return i && i.naturalWidth ? [i.naturalWidth, i.naturalHeight] : null;";
+    let seen = bob.eval(shape).await.expect("bob's picture");
+    phone
+        .wait_for_js(
+            "const t = document.querySelector('.call-screen .video-tile.self'); const i = t && t.querySelector('img.video'); return !!(i && i.naturalWidth);",
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("the phone's own preview");
+    let own = phone
+        .eval(
+            "const i = document.querySelector('.call-screen .video-tile.self img.video'); return [i.naturalWidth, i.naturalHeight];",
+        )
+        .await
+        .expect("the phone's preview");
+    let portrait = |shape: &serde_json::Value| shape[1].as_f64() > shape[0].as_f64();
+    assert!(portrait(&seen), "bob sees the phone's picture lying down: {seen}");
+    assert!(portrait(&own), "the phone's own preview is lying down: {own}");
     if let Some(path) = bob.screenshot("phone-camera-on-desktop").await.expect("screenshot") {
         eprintln!("screenshot: {}", path.display());
     }

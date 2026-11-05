@@ -66,6 +66,12 @@ pub(crate) fn forget(key: &str) {
 
 /// Keep `buffer` as the picture under `key`.
 pub(crate) fn keep(key: &str, buffer: &dyn VideoBuffer) {
+    keep_turned(key, buffer, 0);
+}
+
+/// [`keep`], turned `degrees` clockwise (0, 90, 180, 270) to stand upright:
+/// a phone's camera sensor is mounted turned, and its frames say so.
+pub(crate) fn keep_turned(key: &str, buffer: &dyn VideoBuffer, degrees: u32) {
     let (mut width, mut height) = (buffer.width(), buffer.height());
     if width == 0 || height == 0 {
         return;
@@ -85,6 +91,7 @@ pub(crate) fn keep(key: &str, buffer: &dyn VideoBuffer) {
         width as i32,
         height as i32,
     );
+    let (rgba, width, height) = turn(rgba, width, height, degrees);
     let mut jpeg = Vec::new();
     let encoder = jpeg_encoder::Encoder::new(&mut jpeg, 75);
     if let Err(err) = encoder.encode(
@@ -202,4 +209,28 @@ pub(crate) async fn play_test_pattern(
         n = n.wrapping_add(1);
     }
     forget(pattern.key);
+}
+
+/// RGBA pixels turned `degrees` clockwise; the new width and height.
+fn turn(rgba: Vec<u8>, width: u32, height: u32, degrees: u32) -> (Vec<u8>, u32, u32) {
+    let (w, h) = (width as usize, height as usize);
+    let (out_w, out_h) = match degrees {
+        90 | 270 => (h, w),
+        180 => (w, h),
+        _ => return (rgba, width, height),
+    };
+    let mut out = vec![0u8; rgba.len()];
+    for y in 0..h {
+        for x in 0..w {
+            let (nx, ny) = match degrees {
+                90 => (h - 1 - y, x),
+                180 => (w - 1 - x, h - 1 - y),
+                _ => (y, w - 1 - x),
+            };
+            let from = (y * w + x) * 4;
+            let to = (ny * out_w + nx) * 4;
+            out[to..to + 4].copy_from_slice(&rgba[from..from + 4]);
+        }
+    }
+    (out, out_w as u32, out_h as u32)
 }
