@@ -117,7 +117,15 @@ fn data_url(sound: Sound) -> &'static str {
 pub fn play(sound: Sound) {
     let audible = morpheus_call::AudioMode::from_env() == morpheus_call::AudioMode::Platform;
     let play = if audible {
-        format!("new Audio('{}').play().catch(() => {{}});", data_url(sound))
+        // Whether it played (or why not: a page may only play sound after a
+        // tap or click), kept for the tests and logged.
+        format!(
+            "new Audio('{}').play()\
+             .then(() => (window.morpheusSoundPlays ??= []).push('{key}: played'))\
+             .catch(e => {{ (window.morpheusSoundPlays ??= []).push('{key}: ' + e.name); console.warn('sound not played', '{key}', e); }});",
+            data_url(sound),
+            key = sound.key()
+        )
     } else {
         String::new()
     };

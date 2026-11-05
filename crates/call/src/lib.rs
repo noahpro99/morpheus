@@ -47,6 +47,8 @@ pub use devices::{
 mod camera;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 mod screen;
+mod platform_camera;
+pub use platform_camera::{PlatformCamera, camera_frame, set_platform_camera};
 mod video;
 pub use video::{
     CAMERA_PATTERN, Frame, LOCAL_CAMERA, LOCAL_SCREEN, SCREEN_PATTERN, TestPattern, latest_frame,
@@ -79,9 +81,12 @@ impl AudioMode {
 
 static TEST_TONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// Whether calls here can send video: a webcam on Linux, or the test pattern.
+/// Whether calls here can send video: a webcam on Linux, the app's own
+/// camera (phones, [`set_platform_camera`]), or the test pattern.
 pub fn can_send_video() -> bool {
-    cfg!(target_os = "linux") || AudioMode::from_env() == AudioMode::Tone
+    cfg!(target_os = "linux")
+        || platform_camera::available()
+        || AudioMode::from_env() == AudioMode::Tone
 }
 
 /// Whether calls here can share the screen: desktops, or the test pattern.
@@ -469,6 +474,8 @@ struct Outgoing {
 /// Where outgoing frames come from.
 enum Feed {
     TestPattern(video::TestPattern),
+    /// The app's own camera ([`set_platform_camera`]).
+    Platform,
     #[cfg(target_os = "linux")]
     Camera(camera::Camera),
     /// Already capturing; frames go out once `sending` is set.
@@ -499,6 +506,16 @@ impl Outgoing {
                     Feed::TestPattern(pattern),
                     NativeVideoSource::new(resolution, screen),
                 )
+            }
+            (AudioMode::Platform, VideoKind::Camera) if platform_camera::available() => {
+                let source = NativeVideoSource::new(
+                    VideoResolution {
+                        width: 640,
+                        height: 480,
+                    },
+                    false,
+                );
+                (Feed::Platform, source)
             }
             #[cfg(target_os = "linux")]
             (AudioMode::Platform, VideoKind::Camera) => {
@@ -577,6 +594,17 @@ impl Outgoing {
         match feed {
             Feed::TestPattern(pattern) => {
                 tokio::spawn(video::play_test_pattern(pattern, source, stop.clone()));
+            }
+            Feed::Platform => {
+                let (source, running) = (source.clone(), stop.clone());
+                let started = tokio::task::spawn_blocking(move || platform_camera::run(source, running))
+                    .await
+                    .unwrap_or(false);
+                if !started {
+                    stop.store(true, Ordering::Relaxed);
+                    let _ = room.local_participant().unpublish_track(&publication.sid()).await;
+                    return Err(Error::Video("the camera did not start".into()));
+                }
             }
             #[cfg(target_os = "linux")]
             Feed::Camera(device) => device.run(source, stop.clone()),

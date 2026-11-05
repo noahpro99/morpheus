@@ -32,6 +32,7 @@ fn main() {
         android::init_webrtc();
         config.microphone = Some(std::sync::Arc::new(android::microphone));
         config.speakerphone = Some(std::sync::Arc::new(android::speakerphone));
+        android::register_camera();
         // Test builds send a tone instead (no environment to say so here),
         // unless a test marked the app for the real microphone.
         #[cfg(feature = "e2e")]
@@ -225,6 +226,68 @@ mod android {
     }
 
     const RECORD_AUDIO: &str = "android.permission.RECORD_AUDIO";
+    const CAMERA: &str = "android.permission.CAMERA";
+
+    /// The phone's camera for calls (`CameraFeed.kt`): its frames come back
+    /// through [`Java_dev_morpheus_mobile_CameraFeed_frame`].
+    pub fn register_camera() {
+        morpheus_call::set_platform_camera(morpheus_call::PlatformCamera {
+            start: Box::new(|| permission(CAMERA, 7303) && camera_feed("start")),
+            stop: Box::new(|| {
+                camera_feed("stop");
+            }),
+        });
+    }
+
+    /// `CameraFeed.start(context)` or `CameraFeed.stop()`, through the app's
+    /// class loader (a natively attached thread cannot find app classes).
+    #[allow(unsafe_code)]
+    fn camera_feed(method: &str) -> bool {
+        let ctx = ndk_context::android_context();
+        // SAFETY: as in `files_dir`.
+        let Ok(vm) = (unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }) else {
+            return false;
+        };
+        let Ok(mut env) = vm.attach_current_thread() else {
+            return false;
+        };
+        let context = unsafe { JObject::from_raw(ctx.context().cast()) };
+        let result = (|| -> jni::errors::Result<bool> {
+            let loader = env
+                .call_method(&context, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])?
+                .l()?;
+            let name = env.new_string("dev.morpheus.mobile.CameraFeed")?;
+            let class = env
+                .call_method(
+                    &loader,
+                    "loadClass",
+                    "(Ljava/lang/String;)Ljava/lang/Class;",
+                    &[JValue::Object(&name)],
+                )?
+                .l()?;
+            let class = jni::objects::JClass::from(class);
+            if method == "start" {
+                env.call_static_method(
+                    class,
+                    "start",
+                    "(Landroid/content/Context;)Z",
+                    &[JValue::Object(&context)],
+                )?
+                .z()
+            } else {
+                env.call_static_method(class, "stop", "()V", &[])?;
+                Ok(true)
+            }
+        })();
+        match result {
+            Ok(done) => done,
+            Err(err) => {
+                let _ = env.exception_clear();
+                tracing::warn!(%err, method, "camera");
+                false
+            }
+        }
+    }
 
     /// Call audio out of the loudspeaker (`true`) or the earpiece, through
     /// `AudioManager` (WebRTC leaves the route to the system: the earpiece).
@@ -264,10 +327,15 @@ mod android {
         }
     }
 
-    /// Ask for the microphone (a runtime permission) and wait for the
-    /// answer: the system dialog shows over the app. `true` once granted.
-    #[allow(unsafe_code)]
+    /// Ask for the microphone and wait for the answer.
     pub fn microphone() -> bool {
+        permission(RECORD_AUDIO, 7302)
+    }
+
+    /// Ask for a runtime permission (`request` tells the answers apart) and
+    /// wait for it: the system dialog shows over the app. `true` once granted.
+    #[allow(unsafe_code)]
+    fn permission(wanted: &str, request: i32) -> bool {
         let ctx = ndk_context::android_context();
         // SAFETY: as in `files_dir`.
         let Ok(vm) = (unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }) else {
@@ -278,7 +346,7 @@ mod android {
         };
         let activity = unsafe { JObject::from_raw(ctx.context().cast()) };
         let granted = |env: &mut jni::JNIEnv| -> bool {
-            let Ok(name) = env.new_string(RECORD_AUDIO) else {
+            let Ok(name) = env.new_string(wanted) else {
                 return false;
             };
             let answer = env
@@ -301,13 +369,13 @@ mod android {
             return true;
         }
         let asked = (|| -> jni::errors::Result<()> {
-            let name = env.new_string(RECORD_AUDIO)?;
+            let name = env.new_string(wanted)?;
             let names = env.new_object_array(1, "java/lang/String", &name)?;
             env.call_method(
                 &activity,
                 "requestPermissions",
                 "([Ljava/lang/String;I)V",
-                &[JValue::Object(&names), JValue::Int(7302)],
+                &[JValue::Object(&names), JValue::Int(request)],
             )?;
             Ok(())
         })();
@@ -338,4 +406,46 @@ pub extern "system" fn JNI_OnLoad(
 ) -> jni::sys::jint {
     morpheus_call::initialize_android(&vm);
     jni::sys::JNI_VERSION_1_6
+}
+
+/// A camera picture from `CameraFeed.kt`, on to the call. The planes are
+/// direct buffers, valid until this returns.
+#[cfg(target_os = "android")]
+#[unsafe(no_mangle)]
+#[allow(unsafe_code, clippy::too_many_arguments)]
+pub extern "system" fn Java_dev_morpheus_mobile_CameraFeed_frame(
+    env: jni::JNIEnv,
+    _class: jni::objects::JClass,
+    y: jni::objects::JByteBuffer,
+    u: jni::objects::JByteBuffer,
+    v: jni::objects::JByteBuffer,
+    y_stride: jni::sys::jint,
+    uv_stride: jni::sys::jint,
+    uv_pixel_stride: jni::sys::jint,
+    width: jni::sys::jint,
+    height: jni::sys::jint,
+    rotation: jni::sys::jint,
+) {
+    let plane = |buffer: &jni::objects::JByteBuffer| -> Option<&[u8]> {
+        let at = env.get_direct_buffer_address(buffer).ok()?;
+        let len = env.get_direct_buffer_capacity(buffer).ok()?;
+        // SAFETY: a direct buffer of `len` bytes, which Android keeps alive
+        // (the image is open) until this call returns.
+        Some(unsafe { std::slice::from_raw_parts(at, len) })
+    };
+    let (Some(y), Some(u), Some(v)) = (plane(&y), plane(&u), plane(&v)) else {
+        return;
+    };
+    let size = |n: jni::sys::jint| usize::try_from(n).unwrap_or(0);
+    morpheus_call::camera_frame(
+        y,
+        u,
+        v,
+        size(y_stride),
+        size(uv_stride),
+        size(uv_pixel_stride),
+        u32::try_from(width).unwrap_or(0),
+        u32::try_from(height).unwrap_or(0),
+        u32::try_from(rotation).unwrap_or(0),
+    );
 }

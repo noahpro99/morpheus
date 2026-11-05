@@ -136,7 +136,6 @@ impl App {
         let log = std::fs::File::create(&log_path)?;
 
         let mut command = Command::new(&bin);
-        command.envs(env.iter().copied());
         if let Some((width, height)) = size {
             command.env("MORPHEUS_E2E_SIZE", format!("{width}x{height}"));
         }
@@ -153,6 +152,8 @@ impl App {
                 "RUST_LOG",
                 std::env::var("RUST_LOG").unwrap_or_else(|_| "morpheus=debug,warn".into()),
             )
+            // A test's own settings last: they win over the defaults above.
+            .envs(env.iter().copied())
             .stdout(Stdio::from(log.try_clone()?))
             .stderr(Stdio::from(log))
             .kill_on_drop(true)
@@ -866,6 +867,18 @@ impl App {
     pub async fn launch_android_with_real_audio() -> Result<Self> {
         PHONE_BUSY.store(true, Ordering::SeqCst);
         Self::start_android_with(true, &[], true).await
+    }
+
+    /// Real microphone and camera (no test tone or pattern), both allowed
+    /// before the app starts.
+    pub async fn launch_android_with_real_media() -> Result<Self> {
+        PHONE_BUSY.store(true, Ordering::SeqCst);
+        Self::start_android_with(
+            true,
+            &["android.permission.CAMERA", "android.permission.RECORD_AUDIO"],
+            true,
+        )
+        .await
     }
 
     /// [`Self::launch_android`] with runtime permissions granted before the

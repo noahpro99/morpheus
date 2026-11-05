@@ -1907,3 +1907,187 @@ async fn phone_call_screen_swipes_down_and_not_sideways() {
     );
     app.tap(".call-screen .hang-up").await.expect("hang up");
 }
+
+/// A call ringing the phone, with the app open, is heard: the ringtone
+/// really plays (this run has real audio).
+#[tokio::test]
+async fn phone_ring_is_heard_with_the_app_open() {
+    if !enabled() {
+        eprintln!("MORPHEUS_E2E_ANDROID not set; skipping the Android test");
+        return;
+    }
+    let Ok(hs) = std::env::var("MORPHEUS_TEST_HOMESERVER") else {
+        return;
+    };
+    let mut phone = App::launch_android_with_real_audio()
+        .await
+        .expect("launch on Android");
+    phone
+        .wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    phone
+        .type_into("form.login input[name=username]", "alice")
+        .await
+        .expect("username");
+    phone
+        .type_into("form.login input[name=password]", "alice-password")
+        .await
+        .expect("password");
+    phone.submit("form.login").await.expect("submit");
+    phone
+        .wait_for(".room", DEFAULT_WAIT)
+        .await
+        .expect("rooms");
+
+    let mut bob = App::launch_desktop(&hs).await.expect("launch bob");
+    bob.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    bob.type_into("form.login input[name=username]", "bob")
+        .await
+        .expect("username");
+    bob.type_into("form.login input[name=password]", "bob-password")
+        .await
+        .expect("password");
+    bob.submit("form.login").await.expect("submit");
+    bob.wait_for(".room", DEFAULT_WAIT).await.expect("rooms");
+    bob.click(".rail-item[title=\"Direct messages\"]")
+        .await
+        .expect("bob's DMs");
+    bob.open_room("alice").await.expect("bob in the DM");
+    bob.click(".chat-header .call-button")
+        .await
+        .expect("bob calls");
+    phone
+        .wait_for_text(".incoming-call", "bob", DEFAULT_WAIT)
+        .await
+        .expect("the phone is rung");
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    let plays: Vec<String> = loop {
+        let plays: Vec<String> = serde_json::from_value(
+            phone
+                .eval("return window.morpheusSoundPlays ?? [];")
+                .await
+                .expect("sounds"),
+        )
+        .unwrap_or_default();
+        if plays.iter().any(|p| p.starts_with("ring: ")) {
+            break plays;
+        }
+        assert!(std::time::Instant::now() < deadline, "no ringtone tried: {plays:?}");
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    };
+    bob.click(".voice-panel .hang-up")
+        .await
+        .expect("bob hangs up");
+    assert!(
+        plays.iter().any(|p| p == "ring: played") && !plays.iter().any(|p| p.starts_with("ring: ") && p != "ring: played"),
+        "the ringtone did not play: {plays:?}"
+    );
+}
+
+/// A phone in a call turns its camera on, and the others see it: the
+/// camera button is there, and a desktop gets the phone's picture (the
+/// emulator's camera films a virtual room). Real camera and microphone.
+#[tokio::test]
+async fn phone_camera_shows_on_the_desktop() {
+    if !enabled() {
+        eprintln!("MORPHEUS_E2E_ANDROID not set; skipping the Android test");
+        return;
+    }
+    let Ok(hs) = std::env::var("MORPHEUS_TEST_HOMESERVER") else {
+        return;
+    };
+    let mut phone = App::launch_android_with_real_media()
+        .await
+        .expect("launch on Android");
+    phone
+        .wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    phone
+        .type_into("form.login input[name=username]", "alice")
+        .await
+        .expect("username");
+    phone
+        .type_into("form.login input[name=password]", "alice-password")
+        .await
+        .expect("password");
+    phone.submit("form.login").await.expect("submit");
+    phone
+        .wait_for(".room", DEFAULT_WAIT)
+        .await
+        .expect("rooms");
+    phone.open_room("random").await.expect("open #random");
+    phone
+        .tap(".chat-header .call-button")
+        .await
+        .expect("call");
+    phone
+        .wait_for_text(".call-screen .call-screen-state", "Connected", DEFAULT_WAIT)
+        .await
+        .expect("connected");
+
+    let mut bob = App::launch_desktop(&hs).await.expect("launch bob");
+    bob.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    bob.type_into("form.login input[name=username]", "bob")
+        .await
+        .expect("username");
+    bob.type_into("form.login input[name=password]", "bob-password")
+        .await
+        .expect("password");
+    bob.submit("form.login").await.expect("submit");
+    bob.wait_for(".room", DEFAULT_WAIT).await.expect("rooms");
+    bob.open_room("random").await.expect("bob in #random");
+    bob.click(".chat-header .call-button").await.expect("bob joins");
+    bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("bob connected");
+
+    // The phone has a camera button, and turns it on.
+    phone
+        .wait_for(".call-screen .camera-button:not([disabled])", DEFAULT_WAIT)
+        .await
+        .expect("a camera button on the phone");
+    phone
+        .tap(".call-screen .camera-button")
+        .await
+        .expect("camera on");
+    phone
+        .wait_for(".call-screen .camera-button.active", DEFAULT_WAIT)
+        .await
+        .expect("the camera is on");
+
+    // Bob sees a real picture from it: loaded, and not one flat colour.
+    let picture = "const t = [...document.querySelectorAll('.call-stage .video-tile')].find(t => t.dataset.user === '@alice:localhost'); \
+         const i = t && t.querySelector('img.video'); \
+         if (!i || !i.complete || !i.naturalWidth) return false; \
+         const c = document.createElement('canvas'); c.width = 32; c.height = 32; \
+         const g = c.getContext('2d'); g.drawImage(i, 0, 0, 32, 32); \
+         const d = g.getImageData(0, 0, 32, 32).data; let lo = 255, hi = 0; \
+         for (let p = 0; p < d.length; p += 4) { const v = (d[p] + d[p + 1] + d[p + 2]) / 3; lo = Math.min(lo, v); hi = Math.max(hi, v); } \
+         return hi - lo > 30;";
+    bob.wait_for_js(picture, DEFAULT_WAIT)
+        .await
+        .expect("bob sees the phone's camera");
+    if let Some(path) = bob.screenshot("phone-camera-on-desktop").await.expect("screenshot") {
+        eprintln!("screenshot: {}", path.display());
+    }
+    shot(&mut phone, "android-camera-on").await;
+
+    phone
+        .tap(".call-screen .camera-button")
+        .await
+        .expect("camera off");
+    bob.wait_for_js("return !document.querySelector('.call-stage');", DEFAULT_WAIT)
+        .await
+        .expect("off again for bob");
+    phone
+        .tap(".call-screen .hang-up")
+        .await
+        .expect("hang up");
+    bob.click(".voice-panel .hang-up").await.expect("bob hangs up");
+}

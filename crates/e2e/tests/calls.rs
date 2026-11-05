@@ -1186,3 +1186,58 @@ async fn out_of_call(app: &mut App) {
         .await;
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 }
+
+/// What the app's sounds did: "ring: played", or the reason one did not
+/// play (a page may only play sound after a tap or click).
+async fn sound_plays(app: &mut App) -> Vec<String> {
+    serde_json::from_value(
+        app.eval("return window.morpheusSoundPlays ?? [];")
+            .await
+            .expect("sounds"),
+    )
+    .unwrap_or_default()
+}
+
+/// A call ringing a desktop is heard: the ringtone really plays (test runs
+/// otherwise only note their sounds; this one has real audio).
+#[tokio::test]
+async fn a_ring_is_heard_on_the_desktop() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    login_and_open(&mut alice, "alice", "random").await;
+    let mut bob = App::launch_with_env(&hs, &[("MORPHEUS_CALL_AUDIO", "platform")])
+        .await
+        .expect("launch bob, with real sound");
+    login_and_open(&mut bob, "bob", "random").await;
+    open_dm(&mut alice, "bob").await;
+    let hang_up = if alice.is_phone() {
+        ".call-screen .hang-up"
+    } else {
+        ".voice-panel .hang-up"
+    };
+    alice
+        .click(".chat-header .call-button")
+        .await
+        .expect("alice calls bob");
+    bob.wait_for_text(".incoming-call", "alice", DEFAULT_WAIT)
+        .await
+        .expect("bob is rung");
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    let plays = loop {
+        let plays = sound_plays(&mut bob).await;
+        if plays.iter().any(|p| p.starts_with("ring: ")) {
+            break plays;
+        }
+        assert!(std::time::Instant::now() < deadline, "no ringtone tried: {plays:?}");
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    };
+    alice.click(hang_up).await.expect("alice hangs up");
+    out_of_call(&mut alice).await;
+    assert!(
+        plays.iter().any(|p| p == "ring: played") && !plays.iter().any(|p| p.starts_with("ring: ") && p != "ring: played"),
+        "the ringtone did not play: {plays:?}"
+    );
+}
