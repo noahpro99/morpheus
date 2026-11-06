@@ -357,6 +357,16 @@ if [[ ! -f "$HS_DIR/.seeded-firehose" ]]; then
   echo "  + 600 messages"
 fi
 
+# A room far longer than a session ever loads at once, for the timeline's
+# windowing (only the rows near the screen are kept in the page).
+if [[ ! -f "$HS_DIR/.seeded-deep" ]]; then
+  echo "deep:"
+  DEEP=$(ensure_room deep "deep" "3000 messages for timeline windowing")
+  for i in $(seq 1 3000); do say "$BOB" "$DEEP" "deep message $i"; done
+  touch "$HS_DIR/.seeded-deep"
+  echo "  + 3000 messages"
+fi
+
 # Every test login leaves a device behind (alice had 1300+), and each one
 # adds key queries to every sync and fans out verification requests. Last
 # step, since it also signs out the tokens this script used.

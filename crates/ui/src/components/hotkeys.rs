@@ -392,6 +392,29 @@ window.addEventListener('paste', e => {
   }, { capture: true });
   window.addEventListener('touchcancel', () => { if (g) settle(g.el, g.kind === 'forward' ? 'translateX(100%)' : 'none'); g = null; }, { capture: true });
 })();
+// Far back in a long room, rows come and go below the view as it scrolls
+// (timeline.rs keeps only a few hundred in the page), and WebKit does not
+// keep the view where it was. So: the message at the top of the view, and
+// where it is, noted on every scroll (before the app hears of it); and when
+// the timeline says scrolling changed its rows (`data-anchor` goes up, in the
+// same update as the rows), that message is put back where it was.
+(() => {
+  let anchor = null;
+  window.addEventListener('scroll', e => {
+    const t = e.target;
+    if (!t.classList || !t.classList.contains('timeline')) return;
+    const top = t.getBoundingClientRect().top;
+    // By its event, not the element: the rows may be drawn afresh.
+    const m = [...t.querySelectorAll('.message[data-event-id]:not([data-event-id=""])')]
+      .find(m => m.getBoundingClientRect().bottom > top);
+    anchor = m ? { id: m.dataset.eventId, top: m.getBoundingClientRect().top } : null;
+  }, { capture: true, passive: true });
+  new MutationObserver(changes => {
+    const t = changes.find(c => c.attributeName === 'data-anchor')?.target;
+    const m = t && anchor && t.querySelector('.message[data-event-id=' + JSON.stringify(anchor.id) + ']');
+    if (m) t.scrollTop += m.getBoundingClientRect().top - anchor.top;
+  }).observe(document.documentElement, { subtree: true, attributes: true, attributeFilter: ['data-anchor'] });
+})();
 // The call stage's height: its bottom edge is dragged. The height is a CSS
 // variable on the page (the stage comes and goes with the cameras) and is
 // remembered on this device.
