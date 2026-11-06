@@ -36,6 +36,14 @@ jobs:
         run: |
           rustup show active-toolchain || rustup toolchain install
           rustup target add ${{ matrix.target }}
+          # dx strips with rustup's rust-objcopy, which looks for libLLVM
+          # beside itself; the toolchain has it one level up.
+          sysroot=$(rustc --print sysroot)
+          host=$(rustc -vV | sed -n 's/^host: //p')
+          rustup component add llvm-tools
+          mkdir -p "$sysroot/lib/rustlib/$host/lib"
+          for lib in "$sysroot"/lib/libLLVM*.dylib; do ln -sf "$lib" "$sysroot/lib/rustlib/$host/lib/libLLVM.dylib"; done
+          ls -la "$sysroot/lib/rustlib/$host/lib/" | grep -i llvm || true
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -94,6 +102,14 @@ jobs:
         run: |
           rustup show active-toolchain || rustup toolchain install
           rustup target add aarch64-apple-ios
+          # dx strips with rustup's rust-objcopy, which looks for libLLVM
+          # beside itself; the toolchain has it one level up.
+          sysroot=$(rustc --print sysroot)
+          host=$(rustc -vV | sed -n 's/^host: //p')
+          rustup component add llvm-tools
+          mkdir -p "$sysroot/lib/rustlib/$host/lib"
+          for lib in "$sysroot"/lib/libLLVM*.dylib; do ln -sf "$lib" "$sysroot/lib/rustlib/$host/lib/libLLVM.dylib"; done
+          ls -la "$sysroot/lib/rustlib/$host/lib/" | grep -i llvm || true
 
       - uses: Swatinem/rust-cache@v2
         with:
