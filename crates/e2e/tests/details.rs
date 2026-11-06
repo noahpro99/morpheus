@@ -197,3 +197,109 @@ async fn leaving_a_room_can_be_undone() {
         "still a member"
     );
 }
+
+/// A double tap on send (or Enter pressed twice at once) sends one message.
+#[tokio::test]
+async fn a_double_send_sends_once() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch_desktop(&hs).await.expect("launch");
+    login_and_open(&mut app, "random").await;
+    let count = |text: &str| {
+        format!(
+            "return [...document.querySelectorAll('.message .body')].filter(b => b.textContent.trim() === {}).length;",
+            serde_json::to_string(text).expect("json")
+        )
+    };
+
+    // The send button (phones have one).
+    let tapped = format!("tapped twice {}", std::process::id());
+    let has_button = app.count(".composer .send-button").await.expect("count") > 0;
+    if has_button {
+        app.type_into(".composer .composer-input", &tapped).await.expect("type");
+        app.eval("const b = document.querySelector('.composer .send-button'); b.click(); b.click();")
+            .await
+            .expect("double tap");
+        app.wait_for_exact_text(".message.own:not(.pending) .body", &tapped, DEFAULT_WAIT)
+            .await
+            .expect("sent");
+    }
+
+    let entered = format!("entered twice {}", std::process::id());
+    app.type_into(".composer .composer-input", &entered).await.expect("type");
+    app.eval("const i = document.querySelector('.composer .composer-input'); \
+              for (const _ of [1, 2]) i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));")
+        .await
+        .expect("double enter");
+    app.wait_for_exact_text(".message.own:not(.pending) .body", &entered, DEFAULT_WAIT)
+        .await
+        .expect("sent");
+
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    if has_button {
+        assert_eq!(app.eval(&count(&tapped)).await.expect("count"), serde_json::json!(1), "one message from a double tap");
+    }
+    assert_eq!(app.eval(&count(&entered)).await.expect("count"), serde_json::json!(1), "one message from a double Enter");
+}
+
+/// Heading for a submenu across the item below it (the mouse cuts the
+/// corner) keeps the submenu open; moving down the menu away from it
+/// closes it.
+#[tokio::test]
+async fn submenus_stay_open_while_the_mouse_heads_for_them() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch_desktop(&hs).await.expect("launch");
+    login_and_open(&mut app, "random").await;
+    app.eval(
+        "const el = [...document.querySelectorAll('.room')].find(r => r.querySelector('.room-name')?.textContent.trim() === 'random'); \
+         const r = el.getBoundingClientRect(); \
+         el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + 20, clientY: r.top + 10 }));",
+    )
+    .await
+    .expect("room menu");
+    app.wait_for(".context-menu", DEFAULT_WAIT).await.expect("menu");
+
+    // Helpers in the page: the Notifications row, the row below it, a
+    // pointer move to a point over an element, and whether the flyout shows.
+    let setup = "window.__t = { \
+        parent: () => [...document.querySelectorAll('.context-item.has-submenu')].find(r => r.querySelector('.menu-label').textContent.trim() === 'Notifications'), \
+        below: () => window.__t.parent().nextElementSibling, \
+        move: (el, x, y) => { for (const type of ['mousemove', 'mouseover']) el.dispatchEvent(new MouseEvent(type, { bubbles: true, clientX: x, clientY: y })); }, \
+        open: () => getComputedStyle(window.__t.parent().querySelector(':scope > .context-submenu')).display !== 'none', \
+    }; return true;";
+    app.eval(setup).await.expect("helpers");
+
+    let point_in_parent = "const p = window.__t.parent().getBoundingClientRect(); window.__t.move(window.__t.parent(), p.left + 30, p.top + p.height / 2); return window.__t.open();";
+    assert_eq!(app.eval(point_in_parent).await.expect("hover"), serde_json::json!(true), "open on hover");
+
+    // Toward the flyout, crossing the row below near its right end.
+    app.eval("const b = window.__t.below().getBoundingClientRect(); window.__t.move(window.__t.below(), b.right - 12, b.top + 4); return true;")
+        .await
+        .expect("cut across");
+    tokio::time::sleep(Duration::from_millis(120)).await;
+    assert_eq!(
+        app.eval("return window.__t.open();").await.expect("open"),
+        serde_json::json!(true),
+        "still open while heading for it"
+    );
+    // And on into it: it stays.
+    app.eval("const s = window.__t.parent().querySelector('.context-submenu .context-item'); const r = s.getBoundingClientRect(); window.__t.move(s, r.left + 10, r.top + r.height / 2); return true;")
+        .await
+        .expect("into the flyout");
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(app.eval("return window.__t.open();").await.expect("open"), serde_json::json!(true), "open inside it");
+
+    // Back on the parent, then straight down the left edge, away from it: it closes.
+    app.eval(point_in_parent).await.expect("hover again");
+    app.eval("const b = window.__t.below().getBoundingClientRect(); window.__t.move(window.__t.below(), b.left + 10, b.top + b.height / 2); return true;")
+        .await
+        .expect("down the menu");
+    app.wait_for_js("return !window.__t.open();", Duration::from_secs(2))
+        .await
+        .expect("closes when moving away");
+}
