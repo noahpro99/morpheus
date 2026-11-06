@@ -2188,3 +2188,8 @@ h1, h2, h3, h4, .modal-title, .empty-title {
   min-height: 44px;
 }
 .shell.narrow button.ghost { display: inline-flex; align-items: center; justify-content: center; }
+
+/* No web-view tap highlight: Android paints a translucent square over
+   whatever is tapped, round icons included. The app's own pressed and
+   selected states are the feedback. */
+* { -webkit-tap-highlight-color: transparent; }
