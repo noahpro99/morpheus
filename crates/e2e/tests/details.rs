@@ -303,3 +303,27 @@ async fn submenus_stay_open_while_the_mouse_heads_for_them() {
         .await
         .expect("closes when moving away");
 }
+
+/// On a phone every button is a comfortable target: at least 44 points
+/// each way (Apple's guideline), however small its icon.
+#[tokio::test]
+async fn phone_tap_targets_are_at_least_44_points() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch_sized(&hs, 400, 860).await.expect("launch");
+    login_and_open(&mut app, "general").await;
+    // Back on the room list, then in the chat: the buttons of each.
+    let small = "return [...document.querySelectorAll('.shell button, .shell .room')] \
+        .filter(b => b.offsetParent && !b.closest('.titlebar, .message, .timeline, .context-menu')) \
+        .map(b => { const r = b.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height), (b.className || b.tagName) + ' ' + (b.title || b.textContent.trim().slice(0, 16))]; }) \
+        .filter(([w, h]) => w < 44 || h < 44).map(([w, h, what]) => `${w}x${h} ${what}`);";
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    let in_chat = app.eval(small).await.expect("chat buttons");
+    app.click(".pane-back").await.expect("back to the list");
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let in_list = app.eval(small).await.expect("list buttons");
+    assert_eq!(in_chat, serde_json::json!([]), "small targets in the chat");
+    assert_eq!(in_list, serde_json::json!([]), "small targets on the room list");
+}

@@ -1615,7 +1615,7 @@ body.dropping .drop-hint { display: flex; }
 .shell.narrow .room { padding: 10px 8px; }
 .shell.narrow .rail-item { width: 48px; height: 48px; }
 .shell.narrow .composer-row { min-height: 52px; }
-.shell.narrow .chat-header .member-toggle, .shell.narrow .chat-header .pin-toggle { min-width: 40px; min-height: 40px; }
+.shell.narrow .chat-header .member-toggle, .shell.narrow .chat-header .pin-toggle { min-width: 44px; min-height: 44px; }
 .shell.narrow .toast-layer { left: 16px; right: 16px; max-width: none; }
 /* On a phone the profile is a bottom sheet, rising from the bottom edge. */
 .card-overlay.sheet-dim { background: rgba(0, 0, 0, 0.45); animation: lightbox-fade 140ms ease-out; }
@@ -2174,3 +2174,17 @@ h1, h2, h3, h4, .modal-title, .empty-title {
   cursor: pointer;
 }
 .toast .toast-undo:hover { text-decoration: underline; }
+
+/* Phones: every button is at least 44 points each way (Apple's guideline),
+   however small its icon. */
+.shell.narrow button.ghost,
+.shell.narrow .attach-button,
+.shell.narrow .emoji-button,
+.shell.narrow .send-button,
+.shell.narrow .room,
+.shell.narrow .rail-item,
+.shell.narrow .member {
+  min-width: 44px;
+  min-height: 44px;
+}
+.shell.narrow button.ghost { display: inline-flex; align-items: center; justify-content: center; }
