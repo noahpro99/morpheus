@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: macos-latest
     timeout-minutes: 120
     strategy:
       fail-fast: false
@@ -30,7 +30,7 @@ jobs:
           - target: x86_64-apple-darwin
             arch: x86_64
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Rust
         run: |
