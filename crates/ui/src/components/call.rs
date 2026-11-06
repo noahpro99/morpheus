@@ -16,8 +16,8 @@ use morpheus_core::{IncomingCall, OwnedRoomId, OwnedUserId, Ringing, RoomSummary
 use super::shell::go_to;
 use super::toast::report;
 use crate::icons::{
-    CHEVRON_DOWN, CHEVRON_UP, Icon, MIC, MIC_OFF, PHONE, PHONE_OFF, SCREEN_SHARE,
-    SCREEN_SHARE_OFF, VIDEO, VIDEO_OFF, VOLUME_2,
+    CHEVRON_DOWN, CHEVRON_UP, Icon, MIC, MIC_OFF, PHONE, PHONE_OFF, SCREEN_SHARE, SCREEN_SHARE_OFF,
+    VIDEO, VIDEO_OFF, VOLUME_2,
 };
 use crate::media::Avatar;
 use crate::sounds::{Sound, play};
@@ -206,7 +206,12 @@ fn call_room_for(room_id: &OwnedRoomId, rooms: &[RoomSummary]) -> Option<(OwnedR
     }
     rooms
         .iter()
-        .find(|r| r.is_dm && r.id != *room_id && r.dm_user.as_ref() == Some(them) && r.call_participants.contains(them))
+        .find(|r| {
+            r.is_dm
+                && r.id != *room_id
+                && r.dm_user.as_ref() == Some(them)
+                && r.call_participants.contains(them)
+        })
         .map(|r| (r.id.clone(), r.name.clone()))
 }
 
@@ -215,9 +220,9 @@ pub fn join_call(session: Session, room_id: OwnedRoomId, room_name: String) {
     let mut active = consume_context::<ActiveCall>();
     let voice = consume_context::<Voice>();
     let media = consume_context::<CallMedia>();
-    let (room_id, room_name) = match try_consume_context::<super::shell::Rooms>()
-        .and_then(|rooms| call_room_for(&room_id, &rooms.peek().iter().cloned().collect::<Vec<_>>()))
-    {
+    let (room_id, room_name) = match try_consume_context::<super::shell::Rooms>().and_then(
+        |rooms| call_room_for(&room_id, &rooms.peek().iter().cloned().collect::<Vec<_>>()),
+    ) {
         Some((elsewhere, name)) => {
             tracing::info!(asked = %room_id, joining = %elsewhere, "they are calling from another DM: joining that call");
             go_to(elsewhere.clone());

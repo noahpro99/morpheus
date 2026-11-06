@@ -87,7 +87,10 @@ pub fn Rail() -> Element {
         .collect();
     let current = selected_space();
     // Favorites get a place of their own once there are any.
-    let has_favorites = rooms.read().iter().any(|room| room.favorite && !room.invited);
+    let has_favorites = rooms
+        .read()
+        .iter()
+        .any(|room| room.favorite && !room.invited);
     // The last one taken out: back to the DMs.
     use_effect(move || {
         let rooms = rooms.read();

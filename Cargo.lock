@@ -662,6 +662,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "blurhash"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e79769241dcd44edf79a732545e8b5cec84c247ac060f5252cd51885d093a8fc"
+
+[[package]]
 name = "bmrng"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5290,6 +5296,7 @@ version = "0.1.0"
 dependencies = [
  "apple-native-keyring-store",
  "base64 0.22.1",
+ "blurhash",
  "chacha20poly1305",
  "directories",
  "eyeball-im",
@@ -5300,6 +5307,7 @@ dependencies = [
  "matrix-sdk-ui",
  "mime_guess",
  "open",
+ "png 0.17.16",
  "rand 0.9.5",
  "ruma-html",
  "serde",
@@ -5311,6 +5319,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "webpki-root-certs",
+ "zune-jpeg",
 ]
 
 [[package]]

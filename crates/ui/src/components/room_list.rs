@@ -41,9 +41,10 @@ pub fn RoomList(error: Option<String>) -> Element {
             .into_iter()
             .filter(|room| {
                 // Back once a message comes after it was closed.
-                closed.get(room.id.as_str()).is_none_or(|at| {
-                    i64::try_from(room.latest_ms).unwrap_or(i64::MAX) > *at
-                }) || (Some(&room.id) == open_room.as_ref() && !friends_open().0)
+                closed
+                    .get(room.id.as_str())
+                    .is_none_or(|at| i64::try_from(room.latest_ms).unwrap_or(i64::MAX) > *at)
+                    || (Some(&room.id) == open_room.as_ref() && !friends_open().0)
             })
             .collect();
         // Stable: the rest keep their order (by recency).
@@ -344,10 +345,19 @@ fn dm_menu(
         }
     }));
     items.push(MenuItem::new(
-        if room.favorite { "Remove from favorites" } else { "Add to favorites" },
+        if room.favorite {
+            "Remove from favorites"
+        } else {
+            "Add to favorites"
+        },
         {
             let (session, room_id, favorite) = (session.clone(), room.id.clone(), room.favorite);
-            move || run("favorites", session.set_favorite(room_id.clone(), !favorite))
+            move || {
+                run(
+                    "favorites",
+                    session.set_favorite(room_id.clone(), !favorite),
+                )
+            }
         },
     ));
     items.push(MenuItem::new("Profile", {
@@ -369,7 +379,12 @@ fn dm_menu(
         move || {
             // Read, or its unread messages would bring it straight back.
             run("mark read", session.mark_room_read(room_id.clone()));
-            super::marks::set_mark(&session, marks::CLOSED, key.clone(), Some(super::marks::now_ms()));
+            super::marks::set_mark(
+                &session,
+                marks::CLOSED,
+                key.clone(),
+                Some(super::marks::now_ms()),
+            );
             // Closing the open DM goes to the Friends page, as Discord does.
             let selected = consume_context::<Selected>();
             if selected.peek().as_ref().map(ToString::to_string).as_deref() == Some(key.as_str()) {
@@ -381,17 +396,27 @@ fn dm_menu(
     if let Some(invite) = super::invites::invite_menu(session, &user_id, None) {
         items.push(invite);
     }
-    items.push(MenuItem::new(if friend { "Remove friend" } else { "Add friend" }, {
-        let (session, user_id) = (session.clone(), user_id.clone());
-        move || super::friends::set_friend(&session, user_id.clone(), !friend)
-    }));
-    items.push(MenuItem::new(if ignored { "Unignore" } else { "Ignore" }, {
-        let (session, user_id) = (session.clone(), user_id.clone());
-        move || {
-            let at = (!ignored).then(super::marks::now_ms);
-            super::marks::set_mark(&session, marks::IGNORED, user_id.to_string(), at);
-        }
-    }));
+    items.push(MenuItem::new(
+        if friend {
+            "Remove friend"
+        } else {
+            "Add friend"
+        },
+        {
+            let (session, user_id) = (session.clone(), user_id.clone());
+            move || super::friends::set_friend(&session, user_id.clone(), !friend)
+        },
+    ));
+    items.push(MenuItem::new(
+        if ignored { "Unignore" } else { "Ignore" },
+        {
+            let (session, user_id) = (session.clone(), user_id.clone());
+            move || {
+                let at = (!ignored).then(super::marks::now_ms);
+                super::marks::set_mark(&session, marks::IGNORED, user_id.to_string(), at);
+            }
+        },
+    ));
     items.push(
         MenuItem::new(if blocked { "Unblock" } else { "Block" }, {
             let (session, user_id) = (session.clone(), user_id.clone());
@@ -419,7 +444,11 @@ fn dm_menu(
             MenuItem::new(label, {
                 let (session, room_id) = (session.clone(), room.id.clone());
                 move || {
-                    let until = if length == 0 { 0 } else { super::marks::now_ms() + length };
+                    let until = if length == 0 {
+                        0
+                    } else {
+                        super::marks::now_ms() + length
+                    };
                     super::marks::mute_until(&session, room_id.clone(), until);
                 }
             })

@@ -146,7 +146,11 @@ pub fn Composer(
                         Ok(list) => {
                             members.set(Some(list));
                             let text = draft.peek().clone();
-                            suggestions.set(suggest(&text, members.peek().as_deref(), &nicknames()));
+                            suggestions.set(suggest(
+                                &text,
+                                members.peek().as_deref(),
+                                &nicknames(),
+                            ));
                             active.set(0);
                         }
                         Err(err) => report("members for mention autocomplete", &err),

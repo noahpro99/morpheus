@@ -3,7 +3,6 @@
 
 use dioxus::prelude::*;
 
-
 use morpheus_core::{MemberRole, OwnedUserId, Session};
 
 use super::context_menu::{MenuItem, copy_to_clipboard, open_menu_at};
