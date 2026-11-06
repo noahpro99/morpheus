@@ -384,7 +384,7 @@ pub fn Settings() -> Element {
                                 section { class: "settings-section",
                                     h3 { "Devices" }
                                     match &*devices.read() {
-                                        None => rsx! { p { class: "muted", "Loading…" } },
+                                        None => rsx! { crate::media::Skeleton { rows: 2 } },
                                         Some(Err(err)) => rsx! { p { class: "error", "{err}" } },
                                         Some(Ok(list)) => rsx! { DeviceList { devices: list.clone() } },
                                     }

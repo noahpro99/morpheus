@@ -43,7 +43,7 @@ pub fn Members(room_id: OwnedRoomId, member_count: u64) -> Element {
     rsx! {
         aside { class: "members",
             match &*members.read() {
-                None => rsx! { p { class: "muted pad", "Loading…" } },
+                None => rsx! { crate::media::Skeleton { rows: 6, pictures: true } },
                 Some(Err(err)) => rsx! { p { class: "error pad", "{err}" } },
                 Some(Ok(list)) => {
                     // The list is already ordered admins → moderators → members,

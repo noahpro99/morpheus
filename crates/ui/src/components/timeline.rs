@@ -1417,7 +1417,11 @@ fn ReplyQuote(reply: Option<ReplyPreview>) -> Element {
         div { class: "reply-quote", title: "{reply.event_id}",
             span { "↩" }
             b { "{reply.sender_name.as_deref().unwrap_or(\"…\")}" }
-            span { "{reply.summary.as_deref().unwrap_or(\"Loading…\")}" }
+            match reply.summary.as_deref() {
+                Some(summary) => rsx! { span { "{summary}" } },
+                // The message replied to is still on its way.
+                None => rsx! { span { class: "skeleton skeleton-inline", "aria-hidden": "true" } },
+            }
         }
     }
 }
