@@ -41,6 +41,9 @@ const AUTO_FILL_MAX_PAGES: u32 = 15;
 /// once it covers everything loaded do we ask the server for more.
 const INITIAL_WINDOW: usize = 120;
 const WINDOW_STEP: usize = 100;
+/// Most rows in the page at once: far back in a long room, the newest ones
+/// are dropped as older ones come in (and come back on the way down).
+const MAX_ROWS: usize = 300;
 /// History pages to load looking for a message to jump to.
 const JUMP_MAX_PAGES: usize = 30;
 /// Rows kept rendered beyond a jumped-to message.
@@ -245,6 +248,12 @@ pub fn TimelineView(
     });
 
     let mut window = use_signal(|| INITIAL_WINDOW);
+    // Newest rows left out of the page (only far back in a long room).
+    let mut skip = use_signal(|| 0usize);
+    // Bumped when scrolling makes rows come or go below the view: the page
+    // then puts the view back where it was (`hotkeys.rs`; WebKit does not
+    // anchor the scroll position itself). Not bumped by "Jump to present".
+    let mut anchor = use_signal(|| 0u32);
 
     let mut load_older = move || {
         // Reveal already-loaded rows before fetching more history. Hidden
@@ -254,8 +263,16 @@ pub fn TimelineView(
             .iter()
             .filter(|entry| !matches!(entry, TimelineEntry::Message(m) if m.kind.is_hidden()))
             .count();
-        if window() < shown {
-            window += WINDOW_STEP;
+        if skip() + window() < shown {
+            let wider = window() + WINDOW_STEP;
+            if wider > MAX_ROWS {
+                // Older rows in at the top, as many newest ones out below.
+                skip += wider - MAX_ROWS;
+                window.set(MAX_ROWS);
+                anchor += 1;
+            } else {
+                window.set(wider);
+            }
             return;
         }
         let Some(active) = handle() else { return };
@@ -296,8 +313,16 @@ pub fn TimelineView(
                     .filter(|entry| !matches!(entry, TimelineEntry::Message(m) if m.kind.is_hidden()))
                     .position(|entry| matches!(entry, TimelineEntry::Message(m) if matches!(&m.id, MessageId::Event(id) if id.as_str() == target)));
                 if let Some(from_newest) = from_newest {
-                    if *window.peek() <= from_newest + JUMP_MARGIN {
-                        window.set(from_newest + JUMP_MARGIN + 1);
+                    let (first, last) = (*skip.peek(), *skip.peek() + *window.peek());
+                    if from_newest < first || from_newest + JUMP_MARGIN >= last {
+                        if from_newest + JUMP_MARGIN < MAX_ROWS {
+                            skip.set(0);
+                            window.set((from_newest + JUMP_MARGIN + 1).max(INITIAL_WINDOW));
+                        } else {
+                            // Far back: the page holds the rows around it.
+                            skip.set(from_newest.saturating_sub(MAX_ROWS / 2));
+                            window.set(MAX_ROWS);
+                        }
                     }
                     break;
                 }
@@ -335,7 +360,13 @@ pub fn TimelineView(
         if distance_to_top < PAGINATE_THRESHOLD_PX {
             load_older();
         }
-        let away = -evt.scroll_top() > JUMP_THRESHOLD_PX;
+        // Near the bottom with newer rows left out: bring them back (the
+        // oldest go at the top).
+        if skip() > 0 && -evt.scroll_top() < PAGINATE_THRESHOLD_PX {
+            skip.set(skip().saturating_sub(WINDOW_STEP));
+            anchor += 1;
+        }
+        let away = -evt.scroll_top() > JUMP_THRESHOLD_PX || skip() > 0;
         if away != scrolled_up() {
             scrolled_up.set(away);
         }
@@ -345,7 +376,12 @@ pub fn TimelineView(
     // scrolled up. `column-reverse` normally does this by itself, but WebKit
     // leaves the view wherever it was when rows are added to an empty
     // container, which showed older messages after switching rooms.
-    let pin_to_bottom = move |behavior: ScrollBehavior| {
+    let mut pin_to_bottom = move |behavior: ScrollBehavior| {
+        // The newest rows back in the page first.
+        if *skip.peek() > 0 {
+            skip.set(0);
+            window.set(INITIAL_WINDOW);
+        }
         if let Some(el) = container() {
             spawn(async move {
                 let _ = el
@@ -441,12 +477,16 @@ pub fn TimelineView(
         // Rendered newest-first; CSS flips it and keeps the view pinned to the bottom.
         section {
             class: "timeline",
+            // Which rows are in the page, for tests: newest left out, how many shown.
+            "data-skip": "{skip}",
+            "data-window": "{window}",
+            "data-anchor": "{anchor}",
             onscroll: on_scroll,
             onmounted: move |e| container.set(Some(e.data())),
             if loading {
                 SkeletonRows {}
             }
-            for row in rows.into_iter().rev().take(window()) {
+            for row in rows.into_iter().rev().skip(skip()).take(window()) {
                 match row {
                     Row::Message { message, show_header } => rsx! {
                         MessageRow { key: "{message.unique_id}", message: message.clone(), show_header }
