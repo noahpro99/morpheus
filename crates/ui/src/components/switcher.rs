@@ -15,6 +15,15 @@ enum Entry {
     Action(Action),
 }
 
+impl Entry {
+    fn key(&self) -> String {
+        match self {
+            Entry::Room(room) => room.id.to_string(),
+            Entry::Action(action) => action.label().to_owned(),
+        }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Action {
     Settings,
@@ -161,7 +170,8 @@ pub fn QuickSwitcher(open: Signal<bool>) -> Element {
                 ul { class: "switcher-results",
                     for (index, entry) in matches.iter().enumerate() {
                         li {
-                            key: "{index}",
+                            // By what it is: a row keeps its picture, so it must stay with its room.
+                            key: "{entry.key()}",
                             class: "switcher-item",
                             class: if matches!(entry, Entry::Action(_)) { "action" },
                             class: if index == cursor_now { "active" },
