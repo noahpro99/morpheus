@@ -2207,3 +2207,24 @@ h1, h2, h3, h4, .modal-title, .empty-title {
    is one. */
 .image[style*="background-image"] { background-size: cover; background-position: center; }
 .image.placeholder[style*="background-image"] { color: transparent; }
+
+/* Secure Backup offer: a card in the corner until set up (or "Later"). */
+.backup-prompt {
+  position: fixed;
+  right: 16px;
+  top: 48px;
+  z-index: 55;
+  max-width: 360px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 12px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.backup-prompt-icon { color: var(--accent); margin-top: 2px; }
+.backup-prompt-text { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; }
+.backup-prompt-text span { color: var(--text-muted); }
+.backup-prompt-actions { grid-column: 2; display: flex; gap: 8px; justify-content: flex-end; margin-top: 6px; }
+.shell.narrow .backup-prompt { left: 12px; right: 12px; top: calc(env(safe-area-inset-top, 0px) + 12px); max-width: none; }

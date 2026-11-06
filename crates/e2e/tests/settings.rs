@@ -396,3 +396,79 @@ async fn qr_code_verification_with_a_device_that_scans() {
     .await
     .expect("the scanner is done");
 }
+
+/// A brand-new account's first sign-in, as in Element: with no other
+/// device to verify it, this one becomes the account's first verified
+/// device (its cross-signing identity is made here), nothing is "locked",
+/// and the app straight away offers to set up Secure Backup, whose key it
+/// hands over to keep.
+#[tokio::test]
+async fn a_new_accounts_first_device_is_verified_and_offers_secure_backup() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let user = new_account(&hs, "first").expect("a brand-new account");
+    let mut app = App::launch(&hs).await.expect("launch app");
+    login(&mut app, &user, &format!("{user}-password")).await;
+
+    app.wait_for_text(".backup-prompt", "Set up Secure Backup", DEFAULT_WAIT)
+        .await
+        .expect("offered Secure Backup at once");
+    assert_eq!(
+        app.count(".key-banner").await.expect("count"),
+        0,
+        "no \"messages are locked\" banner on the account's first device"
+    );
+    open_security(&mut app).await;
+    app.wait_for_text(".status-list", "This device is verified", DEFAULT_WAIT)
+        .await
+        .expect("verified as the account's first device");
+    app.press("body", "Escape").await.expect("close settings");
+
+    app.click_text(".backup-prompt button", "Set up")
+        .await
+        .expect("set it up");
+    app.wait_for(".recovery-key-new code", DEFAULT_WAIT)
+        .await
+        .expect("the recovery key, to keep");
+    // Set up, the offer goes.
+    app.press("body", "Escape").await.expect("close");
+    app.wait_for_js(
+        "return document.querySelector('.backup-prompt') === null;",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("no more offer once it is set up");
+}
+
+/// Someone already signed in from before the app set up a new account's
+/// first device (so their device is unverified and they were never offered
+/// a backup): the next time the app starts, that is put right.
+#[tokio::test]
+async fn an_unverified_first_device_is_put_right_when_the_app_restarts() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let user = new_account(&hs, "already").expect("a brand-new account");
+    // Signed in by an app from before.
+    let mut app = App::launch_with_env(&hs, &[("MORPHEUS_E2E_SIGN_IN_UNVERIFIED", "1")])
+        .await
+        .expect("launch app");
+    login(&mut app, &user, &format!("{user}-password")).await;
+    open_security(&mut app).await;
+    app.wait_for_text(".status-list", "This device is not verified", DEFAULT_WAIT)
+        .await
+        .expect("unverified, as their device is");
+
+    // The app starts again (updated).
+    let mut app = app.relaunch().await.expect("relaunch");
+    app.wait_for_text(".backup-prompt", "Set up Secure Backup", DEFAULT_WAIT)
+        .await
+        .expect("now offered Secure Backup");
+    open_security(&mut app).await;
+    app.wait_for_text(".status-list", "This device is verified", DEFAULT_WAIT)
+        .await
+        .expect("and verified as the account's first device");
+}

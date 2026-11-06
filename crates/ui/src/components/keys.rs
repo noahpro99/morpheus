@@ -16,6 +16,8 @@ use crate::icons::{Icon, KEY, LOCK, SHIELD_CHECK};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct KeyAccess {
     pub locked: bool,
+    /// The account has no key backup at all: offer Secure Backup.
+    pub backup_missing: bool,
 }
 pub type DeviceKeys = Signal<KeyAccess>;
 
@@ -30,6 +32,8 @@ pub enum SettingsFocus {
     #[default]
     None,
     RecoveryKey,
+    /// Set up Secure Backup (key backup and a recovery key) at once.
+    SetUpBackup,
     /// The Security & Privacy page (verifying this device).
     Security,
 }
@@ -59,8 +63,13 @@ pub fn provide_key_tracking(session: Session) {
         if let Some(Some(status)) = status() {
             let locked =
                 !status.device_verified && status.recovery != RecoveryAvailability::Enabled;
-            if keys.peek().locked != locked {
-                keys.set(KeyAccess { locked });
+            let backup_missing = status.recovery == RecoveryAvailability::Disabled;
+            let now = KeyAccess {
+                locked,
+                backup_missing,
+            };
+            if *keys.peek() != now {
+                keys.set(now);
             }
         }
     });
@@ -96,6 +105,41 @@ pub fn KeyBanner() -> Element {
                     },
                     Icon { glyph: KEY, size: 16 }
                     "Enter recovery key"
+                }
+            }
+        }
+    }
+}
+
+/// Offered while the account has no key backup (a new account's first
+/// sign-in, as Element does): Secure Backup keeps encrypted history
+/// readable on new devices, behind a recovery key to keep. "Later" hides
+/// it until the app next starts.
+#[component]
+pub fn BackupPrompt() -> Element {
+    let keys = use_context::<DeviceKeys>();
+    let mut settings_open = use_context::<SettingsOpen>();
+    let mut target = use_context::<SettingsTarget>();
+    let mut later = use_signal(|| false);
+    if !keys().backup_missing || later() {
+        return rsx! {};
+    }
+    rsx! {
+        div { class: "backup-prompt", role: "status",
+            Icon { glyph: KEY, size: 18, class: "backup-prompt-icon" }
+            div { class: "backup-prompt-text",
+                strong { "Set up Secure Backup" }
+                span { "Keep your encrypted messages if you lose this device: you'll get a recovery key to save." }
+            }
+            div { class: "backup-prompt-actions",
+                button { class: "secondary", onclick: move |_| later.set(true), "Later" }
+                button {
+                    class: "primary",
+                    onclick: move |_| {
+                        target.set(SettingsFocus::SetUpBackup);
+                        settings_open.set(true);
+                    },
+                    "Set up"
                 }
             }
         }

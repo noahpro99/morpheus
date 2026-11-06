@@ -363,9 +363,12 @@ async fn every_menu_item_has_an_icon() {
     dm_menu(&mut app, "carol").await;
     let in_dm = app.eval(missing).await.expect("dm menu");
     app.press("body", "Escape").await.expect("close");
-    app.wait_for_js("return document.querySelector('.context-menu') === null;", DEFAULT_WAIT)
-        .await
-        .expect("closed");
+    app.wait_for_js(
+        "return document.querySelector('.context-menu') === null;",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("closed");
 
     app.open_room("general").await.expect("a room");
     app.eval(
@@ -375,7 +378,9 @@ async fn every_menu_item_has_an_icon() {
     )
     .await
     .expect("room menu");
-    app.wait_for(".context-menu", DEFAULT_WAIT).await.expect("menu");
+    app.wait_for(".context-menu", DEFAULT_WAIT)
+        .await
+        .expect("menu");
     let in_room = app.eval(missing).await.expect("room menu");
     app.press("body", "Escape").await.expect("close");
 
@@ -384,11 +389,17 @@ async fn every_menu_item_has_an_icon() {
     for (what, target) in [
         ("message", "document.querySelector('.message.with-header')"),
         ("member", "document.querySelector('.members .member')"),
-        ("server", "document.querySelector('.rail-item[title=\"Engineering\"]')"),
+        (
+            "server",
+            "document.querySelector('.rail-item[title=\"Engineering\"]')",
+        ),
     ] {
-        app.wait_for_js("return document.querySelector('.context-menu') === null;", DEFAULT_WAIT)
-            .await
-            .expect("closed");
+        app.wait_for_js(
+            "return document.querySelector('.context-menu') === null;",
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("closed");
         app.wait_for_js(&format!("return !!{target};"), DEFAULT_WAIT)
             .await
             .unwrap_or_else(|err| panic!("a {what} to right-click: {err}"));
@@ -398,13 +409,27 @@ async fn every_menu_item_has_an_icon() {
         ))
         .await
         .expect("right-click");
-        app.wait_for(".context-menu", DEFAULT_WAIT).await.expect("menu");
+        app.wait_for(".context-menu", DEFAULT_WAIT)
+            .await
+            .expect("menu");
         others.push((what, app.eval(missing).await.expect("labels")));
         app.press("body", "Escape").await.expect("close");
     }
-    assert_eq!(in_dm, serde_json::json!([]), "DM menu items without an icon");
-    assert_eq!(in_room, serde_json::json!([]), "room menu items without an icon");
+    assert_eq!(
+        in_dm,
+        serde_json::json!([]),
+        "DM menu items without an icon"
+    );
+    assert_eq!(
+        in_room,
+        serde_json::json!([]),
+        "room menu items without an icon"
+    );
     for (what, missing) in others {
-        assert_eq!(missing, serde_json::json!([]), "{what} menu items without an icon");
+        assert_eq!(
+            missing,
+            serde_json::json!([]),
+            "{what} menu items without an icon"
+        );
     }
 }
