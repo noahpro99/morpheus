@@ -159,7 +159,7 @@ pub fn PinnedPanel(room_id: OwnedRoomId) -> Element {
             div { class: "message-dialog pinned-dialog", tabindex: "-1", autofocus: true, onclick: move |e| e.stop_propagation(),
                 h2 { "Pinned messages" }
                 match &*pinned.read() {
-                    None => rsx! { p { class: "muted", "Loading…" } },
+                    None => rsx! { crate::media::Skeleton { rows: 3 } },
                     Some(Err(err)) => rsx! { p { class: "error", "{err}" } },
                     Some(Ok(list)) if list.is_empty() => rsx! { p { class: "muted", "Nothing pinned yet. Right-click a message to pin it." } },
                     Some(Ok(list)) => rsx! {

@@ -333,3 +333,43 @@ async fn phone_tap_targets_are_at_least_44_points() {
     assert_eq!(in_chat, serde_json::json!([]), "small targets in the chat");
     assert_eq!(in_list, serde_json::json!([]), "small targets on the room list");
 }
+
+/// Waiting shows the shape of what is coming, never a "Loading…" line: the
+/// member list, pinned messages, your devices and a picture opening full
+/// size all show skeletons while they load.
+#[tokio::test]
+async fn loading_shows_skeletons_not_words() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch_desktop(&hs).await.expect("launch");
+    login_and_open(&mut app, "general").await;
+    // Note any "Loading…" that appears anywhere, however briefly.
+    app.eval("window.__loadingSeen = []; new MutationObserver(changes => { for (const c of changes) for (const n of [c.target, ...c.addedNodes]) { const t = n.textContent || ''; if (/Loading…/.test(t) && n.nodeType !== 9) window.__loadingSeen.push((n.className || n.nodeName) + ': ' + t.trim().slice(0, 40)); } }).observe(document.body, { subtree: true, childList: true, characterData: true }); return true;")
+        .await
+        .expect("observer");
+
+    // The member list, shut and opened again.
+    app.click(".member-toggle").await.expect("hide members");
+    app.click(".member-toggle").await.expect("show members");
+    app.wait_for(".members .member", DEFAULT_WAIT).await.expect("members");
+    // Pinned messages.
+    app.click(".pin-toggle").await.expect("pins");
+    app.wait_for(".pinned-dialog", DEFAULT_WAIT).await.expect("pinned dialog");
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    app.press("body", "Escape").await.expect("close");
+    // Your devices.
+    app.click(".settings-button").await.expect("settings");
+    app.click_text(".settings-nav button", "Security & Privacy").await.expect("security");
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    app.press("body", "Escape").await.expect("close settings");
+    // A picture, full size.
+    app.reveal_element(".message img.image", DEFAULT_WAIT).await.expect("an image");
+    app.click(".message img.image").await.expect("open it");
+    app.wait_for(".lightbox-overlay", DEFAULT_WAIT).await.expect("lightbox");
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    let seen = app.eval("return window.__loadingSeen;").await.expect("seen");
+    assert_eq!(seen, serde_json::json!([]), "\"Loading…\" shown while waiting");
+}

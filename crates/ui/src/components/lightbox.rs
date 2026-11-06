@@ -111,7 +111,17 @@ pub fn Lightbox() -> Element {
                         Some(src) => rsx! {
                             img { class: "lightbox-image", src: "{src}", alt: "{image.body}" }
                         },
-                        None => rsx! { div { class: "lightbox-loading", "Loading…" } },
+                        // Not even the thumbnail yet: the picture's shape.
+                        None => rsx! {
+                            div {
+                                class: "lightbox-loading skeleton",
+                                "aria-hidden": "true",
+                                style: match (image.width, image.height) {
+                                    (Some(w), Some(h)) if w > 0 && h > 0 => format!("aspect-ratio: {w} / {h}"),
+                                    _ => "aspect-ratio: 4 / 3".to_owned(),
+                                },
+                            }
+                        },
                     }
                     if loading && display_url.is_some() {
                         div { class: "lightbox-loading-badge", "Loading full size…" }

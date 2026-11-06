@@ -122,3 +122,23 @@ pub fn Avatar(
         }
     }
 }
+
+/// What is coming, in outline, while it loads: `rows` lines, each after a
+/// round picture when `pictures` (lists of people).
+#[component]
+pub fn Skeleton(rows: usize, #[props(default)] pictures: bool) -> Element {
+    // Varied widths read as text rather than bars.
+    const WIDTHS: [u32; 5] = [72, 54, 86, 61, 45];
+    rsx! {
+        div { class: "skeleton-block", "aria-hidden": "true",
+            for index in 0..rows {
+                div { key: "{index}", class: "skeleton-item",
+                    if pictures {
+                        div { class: "skeleton skeleton-picture" }
+                    }
+                    div { class: "skeleton skeleton-line", style: "width: {WIDTHS[index % WIDTHS.len()]}%" }
+                }
+            }
+        }
+    }
+}
