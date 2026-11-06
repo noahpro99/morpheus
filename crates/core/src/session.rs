@@ -97,7 +97,11 @@ impl Core {
                 .await?;
             info!(user = %client.user_id().map(ToString::to_string).unwrap_or_default(), "restored session");
 
-            Session::start(core, client, dir).await.map(Some)
+            let session = Session::start(core.clone(), client.clone(), dir).await?;
+            // Signed in before the app did this at sign-in: an account still
+            // without a cross-signing identity gets it from this device now.
+            core.spawn(async move { first_device(&client, None).await });
+            Ok(Some(session))
         })
     }
 
@@ -147,7 +151,18 @@ impl Core {
             }
             info!(user = %request.username, "logged in with password");
 
-            persist_and_start(core, client, request.homeserver, passphrase, dir).await
+            let session = persist_and_start(
+                core.clone(),
+                client.clone(),
+                request.homeserver,
+                passphrase,
+                dir,
+            )
+            .await?;
+            // A brand-new account: this device becomes its first verified one.
+            let password = request.password;
+            core.spawn(async move { first_device(&client, Some(password)).await });
+            Ok(session)
         })
     }
 
@@ -183,7 +198,11 @@ impl Core {
             }
             info!("logged in with single sign-on");
 
-            persist_and_start(core, client, homeserver, passphrase, dir).await
+            let session =
+                persist_and_start(core.clone(), client.clone(), homeserver, passphrase, dir)
+                    .await?;
+            core.spawn(async move { first_device(&client, None).await });
+            Ok(session)
         })
     }
 }
@@ -546,4 +565,14 @@ impl Core {
             }))
         })
     }
+}
+
+/// A brand-new account's first device becomes its first verified one (see
+/// [`crate::recovery::set_up_first_device`]). Test runs can play an app
+/// from before this was done at sign-in (`MORPHEUS_E2E_SIGN_IN_UNVERIFIED`).
+async fn first_device(client: &Client, password: Option<String>) {
+    if password.is_some() && std::env::var_os("MORPHEUS_E2E_SIGN_IN_UNVERIFIED").is_some() {
+        return;
+    }
+    crate::recovery::set_up_first_device(client, password).await;
 }

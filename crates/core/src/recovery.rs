@@ -119,3 +119,34 @@ async fn bootstrap_cross_signing(client: &matrix_sdk::Client) {
         tracing::debug!(%err, "cross-signing not bootstrapped");
     }
 }
+
+/// A brand-new account's first sign-in (as Element does it): give the
+/// account its cross-signing identity from this device, which so becomes
+/// its first verified device; nothing else could verify it. Only when the
+/// server has no identity for the account (an existing one is never
+/// replaced). If the server wants the password for it, `password` (the one
+/// just signed in with) is given.
+pub(crate) async fn set_up_first_device(client: &matrix_sdk::Client, password: Option<String>) {
+    use matrix_sdk::ruma::api::client::uiaa;
+    let encryption = client.encryption();
+    let Err(err) = encryption.bootstrap_cross_signing_if_needed(None).await else {
+        return;
+    };
+    let (Some(info), Some(password), Some(user_id)) =
+        (err.as_uiaa_response(), password, client.user_id())
+    else {
+        tracing::warn!(%err, "first device: cross-signing not set up");
+        return;
+    };
+    let mut auth = uiaa::Password::new(
+        uiaa::UserIdentifier::Matrix(uiaa::MatrixUserIdentifier::new(user_id.to_string())),
+        password,
+    );
+    auth.session = info.session.clone();
+    if let Err(err) = encryption
+        .bootstrap_cross_signing_if_needed(Some(uiaa::AuthData::Password(auth)))
+        .await
+    {
+        tracing::warn!(%err, "first device: cross-signing not set up (with the password)");
+    }
+}

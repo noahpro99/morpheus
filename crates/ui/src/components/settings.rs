@@ -170,7 +170,9 @@ pub fn Settings() -> Element {
         if let Some(mut target) = try_consume_context::<SettingsTarget>() {
             let wanted = *target.peek();
             match wanted {
-                SettingsFocus::RecoveryKey => page.set(Some(SettingsPage::Security)),
+                SettingsFocus::RecoveryKey | SettingsFocus::SetUpBackup => {
+                    page.set(Some(SettingsPage::Security))
+                }
                 SettingsFocus::Security => {
                     target.set(SettingsFocus::None);
                     page.set(Some(SettingsPage::Security));
@@ -195,9 +197,9 @@ pub fn Settings() -> Element {
 
     // A recovery key just created here, shown until Settings closes.
     let mut new_key = use_signal(|| None::<String>);
-    let set_up_recovery = {
+    let mut set_up_recovery = {
         let session = session.clone();
-        move |_| {
+        move || {
             if busy() {
                 return;
             }
@@ -221,6 +223,23 @@ pub fn Settings() -> Element {
         &*status.read(),
         Some(Ok(status)) if status.recovery == RecoveryAvailability::Disabled
     );
+    // Opened from the Secure Backup offer: set it up straight away.
+    use_effect({
+        let mut set_up_recovery = set_up_recovery.clone();
+        move || {
+            let missing = matches!(
+                &*status.read(),
+                Some(Ok(status)) if status.recovery == RecoveryAvailability::Disabled
+            );
+            if let Some(mut target) = try_consume_context::<super::keys::SettingsTarget>()
+                && missing
+                && *target.peek() == super::keys::SettingsFocus::SetUpBackup
+            {
+                target.set(super::keys::SettingsFocus::None);
+                set_up_recovery();
+            }
+        }
+    });
 
     let start_verification = {
         let session = session.clone();
@@ -338,7 +357,7 @@ pub fn Settings() -> Element {
                                         }
                                     } else if backup_missing {
                                         div { class: "settings-actions",
-                                            button { class: "primary setup-recovery", disabled: busy(), onclick: set_up_recovery,
+                                            button { class: "primary setup-recovery", disabled: busy(), onclick: move |_| set_up_recovery(),
                                                 "Set up recovery"
                                             }
                                         }
