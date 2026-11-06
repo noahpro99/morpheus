@@ -51,6 +51,8 @@ pub struct App {
     homeserver: String,
     /// `(what, elapsed)` for every wait, printed when the app is dropped.
     timings: Vec<(String, Duration)>,
+    /// The window size asked for (logical pixels; desktop only).
+    size: (u32, u32),
 }
 
 #[derive(Deserialize)]
@@ -174,6 +176,7 @@ impl App {
             port,
             homeserver: homeserver.to_owned(),
             timings: Vec::new(),
+            size: size.unwrap_or((1280, 800)),
         })
     }
 
@@ -555,10 +558,12 @@ impl App {
         }) else {
             return Ok(None);
         };
-        let geometry = format!(
-            "{},{} {}x{}",
-            window["at"][0], window["at"][1], window["size"][0], window["size"][1]
-        );
+        // Tiled, the window can be bigger than the size it was opened at,
+        // which the web view keeps (in the top-left corner): just that.
+        let size = |i: usize| window["size"][i].as_i64().unwrap_or(0);
+        let width = size(0).min(i64::from(self.size.0));
+        let height = size(1).min(i64::from(self.size.1));
+        let geometry = format!("{},{} {width}x{height}", window["at"][0], window["at"][1]);
 
         let dir = workspace_root()?.join("target/e2e");
         std::fs::create_dir_all(&dir)?;
@@ -769,7 +774,7 @@ fn keep_test_windows_unfocused() {
             .args([
                 "eval",
                 &format!(
-                    "hl.window_rule({{ name = \"morpheus-test\", match = {{ title = \"^(Morpheus \\\\(test\\\\))$\" }}, no_initial_focus = true, no_focus = true{place} }})"
+                    "hl.window_rule({{ name = \"morpheus-test\", match = {{ title = \"^(Morpheus \\\\(test\\\\))$\" }}, no_initial_focus = true, no_focus = true, opacity = \"1.0 override 1.0 override\"{place} }})"
                 ),
             ])
             .stdout(std::process::Stdio::null())
@@ -1012,6 +1017,7 @@ impl App {
                     port,
                     homeserver: String::new(),
                     timings: Vec::new(),
+                    size: (0, 0),
                 };
                 if tokio::time::timeout(Duration::from_secs(3), app.eval("return 1"))
                     .await
