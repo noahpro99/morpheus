@@ -459,7 +459,21 @@ pub fn TimelineView(
             .any(|entry| matches!(entry, TimelineEntry::TimelineStart));
     let entries_now = entries.read();
     let marker = new_marker();
-    let rows = group_rows(&entries_now, marker.as_deref());
+    // Messages deleted a moment ago, still undoable, are left out.
+    let hidden = try_use_context::<super::toast::Hidden>();
+    let shown: Option<Vector<TimelineEntry>> = hidden
+        .filter(|hidden| !hidden.read().0.is_empty())
+        .map(|hidden| {
+            let hidden = hidden.read();
+            entries_now
+                .iter()
+                .filter(|entry| {
+                    !matches!(entry, TimelineEntry::Message(m) if hidden.0.contains(&message_key(&m.id)))
+                })
+                .cloned()
+                .collect()
+        });
+    let rows = group_rows(shown.as_ref().unwrap_or(&entries_now), marker.as_deref());
     // Nothing from the SDK yet (not even the start marker): show placeholders
     // instead of an empty column.
     let loading = entries_now.is_empty() && load_error().is_none();
@@ -683,12 +697,7 @@ pub(crate) fn MessageRow(message: Message, show_header: bool) -> Element {
         let id = message.id.clone();
         move |_| {
             let Some(active) = timeline() else { return };
-            let id = id.clone();
-            spawn(async move {
-                if let Err(err) = active.redact(id).await {
-                    report("delete", &err);
-                }
-            });
+            delete_with_undo(active, id.clone());
         }
     };
     let can_reply = matches!(message.id, MessageId::Event(_)) && !message.is_local_echo;
@@ -920,12 +929,7 @@ pub(crate) fn MessageRow(message: Message, show_header: bool) -> Element {
                         let id = message.id.clone();
                         move || {
                             let Some(active) = timeline() else { return };
-                            let id = id.clone();
-                            spawn(async move {
-                                if let Err(err) = active.redact(id).await {
-                                    report("delete", &err);
-                                }
-                            });
+                            delete_with_undo(active, id.clone());
                         }
                     })
                     .danger(),
@@ -1492,4 +1496,19 @@ mod tests {
             .collect();
         assert_eq!(shape, ["a", "NEW", "d"]);
     }
+}
+
+/// A message's key in [`super::toast::Hidden`].
+fn message_key(id: &MessageId) -> String {
+    match id {
+        MessageId::Event(id) => id.to_string(),
+        MessageId::Transaction(id) => id.to_string(),
+    }
+}
+
+/// Delete a message, undoably: it goes now, for good once the toast has.
+fn delete_with_undo(active: morpheus_core::TimelineHandle, id: MessageId) {
+    super::toast::hide_with_undo(message_key(&id), "Message deleted", "delete", move || {
+        active.redact(id)
+    });
 }

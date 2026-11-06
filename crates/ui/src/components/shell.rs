@@ -368,6 +368,8 @@ pub fn Shell(session: Session) -> Element {
         use_context_provider(|| Signal::new_in_scope(ToastList::default(), ScopeId::ROOT));
     // Background tasks (calls, sign-out) run outside any component.
     super::toast::register_shell_toasts(toasts);
+    // Messages and rooms an undoable action has hidden for now.
+    use_context_provider(|| Signal::new_in_scope(super::toast::HiddenSet::default(), ScopeId::ROOT));
     // Narrow (phone) layout: the page reports its width; one pane shows at a time.
     let mut narrow: NarrowWindow = use_context_provider(|| Signal::new(Narrow::default()));
     // Pane slides are switched on a moment after the phone layout applies,
@@ -1093,7 +1095,7 @@ fn ChatRoom(room: RoomSummary) -> Element {
             }
             button {
                 class: "ghost pin-toggle",
-                title: "Pinned messages",
+                title: "Pinned messages (Ctrl+P)",
                 onclick: move |_| message_dialog.set(MessageDialog::Pinned),
                 Icon { glyph: crate::icons::PIN, size: 16 }
                 "{pinned().0.len()}"
@@ -1101,7 +1103,7 @@ fn ChatRoom(room: RoomSummary) -> Element {
             button {
                 class: "ghost member-toggle",
                 class: if members_open().0 { "active" },
-                title: "Toggle member list",
+                title: "Member list (Ctrl+U)",
                 onclick: move |_| members_open.with_mut(|shown| shown.0 = !shown.0),
                 Icon { glyph: crate::icons::USERS, size: 16 }
                 "{room.member_count}"

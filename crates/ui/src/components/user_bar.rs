@@ -179,7 +179,7 @@ pub fn UserBar() -> Element {
                 },
                 Icon { glyph: if voice().deafened { HEADPHONE_OFF } else { HEADPHONES }, size: 18 }
             }
-            button { class: "ghost settings-button", title: "Settings", onclick: move |_| settings_open.set(true), Icon { glyph: SETTINGS, size: 18 } }
+            button { class: "ghost settings-button", title: "Settings (Ctrl+,)", onclick: move |_| settings_open.set(true), Icon { glyph: SETTINGS, size: 18 } }
             }
         }
     }

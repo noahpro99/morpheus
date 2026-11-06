@@ -153,15 +153,9 @@ async fn reply_edit_and_delete_own_messages() {
     .await
     .expect("edited marker");
 
-    // Delete: the row becomes a tombstone.
-    click_action_until(
-        &mut app,
-        &edited,
-        "delete",
-        ".message .body",
-        "Message deleted",
-    )
-    .await;
+    // Delete: the row goes at once (undoable from a toast), then becomes a
+    // tombstone.
+    click_action(&mut app, &edited, "delete").await;
     app.wait_for_js(
         &format!(
             "return ![...document.querySelectorAll('.message .body')].some(el => el.textContent.includes({}));",
