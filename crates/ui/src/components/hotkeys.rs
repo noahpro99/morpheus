@@ -51,6 +51,8 @@ window.addEventListener('keydown', e => {
   else if (mod && !alt && !shift && key === 'p') name = 'pins';
   else if (mod && !alt && key === ',') name = 'settings';
   else if (mod && !alt && shift && key === 'u') name = 'attach';
+  else if (mod && !alt && shift && key === 'm') name = 'toggle_mute';
+  else if (mod && !alt && shift && key === 'd') name = 'toggle_deafen';
   else if (k === 'ArrowUp' && !mod && !alt && !shift && typing && t.value === '' && t.closest('.composer')) name = 'edit_last';
   // Typing with nothing focused goes to the message box, as in Discord.
   if (!name && !typing && !mod && !alt && k.length === 1 && !document.querySelector('.overlay, .context-menu, .card-overlay')) {
@@ -99,6 +101,13 @@ pub const GROUPS: &[(&str, &[(&str, &str)])] = &[
             ("Ctrl+,", "Settings"),
             ("Ctrl+/", "This list"),
             ("Ctrl+R", "Reload the app"),
+        ],
+    ),
+    (
+        "Voice",
+        &[
+            ("Ctrl+Shift+M", "Mute or unmute"),
+            ("Ctrl+Shift+D", "Deafen or undeafen (deafening mutes too)"),
         ],
     ),
 ];

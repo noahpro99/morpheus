@@ -251,3 +251,43 @@ async fn ctrl_r_reloads_the_app() {
         .await
         .expect("works after reloading");
 }
+
+/// Ctrl+Shift+M mutes and unmutes; Ctrl+Shift+D deafens (which mutes too)
+/// and undeafens, leaving you muted if you were before.
+#[tokio::test]
+async fn ctrl_shift_m_mutes_and_ctrl_shift_d_deafens() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch_desktop(&hs).await.expect("launch");
+    login_and_open(&mut app, "general").await;
+    let state = "return [document.querySelector('.user-bar .mute-button').classList.contains('active'), \
+                         document.querySelector('.user-bar .deafen-button').classList.contains('active')];";
+    async fn press(app: &mut App, key: &str) {
+        // Shift makes the letter a capital, as a real keyboard does.
+        app.key_combo("body", key, true, false, true).await.expect("shortcut");
+        tokio::time::sleep(Duration::from_millis(300)).await;
+    }
+    let mut expect = async |app: &mut App, muted: bool, deafened: bool, why: &str| {
+        assert_eq!(app.eval(state).await.expect("state"), serde_json::json!([muted, deafened]), "{why}");
+    };
+    expect(&mut app, false, false, "starts heard and hearing").await;
+    press(&mut app, "M").await;
+    expect(&mut app, true, false, "Ctrl+Shift+M mutes").await;
+    press(&mut app, "M").await;
+    expect(&mut app, false, false, "and unmutes").await;
+
+    press(&mut app, "D").await;
+    expect(&mut app, true, true, "Ctrl+Shift+D deafens, muted too").await;
+    press(&mut app, "D").await;
+    expect(&mut app, false, false, "undeafened: unmuted again").await;
+
+    press(&mut app, "M").await;
+    press(&mut app, "D").await;
+    expect(&mut app, true, true, "muted, then deafened").await;
+    press(&mut app, "D").await;
+    expect(&mut app, true, false, "undeafened: still muted, as before").await;
+    press(&mut app, "M").await;
+    expect(&mut app, false, false, "back as it was").await;
+}
