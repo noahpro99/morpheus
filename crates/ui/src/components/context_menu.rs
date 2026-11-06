@@ -256,6 +256,7 @@ pub fn ContextMenuLayer() -> Element {
                 onclick: move |e| e.stop_propagation(),
                 onmounted: move |_| {
                     document::eval(CLAMP_JS);
+                    document::eval(SUBMENU_JS);
                 },
                 if let Some(react) = open.react.clone() {
                     div { class: "context-reactions",
@@ -315,8 +316,6 @@ fn entries(items: &[Rc<MenuItem>], close: impl FnMut() + Copy + 'static) -> Elem
                     class: "context-item has-submenu",
                     role: "menuitem",
                     "aria-haspopup": "true",
-                    // Keep the flyout on screen: flip it up or to the left when needed.
-                    onmouseenter: move |_| { document::eval(SUBMENU_CLAMP_JS); },
                     if let Some(glyph) = item.glyph() {
                         Icon { glyph, size: 16, class: "menu-icon" }
                     }
@@ -391,10 +390,63 @@ fn default_icon(label: &str) -> Option<&'static str> {
         .map(|(_, glyph)| *glyph)
 }
 
-/// Runs when a submenu parent is hovered: the flyout opens to the right and
-/// down by default; near an edge it opens up or to the left instead.
-const SUBMENU_CLAMP_JS: &str = "const sub = document.querySelector('.context-item.has-submenu:hover > .context-submenu'); if (!sub) return; \
-    sub.style.top = ''; sub.style.bottom = ''; sub.style.left = ''; sub.style.right = ''; \
-    const r = sub.getBoundingClientRect(); \
-    if (r.bottom > innerHeight - 8) { sub.style.top = 'auto'; sub.style.bottom = '-6px'; } \
-    if (r.right > innerWidth - 8) { sub.style.left = 'auto'; sub.style.right = '100%'; sub.style.marginRight = '2px'; }";
+/// Opens submenus as the pointer reaches their row, and keeps one open
+/// while the pointer heads for it: crossing the rows below on the way (the
+/// "safe triangle", from where the pointer was to the flyout's near edge)
+/// waits a moment before switching, instead of closing it at once.
+/// Installed once; flyouts are kept on screen as they open.
+const SUBMENU_JS: &str = r#"
+(() => {
+  if (window.__morpheusSubmenus) return;
+  window.__morpheusSubmenus = true;
+  let last = null, prev = null, timer = null;
+  const openRow = () => document.querySelector('.context-item.has-submenu.open');
+  const clamp = row => {
+    const sub = row.querySelector(':scope > .context-submenu'); if (!sub) return;
+    sub.style.top = ''; sub.style.bottom = ''; sub.style.left = ''; sub.style.right = '';
+    const r = sub.getBoundingClientRect();
+    if (r.bottom > innerHeight - 8) { sub.style.top = 'auto'; sub.style.bottom = '-6px'; }
+    if (r.right > innerWidth - 8) { sub.style.left = 'auto'; sub.style.right = '100%'; sub.style.marginRight = '2px'; }
+  };
+  const open = row => {
+    const current = openRow();
+    if (current === row) return;
+    current?.classList.remove('open');
+    row.classList.add('open');
+    clamp(row);
+  };
+  const close = () => openRow()?.classList.remove('open');
+  // Is `p` inside the triangle from `from` to the flyout's near edge?
+  const heading = (from, p, sub) => {
+    if (!from || !sub) return false;
+    const r = sub.getBoundingClientRect();
+    const x = r.left >= from.x ? r.left : r.right;
+    const b = { x, y: r.top - 16 }, c = { x, y: r.bottom + 16 };
+    const side = (p1, p2, p3) => (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y);
+    const d1 = side(p, from, b), d2 = side(p, b, c), d3 = side(p, c, from);
+    return !((d1 < 0 || d2 < 0 || d3 < 0) && (d1 > 0 || d2 > 0 || d3 > 0));
+  };
+  document.addEventListener('mousemove', e => {
+    const p = { x: e.clientX, y: e.clientY };
+    if (!last || last.x !== p.x || last.y !== p.y) { prev = last; last = p; }
+  }, true);
+  document.addEventListener('mouseover', e => {
+    const item = e.target.closest && e.target.closest('.context-menu .context-item');
+    if (!item) return;
+    const p = { x: e.clientX, y: e.clientY };
+    const from = last && last.x === p.x && last.y === p.y ? prev : last;
+    const current = openRow();
+    clearTimeout(timer);
+    // In the open row or its flyout: nothing changes.
+    if (current && current.contains(item)) return;
+    const next = item.classList.contains('has-submenu') ? item : null;
+    const switchTo = () => { if (next) open(next); else if (current && item.parentElement === current.parentElement) close(); };
+    if (current && item.parentElement === current.parentElement
+        && heading(from, p, current.querySelector(':scope > .context-submenu'))) {
+      timer = setTimeout(switchTo, 300);
+      return;
+    }
+    switchTo();
+  }, true);
+})();
+"#;

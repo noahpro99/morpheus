@@ -1177,10 +1177,10 @@ button.sender:hover { text-decoration: underline; }
   max-height: 60vh;
   overflow-y: auto;
 }
-.context-item.has-submenu:hover > .context-submenu { display: flex; }
+.context-item.has-submenu.open > .context-submenu { display: flex; }
 .context-item.checked::after { content: "✓"; float: right; color: var(--accent); }
-.context-item.has-submenu:hover { background: var(--accent-strong); color: white; }
-.context-item.has-submenu:hover > .submenu-arrow { color: white; }
+.context-item.has-submenu.open { background: var(--accent-strong); color: white; }
+.context-item.has-submenu.open > .submenu-arrow { color: white; }
 .member.blocked { opacity: 0.6; }
 .member .tag { margin-left: auto; font-size: 0.65rem; }
 
@@ -1192,7 +1192,7 @@ button.sender:hover { text-decoration: underline; }
   flex-wrap: wrap;
   width: 236px;
 }
-.context-item.has-submenu:hover > .context-submenu.grid { display: flex; }
+.context-item.has-submenu.open > .context-submenu.grid { display: flex; }
 .context-submenu.grid .context-item { width: 36px; padding: 6px 0; text-align: center; font-size: 1.1rem; }
 .pin-toggle { margin-left: auto; font-size: 0.85rem; }
 .pin-toggle + .member-toggle { margin-left: 0; }
@@ -1309,7 +1309,7 @@ button.sender:hover { text-decoration: underline; }
 .context-item { display: flex; align-items: center; gap: 10px; }
 .context-item.no-icon { padding-left: 36px; }
 .menu-icon { color: var(--text-faint); }
-.context-item:hover .menu-icon, .context-item.has-submenu:hover > .menu-icon { color: inherit; }
+.context-item:hover .menu-icon, .context-item.has-submenu.open > .menu-icon { color: inherit; }
 .menu-label { flex: 1; }
 .context-submenu.grid .context-item { padding-left: 0; justify-content: center; }
 .member-toggle, .pin-toggle { display: inline-flex; align-items: center; gap: 5px; }
