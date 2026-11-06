@@ -81,6 +81,10 @@ impl Session {
                         {
                             return;
                         }
+                        // Someone you ignore makes no sound.
+                        if ignored(&room.client(), &event.sender).await {
+                            return;
+                        }
                         let Some(notification) = notification_for(&room, &event, &raw).await else {
                             return;
                         };
@@ -162,4 +166,19 @@ fn summarize(msgtype: &MessageType) -> String {
         MessageType::File(file) => format!("📎 {}", file.body),
         other => format!("sent a {}", other.msgtype()),
     }
+}
+
+/// Whether you ignore `sender` (the [`crate::marks::IGNORED`] map, as this
+/// device last synced it).
+async fn ignored(client: &matrix_sdk::Client, sender: &matrix_sdk::ruma::UserId) -> bool {
+    use matrix_sdk::ruma::events::GlobalAccountDataEventType;
+    let kind = GlobalAccountDataEventType::from(crate::marks::IGNORED);
+    client
+        .account()
+        .account_data_raw(kind)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|raw| raw.deserialize_as::<serde_json::Value>().ok())
+        .is_some_and(|map| map.get(sender.as_str()).is_some())
 }

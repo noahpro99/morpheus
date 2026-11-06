@@ -198,6 +198,23 @@ for room in "$GENERAL" "$RANDOM_ROOM" "$DEV" $ENC; do clear_calls "$room"; done
 for user in alice bob carol; do
   token_var=${user^^}
   api "${!token_var}" PUT "/_matrix/client/v3/user/@$user:localhost/account_data/dev.morpheus.friends" '{"users":[]}' >/dev/null
+  # So do the DM menu's marks (pinned, closed, ignored, timed mutes),
+  # favorites and room mutes.
+  for kind in pinned closed ignored muted_until; do
+    api "${!token_var}" PUT "/_matrix/client/v3/user/@$user:localhost/account_data/dev.morpheus.$kind" '{}' >/dev/null
+  done
+  for room in $(api "${!token_var}" GET /_matrix/client/v3/joined_rooms | jq -r '.joined_rooms[]'); do
+    curl -fsS -X DELETE "$HS_URL/_matrix/client/v3/user/@$user:localhost/rooms/$room/tags/m.favourite" \
+      -H "Authorization: Bearer ${!token_var}" >/dev/null 2>&1 || true
+  done
+  # Muting adds an override rule named after the room (and a room rule).
+  rules=$(api "${!token_var}" GET /_matrix/client/v3/pushrules/)
+  for kind in room override; do
+    for rule in $(jq -r --arg k "$kind" '.global[$k][]?.rule_id | select(startswith("!"))' <<<"$rules" | jq -Rr @uri); do
+      curl -fsS -X DELETE "$HS_URL/_matrix/client/v3/pushrules/global/$kind/$rule" \
+        -H "Authorization: Bearer ${!token_var}" >/dev/null 2>&1 || true
+    done
+  done
 done
 # #encrypted starts each run without calls allowed: the calls e2e test has
 # its admin turn them on by joining.

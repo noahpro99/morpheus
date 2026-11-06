@@ -86,6 +86,16 @@ pub fn Rail() -> Element {
         .cloned()
         .collect();
     let current = selected_space();
+    // Favorites get a place of their own once there are any.
+    let has_favorites = rooms.read().iter().any(|room| room.favorite && !room.invited);
+    // The last one taken out: back to the DMs.
+    use_effect(move || {
+        let rooms = rooms.read();
+        let none = !rooms.iter().any(|room| room.favorite && !room.invited);
+        if none && !rooms.is_empty() && selected_space() == Scope::Favorites {
+            selected_space.set(Scope::Dms);
+        }
+    });
     let unread_dms = rooms
         .read()
         .iter()
@@ -158,6 +168,15 @@ pub fn Rail() -> Element {
                 title: "Rooms",
                 onclick: move |_| selected_space.set(Scope::Rooms),
                 "#"
+            }
+            if has_favorites {
+                button {
+                    class: "rail-item rail-favorites",
+                    class: if current == Scope::Favorites { "selected" },
+                    title: "Favorites",
+                    onclick: move |_| selected_space.set(Scope::Favorites),
+                    Icon { glyph: crate::icons::STAR, size: 20 }
+                }
             }
             div { class: "rail-divider" }
             for (index, entry) in entries.iter().cloned().enumerate() {

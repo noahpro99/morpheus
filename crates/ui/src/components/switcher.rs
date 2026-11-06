@@ -172,6 +172,7 @@ pub fn QuickSwitcher(open: Signal<bool>) -> Element {
                         li {
                             // By what it is: a row keeps its picture, so it must stay with its room.
                             key: "{entry.key()}",
+                            "data-key": "{entry.key()}",
                             class: "switcher-item",
                             class: if matches!(entry, Entry::Action(_)) { "action" },
                             class: if index == cursor_now { "active" },
