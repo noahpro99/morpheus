@@ -366,7 +366,13 @@ async fn ring_notifier(session: Session, focus: Focus, data_dir: PathBuf) {
         let icon = picture_file(&session, avatar, ICON_SIZE, &data_dir).await;
         let title = format!("{name} is calling");
         tracing::info!(%title, "ring notification");
-        notify(&data_dir, title, "Open Morpheus to answer".into(), icon, None);
+        notify(
+            &data_dir,
+            title,
+            "Open Morpheus to answer".into(),
+            icon,
+            None,
+        );
     }
 }
 
