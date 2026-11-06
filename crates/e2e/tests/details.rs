@@ -199,13 +199,14 @@ async fn leaving_a_room_can_be_undone() {
 }
 
 /// A double tap on send (or Enter pressed twice at once) sends one message.
+/// (On the phone when `MORPHEUS_E2E_ANDROID` is set: it has the button.)
 #[tokio::test]
 async fn a_double_send_sends_once() {
     let Some(hs) = homeserver() else {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
-    let mut app = App::launch_desktop(&hs).await.expect("launch");
+    let mut app = App::launch(&hs).await.expect("launch");
     login_and_open(&mut app, "random").await;
     let count = |text: &str| {
         format!(
@@ -227,21 +228,26 @@ async fn a_double_send_sends_once() {
             .expect("sent");
     }
 
+    // Enter (a phone's Enter makes a new line instead).
     let entered = format!("entered twice {}", std::process::id());
-    app.type_into(".composer .composer-input", &entered).await.expect("type");
-    app.eval("const i = document.querySelector('.composer .composer-input'); \
-              for (const _ of [1, 2]) i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));")
-        .await
-        .expect("double enter");
-    app.wait_for_exact_text(".message.own:not(.pending) .body", &entered, DEFAULT_WAIT)
-        .await
-        .expect("sent");
+    if !has_button {
+        app.type_into(".composer .composer-input", &entered).await.expect("type");
+        app.eval("const i = document.querySelector('.composer .composer-input'); \
+                  for (const _ of [1, 2]) i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));")
+            .await
+            .expect("double enter");
+        app.wait_for_exact_text(".message.own:not(.pending) .body", &entered, DEFAULT_WAIT)
+            .await
+            .expect("sent");
+    }
 
     tokio::time::sleep(Duration::from_secs(3)).await;
     if has_button {
         assert_eq!(app.eval(&count(&tapped)).await.expect("count"), serde_json::json!(1), "one message from a double tap");
     }
-    assert_eq!(app.eval(&count(&entered)).await.expect("count"), serde_json::json!(1), "one message from a double Enter");
+    if !has_button {
+        assert_eq!(app.eval(&count(&entered)).await.expect("count"), serde_json::json!(1), "one message from a double Enter");
+    }
 }
 
 /// Heading for a submenu across the item below it (the mouse cuts the

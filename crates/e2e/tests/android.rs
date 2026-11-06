@@ -2199,3 +2199,36 @@ async fn phone_swipe_animations_are_quick() {
         .expect("rise");
     assert!(first_seconds(&rise) <= 0.15, "sheets rise in {rise}");
 }
+
+/// Tapping a server in the rail shows no square: the web view's tap
+/// highlight (a rectangle, whatever the shape) and a focus ring are off;
+/// the selected pill is the feedback.
+#[tokio::test]
+async fn tapping_a_server_flashes_no_square() {
+    if !enabled() {
+        eprintln!("MORPHEUS_E2E_ANDROID not set; skipping the Android test");
+        return;
+    }
+    let mut app = App::launch_android().await.expect("launch on Android");
+    app.wait_for("form.login", DEFAULT_WAIT).await.expect("login form");
+    app.type_into("form.login input[name=username]", "alice")
+        .await
+        .expect("username");
+    app.type_into("form.login input[name=password]", "alice-password")
+        .await
+        .expect("password");
+    app.submit("form.login").await.expect("submit");
+    app.wait_for(".rail-item[title=\"Engineering\"]", DEFAULT_WAIT)
+        .await
+        .expect("a server in the rail");
+    app.tap(".rail-item[title=\"Engineering\"]").await.expect("tap the server");
+    app.wait_for(".rail-item.selected[title=\"Engineering\"]", DEFAULT_WAIT)
+        .await
+        .expect("selected");
+    let looks = app
+        .eval("const el = document.querySelector('.rail-item[title=\"Engineering\"]'); const s = getComputedStyle(el); \
+               return [s.webkitTapHighlightColor, s.outlineStyle === 'none' || s.outlineWidth === '0px'];")
+        .await
+        .expect("styles");
+    assert_eq!(looks, serde_json::json!(["rgba(0, 0, 0, 0)", true]), "no tap highlight, no focus ring");
+}
