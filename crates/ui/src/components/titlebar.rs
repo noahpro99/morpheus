@@ -70,6 +70,7 @@ pub fn TitleBar() -> Element {
     let title = match scope() {
         Scope::Dms => "Direct messages".to_string(),
         Scope::Rooms => "Rooms".to_string(),
+        Scope::Favorites => "Favorites".to_string(),
         Scope::Space(id) => rooms
             .read()
             .iter()

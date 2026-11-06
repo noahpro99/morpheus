@@ -10,6 +10,7 @@ mod hotkeys;
 mod invites;
 mod keys;
 mod lightbox;
+mod marks;
 mod login;
 mod members;
 mod message_dialogs;

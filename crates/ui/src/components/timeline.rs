@@ -958,6 +958,27 @@ pub(crate) fn MessageRow(message: Message, show_header: bool) -> Element {
         }
     };
 
+    // Someone you ignore: folded away, shown on request.
+    let ignored = try_use_context::<super::marks::Marks>()
+        .is_some_and(|marks| marks.ignored.read().contains_key(message.sender.as_str()));
+    let mut revealed = use_signal(|| false);
+    if ignored && !revealed() {
+        return rsx! {
+            div {
+                class: "message ignored",
+                "data-event-id": match &message.id {
+                    MessageId::Event(id) => id.to_string(),
+                    MessageId::Transaction(_) => String::new(),
+                },
+                button {
+                    class: "ignored-fold",
+                    onclick: move |_| revealed.set(true),
+                    "Ignored message · Show"
+                }
+            }
+        };
+    }
+
     rsx! {
         div {
             class: "message",

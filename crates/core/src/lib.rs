@@ -49,6 +49,7 @@ pub use media::{Media, MediaRef};
 pub use members::{Member, MemberPermissions, MemberRole, ModRoom, Standing};
 pub use messages::PinnedMessage;
 pub use notifications::{Notification, NotificationUpdates};
+pub use people::marks;
 pub use profile::Profile;
 pub use push::{DEFAULT_PUSH_GATEWAY, PUSH_APP_ID, PushRegistration};
 pub use recovery::{EncryptionStatus, RecoveryAvailability};

@@ -249,6 +249,8 @@ pub enum Scope {
     /// Rooms that are not DMs and not inside any space.
     #[default]
     Rooms,
+    /// Rooms and DMs in your favorites (`m.favourite`).
+    Favorites,
     /// A top-level space and everything nested under it.
     Space(OwnedRoomId),
 }
@@ -276,6 +278,13 @@ pub fn rooms_in_scope(rooms: &Vector<RoomSummary>, scope: &Scope) -> Vec<RoomSum
             return rooms
                 .iter()
                 .filter(|room| room.is_dm && !room.is_space && !room.invited)
+                .cloned()
+                .collect();
+        }
+        Scope::Favorites => {
+            return rooms
+                .iter()
+                .filter(|room| room.favorite && !room.is_space && !room.invited)
                 .cloned()
                 .collect();
         }
@@ -351,6 +360,7 @@ pub fn Shell(session: Session) -> Element {
     super::keys::provide_key_tracking(session.clone());
     let mut nickname_target = super::nicknames::provide_nicknames(session.clone());
     let (_, friends_open) = super::friends::provide_friends(session.clone());
+    super::marks::provide_marks(session.clone());
     super::call::provide_calls(session.clone());
     // Owned by the app root: background tasks (calls, sign-out) run there and
     // toast through it.
@@ -1065,11 +1075,11 @@ fn ChatRoom(room: RoomSummary) -> Element {
                 class: "ghost room-menu-button",
                 title: "Room options",
                 onclick: {
-                    let (session, room_id, is_dm) = (header_session.clone(), room.id.clone(), room.is_dm);
+                    let (session, room) = (header_session.clone(), room.clone());
                     move |e: Event<MouseData>| {
                         e.stop_propagation();
                         let at = e.client_coordinates();
-                        super::room_list::open_room_menu_at(&session, room_id.clone(), is_dm, at.x, at.y);
+                        super::room_list::open_room_menu_at(&session, room.clone(), at.x, at.y);
                     }
                 },
                 Icon { glyph: crate::icons::ELLIPSIS, size: 16 }

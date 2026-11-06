@@ -1420,3 +1420,37 @@ fn prune_test_devices(homeserver: &str) {
         }
     });
 }
+
+/// Send `body` into `room_id` as `user` (a local part, password
+/// `<user>-password`) straight through the API, no app needed.
+pub fn send_as(homeserver: &str, user: &str, room_id: &str, body: &str) -> Result<()> {
+    let login = curl(&[
+        "-X",
+        "POST",
+        &format!("{homeserver}/_matrix/client/v3/login"),
+        "-d",
+        &json!({ "type": "m.login.password", "identifier": { "type": "m.id.user", "user": user }, "password": format!("{user}-password") }).to_string(),
+    ])?;
+    let login: Value = serde_json::from_str(&login)?;
+    let token = login["access_token"]
+        .as_str()
+        .ok_or_else(|| anyhow!("no token for {user}"))?;
+    let room = room_id.replace('!', "%21").replace(':', "%3A");
+    curl(&[
+        "-X",
+        "PUT",
+        "-H",
+        &format!("Authorization: Bearer {token}"),
+        &format!("{homeserver}/_matrix/client/v3/rooms/{room}/send/m.room.message/e2e-{}", unique()),
+        "-d",
+        &json!({ "msgtype": "m.text", "body": body }).to_string(),
+    ])?;
+    let _ = curl(&[
+        "-X",
+        "POST",
+        "-H",
+        &format!("Authorization: Bearer {token}"),
+        &format!("{homeserver}/_matrix/client/v3/logout"),
+    ]);
+    Ok(())
+}

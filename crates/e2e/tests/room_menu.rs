@@ -349,3 +349,99 @@ async fn header_button_opens_the_room_menu() {
         .await
         .expect("room editor");
 }
+
+/// The top level of the open menu, label by label.
+async fn menu_labels(app: &mut App) -> Vec<String> {
+    let labels = app
+        .eval("return [...document.querySelectorAll('.context-menu:not(.context-submenu) > .context-item > .menu-label')].map(l => l.textContent.trim());")
+        .await
+        .expect("labels");
+    serde_json::from_value(labels).expect("strings")
+}
+
+/// Right-clicking a DM with a friend offers what Discord's does: mark as
+/// read, pin, favorites, their profile, a nickname for them, close the DM,
+/// invite them to a server, unfriend, ignore, block, mute for a while, and
+/// the IDs. A DM with someone not (yet) a friend offers to add them instead.
+#[tokio::test]
+async fn a_dm_menu_has_what_discord_has() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut alice = App::launch_desktop(&hs).await.expect("launch alice");
+    login(&mut alice, "alice").await;
+    alice.open_room("bob").await.expect("the DM with bob");
+
+    room_menu(&mut alice, "bob").await;
+    assert_eq!(
+        menu_labels(&mut alice).await,
+        [
+            "Mark as unread",
+            "Pin",
+            "Add to favorites",
+            "Profile",
+            "Close DM",
+            "Invite to server",
+            "Add friend",
+            "Ignore",
+            "Block",
+            "Mute @bob",
+            "Copy user ID",
+            "Copy room ID",
+        ],
+        "not friends yet"
+    );
+    alice.click_text(".context-item", "Add friend").await.expect("add friend");
+    menu_closed(&mut alice).await;
+
+    // Friends now: a nickname for them, and unfriending.
+    let mut labels = Vec::new();
+    for _ in 0..20 {
+        room_menu(&mut alice, "bob").await;
+        labels = menu_labels(&mut alice).await;
+        if labels.iter().any(|l| l == "Remove friend") {
+            break;
+        }
+        alice.press("body", "Escape").await.expect("close");
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+    assert_eq!(
+        labels,
+        [
+            "Mark as unread",
+            "Pin",
+            "Add to favorites",
+            "Profile",
+            "Change friend nickname",
+            "Close DM",
+            "Invite to server",
+            "Remove friend",
+            "Ignore",
+            "Block",
+            "Mute @bob",
+            "Copy user ID",
+            "Copy room ID",
+        ],
+        "friends"
+    );
+    // The mute choices, as Discord's.
+    let durations = alice
+        .eval("const row = [...document.querySelectorAll('.context-item.has-submenu')].find(r => r.querySelector('.menu-label').textContent.trim() === 'Mute @bob'); \
+               return [...row.querySelectorAll('.context-submenu .menu-label')].map(l => l.textContent.trim());")
+        .await
+        .expect("durations");
+    assert_eq!(
+        durations,
+        serde_json::json!([
+            "For 15 minutes",
+            "For 1 hour",
+            "For 3 hours",
+            "For 8 hours",
+            "For 24 hours",
+            "Until I turn it back on"
+        ])
+    );
+    // Back as it was, for other tests.
+    alice.click_text(".context-item", "Remove friend").await.expect("unfriend");
+}

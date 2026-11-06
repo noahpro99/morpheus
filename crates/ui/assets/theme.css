@@ -2121,3 +2121,31 @@ form.new-message button:disabled { opacity: 0.5; cursor: default; }
 }
 .call-stage-resize:hover, body.resizing-stage .call-stage-resize { background: var(--accent); }
 body.resizing-stage { cursor: ns-resize; user-select: none; -webkit-user-select: none; }
+
+/* DM list: pinned DMs carry a small pin; muted rooms fade. */
+.room .room-pin {
+  margin-left: auto;
+  color: var(--text-muted, #8a90a2);
+  flex: none;
+}
+.room.muted:not(.selected) .room-name,
+.room.muted:not(.selected) .avatar {
+  opacity: 0.45;
+}
+
+/* A message from someone ignored, folded to one quiet line. */
+.message.ignored {
+  padding: 2px 16px 2px 72px;
+}
+.message.ignored .ignored-fold {
+  background: none;
+  border: none;
+  padding: 2px 0;
+  color: var(--text-muted, #8a90a2);
+  font-size: 0.85em;
+  font-style: italic;
+  cursor: pointer;
+}
+.message.ignored .ignored-fold:hover {
+  text-decoration: underline;
+}

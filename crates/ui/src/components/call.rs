@@ -1173,6 +1173,8 @@ mod tests {
                 .iter()
                 .map(|u| OwnedUserId::try_from(*u).expect("user id"))
                 .collect(),
+            favorite: false,
+            latest_ms: 0,
         }
     }
 

@@ -51,6 +51,10 @@ pub struct RoomSummary {
     pub inviter: Option<String>,
     /// Who is in the room's call (MatrixRTC), oldest first; empty when none.
     pub call_participants: Vec<OwnedUserId>,
+    /// In your favorites (`m.favourite`).
+    pub favorite: bool,
+    /// When the newest message came (milliseconds since the epoch; 0 unknown).
+    pub latest_ms: u64,
 }
 
 impl RoomSummary {
@@ -118,6 +122,8 @@ impl RoomSummary {
             invited,
             inviter,
             call_participants: crate::calls::call_participants(&room),
+            favorite: room.is_favourite(),
+            latest_ms: room.latest_event_timestamp().map_or(0, |ts| ts.0.into()),
         }
     }
 }
@@ -317,6 +323,18 @@ impl Session {
                 )
                 .await?;
             room.set_unread_flag(false).await?;
+            Ok(())
+        })
+    }
+
+    /// Flag a room unread (`m.marked_unread`), to come back to it.
+    pub fn mark_room_unread(&self, room_id: OwnedRoomId) -> CoreFuture<()> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            let room = client
+                .get_room(&room_id)
+                .ok_or_else(|| crate::Error::UnknownRoom(room_id.clone()))?;
+            room.set_unread_flag(true).await?;
             Ok(())
         })
     }

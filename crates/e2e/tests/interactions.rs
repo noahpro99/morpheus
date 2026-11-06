@@ -292,10 +292,10 @@ async fn ctrl_k_pictures_follow_their_rooms() {
     app.wait_for(".switcher input", DEFAULT_WAIT)
         .await
         .expect("switcher opens");
-    // Each row's name and picture (an image's source, or its letter).
+    // Each row (its room and name) and picture (an image's source, or its letter).
     let pictures = "return [...document.querySelectorAll('.switcher-item')].filter(r => r.querySelector('.name')).map(r => { \
          const a = r.querySelector('.avatar'); \
-         return [r.querySelector('.name').textContent.trim(), a.tagName === 'IMG' ? a.getAttribute('src') : 'letter ' + a.textContent.trim()]; });";
+         return [r.dataset.key + ' ' + r.querySelector('.name').textContent.trim(), a.tagName === 'IMG' ? a.getAttribute('src') : 'letter ' + a.textContent.trim()]; });";
     // Wait for the pictures to load, then note whose is whose.
     app.wait_for_js(
         "return document.querySelectorAll('.switcher-item img.avatar').length > 0;",

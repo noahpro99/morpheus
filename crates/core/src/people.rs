@@ -257,3 +257,70 @@ async fn read_friends(client: &matrix_sdk::Client) -> Vec<OwnedUserId> {
         .filter_map(|id| id.as_str()?.parse().ok())
         .collect()
 }
+
+/// Private marks kept in account data (synced across your devices, seen by
+/// nobody else), each a map from a room or user ID to a time in
+/// milliseconds since the epoch.
+pub mod marks {
+    /// DMs pinned to the top of the list, when pinned.
+    pub const PINNED: &str = "dev.morpheus.pinned";
+    /// DMs closed (hidden from the list until a new message), when closed.
+    pub const CLOSED: &str = "dev.morpheus.closed";
+    /// People ignored: their messages folded away and silent, when ignored.
+    pub const IGNORED: &str = "dev.morpheus.ignored";
+    /// Rooms muted for a while: when the mute ends (0: until unmuted).
+    pub const MUTED_UNTIL: &str = "dev.morpheus.muted_until";
+}
+
+impl Session {
+    /// One of the [`marks`] maps.
+    pub fn marks(
+        &self,
+        kind: &'static str,
+    ) -> CoreFuture<std::collections::HashMap<String, i64>> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            Ok(read_map(&client, kind)
+                .await?
+                .into_iter()
+                .filter_map(|(key, at)| Some((key, at.as_i64()?)))
+                .collect())
+        })
+    }
+
+    /// Set (`Some`) or clear one entry of a [`marks`] map.
+    pub fn set_mark(
+        &self,
+        kind: &'static str,
+        key: String,
+        at: Option<i64>,
+    ) -> CoreFuture<()> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            let mut map = read_map(&client, kind).await?;
+            match at {
+                Some(at) => map.insert(key, Value::from(at)),
+                None => map.remove(&key),
+            };
+            let raw: Raw<AnyGlobalAccountDataEventContent> =
+                Raw::from_json(serde_json::value::to_raw_value(&Value::Object(map))?);
+            client
+                .account()
+                .set_account_data_raw(GlobalAccountDataEventType::from(kind), raw)
+                .await?;
+            Ok(())
+        })
+    }
+
+    /// Add a room to your favorites (`m.favourite`), or take it out.
+    pub fn set_favorite(&self, room_id: crate::OwnedRoomId, favorite: bool) -> CoreFuture<()> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            let room = client
+                .get_room(&room_id)
+                .ok_or_else(|| Error::UnknownRoom(room_id.clone()))?;
+            room.set_is_favourite(favorite, None).await?;
+            Ok(())
+        })
+    }
+}
