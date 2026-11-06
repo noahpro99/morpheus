@@ -153,7 +153,7 @@ pub fn TitleBar() -> Element {
             div { class: "titlebar-nav", "data-nav": "{nav().index}/{nav().entries.len()}", "data-nav-entries": "{history_names}",
                 button {
                     class: "ghost nav-button",
-                    title: "Back",
+                    title: "Back (Alt+←)",
                     disabled: !nav().can_go_back(),
                     onmousedown: move |e| e.stop_propagation(),
                     onclick: move |_| jump(-1),
@@ -161,7 +161,7 @@ pub fn TitleBar() -> Element {
                 }
                 button {
                     class: "ghost nav-button",
-                    title: "Forward",
+                    title: "Forward (Alt+→)",
                     disabled: !nav().can_go_forward(),
                     onmousedown: move |e| e.stop_propagation(),
                     onclick: move |_| jump(1),
@@ -172,14 +172,14 @@ pub fn TitleBar() -> Element {
             div { class: "titlebar-actions",
                 button {
                     class: "ghost titlebar-button help-button",
-                    title: "Help",
+                    title: "Help (Ctrl+/)",
                     onmousedown: move |e| e.stop_propagation(),
                     onclick: move |_| panel.set(if panel() == TopPanel::Help { TopPanel::None } else { TopPanel::Help }),
                     Icon { glyph: CIRCLE_HELP, size: 16 }
                 }
                 button {
                     class: "ghost titlebar-button inbox-button",
-                    title: "Inbox",
+                    title: "Inbox (Ctrl+I)",
                     onmousedown: move |e| e.stop_propagation(),
                     onclick: move |_| panel.set(if panel() == TopPanel::Inbox { TopPanel::None } else { TopPanel::Inbox }),
                     Icon { glyph: INBOX, size: 16 }

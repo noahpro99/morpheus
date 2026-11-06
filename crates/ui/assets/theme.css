@@ -2149,3 +2149,28 @@ body.resizing-stage { cursor: ns-resize; user-select: none; -webkit-user-select:
 .message.ignored .ignored-fold:hover {
   text-decoration: underline;
 }
+
+/* Digits that change in place keep one width, so counts and times do not
+   jiggle as they tick. */
+.time, .badge, .rail-badge, .pin-toggle, .member-toggle, .call-duration,
+.attachment-meta, .unread-count, .reaction .count, .reaction {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Headings wrap evenly, never leaving one word alone on the last line. */
+h1, h2, h3, h4, .modal-title, .empty-title {
+  text-wrap: balance;
+}
+
+/* An undoable action's toast: its text and an Undo button. */
+.toast { display: flex; align-items: center; gap: 12px; }
+.toast .toast-text { flex: 1; }
+.toast .toast-undo {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-weight: 600;
+  padding: 6px 4px;
+  cursor: pointer;
+}
+.toast .toast-undo:hover { text-decoration: underline; }

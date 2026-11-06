@@ -21,12 +21,15 @@ pub fn RoomList(error: Option<String>) -> Element {
 
     let scope = selected_space();
     let hide_muted = prefs().hide_muted;
+    let hidden = use_context::<super::toast::Hidden>();
     let open_room = selected();
     let (dms, channels): (Vec<RoomSummary>, Vec<RoomSummary>) =
         rooms_in_scope(&rooms.read(), &scope)
             .into_iter()
             // "Hide muted channels" keeps the open room visible.
             .filter(|room| !hide_muted || !room.muted || Some(&room.id) == open_room.as_ref())
+            // Rooms just left, still undoable, are out of the list.
+            .filter(|room| !hidden.read().0.contains(room.id.as_str()))
             .partition(|room| room.is_dm);
     // DMs: closed ones stay out of the list until a new message comes
     // (or they are opened); pinned ones come first, in the order pinned.
@@ -479,8 +482,17 @@ fn room_menu(session: &Session, room: &RoomSummary, mode: Option<NotifyMode>) ->
     items.push(copy_room_id(room));
     items.push(
         MenuItem::new("Leave room", {
-            let (session, room_id) = (session.clone(), room_id.clone());
-            move || run("leave", session.leave_room(room_id.clone()))
+            let (session, room_id, name) = (session.clone(), room_id.clone(), room.name.clone());
+            // No "are you sure": it goes from the list now, undoable a moment.
+            move || {
+                let (session, room_id) = (session.clone(), room_id.clone());
+                super::toast::hide_with_undo(
+                    room_id.to_string(),
+                    format!("Left #{name}"),
+                    "leave",
+                    move || session.leave_room(room_id),
+                );
+            }
         })
         .danger(),
     );
