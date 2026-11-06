@@ -41,3 +41,7 @@ tempfile = { workspace = true }
 
 [lints]
 workspace = true
+
+# keyring's Apple store will not compile for iPhone without its iOS store.
+[target.'cfg(target_os = "ios")'.dependencies]
+apple-native-keyring-store = { version = "1", features = ["protected"] }
