@@ -392,7 +392,10 @@ async fn a_dm_menu_has_what_discord_has() {
         ],
         "not friends yet"
     );
-    alice.click_text(".context-item", "Add friend").await.expect("add friend");
+    alice
+        .click_text(".context-item", "Add friend")
+        .await
+        .expect("add friend");
     menu_closed(&mut alice).await;
 
     // Friends now: a nickname for them, and unfriending.
@@ -443,5 +446,8 @@ async fn a_dm_menu_has_what_discord_has() {
         ])
     );
     // Back as it was, for other tests.
-    alice.click_text(".context-item", "Remove friend").await.expect("unfriend");
+    alice
+        .click_text(".context-item", "Remove friend")
+        .await
+        .expect("unfriend");
 }

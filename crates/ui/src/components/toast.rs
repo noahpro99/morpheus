@@ -47,7 +47,11 @@ pub fn toast(text: impl Into<String>) {
     let id = toasts.with_mut(|list| {
         let id = list.next_id;
         list.next_id += 1;
-        list.items.push(Toast { id, text, undo: false });
+        list.items.push(Toast {
+            id,
+            text,
+            undo: false,
+        });
         id
     });
     dioxus::core::spawn_forever(async move {
@@ -135,7 +139,11 @@ pub fn toast_with_undo(
     let id = toasts.with_mut(|list| {
         let id = list.next_id;
         list.next_id += 1;
-        list.items.push(Toast { id, text, undo: true });
+        list.items.push(Toast {
+            id,
+            text,
+            undo: true,
+        });
         id
     });
     PENDING.with(|pending| {

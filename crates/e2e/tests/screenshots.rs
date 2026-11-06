@@ -88,9 +88,12 @@ async fn desktop_tour() {
         .expect("card");
     shot(&mut app, "desktop-profile").await;
     app.press("body", "Escape").await.expect("close");
-    app.wait_for_js("return document.querySelector('.profile-card') === null;", DEFAULT_WAIT)
-        .await
-        .expect("card closed");
+    app.wait_for_js(
+        "return document.querySelector('.profile-card') === null;",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("card closed");
 
     // A picture and a thread in #design.
     open(&mut app, "design").await;
@@ -103,7 +106,9 @@ async fn desktop_tour() {
         .await
         .expect("thread panel");
     shot(&mut app, "desktop-thread").await;
-    app.click(".thread-panel-header .ghost").await.expect("close");
+    app.click(".thread-panel-header .ghost")
+        .await
+        .expect("close");
 
     // Ctrl+K.
     open(&mut app, "lobby").await;
@@ -145,8 +150,12 @@ async fn desktop_tour() {
         )
         .await;
     shot(&mut app, "desktop-call").await;
-    let _ = app.eval("document.querySelector('.voice-panel .hang-up')?.click();").await;
-    let _ = milo.eval("document.querySelector('.voice-panel .hang-up')?.click();").await;
+    let _ = app
+        .eval("document.querySelector('.voice-panel .hang-up')?.click();")
+        .await;
+    let _ = milo
+        .eval("document.querySelector('.voice-panel .hang-up')?.click();")
+        .await;
     tokio::time::sleep(Duration::from_secs(2)).await;
 }
 
@@ -158,7 +167,10 @@ async fn phone_tour() {
         return;
     };
     let mut app = App::launch_sized(&hs, 400, 860).await.expect("launch");
-    assert!(app.is_phone(), "needs the emulator (or a phone) for phone shots");
+    assert!(
+        app.is_phone(),
+        "needs the emulator (or a phone) for phone shots"
+    );
     shot(&mut app, "phone-login").await;
     login(&mut app, "luna").await;
     open(&mut app, "lobby").await;

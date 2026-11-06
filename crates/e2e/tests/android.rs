@@ -292,10 +292,9 @@ async fn phone_signs_in_navigates_and_sends() {
         .await
         .expect("members open");
     tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
-    let lefts: Vec<f64> = serde_json::from_value(
-        app.eval("return window.__lefts;").await.expect("positions"),
-    )
-    .expect("numbers");
+    let lefts: Vec<f64> =
+        serde_json::from_value(app.eval("return window.__lefts;").await.expect("positions"))
+            .expect("numbers");
     let back = lefts.windows(2).find(|pair| pair[1] > pair[0] + 2.0);
     assert!(
         back.is_none(),
@@ -826,7 +825,9 @@ async fn phone_gets_push_notifications_in_the_background() {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
     while adb_shell(&["dumpsys", "notification", "--noredact"])
         .split("NotificationRecord(")
-        .any(|record| record.contains("pkg=dev.morpheus.mobile") && record.contains("channel=calls"))
+        .any(|record| {
+            record.contains("pkg=dev.morpheus.mobile") && record.contains("channel=calls")
+        })
     {
         assert!(
             std::time::Instant::now() < deadline,
@@ -1358,9 +1359,12 @@ async fn phone_call_fills_the_screen_and_minimizes_to_a_bar() {
         .await
         .expect("a tile for alice");
     for control in [".mute-button", ".speaker-button", ".hang-up"] {
-        app.wait_for(&format!(".call-screen .call-controls {control}"), DEFAULT_WAIT)
-            .await
-            .unwrap_or_else(|e| panic!("{control} on the call screen: {e}"));
+        app.wait_for(
+            &format!(".call-screen .call-controls {control}"),
+            DEFAULT_WAIT,
+        )
+        .await
+        .unwrap_or_else(|e| panic!("{control} on the call screen: {e}"));
     }
     let covered = app
         .eval(
@@ -1369,7 +1373,11 @@ async fn phone_call_fills_the_screen_and_minimizes_to_a_bar() {
         )
         .await
         .expect("measure");
-    assert_eq!(covered, serde_json::json!(true), "the call fills the screen");
+    assert_eq!(
+        covered,
+        serde_json::json!(true),
+        "the call fills the screen"
+    );
     shot(&mut app, "android-call-screen").await;
 
     // Mute from the call screen.
@@ -1390,14 +1398,20 @@ async fn phone_call_fills_the_screen_and_minimizes_to_a_bar() {
         .await
         .expect("the call bar");
     shot(&mut app, "android-call-bar").await;
-    app.tap(".chat .call-bar").await.expect("open the call again");
+    app.tap(".chat .call-bar")
+        .await
+        .expect("open the call again");
     app.wait_for(".call-screen", DEFAULT_WAIT)
         .await
         .expect("the call screen again");
-    app.tap(".call-screen .call-minimize").await.expect("minimize");
+    app.tap(".call-screen .call-minimize")
+        .await
+        .expect("minimize");
     gone(&mut app, ".call-screen", "the call screen").await;
     // The header's call button opens it rather than hanging up.
-    app.tap(".chat-header .call-button").await.expect("call button");
+    app.tap(".chat-header .call-button")
+        .await
+        .expect("call button");
     app.wait_for(".call-screen", DEFAULT_WAIT)
         .await
         .expect("the call screen from the header");
@@ -1428,10 +1442,7 @@ async fn middle_of(app: &mut App, selector: &str, needle: &str) -> (f64, f64) {
     let at = at
         .as_array()
         .unwrap_or_else(|| panic!("no {selector} with {needle:?}"));
-    (
-        at[0].as_f64().expect("x"),
-        at[1].as_f64().expect("y"),
-    )
+    (at[0].as_f64().expect("x"), at[1].as_f64().expect("y"))
 }
 
 /// A real finger held down at `at` for a second, then lifted.
@@ -1510,7 +1521,11 @@ async fn phone_select_text_lets_a_message_be_selected() {
         !words.trim().is_empty() && text.contains(words.trim()),
         "holding selected nothing from the message: {selected}"
     );
-    assert_eq!(selected[1], serde_json::json!(false), "no menu over the selection");
+    assert_eq!(
+        selected[1],
+        serde_json::json!(false),
+        "no menu over the selection"
+    );
 
     // Back closes it (after clearing the selection, if the system takes one press for that).
     back_key();
@@ -1557,9 +1572,11 @@ async fn phone_profile_is_a_bottom_sheet() {
     .await
     .expect("scroll to a sender");
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-    app.eval("[...document.querySelectorAll('.message .avatar-button')].pop().click(); return true;")
-        .await
-        .expect("open the profile");
+    app.eval(
+        "[...document.querySelectorAll('.message .avatar-button')].pop().click(); return true;",
+    )
+    .await
+    .expect("open the profile");
     app.wait_for(".profile-card", DEFAULT_WAIT)
         .await
         .expect("the profile");
@@ -1579,14 +1596,30 @@ async fn phone_profile_is_a_bottom_sheet() {
         .await
         .expect("measure");
     shot(&mut app, "android-profile-sheet").await;
-    assert_eq!(shape[0], serde_json::json!(true), "a sheet, not a floating card: {shape}");
+    assert_eq!(
+        shape[0],
+        serde_json::json!(true),
+        "a sheet, not a floating card: {shape}"
+    );
     assert_eq!(
         (&shape[1], &shape[2], &shape[3]),
-        (&serde_json::json!(0), &serde_json::json!(0), &serde_json::json!(0)),
+        (
+            &serde_json::json!(0),
+            &serde_json::json!(0),
+            &serde_json::json!(0)
+        ),
         "edge to edge, on the bottom edge: {shape}"
     );
-    assert_eq!(shape[4], serde_json::json!(true), "the picture overlaps the banner: {shape}");
-    assert_eq!(shape[5], serde_json::json!(true), "the picture is over the banner, not under: {shape}");
+    assert_eq!(
+        shape[4],
+        serde_json::json!(true),
+        "the picture overlaps the banner: {shape}"
+    );
+    assert_eq!(
+        shape[5],
+        serde_json::json!(true),
+        "the picture is over the banner, not under: {shape}"
+    );
 
     // Swiping it down puts it away.
     let (width, height) = app.page_size().await.expect("size");
@@ -1720,7 +1753,11 @@ async fn phone_sent_messages_show_at_once_even_on_a_slow_network() {
         waited < 500.0,
         "the message took {waited:.0} ms to show after pressing send"
     );
-    assert_eq!(pending, serde_json::json!(true), "greyed while the server has not got it");
+    assert_eq!(
+        pending,
+        serde_json::json!(true),
+        "greyed while the server has not got it"
+    );
     slow.store(false, std::sync::atomic::Ordering::Relaxed);
     app.wait_for_exact_text(".message.own:not(.pending) .body", &text, DEFAULT_WAIT)
         .await
@@ -1818,7 +1855,15 @@ async fn phone_gets_messages_live_again_after_losing_the_network() {
     tokio::time::sleep(std::time::Duration::from_secs(40)).await;
     let errors = phone.log_tail(400);
     drop(offline);
-    eprintln!("sync while offline:\n{}", errors.lines().filter(|l| l.contains("sync")).take(20).collect::<Vec<_>>().join("\n"));
+    eprintln!(
+        "sync while offline:\n{}",
+        errors
+            .lines()
+            .filter(|l| l.contains("sync"))
+            .take(20)
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
 
     for n in 0..2 {
         let text = format!("back online {n} {run}");
@@ -1885,9 +1930,13 @@ async fn phone_call_screen_swipes_down_and_not_sideways() {
     }
 
     // Down: the bar, still in the call.
-    app.swipe((width / 2.0, height * 0.3), (width / 2.0, height - 10.0), 250)
-        .await
-        .expect("swipe down");
+    app.swipe(
+        (width / 2.0, height * 0.3),
+        (width / 2.0, height - 10.0),
+        250,
+    )
+    .await
+    .expect("swipe down");
     gone(&mut app, ".call-screen", "the call screen").await;
     app.wait_for_text(".chat .call-bar", "random", DEFAULT_WAIT)
         .await
@@ -1902,7 +1951,10 @@ async fn phone_call_screen_swipes_down_and_not_sideways() {
         .await
         .expect("transform");
     assert!(
-        matches!(shifted.as_str(), Some("none") | Some("matrix(1, 0, 0, 1, 0, 0)")),
+        matches!(
+            shifted.as_str(),
+            Some("none") | Some("matrix(1, 0, 0, 1, 0, 0)")
+        ),
         "it opened again where the swipe left it: {shifted}"
     );
     app.tap(".call-screen .hang-up").await.expect("hang up");
@@ -1935,10 +1987,7 @@ async fn phone_ring_is_heard_with_the_app_open() {
         .await
         .expect("password");
     phone.submit("form.login").await.expect("submit");
-    phone
-        .wait_for(".room", DEFAULT_WAIT)
-        .await
-        .expect("rooms");
+    phone.wait_for(".room", DEFAULT_WAIT).await.expect("rooms");
 
     let mut bob = App::launch_desktop(&hs).await.expect("launch bob");
     bob.wait_for("form.login", DEFAULT_WAIT)
@@ -1975,14 +2024,20 @@ async fn phone_ring_is_heard_with_the_app_open() {
         if plays.iter().any(|p| p.starts_with("ring: ")) {
             break plays;
         }
-        assert!(std::time::Instant::now() < deadline, "no ringtone tried: {plays:?}");
+        assert!(
+            std::time::Instant::now() < deadline,
+            "no ringtone tried: {plays:?}"
+        );
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     };
     bob.click(".voice-panel .hang-up")
         .await
         .expect("bob hangs up");
     assert!(
-        plays.iter().any(|p| p == "ring: played") && !plays.iter().any(|p| p.starts_with("ring: ") && p != "ring: played"),
+        plays.iter().any(|p| p == "ring: played")
+            && !plays
+                .iter()
+                .any(|p| p.starts_with("ring: ") && p != "ring: played"),
         "the ringtone did not play: {plays:?}"
     );
 }
@@ -2015,15 +2070,9 @@ async fn phone_camera_shows_on_the_desktop() {
         .await
         .expect("password");
     phone.submit("form.login").await.expect("submit");
-    phone
-        .wait_for(".room", DEFAULT_WAIT)
-        .await
-        .expect("rooms");
+    phone.wait_for(".room", DEFAULT_WAIT).await.expect("rooms");
     phone.open_room("random").await.expect("open #random");
-    phone
-        .tap(".chat-header .call-button")
-        .await
-        .expect("call");
+    phone.tap(".chat-header .call-button").await.expect("call");
     phone
         .wait_for_text(".call-screen .call-screen-state", "Connected", DEFAULT_WAIT)
         .await
@@ -2042,7 +2091,9 @@ async fn phone_camera_shows_on_the_desktop() {
     bob.submit("form.login").await.expect("submit");
     bob.wait_for(".room", DEFAULT_WAIT).await.expect("rooms");
     bob.open_room("random").await.expect("bob in #random");
-    bob.click(".chat-header .call-button").await.expect("bob joins");
+    bob.click(".chat-header .call-button")
+        .await
+        .expect("bob joins");
     bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
         .await
         .expect("bob connected");
@@ -2094,9 +2145,19 @@ async fn phone_camera_shows_on_the_desktop() {
         .await
         .expect("the phone's preview");
     let portrait = |shape: &serde_json::Value| shape[1].as_f64() > shape[0].as_f64();
-    assert!(portrait(&seen), "bob sees the phone's picture lying down: {seen}");
-    assert!(portrait(&own), "the phone's own preview is lying down: {own}");
-    if let Some(path) = bob.screenshot("phone-camera-on-desktop").await.expect("screenshot") {
+    assert!(
+        portrait(&seen),
+        "bob sees the phone's picture lying down: {seen}"
+    );
+    assert!(
+        portrait(&own),
+        "the phone's own preview is lying down: {own}"
+    );
+    if let Some(path) = bob
+        .screenshot("phone-camera-on-desktop")
+        .await
+        .expect("screenshot")
+    {
         eprintln!("screenshot: {}", path.display());
     }
     shot(&mut phone, "android-camera-on").await;
@@ -2105,14 +2166,16 @@ async fn phone_camera_shows_on_the_desktop() {
         .tap(".call-screen .camera-button")
         .await
         .expect("camera off");
-    bob.wait_for_js("return !document.querySelector('.call-stage');", DEFAULT_WAIT)
+    bob.wait_for_js(
+        "return !document.querySelector('.call-stage');",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("off again for bob");
+    phone.tap(".call-screen .hang-up").await.expect("hang up");
+    bob.click(".voice-panel .hang-up")
         .await
-        .expect("off again for bob");
-    phone
-        .tap(".call-screen .hang-up")
-        .await
-        .expect("hang up");
-    bob.click(".voice-panel .hang-up").await.expect("bob hangs up");
+        .expect("bob hangs up");
 }
 
 /// Seconds in a CSS time list's first entry ("0.24s, 0.24s" → 0.24).
@@ -2174,9 +2237,12 @@ async fn phone_swipe_animations_are_quick() {
         .await
         .expect("drag");
     app.lift((width * 0.7, height / 2.0)).await.expect("lift");
-    app.wait_for_js("return window.__settle !== null && !window.__settle.includes('none');", DEFAULT_WAIT)
-        .await
-        .expect("the swipe finishes");
+    app.wait_for_js(
+        "return window.__settle !== null && !window.__settle.includes('none');",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("the swipe finishes");
     let settle = app.eval("return window.__settle;").await.expect("settle");
     let settle_s = settle
         .as_str()
@@ -2210,7 +2276,9 @@ async fn tapping_a_server_flashes_no_square() {
         return;
     }
     let mut app = App::launch_android().await.expect("launch on Android");
-    app.wait_for("form.login", DEFAULT_WAIT).await.expect("login form");
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
     app.type_into("form.login input[name=username]", "alice")
         .await
         .expect("username");
@@ -2221,7 +2289,9 @@ async fn tapping_a_server_flashes_no_square() {
     app.wait_for(".rail-item[title=\"Engineering\"]", DEFAULT_WAIT)
         .await
         .expect("a server in the rail");
-    app.tap(".rail-item[title=\"Engineering\"]").await.expect("tap the server");
+    app.tap(".rail-item[title=\"Engineering\"]")
+        .await
+        .expect("tap the server");
     app.wait_for(".rail-item.selected[title=\"Engineering\"]", DEFAULT_WAIT)
         .await
         .expect("selected");
@@ -2230,5 +2300,9 @@ async fn tapping_a_server_flashes_no_square() {
                return [s.webkitTapHighlightColor, s.outlineStyle === 'none' || s.outlineWidth === '0px'];")
         .await
         .expect("styles");
-    assert_eq!(looks, serde_json::json!(["rgba(0, 0, 0, 0)", true]), "no tap highlight, no focus ring");
+    assert_eq!(
+        looks,
+        serde_json::json!(["rgba(0, 0, 0, 0)", true]),
+        "no tap highlight, no focus ring"
+    );
 }

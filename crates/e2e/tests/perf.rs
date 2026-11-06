@@ -137,7 +137,11 @@ async fn threads_and_memory_stay_modest() {
         if let Ok(children) =
             std::fs::read_to_string(format!("/proc/{parent}/task/{parent}/children"))
         {
-            processes.extend(children.split_whitespace().filter_map(|c| c.parse::<u32>().ok()));
+            processes.extend(
+                children
+                    .split_whitespace()
+                    .filter_map(|c| c.parse::<u32>().ok()),
+            );
         }
     }
     let pss_kb = |pid: u32| -> u64 {
@@ -149,7 +153,10 @@ async fn threads_and_memory_stay_modest() {
             .unwrap_or(0)
     };
     let total_mb = processes.iter().map(|p| pss_kb(*p)).sum::<u64>() / 1024;
-    eprintln!("[memory] {threads} threads, {total_mb} MB over {} processes", processes.len());
+    eprintln!(
+        "[memory] {threads} threads, {total_mb} MB over {} processes",
+        processes.len()
+    );
     assert!(threads < 60, "{threads} threads in the app");
     assert!(total_mb < 500, "{total_mb} MB for the app");
 }

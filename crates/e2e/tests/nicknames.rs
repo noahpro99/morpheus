@@ -156,7 +156,11 @@ async fn mentions_find_people_by_nickname() {
     login_and_open(&mut carol, "carol", "general").await;
     // A run that failed half way leaves the nickname behind: start clean.
     let leftover = carol
-        .wait_for_text(".members .member", "Zebedee", std::time::Duration::from_secs(3))
+        .wait_for_text(
+            ".members .member",
+            "Zebedee",
+            std::time::Duration::from_secs(3),
+        )
         .await
         .is_ok();
     if leftover {

@@ -52,7 +52,9 @@ async fn autofill_shortcut_hints_steady_numbers_and_balanced_headings() {
         return;
     };
     let mut app = App::launch_desktop(&hs).await.expect("launch");
-    app.wait_for("form.login", DEFAULT_WAIT).await.expect("login form");
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
 
     // A password manager knows which field is which.
     let autocomplete = app
@@ -65,7 +67,11 @@ async fn autofill_shortcut_hints_steady_numbers_and_balanced_headings() {
         "sign-in fields say what they hold"
     );
     // The sign-in heading wraps evenly.
-    assert_eq!(style(&mut app, ".login h1", "text-wrap-style").await, "balance", "balanced heading");
+    assert_eq!(
+        style(&mut app, ".login h1", "text-wrap-style").await,
+        "balance",
+        "balanced heading"
+    );
 
     login_and_open(&mut app, "general").await;
 
@@ -87,7 +93,9 @@ async fn autofill_shortcut_hints_steady_numbers_and_balanced_headings() {
     );
 
     // Counters and times keep their width as digits change.
-    app.wait_for(".message .time", DEFAULT_WAIT).await.expect("a message's time");
+    app.wait_for(".message .time", DEFAULT_WAIT)
+        .await
+        .expect("a message's time");
     for selector in [".message .time", ".pin-toggle", ".member-toggle"] {
         assert_eq!(
             style(&mut app, selector, "font-variant-numeric").await,
@@ -134,16 +142,23 @@ async fn deleting_a_message_can_be_undone() {
     let mut app = App::launch_desktop(&hs).await.expect("launch");
     login_and_open(&mut app, "random").await;
     let text = format!("undo me {}", std::process::id());
-    app.type_into(".composer .composer-input", &text).await.expect("type");
-    app.press(".composer .composer-input", "Enter").await.expect("send");
+    app.type_into(".composer .composer-input", &text)
+        .await
+        .expect("type");
+    app.press(".composer .composer-input", "Enter")
+        .await
+        .expect("send");
     app.wait_for_exact_text(".message.own:not(.pending) .body", &text, DEFAULT_WAIT)
         .await
         .expect("sent");
 
     hover_action(&mut app, &text, "delete").await;
-    app.wait_for_js(&shown(&text).replace("return ", "return !"), Duration::from_secs(2))
-        .await
-        .expect("gone at once");
+    app.wait_for_js(
+        &shown(&text).replace("return ", "return !"),
+        Duration::from_secs(2),
+    )
+    .await
+    .expect("gone at once");
     app.wait_for_text(".toast", "Message deleted", Duration::from_secs(2))
         .await
         .expect("a toast saying so");
@@ -153,7 +168,11 @@ async fn deleting_a_message_can_be_undone() {
         .expect("back after undo");
     // Not deleted behind the scenes either.
     tokio::time::sleep(Duration::from_secs(8)).await;
-    assert_eq!(app.eval(&shown(&text)).await.expect("look"), serde_json::json!(true), "still there");
+    assert_eq!(
+        app.eval(&shown(&text)).await.expect("look"),
+        serde_json::json!(true),
+        "still there"
+    );
 
     // Left alone, it goes for good.
     hover_action(&mut app, &text, "delete").await;
@@ -178,8 +197,12 @@ async fn leaving_a_room_can_be_undone() {
     ))
     .await
     .expect("room menu");
-    app.wait_for(".context-menu", DEFAULT_WAIT).await.expect("menu open");
-    app.click_text(".context-menu .context-item", "Leave room").await.expect("leave");
+    app.wait_for(".context-menu", DEFAULT_WAIT)
+        .await
+        .expect("menu open");
+    app.click_text(".context-menu .context-item", "Leave room")
+        .await
+        .expect("leave");
     app.wait_for_js(&format!("return !{row};"), Duration::from_secs(2))
         .await
         .expect("gone from the list at once");
@@ -219,10 +242,14 @@ async fn a_double_send_sends_once() {
     let tapped = format!("tapped twice {}", std::process::id());
     let has_button = app.count(".composer .send-button").await.expect("count") > 0;
     if has_button {
-        app.type_into(".composer .composer-input", &tapped).await.expect("type");
-        app.eval("const b = document.querySelector('.composer .send-button'); b.click(); b.click();")
+        app.type_into(".composer .composer-input", &tapped)
             .await
-            .expect("double tap");
+            .expect("type");
+        app.eval(
+            "const b = document.querySelector('.composer .send-button'); b.click(); b.click();",
+        )
+        .await
+        .expect("double tap");
         app.wait_for_exact_text(".message.own:not(.pending) .body", &tapped, DEFAULT_WAIT)
             .await
             .expect("sent");
@@ -231,7 +258,9 @@ async fn a_double_send_sends_once() {
     // Enter (a phone's Enter makes a new line instead).
     let entered = format!("entered twice {}", std::process::id());
     if !has_button {
-        app.type_into(".composer .composer-input", &entered).await.expect("type");
+        app.type_into(".composer .composer-input", &entered)
+            .await
+            .expect("type");
         app.eval("const i = document.querySelector('.composer .composer-input'); \
                   for (const _ of [1, 2]) i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));")
             .await
@@ -243,10 +272,18 @@ async fn a_double_send_sends_once() {
 
     tokio::time::sleep(Duration::from_secs(3)).await;
     if has_button {
-        assert_eq!(app.eval(&count(&tapped)).await.expect("count"), serde_json::json!(1), "one message from a double tap");
+        assert_eq!(
+            app.eval(&count(&tapped)).await.expect("count"),
+            serde_json::json!(1),
+            "one message from a double tap"
+        );
     }
     if !has_button {
-        assert_eq!(app.eval(&count(&entered)).await.expect("count"), serde_json::json!(1), "one message from a double Enter");
+        assert_eq!(
+            app.eval(&count(&entered)).await.expect("count"),
+            serde_json::json!(1),
+            "one message from a double Enter"
+        );
     }
 }
 
@@ -268,7 +305,9 @@ async fn submenus_stay_open_while_the_mouse_heads_for_them() {
     )
     .await
     .expect("room menu");
-    app.wait_for(".context-menu", DEFAULT_WAIT).await.expect("menu");
+    app.wait_for(".context-menu", DEFAULT_WAIT)
+        .await
+        .expect("menu");
 
     // Helpers in the page: the Notifications row, the row below it, a
     // pointer move to a point over an element, and whether the flyout shows.
@@ -281,7 +320,11 @@ async fn submenus_stay_open_while_the_mouse_heads_for_them() {
     app.eval(setup).await.expect("helpers");
 
     let point_in_parent = "const p = window.__t.parent().getBoundingClientRect(); window.__t.move(window.__t.parent(), p.left + 30, p.top + p.height / 2); return window.__t.open();";
-    assert_eq!(app.eval(point_in_parent).await.expect("hover"), serde_json::json!(true), "open on hover");
+    assert_eq!(
+        app.eval(point_in_parent).await.expect("hover"),
+        serde_json::json!(true),
+        "open on hover"
+    );
 
     // Toward the flyout, crossing the row below near its right end.
     app.eval("const b = window.__t.below().getBoundingClientRect(); window.__t.move(window.__t.below(), b.right - 12, b.top + 4); return true;")
@@ -298,7 +341,11 @@ async fn submenus_stay_open_while_the_mouse_heads_for_them() {
         .await
         .expect("into the flyout");
     tokio::time::sleep(Duration::from_millis(500)).await;
-    assert_eq!(app.eval("return window.__t.open();").await.expect("open"), serde_json::json!(true), "open inside it");
+    assert_eq!(
+        app.eval("return window.__t.open();").await.expect("open"),
+        serde_json::json!(true),
+        "open inside it"
+    );
 
     // Back on the parent, then straight down the left edge, away from it: it closes.
     app.eval(point_in_parent).await.expect("hover again");
@@ -331,7 +378,11 @@ async fn phone_tap_targets_are_at_least_44_points() {
     tokio::time::sleep(Duration::from_millis(500)).await;
     let in_list = app.eval(small).await.expect("list buttons");
     assert_eq!(in_chat, serde_json::json!([]), "small targets in the chat");
-    assert_eq!(in_list, serde_json::json!([]), "small targets on the room list");
+    assert_eq!(
+        in_list,
+        serde_json::json!([]),
+        "small targets on the room list"
+    );
 }
 
 /// Waiting shows the shape of what is coming, never a "Loading…" line: the
@@ -353,23 +404,104 @@ async fn loading_shows_skeletons_not_words() {
     // The member list, shut and opened again.
     app.click(".member-toggle").await.expect("hide members");
     app.click(".member-toggle").await.expect("show members");
-    app.wait_for(".members .member", DEFAULT_WAIT).await.expect("members");
+    app.wait_for(".members .member", DEFAULT_WAIT)
+        .await
+        .expect("members");
     // Pinned messages.
     app.click(".pin-toggle").await.expect("pins");
-    app.wait_for(".pinned-dialog", DEFAULT_WAIT).await.expect("pinned dialog");
+    app.wait_for(".pinned-dialog", DEFAULT_WAIT)
+        .await
+        .expect("pinned dialog");
     tokio::time::sleep(Duration::from_secs(1)).await;
     app.press("body", "Escape").await.expect("close");
     // Your devices.
     app.click(".settings-button").await.expect("settings");
-    app.click_text(".settings-nav button", "Security & Privacy").await.expect("security");
+    app.click_text(".settings-nav button", "Security & Privacy")
+        .await
+        .expect("security");
     tokio::time::sleep(Duration::from_secs(2)).await;
     app.press("body", "Escape").await.expect("close settings");
     // A picture, full size.
-    app.reveal_element(".message img.image", DEFAULT_WAIT).await.expect("an image");
+    app.reveal_element(".message img.image", DEFAULT_WAIT)
+        .await
+        .expect("an image");
     app.click(".message img.image").await.expect("open it");
-    app.wait_for(".lightbox-overlay", DEFAULT_WAIT).await.expect("lightbox");
+    app.wait_for(".lightbox-overlay", DEFAULT_WAIT)
+        .await
+        .expect("lightbox");
     tokio::time::sleep(Duration::from_secs(1)).await;
 
-    let seen = app.eval("return window.__loadingSeen;").await.expect("seen");
-    assert_eq!(seen, serde_json::json!([]), "\"Loading…\" shown while waiting");
+    let seen = app
+        .eval("return window.__loadingSeen;")
+        .await
+        .expect("seen");
+    assert_eq!(
+        seen,
+        serde_json::json!([]),
+        "\"Loading…\" shown while waiting"
+    );
+}
+
+const DUSK_PNG: &[u8] = include_bytes!("../fixtures/dusk.png");
+
+/// Whether the image named `body` shows a blurred placeholder (a decoded
+/// blurhash) behind it or in its place.
+fn blurred(body: &str) -> String {
+    format!(
+        "const el = [...document.querySelectorAll('.message .image')].find(i => i.alt === {0} || i.title === {0} || i.textContent.includes({0})); \
+         return !!el && getComputedStyle(el).backgroundImage.startsWith('url(\"data:image/png');",
+        serde_json::to_string(body).expect("json")
+    )
+}
+
+/// Pictures show a blurred preview of themselves while they load: from the
+/// blurhash others' apps send with them, and one this app sends with its
+/// own.
+#[tokio::test]
+async fn pictures_blur_in_from_a_placeholder() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch_desktop(&hs).await.expect("launch");
+    login_and_open(&mut app, "random").await;
+    let room_id: String = app
+        .eval("return document.querySelector('.room.selected').dataset.room;")
+        .await
+        .expect("room id")
+        .as_str()
+        .expect("string")
+        .to_owned();
+
+    // From someone else's app, with a blurhash.
+    let theirs = format!("their dusk {}.png", std::process::id());
+    morpheus_e2e::send_image_as(
+        &hs,
+        "bob",
+        &room_id,
+        DUSK_PNG,
+        &theirs,
+        Some("LKO2?U%2Tw=w]~RBVZRi};RPxuwH"),
+    )
+    .expect("bob sends a picture");
+    app.wait_for_js(&blurred(&theirs), DEFAULT_WAIT)
+        .await
+        .expect("a blurred placeholder from their blurhash");
+
+    // This app's own: dropped in, sent with a blurhash of its own.
+    let ours = format!("our dusk {}.png", std::process::id());
+    let bytes: Vec<String> = DUSK_PNG.iter().map(u8::to_string).collect();
+    app.eval(&format!(
+        "const dt = new DataTransfer(); dt.items.add(new File([new Uint8Array([{}])], {}, {{ type: 'image/png' }})); \
+         const target = document.querySelector('.chat'); \
+         target.dispatchEvent(new DragEvent('dragover', {{ bubbles: true, cancelable: true, dataTransfer: dt }})); \
+         target.dispatchEvent(new DragEvent('drop', {{ bubbles: true, cancelable: true, dataTransfer: dt }}));",
+        bytes.join(","),
+        serde_json::to_string(&ours).expect("json")
+    ))
+    .await
+    .expect("drop a picture");
+    app.wait_for_js(&blurred(&ours), DEFAULT_WAIT)
+        .await
+        .expect("sent with a blurhash of its own");
 }

@@ -117,7 +117,9 @@ async fn join_a_call_see_who_is_in_it_mute_and_hang_up() {
         .wait_for_js(&chimes_are(&["join", "join"]), DEFAULT_WAIT)
         .await
     {
-        let heard = alice.eval("return (window.morpheusSounds ?? []).join(',');").await;
+        let heard = alice
+            .eval("return (window.morpheusSounds ?? []).join(',');")
+            .await;
         panic!("a chime as bob joins: {err}; alice heard {heard:?}");
     }
     bob.wait_for_js(&chimes_are(&["join"]), DEFAULT_WAIT)
@@ -612,7 +614,10 @@ async fn a_camera_turned_on_shows_to_everyone_in_the_call_until_turned_off() {
     // A phone stacks the two, one above the other, full width.
     if alice.is_phone() {
         alice
-            .wait_for(".call-screen .call-tile[data-user=\"@bob:localhost\"]", DEFAULT_WAIT)
+            .wait_for(
+                ".call-screen .call-tile[data-user=\"@bob:localhost\"]",
+                DEFAULT_WAIT,
+            )
             .await
             .expect("bob's tile on the phone");
         let stacked = alice
@@ -623,10 +628,18 @@ async fn a_camera_turned_on_shows_to_everyone_in_the_call_until_turned_off() {
             )
             .await
             .expect("measure");
-        if let Some(path) = alice.screenshot("android-call-two").await.expect("screenshot") {
+        if let Some(path) = alice
+            .screenshot("android-call-two")
+            .await
+            .expect("screenshot")
+        {
             eprintln!("screenshot: {}", path.display());
         }
-        assert_eq!(stacked, serde_json::json!(true), "the two tiles stack on a phone");
+        assert_eq!(
+            stacked,
+            serde_json::json!(true),
+            "the two tiles stack on a phone"
+        );
     }
 
     // The other way: bob's camera reaches alice.
@@ -637,7 +650,11 @@ async fn a_camera_turned_on_shows_to_everyone_in_the_call_until_turned_off() {
         .wait_for_js(&shows_test_pattern("@bob:localhost"), DEFAULT_WAIT)
         .await
         .expect("alice sees bob's camera");
-    if let Some(path) = alice.screenshot("call-video-other-way").await.expect("screenshot") {
+    if let Some(path) = alice
+        .screenshot("call-video-other-way")
+        .await
+        .expect("screenshot")
+    {
         eprintln!("screenshot: {}", path.display());
     }
     bob.click(".voice-panel .camera-button")
@@ -847,12 +864,18 @@ async fn joining_a_ringing_call_from_the_room_stops_the_ring_for_good() {
     bob.click(".voice-panel .hang-up")
         .await
         .expect("bob hangs up");
-    bob.wait_for_js("return !document.querySelector('.voice-panel');", DEFAULT_WAIT)
-        .await
-        .expect("bob out");
+    bob.wait_for_js(
+        "return !document.querySelector('.voice-panel');",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("bob out");
     tokio::time::sleep(std::time::Duration::from_secs(4)).await;
     assert_eq!(
-        (rings(&mut bob).await, bob.count(".incoming-call").await.expect("count")),
+        (
+            rings(&mut bob).await,
+            bob.count(".incoming-call").await.expect("count")
+        ),
         (joined, 0),
         "it rang again after hanging up"
     );
@@ -936,7 +959,10 @@ fn renamed(jwt: &str, identity: &str) -> String {
     use base64::Engine as _;
     let b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD;
     let mut parts = jwt.split('.');
-    let (header, payload) = (parts.next().expect("header"), parts.next().expect("payload"));
+    let (header, payload) = (
+        parts.next().expect("header"),
+        parts.next().expect("payload"),
+    );
     let mut claims: serde_json::Value =
         serde_json::from_slice(&b64.decode(payload).expect("payload")).expect("claims");
     claims["sub"] = serde_json::json!(identity);
@@ -955,7 +981,9 @@ fn renamed(jwt: &str, identity: &str) -> String {
 /// service in front, each token renamed. Returns its URL.
 async fn renaming_token_service() -> String {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
     let url = format!("http://{}", listener.local_addr().expect("addr"));
     tokio::spawn(async move {
         let mut served = 0u32;
@@ -967,7 +995,9 @@ async fn renaming_token_service() -> String {
                 let mut request = Vec::new();
                 let mut buf = [0u8; 8192];
                 let (head_end, length) = loop {
-                    let Ok(n) = client.read(&mut buf).await else { return };
+                    let Ok(n) = client.read(&mut buf).await else {
+                        return;
+                    };
                     if n == 0 {
                         return;
                     }
@@ -983,7 +1013,9 @@ async fn renaming_token_service() -> String {
                     }
                 };
                 while request.len() < head_end + length {
-                    let Ok(n) = client.read(&mut buf).await else { return };
+                    let Ok(n) = client.read(&mut buf).await else {
+                        return;
+                    };
                     if n == 0 {
                         break;
                     }
@@ -993,7 +1025,15 @@ async fn renaming_token_service() -> String {
                 let path = head.split_whitespace().nth(1).unwrap_or("/").to_owned();
                 let body = String::from_utf8_lossy(&request[head_end..]).to_string();
                 let answer = tokio::process::Command::new("curl")
-                    .args(["-s", "-w", "\n%{http_code}", "-X", "POST", "-H", "Content-Type: application/json"])
+                    .args([
+                        "-s",
+                        "-w",
+                        "\n%{http_code}",
+                        "-X",
+                        "POST",
+                        "-H",
+                        "Content-Type: application/json",
+                    ])
                     .arg(format!("http://localhost:8080{path}"))
                     .args(["-d", &body])
                     .output()
@@ -1079,7 +1119,9 @@ async fn encrypted_calls_work_whatever_the_token_service_names_people() {
         .await
         .expect("alice sees bob's camera");
 
-    bob.click(".voice-panel .hang-up").await.expect("bob hangs up");
+    bob.click(".voice-panel .hang-up")
+        .await
+        .expect("bob hangs up");
     alice
         .click(".voice-panel .hang-up")
         .await
@@ -1147,7 +1189,10 @@ async fn the_call_stage_is_resized_by_dragging_its_edge() {
         .await
         .expect("camera off");
     alice
-        .wait_for_js("return !document.querySelector('.call-stage');", DEFAULT_WAIT)
+        .wait_for_js(
+            "return !document.querySelector('.call-stage');",
+            DEFAULT_WAIT,
+        )
         .await
         .expect("stage gone");
     alice
@@ -1163,13 +1208,14 @@ async fn the_call_stage_is_resized_by_dragging_its_edge() {
         (again - after).abs() < 12.0,
         "the stage forgot its size: {after} → {again} px"
     );
-    if let Some(path) = alice.screenshot("call-stage-resized").await.expect("screenshot") {
+    if let Some(path) = alice
+        .screenshot("call-stage-resized")
+        .await
+        .expect("screenshot")
+    {
         eprintln!("screenshot: {}", path.display());
     }
-    alice
-        .click(".voice-panel .hang-up")
-        .await
-        .expect("hang up");
+    alice.click(".voice-panel .hang-up").await.expect("hang up");
     out_of_call(&mut alice).await;
 }
 
@@ -1231,13 +1277,19 @@ async fn a_ring_is_heard_on_the_desktop() {
         if plays.iter().any(|p| p.starts_with("ring: ")) {
             break plays;
         }
-        assert!(std::time::Instant::now() < deadline, "no ringtone tried: {plays:?}");
+        assert!(
+            std::time::Instant::now() < deadline,
+            "no ringtone tried: {plays:?}"
+        );
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     };
     alice.click(hang_up).await.expect("alice hangs up");
     out_of_call(&mut alice).await;
     assert!(
-        plays.iter().any(|p| p == "ring: played") && !plays.iter().any(|p| p.starts_with("ring: ") && p != "ring: played"),
+        plays.iter().any(|p| p == "ring: played")
+            && !plays
+                .iter()
+                .any(|p| p.starts_with("ring: ") && p != "ring: played"),
         "the ringtone did not play: {plays:?}"
     );
 }

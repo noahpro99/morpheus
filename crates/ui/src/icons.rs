@@ -37,7 +37,7 @@ pub const CHECK_CHECK: &str = r#"<path d="M18 6 7 17l-5-5" /> <path d="m22 10-7.
 pub const CHECK: &str = r#"<path d="M20 6 9 17l-5-5" />"#;
 pub const CHEVRON_DOWN: &str = r#"<path d="m6 9 6 6 6-6" />"#;
 pub const CHEVRON_UP: &str = r#"<path d="m18 15-6-6-6 6" />"#;
-pub const CHEVRON_LEFT:&str = r#"<path d="m15 18-6-6 6-6" />"#;
+pub const CHEVRON_LEFT: &str = r#"<path d="m15 18-6-6 6-6" />"#;
 pub const CHEVRON_RIGHT: &str = r#"<path d="m9 18 6-6-6-6" />"#;
 pub const CIRCLE_HELP: &str = r#"<circle cx="12" cy="12" r="10" /> <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /> <path d="M12 17h.01" />"#;
 pub const CIRCLE_MINUS: &str = r#"<circle cx="12" cy="12" r="10" /> <path d="M8 12h8" />"#;

@@ -1,9 +1,6 @@
 use std::{
     collections::HashMap,
-    sync::{
-        Arc, Mutex as StdMutex,
-        atomic::Ordering,
-    },
+    sync::{Arc, Mutex as StdMutex, atomic::Ordering},
 };
 
 use futures_util::{StreamExt, pin_mut};

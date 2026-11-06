@@ -2201,3 +2201,9 @@ h1, h2, h3, h4, .modal-title, .empty-title {
 .skeleton-picture { width: 32px; height: 32px; border-radius: 50%; flex: none; }
 .reply-preview .skeleton-line, .skeleton-inline { display: inline-block; width: 140px; height: 10px; margin: 0; vertical-align: middle; }
 .lightbox-loading.skeleton { width: min(80vw, 720px); max-height: 80vh; border-radius: 8px; }
+
+/* A picture's blurred preview (its BlurHash), stretched behind it while it
+   loads; the placeholder shows only the preview, no file name, when there
+   is one. */
+.image[style*="background-image"] { background-size: cover; background-position: center; }
+.image.placeholder[style*="background-image"] { color: transparent; }

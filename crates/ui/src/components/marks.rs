@@ -26,7 +26,11 @@ impl Marks {
     /// Whether a room is muted, counting changes made here.
     pub fn is_muted(&self, room: &morpheus_core::RoomSummary) -> bool {
         let key = room.id.to_string();
-        self.muted_now.read().get(&key).copied().unwrap_or(room.muted)
+        self.muted_now
+            .read()
+            .get(&key)
+            .copied()
+            .unwrap_or(room.muted)
             || self.muted_until.read().contains_key(&key)
     }
 }
@@ -63,7 +67,12 @@ pub fn provide_marks(session: Session) -> Marks {
         move || {
             let session = session.clone();
             async move {
-                for kind in [marks::PINNED, marks::CLOSED, marks::IGNORED, marks::MUTED_UNTIL] {
+                for kind in [
+                    marks::PINNED,
+                    marks::CLOSED,
+                    marks::IGNORED,
+                    marks::MUTED_UNTIL,
+                ] {
                     match session.marks(kind).await {
                         Ok(map) => marks.signal(kind).set(map),
                         Err(err) => report("loading your marks", &err),
@@ -118,19 +127,30 @@ pub fn set_mark(session: &Session, kind: &'static str, key: String, at: Option<i
 
 /// Mute a room until `until` (milliseconds since the epoch; 0 for good).
 pub fn mute_until(session: &Session, room_id: OwnedRoomId, until: i64) {
-    consume_context::<Marks>().muted_now.write().insert(room_id.to_string(), true);
+    consume_context::<Marks>()
+        .muted_now
+        .write()
+        .insert(room_id.to_string(), true);
     let future = session.set_notify_mode(room_id.clone(), NotifyMode::Mute);
     spawn(async move {
         if let Err(err) = future.await {
             report("mute", &err);
         }
     });
-    set_mark(session, marks::MUTED_UNTIL, room_id.to_string(), Some(until));
+    set_mark(
+        session,
+        marks::MUTED_UNTIL,
+        room_id.to_string(),
+        Some(until),
+    );
 }
 
 /// Hear a room again.
 pub fn unmute(session: &Session, room_id: OwnedRoomId) {
-    consume_context::<Marks>().muted_now.write().insert(room_id.to_string(), false);
+    consume_context::<Marks>()
+        .muted_now
+        .write()
+        .insert(room_id.to_string(), false);
     let future = session.set_notify_mode(room_id.clone(), NotifyMode::AllMessages);
     spawn(async move {
         if let Err(err) = future.await {

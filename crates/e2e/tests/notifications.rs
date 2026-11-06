@@ -249,10 +249,17 @@ async fn notifications_show_the_senders_picture_and_the_photo() {
         {
             break notice;
         }
-        assert!(std::time::Instant::now() < deadline, "not shown: {:?}", shown(&bob));
+        assert!(
+            std::time::Instant::now() < deadline,
+            "not shown: {:?}",
+            shown(&bob)
+        );
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     };
-    assert!(is_image(&notice["icon"]), "alice's picture as the icon: {notice}");
+    assert!(
+        is_image(&notice["icon"]),
+        "alice's picture as the icon: {notice}"
+    );
 
     // A photo: the picture itself in the notification.
     let photo = format!("photo-{pid}.png");
@@ -276,7 +283,11 @@ async fn notifications_show_the_senders_picture_and_the_photo() {
         {
             break notice;
         }
-        assert!(std::time::Instant::now() < deadline, "photo not shown: {:?}", shown(&bob));
+        assert!(
+            std::time::Instant::now() < deadline,
+            "photo not shown: {:?}",
+            shown(&bob)
+        );
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     };
     assert!(is_image(&notice["icon"]), "alice's picture: {notice}");

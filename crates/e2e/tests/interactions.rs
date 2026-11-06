@@ -311,14 +311,19 @@ async fn ctrl_k_pictures_follow_their_rooms() {
         app.eval("const i = document.querySelector('.switcher input'); i.value = ''; i.dispatchEvent(new Event('input', { bubbles: true }));")
             .await
             .expect("clear");
-        app.type_into(".switcher input", query).await.expect("filter");
+        app.type_into(".switcher input", query)
+            .await
+            .expect("filter");
         tokio::time::sleep(Duration::from_secs(1)).await;
         let after: Vec<(String, String)> =
             serde_json::from_value(app.eval(pictures).await.expect("pictures")).expect("rows");
         eprintln!("[switcher] '{query}': {after:?}");
         for (name, picture) in &after {
             if let Some(own) = before.get(name) {
-                assert_eq!(picture, own, "'{name}' shows another room's picture after typing '{query}'");
+                assert_eq!(
+                    picture, own,
+                    "'{name}' shows another room's picture after typing '{query}'"
+                );
             }
         }
     }

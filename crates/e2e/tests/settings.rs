@@ -334,7 +334,10 @@ async fn qr_code_verification_with_a_device_that_scans() {
         .expect("cross-signing on the phone");
     let deadline = std::time::Instant::now() + DEFAULT_WAIT;
     while phone.own_devices().await.map(|d| d.len()).unwrap_or(0) < 2 {
-        assert!(std::time::Instant::now() < deadline, "the app's device never showed up");
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the app's device never showed up"
+        );
         tokio::time::sleep(Duration::from_millis(300)).await;
     }
     let mut scanner = phone
@@ -356,7 +359,8 @@ async fn qr_code_verification_with_a_device_that_scans() {
         .eval("return document.querySelector('.verification-qr').innerHTML;")
         .await
         .expect("the code's picture");
-    let saved = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/e2e/verification-qr.svg");
+    let saved = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/e2e/verification-qr.svg");
     let _ = std::fs::write(&saved, svg.as_str().unwrap_or_default());
     let bytes: Vec<u8> = serde_json::from_value(
         app.eval(

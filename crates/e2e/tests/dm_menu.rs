@@ -26,7 +26,9 @@ fn row(name: &str) -> String {
 /// Alice signed in, on the DM list, nothing open (the Friends page).
 async fn alice_on_dms(hs: &str) -> App {
     let mut app = App::launch_desktop(hs).await.expect("launch");
-    app.wait_for("form.login", DEFAULT_WAIT).await.expect("login form");
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
     app.type_into("form.login input[name=username]", "alice")
         .await
         .expect("username");
@@ -51,16 +53,21 @@ async fn dm_menu(app: &mut App, name: &str) {
     ))
     .await
     .expect("right-click");
-    app.wait_for(".context-menu", DEFAULT_WAIT).await.expect("menu");
+    app.wait_for(".context-menu", DEFAULT_WAIT)
+        .await
+        .expect("menu");
 }
 
 async fn choose(app: &mut App, label: &str) {
     app.click_text(".context-menu .context-item", label)
         .await
         .expect("menu item");
-    app.wait_for_js("return document.querySelector('.context-menu') === null;", DEFAULT_WAIT)
-        .await
-        .expect("menu closed");
+    app.wait_for_js(
+        "return document.querySelector('.context-menu') === null;",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("menu closed");
 }
 
 /// The menu's top-level labels.
@@ -74,19 +81,32 @@ async fn labels(app: &mut App) -> Vec<String> {
 }
 
 async fn has_class(app: &mut App, name: &str, class: &str) -> bool {
-    app.eval(&format!("return !!{}?.classList.contains({});", row(name), js(class)))
-        .await
-        .expect("class")
+    app.eval(&format!(
+        "return !!{}?.classList.contains({});",
+        row(name),
+        js(class)
+    ))
+    .await
+    .expect("class")
         == serde_json::json!(true)
 }
 
 async fn wait_class(app: &mut App, name: &str, class: &str, on: bool) {
     app.wait_for_js(
-        &format!("return !!{}?.classList.contains({}) === {on};", row(name), js(class)),
+        &format!(
+            "return !!{}?.classList.contains({}) === {on};",
+            row(name),
+            js(class)
+        ),
         DEFAULT_WAIT,
     )
     .await
-    .unwrap_or_else(|err| panic!("{name} {} {class}: {err}", if on { "gets" } else { "loses" }));
+    .unwrap_or_else(|err| {
+        panic!(
+            "{name} {} {class}: {err}",
+            if on { "gets" } else { "loses" }
+        )
+    });
 }
 
 #[tokio::test]
@@ -125,7 +145,10 @@ async fn a_pinned_dm_stays_at_the_top() {
     dm_menu(&mut app, &last).await;
     choose(&mut app, "Pin").await;
     app.wait_for_js(
-        &format!("return document.querySelector('.room.dm .room-name')?.textContent.trim() === {};", js(&last)),
+        &format!(
+            "return document.querySelector('.room.dm .room-name')?.textContent.trim() === {};",
+            js(&last)
+        ),
         DEFAULT_WAIT,
     )
     .await
@@ -137,7 +160,10 @@ async fn a_pinned_dm_stays_at_the_top() {
     app.wait_for(".rail-dms", DEFAULT_WAIT).await.expect("rail");
     app.click(".rail-dms").await.expect("DMs");
     app.wait_for_js(
-        &format!("return document.querySelector('.room.dm .room-name')?.textContent.trim() === {};", js(&last)),
+        &format!(
+            "return document.querySelector('.room.dm .room-name')?.textContent.trim() === {};",
+            js(&last)
+        ),
         DEFAULT_WAIT,
     )
     .await
@@ -156,7 +182,11 @@ async fn favorites_get_their_own_place_in_the_rail() {
         return;
     };
     let mut app = alice_on_dms(&hs).await;
-    assert_eq!(app.count(".rail-favorites").await.expect("count"), 0, "no favorites yet");
+    assert_eq!(
+        app.count(".rail-favorites").await.expect("count"),
+        0,
+        "no favorites yet"
+    );
     dm_menu(&mut app, "carol").await;
     choose(&mut app, "Add to favorites").await;
     app.wait_for(".rail-favorites", DEFAULT_WAIT)
@@ -172,9 +202,12 @@ async fn favorites_get_their_own_place_in_the_rail() {
 
     dm_menu(&mut app, "carol").await;
     choose(&mut app, "Remove from favorites").await;
-    app.wait_for_js("return document.querySelector('.rail-favorites') === null;", DEFAULT_WAIT)
-        .await
-        .expect("no Favorites place once empty");
+    app.wait_for_js(
+        "return document.querySelector('.rail-favorites') === null;",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("no Favorites place once empty");
 }
 
 #[tokio::test]
@@ -194,7 +227,10 @@ async fn a_closed_dm_comes_back_with_a_new_message() {
     dm_menu(&mut app, "carol").await;
     choose(&mut app, "Close DM").await;
     let by_id = format!("document.querySelector('.room.dm[data-room=\"{room_id}\"]')");
-    if let Err(err) = app.wait_for_js(&format!("return !{by_id};"), DEFAULT_WAIT).await {
+    if let Err(err) = app
+        .wait_for_js(&format!("return !{by_id};"), DEFAULT_WAIT)
+        .await
+    {
         let state = app
             .eval(&format!("const r = {by_id}; return [r?.className, document.querySelector('.chat-header h2')?.textContent, document.querySelector('.friends-page') !== null];"))
             .await;
@@ -207,8 +243,13 @@ async fn a_closed_dm_comes_back_with_a_new_message() {
         "stays closed"
     );
 
-    morpheus_e2e::send_as(&hs, "carol", &room_id, &format!("still there? {}", std::process::id()))
-        .expect("carol writes");
+    morpheus_e2e::send_as(
+        &hs,
+        "carol",
+        &room_id,
+        &format!("still there? {}", std::process::id()),
+    )
+    .expect("carol writes");
     app.wait_for_js(
         &format!("return !!{by_id}?.classList.contains('unread');"),
         DEFAULT_WAIT,
@@ -236,7 +277,9 @@ async fn an_ignored_persons_messages_fold_away() {
     app.wait_for_text(".notification-log li", &text, DEFAULT_WAIT)
         .await
         .expect("a notification for her message");
-    app.eval(&format!("{}.click();", row("carol"))).await.expect("open");
+    app.eval(&format!("{}.click();", row("carol")))
+        .await
+        .expect("open");
     app.wait_for_exact_text(".message .body", &text, DEFAULT_WAIT)
         .await
         .expect("her message");
@@ -258,7 +301,9 @@ async fn an_ignored_persons_messages_fold_away() {
     app.click(".friends-row").await.expect("away from the DM");
     let quiet = format!("still ignored {}", std::process::id());
     morpheus_e2e::send_as(&hs, "carol", &room_id, &quiet).expect("carol writes again");
-    app.eval(&format!("{}.click();", row("carol"))).await.expect("open again");
+    app.eval(&format!("{}.click();", row("carol")))
+        .await
+        .expect("open again");
     app.wait_for_js(
         &format!("return document.querySelectorAll('.message.ignored').length > {folds};"),
         DEFAULT_WAIT,

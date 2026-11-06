@@ -13,6 +13,7 @@
 //! UI code has exactly one way of consuming incremental updates.
 
 mod accounts;
+mod blur;
 mod calls;
 mod core;
 mod error;
@@ -41,6 +42,7 @@ pub use error::{Error, Result};
 /// leak into dependents, and `Send` so any executor can drive it.
 pub type CoreFuture<T> = futures_util::future::BoxFuture<'static, Result<T>>;
 pub use accounts::SavedAccount;
+pub use blur::placeholder as blur_placeholder;
 pub use calls::{
     CallCredentials, CallKey, CallKeyUpdates, CallMember, IncomingCall, RING_FOR_MS, RingUpdates,
     Ringing,
@@ -65,8 +67,7 @@ pub use timeline::{
 pub use typing::TypingUpdates;
 pub use updates::UpdateStatus;
 pub use verification::{
-    Device, QrImage, VerificationActions, VerificationHandle, VerificationStep,
-    VerificationUpdates,
+    Device, QrImage, VerificationActions, VerificationHandle, VerificationStep, VerificationUpdates,
 };
 
 pub use eyeball_im::VectorDiff;

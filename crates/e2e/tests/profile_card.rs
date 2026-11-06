@@ -218,7 +218,10 @@ async fn gone_js(app: &mut App, selector: &str) {
 
 /// The row for `room` in the mod view.
 fn row(room: &str) -> String {
-    format!(".mod-view .mod-room[data-name={}]", serde_json::to_string(room).expect("json"))
+    format!(
+        ".mod-view .mod-room[data-name={}]",
+        serde_json::to_string(room).expect("json")
+    )
 }
 
 /// Discord's mod view: one sheet for a person, every room you share with
@@ -243,9 +246,13 @@ async fn mod_view_moderates_someone_across_rooms() {
     app.click(".profile-card .card-button.mod-view")
         .await
         .expect("mod view");
-    app.wait_for_text(".mod-view .mod-view-id", &format!("@{them}:localhost"), DEFAULT_WAIT)
-        .await
-        .expect("the sheet names them");
+    app.wait_for_text(
+        ".mod-view .mod-view-id",
+        &format!("@{them}:localhost"),
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("the sheet names them");
     for room in ["general", "random"] {
         app.wait_for(&standing(room, "Member"), DEFAULT_WAIT)
             .await
@@ -290,7 +297,9 @@ async fn mod_view_moderates_someone_across_rooms() {
         .expect("unbanned");
     // Still in #random? No: unbanning lets them back, it does not bring them.
     assert_eq!(
-        app.count(&format!("{} .mod-ban", row("random"))).await.expect("count"),
+        app.count(&format!("{} .mod-ban", row("random")))
+            .await
+            .expect("count"),
         1,
         "they can be banned again before they come back"
     );

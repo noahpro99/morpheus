@@ -45,9 +45,9 @@ pub use devices::{
 };
 #[cfg(target_os = "linux")]
 mod camera;
+mod platform_camera;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 mod screen;
-mod platform_camera;
 pub use platform_camera::{PlatformCamera, camera_frame, set_platform_camera};
 mod video;
 pub use video::{
@@ -328,7 +328,11 @@ impl Call {
 
     /// Hear `identity` in an encrypted call: their media key, as they sent it.
     pub fn set_key(&self, identity: &str, key: Vec<u8>) {
-        info!(who = identity, encrypted = self.keys.is_some(), "call key received");
+        info!(
+            who = identity,
+            encrypted = self.keys.is_some(),
+            "call key received"
+        );
         if let Some(keys) = &self.keys {
             keys.set_key(&ParticipantIdentity(identity.to_owned()), 0, key);
         }
@@ -597,12 +601,16 @@ impl Outgoing {
             }
             Feed::Platform => {
                 let (source, running) = (source.clone(), stop.clone());
-                let started = tokio::task::spawn_blocking(move || platform_camera::run(source, running))
-                    .await
-                    .unwrap_or(false);
+                let started =
+                    tokio::task::spawn_blocking(move || platform_camera::run(source, running))
+                        .await
+                        .unwrap_or(false);
                 if !started {
                     stop.store(true, Ordering::Relaxed);
-                    let _ = room.local_participant().unpublish_track(&publication.sid()).await;
+                    let _ = room
+                        .local_participant()
+                        .unpublish_track(&publication.sid())
+                        .await;
                     return Err(Error::Video("the camera did not start".into()));
                 }
             }

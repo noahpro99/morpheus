@@ -369,7 +369,9 @@ pub fn Shell(session: Session) -> Element {
     // Background tasks (calls, sign-out) run outside any component.
     super::toast::register_shell_toasts(toasts);
     // Messages and rooms an undoable action has hidden for now.
-    use_context_provider(|| Signal::new_in_scope(super::toast::HiddenSet::default(), ScopeId::ROOT));
+    use_context_provider(|| {
+        Signal::new_in_scope(super::toast::HiddenSet::default(), ScopeId::ROOT)
+    });
     // Narrow (phone) layout: the page reports its width; one pane shows at a time.
     let mut narrow: NarrowWindow = use_context_provider(|| Signal::new(Narrow::default()));
     // Pane slides are switched on a moment after the phone layout applies,

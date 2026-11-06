@@ -794,7 +794,10 @@ const TEST_MONITOR: &str = "MORPHEUS-TEST";
 /// width. The workspace's number, once the monitor is set up.
 fn test_workspace() -> Option<i64> {
     let hyprctl = |args: &[&str]| -> Option<String> {
-        let out = std::process::Command::new("hyprctl").args(args).output().ok()?;
+        let out = std::process::Command::new("hyprctl")
+            .args(args)
+            .output()
+            .ok()?;
         out.status
             .success()
             .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
@@ -819,7 +822,9 @@ fn test_workspace() -> Option<i64> {
     let id = find()?;
     hyprctl(&[
         "eval",
-        &format!("hl.dispatch(hl.dsp.workspace.rename({{ workspace = \"{id}\", name = \"morpheus-tests\" }}))"),
+        &format!(
+            "hl.dispatch(hl.dsp.workspace.rename({{ workspace = \"{id}\", name = \"morpheus-tests\" }}))"
+        ),
     ]);
     Some(id)
 }
@@ -880,7 +885,10 @@ impl App {
         PHONE_BUSY.store(true, Ordering::SeqCst);
         Self::start_android_with(
             true,
-            &["android.permission.CAMERA", "android.permission.RECORD_AUDIO"],
+            &[
+                "android.permission.CAMERA",
+                "android.permission.RECORD_AUDIO",
+            ],
             true,
         )
         .await
@@ -1441,9 +1449,72 @@ pub fn send_as(homeserver: &str, user: &str, room_id: &str, body: &str) -> Resul
         "PUT",
         "-H",
         &format!("Authorization: Bearer {token}"),
-        &format!("{homeserver}/_matrix/client/v3/rooms/{room}/send/m.room.message/e2e-{}", unique()),
+        &format!(
+            "{homeserver}/_matrix/client/v3/rooms/{room}/send/m.room.message/e2e-{}",
+            unique()
+        ),
         "-d",
         &json!({ "msgtype": "m.text", "body": body }).to_string(),
+    ])?;
+    let _ = curl(&[
+        "-X",
+        "POST",
+        "-H",
+        &format!("Authorization: Bearer {token}"),
+        &format!("{homeserver}/_matrix/client/v3/logout"),
+    ]);
+    Ok(())
+}
+
+/// Send `png` into `room_id` as an image from `user` (see [`send_as`]),
+/// with `blurhash` in its info when given; `body` names it.
+pub fn send_image_as(
+    homeserver: &str,
+    user: &str,
+    room_id: &str,
+    png: &[u8],
+    body: &str,
+    blurhash: Option<&str>,
+) -> Result<()> {
+    let login = curl(&[
+        "-X",
+        "POST",
+        &format!("{homeserver}/_matrix/client/v3/login"),
+        "-d",
+        &json!({ "type": "m.login.password", "identifier": { "type": "m.id.user", "user": user }, "password": format!("{user}-password") }).to_string(),
+    ])?;
+    let login: Value = serde_json::from_str(&login)?;
+    let token = login["access_token"]
+        .as_str()
+        .ok_or_else(|| anyhow!("no token for {user}"))?;
+    let file = std::env::temp_dir().join(format!("morpheus-e2e-{}.png", unique()));
+    std::fs::write(&file, png)?;
+    let uploaded = curl(&[
+        "-X",
+        "POST",
+        "-H",
+        &format!("Authorization: Bearer {token}"),
+        "-H",
+        "Content-Type: image/png",
+        "--data-binary",
+        &format!("@{}", file.display()),
+        &format!("{homeserver}/_matrix/media/v3/upload?filename=image.png"),
+    ])?;
+    let _ = std::fs::remove_file(&file);
+    let uploaded: Value = serde_json::from_str(&uploaded)?;
+    let mut info = json!({ "mimetype": "image/png", "w": 64, "h": 48, "size": png.len() });
+    if let Some(hash) = blurhash {
+        info["xyz.amorgan.blurhash"] = json!(hash);
+    }
+    let room = room_id.replace('!', "%21").replace(':', "%3A");
+    curl(&[
+        "-X",
+        "PUT",
+        "-H",
+        &format!("Authorization: Bearer {token}"),
+        &format!("{homeserver}/_matrix/client/v3/rooms/{room}/send/m.room.message/e2e-{}", unique()),
+        "-d",
+        &json!({ "msgtype": "m.image", "body": body, "url": uploaded["content_uri"], "info": info }).to_string(),
     ])?;
     let _ = curl(&[
         "-X",

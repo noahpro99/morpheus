@@ -114,6 +114,7 @@ pub fn TimelineView(
                         media,
                         width,
                         height,
+                        ..
                     } => Some(LightboxImage {
                         media: media.clone(),
                         body: body.clone(),
@@ -1128,7 +1129,8 @@ fn MessageBody(kind: MessageKind, edited: bool) -> Element {
             media,
             width,
             height,
-        } => rsx! { ImageBody { body, media, width, height } },
+            blurhash,
+        } => rsx! { ImageBody { body, media, width, height, blurhash } },
         MessageKind::File {
             body,
             media,
@@ -1210,13 +1212,28 @@ fn RichText(
 }
 
 #[component]
-fn ImageBody(body: String, media: MediaRef, width: Option<u32>, height: Option<u32>) -> Element {
+fn ImageBody(
+    body: String,
+    media: MediaRef,
+    width: Option<u32>,
+    height: Option<u32>,
+    blurhash: Option<String>,
+) -> Element {
     let mut lightbox_index = use_context::<LightboxIndex>();
     let gallery = use_context::<LightboxImages>();
     let url = use_thumbnail(Some(media.clone()), 800, 600);
+    // A blurred preview behind the picture until it has loaded (and in its
+    // place before then), when the sender's app gave one.
+    let blur = use_memo(use_reactive!(|blurhash| blurhash
+        .as_deref()
+        .and_then(morpheus_core::blur_placeholder)));
     let aspect = match (width, height) {
         (Some(w), Some(h)) if h > 0 => format!("aspect-ratio: {w} / {h};"),
         _ => String::new(),
+    };
+    let aspect = match blur() {
+        Some(blur) => format!("{aspect} background-image: url(\"{blur}\");"),
+        None => aspect,
     };
 
     let open = move |_| {
@@ -1452,6 +1469,21 @@ fn MsgShield(shield: Option<morpheus_core::Shield>) -> Element {
     }
 }
 
+/// A message's key in [`super::toast::Hidden`].
+fn message_key(id: &MessageId) -> String {
+    match id {
+        MessageId::Event(id) => id.to_string(),
+        MessageId::Transaction(id) => id.to_string(),
+    }
+}
+
+/// Delete a message, undoably: it goes now, for good once the toast has.
+fn delete_with_undo(active: morpheus_core::TimelineHandle, id: MessageId) {
+    super::toast::hide_with_undo(message_key(&id), "Message deleted", "delete", move || {
+        active.redact(id)
+    });
+}
+
 #[cfg(test)]
 #[allow(clippy::expect_used)]
 mod tests {
@@ -1500,19 +1532,4 @@ mod tests {
             .collect();
         assert_eq!(shape, ["a", "NEW", "d"]);
     }
-}
-
-/// A message's key in [`super::toast::Hidden`].
-fn message_key(id: &MessageId) -> String {
-    match id {
-        MessageId::Event(id) => id.to_string(),
-        MessageId::Transaction(id) => id.to_string(),
-    }
-}
-
-/// Delete a message, undoably: it goes now, for good once the toast has.
-fn delete_with_undo(active: morpheus_core::TimelineHandle, id: MessageId) {
-    super::toast::hide_with_undo(message_key(&id), "Message deleted", "delete", move || {
-        active.redact(id)
-    });
 }

@@ -145,6 +145,8 @@ pub enum MessageKind {
         media: MediaRef,
         width: Option<u32>,
         height: Option<u32>,
+        /// Its BlurHash, for a blurred placeholder while it loads.
+        blurhash: Option<String>,
     },
     File {
         body: String,
@@ -376,6 +378,7 @@ impl MessageKind {
                             .as_ref()
                             .and_then(|i| i.height)
                             .and_then(uint_to_u32),
+                        blurhash: image.info.as_ref().and_then(|i| i.blurhash.clone()),
                     },
                     MessageType::File(file) => Self::File {
                         body: file.body.clone(),
@@ -586,9 +589,19 @@ impl TimelineHandle {
         let timeline = self.timeline.clone();
         self.core.run(async move {
             let mime = mime_guess::from_path(&path).first_or_octet_stream();
-            timeline
-                .send_attachment(path, mime, AttachmentConfig::default())
-                .await?;
+            // Pictures go with their size and a blurred preview.
+            let info = if mime.type_() == mime_guess::mime::IMAGE {
+                std::fs::read(&path)
+                    .ok()
+                    .and_then(|bytes| crate::blur::image_info(&bytes, mime.essence_str()))
+            } else {
+                None
+            };
+            let config = AttachmentConfig {
+                info,
+                ..AttachmentConfig::default()
+            };
+            timeline.send_attachment(path, mime, config).await?;
             Ok(())
         })
     }
@@ -609,12 +622,12 @@ impl TimelineHandle {
                 .ok()
                 .filter(|m| m.type_() != mime_guess::mime::STAR)
                 .unwrap_or_else(|| mime_guess::from_path(&filename).first_or_octet_stream());
+            let config = AttachmentConfig {
+                info: crate::blur::image_info(&bytes, mime.essence_str()),
+                ..AttachmentConfig::default()
+            };
             timeline
-                .send_attachment(
-                    AttachmentSource::Data { bytes, filename },
-                    mime,
-                    AttachmentConfig::default(),
-                )
+                .send_attachment(AttachmentSource::Data { bytes, filename }, mime, config)
                 .await?;
             Ok(())
         })

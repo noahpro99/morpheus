@@ -49,7 +49,12 @@ pub fn ModViewModal(user_id: OwnedUserId) -> Element {
         move || {
             let _ = changed();
             let (session, user_id) = (session.clone(), user_id.clone());
-            async move { session.mod_overview(user_id).await.map_err(|err| err.to_string()) }
+            async move {
+                session
+                    .mod_overview(user_id)
+                    .await
+                    .map_err(|err| err.to_string())
+            }
         }
     });
     let (name, avatar) = match profile().flatten() {
@@ -61,21 +66,22 @@ pub fn ModViewModal(user_id: OwnedUserId) -> Element {
         .unwrap_or_else(|| name.clone());
 
     // One moderation action in one room, then a fresh look at every room.
-    let mut act = move |room_id: OwnedRoomId,
-                        what: &'static str,
-                        action: std::pin::Pin<Box<dyn Future<Output = morpheus_core::Result<()>>>>| {
-        busy.set(Some(room_id));
-        spawn(async move {
-            if let Err(err) = action.await {
-                report(what, &err);
-            }
-            busy.set(None);
-            changed += 1;
-            if let Some(mut version) = try_consume_context::<MembersVersion>() {
-                version.with_mut(|v| v.0 += 1);
-            }
-        });
-    };
+    let mut act =
+        move |room_id: OwnedRoomId,
+              what: &'static str,
+              action: std::pin::Pin<Box<dyn Future<Output = morpheus_core::Result<()>>>>| {
+            busy.set(Some(room_id));
+            spawn(async move {
+                if let Err(err) = action.await {
+                    report(what, &err);
+                }
+                busy.set(None);
+                changed += 1;
+                if let Some(mut version) = try_consume_context::<MembersVersion>() {
+                    version.with_mut(|v| v.0 += 1);
+                }
+            });
+        };
 
     rsx! {
         div { class: "overlay", onclick: move |_| close(),

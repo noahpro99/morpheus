@@ -274,10 +274,7 @@ pub mod marks {
 
 impl Session {
     /// One of the [`marks`] maps.
-    pub fn marks(
-        &self,
-        kind: &'static str,
-    ) -> CoreFuture<std::collections::HashMap<String, i64>> {
+    pub fn marks(&self, kind: &'static str) -> CoreFuture<std::collections::HashMap<String, i64>> {
         let client = self.client.clone();
         self.core.run(async move {
             Ok(read_map(&client, kind)
@@ -289,12 +286,7 @@ impl Session {
     }
 
     /// Set (`Some`) or clear one entry of a [`marks`] map.
-    pub fn set_mark(
-        &self,
-        kind: &'static str,
-        key: String,
-        at: Option<i64>,
-    ) -> CoreFuture<()> {
+    pub fn set_mark(&self, kind: &'static str, key: String, at: Option<i64>) -> CoreFuture<()> {
         let client = self.client.clone();
         self.core.run(async move {
             let mut map = read_map(&client, kind).await?;

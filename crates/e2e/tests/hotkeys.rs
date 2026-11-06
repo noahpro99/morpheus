@@ -266,11 +266,17 @@ async fn ctrl_shift_m_mutes_and_ctrl_shift_d_deafens() {
                          document.querySelector('.user-bar .deafen-button').classList.contains('active')];";
     async fn press(app: &mut App, key: &str) {
         // Shift makes the letter a capital, as a real keyboard does.
-        app.key_combo("body", key, true, false, true).await.expect("shortcut");
+        app.key_combo("body", key, true, false, true)
+            .await
+            .expect("shortcut");
         tokio::time::sleep(Duration::from_millis(300)).await;
     }
-    let mut expect = async |app: &mut App, muted: bool, deafened: bool, why: &str| {
-        assert_eq!(app.eval(state).await.expect("state"), serde_json::json!([muted, deafened]), "{why}");
+    let expect = async |app: &mut App, muted: bool, deafened: bool, why: &str| {
+        assert_eq!(
+            app.eval(state).await.expect("state"),
+            serde_json::json!([muted, deafened]),
+            "{why}"
+        );
     };
     expect(&mut app, false, false, "starts heard and hearing").await;
     press(&mut app, "M").await;
