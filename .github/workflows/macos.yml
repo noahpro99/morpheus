@@ -1,0 +1,82 @@
+# The macOS build of the desktop app (Apple's SDK is only licensed for
+# Apple hardware, so it is built on GitHub's Macs rather than cross-built
+# like Windows): Morpheus.app, ad-hoc signed and zipped, for Apple silicon
+# and Intel. On a release tag it is attached to that release; run by hand,
+# it is attached to the release named in `tag` (if any).
+name: macOS
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release to attach the builds to (e.g. v0.1.0); empty to only keep them as run artifacts
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            arch: arm64
+          - target: x86_64-apple-darwin
+            arch: x86_64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          rustup target add ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: macos-${{ matrix.target }}
+
+      - uses: cargo-bins/cargo-binstall@main
+      - name: Dioxus CLI
+        run: cargo binstall -y dioxus-cli@0.7.10
+
+      - name: Build
+        run: dx build --release --package morpheus-desktop --platform macos --target ${{ matrix.target }}
+
+      - name: Package
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          app=$(find target/dx/morpheus-desktop/release/macos -maxdepth 2 -name '*.app' | head -1)
+          echo "app: $app"; ls -la "$app/Contents" "$app/Contents/MacOS"
+          mkdir -p dist
+          cp -R "$app" dist/Morpheus.app
+          plist=dist/Morpheus.app/Contents/Info.plist
+          # macOS ends an app that opens the microphone or camera without saying why.
+          set_key() { /usr/libexec/PlistBuddy -c "Set :$1 $2" "$plist" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :$1 string $2" "$plist"; }
+          set_key NSMicrophoneUsageDescription "Morpheus uses the microphone in calls."
+          set_key NSCameraUsageDescription "Morpheus uses the camera in video calls."
+          set_key CFBundleDisplayName Morpheus
+          # Not notarised: ad-hoc signed so Apple silicon runs it at all.
+          codesign --force --deep --sign - dist/Morpheus.app
+          codesign --verify --deep dist/Morpheus.app
+          zip="dist/morpheus-$version-macos-${{ matrix.arch }}.zip"
+          ditto -c -k --keepParent dist/Morpheus.app "$zip"
+          ls -la "$zip"
+          echo "ZIP=$zip" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.arch }}
+          path: ${{ env.ZIP }}
+
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/') || inputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: gh release upload "$TAG" "$ZIP" --clobber
