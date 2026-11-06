@@ -348,3 +348,63 @@ async fn mute_a_dm_for_a_while_then_unmute() {
     choose(&mut app, "Unmute @carol").await;
     wait_class(&mut app, "carol", "muted", false).await;
 }
+
+/// Every item of a DM's menu, and of a room's, has an icon.
+#[tokio::test]
+async fn every_menu_item_has_an_icon() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = alice_on_dms(&hs).await;
+    let missing = "return [...document.querySelectorAll('.context-menu:not(.context-submenu) > .context-item')] \
+        .filter(i => !i.querySelector(':scope > .menu-icon, :scope > .menu-avatar')) \
+        .map(i => i.querySelector('.menu-label').textContent.trim());";
+    dm_menu(&mut app, "carol").await;
+    let in_dm = app.eval(missing).await.expect("dm menu");
+    app.press("body", "Escape").await.expect("close");
+    app.wait_for_js("return document.querySelector('.context-menu') === null;", DEFAULT_WAIT)
+        .await
+        .expect("closed");
+
+    app.open_room("general").await.expect("a room");
+    app.eval(
+        "const el = [...document.querySelectorAll('.room')].find(r => r.querySelector('.room-name')?.textContent.trim() === 'general'); \
+         const r = el.getBoundingClientRect(); \
+         el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + 20, clientY: r.top + 10 }));",
+    )
+    .await
+    .expect("room menu");
+    app.wait_for(".context-menu", DEFAULT_WAIT).await.expect("menu");
+    let in_room = app.eval(missing).await.expect("room menu");
+    app.press("body", "Escape").await.expect("close");
+
+    // A message's, a member's and a server's menus too.
+    let mut others = Vec::new();
+    for (what, target) in [
+        ("message", "document.querySelector('.message.with-header')"),
+        ("member", "document.querySelector('.members .member')"),
+        ("server", "document.querySelector('.rail-item[title=\"Engineering\"]')"),
+    ] {
+        app.wait_for_js("return document.querySelector('.context-menu') === null;", DEFAULT_WAIT)
+            .await
+            .expect("closed");
+        app.wait_for_js(&format!("return !!{target};"), DEFAULT_WAIT)
+            .await
+            .unwrap_or_else(|err| panic!("a {what} to right-click: {err}"));
+        app.eval(&format!(
+            "const el = {target}; const r = el.getBoundingClientRect(); \
+             el.dispatchEvent(new MouseEvent('contextmenu', {{ bubbles: true, cancelable: true, clientX: r.left + 20, clientY: r.top + 10 }}));"
+        ))
+        .await
+        .expect("right-click");
+        app.wait_for(".context-menu", DEFAULT_WAIT).await.expect("menu");
+        others.push((what, app.eval(missing).await.expect("labels")));
+        app.press("body", "Escape").await.expect("close");
+    }
+    assert_eq!(in_dm, serde_json::json!([]), "DM menu items without an icon");
+    assert_eq!(in_room, serde_json::json!([]), "room menu items without an icon");
+    for (what, missing) in others {
+        assert_eq!(missing, serde_json::json!([]), "{what} menu items without an icon");
+    }
+}
