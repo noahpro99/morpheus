@@ -722,6 +722,8 @@ pub fn Shell(session: Session) -> Element {
             "pins" => message_dialog.set(MessageDialog::Pinned),
             "settings" => settings_open.set(true),
             "attach" => hotkey.set(Some(Hotkey::Attach)),
+            "toggle_mute" => super::call::toggle_mute(),
+            "toggle_deafen" => super::call::toggle_deafen(),
             "edit_last" => hotkey.set(Some(Hotkey::EditLast)),
             "back" => nav_jump(-1, nav, rooms, selected_space, selected),
             "forward" => nav_jump(1, nav, rooms, selected_space, selected),

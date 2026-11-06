@@ -543,10 +543,19 @@ pub fn show_call_screen(shown: bool) {
     }
 }
 
-/// Mute, or unmute (which undeafens too, as in Discord).
-fn toggle_mute(flags: VoiceFlags) {
+/// Mute, or unmute (which undeafens too, as in Discord): the mic buttons
+/// and Ctrl+Shift+M.
+pub fn toggle_mute() {
+    let flags = *consume_context::<Voice>().peek();
     let muted = !(flags.muted || flags.deafened);
     set_voice(muted, flags.deafened && muted);
+}
+
+/// Deafen (muted too), or undeafen (muted only if you were before): the
+/// headphones button and Ctrl+Shift+D.
+pub fn toggle_deafen() {
+    let flags = *consume_context::<Voice>().peek();
+    set_voice(flags.muted, !flags.deafened);
 }
 
 /// Phones: call audio from the earpiece (held to the ear) or the loudspeaker.
@@ -952,7 +961,7 @@ pub fn CallScreen() -> Element {
                     class: "call-control mute-button",
                     class: if muted { "active" },
                     title: if muted { "Unmute" } else { "Mute" },
-                    onclick: move |_| toggle_mute(voice()),
+                    onclick: move |_| toggle_mute(),
                     Icon { glyph: if muted { MIC_OFF } else { MIC }, size: 24 }
                 }
                 if has_earpiece() {

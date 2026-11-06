@@ -160,23 +160,15 @@ pub fn UserBar() -> Element {
             button {
                 class: "ghost mute-button",
                 class: if voice().muted || voice().deafened { "active" },
-                title: if voice().muted { "Unmute" } else { "Mute" },
-                onclick: move |_| {
-                    let flags = voice();
-                    // Unmuting while deafened undeafens too, as in Discord.
-                    let muted = !(flags.muted || flags.deafened);
-                    super::call::set_voice(muted, flags.deafened && muted);
-                },
+                title: if voice().muted { "Unmute (Ctrl+Shift+M)" } else { "Mute (Ctrl+Shift+M)" },
+                onclick: move |_| super::call::toggle_mute(),
                 Icon { glyph: if voice().muted || voice().deafened { MIC_OFF } else { MIC }, size: 18 }
             }
             button {
                 class: "ghost deafen-button",
                 class: if voice().deafened { "active" },
-                title: if voice().deafened { "Undeafen" } else { "Deafen" },
-                onclick: move |_| {
-                    let flags = voice();
-                    super::call::set_voice(flags.muted, !flags.deafened);
-                },
+                title: if voice().deafened { "Undeafen (Ctrl+Shift+D)" } else { "Deafen (Ctrl+Shift+D)" },
+                onclick: move |_| super::call::toggle_deafen(),
                 Icon { glyph: if voice().deafened { HEADPHONE_OFF } else { HEADPHONES }, size: 18 }
             }
             button { class: "ghost settings-button", title: "Settings (Ctrl+,)", onclick: move |_| settings_open.set(true), Icon { glyph: SETTINGS, size: 18 } }
