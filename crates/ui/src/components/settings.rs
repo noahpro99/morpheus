@@ -382,18 +382,21 @@ pub fn Settings() -> Element {
                                             button {
                                                 class: "secondary",
                                                 onclick: move |_| super::context_menu::copy_to_clipboard(&key),
+                                                Icon { glyph: crate::icons::COPY }
                                                 "Copy"
                                             }
                                         }
                                     } else if backup_missing {
                                         div { class: "settings-actions",
                                             button { class: "primary setup-recovery", disabled: busy(), onclick: move |_| set_up_recovery(),
+                                                Icon { glyph: SHIELD }
                                                 "Set up recovery"
                                             }
                                         }
                                     } else if recovery_enabled {
                                         div { class: "settings-actions",
                                             button { class: "secondary change-recovery-key", disabled: busy(), onclick: move |_| change_key(),
+                                                Icon { glyph: crate::icons::REFRESH_CW }
                                                 "Change recovery key"
                                             }
                                             p { class: "muted",
@@ -406,6 +409,7 @@ pub fn Settings() -> Element {
                                     } else {
                                         div { class: "settings-actions",
                                             button { class: "primary", disabled: busy(), onclick: start_verification.clone(),
+                                                Icon { glyph: crate::icons::SHIELD_CHECK }
                                                 "Verify with another signed-in device"
                                             }
                                         }
@@ -429,7 +433,10 @@ pub fn Settings() -> Element {
                                                     },
                                                 }
                                             }
-                                            button { r#type: "submit", class: "secondary", disabled: busy(), "Restore from backup" }
+                                            button { r#type: "submit", class: "secondary", disabled: busy(),
+                                                Icon { glyph: crate::icons::KEY }
+                                                "Restore from backup"
+                                            }
                                         }
                                     }
                                     match recovery_message() {
@@ -955,6 +962,9 @@ pub fn ReportBug() -> Element {
     let config = use_context::<crate::AppConfig>();
     let url = use_hook(|| morpheus_core::bug_report_url(super::about::VERSION, &config.data_dir));
     rsx! {
-        a { class: "button primary report-bug", href: "{url}", "Report a bug" }
+        a { class: "button primary report-bug", href: "{url}",
+            Icon { glyph: crate::icons::BUG }
+            "Report a bug"
+        }
     }
 }

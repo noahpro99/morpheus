@@ -1050,14 +1050,14 @@ pub(crate) fn MessageRow(message: Message, show_header: bool) -> Element {
                         }
                     }
                     if can_reply {
-                        button { class: "action reply", title: "Reply", onclick: start_reply, "↩" }
-                        button { class: "action thread", title: "Reply in thread", onclick: open_thread, "🧵" }
+                        button { class: "action reply", title: "Reply", onclick: start_reply, crate::icons::Icon { glyph: crate::icons::REPLY } }
+                        button { class: "action thread", title: "Reply in thread", onclick: open_thread, crate::icons::Icon { glyph: crate::icons::MESSAGES_SQUARE } }
                     }
                     if message.can_edit {
-                        button { class: "action edit", title: "Edit", onclick: start_edit, "✏️" }
+                        button { class: "action edit", title: "Edit", onclick: start_edit, crate::icons::Icon { glyph: crate::icons::PENCIL } }
                     }
                     if message.is_own && can_reply {
-                        button { class: "action delete", title: "Delete", onclick: delete, "🗑" }
+                        button { class: "action delete", title: "Delete", onclick: delete, crate::icons::Icon { glyph: crate::icons::TRASH_2 } }
                     }
                 }
             }

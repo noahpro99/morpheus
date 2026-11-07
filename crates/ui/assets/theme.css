@@ -406,7 +406,8 @@ img.avatar { object-fit: cover; }
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
 }
 .message:hover .actions { display: flex; }
-.action { padding: 4px 6px; border-radius: 4px; font-size: 0.95rem; }
+.action { display: inline-flex; align-items: center; justify-content: center; padding: 6px; border-radius: 4px; font-size: 0.95rem; color: var(--text-muted); }
+.action:hover { color: var(--text); }
 .action:hover { background: var(--bg-hover); }
 
 /* Reactions */
@@ -935,7 +936,11 @@ img.avatar { object-fit: cover; }
 }
 .settings-user { font-weight: 600; }
 .settings-actions { display: flex; gap: 8px; margin: 12px 0; }
-.settings button.primary, .settings button.secondary, .settings button.danger {
+.settings button.primary, .settings button.secondary, .settings button.danger, .settings a.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   padding: 10px 14px;
   border-radius: var(--radius);
   font-weight: 600;
@@ -2261,3 +2266,4 @@ h1, h2, h3, h4, .modal-title, .empty-title {
 /* Screens before the shell (splash, sign-in) under the app's own window bar. */
 .window-screen { display: flex; flex-direction: column; height: 100%; }
 .window-screen > .centered { flex: 1; height: auto; min-height: 0; }
+.report-bug { display: inline-flex; align-items: center; gap: 8px; }
