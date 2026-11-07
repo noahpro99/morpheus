@@ -33,6 +33,7 @@ mod user_bar;
 
 pub use login::Login;
 pub use shell::Shell;
+pub use titlebar::WindowBar;
 
 use dioxus::prelude::*;
 

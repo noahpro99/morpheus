@@ -7,7 +7,7 @@ use dioxus::prelude::*;
 use morpheus_core::{Core, OwnedRoomId, Session};
 
 use crate::{
-    components::{Login, Shell, Splash},
+    components::{Login, Shell, Splash, WindowBar},
     e2e::E2eBridge,
 };
 
@@ -162,7 +162,9 @@ fn Boot(core: Core) -> Element {
     });
 
     match (&*restore.read(), session()) {
-        (None, _) => rsx! { Splash {} },
+        (None, _) => rsx! {
+            div { class: "window-screen", WindowBar {} Splash {} }
+        },
         // Keyed by account: switching accounts builds a fresh shell around
         // the new session instead of keeping the old one in its context.
         // (Keys only count in a list, hence the list of one.)
@@ -174,7 +176,12 @@ fn Boot(core: Core) -> Element {
                 }
             }
         },
-        (Some(result), None) => rsx! { Login { restore_error: result.clone().err() } },
+        (Some(result), None) => rsx! {
+            div { class: "window-screen",
+                WindowBar {}
+                Login { restore_error: result.clone().err() }
+            }
+        },
     }
 }
 
