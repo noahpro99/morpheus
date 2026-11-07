@@ -48,9 +48,9 @@ jobs:
         with:
           shared-key: linux-x86_64
 
-      - uses: cargo-bins/cargo-binstall@main
+      # Built here: the prebuilt one needs a newer glibc than this Ubuntu.
       - name: Dioxus CLI
-        run: cargo binstall -y dioxus-cli@0.7.10
+        run: cargo install --locked dioxus-cli@0.7.10
 
       - name: Build
         run: dx build --release --package morpheus-desktop --platform linux
