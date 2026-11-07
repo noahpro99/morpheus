@@ -51,6 +51,22 @@ struct Focus(Arc<AtomicBool>);
 static SHOW_REQUESTED: AtomicBool = AtomicBool::new(false);
 
 fn main() {
+    // Sounds at the volume the app plays them: WirePlumber otherwise saves a
+    // volume per app name and puts it back on every stream (across restarts),
+    // and one saved at 0 silenced every chime and ring for good. WebKit's
+    // audio goes through PulseAudio, whose client properties come from here
+    // (the web process inherits it). Setting it means starting over with it.
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("PULSE_PROP").is_none()
+        && let Ok(exe) = std::env::current_exe()
+    {
+        use std::os::unix::process::CommandExt as _;
+        let err = std::process::Command::new(exe)
+            .args(std::env::args_os().skip(1))
+            .env("PULSE_PROP", "state.restore-props=false")
+            .exec();
+        eprintln!("could not restart with PULSE_PROP: {err}");
+    }
     // The terminal, and a file in the data dir (`morpheus.log`, fresh each
     // start) to read after something went wrong. Dioxus's signal-ownership
     // warnings are pages long; they are left out.

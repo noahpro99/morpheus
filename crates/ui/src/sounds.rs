@@ -119,8 +119,13 @@ pub fn play(sound: Sound) {
     let play = if audible {
         // Whether it played (or why not: a page may only play sound after a
         // tap or click), kept for the tests and logged.
+        // One element per sound, kept: an Audio nothing refers to can be
+        // collected before it plays, and then it never does.
         format!(
-            "new Audio('{}').play()\
+            "const chimes = (window.morpheusChimes ??= {{}});\
+             const a = (chimes['{key}'] ??= new Audio('{}'));\
+             a.currentTime = 0;\
+             a.play()\
              .then(() => (window.morpheusSoundPlays ??= []).push('{key}: played'))\
              .catch(e => {{ (window.morpheusSoundPlays ??= []).push('{key}: ' + e.name); console.warn('sound not played', '{key}', e); }});",
             data_url(sound),
