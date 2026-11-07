@@ -162,3 +162,98 @@ async fn new_message_by_username_opens_a_dm() {
         .await
         .expect("ready to type");
 }
+
+/// On the Friends page the whole row is the Message button, as in Discord:
+/// clicking a friend's name opens the DM; Remove still only removes.
+#[tokio::test]
+async fn a_friends_whole_row_opens_the_dm() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch(&hs).await.expect("launch app");
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    app.type_into("form.login input[name=username]", "carol")
+        .await
+        .expect("username");
+    app.type_into("form.login input[name=password]", "carol-password")
+        .await
+        .expect("password");
+    app.submit("form.login").await.expect("submit");
+    app.wait_for(".room", DEFAULT_WAIT).await.expect("rooms");
+    app.open_room("general").await.expect("open general");
+    member_menu(&mut app, "bob").await;
+    app.click_text(".context-menu .context-item", "Add friend")
+        .await
+        .expect("Add friend");
+    open_friends(&mut app).await;
+    app.wait_for_text(".friends-page .friend", "bob", DEFAULT_WAIT)
+        .await
+        .expect("bob listed");
+    app.click(".friends-page .friend .friend-name")
+        .await
+        .expect("click the row");
+    app.wait_for_js(
+        "return !document.querySelector('.friends-page') && !!document.querySelector('.chat-header');",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("the row opened the DM");
+
+    open_friends(&mut app).await;
+    app.click_text(".friends-page .friend button", "Remove")
+        .await
+        .expect("Remove");
+    app.wait_for_js(
+        "return ![...document.querySelectorAll('.friends-page .friend')].some(f => f.textContent.includes('bob'));",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("bob gone");
+    assert_eq!(
+        app.count(".friends-page").await.expect("count"),
+        1,
+        "Remove didn't also open the DM"
+    );
+}
+
+/// DMs in the list are tall rows, as in Discord (42px, a 32px picture),
+/// and the Friends row matches them.
+#[tokio::test]
+async fn dm_rows_are_tall() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch(&hs).await.expect("launch app");
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    app.type_into("form.login input[name=username]", "alice")
+        .await
+        .expect("username");
+    app.type_into("form.login input[name=password]", "alice-password")
+        .await
+        .expect("password");
+    app.submit("form.login").await.expect("submit");
+    app.wait_for(".rail-dms", DEFAULT_WAIT).await.expect("rail");
+    app.click(".rail-dms").await.expect("DMs");
+    app.wait_for(".sidebar .room.dm", DEFAULT_WAIT)
+        .await
+        .expect("a DM listed");
+    let sizes = app
+        .eval(
+            "const dm = document.querySelector('.sidebar .room.dm'); \
+             const pic = dm.querySelector('.avatar, img'); \
+             const friends = document.querySelector('.sidebar .friends-row'); \
+             return [dm.getBoundingClientRect().height, pic.getBoundingClientRect().height, friends.getBoundingClientRect().height];",
+        )
+        .await
+        .expect("sizes");
+    let sizes: Vec<f64> = serde_json::from_value(sizes).expect("numbers");
+    assert!(sizes[0] >= 42.0, "a DM row is 42px tall: {sizes:?}");
+    assert!(sizes[1] >= 32.0, "with a 32px picture: {sizes:?}");
+    assert!(sizes[2] >= 42.0, "and so is Friends: {sizes:?}");
+}
