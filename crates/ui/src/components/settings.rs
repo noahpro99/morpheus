@@ -33,16 +33,19 @@ pub enum SettingsPage {
     VoiceVideo,
     /// Desktop only: opening at sign-in, starting hidden.
     Startup,
+    /// Reporting a bug, and the version.
+    Help,
 }
 
 impl SettingsPage {
-    pub const ALL: [SettingsPage; 6] = [
+    pub const ALL: [SettingsPage; 7] = [
         SettingsPage::Account,
         SettingsPage::Security,
         SettingsPage::Notifications,
         SettingsPage::Appearance,
         SettingsPage::VoiceVideo,
         SettingsPage::Startup,
+        SettingsPage::Help,
     ];
 
     pub fn label(self) -> &'static str {
@@ -53,6 +56,7 @@ impl SettingsPage {
             SettingsPage::Appearance => "Appearance",
             SettingsPage::VoiceVideo => "Voice & Video",
             SettingsPage::Startup => "Startup",
+            SettingsPage::Help => "Help & Feedback",
         }
     }
 
@@ -64,6 +68,7 @@ impl SettingsPage {
             SettingsPage::Appearance => PALETTE,
             SettingsPage::VoiceVideo => MIC,
             SettingsPage::Startup => crate::icons::SQUARE,
+            SettingsPage::Help => crate::icons::CIRCLE_HELP,
         }
     }
 }
@@ -411,6 +416,7 @@ pub fn Settings() -> Element {
                             },
                             SettingsPage::Notifications => rsx! { NotificationsPage {} },
                             SettingsPage::Startup => rsx! { StartupPage {} },
+                            SettingsPage::Help => rsx! { HelpPage {} },
                             SettingsPage::Appearance => rsx! { AppearancePage {} },
                             SettingsPage::VoiceVideo => rsx! { VoicePage {} },
                         }
@@ -884,5 +890,37 @@ fn StartupPage() -> Element {
                 p { class: "error", "{text}" }
             }
         }
+    }
+}
+
+/// Help & Feedback: the version, and Report a bug, which opens a new GitHub
+/// issue filled in with the version, this device and the end of the log.
+#[component]
+fn HelpPage() -> Element {
+    let version = super::about::VERSION;
+    rsx! {
+        section { class: "settings-section",
+            h3 { "Report a bug" }
+            p { class: "muted",
+                "Opens a new issue on GitHub with your version, device and the end of this run's log filled in. Issues are public: read the log over and remove anything you'd rather not share before posting."
+            }
+            ReportBug {}
+        }
+        section { class: "settings-section",
+            h3 { "Version" }
+            p { "Morpheus {version}" }
+            p { class: "muted", "{morpheus_core::device()}" }
+        }
+    }
+}
+
+/// The Report a bug button: a new GitHub issue filled in with the version,
+/// this device and the end of the log (as of when it is shown).
+#[component]
+pub fn ReportBug() -> Element {
+    let config = use_context::<crate::AppConfig>();
+    let url = use_hook(|| morpheus_core::bug_report_url(super::about::VERSION, &config.data_dir));
+    rsx! {
+        a { class: "button primary report-bug", href: "{url}", "Report a bug" }
     }
 }

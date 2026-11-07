@@ -319,6 +319,7 @@ pub fn HelpModal() -> Element {
                 }
                 p { class: "muted", "Morpheus is a Matrix client: your account lives on your homeserver and works in any Matrix app." }
                 div { class: "settings-actions",
+                    super::settings::ReportBug {}
                     button { class: "secondary", onclick: move |_| close(), "Close" }
                 }
             }

@@ -2176,7 +2176,9 @@ h1, h2, h3, h4, .modal-title, .empty-title {
 .shell.narrow .send-button,
 .shell.narrow .room,
 .shell.narrow .rail-item,
-.shell.narrow .member {
+.shell.narrow .member,
+.shell.narrow .backup-prompt-actions button,
+.shell.narrow .backup-prompt-actions .button {
   min-width: 44px;
   min-height: 44px;
 }

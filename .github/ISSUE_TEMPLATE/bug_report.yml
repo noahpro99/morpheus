@@ -1,0 +1,38 @@
+name: Bug report
+description: Something in Morpheus doesn't work as it should. (Settings → Help & Feedback → Report a bug fills in the version, device and log for you.)
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open …
+        2. Click …
+  - type: input
+    id: version
+    attributes:
+      label: Morpheus version
+      placeholder: "0.1.1"
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device
+      placeholder: "macOS 26.6 aarch64"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: The end of the app's log. Issues are public, so look it over first.
+      render: text

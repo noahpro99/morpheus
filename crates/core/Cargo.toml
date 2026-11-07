@@ -6,6 +6,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+url = "2"
 matrix-sdk = { workspace = true }
 matrix-sdk-ui = { workspace = true }
 ruma-html = { workspace = true }
