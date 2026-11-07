@@ -2251,3 +2251,7 @@ h1, h2, h3, h4, .modal-title, .empty-title {
   aspect-ratio: auto;
   max-width: none;
 }
+
+/* A newer release: a card like the backup offer's, lower down. */
+.update-card { top: auto; bottom: 88px; }
+.update-card a.button { padding: 6px 12px; border-radius: var(--radius-sm); text-decoration: none; }

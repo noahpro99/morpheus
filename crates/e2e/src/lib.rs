@@ -133,7 +133,11 @@ impl App {
         let download_dir = data_dir.join("downloads");
         std::fs::create_dir_all(&download_dir)?;
         let port = free_port().await?;
-        let bin = binary_path()?;
+        // A test may run another copy of the app (MORPHEUS_E2E_BIN in `env`).
+        let bin = match env.iter().find(|(key, _)| *key == "MORPHEUS_E2E_BIN") {
+            Some((_, bin)) => PathBuf::from(bin),
+            None => binary_path()?,
+        };
         let log_path = data_dir.join("app.log");
         let log = std::fs::File::create(&log_path)?;
 
@@ -715,6 +719,11 @@ fn workspace_root() -> Result<PathBuf> {
 }
 
 /// `MORPHEUS_E2E_BIN`, or the output of `dx build --package morpheus-desktop --features e2e`.
+/// The app the tests run (`just e2e-build`'s).
+pub fn app_binary() -> Result<PathBuf> {
+    binary_path()
+}
+
 fn binary_path() -> Result<PathBuf> {
     if let Some(bin) = std::env::var_os("MORPHEUS_E2E_BIN") {
         return Ok(PathBuf::from(bin));
