@@ -99,6 +99,14 @@ jobs:
           kill "$pid"
           echo "Morpheus is running after 20s"; tail -5 smoke/log.txt
 
+      # As a Mac user expects it: its icon, an Edit menu that pastes, ⌘W
+      # closing the window, and the Dock bringing it back.
+      - name: Behaves as a Mac app
+        if: matrix.arch == 'arm64'
+        run: |
+          sleep 2
+          bash scripts/mac-check.sh smoke/Morpheus.app
+
       - uses: actions/upload-artifact@v4
         with:
           name: macos-${{ matrix.arch }}
