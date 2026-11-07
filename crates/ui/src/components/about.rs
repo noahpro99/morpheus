@@ -158,8 +158,16 @@ pub fn UpdateCard() -> Element {
     if later() {
         return rsx! {};
     }
-    let install = morpheus_core::installs_updates() && download.is_some();
-    let link = download.clone().or(url.clone()).unwrap_or_default();
+    let installs = morpheus_core::installs_updates();
+    let install = installs && download.is_some();
+    // Not installed here: the release page, as an install that isn't the
+    // app's to change wants its own package rather than this zip.
+    let link = if installs {
+        download.clone().or(url.clone())
+    } else {
+        url.clone().or(download.clone())
+    }
+    .unwrap_or_default();
     rsx! {
         div { class: "backup-prompt update-card", role: "status",
             Icon { glyph: crate::icons::REFRESH_CW, size: 18, class: "backup-prompt-icon" }

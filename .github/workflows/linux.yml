@@ -1,0 +1,83 @@
+# The desktop app for Linux (x86-64), zipped as the updater expects:
+# morpheus-<version>-linux-x86_64.zip, one folder holding morpheus-desktop
+# and its assets. Built on an older Ubuntu, against the system's own
+# WebKitGTK, so it runs on most distributions from that one on (a build in
+# `nix develop` would only run where Nix is). On a release tag it is attached
+# to that release; run by hand, to the release named in `tag` (if any).
+name: Linux
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release to attach the build to (e.g. v0.1.1); empty to only keep it as a run artifact
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libxdo-dev \
+            libayatana-appindicator3-dev librsvg2-dev libssl-dev libasound2-dev \
+            libpulse-dev libpipewire-0.3-dev libxkbcommon-dev libgl-dev libdrm-dev libgbm-dev \
+            libx11-dev libxext-dev libxfixes-dev libxdamage-dev libxrandr-dev libxcomposite-dev libxtst-dev \
+            pkg-config cmake zip
+          # libwebrtc (calls) is built against Chromium's libc++ and needs a
+          # recent clang, as in the dev shell.
+          wget -qO llvm.sh https://apt.llvm.org/llvm.sh
+          sudo bash llvm.sh 21
+          echo "CC_x86_64_unknown_linux_gnu=clang-21" >> "$GITHUB_ENV"
+          echo "CXX_x86_64_unknown_linux_gnu=clang++-21" >> "$GITHUB_ENV"
+
+      - name: Rust
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: linux-x86_64
+
+      - uses: cargo-bins/cargo-binstall@main
+      - name: Dioxus CLI
+        run: cargo binstall -y dioxus-cli@0.7.10
+
+      - name: Build
+        run: dx build --release --package morpheus-desktop --platform linux
+
+      - name: Package
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          app=target/dx/morpheus-desktop/release/linux/app
+          ls -la "$app"
+          name="morpheus-$version-linux-x86_64"
+          mkdir -p "dist/$name"
+          cp "$app/morpheus-desktop" "dist/$name/"
+          cp -r "$app/assets" "dist/$name/"
+          # Every library it links is one a distribution has.
+          if ldd "dist/$name/morpheus-desktop" | grep "not found"; then exit 1; fi
+          (cd dist && zip -qr "$name.zip" "$name")
+          ls -la "dist/$name.zip"
+          echo "ZIP=dist/$name.zip" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-x86_64
+          path: ${{ env.ZIP }}
+
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/') || inputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: gh release upload "$TAG" "$ZIP" --clobber
