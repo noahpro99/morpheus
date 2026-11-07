@@ -217,3 +217,45 @@ pub fn invite_menu(
     (!targets.is_empty())
         .then(|| MenuItem::submenu("Invite to server", targets).icon(crate::icons::USER_PLUS))
 }
+
+/// Shown in the chat column for a server's channel you aren't in: what it
+/// is and a button to join it (the room list then has it, and it opens).
+#[component]
+pub fn JoinCard(room: morpheus_core::SpaceRoom) -> Element {
+    let session = use_context::<Session>();
+    let mut joining = use_signal(|| false);
+    let members = match room.member_count {
+        1 => "1 member".to_string(),
+        n => format!("{n} members"),
+    };
+    rsx! {
+        section { class: "invite-card join-card",
+            Avatar { media: room.avatar.clone(), fallback: room.name.clone(), size: 72 }
+            h2 { "{room.name}" }
+            p { class: "muted", "{members}" }
+            if let Some(topic) = room.topic.as_deref() {
+                p { class: "topic", "{topic}" }
+            }
+            div { class: "settings-actions",
+                button {
+                    class: "primary join-button",
+                    disabled: joining(),
+                    onclick: {
+                        let room = room.clone();
+                        move |_| {
+                            joining.set(true);
+                            let (session, room) = (session.clone(), room.clone());
+                            spawn(async move {
+                                if let Err(err) = session.join_room_via(room.id.clone(), room.via.clone()).await {
+                                    report("join room", &err);
+                                }
+                                joining.set(false);
+                            });
+                        }
+                    },
+                    if joining() { "Joining…" } else { "Join" }
+                }
+            }
+        }
+    }
+}

@@ -17,6 +17,7 @@ pub fn RoomList(error: Option<String>) -> Element {
     let selected = use_context::<Selected>();
     let prefs = use_context::<UiPrefs>();
     let session = use_context::<Session>();
+    let session_for_directory = session.clone();
     let mut friends_open = use_context::<super::friends::FriendsOpen>();
 
     let scope = selected_space();
@@ -86,9 +87,109 @@ pub fn RoomList(error: Option<String>) -> Element {
     // Invites show in every scope, like Discord's pending list.
     let invites = pending_invites(&rooms.read());
     let no_rooms = channels.is_empty();
-    let (uncategorised, categorised): (Vec<RoomSummary>, Vec<RoomSummary>) = channels
+    let (mut uncategorised, mut categorised): (Vec<RoomSummary>, Vec<RoomSummary>) = channels
         .into_iter()
         .partition(|room| category_of(room).is_none());
+    // A server's channels in the order it keeps (as other clients show
+    // them), each category's in its own; any it doesn't list come after.
+    let children_of = move |space_id: &OwnedRoomId| -> Vec<OwnedRoomId> {
+        rooms
+            .read()
+            .iter()
+            .find(|room| &room.id == space_id)
+            .map(|room| room.space_children.clone())
+            .unwrap_or_default()
+    };
+    let place = |order: &[OwnedRoomId], id: &OwnedRoomId| {
+        order
+            .iter()
+            .position(|child| child == id)
+            .unwrap_or(usize::MAX)
+    };
+    let mut categories = categories;
+    let (server, can_reorder) = match &scope {
+        Scope::Space(space_id) => {
+            let order = children_of(space_id);
+            uncategorised.sort_by_key(|room| place(&order, &room.id));
+            categories.sort_by_key(|(id, _)| place(&order, id));
+            let can = rooms
+                .read()
+                .iter()
+                .any(|room| &room.id == space_id && room.can_edit_children);
+            (Some(space_id.clone()), can)
+        }
+        _ => (None, false),
+    };
+    let category_orders: Vec<(OwnedRoomId, Vec<OwnedRoomId>)> = categories
+        .iter()
+        .map(|(id, _)| (id.clone(), children_of(id)))
+        .collect();
+    categorised.sort_by_key(|room| {
+        category_orders
+            .iter()
+            .find(|(id, _)| room.parent_spaces.contains(id))
+            .map_or(usize::MAX, |(_, order)| place(order, &room.id))
+    });
+    // The server's channels you aren't in, from its directory: listed last,
+    // opening a card to join.
+    let directory = use_resource(move || {
+        let session = session_for_directory.clone();
+        let scope = selected_space();
+        async move {
+            match scope {
+                Scope::Space(space_id) => session.space_rooms(space_id).await.unwrap_or_default(),
+                _ => Vec::new(),
+            }
+        }
+    });
+    let unjoined: Vec<morpheus_core::SpaceRoom> = match directory.read().as_ref() {
+        Some(list) if server.is_some() => list
+            .iter()
+            .filter(|room| !room.is_space)
+            .filter(|room| {
+                !rooms
+                    .read()
+                    .iter()
+                    .any(|known| known.id == room.id && !known.invited)
+            })
+            .cloned()
+            .collect(),
+        _ => Vec::new(),
+    };
+    // Dragging a channel onto another puts it there, for everyone.
+    let mut dragging = use_signal(|| None::<OwnedRoomId>);
+    let reorder = {
+        let session = session.clone();
+        let server = server.clone();
+        let listed: Vec<OwnedRoomId> = uncategorised.iter().map(|room| room.id.clone()).collect();
+        move |target: OwnedRoomId| {
+            let (Some(from), Some(space_id)) = (dragging.take(), server.clone()) else {
+                return;
+            };
+            if from == target {
+                return;
+            }
+            // The server's whole list (channels you aren't in too), moved.
+            let mut order = children_of(&space_id);
+            for id in &listed {
+                if !order.contains(id) {
+                    order.push(id.clone());
+                }
+            }
+            order.retain(|id| *id != from);
+            let at = order
+                .iter()
+                .position(|id| *id == target)
+                .unwrap_or(order.len());
+            order.insert(at, from);
+            let session = session.clone();
+            spawn(async move {
+                if let Err(err) = session.set_space_order(space_id, order).await {
+                    report("reorder channels", &err);
+                }
+            });
+        }
+    };
 
     // Clicking the space name opens the server menu.
     let header_menu = {
@@ -187,7 +288,7 @@ pub fn RoomList(error: Option<String>) -> Element {
                         h4 { class: "section", "Rooms" }
                     }
                     for room in uncategorised {
-                        RoomRow { key: "{room.id}", room }
+                        RoomRow { key: "{room.id}", room, reorder: can_reorder.then(|| (dragging, Callback::new(reorder.clone()))) }
                     }
                 }
                 for (category_id, category_name) in categories.iter() {
@@ -197,10 +298,16 @@ pub fn RoomList(error: Option<String>) -> Element {
                             if !members.is_empty() {
                                 h4 { key: "{category_id}", class: "section category", "{category_name}" }
                                 for room in members {
-                                    RoomRow { key: "{room.id}", room }
+                                    RoomRow { key: "{room.id}", room, reorder: None }
                                 }
                             }
                         }
+                    }
+                }
+                if !unjoined.is_empty() {
+                    h4 { class: "section more-channels", "More channels" }
+                    for room in unjoined {
+                        UnjoinedRow { key: "{room.id}", room }
                     }
                 }
             }
@@ -209,8 +316,42 @@ pub fn RoomList(error: Option<String>) -> Element {
     }
 }
 
+/// A server's channel you aren't in: opens a card to join it.
 #[component]
-fn RoomRow(room: RoomSummary) -> Element {
+fn UnjoinedRow(room: morpheus_core::SpaceRoom) -> Element {
+    let selected = use_context::<Selected>();
+    let mut preview = use_context::<super::shell::Preview>();
+    let is_selected = selected().as_ref() == Some(&room.id);
+    rsx! {
+        button {
+            class: "room unjoined",
+            class: if is_selected { "selected" },
+            "data-room": "{room.id}",
+            title: "Not joined",
+            onclick: {
+                let room = room.clone();
+                move |_| {
+                    preview.set(Some(room.clone()));
+                    go_to(room.id.clone());
+                }
+            },
+            if room.is_voice {
+                Icon { glyph: crate::icons::VOLUME_2, size: 18, class: "voice-icon" }
+            } else {
+                span { class: "hash", "#" }
+            }
+            span { class: "room-name", "{room.name}" }
+        }
+    }
+}
+
+/// `reorder`: the channel being dragged and where a drop puts it, when you
+/// may reorder the server's channels.
+#[component]
+fn RoomRow(
+    room: RoomSummary,
+    #[props(default)] reorder: Option<(Signal<Option<OwnedRoomId>>, Callback<OwnedRoomId>)>,
+) -> Element {
     let session = use_context::<Session>();
     let selected = use_context::<Selected>();
     let is_selected = selected().as_ref() == Some(&room.id);
@@ -246,11 +387,38 @@ fn RoomRow(room: RoomSummary) -> Element {
         }
     };
 
+    let drag_id = room.id.clone();
+    let drop_id = room.id.clone();
+    let dragged = reorder.is_some_and(|(dragging, _)| dragging().as_ref() == Some(&room.id));
+
     rsx! {
         button {
             class: "room",
             "data-room": "{room.id}",
             oncontextmenu: on_context,
+            draggable: if reorder.is_some() { "true" },
+            class: if dragged { "dragging" },
+            ondragstart: move |_| {
+                if let Some((mut dragging, _)) = reorder {
+                    dragging.set(Some(drag_id.clone()));
+                }
+            },
+            ondragover: move |e| {
+                if reorder.is_some() {
+                    e.prevent_default();
+                }
+            },
+            ondrop: move |e| {
+                if let Some((_, on_drop)) = reorder {
+                    e.prevent_default();
+                    on_drop(drop_id.clone());
+                }
+            },
+            ondragend: move |_| {
+                if let Some((mut dragging, _)) = reorder {
+                    dragging.set(None);
+                }
+            },
             class: if room.is_dm { "dm" },
             class: if room.is_voice { "voice" },
             class: if pinned { "pinned" },

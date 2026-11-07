@@ -62,6 +62,11 @@ pub struct RoomSummary {
     pub is_voice: bool,
     /// When the newest message came (milliseconds since the epoch; 0 unknown).
     pub latest_ms: u64,
+    /// For a space: the rooms it lists (`m.space.child`), in its order.
+    /// They belong to it even when they don't name it back.
+    pub space_children: Vec<OwnedRoomId>,
+    /// For a space: you may change its children (and so their order).
+    pub can_edit_children: bool,
 }
 
 impl RoomSummary {
@@ -96,6 +101,25 @@ impl RoomSummary {
             .unwrap_or_else(|| room.room_id().to_string());
         let counts = room.unread_notification_counts();
         let parent_spaces = parent_spaces(&room).await;
+        let (space_children, can_edit_children) = if room.is_space() {
+            let children = space_children(&room)
+                .await
+                .into_iter()
+                .map(|(id, _)| id)
+                .collect();
+            let can = match room.client().user_id() {
+                Some(me) => room.power_levels().await.is_ok_and(|levels| {
+                    levels.user_can_send_state(
+                        me,
+                        matrix_sdk::ruma::events::StateEventType::SpaceChild,
+                    )
+                }),
+                None => false,
+            };
+            (children, can)
+        } else {
+            (Vec::new(), false)
+        };
         let is_dm = room.direct_targets_length() > 0;
         // Who a DM is with (the first target, for one-to-one chats).
         let dm_user = room
@@ -134,6 +158,8 @@ impl RoomSummary {
                 .room_type()
                 .is_some_and(|kind| VOICE_ROOM_TYPES.contains(&kind.to_string().as_str())),
             latest_ms: room.latest_event_timestamp().map_or(0, |ts| ts.0.into()),
+            space_children,
+            can_edit_children,
         }
     }
 }
@@ -525,5 +551,171 @@ impl NotifyMode {
             Self::MentionsOnly => RoomNotificationMode::MentionsAndKeywordsOnly,
             Self::Mute => RoomNotificationMode::Mute,
         }
+    }
+}
+
+/// A space's children from its `m.space.child` events (those with a
+/// `via`; an empty one removes the child), in the space's order: by `order`
+/// (Unicode codepoints), then those without one, as the spec has it. The
+/// spec breaks ties by the rooms' creation time, which isn't known for rooms
+/// not joined; their room ids stand in.
+async fn space_children(room: &Room) -> Vec<(OwnedRoomId, SpaceChildEventContent)> {
+    use matrix_sdk::deserialized_responses::SyncOrStrippedState;
+    let Ok(events) = room
+        .get_state_events_static::<SpaceChildEventContent>()
+        .await
+    else {
+        return Vec::new();
+    };
+    let mut children: Vec<(OwnedRoomId, SpaceChildEventContent)> = events
+        .into_iter()
+        .filter_map(|raw| match raw.deserialize().ok()? {
+            SyncOrStrippedState::Sync(event) => {
+                let event = event.as_original()?;
+                Some((event.state_key.clone(), event.content.clone()))
+            }
+            SyncOrStrippedState::Stripped(_) => None,
+        })
+        .filter(|(_, content)| !content.via.is_empty())
+        .collect();
+    children.sort_by(|(a_id, a), (b_id, b)| {
+        let key = |c: &SpaceChildEventContent| c.order.as_ref().map(|o| o.as_str().to_owned());
+        match (key(a), key(b)) {
+            (Some(x), Some(y)) => x.cmp(&y).then_with(|| a_id.cmp(b_id)),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => a_id.cmp(b_id),
+        }
+    });
+    children
+}
+
+/// A room a space lists, from the server's directory of it (`/hierarchy`):
+/// what shows for the space's channels you aren't in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpaceRoom {
+    pub id: OwnedRoomId,
+    pub name: String,
+    pub topic: Option<String>,
+    pub avatar: Option<MediaRef>,
+    pub member_count: u64,
+    pub is_space: bool,
+    pub is_voice: bool,
+    /// Servers to join it through (from the space's `m.space.child`).
+    pub via: Vec<String>,
+}
+
+impl Session {
+    /// The rooms `space_id` lists, one level down, as the server's directory
+    /// describes them (including ones you aren't in), in the space's order.
+    pub fn space_rooms(&self, space_id: OwnedRoomId) -> CoreFuture<Vec<SpaceRoom>> {
+        use matrix_sdk::ruma::api::client::space::get_hierarchy;
+        let client = self.client.clone();
+        self.core.run(async move {
+            let mut request = get_hierarchy::v1::Request::new(space_id.clone());
+            request.max_depth = Some(1u32.into());
+            let response = client.send(request).await?;
+            let order: Vec<(OwnedRoomId, Vec<String>)> = match client.get_room(&space_id) {
+                Some(space) => space_children(&space)
+                    .await
+                    .into_iter()
+                    .map(|(id, c)| (id, c.via.iter().map(ToString::to_string).collect()))
+                    .collect(),
+                None => Vec::new(),
+            };
+            let mut rooms: Vec<SpaceRoom> = response
+                .rooms
+                .into_iter()
+                .filter(|chunk| chunk.summary.room_id != space_id)
+                .map(|chunk| {
+                    let summary = chunk.summary;
+                    let id = summary.room_id.clone();
+                    let via = order
+                        .iter()
+                        .find(|(child, _)| *child == id)
+                        .map(|(_, via)| via.clone())
+                        .unwrap_or_default();
+                    let kind = summary.room_type.as_ref().map(ToString::to_string);
+                    SpaceRoom {
+                        name: summary
+                            .name
+                            .clone()
+                            .or_else(|| summary.canonical_alias.as_ref().map(ToString::to_string))
+                            .unwrap_or_else(|| id.to_string()),
+                        topic: summary.topic.clone(),
+                        avatar: summary.avatar_url.clone().map(MediaRef::from_mxc),
+                        member_count: summary.num_joined_members.into(),
+                        is_space: kind.as_deref() == Some("m.space"),
+                        is_voice: kind
+                            .as_deref()
+                            .is_some_and(|k| VOICE_ROOM_TYPES.contains(&k)),
+                        via,
+                        id,
+                    }
+                })
+                .collect();
+            let place = |id: &OwnedRoomId| {
+                order
+                    .iter()
+                    .position(|(child, _)| child == id)
+                    .unwrap_or(usize::MAX)
+            };
+            rooms.sort_by_key(|room| place(&room.id));
+            Ok(rooms)
+        })
+    }
+
+    /// Join a room you may know nothing about yet (a space's channel you
+    /// aren't in), through `via`.
+    pub fn join_room_via(&self, room_id: OwnedRoomId, via: Vec<String>) -> CoreFuture<()> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            let servers: Vec<matrix_sdk::ruma::OwnedServerName> = via
+                .iter()
+                .filter_map(|s| s.as_str().try_into().ok())
+                .collect();
+            client
+                .join_room_by_id_or_alias(
+                    <&matrix_sdk::ruma::RoomOrAliasId>::from(&*room_id),
+                    &servers,
+                )
+                .await?;
+            Ok(())
+        })
+    }
+
+    /// Put `space_id`'s channels in `order` (their room ids, first to last)
+    /// for everyone: each child's `order` is rewritten to its place. Needs
+    /// the power to change the space's children.
+    pub fn set_space_order(
+        &self,
+        space_id: OwnedRoomId,
+        order: Vec<OwnedRoomId>,
+    ) -> CoreFuture<()> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            let space = client
+                .get_room(&space_id)
+                .ok_or_else(|| crate::Error::UnknownRoom(space_id.clone()))?;
+            let children = space_children(&space).await;
+            for (place, id) in order.iter().enumerate() {
+                let Some((_, content)) = children.iter().find(|(child, _)| child == id) else {
+                    continue;
+                };
+                // Room for 26^2 places either side, in plain letters.
+                let key = format!(
+                    "{}{}",
+                    char::from(b'a' + (place / 26 % 26) as u8),
+                    char::from(b'a' + (place % 26) as u8)
+                );
+                if content.order.as_ref().map(|o| o.as_str()) == Some(key.as_str()) {
+                    continue;
+                }
+                let mut content = content.clone();
+                content.order = matrix_sdk::ruma::SpaceChildOrder::parse(&key).ok();
+                space.send_state_event_for_key(id, content).await?;
+            }
+            Ok(())
+        })
     }
 }

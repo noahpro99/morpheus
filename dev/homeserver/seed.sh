@@ -245,6 +245,37 @@ add_space_child "$ALICE" "$ENGINEERING" "$DEV"
 add_space_parent "$ALICE" "$DEV" "$ENGINEERING"
 echo "  + #dev is a child of #engineering (space); #general and #random stay outside it"
 
+# Projects: Carol's server, whose rooms are listed only by the server
+# (m.space.child, no m.space.parent back), as GrapheneOS's are, in the order
+# the server keeps (news, general, archive). Alice is in the server and two
+# of its rooms, not in archive.
+carol_room() {
+  local alias="$1" name="$2" extra="${3:-"{}"}" id
+  if id=$(curl -fsS "$HS_URL/_matrix/client/v3/directory/room/%23$alias:localhost" 2>/dev/null | jq -r .room_id); then
+    echo "$id"
+    return
+  fi
+  api "$CAROL" POST /_matrix/client/v3/createRoom "$(jq -nc --arg a "$alias" --arg n "$name" --argjson x "$extra" \
+    '{room_alias_name:$a, name:$n, topic:("The " + $n + " room"), preset:"public_chat"} + $x')" | jq -r .room_id
+}
+PROJECTS=$(carol_room projects "Projects" '{"creation_content":{"type":"m.space"}}')
+PROJ_GENERAL=$(carol_room proj-general "projects-general")
+PROJ_NEWS=$(carol_room proj-news "projects-news")
+PROJ_ARCHIVE=$(carol_room proj-archive "projects-archive")
+for pair in "$PROJ_NEWS a" "$PROJ_GENERAL b" "$PROJ_ARCHIVE c"; do
+  set -- $pair
+  api "$CAROL" PUT "/_matrix/client/v3/rooms/$PROJECTS/state/m.space.child/$1" \
+    "$(jq -nc --arg o "$2" '{via:["localhost"], order:$o}')" >/dev/null
+done
+for room in "$PROJECTS" "$PROJ_GENERAL" "$PROJ_NEWS"; do
+  api "$ALICE" POST "/_matrix/client/v3/join/$room" '{}' >/dev/null
+done
+api "$ALICE" POST "/_matrix/client/v3/rooms/$PROJ_ARCHIVE/leave" '{}' >/dev/null 2>&1 || true
+api "$ALICE" POST "/_matrix/client/v3/rooms/$PROJ_ARCHIVE/forget" '{}' >/dev/null 2>&1 || true
+# The newest message in general: by recency it would come first.
+say "$CAROL" "$PROJ_GENERAL" "Welcome to Projects"
+echo "  + Projects (Carol's server): #projects-news, #projects-general, #projects-archive (Alice not in it)"
+
 if [[ ! -f "$HS_DIR/.seeded" ]]; then
   echo "profiles:"
   set_avatar "$ALICE" "@alice:localhost" "$PNG_ALICE"
