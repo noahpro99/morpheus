@@ -391,3 +391,35 @@ fn InboxMentions(on_open: Callback<OwnedRoomId>) -> Element {
         }
     }
 }
+
+/// The bar over screens before the shell (the splash, signing in): the
+/// window has no system title bar on any desktop, so this is where it is
+/// dragged from, with its minimize, maximize and close. Nothing on phones.
+#[component]
+pub fn WindowBar() -> Element {
+    let Some(controls) = use_hook(try_consume_context::<WindowControls>) else {
+        return rsx! {};
+    };
+    let drag = controls.clone();
+    let maximize = controls.clone();
+    rsx! {
+        header {
+            class: "titlebar window-bar",
+            onmousedown: move |e| {
+                if e.trigger_button() == Some(dioxus::html::input_data::MouseButton::Primary) {
+                    (drag.drag)();
+                }
+            },
+            ondoubleclick: move |_| (maximize.toggle_maximize)(),
+            div {}
+            div { class: "titlebar-title", Logo { size: 16, class: "titlebar-logo" } "Morpheus" }
+            div { class: "titlebar-actions",
+                div { class: "window-controls", onmousedown: move |e| e.stop_propagation(),
+                    button { class: "ghost", title: "Minimize", onclick: { let c = controls.clone(); move |_| (c.minimize)() }, Icon { glyph: MINUS, size: 14 } }
+                    button { class: "ghost", title: "Maximize", onclick: { let c = controls.clone(); move |_| (c.toggle_maximize)() }, Icon { glyph: SQUARE, size: 13 } }
+                    button { class: "ghost close", title: "Close", onclick: move |_| (controls.close)(), Icon { glyph: X, size: 14 } }
+                }
+            }
+        }
+    }
+}
