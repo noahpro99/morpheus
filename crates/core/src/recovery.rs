@@ -81,6 +81,18 @@ impl Session {
         })
     }
 
+    /// Replace the recovery key (lost or never saved), as Element's "Change
+    /// recovery key": needs this device to hold the account's secrets
+    /// (recovery enabled here). Returns the new key; the old one stops working.
+    pub fn change_recovery_key(&self) -> CoreFuture<String> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            let recovery = client.encryption().recovery();
+            let key = recovery.reset_key().await?;
+            Ok(key)
+        })
+    }
+
     /// Restore cross-signing and room keys with a recovery key (or passphrase).
     /// Encrypted history becomes readable as keys are downloaded.
     pub fn recover(&self, recovery_key: String) -> CoreFuture<()> {

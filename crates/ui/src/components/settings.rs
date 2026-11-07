@@ -224,6 +224,31 @@ pub fn Settings() -> Element {
             });
         }
     };
+    let mut change_key = {
+        let session = session.clone();
+        move || {
+            if busy() {
+                return;
+            }
+            busy.set(true);
+            recovery_message.set(None);
+            let session = session.clone();
+            spawn(async move {
+                match session.change_recovery_key().await {
+                    Ok(key) => {
+                        new_key.set(Some(key));
+                        refresh += 1;
+                    }
+                    Err(err) => recovery_message.set(Some(Err(err.to_string()))),
+                }
+                busy.set(false);
+            });
+        }
+    };
+    let recovery_enabled = matches!(
+        &*status.read(),
+        Some(Ok(status)) if status.recovery == RecoveryAvailability::Enabled
+    );
     let backup_missing = matches!(
         &*status.read(),
         Some(Ok(status)) if status.recovery == RecoveryAvailability::Disabled
@@ -364,6 +389,15 @@ pub fn Settings() -> Element {
                                         div { class: "settings-actions",
                                             button { class: "primary setup-recovery", disabled: busy(), onclick: move |_| set_up_recovery(),
                                                 "Set up recovery"
+                                            }
+                                        }
+                                    } else if recovery_enabled {
+                                        div { class: "settings-actions",
+                                            button { class: "secondary change-recovery-key", disabled: busy(), onclick: move |_| change_key(),
+                                                "Change recovery key"
+                                            }
+                                            p { class: "muted",
+                                                "Lost your recovery key? Make a new one here; the old one stops working."
                                             }
                                         }
                                     }
