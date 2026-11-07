@@ -1219,6 +1219,126 @@ async fn the_call_stage_is_resized_by_dragging_its_edge() {
     out_of_call(&mut alice).await;
 }
 
+/// How the stage's cards sit: each card's box, its picture's box, whose it
+/// is, and the stage's box. Fails (returns why) unless every card is the same
+/// size, wholly inside the stage, and a camera fills its card.
+const STAGE_CARDS: &str = "
+    const stage = document.querySelector('.call-stage');
+    if (!stage) return 'no stage';
+    const s = stage.getBoundingClientRect();
+    const cards = [...stage.querySelectorAll('.video-tile, .call-tile')];
+    if (cards.length < 2) return 'cards: ' + cards.length;
+    const boxes = cards.map(c => c.getBoundingClientRect());
+    const w = boxes[0].width, h = boxes[0].height;
+    if (w < 80 || h < 45) return 'tiny cards ' + w + 'x' + h;
+    for (const [i, b] of boxes.entries()) {
+        if (Math.abs(b.width - w) > 1.5 || Math.abs(b.height - h) > 1.5)
+            return 'card ' + i + ' is ' + b.width + 'x' + b.height + ', not ' + w + 'x' + h;
+        if (b.left < s.left - 1 || b.right > s.right + 1 || b.top < s.top - 1 || b.bottom > s.bottom + 1)
+            return 'card ' + i + ' ' + JSON.stringify(b) + ' outside the stage ' + JSON.stringify(s);
+    }
+    for (const t of stage.querySelectorAll('.video-tile')) {
+        const b = t.getBoundingClientRect(), v = t.querySelector('img.video').getBoundingClientRect();
+        if (Math.abs(v.width - b.width) > 1.5 || Math.abs(v.height - b.height) > 1.5)
+            return 'a camera ' + v.width + 'x' + v.height + ' in a card ' + b.width + 'x' + b.height;
+    }
+    return 'ok ' + w + 'x' + h;";
+
+/// With a camera on, everyone in the call is a card of the same size, as in
+/// Discord: the camera shows inside its person's card, the cards fit the
+/// stage, and still do (bigger) once the stage is dragged taller.
+#[tokio::test]
+async fn a_camera_shows_in_its_persons_card_among_equal_cards() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut alice = App::launch_desktop(&hs).await.expect("launch alice");
+    login_and_open(&mut alice, "alice", "random").await;
+    let mut bob = App::launch_desktop(&hs).await.expect("launch bob");
+    login_and_open(&mut bob, "bob", "random").await;
+    alice
+        .click(".chat-header .call-button")
+        .await
+        .expect("call");
+    alice
+        .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("alice connected");
+    bob.click(".chat-header .call-button").await.expect("join");
+    bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("bob connected");
+    bob.click(".voice-panel .camera-button")
+        .await
+        .expect("bob's camera");
+    alice
+        .wait_for_js(&shows_test_pattern("@bob:localhost"), DEFAULT_WAIT)
+        .await
+        .expect("alice sees bob's camera");
+    alice
+        .wait_for(
+            ".call-stage .call-tile[data-user=\"@alice:localhost\"]",
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("alice's own card");
+    let at_first = alice.eval(STAGE_CARDS).await.expect("cards");
+    if let Some(path) = alice.screenshot("call-cards").await.expect("screenshot") {
+        eprintln!("screenshot: {}", path.display());
+    }
+    let first: f64 = at_first
+        .as_str()
+        .and_then(|s| s.strip_prefix("ok "))
+        .and_then(|s| s.split('x').next())
+        .and_then(|w| w.parse().ok())
+        .unwrap_or_else(|| panic!("the cards: {at_first}"));
+
+    // Drag the stage 200 px taller: the cards grow and still fit.
+    alice
+        .eval(
+            "const h = document.querySelector('.call-stage-resize').getBoundingClientRect(); \
+             const x = h.left + h.width / 2, y = h.top + h.height / 2; \
+             const at = (type, dy, target) => target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y + dy, buttons: 1 })); \
+             at('mousedown', 0, document.querySelector('.call-stage-resize')); \
+             for (let dy = 20; dy <= 200; dy += 20) at('mousemove', dy, window); \
+             at('mouseup', 200, window); return true;",
+        )
+        .await
+        .expect("drag");
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    let resized = alice.eval(STAGE_CARDS).await.expect("cards");
+    if let Some(path) = alice
+        .screenshot("call-cards-resized")
+        .await
+        .expect("screenshot")
+    {
+        eprintln!("screenshot: {}", path.display());
+    }
+    let later: f64 = resized
+        .as_str()
+        .and_then(|s| s.strip_prefix("ok "))
+        .and_then(|s| s.split('x').next())
+        .and_then(|w| w.parse().ok())
+        .unwrap_or_else(|| panic!("the cards after a resize: {resized}"));
+    assert!(
+        later > first,
+        "bigger cards in a taller stage: {first} → {later}"
+    );
+    // Put the stage's size back for other tests.
+    alice
+        .eval("localStorage.removeItem('morpheus.callStageHeight'); return true;")
+        .await
+        .expect("forget the size");
+
+    bob.click(".voice-panel .hang-up")
+        .await
+        .expect("bob hangs up");
+    alice.click(".voice-panel .hang-up").await.expect("hang up");
+    out_of_call(&mut bob).await;
+    out_of_call(&mut alice).await;
+}
+
 /// Hung up for good: the voice panel gone, and a moment for the leave to
 /// reach the call server. A test ending sooner kills the app mid-leave, and
 /// its ghost stays in the room until the server gives up on it, chiming
