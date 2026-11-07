@@ -167,10 +167,18 @@ impl Session {
                 .bytes()
                 .await
                 .map_err(|err| failed(&err))?;
-            tokio::task::spawn_blocking(move || swap::install(&bytes))
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            let installed = tokio::task::spawn_blocking(move || swap::install(&bytes))
                 .await
                 .map_err(|err| failed(&err))?
-                .map_err(|err| failed(&err))
+                .map_err(|err| failed(&err));
+            // Phones install through the system, never in place.
+            #[cfg(any(target_os = "android", target_os = "ios"))]
+            let installed = {
+                drop(bytes);
+                Err(failed(&"this device installs updates itself"))
+            };
+            installed
         })
     }
 }
