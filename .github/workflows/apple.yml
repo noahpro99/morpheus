@@ -77,6 +77,28 @@ jobs:
           ls -la "$zip"
           echo "ZIP=$zip" >> "$GITHUB_ENV"
 
+      # The app has to get past loading: a link that drops libwebrtc's
+      # Objective-C aborts it before main. (The Intel build runs under
+      # Rosetta on the Apple-silicon runner.)
+      - name: Starts
+        run: |
+          if [ "${{ matrix.arch }}" = x86_64 ] && ! arch -x86_64 /usr/bin/true 2>/dev/null; then
+            echo "No Rosetta on this runner; not started"; exit 0
+          fi
+          rm -rf smoke && mkdir smoke && ditto -x -k "$ZIP" smoke
+          exe=smoke/Morpheus.app/Contents/MacOS/morpheus-desktop
+          MORPHEUS_DATA_DIR="$PWD/smoke/data" "$exe" > smoke/log.txt 2>&1 &
+          pid=$!
+          sleep 20
+          if ! kill -0 "$pid" 2>/dev/null; then
+            echo "Morpheus quit within 20s:"; cat smoke/log.txt
+            ls ~/Library/Logs/DiagnosticReports/ 2>/dev/null | grep -i morpheus && \
+              head -40 ~/Library/Logs/DiagnosticReports/*morpheus* 2>/dev/null
+            exit 1
+          fi
+          kill "$pid"
+          echo "Morpheus is running after 20s"; tail -5 smoke/log.txt
+
       - uses: actions/upload-artifact@v4
         with:
           name: macos-${{ matrix.arch }}
