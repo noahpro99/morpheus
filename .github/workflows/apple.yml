@@ -103,6 +103,7 @@ jobs:
       # closing the window, and the Dock bringing it back.
       - name: Behaves as a Mac app
         if: matrix.arch == 'arm64'
+        timeout-minutes: 10
         run: |
           sleep 2
           bash scripts/mac-check.sh smoke/Morpheus.app

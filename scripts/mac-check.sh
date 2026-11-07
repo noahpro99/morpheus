@@ -27,13 +27,15 @@ if ! kill -0 "$pid" 2>/dev/null; then
     fail "the app quit on start"; cat "$data/log.txt"; exit 1
 fi
 
-ui() { osascript -e "tell application \"System Events\" to tell (first process whose unix id is $pid) to $1" 2>&1; }
+# osascript waits for ever on a permission prompt no one can answer here.
+osa() { perl -e "alarm 20; exec @ARGV" osascript "$@" 2>&1 || echo "(osascript failed or timed out)"; }
+ui() { osa -e "tell application \"System Events\" to tell (first process whose unix id is $pid) to $1"; }
 windows() { ui "count windows"; }
 
 menus=$(ui "get name of menu bar items of menu bar 1")
 echo "menu bar: $menus"
 case "$menus" in
-    *"assistive access"*|*"not allowed"*) echo "System Events may not script apps here: $menus"; kill "$pid"; exit 1 ;;
+    *"assistive access"*|*"not allowed"*|*"timed out"*) echo "System Events may not script apps here: $menus"; kill "$pid"; exit 1 ;;
 esac
 edit=$(ui "get name of menu items of menu \"Edit\" of menu bar item \"Edit\" of menu bar 1")
 case "$edit" in
@@ -42,10 +44,10 @@ case "$edit" in
 esac
 
 # ⌘W, as a person presses it, closes the window (the app keeps running).
-osascript -e "tell application \"System Events\" to set frontmost of (first process whose unix id is $pid) to true" >/dev/null 2>&1
+osa -e "tell application \"System Events\" to set frontmost of (first process whose unix id is $pid) to true" >/dev/null 2>&1
 sleep 1
 before=$(windows)
-osascript -e 'tell application "System Events" to keystroke "w" using command down' 2>&1
+osa -e 'tell application "System Events" to keystroke "w" using command down'
 sleep 2
 after=$(windows)
 if [ "$before" -ge 1 ] 2>/dev/null && [ "$after" = 0 ] && kill -0 "$pid" 2>/dev/null; then
