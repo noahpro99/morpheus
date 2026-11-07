@@ -48,6 +48,8 @@ async fn shortcuts_navigate_rooms_scopes_history_and_panels() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
+    // The rail's servers in a known order (Ctrl+Alt+Down follows it).
+    set_rail(&hs, &["Engineering", "Projects"]);
     let mut app = App::launch_desktop(&hs).await.expect("launch app");
     login_and_open(&mut app, "general").await;
 
@@ -296,4 +298,115 @@ async fn ctrl_shift_m_mutes_and_ctrl_shift_d_deafens() {
     expect(&mut app, true, false, "undeafened: still muted, as before").await;
     press(&mut app, "M").await;
     expect(&mut app, false, false, "back as it was").await;
+}
+
+/// Put Alice's rail in this order of servers (by name), as dragging would.
+fn set_rail(hs: &str, names: &[&str]) {
+    let rail: Vec<serde_json::Value> = names
+        .iter()
+        .map(|name| {
+            let alias = name.to_lowercase();
+            let id = morpheus_e2e::api_as(
+                hs,
+                "alice",
+                "GET",
+                &format!("directory/room/%23{alias}%3Alocalhost"),
+                None,
+            )
+            .expect("alias")["room_id"]
+                .clone();
+            serde_json::json!({ "space": id })
+        })
+        .collect();
+    morpheus_e2e::api_as(
+        hs,
+        "alice",
+        "PUT",
+        "user/@alice:localhost/account_data/dev.morpheus.ui",
+        Some(serde_json::json!({ "rail": rail })),
+    )
+    .expect("rail prefs");
+}
+
+/// Ctrl+Alt+Down goes server by server in the order the rail shows them
+/// (the order you dragged them into), not the order rooms were active.
+#[tokio::test]
+async fn ctrl_alt_down_goes_server_by_server_in_rail_order() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    for order in [["Projects", "Engineering"], ["Engineering", "Projects"]] {
+        set_rail(&hs, &order);
+        let mut app = App::launch_desktop(&hs).await.expect("launch app");
+        login_and_open(&mut app, "general").await;
+        app.click(".rail-rooms").await.expect("Rooms");
+        for name in order {
+            app.key_combo("body", "ArrowDown", true, true, false)
+                .await
+                .expect("ctrl+alt+down");
+            app.wait_for(
+                &format!(".rail-item.selected[title=\"{name}\"]"),
+                DEFAULT_WAIT,
+            )
+            .await
+            .unwrap_or_else(|_| panic!("{name} next, as the rail has {order:?}"));
+        }
+        app.key_combo("body", "ArrowUp", true, true, false)
+            .await
+            .expect("ctrl+alt+up");
+        app.wait_for(
+            &format!(".rail-item.selected[title=\"{}\"]", order[0]),
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("and back up");
+    }
+    set_rail(&hs, &[]);
+}
+
+/// Shift+Alt+Right goes to the DMs, and from the DMs back to the server you
+/// were last in.
+#[tokio::test]
+async fn shift_alt_right_toggles_dms_and_the_last_server() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch_desktop(&hs).await.expect("launch app");
+    login_and_open(&mut app, "general").await;
+    app.click(".rail-item[title=\"Projects\"]")
+        .await
+        .expect("Projects");
+    app.wait_for(".rail-item.selected[title=\"Projects\"]", DEFAULT_WAIT)
+        .await
+        .expect("in Projects");
+    app.key_combo("body", "ArrowRight", false, true, true)
+        .await
+        .expect("shift+alt+right");
+    app.wait_for(".rail-dms.selected", DEFAULT_WAIT)
+        .await
+        .expect("to the DMs");
+    app.key_combo("body", "ArrowRight", false, true, true)
+        .await
+        .expect("shift+alt+right");
+    app.wait_for(".rail-item.selected[title=\"Projects\"]", DEFAULT_WAIT)
+        .await
+        .expect("back to the last server");
+    // Another server, then the DMs and back: that one.
+    app.click(".rail-item[title=\"Engineering\"]")
+        .await
+        .expect("Engineering");
+    app.key_combo("body", "ArrowRight", false, true, true)
+        .await
+        .expect("shift+alt+right");
+    app.wait_for(".rail-dms.selected", DEFAULT_WAIT)
+        .await
+        .expect("to the DMs");
+    app.key_combo("body", "ArrowRight", false, true, true)
+        .await
+        .expect("shift+alt+right");
+    app.wait_for(".rail-item.selected[title=\"Engineering\"]", DEFAULT_WAIT)
+        .await
+        .expect("back to Engineering");
 }
