@@ -158,13 +158,19 @@ fn main() {
         .build()
         .expect("the UI's runtime");
     let _runtime = runtime.enter();
+    // No menu bar in the window: the shell draws its own bar. A Mac's menu
+    // bar is the system's, at the top of the screen, and ⌘V, ⌘C, ⌘W and ⌘Q
+    // only work through one; Dioxus drops it for an undecorated window
+    // unless it is set first.
+    #[cfg(target_os = "macos")]
+    let config_with_menu = Config::new().with_menu(mac_menu()).with_window(window);
+    #[cfg(not(target_os = "macos"))]
+    let config_with_menu = Config::new().with_window(window).with_menu(None);
     LaunchBuilder::new()
         .with_context(config)
         .with_context(focus)
         .with_cfg(
-            Config::new()
-                .with_window(window)
-                .with_menu(None)
+            config_with_menu
                 // Closing the window keeps Morpheus syncing in the tray, so
                 // notifications keep coming; the tray menu quits for real.
                 .with_close_behaviour(WindowCloseBehaviour::WindowHides)
@@ -172,6 +178,69 @@ fn main() {
                 .with_background_color((13, 15, 20, 255)),
         )
         .launch(DesktopRoot);
+}
+
+/// The menu item that closes the window (⌘W). macOS's own Close Window
+/// asks the window to close itself, which a window without a title bar
+/// refuses; this one hides it, as closing does everywhere else.
+#[cfg(target_os = "macos")]
+const CLOSE_WINDOW: &str = "close-window";
+
+/// A Mac app's menu bar: Morpheus (hide, quit), Edit (the clipboard and
+/// undo, which the web view's text fields only get through these), Window.
+#[cfg(target_os = "macos")]
+fn mac_menu() -> dioxus::desktop::muda::Menu {
+    use dioxus::desktop::muda::{
+        Menu, MenuItem, PredefinedMenuItem, Submenu,
+        accelerator::{Accelerator, Code, Modifiers},
+    };
+    let menu = Menu::new();
+    let app = Submenu::with_items(
+        "Morpheus",
+        true,
+        &[
+            &PredefinedMenuItem::hide(None),
+            &PredefinedMenuItem::hide_others(None),
+            &PredefinedMenuItem::show_all(None),
+            &PredefinedMenuItem::separator(),
+            &PredefinedMenuItem::quit(None),
+        ],
+    );
+    let edit = Submenu::with_items(
+        "Edit",
+        true,
+        &[
+            &PredefinedMenuItem::undo(None),
+            &PredefinedMenuItem::redo(None),
+            &PredefinedMenuItem::separator(),
+            &PredefinedMenuItem::cut(None),
+            &PredefinedMenuItem::copy(None),
+            &PredefinedMenuItem::paste(None),
+            &PredefinedMenuItem::select_all(None),
+        ],
+    );
+    let close = MenuItem::with_id(
+        CLOSE_WINDOW,
+        "Close Window",
+        true,
+        Some(Accelerator::new(Some(Modifiers::SUPER), Code::KeyW)),
+    );
+    let window = Submenu::with_items(
+        "Window",
+        true,
+        &[&PredefinedMenuItem::minimize(None), &close],
+    );
+    for submenu in [app, edit, window] {
+        match submenu {
+            Ok(submenu) => {
+                if let Err(err) = menu.append(&submenu) {
+                    tracing::warn!(%err, "menu bar");
+                }
+            }
+            Err(err) => tracing::warn!(%err, "menu bar"),
+        }
+    }
+    menu
 }
 
 /// Wraps the shared app with the window controls its title bar needs, the
@@ -246,9 +315,22 @@ fn DesktopRoot() -> Element {
             {
                 focus.0.store(*focused, Ordering::Relaxed);
             }
-            if SHOW_REQUESTED.swap(false, Ordering::Relaxed) {
+            // Clicking the app in the Dock (or opening it again) on a Mac
+            // brings the closed window back, as Discord's does.
+            let reopened = matches!(event, Event::Reopen { .. });
+            if SHOW_REQUESTED.swap(false, Ordering::Relaxed) || reopened {
                 window.set_visible(true);
                 window.set_focus();
+            }
+        }
+    });
+    // ⌘W (the menu bar's Close Window) closes the window as its × does.
+    #[cfg(target_os = "macos")]
+    dioxus::desktop::use_muda_event_handler({
+        let window = window.window.clone();
+        move |event| {
+            if event.id().0 == CLOSE_WINDOW {
+                window.set_visible(false);
             }
         }
     });

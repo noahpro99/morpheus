@@ -69,6 +69,15 @@ jobs:
           set_key NSMicrophoneUsageDescription "Morpheus uses the microphone in calls."
           set_key NSCameraUsageDescription "Morpheus uses the camera in video calls."
           set_key CFBundleDisplayName Morpheus
+          # The icon (apps/desktop/icons/icon.png, 1024 px) at every size macOS asks for.
+          set=$(mktemp -d)/Morpheus.iconset; mkdir -p "$set"
+          for size in 16 32 128 256 512; do
+            sips -z $size $size apps/desktop/icons/icon.png --out "$set/icon_${size}x${size}.png" >/dev/null
+            sips -z $((size * 2)) $((size * 2)) apps/desktop/icons/icon.png --out "$set/icon_${size}x${size}@2x.png" >/dev/null
+          done
+          mkdir -p dist/Morpheus.app/Contents/Resources
+          iconutil -c icns "$set" -o dist/Morpheus.app/Contents/Resources/Morpheus.icns
+          set_key CFBundleIconFile Morpheus
           # Not notarised: ad-hoc signed so Apple silicon runs it at all.
           codesign --force --deep --sign - dist/Morpheus.app
           codesign --verify --deep dist/Morpheus.app
