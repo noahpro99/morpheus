@@ -1294,6 +1294,98 @@ async fn a_ring_is_heard_on_the_desktop() {
     );
 }
 
+/// The app's processes (it and WebKit's helpers, which play the page's
+/// audio) that have a playback stream open in PipeWire right now.
+fn playing_streams(pid: u32) -> Vec<String> {
+    let mut family = vec![pid];
+    let mut at = 0;
+    while at < family.len() {
+        let parent = family[at];
+        at += 1;
+        if let Ok(children) =
+            std::fs::read_to_string(format!("/proc/{parent}/task/{parent}/children"))
+        {
+            family.extend(
+                children
+                    .split_whitespace()
+                    .filter_map(|c| c.parse::<u32>().ok()),
+            );
+        }
+    }
+    let Ok(out) = std::process::Command::new("pw-dump").output() else {
+        return vec!["no pw-dump".into()];
+    };
+    let nodes: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap_or_default();
+    nodes
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|n| n["info"]["props"]["media.class"] == "Stream/Output/Audio")
+        .filter(|n| {
+            n["info"]["props"]["application.process.id"]
+                .as_u64()
+                .or_else(|| {
+                    n["info"]["props"]["application.process.id"]
+                        .as_str()?
+                        .parse()
+                        .ok()
+                })
+                .is_some_and(|p| family.contains(&(p as u32)))
+        })
+        .map(|n| {
+            format!(
+                "{} app {} channels {} volumes {} ({})",
+                n["info"]["props"]["node.name"],
+                n["info"]["props"]["application.name"],
+                n["info"]["props"]["audio.channels"],
+                n["info"]["params"]["Props"][0]["channelVolumes"],
+                n["info"]["state"]
+            )
+        })
+        .collect()
+}
+
+/// The desktop's sounds come out of the speakers: pressing mute plays its
+/// chime through a real audio stream, not only a play() the page accepted.
+#[tokio::test]
+async fn a_chime_comes_out_of_the_speakers() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch_with_env(&hs, &[("MORPHEUS_CALL_AUDIO", "platform")])
+        .await
+        .expect("launch, with real sound");
+    login_and_open(&mut app, "alice", "general").await;
+    let pid = app.pid().expect("a desktop app");
+    app.click(".user-bar .mute-button").await.expect("mute");
+    let mut seen = Vec::new();
+    for _ in 0..100 {
+        seen = playing_streams(pid)
+            .into_iter()
+            .filter(|s| s.ends_with("(\"running\")"))
+            .collect();
+        if !seen.is_empty() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    let plays = sound_plays(&mut app).await;
+    app.click(".user-bar .mute-button").await.expect("unmute");
+    assert!(
+        !seen.is_empty(),
+        "no audio stream from the app; the page said: {plays:?}; streams: {:?}",
+        playing_streams(pid)
+    );
+    // Heard, not only played: a volume of 0 saved for the app (WirePlumber
+    // keeps one per app, across restarts) must not silence it.
+    assert!(
+        seen.iter()
+            .all(|s| !s.contains("volumes [0.0") && !s.contains("volumes [0]")),
+        "the app's audio plays at no volume: {seen:?}"
+    );
+}
+
 /// A voice channel (Element's video room: a room of type
 /// org.matrix.msc3417.call) works as Discord's: listed with a speaker,
 /// clicking it joins its call, clicking it again stays in, and others see
