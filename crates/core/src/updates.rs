@@ -63,14 +63,19 @@ fn platform() -> Option<&'static str> {
     }
 }
 
-/// Whether this build replaces itself with a downloaded release (desktops),
-/// rather than handing the download to the system (phones).
+/// Whether this build replaces itself with a downloaded release: desktops,
+/// when the app's folder is the app's to change. An install it can't write
+/// to (Nix's store, a package manager's files) and phones are updated by
+/// whatever installed them.
 pub fn installs_updates() -> bool {
-    cfg!(any(
-        target_os = "windows",
-        target_os = "linux",
-        target_os = "macos"
-    ))
+    #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
+    {
+        swap::can_replace()
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+    {
+        false
+    }
 }
 
 fn feed_url() -> Option<String> {
@@ -304,6 +309,18 @@ mod swap {
             .env("MORPHEUS_UPDATED_FROM", std::process::id().to_string())
             .spawn()?;
         Ok(())
+    }
+
+    /// Whether the app's folder takes new files (tried, as permissions
+    /// alone don't say: a read-only mount, or Windows' own rules).
+    pub fn can_replace() -> bool {
+        let Ok((_, dir)) = place() else {
+            return false;
+        };
+        let probe = dir.join(format!("{STAGING}-probe-{}", std::process::id()));
+        let ok = std::fs::write(&probe, b"").is_ok();
+        let _ = std::fs::remove_file(&probe);
+        ok
     }
 
     pub fn clean_up() {

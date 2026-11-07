@@ -201,3 +201,86 @@ async fn the_app_updates_itself_from_a_newer_release() {
     );
     let _ = std::fs::remove_dir_all(&root);
 }
+
+/// An install the app can't write to (Nix's store, a package manager's
+/// files) is updated by whatever installed it: the card says a version is
+/// out and links to the release page, and offers no Update.
+#[tokio::test]
+async fn a_read_only_install_links_to_the_release_instead() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let root = app_binary()
+        .expect("build")
+        .ancestors()
+        .nth(6)
+        .expect("target")
+        .join(format!("e2e-update-ro-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let install = root.join("install");
+    let exe = install_copy(&install);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&install, std::fs::Permissions::from_mode(0o555)).expect("mode");
+    }
+
+    let probe = TcpListener::bind("127.0.0.1:0").expect("bind");
+    let port = probe.local_addr().expect("addr").port();
+    drop(probe);
+    let base = format!("http://127.0.0.1:{port}");
+    let feed = serde_json::json!({
+        "tag_name": "v99.0.0",
+        "html_url": format!("{base}/release"),
+        "assets": [
+            { "name": "morpheus-99.0.0-linux-x86_64.zip", "browser_download_url": format!("{base}/linux.zip") },
+        ]
+    })
+    .to_string()
+    .into_bytes();
+    serve(
+        TcpListener::bind(("127.0.0.1", port)).expect("rebind"),
+        vec![("/feed".to_string(), feed)],
+    );
+
+    let feed_url = format!("{base}/feed");
+    let exe_str = exe.to_string_lossy().into_owned();
+    let mut app = App::launch_with_env(
+        &hs,
+        &[
+            ("MORPHEUS_E2E_BIN", exe_str.as_str()),
+            ("MORPHEUS_UPDATE_FEED", feed_url.as_str()),
+        ],
+    )
+    .await
+    .expect("launch the read-only copy");
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    app.type_into("form.login input[name=username]", "alice")
+        .await
+        .expect("username");
+    app.type_into("form.login input[name=password]", "alice-password")
+        .await
+        .expect("password");
+    app.submit("form.login").await.expect("submit");
+
+    app.wait_for_text(".update-card", "99.0.0", DEFAULT_WAIT)
+        .await
+        .expect("the app says a newer version is out");
+    let release = format!(".update-card a[href='{base}/release']");
+    let links = app.count(&release).await.expect("count links");
+    let buttons = app
+        .count(".update-card button.update-button")
+        .await
+        .expect("count buttons");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&install, std::fs::Permissions::from_mode(0o755));
+    }
+    let _ = std::fs::remove_dir_all(&root);
+    assert_eq!(buttons, 0, "no Update for an install the app can't change");
+    assert_eq!(links, 1, "a link to the release page instead");
+}
