@@ -326,6 +326,16 @@ async fn build_client(
         .with_threading_support(ThreadingSupport::Enabled {
             with_subscriptions: false,
         })
+        // A message this device can't decrypt asks the key backup for its
+        // key (as Element X does). The SDK's default never asks, so after
+        // the recovery key, history from before the device stayed locked.
+        // Backups and cross-signing are still set up by the app's prompts.
+        .with_encryption_settings(matrix_sdk::encryption::EncryptionSettings {
+            auto_enable_cross_signing: false,
+            backup_download_strategy:
+                matrix_sdk::encryption::BackupDownloadStrategy::AfterDecryptionFailure,
+            auto_enable_backups: false,
+        })
         .build()
         .await?)
 }
