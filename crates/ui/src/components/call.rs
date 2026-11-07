@@ -1189,6 +1189,7 @@ mod tests {
                 .collect(),
             favorite: false,
             latest_ms: 0,
+            is_voice: false,
         }
     }
 

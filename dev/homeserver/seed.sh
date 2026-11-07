@@ -165,6 +165,19 @@ echo "rooms:"
 GENERAL=$(ensure_room general "general" "Where everything starts")
 RANDOM_ROOM=$(ensure_room random "random" "Off-topic")
 DEV=$(ensure_room dev "dev" "Building Morpheus")
+# A voice channel, as Element makes one (a "video room": a room whose type
+# is org.matrix.msc3417.call), for alice, bob and carol.
+if LOUNGE=$(curl -fsS "$HS_URL/_matrix/client/v3/directory/room/%23lounge:localhost" 2>/dev/null | jq -r .room_id); then
+  echo "  = #lounge ($LOUNGE)"
+else
+  LOUNGE=$(api "$ALICE" POST /_matrix/client/v3/createRoom "$(jq -nc \
+    '{room_alias_name:"lounge", name:"lounge", topic:"Drop in and talk", preset:"public_chat",
+      creation_content:{type:"org.matrix.msc3417.call"},
+      invite:["@bob:localhost","@carol:localhost"]}')" | jq -r .room_id)
+  api "$BOB" POST "/_matrix/client/v3/join/$LOUNGE" '{}' >/dev/null
+  api "$CAROL" POST "/_matrix/client/v3/join/$LOUNGE" '{}' >/dev/null
+  echo "  + #lounge ($LOUNGE), a voice channel"
+fi
 
 # Calls: members post their call membership as state, which needs power
 # level 0 for it (rooms Morpheus creates set this; older rooms get it here).
@@ -179,7 +192,7 @@ allow_calls() {
 }
 ENC=$(curl -fsS "$HS_URL/_matrix/client/v3/directory/room/%23encrypted:localhost" 2>/dev/null | jq -r .room_id) || ENC=""
 # (#encrypted too, for now: its leftovers can only be hung up while allowed.)
-for room in "$GENERAL" "$RANDOM_ROOM" "$DEV" $ENC; do allow_calls "$room"; done
+for room in "$GENERAL" "$RANDOM_ROOM" "$DEV" "$LOUNGE" $ENC; do allow_calls "$room"; done
 
 # Test runs that died mid-call leave memberships behind; hang them up.
 clear_calls() {
@@ -193,7 +206,7 @@ clear_calls() {
     echo "  - hung up $key" >&2
   done
 }
-for room in "$GENERAL" "$RANDOM_ROOM" "$DEV" $ENC; do clear_calls "$room"; done
+for room in "$GENERAL" "$RANDOM_ROOM" "$DEV" "$LOUNGE" $ENC; do clear_calls "$room"; done
 # Friends lists start empty each run (tests add and remove them).
 for user in alice bob carol; do
   token_var=${user^^}
