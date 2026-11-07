@@ -364,6 +364,14 @@ pub fn Shell(session: Session) -> Element {
     let mut selected: Selected = use_context_provider(|| Signal::new(None));
     let preview: Preview = use_context_provider(|| Signal::new(None));
     let mut selected_space: SelectedSpace = use_context_provider(|| Signal::new(Scope::default()));
+    // The last scope other than the DMs, for Shift+Alt+Right to go back to.
+    let mut last_server = use_signal(|| Scope::Rooms);
+    use_effect(move || {
+        let scope = selected_space();
+        if scope != Scope::Dms {
+            last_server.set(scope);
+        }
+    });
     let mut active_thread: ActiveThread = use_context_provider(|| Signal::new(None));
     let mut load_error = use_signal(|| None::<String>);
     let mut switcher_open = use_signal(|| false);
@@ -697,17 +705,7 @@ pub fn Shell(session: Session) -> Element {
                 };
                 Some(candidates[next].clone())
             };
-        let scopes = move || {
-            let mut all = vec![Scope::Dms, Scope::Rooms];
-            all.extend(
-                rooms
-                    .read()
-                    .iter()
-                    .filter(|r| r.is_space && r.parent_spaces.is_empty())
-                    .map(|r| Scope::Space(r.id.clone())),
-            );
-            all
-        };
+        let scopes = move || super::rail::rail_scopes(&prefs.peek(), &rooms.read());
         match name.as_str() {
             "escape" => {
                 let mut call_screen = consume_context::<super::call::CallScreenOpen>();
@@ -736,6 +734,18 @@ pub fn Shell(session: Session) -> Element {
             "chat_front" => {
                 if narrow.peek().0 && current.peek().is_some() {
                     chat_open.set(ChatInFront(true));
+                }
+            }
+            // Shift+Alt+Right: to the DMs, and from them back to the server.
+            "dms_toggle" => {
+                if *selected_space.peek() == Scope::Dms {
+                    let back = last_server.peek().clone();
+                    // A server since left: Rooms instead.
+                    let gone = matches!(&back, Scope::Space(id) if !rooms.peek().iter().any(|r| &r.id == id));
+                    selected_space.set(if gone { Scope::Rooms } else { back });
+                } else {
+                    last_server.set(selected_space.peek().clone());
+                    selected_space.set(Scope::Dms);
                 }
             }
             "switcher" => switcher_open.toggle(),

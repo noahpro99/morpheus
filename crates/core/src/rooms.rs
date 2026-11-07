@@ -556,9 +556,9 @@ impl NotifyMode {
 
 /// A space's children from its `m.space.child` events (those with a
 /// `via`; an empty one removes the child), in the space's order: by `order`
-/// (Unicode codepoints), then those without one, as the spec has it. The
-/// spec breaks ties by the rooms' creation time, which isn't known for rooms
-/// not joined; their room ids stand in.
+/// (Unicode codepoints), then those without one by when they were added
+/// (the spec says by the rooms' creation, which isn't known for rooms not
+/// joined; Element uses this too).
 async fn space_children(room: &Room) -> Vec<(OwnedRoomId, SpaceChildEventContent)> {
     use matrix_sdk::deserialized_responses::SyncOrStrippedState;
     let Ok(events) = room
@@ -567,27 +567,37 @@ async fn space_children(room: &Room) -> Vec<(OwnedRoomId, SpaceChildEventContent
     else {
         return Vec::new();
     };
-    let mut children: Vec<(OwnedRoomId, SpaceChildEventContent)> = events
+    // (room, content, when it was added)
+    let mut children: Vec<(OwnedRoomId, SpaceChildEventContent, u64)> = events
         .into_iter()
         .filter_map(|raw| match raw.deserialize().ok()? {
             SyncOrStrippedState::Sync(event) => {
                 let event = event.as_original()?;
-                Some((event.state_key.clone(), event.content.clone()))
+                Some((
+                    event.state_key.clone(),
+                    event.content.clone(),
+                    event.origin_server_ts.0.into(),
+                ))
             }
             SyncOrStrippedState::Stripped(_) => None,
         })
-        .filter(|(_, content)| !content.via.is_empty())
+        .filter(|(_, content, _)| !content.via.is_empty())
         .collect();
-    children.sort_by(|(a_id, a), (b_id, b)| {
+    // As Element sorts them: by order, then (no order) when added, then id.
+    children.sort_by(|(a_id, a, a_ts), (b_id, b, b_ts)| {
         let key = |c: &SpaceChildEventContent| c.order.as_ref().map(|o| o.as_str().to_owned());
+        let rest = || a_ts.cmp(b_ts).then_with(|| a_id.cmp(b_id));
         match (key(a), key(b)) {
-            (Some(x), Some(y)) => x.cmp(&y).then_with(|| a_id.cmp(b_id)),
+            (Some(x), Some(y)) => x.cmp(&y).then_with(rest),
             (Some(_), None) => std::cmp::Ordering::Less,
             (None, Some(_)) => std::cmp::Ordering::Greater,
-            (None, None) => a_id.cmp(b_id),
+            (None, None) => rest(),
         }
     });
     children
+        .into_iter()
+        .map(|(id, content, _)| (id, content))
+        .collect()
 }
 
 /// A room a space lists, from the server's directory of it (`/hierarchy`):

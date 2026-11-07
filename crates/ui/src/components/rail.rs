@@ -55,6 +55,27 @@ fn layout(prefs: &Prefs, spaces: &[RoomSummary]) -> Vec<RailEntry> {
     entries
 }
 
+/// The rail's scopes top to bottom, as drawn: DMs, Rooms, Favorites (when
+/// any), then each server in the rail's order (a folder's in its order).
+pub fn rail_scopes(prefs: &Prefs, rooms: &morpheus_core::Vector<RoomSummary>) -> Vec<Scope> {
+    let spaces: Vec<RoomSummary> = rooms
+        .iter()
+        .filter(|room| room.is_space && room.parent_spaces.is_empty())
+        .cloned()
+        .collect();
+    let mut all = vec![Scope::Dms, Scope::Rooms];
+    if rooms.iter().any(|room| room.favorite && !room.invited) {
+        all.push(Scope::Favorites);
+    }
+    for entry in layout(prefs, &spaces) {
+        match entry {
+            RailEntry::Space(id) => all.push(Scope::Space(id)),
+            RailEntry::Folder { spaces, .. } => all.extend(spaces.into_iter().map(Scope::Space)),
+        }
+    }
+    all
+}
+
 /// Persist the layout after a change.
 pub fn save_prefs(session: &Session, prefs: &Prefs) {
     let future = session.set_ui_prefs(prefs.to_json());

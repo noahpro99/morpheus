@@ -44,6 +44,7 @@ window.addEventListener('keydown', e => {
   else if (alt && !mod && shift && k === 'ArrowDown') name = 'next_unread';
   else if (alt && mod && k === 'ArrowUp') name = 'prev_scope';
   else if (alt && mod && k === 'ArrowDown') name = 'next_scope';
+  else if (alt && !mod && shift && k === 'ArrowRight') name = 'dms_toggle';
   else if (alt && !mod && k === 'ArrowLeft') name = 'back';
   else if (alt && !mod && k === 'ArrowRight') name = 'forward';
   else if (mod && !alt && !shift && key === 'i') name = 'inbox';
@@ -75,6 +76,10 @@ pub const GROUPS: &[(&str, &[(&str, &str)])] = &[
             ("Alt+↑ / Alt+↓", "Previous / next room"),
             ("Alt+Shift+↑ / ↓", "Previous / next unread room"),
             ("Ctrl+Alt+↑ / ↓", "Previous / next server (rail)"),
+            (
+                "Alt+Shift+→",
+                "Direct messages, and back to the last server",
+            ),
             ("Alt+← / Alt+→", "Back / forward through visited rooms"),
         ],
     ),
