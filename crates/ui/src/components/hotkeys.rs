@@ -437,10 +437,40 @@ window.addEventListener('paste', e => {
   const apply = h => {
     const root = document.documentElement.style;
     root.setProperty('--call-stage-h', h + 'px');
-    root.setProperty('--call-stage-max', 'none');
-    // The tiles fill it, less the stage's padding.
-    root.setProperty('--call-tile-h', Math.max(60, h - 16) + 'px');
   };
+  // Discord's cards: all the same size (16:9), as big as lets every one of
+  // them fit the stage, trying each number across.
+  const GAP = 8, RATIO = 16 / 9;
+  const fit = stage => {
+    const n = stage.children.length;
+    if (!n) return;
+    const css = getComputedStyle(stage);
+    const W = stage.clientWidth - parseFloat(css.paddingLeft) - parseFloat(css.paddingRight);
+    const H = stage.clientHeight - parseFloat(css.paddingTop) - parseFloat(css.paddingBottom);
+    let best = 0;
+    for (let across = 1; across <= n; across++) {
+      const rows = Math.ceil(n / across);
+      const w = Math.min((W - (across - 1) * GAP) / across, ((H - (rows - 1) * GAP) / rows) * RATIO);
+      best = Math.max(best, w);
+    }
+    stage.style.setProperty('--card-w', Math.max(40, Math.floor(best)) + 'px');
+  };
+  const sizes = new ResizeObserver(entries => entries.forEach(e => fit(e.target)));
+  const watched = new WeakSet();
+  let queued = false;
+  const watch = () => {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(() => {
+      queued = false;
+      document.querySelectorAll('.call-stage').forEach(stage => {
+        if (!watched.has(stage)) { watched.add(stage); sizes.observe(stage); }
+        fit(stage);
+      });
+    });
+  };
+  // Stages come and go, and people (cards) with them.
+  new MutationObserver(watch).observe(document.documentElement, { childList: true, subtree: true });
   try { const kept = parseFloat(localStorage.getItem(KEY)); if (kept > 0) apply(kept); } catch (_) {}
   let drag = null;
   window.addEventListener('mousedown', e => {

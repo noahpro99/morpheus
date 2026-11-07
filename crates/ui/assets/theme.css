@@ -2101,15 +2101,7 @@ form.new-message button:disabled { opacity: 0.5; cursor: default; }
 .verification-qr { width: min(240px, 70vw); aspect-ratio: 1; margin: 8px auto; border-radius: var(--radius); overflow: hidden; }
 .verification-qr svg { display: block; width: 100%; height: 100%; }
 
-/* Desktop stage: someone without a camera is a tile like the video ones,
-   their picture in the middle. */
-.call-stage .call-tile { height: clamp(120px, 28vh, 270px); aspect-ratio: 4 / 3; max-width: 100%; }
-.shell.narrow .call-stage .call-tile { height: clamp(100px, 22vh, 200px); }
-
-/* The stage's height, once its edge has been dragged (hotkeys.rs sets the
-   variables); its tiles fill it. */
-.call-stage { height: var(--call-stage-h, auto); max-height: var(--call-stage-max, 45%); }
-.call-stage .video-tile, .call-stage .call-tile { height: var(--call-tile-h, clamp(120px, 28vh, 270px)); }
+/* The stage's bottom edge, dragged to resize it (hotkeys.rs). */
 .call-stage-resize {
   flex: none;
   height: 6px;
@@ -2239,3 +2231,23 @@ h1, h2, h3, h4, .modal-title, .empty-title {
 .room.unjoined:hover, .room.unjoined.selected { opacity: 1; }
 .room[draggable="true"].dragging { opacity: 0.4; }
 .friends-row .friends-icon { width: 32px; flex: none; }
+
+/* The desktop stage, as Discord's: everyone a card of the same size (16:9),
+   a camera filling its person's card, as many across as fit; the stage's
+   script (hotkeys.rs) sets --card-w so all of them fit its height, which is
+   dragged at its bottom edge. */
+.call-stage {
+  box-sizing: border-box;
+  height: var(--call-stage-h, clamp(160px, 35vh, 420px));
+  max-height: 85%;
+  align-content: center;
+  overflow: hidden;
+}
+.call-stage .video-tile, .call-stage .call-tile,
+.shell.narrow .call-stage .video-tile, .shell.narrow .call-stage .call-tile {
+  flex: none;
+  width: var(--card-w, 240px);
+  height: calc(var(--card-w, 240px) * 9 / 16);
+  aspect-ratio: auto;
+  max-width: none;
+}

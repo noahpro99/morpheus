@@ -739,19 +739,11 @@ pub fn CallStage(room_id: OwnedRoomId) -> Element {
         return rsx! {};
     }
     // Everyone gets a tile once anyone's camera is on: theirs, or their picture.
-    let (feeds, without_camera) = tiles(&call, &rooms.read(), session.user_id());
+    let cards = tiles(&call, &rooms.read(), session.user_id());
+    let count = cards.len();
     rsx! {
-        div { class: "call-stage",
-            for feed in feeds {
-                VideoTile { key: "{feed.key}", user: feed.user, feed: feed.key, screen: feed.screen }
-            }
-            for user in without_camera {
-                CallTile {
-                    key: "{user}",
-                    speaking: call.speaking.contains(&user),
-                    user_id: user,
-                }
-            }
+        div { class: "call-stage", "data-cards": "{count}",
+            Cards { cards, speaking: call.speaking.clone() }
         }
         // Dragged to make the stage taller or shorter (hotkeys.rs does the
         // dragging and remembers the height).
@@ -759,13 +751,21 @@ pub fn CallStage(room_id: OwnedRoomId) -> Element {
     }
 }
 
-/// A call's tiles: the video (shared screens first, then cameras), and
-/// the people in it with no camera on (this account first).
+/// One card in a call, as Discord has them: a shared screen, or a person
+/// (their camera when it is on, else their picture).
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Card {
+    Video(VideoFeed),
+    Person(OwnedUserId),
+}
+
+/// A call's cards: shared screens first, then everyone in it (this account
+/// first), each in their own card whether or not their camera is on.
 fn tiles(
     call: &CallState,
     rooms: &morpheus_core::Vector<RoomSummary>,
     me: Option<OwnedUserId>,
-) -> (Vec<VideoFeed>, Vec<OwnedUserId>) {
+) -> Vec<Card> {
     let mut people = rooms
         .iter()
         .find(|room| room.id == call.room_id)
@@ -776,14 +776,46 @@ fn tiles(
     {
         people.insert(0, me);
     }
-    let screens = call.video.iter().filter(|feed| feed.screen);
-    let cameras = call.video.iter().filter(|feed| !feed.screen);
-    let feeds = screens.chain(cameras.clone()).cloned().collect();
-    let without_camera = people
-        .into_iter()
-        .filter(|user| !cameras.clone().any(|feed| &feed.user == user))
+    let camera = |user: &OwnedUserId| {
+        call.video
+            .iter()
+            .find(|feed| !feed.screen && &feed.user == user)
+    };
+    let mut cards: Vec<Card> = call
+        .video
+        .iter()
+        .filter(|feed| feed.screen)
+        .cloned()
+        .map(Card::Video)
         .collect();
-    (feeds, without_camera)
+    cards.extend(people.iter().map(|user| match camera(user) {
+        Some(feed) => Card::Video(feed.clone()),
+        None => Card::Person(user.clone()),
+    }));
+    // A camera from someone not (yet) listed in the call.
+    cards.extend(
+        call.video
+            .iter()
+            .filter(|feed| !feed.screen && !people.contains(&feed.user))
+            .cloned()
+            .map(Card::Video),
+    );
+    cards
+}
+
+/// The cards, each its own size (the stage's script fits them to it).
+#[component]
+fn Cards(cards: Vec<Card>, speaking: Vec<OwnedUserId>) -> Element {
+    rsx! {
+        {cards.into_iter().map(|card| match card {
+            Card::Video(feed) => rsx! {
+                VideoTile { key: "{feed.key}", user: feed.user, feed: feed.key, screen: feed.screen }
+            },
+            Card::Person(user) => rsx! {
+                CallTile { key: "{user}", speaking: speaking.contains(&user), user_id: user }
+            },
+        })}
+    }
 }
 
 /// How often a tile looks for a new picture.
@@ -923,7 +955,7 @@ pub fn CallScreen() -> Element {
     let Some(call) = active().0.filter(|_| shown().0) else {
         return rsx! {};
     };
-    let (feeds, without_camera) = tiles(&call, &rooms.read(), session.user_id());
+    let cards = tiles(&call, &rooms.read(), session.user_id());
     let flags = voice();
     let muted = flags.muted || flags.deafened;
     let room_id = call.room_id.clone();
@@ -950,16 +982,7 @@ pub fn CallScreen() -> Element {
                 }
             }
             div { class: "call-tiles",
-                for feed in feeds {
-                    VideoTile { key: "{feed.key}", user: feed.user, feed: feed.key, screen: feed.screen }
-                }
-                for user in without_camera {
-                    CallTile {
-                        key: "{user}",
-                        speaking: call.speaking.contains(&user),
-                        user_id: user,
-                    }
-                }
+                Cards { cards, speaking: call.speaking.clone() }
             }
             div { class: "call-controls",
                 button {
