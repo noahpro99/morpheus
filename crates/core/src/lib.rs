@@ -55,7 +55,7 @@ pub use people::marks;
 pub use profile::Profile;
 pub use push::{DEFAULT_PUSH_GATEWAY, PUSH_APP_ID, PushRegistration};
 pub use recovery::{EncryptionStatus, RecoveryAvailability};
-pub use rooms::{NotifyMode, RoomListUpdates, RoomSummary};
+pub use rooms::{NotifyMode, RoomListUpdates, RoomSummary, SpaceRoom};
 pub use search::SearchHit;
 pub use session::{LoginFlows, LoginRequest, NotificationPreview, Session, UrlOpener};
 pub use session_store::SessionStoreKind;

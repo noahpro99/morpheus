@@ -1429,6 +1429,46 @@ fn prune_test_devices(homeserver: &str) {
     });
 }
 
+/// One client-server API call as `user` (a local part, password
+/// `<user>-password`): `path` from `/_matrix/client/v3/` on, `body` JSON
+/// (`None` for a GET). Returns the response's JSON.
+pub fn api_as(
+    homeserver: &str,
+    user: &str,
+    method: &str,
+    path: &str,
+    body: Option<Value>,
+) -> Result<Value> {
+    let login = curl(&[
+        "-X",
+        "POST",
+        &format!("{homeserver}/_matrix/client/v3/login"),
+        "-d",
+        &json!({ "type": "m.login.password", "identifier": { "type": "m.id.user", "user": user }, "password": format!("{user}-password") }).to_string(),
+    ])?;
+    let login: Value = serde_json::from_str(&login)?;
+    let token = login["access_token"]
+        .as_str()
+        .ok_or_else(|| anyhow!("no token for {user}"))?
+        .to_owned();
+    let auth = format!("Authorization: Bearer {token}");
+    let url = format!("{homeserver}/_matrix/client/v3/{path}");
+    let body = body.map(|b| b.to_string());
+    let mut args = vec!["-X", method, "-H", &auth, &url];
+    if let Some(body) = body.as_deref() {
+        args.extend(["-d", body]);
+    }
+    let out = curl(&args);
+    let _ = curl(&[
+        "-X",
+        "POST",
+        "-H",
+        &auth,
+        &format!("{homeserver}/_matrix/client/v3/logout"),
+    ]);
+    Ok(serde_json::from_str(&out?).unwrap_or(Value::Null))
+}
+
 /// Send `body` into `room_id` as `user` (a local part, password
 /// `<user>-password`) straight through the API, no app needed.
 pub fn send_as(homeserver: &str, user: &str, room_id: &str, body: &str) -> Result<()> {

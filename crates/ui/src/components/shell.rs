@@ -61,6 +61,36 @@ pub type ChatOpen = Signal<ChatInFront>;
 pub type Rooms = Signal<Vector<RoomSummary>>;
 /// Currently open room.
 pub type Selected = Signal<Option<OwnedRoomId>>;
+/// A server's channel you aren't in, opened from the list: the chat area
+/// shows a card to join it while it is the selected room.
+pub type Preview = Signal<Option<morpheus_core::SpaceRoom>>;
+
+/// Rooms a joined space lists (its `m.space.child`) belong to it even when
+/// they don't name it back (no `m.space.parent`), as other clients have it:
+/// the space goes into their parents.
+fn adopt_children(list: &mut Vector<RoomSummary>) {
+    let links: Vec<(OwnedRoomId, OwnedRoomId)> = list
+        .iter()
+        .filter(|room| room.is_space && !room.invited)
+        .flat_map(|space| {
+            space
+                .space_children
+                .iter()
+                .map(|child| (child.clone(), space.id.clone()))
+        })
+        .collect();
+    for (child, space) in links {
+        let Some(index) = list
+            .iter()
+            .position(|room| room.id == child && !room.parent_spaces.contains(&space))
+        else {
+            continue;
+        };
+        if let Some(room) = list.get_mut(index) {
+            room.parent_spaces.push(space);
+        }
+    }
+}
 /// Whether the members column is shown (the header toggle flips it).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MembersShown(pub bool);
@@ -332,6 +362,7 @@ pub fn Shell(session: Session) -> Element {
     provide_media_cache();
     let mut rooms: Rooms = use_context_provider(|| Signal::new(Vector::new()));
     let mut selected: Selected = use_context_provider(|| Signal::new(None));
+    let preview: Preview = use_context_provider(|| Signal::new(None));
     let mut selected_space: SelectedSpace = use_context_provider(|| Signal::new(Scope::default()));
     let mut active_thread: ActiveThread = use_context_provider(|| Signal::new(None));
     let mut load_error = use_signal(|| None::<String>);
@@ -520,7 +551,10 @@ pub fn Shell(session: Session) -> Element {
             match session.room_list().await {
                 Ok(mut updates) => {
                     while let Some(diffs) = updates.next().await {
-                        rooms.with_mut(|list| diffs.into_iter().for_each(|diff| diff.apply(list)));
+                        rooms.with_mut(|list| {
+                            diffs.into_iter().for_each(|diff| diff.apply(list));
+                            adopt_children(list);
+                        });
                     }
                 }
                 Err(err) => {
@@ -882,11 +916,14 @@ pub fn Shell(session: Session) -> Element {
                     // Keyed on the room id so switching rooms remounts the timeline.
                     Some(room) if room.invited => rsx! { InviteCard { key: "invite-{room.id}", room } },
                     Some(room) => rsx! { ChatRoom { key: "{room.id}", room } },
-                    None => rsx! {
-                        div { class: "empty-state",
-                            h2 { "Pick a room" }
-                            p { class: "muted", "Your conversations will show up here." }
-                        }
+                    None => match preview().filter(|p| Some(&p.id) == selected().as_ref()) {
+                        Some(room) => rsx! { super::invites::JoinCard { key: "join-{room.id}", room } },
+                        None => rsx! {
+                            div { class: "empty-state",
+                                h2 { "Pick a room" }
+                                p { class: "muted", "Your conversations will show up here." }
+                            }
+                        },
                     },
                 }
             }

@@ -2232,3 +2232,8 @@ h1, h2, h3, h4, .modal-title, .empty-title {
 /* A voice channel: a speaker where a text channel has its #. */
 .room .voice-icon { flex: none; width: 18px; color: var(--text-faint); }
 .room.selected .voice-icon, .room:hover .voice-icon { color: var(--text-muted); }
+
+/* A server's channels you aren't in: listed last, dimmed until hovered. */
+.room.unjoined { opacity: 0.6; }
+.room.unjoined:hover, .room.unjoined.selected { opacity: 1; }
+.room[draggable="true"].dragging { opacity: 0.4; }
