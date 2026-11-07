@@ -5275,7 +5275,7 @@ dependencies = [
 
 [[package]]
 name = "morpheus-call"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "futures-util",
  "jpeg-encoder",
@@ -5292,7 +5292,7 @@ dependencies = [
 
 [[package]]
 name = "morpheus-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "apple-native-keyring-store",
  "base64 0.22.1",
@@ -5325,7 +5325,7 @@ dependencies = [
 
 [[package]]
 name = "morpheus-desktop"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "dioxus",
  "directories",
@@ -5343,7 +5343,7 @@ dependencies = [
 
 [[package]]
 name = "morpheus-e2e"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -5356,7 +5356,7 @@ dependencies = [
 
 [[package]]
 name = "morpheus-mobile"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "dioxus",
  "jni 0.21.1",
@@ -5373,7 +5373,7 @@ dependencies = [
 
 [[package]]
 name = "morpheus-ui"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64 0.22.1",
  "dioxus",
