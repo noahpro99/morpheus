@@ -271,7 +271,7 @@ pub fn RoomList(error: Option<String>) -> Element {
                             consume_context::<super::shell::ChatOpen>()
                                 .set(super::shell::ChatInFront(true));
                         },
-                        crate::icons::Icon { glyph: crate::icons::USERS, size: 18 }
+                        crate::icons::Icon { glyph: crate::icons::USERS, size: 22, class: "friends-icon" }
                         span { class: "room-name", "Friends" }
                     }
                 }
@@ -434,7 +434,7 @@ fn RoomRow(
                 }
             },
             if room.is_dm {
-                Avatar { media: room.avatar.clone(), fallback: room.name.clone(), size: 24 }
+                Avatar { media: room.avatar.clone(), fallback: room.name.clone(), size: 32 }
             } else if room.is_voice {
                 Icon { glyph: crate::icons::VOLUME_2, size: 18, class: "voice-icon" }
             } else {

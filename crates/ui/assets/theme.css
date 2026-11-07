@@ -1004,7 +1004,7 @@ img.avatar { object-fit: cover; }
 
 /* ---- Sidebar: DMs and the profile chip ----------------------------------- */
 
-.room.dm { padding: 5px 8px; }
+.room.dm, .room.friends-row { min-height: 42px; padding: 5px 8px; gap: 12px; }
 .room.dm .avatar { font-size: 0.7rem; }
 .profile-chip {
   flex: 1;
@@ -1789,7 +1789,8 @@ body.dropping .drop-hint { display: flex; }
 .friend-actions { display: flex; gap: 6px; }
 .friend-actions button { padding: 6px 12px; border-radius: var(--radius); }
 .friend-actions .secondary { background: var(--bg-elevated); }
-.friends-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.friends-row { display: flex; align-items: center; margin-bottom: 6px; }
+.friend { cursor: pointer; }
 /* Discord's Friends header: tabs, and the green Add Friend button. */
 .friends-header { gap: 12px; }
 .friends-header h2 { flex: none; }
@@ -2237,3 +2238,4 @@ h1, h2, h3, h4, .modal-title, .empty-title {
 .room.unjoined { opacity: 0.6; }
 .room.unjoined:hover, .room.unjoined.selected { opacity: 1; }
 .room[draggable="true"].dragging { opacity: 0.4; }
+.friends-row .friends-icon { width: 32px; flex: none; }

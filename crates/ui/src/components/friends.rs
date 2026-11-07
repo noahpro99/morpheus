@@ -224,7 +224,8 @@ fn FriendRow(user_id: OwnedUserId) -> Element {
         }
     };
     rsx! {
-        li { class: "friend",
+        // The whole row opens the DM (as Discord's does); Remove doesn't.
+        li { class: "friend", role: "button", onclick: message,
             Avatar { media: avatar, fallback: shown.clone(), size: 40 }
             div { class: "friend-text",
                 span { class: "friend-name", "{shown}" }
@@ -233,12 +234,15 @@ fn FriendRow(user_id: OwnedUserId) -> Element {
                 }
             }
             div { class: "friend-actions",
-                button { class: "secondary", onclick: message, "Message" }
+                button { class: "secondary", "Message" }
                 button {
                     class: "ghost",
                     onclick: {
                         let (session, user_id) = (session.clone(), user_id.clone());
-                        move |_| set_friend(&session, user_id.clone(), false)
+                        move |e: Event<MouseData>| {
+                            e.stop_propagation();
+                            set_friend(&session, user_id.clone(), false);
+                        }
                     },
                     "Remove"
                 }
