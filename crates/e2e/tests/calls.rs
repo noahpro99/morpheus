@@ -1293,3 +1293,90 @@ async fn a_ring_is_heard_on_the_desktop() {
         "the ringtone did not play: {plays:?}"
     );
 }
+
+/// A voice channel (Element's video room: a room of type
+/// org.matrix.msc3417.call) works as Discord's: listed with a speaker,
+/// clicking it joins its call, clicking it again stays in, and others see
+/// who is in it under it and join the same way.
+#[tokio::test]
+async fn clicking_a_voice_channel_joins_its_call() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    login_and_open(&mut alice, "alice", "general").await;
+    let lounge = "[...document.querySelectorAll('.room')].find(r => r.querySelector('.room-name')?.textContent.trim() === 'lounge')";
+    alice
+        .wait_for_js(&format!("return !!{lounge};"), DEFAULT_WAIT)
+        .await
+        .expect("the voice channel listed");
+    assert_eq!(
+        alice
+            .eval(&format!("const r = {lounge}; return [r.classList.contains('voice'), !!r.querySelector('.voice-icon'), r.querySelector('.hash') === null];"))
+            .await
+            .expect("row"),
+        serde_json::json!([true, true, true]),
+        "listed with a speaker, not a #"
+    );
+    let room_id: String = alice
+        .eval(&format!("return {lounge}.dataset.room;"))
+        .await
+        .expect("room id")
+        .as_str()
+        .expect("string")
+        .to_owned();
+
+    alice
+        .eval(&format!("{lounge}.click();"))
+        .await
+        .expect("click it");
+    alice
+        .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("clicking joined its call");
+    alice
+        .wait_for_text(".voice-panel", "lounge", DEFAULT_WAIT)
+        .await
+        .expect("in the lounge");
+    alice
+        .wait_for_js(&in_call(&room_id, "alice"), DEFAULT_WAIT)
+        .await
+        .expect("listed under it");
+    // Clicking it again does not leave.
+    alice
+        .eval(&format!("{lounge}.click();"))
+        .await
+        .expect("click again");
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    alice
+        .wait_for_text(
+            ".voice-panel",
+            "Voice connected",
+            std::time::Duration::from_secs(2),
+        )
+        .await
+        .expect("still in");
+
+    // Bob sees her in it, and joins the same way.
+    let mut bob = App::launch(&hs).await.expect("launch bob");
+    login_and_open(&mut bob, "bob", "general").await;
+    bob.wait_for_js(&in_call(&room_id, "alice"), DEFAULT_WAIT)
+        .await
+        .expect("bob sees alice in the voice channel");
+    bob.eval(&format!("{lounge}.click();"))
+        .await
+        .expect("bob clicks it");
+    bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("bob joined");
+    alice
+        .wait_for_js(&in_call(&room_id, "bob"), DEFAULT_WAIT)
+        .await
+        .expect("alice sees bob join");
+
+    for app in [&mut alice, &mut bob] {
+        let _ = app.click(".voice-panel .hang-up").await;
+        out_of_call(app).await;
+    }
+}

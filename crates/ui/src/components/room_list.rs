@@ -221,6 +221,18 @@ fn RoomRow(room: RoomSummary) -> Element {
     let pinned = room.is_dm && marks.pinned.read().contains_key(room.id.as_str());
     let muted = marks.is_muted(&room);
     let id = room.id.clone();
+    let (is_voice, name, join_session) = (room.is_voice, room.name.clone(), session.clone());
+    let active = use_context::<super::call::ActiveCall>();
+    let in_this_call = {
+        let id = room.id.clone();
+        move || {
+            active
+                .peek()
+                .0
+                .as_ref()
+                .is_some_and(|call| call.room_id == id)
+        }
+    };
 
     // The menu needs the room's notification mode, so it is built after a
     // quick (local) lookup and opened at the pointer's position.
@@ -240,13 +252,23 @@ fn RoomRow(room: RoomSummary) -> Element {
             "data-room": "{room.id}",
             oncontextmenu: on_context,
             class: if room.is_dm { "dm" },
+            class: if room.is_voice { "voice" },
             class: if pinned { "pinned" },
             class: if muted { "muted" },
             class: if is_selected { "selected" },
             class: if room.unread_messages > 0 || room.marked_unread { "unread" },
-            onclick: move |_| go_to(id.clone()),
+            onclick: move |_| {
+                go_to(id.clone());
+                // A voice channel, as in Discord: clicking it joins its call
+                // (already in it, it only opens).
+                if is_voice && !in_this_call() {
+                    super::call::join_call(join_session.clone(), id.clone(), name.clone());
+                }
+            },
             if room.is_dm {
                 Avatar { media: room.avatar.clone(), fallback: room.name.clone(), size: 24 }
+            } else if room.is_voice {
+                Icon { glyph: crate::icons::VOLUME_2, size: 18, class: "voice-icon" }
             } else {
                 span { class: "hash", "#" }
             }
