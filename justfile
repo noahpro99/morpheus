@@ -16,12 +16,18 @@ check:
 fmt:
     cargo fmt --all
 
+# Delete build artifacts no build has used for a week. Cargo never removes
+# old ones itself, so every code, dependency or toolchain change leaves
+# another copy in target/. The build recipes run this first.
+sweep:
+    nix run nixpkgs#cargo-sweep -- sweep --time 7
+
 # Clippy with warnings as errors
 lint:
     cargo clippy --workspace --all-targets -- -D warnings
 
 # Unit tests (live tests self-skip without a homeserver)
-test:
+test: sweep
     cargo test --workspace
 
 # End-to-end tests against the local homeserver (run `just hs-up hs-seed` first)
@@ -29,7 +35,7 @@ test-live:
     MORPHEUS_TEST_HOMESERVER={{hs}} cargo test -p morpheus-core --test live -- --nocapture
 
 # Build the desktop app with the in-app test bridge
-e2e-build:
+e2e-build: sweep
     dx build --package morpheus-desktop --features e2e
 
 # Playwright-style tests through the real window (needs `just hs-up hs-seed`)
@@ -45,19 +51,19 @@ e2e-one file: hs-seed
 ci: fmt lint test
 
 # Run the desktop app with hot reload
-desktop:
+desktop: sweep
     dx serve --package morpheus-desktop
 
 # Run the desktop app as a named profile (separate data dir), e.g. `just desktop-as bob`
-desktop-as profile:
+desktop-as profile: sweep
     MORPHEUS_DATA_DIR="$PWD/.dev-data/{{profile}}" dx serve --package morpheus-desktop
 
 # Release build of the desktop app
-desktop-release:
+desktop-release: sweep
     dx build --package morpheus-desktop --release
 
 # Run on a plugged-in Android phone (USB debugging on; check with `adb devices`)
-android:
+android: sweep
     rm -rf target/dx/morpheus-mobile/debug/android/app/app/src/main/jniLibs/x86_64
     nix develop .#android -c dx serve --package morpheus-mobile --platform android
 
@@ -79,7 +85,7 @@ _android-extras:
 
 # Update the app on a plugged-in phone, keeping its sign-in and data.
 # With the emulator also running, name the phone: `ANDROID_SERIAL=<id> just android-update`
-android-update:
+android-update: sweep
     rm -rf target/dx/morpheus-mobile/debug/android/app/app/src/main/jniLibs/x86_64
     nix develop .#android -c dx build --package morpheus-mobile --platform android --target aarch64-linux-android
     nix develop .#android -c just _android-extras
@@ -88,7 +94,7 @@ android-update:
 
 # Fresh install on a plugged-in phone: uninstall (wipes its sign-in and data), build for ARM, install, launch.
 # With the emulator also running, name the phone: `ANDROID_SERIAL=<id from adb devices> just android-reinstall`
-android-reinstall:
+android-reinstall: sweep
     rm -rf target/dx/morpheus-mobile/debug/android/app/app/src/main/jniLibs/x86_64
     nix develop .#android -c dx build --package morpheus-mobile --platform android --target aarch64-linux-android
     nix develop .#android -c just _android-extras
@@ -107,12 +113,12 @@ android-emulator:
     nix develop .#android-emulator -c env LD_LIBRARY_PATH=/run/opengl-driver/lib emulator -avd morpheus -gpu host -netdelay none -netspeed full
 
 # Run on the virtual phone (start it with `just android-emulator` first)
-android-virtual:
+android-virtual: sweep
     rm -rf target/dx/morpheus-mobile/debug/android/app/app/src/main/jniLibs/arm64-v8a
     nix develop .#android-emulator -c dx serve --package morpheus-mobile --platform android
 
 # Build the mobile app with the test bridge for the virtual phone and install it (the emulator must be running)
-e2e-android-build:
+e2e-android-build: sweep
     # dx reuses one gradle project per app: drop the phone's ARM library so it is not bundled too.
     rm -rf target/dx/morpheus-mobile/debug/android/app/app/src/main/jniLibs/arm64-v8a
     nix develop .#android-emulator -c dx build --package morpheus-mobile --platform android --target x86_64-linux-android --features e2e
