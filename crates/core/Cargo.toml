@@ -50,3 +50,7 @@ workspace = true
 # keyring's Apple store will not compile for iPhone without its iOS store.
 [target.'cfg(target_os = "ios")'.dependencies]
 apple-native-keyring-store = { version = "1", features = ["protected"] }
+
+# Self-update on desktops: a release is a zip of the app's folder.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+zip = { version = "0.6", default-features = false, features = ["deflate"] }

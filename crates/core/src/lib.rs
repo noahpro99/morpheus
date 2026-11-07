@@ -65,7 +65,7 @@ pub use timeline::{
     TimelineEntry, TimelineHandle, TimelineUpdates,
 };
 pub use typing::TypingUpdates;
-pub use updates::UpdateStatus;
+pub use updates::{UpdateStatus, clean_up_after_update, installs_updates};
 pub use verification::{
     Device, QrImage, VerificationActions, VerificationHandle, VerificationStep, VerificationUpdates,
 };

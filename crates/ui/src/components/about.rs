@@ -110,7 +110,7 @@ pub fn check_for_updates() {
             Ok(UpdateStatus::NoFeed) => toast(format!(
                 "Morpheus {VERSION}: this build has no release feed to check"
             )),
-            Ok(UpdateStatus::Available { version, url }) => {
+            Ok(UpdateStatus::Available { version, url, .. }) => {
                 toast(match &url {
                     Some(url) => format!("Morpheus {version} is available: {url}"),
                     None => format!("Morpheus {version} is available"),
@@ -119,4 +119,87 @@ pub fn check_for_updates() {
             Err(err) => report("update check", &err),
         }
     });
+}
+
+/// How often the app looks for a new release while it runs.
+const UPDATE_CHECK_EVERY: std::time::Duration = std::time::Duration::from_secs(6 * 60 * 60);
+
+/// A newer release, found by the app itself: a card offering it. Update
+/// installs it in place and restarts (desktops); phones get the download.
+#[component]
+pub fn UpdateCard() -> Element {
+    let session = use_context::<Session>();
+    let mut found = use_signal(|| None::<(String, Option<String>, Option<String>)>);
+    let mut later = use_signal(|| false);
+    let mut busy = use_signal(|| false);
+    use_future({
+        let session = session.clone();
+        move || {
+            let session = session.clone();
+            async move {
+                loop {
+                    match session.check_for_update(VERSION).await {
+                        Ok(UpdateStatus::Available {
+                            version,
+                            url,
+                            download,
+                        }) => found.set(Some((version, url, download))),
+                        Ok(_) => {}
+                        Err(err) => tracing::info!(%err, "update check failed"),
+                    }
+                    tokio::time::sleep(UPDATE_CHECK_EVERY).await;
+                }
+            }
+        }
+    });
+    let Some((version, url, download)) = found() else {
+        return rsx! {};
+    };
+    if later() {
+        return rsx! {};
+    }
+    let install = morpheus_core::installs_updates() && download.is_some();
+    let link = download.clone().or(url.clone()).unwrap_or_default();
+    rsx! {
+        div { class: "backup-prompt update-card", role: "status",
+            Icon { glyph: crate::icons::REFRESH_CW, size: 18, class: "backup-prompt-icon" }
+            div { class: "backup-prompt-text",
+                strong { "Morpheus {version} is available" }
+                span {
+                    if install {
+                        "Update now: Morpheus restarts on the new version."
+                    } else {
+                        "Download it to update."
+                    }
+                }
+            }
+            div { class: "backup-prompt-actions",
+                button { class: "secondary", onclick: move |_| later.set(true), "Later" }
+                if install {
+                    button {
+                        class: "primary update-button",
+                        disabled: busy(),
+                        onclick: move |_| {
+                            let Some(download) = download.clone() else { return };
+                            busy.set(true);
+                            let future = session.install_update(download);
+                            spawn(async move {
+                                match future.await {
+                                    // The new version is starting; it waits for this one.
+                                    Ok(()) => std::process::exit(0),
+                                    Err(err) => {
+                                        report("updating", &err);
+                                        busy.set(false);
+                                    }
+                                }
+                            });
+                        },
+                        if busy() { "Updating…" } else { "Update" }
+                    }
+                } else if !link.is_empty() {
+                    a { class: "button primary update-button", href: "{link}", "Download" }
+                }
+            }
+        }
+    }
 }

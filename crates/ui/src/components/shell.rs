@@ -898,6 +898,7 @@ pub fn Shell(session: Session) -> Element {
             div { class: "drop-hint", "Drop to upload" }
             ToastLayer {}
             super::keys::BackupPrompt {}
+            super::about::UpdateCard {}
             super::call::IncomingCalls {}
             // Mirror of what was announced, for the test bridge.
             ul { class: "link-log", hidden: true,
