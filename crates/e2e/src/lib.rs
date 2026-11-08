@@ -1515,6 +1515,46 @@ pub fn send_as(homeserver: &str, user: &str, room_id: &str, body: &str) -> Resul
     Ok(())
 }
 
+/// Send each of `bodies` into `room_id` as `user`, in order, on one login
+/// (quicker than [`send_as`] for filling a room with history).
+pub fn send_many_as(homeserver: &str, user: &str, room_id: &str, bodies: &[String]) -> Result<()> {
+    let login = curl(&[
+        "-X",
+        "POST",
+        &format!("{homeserver}/_matrix/client/v3/login"),
+        "-d",
+        &json!({ "type": "m.login.password", "identifier": { "type": "m.id.user", "user": user }, "password": format!("{user}-password") }).to_string(),
+    ])?;
+    let login: Value = serde_json::from_str(&login)?;
+    let token = login["access_token"]
+        .as_str()
+        .ok_or_else(|| anyhow!("no token for {user}"))?;
+    let auth = format!("Authorization: Bearer {token}");
+    let room = room_id.replace('!', "%21").replace(':', "%3A");
+    for body in bodies {
+        curl(&[
+            "-X",
+            "PUT",
+            "-H",
+            &auth,
+            &format!(
+                "{homeserver}/_matrix/client/v3/rooms/{room}/send/m.room.message/e2e-{}",
+                unique()
+            ),
+            "-d",
+            &json!({ "msgtype": "m.text", "body": body }).to_string(),
+        ])?;
+    }
+    let _ = curl(&[
+        "-X",
+        "POST",
+        "-H",
+        &auth,
+        &format!("{homeserver}/_matrix/client/v3/logout"),
+    ]);
+    Ok(())
+}
+
 /// Send `png` into `room_id` as an image from `user` (see [`send_as`]),
 /// with `blurhash` in its info when given; `body` names it.
 pub fn send_image_as(

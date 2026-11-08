@@ -145,3 +145,74 @@ async fn locked_messages_say_how_to_unlock_them() {
     .await
     .expect("the recovery key field is focused");
 }
+
+/// Scrolling up through a long room keeps loading older messages until its
+/// first one, as the wheel does (no "Load older messages" click): far back,
+/// past the most rows the page keeps, history still comes in.
+#[tokio::test]
+async fn scrolling_up_reaches_the_start_of_a_long_room() {
+    use morpheus_e2e::{api_as, new_account, send_many_as};
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let user = new_account(&hs, "longroom").expect("account");
+    let room = api_as(
+        &hs,
+        &user,
+        "POST",
+        "createRoom",
+        Some(serde_json::json!({ "name": "archive" })),
+    )
+    .expect("a room");
+    let room = room["room_id"].as_str().expect("room id").to_owned();
+    let mut bodies = vec!["the very first message".to_owned()];
+    bodies.extend((1..=500).map(|n| format!("history message {n}")));
+    send_many_as(&hs, &user, &room, &bodies).expect("history");
+
+    let mut app = App::launch(&hs).await.expect("launch");
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    app.type_into("form.login input[name=username]", &user)
+        .await
+        .expect("username");
+    app.type_into(
+        "form.login input[name=password]",
+        &format!("{user}-password"),
+    )
+    .await
+    .expect("password");
+    app.submit("form.login").await.expect("submit");
+    app.open_room("archive").await.expect("open the room");
+    app.wait_for_text(".timeline", "history message 500", DEFAULT_WAIT)
+        .await
+        .expect("the newest message");
+
+    // The wheel: the view moves up a little at a time; at the top it stays.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(45);
+    loop {
+        let found = app
+            .eval(
+                "const t = document.querySelector('.timeline');
+                 if ([...t.querySelectorAll('.message .body')].some(b => b.textContent.includes('the very first message'))) return true;
+                 t.scrollTop -= 600; return false;",
+            )
+            .await
+            .expect("scroll");
+        if found.as_bool() == Some(true) {
+            break;
+        }
+        let at = app
+            .eval(
+                "const t = document.querySelector('.timeline'); return [t.dataset.skip, t.dataset.window, [...t.querySelectorAll('.message .body')].map(b => b.textContent).filter(s => s.startsWith('history')).pop()];",
+            )
+            .await
+            .expect("where");
+        assert!(
+            std::time::Instant::now() < deadline,
+            "scrolling up stopped short of the room's first message (skip, window, oldest shown: {at})"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+}

@@ -44,6 +44,10 @@ const WINDOW_STEP: usize = 100;
 /// Most rows in the page at once: far back in a long room, the newest ones
 /// are dropped as older ones come in (and come back on the way down).
 const MAX_ROWS: usize = 300;
+/// Far back in a long room, how long after a scroll that seems to reach the
+/// bottom to look again before bringing the newest rows back (WebKit reports
+/// the view at the bottom for a moment while rows change).
+const BOTTOM_RECHECK_MS: u64 = 120;
 /// History pages to load looking for a message to jump to.
 const JUMP_MAX_PAGES: usize = 30;
 /// Rows kept rendered beyond a jumped-to message.
@@ -255,6 +259,8 @@ pub fn TimelineView(
     // then puts the view back where it was (`hotkeys.rs`; WebKit does not
     // anchor the scroll position itself). Not bumped by "Jump to present".
     let mut anchor = use_signal(|| 0u32);
+    // A check that the view really is at the bottom is pending (see on_scroll).
+    let mut bottom_check = use_signal(|| false);
 
     let mut load_older = move || {
         // Reveal already-loaded rows before fetching more history. Hidden
@@ -362,10 +368,28 @@ pub fn TimelineView(
             load_older();
         }
         // Near the bottom with newer rows left out: bring them back (the
-        // oldest go at the top).
-        if skip() > 0 && -evt.scroll_top() < PAGINATE_THRESHOLD_PX {
-            skip.set(skip().saturating_sub(WINDOW_STEP));
-            anchor += 1;
+        // oldest go at the top), if the view is still there a moment later.
+        // While rows change (older ones coming in, a message updating),
+        // WebKit reports the view at the bottom for a moment; taken at its
+        // word, that dropped the rows being read and jumped the view.
+        if skip() > 0 && -evt.scroll_top() < PAGINATE_THRESHOLD_PX && !*bottom_check.peek() {
+            bottom_check.set(true);
+            spawn(async move {
+                tokio::time::sleep(Duration::from_millis(BOTTOM_RECHECK_MS)).await;
+                let offset = match container.peek().clone() {
+                    Some(el) => el.get_scroll_offset().await.ok(),
+                    None => None,
+                };
+                if let Some(offset) = offset
+                    && *skip.peek() > 0
+                    && -offset.y < PAGINATE_THRESHOLD_PX
+                {
+                    let fewer = skip.peek().saturating_sub(WINDOW_STEP);
+                    skip.set(fewer);
+                    anchor += 1;
+                }
+                bottom_check.set(false);
+            });
         }
         let away = -evt.scroll_top() > JUMP_THRESHOLD_PX || skip() > 0;
         if away != scrolled_up() {

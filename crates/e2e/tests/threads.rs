@@ -3,52 +3,32 @@
 
 #![allow(clippy::expect_used)]
 
-use morpheus_e2e::{App, DEFAULT_WAIT};
+use morpheus_e2e::{App, DEFAULT_WAIT, api_as, new_account};
 
 fn homeserver() -> Option<String> {
     std::env::var("MORPHEUS_TEST_HOMESERVER").ok()
 }
 
-async fn login_and_open(app: &mut App, room: &str) {
-    app.wait_for("form.login", DEFAULT_WAIT)
-        .await
-        .expect("login form");
-    app.type_into("form.login input[name=username]", "alice")
-        .await
-        .expect("username");
-    app.type_into("form.login input[name=password]", "alice-password")
-        .await
-        .expect("password");
-    app.submit("form.login").await.expect("submit");
-    app.wait_for(".room", DEFAULT_WAIT)
-        .await
-        .expect("room listed");
-    app.open_room(room).await.expect("open room");
-    app.wait_for_text(".chat-header h2", room, DEFAULT_WAIT)
-        .await
-        .expect("room header");
-    app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
-        .await
-        .expect("composer ready");
-}
-
-/// The reply count shown on the thread chip under the message containing
-/// `root_text`, or `-1` if that message has no chip (or doesn't exist).
-async fn thread_reply_count(app: &mut App, root_text: &str) -> i64 {
-    let js = format!(
-        "const msg = [...document.querySelectorAll('.message')].find(m => m.querySelector('.body')?.textContent.includes({}));
-         if (!msg) return -1;
-         const chip = msg.querySelector('.thread-chip');
-         if (!chip) return -1;
-         const match = chip.textContent.match(/\\d+/);
-         return match ? parseInt(match[0], 10) : 0;",
-        serde_json::to_string(root_text).expect("json")
-    );
-    app.eval(&js)
-        .await
-        .expect("thread count")
-        .as_i64()
-        .expect("number")
+/// A reply in the thread of `root` (replying to `to`), sent as `user`.
+fn thread_reply(hs: &str, user: &str, room: &str, root: &str, to: &str, body: &str) -> String {
+    let sent = api_as(
+        hs,
+        user,
+        "PUT",
+        &format!("rooms/{room}/send/m.room.message/{}", body.len()),
+        Some(serde_json::json!({
+            "msgtype": "m.text",
+            "body": body,
+            "m.relates_to": {
+                "rel_type": "m.thread",
+                "event_id": root,
+                "is_falling_back": true,
+                "m.in_reply_to": { "event_id": to }
+            }
+        })),
+    )
+    .expect("a thread reply");
+    sent["event_id"].as_str().expect("reply id").to_owned()
 }
 
 #[tokio::test]
@@ -57,24 +37,69 @@ async fn thread_panel_shows_replies_and_posts_a_new_one() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
-    let mut app = App::launch_desktop(&hs).await.expect("launch app");
-    login_and_open(&mut app, "general").await;
-
     const ROOT: &str = "Let's plan Q4 in this thread";
+    // A room of its own: a root with two replies in its thread.
+    let user = new_account(&hs, "threads").expect("account");
+    let room = api_as(
+        &hs,
+        &user,
+        "POST",
+        "createRoom",
+        Some(serde_json::json!({ "name": "plans" })),
+    )
+    .expect("a room");
+    let room = room["room_id"]
+        .as_str()
+        .expect("room id")
+        .replace('!', "%21")
+        .replace(':', "%3A");
+    let root = api_as(
+        &hs,
+        &user,
+        "PUT",
+        &format!("rooms/{room}/send/m.room.message/root"),
+        Some(serde_json::json!({ "msgtype": "m.text", "body": ROOT })),
+    )
+    .expect("root");
+    let root = root["event_id"].as_str().expect("root id").to_owned();
+    let first = thread_reply(
+        &hs,
+        &user,
+        &room,
+        &root,
+        &root,
+        "I think threads should ship first",
+    );
+    thread_reply(
+        &hs,
+        &user,
+        &room,
+        &root,
+        &first,
+        "Agreed, then the emoji picker",
+    );
 
-    // The seeded thread root carries a chip summarising its replies. It is
-    // far up the room by now, so scroll until it is revealed.
-    app.reveal_message(ROOT, DEFAULT_WAIT)
+    let mut app = App::launch_desktop(&hs).await.expect("launch app");
+    app.wait_for("form.login", DEFAULT_WAIT)
         .await
-        .expect("thread root seeded");
-    app.wait_for_text(".thread-chip", "repl", DEFAULT_WAIT)
+        .expect("login form");
+    app.type_into("form.login input[name=username]", &user)
+        .await
+        .expect("username");
+    app.type_into(
+        "form.login input[name=password]",
+        &format!("{user}-password"),
+    )
+    .await
+    .expect("password");
+    app.submit("form.login").await.expect("submit");
+    app.open_room("plans").await.expect("open room");
+
+    // The root carries a chip summarising its replies.
+    app.wait_for_text(".thread-chip", "2 replies", DEFAULT_WAIT)
         .await
         .expect("thread chip rendered");
-    let count_before = thread_reply_count(&mut app, ROOT).await;
-    assert!(
-        count_before >= 2,
-        "seeded thread should have at least 2 replies, got {count_before}"
-    );
+    let count_before = 2;
 
     // Clicking the chip opens the thread panel with the root and its replies.
     app.click_text(".thread-chip", "repl")
@@ -86,10 +111,9 @@ async fn thread_panel_shows_replies_and_posts_a_new_one() {
     app.wait_for_text(".thread-panel-root .body", ROOT, DEFAULT_WAIT)
         .await
         .expect("root message shown in panel");
-    // Every run adds a reply, so the seeded first one is further up each time.
-    app.reveal(
-        "first seeded reply",
-        "return [...document.querySelectorAll('.thread-panel .message .body')].some(b => b.textContent.includes('I think threads should ship first'));",
+    app.wait_for_text(
+        ".thread-panel .message .body",
+        "I think threads should ship first",
         DEFAULT_WAIT,
     )
     .await
