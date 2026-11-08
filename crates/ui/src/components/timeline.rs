@@ -1101,7 +1101,7 @@ fn ThreadChip(thread: Option<ThreadSummary>, on_open: Callback<()>) -> Element {
     };
     rsx! {
         button { class: "thread-chip", onclick: move |_| on_open(()),
-            span { class: "thread-chip-icon", "🧵" }
+            span { class: "thread-chip-icon", crate::icons::Icon { glyph: crate::icons::MESSAGES_SQUARE, size: 14 } }
             span { class: "thread-chip-count", "{count_label}" }
             if let Some(name) = &thread.latest_sender_name {
                 span { class: "thread-chip-latest", "· last from {name}" }

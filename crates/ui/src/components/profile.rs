@@ -105,7 +105,7 @@ pub fn ProfileModal(user_id: OwnedUserId) -> Element {
                         p { class: "error", "{message}" }
                     }
                 }
-                button { class: "ghost profile-close", title: "Close", onclick: move |_| close(), "✕" }
+                button { class: "ghost profile-close", title: "Close", onclick: move |_| close(), crate::icons::Icon { glyph: crate::icons::X, size: 18 } }
             }
         }
     }
@@ -216,7 +216,7 @@ pub fn EditProfileModal() -> Element {
                 h2 { "Edit profile" }
                 div { class: "profile-editor-avatar",
                     Avatar { media: avatar, fallback: name(), size: 64 }
-                    button { r#type: "button", class: "secondary", disabled: busy(), onclick: pick_avatar, "Change avatar…" }
+                    button { r#type: "button", class: "secondary", disabled: busy(), onclick: pick_avatar, crate::icons::Icon { glyph: crate::icons::IMAGE } "Change avatar…" }
                 }
                 label { "Display name"
                     input {
@@ -712,7 +712,7 @@ fn ReportUserForm(user_id: OwnedUserId, on_done: Callback<()>) -> Element {
                 None => rsx! {},
             }
             div { class: "settings-actions",
-                button { r#type: "submit", class: "danger", "Report" }
+                button { r#type: "submit", class: "danger", crate::icons::Icon { glyph: crate::icons::FLAG } "Report" }
                 button { r#type: "button", class: "secondary", onclick: move |_| on_done(()), "Cancel" }
             }
         }

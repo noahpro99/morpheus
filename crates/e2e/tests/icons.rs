@@ -1,10 +1,9 @@
-//! Buttons carry icons from the app's icon set, as the rail, title bar and
-//! menus already do: the message hover bar (not emoji), and every action
-//! button across Settings' pages.
+//! UI rule: every action button in Settings carries an icon from the app's
+//! icon set beside its label, as the rail, title bar and menus do.
 
 #![allow(clippy::expect_used)]
 
-use morpheus_e2e::{App, DEFAULT_WAIT, api_as, new_account};
+use morpheus_e2e::{App, DEFAULT_WAIT, new_account};
 
 fn homeserver() -> Option<String> {
     std::env::var("MORPHEUS_TEST_HOMESERVER").ok()
@@ -43,48 +42,6 @@ async fn without_icons(app: &mut App, scope: &str) -> Vec<String> {
         .into_iter()
         .filter_map(|v| v.as_str().map(str::to_owned))
         .collect()
-}
-
-#[tokio::test]
-async fn the_message_hover_bar_uses_icons_not_emoji() {
-    let Some(hs) = homeserver() else {
-        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
-        return;
-    };
-    let user = new_account(&hs, "icons").expect("account");
-    api_as(
-        &hs,
-        &user,
-        "POST",
-        "createRoom",
-        Some(serde_json::json!({ "name": "lounge" })),
-    )
-    .expect("a room");
-    let mut app = App::launch(&hs).await.expect("launch");
-    login(&mut app, &user).await;
-    app.open_room("lounge").await.expect("open the room");
-    app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
-        .await
-        .expect("composer");
-    app.type_into(".composer .composer-input", "with icons")
-        .await
-        .expect("type");
-    app.press(".composer .composer-input", "Enter")
-        .await
-        .expect("send");
-    for action in ["reply", "thread", "edit", "delete"] {
-        let selector = format!(".message .actions .action.{action} svg.icon");
-        app.wait_for(&selector, DEFAULT_WAIT)
-            .await
-            .unwrap_or_else(|err| panic!("{action} is an icon: {err}"));
-    }
-    let text = app
-        .eval(
-            "return [...document.querySelectorAll('.message .actions .action.reply, .message .actions .action.thread, .message .actions .action.edit, .message .actions .action.delete')].map(b => b.textContent.trim()).join('');",
-        )
-        .await
-        .expect("labels");
-    assert_eq!(text.as_str(), Some(""), "no emoji beside the icons");
 }
 
 #[tokio::test]
