@@ -76,7 +76,7 @@ pub fn InviteModal(room_id: OwnedRoomId) -> Element {
                     None => rsx! {},
                 }
                 div { class: "settings-actions",
-                    button { r#type: "submit", class: "primary", disabled: busy(), "Invite" }
+                    button { r#type: "submit", class: "primary", disabled: busy(), crate::icons::Icon { glyph: crate::icons::USER_PLUS } "Invite" }
                     button { r#type: "button", class: "secondary", onclick: move |_| close(), "Close" }
                 }
             }
@@ -258,7 +258,7 @@ pub fn CreateRoomModal() -> Element {
                     p { class: "error", "{text}" }
                 }
                 div { class: "settings-actions",
-                    button { r#type: "submit", class: "primary", disabled: busy(), "Create" }
+                    button { r#type: "submit", class: "primary", disabled: busy(), crate::icons::Icon { glyph: crate::icons::PLUS } "Create" }
                     button { r#type: "button", class: "secondary", onclick: move |_| close(), "Cancel" }
                 }
             }
@@ -442,7 +442,7 @@ pub fn RoomProfileModal(room_id: OwnedRoomId) -> Element {
                     input { name: "nickname", value: "{name}", oninput: move |e| name.set(e.value()) }
                 }
                 div { class: "settings-actions",
-                    button { r#type: "button", class: "secondary", onclick: pick, "Choose avatar…" }
+                    button { r#type: "button", class: "secondary", onclick: pick, crate::icons::Icon { glyph: crate::icons::IMAGE } "Choose avatar…" }
                     if let Some(file) = picked {
                         span { class: "muted", "{file}" }
                     }
@@ -511,7 +511,7 @@ pub fn CreateSpaceModal(parent: Option<OwnedRoomId>) -> Element {
                     p { class: "error", "{text}" }
                 }
                 div { class: "settings-actions",
-                    button { r#type: "submit", class: "primary", disabled: busy(), "Create" }
+                    button { r#type: "submit", class: "primary", disabled: busy(), crate::icons::Icon { glyph: crate::icons::PLUS } "Create" }
                     button { r#type: "button", class: "secondary", onclick: move |_| close(), "Cancel" }
                 }
             }
@@ -571,7 +571,7 @@ pub fn LeaveSpaceModal(space_id: OwnedRoomId) -> Element {
                     p { class: "error", "{text}" }
                 }
                 div { class: "settings-actions",
-                    button { class: "danger", disabled: busy(), onclick: leave, "Leave server" }
+                    button { class: "danger", disabled: busy(), onclick: leave, crate::icons::Icon { glyph: crate::icons::LOG_OUT } "Leave server" }
                     button { class: "secondary", onclick: move |_| close(), "Cancel" }
                 }
             }

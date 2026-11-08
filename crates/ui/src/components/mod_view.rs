@@ -202,12 +202,12 @@ fn ModRoomRow(
             if below {
                 div { class: "mod-actions",
                     if present && mine.can_kick {
-                        button { class: "secondary mod-kick", disabled: busy, onclick: move |_| on_kick.call(()), "Kick" }
+                        button { class: "secondary mod-kick", disabled: busy, onclick: move |_| on_kick.call(()), crate::icons::Icon { glyph: crate::icons::USER_X } "Kick" }
                     }
                     if room.standing == Standing::Banned && mine.can_ban {
-                        button { class: "secondary mod-unban", disabled: busy, onclick: move |_| on_unban.call(()), "Unban" }
+                        button { class: "secondary mod-unban", disabled: busy, onclick: move |_| on_unban.call(()), crate::icons::Icon { glyph: crate::icons::CIRCLE_MINUS } "Unban" }
                     } else if mine.can_ban {
-                        button { class: "danger mod-ban", disabled: busy, onclick: move |_| on_ban.call(()), "Ban" }
+                        button { class: "danger mod-ban", disabled: busy, onclick: move |_| on_ban.call(()), crate::icons::Icon { glyph: crate::icons::BAN } "Ban" }
                     }
                 }
             }
