@@ -1348,6 +1348,10 @@ fn IncomingCallCard(call: IncomingCall, room: Option<RoomSummary>) -> Element {
     }
 }
 
+/// Bumped by every join and hang-up: a call's event loop goes on only while
+/// its number is the latest, so a call already left cannot end the next one.
+static CALL_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 #[cfg(test)]
 #[allow(clippy::expect_used)]
 mod tests {
@@ -1410,7 +1414,3 @@ mod tests {
         assert_eq!(call_room_for(&asked, &alone), None);
     }
 }
-
-/// Bumped by every join and hang-up: a call's event loop goes on only while
-/// its number is the latest, so a call already left cannot end the next one.
-static CALL_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
