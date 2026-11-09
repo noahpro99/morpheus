@@ -2569,3 +2569,31 @@ body.rail-dragging, body.rail-dragging * { cursor: grabbing !important; }
 }
 .mutual-more:hover { text-decoration: underline; }
 .profile-modal .profile-mutual { margin-top: 12px; max-height: 240px; overflow-y: auto; text-align: left; }
+
+/* Settings' search bar, at the top of its list, and what it finds. */
+.settings-search {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0 0 8px;
+  padding: 7px 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+}
+.settings-result {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  text-align: left;
+}
+.settings-result:hover { background: var(--bg-hover); }
+.settings-result-page { margin-left: auto; font-size: 0.75rem; }
+.settings-no-result { padding: 8px 10px; }

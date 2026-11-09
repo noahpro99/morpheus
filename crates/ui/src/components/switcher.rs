@@ -2,7 +2,7 @@ use dioxus::prelude::*;
 use morpheus_core::RoomSummary;
 
 use super::about::{AboutOpen, AboutShown};
-use super::settings::{SETTINGS_INDEX, SettingEntry, SettingsOpen, SettingsPage, open_setting};
+use super::settings::{SettingEntry, SettingsOpen, find_settings, open_setting};
 use super::shell::{Rooms, SelectedSpace, go_to, scope_for};
 use super::titlebar::{OpenTopPanel, TopPanel};
 use crate::icons::{CIRCLE_HELP, HEART, INBOX, Icon, REFRESH_CW, SETTINGS};
@@ -114,18 +114,11 @@ pub fn QuickSwitcher(open: Signal<bool>) -> Element {
         );
         // Settings match on every word typed, in their name or other words
         // they answer to ("privacy" finds what notifications show).
-        if !needle.is_empty() {
-            list.extend(
-                SETTINGS_INDEX
-                    .iter()
-                    .filter(|s| has_window || s.page != SettingsPage::Startup)
-                    .filter(|s| {
-                        let words = format!("{} {}", s.label, s.keywords).to_lowercase();
-                        needle.split_whitespace().all(|w| words.contains(w))
-                    })
-                    .map(Entry::Setting),
-            );
-        }
+        list.extend(
+            find_settings(&needle, has_window)
+                .into_iter()
+                .map(Entry::Setting),
+        );
         list
     };
     let cursor_now = cursor().min(matches.len().saturating_sub(1));
