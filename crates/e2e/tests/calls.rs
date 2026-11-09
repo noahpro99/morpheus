@@ -2409,3 +2409,34 @@ async fn a_dm_call_rings_back_for_the_caller_and_the_notification_rings() {
         .await
         .expect("the DM's call empty");
 }
+
+/// Ctrl+Enter answers a call ringing, as in Discord.
+#[tokio::test]
+async fn ctrl_enter_answers_a_ringing_call() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut bob = App::launch(&hs).await.expect("launch bob");
+    login_and_open(&mut bob, "bob", "general").await;
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    login_and_open(&mut alice, "alice", "general").await;
+    open_dm(&mut alice, "bob").await;
+    alice
+        .click(".chat-header .call-button")
+        .await
+        .expect("alice calls");
+    bob.wait_for_text(".incoming-call", "alice", DEFAULT_WAIT)
+        .await
+        .expect("bob is rung");
+    bob.key_combo("body", "Enter", true, false, false)
+        .await
+        .expect("ctrl+enter");
+    bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("answered");
+    bob.click(".voice-panel .hang-up").await.expect("hang up");
+    out_of_call(&mut bob).await;
+    alice.click(".voice-panel .hang-up").await.expect("hang up");
+    out_of_call(&mut alice).await;
+}

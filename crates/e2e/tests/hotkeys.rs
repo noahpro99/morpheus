@@ -736,3 +736,37 @@ async fn overlays_scroll_on_their_own_layer() {
         "settings"
     );
 }
+
+/// Discord's shortcuts for search (Ctrl+F), the emoji picker (Ctrl+E) and
+/// creating or joining a server (Ctrl+Shift+N).
+#[tokio::test]
+async fn ctrl_f_ctrl_e_and_ctrl_shift_n() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch(&hs).await.expect("launch app");
+    login_and_open(&mut app, "general").await;
+    app.key_combo("body", "f", true, false, false)
+        .await
+        .expect("ctrl+f");
+    app.wait_for(".search-toggle.active", DEFAULT_WAIT)
+        .await
+        .expect("search opens");
+    app.press("body", "Escape").await.expect("close");
+    app.key_combo("body", "e", true, false, false)
+        .await
+        .expect("ctrl+e");
+    app.wait_for(".composer .emoji-panel", DEFAULT_WAIT)
+        .await
+        .expect("the emoji picker");
+    app.press(".composer .composer-input", "Escape")
+        .await
+        .expect("close");
+    app.key_combo("body", "N", true, false, true)
+        .await
+        .expect("ctrl+shift+n");
+    app.wait_for(".create-space-dialog", DEFAULT_WAIT)
+        .await
+        .expect("create a server");
+}
