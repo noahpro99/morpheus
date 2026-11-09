@@ -151,7 +151,9 @@ impl RoomSummary {
             dm_user,
             member_count: room.joined_members_count(),
             unread_messages: room.num_unread_messages(),
-            highlight_count: counts.highlight_count,
+            // The server's count, or the SDK's own reckoning from the read
+            // receipts (sliding sync does not always carry the former).
+            highlight_count: counts.highlight_count.max(room.num_unread_mentions()),
             marked_unread: room.is_marked_unread(),
             muted,
             parent_spaces,

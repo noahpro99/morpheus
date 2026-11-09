@@ -776,35 +776,35 @@ pub fn Shell(session: Session) -> Element {
             }
             go_to(room.id.clone());
         };
-        let step =
-            move |list: &[RoomSummary], step: isize, unread_only: bool| -> Option<RoomSummary> {
-                let candidates: Vec<&RoomSummary> = list
+        let step = move |list: &[RoomSummary], step: isize, only: Only| -> Option<RoomSummary> {
+            let candidates: Vec<&RoomSummary> = list
+                .iter()
+                .filter(|r| match only {
+                    Only::Any => true,
+                    Only::Unread => {
+                        r.unread_messages > 0 || r.highlight_count > 0 || r.marked_unread
+                    }
+                    Only::Mentions => r.highlight_count > 0,
+                })
+                .collect();
+            if candidates.is_empty() {
+                return None;
+            }
+            let current = selected.peek().clone();
+            let pos = list.iter().position(|r| Some(&r.id) == current.as_ref());
+            let next = match (pos, step.is_positive()) {
+                (Some(i), true) => candidates
                     .iter()
-                    .filter(|r| {
-                        !unread_only
-                            || r.unread_messages > 0
-                            || r.highlight_count > 0
-                            || r.marked_unread
-                    })
-                    .collect();
-                if candidates.is_empty() {
-                    return None;
-                }
-                let current = selected.peek().clone();
-                let pos = list.iter().position(|r| Some(&r.id) == current.as_ref());
-                let next = match (pos, step.is_positive()) {
-                    (Some(i), true) => candidates
-                        .iter()
-                        .position(|r| list.iter().position(|x| x.id == r.id) > Some(i))
-                        .unwrap_or(0),
-                    (Some(i), false) => candidates
-                        .iter()
-                        .rposition(|r| list.iter().position(|x| x.id == r.id) < Some(i))
-                        .unwrap_or(candidates.len() - 1),
-                    (None, _) => 0,
-                };
-                Some(candidates[next].clone())
+                    .position(|r| list.iter().position(|x| x.id == r.id) > Some(i))
+                    .unwrap_or(0),
+                (Some(i), false) => candidates
+                    .iter()
+                    .rposition(|r| list.iter().position(|x| x.id == r.id) < Some(i))
+                    .unwrap_or(candidates.len() - 1),
+                (None, _) => 0,
             };
+            Some(candidates[next].clone())
+        };
         let scopes = move || super::rail::rail_scopes(&prefs.peek(), &rooms.read());
         match name.as_str() {
             "escape" => {
@@ -923,9 +923,50 @@ pub fn Shell(session: Session) -> Element {
                 if let Some(room) = step(
                     &list,
                     if forward { 1 } else { -1 },
-                    name.ends_with("unread"),
+                    if name.ends_with("unread") {
+                        Only::Unread
+                    } else {
+                        Only::Any
+                    },
                 ) {
                     open(&room);
+                }
+            }
+            // Ctrl+Shift+Alt+Up/Down: rooms that mention you, in every scope.
+            "next_mention" | "prev_mention" => {
+                let all: Vec<RoomSummary> = super::rail::rail_scopes(&prefs.peek(), &rooms.read())
+                    .iter()
+                    .flat_map(|scope| rooms_in_scope(&rooms.read(), scope))
+                    .collect();
+                let forward = name.starts_with("next");
+                if let Some(room) = step(&all, if forward { 1 } else { -1 }, Only::Mentions) {
+                    open(&room);
+                }
+            }
+            // Ctrl+Shift+Alt+V: the call you are in (its page, for a voice channel).
+            "current_call" => {
+                let call = consume_context::<super::call::ActiveCall>()
+                    .peek()
+                    .0
+                    .clone();
+                if let Some(call) = call
+                    && let Some(room) = rooms.peek().iter().find(|r| r.id == call.room_id).cloned()
+                {
+                    open(&room);
+                    chat_open.set(ChatInFront(true));
+                    if narrow.peek().0 {
+                        super::call::show_call_screen(true);
+                    }
+                }
+            }
+            // Ctrl+Shift+L: the open room's link.
+            "copy_link" => {
+                if let Some(id) = current.peek().as_ref() {
+                    super::context_menu::copy_to_clipboard(&format!(
+                        "https://matrix.to/#/{}",
+                        id.id
+                    ));
+                    super::toast::toast("Link copied");
                 }
             }
             "next_scope" | "prev_scope" => {
@@ -1471,4 +1512,12 @@ fn open_link(url: &str, open_url: Option<&morpheus_core::UrlOpener>) {
     if let Err(err) = result {
         report("opening the link", &err);
     }
+}
+
+/// Which rooms a next/previous shortcut steps through.
+#[derive(Clone, Copy)]
+enum Only {
+    Any,
+    Unread,
+    Mentions,
 }
