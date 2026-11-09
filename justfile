@@ -16,11 +16,10 @@ check:
 fmt:
     cargo fmt --all
 
-# Delete build artifacts no build has used for a week. Cargo never removes
-# old ones itself, so every code, dependency or toolchain change leaves
-# another copy in target/. The build recipes run this first.
+# Keep target/ to the builds in use (see scripts/prune-target.sh). The build
+# recipes run this first; the dev shell runs it once a day.
 sweep:
-    nix run nixpkgs#cargo-sweep -- sweep --time 7
+    ./scripts/prune-target.sh
 
 # Clippy with warnings as errors
 lint:
