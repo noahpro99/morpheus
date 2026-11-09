@@ -169,8 +169,30 @@ pub type SettingHighlight = Signal<Option<&'static str>>;
 /// Open Settings at one setting, highlighted.
 pub fn open_setting(entry: &SettingEntry) {
     consume_context::<SettingsOpen>().set(true);
+    show_setting(entry);
+}
+
+/// Show one setting's page with it highlighted (Settings being open).
+pub fn show_setting(entry: &SettingEntry) {
     consume_context::<OpenSettingsPage>().set(Some(entry.page));
     consume_context::<SettingHighlight>().set(Some(entry.anchor));
+}
+
+/// The settings matching every word of `query`, in their name or the other
+/// words they answer to; the Startup page only with a window.
+pub fn find_settings(query: &str, has_window: bool) -> Vec<&'static SettingEntry> {
+    let needle = query.trim().to_lowercase();
+    if needle.is_empty() {
+        return Vec::new();
+    }
+    SETTINGS_INDEX
+        .iter()
+        .filter(|s| has_window || s.page != SettingsPage::Startup)
+        .filter(|s| {
+            let words = format!("{} {}", s.label, s.keywords).to_lowercase();
+            needle.split_whitespace().all(|w| words.contains(w))
+        })
+        .collect()
 }
 
 /// The verification flow currently shown, if any. Incoming requests set this
@@ -282,6 +304,7 @@ pub fn Settings() -> Element {
     let narrow = try_use_context::<NarrowWindow>().is_some_and(|n| n().0);
     // A desktop window: only it has startup options.
     let has_window = use_hook(|| try_consume_context::<crate::WindowControls>().is_some());
+    let mut search = use_signal(String::new);
     let mut close = move || {
         open.set(false);
         page.set(None);
@@ -447,7 +470,49 @@ pub fn Settings() -> Element {
                         h2 { "Settings" }
                         button { class: "ghost settings-nav-close", title: "Close", onclick: move |_| close(), "✕" }
                     }
-                    for item in SettingsPage::ALL.into_iter().filter(|p| has_window || *p != SettingsPage::Startup) {
+                    // Find a single setting; on a desktop it has the keyboard
+                    // as Settings opens (a phone's would raise its keyboard).
+                    input {
+                        class: "settings-search",
+                        r#type: "search",
+                        placeholder: "Search settings",
+                        value: "{search}",
+                        oninput: move |e| search.set(e.value()),
+                        onmounted: move |e| {
+                            if has_window {
+                                spawn(async move {
+                                    let _ = e.data().set_focus(true).await;
+                                });
+                            }
+                        },
+                        onkeydown: move |e: KeyboardEvent| {
+                            if e.key() == Key::Enter
+                                && let Some(entry) = find_settings(&search(), has_window).first()
+                            {
+                                e.prevent_default();
+                                show_setting(entry);
+                                search.set(String::new());
+                            }
+                        },
+                    }
+                    if !search().trim().is_empty() {
+                        for entry in find_settings(&search(), has_window) {
+                            button {
+                                class: "settings-result",
+                                onclick: move |_| {
+                                    show_setting(entry);
+                                    search.set(String::new());
+                                },
+                                Icon { glyph: entry.page.glyph(), size: 18 }
+                                span { "{entry.label}" }
+                                span { class: "settings-result-page muted", "{entry.page.label()}" }
+                            }
+                        }
+                        if find_settings(&search(), has_window).is_empty() {
+                            p { class: "muted settings-no-result", "No setting matches." }
+                        }
+                    }
+                    for item in SettingsPage::ALL.into_iter().filter(|p| has_window || *p != SettingsPage::Startup).filter(|_| search().trim().is_empty()) {
                         button {
                             class: "settings-nav-item",
                             class: if shown == Some(item) { "selected" },

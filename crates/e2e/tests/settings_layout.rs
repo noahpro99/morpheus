@@ -263,3 +263,48 @@ async fn phone_settings_are_full_screen_list_then_page() {
         .await
         .expect("settings closed");
 }
+
+/// Settings opens with its search bar focused: typing finds single
+/// settings, and picking one opens its page with it highlighted.
+#[tokio::test]
+async fn settings_open_with_the_search_bar_focused() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = morpheus_e2e::App::launch(&hs).await.expect("launch");
+    login(&mut app, "alice").await;
+    app.click(".settings-button").await.expect("gear");
+    app.wait_for_js(
+        "return document.activeElement === document.querySelector('.settings .settings-search');",
+        morpheus_e2e::DEFAULT_WAIT,
+    )
+    .await
+    .expect("the search bar focused");
+    app.type_into(".settings .settings-search", "microphone")
+        .await
+        .expect("type");
+    app.wait_for_text(
+        ".settings .settings-result",
+        "Microphone and speaker",
+        morpheus_e2e::DEFAULT_WAIT,
+    )
+    .await
+    .expect("found");
+    app.press(".settings .settings-search", "Enter")
+        .await
+        .expect("pick");
+    app.wait_for_text(
+        ".settings-page h2",
+        "Voice & Video",
+        morpheus_e2e::DEFAULT_WAIT,
+    )
+    .await
+    .expect("its page");
+    app.wait_for(
+        ".settings-page [data-setting=audio-devices].setting-highlight",
+        morpheus_e2e::DEFAULT_WAIT,
+    )
+    .await
+    .expect("highlighted");
+}
