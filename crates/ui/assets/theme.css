@@ -2701,3 +2701,5 @@ body.rail-dragging, body.rail-dragging * { cursor: grabbing !important; }
 .voice-page-join .join-voice { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border-radius: var(--radius-sm); background: var(--green, #23a559); color: #fff; font-weight: 600; }
 .chat-header .voice-chat-toggle { width: 32px; height: 32px; padding: 0; display: grid; place-items: center; border-radius: var(--radius-sm); }
 .chat-header .voice-chat-toggle.active { background: var(--bg-selected); color: var(--text); }
+/* Phones: the call bar above the message box is a full-size target. */
+.shell.narrow .call-bar { min-height: 44px; }
