@@ -1,5 +1,6 @@
 //! The pill along the bottom of the rail and sidebar: your avatar and name
-//! (click for the account menu) and the settings gear. Shares its height and
+//! (click for the account menu), mute, deafen and the settings gear, and in a
+//! call its controls above them. Out of a call it shares its height and
 //! colour with the message box next to it.
 
 use super::toast::report;
@@ -149,6 +150,9 @@ pub fn UserBar() -> Element {
     rsx! {
         footer { class: "sidebar-footer user-bar",
             div { class: "user-pill",
+            // In a call, its controls sit at the top of this card.
+            super::call::VoicePanel {}
+            div { class: "user-row",
             button {
                 class: "profile-chip",
                 title: "{user_id}",
@@ -172,6 +176,7 @@ pub fn UserBar() -> Element {
                 Icon { glyph: if voice().deafened { HEADPHONE_OFF } else { HEADPHONES }, size: 18 }
             }
             button { class: "ghost settings-button", title: "Settings (Ctrl+,)", onclick: move |_| settings_open.set(true), Icon { glyph: SETTINGS, size: 18 } }
+            }
             }
         }
     }
