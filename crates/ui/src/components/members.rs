@@ -116,8 +116,11 @@ fn MemberRow(
             class: if member.is_ignored { "blocked" },
             title: "{member.user_id}",
             onclick: {
-                let user_id = member.user_id.clone();
-                move |e| open_profile_at(user_id.clone(), &e)
+                let (user_id, name, avatar) = (member.user_id.clone(), member.name.clone(), member.avatar.clone());
+                move |e| {
+                    super::profile::remember_person(&user_id, &name, avatar.clone());
+                    open_profile_at(user_id.clone(), &e)
+                }
             },
             oncontextmenu: on_context,
             Avatar { media: member.avatar.clone(), fallback: member.name.clone(), size: 32 }

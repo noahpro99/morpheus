@@ -1025,8 +1025,11 @@ pub(crate) fn MessageRow(message: Message, show_header: bool) -> Element {
                     title: "{message.sender}",
                     oncontextmenu: sender_menu.clone(),
                     onclick: {
-                        let sender = message.sender.clone();
-                        move |e| open_profile_at(sender.clone(), &e)
+                        let (sender, name, avatar) = (message.sender.clone(), message.sender_name.clone(), message.sender_avatar.clone());
+                        move |e| {
+                            super::profile::remember_person(&sender, &name, avatar.clone());
+                            open_profile_at(sender.clone(), &e)
+                        }
                     },
                     Avatar { media: message.sender_avatar.clone(), fallback: message.sender_name.clone(), size: 40 }
                 }

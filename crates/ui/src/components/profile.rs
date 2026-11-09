@@ -406,9 +406,12 @@ pub fn ProfileCard(open: ProfileOpen) -> Element {
     };
     let is_blocked = blocked_now().unwrap_or_else(|| blocked().unwrap_or(false));
 
-    let (name, avatar, status) = match profile().flatten() {
-        Some(p) => (p.name, p.avatar, p.status),
-        None => (user_id.localpart().to_owned(), None, None),
+    let seen = try_use_context::<SeenPeople>().and_then(|seen| seen.peek().get(&user_id).cloned());
+    let (name, avatar, status) = match (profile().flatten(), seen) {
+        (Some(p), _) => (p.name, p.avatar, p.status),
+        // As seen where it was opened from, until the profile comes.
+        (None, Some((name, avatar))) => (name, avatar, None),
+        (None, None) => (user_id.localpart().to_owned(), None, None),
     };
     // Your nickname for them leads; their own name goes beside it.
     let nickname = try_use_context::<super::nicknames::Nicknames>()
@@ -716,5 +719,18 @@ fn ReportUserForm(user_id: OwnedUserId, on_done: Callback<()>) -> Element {
                 button { r#type: "button", class: "secondary", onclick: move |_| on_done(()), "Cancel" }
             }
         }
+    }
+}
+
+/// People as last seen on screen (name and picture), so a card opened from a
+/// member row or a message shows them at once while it fetches the rest.
+pub type SeenPeople =
+    Signal<std::collections::HashMap<OwnedUserId, (String, Option<morpheus_core::MediaRef>)>>;
+
+/// Note someone as just seen, before opening their card.
+pub fn remember_person(user_id: &OwnedUserId, name: &str, avatar: Option<morpheus_core::MediaRef>) {
+    if let Some(mut seen) = try_consume_context::<SeenPeople>() {
+        seen.write()
+            .insert(user_id.clone(), (name.to_owned(), avatar));
     }
 }
