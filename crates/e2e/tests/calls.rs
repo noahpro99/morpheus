@@ -5,7 +5,7 @@
 
 #![allow(clippy::expect_used)]
 
-use morpheus_e2e::{App, DEFAULT_WAIT};
+use morpheus_e2e::{App, DEFAULT_WAIT, api_as};
 
 fn homeserver() -> Option<String> {
     std::env::var("MORPHEUS_TEST_HOMESERVER").ok()
@@ -97,7 +97,11 @@ async fn join_a_call_see_who_is_in_it_mute_and_hang_up() {
         return;
     };
     let mut alice = App::launch(&hs).await.expect("launch alice");
-    login_and_open(&mut alice, "alice", "hangout").await;
+    // A voice channel of its own: nobody an earlier test left behind can
+    // come or go in it (and chime).
+    let channel = fresh_voice_channel(&hs);
+    login_and_open(&mut alice, "alice", "general").await;
+    open_without_joining(&mut alice, &channel).await;
     let hangout_id: String = alice
         .eval("return document.querySelector('.room.selected').dataset.room;")
         .await
@@ -105,18 +109,6 @@ async fn join_a_call_see_who_is_in_it_mute_and_hang_up() {
         .as_str()
         .expect("string")
         .to_owned();
-    // An empty channel to start from: someone an earlier test left in the
-    // call drops out once their membership expires (chiming "leave").
-    alice
-        .wait_for_js(
-            &format!(
-                "return ![...document.querySelectorAll('.room-call')].some(c => c.dataset.room === {} && c.querySelector('.call-participant'));",
-                serde_json::to_string(&hangout_id).expect("json")
-            ),
-            std::time::Duration::from_secs(90),
-        )
-        .await
-        .expect("nobody left in the channel");
 
     // Alice starts a call from the header.
     alice
@@ -128,7 +120,7 @@ async fn join_a_call_see_who_is_in_it_mute_and_hang_up() {
         .await
         .expect("voice panel");
     alice
-        .wait_for_text(".voice-panel", "hangout", DEFAULT_WAIT)
+        .wait_for_text(".voice-panel", &channel, DEFAULT_WAIT)
         .await
         .expect("names the room");
     alice
@@ -142,7 +134,8 @@ async fn join_a_call_see_who_is_in_it_mute_and_hang_up() {
 
     // Bob sees her there before joining, and joins.
     let mut bob = App::launch(&hs).await.expect("launch bob");
-    login_and_open(&mut bob, "bob", "hangout").await;
+    login_and_open(&mut bob, "bob", "general").await;
+    open_without_joining(&mut bob, &channel).await;
     bob.wait_for_js(&in_call(&hangout_id, "alice"), DEFAULT_WAIT)
         .await
         .expect("bob sees alice in the call");
@@ -601,8 +594,11 @@ async fn a_camera_turned_on_shows_to_everyone_in_the_call_until_turned_off() {
     bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
         .await
         .expect("bob connected");
-    // No cameras yet, so no stage.
-    assert_eq!(bob.count(".call-stage").await.expect("count"), 0);
+    // No cameras yet: the call shows (a card each), but no video.
+    assert_eq!(
+        bob.count(".call-stage .video-tile").await.expect("count"),
+        0
+    );
 
     // Alice turns hers on (the voice panel is with the room list on a phone).
     if alice.is_phone() {
@@ -716,11 +712,11 @@ async fn a_camera_turned_on_shows_to_everyone_in_the_call_until_turned_off() {
             .expect("camera off");
     }
     bob.wait_for_js(
-        "return !document.querySelector('.call-stage');",
+        "return !document.querySelector('.call-stage .video-tile');",
         DEFAULT_WAIT,
     )
     .await
-    .expect("the stage goes when the camera does");
+    .expect("her video goes when the camera does");
     alice
         .wait_for_js(no_tile_for_alice, DEFAULT_WAIT)
         .await
@@ -1231,11 +1227,11 @@ async fn the_call_stage_is_resized_by_dragging_its_edge() {
         .expect("camera off");
     alice
         .wait_for_js(
-            "return !document.querySelector('.call-stage');",
+            "return !document.querySelector('.call-stage .video-tile');",
             DEFAULT_WAIT,
         )
         .await
-        .expect("stage gone");
+        .expect("her video gone");
     alice
         .click(".voice-panel .camera-button")
         .await
@@ -1295,9 +1291,13 @@ async fn a_camera_shows_in_its_persons_card_among_equal_cards() {
         return;
     };
     let mut alice = App::launch_desktop(&hs).await.expect("launch alice");
-    login_and_open(&mut alice, "alice", "hangout").await;
+    // A channel of its own: someone left in #hangout would add a card.
+    let channel = fresh_voice_channel(&hs);
+    login_and_open(&mut alice, "alice", "general").await;
+    open_without_joining(&mut alice, &channel).await;
     let mut bob = App::launch_desktop(&hs).await.expect("launch bob");
-    login_and_open(&mut bob, "bob", "hangout").await;
+    login_and_open(&mut bob, "bob", "general").await;
+    open_without_joining(&mut bob, &channel).await;
     alice
         .click(".chat-header .call-button")
         .await
@@ -1324,6 +1324,10 @@ async fn a_camera_shows_in_its_persons_card_among_equal_cards() {
         )
         .await
         .expect("alice's own card");
+    // Short to begin with, so its height (not the window's width) sets the
+    // cards' size.
+    drag_stage(&mut alice, -400).await;
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     let at_first = alice.eval(STAGE_CARDS).await.expect("cards");
     if let Some(path) = alice.screenshot("call-cards").await.expect("screenshot") {
         eprintln!("screenshot: {}", path.display());
@@ -1697,4 +1701,291 @@ async fn call_controls_live_in_the_profile_card_with_a_red_hang_up() {
         )
         .await
         .expect("left the call");
+}
+
+/// Join #hangout by opening it without joining, then the call button.
+async fn join_hangout(app: &mut App, user: &str) {
+    login_and_open(app, user, "hangout").await;
+    app.click(".chat-header .call-button").await.expect("join");
+    app.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("in the call");
+}
+
+/// In any call the call's view shows, cameras or not: a card per person
+/// showing whether they are muted or deafened, and the controls along the
+/// bottom (mute, deafen, camera, screen, leave), as in Discord.
+#[tokio::test]
+async fn the_call_view_shows_in_any_call_with_its_controls() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    join_hangout(&mut alice, "alice").await;
+    alice
+        .wait_for(
+            ".call-stage .call-tile[data-user=\"@alice:localhost\"]",
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("the call view, with no camera on");
+    for control in [
+        ".mute-button",
+        ".deafen-button",
+        ".camera-button",
+        ".screen-button",
+        ".hang-up",
+    ] {
+        alice
+            .wait_for(
+                &format!(".call-stage .call-controls {control}"),
+                DEFAULT_WAIT,
+            )
+            .await
+            .unwrap_or_else(|e| panic!("{control} along the bottom: {e}"));
+    }
+    let card = ".call-stage [data-user=\"@alice:localhost\"]";
+    alice
+        .click(".call-stage .call-controls .mute-button")
+        .await
+        .expect("mute");
+    alice
+        .wait_for(&format!("{card} .voice-state.muted"), DEFAULT_WAIT)
+        .await
+        .expect("her card shows her muted");
+    alice
+        .wait_for(".user-pill .mute-button.active", DEFAULT_WAIT)
+        .await
+        .expect("the same mute as the profile card's");
+    alice
+        .click(".call-stage .call-controls .deafen-button")
+        .await
+        .expect("deafen");
+    alice
+        .wait_for(&format!("{card} .voice-state.deafened"), DEFAULT_WAIT)
+        .await
+        .expect("her card shows her deafened");
+    alice
+        .click(".call-stage .call-controls .deafen-button")
+        .await
+        .expect("undeafen");
+    alice
+        .click(".call-stage .call-controls .mute-button")
+        .await
+        .expect("unmute");
+    alice
+        .wait_for_js(
+            &format!("return !document.querySelector('{card} .voice-state');"),
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("no mark when talking");
+    alice
+        .click(".call-stage .call-controls .hang-up")
+        .await
+        .expect("leave");
+    alice
+        .wait_for_js(
+            "return !document.querySelector('.call-stage');",
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("left");
+}
+
+/// Everyone sees each person's state: muted or deafened and their camera
+/// on their card in the call, and the same, with LIVE for a shared screen,
+/// beside their name in the sidebar's list of who is in the call (also for
+/// someone not in it).
+#[tokio::test]
+async fn others_see_who_is_muted_deafened_on_camera_or_live() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    join_hangout(&mut alice, "alice").await;
+    let mut carol = App::launch(&hs).await.expect("launch carol");
+    login_and_open(&mut carol, "carol", "general").await;
+    let mut bob = App::launch(&hs).await.expect("launch bob");
+    join_hangout(&mut bob, "bob").await;
+
+    let listed = "[...document.querySelectorAll('.room-call .call-participant')].find(p => p.textContent.includes('bob'))";
+    let card = ".call-stage [data-user=\"@bob:localhost\"]";
+
+    bob.click(".call-stage .call-controls .mute-button")
+        .await
+        .expect("bob mutes");
+    alice
+        .wait_for(&format!("{card} .voice-state.muted"), DEFAULT_WAIT)
+        .await
+        .expect("alice sees bob muted on his card");
+    for app in [&mut alice, &mut carol] {
+        app.wait_for_js(
+            &format!("const p = {listed}; return !!p && !!p.querySelector('.voice-state.muted');"),
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("bob listed as muted");
+    }
+
+    bob.click(".call-stage .call-controls .deafen-button")
+        .await
+        .expect("bob deafens");
+    carol
+        .wait_for_js(
+            &format!(
+                "const p = {listed}; return !!p && !!p.querySelector('.voice-state.deafened');"
+            ),
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("bob listed as deafened");
+
+    bob.click(".call-stage .call-controls .camera-button")
+        .await
+        .expect("camera on");
+    bob.click(".call-stage .call-controls .screen-button")
+        .await
+        .expect("share the screen");
+    for app in [&mut alice, &mut carol] {
+        app.wait_for_js(
+            &format!("const p = {listed}; return !!p && !!p.querySelector('.media-camera') && !!p.querySelector('.media-live');"),
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("bob listed with his camera and LIVE");
+    }
+    carol
+        .wait_for_text(
+            ".room-call .call-participant .media-live",
+            "LIVE",
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("says LIVE");
+
+    bob.click(".call-stage .call-controls .hang-up")
+        .await
+        .expect("bob leaves");
+    alice
+        .click(".call-stage .call-controls .hang-up")
+        .await
+        .expect("alice leaves");
+}
+
+/// Joining a call where someone already has their camera on and shares a
+/// screen shows both straight away, and again after leaving and rejoining.
+#[tokio::test]
+async fn joining_and_rejoining_picks_up_cameras_and_screens() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut bob = App::launch(&hs).await.expect("launch bob");
+    join_hangout(&mut bob, "bob").await;
+    bob.click(".voice-panel .camera-button")
+        .await
+        .expect("camera on");
+    bob.wait_for(".voice-panel .camera-button.active", DEFAULT_WAIT)
+        .await
+        .expect("camera on");
+    bob.click(".voice-panel .screen-button")
+        .await
+        .expect("share");
+    bob.wait_for(".voice-panel .screen-button.active", DEFAULT_WAIT)
+        .await
+        .expect("sharing");
+
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    let both = "const tiles = [...document.querySelectorAll('.call-stage .video-tile')].filter(t => t.dataset.user === '@bob:localhost'); \
+        const shown = t => { const i = t.querySelector('img.video'); return !!i && i.complete && i.naturalWidth > 0; }; \
+        return tiles.some(t => t.classList.contains('screen') && shown(t)) && tiles.some(t => !t.classList.contains('screen') && shown(t));";
+    join_hangout(&mut alice, "alice").await;
+    alice
+        .wait_for_js(both, DEFAULT_WAIT)
+        .await
+        .expect("bob's camera and screen on joining");
+    for round in 1..=2 {
+        alice.click(".voice-panel .hang-up").await.expect("leave");
+        alice
+            .wait_for_js(
+                "return !document.querySelector('.voice-panel');",
+                DEFAULT_WAIT,
+            )
+            .await
+            .expect("left");
+        alice
+            .click(".chat-header .call-button")
+            .await
+            .expect("rejoin");
+        alice
+            .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+            .await
+            .expect("back in");
+        alice
+            .wait_for_js(both, DEFAULT_WAIT)
+            .await
+            .unwrap_or_else(|e| panic!("bob's camera and screen after rejoining ({round}): {e}"));
+    }
+    alice.click(".voice-panel .hang-up").await.expect("leave");
+    bob.click(".voice-panel .hang-up")
+        .await
+        .expect("bob leaves");
+}
+
+/// A new voice channel for alice and bob, named uniquely; its name.
+fn fresh_voice_channel(hs: &str) -> String {
+    let name = format!(
+        "voice {} {}",
+        std::process::id(),
+        NEXT_CHANNEL.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+    );
+    let room = api_as(
+        hs,
+        "alice",
+        "POST",
+        "createRoom",
+        Some(serde_json::json!({
+            "name": name,
+            "preset": "public_chat",
+            "creation_content": { "type": "org.matrix.msc3417.call" },
+            "power_level_content_override": { "events": { "org.matrix.msc3401.call.member": 0 } },
+            "invite": ["@bob:localhost"],
+        })),
+    )
+    .expect("a voice channel");
+    let id = room["room_id"]
+        .as_str()
+        .expect("room id")
+        .replace('!', "%21")
+        .replace(':', "%3A");
+    api_as(
+        hs,
+        "bob",
+        "POST",
+        &format!("rooms/{id}/join"),
+        Some(serde_json::json!({})),
+    )
+    .expect("bob joins");
+    name
+}
+
+/// Tells this run's fresh voice channels apart.
+static NEXT_CHANNEL: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// Drag the call stage's bottom edge by `dy` pixels (down is taller).
+async fn drag_stage(app: &mut App, dy: i32) {
+    let step = if dy < 0 { -20 } else { 20 };
+    app.eval(&format!(
+        "const h = document.querySelector('.call-stage-resize').getBoundingClientRect(); \
+         const x = h.left + h.width / 2, y = h.top + h.height / 2; \
+         const at = (type, d, target) => target.dispatchEvent(new MouseEvent(type, {{ bubbles: true, cancelable: true, clientX: x, clientY: y + d, buttons: 1 }})); \
+         at('mousedown', 0, document.querySelector('.call-stage-resize')); \
+         for (let d = {step}; Math.abs(d) <= Math.abs({dy}); d += {step}) at('mousemove', d, window); \
+         at('mouseup', {dy}, window); return true;"
+    ))
+    .await
+    .expect("drag the stage");
 }

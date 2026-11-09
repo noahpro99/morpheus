@@ -55,6 +55,9 @@ pub struct RoomSummary {
     pub inviter: Option<String>,
     /// Who is in the room's call (MatrixRTC), oldest first; empty when none.
     pub call_participants: Vec<OwnedUserId>,
+    /// What each person in the call has on (muted, deafened, camera, screen),
+    /// as Morpheus publishes it; people in other apps are missing.
+    pub call_media: Vec<(OwnedUserId, crate::CallMedia)>,
     /// In your favorites (`m.favourite`).
     pub favorite: bool,
     /// A voice channel: a room that is a call (Element's video rooms,
@@ -155,6 +158,7 @@ impl RoomSummary {
             invited,
             inviter,
             call_participants: crate::calls::call_participants(&room),
+            call_media: crate::calls::call_media(&room).await,
             favorite: room.is_favourite(),
             is_voice: room
                 .room_type()

@@ -16,8 +16,8 @@ use morpheus_core::{IncomingCall, OwnedRoomId, OwnedUserId, Ringing, RoomSummary
 use super::shell::go_to;
 use super::toast::report;
 use crate::icons::{
-    CHEVRON_DOWN, CHEVRON_UP, Icon, MIC, MIC_OFF, PHONE, PHONE_OFF, SCREEN_SHARE, SCREEN_SHARE_OFF,
-    VIDEO, VIDEO_OFF, VOLUME_2,
+    CHEVRON_DOWN, CHEVRON_UP, HEADPHONE_OFF, HEADPHONES, Icon, MIC, MIC_OFF, PHONE, PHONE_OFF,
+    SCREEN_SHARE, SCREEN_SHARE_OFF, VIDEO, VIDEO_OFF, VOLUME_2,
 };
 use crate::media::Avatar;
 use crate::sounds::{Sound, play};
@@ -105,7 +105,39 @@ struct CallMedia(Rc<RefCell<Option<Call>>>);
 /// out, switching accounts).
 pub fn provide_calls(session: Session) {
     let active: ActiveCall = use_context_provider(|| Signal::new(CallSlot::default()));
-    use_context_provider(|| Signal::new(VoiceFlags::default()) as Voice);
+    let voice: Voice = use_context_provider(|| Signal::new(VoiceFlags::default()));
+    // What this device has on, published in its call membership for everyone
+    // to show (on its card, and beside its name under the room).
+    let mut published = use_signal(|| None::<(OwnedRoomId, morpheus_core::CallMedia)>);
+    use_effect({
+        let session = session.clone();
+        move || {
+            let flags = voice();
+            let Some(call) = active().0.filter(|call| call.connected) else {
+                if published.peek().is_some() {
+                    published.set(None);
+                }
+                return;
+            };
+            let media = morpheus_core::CallMedia {
+                muted: flags.muted || flags.deafened,
+                deafened: flags.deafened,
+                camera: call.camera,
+                screen: call.screen,
+            };
+            let now = (call.room_id.clone(), media);
+            if published.peek().as_ref() == Some(&now) {
+                return;
+            }
+            published.set(Some(now));
+            let sending = session.set_call_media(call.room_id, media);
+            spawn(async move {
+                if let Err(err) = sending.await {
+                    tracing::warn!(%err, "call media state not published");
+                }
+            });
+        }
+    });
     use_context_provider(|| Signal::new(CallScreenShown::default()) as CallScreenOpen);
     let media = use_context_provider(CallMedia::default);
     let config = use_context::<crate::AppConfig>();
@@ -248,6 +280,11 @@ pub fn join_call(session: Session, room_id: OwnedRoomId, room_name: String) {
     // Outlives whatever button started it.
     spawn_forever(async move {
         leave(&session, active, &media).await;
+        // This call's number: its events stop counting once another call (or a
+        // hang-up) has come since.
+        let generation = CALL_GENERATION.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+        let current =
+            move || CALL_GENERATION.load(std::sync::atomic::Ordering::SeqCst) == generation;
         active.set(CallSlot(Some(CallState {
             room_id: room_id.clone(),
             room_name,
@@ -376,6 +413,7 @@ pub fn join_call(session: Session, room_id: OwnedRoomId, room_name: String) {
                     Some(event) => event,
                     None => return,
                 },
+                _ = tokio::time::sleep(std::time::Duration::from_secs(1)), if !current() => return,
                 Some(key) = async {
                     match keys.as_mut() {
                         Some(keys) => keys.next().await,
@@ -461,6 +499,11 @@ pub fn join_call(session: Session, room_id: OwnedRoomId, room_name: String) {
                     });
                 }
                 CallEvent::Disconnected(reason) => {
+                    // A call left already (hung up, or replaced by a rejoin) says
+                    // goodbye late: not the call going now.
+                    if !current() {
+                        return;
+                    }
                     report("the call dropped", &reason);
                     leave(&session, active, &media).await;
                     return;
@@ -479,6 +522,7 @@ pub fn hang_up(session: Session) {
 }
 
 async fn leave(session: &Session, mut active: ActiveCall, media: &CallMedia) {
+    CALL_GENERATION.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     let call = media.0.borrow_mut().take();
     let room = active
         .try_peek()
@@ -685,6 +729,7 @@ pub fn RoomCall(
             for user in participants {
                 CallParticipant {
                     key: "{user}",
+                    room_id: room_id.clone(),
                     speaking: speaking.contains(&user),
                     user_id: user,
                 }
@@ -715,18 +760,71 @@ fn use_person(user_id: &OwnedUserId) -> (String, Option<morpheus_core::MediaRef>
 }
 
 #[component]
-fn CallParticipant(user_id: OwnedUserId, speaking: bool) -> Element {
+fn CallParticipant(room_id: OwnedRoomId, user_id: OwnedUserId, speaking: bool) -> Element {
     let (name, avatar) = use_person(&user_id);
+    let media = use_call_media(&room_id, &user_id);
     rsx! {
-        div { class: "call-participant", class: if speaking { "speaking" },
+        div { class: "call-participant", class: if speaking { "speaking" }, "data-user": "{user_id}",
             Avatar { media: avatar, fallback: name.clone(), size: 20 }
             span { class: "call-participant-name", "{name}" }
+            MediaMarks { media, video: true }
         }
     }
 }
 
-/// Above the chat of the room this account is calling in, while anyone's
-/// camera is on: a tile each.
+/// What someone in `room_id`'s call has on: this account's from its own
+/// flags (at once), anyone else's as their membership publishes it.
+fn use_call_media(room_id: &OwnedRoomId, user_id: &OwnedUserId) -> morpheus_core::CallMedia {
+    let session = use_context::<Session>();
+    let rooms = use_context::<super::shell::Rooms>();
+    let active = use_context::<ActiveCall>();
+    let voice = use_context::<Voice>();
+    if session.user_id().as_ref() == Some(user_id)
+        && let Some(call) = active().0.filter(|c| &c.room_id == room_id)
+    {
+        let flags = voice();
+        return morpheus_core::CallMedia {
+            muted: flags.muted || flags.deafened,
+            deafened: flags.deafened,
+            camera: call.camera,
+            screen: call.screen,
+        };
+    }
+    rooms
+        .read()
+        .iter()
+        .find(|room| &room.id == room_id)
+        .and_then(|room| {
+            room.call_media
+                .iter()
+                .find(|(user, _)| user == user_id)
+                .map(|(_, media)| *media)
+        })
+        .unwrap_or_default()
+}
+
+/// Marks for someone in a call: deafened or muted, and with `video`, their
+/// camera and LIVE for a shared screen.
+#[component]
+fn MediaMarks(media: morpheus_core::CallMedia, video: bool) -> Element {
+    rsx! {
+        if media.deafened {
+            span { class: "voice-state deafened", title: "Deafened", Icon { glyph: HEADPHONE_OFF, size: 14 } }
+        } else if media.muted {
+            span { class: "voice-state muted", title: "Muted", Icon { glyph: MIC_OFF, size: 14 } }
+        }
+        if video && media.camera {
+            span { class: "media-camera", title: "Camera on", Icon { glyph: VIDEO, size: 14 } }
+        }
+        if video && media.screen {
+            span { class: "media-live", title: "Sharing their screen", "LIVE" }
+        }
+    }
+}
+
+/// Above the chat of the room this account is calling in: a card each
+/// (their camera, or their picture), and the call's controls along the
+/// bottom, cameras on or not.
 #[component]
 pub fn CallStage(room_id: OwnedRoomId) -> Element {
     let session = use_context::<Session>();
@@ -735,19 +833,79 @@ pub fn CallStage(room_id: OwnedRoomId) -> Element {
     let Some(call) = active().0.filter(|call| call.room_id == room_id) else {
         return rsx! {};
     };
-    if call.video.is_empty() {
-        return rsx! {};
-    }
-    // Everyone gets a tile once anyone's camera is on: theirs, or their picture.
     let cards = tiles(&call, &rooms.read(), session.user_id());
     let count = cards.len();
     rsx! {
         div { class: "call-stage", "data-cards": "{count}",
-            Cards { cards, speaking: call.speaking.clone() }
+            div { class: "call-cards",
+                Cards { room_id: room_id.clone(), cards, speaking: call.speaking.clone() }
+            }
+            StageControls { call: call.clone() }
         }
         // Dragged to make the stage taller or shorter (hotkeys.rs does the
         // dragging and remembers the height).
         div { class: "call-stage-resize", title: "Drag to resize" }
+    }
+}
+
+/// The call's controls under its cards, as Discord has them (the same as
+/// the profile card's, there too): mute, deafen, camera, screen, leave.
+#[component]
+fn StageControls(call: CallState) -> Element {
+    let session = use_context::<Session>();
+    let voice = use_context::<Voice>();
+    let flags = voice();
+    let muted = flags.muted || flags.deafened;
+    rsx! {
+        div { class: "call-controls stage-controls",
+            button {
+                class: "call-control mute-button",
+                class: if muted { "active" },
+                title: if muted { "Unmute (Ctrl+Shift+M)" } else { "Mute (Ctrl+Shift+M)" },
+                onclick: move |_| toggle_mute(),
+                Icon { glyph: if muted { MIC_OFF } else { MIC }, size: 20 }
+            }
+            button {
+                class: "call-control deafen-button",
+                class: if flags.deafened { "active" },
+                title: if flags.deafened { "Undeafen (Ctrl+Shift+D)" } else { "Deafen (Ctrl+Shift+D)" },
+                onclick: move |_| toggle_deafen(),
+                Icon { glyph: if flags.deafened { HEADPHONE_OFF } else { HEADPHONES }, size: 20 }
+            }
+            if morpheus_call::can_send_video() {
+                button {
+                    class: "call-control camera-button",
+                    class: if call.camera { "active" },
+                    title: if call.camera { "Turn off camera" } else { "Turn on camera" },
+                    disabled: !call.connected,
+                    onclick: {
+                        let (session, on) = (session.clone(), !call.camera);
+                        move |_| set_camera(session.clone(), on)
+                    },
+                    Icon { glyph: if call.camera { VIDEO } else { VIDEO_OFF }, size: 20 }
+                }
+            }
+            if morpheus_call::can_share_screen() {
+                button {
+                    class: "call-control screen-button",
+                    class: if call.screen { "active" },
+                    class: if call.choosing_screen { "pending" },
+                    title: if call.screen { "Stop sharing your screen" } else { "Share your screen" },
+                    disabled: !call.connected || call.choosing_screen,
+                    onclick: {
+                        let (session, on) = (session.clone(), !call.screen);
+                        move |_| set_screen_share(session.clone(), on)
+                    },
+                    Icon { glyph: if call.screen { SCREEN_SHARE_OFF } else { SCREEN_SHARE }, size: 20 }
+                }
+            }
+            button {
+                class: "call-control hang-up",
+                title: "Disconnect",
+                onclick: move |_| hang_up(session.clone()),
+                Icon { glyph: PHONE_OFF, size: 20 }
+            }
+        }
     }
 }
 
@@ -805,14 +963,14 @@ fn tiles(
 
 /// The cards, each its own size (the stage's script fits them to it).
 #[component]
-fn Cards(cards: Vec<Card>, speaking: Vec<OwnedUserId>) -> Element {
+fn Cards(room_id: OwnedRoomId, cards: Vec<Card>, speaking: Vec<OwnedUserId>) -> Element {
     rsx! {
         {cards.into_iter().map(|card| match card {
             Card::Video(feed) => rsx! {
-                VideoTile { key: "{feed.key}", user: feed.user, feed: feed.key, screen: feed.screen }
+                VideoTile { key: "{feed.key}", room_id: room_id.clone(), user: feed.user, feed: feed.key, screen: feed.screen }
             },
             Card::Person(user) => rsx! {
-                CallTile { key: "{user}", speaking: speaking.contains(&user), user_id: user }
+                CallTile { key: "{user}", room_id: room_id.clone(), speaking: speaking.contains(&user), user_id: user }
             },
         })}
     }
@@ -823,8 +981,9 @@ const VIDEO_POLL_MS: u64 = 1000 / 30;
 
 /// One person's video: the latest picture, as it comes.
 #[component]
-fn VideoTile(user: OwnedUserId, feed: String, screen: bool) -> Element {
+fn VideoTile(room_id: OwnedRoomId, user: OwnedUserId, feed: String, screen: bool) -> Element {
     let (name, _) = use_person(&user);
+    let media = use_call_media(&room_id, &user);
     use_future({
         let feed = feed.clone();
         move || {
@@ -861,6 +1020,9 @@ fn VideoTile(user: OwnedUserId, feed: String, screen: bool) -> Element {
             img { class: "video", alt: "" }
             span { class: "video-name",
                 if screen { "{name}'s screen" } else { "{name}" }
+            }
+            if !screen {
+                span { class: "card-marks", MediaMarks { media, video: false } }
             }
         }
     }
@@ -982,7 +1144,7 @@ pub fn CallScreen() -> Element {
                 }
             }
             div { class: "call-tiles",
-                Cards { cards, speaking: call.speaking.clone() }
+                Cards { room_id: call.room_id.clone(), cards, speaking: call.speaking.clone() }
             }
             div { class: "call-controls",
                 button {
@@ -1030,12 +1192,14 @@ pub fn CallScreen() -> Element {
 
 /// Someone in the call without a camera on: their picture, large.
 #[component]
-fn CallTile(user_id: OwnedUserId, speaking: bool) -> Element {
+fn CallTile(room_id: OwnedRoomId, user_id: OwnedUserId, speaking: bool) -> Element {
     let (name, avatar) = use_person(&user_id);
+    let media = use_call_media(&room_id, &user_id);
     rsx! {
         div { class: "call-tile", class: if speaking { "speaking" }, "data-user": "{user_id}",
             Avatar { media: avatar, fallback: name.clone(), size: 72 }
             span { class: "video-name", "{name}" }
+            span { class: "card-marks", MediaMarks { media, video: false } }
         }
     }
 }
@@ -1216,6 +1380,7 @@ mod tests {
             can_edit_children: false,
             is_voice: false,
             is_encrypted: false,
+            call_media: Vec::new(),
         }
     }
 
@@ -1245,3 +1410,7 @@ mod tests {
         assert_eq!(call_room_for(&asked, &alone), None);
     }
 }
+
+/// Bumped by every join and hang-up: a call's event loop goes on only while
+/// its number is the latest, so a call already left cannot end the next one.
+static CALL_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);

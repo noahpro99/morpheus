@@ -156,6 +156,15 @@ impl Session {
                 None,
                 None,
             );
+            // Kept, so the media state can be added to it later.
+            if let (Ok(value), Ok(mut kept)) =
+                (serde_json::to_value(&content), memberships().lock())
+            {
+                kept.insert(
+                    (user_id.clone(), room_id.clone()),
+                    (state_key.as_ref().to_owned(), value),
+                );
+            }
             let others_in_call = call_participants(&room).iter().any(|u| *u != user_id);
             let membership = room.send_state_event_for_key(&state_key, content).await?;
             if let Err(err) =
@@ -175,6 +184,9 @@ impl Session {
             let client = session.client.clone();
             let user_id = client.user_id().ok_or(Error::NoSession)?.to_owned();
             let device_id = client.device_id().ok_or(Error::NoSession)?.to_owned();
+            if let Ok(mut kept) = memberships().lock() {
+                kept.remove(&(user_id.clone(), room_id.clone()));
+            }
             // The scheduled leave, sent now: one request, so nothing is lost if
             // the app dies right after (cancelling it and then sending a leave
             // could leave a ghost for hours).
@@ -848,4 +860,95 @@ impl Session {
 /// Whether an event of this type is a ring.
 pub(crate) fn is_ring(event_type: &str) -> bool {
     RING_EVENTS.contains(&event_type)
+}
+
+/// Where Morpheus keeps a call member's media state in its membership.
+const MEDIA_KEY: &str = "dev.morpheus.media";
+
+/// What someone in a call has on: their microphone and sound (muted,
+/// deafened), camera and shared screen. Morpheus adds it to its call
+/// membership; people in other apps show none of it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+pub struct CallMedia {
+    #[serde(default)]
+    pub muted: bool,
+    #[serde(default)]
+    pub deafened: bool,
+    #[serde(default)]
+    pub camera: bool,
+    #[serde(default)]
+    pub screen: bool,
+}
+
+/// This device's membership in each call it is in (its state key and the
+/// content sent on joining), so its media state can be added to it.
+type Memberships = Mutex<HashMap<(OwnedUserId, OwnedRoomId), (String, Value)>>;
+
+fn memberships() -> &'static Memberships {
+    static MEMBERSHIPS: OnceLock<Memberships> = OnceLock::new();
+    MEMBERSHIPS.get_or_init(Default::default)
+}
+
+/// Each person in a room's call with the media state they publish (a person
+/// on several devices: any device's camera or screen; muted only if all are).
+pub(crate) async fn call_media(room: &matrix_sdk::Room) -> Vec<(OwnedUserId, CallMedia)> {
+    use matrix_sdk::deserialized_responses::RawAnySyncOrStrippedState;
+    let Ok(events) = room.get_state_events(StateEventType::CallMember).await else {
+        return Vec::new();
+    };
+    let mut found: Vec<(OwnedUserId, CallMedia)> = Vec::new();
+    for raw in events {
+        let RawAnySyncOrStrippedState::Sync(raw) = raw else {
+            continue;
+        };
+        let Ok(event) = raw.deserialize_as::<Value>() else {
+            continue;
+        };
+        let content = &event["content"];
+        // Left: an empty membership.
+        if content.get("device_id").is_none() {
+            continue;
+        }
+        let Some(user) = event["sender"]
+            .as_str()
+            .and_then(|s| OwnedUserId::try_from(s).ok())
+        else {
+            continue;
+        };
+        let media: CallMedia =
+            serde_json::from_value(content[MEDIA_KEY].clone()).unwrap_or_default();
+        match found.iter_mut().find(|(u, _)| *u == user) {
+            Some((_, seen)) => {
+                seen.camera |= media.camera;
+                seen.screen |= media.screen;
+                seen.muted &= media.muted;
+                seen.deafened &= media.deafened;
+            }
+            None => found.push((user, media)),
+        }
+    }
+    found
+}
+
+impl Session {
+    /// Publish this device's media state in its membership of `room_id`'s
+    /// call, for everyone to show. Nothing happens outside a call.
+    pub fn set_call_media(&self, room_id: OwnedRoomId, media: CallMedia) -> CoreFuture<()> {
+        let session = self.clone();
+        self.core.run(async move {
+            let room = session.room(&room_id)?;
+            let user_id = session.client.user_id().ok_or(Error::NoSession)?.to_owned();
+            let kept = memberships()
+                .lock()
+                .ok()
+                .and_then(|kept| kept.get(&(user_id, room_id)).cloned());
+            let Some((state_key, mut content)) = kept else {
+                return Ok(());
+            };
+            content[MEDIA_KEY] = serde_json::to_value(media)?;
+            room.send_state_event_raw(&StateEventType::CallMember.to_string(), &state_key, content)
+                .await?;
+            Ok(())
+        })
+    }
 }

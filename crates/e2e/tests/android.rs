@@ -2220,7 +2220,7 @@ async fn phone_camera_shows_on_the_desktop() {
         .await
         .expect("camera off");
     bob.wait_for_js(
-        "return !document.querySelector('.call-stage');",
+        "return !document.querySelector('.call-stage .video-tile');",
         DEFAULT_WAIT,
     )
     .await

@@ -2474,3 +2474,45 @@ h1, h2, h3, h4, .modal-title, .empty-title {
 .rail-item.unread > .rail-pill { height: 8px; }
 .rail-item:hover > .rail-pill { height: 20px; }
 .rail-item.selected > .rail-pill { height: 40px; }
+
+/* ---- The call view: cards, then the controls along the bottom --------------- */
+.call-stage { display: flex; flex-direction: column; flex-wrap: nowrap; gap: 8px; padding-bottom: 8px; min-height: 200px; }
+.call-stage .call-cards {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-content: center;
+  gap: 8px;
+  overflow: hidden;
+}
+.call-stage .stage-controls { padding: 0; gap: 12px; background: none; border-radius: 0; }
+.call-stage .stage-controls .call-control { width: 44px; height: 44px; }
+/* Muted or deafened, on a person's card: a dark disc in its corner. */
+.card-marks { position: absolute; right: 8px; bottom: 8px; display: flex; gap: 4px; }
+.card-marks .voice-state {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  color: var(--danger);
+}
+.call-tile { position: relative; }
+/* Beside a name in the room's call list: mute or deafen, camera, LIVE. */
+.call-participant .voice-state, .call-participant .media-camera { display: inline-flex; color: var(--text-muted); }
+.call-participant .voice-state { color: var(--danger); }
+.call-participant .voice-state:first-of-type { margin-left: auto; }
+.call-participant .media-live {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+.call-participant { gap: 6px; }
+.call-participant-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
