@@ -820,6 +820,13 @@ pub fn Shell(session: Session) -> Element {
                     chat_open.set(ChatInFront(true));
                 }
             }
+            // A phone's left swipe across the profile card: the DMs.
+            "go_dms" => {
+                if *selected_space.peek() != Scope::Dms {
+                    selected_space.set(Scope::Dms);
+                }
+                chat_open.set(ChatInFront(false));
+            }
             // Shift+Alt+Right: to the DMs, and from them back to the server.
             "dms_toggle" => {
                 if *selected_space.peek() == Scope::Dms {

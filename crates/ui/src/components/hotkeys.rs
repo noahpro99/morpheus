@@ -370,6 +370,11 @@ document.addEventListener('click', e => {
       g = { kind: 'call', el: call, base: 0, ...start };
       return;
     }
+    // A swipe across the profile card at the bottom (left: to the DMs).
+    if (e.target.closest && e.target.closest('.user-pill')) {
+      g = { kind: 'card', el: null, ...start };
+      return;
+    }
     if (document.querySelector(OPEN_FOR_SWIPE)) return;
     const pane = narrowPane();
     if (pane === 'chat' || pane === 'side') {
@@ -410,6 +415,8 @@ document.addEventListener('click', e => {
       g.d = Math.max(0, dx);
       g.el.style.transition = 'none';
       g.el.style.transform = `translateX(${g.d}px)`;
+    } else if (g.kind === 'card' && g.axis === 'x') {
+      g.d = Math.max(0, -dx);
     } else if (g.kind === 'forward' && g.axis === 'x') {
       g.d = Math.max(0, -dx);
       g.el.style.transition = 'none';
@@ -417,6 +424,12 @@ document.addEventListener('click', e => {
     }
   }, { passive: true, capture: true });
   window.addEventListener('touchend', () => {
+    if (g && g.kind === 'card') {
+      const far = g.d > 50;
+      g = null;
+      if (far) dioxus.send('go_dms');
+      return;
+    }
     if (!g || g.d <= 0) { g = null; return; }
     const { kind, el, d, at, then: next } = g;
     g = null;
@@ -446,7 +459,7 @@ document.addEventListener('click', e => {
       } else settle(el, 'translateX(100%)');
     }
   }, { capture: true });
-  window.addEventListener('touchcancel', () => { if (g) settle(g.el, g.kind === 'forward' ? 'translateX(100%)' : 'none'); g = null; }, { capture: true });
+  window.addEventListener('touchcancel', () => { if (g && g.el) settle(g.el, g.kind === 'forward' ? 'translateX(100%)' : 'none'); g = null; }, { capture: true });
 })();
 // Far back in a long room, rows come and go below the view as it scrolls
 // (timeline.rs keeps only a few hundred in the page), and WebKit does not
