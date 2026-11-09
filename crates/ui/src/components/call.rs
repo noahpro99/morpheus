@@ -148,6 +148,7 @@ pub fn provide_calls(session: Session) {
         }
     });
     use_hook(|| morpheus_call::choose_audio_devices(crate::device_prefs::audio_devices(&data_dir)));
+    use_hook(|| morpheus_call::choose_camera(crate::device_prefs::camera(&data_dir)));
     let mut rings: Rings = use_context_provider(|| Signal::new(RingList::default()));
     use_future({
         let (session, media) = (session.clone(), media.clone());
@@ -875,6 +876,15 @@ fn StageControls(call: CallState) -> Element {
             if morpheus_call::can_send_video() {
                 button {
                     class: "call-control camera-button",
+                    oncontextmenu: {
+                        let session = session.clone();
+                        move |e: Event<MouseData>| {
+                            e.prevent_default();
+                            e.stop_propagation();
+                            let at = e.client_coordinates();
+                            open_camera_menu(session.clone(), at.x, at.y);
+                        }
+                    },
                     class: if call.camera { "active" },
                     title: if call.camera { "Turn off camera" } else { "Turn on camera" },
                     disabled: !call.connected,
@@ -1069,6 +1079,15 @@ pub fn VoicePanel() -> Element {
             if morpheus_call::can_send_video() {
             button {
                 class: "ghost camera-button",
+                oncontextmenu: {
+                    let session = session.clone();
+                    move |e: Event<MouseData>| {
+                        e.prevent_default();
+                        e.stop_propagation();
+                        let at = e.client_coordinates();
+                        open_camera_menu(session.clone(), at.x, at.y);
+                    }
+                },
                 class: if call.camera { "active" },
                 title: if call.camera { "Turn off camera" } else { "Turn on camera" },
                 disabled: !call.connected,
@@ -1166,6 +1185,15 @@ pub fn CallScreen() -> Element {
                 if morpheus_call::can_send_video() {
                     button {
                         class: "call-control camera-button",
+                        oncontextmenu: {
+                            let session = session.clone();
+                            move |e: Event<MouseData>| {
+                                e.prevent_default();
+                                e.stop_propagation();
+                                let at = e.client_coordinates();
+                                open_camera_menu(session.clone(), at.x, at.y);
+                            }
+                        },
                         class: if call.camera { "active" },
                         title: if call.camera { "Turn off camera" } else { "Turn on camera" },
                         disabled: !call.connected,
@@ -1413,4 +1441,93 @@ mod tests {
         let alone = [dm("!new:x", "@bob:x", &[]), dm("!old:x", "@bob:x", &[])];
         assert_eq!(call_room_for(&asked, &alone), None);
     }
+}
+
+/// The quick list of microphones (or, with `speakers`, speakers) behind the
+/// profile card's arrows and right-clicks: the one in use ticked, a pick
+/// switches to it (a call going now too), and the full settings below.
+pub fn open_audio_menu(speakers: bool, x: f64, y: f64) {
+    use super::context_menu::{MenuItem, open_menu_at};
+    let data_dir = consume_context::<crate::AppConfig>().data_dir;
+    spawn(async move {
+        let found = morpheus_call::audio_devices(AudioMode::from_env()).await;
+        let chosen = morpheus_call::chosen_audio_devices();
+        let (list, current) = if speakers {
+            (found.speakers, chosen.speaker)
+        } else {
+            (found.microphones, chosen.microphone)
+        };
+        let mut items: Vec<MenuItem> = std::iter::once((None, "System default".to_owned()))
+            .chain(list.into_iter().map(|d| (Some(d.id), d.name)))
+            .map(|(id, name)| {
+                let checked = id == current;
+                let data_dir = data_dir.clone();
+                MenuItem::new(name, move || {
+                    let mut choice = morpheus_call::chosen_audio_devices();
+                    if speakers {
+                        choice.speaker = id.clone();
+                    } else {
+                        choice.microphone = id.clone();
+                    }
+                    if let Err(err) = crate::device_prefs::set_audio_devices(&data_dir, &choice) {
+                        report("saving the audio devices", &err);
+                    }
+                    use_devices(choice);
+                })
+                .checked(checked)
+            })
+            .collect();
+        items.push(open_voice_settings_item());
+        open_menu_at(x, y, items, None);
+    });
+}
+
+/// The camera button's right-click: the cameras, the one in use ticked; a
+/// pick switches to it (at once, if the camera is on).
+pub fn open_camera_menu(session: Session, x: f64, y: f64) {
+    use super::context_menu::{MenuItem, open_menu_at};
+    let data_dir = consume_context::<crate::AppConfig>().data_dir;
+    let current = morpheus_call::chosen_camera();
+    let mut items: Vec<MenuItem> = morpheus_call::cameras(AudioMode::from_env())
+        .into_iter()
+        .map(|camera| {
+            let checked = current.as_deref() == Some(camera.id.as_str());
+            let (data_dir, session, id) = (data_dir.clone(), session.clone(), camera.id);
+            MenuItem::new(camera.name, move || {
+                morpheus_call::choose_camera(Some(id.clone()));
+                if let Err(err) = crate::device_prefs::set_camera(&data_dir, Some(&id)) {
+                    report("saving the camera", &err);
+                }
+                // On now: turned off and on again with the new one.
+                let on = consume_context::<ActiveCall>()
+                    .peek()
+                    .0
+                    .as_ref()
+                    .is_some_and(|call| call.camera);
+                if on {
+                    let session = session.clone();
+                    set_camera(session.clone(), false);
+                    spawn(async move {
+                        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+                        set_camera(session, true);
+                    });
+                }
+            })
+            .checked(checked)
+        })
+        .collect();
+    if items.is_empty() {
+        items.push(MenuItem::new("No camera found", || {}));
+    }
+    items.push(open_voice_settings_item());
+    open_menu_at(x, y, items, None);
+}
+
+fn open_voice_settings_item() -> super::context_menu::MenuItem {
+    super::context_menu::MenuItem::new("Voice & Video settings", || {
+        consume_context::<super::settings::SettingsOpen>().set(true);
+        consume_context::<super::settings::OpenSettingsPage>()
+            .set(Some(super::settings::SettingsPage::VoiceVideo));
+    })
+    .icon(crate::icons::SETTINGS)
 }

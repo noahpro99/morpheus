@@ -379,7 +379,7 @@ async fn choose_the_microphone_and_speaker_for_calls() {
     open_voice_settings(&mut alice).await;
     let shown = alice
         .eval(
-            "return [...document.querySelectorAll('.voice-devices .device-current')].map(s => s.dataset.id).join(',');",
+            "return [...document.querySelectorAll('.voice-devices .device-choice:not([data-kind=camera]) .device-current')].map(s => s.dataset.id).join(',');",
         )
         .await
         .expect("read pickers");
@@ -1988,4 +1988,144 @@ async fn drag_stage(app: &mut App, dy: i32) {
     ))
     .await
     .expect("drag the stage");
+}
+
+/// Settings → Voice & Video: each device list has its icon, and the camera
+/// is chosen there too (kept on the device).
+#[tokio::test]
+async fn voice_settings_have_icons_and_a_camera_choice() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    login_and_open(&mut alice, "alice", "general").await;
+    open_voice_settings(&mut alice).await;
+    alice
+        .wait_for(
+            ".voice-devices .device-choice[data-kind=camera] .device-current",
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("a camera choice");
+    let bare = alice
+        .eval("return [...document.querySelectorAll('.voice-devices .device-choice')].filter(c => !c.querySelector('.device-label svg.icon')).map(c => c.dataset.kind);")
+        .await
+        .expect("icons");
+    assert_eq!(bare, serde_json::json!([]), "device lists without an icon");
+    choose(&mut alice, "camera", "test-camera-2").await;
+    alice
+        .wait_for(
+            ".device-choice[data-kind=camera] .device-current[data-id=\"test-camera-2\"]",
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("chosen");
+    let saved = alice.data_dir().join("audio_devices.json");
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    while !std::fs::read_to_string(&saved)
+        .unwrap_or_default()
+        .contains("test-camera-2")
+    {
+        assert!(std::time::Instant::now() < deadline, "camera not kept");
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+}
+
+/// The profile card's mic and headphones each have an arrow (and a
+/// right-click) for a quick list of microphones or speakers; picking one
+/// switches to it. Right-clicking the camera button in a call lists cameras.
+#[tokio::test]
+async fn quick_device_menus_on_the_mic_headphones_and_camera() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    login_and_open(&mut alice, "alice", "general").await;
+    let menu_has = |items: &[&str]| {
+        format!(
+            "const labels = [...document.querySelectorAll('.context-menu .context-item')].map(i => i.textContent.trim()); \
+             return {}.every(w => labels.some(l => l.includes(w)));",
+            serde_json::to_string(items).expect("json")
+        )
+    };
+
+    alice
+        .click(".user-pill .mute-button + .device-menu-button")
+        .await
+        .expect("the arrow beside the mic");
+    alice
+        .wait_for_js(
+            &menu_has(&["Test microphone 1", "Test microphone 2"]),
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("microphones listed");
+    alice
+        .click_text(".context-menu .context-item", "Test microphone 2")
+        .await
+        .expect("pick");
+    alice
+        .wait_for_js(
+            "return !document.querySelector('.context-menu');",
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("menu closes");
+    // Right-click works as the arrow does, and shows the pick.
+    alice
+        .right_click(".user-pill .mute-button")
+        .await
+        .expect("right-click the mic");
+    alice
+        .wait_for_js(
+            "return [...document.querySelectorAll('.context-menu .context-item.checked')].some(i => i.textContent.includes('Test microphone 2'));",
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("the chosen microphone ticked");
+    alice.press("body", "Escape").await.expect("close");
+
+    alice
+        .right_click(".user-pill .deafen-button")
+        .await
+        .expect("right-click the headphones");
+    alice
+        .wait_for_js(
+            &menu_has(&["Test speaker 1", "Test speaker 2"]),
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("speakers listed");
+    alice.press("body", "Escape").await.expect("close");
+    assert_eq!(
+        alice
+            .count(".user-pill .deafen-button + .device-menu-button")
+            .await
+            .expect("count"),
+        1,
+        "an arrow beside the headphones"
+    );
+
+    // In a call: the camera button's right-click lists cameras.
+    open_without_joining(&mut alice, "hangout").await;
+    alice
+        .click(".chat-header .call-button")
+        .await
+        .expect("join");
+    alice
+        .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("in the call");
+    alice
+        .right_click(".voice-panel .camera-button")
+        .await
+        .expect("right-click the camera");
+    alice
+        .wait_for_js(&menu_has(&["Test camera 1", "Test camera 2"]), DEFAULT_WAIT)
+        .await
+        .expect("cameras listed");
+    alice.press("body", "Escape").await.expect("close");
+    alice.click(".voice-panel .hang-up").await.expect("leave");
 }

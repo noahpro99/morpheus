@@ -924,6 +924,17 @@ fn AppearancePage() -> Element {
 #[component]
 fn VoicePage() -> Element {
     let data_dir = use_context::<crate::AppConfig>().data_dir;
+    let camera_dir = data_dir.clone();
+    let mut camera = use_signal(morpheus_call::chosen_camera);
+    // The cameras, as device lists show them.
+    let cameras: Vec<morpheus_call::AudioDevice> =
+        morpheus_call::cameras(morpheus_call::AudioMode::from_env())
+            .into_iter()
+            .map(|c| morpheus_call::AudioDevice {
+                id: c.id,
+                name: c.name,
+            })
+            .collect();
     let devices =
         use_resource(|| morpheus_call::audio_devices(morpheus_call::AudioMode::from_env()));
     let mut chosen = use_signal(morpheus_call::chosen_audio_devices);
@@ -951,6 +962,7 @@ fn VoicePage() -> Element {
                 Some(found) => rsx! {
                     DevicePicker {
                         kind: "microphone",
+                        icon: crate::icons::MIC,
                         label: "Microphone",
                         devices: found.microphones,
                         current: chosen().microphone,
@@ -962,6 +974,7 @@ fn VoicePage() -> Element {
                     }
                     DevicePicker {
                         kind: "speaker",
+                        icon: crate::icons::VOLUME_2,
                         label: "Speaker",
                         devices: found.speakers,
                         current: chosen().speaker,
@@ -970,6 +983,22 @@ fn VoicePage() -> Element {
                             choice.speaker = id;
                             choose.call(choice);
                         },
+                    }
+                    if !cameras.is_empty() {
+                        DevicePicker {
+                            kind: "camera",
+                            icon: crate::icons::VIDEO,
+                            label: "Camera",
+                            devices: cameras.clone(),
+                            current: camera(),
+                            on_pick: move |id: Option<String>| {
+                                morpheus_call::choose_camera(id.clone());
+                                if let Err(err) = crate::device_prefs::set_camera(&camera_dir, id.as_deref()) {
+                                    report("saving the camera", &err);
+                                }
+                                camera.set(id);
+                            },
+                        }
                     }
                     p { class: "muted", "Used for calls on this device; a call going now switches over." }
                 },
@@ -984,6 +1013,7 @@ fn VoicePage() -> Element {
 fn DevicePicker(
     kind: &'static str,
     label: &'static str,
+    icon: &'static str,
     devices: Vec<morpheus_call::AudioDevice>,
     current: Option<String>,
     on_pick: EventHandler<Option<String>>,
@@ -999,7 +1029,7 @@ fn DevicePicker(
             .collect();
     rsx! {
         div { class: "device-choice", "data-kind": "{kind}",
-            span { class: "device-label", "{label}" }
+            span { class: "device-label", Icon { glyph: icon, size: 16 } "{label}" }
             button {
                 class: "device-current",
                 class: if open() { "open" },

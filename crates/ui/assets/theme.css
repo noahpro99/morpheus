@@ -2537,3 +2537,20 @@ body.rail-dragging, body.rail-dragging * { cursor: grabbing !important; }
 
 /* The message whose menu is open stays highlighted. */
 .message[data-menu-open] { background: var(--bg-hover); }
+
+/* Device lists in Voice & Video: an icon beside each name. */
+.device-label { display: inline-flex; align-items: center; gap: 8px; }
+/* The profile card's arrows beside the mic and headphones: the quick lists. */
+.user-pill .device-menu-button {
+  width: 16px;
+  height: 32px;
+  margin-left: -6px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+}
+.user-pill .device-menu-button:hover { color: var(--text); background: var(--bg-hover); }
+/* Phones pick their own microphone and speaker. */
+.shell.narrow .user-pill .device-menu-button { display: none; }

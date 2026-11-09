@@ -402,7 +402,7 @@ async fn phone_tap_targets_are_at_least_44_points() {
     let cut = app
         .eval(
             "const pill = document.querySelector('.user-pill').getBoundingClientRect(); \
-             return [...document.querySelectorAll('.user-pill .user-row > *')].filter(el => { \
+             return [...document.querySelectorAll('.user-pill .user-row > *')].filter(el => getComputedStyle(el).display !== 'none').filter(el => { \
                const r = el.getBoundingClientRect(); return r.height === 0 || r.top < pill.top - 1 || r.bottom > pill.bottom + 1; \
              }).map(el => el.className || el.tagName);",
         )

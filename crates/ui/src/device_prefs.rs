@@ -46,6 +46,7 @@ pub fn set_audio_devices(
     let json = serde_json::json!({
         "microphone": choice.microphone,
         "speaker": choice.speaker,
+        "camera": camera(data_dir),
     });
     std::fs::write(data_dir.join(AUDIO_DEVICES), json.to_string())
 }
@@ -147,4 +148,26 @@ pub fn set_last_place(data_dir: &Path, user: &str, place: &LastPlace) -> std::io
         data_dir.join(LAST_PLACE),
         serde_json::Value::Object(places).to_string(),
     )
+}
+
+/// The camera chosen for calls (kept beside the audio devices; absent: the
+/// first that works).
+pub fn camera(data_dir: &Path) -> Option<String> {
+    let saved: serde_json::Value = std::fs::read(data_dir.join(AUDIO_DEVICES))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default();
+    saved
+        .get("camera")
+        .and_then(|v| v.as_str())
+        .map(str::to_owned)
+}
+
+pub fn set_camera(data_dir: &Path, camera: Option<&str>) -> std::io::Result<()> {
+    let mut saved: serde_json::Value = std::fs::read(data_dir.join(AUDIO_DEVICES))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_else(|| serde_json::json!({}));
+    saved["camera"] = serde_json::json!(camera);
+    std::fs::write(data_dir.join(AUDIO_DEVICES), saved.to_string())
 }
