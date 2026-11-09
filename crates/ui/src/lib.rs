@@ -5,7 +5,7 @@
 //! lives here so both apps stay pixel-consistent.
 
 mod app;
-mod attach;
+pub mod attach;
 pub mod autostart;
 mod components;
 pub mod device_prefs;

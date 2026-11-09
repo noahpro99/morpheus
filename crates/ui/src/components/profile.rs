@@ -225,7 +225,7 @@ pub fn EditProfileModal() -> Element {
             }
             let session = session.clone();
             spawn(async move {
-                let Some(path) = crate::attach::pick_attachment().await else {
+                let Some(path) = crate::attach::pick_image().await else {
                     return;
                 };
                 busy.set(true);

@@ -40,6 +40,7 @@ fn main() {
         android::init_webrtc();
         config.microphone = Some(std::sync::Arc::new(android::microphone));
         config.speakerphone = Some(std::sync::Arc::new(android::speakerphone));
+        morpheus_ui::attach::set_file_picker(std::sync::Arc::new(android::pick_file));
         android::register_camera();
         // Test builds send a tone instead (no environment to say so here),
         // unless a test marked the app for the real microphone.
@@ -305,6 +306,59 @@ mod android {
             }
         }
     }
+
+    /// The system's file picker (`PickFileActivity`), for any file or only
+    /// pictures: blocks until something is picked (copied into the app's
+    /// files, its path returned) or the picker is closed.
+    #[allow(unsafe_code)]
+    pub fn pick_file(images: bool) -> Option<std::path::PathBuf> {
+        let ctx = ndk_context::android_context();
+        // SAFETY: as in `files_dir`.
+        let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }.ok()?;
+        let mut env = vm.attach_current_thread().ok()?;
+        let context = unsafe { JObject::from_raw(ctx.context().cast()) };
+        let started = (|| -> jni::errors::Result<()> {
+            let loader = env
+                .call_method(&context, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])?
+                .l()?;
+            let name = env.new_string("dev.morpheus.mobile.PickFileActivity")?;
+            let class = env
+                .call_method(
+                    &loader,
+                    "loadClass",
+                    "(Ljava/lang/String;)Ljava/lang/Class;",
+                    &[JValue::Object(&name)],
+                )?
+                .l()?;
+            env.call_static_method(
+                jni::objects::JClass::from(class),
+                "start",
+                "(Landroid/content/Context;Z)V",
+                &[JValue::Object(&context), JValue::Bool(u8::from(images))],
+            )?;
+            Ok(())
+        })();
+        if let Err(err) = started {
+            let _ = env.exception_clear();
+            tracing::warn!(%err, "file picker");
+            return None;
+        }
+        // The activity leaves its answer in `picked` (empty: cancelled).
+        let answer = super::data_dir().join("picked");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(PICK_WAIT_SECS);
+        while std::time::Instant::now() < deadline {
+            if let Ok(path) = std::fs::read_to_string(&answer) {
+                let _ = std::fs::remove_file(&answer);
+                let path = path.trim();
+                return (!path.is_empty()).then(|| std::path::PathBuf::from(path));
+            }
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+        None
+    }
+
+    /// How long a picker may stay open.
+    const PICK_WAIT_SECS: u64 = 600;
 
     /// Call audio out of the loudspeaker (`true`) or the earpiece, through
     /// `AudioManager` (WebRTC leaves the route to the system: the earpiece).

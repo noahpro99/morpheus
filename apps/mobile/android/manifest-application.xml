@@ -7,5 +7,6 @@
             </intent-filter>
         </service>
         <activity android:name="dev.morpheus.mobile.OpenRoomActivity" android:exported="false" android:theme="@android:style/Theme.NoDisplay" android:excludeFromRecents="true" android:taskAffinity="" />
+        <activity android:name="dev.morpheus.mobile.PickFileActivity" android:exported="false" android:theme="@android:style/Theme.Translucent.NoTitleBar" android:excludeFromRecents="true" />
         <provider android:name="dev.morpheus.mobile.PushStartup" android:authorities="dev.morpheus.mobile.pushstartup" android:exported="false" />
         <!-- morpheus:end -->
