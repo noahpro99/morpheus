@@ -142,7 +142,21 @@ pub fn UserBar() -> Element {
                 .icon(crate::icons::USER_PLUS),
             );
             items.push(MenuItem::submenu("Switch account", switch));
-            items.push(MenuItem::new("Sign out", logout.clone()).danger());
+            items.push(
+                MenuItem::new("Sign out", {
+                    let logout = logout.clone();
+                    move || {
+                        let logout = logout.clone();
+                        super::confirm::ask(
+                            "Sign out",
+                            "Are you sure you want to sign out? You will need your password (or single sign-on) to sign back in here.",
+                            "Sign out",
+                            logout,
+                        );
+                    }
+                })
+                .danger(),
+            );
             open_menu(&e, items, None);
         }
     };
