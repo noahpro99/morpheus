@@ -397,3 +397,91 @@ async fn card_buttons_are_small_and_mutual_rooms_open() {
     .await
     .expect("the card closed");
 }
+
+/// The card shows a few mutual rooms and a way to the full profile, which
+/// lists them all; clicking the card's picture opens it too.
+#[tokio::test]
+async fn the_card_shows_a_few_rooms_and_its_picture_opens_the_full_profile() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch(&hs).await.expect("launch");
+    login_and_open(&mut app, "alice", "general").await;
+    open_card_for(&mut app, "bob").await;
+    app.wait_for(".profile-card .mutual-room", DEFAULT_WAIT)
+        .await
+        .expect("mutual rooms");
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    let shown = app
+        .count(".profile-card .mutual-room")
+        .await
+        .expect("count");
+    assert!(shown <= 4, "{shown} mutual rooms on the card");
+    // Bob shares many rooms with alice (the seed and the tests' channels).
+    app.click_text(".profile-card .mutual-more", "View full profile")
+        .await
+        .expect("view full profile");
+    app.wait_for(".profile-modal", DEFAULT_WAIT)
+        .await
+        .expect("the full profile");
+    app.wait_for_js(
+        &format!(
+            "return document.querySelectorAll('.profile-modal .mutual-room').length > {shown};"
+        ),
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("every mutual room on the full profile");
+    app.press("body", "Escape").await.expect("close");
+    app.wait_for_js(
+        "return !document.querySelector('.profile-modal');",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("closed");
+
+    open_card_for(&mut app, "bob").await;
+    app.click(".profile-card .card-avatar")
+        .await
+        .expect("the card's picture");
+    app.wait_for(".profile-modal", DEFAULT_WAIT)
+        .await
+        .expect("the picture opens the full profile");
+}
+
+/// A card never runs off the app, even as its rooms and roles arrive after
+/// it opened (opened low down, from the newest message's picture).
+#[tokio::test]
+async fn the_card_stays_on_screen_as_it_fills_in() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch_sized(&hs, 1280, 720).await.expect("launch");
+    login_and_open(&mut app, "bob", "general").await;
+    app.wait_for(".message .avatar-button", DEFAULT_WAIT)
+        .await
+        .expect("messages");
+    // The lowest picture in the timeline, someone else's.
+    app.eval(
+        "const b = [...document.querySelectorAll('.message:not(.own) .avatar-button')].sort((x, y) => y.getBoundingClientRect().top - x.getBoundingClientRect().top)[0]; \
+         const r = b.getBoundingClientRect(); \
+         b.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: r.left + 10, clientY: r.top + 10 })); return true;",
+    )
+    .await
+    .expect("open a card low down");
+    app.wait_for(".profile-card .mutual-room", DEFAULT_WAIT)
+        .await
+        .expect("filled in");
+    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+    let inside = app
+        .eval(
+            "const c = document.querySelector('.profile-card').getBoundingClientRect(); \
+             const s = document.querySelector('.shell').getBoundingClientRect(); \
+             return [c.top >= s.top - 1 && c.bottom <= Math.min(s.bottom, innerHeight) + 1, Math.round(c.top), Math.round(c.bottom), Math.round(s.bottom)];",
+        )
+        .await
+        .expect("bounds");
+    assert_eq!(inside[0], true, "the card ran off the app: {inside}");
+}
