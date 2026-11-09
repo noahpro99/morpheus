@@ -40,8 +40,8 @@ use tracing::{debug, info, warn};
 
 mod devices;
 pub use devices::{
-    AudioDevice, AudioDevices, DeviceChoice, audio_devices, choose_audio_devices,
-    chosen_audio_devices,
+    AudioDevice, AudioDevices, CameraDevice, DeviceChoice, audio_devices, cameras,
+    choose_audio_devices, choose_camera, chosen_audio_devices, chosen_camera,
 };
 #[cfg(target_os = "linux")]
 mod camera;

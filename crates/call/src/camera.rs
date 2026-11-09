@@ -35,9 +35,13 @@ pub(crate) struct Camera {
 }
 
 impl Camera {
-    /// The first camera that can give YUYV.
+    /// The camera chosen ([`crate::choose_camera`]), else the first that can
+    /// give YUYV.
     pub(crate) fn open() -> io::Result<Self> {
-        for device in linuxvideo::list()? {
+        let chosen = crate::chosen_camera()
+            .and_then(|path| linuxvideo::Device::open(path).ok())
+            .map(Ok);
+        for device in chosen.into_iter().chain(linuxvideo::list()?) {
             let Ok(device) = device else { continue };
             let yuyv = device
                 .formats(BufType::VIDEO_CAPTURE)
@@ -206,4 +210,29 @@ mod device_tests {
             resolution.width, resolution.height
         );
     }
+}
+
+/// The cameras that can give YUYV (webcams; not the infrared ones beside
+/// them), by device path and name.
+pub(crate) fn list() -> Vec<crate::CameraDevice> {
+    let Ok(devices) = linuxvideo::list() else {
+        return Vec::new();
+    };
+    devices
+        .filter_map(Result::ok)
+        .filter(|device| {
+            device
+                .formats(BufType::VIDEO_CAPTURE)
+                .filter_map(Result::ok)
+                .any(|format| format.pixel_format() == PixelFormat::YUYV)
+        })
+        .filter_map(|device| {
+            let id = device.path().ok()?.to_string_lossy().into_owned();
+            let name = device
+                .capabilities()
+                .map(|caps| caps.card().to_owned())
+                .unwrap_or_else(|_| id.clone());
+            Some(crate::CameraDevice { id, name })
+        })
+        .collect()
 }

@@ -11,7 +11,7 @@ use morpheus_core::{Core, Session};
 use super::context_menu::{MenuItem, open_menu};
 use super::profile::{Editor, ProfileEditor, ProfileRefresh, open_profile};
 use super::settings::SettingsOpen;
-use crate::icons::{HEADPHONE_OFF, HEADPHONES, Icon, MIC, MIC_OFF, SETTINGS};
+use crate::icons::{CHEVRON_DOWN, HEADPHONE_OFF, HEADPHONES, Icon, MIC, MIC_OFF, SETTINGS};
 use crate::media::Avatar;
 
 #[component]
@@ -166,18 +166,40 @@ pub fn UserBar() -> Element {
                 class: if voice().muted || voice().deafened { "active" },
                 title: if voice().muted { "Unmute (Ctrl+Shift+M)" } else { "Mute (Ctrl+Shift+M)" },
                 onclick: move |_| super::call::toggle_mute(),
+                oncontextmenu: move |e: Event<MouseData>| device_menu(e, false),
                 Icon { glyph: if voice().muted || voice().deafened { MIC_OFF } else { MIC }, size: 18 }
+            }
+            button {
+                class: "ghost device-menu-button",
+                title: "Microphone",
+                onclick: move |e: Event<MouseData>| device_menu(e, false),
+                Icon { glyph: CHEVRON_DOWN, size: 12 }
             }
             button {
                 class: "ghost deafen-button",
                 class: if voice().deafened { "active" },
                 title: if voice().deafened { "Undeafen (Ctrl+Shift+D)" } else { "Deafen (Ctrl+Shift+D)" },
                 onclick: move |_| super::call::toggle_deafen(),
+                oncontextmenu: move |e: Event<MouseData>| device_menu(e, true),
                 Icon { glyph: if voice().deafened { HEADPHONE_OFF } else { HEADPHONES }, size: 18 }
+            }
+            button {
+                class: "ghost device-menu-button",
+                title: "Speaker",
+                onclick: move |e: Event<MouseData>| device_menu(e, true),
+                Icon { glyph: CHEVRON_DOWN, size: 12 }
             }
             button { class: "ghost settings-button", title: "Settings (Ctrl+,)", onclick: move |_| settings_open.set(true), Icon { glyph: SETTINGS, size: 18 } }
             }
             }
         }
     }
+}
+
+/// The quick list of microphones or speakers, under the pointer.
+fn device_menu(e: Event<MouseData>, speakers: bool) {
+    e.prevent_default();
+    e.stop_propagation();
+    let at = e.client_coordinates();
+    super::call::open_audio_menu(speakers, at.x, at.y);
 }

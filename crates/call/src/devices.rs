@@ -125,3 +125,45 @@ pub(crate) fn apply(platform: &PlatformAudio, live: bool) -> Result<()> {
     }
     Ok(())
 }
+
+/// A camera this device can send.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CameraDevice {
+    pub id: String,
+    pub name: String,
+}
+
+/// The camera chosen (`None`: the first that works).
+static CAMERA: Mutex<Option<String>> = Mutex::new(None);
+
+/// The cameras to choose from: test runs list stand-ins, Linux its
+/// Video4Linux cameras; elsewhere the system's own.
+pub fn cameras(mode: AudioMode) -> Vec<CameraDevice> {
+    if mode == AudioMode::Tone {
+        return (1..=2)
+            .map(|n| CameraDevice {
+                id: format!("test-camera-{n}"),
+                name: format!("Test camera {n}"),
+            })
+            .collect();
+    }
+    #[cfg(target_os = "linux")]
+    {
+        crate::camera::list()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        Vec::new()
+    }
+}
+
+/// Use this camera from the next time one is turned on.
+pub fn choose_camera(id: Option<String>) {
+    if let Ok(mut chosen) = CAMERA.lock() {
+        *chosen = id;
+    }
+}
+
+pub fn chosen_camera() -> Option<String> {
+    CAMERA.lock().ok().and_then(|chosen| chosen.clone())
+}
