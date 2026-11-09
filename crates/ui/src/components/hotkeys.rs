@@ -45,7 +45,7 @@ window.addEventListener('keydown', e => {
   else if (alt && !mod && shift && k === 'ArrowDown') name = 'next_unread';
   else if (alt && mod && k === 'ArrowUp') name = 'prev_scope';
   else if (alt && mod && k === 'ArrowDown') name = 'next_scope';
-  else if (alt && !mod && shift && k === 'ArrowRight') name = 'dms_toggle';
+  else if (alt && mod && !shift && k === 'ArrowRight') name = 'dms_toggle';
   else if (alt && !mod && k === 'ArrowLeft') name = 'back';
   else if (alt && !mod && k === 'ArrowRight') name = 'forward';
   else if (mod && !alt && !shift && key === 'i') name = 'inbox';
@@ -81,8 +81,8 @@ pub const GROUPS: &[(&str, &[(&str, &str)])] = &[
             ("Alt+Shift+↑ / ↓", "Previous / next unread room"),
             ("Ctrl+Alt+↑ / ↓", "Previous / next server (rail)"),
             (
-                "Alt+Shift+→",
-                "Direct messages, and back to the last server",
+                "Ctrl+Alt+→",
+                "Your last DM, and back to your last server channel",
             ),
             ("Alt+← / Alt+→", "Back / forward through visited rooms"),
         ],
@@ -370,7 +370,8 @@ document.addEventListener('click', e => {
       g = { kind: 'call', el: call, base: 0, ...start };
       return;
     }
-    // A swipe across the profile card at the bottom (left: to the DMs).
+    // A swipe right across the profile card at the bottom: the last DM and
+    // the last server channel in turn (Ctrl+Alt+Right).
     if (e.target.closest && e.target.closest('.user-pill')) {
       g = { kind: 'card', el: null, ...start };
       return;
@@ -416,7 +417,7 @@ document.addEventListener('click', e => {
       g.el.style.transition = 'none';
       g.el.style.transform = `translateX(${g.d}px)`;
     } else if (g.kind === 'card' && g.axis === 'x') {
-      g.d = Math.max(0, -dx);
+      g.d = Math.max(0, dx);
     } else if (g.kind === 'forward' && g.axis === 'x') {
       g.d = Math.max(0, -dx);
       g.el.style.transition = 'none';
@@ -427,7 +428,7 @@ document.addEventListener('click', e => {
     if (g && g.kind === 'card') {
       const far = g.d > 50;
       g = null;
-      if (far) dioxus.send('go_dms');
+      if (far) dioxus.send('dms_toggle');
       return;
     }
     if (!g || g.d <= 0) { g = null; return; }

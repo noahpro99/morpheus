@@ -2662,3 +2662,6 @@ body.rail-dragging, body.rail-dragging * { cursor: grabbing !important; }
 .rail { min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; }
 .rail::-webkit-scrollbar { display: none; }
 .sidebar { min-height: 0; }
+/* Phones have no arrow beside mute and deafen: the buttons keep all four
+   rounded corners. */
+.shell.narrow .user-pill .device-pair > button { border-radius: var(--radius-sm); }

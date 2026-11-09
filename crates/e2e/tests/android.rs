@@ -2545,9 +2545,12 @@ async fn phone_changes_the_avatar_through_the_system_picker() {
         .expect("the picked picture is the avatar");
 }
 
-/// Swiping left across the profile card at the bottom goes to the DMs.
+/// Swiping right across the profile card at the bottom goes to the DM you
+/// were last in and back to the server channel (as Ctrl+Alt+Right does on a
+/// desktop). Muted, the card's mic button keeps its rounded corners (no
+/// arrow beside it on a phone).
 #[tokio::test]
-async fn phone_swiping_the_profile_card_left_goes_to_the_dms() {
+async fn phone_swiping_the_profile_card_toggles_the_last_dm_and_channel() {
     if !enabled() {
         eprintln!("MORPHEUS_E2E_ANDROID not set; skipping the Android test");
         return;
@@ -2564,29 +2567,62 @@ async fn phone_swiping_the_profile_card_left_goes_to_the_dms() {
         .expect("password");
     app.submit("form.login").await.expect("submit");
     app.wait_for(".room", DEFAULT_WAIT).await.expect("rooms");
-    app.tap(".rail-item[title=\"Rooms\"]").await.expect("rooms");
-    app.wait_for(".rail-item.selected[title=\"Rooms\"]", DEFAULT_WAIT)
+    app.open_room("random").await.expect("random");
+    app.click(".chat-header .pane-back")
         .await
-        .expect("on Rooms");
-    let card = app
-        // Along its upper part: the bottom edge of the screen is Android's own
-        // (a sideways swipe there switches apps).
-        .eval("const r = document.querySelector('.user-pill .user-row').getBoundingClientRect(); return [r.left, r.right, r.top + 3];")
-        .await
-        .expect("card");
-    let (left, right, y) = (
-        card[0].as_f64().expect("left"),
-        card[1].as_f64().expect("right"),
-        card[2].as_f64().expect("y"),
-    );
-    let inset = (right - left) * 0.25;
-    app.swipe((right - inset, y), (left + inset, y), 200)
-        .await
-        .expect("swipe left across the card");
+        .expect("back to the list");
+    pane(&mut app, "rooms").await;
+    let swipe_right = async |app: &mut App| {
+        // Along its upper part: the bottom edge of the screen is Android's
+        // own (a sideways swipe there switches apps).
+        let card = app
+            .eval("const r = document.querySelector('.user-pill .user-row').getBoundingClientRect(); return [r.left, r.right, r.top + 3];")
+            .await
+            .expect("card");
+        let (left, right, y) = (
+            card[0].as_f64().expect("left"),
+            card[1].as_f64().expect("right"),
+            card[2].as_f64().expect("y"),
+        );
+        let inset = (right - left) * 0.25;
+        app.swipe((left + inset, y), (right - inset, y), 200)
+            .await
+            .expect("swipe right across the card");
+    };
+    swipe_right(&mut app).await;
     app.wait_for(
         ".rail-item.selected[title=\"Direct messages\"]",
         DEFAULT_WAIT,
     )
     .await
     .expect("in the DMs");
+    swipe_right(&mut app).await;
+    app.wait_for(".rail-item.selected[title=\"Rooms\"]", DEFAULT_WAIT)
+        .await
+        .expect("back in Rooms");
+    app.wait_for(".room.selected .room-name", DEFAULT_WAIT)
+        .await
+        .expect("a room picked");
+    let picked = app
+        .eval("return document.querySelector('.room.selected .room-name').textContent.trim();")
+        .await
+        .expect("picked");
+    assert_eq!(picked.as_str(), Some("random"), "the channel last open");
+
+    app.tap(".user-pill .mute-button").await.expect("mute");
+    app.wait_for(".user-pill .device-pair.active", DEFAULT_WAIT)
+        .await
+        .expect("muted");
+    let radii = app
+        .eval("const s = getComputedStyle(document.querySelector('.user-pill .mute-button')); return [s.borderTopLeftRadius, s.borderTopRightRadius, s.borderBottomRightRadius, s.borderBottomLeftRadius].map(parseFloat);")
+        .await
+        .expect("radii");
+    let radii: Vec<f64> = serde_json::from_value(radii).expect("numbers");
+    assert!(
+        radii
+            .iter()
+            .all(|r| *r > 0.0 && (*r - radii[0]).abs() < 0.5),
+        "the muted button's corners: {radii:?}"
+    );
+    app.tap(".user-pill .mute-button").await.expect("unmute");
 }

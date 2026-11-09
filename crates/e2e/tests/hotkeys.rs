@@ -365,50 +365,52 @@ async fn ctrl_alt_down_goes_server_by_server_in_rail_order() {
     set_rail(&hs, &[]);
 }
 
-/// Shift+Alt+Right goes to the DMs, and from the DMs back to the server you
-/// were last in.
+/// Ctrl+Alt+Right (as in Discord) toggles between the DM you were last in and
+/// the server channel you were last in: the very channels, not just the scope.
 #[tokio::test]
-async fn shift_alt_right_toggles_dms_and_the_last_server() {
+async fn ctrl_alt_right_toggles_the_last_dm_and_server_channel() {
     let Some(hs) = homeserver() else {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
     let mut app = App::launch_desktop(&hs).await.expect("launch app");
-    login_and_open(&mut app, "general").await;
-    app.click(".rail-item[title=\"Projects\"]")
+    login_and_open(&mut app, "random").await;
+    app.wait_for_text(".chat-header h2", "random", DEFAULT_WAIT)
         .await
-        .expect("Projects");
-    app.wait_for(".rail-item.selected[title=\"Projects\"]", DEFAULT_WAIT)
+        .expect("in #random");
+    // A DM that is not the first in the list.
+    app.click(".rail-item[title=\"Direct messages\"]")
         .await
-        .expect("in Projects");
-    app.key_combo("body", "ArrowRight", false, true, true)
+        .expect("dms");
+    app.wait_for(".room:not(.friends-row) + .room", DEFAULT_WAIT)
         .await
-        .expect("shift+alt+right");
-    app.wait_for(".rail-dms.selected", DEFAULT_WAIT)
+        .expect("two DMs");
+    let dm = app
+        .eval("const r = document.querySelectorAll('.room:not(.friends-row)')[1]; r.click(); return r.querySelector('.room-name').textContent.trim();")
         .await
-        .expect("to the DMs");
-    app.key_combo("body", "ArrowRight", false, true, true)
+        .expect("open the second DM");
+    let dm = dm.as_str().expect("name").to_owned();
+    app.wait_for_text(".chat-header h2", &dm, DEFAULT_WAIT)
         .await
-        .expect("shift+alt+right");
-    app.wait_for(".rail-item.selected[title=\"Projects\"]", DEFAULT_WAIT)
+        .expect("in that DM");
+    for (scope, header) in [
+        ("Rooms", "random"),
+        ("Direct messages", dm.as_str()),
+        ("Rooms", "random"),
+    ] {
+        app.key_combo("body", "ArrowRight", true, true, false)
+            .await
+            .expect("ctrl+alt+right");
+        app.wait_for(
+            &format!(".rail-item.selected[title=\"{scope}\"]"),
+            DEFAULT_WAIT,
+        )
         .await
-        .expect("back to the last server");
-    // Another server, then the DMs and back: that one.
-    app.click(".rail-item[title=\"Engineering\"]")
-        .await
-        .expect("Engineering");
-    app.key_combo("body", "ArrowRight", false, true, true)
-        .await
-        .expect("shift+alt+right");
-    app.wait_for(".rail-dms.selected", DEFAULT_WAIT)
-        .await
-        .expect("to the DMs");
-    app.key_combo("body", "ArrowRight", false, true, true)
-        .await
-        .expect("shift+alt+right");
-    app.wait_for(".rail-item.selected[title=\"Engineering\"]", DEFAULT_WAIT)
-        .await
-        .expect("back to Engineering");
+        .unwrap_or_else(|e| panic!("to {scope}: {e}"));
+        app.wait_for_text(".chat-header h2", header, DEFAULT_WAIT)
+            .await
+            .unwrap_or_else(|e| panic!("back in {header}: {e}"));
+    }
 }
 
 /// Ctrl+Shift+P opens the command palette too (as in VS Code), and the

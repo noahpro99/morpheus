@@ -278,7 +278,7 @@ pub type MembersVersion = Signal<MembersStamp>;
 /// Its own type, not a bare `Option<OwnedRoomId>`: Dioxus context is keyed by
 /// type, and sharing a type with [`Selected`] made room clicks land on the
 /// scope signal.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub enum Scope {
     /// Direct messages (rooms with a DM target).
     Dms,
@@ -375,8 +375,11 @@ pub fn Shell(session: Session) -> Element {
     let mut selected: Selected = use_context_provider(|| Signal::new(None));
     let preview: Preview = use_context_provider(|| Signal::new(None));
     let mut selected_space: SelectedSpace = use_context_provider(|| Signal::new(Scope::default()));
-    // The last scope other than the DMs, for Shift+Alt+Right to go back to.
+    // The last scope other than the DMs, for Ctrl+Alt+Right to go back to.
     let mut last_server = use_signal(|| Scope::Rooms);
+    // The room last open in each scope (a server, Rooms, the DMs), for
+    // Ctrl+Alt+Right to land in.
+    let mut last_room_in = use_signal(std::collections::HashMap::<Scope, OwnedRoomId>::new);
     use_effect(move || {
         let scope = selected_space();
         if scope != Scope::Dms {
@@ -691,6 +694,18 @@ pub fn Shell(session: Session) -> Element {
         }
     });
 
+    // Note the room open in its scope, for Ctrl+Alt+Right to come back to.
+    use_effect(move || {
+        let Some(id) = selected() else { return };
+        let list = rooms.read();
+        if let Some(room) = list.iter().find(|r| r.id == id) {
+            let scope = scope_for(&list, room);
+            drop(list);
+            last_room_in.with_mut(|map| {
+                map.insert(scope, id);
+            });
+        }
+    });
     let current = use_memo(move || {
         let id = selected()?;
         rooms.read().iter().find(|room| room.id == id).cloned()
@@ -820,13 +835,6 @@ pub fn Shell(session: Session) -> Element {
                     chat_open.set(ChatInFront(true));
                 }
             }
-            // A phone's left swipe across the profile card: the DMs.
-            "go_dms" => {
-                if *selected_space.peek() != Scope::Dms {
-                    selected_space.set(Scope::Dms);
-                }
-                chat_open.set(ChatInFront(false));
-            }
             // Shift+Alt+Right: to the DMs, and from them back to the server.
             "dms_toggle" => {
                 if *selected_space.peek() == Scope::Dms {
@@ -837,6 +845,14 @@ pub fn Shell(session: Session) -> Element {
                 } else {
                     last_server.set(selected_space.peek().clone());
                     selected_space.set(Scope::Dms);
+                }
+                // Back in the very room last open there, as Discord does.
+                let scope = selected_space.peek().clone();
+                let room = last_room_in.peek().get(&scope).cloned();
+                if let Some(room) = room
+                    && in_scope().iter().any(|r| r.id == room)
+                {
+                    select(room);
                 }
             }
             "switcher" => switcher_open.toggle(),
