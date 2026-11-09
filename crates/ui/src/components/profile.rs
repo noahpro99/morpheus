@@ -68,9 +68,10 @@ pub fn ProfileModal(user_id: OwnedUserId) -> Element {
         let session = session.clone();
         use_resource(use_reactive!(|user_id| {
             let session = session.clone();
-            async move { session.mutual_rooms(user_id).await.unwrap_or_default() }
+            async move { session.mutual_spaces(user_id).await.unwrap_or_default() }
         }))
     };
+    let rooms = use_context::<super::shell::Rooms>();
     let mut close = move || target.set(ProfileTarget::default());
 
     // Show what we know right away; the fetch fills in the name and avatar.
@@ -112,21 +113,30 @@ pub fn ProfileModal(user_id: OwnedUserId) -> Element {
                         p { class: "error", "{message}" }
                     }
                     if !own {
-                        section { class: "card-section mutual profile-mutual",
-                            h4 { "Mutual rooms — {mutual().map(|m| m.len()).unwrap_or(0)}" }
-                            for (id, room_name) in mutual().unwrap_or_default() {
-                                button {
-                                    key: "{id}",
-                                    class: "mutual-room",
-                                    title: "Open #{room_name}",
-                                    onclick: {
-                                        let id = id.clone();
-                                        move |_| {
-                                            open_room_from_card(id.clone());
-                                            close();
+                        {
+                            let servers = shared_servers(&rooms.read(), &mutual().unwrap_or_default());
+                            rsx! {
+                                section { class: "card-section mutual profile-mutual",
+                                    h4 { "Mutual servers — {servers.len()}" }
+                                    if servers.is_empty() {
+                                        p { class: "muted", "None yet." }
+                                    }
+                                    for server in servers {
+                                        button {
+                                            key: "{server.id}",
+                                            class: "mutual-server",
+                                            title: "Open {server.name}",
+                                            onclick: {
+                                                let id = server.id.clone();
+                                                move |_| {
+                                                    open_server(id.clone());
+                                                    close();
+                                                }
+                                            },
+                                            Avatar { media: server.avatar.clone(), fallback: server.name.clone(), size: 28 }
+                                            span { "{server.name}" }
                                         }
-                                    },
-                                    "#{room_name}"
+                                    }
                                 }
                             }
                         }
@@ -388,11 +398,12 @@ pub fn ProfileCard(open: ProfileOpen) -> Element {
             async move { session.profile(user_id).await.ok() }
         }))
     };
-    let mutual = {
+    let rooms = use_context::<super::shell::Rooms>();
+    let mutual_spaces = {
         let session = session.clone();
         use_resource(use_reactive!(|user_id| {
             let session = session.clone();
-            async move { session.mutual_rooms(user_id).await.unwrap_or_default() }
+            async move { session.mutual_spaces(user_id).await.unwrap_or_default() }
         }))
     };
     let role = {
@@ -578,14 +589,6 @@ pub fn ProfileCard(open: ProfileOpen) -> Element {
     // clicked (never over it) and always inside the window.
     let (ax, ay) = open.at.unwrap_or((-1.0, -1.0));
     let style = "left: -9999px; top: 0;".to_string();
-    // The room you are both in right now comes first.
-    let mut mutual_list = mutual().unwrap_or_default();
-    if let Some(here) = selected.peek().clone()
-        && let Some(pos) = mutual_list.iter().position(|(id, _)| *id == here)
-    {
-        let current = mutual_list.remove(pos);
-        mutual_list.insert(0, current);
-    }
     let role_label = role().flatten().map(|r| match r {
         MemberRole::Admin => "Admin",
         MemberRole::Moderator => "Moderator",
@@ -648,34 +651,19 @@ pub fn ProfileCard(open: ProfileOpen) -> Element {
                         if let Some(role) = role_label { span { class: "tag", "{role}" } }
                     }
                     if !own {
-                        section { class: "card-section mutual",
-                            h4 { "Mutual rooms — {mutual_list.len()}" }
-                            if mutual_list.is_empty() {
-                                p { class: "muted", "None yet." }
-                            }
-                            for (id, room_name) in mutual_list.iter().take(CARD_MUTUAL_ROOMS) {
+                        // How many servers you share; the full profile lists them.
+                        {
+                            let servers = shared_servers(&rooms.read(), &mutual_spaces().unwrap_or_default());
+                            let count = servers.len();
+                            rsx! {
                                 button {
-                                    key: "{id}",
-                                    class: "mutual-room",
-                                    title: "Open #{room_name}",
-                                    onclick: {
-                                        let id = id.clone();
-                                        move |_| {
-                                            open_room_from_card(id.clone());
-                                            close();
-                                        }
-                                    },
-                                    "#{room_name}"
-                                }
-                            }
-                            if mutual_list.len() > CARD_MUTUAL_ROOMS {
-                                button {
-                                    class: "mutual-more",
+                                    class: "mutual-servers",
+                                    title: "View full profile",
                                     onclick: {
                                         let open = open.clone();
                                         move |_| show_full_profile(&open)
                                     },
-                                    "View full profile"
+                                    if count == 1 { "1 mutual server" } else { "{count} mutual servers" }
                                 }
                             }
                         }
@@ -801,27 +789,29 @@ pub fn remember_person(user_id: &OwnedUserId, name: &str, avatar: Option<morpheu
     }
 }
 
-/// Open a room picked on a card (a mutual room), in its server or the DMs.
-fn open_room_from_card(room_id: morpheus_core::OwnedRoomId) {
-    let rooms = consume_context::<super::shell::Rooms>();
-    let mut scope = consume_context::<SelectedSpace>();
-    let found = rooms.peek().iter().find(|r| r.id == room_id).cloned();
-    if let Some(room) = found {
-        let wanted = super::shell::scope_for(&rooms.peek(), &room);
-        if wanted != *scope.peek() {
-            scope.set(wanted);
-        }
-    }
-    go_to(room_id);
-}
-
-/// How many mutual rooms a card lists; the full profile has them all.
-const CARD_MUTUAL_ROOMS: usize = 4;
-
 /// Swap a card for the full profile of the same person.
 fn show_full_profile(open: &ProfileOpen) {
     consume_context::<OpenProfile>().set(ProfileTarget(Some(ProfileOpen {
         full: true,
         ..open.clone()
     })));
+}
+
+/// The servers (top-level spaces) among `spaces`, by name.
+fn shared_servers(
+    rooms: &morpheus_core::Vector<morpheus_core::RoomSummary>,
+    spaces: &[morpheus_core::OwnedRoomId],
+) -> Vec<morpheus_core::RoomSummary> {
+    let mut servers: Vec<_> = rooms
+        .iter()
+        .filter(|r| r.is_space && r.parent_spaces.is_empty() && spaces.contains(&r.id))
+        .cloned()
+        .collect();
+    servers.sort_by_key(|s| s.name.to_lowercase());
+    servers
+}
+
+/// Go to a server picked on a profile (a mutual server).
+fn open_server(space_id: morpheus_core::OwnedRoomId) {
+    consume_context::<SelectedSpace>().set(Scope::Space(space_id));
 }
