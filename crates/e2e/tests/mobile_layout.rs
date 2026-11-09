@@ -191,3 +191,36 @@ async fn wide_window_keeps_every_column() {
         "no back buttons on a desktop"
     );
 }
+
+/// However many servers, the profile card stays on screen at the bottom of
+/// a phone: the server rail scrolls rather than pushing it off.
+#[tokio::test]
+async fn the_profile_card_stays_on_screen_with_many_servers() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    // Short, so alice's servers fill the rail.
+    let mut app = App::launch_sized(&hs, 400, 400).await.expect("launch");
+    login(&mut app, "alice").await;
+    app.wait_for(".user-pill", DEFAULT_WAIT)
+        .await
+        .expect("card");
+    let at = app
+        .eval(
+            "const p = document.querySelector('.user-pill').getBoundingClientRect(); \
+             const s = document.querySelector('.shell').getBoundingClientRect(); \
+             return [Math.round(p.top), Math.round(p.bottom), Math.round(s.bottom)];",
+        )
+        .await
+        .expect("where");
+    let (top, bottom, end) = (
+        at[0].as_f64().unwrap_or(0.0),
+        at[1].as_f64().unwrap_or(0.0),
+        at[2].as_f64().unwrap_or(0.0),
+    );
+    assert!(
+        top < end && bottom <= end + 1.0,
+        "the card is off the bottom: {at}"
+    );
+}

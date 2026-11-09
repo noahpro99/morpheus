@@ -2544,3 +2544,49 @@ async fn phone_changes_the_avatar_through_the_system_picker() {
         .await
         .expect("the picked picture is the avatar");
 }
+
+/// Swiping left across the profile card at the bottom goes to the DMs.
+#[tokio::test]
+async fn phone_swiping_the_profile_card_left_goes_to_the_dms() {
+    if !enabled() {
+        eprintln!("MORPHEUS_E2E_ANDROID not set; skipping the Android test");
+        return;
+    }
+    let mut app = App::launch_android().await.expect("launch on Android");
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    app.type_into("form.login input[name=username]", "alice")
+        .await
+        .expect("username");
+    app.type_into("form.login input[name=password]", "alice-password")
+        .await
+        .expect("password");
+    app.submit("form.login").await.expect("submit");
+    app.wait_for(".room", DEFAULT_WAIT).await.expect("rooms");
+    app.tap(".rail-item[title=\"Rooms\"]").await.expect("rooms");
+    app.wait_for(".rail-item.selected[title=\"Rooms\"]", DEFAULT_WAIT)
+        .await
+        .expect("on Rooms");
+    let card = app
+        // Along its upper part: the bottom edge of the screen is Android's own
+        // (a sideways swipe there switches apps).
+        .eval("const r = document.querySelector('.user-pill .user-row').getBoundingClientRect(); return [r.left, r.right, r.top + 3];")
+        .await
+        .expect("card");
+    let (left, right, y) = (
+        card[0].as_f64().expect("left"),
+        card[1].as_f64().expect("right"),
+        card[2].as_f64().expect("y"),
+    );
+    let inset = (right - left) * 0.25;
+    app.swipe((right - inset, y), (left + inset, y), 200)
+        .await
+        .expect("swipe left across the card");
+    app.wait_for(
+        ".rail-item.selected[title=\"Direct messages\"]",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("in the DMs");
+}

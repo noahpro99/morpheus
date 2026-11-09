@@ -2655,3 +2655,10 @@ body.rail-dragging, body.rail-dragging * { cursor: grabbing !important; }
 
 /* You, under a voice channel you are joining: greyed until connected. */
 .call-participant.connecting { opacity: 0.45; }
+
+/* Many servers: the rail scrolls within its row (and the room list within
+   its own) instead of pushing the profile card off the bottom. */
+.shell-body { grid-template-rows: minmax(0, 1fr) auto; }
+.rail { min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; }
+.rail::-webkit-scrollbar { display: none; }
+.sidebar { min-height: 0; }
