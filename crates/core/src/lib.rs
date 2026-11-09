@@ -45,8 +45,8 @@ pub type CoreFuture<T> = futures_util::future::BoxFuture<'static, Result<T>>;
 pub use accounts::SavedAccount;
 pub use blur::placeholder as blur_placeholder;
 pub use calls::{
-    CallCredentials, CallKey, CallKeyUpdates, CallMember, IncomingCall, RING_FOR_MS, RingUpdates,
-    Ringing,
+    CallCredentials, CallKey, CallKeyUpdates, CallMedia, CallMember, IncomingCall, RING_FOR_MS,
+    RingUpdates, Ringing,
 };
 pub use media::{Media, MediaRef};
 pub use members::{Member, MemberPermissions, MemberRole, ModRoom, Standing};

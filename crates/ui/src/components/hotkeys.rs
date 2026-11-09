@@ -442,6 +442,8 @@ window.addEventListener('paste', e => {
   // Discord's cards: all the same size (16:9), as big as lets every one of
   // them fit the stage, trying each number across.
   const GAP = 8, RATIO = 16 / 9;
+  // Short as it may be, the stage keeps its controls and a row of cards.
+  const STAGE_MIN = 200;
   const fit = stage => {
     const n = stage.children.length;
     if (!n) return;
@@ -464,7 +466,7 @@ window.addEventListener('paste', e => {
     queued = true;
     requestAnimationFrame(() => {
       queued = false;
-      document.querySelectorAll('.call-stage').forEach(stage => {
+      document.querySelectorAll('.call-stage .call-cards').forEach(stage => {
         if (!watched.has(stage)) { watched.add(stage); sizes.observe(stage); }
         fit(stage);
       });
@@ -486,7 +488,7 @@ window.addEventListener('paste', e => {
     if (!drag) return;
     const chat = document.querySelector('.chat');
     const most = chat ? chat.clientHeight * 0.85 : 800;
-    drag.now = Math.round(Math.min(most, Math.max(80, drag.h + e.clientY - drag.y)));
+    drag.now = Math.round(Math.min(most, Math.max(STAGE_MIN, drag.h + e.clientY - drag.y)));
     apply(drag.now);
   }, true);
   window.addEventListener('mouseup', () => {
