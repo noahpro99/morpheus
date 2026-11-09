@@ -155,6 +155,10 @@ timeline → send.
   declined or abandoned, how backers vote on priority, whether to still accept
   untied donations.
 
+## Backlog
+- A video player for video messages: play inline in the timeline (poster frame, play/pause, seek, volume, fullscreen), as Discord does, instead of downloading the file.
+- Reactions: the hover bar's fourth quick reaction becomes a "more" icon that opens a full emoji picker with search (categories, recents, skin tones).
+
 ## Hosting: morpheuschat.org (idea, not scheduled)
 - The client stays open source. Paid hosting on `morpheuschat.org` homeservers
   is the default upgrade: more media storage and bigger uploads than free
