@@ -109,3 +109,42 @@ pub fn set_notification_content(
         std::fs::write(path, content.key())
     }
 }
+
+/// Where each account on this device was last (`{user: {room, chat}}`), so
+/// starting the app again, even after quitting it, opens there.
+pub const LAST_PLACE: &str = "last_place.json";
+
+/// The room last open, and on a phone whether its chat was in front.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LastPlace {
+    pub room: String,
+    pub chat: bool,
+}
+
+fn last_places(data_dir: &Path) -> serde_json::Map<String, serde_json::Value> {
+    std::fs::read(data_dir.join(LAST_PLACE))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default()
+}
+
+pub fn last_place(data_dir: &Path, user: &str) -> Option<LastPlace> {
+    let places = last_places(data_dir);
+    let place = places.get(user)?;
+    Some(LastPlace {
+        room: place.get("room")?.as_str()?.to_owned(),
+        chat: place.get("chat").and_then(|c| c.as_bool()).unwrap_or(false),
+    })
+}
+
+pub fn set_last_place(data_dir: &Path, user: &str, place: &LastPlace) -> std::io::Result<()> {
+    let mut places = last_places(data_dir);
+    places.insert(
+        user.to_owned(),
+        serde_json::json!({ "room": place.room, "chat": place.chat }),
+    );
+    std::fs::write(
+        data_dir.join(LAST_PLACE),
+        serde_json::Value::Object(places).to_string(),
+    )
+}

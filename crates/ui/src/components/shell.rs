@@ -47,6 +47,8 @@ const NOTICE_CAP: usize = 50;
 const PANES_SETTLE_MS: u64 = 300;
 /// Quarter-second looks for a room asked for before the list has it (~10 s).
 const OPEN_ROOM_TRIES: u32 = 40;
+/// How long a start waits for the room it was last in to reach the list.
+const LAST_PLACE_WAIT_SECS: u64 = 20;
 
 /// Phone-width window (reported by the page): one pane at a time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -359,6 +361,11 @@ pub fn rooms_in_scope(rooms: &Vector<RoomSummary>, scope: &Scope) -> Vec<RoomSum
 #[component]
 pub fn Shell(session: Session) -> Element {
     use_context_provider(|| session.clone());
+    // The account, for remembering where it was (see `pending_place`).
+    let place_user = session
+        .user_id()
+        .map(|id| id.to_string())
+        .unwrap_or_default();
     provide_media_cache();
     let mut rooms: Rooms = use_context_provider(|| Signal::new(Vector::new()));
     let mut selected: Selected = use_context_provider(|| Signal::new(None));
@@ -570,6 +577,70 @@ pub fn Shell(session: Session) -> Element {
                     load_error.set(Some(err.to_string()));
                 }
             }
+        }
+    });
+
+    // Where this account was when the app last ran (even if it was quit):
+    // reopened once that room is in the list. Until then nothing is saved,
+    // so the room picked meanwhile does not overwrite it.
+    let place_dir = use_context::<crate::AppConfig>().data_dir;
+    let mut pending_place = use_signal({
+        let (dir, user) = (place_dir.clone(), place_user.clone());
+        move || crate::device_prefs::last_place(&dir, &user)
+    });
+    // A room that is gone (left elsewhere) is not waited for forever.
+    use_future(move || async move {
+        tokio::time::sleep(std::time::Duration::from_secs(LAST_PLACE_WAIT_SECS)).await;
+        pending_place.set(None);
+    });
+    use_effect(move || {
+        let list = rooms.read();
+        let Some(place) = pending_place.peek().clone() else {
+            return;
+        };
+        let Some(room) = list
+            .iter()
+            .find(|room| room.id.as_str() == place.room && !room.invited)
+            .cloned()
+        else {
+            return;
+        };
+        // A channel's server can reach the list after the channel: until it
+        // has, the channel would be filed under Rooms and moved off again.
+        let server_listed = room
+            .parent_spaces
+            .iter()
+            .all(|space| list.iter().any(|r| &r.id == space));
+        if !server_listed {
+            return;
+        }
+        let scope = scope_for(&list, &room);
+        drop(list);
+        tracing::info!(room = %room.id, ?scope, "reopening the last room");
+        pending_place.set(None);
+        if scope != *selected_space.peek() {
+            selected_space.set(scope);
+        }
+        select(room.id);
+        if place.chat {
+            chat_open.set(ChatInFront(true));
+        }
+    });
+    use_effect(move || {
+        let room = selected();
+        let chat = chat_open().0;
+        if pending_place().is_some() {
+            return;
+        }
+        let Some(room) = room else {
+            return;
+        };
+        let place = crate::device_prefs::LastPlace {
+            room: room.to_string(),
+            chat,
+        };
+        if let Err(err) = crate::device_prefs::set_last_place(&place_dir, &place_user, &place) {
+            tracing::warn!(%err, "last place not kept");
         }
     });
 
