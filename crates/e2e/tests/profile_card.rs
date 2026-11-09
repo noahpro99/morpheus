@@ -6,7 +6,7 @@
 
 use std::time::Duration;
 
-use morpheus_e2e::{App, DEFAULT_WAIT, admin_join, new_account};
+use morpheus_e2e::{App, DEFAULT_WAIT, admin_join, api_as, new_account};
 
 fn homeserver() -> Option<String> {
     std::env::var("MORPHEUS_TEST_HOMESERVER").ok()
@@ -476,4 +476,98 @@ async fn the_card_stays_on_screen_as_it_fills_in() {
         .await
         .expect("bounds");
     assert_eq!(inside[0], true, "the card ran off the app: {inside}");
+}
+
+/// Mutual servers are counted in a server with many members too (whose
+/// members this device has not all loaded).
+#[tokio::test]
+async fn mutual_servers_count_in_a_busy_server() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let owner = new_account(&hs, "busyowner").expect("owner");
+    let enc = |id: &str| id.replace('!', "%21").replace(':', "%3A");
+    let space = api_as(
+        &hs,
+        &owner,
+        "POST",
+        "createRoom",
+        Some(serde_json::json!({ "name": "Busy server", "preset": "public_chat", "creation_content": { "type": "m.space" } })),
+    )
+    .expect("space");
+    let space = space["room_id"].as_str().expect("id").to_owned();
+    let room = api_as(
+        &hs,
+        &owner,
+        "POST",
+        "createRoom",
+        Some(serde_json::json!({ "name": "busy lobby", "preset": "public_chat" })),
+    )
+    .expect("room");
+    let room = room["room_id"].as_str().expect("id").to_owned();
+    api_as(
+        &hs,
+        &owner,
+        "PUT",
+        &format!("rooms/{}/state/m.space.child/{room}", enc(&space)),
+        Some(serde_json::json!({ "via": ["localhost"] })),
+    )
+    .expect("child");
+    // The person whose card is opened joined long ago: many have joined
+    // since, so their joining is not among the server's recent events.
+    let mut last = String::new();
+    for n in 0..26 {
+        let member = new_account(&hs, &format!("busy{n}")).expect("member");
+        // Spaced out: the homeserver limits how fast joins come.
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        api_as(
+            &hs,
+            &member,
+            "POST",
+            &format!("join/{}", enc(&space)),
+            Some(serde_json::json!({})),
+        )
+        .expect("join space");
+        if n == 0 {
+            last = member;
+        }
+    }
+    api_as(
+        &hs,
+        &last,
+        "POST",
+        &format!("join/{}", enc(&room)),
+        Some(serde_json::json!({})),
+    )
+    .expect("join lobby");
+
+    let mut app = App::launch(&hs).await.expect("launch");
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    app.type_into("form.login input[name=username]", &owner)
+        .await
+        .expect("username");
+    app.type_into(
+        "form.login input[name=password]",
+        &format!("{owner}-password"),
+    )
+    .await
+    .expect("password");
+    app.submit("form.login").await.expect("submit");
+    app.wait_for(".shell", DEFAULT_WAIT)
+        .await
+        .expect("signed in");
+    app.open_room("busy lobby").await.expect("lobby");
+    app.click_text(".members .member", &last)
+        .await
+        .expect("their card");
+    app.wait_for_text(
+        ".profile-card .mutual-servers",
+        "1 mutual server",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("the busy server counted");
 }

@@ -585,6 +585,23 @@ async fn the_shortcuts_dialog_is_wide_with_one_line_rows() {
         serde_json::json!([]),
         "descriptions cut off: {report}"
     );
+    // Its list scrolls without a rounded clip around it (which can keep
+    // WebKit from scrolling it smoothly with a wheel).
+    let clipped = app
+        .eval(
+            "const b = document.querySelector('.help-body'); const out = []; \
+             for (let e = b.parentElement; e && e !== document.body; e = e.parentElement) { \
+               const s = getComputedStyle(e); \
+               if (s.overflow !== 'visible' && parseFloat(s.borderTopLeftRadius) > 0) out.push(e.className); } \
+             return out;",
+        )
+        .await
+        .expect("ancestors");
+    assert_eq!(
+        clipped,
+        serde_json::json!([]),
+        "a rounded clip around the scrolling list"
+    );
 }
 
 /// Nothing animates forever once a room has loaded: placeholder rows that
