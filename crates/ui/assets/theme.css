@@ -1428,7 +1428,8 @@ button.sender:hover { text-decoration: underline; }
 .card-tags { display: flex; gap: 6px; flex-wrap: wrap; }
 .card-section { width: 100%; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--bg-elevated); display: flex; flex-direction: column; gap: 6px; }
 .card-section h4 { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-faint); }
-.mutual-room { display: inline-block; margin: 0 6px 4px 0; padding: 2px 8px; border-radius: var(--radius-sm); background: var(--bg-elevated); font-size: 0.85rem; }
+.mutual-room { display: inline-block; margin: 0 6px 4px 0; padding: 2px 8px; border-radius: var(--radius-sm); background: var(--bg-elevated); color: var(--text-muted); font-size: 0.85rem; cursor: pointer; }
+.mutual-room:hover { background: var(--bg-hover); color: var(--text); text-decoration: underline; }
 .note {
   width: 100%;
   resize: vertical;
@@ -2533,3 +2534,6 @@ body.rail-dragging, body.rail-dragging * { cursor: grabbing !important; }
 }
 .rail-item.drop-into { box-shadow: 0 0 0 2px #fff; }
 .folder-grid .avatar, .folder-grid img.avatar { border-radius: 6px !important; }
+
+/* The message whose menu is open stays highlighted. */
+.message[data-menu-open] { background: var(--bg-hover); }
