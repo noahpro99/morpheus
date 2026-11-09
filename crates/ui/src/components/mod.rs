@@ -3,6 +3,7 @@
 mod about;
 mod call;
 mod composer;
+mod confirm;
 mod context_menu;
 mod emoji;
 mod friends;

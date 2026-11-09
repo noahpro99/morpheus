@@ -721,11 +721,16 @@ pub(crate) fn MessageRow(message: Message, show_header: bool) -> Element {
             }));
         }
     };
+    // Asks first; Shift-click deletes at once (as in Discord).
     let delete = {
         let id = message.id.clone();
-        move |_| {
+        move |e: MouseEvent| {
             let Some(active) = timeline() else { return };
-            delete_with_undo(active, id.clone());
+            if e.modifiers().shift() {
+                delete_with_undo(active, id.clone());
+            } else {
+                ask_to_delete(active, id.clone());
+            }
         }
     };
     let can_reply = matches!(message.id, MessageId::Event(_)) && !message.is_local_echo;
@@ -957,7 +962,7 @@ pub(crate) fn MessageRow(message: Message, show_header: bool) -> Element {
                         let id = message.id.clone();
                         move || {
                             let Some(active) = timeline() else { return };
-                            delete_with_undo(active, id.clone());
+                            ask_to_delete(active, id.clone());
                         }
                     })
                     .danger(),
@@ -1505,6 +1510,16 @@ fn message_key(id: &MessageId) -> String {
         MessageId::Event(id) => id.to_string(),
         MessageId::Transaction(id) => id.to_string(),
     }
+}
+
+/// "Delete message?" first (Shift-click on the bin skips it).
+fn ask_to_delete(active: morpheus_core::TimelineHandle, id: MessageId) {
+    super::confirm::ask(
+        "Delete message",
+        "Are you sure you want to delete this message? Tip: hold Shift when you click the bin to skip this.",
+        "Delete",
+        move || delete_with_undo(active.clone(), id.clone()),
+    );
 }
 
 /// Delete a message, undoably: it goes now, for good once the toast has.

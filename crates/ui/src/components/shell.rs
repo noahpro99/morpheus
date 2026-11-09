@@ -398,6 +398,8 @@ pub fn Shell(session: Session) -> Element {
     use_context_provider(|| {
         Signal::new(std::collections::HashMap::new()) as super::profile::SeenPeople
     });
+    // "Are you sure?" (signing out, deleting a message).
+    let mut confirming: super::confirm::Confirm = use_context_provider(|| Signal::new(None));
     let mut open_profile: OpenProfile =
         use_context_provider(|| Signal::new(ProfileTarget::default()));
     let mut context_menu: ContextMenu = use_context_provider(|| Signal::new(MenuState::default()));
@@ -707,7 +709,9 @@ pub fn Shell(session: Session) -> Element {
     // listener (below) so it works whatever has focus.
     // Returns whether anything was open to close.
     let mut close_top_modal = move || -> bool {
-        if lightbox_open().0 {
+        if confirming.peek().is_some() {
+            confirming.set(None);
+        } else if lightbox_open().0 {
             escapes.with_mut(|e| e.0 += 1);
         } else if context_menu().0.is_some() {
             context_menu.set(MenuState::default());
@@ -1008,6 +1012,7 @@ pub fn Shell(session: Session) -> Element {
             super::keys::BackupPrompt {}
             super::about::UpdateCard {}
             super::call::IncomingCalls {}
+            super::confirm::ConfirmDialog {}
             // Mirror of what was announced, for the test bridge.
             ul { class: "link-log", hidden: true,
                 for (index, url) in opened_links().iter().enumerate() {

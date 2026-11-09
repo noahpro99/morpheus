@@ -144,6 +144,9 @@ async fn add_switch_restart_and_sign_out_of_accounts() {
     app.click_text(".context-item", "Sign out")
         .await
         .expect("sign out alice");
+    app.click(".confirm-dialog button.danger")
+        .await
+        .expect("confirm");
     signed_in_as(&mut app, "bob").await;
     account_menu(&mut app).await;
     let items = switch_items(&mut app).await;
@@ -154,6 +157,9 @@ async fn add_switch_restart_and_sign_out_of_accounts() {
     app.click_text(".context-item", "Sign out")
         .await
         .expect("sign out bob");
+    app.click(".confirm-dialog button.danger")
+        .await
+        .expect("confirm");
     app.wait_for("form.login", DEFAULT_WAIT)
         .await
         .expect("back at the login form");

@@ -153,9 +153,18 @@ async fn reply_edit_and_delete_own_messages() {
     .await
     .expect("edited marker");
 
-    // Delete: the row goes at once (undoable from a toast), then becomes a
-    // tombstone.
+    // Delete asks first, then the row goes at once (undoable from a toast)
+    // and becomes a tombstone.
     click_action(&mut app, &edited, "delete").await;
+    app.wait_for_text(".confirm-dialog", "Delete message", DEFAULT_WAIT)
+        .await
+        .expect("asked first");
+    app.wait_for_text(".message .body", &edited, DEFAULT_WAIT)
+        .await
+        .expect("still there while asked");
+    app.click(".confirm-dialog button.danger")
+        .await
+        .expect("confirm");
     app.wait_for_js(
         &format!(
             "return ![...document.querySelectorAll('.message .body')].some(el => el.textContent.includes({}));",
@@ -287,7 +296,7 @@ async fn ctrl_k_pictures_follow_their_rooms() {
         .await
         .expect("switcher opens");
     // Each row (its room and name) and picture (an image's source, or its letter).
-    let pictures = "return [...document.querySelectorAll('.switcher-item')].filter(r => r.querySelector('.name')).map(r => { \
+    let pictures = "return [...document.querySelectorAll('.switcher-item:not(.action)')].filter(r => r.querySelector('.name')).map(r => { \
          const a = r.querySelector('.avatar'); \
          return [r.dataset.key + ' ' + r.querySelector('.name').textContent.trim(), a.tagName === 'IMG' ? a.getAttribute('src') : 'letter ' + a.textContent.trim()]; });";
     // Wait for the pictures to load, then note whose is whose.
@@ -327,4 +336,46 @@ async fn ctrl_k_pictures_follow_their_rooms() {
             }
         }
     }
+}
+
+/// Shift-clicking the delete icon skips the question, as in Discord.
+#[tokio::test]
+async fn shift_click_deletes_without_asking() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch(&hs).await.expect("launch app");
+    login_and_open(&mut app, "alice", "alice-password", "dev").await;
+    let text = format!("gone in a shift {}", std::process::id());
+    app.type_into(".composer .composer-input", &text)
+        .await
+        .expect("type");
+    app.press(".composer .composer-input", "Enter")
+        .await
+        .expect("send");
+    app.wait_for_exact_text(".message.own:not(.pending) .body", &text, DEFAULT_WAIT)
+        .await
+        .expect("sent");
+    app.eval(&format!(
+        "const msg = [...document.querySelectorAll('.message')].find(m => m.querySelector('.body')?.textContent.includes({})); \
+         msg.querySelector('.action.delete').dispatchEvent(new MouseEvent('click', {{ bubbles: true, cancelable: true, shiftKey: true }})); return true;",
+        serde_json::to_string(&text).expect("json")
+    ))
+    .await
+    .expect("shift-click delete");
+    app.wait_for_js(
+        &format!(
+            "return ![...document.querySelectorAll('.message .body')].some(el => el.textContent.includes({}));",
+            serde_json::to_string(&text).expect("json")
+        ),
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("deleted at once");
+    assert_eq!(
+        app.count(".confirm-dialog").await.expect("count"),
+        0,
+        "asked anyway"
+    );
 }

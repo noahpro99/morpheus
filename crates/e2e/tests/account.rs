@@ -159,11 +159,36 @@ async fn account_menu_edits_name_sets_status_and_signs_out() {
     .await
     .expect("closed after clearing");
 
-    // Sign out from the menu returns to the login form.
+    // Sign out asks first: Cancel keeps you signed in.
     open_chip_menu(&mut app).await;
     app.click_text(".context-item", "Sign out")
         .await
         .expect("sign out");
+    app.wait_for_text(".confirm-dialog", "Sign out", DEFAULT_WAIT)
+        .await
+        .expect("asked first");
+    app.click_text(".confirm-dialog button", "Cancel")
+        .await
+        .expect("cancel");
+    app.wait_for_js(
+        "return !document.querySelector('.confirm-dialog');",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("dialog gone");
+    assert_eq!(
+        app.count("form.login").await.expect("count"),
+        0,
+        "still signed in"
+    );
+    // Confirmed, it returns to the login form.
+    open_chip_menu(&mut app).await;
+    app.click_text(".context-item", "Sign out")
+        .await
+        .expect("sign out");
+    app.click(".confirm-dialog button.danger")
+        .await
+        .expect("confirm");
     app.wait_for("form.login", DEFAULT_WAIT)
         .await
         .expect("back at the login form");
