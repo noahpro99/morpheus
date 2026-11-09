@@ -50,7 +50,9 @@ impl Session {
                 if !room.is_space() {
                     continue;
                 }
-                if let Ok(Some(member)) = room.get_member_no_sync(&user_id).await
+                // Fetched when not here yet: in a big server this device holds
+                // only the members of recent events.
+                if let Ok(Some(member)) = room.get_member(&user_id).await
                     && member.membership()
                         == &matrix_sdk::ruma::events::room::member::MembershipState::Join
                 {

@@ -2644,3 +2644,11 @@ body.rail-dragging, body.rail-dragging * { cursor: grabbing !important; }
 }
 .mutual-server:hover { background: var(--bg-hover); }
 .mutual-server .avatar { border-radius: 10px !important; }
+
+/* The shortcuts dialog scrolls inside without clipping to its rounded
+   corners (a rounded clip around a scroller can keep WebKit from scrolling
+   it smoothly): its header and footer carry the corners instead. */
+.help-dialog { overflow: visible; }
+.help-header { border-radius: var(--radius-lg) var(--radius-lg) 0 0; background: var(--bg-sidebar); }
+.help-footer { border-radius: 0 0 var(--radius-lg) var(--radius-lg); background: var(--bg-sidebar); }
+.help-body { min-height: 0; flex: 1; overscroll-behavior: contain; will-change: scroll-position; }
