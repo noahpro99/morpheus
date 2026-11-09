@@ -254,3 +254,62 @@ async fn scrolling_up_reaches_the_start_of_a_long_room() {
         "placeholder rows on the way up (and none at the start), never a loading line"
     );
 }
+
+/// Scrolled to the top, the view stays up there while older messages load
+/// (it was thrown back to the newest one).
+#[tokio::test]
+async fn reaching_the_top_stays_there_while_older_messages_load() {
+    let Some(hs) = std::env::var("MORPHEUS_TEST_HOMESERVER").ok() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let user = morpheus_e2e::new_account(&hs, "topload").expect("account");
+    let room = morpheus_e2e::api_as(
+        &hs,
+        &user,
+        "POST",
+        "createRoom",
+        Some(serde_json::json!({ "name": "top load" })),
+    )
+    .expect("a room");
+    let room = room["room_id"].as_str().expect("room id").to_owned();
+    let bodies: Vec<String> = (1..=80).map(|n| format!("line {n}")).collect();
+    morpheus_e2e::send_many_as(&hs, &user, &room, &bodies).expect("history");
+    let mut app = morpheus_e2e::App::launch(&hs).await.expect("launch app");
+    app.wait_for("form.login", morpheus_e2e::DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    app.type_into("form.login input[name=username]", &user)
+        .await
+        .expect("username");
+    app.type_into(
+        "form.login input[name=password]",
+        &format!("{user}-password"),
+    )
+    .await
+    .expect("password");
+    app.submit("form.login").await.expect("submit");
+    app.open_room("top load").await.expect("open the room");
+    app.wait_for_exact_text(".message .body", "line 80", morpheus_e2e::DEFAULT_WAIT)
+        .await
+        .expect("the newest");
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    // Once to the top, as a scroll wheel would, then watch.
+    let lowest = app
+        .eval(
+            "const t = document.querySelector('.timeline'); t.scrollTop = -t.scrollHeight; \
+             let lowest = t.scrollTop; \
+             for (let i = 0; i < 90; i++) { await new Promise(r => requestAnimationFrame(r)); lowest = Math.max(lowest, t.scrollTop); } \
+             return [Math.round(lowest), Math.round(t.scrollHeight - t.clientHeight)];",
+        )
+        .await
+        .expect("watch");
+    let (lowest, range) = (
+        lowest[0].as_f64().expect("n"),
+        lowest[1].as_f64().expect("n"),
+    );
+    assert!(
+        lowest < -range / 2.0,
+        "thrown back down while older messages loaded: at {lowest} of -{range}"
+    );
+}
