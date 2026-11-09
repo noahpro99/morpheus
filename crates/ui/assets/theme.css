@@ -1670,7 +1670,8 @@ body.dropping .drop-hint { display: flex; }
 }
 
 /* Phones: a thumb-sized pill. */
-.shell.narrow .user-pill { height: 64px; padding: 0 10px 0 8px; }
+.shell.narrow .user-pill { height: auto; padding: 0; }
+.shell.narrow .user-pill .user-row { height: 64px; padding: 0 10px 0 8px; }
 .shell.narrow .user-pill .profile-chip { height: 54px; }
 .shell.narrow .user-pill .profile-chip .avatar { width: 42px; height: 42px; }
 .shell.narrow .user-pill .profile-chip .user { font-size: 1.05rem; }
@@ -2444,3 +2445,13 @@ h1, h2, h3, h4, .modal-title, .empty-title {
 .encryption-setting p { margin: 0; font-size: 0.85rem; }
 .encryption-setting .warning { color: var(--warning, #f0b232); }
 .encryption-setting button { align-self: flex-start; display: inline-flex; align-items: center; gap: 8px; }
+
+/* Phones: the call card in the profile card, roomy enough for thumbs. */
+.shell.narrow .user-pill .voice-panel { padding: 8px 6px 8px 12px; gap: 6px; }
+.shell.narrow .voice-room,
+.shell.narrow .call-screen-room { min-height: 44px; display: flex; align-items: center; }
+.shell.narrow .call-screen-room { flex-direction: column; align-items: flex-start; justify-content: center; }
+.shell.narrow .voice-panel .hang-up,
+.shell.narrow .voice-panel .camera-button,
+.shell.narrow .voice-panel .screen-button,
+.shell.narrow .voice-panel .speaker-button { width: 44px; height: 44px; }

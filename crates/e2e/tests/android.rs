@@ -2176,6 +2176,13 @@ async fn phone_camera_shows_on_the_desktop() {
     let shape = "const t = [...document.querySelectorAll('.video-tile')].find(t => t.dataset.user === '@alice:localhost'); \
          const i = t && t.querySelector('img.video'); \
          return i && i.naturalWidth ? [i.naturalWidth, i.naturalHeight] : null;";
+    // Frames replace the picture as they come: wait for a loaded one.
+    bob.wait_for_js(
+        &format!("return (() => {{ {shape} }})() !== null;"),
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("a loaded frame");
     let seen = bob.eval(shape).await.expect("bob's picture");
     phone
         .wait_for_js(

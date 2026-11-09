@@ -383,6 +383,42 @@ async fn phone_tap_targets_are_at_least_44_points() {
         serde_json::json!([]),
         "small targets on the room list"
     );
+
+    // In a call: the call's controls in the profile card under the list.
+    app.eval("[...document.querySelectorAll('.room')].find(r => r.querySelector('.room-name')?.textContent.trim() === 'hangout')?.click(); return true;")
+        .await
+        .expect("join #hangout");
+    app.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("in the call");
+    // Joining brings the chat forward: back to the list, where the card is.
+    if app.count(".pane-back").await.expect("count") > 0 {
+        app.click(".chat-header .pane-back").await.expect("back");
+    }
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let in_call = app.eval(small).await.expect("call buttons");
+    // The card grows to hold the call: your own row (picture, mute, deafen,
+    // settings) stays whole inside it, under the call's controls.
+    let cut = app
+        .eval(
+            "const pill = document.querySelector('.user-pill').getBoundingClientRect(); \
+             return [...document.querySelectorAll('.user-pill .user-row > *')].filter(el => { \
+               const r = el.getBoundingClientRect(); return r.height === 0 || r.top < pill.top - 1 || r.bottom > pill.bottom + 1; \
+             }).map(el => el.className || el.tagName);",
+        )
+        .await
+        .expect("card");
+    let _ = app.click(".voice-panel .hang-up").await;
+    assert_eq!(
+        in_call,
+        serde_json::json!([]),
+        "small targets in the call card"
+    );
+    assert_eq!(
+        cut,
+        serde_json::json!([]),
+        "your row is cut off by the call card"
+    );
 }
 
 /// Waiting shows the shape of what is coming, never a "Loading…" line: the
