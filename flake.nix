@@ -78,6 +78,7 @@
 
           tools = with pkgs; [
             dioxus-cli
+            cargo-sweep # scripts/prune-target.sh
             just
             pkg-config
             cmake # aws-lc-sys (rustls backend used by matrix-sdk)
@@ -111,6 +112,12 @@
 
           shellHook = ''
             export XDG_DATA_DIRS="$GSETTINGS_SCHEMAS_PATH''${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
+            # Once a day: keep target/ to the builds in use (it grew past 300 GB).
+            stamp=target/.pruned
+            if [ -d target ] && [ -z "$(find "$stamp" -mmin -1440 2>/dev/null)" ]; then
+              touch "$stamp"
+              ./scripts/prune-target.sh >&2 || true
+            fi
             echo "morpheus dev shell — run 'just' to list commands"
           '';
           androidShell =
@@ -176,6 +183,43 @@
             // {
               nativeBuildInputs = tools ++ [ toolchain ];
               buildInputs = guiLibs;
+              inherit shellHook;
+            }
+          );
+          # `nix develop .#web` — the browser build (app.morpheuschat.org):
+          # the wasm target, wasm-bindgen as Cargo.lock has it (dx checks the
+          # versions match; nixpkgs' dx brings an older one, last in PATH),
+          # and a headless Chromium the e2e tests drive.
+          web =
+            let
+              wasmBindgen = pkgs.buildWasmBindgenCli rec {
+                src = pkgs.fetchCrate {
+                  pname = "wasm-bindgen-cli";
+                  version = "0.2.129";
+                  hash = "sha256-pcecKQd7E8Opw6bkFoE569epUi7gh5qpQF1e5PJY6V8=";
+                };
+                cargoDeps = pkgs.rustPlatform.fetchCargoVendor {
+                  inherit src;
+                  inherit (src) pname version;
+                  hash = "sha256-vmUrWVU7kPJJxO5qIVeAkwQyWDELO1Z4Z5gitz2kco8=";
+                };
+              };
+            in
+            pkgs.mkShell (
+            commonEnv
+            // {
+              nativeBuildInputs = tools ++ [
+                (toolchain.override { targets = [ "wasm32-unknown-unknown" ]; })
+                wasmBindgen
+                pkgs.binaryen
+                pkgs.chromium
+                pkgs.llvmPackages_21.clang-unwrapped
+              ];
+              buildInputs = guiLibs;
+              # C in the SDK's dependencies (ring, zstd) compiled for wasm.
+              CC_wasm32_unknown_unknown = "${pkgs.llvmPackages_21.clang-unwrapped}/bin/clang";
+              AR_wasm32_unknown_unknown = "${pkgs.llvmPackages_21.llvm}/bin/llvm-ar";
+              CHROME = "${pkgs.chromium}/bin/chromium";
               inherit shellHook;
             }
           );
