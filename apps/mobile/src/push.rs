@@ -22,7 +22,7 @@ static ACTIVE: OnceLock<Mutex<Option<Session>>> = OnceLock::new();
 /// Called for every session that becomes active. Starts the bridge thread
 /// the first time.
 pub fn on_session(session: Session, data_dir: PathBuf) {
-    write_notices(session.clone(), data_dir.join(NOTICES_DIR));
+    write_notices(session.clone(), data_dir.clone());
     let first = ACTIVE.get().is_none();
     let slot = ACTIVE.get_or_init(|| Mutex::new(None));
     if let Ok(mut active) = slot.lock() {
@@ -171,7 +171,8 @@ fn notice_file(event_id: &str) -> String {
 /// who said what for each one that should notify, for the push service
 /// (`MorpheusPushService`) to show when the matching push arrives. A push
 /// alone carries only ids.
-fn write_notices(session: Session, dir: PathBuf) {
+fn write_notices(session: Session, data_dir: PathBuf) {
+    let dir = data_dir.join(NOTICES_DIR);
     let spawned = std::thread::Builder::new()
         .name("morpheus-notices".into())
         .spawn(move || {
@@ -188,15 +189,18 @@ fn write_notices(session: Session, dir: PathBuf) {
                 };
                 let _ = std::fs::create_dir_all(&dir);
                 while let Some(notice) = updates.next().await {
+                    let file = dir.join(notice_file(&notice.event_id));
+                    let room_id = notice.room_id.to_string();
+                    // Worded and pictured as this device's setting says.
+                    let ready = morpheus_ui::notices::ready(&session, notice, &data_dir).await;
                     let body = serde_json::json!({
-                        "room_id": notice.room_id.to_string(),
-                        "room": notice.room_name,
-                        "sender": notice.sender_name,
-                        "body": notice.body_summary,
-                        "mention": notice.is_mention,
+                        "room_id": room_id,
+                        "title": ready.text.title,
+                        "body": ready.text.body,
+                        "icon": ready.icon,
+                        "image": ready.image,
                     });
-                    let _ =
-                        std::fs::write(dir.join(notice_file(&notice.event_id)), body.to_string());
+                    let _ = std::fs::write(file, body.to_string());
                     prune(&dir);
                 }
             });
@@ -220,6 +224,12 @@ async fn write_ring_notices(session: Session, dir: PathBuf) {
             Ok(profile) => profile.name,
             Err(_) => call.caller.localpart().to_owned(),
         };
+        // Hidden on this device: not who is calling either.
+        let hidden = dir.parent().is_some_and(|data_dir| {
+            morpheus_ui::device_prefs::notification_content(data_dir)
+                == morpheus_ui::device_prefs::NotificationContent::Hidden
+        });
+        let name = if hidden { "Someone".to_owned() } else { name };
         let body = serde_json::json!({
             "room_id": call.room_id.to_string(),
             "room": name,
@@ -254,7 +264,7 @@ fn prune(dir: &Path) {
 
 /// Called by `MorpheusPushService` (Kotlin) when a push arrives while the app
 /// is closed: decrypt that one message for the notification, without
-/// starting the app. Returns JSON `{sender, room, body, dm, call}`, or null when
+/// starting the app. Returns JSON `{title, body, sender, icon, image, call}`, or null when
 /// there is nothing to show.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
@@ -280,23 +290,41 @@ pub extern "system" fn Java_dev_morpheus_mobile_MorpheusPushService_previewNativ
 }
 
 fn preview(dir: PathBuf, room_id: String, event_id: String) -> Option<String> {
-    let core = morpheus_core::Core::new(dir).ok()?;
+    let core = morpheus_core::Core::new(dir.clone()).ok()?;
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .ok()?;
     let found = runtime.block_on(core.preview_notification(room_id, event_id));
     match found {
-        Ok(Some(preview)) => Some(
-            serde_json::json!({
-                "sender": preview.sender,
-                "room": preview.room,
-                "body": preview.body,
-                "dm": preview.is_dm,
-                "call": preview.is_call,
-            })
-            .to_string(),
-        ),
+        Ok(Some(preview)) => {
+            let content = morpheus_ui::device_prefs::notification_content(&dir);
+            let text = morpheus_ui::notices::notice_text(
+                content,
+                &preview.sender,
+                &preview.room,
+                &preview.body,
+                preview.is_dm,
+                preview.is_mention,
+            );
+            let hidden = content == morpheus_ui::device_prefs::NotificationContent::Hidden;
+            let keep = |media: Option<morpheus_core::Media>, allowed: bool| {
+                media
+                    .filter(|_| allowed)
+                    .and_then(|media| morpheus_ui::notices::keep_picture(&dir, &media))
+            };
+            Some(
+                serde_json::json!({
+                    "title": text.title,
+                    "body": text.body,
+                    "sender": if hidden { "Someone".to_owned() } else { preview.sender },
+                    "icon": keep(preview.sender_avatar, text.sender_picture),
+                    "image": keep(preview.image, text.photo),
+                    "call": preview.is_call,
+                })
+                .to_string(),
+            )
+        }
         Ok(None) => None,
         Err(err) => {
             tracing::warn!(%err, "previewing a pushed message failed");

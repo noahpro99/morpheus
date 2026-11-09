@@ -25,6 +25,7 @@ mod format;
 pub mod icons;
 mod linkify;
 mod media;
+pub mod notices;
 mod sounds;
 mod window;
 

@@ -20,7 +20,7 @@ use dioxus::desktop::{
     use_wry_event_handler,
 };
 use dioxus::prelude::*;
-use morpheus_core::{MediaRef, Session};
+use morpheus_core::Session;
 use morpheus_ui::{AppCommand, AppConfig, OpenRoom, WindowControls};
 use tracing_subscriber::EnvFilter;
 
@@ -428,23 +428,19 @@ fn notifier(session: Session, focus: Focus, open_room: OpenRoom, data_dir: PathB
                     if looking {
                         continue;
                     }
-                    let title = if notice.is_mention {
-                        format!(
-                            "{} mentioned you in {}",
-                            notice.sender_name, notice.room_name
-                        )
-                    } else {
-                        format!("{} in {}", notice.sender_name, notice.room_name)
-                    };
                     // Checked each time: Settings can turn it off while running.
                     if !morpheus_ui::device_prefs::notifications_enabled(&data_dir) {
                         tracing::info!("notifications are off on this device; not shown");
                         continue;
                     }
-                    let icon =
-                        picture_file(&session, notice.sender_avatar, ICON_SIZE, &data_dir).await;
-                    let image = picture_file(&session, notice.image, IMAGE_SIZE, &data_dir).await;
-                    notify(&data_dir, title, notice.body_summary, icon, image);
+                    let ready = morpheus_ui::notices::ready(&session, notice, &data_dir).await;
+                    notify(
+                        &data_dir,
+                        ready.text.title,
+                        ready.text.body,
+                        ready.icon,
+                        ready.image,
+                    );
                 }
             });
         })
@@ -475,7 +471,20 @@ async fn ring_notifier(session: Session, focus: Focus, data_dir: PathBuf) {
             Ok(profile) => (profile.name, profile.avatar),
             Err(_) => (call.caller.localpart().to_owned(), None),
         };
-        let icon = picture_file(&session, avatar, ICON_SIZE, &data_dir).await;
+        let hidden = morpheus_ui::device_prefs::notification_content(&data_dir)
+            == morpheus_ui::device_prefs::NotificationContent::Hidden;
+        let (name, avatar) = if hidden {
+            ("Someone".to_owned(), None)
+        } else {
+            (name, avatar)
+        };
+        let icon = morpheus_ui::notices::picture_file(
+            &session,
+            avatar,
+            morpheus_ui::notices::ICON_SIZE,
+            &data_dir,
+        )
+        .await;
         let title = format!("{name} is calling");
         tracing::info!(%title, "ring notification");
         notify(
@@ -486,48 +495,6 @@ async fn ring_notifier(session: Session, focus: Focus, data_dir: PathBuf) {
             None,
         );
     }
-}
-
-/// Notification pictures: the sender's (small) and a photo sent (larger).
-const ICON_SIZE: u32 = 96;
-const IMAGE_SIZE: u32 = 512;
-
-/// A picture for a notification, as a file (notification daemons read
-/// pictures from disk). Kept by the media's key, so each is fetched once.
-async fn picture_file(
-    session: &Session,
-    media: Option<MediaRef>,
-    size: u32,
-    data_dir: &Path,
-) -> Option<PathBuf> {
-    use std::hash::{Hash, Hasher};
-    let media = media?;
-    let mut hasher = std::hash::DefaultHasher::new();
-    (media.key(), size).hash(&mut hasher);
-    let dir = data_dir.join("notification-pictures");
-    let stem = format!("{:016x}", hasher.finish());
-    for ext in ["png", "jpg", "gif", "webp"] {
-        let kept = dir.join(format!("{stem}.{ext}"));
-        if kept.exists() {
-            return Some(kept);
-        }
-    }
-    let fetched = session.thumbnail(media, size, size).await.ok().flatten()?;
-    let ext = match fetched.mime() {
-        "image/png" => "png",
-        "image/jpeg" => "jpg",
-        "image/gif" => "gif",
-        "image/webp" => "webp",
-        _ => return None,
-    };
-    let path = dir.join(format!("{stem}.{ext}"));
-    let written =
-        std::fs::create_dir_all(&dir).and_then(|()| std::fs::write(&path, &fetched.bytes));
-    if let Err(err) = written {
-        tracing::warn!(%err, "notification picture not kept");
-        return None;
-    }
-    Some(path)
 }
 
 /// Raise an OS notification, the sender's picture as its icon and a photo
@@ -563,13 +530,16 @@ fn notify(
         if let Some(icon) = &icon {
             notification.icon(&icon.to_string_lossy());
         }
-        // Linux daemons show a picture in the notification; elsewhere the icon is all.
+        // Linux daemons show a picture in the notification. macOS and Windows
+        // take no icon, only a picture: the photo, else the sender's.
         #[cfg(all(unix, not(target_os = "macos")))]
         if let Some(image) = &image {
             notification.image_path(&image.to_string_lossy());
         }
         #[cfg(not(all(unix, not(target_os = "macos"))))]
-        drop(image);
+        if let Some(picture) = image.as_ref().or(icon.as_ref()) {
+            notification.image_path(&picture.to_string_lossy());
+        }
         if let Err(err) = notification.show() {
             tracing::warn!(%err, "desktop notification failed");
         }

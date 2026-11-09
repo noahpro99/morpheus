@@ -40,6 +40,9 @@ pub struct Notification {
     pub sender_avatar: Option<MediaRef>,
     /// The photo, when the message is one.
     pub image: Option<MediaRef>,
+    /// Just two people in the room (a DM or not): it notifies like a DM,
+    /// by the sender's name alone.
+    pub is_dm: bool,
 }
 
 /// A live stream of [`Notification`]s across every joined room.
@@ -153,6 +156,7 @@ async fn notification_for(
         is_mention,
         sender_avatar,
         image,
+        is_dm: room.joined_members_count() <= 2,
     })
 }
 
