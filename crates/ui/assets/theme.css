@@ -2516,3 +2516,6 @@ h1, h2, h3, h4, .modal-title, .empty-title {
 }
 .call-participant { gap: 6px; }
 .call-participant-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Servers and the rail's other badges: rounded squares, always. */
+.rail-item, .rail-item:hover, .rail-item.selected, .rail-folder .rail-item { border-radius: 16px; }

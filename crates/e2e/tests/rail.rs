@@ -290,3 +290,28 @@ async fn the_rail_marks_the_current_scope_and_unread_ones() {
         );
     }
 }
+
+/// Servers (and the rail's other badges) are rounded squares, not circles.
+#[tokio::test]
+async fn rail_badges_are_rounded_squares() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch(&hs).await.expect("launch app");
+    login(&mut app, "alice").await;
+    app.wait_for(".rail-item.space-badge", DEFAULT_WAIT)
+        .await
+        .expect("a server");
+    // Each badge, and the picture inside it: [title, corner radius, width].
+    let round = app
+        .eval(
+            "return [...document.querySelectorAll('.rail > .rail-item, .rail-folder .rail-item, .rail-item .avatar')] \
+               .filter(el => !el.matches('.rail-add')) \
+               .map(el => [el.title || el.className, parseFloat(getComputedStyle(el).borderTopLeftRadius), el.getBoundingClientRect().width]) \
+               .filter(([, r, w]) => r >= w * 0.45 || r < w * 0.2);",
+        )
+        .await
+        .expect("badges");
+    assert_eq!(round, serde_json::json!([]), "badges that are circles (or square)");
+}
