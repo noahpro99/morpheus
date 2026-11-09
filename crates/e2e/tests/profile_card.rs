@@ -1,4 +1,4 @@
-//! The profile card: mutual rooms, a private note, messaging from the card,
+//! The profile card: mutual servers, a private note, messaging from the card,
 //! the more menu (full profile, block), and the report form.
 
 // Desktop layout (member column beside the chat, window controls): phone runs keep it on desktop.
@@ -65,9 +65,13 @@ async fn card_shows_mutual_rooms_saves_a_note_and_messages() {
     )
     .await
     .expect("anchored at the click");
-    app.wait_for_text(".profile-card .mutual", "general", DEFAULT_WAIT)
-        .await
-        .expect("mutual rooms");
+    app.wait_for_text(
+        ".profile-card .mutual-servers",
+        "mutual server",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("mutual servers counted");
     app.wait_for_text(".profile-card .card-tags", "Member", DEFAULT_WAIT)
         .await
         .expect("role here");
@@ -354,16 +358,18 @@ async fn the_card_shows_the_picture_already_loaded_at_once() {
     );
 }
 
-/// The card's buttons along its top are small squares (not a bar across it),
-/// and its mutual rooms are links: clicking one opens it.
+/// The card's buttons along its top are small squares (not a bar across it).
+/// It counts the servers you share (no list); the count, like its picture,
+/// opens the full profile, which lists those servers with their icons, and
+/// clicking one opens it.
 #[tokio::test]
-async fn card_buttons_are_small_and_mutual_rooms_open() {
+async fn the_card_counts_mutual_servers_and_the_full_profile_lists_them() {
     let Some(hs) = homeserver() else {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
     let mut app = App::launch(&hs).await.expect("launch");
-    login_and_open(&mut app, "alice", "random").await;
+    login_and_open(&mut app, "alice", "general").await;
     open_card_for(&mut app, "bob").await;
     let buttons = app
         .eval(
@@ -372,68 +378,52 @@ async fn card_buttons_are_small_and_mutual_rooms_open() {
         )
         .await
         .expect("buttons");
-    let list = buttons.as_array().expect("list");
-    assert!(!list.is_empty(), "no buttons: {buttons}");
-    for b in list {
+    for b in buttons.as_array().expect("list") {
         let (w, h) = (b[1].as_f64().unwrap_or(0.0), b[2].as_f64().unwrap_or(0.0));
         assert!(w <= 40.0 && (w - h).abs() <= 4.0, "not a small square: {b}");
     }
-    // The first is the room open now; the next one is elsewhere.
-    app.wait_for(".profile-card .mutual-room:nth-of-type(2)", DEFAULT_WAIT)
-        .await
-        .expect("another mutual room");
-    let other = app
-        .eval("const b = document.querySelectorAll('.profile-card .mutual-room')[1]; const name = b.textContent.trim().replace(/^#/, ''); b.click(); return name;")
-        .await
-        .expect("click it");
-    let other = other.as_str().expect("name").to_owned();
-    app.wait_for_text(".chat-header h2", &other, DEFAULT_WAIT)
-        .await
-        .expect("opened it");
-    app.wait_for_js(
-        "return !document.querySelector('.profile-card');",
+    app.wait_for_text(
+        ".profile-card .mutual-servers",
+        "mutual server",
         DEFAULT_WAIT,
     )
     .await
-    .expect("the card closed");
-}
-
-/// The card shows a few mutual rooms and a way to the full profile, which
-/// lists them all; clicking the card's picture opens it too.
-#[tokio::test]
-async fn the_card_shows_a_few_rooms_and_its_picture_opens_the_full_profile() {
-    let Some(hs) = homeserver() else {
-        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
-        return;
-    };
-    let mut app = App::launch(&hs).await.expect("launch");
-    login_and_open(&mut app, "alice", "general").await;
-    open_card_for(&mut app, "bob").await;
-    app.wait_for(".profile-card .mutual-room", DEFAULT_WAIT)
+    .expect("a count of mutual servers");
+    assert_eq!(
+        app.count(".profile-card .mutual-room, .profile-card .mutual-server")
+            .await
+            .expect("count"),
+        0,
+        "no list on the card"
+    );
+    let counted: usize = app
+        .eval("return parseInt(document.querySelector('.profile-card .mutual-servers').textContent, 10);")
         .await
-        .expect("mutual rooms");
-    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-    let shown = app
-        .count(".profile-card .mutual-room")
+        .expect("count")
+        .as_u64()
+        .expect("a number") as usize;
+    assert!(counted >= 1, "alice and bob share Engineering");
+    app.click(".profile-card .mutual-servers")
         .await
-        .expect("count");
-    assert!(shown <= 4, "{shown} mutual rooms on the card");
-    // Bob shares many rooms with alice (the seed and the tests' channels).
-    app.click_text(".profile-card .mutual-more", "View full profile")
-        .await
-        .expect("view full profile");
+        .expect("the count");
     app.wait_for(".profile-modal", DEFAULT_WAIT)
         .await
         .expect("the full profile");
     app.wait_for_js(
         &format!(
-            "return document.querySelectorAll('.profile-modal .mutual-room').length > {shown};"
+            "const s = [...document.querySelectorAll('.profile-modal .mutual-server')]; \
+             return s.length === {counted} && s.every(x => x.querySelector('.avatar')) && s.some(x => x.textContent.includes('Engineering'));"
         ),
         DEFAULT_WAIT,
     )
     .await
-    .expect("every mutual room on the full profile");
-    app.press("body", "Escape").await.expect("close");
+    .expect("every mutual server, with its icon");
+    app.click_text(".profile-modal .mutual-server", "Engineering")
+        .await
+        .expect("open Engineering");
+    app.wait_for(".rail-item.selected[title=\"Engineering\"]", DEFAULT_WAIT)
+        .await
+        .expect("in Engineering");
     app.wait_for_js(
         "return !document.querySelector('.profile-modal');",
         DEFAULT_WAIT,
@@ -441,6 +431,8 @@ async fn the_card_shows_a_few_rooms_and_its_picture_opens_the_full_profile() {
     .await
     .expect("closed");
 
+    // The card's picture opens the full profile too.
+    app.open_room("general").await.expect("general");
     open_card_for(&mut app, "bob").await;
     app.click(".profile-card .card-avatar")
         .await
@@ -471,7 +463,7 @@ async fn the_card_stays_on_screen_as_it_fills_in() {
     )
     .await
     .expect("open a card low down");
-    app.wait_for(".profile-card .mutual-room", DEFAULT_WAIT)
+    app.wait_for(".profile-card .mutual-servers", DEFAULT_WAIT)
         .await
         .expect("filled in");
     tokio::time::sleep(std::time::Duration::from_millis(800)).await;

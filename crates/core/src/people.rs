@@ -41,6 +41,26 @@ impl Session {
         })
     }
 
+    /// Spaces (servers and their sub-spaces) that both of you have joined.
+    pub fn mutual_spaces(&self, user_id: OwnedUserId) -> CoreFuture<Vec<OwnedRoomId>> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            let mut out = Vec::new();
+            for room in client.joined_rooms() {
+                if !room.is_space() {
+                    continue;
+                }
+                if let Ok(Some(member)) = room.get_member_no_sync(&user_id).await
+                    && member.membership()
+                        == &matrix_sdk::ruma::events::room::member::MembershipState::Join
+                {
+                    out.push(room.room_id().to_owned());
+                }
+            }
+            Ok(out)
+        })
+    }
+
     /// The user's role in a room, if they are a member.
     pub fn member_role(
         &self,

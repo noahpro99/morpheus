@@ -2620,3 +2620,27 @@ body.rail-dragging, body.rail-dragging * { cursor: grabbing !important; }
 .user-pill .device-pair .device-menu-button { margin-left: 0; }
 .user-pill .device-pair.active > button { background: color-mix(in srgb, var(--danger) 18%, transparent); color: var(--danger); }
 .user-pill .device-pair.active > button:hover { background: color-mix(in srgb, var(--danger) 28%, transparent); }
+
+/* The card's count of servers you share, and the full profile's list of them. */
+.mutual-servers {
+  margin-top: 8px;
+  padding: 0;
+  background: none;
+  color: var(--accent);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.mutual-servers:hover { text-decoration: underline; }
+.mutual-server {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  text-align: left;
+}
+.mutual-server:hover { background: var(--bg-hover); }
+.mutual-server .avatar { border-radius: 10px !important; }
