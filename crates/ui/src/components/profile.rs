@@ -684,6 +684,9 @@ pub fn ProfileCard(open: ProfileOpen) -> Element {
 const CARD_CLAMP_JS: &str = "const c = document.querySelector('.profile-card'); if (!c) return; \
     const ax = parseFloat(c.dataset.ax), ay = parseFloat(c.dataset.ay); \
     const w = c.offsetWidth, h = c.offsetHeight, pad = 8; \
+    /* The app's own area (a window can be larger than the shell drawn in it). */ \
+    const s = (document.querySelector('.shell') || document.body).getBoundingClientRect(); \
+    const L = Math.max(0, s.left), T = Math.max(0, s.top), R = Math.min(innerWidth, s.right), B = Math.min(innerHeight, s.bottom); \
     let x, y; \
     /* The card's own backdrop covers the point; look beneath it. */ \
     const anchor = ax >= 0 ? (document.elementsFromPoint(ax, ay).find(e => !e.closest('.card-overlay, .profile-card')) || null) : null; \
@@ -691,14 +694,14 @@ const CARD_CLAMP_JS: &str = "const c = document.querySelector('.profile-card'); 
     if (el) { const r = el.getBoundingClientRect(); \
       /* Beside the avatar, on the side nearer the middle of the window, never over it. */ \
       const mid = (r.left + r.right) / 2; \
-      x = mid < innerWidth / 2 ? r.right + pad : r.left - w - pad; \
-      if (x + w > innerWidth - pad) x = r.left - w - pad; \
-      if (x < pad) x = r.right + pad; \
+      x = mid < (L + R) / 2 ? r.right + pad : r.left - w - pad; \
+      if (x + w > R - pad) x = r.left - w - pad; \
+      if (x < L + pad) x = r.right + pad; \
       y = r.top; } \
-    else if (ax >= 0) { x = ax < innerWidth / 2 ? ax + 16 : ax - w - 16; y = ay; } \
-    else { x = (innerWidth - w) / 2; y = innerHeight * 0.2; } \
-    y = Math.max(pad, Math.min(y, innerHeight - h - pad)); \
-    x = Math.max(pad, Math.min(x, innerWidth - w - pad)); \
+    else if (ax >= 0) { x = ax < (L + R) / 2 ? ax + 16 : ax - w - 16; y = ay; } \
+    else { x = (L + R - w) / 2; y = T + (B - T) * 0.2; } \
+    y = Math.max(T + pad, Math.min(y, B - h - pad)); \
+    x = Math.max(L + pad, Math.min(x, R - w - pad)); \
     c.style.left = x + 'px'; c.style.top = y + 'px';";
 
 #[component]

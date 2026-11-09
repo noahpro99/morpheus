@@ -232,6 +232,22 @@ window.addEventListener('paste', e => {
   new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-pane'] });
   schedule();
 })();
+// Pasting with nothing focused goes to the message box, as typing does: the
+// paste is handed to the box (pictures attach there), and text it does not
+// take is put in it.
+document.addEventListener('paste', e => {
+  const t = e.target;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+  if (document.querySelector('.overlay, .context-menu, .card-overlay')) return;
+  const box = document.querySelector('.composer .composer-input:not([disabled])');
+  if (!box) return;
+  e.preventDefault();
+  box.focus();
+  const handed = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: e.clipboardData });
+  box.dispatchEvent(handed);
+  const text = e.clipboardData && e.clipboardData.getData('text/plain');
+  if (!handed.defaultPrevented && text) document.execCommand('insertText', false, text);
+}, true);
 // The message right-clicked stays highlighted while its menu is open (the
 // pointer has moved onto the menu); a data attribute, which re-renders
 // leave alone.

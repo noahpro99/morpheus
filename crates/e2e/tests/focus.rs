@@ -171,7 +171,7 @@ async fn profile_card_opens_beside_the_avatar_towards_the_middle() {
         DEFAULT_WAIT,
     )
     .await
-    .expect("card left of the member row, inside the window");
+    .unwrap_or_else(|e| panic!("card left of the member row, inside the window: {e}"));
     app.key_combo("body", "Escape", false, false, false)
         .await
         .expect("close card");
@@ -196,4 +196,34 @@ async fn profile_card_opens_beside_the_avatar_towards_the_middle() {
     )
     .await
     .expect("card right of the avatar, inside the window");
+}
+
+/// Pasting with nothing focused goes to the message box (focused for you),
+/// as typing does.
+#[tokio::test]
+async fn pasting_anywhere_goes_to_the_message_box() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch(&hs).await.expect("launch app");
+    login_and_open(&mut app, "general").await;
+    let text = format!("pasted from afar {}", std::process::id());
+    let state = app
+        .eval(&format!(
+            "document.activeElement && document.activeElement.blur(); \
+             const dt = new DataTransfer(); dt.setData('text/plain', {}); \
+             document.querySelector('.timeline').dispatchEvent(new ClipboardEvent('paste', {{ bubbles: true, cancelable: true, clipboardData: dt }})); \
+             await new Promise(r => setTimeout(r, 300)); \
+             const box = document.querySelector('.composer .composer-input'); \
+             return [box.value, document.activeElement === box];",
+            serde_json::to_string(&text).expect("json")
+        ))
+        .await
+        .expect("paste");
+    assert_eq!(
+        state,
+        serde_json::json!([text, true]),
+        "the paste landed in the box, focused"
+    );
 }

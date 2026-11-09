@@ -363,7 +363,7 @@ async fn card_buttons_are_small_and_mutual_rooms_open() {
         return;
     };
     let mut app = App::launch(&hs).await.expect("launch");
-    login_and_open(&mut app, "alice", "general").await;
+    login_and_open(&mut app, "alice", "random").await;
     open_card_for(&mut app, "bob").await;
     let buttons = app
         .eval(
@@ -378,15 +378,18 @@ async fn card_buttons_are_small_and_mutual_rooms_open() {
         let (w, h) = (b[1].as_f64().unwrap_or(0.0), b[2].as_f64().unwrap_or(0.0));
         assert!(w <= 40.0 && (w - h).abs() <= 4.0, "not a small square: {b}");
     }
-    app.wait_for_text(".profile-card .mutual-room", "random", DEFAULT_WAIT)
+    // The first is the room open now; the next one is elsewhere.
+    app.wait_for(".profile-card .mutual-room:nth-of-type(2)", DEFAULT_WAIT)
         .await
-        .expect("random among the mutual rooms");
-    app.click_text(".profile-card .mutual-room", "random")
+        .expect("another mutual room");
+    let other = app
+        .eval("const b = document.querySelectorAll('.profile-card .mutual-room')[1]; const name = b.textContent.trim().replace(/^#/, ''); b.click(); return name;")
         .await
-        .expect("click random");
-    app.wait_for_text(".chat-header h2", "random", DEFAULT_WAIT)
+        .expect("click it");
+    let other = other.as_str().expect("name").to_owned();
+    app.wait_for_text(".chat-header h2", &other, DEFAULT_WAIT)
         .await
-        .expect("opened #random");
+        .expect("opened it");
     app.wait_for_js(
         "return !document.querySelector('.profile-card');",
         DEFAULT_WAIT,
