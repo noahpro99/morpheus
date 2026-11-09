@@ -306,25 +306,78 @@ pub fn HelpModal() -> Element {
     let mut close = move || panel.set(TopPanel::None);
     rsx! {
         div { class: "overlay", onclick: move |_| close(),
-            div { class: "message-dialog help-dialog", tabindex: "-1", autofocus: true, onclick: move |e| e.stop_propagation(),
-                h2 { "Keyboard shortcuts" }
-                for (group, rows) in super::hotkeys::GROUPS {
-                    h3 { class: "help-group", "{group}" }
-                    dl { class: "help-list",
-                        for (keys, what) in rows.iter() {
-                            dt { "{keys}" }
-                            dd { "{what}" }
+            div { class: "help-dialog", tabindex: "-1", autofocus: true, onclick: move |e| e.stop_propagation(),
+                header { class: "help-header",
+                    h2 { "Keyboard shortcuts" }
+                    button { class: "ghost help-close", title: "Close", onclick: move |_| close(),
+                        Icon { glyph: X, size: 18 }
+                    }
+                }
+                div { class: "help-body",
+                    for (group, rows) in super::hotkeys::GROUPS {
+                        section { class: "help-section",
+                            h3 { class: "help-group", "{group}" }
+                            for (keys, what) in rows.iter() {
+                                div { class: "help-row",
+                                    span { class: "help-keys",
+                                        for part in key_caps(keys) {
+                                            match part {
+                                                KeyPart::Key(key) => rsx! { kbd { "{key}" } },
+                                                KeyPart::Plus => rsx! { span { class: "help-plus", "+" } },
+                                                KeyPart::Or(word) => rsx! { span { class: "help-or", "{word}" } },
+                                            }
+                                        }
+                                    }
+                                    span { class: "help-what", "{what}" }
+                                }
+                            }
                         }
                     }
                 }
-                p { class: "muted", "Morpheus is a Matrix client: your account lives on your homeserver and works in any Matrix app." }
-                div { class: "settings-actions",
+                footer { class: "help-footer",
+                    p { class: "muted", "Morpheus is a Matrix client: your account lives on your homeserver and works in any Matrix app." }
                     super::settings::ReportBug {}
-                    button { class: "secondary", onclick: move |_| close(), "Close" }
                 }
             }
         }
     }
+}
+
+/// A piece of a shortcut as the dialog draws it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum KeyPart {
+    Key(String),
+    Plus,
+    /// Between alternatives: "or", or "/" for a pair.
+    Or(&'static str),
+}
+
+/// "Ctrl+K or Ctrl+Shift+P" → Ctrl + K, or, Ctrl + Shift + P (each key a cap).
+fn key_caps(keys: &str) -> Vec<KeyPart> {
+    let mut parts = Vec::new();
+    for (i, alternative) in keys.split(" or ").enumerate() {
+        if i > 0 {
+            parts.push(KeyPart::Or("or"));
+        }
+        for (j, pair) in alternative.split(" / ").enumerate() {
+            if j > 0 {
+                parts.push(KeyPart::Or("/"));
+            }
+            // A "+" key itself would be "Ctrl++": keep the trailing one.
+            let mut keys: Vec<&str> = pair.split('+').collect();
+            if pair.ends_with("++") {
+                keys.truncate(keys.len() - 2);
+                keys.push("+");
+            }
+            for (k, key) in keys.into_iter().filter(|k| !k.is_empty()).enumerate() {
+                if k > 0 {
+                    parts.push(KeyPart::Plus);
+                }
+                parts.push(KeyPart::Key(key.to_owned()));
+            }
+        }
+    }
+    parts
 }
 
 /// Move the history cursor by `step` and open that room, switching scope
