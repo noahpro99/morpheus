@@ -20,7 +20,7 @@ use super::{
         EditProfileModal, Editor, OpenProfile, ProfileCard, ProfileEditor, ProfileModal,
         ProfileRefresh, ProfileTarget, ProfileVersion, StatusModal,
     },
-    rail::{Dragging, Rail, RailDrag},
+    rail::Rail,
     room_dialogs::{
         CreateRoomModal, CreateSpaceModal, EditRoomModal, InviteModal, LeaveSpaceModal,
         OpenRoomDialog, PrivacyModal, RenameFolderModal, RoomDialog, RoomProfileModal,
@@ -407,7 +407,6 @@ pub fn Shell(session: Session) -> Element {
     let lightbox_open: LightboxOpen = use_context_provider(|| Signal::new(LightboxShown(false)));
     let mut escapes: EscapeTick = use_context_provider(|| Signal::new(Escapes(0)));
     let mut prefs: UiPrefs = use_context_provider(|| Signal::new(Prefs::default()));
-    let _drag: RailDrag = use_context_provider(|| Signal::new(Dragging::default()));
     let has_window = use_hook(|| try_consume_context::<crate::WindowControls>().is_some());
     super::keys::provide_key_tracking(session.clone());
     let mut nickname_target = super::nicknames::provide_nicknames(session.clone());

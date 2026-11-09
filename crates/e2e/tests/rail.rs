@@ -6,7 +6,7 @@
 
 use std::time::Duration;
 
-use morpheus_e2e::{App, DEFAULT_WAIT, api_as};
+use morpheus_e2e::{App, DEFAULT_WAIT, api_as, new_account};
 
 fn homeserver() -> Option<String> {
     std::env::var("MORPHEUS_TEST_HOMESERVER").ok()
@@ -45,19 +45,34 @@ async fn create_server(app: &mut App, name: &str) {
         .expect("badge");
 }
 
-/// Synthetic HTML5 drag: dragstart on the source, drop on the target.
-async fn drag(app: &mut App, from: &str, to: &str) {
-    let js = format!(
-        "const from = document.querySelector({}); const to = document.querySelector({}); \
+/// A pointer drag from `from` onto the middle of `to` (or, with `before`,
+/// just inside its top edge), let go there unless `hold`.
+fn drag_js(from: &str, to: &str, before: bool, hold: bool) -> String {
+    format!(
+        "const from = document.querySelector({from}); const to = document.querySelector({to}); \
          if (!from || !to) throw new Error('drag endpoints missing'); \
-         from.dispatchEvent(new DragEvent('dragstart', {{ bubbles: true }})); \
-         to.dispatchEvent(new DragEvent('dragover', {{ bubbles: true, cancelable: true }})); \
-         to.dispatchEvent(new DragEvent('drop', {{ bubbles: true, cancelable: true }})); \
-         from.dispatchEvent(new DragEvent('dragend', {{ bubbles: true }}));",
-        serde_json::to_string(from).expect("json"),
-        serde_json::to_string(to).expect("json")
-    );
-    app.eval(&js).await.expect("drag");
+         const f = from.getBoundingClientRect(), t = to.getBoundingClientRect(); \
+         const fire = (type, x, y, target) => target.dispatchEvent(new MouseEvent(type, {{ bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, buttons: 1 }})); \
+         const x0 = f.left + f.width / 2, y0 = f.top + f.height / 2; \
+         const x1 = t.left + t.width / 2, y1 = {before} ? t.top + 3 : t.top + t.height / 2; \
+         fire('mousedown', x0, y0, from); \
+         for (let i = 1; i <= 10; i++) fire('mousemove', x0 + (x1 - x0) * i / 10, y0 + (y1 - y0) * i / 10, document); \
+         if (!{hold}) fire('mouseup', x1, y1, document); return true;",
+        from = serde_json::to_string(from).expect("json"),
+        to = serde_json::to_string(to).expect("json"),
+    )
+}
+
+async fn drag(app: &mut App, from: &str, to: &str) {
+    app.eval(&drag_js(from, to, false, false))
+        .await
+        .expect("drag");
+}
+
+async fn drag_before(app: &mut App, from: &str, to: &str) {
+    app.eval(&drag_js(from, to, true, false))
+        .await
+        .expect("drag");
 }
 
 async fn leave_server(app: &mut App, name: &str) {
@@ -109,6 +124,19 @@ async fn servers_drag_into_folders_and_reorder() {
     .await;
     // Earlier runs may have left folders behind: work with the newest one and
     // give it a unique name right away.
+    // Both left the top level (into the new folder).
+    app.wait_for_js(
+        &format!(
+            "return ![...document.querySelectorAll('.rail > .rail-item')].some(b => b.title === {} || b.title === {});",
+            serde_json::to_string(&a).expect("json"),
+            serde_json::to_string(&b).expect("json")
+        ),
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("a folder of the two");
+    // The new layout is saved to the account and comes back: let it settle.
+    tokio::time::sleep(Duration::from_secs(1)).await;
     app.wait_for(".rail-folder .folder-badge", DEFAULT_WAIT)
         .await
         .expect("folder created");
@@ -160,11 +188,11 @@ async fn servers_drag_into_folders_and_reorder() {
     .await
     .expect("b is a top-level badge again");
 
-    // Reorder: drop b on the first drop zone, so it comes before the folder.
-    drag(
+    // Reorder: let go of b just above the first server, so it comes first.
+    drag_before(
         &mut app,
         &format!(".rail-item[title=\"{b}\"]"),
-        ".rail-drop",
+        ".rail > [data-index=\"0\"]",
     )
     .await;
     app.wait_for_js(
@@ -313,5 +341,113 @@ async fn rail_badges_are_rounded_squares() {
         )
         .await
         .expect("badges");
-    assert_eq!(round, serde_json::json!([]), "badges that are circles (or square)");
+    assert_eq!(
+        round,
+        serde_json::json!([]),
+        "badges that are circles (or square)"
+    );
+}
+
+/// Dragging a server is plain: the pointer turns into a grabbing hand (no
+/// picture of the badge follows it), a white line shows where it will land,
+/// nothing else moves or spaces out, and letting go puts it there.
+#[tokio::test]
+async fn dragging_a_server_shows_a_line_where_it_lands() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let user = new_account(&hs, "drag").expect("account");
+    let mut app = App::launch(&hs).await.expect("launch app");
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    app.type_into("form.login input[name=username]", &user)
+        .await
+        .expect("username");
+    app.type_into(
+        "form.login input[name=password]",
+        &format!("{user}-password"),
+    )
+    .await
+    .expect("password");
+    app.submit("form.login").await.expect("submit");
+    app.wait_for(".shell", DEFAULT_WAIT)
+        .await
+        .expect("signed in");
+    for name in ["one", "two", "three"] {
+        create_server(&mut app, name).await;
+    }
+    let order = "return [...document.querySelectorAll('.rail > .rail-item.space-badge')].map(b => b.title);";
+    assert_eq!(
+        app.eval(order).await.expect("order"),
+        serde_json::json!(["three", "two", "one"])
+    );
+    assert_eq!(
+        app.count(".rail [draggable=true]").await.expect("count"),
+        0,
+        "badges use the browser's drag (which drags a picture of them)"
+    );
+    let tops = "return [...document.querySelectorAll('.rail > .rail-item')].map(b => Math.round(b.getBoundingClientRect().top));";
+    let before = app.eval(tops).await.expect("tops");
+
+    // New servers go on top: hold "three" just above "one".
+    app.eval(&drag_js(
+        ".rail-item[title=\"three\"]",
+        ".rail-item[title=\"one\"]",
+        true,
+        true,
+    ))
+    .await
+    .expect("drag");
+    let during = app
+        .eval(
+            "const line = document.querySelector('.rail-drop-line'); \
+             const r = line && line.getBoundingClientRect(); \
+             const two = document.querySelector('.rail-item[title=\"two\"]').getBoundingClientRect(); \
+             const one = document.querySelector('.rail-item[title=\"one\"]').getBoundingClientRect(); \
+             return { cursor: getComputedStyle(document.body).cursor, \
+               line: !!r && r.height > 0 && r.height <= 4 && r.width >= 24, \
+               colour: line ? getComputedStyle(line).backgroundColor : null, \
+               between: !!r && r.top >= two.bottom - 2 && r.bottom <= one.top + 2 };",
+        )
+        .await
+        .expect("during");
+    assert_eq!(during["cursor"], "grabbing", "{during}");
+    assert_eq!(during["line"], true, "a thin line: {during}");
+    assert_eq!(during["colour"], "rgb(255, 255, 255)", "{during}");
+    assert_eq!(during["between"], true, "between two and one: {during}");
+    assert_eq!(
+        app.eval(tops).await.expect("tops"),
+        before,
+        "the badges moved while dragging"
+    );
+
+    // Let go: "three" lands between two and one.
+    app.eval(
+        "const t = document.querySelector('.rail-item[title=\"one\"]').getBoundingClientRect(); \
+         document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: t.left + t.width / 2, clientY: t.top + 3 })); return true;",
+    )
+    .await
+    .expect("let go");
+    app.wait_for_js(
+        &format!(
+            "return JSON.stringify((() => {{ {order} }})()) === '[\"two\",\"three\",\"one\"]';"
+        ),
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("moved");
+    assert_eq!(
+        app.count(".rail-drop-line").await.expect("count"),
+        0,
+        "the line goes"
+    );
+    assert_eq!(
+        app.eval("return getComputedStyle(document.body).cursor;")
+            .await
+            .expect("cursor"),
+        serde_json::json!("auto"),
+        "the pointer is back"
+    );
 }
