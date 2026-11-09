@@ -533,7 +533,10 @@ pub fn ProfileCard(open: ProfileOpen) -> Element {
                 .icon(crate::icons::USER),
                 MenuItem::new("Share profile", {
                     let link = format!("https://matrix.to/#/{user_id}");
-                    move || copy_to_clipboard(&link)
+                    move || {
+                        copy_to_clipboard(&link);
+                        super::toast::toast("Link copied");
+                    }
                 })
                 .icon(crate::icons::SHARE_2),
             ];
