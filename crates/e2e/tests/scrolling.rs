@@ -188,6 +188,17 @@ async fn scrolling_up_reaches_the_start_of_a_long_room() {
     app.wait_for_text(".timeline", "history message 500", DEFAULT_WAIT)
         .await
         .expect("the newest message");
+    // What shows above the oldest loaded message on the way up: placeholder
+    // rows to scroll onto, never a "loading" line.
+    app.eval(
+        "window.__loadingText = false; window.__olderSkeletons = false; \
+         const look = () => { const t = document.querySelector('.timeline'); if (!t) return; \
+           if (/Loading older/.test(t.textContent)) window.__loadingText = true; \
+           if (t.querySelector('.older-skeleton')) window.__olderSkeletons = true; }; \
+         new MutationObserver(look).observe(document.body, { childList: true, subtree: true, characterData: true }); look(); return true;",
+    )
+    .await
+    .expect("watch");
 
     // The wheel: the view moves up a little at a time; at the top it stays.
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(45);
@@ -215,4 +226,22 @@ async fn scrolling_up_reaches_the_start_of_a_long_room() {
         );
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
+    // Past the first message are the room's creation events: once those are
+    // in, the placeholders give way to the room's beginning.
+    app.wait_for_js(
+        "const t = document.querySelector('.timeline'); t.scrollTop = -t.scrollHeight; \
+         return !t.querySelector('.older-skeleton') && !!t.querySelector('.timeline-start');",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("the beginning of the room, no placeholders");
+    let seen = app
+        .eval("return [window.__olderSkeletons, window.__loadingText, document.querySelectorAll('.timeline .older-skeleton').length];")
+        .await
+        .expect("what showed");
+    assert_eq!(
+        seen,
+        serde_json::json!([true, false, 0]),
+        "placeholder rows on the way up (and none at the start), never a loading line"
+    );
 }
