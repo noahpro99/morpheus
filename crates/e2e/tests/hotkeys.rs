@@ -666,3 +666,32 @@ async fn the_palette_names_servers_and_the_card_has_your_picture() {
     .await
     .expect("#dev named with its server");
 }
+
+/// In the palette a server's channel shows the server's picture on the left.
+#[tokio::test]
+async fn the_palette_shows_a_channels_server_picture() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch(&hs).await.expect("launch app");
+    login_and_open(&mut app, "general").await;
+    app.key_combo("body", "k", true, false, false)
+        .await
+        .expect("ctrl+k");
+    app.wait_for(".switcher input", DEFAULT_WAIT)
+        .await
+        .expect("palette");
+    app.type_into(".switcher input", "dev")
+        .await
+        .expect("filter");
+    // Engineering's picture: its letter badge when it has none.
+    app.wait_for_js(
+        "const row = [...document.querySelectorAll('.switcher-item:not(.action)')].find(r => r.querySelector('.name')?.textContent.trim() === 'dev'); \
+         const pic = row && row.querySelector('.avatar'); \
+         return !!pic && (pic.getAttribute('alt') === 'Engineering' || pic.textContent.trim() === 'E');",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("#dev with Engineering's picture");
+}

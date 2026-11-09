@@ -195,7 +195,11 @@ pub fn QuickSwitcher(open: Signal<bool>) -> Element {
                             },
                             match entry {
                                 Entry::Room(room) => rsx! {
-                                    Avatar { media: room.avatar.clone(), fallback: room.name.clone(), size: 24 }
+                                    {
+                                        // A server's channel shows the server's picture.
+                                        let (media, fallback) = picture_of(&rooms.read(), room);
+                                        rsx! { Avatar { media, fallback, size: 24 } }
+                                    }
                                     span { class: "name", "{room.name}" }
                                     span { class: "kind", "{server_of(&rooms.read(), room)}" }
                                 },
@@ -232,4 +236,18 @@ fn server_of(rooms: &morpheus_core::Vector<RoomSummary>, room: &RoomSummary) -> 
         super::shell::Scope::Dms => "Direct message".to_owned(),
         _ => "Rooms".to_owned(),
     }
+}
+
+/// The picture a room shows in the palette: its server's for a server's
+/// channel, else its own.
+fn picture_of(
+    rooms: &morpheus_core::Vector<RoomSummary>,
+    room: &RoomSummary,
+) -> (Option<morpheus_core::MediaRef>, String) {
+    if let super::shell::Scope::Space(id) = scope_for(rooms, room)
+        && let Some(space) = rooms.iter().find(|r| r.id == id)
+    {
+        return (space.avatar.clone(), space.name.clone());
+    }
+    (room.avatar.clone(), room.name.clone())
 }

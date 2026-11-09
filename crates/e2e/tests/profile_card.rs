@@ -571,3 +571,27 @@ async fn mutual_servers_count_in_a_busy_server() {
     .await
     .expect("the busy server counted");
 }
+
+/// Share profile copies the profile's link and says so.
+#[tokio::test]
+async fn share_profile_says_the_link_was_copied() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch(&hs).await.expect("launch");
+    login_and_open(&mut app, "alice", "general").await;
+    open_card_for(&mut app, "bob").await;
+    app.click(".profile-card .card-button.more")
+        .await
+        .expect("more");
+    app.wait_for_text(".context-item", "Share profile", DEFAULT_WAIT)
+        .await
+        .expect("the menu");
+    app.click_text(".context-item", "Share profile")
+        .await
+        .expect("share");
+    app.wait_for_text(".toast", "Link copied", DEFAULT_WAIT)
+        .await
+        .expect("a toast saying so");
+}

@@ -2197,3 +2197,48 @@ async fn muted_marks_the_mic_and_its_arrow_red_together() {
         "muted look"
     );
 }
+
+/// Clicking a voice channel lists you under it at once, greyed until the
+/// call connects.
+#[tokio::test]
+async fn joining_lists_you_at_once_greyed_until_connected() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    login_and_open(&mut alice, "alice", "general").await;
+    let channel = fresh_voice_channel(&hs);
+    alice
+        .wait_for_text(".room .room-name", &channel, DEFAULT_WAIT)
+        .await
+        .expect("the channel listed");
+    // Click, then look straight away (before the call can connect).
+    let first = alice
+        .eval(&format!(
+            "const row = [...document.querySelectorAll('.room')].find(r => r.querySelector('.room-name')?.textContent.trim() === {name}); \
+             row.click(); \
+             for (let i = 0; i < 60; i++) {{ \
+               const me = [...document.querySelectorAll('.room-call .call-participant')].find(p => p.dataset.user === '@alice:localhost'); \
+               if (me) return me.classList.contains('connecting') ? 'greyed' : 'listed'; \
+               await new Promise(r => requestAnimationFrame(r)); \
+             }} \
+             return 'missing';",
+            name = serde_json::to_string(&channel).expect("json")
+        ))
+        .await
+        .expect("look");
+    assert_eq!(first.as_str(), Some("greyed"), "on clicking");
+    alice
+        .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("connected");
+    alice
+        .wait_for_js(
+            "const me = [...document.querySelectorAll('.room-call .call-participant')].find(p => p.dataset.user === '@alice:localhost'); return !!me && !me.classList.contains('connecting');",
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("not greyed once connected");
+    alice.click(".voice-panel .hang-up").await.expect("leave");
+}

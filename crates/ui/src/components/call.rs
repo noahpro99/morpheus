@@ -716,6 +716,19 @@ pub fn RoomCall(
 ) -> Element {
     let session = use_context::<Session>();
     let active = use_context::<ActiveCall>();
+    // Joining this call: you are listed at once, greyed until connected.
+    let me = session.user_id();
+    let joining = active()
+        .0
+        .as_ref()
+        .is_some_and(|c| c.room_id == room_id && !c.connected);
+    let mut participants = participants;
+    if joining
+        && let Some(me) = me.clone()
+        && !participants.contains(&me)
+    {
+        participants.push(me);
+    }
     let speaking = active()
         .0
         .filter(|c| c.room_id == room_id)
@@ -731,6 +744,7 @@ pub fn RoomCall(
                 CallParticipant {
                     key: "{user}",
                     room_id: room_id.clone(),
+                    connecting: joining && me.as_ref() == Some(&user),
                     speaking: speaking.contains(&user),
                     user_id: user,
                 }
@@ -761,11 +775,16 @@ fn use_person(user_id: &OwnedUserId) -> (String, Option<morpheus_core::MediaRef>
 }
 
 #[component]
-fn CallParticipant(room_id: OwnedRoomId, user_id: OwnedUserId, speaking: bool) -> Element {
+fn CallParticipant(
+    room_id: OwnedRoomId,
+    user_id: OwnedUserId,
+    speaking: bool,
+    connecting: bool,
+) -> Element {
     let (name, avatar) = use_person(&user_id);
     let media = use_call_media(&room_id, &user_id);
     rsx! {
-        div { class: "call-participant", class: if speaking { "speaking" }, "data-user": "{user_id}",
+        div { class: "call-participant", class: if speaking { "speaking" }, class: if connecting { "connecting" }, "data-user": "{user_id}",
             Avatar { media: avatar, fallback: name.clone(), size: 20 }
             span { class: "call-participant-name", "{name}" }
             MediaMarks { media, video: true }
