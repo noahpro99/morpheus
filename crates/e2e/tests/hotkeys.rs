@@ -770,3 +770,154 @@ async fn ctrl_f_ctrl_e_and_ctrl_shift_n() {
         .await
         .expect("create a server");
 }
+
+/// Page Up / Page Down scroll the chat; Ctrl+Shift+L copies the room's link.
+#[tokio::test]
+async fn page_keys_scroll_and_ctrl_shift_l_copies_the_link() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    // A long chat of its own.
+    let user = morpheus_e2e::new_account(&hs, "pages").expect("account");
+    let room = morpheus_e2e::api_as(
+        &hs,
+        &user,
+        "POST",
+        "createRoom",
+        Some(serde_json::json!({ "name": "pages" })),
+    )
+    .expect("a room");
+    let room = room["room_id"].as_str().expect("room id").to_owned();
+    let bodies: Vec<String> = (1..=80).map(|n| format!("line {n}")).collect();
+    morpheus_e2e::send_many_as(&hs, &user, &room, &bodies).expect("history");
+    let mut app = App::launch_sized(&hs, 1100, 700).await.expect("launch app");
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    app.type_into("form.login input[name=username]", &user)
+        .await
+        .expect("username");
+    app.type_into(
+        "form.login input[name=password]",
+        &format!("{user}-password"),
+    )
+    .await
+    .expect("password");
+    app.submit("form.login").await.expect("submit");
+    app.open_room("pages").await.expect("open the room");
+    app.wait_for_js(
+        "const t = document.querySelector('.timeline'); return !!t && t.scrollHeight > t.clientHeight + 400;",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("a long chat");
+    let at = "return Math.round(document.querySelector('.timeline').scrollTop);";
+    let before = app.eval(at).await.expect("scroll").as_f64().expect("n");
+    app.press(".composer .composer-input", "PageUp")
+        .await
+        .expect("page up");
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    let up = app.eval(at).await.expect("scroll").as_f64().expect("n");
+    assert!(up < before - 100.0, "page up scrolls up: {before} → {up}");
+    app.press(".composer .composer-input", "PageDown")
+        .await
+        .expect("page down");
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    let down = app.eval(at).await.expect("scroll").as_f64().expect("n");
+    assert!(down > up + 100.0, "page down scrolls down: {up} → {down}");
+
+    app.key_combo("body", "L", true, false, true)
+        .await
+        .expect("ctrl+shift+l");
+    app.wait_for_text(".toast", "Link copied", DEFAULT_WAIT)
+        .await
+        .expect("copied");
+}
+
+/// Ctrl+Shift+Alt+Down goes to the next room that mentions you, past rooms
+/// merely unread.
+#[tokio::test]
+async fn ctrl_shift_alt_down_goes_to_rooms_that_mention_you() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch(&hs).await.expect("launch app");
+    login_and_open(&mut app, "general").await;
+    // Nothing unread to start from, then two rooms from bob: one merely
+    // unread, one mentioning alice.
+    app.press("body", "Escape").await.expect("focus out");
+    app.key_combo("body", "Escape", false, false, true)
+        .await
+        .expect("shift+esc marks all read");
+    let stamp = std::process::id();
+    let room = |name: &str| -> String {
+        let made = morpheus_e2e::api_as(
+            &hs,
+            "bob",
+            "POST",
+            "createRoom",
+            Some(serde_json::json!({ "name": name, "invite": ["@alice:localhost", "@carol:localhost"] })),
+        )
+        .expect("a room");
+        let id = made["room_id"].as_str().expect("room id").to_owned();
+        // Three people, so it is listed as a room (not titled like a DM).
+        for who in ["alice", "carol"] {
+            morpheus_e2e::api_as(
+                &hs,
+                who,
+                "POST",
+                &format!("rooms/{}/join", id.replace('!', "%21").replace(':', "%3A")),
+                Some(serde_json::json!({})),
+            )
+            .expect("joins");
+        }
+        id
+    };
+    let (quiet, ping) = (format!("quiet {stamp}"), format!("ping {stamp}"));
+    let quiet_id = room(&quiet);
+    let ping_id = room(&ping);
+    morpheus_e2e::send_as(&hs, "bob", &quiet_id, "just chatting").expect("unread");
+    morpheus_e2e::api_as(
+        &hs,
+        "bob",
+        "PUT",
+        &format!(
+            "rooms/{}/send/m.room.message/ping{stamp}",
+            ping_id.replace('!', "%21").replace(':', "%3A")
+        ),
+        Some(serde_json::json!({
+            "msgtype": "m.text",
+            "body": "@alice:localhost look",
+            "m.mentions": { "user_ids": ["@alice:localhost"] },
+        })),
+    )
+    .expect("mention");
+    app.wait_for_js(
+        &format!(
+            "return [...document.querySelectorAll('.room')].some(r => r.querySelector('.room-name')?.textContent.trim() === {} && r.querySelector('.badge'));",
+            serde_json::to_string(&ping).expect("json")
+        ),
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("the mention shows");
+    app.key_combo("body", "ArrowDown", true, true, true)
+        .await
+        .expect("ctrl+shift+alt+down");
+    app.wait_for_text(".chat-header h2", &ping, DEFAULT_WAIT)
+        .await
+        .expect("to the room that mentions alice");
+    // Out of alice's list again, for the tests walking through it.
+    for id in [&quiet_id, &ping_id] {
+        morpheus_e2e::api_as(
+            &hs,
+            "alice",
+            "POST",
+            &format!("rooms/{}/leave", id.replace('!', "%21").replace(':', "%3A")),
+            Some(serde_json::json!({})),
+        )
+        .expect("alice leaves");
+    }
+}

@@ -2440,3 +2440,75 @@ async fn ctrl_enter_answers_a_ringing_call() {
     alice.click(".voice-panel .hang-up").await.expect("hang up");
     out_of_call(&mut alice).await;
 }
+
+/// Discord's call shortcuts: Ctrl+Shift+Alt+V goes to the call you are in;
+/// Ctrl+' calls the DM open; Esc declines a call ringing.
+#[tokio::test]
+async fn go_to_the_call_start_a_dm_call_and_decline_by_keyboard() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    login_and_open(&mut alice, "alice", "general").await;
+    let channel = fresh_voice_channel(&hs);
+    let row = format!(
+        "[...document.querySelectorAll('.room')].find(r => r.querySelector('.room-name')?.textContent.trim() === {})",
+        serde_json::to_string(&channel).expect("json")
+    );
+    alice
+        .wait_for_js(&format!("return !!{row};"), DEFAULT_WAIT)
+        .await
+        .expect("listed");
+    alice
+        .eval(&format!("{row}.click(); return true;"))
+        .await
+        .expect("join");
+    alice
+        .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("joined");
+    alice
+        .wait_for_text(".chat-header h2", "general", DEFAULT_WAIT)
+        .await
+        .expect("still in #general");
+    alice
+        .eval("document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'V', code: 'KeyV', ctrlKey: true, shiftKey: true, altKey: true, bubbles: true })); return true;")
+        .await
+        .expect("ctrl+shift+alt+v");
+    alice
+        .wait_for_text(".chat-header h2", &channel, DEFAULT_WAIT)
+        .await
+        .expect("at the call");
+    alice
+        .wait_for(".call-stage.voice-page", DEFAULT_WAIT)
+        .await
+        .expect("its call page");
+    alice.click(".voice-panel .hang-up").await.expect("hang up");
+    out_of_call(&mut alice).await;
+
+    let mut bob = App::launch(&hs).await.expect("launch bob");
+    login_and_open(&mut bob, "bob", "general").await;
+    open_dm(&mut alice, "bob").await;
+    alice
+        .eval("document.body.dispatchEvent(new KeyboardEvent('keydown', { key: \"'\", code: 'Quote', ctrlKey: true, bubbles: true })); return true;")
+        .await
+        .expect("ctrl+'");
+    bob.wait_for_text(".incoming-call", "alice", DEFAULT_WAIT)
+        .await
+        .expect("bob is rung");
+    bob.press("body", "Escape").await.expect("escape");
+    bob.wait_for_js(
+        "return !document.querySelector('.incoming-call');",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("declined");
+    assert_eq!(
+        bob.count(".voice-panel").await.expect("count"),
+        0,
+        "bob did not join"
+    );
+    alice.click(".voice-panel .hang-up").await.expect("hang up");
+    out_of_call(&mut alice).await;
+}

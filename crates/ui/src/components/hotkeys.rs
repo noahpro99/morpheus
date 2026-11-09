@@ -32,12 +32,21 @@ window.addEventListener('keydown', e => {
   // otherwise also step back to the room list.
   const composerEl = t && t.closest ? t.closest('.composer') : null;
   const boxBusy = !!composerEl && !!composerEl.querySelector('.composer-banner, .autocomplete, .emoji-panel');
+  const ringing = !!document.querySelector('.incoming-call .decline-call');
   if (k === 'Escape' && boxBusy) name = null;
+  // Esc declines a call ringing (unless a dialog or menu is open to close).
+  else if (k === 'Escape' && !shift && ringing && !document.querySelector('.overlay, .context-menu, .card-overlay')) name = 'decline';
   else if (k === 'Escape' && shift) name = 'mark_scope_read';
   else if (k === 'Escape') name = 'escape';
   else if (mod && !alt && !shift && key === 'k') name = 'switcher';
   else if (mod && !alt && shift && key === 'p') name = 'switcher';
   else if (mod && !alt && !shift && key === 'r') name = 'reload';
+  else if (mod && alt && shift && key === 'v') name = 'current_call';
+  else if (mod && alt && shift && k === 'ArrowUp') name = 'prev_mention';
+  else if (mod && alt && shift && k === 'ArrowDown') name = 'next_mention';
+  else if (mod && !alt && shift && key === 'l') name = 'copy_link';
+  else if (mod && !alt && !shift && key === "'") name = 'start_call';
+  else if (!mod && !alt && !shift && (k === 'PageUp' || k === 'PageDown') && (!typing || (t.closest && t.closest('.composer')))) name = 'page';
   else if (mod && !alt && !shift && key === 'f') name = 'search';
   else if (mod && !alt && !shift && key === 'e') name = 'emoji';
   else if (mod && !alt && shift && key === 'n') name = 'create_server';
@@ -69,8 +78,15 @@ window.addEventListener('keydown', e => {
   if (!name) return;
   // Handled here, by the buttons they stand for: the emoji picker and
   // answering a call ringing.
-  if (name === 'emoji' || name === 'answer') {
-    const button = document.querySelector(name === 'emoji' ? '.composer .emoji-button' : '.incoming-call .accept-call');
+  // Page Up / Page Down scroll the chat (the timeline runs bottom-up).
+  if (name === 'page') {
+    const tl = document.querySelector('.timeline');
+    if (tl) { e.preventDefault(); tl.scrollBy({ top: (k === 'PageUp' ? -1 : 1) * tl.clientHeight * 0.85 }); }
+    return;
+  }
+  const buttons = { emoji: '.composer .emoji-button', answer: '.incoming-call .accept-call', decline: '.incoming-call .decline-call', start_call: '.chat-header .call-button:not(.active)' };
+  if (buttons[name]) {
+    const button = document.querySelector(buttons[name]);
     if (button) { e.preventDefault(); button.click(); }
     return;
   }
@@ -96,6 +112,11 @@ pub const GROUPS: &[(&str, &[(&str, &str)])] = &[
                 "Your last DM, and back to your last server channel",
             ),
             ("Alt+← / Alt+→", "Back / forward through visited rooms"),
+            (
+                "Ctrl+Shift+Alt+↑ / ↓",
+                "Previous / next room that mentions you",
+            ),
+            ("Ctrl+Shift+Alt+V", "Go to the call you are in"),
         ],
     ),
     (
@@ -107,6 +128,8 @@ pub const GROUPS: &[(&str, &[(&str, &str)])] = &[
             ("Ctrl+E", "Emoji picker"),
             ("Esc", "Close what is open, or jump to the newest message"),
             ("Shift+Esc", "Mark every room in this scope as read"),
+            ("Page Up / Page Down", "Scroll the chat"),
+            ("Ctrl+Shift+L", "Copy the room's link"),
             ("Right-click", "Actions for a message, room, or member"),
         ],
     ),
@@ -129,6 +152,8 @@ pub const GROUPS: &[(&str, &[(&str, &str)])] = &[
             ("Ctrl+Shift+M", "Mute or unmute"),
             ("Ctrl+Shift+D", "Deafen or undeafen (deafening mutes too)"),
             ("Ctrl+Enter", "Answer a call ringing"),
+            ("Esc", "Decline a call ringing"),
+            ("Ctrl+'", "Call the DM open"),
         ],
     ),
 ];
