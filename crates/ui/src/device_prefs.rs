@@ -49,3 +49,63 @@ pub fn set_audio_devices(
     });
     std::fs::write(data_dir.join(AUDIO_DEVICES), json.to_string())
 }
+
+/// What a notification on this device gives away (absent: everything).
+/// Holds `sender` or `hidden`; the Android push service reads it too.
+pub const NOTIFICATION_CONTENT: &str = "notification_content";
+
+/// How much a notification shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum NotificationContent {
+    /// Who sent what, and where.
+    #[default]
+    Full,
+    /// Only who sent it.
+    Sender,
+    /// Nothing: "Someone sent a message".
+    Hidden,
+}
+
+impl NotificationContent {
+    pub const ALL: [Self; 3] = [Self::Full, Self::Sender, Self::Hidden];
+
+    /// As kept in the file (and in the Settings radio's value).
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Full => "full",
+            Self::Sender => "sender",
+            Self::Hidden => "hidden",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Full => "Name and message",
+            Self::Sender => "Name only",
+            Self::Hidden => "Nothing (\u{201c}Someone sent a message\u{201d})",
+        }
+    }
+}
+
+pub fn notification_content(data_dir: &Path) -> NotificationContent {
+    let kept = std::fs::read_to_string(data_dir.join(NOTIFICATION_CONTENT)).unwrap_or_default();
+    NotificationContent::ALL
+        .into_iter()
+        .find(|c| c.key() == kept.trim())
+        .unwrap_or_default()
+}
+
+pub fn set_notification_content(
+    data_dir: &Path,
+    content: NotificationContent,
+) -> std::io::Result<()> {
+    let path = data_dir.join(NOTIFICATION_CONTENT);
+    if content == NotificationContent::Full {
+        match std::fs::remove_file(path) {
+            Err(err) if err.kind() != std::io::ErrorKind::NotFound => Err(err),
+            _ => Ok(()),
+        }
+    } else {
+        std::fs::write(path, content.key())
+    }
+}

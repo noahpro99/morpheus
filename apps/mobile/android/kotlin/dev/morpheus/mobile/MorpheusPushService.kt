@@ -6,6 +6,8 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.media.AudioAttributes
 import android.media.RingtoneManager
 import android.util.Log
@@ -64,16 +66,24 @@ class MorpheusPushService : PushService() {
             // decrypt the message here (Rust, through JNI).
             val notice = if (PushStartup.appStarted) awaitNotice(eventId) else coldPreview(roomId, eventId)
             Log.d(TAG, "showing a notification for $roomId (unread $unread, notice ${notice != null})")
-            val room = notice?.optString("room")?.ifEmpty { null } ?: roomName(roomId)
+            // What this device lets a notification show (`device_prefs.rs`):
+            // without a notice, a hidden one names no room either.
+            val private = File(dataDir(this), "notification_content").exists()
+            val room = notice?.optString("room")?.ifEmpty { null }
+                ?: if (private) null else roomName(roomId)
             val sender = notice?.optString("sender")?.ifEmpty { null }
             if (notice?.optBoolean("call") == true) {
                 showCall(roomId, sender ?: room ?: "Someone")
                 return@Thread
             }
-            val title = if (sender != null && room != null) "$sender in $room" else room
+            // The notice is worded already (`notices.rs`): a room of two by
+            // name alone, and as much as the device's setting shows.
+            val title = notice?.optString("title")?.ifEmpty { null } ?: room
             val text = notice?.optString("body")?.ifEmpty { null }
                 ?: if (unread > 1) "$unread unread messages" else "New message"
-            show(roomId, title, text)
+            val icon = notice?.optString("icon")?.ifEmpty { null }
+            val image = notice?.optString("image")?.ifEmpty { null }
+            show(roomId, title, text, icon, image)
         }.start()
     }
 
@@ -119,7 +129,16 @@ class MorpheusPushService : PushService() {
 
     private fun manager() = getSystemService(NotificationManager::class.java)
 
-    private fun show(roomId: String, title: String?, text: String) {
+    /** A picture the Rust side wrote for a notification, if it decodes. */
+    private fun picture(path: String?): Bitmap? = path?.let {
+        try {
+            BitmapFactory.decodeFile(it)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun show(roomId: String, title: String?, text: String, iconPath: String?, imagePath: String?) {
         val manager = manager()
         manager.createNotificationChannel(
             NotificationChannel(CHANNEL, "Messages", NotificationManager.IMPORTANCE_HIGH)
@@ -135,14 +154,18 @@ class MorpheusPushService : PushService() {
         )
         val icon = resources.getIdentifier("ic_notification", "drawable", packageName)
             .takeIf { it != 0 } ?: applicationInfo.icon
-        val built = Notification.Builder(this, CHANNEL)
+        val builder = Notification.Builder(this, CHANNEL)
             .setSmallIcon(icon)
             .setContentTitle(title ?: "Morpheus")
             .setContentText(text)
             .setAutoCancel(true)
             .setContentIntent(tap)
-            .build()
-        manager.notify(roomId.hashCode(), built)
+        // The sender's picture beside it, and a photo sent shown in it.
+        picture(iconPath)?.let { builder.setLargeIcon(it) }
+        picture(imagePath)?.let {
+            builder.setStyle(Notification.BigPictureStyle().bigPicture(it).setSummaryText(text))
+        }
+        manager.notify(roomId.hashCode(), builder.build())
     }
 
     /** Someone calling: rings like a phone call until answered or for half a minute. */

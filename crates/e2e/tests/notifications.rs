@@ -4,7 +4,7 @@
 
 #![allow(clippy::expect_used)]
 
-use morpheus_e2e::{App, DEFAULT_WAIT};
+use morpheus_e2e::{App, DEFAULT_WAIT, api_as, new_account};
 
 fn homeserver() -> Option<String> {
     std::env::var("MORPHEUS_TEST_HOMESERVER").ok()
@@ -292,4 +292,136 @@ async fn notifications_show_the_senders_picture_and_the_photo() {
     };
     assert!(is_image(&notice["icon"]), "alice's picture: {notice}");
     assert!(is_image(&notice["image"]), "the photo: {notice}");
+}
+
+/// A fresh pair in a room of their own (just the two of them): `reader` is
+/// signed in on a desktop app, and `writer` posts through the API.
+async fn pair(hs: &str, name: &str) -> (App, String, String, String) {
+    let reader = new_account(hs, &format!("{name}r")).expect("reader");
+    let writer = new_account(hs, &format!("{name}w")).expect("writer");
+    let room = api_as(
+        hs,
+        &writer,
+        "POST",
+        "createRoom",
+        Some(serde_json::json!({ "name": format!("{name} chat") })),
+    )
+    .expect("a room");
+    let room = room["room_id"].as_str().expect("room id").to_owned();
+    let id = room.replace('!', "%21").replace(':', "%3A");
+    api_as(
+        hs,
+        &writer,
+        "POST",
+        &format!("rooms/{id}/invite"),
+        Some(serde_json::json!({ "user_id": format!("@{reader}:localhost") })),
+    )
+    .expect("invite");
+    api_as(
+        hs,
+        &reader,
+        "POST",
+        &format!("rooms/{id}/join"),
+        Some(serde_json::json!({})),
+    )
+    .expect("reader joins");
+    let mut app = App::launch_desktop(hs).await.expect("launch");
+    login(&mut app, &reader).await;
+    (app, reader, writer, room)
+}
+
+/// `writer` says `text` in `room`; what the reader's app showed for it (the
+/// first notification after the `before` already shown).
+async fn shown_for(app: &App, hs: &str, writer: &str, room: &str, text: &str) -> serde_json::Value {
+    let before = shown(app).len();
+    let room = room.replace('!', "%21").replace(':', "%3A");
+    api_as(
+        hs,
+        writer,
+        "PUT",
+        &format!("rooms/{room}/send/m.room.message/{}", text.len()),
+        Some(serde_json::json!({ "msgtype": "m.text", "body": text })),
+    )
+    .expect("send");
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        if let Some(notice) = shown(app).into_iter().nth(before) {
+            return notice;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "nothing shown for {text:?}: {:?}",
+            shown(app)
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+}
+
+/// A room of just two people reads like a DM: the notification is titled
+/// with the other person's name alone, not "name in room".
+#[tokio::test]
+async fn a_two_person_room_notifies_like_a_dm() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let (app, _reader, writer, room) = pair(&hs, "duo").await;
+    let text = format!("just us {}", std::process::id());
+    let notice = shown_for(&app, &hs, &writer, &room, &text).await;
+    assert_eq!(notice["title"].as_str(), Some(writer.as_str()), "{notice}");
+    assert_eq!(notice["body"].as_str(), Some(text.as_str()), "{notice}");
+}
+
+/// Settings → Notifications chooses what a notification gives away: the
+/// message (the default), only who sent it, or nothing ("Someone sent a
+/// message"), kept on this device.
+#[tokio::test]
+async fn notifications_can_hide_the_message_or_the_sender() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let (mut app, _reader, writer, room) = pair(&hs, "hush").await;
+    let choose = async |app: &mut App, value: &str| {
+        app.click(".settings-button").await.expect("gear");
+        app.wait_for_text(".settings-nav button", "Notifications", DEFAULT_WAIT)
+            .await
+            .expect("settings");
+        app.click_text(".settings-nav button", "Notifications")
+            .await
+            .expect("notifications page");
+        let option = format!(".settings-page input[name=notification-content][value={value}]");
+        app.wait_for(&option, DEFAULT_WAIT).await.expect("the choice");
+        app.click(&option).await.expect("choose");
+        app.wait_for(&format!("{option}:checked"), DEFAULT_WAIT)
+            .await
+            .expect("chosen");
+        app.press("body", "Escape").await.expect("close settings");
+    };
+    let pid = std::process::id();
+
+    choose(&mut app, "sender").await;
+    let text = format!("secret plans {pid}");
+    let notice = shown_for(&app, &hs, &writer, &room, &text).await;
+    assert_eq!(notice["title"].as_str(), Some(writer.as_str()), "{notice}");
+    assert_eq!(notice["body"].as_str(), Some("Sent a message"), "{notice}");
+
+    choose(&mut app, "hidden").await;
+    let text = format!("more secret plans {pid}");
+    let notice = shown_for(&app, &hs, &writer, &room, &text).await;
+    assert_eq!(notice["title"].as_str(), Some("Morpheus"), "{notice}");
+    assert_eq!(
+        notice["body"].as_str(),
+        Some("Someone sent a message"),
+        "{notice}"
+    );
+    assert!(
+        notice["icon"].is_null() && notice["image"].is_null(),
+        "no pictures when hidden: {notice}"
+    );
+
+    choose(&mut app, "full").await;
+    let text = format!("open plans {pid}");
+    let notice = shown_for(&app, &hs, &writer, &room, &text).await;
+    assert_eq!(notice["body"].as_str(), Some(text.as_str()), "{notice}");
 }

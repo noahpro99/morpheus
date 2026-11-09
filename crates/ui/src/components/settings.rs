@@ -15,6 +15,7 @@ use morpheus_core::{
 use super::keys::{KeysRefresh, SettingsFocus, SettingsTarget};
 use super::shell::{NarrowWindow, Theme, UiPrefs};
 use super::toast::report;
+use crate::device_prefs::NotificationContent;
 use crate::icons::{BELL, Icon, MIC, PALETTE, SHIELD, USER};
 
 /// How long a finished verification shows its success before stepping aside.
@@ -638,6 +639,11 @@ fn NotificationsPage() -> Element {
         let data_dir = data_dir.clone();
         move || crate::device_prefs::notifications_enabled(&data_dir)
     });
+    let mut shows = use_signal({
+        let data_dir = data_dir.clone();
+        move || crate::device_prefs::notification_content(&data_dir)
+    });
+    let content_dir = data_dir.clone();
     // Written by the Android push bridge (apps/mobile/src/push.rs).
     let push = std::fs::read_to_string(data_dir.join("push_status")).ok();
     let device = if cfg!(target_os = "android") {
@@ -677,6 +683,27 @@ fn NotificationsPage() -> Element {
                 span { "Notifications on this device" }
             }
             p { class: "device-notifications muted", "{device}" }
+            fieldset { class: "notify-default notification-content",
+                legend { "What notifications show" }
+                for content in NotificationContent::ALL {
+                    label { class: "notify-choice",
+                        input {
+                            r#type: "radio",
+                            name: "notification-content",
+                            value: "{content.key()}",
+                            checked: shows() == content,
+                            onchange: {
+                                let data_dir = content_dir.clone();
+                                move |_| match crate::device_prefs::set_notification_content(&data_dir, content) {
+                                    Ok(()) => shows.set(content),
+                                    Err(err) => report("saving what notifications show", &err),
+                                }
+                            },
+                        }
+                        span { "{content.label()}" }
+                    }
+                }
+            }
         }
     }
 }

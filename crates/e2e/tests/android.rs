@@ -482,6 +482,42 @@ async fn phone_back_key_closes_and_steps_back() {
     app.wait_for(".settings", DEFAULT_WAIT)
         .await
         .expect("settings open");
+    // From a page, back steps to the list of pages (as its back arrow
+    // does), then out of Settings.
+    let pages = app
+        .eval("return [...document.querySelectorAll('.settings-nav button.settings-nav-item')].map(b => b.textContent.trim());")
+        .await
+        .expect("pages");
+    for page in pages
+        .as_array()
+        .expect("pages")
+        .iter()
+        .filter_map(|p| p.as_str())
+    {
+        app.tap_text(".settings-nav button.settings-nav-item", page)
+            .await
+            .expect("a settings page");
+        app.wait_for_text(".settings-page h2", page, DEFAULT_WAIT)
+            .await
+            .expect("page shown");
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        back_key();
+        gone(&mut app, ".settings-page", &format!("the {page} page")).await;
+        app.wait_for(".settings .settings-nav", DEFAULT_WAIT)
+            .await
+            .unwrap_or_else(|e| panic!("back from {page} at the list of pages: {e}"));
+    }
+    // The page's own back arrow does the same.
+    app.tap_text(".settings-nav button.settings-nav-item", "Appearance")
+        .await
+        .expect("a settings page");
+    app.wait_for_text(".settings-page h2", "Appearance", DEFAULT_WAIT)
+        .await
+        .expect("page shown");
+    app.tap(".settings-page .settings-back")
+        .await
+        .expect("the back arrow");
+    gone(&mut app, ".settings-page", "the page (back arrow)").await;
     back_key();
     gone(&mut app, ".settings", "settings").await;
     pane(&mut app, "rooms").await;
@@ -687,6 +723,16 @@ async fn phone_gets_push_notifications_in_the_background() {
         });
         if ours {
             eprintln!("notification after {:?}", sent.elapsed());
+            // With bob's picture beside it, as on the desktop.
+            let record = shown
+                .split("NotificationRecord(")
+                .find(|record| record.contains("pkg=dev.morpheus.mobile") && record.contains(&text))
+                .unwrap_or_default();
+            assert!(
+                record.contains("android.largeIcon=Icon"),
+                "no sender's picture on the notification: {}",
+                record.chars().take(1500).collect::<String>()
+            );
             break;
         }
         if std::time::Instant::now() >= deadline {

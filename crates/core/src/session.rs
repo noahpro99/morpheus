@@ -490,9 +490,15 @@ pub struct NotificationPreview {
     pub sender: String,
     pub room: String,
     pub body: String,
+    /// Just two people in the room: notified like a DM, by name.
     pub is_dm: bool,
+    pub is_mention: bool,
     /// A ring: someone calling (MSC4075).
     pub is_call: bool,
+    /// The sender's picture, for the notification's icon.
+    pub sender_avatar: Option<crate::Media>,
+    /// The photo, when the message is one.
+    pub image: Option<crate::Media>,
 }
 
 impl Core {
@@ -508,6 +514,7 @@ impl Core {
     ) -> CoreFuture<Option<NotificationPreview>> {
         let core = self.clone();
         self.run(async move {
+            use matrix_sdk::ruma::events::room::message::MessageType;
             use matrix_sdk::ruma::events::{
                 AnySyncMessageLikeEvent, AnySyncTimelineEvent, SyncMessageLikeEvent,
             };
@@ -539,10 +546,12 @@ impl Core {
                 .matrix_auth()
                 .restore_session(stored.session, RoomLoadSettings::default())
                 .await?;
-            let notifications =
-                NotificationClient::new(client, NotificationProcessSetup::MultipleProcesses)
-                    .await
-                    .map_err(|err| Error::Other(format!("notification client: {err}")))?;
+            let notifications = NotificationClient::new(
+                client.clone(),
+                NotificationProcessSetup::MultipleProcesses,
+            )
+            .await
+            .map_err(|err| Error::Other(format!("notification client: {err}")))?;
             let status = notifications
                 .get_notification(&room_id, &event_id)
                 .await
@@ -556,22 +565,43 @@ impl Core {
                 }
                 NotificationEvent::Invite(_) => false,
             };
+            let mut photo = None;
             let body = match &item.event {
                 _ if is_call => "Incoming call".to_owned(),
                 NotificationEvent::Timeline(event) => match event.as_ref() {
                     AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::RoomMessage(
                         SyncMessageLikeEvent::Original(message),
-                    )) => message.content.body().to_owned(),
+                    )) => {
+                        if let MessageType::Image(image) = &message.content.msgtype {
+                            photo = Some(crate::MediaRef::from_source(image.source.clone()));
+                        }
+                        message.content.body().to_owned()
+                    }
                     _ => "New message".to_owned(),
                 },
                 NotificationEvent::Invite(_) => "Invited you".to_owned(),
+            };
+            let avatar = item
+                .sender_avatar_url
+                .as_deref()
+                .map(|url| crate::MediaRef::from_mxc(url.into()));
+            let sender_avatar = match avatar {
+                Some(media) => crate::media::fetch_thumbnail(&client, media, 96, 96).await,
+                None => None,
+            };
+            let image = match photo {
+                Some(media) => crate::media::fetch_thumbnail(&client, media, 512, 512).await,
+                None => None,
             };
             Ok(Some(NotificationPreview {
                 sender: item.sender_display_name.clone().unwrap_or_default(),
                 room: item.room_computed_display_name.clone(),
                 body,
-                is_dm: item.is_direct_message_room,
+                is_dm: item.is_direct_message_room || item.joined_members_count <= 2,
+                is_mention: item.has_mention.unwrap_or(false),
                 is_call,
+                sender_avatar,
+                image,
             }))
         })
     }

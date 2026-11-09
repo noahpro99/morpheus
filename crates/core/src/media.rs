@@ -93,39 +93,48 @@ impl Media {
     }
 }
 
+/// [`Session::thumbnail`], for a client without a session (a push's preview).
+pub(crate) async fn fetch_thumbnail(
+    client: &matrix_sdk::Client,
+    media: MediaRef,
+    width: u32,
+    height: u32,
+) -> Option<Media> {
+    let media_client = client.media();
+    let settings = MediaThumbnailSettings::new(UInt::from(width), UInt::from(height));
+    let thumbnail = MediaRequestParameters {
+        source: media.source.clone(),
+        format: MediaFormat::Thumbnail(settings),
+    };
+
+    let bytes = match media_client.get_media_content(&thumbnail, true).await {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            debug!(%err, key = media.key, "thumbnail unavailable, fetching full file");
+            let full = MediaRequestParameters {
+                source: media.source,
+                format: MediaFormat::File,
+            };
+            match media_client.get_media_content(&full, true).await {
+                Ok(bytes) => bytes,
+                Err(err) => {
+                    debug!(%err, "media fetch failed");
+                    return None;
+                }
+            }
+        }
+    };
+    Some(Media { bytes })
+}
+
 impl Session {
     /// Fetch a thumbnail at most `width`×`height`, falling back to the full
     /// file when the server cannot thumbnail (tiny images, SVGs, ...).
     /// The SDK caches results on disk.
     pub fn thumbnail(&self, media: MediaRef, width: u32, height: u32) -> CoreFuture<Option<Media>> {
         let client = self.client.clone();
-        self.core.run(async move {
-            let media_client = client.media();
-            let settings = MediaThumbnailSettings::new(UInt::from(width), UInt::from(height));
-            let thumbnail = MediaRequestParameters {
-                source: media.source.clone(),
-                format: MediaFormat::Thumbnail(settings),
-            };
-
-            let bytes = match media_client.get_media_content(&thumbnail, true).await {
-                Ok(bytes) => bytes,
-                Err(err) => {
-                    debug!(%err, key = media.key, "thumbnail unavailable, fetching full file");
-                    let full = MediaRequestParameters {
-                        source: media.source,
-                        format: MediaFormat::File,
-                    };
-                    match media_client.get_media_content(&full, true).await {
-                        Ok(bytes) => bytes,
-                        Err(err) => {
-                            debug!(%err, "media fetch failed");
-                            return Ok(None);
-                        }
-                    }
-                }
-            };
-            Ok(Some(Media { bytes }))
-        })
+        self.core
+            .run(async move { Ok(fetch_thumbnail(&client, media, width, height).await) })
     }
 
     /// Download the full file behind `media` into the user's Downloads
