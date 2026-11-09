@@ -155,6 +155,27 @@ timeline → send.
   declined or abandoned, how backers vote on priority, whether to still accept
   untied donations.
 
+## Hosting: morpheuschat.org (idea, not scheduled)
+- The client stays open source. Paid hosting on `morpheuschat.org` homeservers
+  is the default upgrade: more media storage and bigger uploads than free
+  servers such as matrix.org.
+- Where it is offered: sending a file over the server's upload limit (the
+  limit comes from `/_matrix/client/v1/media/config`) prompts an upgrade, not
+  only an error; Settings shows storage used on servers you run or pay for,
+  with the plans.
+- "Upgrade" moves an account from `@you:matrix.org` to
+  `@you:morpheuschat.org`. Matrix has no account portability yet (MSC2785 and
+  related proposals are unfinished), so a migration is a new account plus a
+  guided move: copy the profile, join the same rooms and DMs (inviting the new
+  account from the old one), carry over the encryption keys through key
+  backup, and leave the old account with a "moved" notice. Message history
+  stays attributed to the old ID.
+- Open questions: a quota API (Synapse has none for users; ours would be an
+  extension the client reads only on our servers); whether the upgrade prompt
+  stays out of the way for self-hosters and other servers; billing provider;
+  how this sits next to the feature-bounty idea above; keeping it honest (no
+  dark patterns, free servers stay first-class).
+
 ## Testing strategy
 
 - **Unit tests** in `crates/core` and `crates/ui` for pure logic (grouping, formatting, mapping SDK items).
