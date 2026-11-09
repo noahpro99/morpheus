@@ -128,15 +128,15 @@ async fn desktop_tour() {
     shot(&mut app, "desktop-settings").await;
     app.click(".settings-header .ghost").await.expect("close");
 
-    // A call in the lobby with Milo, both talking (test runs send a tone).
-    let mut milo = App::launch(&hs).await.expect("milo");
-    login(&mut milo, "milo").await;
-    open(&mut milo, "lobby").await;
-    app.click(".chat-header .call-button").await.expect("call");
+    // A call in #hangout (a voice channel: opening it joins) with Milo,
+    // both talking (test runs send a tone).
+    open(&mut app, "hangout").await;
     app.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
         .await
         .expect("connected");
-    milo.click(".chat-header .call-button").await.expect("join");
+    let mut milo = App::launch(&hs).await.expect("milo");
+    login(&mut milo, "milo").await;
+    open(&mut milo, "hangout").await;
     app.wait_for_js(
         "return document.querySelectorAll('.call-participant').length >= 2;",
         DEFAULT_WAIT,

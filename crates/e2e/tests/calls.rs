@@ -11,6 +11,30 @@ fn homeserver() -> Option<String> {
     std::env::var("MORPHEUS_TEST_HOMESERVER").ok()
 }
 
+/// The seeded voice channels: #hangout, and #vault (encrypted).
+const VOICE_CHANNELS: [&str; 2] = ["hangout", "vault"];
+
+/// Open a room through the switcher (Ctrl+K), which shows it without joining
+/// a voice channel's call.
+async fn open_without_joining(app: &mut App, room: &str) {
+    app.key_combo("body", "k", true, false, false)
+        .await
+        .expect("ctrl+k");
+    app.wait_for(".switcher input", DEFAULT_WAIT)
+        .await
+        .expect("switcher");
+    app.type_into(".switcher input", room)
+        .await
+        .expect("filter");
+    app.wait_for_text(".switcher-item.active", room, DEFAULT_WAIT)
+        .await
+        .expect("room offered");
+    app.press(".switcher input", "Enter").await.expect("pick");
+    app.wait_for_text(".chat-header h2", room, DEFAULT_WAIT)
+        .await
+        .expect("room open");
+}
+
 async fn login_and_open(app: &mut App, user: &str, room: &str) {
     app.wait_for("form.login", DEFAULT_WAIT)
         .await
@@ -26,7 +50,12 @@ async fn login_and_open(app: &mut App, user: &str, room: &str) {
     .expect("password");
     app.submit("form.login").await.expect("submit");
     app.wait_for(".room", DEFAULT_WAIT).await.expect("rooms");
-    if let Err(err) = app.open_room(room).await {
+    // Calls belong to voice channels (and DMs). Clicking a voice channel's
+    // row joins its call; the switcher only opens it, so a test can start or
+    // join from the call button as a step of its own.
+    if VOICE_CHANNELS.contains(&room) {
+        open_without_joining(app, room).await;
+    } else if let Err(err) = app.open_room(room).await {
         let rows = app.eval("return [...document.querySelectorAll('.room')].map(r => r.textContent).join(' | ');").await;
         let _ = app.screenshot("open-room-failed").await;
         panic!("open room: {err}\nrows: {rows:?}");
@@ -68,14 +97,26 @@ async fn join_a_call_see_who_is_in_it_mute_and_hang_up() {
         return;
     };
     let mut alice = App::launch(&hs).await.expect("launch alice");
-    login_and_open(&mut alice, "alice", "random").await;
-    let random_id: String = alice
+    login_and_open(&mut alice, "alice", "hangout").await;
+    let hangout_id: String = alice
         .eval("return document.querySelector('.room.selected').dataset.room;")
         .await
         .expect("room id")
         .as_str()
         .expect("string")
         .to_owned();
+    // An empty channel to start from: someone an earlier test left in the
+    // call drops out once their membership expires (chiming "leave").
+    alice
+        .wait_for_js(
+            &format!(
+                "return ![...document.querySelectorAll('.room-call')].some(c => c.dataset.room === {} && c.querySelector('.call-participant'));",
+                serde_json::to_string(&hangout_id).expect("json")
+            ),
+            std::time::Duration::from_secs(90),
+        )
+        .await
+        .expect("nobody left in the channel");
 
     // Alice starts a call from the header.
     alice
@@ -87,11 +128,11 @@ async fn join_a_call_see_who_is_in_it_mute_and_hang_up() {
         .await
         .expect("voice panel");
     alice
-        .wait_for_text(".voice-panel", "random", DEFAULT_WAIT)
+        .wait_for_text(".voice-panel", "hangout", DEFAULT_WAIT)
         .await
         .expect("names the room");
     alice
-        .wait_for_js(&in_call(&random_id, "alice"), DEFAULT_WAIT)
+        .wait_for_js(&in_call(&hangout_id, "alice"), DEFAULT_WAIT)
         .await
         .expect("alice listed under the room");
     alice
@@ -101,8 +142,8 @@ async fn join_a_call_see_who_is_in_it_mute_and_hang_up() {
 
     // Bob sees her there before joining, and joins.
     let mut bob = App::launch(&hs).await.expect("launch bob");
-    login_and_open(&mut bob, "bob", "random").await;
-    bob.wait_for_js(&in_call(&random_id, "alice"), DEFAULT_WAIT)
+    login_and_open(&mut bob, "bob", "hangout").await;
+    bob.wait_for_js(&in_call(&hangout_id, "alice"), DEFAULT_WAIT)
         .await
         .expect("bob sees alice in the call");
     bob.click(".chat-header .call-button").await.expect("join");
@@ -110,7 +151,7 @@ async fn join_a_call_see_who_is_in_it_mute_and_hang_up() {
         .await
         .expect("bob connected");
     alice
-        .wait_for_js(&in_call(&random_id, "bob"), DEFAULT_WAIT)
+        .wait_for_js(&in_call(&hangout_id, "bob"), DEFAULT_WAIT)
         .await
         .expect("alice sees bob join");
     if let Err(err) = alice
@@ -171,7 +212,7 @@ async fn join_a_call_see_who_is_in_it_mute_and_hang_up() {
         .await
         .expect("panel gone");
     bob.wait_for_js(
-        &format!("return !(() => {{ {} }})();", in_call(&random_id, "alice")),
+        &format!("return !(() => {{ {} }})();", in_call(&hangout_id, "alice")),
         DEFAULT_WAIT,
     )
     .await
@@ -199,13 +240,13 @@ async fn encrypted_rooms_encrypt_the_call_and_both_sides_still_hear() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
-    // #encrypted starts without calls allowed (the seed resets it): alice,
+    // #vault starts without calls allowed (the seed resets it): alice,
     // an admin, turns them on by joining, and bob can then join too.
     // Both devices exist before either sends, so room keys reach both.
     let mut alice = App::launch(&hs).await.expect("launch alice");
-    login_and_open(&mut alice, "alice", "encrypted").await;
+    login_and_open(&mut alice, "alice", "vault").await;
     let mut bob = App::launch(&hs).await.expect("launch bob");
-    login_and_open(&mut bob, "bob", "encrypted").await;
+    login_and_open(&mut bob, "bob", "vault").await;
 
     alice
         .click(".chat-header .call-button")
@@ -308,7 +349,7 @@ async fn choose_the_microphone_and_speaker_for_calls() {
         return;
     };
     let mut alice = App::launch_desktop(&hs).await.expect("launch alice");
-    login_and_open(&mut alice, "alice", "random").await;
+    login_and_open(&mut alice, "alice", "hangout").await;
     open_voice_settings(&mut alice).await;
     choose(&mut alice, "microphone", "test-microphone-2").await;
     choose(&mut alice, "speaker", "test-speaker-1").await;
@@ -364,8 +405,11 @@ async fn choose_the_microphone_and_speaker_for_calls() {
     alice.press("body", "Escape").await.expect("close settings");
 
     // Calls still connect.
-    alice.open_room("random").await.expect("open #random");
-    alice.click(".call-button").await.expect("join");
+    open_without_joining(&mut alice, "hangout").await;
+    alice
+        .click(".chat-header .call-button")
+        .await
+        .expect("join");
     alice
         .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
         .await
@@ -390,9 +434,9 @@ async fn a_call_in_a_dm_rings_the_other_person_who_can_answer_or_decline() {
         return;
     };
     let mut alice = App::launch(&hs).await.expect("launch alice");
-    login_and_open(&mut alice, "alice", "random").await;
+    login_and_open(&mut alice, "alice", "hangout").await;
     let mut bob = App::launch(&hs).await.expect("launch bob");
-    login_and_open(&mut bob, "bob", "random").await;
+    login_and_open(&mut bob, "bob", "hangout").await;
     open_dm(&mut alice, "bob").await;
 
     // Alice calls; bob's app rings.
@@ -542,9 +586,9 @@ async fn a_camera_turned_on_shows_to_everyone_in_the_call_until_turned_off() {
     };
     // An encrypted room: the video is end-to-end encrypted like the audio.
     let mut alice = App::launch(&hs).await.expect("launch alice");
-    login_and_open(&mut alice, "alice", "encrypted").await;
+    login_and_open(&mut alice, "alice", "vault").await;
     let mut bob = App::launch(&hs).await.expect("launch bob");
-    login_and_open(&mut bob, "bob", "encrypted").await;
+    login_and_open(&mut bob, "bob", "vault").await;
     alice
         .click(".chat-header .call-button")
         .await
@@ -576,10 +620,7 @@ async fn a_camera_turned_on_shows_to_everyone_in_the_call_until_turned_off() {
         .await
         .expect("the button shows it on");
     if alice.is_phone() {
-        alice
-            .open_room("encrypted")
-            .await
-            .expect("back to the room");
+        open_without_joining(&mut alice, "vault").await;
         // The call's own screen, where a phone shows the video.
         alice
             .click(".chat-header .call-button")
@@ -734,9 +775,9 @@ async fn a_shared_screen_shows_to_everyone_in_the_call_until_stopped() {
         eprintln!("phones do not share their screen yet; skipping");
         return;
     }
-    login_and_open(&mut alice, "alice", "random").await;
+    login_and_open(&mut alice, "alice", "hangout").await;
     let mut bob = App::launch(&hs).await.expect("launch bob");
-    login_and_open(&mut bob, "bob", "random").await;
+    login_and_open(&mut bob, "bob", "hangout").await;
     alice
         .click(".chat-header .call-button")
         .await
@@ -836,9 +877,9 @@ async fn joining_a_ringing_call_from_the_room_stops_the_ring_for_good() {
         return;
     };
     let mut alice = App::launch(&hs).await.expect("launch alice");
-    login_and_open(&mut alice, "alice", "random").await;
+    login_and_open(&mut alice, "alice", "hangout").await;
     let mut bob = App::launch(&hs).await.expect("launch bob");
-    login_and_open(&mut bob, "bob", "random").await;
+    login_and_open(&mut bob, "bob", "hangout").await;
     open_dm(&mut alice, "bob").await;
     alice
         .click(".chat-header .call-button")
@@ -898,7 +939,7 @@ async fn a_ring_during_a_call_is_shown_but_silent() {
         return;
     };
     let mut alice = App::launch_desktop(&hs).await.expect("launch alice");
-    login_and_open(&mut alice, "alice", "random").await;
+    login_and_open(&mut alice, "alice", "hangout").await;
     alice
         .click(".chat-header .call-button")
         .await
@@ -910,7 +951,7 @@ async fn a_ring_during_a_call_is_shown_but_silent() {
     let before = rings(&mut alice).await;
 
     let mut bob = App::launch(&hs).await.expect("launch bob");
-    login_and_open(&mut bob, "bob", "random").await;
+    login_and_open(&mut bob, "bob", "hangout").await;
     open_dm(&mut bob, "alice").await;
     bob.click(".chat-header .call-button")
         .await
@@ -1074,9 +1115,9 @@ async fn encrypted_calls_work_whatever_the_token_service_names_people() {
     let service = renaming_token_service().await;
     let env = [("MORPHEUS_LIVEKIT_SERVICE", service.as_str())];
     let mut alice = App::launch_with_env(&hs, &env).await.expect("launch alice");
-    login_and_open(&mut alice, "alice", "encrypted").await;
+    login_and_open(&mut alice, "alice", "vault").await;
     let mut bob = App::launch_with_env(&hs, &env).await.expect("launch bob");
-    login_and_open(&mut bob, "bob", "encrypted").await;
+    login_and_open(&mut bob, "bob", "vault").await;
 
     alice
         .click(".chat-header .call-button")
@@ -1147,7 +1188,7 @@ async fn the_call_stage_is_resized_by_dragging_its_edge() {
         return;
     };
     let mut alice = App::launch_desktop(&hs).await.expect("launch alice");
-    login_and_open(&mut alice, "alice", "random").await;
+    login_and_open(&mut alice, "alice", "hangout").await;
     alice
         .click(".chat-header .call-button")
         .await
@@ -1254,9 +1295,9 @@ async fn a_camera_shows_in_its_persons_card_among_equal_cards() {
         return;
     };
     let mut alice = App::launch_desktop(&hs).await.expect("launch alice");
-    login_and_open(&mut alice, "alice", "random").await;
+    login_and_open(&mut alice, "alice", "hangout").await;
     let mut bob = App::launch_desktop(&hs).await.expect("launch bob");
-    login_and_open(&mut bob, "bob", "random").await;
+    login_and_open(&mut bob, "bob", "hangout").await;
     alice
         .click(".chat-header .call-button")
         .await
@@ -1373,11 +1414,11 @@ async fn a_ring_is_heard_on_the_desktop() {
         return;
     };
     let mut alice = App::launch(&hs).await.expect("launch alice");
-    login_and_open(&mut alice, "alice", "random").await;
+    login_and_open(&mut alice, "alice", "hangout").await;
     let mut bob = App::launch_with_env(&hs, &[("MORPHEUS_CALL_AUDIO", "platform")])
         .await
         .expect("launch bob, with real sound");
-    login_and_open(&mut bob, "bob", "random").await;
+    login_and_open(&mut bob, "bob", "hangout").await;
     open_dm(&mut alice, "bob").await;
     let hang_up = if alice.is_phone() {
         ".call-screen .hang-up"
@@ -1591,4 +1632,69 @@ async fn clicking_a_voice_channel_joins_its_call() {
         let _ = app.click(".voice-panel .hang-up").await;
         out_of_call(app).await;
     }
+}
+
+/// In a call, its controls are part of the profile card at the bottom left
+/// (which grows to hold them), and hanging up is red wherever it shows.
+#[tokio::test]
+async fn call_controls_live_in_the_profile_card_with_a_red_hang_up() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    login_and_open(&mut alice, "alice", "general").await;
+    let card_before = alice
+        .eval("return document.querySelector('.user-pill').getBoundingClientRect().height;")
+        .await
+        .expect("card")
+        .as_f64()
+        .expect("height");
+    let lounge = "[...document.querySelectorAll('.room')].find(r => r.querySelector('.room-name')?.textContent.trim() === 'lounge')";
+    alice
+        .wait_for_js(&format!("return !!{lounge};"), DEFAULT_WAIT)
+        .await
+        .expect("the voice channel listed");
+    alice
+        .eval(&format!("{lounge}.click();"))
+        .await
+        .expect("join the lounge");
+    alice
+        .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("in the call");
+    let card = alice
+        .eval(
+            "const panel = document.querySelector('.voice-panel'); \
+             const pill = panel.closest('.user-pill'); \
+             const probe = document.createElement('div'); probe.style.background = 'var(--danger)'; document.body.append(probe); \
+             const danger = getComputedStyle(probe).backgroundColor; probe.remove(); \
+             const hangUps = [...document.querySelectorAll('.hang-up')].filter(b => b.offsetParent !== null); \
+             return { in_card: !!pill, height: pill ? pill.getBoundingClientRect().height : 0, danger, \
+               hang_ups: hangUps.map(b => getComputedStyle(b).backgroundColor) };",
+        )
+        .await
+        .expect("card");
+    assert_eq!(
+        card["in_card"], true,
+        "call controls outside the profile card: {card}"
+    );
+    assert!(
+        card["height"].as_f64().unwrap_or(0.0) > card_before + 20.0,
+        "the profile card did not grow to hold them ({card_before}px before): {card}"
+    );
+    let hang_ups = card["hang_ups"].as_array().expect("hang-ups");
+    assert!(!hang_ups.is_empty(), "no hang-up shown: {card}");
+    assert!(
+        hang_ups.iter().all(|c| c == &card["danger"]),
+        "a hang-up that is not red: {card}"
+    );
+    alice.click(".voice-panel .hang-up").await.expect("hang up");
+    alice
+        .wait_for_js(
+            "return !document.querySelector('.voice-panel');",
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("left the call");
 }

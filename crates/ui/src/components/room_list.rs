@@ -311,7 +311,7 @@ pub fn RoomList(error: Option<String>) -> Element {
                     }
                 }
             }
-            super::call::VoicePanel {}
+            // The call controls live in the profile card (`UserBar`).
         }
     }
 }

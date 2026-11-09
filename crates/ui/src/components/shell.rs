@@ -54,6 +54,10 @@ const LAST_PLACE_WAIT_SECS: u64 = 20;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Narrow(pub bool);
 pub type NarrowWindow = Signal<Narrow>;
+/// Where the app was last, until it has been reopened. Going somewhere
+/// yourself first ([`go_to`]) drops it.
+pub type PendingPlace = Signal<Option<crate::device_prefs::LastPlace>>;
+
 /// Narrow layout: whether the chat pane is in front of the room list.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ChatInFront(pub bool);
@@ -584,9 +588,9 @@ pub fn Shell(session: Session) -> Element {
     // reopened once that room is in the list. Until then nothing is saved,
     // so the room picked meanwhile does not overwrite it.
     let place_dir = use_context::<crate::AppConfig>().data_dir;
-    let mut pending_place = use_signal({
+    let mut pending_place: PendingPlace = use_context_provider({
         let (dir, user) = (place_dir.clone(), place_user.clone());
-        move || crate::device_prefs::last_place(&dir, &user)
+        move || Signal::new(crate::device_prefs::last_place(&dir, &user))
     });
     // A room that is gone (left elsewhere) is not waited for forever.
     use_future(move || async move {
@@ -1175,28 +1179,6 @@ fn ChatRoom(room: RoomSummary) -> Element {
             if let Some(topic) = room.topic.as_deref() {
                 span { class: "topic", "{topic}" }
             }
-            {
-                let in_this_call = call_room.as_ref() == Some(&room.id);
-                let (session, room_id, room_name) = (header_session.clone(), room.id.clone(), room.name.clone());
-                rsx! {
-                    button {
-                        class: "ghost call-button",
-                        class: if in_this_call { "active" },
-                        title: if in_this_call && narrow().0 { "Open the call" } else if in_this_call { "Leave the call" } else if room.call_participants.is_empty() { "Start a call" } else { "Join the call" },
-                        onclick: move |_| {
-                            if in_this_call && narrow.peek().0 {
-                                // A phone opens the call; hanging up is in there.
-                                super::call::show_call_screen(true);
-                            } else if in_this_call {
-                                super::call::hang_up(session.clone());
-                            } else {
-                                super::call::join_call(session.clone(), room_id.clone(), room_name.clone());
-                            }
-                        },
-                        Icon { glyph: if in_this_call && !narrow().0 { crate::icons::PHONE_OFF } else { crate::icons::PHONE }, size: 16 }
-                    }
-                }
-            }
             button {
                 class: "ghost room-menu-button",
                 title: "Room options",
@@ -1211,11 +1193,38 @@ fn ChatRoom(room: RoomSummary) -> Element {
                 Icon { glyph: crate::icons::ELLIPSIS, size: 16 }
             }
             button {
-                class: "ghost search-toggle",
-                class: if search_open().0 { "active" },
-                title: "Search this room",
-                onclick: move |_| search_open.with_mut(|s| s.0 = !s.0),
-                Icon { glyph: crate::icons::SEARCH, size: 16 }
+                class: "ghost member-toggle",
+                class: if members_open().0 { "active" },
+                title: "Member list (Ctrl+U)",
+                onclick: move |_| members_open.with_mut(|shown| shown.0 = !shown.0),
+                Icon { glyph: crate::icons::USERS, size: 16 }
+                "{room.member_count}"
+            }
+            // Calls belong to DMs and voice channels, as in Discord: a text
+            // channel has none.
+            if room.is_dm || room.is_voice {
+                {
+                    let in_this_call = call_room.as_ref() == Some(&room.id);
+                    let (session, room_id, room_name) = (header_session.clone(), room.id.clone(), room.name.clone());
+                    rsx! {
+                        button {
+                            class: "ghost call-button",
+                            class: if in_this_call { "active" },
+                            title: if in_this_call && narrow().0 { "Open the call" } else if in_this_call { "Leave the call" } else if room.call_participants.is_empty() { "Start a call" } else { "Join the call" },
+                            onclick: move |_| {
+                                if in_this_call && narrow.peek().0 {
+                                    // A phone opens the call; hanging up is in there.
+                                    super::call::show_call_screen(true);
+                                } else if in_this_call {
+                                    super::call::hang_up(session.clone());
+                                } else {
+                                    super::call::join_call(session.clone(), room_id.clone(), room_name.clone());
+                                }
+                            },
+                            Icon { glyph: if in_this_call && !narrow().0 { crate::icons::PHONE_OFF } else { crate::icons::PHONE }, size: 16 }
+                        }
+                    }
+                }
             }
             button {
                 class: "ghost pin-toggle",
@@ -1224,13 +1233,15 @@ fn ChatRoom(room: RoomSummary) -> Element {
                 Icon { glyph: crate::icons::PIN, size: 16 }
                 "{pinned().0.len()}"
             }
+            // A search bar at the top right (an icon on a phone); opens the
+            // search panel.
             button {
-                class: "ghost member-toggle",
-                class: if members_open().0 { "active" },
-                title: "Member list (Ctrl+U)",
-                onclick: move |_| members_open.with_mut(|shown| shown.0 = !shown.0),
-                Icon { glyph: crate::icons::USERS, size: 16 }
-                "{room.member_count}"
+                class: "ghost search-toggle",
+                class: if search_open().0 { "active" },
+                title: "Search this room",
+                onclick: move |_| search_open.with_mut(|s| s.0 = !s.0),
+                span { class: "search-toggle-label", "Search" }
+                Icon { glyph: crate::icons::SEARCH, size: 16 }
             }
         }
         // A phone shows the call on its own screen.
@@ -1300,6 +1311,12 @@ pub fn scope_for(rooms: &Vector<RoomSummary>, room: &RoomSummary) -> Scope {
 /// Open a room and remember the visit for back/forward. Every navigation
 /// that is not itself back/forward goes through here.
 pub fn go_to(room_id: OwnedRoomId) {
+    // Somewhere chosen before the last place was reopened: stay there.
+    if let Some(mut pending) = try_consume_context::<PendingPlace>()
+        && pending.peek().is_some()
+    {
+        pending.set(None);
+    }
     // Going to a room leaves the Friends page.
     if let Some(mut friends) = try_consume_context::<super::friends::FriendsOpen>() {
         friends.set(super::friends::FriendsShown(false));

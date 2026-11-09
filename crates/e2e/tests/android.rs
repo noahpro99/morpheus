@@ -115,7 +115,7 @@ async fn phone_signs_in_navigates_and_sends() {
     app.tap(".context-menu.sheet .sheet-back")
         .await
         .expect("back to the menu");
-    app.wait_for_js(&shown_item("Mark as read"), DEFAULT_WAIT)
+    app.wait_for_js(&shown_item("Mark as"), DEFAULT_WAIT)
         .await
         .expect("back at the main list");
     // Dragging the sheet down by its handle dismisses it.
@@ -1060,7 +1060,7 @@ async fn phone_calls_use_the_loudspeaker_and_switch_to_the_earpiece() {
     app.wait_for(".room", DEFAULT_WAIT)
         .await
         .expect("rooms listed");
-    app.open_room("random").await.expect("open #random");
+    open_without_joining(&mut app, "hangout").await;
     app.click(".chat-header .call-button").await.expect("call");
     app.click(".chat-header .pane-back")
         .await
@@ -1132,7 +1132,7 @@ async fn phone_starts_a_call_with_the_real_microphone_without_crashing() {
     app.wait_for(".room", DEFAULT_WAIT)
         .await
         .expect("rooms listed");
-    app.open_room("random").await.expect("open #random");
+    open_without_joining(&mut app, "hangout").await;
     app.click(".chat-header .call-button").await.expect("call");
     // Give a crash time to happen: the microphone opens as the call connects.
     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
@@ -1151,7 +1151,7 @@ async fn phone_starts_a_call_with_the_real_microphone_without_crashing() {
         .await
         .expect("in the call");
     shot(&mut app, "android-call-list").await;
-    app.tap_text(".room", "random")
+    app.tap_text(".room", "hangout")
         .await
         .expect("back into the room");
     pane(&mut app, "chat").await;
@@ -1391,11 +1391,11 @@ async fn phone_call_fills_the_screen_and_minimizes_to_a_bar() {
     app.wait_for(".room", DEFAULT_WAIT)
         .await
         .expect("rooms listed");
-    app.open_room("random").await.expect("open #random");
+    open_without_joining(&mut app, "hangout").await;
     app.tap(".chat-header .call-button").await.expect("call");
 
     // Full screen: the room's name, a tile for alice, the controls.
-    app.wait_for_text(".call-screen .call-screen-title", "random", DEFAULT_WAIT)
+    app.wait_for_text(".call-screen .call-screen-title", "hangout", DEFAULT_WAIT)
         .await
         .expect("the call screen");
     app.wait_for_text(".call-screen .call-screen-state", "Connected", DEFAULT_WAIT)
@@ -1440,7 +1440,7 @@ async fn phone_call_fills_the_screen_and_minimizes_to_a_bar() {
     back_key();
     gone(&mut app, ".call-screen", "the call screen").await;
     pane(&mut app, "chat").await;
-    app.wait_for_text(".chat .call-bar", "random", DEFAULT_WAIT)
+    app.wait_for_text(".chat .call-bar", "hangout", DEFAULT_WAIT)
         .await
         .expect("the call bar");
     shot(&mut app, "android-call-bar").await;
@@ -1944,7 +1944,7 @@ async fn phone_call_screen_swipes_down_and_not_sideways() {
     app.wait_for(".room", DEFAULT_WAIT)
         .await
         .expect("rooms listed");
-    app.open_room("random").await.expect("open #random");
+    open_without_joining(&mut app, "hangout").await;
     app.tap(".chat-header .call-button").await.expect("call");
     app.wait_for_text(".call-screen .call-screen-state", "Connected", DEFAULT_WAIT)
         .await
@@ -1984,7 +1984,7 @@ async fn phone_call_screen_swipes_down_and_not_sideways() {
     .await
     .expect("swipe down");
     gone(&mut app, ".call-screen", "the call screen").await;
-    app.wait_for_text(".chat .call-bar", "random", DEFAULT_WAIT)
+    app.wait_for_text(".chat .call-bar", "hangout", DEFAULT_WAIT)
         .await
         .expect("down to the bar, still in the call");
 
@@ -2117,7 +2117,7 @@ async fn phone_camera_shows_on_the_desktop() {
         .expect("password");
     phone.submit("form.login").await.expect("submit");
     phone.wait_for(".room", DEFAULT_WAIT).await.expect("rooms");
-    phone.open_room("random").await.expect("open #random");
+    open_without_joining(&mut phone, "hangout").await;
     phone.tap(".chat-header .call-button").await.expect("call");
     phone
         .wait_for_text(".call-screen .call-screen-state", "Connected", DEFAULT_WAIT)
@@ -2136,7 +2136,7 @@ async fn phone_camera_shows_on_the_desktop() {
         .expect("password");
     bob.submit("form.login").await.expect("submit");
     bob.wait_for(".room", DEFAULT_WAIT).await.expect("rooms");
-    bob.open_room("random").await.expect("bob in #random");
+    open_without_joining(&mut bob, "hangout").await;
     bob.click(".chat-header .call-button")
         .await
         .expect("bob joins");
@@ -2396,4 +2396,27 @@ async fn phone_reopens_the_last_chat_after_quitting() {
     app.wait_for_text(".chat-header h2", "random", DEFAULT_WAIT)
         .await
         .expect("back in #random");
+}
+
+/// Open a room through the switcher (Ctrl+K), which shows a voice channel
+/// without joining its call (tapping its row joins), so a test can start or
+/// join from the call button. Calls belong to voice channels and DMs.
+async fn open_without_joining(app: &mut App, room: &str) {
+    app.wait_for(".room", DEFAULT_WAIT).await.expect("rooms");
+    app.key_combo("body", "k", true, false, false)
+        .await
+        .expect("ctrl+k");
+    app.wait_for(".switcher input", DEFAULT_WAIT)
+        .await
+        .expect("switcher");
+    app.type_into(".switcher input", room)
+        .await
+        .expect("filter");
+    app.wait_for_text(".switcher-item.active", room, DEFAULT_WAIT)
+        .await
+        .expect("room offered");
+    app.press(".switcher input", "Enter").await.expect("pick");
+    app.wait_for_text(".chat-header h2", room, DEFAULT_WAIT)
+        .await
+        .expect("room open");
 }

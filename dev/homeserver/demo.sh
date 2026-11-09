@@ -89,10 +89,12 @@ join() { # join <token> <room>, retrying while the invite settles
   echo "could not join $2" >&2
   return 1
 }
-room() { # room <creator-token> <name> <topic> [space] -> room id; everyone joins
-  local id
-  id=$(api "$1" POST /_matrix/client/v3/createRoom "$(jq -nc --arg n "$2" --arg t "$3" \
+room() { # room <creator-token> <name> <topic> [space] [voice] -> room id; everyone joins
+  local id kind=null
+  [[ "${5:-}" == voice ]] && kind='"org.matrix.msc3417.call"'
+  id=$(api "$1" POST /_matrix/client/v3/createRoom "$(jq -nc --arg n "$2" --arg t "$3" --argjson kind "$kind" \
     '{name:$n, topic:$t, preset:"public_chat",
+      creation_content:(if $kind then {type:$kind} else {} end),
       power_level_content_override:{events:{"org.matrix.msc3401.call.member":0}},
       invite:$people}' --argjson people "$(others "$1")")" | jq -r .room_id)
   for t in "$L" "$M" "$I" "$K" "$R"; do join "$t" "$id"; done
@@ -115,7 +117,8 @@ LOBBY=$(room "$L" "lobby" "Say hi, plan things" "$SPACE")
 DESIGN=$(room "$I" "design" "Sketches, mockups, feedback" "$SPACE")
 MUSIC=$(room "$K" "music" "What's on repeat" "$SPACE")
 MOVIES=$(room "$R" "movie-night" "Fridays, 9pm, someone's couch" "$SPACE")
-echo "  + Night Owls: lobby, design, music, movie-night"
+HANGOUT=$(room "$M" "hangout" "Drop in and talk" "$SPACE" voice)
+echo "  + Night Owls: lobby, design, music, movie-night, hangout (voice)"
 
 echo "conversations:"
 # #music first and #lobby last, so the lobby is the newest room.

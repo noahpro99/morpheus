@@ -2271,3 +2271,57 @@ h1, h2, h3, h4, .modal-title, .empty-title {
 .message-dialog button, .profile-editor button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .thread-chip-icon { display: inline-flex; align-items: center; color: var(--text-muted); }
 .profile-close { display: inline-flex; align-items: center; justify-content: center; }
+
+/* ---- Chat top bar: buttons at the right, the search bar last ---------------- */
+.chat-header > .room-menu-button { margin-left: auto; }
+.chat-header > .member-toggle, .chat-header > .pin-toggle { margin-left: 0; }
+.chat-header > .search-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 180px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+.shell.narrow .chat-header > .search-toggle { width: auto; background: none; }
+.shell.narrow .search-toggle-label { display: none; }
+
+/* ---- Wide windows: the top bar runs to the right edge, over the side card ---- */
+@container (min-width: 901px) {
+  .shell:not(.narrow):not(.no-side) .shell-body {
+    grid-template-areas:
+      "rail sidebar chat chat"
+      "user user chat chat";
+  }
+  .shell:not(.narrow):not(.no-side) .side-pane {
+    grid-column: 4;
+    grid-row: 1 / 3;
+    z-index: 1;
+    margin: calc(48px + 8px) 8px 8px 0;
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    background: var(--bg-members);
+  }
+  /* Everything in the chat under its top bar leaves the side card its column. */
+  .shell:not(.narrow):not(.no-side) .chat > :not(.chat-header) { margin-right: var(--members-w); }
+}
+
+/* ---- Profile card: in a call, its controls on top and the card taller ------- */
+.user-pill { flex-direction: column; align-items: stretch; height: auto; gap: 0; padding: 0; }
+.user-pill .user-row { display: flex; align-items: center; gap: 8px; height: var(--bottom-h); padding: 0 6px 0 4px; }
+.user-pill .voice-panel {
+  margin: 0;
+  padding: 10px 6px 10px 12px;
+  border-radius: 0;
+  background: none;
+  border-bottom: 1px solid var(--bg-hover);
+}
+
+/* Hanging up is red wherever it shows. */
+.hang-up, .voice-panel .hang-up, .call-control.hang-up { background: var(--danger); color: #fff; }
+.hang-up:hover, .voice-panel .hang-up:hover { background: var(--danger); color: #fff; filter: brightness(1.1); }

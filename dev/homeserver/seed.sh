@@ -178,6 +178,27 @@ else
   api "$CAROL" POST "/_matrix/client/v3/join/$LOUNGE" '{}' >/dev/null
   echo "  + #lounge ($LOUNGE), a voice channel"
 fi
+# Two more voice channels for the call tests (calls belong to voice channels
+# and DMs, not text channels): #hangout, and #vault, end-to-end encrypted.
+# ensure_voice <alias> <encrypted: true|false>
+ensure_voice() {
+  local id
+  if id=$(curl -fsS "$HS_URL/_matrix/client/v3/directory/room/%23$1:localhost" 2>/dev/null | jq -r .room_id); then
+    echo "  = #$1 ($id)" >&2
+  else
+    id=$(api "$ALICE" POST /_matrix/client/v3/createRoom "$(jq -nc --arg a "$1" --argjson enc "$2" \
+      '{room_alias_name:$a, name:$a, preset:"public_chat",
+        creation_content:{type:"org.matrix.msc3417.call"},
+        initial_state:(if $enc then [{type:"m.room.encryption", state_key:"", content:{algorithm:"m.megolm.v1.aes-sha2"}}] else [] end),
+        invite:["@bob:localhost","@carol:localhost"]}')" | jq -r .room_id)
+    api "$BOB" POST "/_matrix/client/v3/join/$id" '{}' >/dev/null
+    api "$CAROL" POST "/_matrix/client/v3/join/$id" '{}' >/dev/null
+    echo "  + #$1 ($id), a voice channel" >&2
+  fi
+  echo "$id"
+}
+HANGOUT=$(ensure_voice hangout false)
+VAULT=$(ensure_voice vault true)
 
 # Calls: members post their call membership as state, which needs power
 # level 0 for it (rooms Morpheus creates set this; older rooms get it here).
@@ -192,7 +213,7 @@ allow_calls() {
 }
 ENC=$(curl -fsS "$HS_URL/_matrix/client/v3/directory/room/%23encrypted:localhost" 2>/dev/null | jq -r .room_id) || ENC=""
 # (#encrypted too, for now: its leftovers can only be hung up while allowed.)
-for room in "$GENERAL" "$RANDOM_ROOM" "$DEV" "$LOUNGE" $ENC; do allow_calls "$room"; done
+for room in "$GENERAL" "$RANDOM_ROOM" "$DEV" "$LOUNGE" "$HANGOUT" "$VAULT" $ENC; do allow_calls "$room"; done
 
 # Test runs that died mid-call leave memberships behind; hang them up.
 clear_calls() {
@@ -206,7 +227,7 @@ clear_calls() {
     echo "  - hung up $key" >&2
   done
 }
-for room in "$GENERAL" "$RANDOM_ROOM" "$DEV" "$LOUNGE" $ENC; do clear_calls "$room"; done
+for room in "$GENERAL" "$RANDOM_ROOM" "$DEV" "$LOUNGE" "$HANGOUT" "$VAULT" $ENC; do clear_calls "$room"; done
 # Friends lists start empty each run (tests add and remove them).
 for user in alice bob carol; do
   token_var=${user^^}
@@ -231,13 +252,14 @@ for user in alice bob carol; do
 done
 # #encrypted starts each run without calls allowed: the calls e2e test has
 # its admin turn them on by joining.
-if [[ -n "$ENC" ]]; then
-  pl=$(api "$ALICE" GET "/_matrix/client/v3/rooms/$ENC/state/m.room.power_levels/")
+# #vault (an encrypted voice channel) too.
+for room in $ENC "$VAULT"; do
+  pl=$(api "$ALICE" GET "/_matrix/client/v3/rooms/$room/state/m.room.power_levels/")
   if [[ $(jq -r '.events["org.matrix.msc3401.call.member"] // "unset"' <<<"$pl") != "unset" ]]; then
-    api "$ALICE" PUT "/_matrix/client/v3/rooms/$ENC/state/m.room.power_levels/" \
+    api "$ALICE" PUT "/_matrix/client/v3/rooms/$room/state/m.room.power_levels/" \
       "$(jq -c 'del(.events["org.matrix.msc3401.call.member"])' <<<"$pl")" >/dev/null
   fi
-fi
+done
 
 echo "spaces:"
 ENGINEERING=$(ensure_space engineering "Engineering" "Everything about building Morpheus")

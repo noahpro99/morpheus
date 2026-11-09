@@ -78,26 +78,26 @@ async fn titlebar_title_history_help_and_controls() {
     app.wait_for_text(".chat-header h2", "dev", DEFAULT_WAIT)
         .await
         .expect("dev open");
-    app.click(".nav-button[title=Back]").await.expect("back");
+    app.click(".nav-button[title^=Back]").await.expect("back");
     app.wait_for_text(".chat-header h2", "random", DEFAULT_WAIT)
         .await
         .expect("back to random");
     app.wait_for(".rail-item.selected[title=\"Rooms\"]", DEFAULT_WAIT)
         .await
         .expect("scope followed back");
-    app.click(".nav-button[title=Back]")
+    app.click(".nav-button[title^=Back]")
         .await
         .expect("back again");
     app.wait_for_text(".chat-header h2", "general", DEFAULT_WAIT)
         .await
         .expect("back to general");
-    app.click(".nav-button[title=Forward]")
+    app.click(".nav-button[title^=Forward]")
         .await
         .expect("forward");
     app.wait_for_text(".chat-header h2", "random", DEFAULT_WAIT)
         .await
         .expect("forward to random");
-    app.click(".nav-button[title=Forward]")
+    app.click(".nav-button[title^=Forward]")
         .await
         .expect("forward again");
     app.wait_for_text(".chat-header h2", "dev", DEFAULT_WAIT)
@@ -107,7 +107,7 @@ async fn titlebar_title_history_help_and_controls() {
         .await
         .expect("scope followed forward");
     app.wait_for(
-        ".nav-button[title=Forward]:disabled",
+        ".nav-button[title^=Forward]:disabled",
         Duration::from_secs(5),
     )
     .await
