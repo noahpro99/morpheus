@@ -524,6 +524,19 @@ document.addEventListener('click', e => {
     const m = t && anchor && t.querySelector('.message[data-event-id=' + JSON.stringify(anchor.id) + ']');
     if (m) t.scrollTop += m.getBoundingClientRect().top - anchor.top;
   }).observe(document.documentElement, { subtree: true, attributes: true, attributeFilter: ['data-anchor'] });
+  // Rows swapped at the top while scrolled up (the placeholders giving way
+  // to the room's start): WebKit drops the view to the newest message. Put
+  // the message that was at the top back, unless the view moved by a scroll.
+  let last = null;
+  window.addEventListener('scroll', e => {
+    if (e.target.classList && e.target.classList.contains('timeline')) last = { el: e.target, top: e.target.scrollTop };
+  }, { capture: true, passive: true });
+  new MutationObserver(() => {
+    if (!last || !anchor || last.top > -240 || !last.el.isConnected || last.el.scrollTop < -1) return;
+    const t = last.el;
+    const m = t.querySelector('.message[data-event-id=' + JSON.stringify(anchor.id) + ']');
+    if (m) t.scrollTop += m.getBoundingClientRect().top - anchor.top;
+  }).observe(document.body, { subtree: true, childList: true });
 })();
 // The call stage's height: its bottom edge is dragged. The height is a CSS
 // variable on the page (the stage comes and goes with the cameras) and is
