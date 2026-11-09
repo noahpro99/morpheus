@@ -153,7 +153,7 @@ async fn card_mod_view_and_report_form() {
     open_card_for(&mut app, "carol").await;
 
     // Mod view opens this person's moderation sheet (see the test below).
-    app.click(".profile-card .card-button.mod-view")
+    app.click(".profile-card .card-button.card-mod-view")
         .await
         .expect("mod view");
     app.wait_for_text(".mod-view .mod-room", "general", DEFAULT_WAIT)
@@ -243,7 +243,7 @@ async fn mod_view_moderates_someone_across_rooms() {
         .await
         .expect("listed in general");
     open_card_for(&mut app, &them).await;
-    app.click(".profile-card .card-button.mod-view")
+    app.click(".profile-card .card-button.card-mod-view")
         .await
         .expect("mod view");
     app.wait_for_text(
@@ -352,4 +352,45 @@ async fn the_card_shows_the_picture_already_loaded_at_once() {
         Some("the same picture"),
         "what the card showed first"
     );
+}
+
+/// The card's buttons along its top are small squares (not a bar across it),
+/// and its mutual rooms are links: clicking one opens it.
+#[tokio::test]
+async fn card_buttons_are_small_and_mutual_rooms_open() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch(&hs).await.expect("launch");
+    login_and_open(&mut app, "alice", "general").await;
+    open_card_for(&mut app, "bob").await;
+    let buttons = app
+        .eval(
+            "return [...document.querySelectorAll('.profile-card .card-actions button')] \
+               .map(b => { const r = b.getBoundingClientRect(); return [b.title, Math.round(r.width), Math.round(r.height)]; });",
+        )
+        .await
+        .expect("buttons");
+    let list = buttons.as_array().expect("list");
+    assert!(!list.is_empty(), "no buttons: {buttons}");
+    for b in list {
+        let (w, h) = (b[1].as_f64().unwrap_or(0.0), b[2].as_f64().unwrap_or(0.0));
+        assert!(w <= 40.0 && (w - h).abs() <= 4.0, "not a small square: {b}");
+    }
+    app.wait_for_text(".profile-card .mutual-room", "random", DEFAULT_WAIT)
+        .await
+        .expect("random among the mutual rooms");
+    app.click_text(".profile-card .mutual-room", "random")
+        .await
+        .expect("click random");
+    app.wait_for_text(".chat-header h2", "random", DEFAULT_WAIT)
+        .await
+        .expect("opened #random");
+    app.wait_for_js(
+        "return !document.querySelector('.profile-card');",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("the card closed");
 }

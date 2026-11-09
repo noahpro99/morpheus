@@ -357,3 +357,33 @@ fn post_as_bob(hs: &str, room: &str, body: &str) {
         &format!("{hs}/_matrix/client/v3/logout"),
     ]);
 }
+
+/// The message right-clicked stays highlighted while its menu is open (the
+/// pointer is off it, on the menu), and not after.
+#[tokio::test]
+async fn the_right_clicked_message_stays_highlighted() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch(&hs).await.expect("launch");
+    login_and_open(&mut app, "alice", "random").await;
+    let row = send_fresh(&mut app, "highlight me").await;
+    let background =
+        format!("const row = {row}; return row ? getComputedStyle(row).backgroundColor : null;");
+    let before = app.eval(&background).await.expect("before");
+    open_menu_on(&mut app, &row).await;
+    let during = app.eval(&background).await.expect("during");
+    assert_ne!(during, before, "not highlighted while its menu is open");
+    app.press("body", "Escape").await.expect("close");
+    menu_closed(&mut app).await;
+    app.wait_for_js(
+        &format!(
+            "return JSON.stringify((() => {{ {background} }})()) === {};",
+            serde_json::to_string(&before.to_string()).expect("json")
+        ),
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("the highlight goes with the menu");
+}

@@ -232,6 +232,25 @@ window.addEventListener('paste', e => {
   new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-pane'] });
   schedule();
 })();
+// The message right-clicked stays highlighted while its menu is open (the
+// pointer has moved onto the menu); a data attribute, which re-renders
+// leave alone.
+(() => {
+  let held = null, shown = false;
+  const release = () => { if (held) { held.removeAttribute('data-menu-open'); held = null; } shown = false; };
+  document.addEventListener('contextmenu', e => {
+    release();
+    const m = e.target.closest && e.target.closest('.message');
+    if (m) { held = m; m.setAttribute('data-menu-open', ''); }
+  }, true);
+  // Released once its menu has come and gone.
+  new MutationObserver(() => {
+    if (!held) return;
+    if (document.querySelector('.context-menu')) shown = true;
+    else if (shown) release();
+  })
+    .observe(document.body, { childList: true, subtree: true });
+})();
 // Phones: leaving a chat (back to the room list) puts the keyboard away,
 // which a focused box would otherwise keep up over the list.
 (() => {

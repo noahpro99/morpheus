@@ -590,7 +590,7 @@ pub fn ProfileCard(open: ProfileOpen) -> Element {
                     }
                     div { class: "card-actions",
                         if !own && selected().is_some() {
-                            button { class: "ghost card-button mod-view", title: "Mod view", onclick: mod_view, Icon { glyph: crate::icons::SHIELD_CHECK, size: 16 } }
+                            button { class: "ghost card-button card-mod-view", title: "Mod view", onclick: mod_view, Icon { glyph: crate::icons::SHIELD_CHECK, size: 16 } }
                         }
                         button { class: "ghost card-button more", title: "More", onclick: more, Icon { glyph: crate::icons::ELLIPSIS, size: 16 } }
                     }
@@ -619,7 +619,19 @@ pub fn ProfileCard(open: ProfileOpen) -> Element {
                                 p { class: "muted", "None yet." }
                             }
                             for (id, room_name) in mutual_list.iter().take(8) {
-                                span { key: "{id}", class: "mutual-room", "#{room_name}" }
+                                button {
+                                    key: "{id}",
+                                    class: "mutual-room",
+                                    title: "Open #{room_name}",
+                                    onclick: {
+                                        let id = id.clone();
+                                        move |_| {
+                                            open_room_from_card(id.clone());
+                                            close();
+                                        }
+                                    },
+                                    "#{room_name}"
+                                }
                             }
                         }
                     }
@@ -733,4 +745,18 @@ pub fn remember_person(user_id: &OwnedUserId, name: &str, avatar: Option<morpheu
         seen.write()
             .insert(user_id.clone(), (name.to_owned(), avatar));
     }
+}
+
+/// Open a room picked on a card (a mutual room), in its server or the DMs.
+fn open_room_from_card(room_id: morpheus_core::OwnedRoomId) {
+    let rooms = consume_context::<super::shell::Rooms>();
+    let mut scope = consume_context::<SelectedSpace>();
+    let found = rooms.peek().iter().find(|r| r.id == room_id).cloned();
+    if let Some(room) = found {
+        let wanted = super::shell::scope_for(&rooms.peek(), &room);
+        if wanted != *scope.peek() {
+            scope.set(wanted);
+        }
+    }
+    go_to(room_id);
 }
