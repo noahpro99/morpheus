@@ -472,3 +472,26 @@ async fn an_unverified_first_device_is_put_right_when_the_app_restarts() {
         .await
         .expect("and verified as the account's first device");
 }
+
+/// The device a sign-in creates is named for the app and the system it runs
+/// on ("Morpheus Linux"), so lists of devices (here, Element) tell them apart.
+#[tokio::test]
+async fn this_device_is_named_for_its_system() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let user = new_account(&hs, "devname").expect("account");
+    let mut app = App::launch(&hs).await.expect("launch");
+    login(&mut app, &user, &format!("{user}-password")).await;
+    app.click(".settings-button").await.expect("gear");
+    app.click_text(".settings-nav button", "Security & Privacy")
+        .await
+        .expect("security");
+    app.wait_for_js(
+        "return [...document.querySelectorAll('.device')].some(d => d.textContent.includes('this device') && d.querySelector('.device-name')?.textContent.trim() === 'Morpheus Linux');",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("this device is Morpheus Linux");
+}
