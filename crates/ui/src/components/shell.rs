@@ -460,6 +460,7 @@ pub fn Shell(session: Session) -> Element {
                 match commands.next().await {
                     crate::AppCommand::Acknowledgements => about_open.set(AboutShown(true)),
                     crate::AppCommand::CheckForUpdates => check_for_updates(),
+                    crate::AppCommand::HangUp => super::call::hang_up(consume_context::<Session>()),
                     crate::AppCommand::OpenRoom(id) => {
                         // A notification tap can start the app: give the room
                         // list a moment to arrive.

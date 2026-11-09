@@ -106,6 +106,23 @@ struct CallMedia(Rc<RefCell<Option<Call>>>);
 pub fn provide_calls(session: Session) {
     let active: ActiveCall = use_context_provider(|| Signal::new(CallSlot::default()));
     let voice: Voice = use_context_provider(|| Signal::new(VoiceFlags::default()));
+    // The platform's record of the call going (a phone's ongoing call
+    // notification): told once the call connects, and when it ends.
+    let presence = use_context::<crate::AppConfig>().call_presence;
+    let mut told = use_signal(|| None::<(String, String)>);
+    use_effect(move || {
+        let now = active()
+            .0
+            .filter(|call| call.connected)
+            .map(|call| (call.room_id.to_string(), call.room_name.clone()));
+        if *told.peek() == now {
+            return;
+        }
+        told.set(now.clone());
+        if let Some(presence) = presence.clone() {
+            presence(now);
+        }
+    });
     // What this device has on, published in its call membership for everyone
     // to show (on its card, and beside its name under the room).
     let mut published = use_signal(|| None::<(OwnedRoomId, morpheus_core::CallMedia)>);

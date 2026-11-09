@@ -11,6 +11,8 @@ publisher = "Morpheus"
 "android.permission.RECORD_AUDIO" = { description = "Your voice in calls" }
 "android.permission.CAMERA" = { description = "Your camera in calls" }
 "android.permission.MODIFY_AUDIO_SETTINGS" = { description = "Speaker and earpiece switching in calls" }
+"android.permission.FOREGROUND_SERVICE" = { description = "Keeping a call going while the app is in the background" }
+"android.permission.FOREGROUND_SERVICE_MICROPHONE" = { description = "Keeping your microphone in a call while the app is in the background" }
 
 [android]
 # UnifiedPush: the app registers with the phone's push app (Sunup, ntfy, …).
