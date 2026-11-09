@@ -410,3 +410,118 @@ async fn shift_alt_right_toggles_dms_and_the_last_server() {
         .await
         .expect("back to Engineering");
 }
+
+/// Ctrl+Shift+P opens the command palette too (as in VS Code), and the
+/// palette finds single settings: picking one opens Settings on its page,
+/// scrolled to it and highlighted.
+#[tokio::test]
+async fn the_palette_opens_on_ctrl_shift_p_and_finds_settings() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch(&hs).await.expect("launch app");
+    login_and_open(&mut app, "general").await;
+    app.key_combo("body", "P", true, false, true)
+        .await
+        .expect("ctrl+shift+p");
+    app.wait_for(".switcher input", DEFAULT_WAIT)
+        .await
+        .expect("the palette opens");
+    assert_eq!(
+        app.count(".pinned-dialog, .message-dialog")
+            .await
+            .expect("count"),
+        0,
+        "Ctrl+Shift+P is not Ctrl+P (pinned messages)"
+    );
+    app.type_into(".switcher input", "notifications show")
+        .await
+        .expect("filter");
+    app.wait_for_text(
+        ".switcher-item.active",
+        "What notifications show",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("the setting is offered");
+    app.press(".switcher input", "Enter").await.expect("pick");
+    app.wait_for_text(".settings-page h2", "Notifications", DEFAULT_WAIT)
+        .await
+        .expect("its page opens");
+    app.wait_for(
+        ".settings-page [data-setting=notification-content].setting-highlight",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("the setting is highlighted");
+    app.press("body", "Escape").await.expect("close");
+
+    // Another page's setting, by a word in it.
+    app.key_combo("body", "k", true, false, false)
+        .await
+        .expect("ctrl+k");
+    app.wait_for(".switcher input", DEFAULT_WAIT)
+        .await
+        .expect("palette");
+    app.type_into(".switcher input", "theme")
+        .await
+        .expect("filter");
+    app.wait_for_text(".switcher-item.active", "Theme", DEFAULT_WAIT)
+        .await
+        .expect("offered");
+    app.press(".switcher input", "Enter").await.expect("pick");
+    app.wait_for_text(".settings-page h2", "Appearance", DEFAULT_WAIT)
+        .await
+        .expect("appearance");
+    app.wait_for(
+        ".settings-page [data-setting=theme].setting-highlight",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("theme highlighted");
+}
+
+/// In the DMs, Friends is part of the list Alt+Up and Alt+Down walk: up from
+/// the top DM lands on it, and down from it goes back to that DM.
+#[tokio::test]
+async fn alt_up_from_the_top_dm_reaches_friends() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch(&hs).await.expect("launch app");
+    login_and_open(&mut app, "general").await;
+    app.click(".rail-item[title=\"Direct messages\"]")
+        .await
+        .expect("dms");
+    app.wait_for(".room:not(.friends-row)", DEFAULT_WAIT)
+        .await
+        .expect("dms listed");
+    let top = app
+        .eval("return document.querySelector('.room:not(.friends-row) .room-name').textContent.trim();")
+        .await
+        .expect("top dm");
+    let top = top.as_str().expect("name").to_owned();
+    app.eval("document.querySelector('.room:not(.friends-row)').click(); return true;")
+        .await
+        .expect("open the top dm");
+    app.wait_for_text(".chat-header h2", &top, DEFAULT_WAIT)
+        .await
+        .expect("in the top dm");
+    app.key_combo("body", "ArrowUp", false, true, false)
+        .await
+        .expect("alt+up");
+    app.wait_for(".friends-page", DEFAULT_WAIT)
+        .await
+        .expect("on Friends");
+    app.wait_for(".friends-row.selected", DEFAULT_WAIT)
+        .await
+        .expect("Friends selected");
+    app.key_combo("body", "ArrowDown", false, true, false)
+        .await
+        .expect("alt+down");
+    app.wait_for_text(".chat-header h2", &top, DEFAULT_WAIT)
+        .await
+        .expect("back in the top dm");
+}

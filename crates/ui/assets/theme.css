@@ -2325,3 +2325,10 @@ h1, h2, h3, h4, .modal-title, .empty-title {
 /* Hanging up is red wherever it shows. */
 .hang-up, .voice-panel .hang-up, .call-control.hang-up { background: var(--danger); color: #fff; }
 .hang-up:hover, .voice-panel .hang-up:hover { background: var(--danger); color: #fff; filter: brightness(1.1); }
+
+/* A setting opened from the command palette flashes once. */
+.setting-highlight { animation: setting-flash 2.5s ease-out; border-radius: var(--radius-sm); }
+@keyframes setting-flash {
+  0%, 30% { box-shadow: 0 0 0 2px var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+  100% { box-shadow: 0 0 0 2px transparent; background: transparent; }
+}

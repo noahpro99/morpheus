@@ -24,6 +24,9 @@ const VERIFIED_NOTE_SECS: u64 = 3;
 /// Whether the settings modal is open. Provided by the shell.
 pub type SettingsOpen = Signal<bool>;
 
+/// How long a setting opened from the palette stays highlighted.
+const SETTING_HIGHLIGHT_MS: u32 = 2500;
+
 /// The settings categories, in the order the side list shows them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsPage {
@@ -61,7 +64,7 @@ impl SettingsPage {
         }
     }
 
-    fn glyph(self) -> &'static str {
+    pub fn glyph(self) -> &'static str {
         match self {
             SettingsPage::Account => USER,
             SettingsPage::Security => SHIELD,
@@ -78,6 +81,97 @@ impl SettingsPage {
 /// desktop it means My Account. Provided by the shell, which steps a phone
 /// back from a page to the list on Escape / the back key.
 pub type OpenSettingsPage = Signal<Option<SettingsPage>>;
+
+/// One setting the command palette finds: its name, other words it answers
+/// to, its page, and the `data-setting` anchor on that page.
+#[derive(PartialEq, Eq)]
+pub struct SettingEntry {
+    pub label: &'static str,
+    pub keywords: &'static str,
+    pub page: SettingsPage,
+    pub anchor: &'static str,
+}
+
+/// Every setting the palette can open.
+pub const SETTINGS_INDEX: &[SettingEntry] = &[
+    SettingEntry {
+        label: "Account",
+        keywords: "profile user name sign out device id",
+        page: SettingsPage::Account,
+        anchor: "account",
+    },
+    SettingEntry {
+        label: "Encryption and recovery key",
+        keywords: "security backup recovery key verify verification restore e2e",
+        page: SettingsPage::Security,
+        anchor: "encryption",
+    },
+    SettingEntry {
+        label: "Devices and sessions",
+        keywords: "security sessions sign out other devices",
+        page: SettingsPage::Security,
+        anchor: "sessions",
+    },
+    SettingEntry {
+        label: "Notification defaults for rooms",
+        keywords: "notifications dms groups all messages mentions",
+        page: SettingsPage::Notifications,
+        anchor: "room-defaults",
+    },
+    SettingEntry {
+        label: "Notifications on this device",
+        keywords: "notifications push turn off on",
+        page: SettingsPage::Notifications,
+        anchor: "device-notifications",
+    },
+    SettingEntry {
+        label: "What notifications show",
+        keywords: "notifications privacy hide message name someone content",
+        page: SettingsPage::Notifications,
+        anchor: "notification-content",
+    },
+    SettingEntry {
+        label: "Theme",
+        keywords: "appearance dark light midnight colours colors",
+        page: SettingsPage::Appearance,
+        anchor: "theme",
+    },
+    SettingEntry {
+        label: "Microphone and speaker",
+        keywords: "voice video audio input output devices calls",
+        page: SettingsPage::VoiceVideo,
+        anchor: "audio-devices",
+    },
+    SettingEntry {
+        label: "Open at sign-in",
+        keywords: "startup autostart login tray hidden",
+        page: SettingsPage::Startup,
+        anchor: "startup",
+    },
+    SettingEntry {
+        label: "Report a bug",
+        keywords: "help feedback issue github",
+        page: SettingsPage::Help,
+        anchor: "report-bug",
+    },
+    SettingEntry {
+        label: "Version",
+        keywords: "help about update",
+        page: SettingsPage::Help,
+        anchor: "version",
+    },
+];
+
+/// The setting to scroll to and highlight once its page shows (from the
+/// command palette).
+pub type SettingHighlight = Signal<Option<&'static str>>;
+
+/// Open Settings at one setting, highlighted.
+pub fn open_setting(entry: &SettingEntry) {
+    consume_context::<SettingsOpen>().set(true);
+    consume_context::<OpenSettingsPage>().set(Some(entry.page));
+    consume_context::<SettingHighlight>().set(Some(entry.anchor));
+}
 
 /// The verification flow currently shown, if any. Incoming requests set this
 /// from the shell; the "Verify" button sets it from the modal.
@@ -147,6 +241,27 @@ pub fn Settings() -> Element {
             let _ = refresh();
             async move { session.own_devices().await.map_err(|e| e.to_string()) }
         }
+    });
+
+    // A setting picked in the palette: once its page has rendered, scroll it
+    // into view and flash it.
+    let mut highlight = use_context::<SettingHighlight>();
+    use_effect(move || {
+        let Some(anchor) = highlight() else {
+            return;
+        };
+        highlight.set(None);
+        spawn(async move {
+            let js = format!(
+                "for (let i = 0; i < 40; i++) {{ \
+                   const el = document.querySelector('.settings-page [data-setting={anchor}]'); \
+                   if (el) {{ el.scrollIntoView({{ block: 'center' }}); el.classList.add('setting-highlight'); \
+                     setTimeout(() => el.classList.remove('setting-highlight'), {SETTING_HIGHLIGHT_MS}); return; }} \
+                   await new Promise(r => setTimeout(r, 50)); \
+                 }}"
+            );
+            let _ = document::eval(&js).await;
+        });
     });
 
     // Refresh once a verification flow completes.
@@ -356,7 +471,7 @@ pub fn Settings() -> Element {
                         }
                         match current {
                             SettingsPage::Account => rsx! {
-                                section { class: "settings-section",
+                                section { class: "settings-section", "data-setting": "account",
                                     h3 { "Account" }
                                     p { class: "settings-user", "{user}" }
                                     if let Some(Ok(status)) = &*status.read() {
@@ -365,7 +480,7 @@ pub fn Settings() -> Element {
                                 }
                             },
                             SettingsPage::Security => rsx! {
-                                section { class: "settings-section",
+                                section { class: "settings-section", "data-setting": "encryption",
                                     h3 { "Encryption" }
                                     match &*status.read() {
                                         None => rsx! { p { class: "muted", "Checking…" } },
@@ -447,7 +562,7 @@ pub fn Settings() -> Element {
                                     }
                                 }
 
-                                section { class: "settings-section",
+                                section { class: "settings-section", "data-setting": "sessions",
                                     h3 { "Devices" }
                                     match &*devices.read() {
                                         None => rsx! { crate::media::Skeleton { rows: 2 } },
@@ -659,13 +774,13 @@ fn NotificationsPage() -> Element {
         "Morpheus shows a system notification when a message arrives while its window is in the background or hidden in the tray.".to_owned()
     };
     rsx! {
-        section { class: "settings-section",
+        section { class: "settings-section", "data-setting": "room-defaults",
             h3 { "Default for rooms" }
             p { class: "muted", "Rooms without their own setting follow these. Set a room's own from its menu." }
             NotifyDefault { dm: true }
             NotifyDefault { dm: false }
         }
-        section { class: "settings-section",
+        section { class: "settings-section", "data-setting": "device-notifications",
             h3 { "This device" }
             label { class: "notify-choice",
                 input {
@@ -683,7 +798,7 @@ fn NotificationsPage() -> Element {
                 span { "Notifications on this device" }
             }
             p { class: "device-notifications muted", "{device}" }
-            fieldset { class: "notify-default notification-content",
+            fieldset { class: "notify-default notification-content", "data-setting": "notification-content",
                 legend { "What notifications show" }
                 for content in NotificationContent::ALL {
                     label { class: "notify-choice",
@@ -772,7 +887,7 @@ fn AppearancePage() -> Element {
     let mut prefs = use_context::<UiPrefs>();
     let current = prefs().theme;
     rsx! {
-        section { class: "settings-section",
+        section { class: "settings-section", "data-setting": "theme",
             h3 { "Theme" }
             div { class: "theme-options",
                 for theme in Theme::ALL {
@@ -820,7 +935,7 @@ fn VoicePage() -> Element {
         chosen.set(choice);
     });
     rsx! {
-        section { class: "settings-section voice-devices",
+        section { class: "settings-section voice-devices", "data-setting": "audio-devices",
             h3 { "Devices" }
             match devices() {
                 None => rsx! { p { class: "muted", "Looking for devices…" } },
@@ -928,7 +1043,7 @@ fn StartupPage() -> Element {
         Err(err) => note.set(Some(err.to_string())),
     };
     rsx! {
-        section { class: "settings-section",
+        section { class: "settings-section", "data-setting": "startup",
             h3 { "When you sign in to your computer" }
             match current() {
                 None => rsx! { p { class: "muted", "Starting with your computer isn't available on this system yet." } },
@@ -967,14 +1082,14 @@ fn StartupPage() -> Element {
 fn HelpPage() -> Element {
     let version = super::about::VERSION;
     rsx! {
-        section { class: "settings-section",
+        section { class: "settings-section", "data-setting": "report-bug",
             h3 { "Report a bug" }
             p { class: "muted",
                 "Opens a new issue on GitHub with your version, device and the end of this run's log filled in. Issues are public: read the log over and remove anything you'd rather not share before posting."
             }
             ReportBug {}
         }
-        section { class: "settings-section",
+        section { class: "settings-section", "data-setting": "version",
             h3 { "Version" }
             p { "Morpheus {version}" }
             p { class: "muted", "{morpheus_core::device()}" }

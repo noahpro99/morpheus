@@ -2,7 +2,7 @@ use dioxus::prelude::*;
 use morpheus_core::RoomSummary;
 
 use super::about::{AboutOpen, AboutShown};
-use super::settings::SettingsOpen;
+use super::settings::{SETTINGS_INDEX, SettingEntry, SettingsOpen, SettingsPage, open_setting};
 use super::shell::{Rooms, SelectedSpace, go_to, scope_for};
 use super::titlebar::{OpenTopPanel, TopPanel};
 use crate::icons::{CIRCLE_HELP, HEART, INBOX, Icon, REFRESH_CW, SETTINGS};
@@ -13,6 +13,8 @@ use crate::media::Avatar;
 enum Entry {
     Room(Box<RoomSummary>),
     Action(Action),
+    /// One setting, opened on its page.
+    Setting(&'static SettingEntry),
 }
 
 impl Entry {
@@ -20,6 +22,7 @@ impl Entry {
         match self {
             Entry::Room(room) => room.id.to_string(),
             Entry::Action(action) => action.label().to_owned(),
+            Entry::Setting(setting) => format!("setting-{}", setting.anchor),
         }
     }
 }
@@ -84,6 +87,8 @@ pub fn QuickSwitcher(open: Signal<bool>) -> Element {
     let mut selected_space = use_context::<SelectedSpace>();
     let mut query = use_signal(String::new);
     let mut cursor = use_signal(|| 0usize);
+    // The Startup page is only there with a window (not on a phone).
+    let has_window = try_consume_context::<crate::WindowControls>().is_some();
 
     let matches: Vec<Entry> = {
         let needle = query().to_lowercase();
@@ -107,6 +112,20 @@ pub fn QuickSwitcher(open: Signal<bool>) -> Element {
                 })
                 .map(Entry::Action),
         );
+        // Settings match on every word typed, in their name or other words
+        // they answer to ("privacy" finds what notifications show).
+        if !needle.is_empty() {
+            list.extend(
+                SETTINGS_INDEX
+                    .iter()
+                    .filter(|s| has_window || s.page != SettingsPage::Startup)
+                    .filter(|s| {
+                        let words = format!("{} {}", s.label, s.keywords).to_lowercase();
+                        needle.split_whitespace().all(|w| words.contains(w))
+                    })
+                    .map(Entry::Setting),
+            );
+        }
         list
     };
     let cursor_now = cursor().min(matches.len().saturating_sub(1));
@@ -130,6 +149,7 @@ pub fn QuickSwitcher(open: Signal<bool>) -> Element {
                     go_to(room.id.clone());
                 }
                 Some(Entry::Action(action)) => action.run(),
+                Some(Entry::Setting(setting)) => open_setting(setting),
                 None => {}
             }
             close();
@@ -148,7 +168,7 @@ pub fn QuickSwitcher(open: Signal<bool>) -> Element {
                             let _ = e.data().set_focus(true).await;
                         });
                     },
-                    placeholder: "Jump to a room or an action…",
+                    placeholder: "Jump to a room, an action or a setting…",
                     value: "{query}",
                     oninput: move |e| {
                         query.set(e.value());
@@ -174,7 +194,7 @@ pub fn QuickSwitcher(open: Signal<bool>) -> Element {
                             key: "{entry.key()}",
                             "data-key": "{entry.key()}",
                             class: "switcher-item",
-                            class: if matches!(entry, Entry::Action(_)) { "action" },
+                            class: if matches!(entry, Entry::Action(_) | Entry::Setting(_)) { "action" },
                             class: if index == cursor_now { "active" },
                             onclick: {
                                 let mut choose = choose.clone();
@@ -189,6 +209,11 @@ pub fn QuickSwitcher(open: Signal<bool>) -> Element {
                                 Entry::Action(action) => rsx! {
                                     Icon { glyph: action.icon(), size: 16, class: "hash" }
                                     span { "{action.label()}" }
+                                },
+                                Entry::Setting(setting) => rsx! {
+                                    Icon { glyph: setting.page.glyph(), size: 16, class: "hash" }
+                                    span { class: "name", "{setting.label}" }
+                                    span { class: "kind", "Settings · {setting.page.label()}" }
                                 },
                             }
                         }
