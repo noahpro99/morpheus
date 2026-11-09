@@ -586,3 +586,33 @@ async fn the_shortcuts_dialog_is_wide_with_one_line_rows() {
         "descriptions cut off: {report}"
     );
 }
+
+/// Nothing animates forever once a room has loaded: placeholder rows that
+/// wait above the oldest message stay still (a shimmer under the dimmed
+/// shortcuts dialog redrew the whole window every frame, and its scrolling
+/// stuttered).
+#[tokio::test]
+async fn nothing_animates_forever_once_loaded() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch(&hs).await.expect("launch app");
+    login_and_open(&mut app, "general").await;
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    app.key_combo("body", "/", true, false, false)
+        .await
+        .expect("ctrl+/");
+    app.wait_for(".help-dialog", DEFAULT_WAIT)
+        .await
+        .expect("shortcuts");
+    let endless = app
+        .eval(
+            "return document.getAnimations() \
+               .filter(a => a.playState === 'running' && a.effect && a.effect.getComputedTiming().iterations === Infinity) \
+               .map(a => (a.animationName || 'animation') + ' on ' + (a.effect.target && a.effect.target.className));",
+        )
+        .await
+        .expect("animations");
+    assert_eq!(endless, serde_json::json!([]), "endless animations");
+}

@@ -2597,3 +2597,8 @@ body.rail-dragging, body.rail-dragging * { cursor: grabbing !important; }
 .settings-result:hover { background: var(--bg-hover); }
 .settings-result-page { margin-left: auto; font-size: 0.75rem; }
 .settings-no-result { padding: 8px 10px; }
+
+/* Placeholders waiting above the oldest message stay still: a shimmer that
+   never ends redraws the window every frame (and under a dimmed dialog, all
+   of it). */
+.older-skeleton .skeleton { animation: none; }
