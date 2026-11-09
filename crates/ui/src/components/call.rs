@@ -328,7 +328,7 @@ pub fn join_call(session: Session, room_id: OwnedRoomId, room_name: String) {
 
         // The phone asks once; without the microphone there is no call.
         if let Some(ask) = microphone {
-            let allowed = tokio::task::spawn_blocking(move || ask())
+            let allowed = morpheus_core::rt::spawn_blocking(move || ask())
                 .await
                 .unwrap_or(false);
             if !allowed {
@@ -436,7 +436,7 @@ pub fn join_call(session: Session, room_id: OwnedRoomId, room_name: String) {
                     Some(event) => event,
                     None => return,
                 },
-                _ = tokio::time::sleep(std::time::Duration::from_secs(1)), if !current() => return,
+                _ = morpheus_core::rt::sleep(std::time::Duration::from_secs(1)), if !current() => return,
                 Some(key) = async {
                     match keys.as_mut() {
                         Some(keys) => keys.next().await,
@@ -1056,7 +1056,7 @@ fn VideoTile(room_id: OwnedRoomId, user: OwnedUserId, feed: String, screen: bool
                              if (t) t.querySelector('img').src = 'data:image/jpeg;base64,{data}';"
                         ));
                     }
-                    tokio::time::sleep(std::time::Duration::from_millis(VIDEO_POLL_MS)).await;
+                    morpheus_core::rt::sleep(std::time::Duration::from_millis(VIDEO_POLL_MS)).await;
                 }
             }
         }
@@ -1298,8 +1298,8 @@ pub fn CallBar() -> Element {
 }
 
 fn now_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    morpheus_core::rt::SystemTime::now()
+        .duration_since(morpheus_core::rt::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or_default()
 }
@@ -1336,7 +1336,7 @@ pub fn IncomingCalls() -> Element {
     let mut tick = use_signal(|| 0u64);
     // Your DM call ringing the other person: since when (a ringback plays
     // until they join, or the ring runs out).
-    let mut ringing_out_since = use_signal(|| None::<std::time::Instant>);
+    let mut ringing_out_since = use_signal(|| None::<morpheus_core::rt::Instant>);
     let me = use_context::<Session>().user_id();
     use_future(move || {
         let me = me.clone();
@@ -1357,7 +1357,7 @@ pub fn IncomingCalls() -> Element {
                     });
                 if ringing_out {
                     let started = *ringing_out_since.peek();
-                    let since = started.unwrap_or_else(std::time::Instant::now);
+                    let since = started.unwrap_or_else(morpheus_core::rt::Instant::now);
                     if started.is_none() {
                         ringing_out_since.set(Some(since));
                     }
@@ -1384,7 +1384,7 @@ pub fn IncomingCalls() -> Element {
                     play(Sound::Ring);
                 }
                 tick += 1;
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                morpheus_core::rt::sleep(std::time::Duration::from_secs(1)).await;
             }
         }
     });
@@ -1555,7 +1555,7 @@ pub fn open_camera_menu(session: Session, x: f64, y: f64) {
                     let session = session.clone();
                     set_camera(session.clone(), false);
                     spawn(async move {
-                        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+                        morpheus_core::rt::sleep(std::time::Duration::from_millis(400)).await;
                         set_camera(session, true);
                     });
                 }

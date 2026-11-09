@@ -99,13 +99,13 @@ impl Session {
             room.send_state_event(RoomHistoryVisibilityEventContent::new(visibility.clone()))
                 .await?;
             // Settle: the dialog re-reads right after saving.
-            let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(8);
-            while tokio::time::Instant::now() < deadline {
+            let deadline = crate::rt::Instant::now() + std::time::Duration::from_secs(8);
+            while crate::rt::Instant::now() < deadline {
                 let rule_ok = matches!(room.join_rule(), Some(JoinRule::Public)) == privacy.public;
                 if rule_ok && room.history_visibility_or_default() == visibility {
                     break;
                 }
-                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                crate::rt::sleep(std::time::Duration::from_millis(100)).await;
             }
             Ok(())
         })
@@ -120,7 +120,7 @@ impl Session {
         let room = self.room(&room_id);
         self.core.run(async move {
             let mime = mime_guess::from_path(&path).first_or_octet_stream();
-            let bytes = tokio::fs::read(&path).await?;
+            let bytes = crate::fs::nonblocking::read(&path).await?;
             room?.upload_avatar(&mime, bytes, None).await?;
             Ok(())
         })
@@ -165,7 +165,7 @@ impl Session {
             let avatar_uri = match avatar {
                 Some(path) => {
                     let mime = mime_guess::from_path(&path).first_or_octet_stream();
-                    let bytes = tokio::fs::read(&path).await?;
+                    let bytes = crate::fs::nonblocking::read(&path).await?;
                     Some(client.media().upload(&mime, bytes, None).await?.content_uri)
                 }
                 None => None,
@@ -185,14 +185,14 @@ impl Session {
             // Wait for every room to reflect the new name locally, so a member
             // list refetched right away shows it.
             if !name.is_empty() {
-                let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
+                let deadline = crate::rt::Instant::now() + std::time::Duration::from_secs(10);
                 for room_id in all {
                     let Some(room) = client.get_room(&room_id) else { continue };
-                    while tokio::time::Instant::now() < deadline {
+                    while crate::rt::Instant::now() < deadline {
                         if matches!(room.get_member_no_sync(&me).await, Ok(Some(m)) if m.name() == name) {
                             break;
                         }
-                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                        crate::rt::sleep(std::time::Duration::from_millis(100)).await;
                     }
                 }
             }

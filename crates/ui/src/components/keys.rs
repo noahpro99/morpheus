@@ -50,7 +50,7 @@ pub fn provide_key_tracking(session: Session) {
     let mut tick = use_signal(|| 0u32);
     use_future(move || async move {
         loop {
-            tokio::time::sleep(RECHECK).await;
+            morpheus_core::rt::sleep(RECHECK).await;
             tick += 1;
         }
     });

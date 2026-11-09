@@ -7,7 +7,7 @@ pub enum Error {
     Io(#[from] std::io::Error),
 
     #[error("core runtime task failed: {0}")]
-    Join(#[from] tokio::task::JoinError),
+    Join(#[from] crate::rt::JoinError),
 
     #[error("stored session is unreadable: {0}")]
     SessionFormat(#[from] serde_json::Error),
@@ -39,6 +39,7 @@ pub enum Error {
     #[error("unknown room {0}")]
     UnknownRoom(OwnedRoomId),
 
+    #[cfg(not(target_arch = "wasm32"))]
     #[error("OS keyring error: {0}")]
     Keyring(#[from] keyring::Error),
 

@@ -147,7 +147,7 @@ pub fn UpdateCard() -> Element {
                         Ok(_) => {}
                         Err(err) => tracing::info!(%err, "update check failed"),
                     }
-                    tokio::time::sleep(UPDATE_CHECK_EVERY).await;
+                    morpheus_core::rt::sleep(UPDATE_CHECK_EVERY).await;
                 }
             }
         }

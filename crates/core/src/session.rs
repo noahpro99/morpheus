@@ -83,7 +83,7 @@ impl Core {
         self.run(async move {
             let blocking = core.clone();
             let (dir, stored) =
-                tokio::task::spawn_blocking(move || -> Result<(PathBuf, Option<StoredSession>)> {
+                crate::rt::spawn_blocking(move || -> Result<(PathBuf, Option<StoredSession>)> {
                     let kind = blocking.session_store_kind();
                     // Older builds kept a plaintext session in the data dir.
                     let root = blocking.data_dir();
@@ -131,7 +131,7 @@ impl Core {
         self.run(async move {
             let client = tls_roots(Client::builder())
                 .server_name_or_homeserver_url(&homeserver)
-                .sqlite_store(core.data_dir().join(PROBE_STORE_DIR), None)
+                .pipe_store(&core.data_dir().join(PROBE_STORE_DIR))
                 .build()
                 .await?;
             let types = client.matrix_auth().get_login_types().await?;
@@ -185,8 +185,70 @@ impl Core {
         })
     }
 
+    /// Finish a single sign-on that came back to the page with a login
+    /// token (a browser's SSO is a redirect away and back; see
+    /// [`Core::login_sso`] there).
+    pub fn login_with_token(&self, homeserver: String, token: String) -> CoreFuture<Session> {
+        let core = self.clone();
+        self.run(async move {
+            let dir = new_account_dir(&core).await?;
+            let (client, passphrase) = fresh_client(&dir, &homeserver).await?;
+            let signed_in = client
+                .matrix_auth()
+                .login_token(&token)
+                .initial_device_display_name(device_name())
+                .await;
+            if let Err(err) = signed_in {
+                abandon(&core, client, &dir).await;
+                return Err(err.into());
+            }
+            info!("logged in with a single sign-on token");
+            let session =
+                persist_and_start(core.clone(), client.clone(), homeserver, passphrase, dir)
+                    .await?;
+            core.spawn(async move { first_device(&client, None).await });
+            Ok(session)
+        })
+    }
+
+    /// In a browser: off to the homeserver's sign-on page, which sends the
+    /// page back with `?loginToken=` (and the homeserver, kept here, in
+    /// `?sso_homeserver=`) for [`Core::login_with_token`]. Never resolves:
+    /// the page goes.
+    #[cfg(target_arch = "wasm32")]
+    pub fn login_sso(
+        &self,
+        homeserver: String,
+        _open_url: Option<UrlOpener>,
+    ) -> CoreFuture<Session> {
+        let core = self.clone();
+        self.run(async move {
+            let (client, _) =
+                fresh_client(&core.data_dir().join(PROBE_STORE_DIR), &homeserver).await?;
+            let window =
+                web_sys::window().ok_or_else(|| Error::Io(std::io::Error::other("no window")))?;
+            let location = window.location();
+            let here = format!(
+                "{}{}",
+                location.origin().unwrap_or_default(),
+                location.pathname().unwrap_or_default()
+            );
+            let back =
+                url::Url::parse_with_params(&here, [("sso_homeserver", homeserver.as_str())])
+                    .map_err(|err| Error::Io(std::io::Error::other(err)))?;
+            let url = client
+                .matrix_auth()
+                .get_sso_login_url(back.as_str(), None)
+                .await?;
+            info!(%url, "off to single sign-on");
+            let _ = location.set_href(&url);
+            std::future::pending::<Result<Session>>().await
+        })
+    }
+
     /// Log in through the homeserver's single sign-on page. Opens the
     /// system browser and waits for it to redirect back to a loopback port.
+    #[cfg(not(target_arch = "wasm32"))]
     ///
     /// `open_url` shows the sign-in page; `None` uses the desktop's default
     /// opener (Android has none a Rust process can use).
@@ -235,8 +297,11 @@ fn is_email(username: &str) -> bool {
 /// does not refuse the new one.
 async fn fresh_client(data_dir: &Path, homeserver: &str) -> Result<(Client, String)> {
     let store = data_dir.join(STORE_DIR);
-    if tokio::fs::try_exists(&store).await.unwrap_or(false) {
-        tokio::fs::remove_dir_all(&store).await?;
+    if crate::fs::nonblocking::try_exists(&store)
+        .await
+        .unwrap_or(false)
+    {
+        crate::fs::nonblocking::remove_dir_all(&store).await?;
     }
     let passphrase = session_store::generate_passphrase();
     let client = build_client(data_dir, homeserver, Some(&passphrase)).await?;
@@ -251,11 +316,11 @@ async fn fresh_client(data_dir: &Path, homeserver: &str) -> Result<(Client, Stri
 async fn set_aside(core: &Core, dir: &Path, stored: &StoredSession, err: &Error) -> Error {
     let user = stored.session.meta.user_id.to_string();
     warn!(%user, %err, "local store unreadable; setting it aside");
-    let stamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let stamp = crate::rt::SystemTime::now()
+        .duration_since(crate::rt::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or_default();
-    let _ = tokio::fs::rename(
+    let _ = crate::fs::nonblocking::rename(
         dir.join(STORE_DIR),
         dir.join(format!("{STORE_DIR}.unreadable-{stamp}")),
     )
@@ -273,7 +338,7 @@ async fn set_aside(core: &Core, dir: &Path, stored: &StoredSession, err: &Error)
         let _ = client.logout().await;
     }
     let (blocking, account_dir) = (core.clone(), dir.to_path_buf());
-    let _ = tokio::task::spawn_blocking(move || -> Result<()> {
+    let _ = crate::rt::spawn_blocking(move || -> Result<()> {
         session_store::resolve(&account_dir, blocking.session_store_kind()).clear()?;
         let next = blocking.active_account_dir();
         crate::accounts::write_active(blocking.data_dir(), &blocking.account_key(&next))
@@ -288,16 +353,16 @@ async fn set_aside(core: &Core, dir: &Path, stored: &StoredSession, err: &Error)
 /// it was a new one), so the folder can take the next sign-in.
 async fn abandon(core: &Core, client: Client, dir: &Path) {
     drop(client);
-    let _ = tokio::fs::remove_dir_all(dir.join(STORE_DIR)).await;
+    let _ = crate::fs::nonblocking::remove_dir_all(dir.join(STORE_DIR)).await;
     if dir != core.data_dir() {
-        let _ = tokio::fs::remove_dir_all(dir).await;
+        let _ = crate::fs::nonblocking::remove_dir_all(dir).await;
     }
 }
 
 /// Blocking-safe: the folder a new sign-in goes into (see `accounts.rs`).
 async fn new_account_dir(core: &Core) -> Result<PathBuf> {
     let core = core.clone();
-    tokio::task::spawn_blocking(move || core.free_account_dir()).await?
+    crate::rt::spawn_blocking(move || core.free_account_dir()).await?
 }
 
 async fn persist_and_start(
@@ -315,7 +380,7 @@ async fn persist_and_start(
     };
     let kind = core.session_store_kind();
     let (blocking, account_dir) = (core.clone(), dir.clone());
-    tokio::task::spawn_blocking(move || -> Result<()> {
+    crate::rt::spawn_blocking(move || -> Result<()> {
         session_store::resolve(&account_dir, kind).save(&stored)?;
         // The account just signed in is the one to restore next time.
         crate::accounts::write_active(blocking.data_dir(), &blocking.account_key(&account_dir))
@@ -329,34 +394,28 @@ async fn build_client(
     homeserver: &str,
     passphrase: Option<&str>,
 ) -> Result<Client> {
-    Ok(tls_roots(Client::builder())
-        // Accepts "matrix.org" or a full URL and follows `.well-known`.
-        .server_name_or_homeserver_url(homeserver)
-        .sqlite_store(data_dir.join(STORE_DIR), passphrase)
-        // Local message search, decrypted messages included: encrypted on disk
-        // with the store's passphrase, next to the store.
-        .search_index_store(match passphrase {
-            Some(secret) => matrix_sdk::search_index::SearchIndexStoreKind::EncryptedDirectory(
-                data_dir.join(STORE_DIR).join("search"),
-                secret.to_owned(),
-            ),
-            None => matrix_sdk::search_index::SearchIndexStoreKind::InMemory,
-        })
-        .with_threading_support(ThreadingSupport::Enabled {
-            with_subscriptions: false,
-        })
-        // A message this device can't decrypt asks the key backup for its
-        // key (as Element X does). The SDK's default never asks, so after
-        // the recovery key, history from before the device stayed locked.
-        // Backups and cross-signing are still set up by the app's prompts.
-        .with_encryption_settings(matrix_sdk::encryption::EncryptionSettings {
-            auto_enable_cross_signing: false,
-            backup_download_strategy:
-                matrix_sdk::encryption::BackupDownloadStrategy::AfterDecryptionFailure,
-            auto_enable_backups: false,
-        })
-        .build()
-        .await?)
+    Ok(with_store(
+        tls_roots(Client::builder())
+            // Accepts "matrix.org" or a full URL and follows `.well-known`.
+            .server_name_or_homeserver_url(homeserver),
+        &data_dir.join(STORE_DIR),
+        passphrase,
+    )
+    .with_threading_support(ThreadingSupport::Enabled {
+        with_subscriptions: false,
+    })
+    // A message this device can't decrypt asks the key backup for its
+    // key (as Element X does). The SDK's default never asks, so after
+    // the recovery key, history from before the device stayed locked.
+    // Backups and cross-signing are still set up by the app's prompts.
+    .with_encryption_settings(matrix_sdk::encryption::EncryptionSettings {
+        auto_enable_cross_signing: false,
+        backup_download_strategy:
+            matrix_sdk::encryption::BackupDownloadStrategy::AfterDecryptionFailure,
+        auto_enable_backups: false,
+    })
+    .build()
+    .await?)
 }
 
 /// Longest wait between attempts to restart a failed sync.
@@ -377,7 +436,7 @@ async fn keep_syncing(sync: std::sync::Weak<SyncService>, syncing: Arc<AtomicBoo
             State::Running => wait = std::time::Duration::from_secs(1),
             State::Error(_) | State::Terminated if syncing.load(Ordering::Relaxed) => {
                 warn!(?state, ?wait, "sync stopped; starting it again");
-                tokio::time::sleep(wait).await;
+                crate::rt::sleep(wait).await;
                 wait = (wait * 2).min(SYNC_RETRY_MAX);
                 let Some(sync) = sync.upgrade() else { return };
                 if syncing.load(Ordering::Relaxed) {
@@ -454,14 +513,14 @@ impl Session {
             client.logout().await?;
             let kind = core.session_store_kind();
             let account_dir = dir.clone();
-            tokio::task::spawn_blocking(move || session_store::resolve(&account_dir, kind).clear())
+            crate::rt::spawn_blocking(move || session_store::resolve(&account_dir, kind).clear())
                 .await??;
             // Drop the account's local data too, so another account can sign in cleanly.
-            let _ = tokio::fs::remove_dir_all(dir.join(STORE_DIR)).await;
+            let _ = crate::fs::nonblocking::remove_dir_all(dir.join(STORE_DIR)).await;
             if dir != core.data_dir() {
-                let _ = tokio::fs::remove_dir_all(&dir).await;
+                let _ = crate::fs::nonblocking::remove_dir_all(&dir).await;
             }
-            tokio::task::spawn_blocking(move || {
+            crate::rt::spawn_blocking(move || {
                 let next = core.active_account_dir();
                 crate::accounts::write_active(core.data_dir(), &core.account_key(&next))
             })
@@ -549,7 +608,7 @@ impl Core {
 
             let blocking = core.clone();
             let (dir, stored) =
-                tokio::task::spawn_blocking(move || -> Result<(PathBuf, Option<StoredSession>)> {
+                crate::rt::spawn_blocking(move || -> Result<(PathBuf, Option<StoredSession>)> {
                     let dir = blocking.active_account_dir();
                     let stored =
                         session_store::resolve(&dir, blocking.session_store_kind()).load()?;
@@ -650,5 +709,50 @@ async fn rename_old_device(client: &Client) {
     });
     if old && let Err(err) = client.rename_device(&device_id, device_name()).await {
         tracing::debug!(%err, "renaming this device failed");
+    }
+}
+
+/// Where a client keeps its state: SQLite (and an encrypted search index
+/// beside it) on desktops and phones, IndexedDB named after the folder in a
+/// browser.
+#[cfg(not(target_arch = "wasm32"))]
+fn with_store(
+    builder: matrix_sdk::ClientBuilder,
+    store: &Path,
+    passphrase: Option<&str>,
+) -> matrix_sdk::ClientBuilder {
+    builder
+        .sqlite_store(store, passphrase)
+        // Local message search, decrypted messages included: encrypted on disk
+        // with the store's passphrase, next to the store.
+        .search_index_store(match passphrase {
+            Some(secret) => matrix_sdk::search_index::SearchIndexStoreKind::EncryptedDirectory(
+                store.join("search"),
+                secret.to_owned(),
+            ),
+            None => matrix_sdk::search_index::SearchIndexStoreKind::InMemory,
+        })
+}
+
+#[cfg(target_arch = "wasm32")]
+fn with_store(
+    builder: matrix_sdk::ClientBuilder,
+    store: &Path,
+    passphrase: Option<&str>,
+) -> matrix_sdk::ClientBuilder {
+    // A mark that the folder has a store (`accounts::free_account_dir`
+    // looks for one before reusing a folder).
+    let _ = crate::fs::write(store.join("indexeddb"), b"");
+    builder.indexeddb_store(&store.to_string_lossy(), passphrase)
+}
+
+/// A throwaway store, for asking a server what it supports.
+trait PipeStore {
+    fn pipe_store(self, store: &Path) -> Self;
+}
+
+impl PipeStore for matrix_sdk::ClientBuilder {
+    fn pipe_store(self, store: &Path) -> Self {
+        with_store(self, store, None)
     }
 }

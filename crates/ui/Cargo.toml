@@ -8,24 +8,35 @@ license.workspace = true
 [features]
 # Test bridge that evaluates JavaScript in the webview on request. See src/e2e.rs.
 e2e = ["dep:serde", "tokio/net", "tokio/io-util"]
+# The same for the web app: the page asks the test relay for scripts (see
+# src/e2e_web.rs and crates/e2e/src/web.rs).
+web-e2e = []
 
 [dependencies]
-# No platform feature here on purpose: apps/desktop and apps/mobile choose.
+# No platform feature here on purpose: apps/desktop, apps/mobile and apps/web choose.
 dioxus = { workspace = true }
 morpheus-core = { workspace = true }
 morpheus-call = { workspace = true }
 tracing = { workspace = true }
 base64 = { workspace = true }
-tokio = { workspace = true, features = ["time", "sync", "macros", "rt"] }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true }
+
+# Desktops and phones: Tokio, the system's opener; local time from the
+# system's time zone (/etc/localtime, TZ, Android's tzdata).
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { workspace = true, features = ["time", "sync", "macros", "rt"] }
 open = { workspace = true }
-# Local time: reads the system time zone (/etc/localtime, TZ, Android's tzdata).
 jiff = "0.2"
 
-# Native file dialogs exist on desktop only; mobile picks files through the
-# platform (PLAN.md phase 5).
-[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+# The browser: its clock and time zone.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+tokio = { version = "1", default-features = false, features = ["sync", "macros"] }
+jiff = { version = "0.2", features = ["js"] }
+
+# Native file dialogs exist on desktop only; mobile and the browser pick
+# files through the page or the platform.
+[target.'cfg(not(any(target_os = "android", target_os = "ios", target_arch = "wasm32")))'.dependencies]
 rfd = { workspace = true }
 
 [lints]

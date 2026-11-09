@@ -346,10 +346,10 @@ pub fn TimelineView(
                         break;
                     }
                 }
-                tokio::time::sleep(Duration::from_millis(100)).await;
+                morpheus_core::rt::sleep(Duration::from_millis(100)).await;
             }
             // Let the rows render, then bring the message into view.
-            tokio::time::sleep(Duration::from_millis(80)).await;
+            morpheus_core::rt::sleep(Duration::from_millis(80)).await;
             let id = serde_json::to_string(&target).unwrap_or_default();
             document::eval(&format!(
                 "const m = document.querySelector('.timeline [data-event-id=' + JSON.stringify({id}) + ']'); \
@@ -375,7 +375,7 @@ pub fn TimelineView(
         if skip() > 0 && -evt.scroll_top() < PAGINATE_THRESHOLD_PX && !*bottom_check.peek() {
             bottom_check.set(true);
             spawn(async move {
-                tokio::time::sleep(Duration::from_millis(BOTTOM_RECHECK_MS)).await;
+                morpheus_core::rt::sleep(Duration::from_millis(BOTTOM_RECHECK_MS)).await;
                 let offset = match container.peek().clone() {
                     Some(el) => el.get_scroll_offset().await.ok(),
                     None => None,
@@ -436,7 +436,7 @@ pub fn TimelineView(
         let generation = *settle.peek() + 1;
         settle.set(generation);
         spawn(async move {
-            tokio::time::sleep(Duration::from_millis(AUTO_FILL_SETTLE_MS)).await;
+            morpheus_core::rt::sleep(Duration::from_millis(AUTO_FILL_SETTLE_MS)).await;
             let at_start = *reached_start.peek()
                 || entries
                     .peek()

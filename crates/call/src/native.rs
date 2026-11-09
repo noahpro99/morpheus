@@ -1,15 +1,15 @@
-//! Call media for Morpheus: a LiveKit room (the MatrixRTC transport; the
-//! core gets the URL and token) with this device's microphone in it and
-//! everyone else's audio coming out of the speakers.
-//!
-//! Real calls use the platform's audio devices through WebRTC's own device
-//! module, which also cancels echo and suppresses noise. Tests use
-//! [`AudioMode::Tone`]: a steady tone instead of the microphone, nothing
-//! played, and [`CallEvent::Heard`]/[`CallEvent::Quiet`] reporting what
-//! arrives from each participant.
-//!
-//! Like the core, the crate owns its Tokio runtime, so callers can await its
-//! futures from any executor.
+// Call media for Morpheus: a LiveKit room (the MatrixRTC transport; the
+// core gets the URL and token) with this device's microphone in it and
+// everyone else's audio coming out of the speakers.
+//
+// Real calls use the platform's audio devices through WebRTC's own device
+// module, which also cancels echo and suppresses noise. Tests use
+// [`AudioMode::Tone`]: a steady tone instead of the microphone, nothing
+// played, and [`CallEvent::Heard`]/[`CallEvent::Quiet`] reporting what
+// arrives from each participant.
+//
+// Like the core, the crate owns its Tokio runtime, so callers can await its
+// futures from any executor.
 
 use std::{
     borrow::Cow,
@@ -38,17 +38,22 @@ use livekit::{
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tracing::{debug, info, warn};
 
+#[path = "devices.rs"]
 mod devices;
 pub use devices::{
     AudioDevice, AudioDevices, CameraDevice, DeviceChoice, audio_devices, cameras,
     choose_audio_devices, choose_camera, chosen_audio_devices, chosen_camera,
 };
 #[cfg(target_os = "linux")]
+#[path = "camera.rs"]
 mod camera;
+#[path = "platform_camera.rs"]
 mod platform_camera;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+#[path = "screen.rs"]
 mod screen;
 pub use platform_camera::{PlatformCamera, camera_frame, set_platform_camera};
+#[path = "video.rs"]
 mod video;
 pub use video::{
     CAMERA_PATTERN, Frame, LOCAL_CAMERA, LOCAL_SCREEN, SCREEN_PATTERN, TestPattern, latest_frame,

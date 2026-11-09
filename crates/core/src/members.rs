@@ -350,8 +350,8 @@ async fn settle_membership(
     user_id: &matrix_sdk::ruma::UserId,
     wanted: MembershipState,
 ) {
-    let deadline = tokio::time::Instant::now() + SETTLE_DEADLINE;
-    while tokio::time::Instant::now() < deadline {
+    let deadline = crate::rt::Instant::now() + SETTLE_DEADLINE;
+    while crate::rt::Instant::now() < deadline {
         let now = match room.get_member_no_sync(user_id).await {
             Ok(Some(member)) => member.membership().clone(),
             Ok(None) => MembershipState::Leave,
@@ -360,7 +360,7 @@ async fn settle_membership(
         if now == wanted {
             return;
         }
-        tokio::time::sleep(SETTLE_POLL).await;
+        crate::rt::sleep(SETTLE_POLL).await;
     }
     tracing::debug!(%user_id, "membership change not reflected locally before the deadline");
 }
@@ -371,13 +371,13 @@ async fn settle_power_level(
     user_id: &matrix_sdk::ruma::UserId,
     level: i64,
 ) {
-    let deadline = tokio::time::Instant::now() + SETTLE_DEADLINE;
-    while tokio::time::Instant::now() < deadline {
+    let deadline = crate::rt::Instant::now() + SETTLE_DEADLINE;
+    while crate::rt::Instant::now() < deadline {
         if matches!(room.get_member_no_sync(user_id).await, Ok(Some(m)) if power_level_of(&m) == level)
         {
             return;
         }
-        tokio::time::sleep(SETTLE_POLL).await;
+        crate::rt::sleep(SETTLE_POLL).await;
     }
     tracing::debug!(%user_id, "power level change not reflected locally before the deadline");
 }
@@ -388,12 +388,12 @@ async fn settle_ignored(
     user_id: &matrix_sdk::ruma::UserId,
     blocked: bool,
 ) {
-    let deadline = tokio::time::Instant::now() + SETTLE_DEADLINE;
-    while tokio::time::Instant::now() < deadline {
+    let deadline = crate::rt::Instant::now() + SETTLE_DEADLINE;
+    while crate::rt::Instant::now() < deadline {
         if is_ignored(client, user_id).await == blocked {
             return;
         }
-        tokio::time::sleep(SETTLE_POLL).await;
+        crate::rt::sleep(SETTLE_POLL).await;
     }
     tracing::debug!(%user_id, "ignore list change not reflected locally before the deadline");
 }

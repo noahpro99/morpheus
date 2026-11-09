@@ -4,7 +4,8 @@ use std::{
     time::Duration,
 };
 
-use tokio::{sync::mpsc, task::AbortHandle};
+use crate::rt::AbortHandle;
+use tokio::sync::mpsc;
 use tracing::debug;
 
 use crate::{CoreFuture, Error, OwnedRoomId, OwnedUserId, Session, TimelineHandle};
@@ -88,7 +89,7 @@ impl TimelineHandle {
             let stop = core.spawn({
                 let timeline = timeline.clone();
                 async move {
-                    tokio::time::sleep(TYPING_TIMEOUT).await;
+                    crate::rt::sleep(TYPING_TIMEOUT).await;
                     let _ = timeline.room().typing_notice(false).await;
                 }
             });

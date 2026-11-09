@@ -172,13 +172,13 @@ impl Session {
                 .bytes()
                 .await
                 .map_err(|err| failed(&err))?;
-            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            #[cfg(not(any(target_os = "android", target_os = "ios", target_arch = "wasm32")))]
             let installed = tokio::task::spawn_blocking(move || swap::install(&bytes))
                 .await
                 .map_err(|err| failed(&err))?
                 .map_err(|err| failed(&err));
             // Phones install through the system, never in place.
-            #[cfg(any(target_os = "android", target_os = "ios"))]
+            #[cfg(any(target_os = "android", target_os = "ios", target_arch = "wasm32"))]
             let installed = {
                 drop(bytes);
                 Err(failed(&"this device installs updates itself"))
@@ -191,11 +191,11 @@ impl Session {
 /// Left behind by the last update: the old version's files (which a
 /// running program can't always delete) and the unpacked download.
 pub fn clean_up_after_update() {
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    #[cfg(not(any(target_os = "android", target_os = "ios", target_arch = "wasm32")))]
     swap::clean_up();
 }
 
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[cfg(not(any(target_os = "android", target_os = "ios", target_arch = "wasm32")))]
 mod swap {
     use std::io;
     use std::path::{Path, PathBuf};

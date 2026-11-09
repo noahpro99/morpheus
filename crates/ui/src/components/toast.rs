@@ -76,7 +76,7 @@ pub fn report(what: &str, err: &impl std::fmt::Display) {
 /// Dioxus desktop and mobile both run on a Tokio runtime, so its timer
 /// serves here.
 async fn tokio_sleep(duration: std::time::Duration) {
-    tokio::time::sleep(duration).await;
+    morpheus_core::rt::sleep(duration).await;
 }
 
 /// Renders the stack; clicking a toast dismisses it.

@@ -20,17 +20,22 @@ use std::path::{Path, PathBuf};
 
 use base64::Engine;
 use chacha20poly1305::{ChaCha20Poly1305, Key, KeyInit, Nonce, aead::Aead};
+#[cfg(not(target_arch = "wasm32"))]
 use keyring::Entry;
 use matrix_sdk::authentication::matrix::MatrixSession;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
-use tracing::{info, warn};
+use tracing::info;
+#[cfg(not(target_arch = "wasm32"))]
+use tracing::warn;
 
 use crate::{Error, Result};
 
 /// Service name under which keyring entries are grouped.
+#[cfg(not(target_arch = "wasm32"))]
 const SERVICE: &str = "dev.morpheus.Morpheus";
 /// A fixed, data-dir-independent entry used only to test keyring availability.
+#[cfg(not(target_arch = "wasm32"))]
 const PROBE_ACCOUNT: &str = "keyring-probe";
 
 /// Directory holding the local sqlite caches, relative to the data dir.
@@ -68,6 +73,7 @@ pub enum SessionStoreKind {
     File,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl SessionStoreKind {
     fn from_env() -> Option<Self> {
         match std::env::var("MORPHEUS_SESSION_STORE").ok()?.as_str() {
@@ -82,7 +88,7 @@ impl SessionStoreKind {
 }
 
 /// Backend-agnostic storage for the one [`StoredSession`] a data directory holds.
-pub(crate) trait SessionStore: Send + Sync {
+pub(crate) trait SessionStore: crate::rt::MaybeSend + crate::rt::MaybeSync {
     fn load(&self) -> Result<Option<StoredSession>>;
     fn save(&self, stored: &StoredSession) -> Result<()>;
     fn clear(&self) -> Result<()>;
@@ -95,6 +101,14 @@ pub(crate) trait SessionStore: Send + Sync {
 /// no explicit choice, the keyring is probed and used if available, else the
 /// file backend is used and a warning is logged.
 pub(crate) fn resolve(data_dir: &Path, forced: Option<SessionStoreKind>) -> Box<dyn SessionStore> {
+    // A browser has no keyring: the session is kept, encrypted, in the
+    // page's storage.
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = forced;
+        Box::new(FileStore::new(data_dir))
+    }
+    #[cfg(not(target_arch = "wasm32"))]
     match forced.or_else(SessionStoreKind::from_env) {
         Some(SessionStoreKind::Keyring) => Box::new(KeyringStore::new(data_dir)),
         Some(SessionStoreKind::File) => Box::new(FileStore::new(data_dir)),
@@ -107,6 +121,7 @@ pub(crate) fn resolve(data_dir: &Path, forced: Option<SessionStoreKind>) -> Box<
 /// every call let a passing keyring hiccup switch to the file backend, which
 /// holds no session for a keyring account: its folder then looked free, and
 /// the next sign-in wiped its store.
+#[cfg(not(target_arch = "wasm32"))]
 fn keyring_usable() -> bool {
     static USABLE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *USABLE.get_or_init(|| match keyring_available() {
@@ -124,6 +139,7 @@ fn keyring_usable() -> bool {
 /// Round-trip a canary secret to check that a keyring backend actually
 /// works (an `Entry` can be constructed even with no Secret Service running;
 /// the real failure only shows up on first use).
+#[cfg(not(target_arch = "wasm32"))]
 fn keyring_available() -> Result<()> {
     let entry = Entry::new(SERVICE, PROBE_ACCOUNT).map_err(Error::Keyring)?;
     entry.set_password("probe").map_err(Error::Keyring)?;
@@ -147,15 +163,15 @@ pub(crate) fn generate_passphrase() -> String {
 /// homeserver stays the source of truth).
 pub(crate) fn migrate_legacy_session(data_dir: &Path, store: &dyn SessionStore) -> Result<()> {
     let legacy_path = data_dir.join(LEGACY_SESSION_FILE);
-    if !legacy_path.exists() {
+    if !crate::fs::exists(&legacy_path) {
         return Ok(());
     }
     if store.load()?.is_some() {
-        let _ = std::fs::remove_file(&legacy_path);
+        let _ = crate::fs::remove_file(&legacy_path);
         return Ok(());
     }
 
-    let raw = std::fs::read(&legacy_path)?;
+    let raw = crate::fs::read(&legacy_path)?;
     let legacy: LegacyStoredSession = serde_json::from_slice(&raw)?;
     let stored = StoredSession {
         homeserver: legacy.homeserver,
@@ -163,8 +179,8 @@ pub(crate) fn migrate_legacy_session(data_dir: &Path, store: &dyn SessionStore) 
         store_passphrase: generate_passphrase(),
     };
     store.save(&stored)?;
-    std::fs::remove_file(&legacy_path)?;
-    let _ = std::fs::remove_dir_all(data_dir.join(STORE_DIR));
+    crate::fs::remove_file(&legacy_path)?;
+    let _ = crate::fs::remove_dir_all(data_dir.join(STORE_DIR));
 
     info!("migrated plaintext session.json into secure storage");
     Ok(())
@@ -172,6 +188,7 @@ pub(crate) fn migrate_legacy_session(data_dir: &Path, store: &dyn SessionStore) 
 
 /// Stable identifier for a data directory, so several profiles running side
 /// by side (`MORPHEUS_DATA_DIR`) each get their own keyring entry.
+#[cfg(not(target_arch = "wasm32"))]
 fn account_id(data_dir: &Path) -> String {
     data_dir
         .canonicalize()
@@ -180,10 +197,12 @@ fn account_id(data_dir: &Path) -> String {
         .to_string()
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 struct KeyringStore {
     account: String,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl KeyringStore {
     fn new(data_dir: &Path) -> Self {
         Self {
@@ -196,6 +215,7 @@ impl KeyringStore {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl SessionStore for KeyringStore {
     fn load(&self) -> Result<Option<StoredSession>> {
         let entry = self.entry()?;
@@ -244,7 +264,7 @@ impl FileStore {
     }
 
     fn cipher(&self) -> Result<ChaCha20Poly1305> {
-        let key_bytes = match std::fs::read(&self.key_path) {
+        let key_bytes = match crate::fs::read(&self.key_path) {
             Ok(bytes) if bytes.len() == KEY_LEN => bytes,
             _ => {
                 let mut bytes = vec![0u8; KEY_LEN];
@@ -260,7 +280,7 @@ impl FileStore {
 
 impl SessionStore for FileStore {
     fn load(&self) -> Result<Option<StoredSession>> {
-        let Ok(raw) = std::fs::read(&self.data_path) else {
+        let Ok(raw) = crate::fs::read(&self.data_path) else {
             return Ok(None);
         };
         if raw.len() < NONCE_LEN {
@@ -290,16 +310,16 @@ impl SessionStore for FileStore {
     }
 
     fn clear(&self) -> Result<()> {
-        let _ = std::fs::remove_file(&self.data_path);
-        let _ = std::fs::remove_file(&self.key_path);
+        let _ = crate::fs::remove_file(&self.data_path);
+        let _ = crate::fs::remove_file(&self.key_path);
         Ok(())
     }
 }
 
 /// Write `bytes` to `path`, restricted to owner read/write on Unix.
 fn write_private_file(path: &Path, bytes: &[u8]) -> Result<()> {
-    std::fs::write(path, bytes)?;
-    #[cfg(unix)]
+    crate::fs::write(path, bytes)?;
+    #[cfg(all(unix, not(target_arch = "wasm32")))]
     {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;

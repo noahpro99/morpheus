@@ -90,6 +90,9 @@ pub struct AppConfig {
     pub speakerphone: Option<SpeakerRoute>,
     /// The platform's own record of the call going. `None`: nothing to tell.
     pub call_presence: Option<CallPresence>,
+    /// A single sign-on that came back to the page: `(homeserver, login
+    /// token)` (the web app).
+    pub sso_return: Option<(String, String)>,
 }
 
 impl AppConfig {
@@ -104,6 +107,7 @@ impl AppConfig {
             microphone: None,
             speakerphone: None,
             call_presence: None,
+            sso_return: None,
         }
     }
 }
@@ -130,9 +134,23 @@ pub fn App() -> Element {
         document::Stylesheet { href: THEME }
         // No-op unless built with the `e2e` feature.
         E2eBridge {}
-        match core {
-            Err(message) => rsx! { FatalError { message } },
-            Ok(core) => rsx! { Boot { core } },
+        if crate::platform::IS_WEB {
+            // A browser tab: its own bar (no window to manage) with the way
+            // to the desktop app, above everything.
+            div { class: "web-root",
+                WebBar {}
+                div { class: "web-content",
+                    match core {
+                        Err(message) => rsx! { FatalError { message } },
+                        Ok(core) => rsx! { Boot { core } },
+                    }
+                }
+            }
+        } else {
+            match core {
+                Err(message) => rsx! { FatalError { message } },
+                Ok(core) => rsx! { Boot { core } },
+            }
         }
     }
 }
@@ -201,6 +219,27 @@ fn FatalError(message: String) -> Element {
             div { class: "card",
                 h1 { "Morpheus could not start" }
                 p { class: "error", "{message}" }
+            }
+        }
+    }
+}
+
+/// Where the desktop app is downloaded.
+pub const DESKTOP_DOWNLOAD_URL: &str = "https://morpheuschat.org/download";
+
+/// The web app's bar: only the way to the desktop app (the browser has the
+/// rest of what a window bar holds).
+#[component]
+fn WebBar() -> Element {
+    rsx! {
+        div { class: "web-bar",
+            a {
+                class: "get-desktop",
+                href: DESKTOP_DOWNLOAD_URL,
+                target: "_blank",
+                rel: "noopener",
+                crate::icons::Icon { glyph: crate::icons::DOWNLOAD, size: 14 }
+                "Get Morpheus Desktop"
             }
         }
     }

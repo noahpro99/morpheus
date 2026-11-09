@@ -9,7 +9,7 @@ use std::sync::Mutex;
 use livekit::prelude::{PlatformAudio, PlayoutDeviceId, RecordingDeviceId};
 use tracing::warn;
 
-use crate::{AudioMode, Error, Result, runtime};
+use crate::imp::{AudioMode, Error, Result, runtime};
 
 /// A microphone or speaker: a stable id to save, and a name to show.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -88,7 +88,7 @@ pub async fn audio_devices(mode: AudioMode) -> AudioDevices {
 }
 
 /// Calls use these devices from now on. A call already going switches over
-/// with [`crate::Call::use_chosen_devices`].
+/// with [`crate::imp::Call::use_chosen_devices`].
 pub fn choose_audio_devices(choice: DeviceChoice) {
     if let Ok(mut chosen) = CHOICE.lock() {
         *chosen = choice;
@@ -149,7 +149,7 @@ pub fn cameras(mode: AudioMode) -> Vec<CameraDevice> {
     }
     #[cfg(target_os = "linux")]
     {
-        crate::camera::list()
+        crate::imp::camera::list()
     }
     #[cfg(not(target_os = "linux"))]
     {

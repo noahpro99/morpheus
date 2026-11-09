@@ -132,7 +132,7 @@ impl Session {
             {
                 Ok(response) => {
                     let heartbeat =
-                        tokio::spawn(heartbeat(client.clone(), response.delay_id.clone()));
+                        crate::rt::spawn(heartbeat(client.clone(), response.delay_id.clone()));
                     if let Ok(mut beats) = heartbeats().lock() {
                         beats.insert(
                             (user_id.clone(), room_id.clone()),
@@ -365,7 +365,7 @@ const LEAVE_DELAY: Duration = Duration::from_secs(10);
 /// How often a device in a call checks in (well inside [`LEAVE_DELAY`]).
 const HEARTBEAT: Duration = Duration::from_secs(4);
 
-type Heartbeats = Mutex<HashMap<(OwnedUserId, OwnedRoomId), (tokio::task::JoinHandle<()>, String)>>;
+type Heartbeats = Mutex<HashMap<(OwnedUserId, OwnedRoomId), (crate::rt::JoinHandle<()>, String)>>;
 
 /// The running heartbeat (and delayed leave id) per account and room.
 fn heartbeats() -> &'static Heartbeats {
@@ -384,10 +384,8 @@ fn stop_heartbeat(user_id: &OwnedUserId, room_id: &OwnedRoomId) -> Option<String
 }
 
 async fn heartbeat(client: matrix_sdk::Client, delay_id: String) {
-    let mut tick = tokio::time::interval(HEARTBEAT);
-    tick.tick().await;
     loop {
-        tick.tick().await;
+        crate::rt::sleep(HEARTBEAT).await;
         if let Err(err) = update_delay(&client, delay_id.clone(), UpdateAction::Restart).await {
             debug!(%err, "call heartbeat");
         }
@@ -606,8 +604,8 @@ impl Session {
                 .device_id()
                 .ok_or(Error::NoSession)?
                 .to_string();
-            let sent_ts = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
+            let sent_ts = crate::rt::SystemTime::now()
+                .duration_since(crate::rt::UNIX_EPOCH)
                 .map(|d| d.as_millis() as u64)
                 .unwrap_or_default();
             let content = json!({
@@ -736,8 +734,8 @@ impl RingUpdates {
 }
 
 fn now_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    crate::rt::SystemTime::now()
+        .duration_since(crate::rt::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or_default()
 }

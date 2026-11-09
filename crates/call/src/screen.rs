@@ -22,7 +22,7 @@ use livekit::webrtc::{
 use tokio::sync::oneshot;
 use tracing::{info, warn};
 
-use crate::video::{self, LOCAL_SCREEN};
+use crate::imp::video::{self, LOCAL_SCREEN};
 
 /// Capture the screen into `source` on a thread of its own until `stop` is
 /// set. `started` hears once: the first picture arrived, or capture could

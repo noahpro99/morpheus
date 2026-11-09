@@ -1,5 +1,7 @@
 // Deeply nested SDK futures trip the default `Send` auto-trait recursion limit.
 #![recursion_limit = "256"]
+// A browser has one thread: shared state there is `Arc` without `Send`.
+#![cfg_attr(target_arch = "wasm32", allow(clippy::arc_with_non_send_sync))]
 
 //! Morpheus core: everything that talks to Matrix, with no UI dependencies.
 //!
@@ -17,6 +19,7 @@ mod blur;
 mod calls;
 mod core;
 mod error;
+pub mod fs;
 mod media;
 mod members;
 mod messages;
@@ -27,6 +30,7 @@ mod push;
 mod recovery;
 mod report;
 mod rooms;
+pub mod rt;
 mod search;
 mod session;
 mod session_store;
@@ -41,7 +45,7 @@ pub use error::{Error, Result};
 
 /// A future produced by the core. Boxed so the deeply nested SDK types never
 /// leak into dependents, and `Send` so any executor can drive it.
-pub type CoreFuture<T> = futures_util::future::BoxFuture<'static, Result<T>>;
+pub type CoreFuture<T> = rt::BoxFuture<'static, Result<T>>;
 pub use accounts::SavedAccount;
 pub use blur::placeholder as blur_placeholder;
 pub use calls::{

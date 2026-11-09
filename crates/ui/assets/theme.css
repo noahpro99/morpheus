@@ -2703,3 +2703,35 @@ body.rail-dragging, body.rail-dragging * { cursor: grabbing !important; }
 .chat-header .voice-chat-toggle.active { background: var(--bg-selected); color: var(--text); }
 /* Phones: the call bar above the message box is a full-size target. */
 .shell.narrow .call-bar { min-height: 44px; }
+
+/* The web app: a slim bar on top with the way to the desktop app, over
+   everything (dialogs included), and the app below it. */
+.web-root { display: flex; flex-direction: column; height: 100%; }
+.web-content { flex: 1; min-height: 0; position: relative; }
+.web-content > * { height: 100%; }
+.web-bar {
+  flex: none;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 8px;
+  background: var(--bg-rail);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
+  position: relative;
+  z-index: 100000;
+}
+.get-desktop {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.get-desktop:hover { filter: brightness(1.1); }

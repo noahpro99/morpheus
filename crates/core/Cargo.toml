@@ -7,10 +7,8 @@ license.workspace = true
 
 [dependencies]
 url = "2"
-matrix-sdk = { workspace = true }
 matrix-sdk-ui = { workspace = true }
 ruma-html = { workspace = true }
-tokio = { workspace = true }
 futures-util = { workspace = true }
 eyeball-im = { workspace = true }
 imbl = { workspace = true }
@@ -18,10 +16,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
-open = { workspace = true }
-directories = { workspace = true }
 mime_guess = { workspace = true }
-keyring = { workspace = true }
 rand = { workspace = true }
 chacha20poly1305 = { workspace = true }
 base64 = { workspace = true }
@@ -31,6 +26,27 @@ blurhash = "0.2"
 png = { workspace = true }
 zune-jpeg = "0.5"
 sha2 = "0.10"
+
+# Desktops and phones: SQLite stores, the system keyring, a local server for
+# SSO, and tokio's runtime.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+matrix-sdk = { workspace = true, features = ["sqlite", "rustls-aws-lc-rs", "sso-login", "experimental-search"] }
+tokio = { workspace = true }
+open = { workspace = true }
+directories = { workspace = true }
+keyring = { workspace = true }
+
+# The browser (apps/web): IndexedDB stores, the page's own fetch and timers.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+matrix-sdk = { workspace = true, features = ["indexeddb", "js"] }
+tokio = { version = "1", default-features = false, features = ["sync", "macros"] }
+wasm-bindgen-futures = "0.4"
+gloo-timers = { version = "0.3", features = ["futures"] }
+web-time = "1"
+web-sys = { version = "0.3", features = ["Window", "Storage", "Navigator", "Location", "Document", "Blob", "Url", "HtmlAnchorElement", "Element"] }
+js-sys = "0.3"
+wasm-bindgen = "0.2"
+getrandom = { version = "0.3", features = ["wasm_js"] }
 
 # Phones and Windows have no system SQLite to link against (and the dev
 # shell's is a Linux desktop build), so the store compiles its own there.
@@ -53,5 +69,5 @@ workspace = true
 apple-native-keyring-store = { version = "1", features = ["protected"] }
 
 # Self-update on desktops: a release is a zip of the app's folder.
-[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+[target.'cfg(not(any(target_os = "android", target_os = "ios", target_arch = "wasm32")))'.dependencies]
 zip = { version = "0.6", default-features = false, features = ["deflate"] }

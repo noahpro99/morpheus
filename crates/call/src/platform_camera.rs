@@ -14,7 +14,7 @@ use livekit::webrtc::{
 };
 use tracing::warn;
 
-use crate::video::{self, LOCAL_CAMERA};
+use crate::imp::video::{self, LOCAL_CAMERA};
 
 /// Starting and stopping the app's camera. `start` returns whether it did.
 pub struct PlatformCamera {

@@ -15,12 +15,12 @@ pub fn notifications_enabled(data_dir: &Path) -> bool {
 pub fn set_notifications_enabled(data_dir: &Path, enabled: bool) -> std::io::Result<()> {
     let marker = data_dir.join(NOTIFICATIONS_OFF);
     if enabled {
-        match std::fs::remove_file(marker) {
+        match morpheus_core::fs::remove_file(marker) {
             Err(err) if err.kind() != std::io::ErrorKind::NotFound => Err(err),
             _ => Ok(()),
         }
     } else {
-        std::fs::write(marker, "")
+        morpheus_core::fs::write(marker, "")
     }
 }
 
@@ -28,7 +28,7 @@ pub fn set_notifications_enabled(data_dir: &Path, enabled: bool) -> std::io::Res
 pub const AUDIO_DEVICES: &str = "audio_devices.json";
 
 pub fn audio_devices(data_dir: &Path) -> morpheus_call::DeviceChoice {
-    let saved: serde_json::Value = std::fs::read(data_dir.join(AUDIO_DEVICES))
+    let saved: serde_json::Value = morpheus_core::fs::read(data_dir.join(AUDIO_DEVICES))
         .ok()
         .and_then(|bytes| serde_json::from_slice(&bytes).ok())
         .unwrap_or_default();
@@ -48,7 +48,7 @@ pub fn set_audio_devices(
         "speaker": choice.speaker,
         "camera": camera(data_dir),
     });
-    std::fs::write(data_dir.join(AUDIO_DEVICES), json.to_string())
+    morpheus_core::fs::write(data_dir.join(AUDIO_DEVICES), json.to_string())
 }
 
 /// What a notification on this device gives away (absent: everything).
@@ -89,7 +89,8 @@ impl NotificationContent {
 }
 
 pub fn notification_content(data_dir: &Path) -> NotificationContent {
-    let kept = std::fs::read_to_string(data_dir.join(NOTIFICATION_CONTENT)).unwrap_or_default();
+    let kept =
+        morpheus_core::fs::read_to_string(data_dir.join(NOTIFICATION_CONTENT)).unwrap_or_default();
     NotificationContent::ALL
         .into_iter()
         .find(|c| c.key() == kept.trim())
@@ -102,12 +103,12 @@ pub fn set_notification_content(
 ) -> std::io::Result<()> {
     let path = data_dir.join(NOTIFICATION_CONTENT);
     if content == NotificationContent::Full {
-        match std::fs::remove_file(path) {
+        match morpheus_core::fs::remove_file(path) {
             Err(err) if err.kind() != std::io::ErrorKind::NotFound => Err(err),
             _ => Ok(()),
         }
     } else {
-        std::fs::write(path, content.key())
+        morpheus_core::fs::write(path, content.key())
     }
 }
 
@@ -123,7 +124,7 @@ pub struct LastPlace {
 }
 
 fn last_places(data_dir: &Path) -> serde_json::Map<String, serde_json::Value> {
-    std::fs::read(data_dir.join(LAST_PLACE))
+    morpheus_core::fs::read(data_dir.join(LAST_PLACE))
         .ok()
         .and_then(|bytes| serde_json::from_slice(&bytes).ok())
         .unwrap_or_default()
@@ -144,7 +145,7 @@ pub fn set_last_place(data_dir: &Path, user: &str, place: &LastPlace) -> std::io
         user.to_owned(),
         serde_json::json!({ "room": place.room, "chat": place.chat }),
     );
-    std::fs::write(
+    morpheus_core::fs::write(
         data_dir.join(LAST_PLACE),
         serde_json::Value::Object(places).to_string(),
     )
@@ -153,7 +154,7 @@ pub fn set_last_place(data_dir: &Path, user: &str, place: &LastPlace) -> std::io
 /// The camera chosen for calls (kept beside the audio devices; absent: the
 /// first that works).
 pub fn camera(data_dir: &Path) -> Option<String> {
-    let saved: serde_json::Value = std::fs::read(data_dir.join(AUDIO_DEVICES))
+    let saved: serde_json::Value = morpheus_core::fs::read(data_dir.join(AUDIO_DEVICES))
         .ok()
         .and_then(|bytes| serde_json::from_slice(&bytes).ok())
         .unwrap_or_default();
@@ -164,10 +165,10 @@ pub fn camera(data_dir: &Path) -> Option<String> {
 }
 
 pub fn set_camera(data_dir: &Path, camera: Option<&str>) -> std::io::Result<()> {
-    let mut saved: serde_json::Value = std::fs::read(data_dir.join(AUDIO_DEVICES))
+    let mut saved: serde_json::Value = morpheus_core::fs::read(data_dir.join(AUDIO_DEVICES))
         .ok()
         .and_then(|bytes| serde_json::from_slice(&bytes).ok())
         .unwrap_or_else(|| serde_json::json!({}));
     saved["camera"] = serde_json::json!(camera);
-    std::fs::write(data_dir.join(AUDIO_DEVICES), saved.to_string())
+    morpheus_core::fs::write(data_dir.join(AUDIO_DEVICES), saved.to_string())
 }
