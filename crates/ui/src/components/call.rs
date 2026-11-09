@@ -1380,69 +1380,6 @@ fn IncomingCallCard(call: IncomingCall, room: Option<RoomSummary>) -> Element {
 /// its number is the latest, so a call already left cannot end the next one.
 static CALL_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-#[cfg(test)]
-#[allow(clippy::expect_used)]
-mod tests {
-    use super::*;
-
-    fn dm(id: &str, with: &str, in_call: &[&str]) -> RoomSummary {
-        RoomSummary {
-            id: OwnedRoomId::try_from(id).expect("room id"),
-            name: with.to_owned(),
-            topic: None,
-            avatar: None,
-            is_space: false,
-            is_dm: true,
-            dm_user: Some(OwnedUserId::try_from(with).expect("user id")),
-            member_count: 2,
-            unread_messages: 0,
-            highlight_count: 0,
-            marked_unread: false,
-            muted: false,
-            parent_spaces: Vec::new(),
-            invited: false,
-            inviter: None,
-            call_participants: in_call
-                .iter()
-                .map(|u| OwnedUserId::try_from(*u).expect("user id"))
-                .collect(),
-            favorite: false,
-            latest_ms: 0,
-            space_children: Vec::new(),
-            can_edit_children: false,
-            is_voice: false,
-            is_encrypted: false,
-            call_media: Vec::new(),
-        }
-    }
-
-    #[test]
-    fn calling_someone_already_calling_from_another_dm_joins_that_call() {
-        let rooms = [
-            dm("!new:x", "@bob:x", &[]),
-            dm("!old:x", "@bob:x", &["@bob:x"]),
-            dm("!carol:x", "@carol:x", &["@carol:x"]),
-        ];
-        let asked = OwnedRoomId::try_from("!new:x").expect("id");
-        assert_eq!(
-            call_room_for(&asked, &rooms).map(|(id, _)| id.to_string()),
-            Some("!old:x".to_owned())
-        );
-    }
-
-    #[test]
-    fn a_call_already_here_or_nowhere_else_stays_here() {
-        let both = [
-            dm("!new:x", "@bob:x", &["@bob:x"]),
-            dm("!old:x", "@bob:x", &["@bob:x"]),
-        ];
-        let asked = OwnedRoomId::try_from("!new:x").expect("id");
-        assert_eq!(call_room_for(&asked, &both), None);
-        let alone = [dm("!new:x", "@bob:x", &[]), dm("!old:x", "@bob:x", &[])];
-        assert_eq!(call_room_for(&asked, &alone), None);
-    }
-}
-
 /// The quick list of microphones (or, with `speakers`, speakers) behind the
 /// profile card's arrows and right-clicks: the one in use ticked, a pick
 /// switches to it (a call going now too), and the full settings below.
@@ -1530,4 +1467,67 @@ fn open_voice_settings_item() -> super::context_menu::MenuItem {
             .set(Some(super::settings::SettingsPage::VoiceVideo));
     })
     .icon(crate::icons::SETTINGS)
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod tests {
+    use super::*;
+
+    fn dm(id: &str, with: &str, in_call: &[&str]) -> RoomSummary {
+        RoomSummary {
+            id: OwnedRoomId::try_from(id).expect("room id"),
+            name: with.to_owned(),
+            topic: None,
+            avatar: None,
+            is_space: false,
+            is_dm: true,
+            dm_user: Some(OwnedUserId::try_from(with).expect("user id")),
+            member_count: 2,
+            unread_messages: 0,
+            highlight_count: 0,
+            marked_unread: false,
+            muted: false,
+            parent_spaces: Vec::new(),
+            invited: false,
+            inviter: None,
+            call_participants: in_call
+                .iter()
+                .map(|u| OwnedUserId::try_from(*u).expect("user id"))
+                .collect(),
+            favorite: false,
+            latest_ms: 0,
+            space_children: Vec::new(),
+            can_edit_children: false,
+            is_voice: false,
+            is_encrypted: false,
+            call_media: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn calling_someone_already_calling_from_another_dm_joins_that_call() {
+        let rooms = [
+            dm("!new:x", "@bob:x", &[]),
+            dm("!old:x", "@bob:x", &["@bob:x"]),
+            dm("!carol:x", "@carol:x", &["@carol:x"]),
+        ];
+        let asked = OwnedRoomId::try_from("!new:x").expect("id");
+        assert_eq!(
+            call_room_for(&asked, &rooms).map(|(id, _)| id.to_string()),
+            Some("!old:x".to_owned())
+        );
+    }
+
+    #[test]
+    fn a_call_already_here_or_nowhere_else_stays_here() {
+        let both = [
+            dm("!new:x", "@bob:x", &["@bob:x"]),
+            dm("!old:x", "@bob:x", &["@bob:x"]),
+        ];
+        let asked = OwnedRoomId::try_from("!new:x").expect("id");
+        assert_eq!(call_room_for(&asked, &both), None);
+        let alone = [dm("!new:x", "@bob:x", &[]), dm("!old:x", "@bob:x", &[])];
+        assert_eq!(call_room_for(&asked, &alone), None);
+    }
 }
