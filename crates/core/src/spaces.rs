@@ -60,6 +60,26 @@ impl Session {
         })
     }
 
+    /// Whether a room is end-to-end encrypted, asking the server when this
+    /// device has not synced its state yet.
+    pub fn is_encrypted(&self, room_id: OwnedRoomId) -> CoreFuture<bool> {
+        let room = self.room(&room_id);
+        self.core.run(async move {
+            let room = room?;
+            Ok(room.latest_encryption_state().await?.is_encrypted())
+        })
+    }
+
+    /// Turn on end-to-end encryption in a room. Matrix rooms cannot turn it
+    /// off again.
+    pub fn enable_encryption(&self, room_id: OwnedRoomId) -> CoreFuture<()> {
+        let room = self.room(&room_id);
+        self.core.run(async move {
+            room?.enable_encryption().await?;
+            Ok(())
+        })
+    }
+
     pub fn set_privacy(&self, room_id: OwnedRoomId, privacy: Privacy) -> CoreFuture<()> {
         let room = self.room(&room_id);
         self.core.run(async move {

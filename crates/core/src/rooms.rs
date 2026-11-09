@@ -60,6 +60,8 @@ pub struct RoomSummary {
     /// A voice channel: a room that is a call (Element's video rooms,
     /// `org.matrix.msc3417.call`, or its older Jitsi ones).
     pub is_voice: bool,
+    /// End-to-end encrypted (as last synced).
+    pub is_encrypted: bool,
     /// When the newest message came (milliseconds since the epoch; 0 unknown).
     pub latest_ms: u64,
     /// For a space: the rooms it lists (`m.space.child`), in its order.
@@ -157,6 +159,7 @@ impl RoomSummary {
             is_voice: room
                 .room_type()
                 .is_some_and(|kind| VOICE_ROOM_TYPES.contains(&kind.to_string().as_str())),
+            is_encrypted: room.encryption_state().is_encrypted(),
             latest_ms: room.latest_event_timestamp().map_or(0, |ts| ts.0.into()),
             space_children,
             can_edit_children,

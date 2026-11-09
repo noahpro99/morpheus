@@ -1206,6 +1206,18 @@ fn ChatRoom(room: RoomSummary) -> Element {
                 span { class: "hash", "#" }
             }
             h2 { "{title}" }
+            // Whether the room is end-to-end encrypted; opens its privacy
+            // settings, where encryption is turned on.
+            button {
+                class: "ghost e2e-badge",
+                class: if room.is_encrypted { "on" } else { "off" },
+                title: if room.is_encrypted { "End-to-end encrypted" } else { "Not encrypted" },
+                onclick: {
+                    let room_id = room.id.clone();
+                    move |_| consume_context::<OpenRoomDialog>().set(RoomDialog::Privacy(room_id.clone()))
+                },
+                Icon { glyph: if room.is_encrypted { crate::icons::LOCK } else { crate::icons::LOCK_OPEN }, size: 14 }
+            }
             if let Some(topic) = room.topic.as_deref() {
                 span { class: "topic", "{topic}" }
             }

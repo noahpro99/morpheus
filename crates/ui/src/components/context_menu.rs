@@ -343,6 +343,7 @@ fn default_icon(label: &str) -> Option<&'static str> {
         ("Reply", REPLY),
         ("Edit message", PENCIL),
         ("Edit room", PENCIL),
+        ("Privacy & encryption", LOCK),
         ("Edit profile", PENCIL),
         ("Copy text", COPY),
         ("Copy message link", LINK),

@@ -2419,3 +2419,28 @@ h1, h2, h3, h4, .modal-title, .empty-title {
   white-space: nowrap;
 }
 .help-footer a.button:hover { background: var(--accent); }
+
+/* ---- Encryption: the top bar's lock, and the privacy dialog's section ------- */
+.chat-header .e2e-badge {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-sm);
+}
+.chat-header .e2e-badge.on { color: var(--green, #23a559); }
+.chat-header .e2e-badge.off { color: var(--text-faint, var(--text-muted)); }
+.encryption-setting {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-elevated);
+}
+.encryption-setting h3 { display: flex; align-items: center; gap: 8px; font-size: 0.95rem; }
+.encryption-setting p { margin: 0; font-size: 0.85rem; }
+.encryption-setting .warning { color: var(--warning, #f0b232); }
+.encryption-setting button { align-self: flex-start; display: inline-flex; align-items: center; gap: 8px; }
