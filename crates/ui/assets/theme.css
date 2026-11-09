@@ -2602,3 +2602,21 @@ body.rail-dragging, body.rail-dragging * { cursor: grabbing !important; }
    never ends redraws the window every frame (and under a dimmed dialog, all
    of it). */
 .older-skeleton .skeleton { animation: none; }
+
+/* Jump to present: centred over the messages, clear of the message box's
+   buttons (beside a side card, over the messages' part of the chat). */
+.jump-to-bottom { right: auto; left: 50%; transform: translateX(-50%); }
+@container (min-width: 901px) {
+  .shell:not(.narrow):not(.no-side) .jump-to-bottom { left: calc((100% - var(--members-w)) / 2); }
+}
+
+/* The profile card's mic and headphones, each with its arrow: one button to
+   the eye, red together when on (muted, deafened) on a pale red, with a thin
+   line of the card's grey between button and arrow. */
+.user-pill .device-pair { display: flex; align-items: stretch; gap: 1px; border-radius: var(--radius-sm); }
+.user-pill .device-pair > button { border-radius: 0; }
+.user-pill .device-pair > button:first-child { border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
+.user-pill .device-pair > button:last-child { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+.user-pill .device-pair .device-menu-button { margin-left: 0; }
+.user-pill .device-pair.active > button { background: color-mix(in srgb, var(--danger) 18%, transparent); color: var(--danger); }
+.user-pill .device-pair.active > button:hover { background: color-mix(in srgb, var(--danger) 28%, transparent); }

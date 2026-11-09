@@ -51,14 +51,16 @@ pub fn use_thumbnail(media: Option<MediaRef>, width: u32, height: u32) -> Memo<O
     }));
 
     use_memo(move || {
-        let (media_key, ..) = key.as_ref()?;
         let cached = cache.read();
         if let Some(entry) = key.as_ref().and_then(|key| cached.get(key)) {
             return entry.clone();
         }
+        // The fetch follows the media as it changes (a profile that loads
+        // after the picture's first render); `key` is the first render's.
         if let Some(url) = fetch.read().clone().flatten() {
             return Some(url);
         }
+        let (media_key, ..) = key.as_ref()?;
         // Another size of the same picture is already here (a member's
         // picture in the list, before their card asks for a larger one):
         // shown until this size arrives.

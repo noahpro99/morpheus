@@ -153,6 +153,9 @@ async fn deleting_a_message_can_be_undone() {
         .expect("sent");
 
     hover_action(&mut app, &text, "delete").await;
+    app.click(".confirm-dialog button.danger")
+        .await
+        .expect("confirm");
     app.wait_for_js(
         &shown(&text).replace("return ", "return !"),
         Duration::from_secs(2),

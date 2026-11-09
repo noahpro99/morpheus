@@ -68,6 +68,15 @@ async fn rooms_open_at_the_newest_message_and_jump_back_after_scrolling() {
     app.wait_for(".jump-to-bottom", DEFAULT_WAIT)
         .await
         .expect("jump button after scrolling up");
+    // Centred over the messages, clear of the message box's buttons.
+    let off = app
+        .eval("const b = document.querySelector('.jump-to-bottom').getBoundingClientRect(), t = document.querySelector('.timeline').getBoundingClientRect(); return Math.abs((b.left + b.right) / 2 - (t.left + t.right) / 2);")
+        .await
+        .expect("where");
+    assert!(
+        off.as_f64().unwrap_or(999.0) <= 4.0,
+        "jump button {off}px off centre"
+    );
     app.click(".jump-to-bottom").await.expect("jump");
     app.wait_for_js(AT_BOTTOM, DEFAULT_WAIT)
         .await

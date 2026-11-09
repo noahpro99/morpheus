@@ -616,3 +616,36 @@ async fn nothing_animates_forever_once_loaded() {
         .expect("animations");
     assert_eq!(endless, serde_json::json!([]), "endless animations");
 }
+
+/// The palette names each room's server on the right ("Engineering" for
+/// #dev); your own picture shows in the profile card at the bottom left.
+#[tokio::test]
+async fn the_palette_names_servers_and_the_card_has_your_picture() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch(&hs).await.expect("launch app");
+    login_and_open(&mut app, "general").await;
+    app.wait_for_js(
+        "const a = document.querySelector('.user-pill .profile-chip .avatar'); return !!a && a.tagName === 'IMG' && a.src.startsWith('data:');",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("alice's picture in the profile card");
+    app.key_combo("body", "k", true, false, false)
+        .await
+        .expect("ctrl+k");
+    app.wait_for(".switcher input", DEFAULT_WAIT)
+        .await
+        .expect("palette");
+    app.type_into(".switcher input", "dev")
+        .await
+        .expect("filter");
+    app.wait_for_js(
+        "return [...document.querySelectorAll('.switcher-item:not(.action)')].some(r => r.querySelector('.name')?.textContent.trim() === 'dev' && r.querySelector('.kind')?.textContent.trim() === 'Engineering');",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("#dev named with its server");
+}

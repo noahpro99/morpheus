@@ -248,6 +248,12 @@ document.addEventListener('paste', e => {
   const text = e.clipboardData && e.clipboardData.getData('text/plain');
   if (!handed.defaultPrevented && text) document.execCommand('insertText', false, text);
 }, true);
+// An open device list (Settings → Voice & Video) closes on a click
+// anywhere else, through its own button so the app knows.
+document.addEventListener('click', e => {
+  const list = document.querySelector('.device-options');
+  if (list && !e.target.closest('.device-choice')) list.closest('.device-choice').querySelector('.device-current').click();
+}, true);
 // The message right-clicked stays highlighted while its menu is open (the
 // pointer has moved onto the menu); a data attribute, which re-renders
 // leave alone.

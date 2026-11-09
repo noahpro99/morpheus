@@ -197,7 +197,7 @@ pub fn QuickSwitcher(open: Signal<bool>) -> Element {
                                 Entry::Room(room) => rsx! {
                                     Avatar { media: room.avatar.clone(), fallback: room.name.clone(), size: 24 }
                                     span { class: "name", "{room.name}" }
-                                    span { class: "kind", if room.is_dm { "Direct message" } else { "Room" } }
+                                    span { class: "kind", "{server_of(&rooms.read(), room)}" }
                                 },
                                 Entry::Action(action) => rsx! {
                                     Icon { glyph: action.icon(), size: 16, class: "hash" }
@@ -217,5 +217,19 @@ pub fn QuickSwitcher(open: Signal<bool>) -> Element {
                 }
             }
         }
+    }
+}
+
+/// Where a room lives, for the palette's right-hand side: its server's name,
+/// or the DMs, or Rooms (outside any server).
+fn server_of(rooms: &morpheus_core::Vector<RoomSummary>, room: &RoomSummary) -> String {
+    match scope_for(rooms, room) {
+        super::shell::Scope::Space(id) => rooms
+            .iter()
+            .find(|r| r.id == id)
+            .map(|space| space.name.clone())
+            .unwrap_or_default(),
+        super::shell::Scope::Dms => "Direct message".to_owned(),
+        _ => "Rooms".to_owned(),
     }
 }

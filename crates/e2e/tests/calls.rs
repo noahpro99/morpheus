@@ -2129,3 +2129,71 @@ async fn quick_device_menus_on_the_mic_headphones_and_camera() {
     alice.press("body", "Escape").await.expect("close");
     alice.click(".voice-panel .hang-up").await.expect("leave");
 }
+
+/// A device list in Settings closes when you click elsewhere.
+#[tokio::test]
+async fn a_device_list_closes_on_a_click_elsewhere() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    login_and_open(&mut alice, "alice", "general").await;
+    open_voice_settings(&mut alice).await;
+    alice
+        .click(".voice-devices .device-choice[data-kind=microphone] .device-current")
+        .await
+        .expect("open the list");
+    alice
+        .wait_for(".device-options", DEFAULT_WAIT)
+        .await
+        .expect("open");
+    alice
+        .click(".settings-page h2")
+        .await
+        .expect("click elsewhere");
+    alice
+        .wait_for_js(
+            "return !document.querySelector('.device-options');",
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("the list closes");
+}
+
+/// Muted (or deafened), the profile card's button and its arrow are one red
+/// thing: both icons red on a pale red background spanning the two, with a
+/// thin line of the card's grey between them.
+#[tokio::test]
+async fn muted_marks_the_mic_and_its_arrow_red_together() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    login_and_open(&mut alice, "alice", "general").await;
+    alice.click(".user-pill .mute-button").await.expect("mute");
+    alice
+        .wait_for(".user-pill .device-pair.active .mute-button", DEFAULT_WAIT)
+        .await
+        .expect("the pair marked");
+    let look = alice
+        .eval(
+            "const pair = document.querySelector('.user-pill .device-pair.active'); \
+             const probe = document.createElement('div'); probe.style.color = 'var(--danger)'; document.body.append(probe); \
+             const danger = getComputedStyle(probe).color; probe.remove(); \
+             const mic = getComputedStyle(pair.querySelector('.mute-button')).color; \
+             const arrow = getComputedStyle(pair.querySelector('.device-menu-button')).color; \
+             const tint = b => { const c = getComputedStyle(b).backgroundColor; return c !== 'rgba(0, 0, 0, 0)' && c !== danger; }; \
+             const bg = tint(pair.querySelector('.mute-button')) && tint(pair.querySelector('.device-menu-button')); \
+             const gap = pair.querySelector('.mute-button').getBoundingClientRect().right < pair.querySelector('.device-menu-button').getBoundingClientRect().left; \
+             return { red: mic === danger && arrow === danger, bg, gap };",
+        )
+        .await
+        .expect("look");
+    assert_eq!(
+        look,
+        serde_json::json!({ "red": true, "bg": true, "gap": true }),
+        "muted look"
+    );
+}
