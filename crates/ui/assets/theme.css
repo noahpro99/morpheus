@@ -2455,3 +2455,22 @@ h1, h2, h3, h4, .modal-title, .empty-title {
 .shell.narrow .voice-panel .camera-button,
 .shell.narrow .voice-panel .screen-button,
 .shell.narrow .voice-panel .speaker-button { width: 44px; height: 44px; }
+
+/* ---- Rail marks: a bar beside where you are, a dot beside what is unread ---- */
+.rail-item { overflow: visible; }
+.rail-item > img.avatar, .rail-item > .avatar { overflow: hidden; }
+.rail-pill {
+  position: absolute;
+  left: -12px;
+  top: 50%;
+  width: 4px;
+  height: 0;
+  border-radius: 0 4px 4px 0;
+  background: #fff;
+  transform: translateY(-50%);
+  transition: height 150ms ease;
+  pointer-events: none;
+}
+.rail-item.unread > .rail-pill { height: 8px; }
+.rail-item:hover > .rail-pill { height: 20px; }
+.rail-item.selected > .rail-pill { height: 40px; }

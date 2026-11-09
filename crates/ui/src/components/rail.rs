@@ -126,6 +126,8 @@ pub fn Rail() -> Element {
         // Pending invites count here too, like Discord's DM pill.
         .filter(|room| room.invited || (room.is_dm && room.highlight_count > 0))
         .count();
+    // Scopes with something unread get a dot beside them on the rail.
+    let unread_in = move |scope: &Scope| scope_has_unread(&rooms.read(), scope);
     let entries = layout(&prefs.read(), &spaces);
     let space_by_id = |id: &OwnedRoomId| spaces.iter().find(|s| &s.id == id).cloned();
 
@@ -178,8 +180,10 @@ pub fn Rail() -> Element {
             button {
                 class: "rail-item rail-dms",
                 class: if current == Scope::Dms { "selected" },
+                class: if current != Scope::Dms && (unread_dms > 0 || unread_in(&Scope::Dms)) { "unread" },
                 title: "Direct messages",
                 onclick: move |_| selected_space.set(Scope::Dms),
+                RailPill {}
                 // The mark is a wide, flat shape: draw it large so it fills the circle.
                 Logo { size: 40 }
                 if unread_dms > 0 {
@@ -189,16 +193,20 @@ pub fn Rail() -> Element {
             button {
                 class: "rail-item rail-rooms",
                 class: if current == Scope::Rooms { "selected" },
+                class: if current != Scope::Rooms && unread_in(&Scope::Rooms) { "unread" },
                 title: "Rooms",
                 onclick: move |_| selected_space.set(Scope::Rooms),
+                RailPill {}
                 "#"
             }
             if has_favorites {
                 button {
                     class: "rail-item rail-favorites",
                     class: if current == Scope::Favorites { "selected" },
+                    class: if current != Scope::Favorites && unread_in(&Scope::Favorites) { "unread" },
                     title: "Favorites",
                     onclick: move |_| selected_space.set(Scope::Favorites),
+                    RailPill {}
                     Icon { glyph: crate::icons::STAR, size: 20 }
                 }
             }
@@ -218,7 +226,7 @@ pub fn Rail() -> Element {
                 match entry.clone() {
                     RailEntry::Space(id) => {
                         if let Some(space) = space_by_id(&id) {
-                            rsx! { SpaceBadge { key: "{space.id}", space, folder: None, selected: current.space_id() == Some(&id), on_drop: move |target: RailEntry| drop_at.call((index, Some(target))) } }
+                            rsx! { SpaceBadge { key: "{space.id}", unread: unread_in(&Scope::Space(space.id.clone())), space, folder: None, selected: current.space_id() == Some(&id), on_drop: move |target: RailEntry| drop_at.call((index, Some(target))) } }
                         } else {
                             rsx! {}
                         }
@@ -226,12 +234,15 @@ pub fn Rail() -> Element {
                     RailEntry::Folder { id, name, spaces: members } => {
                         let open = open_folders().contains(&id);
                         let members: Vec<RoomSummary> = members.iter().filter_map(space_by_id).collect();
+                        let folder_unread = members.iter().any(|s| unread_in(&Scope::Space(s.id.clone())));
                         let contains_current = members.iter().any(|s| current.space_id() == Some(&s.id));
                         let folder_entry = RailEntry::Folder { id: id.clone(), name: name.clone(), spaces: members.iter().map(|s| s.id.clone()).collect() };
                         rsx! {
                             div { key: "{id}", class: "rail-folder", class: if open { "open" }, class: if contains_current { "has-current" },
                                 button {
                                     class: "rail-item folder-badge",
+                                    class: if contains_current && !open { "selected" },
+                                    class: if !contains_current && folder_unread { "unread" },
                                     title: "{name}",
                                     onclick: {
                                         let id = id.clone();
@@ -276,6 +287,7 @@ pub fn Rail() -> Element {
                                             drop_at.call((index, Some(folder_entry.clone())));
                                         }
                                     },
+                                    RailPill {}
                                     if open {
                                         Icon { glyph: FOLDER, size: 20 }
                                     } else {
@@ -289,7 +301,7 @@ pub fn Rail() -> Element {
                                 if open {
                                     div { class: "folder-items",
                                         for space in members {
-                                            SpaceBadge { key: "{space.id}", space: space.clone(), folder: Some(id.clone()), selected: current.space_id() == Some(&space.id), on_drop: move |target: RailEntry| drop_at.call((index, Some(target))) }
+                                            SpaceBadge { key: "{space.id}", unread: unread_in(&Scope::Space(space.id.clone())), space: space.clone(), folder: Some(id.clone()), selected: current.space_id() == Some(&space.id), on_drop: move |target: RailEntry| drop_at.call((index, Some(target))) }
                                         }
                                     }
                                 }
@@ -327,6 +339,7 @@ fn SpaceBadge(
     space: RoomSummary,
     folder: Option<String>,
     selected: bool,
+    unread: bool,
     on_drop: Callback<RailEntry>,
 ) -> Element {
     let mut selected_space = use_context::<SelectedSpace>();
@@ -347,6 +360,7 @@ fn SpaceBadge(
         button {
             class: "rail-item space-badge",
             class: if selected { "selected" },
+            class: if unread && !selected { "unread" },
             class: if drag().0.as_ref() == Some(&id) { "dragging" },
             title: "{space.name}",
             draggable: "true",
@@ -374,7 +388,27 @@ fn SpaceBadge(
                     on_drop(target.clone());
                 }
             },
+            RailPill {}
             Avatar { media: space.avatar.clone(), fallback: space.name.clone(), size: 48 }
         }
     }
+}
+
+/// Whether a scope holds an unread room (muted ones aside), for the dot
+/// beside its badge.
+fn scope_has_unread(rooms: &morpheus_core::Vector<RoomSummary>, scope: &Scope) -> bool {
+    super::shell::rooms_in_scope(rooms, scope)
+        .iter()
+        .any(|room| {
+            room.invited
+                || (!room.muted
+                    && (room.unread_messages > 0 || room.marked_unread || room.highlight_count > 0))
+        })
+}
+
+/// The mark left of a rail badge: a tall bar for the scope you are in, a
+/// dot for one with unread messages (drawn by CSS from the badge's classes).
+#[component]
+fn RailPill() -> Element {
+    rsx! { span { class: "rail-pill" } }
 }

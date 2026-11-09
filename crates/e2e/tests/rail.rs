@@ -6,7 +6,7 @@
 
 use std::time::Duration;
 
-use morpheus_e2e::{App, DEFAULT_WAIT};
+use morpheus_e2e::{App, DEFAULT_WAIT, api_as};
 
 fn homeserver() -> Option<String> {
     std::env::var("MORPHEUS_TEST_HOMESERVER").ok()
@@ -210,4 +210,83 @@ async fn servers_drag_into_folders_and_reorder() {
     .expect("folder gone");
     leave_server(&mut app, &a).await;
     leave_server(&mut app, &b).await;
+}
+
+/// The rail marks where you are and what is waiting, as Discord's does: a
+/// white bar beside the scope you are in, and a white dot beside any other
+/// with unread messages.
+#[tokio::test]
+async fn the_rail_marks_the_current_scope_and_unread_ones() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch(&hs).await.expect("launch app");
+    login(&mut app, "alice").await;
+    // Over in the DMs; then a message for alice in #random (under Rooms).
+    app.click(".rail-item[title=\"Direct messages\"]")
+        .await
+        .expect("dms");
+    let random = api_as(
+        &hs,
+        "bob",
+        "GET",
+        "directory/room/%23random:localhost",
+        None,
+    )
+    .expect("random's id");
+    let random = random["room_id"]
+        .as_str()
+        .expect("id")
+        .replace('!', "%21")
+        .replace(':', "%3A");
+    let text = format!("rail dot {}", std::process::id());
+    api_as(
+        &hs,
+        "bob",
+        "PUT",
+        &format!("rooms/{random}/send/m.room.message/{}", text.len()),
+        Some(serde_json::json!({ "msgtype": "m.text", "body": text })),
+    )
+    .expect("bob writes");
+
+    // Each mark: [height, colour, right edge of the mark, left edge of its badge].
+    let mark = |selector: &str| {
+        format!(
+            "const item = document.querySelector({}); const pill = item && item.querySelector('.rail-pill'); \
+             if (!pill) return null; const p = pill.getBoundingClientRect(), i = item.getBoundingClientRect(); \
+             return [p.height, getComputedStyle(pill).backgroundColor, p.right, i.left];",
+            serde_json::to_string(selector).expect("json")
+        )
+    };
+    app.wait_for_js(
+        &format!(
+            "const m = (() => {{ {} }})(); return !!m && m[0] >= 32;",
+            mark(".rail-item.selected")
+        ),
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("a tall bar beside the scope you are in");
+    app.wait_for_js(
+        &format!(
+            "const m = (() => {{ {} }})(); return !!m && m[0] > 0 && m[0] <= 10;",
+            mark(".rail-item[title=\"Rooms\"]")
+        ),
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("a dot beside Rooms, which has an unread message");
+    for selector in [".rail-item.selected", ".rail-item[title=\"Rooms\"]"] {
+        let shown = app.eval(&mark(selector)).await.expect("mark");
+        assert_eq!(
+            shown[1].as_str(),
+            Some("rgb(255, 255, 255)"),
+            "{selector}: not white: {shown}"
+        );
+        assert!(
+            shown[2].as_f64() <= shown[3].as_f64(),
+            "{selector}: not to the left of its badge: {shown}"
+        );
+    }
 }
