@@ -2665,3 +2665,10 @@ body.rail-dragging, body.rail-dragging * { cursor: grabbing !important; }
 /* Phones have no arrow beside mute and deafen: the buttons keep all four
    rounded corners. */
 .shell.narrow .user-pill .device-pair > button { border-radius: var(--radius-sm); }
+
+/* Overlays (dialogs, Settings) and what scrolls in them are layers of their
+   own: scrolling inside one repaints that, not the whole app underneath
+   (which made scrolling the shortcuts and Settings lag). */
+.overlay { will-change: transform; }
+.overlay .help-body, .overlay .settings-page, .overlay .settings-nav, .overlay .message-dialog,
+.overlay .switcher-results, .overlay .device-options, .overlay .profile-mutual { will-change: scroll-position; }

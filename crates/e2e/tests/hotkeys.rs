@@ -697,3 +697,34 @@ async fn the_palette_shows_a_channels_server_picture() {
     .await
     .expect("#dev with Engineering's picture");
 }
+
+/// What scrolls inside an overlay (the shortcuts, Settings) sits on a layer
+/// of its own, so scrolling it does not repaint the whole app underneath.
+#[tokio::test]
+async fn overlays_scroll_on_their_own_layer() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch(&hs).await.expect("launch app");
+    login_and_open(&mut app, "general").await;
+    let layered = "const out = []; \
+        document.querySelectorAll('.overlay').forEach(o => { \
+          if (getComputedStyle(o).willChange === 'auto') out.push('overlay ' + o.className); \
+          o.querySelectorAll('*').forEach(e => { const s = getComputedStyle(e); \
+            if ((s.overflowY === 'auto' || s.overflowY === 'scroll') && e.scrollHeight > e.clientHeight && s.willChange === 'auto') out.push(e.className); }); }); \
+        return out;";
+    app.key_combo("body", "/", true, false, false)
+        .await
+        .expect("ctrl+/");
+    app.wait_for(".help-dialog", DEFAULT_WAIT)
+        .await
+        .expect("shortcuts");
+    assert_eq!(app.eval(layered).await.expect("layers"), serde_json::json!([]), "shortcuts");
+    app.press("body", "Escape").await.expect("close");
+    app.click(".settings-button").await.expect("settings");
+    app.wait_for(".settings-page", DEFAULT_WAIT)
+        .await
+        .expect("settings");
+    assert_eq!(app.eval(layered).await.expect("layers"), serde_json::json!([]), "settings");
+}
