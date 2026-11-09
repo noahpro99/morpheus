@@ -391,7 +391,9 @@ async fn notifications_can_hide_the_message_or_the_sender() {
             .await
             .expect("notifications page");
         let option = format!(".settings-page input[name=notification-content][value={value}]");
-        app.wait_for(&option, DEFAULT_WAIT).await.expect("the choice");
+        app.wait_for(&option, DEFAULT_WAIT)
+            .await
+            .expect("the choice");
         app.click(&option).await.expect("choose");
         app.wait_for(&format!("{option}:checked"), DEFAULT_WAIT)
             .await

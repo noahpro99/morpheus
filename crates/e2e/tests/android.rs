@@ -2352,3 +2352,48 @@ async fn tapping_a_server_flashes_no_square() {
         "no tap highlight, no focus ring"
     );
 }
+
+/// Quitting the app completely (swiped away, or stopped) and starting it
+/// again opens the chat you were in, in front, not the room list.
+#[tokio::test]
+async fn phone_reopens_the_last_chat_after_quitting() {
+    if !enabled() {
+        eprintln!("MORPHEUS_E2E_ANDROID not set; skipping the Android test");
+        return;
+    }
+    let mut app = App::launch_android().await.expect("launch on Android");
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    app.type_into("form.login input[name=username]", "alice")
+        .await
+        .expect("username");
+    app.type_into("form.login input[name=password]", "alice-password")
+        .await
+        .expect("password");
+    app.submit("form.login").await.expect("submit");
+    app.wait_for(".room", DEFAULT_WAIT)
+        .await
+        .expect("rooms listed");
+    app.open_room("random").await.expect("open random");
+    pane(&mut app, "chat").await;
+    app.wait_for_text(".chat-header h2", "random", DEFAULT_WAIT)
+        .await
+        .expect("in #random");
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+    // Stopped completely (`relaunch` force-stops it), then started again.
+    let mut app = app.relaunch().await.expect("start again");
+    app.wait_for(".shell", DEFAULT_WAIT)
+        .await
+        .expect("signed in still");
+    app.wait_for_js(
+        "return document.querySelector('.shell').dataset.pane === 'chat'",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("the chat in front after starting again");
+    app.wait_for_text(".chat-header h2", "random", DEFAULT_WAIT)
+        .await
+        .expect("back in #random");
+}
