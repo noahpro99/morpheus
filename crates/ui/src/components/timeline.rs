@@ -548,10 +548,13 @@ pub fn TimelineView(
             if let Some(message) = load_error() {
                 p { class: "error", "{message}" }
             }
-            if paginating() {
-                p { class: "muted loading", "Loading older messages…" }
-            } else if !at_start && handle().is_some() {
-                button { class: "ghost load-older", onclick: move |_| load_older(), "Load older messages" }
+            // More history above: placeholder rows to scroll up onto, which
+            // the older messages replace as they arrive (scrolling near them
+            // loads them).
+            if !at_start && handle().is_some() {
+                div { class: "older-skeleton", "aria-hidden": "true",
+                    SkeletonRows {}
+                }
             }
         }
         if scrolled_up() {
