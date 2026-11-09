@@ -104,3 +104,9 @@ from the tray (the logo, with Open and Quit in its menu; a left click reopens).
 Quit from the tray menu to stop it. The tray needs `libayatana-appindicator`
 on Linux, which the dev shell provides; without it the app runs with no tray
 and says so in the log.
+
+## License
+
+Morpheus is licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or [MIT license](LICENSE-MIT), at your option.
+
+Unless you explicitly state otherwise, any contribution you submit for inclusion in Morpheus, as defined in the Apache-2.0 license, is dual licensed as above, without any additional terms or conditions.
