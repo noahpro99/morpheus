@@ -2427,3 +2427,122 @@ async fn open_without_joining(app: &mut App, room: &str) {
         .await
         .expect("room open");
 }
+
+/// Change avatar on a phone opens the system's picker, and the picture
+/// picked there becomes your avatar.
+#[tokio::test]
+async fn phone_changes_the_avatar_through_the_system_picker() {
+    if !enabled() {
+        eprintln!("MORPHEUS_E2E_ANDROID not set; skipping the Android test");
+        return;
+    }
+    // A picture to pick, in the phone's Downloads.
+    let png: &[u8] = &[
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44,
+        0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F,
+        0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0xF8,
+        0xCF, 0xC0, 0x00, 0x00, 0x03, 0x01, 0x01, 0x00, 0x18, 0xDD, 0x8D, 0xB0, 0x00, 0x00, 0x00,
+        0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+    ];
+    let name = format!("avatar-{}.png", std::process::id());
+    let local = std::env::temp_dir().join(&name);
+    std::fs::write(&local, png).expect("picture");
+    let _ = std::process::Command::new("adb")
+        .args([
+            "push",
+            &local.to_string_lossy(),
+            &format!("/sdcard/Download/{name}"),
+        ])
+        .status();
+    let _ = adb_shell(&[
+        "am",
+        "broadcast",
+        "-a",
+        "android.intent.action.MEDIA_SCANNER_SCAN_FILE",
+        "-d",
+        &format!("file:///sdcard/Download/{name}"),
+    ]);
+
+    let mut app = App::launch_android().await.expect("launch on Android");
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    app.type_into("form.login input[name=username]", "carol")
+        .await
+        .expect("username");
+    app.type_into("form.login input[name=password]", "carol-password")
+        .await
+        .expect("password");
+    app.submit("form.login").await.expect("submit");
+    app.wait_for(".room", DEFAULT_WAIT).await.expect("rooms");
+    app.tap(".user-pill .profile-chip")
+        .await
+        .expect("account menu");
+    app.tap_text(".context-item", "Edit profile")
+        .await
+        .expect("edit profile");
+    app.wait_for(".profile-editor", DEFAULT_WAIT)
+        .await
+        .expect("editor");
+    app.tap_text(".profile-editor button", "Change avatar")
+        .await
+        .expect("change avatar");
+
+    // The system picker comes up; pick the picture by its name.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    let spot = loop {
+        let _ = adb_shell(&["uiautomator", "dump", "/sdcard/morpheus-ui.xml"]);
+        let screen = adb_shell(&["cat", "/sdcard/morpheus-ui.xml"]);
+        // By its name (a file picker), or the newest photo (Android's photo
+        // picker shows pictures without names; ours was just added).
+        let found = screen
+            .split("<node ")
+            .find(|n| n.contains(&name) || n.contains("content-desc=\"Photo"))
+            .and_then(|node| {
+                let raw = node.split("bounds=\"").nth(1)?.split('"').next()?;
+                let n: Vec<i64> = raw
+                    .split(|c: char| !c.is_ascii_digit())
+                    .filter(|p| !p.is_empty())
+                    .filter_map(|p| p.parse().ok())
+                    .collect();
+                Some(((n.first()? + n.get(2)?) / 2, (n.get(1)? + n.get(3)?) / 2))
+            });
+        if let Some(spot) = found {
+            break spot;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "no system picker showing {name}"
+        );
+        // The picker may open on Recent: look in Downloads.
+        if let Some(downloads) = screen
+            .split("<node ")
+            .find(|n| n.contains("text=\"Downloads\""))
+        {
+            if let Some(raw) = downloads
+                .split("bounds=\"")
+                .nth(1)
+                .and_then(|s| s.split('"').next())
+            {
+                let n: Vec<i64> = raw
+                    .split(|c: char| !c.is_ascii_digit())
+                    .filter(|p| !p.is_empty())
+                    .filter_map(|p| p.parse().ok())
+                    .collect();
+                if n.len() == 4 {
+                    let _ = adb_shell(&[
+                        "input",
+                        "tap",
+                        &((n[0] + n[2]) / 2).to_string(),
+                        &((n[1] + n[3]) / 2).to_string(),
+                    ]);
+                }
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    };
+    let _ = adb_shell(&["input", "tap", &spot.0.to_string(), &spot.1.to_string()]);
+    app.wait_for_text(".profile-editor", "Avatar updated", DEFAULT_WAIT)
+        .await
+        .expect("the picked picture is the avatar");
+}
