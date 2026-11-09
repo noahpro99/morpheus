@@ -147,6 +147,9 @@ fn main() {
         .with_visible(!start_hidden)
         // The shell draws its own Discord-style bar; see `DesktopRoot`.
         .with_decorations(false)
+        // While a resize outruns the web view, the window itself shows:
+        // dark like the app, not the toolkit's white.
+        .with_background_color((13, 15, 20, 255))
         .with_inner_size(LogicalSize::new(width, height));
 
     // Dioxus runs on the runtime it finds; unasked it builds one with a
