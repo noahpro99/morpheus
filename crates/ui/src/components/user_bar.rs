@@ -32,7 +32,15 @@ pub fn UserBar() -> Element {
         move || {
             let session = session.clone();
             let _ = refresh();
-            async move { session.own_profile().await.ok() }
+            async move {
+                match session.own_profile().await {
+                    Ok(profile) => Some(profile),
+                    Err(err) => {
+                        tracing::warn!(%err, "own profile not loaded");
+                        None
+                    }
+                }
+            }
         }
     });
     let (name, avatar) = match profile().flatten() {
@@ -175,6 +183,8 @@ pub fn UserBar() -> Element {
                 Avatar { media: avatar, fallback: name.clone(), size: 32 }
                 span { class: "user", "{name}" }
             }
+            // The mic and its arrow are one thing: red together when muted.
+            div { class: "device-pair", class: if voice().muted || voice().deafened { "active" },
             button {
                 class: "ghost mute-button",
                 class: if voice().muted || voice().deafened { "active" },
@@ -189,6 +199,8 @@ pub fn UserBar() -> Element {
                 onclick: move |e: Event<MouseData>| device_menu(e, false),
                 Icon { glyph: CHEVRON_DOWN, size: 12 }
             }
+            }
+            div { class: "device-pair", class: if voice().deafened { "active" },
             button {
                 class: "ghost deafen-button",
                 class: if voice().deafened { "active" },
@@ -202,6 +214,7 @@ pub fn UserBar() -> Element {
                 title: "Speaker",
                 onclick: move |e: Event<MouseData>| device_menu(e, true),
                 Icon { glyph: CHEVRON_DOWN, size: 12 }
+            }
             }
             button { class: "ghost settings-button", title: "Settings (Ctrl+,)", onclick: move |_| settings_open.set(true), Icon { glyph: SETTINGS, size: 18 } }
             }
