@@ -525,3 +525,64 @@ async fn alt_up_from_the_top_dm_reaches_friends() {
         .await
         .expect("back in the top dm");
 }
+
+/// The shortcuts dialog (Ctrl+/) is wide enough for its rows: each shortcut
+/// sits on one line, its keys drawn as key caps, and the dialog fits the
+/// window (scrolling inside when it must).
+#[tokio::test]
+async fn the_shortcuts_dialog_is_wide_with_one_line_rows() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch(&hs).await.expect("launch app");
+    login_and_open(&mut app, "general").await;
+    app.key_combo("body", "/", true, false, false)
+        .await
+        .expect("ctrl+/");
+    app.wait_for(".help-dialog", DEFAULT_WAIT)
+        .await
+        .expect("shortcuts dialog");
+    let report = app
+        .eval(
+            "const d = document.querySelector('.help-dialog'); const r = d.getBoundingClientRect(); \
+             const rows = [...d.querySelectorAll('.help-row')]; \
+             const tall = rows.filter(row => { const lh = parseFloat(getComputedStyle(row).lineHeight) || 20; \
+               return [...row.children].some(c => c.getBoundingClientRect().height > lh * 1.9); }) \
+               .map(row => row.textContent.trim()); \
+             const bare = rows.filter(row => !row.querySelector('kbd')).map(row => row.textContent.trim()); \
+             const cut = [...d.querySelectorAll('.help-what')].filter(w => w.scrollWidth > w.clientWidth + 1).map(w => w.textContent); \
+             return { width: r.width, page: innerWidth, top: r.top, bottom: r.bottom, height: innerHeight, rows: rows.length, tall, bare, cut };",
+        )
+        .await
+        .expect("report");
+    assert!(
+        report["rows"].as_u64().unwrap_or(0) >= 10,
+        "shortcut rows: {report}"
+    );
+    assert!(
+        report["width"].as_f64().unwrap_or(0.0) >= 640.0,
+        "the dialog is too narrow: {report}"
+    );
+    assert!(
+        report["top"].as_f64().unwrap_or(-1.0) >= 0.0
+            && report["bottom"].as_f64().unwrap_or(f64::MAX)
+                <= report["height"].as_f64().unwrap_or(0.0),
+        "the dialog does not fit the window: {report}"
+    );
+    assert_eq!(
+        report["tall"],
+        serde_json::json!([]),
+        "rows that wrap: {report}"
+    );
+    assert_eq!(
+        report["bare"],
+        serde_json::json!([]),
+        "rows without key caps: {report}"
+    );
+    assert_eq!(
+        report["cut"],
+        serde_json::json!([]),
+        "descriptions cut off: {report}"
+    );
+}

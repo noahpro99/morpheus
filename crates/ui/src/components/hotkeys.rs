@@ -91,12 +91,9 @@ pub const GROUPS: &[(&str, &[(&str, &str)])] = &[
         "Messages",
         &[
             ("Enter", "Send (Shift+Enter for a new line)"),
-            ("↑ in an empty box", "Edit your last message"),
+            ("↑", "Edit your last message (in an empty message box)"),
             ("Ctrl+Shift+U", "Attach a file"),
-            (
-                "Esc",
-                "Close what is open, or jump to the newest message and mark the room read",
-            ),
+            ("Esc", "Close what is open, or jump to the newest message"),
             ("Shift+Esc", "Mark every room in this scope as read"),
             ("Right-click", "Actions for a message, room, or member"),
         ],
