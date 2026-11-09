@@ -2229,9 +2229,9 @@ async fn joining_lists_you_at_once_greyed_until_connected() {
     let first = alice
         .eval(&format!(
             "const row = [...document.querySelectorAll('.room')].find(r => r.querySelector('.room-name')?.textContent.trim() === {name}); \
-             row.click(); \
+             const id = row.dataset.room; row.click(); \
              for (let i = 0; i < 60; i++) {{ \
-               const me = [...document.querySelectorAll('.room-call .call-participant')].find(p => p.dataset.user === '@alice:localhost'); \
+               const me = [...document.querySelectorAll('.room-call .call-participant')].find(p => p.dataset.user === '@alice:localhost' && p.closest('.room-call').dataset.room === id); \
                if (me) return me.classList.contains('connecting') ? 'greyed' : 'listed'; \
                await new Promise(r => requestAnimationFrame(r)); \
              }} \
@@ -2333,4 +2333,79 @@ async fn a_voice_channel_joins_in_place_and_opens_as_a_call_page() {
         .await
         .expect("its text chat");
     alice.click(".voice-panel .hang-up").await.expect("leave");
+}
+
+/// Desktop DM calls ring both ways: the caller hears a ringback while it
+/// rings (stopping once the other joins), and the one called gets a
+/// notification that rings (the window may be hidden, its own ringtone
+/// silent then).
+#[tokio::test]
+async fn a_dm_call_rings_back_for_the_caller_and_the_notification_rings() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut bob = App::launch_desktop(&hs).await.expect("launch bob");
+    login_and_open(&mut bob, "bob", "general").await;
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    login_and_open(&mut alice, "alice", "general").await;
+    open_dm(&mut alice, "bob").await;
+    alice
+        .click(".chat-header .call-button")
+        .await
+        .expect("call bob");
+    let ringbacks = "return (window.morpheusSounds ?? []).filter(s => s === 'ringback').length;";
+    alice
+        .wait_for_js(
+            &format!("return (() => {{ {ringbacks} }})() > 0;"),
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("alice hears it ring");
+
+    // Bob's notification rings.
+    let shown = bob.data_dir().join("shown-notifications.jsonl");
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let text = std::fs::read_to_string(&shown).unwrap_or_default();
+        if let Some(line) = text.lines().find(|l| l.contains("is calling")) {
+            let notice: serde_json::Value = serde_json::from_str(line).expect("json");
+            assert_eq!(notice["sound"], "phone-incoming-call", "{notice}");
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "no ring notification: {text}"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    }
+
+    // Bob answers: the ringback stops.
+    open_dm(&mut bob, "alice").await;
+    bob.click(".chat-header .call-button")
+        .await
+        .expect("answer");
+    bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("bob in");
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    let then = alice.eval(ringbacks).await.expect("count");
+    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    assert_eq!(
+        alice.eval(ringbacks).await.expect("count"),
+        then,
+        "still ringing back"
+    );
+    alice.click(".voice-panel .hang-up").await.expect("hang up");
+    out_of_call(&mut alice).await;
+    bob.click(".voice-panel .hang-up").await.expect("hang up");
+    out_of_call(&mut bob).await;
+    // Both gone from the DM's call before the next test calls in it.
+    alice
+        .wait_for_js(
+            "return !document.querySelector('.room-call .call-participant');",
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("the DM's call empty");
 }
