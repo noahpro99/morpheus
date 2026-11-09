@@ -64,6 +64,13 @@ pub fn ProfileModal(user_id: OwnedUserId) -> Element {
             async move { session.profile(user_id).await.map_err(|e| e.to_string()) }
         }))
     };
+    let mutual = {
+        let session = session.clone();
+        use_resource(use_reactive!(|user_id| {
+            let session = session.clone();
+            async move { session.mutual_rooms(user_id).await.unwrap_or_default() }
+        }))
+    };
     let mut close = move || target.set(ProfileTarget::default());
 
     // Show what we know right away; the fetch fills in the name and avatar.
@@ -103,6 +110,26 @@ pub fn ProfileModal(user_id: OwnedUserId) -> Element {
                     }
                     if let Some(message) = error {
                         p { class: "error", "{message}" }
+                    }
+                    if !own {
+                        section { class: "card-section mutual profile-mutual",
+                            h4 { "Mutual rooms — {mutual().map(|m| m.len()).unwrap_or(0)}" }
+                            for (id, room_name) in mutual().unwrap_or_default() {
+                                button {
+                                    key: "{id}",
+                                    class: "mutual-room",
+                                    title: "Open #{room_name}",
+                                    onclick: {
+                                        let id = id.clone();
+                                        move |_| {
+                                            open_room_from_card(id.clone());
+                                            close();
+                                        }
+                                    },
+                                    "#{room_name}"
+                                }
+                            }
+                        }
                     }
                 }
                 button { class: "ghost profile-close", title: "Close", onclick: move |_| close(), crate::icons::Icon { glyph: crate::icons::X, size: 18 } }
@@ -596,7 +623,15 @@ pub fn ProfileCard(open: ProfileOpen) -> Element {
                     }
                 }
                 div { class: "profile-body",
-                    Avatar { media: avatar, fallback: name.clone(), size: 72 }
+                    button {
+                        class: "card-avatar",
+                        title: "View full profile",
+                        onclick: {
+                            let open = open.clone();
+                            move |_| show_full_profile(&open)
+                        },
+                        Avatar { media: avatar, fallback: name.clone(), size: 72 }
+                    }
                     if let Some(nick) = nickname.as_ref() {
                         h2 { class: "profile-name", "{nick}" }
                         p { class: "profile-realname muted", "{name}" }
@@ -618,7 +653,7 @@ pub fn ProfileCard(open: ProfileOpen) -> Element {
                             if mutual_list.is_empty() {
                                 p { class: "muted", "None yet." }
                             }
-                            for (id, room_name) in mutual_list.iter().take(8) {
+                            for (id, room_name) in mutual_list.iter().take(CARD_MUTUAL_ROOMS) {
                                 button {
                                     key: "{id}",
                                     class: "mutual-room",
@@ -631,6 +666,16 @@ pub fn ProfileCard(open: ProfileOpen) -> Element {
                                         }
                                     },
                                     "#{room_name}"
+                                }
+                            }
+                            if mutual_list.len() > CARD_MUTUAL_ROOMS {
+                                button {
+                                    class: "mutual-more",
+                                    onclick: {
+                                        let open = open.clone();
+                                        move |_| show_full_profile(&open)
+                                    },
+                                    "View full profile"
                                 }
                             }
                         }
@@ -681,12 +726,17 @@ pub fn ProfileCard(open: ProfileOpen) -> Element {
     }
 }
 
+/// Place the card beside what opened it, inside the app; again whenever its
+/// size changes (rooms and roles arrive after it opens), and never taller
+/// than the app (it scrolls inside).
 const CARD_CLAMP_JS: &str = "const c = document.querySelector('.profile-card'); if (!c) return; \
+    const place = () => { if (!c.isConnected) return; \
     const ax = parseFloat(c.dataset.ax), ay = parseFloat(c.dataset.ay); \
     const w = c.offsetWidth, h = c.offsetHeight, pad = 8; \
     /* The app's own area (a window can be larger than the shell drawn in it). */ \
     const s = (document.querySelector('.shell') || document.body).getBoundingClientRect(); \
     const L = Math.max(0, s.left), T = Math.max(0, s.top), R = Math.min(innerWidth, s.right), B = Math.min(innerHeight, s.bottom); \
+    c.style.maxHeight = (B - T - 2 * pad) + 'px'; c.style.overflowY = 'auto'; \
     let x, y; \
     /* The card's own backdrop covers the point; look beneath it. */ \
     const anchor = ax >= 0 ? (document.elementsFromPoint(ax, ay).find(e => !e.closest('.card-overlay, .profile-card')) || null) : null; \
@@ -702,7 +752,8 @@ const CARD_CLAMP_JS: &str = "const c = document.querySelector('.profile-card'); 
     else { x = (L + R - w) / 2; y = T + (B - T) * 0.2; } \
     y = Math.max(T + pad, Math.min(y, B - h - pad)); \
     x = Math.max(L + pad, Math.min(x, R - w - pad)); \
-    c.style.left = x + 'px'; c.style.top = y + 'px';";
+    c.style.left = x + 'px'; c.style.top = y + 'px'; }; \
+    place(); new ResizeObserver(place).observe(c);";
 
 #[component]
 fn ReportUserForm(user_id: OwnedUserId, on_done: Callback<()>) -> Element {
@@ -762,4 +813,15 @@ fn open_room_from_card(room_id: morpheus_core::OwnedRoomId) {
         }
     }
     go_to(room_id);
+}
+
+/// How many mutual rooms a card lists; the full profile has them all.
+const CARD_MUTUAL_ROOMS: usize = 4;
+
+/// Swap a card for the full profile of the same person.
+fn show_full_profile(open: &ProfileOpen) {
+    consume_context::<OpenProfile>().set(ProfileTarget(Some(ProfileOpen {
+        full: true,
+        ..open.clone()
+    })));
 }

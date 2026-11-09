@@ -2554,3 +2554,18 @@ body.rail-dragging, body.rail-dragging * { cursor: grabbing !important; }
 .user-pill .device-menu-button:hover { color: var(--text); background: var(--bg-hover); }
 /* Phones pick their own microphone and speaker. */
 .shell.narrow .user-pill .device-menu-button { display: none; }
+
+/* The card's picture opens the full profile. */
+.card-avatar { padding: 0; border-radius: 50%; background: none; cursor: pointer; display: inline-grid; }
+.card-avatar:hover { filter: brightness(1.1); }
+.mutual-more {
+  display: block;
+  margin-top: 4px;
+  padding: 0;
+  background: none;
+  color: var(--accent);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.mutual-more:hover { text-decoration: underline; }
+.profile-modal .profile-mutual { margin-top: 12px; max-height: 240px; overflow-y: auto; text-align: left; }
