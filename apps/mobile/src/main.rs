@@ -41,6 +41,7 @@ fn main() {
         config.microphone = Some(std::sync::Arc::new(android::microphone));
         config.speakerphone = Some(std::sync::Arc::new(android::speakerphone));
         morpheus_ui::attach::set_file_picker(std::sync::Arc::new(android::pick_file));
+        config.call_presence = Some(std::sync::Arc::new(android::call_presence));
         android::register_camera();
         // Test builds send a tone instead (no environment to say so here),
         // unless a test marked the app for the real microphone.
@@ -355,6 +356,53 @@ mod android {
             std::thread::sleep(std::time::Duration::from_millis(200));
         }
         None
+    }
+
+    /// The phone's record of the call going (`CallService`): its ongoing call
+    /// notification, for `Some((room id, room name))`; gone for `None`.
+    #[allow(unsafe_code)]
+    pub fn call_presence(call: Option<(String, String)>) {
+        let ctx = ndk_context::android_context();
+        // SAFETY: as in `files_dir`.
+        let Ok(vm) = (unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }) else {
+            return;
+        };
+        let Ok(mut env) = vm.attach_current_thread() else {
+            return;
+        };
+        let context = unsafe { JObject::from_raw(ctx.context().cast()) };
+        let (room_id, room) = call.unwrap_or_default();
+        let told = (|| -> jni::errors::Result<()> {
+            let loader = env
+                .call_method(&context, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])?
+                .l()?;
+            let name = env.new_string("dev.morpheus.mobile.CallService")?;
+            let class = env
+                .call_method(
+                    &loader,
+                    "loadClass",
+                    "(Ljava/lang/String;)Ljava/lang/Class;",
+                    &[JValue::Object(&name)],
+                )?
+                .l()?;
+            let room_id = env.new_string(room_id)?;
+            let room = env.new_string(room)?;
+            env.call_static_method(
+                jni::objects::JClass::from(class),
+                "update",
+                "(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;)V",
+                &[
+                    JValue::Object(&context),
+                    JValue::Object(&room_id),
+                    JValue::Object(&room),
+                ],
+            )?;
+            Ok(())
+        })();
+        if let Err(err) = told {
+            let _ = env.exception_clear();
+            tracing::warn!(%err, "call notification");
+        }
     }
 
     /// How long a picker may stay open.

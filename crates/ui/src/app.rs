@@ -26,6 +26,10 @@ pub type MicrophoneAccess = Arc<dyn Fn() -> bool + Send + Sync>;
 /// Send call audio to the loudspeaker (`true`) or the earpiece (phones).
 pub type SpeakerRoute = Arc<dyn Fn(bool) + Send + Sync>;
 
+/// Tells the platform about the call going: `Some((room id, room name))`
+/// once connected, `None` when it ends (a phone's ongoing call notification).
+pub type CallPresence = Arc<dyn Fn(Option<(String, String)>) + Send + Sync>;
+
 /// Something the platform asks the UI to do, from outside its runtime (the
 /// tray menu).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,6 +38,8 @@ pub enum AppCommand {
     CheckForUpdates,
     /// Show this room (its Matrix id), e.g. from a tapped notification.
     OpenRoom(String),
+    /// Hang up the call going (the phone's call notification).
+    HangUp,
 }
 
 /// A queue of [`AppCommand`]s any thread can push to; the shell drains it.
@@ -82,6 +88,8 @@ pub struct AppConfig {
     pub microphone: Option<MicrophoneAccess>,
     /// Loudspeaker or earpiece for calls (phones). `None`: the system decides.
     pub speakerphone: Option<SpeakerRoute>,
+    /// The platform's own record of the call going. `None`: nothing to tell.
+    pub call_presence: Option<CallPresence>,
 }
 
 impl AppConfig {
@@ -95,6 +103,7 @@ impl AppConfig {
             open_url: None,
             microphone: None,
             speakerphone: None,
+            call_presence: None,
         }
     }
 }

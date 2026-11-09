@@ -2631,3 +2631,111 @@ async fn phone_swiping_the_profile_card_toggles_the_last_dm_and_channel() {
     );
     app.tap(".user-pill .mute-button").await.expect("unmute");
 }
+
+/// A call is the phone's call: while it lasts an ongoing call notification
+/// (Android's call style, naming the room, with Hang up) shows, and it goes
+/// when the call ends; Hang up there ends it.
+#[tokio::test]
+async fn phone_calls_show_an_ongoing_call_notification() {
+    if !enabled() {
+        eprintln!("MORPHEUS_E2E_ANDROID not set; skipping the Android test");
+        return;
+    }
+    // A shade left open by an earlier run would take the taps.
+    let _ = adb_shell(&["cmd", "statusbar", "collapse"]);
+    let mut app = App::launch_android_granting(&["android.permission.POST_NOTIFICATIONS"])
+        .await
+        .expect("launch on Android");
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    app.type_into("form.login input[name=username]", "alice")
+        .await
+        .expect("username");
+    app.type_into("form.login input[name=password]", "alice-password")
+        .await
+        .expect("password");
+    app.submit("form.login").await.expect("submit");
+    app.wait_for(".room", DEFAULT_WAIT)
+        .await
+        .expect("rooms listed");
+    open_without_joining(&mut app, "hangout").await;
+    app.tap(".chat-header .call-button").await.expect("call");
+    app.wait_for_text(".call-screen .call-screen-state", "Connected", DEFAULT_WAIT)
+        .await
+        .expect("connected");
+    let ongoing = || {
+        adb_shell(&["dumpsys", "notification", "--noredact"])
+            .split("NotificationRecord(")
+            .find(|r| r.contains("pkg=dev.morpheus.mobile") && r.contains("CallStyle"))
+            .map(str::to_owned)
+    };
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    let record = loop {
+        if let Some(record) = ongoing() {
+            break record;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "no ongoing call notification"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    };
+    assert!(
+        record.contains("hangout"),
+        "it names the room: {}",
+        record.chars().take(800).collect::<String>()
+    );
+    assert!(
+        record.contains("ONGOING_EVENT") || record.contains("flags=0x"),
+        "ongoing"
+    );
+
+    app.tap(".call-screen .hang-up").await.expect("hang up");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    while ongoing().is_some() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the call notification stayed after hanging up"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+
+    // Again, and this time Hang up in the notification ends it.
+    app.tap(".chat-header .call-button")
+        .await
+        .expect("call again");
+    app.wait_for_text(".call-screen .call-screen-state", "Connected", DEFAULT_WAIT)
+        .await
+        .expect("connected");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    while ongoing().is_none() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "no notification the second time"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+    let _ = adb_shell(&["cmd", "statusbar", "expand-notifications"]);
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    let _ = adb_shell(&["uiautomator", "dump", "/sdcard/morpheus-ui.xml"]);
+    let screen = adb_shell(&["cat", "/sdcard/morpheus-ui.xml"]);
+    let button = screen
+        .split("<node ")
+        .find(|n| n.to_lowercase().contains("text=\"hang up\""))
+        .and_then(|node| {
+            let raw = node.split("bounds=\"").nth(1)?.split('"').next()?;
+            let n: Vec<i64> = raw
+                .split(|c: char| !c.is_ascii_digit())
+                .filter(|p| !p.is_empty())
+                .filter_map(|p| p.parse().ok())
+                .collect();
+            Some(((n.first()? + n.get(2)?) / 2, (n.get(1)? + n.get(3)?) / 2))
+        })
+        .expect("Hang up in the notification");
+    let _ = adb_shell(&["input", "tap", &button.0.to_string(), &button.1.to_string()]);
+    let _ = adb_shell(&["cmd", "statusbar", "collapse"]);
+    app.wait_for_js("return !document.querySelector('.voice-panel') && !document.querySelector('.call-screen');", DEFAULT_WAIT)
+        .await
+        .expect("the call ended from the notification");
+}
