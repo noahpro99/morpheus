@@ -144,6 +144,9 @@ async fn add_switch_restart_and_sign_out_of_accounts() {
     app.click_text(".context-item", "Sign out")
         .await
         .expect("sign out alice");
+    app.wait_for(".confirm-dialog button.danger", DEFAULT_WAIT)
+        .await
+        .expect("asked");
     app.click(".confirm-dialog button.danger")
         .await
         .expect("confirm");
@@ -157,6 +160,9 @@ async fn add_switch_restart_and_sign_out_of_accounts() {
     app.click_text(".context-item", "Sign out")
         .await
         .expect("sign out bob");
+    app.wait_for(".confirm-dialog button.danger", DEFAULT_WAIT)
+        .await
+        .expect("asked");
     app.click(".confirm-dialog button.danger")
         .await
         .expect("confirm");

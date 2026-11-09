@@ -187,8 +187,36 @@ async fn scrolling_up_loads_older_history() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
+    // A room of its own (#random grows with every test run): 120 messages.
+    let user = morpheus_e2e::new_account(&hs, "history").expect("account");
+    let room = morpheus_e2e::api_as(
+        &hs,
+        &user,
+        "POST",
+        "createRoom",
+        Some(serde_json::json!({ "name": "filler" })),
+    )
+    .expect("a room");
+    let room = room["room_id"].as_str().expect("room id").to_owned();
+    let bodies: Vec<String> = (1..=120)
+        .map(|n| format!("random filler message {n}"))
+        .collect();
+    morpheus_e2e::send_many_as(&hs, &user, &room, &bodies).expect("history");
     let mut app = App::launch(&hs).await.expect("launch app");
-    login_and_open(&mut app, "random").await;
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    app.type_into("form.login input[name=username]", &user)
+        .await
+        .expect("username");
+    app.type_into(
+        "form.login input[name=password]",
+        &format!("{user}-password"),
+    )
+    .await
+    .expect("password");
+    app.submit("form.login").await.expect("submit");
+    app.open_room("filler").await.expect("open the room");
 
     // The timeline has loaded (newer test traffic sits above the seeded
     // filler by now); the oldest filler message is not there yet.
@@ -202,18 +230,18 @@ async fn scrolling_up_loads_older_history() {
     .await
     .expect("oldest not loaded initially");
 
-    // Keep scrolling to the top, like a user would, until the room start is reached.
-    for _ in 0..20 {
-        app.eval("const t = document.querySelector('.timeline'); t.scrollTop = -t.scrollHeight;")
+    // Keep scrolling to the top, like a user would, until the room start is
+    // reached (#random grows with every test run: give it time, not tries).
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(240);
+    while std::time::Instant::now() < deadline {
+        let at_start = app
+            .eval("const t = document.querySelector('.timeline'); t.scrollTop = -t.scrollHeight; return !!document.querySelector('.timeline-start');")
             .await
             .expect("scroll");
-        if app
-            .wait_for(".timeline-start", std::time::Duration::from_secs(5))
-            .await
-            .is_ok()
-        {
+        if at_start.as_bool() == Some(true) {
             break;
         }
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     }
     app.wait_for_exact_text(".message .body", "random filler message 1", DEFAULT_WAIT)
         .await
