@@ -9,11 +9,6 @@ use super::space_menu::space_menu;
 use crate::icons::{FOLDER, Icon, Logo, PLUS};
 use crate::media::Avatar;
 
-/// What is being dragged in the rail, if anything.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct Dragging(pub Option<OwnedRoomId>);
-pub type RailDrag = Signal<Dragging>;
-
 /// The rail as drawn: the saved layout, then spaces the layout does not know.
 fn layout(prefs: &Prefs, spaces: &[RoomSummary]) -> Vec<RailEntry> {
     let known = |id: &OwnedRoomId| {
@@ -95,7 +90,6 @@ pub fn Rail() -> Element {
     let mut selected_space = use_context::<SelectedSpace>();
     let session = use_context::<Session>();
     let mut prefs = use_context::<UiPrefs>();
-    let mut drag = use_context::<RailDrag>();
     let mut open_folders = use_signal(Vec::<String>::new);
 
     // Only top-level spaces get their own badge; a nested space's rooms show
@@ -131,47 +125,39 @@ pub fn Rail() -> Element {
     let entries = layout(&prefs.read(), &spaces);
     let space_by_id = |id: &OwnedRoomId| spaces.iter().find(|s| &s.id == id).cloned();
 
-    // Drop handling: `before` is where in the drawn list the drop landed.
-    let drop_at = Callback::new({
+    // Dragging a badge (RAIL_DRAG_JS): where it was let go, applied to the
+    // layout as it is now drawn.
+    use_future({
         let session = session.clone();
-        let entries = entries.clone();
-        move |(before, onto): (usize, Option<RailEntry>)| {
-            let Some(moved) = drag.peek().0.clone() else {
-                return;
-            };
-            drag.set(Dragging::default());
-            prefs.with_mut(|p| {
-                // Work on the drawn layout so unknown spaces have a position.
-                p.rail = entries.clone();
-                p.detach(&moved);
-                match onto {
-                    Some(RailEntry::Folder { id, .. }) => {
-                        if let Some(members) = p.folder_mut(&id) {
-                            members.push(moved);
-                        }
-                    }
-                    Some(RailEntry::Space(target)) if target != moved => {
-                        // Two badges together make a folder, like Discord.
-                        let folder = RailEntry::Folder {
-                            id: p.new_folder_id(),
-                            name: "New folder".into(),
-                            spaces: vec![target.clone(), moved],
-                        };
-                        let pos = p
-                            .rail
-                            .iter()
-                            .position(|e| matches!(e, RailEntry::Space(s) if *s == target))
-                            .unwrap_or(p.rail.len());
-                        p.rail.remove(pos.min(p.rail.len().saturating_sub(1)));
-                        p.rail.insert(pos.min(p.rail.len()), folder);
-                    }
-                    _ => {
-                        let index = before.min(p.rail.len());
-                        p.rail.insert(index, RailEntry::Space(moved));
-                    }
+        move || {
+            let session = session.clone();
+            async move {
+                let mut script = document::eval(RAIL_DRAG_JS);
+                while let Ok(dropped) = script.recv::<serde_json::Value>().await {
+                    let Some(moved) = dropped["from"]
+                        .as_str()
+                        .and_then(|id| OwnedRoomId::try_from(id).ok())
+                    else {
+                        continue;
+                    };
+                    let index = dropped["index"].as_u64().unwrap_or(0) as usize;
+                    let onto = dropped["onto"].as_bool().unwrap_or(false);
+                    let spaces: Vec<RoomSummary> = rooms
+                        .peek()
+                        .iter()
+                        .filter(|room| room.is_space && room.parent_spaces.is_empty())
+                        .cloned()
+                        .collect();
+                    let entries = layout(&prefs.peek(), &spaces);
+                    let target = if onto {
+                        entries.get(index).cloned()
+                    } else {
+                        None
+                    };
+                    prefs.with_mut(|p| move_badge(p, entries, moved, index, target));
+                    save_prefs(&session, &prefs.peek());
                 }
-            });
-            save_prefs(&session, &prefs.peek());
+            }
         }
     });
 
@@ -212,21 +198,10 @@ pub fn Rail() -> Element {
             }
             div { class: "rail-divider" }
             for (index, entry) in entries.iter().cloned().enumerate() {
-                // A thin drop zone before each badge reorders.
-                div {
-                    key: "drop-{index}",
-                    class: "rail-drop",
-                    class: if drag().0.is_some() { "active" },
-                    ondragover: move |e| e.prevent_default(),
-                    ondrop: move |e| {
-                        e.prevent_default();
-                        drop_at.call((index, None));
-                    },
-                }
                 match entry.clone() {
                     RailEntry::Space(id) => {
                         if let Some(space) = space_by_id(&id) {
-                            rsx! { SpaceBadge { key: "{space.id}", unread: unread_in(&Scope::Space(space.id.clone())), space, folder: None, selected: current.space_id() == Some(&id), on_drop: move |target: RailEntry| drop_at.call((index, Some(target))) } }
+                            rsx! { SpaceBadge { key: "{space.id}", unread: unread_in(&Scope::Space(space.id.clone())), space, folder: None, index: Some(index), selected: current.space_id() == Some(&id) } }
                         } else {
                             rsx! {}
                         }
@@ -236,9 +211,8 @@ pub fn Rail() -> Element {
                         let members: Vec<RoomSummary> = members.iter().filter_map(space_by_id).collect();
                         let folder_unread = members.iter().any(|s| unread_in(&Scope::Space(s.id.clone())));
                         let contains_current = members.iter().any(|s| current.space_id() == Some(&s.id));
-                        let folder_entry = RailEntry::Folder { id: id.clone(), name: name.clone(), spaces: members.iter().map(|s| s.id.clone()).collect() };
                         rsx! {
-                            div { key: "{id}", class: "rail-folder", class: if open { "open" }, class: if contains_current { "has-current" },
+                            div { key: "{id}", class: "rail-folder", "data-index": "{index}", "data-folder": "{id}", class: if open { "open" }, class: if contains_current { "has-current" },
                                 button {
                                     class: "rail-item folder-badge",
                                     class: if contains_current && !open { "selected" },
@@ -278,15 +252,6 @@ pub fn Rail() -> Element {
                                             open_menu(&e, items, None);
                                         }
                                     },
-                                    ondragover: move |e| e.prevent_default(),
-                                    ondrop: {
-                                        let folder_entry = folder_entry.clone();
-                                        move |e| {
-                                            e.prevent_default();
-                                            e.stop_propagation();
-                                            drop_at.call((index, Some(folder_entry.clone())));
-                                        }
-                                    },
                                     RailPill {}
                                     if open {
                                         Icon { glyph: FOLDER, size: 20 }
@@ -301,7 +266,7 @@ pub fn Rail() -> Element {
                                 if open {
                                     div { class: "folder-items",
                                         for space in members {
-                                            SpaceBadge { key: "{space.id}", unread: unread_in(&Scope::Space(space.id.clone())), space: space.clone(), folder: Some(id.clone()), selected: current.space_id() == Some(&space.id), on_drop: move |target: RailEntry| drop_at.call((index, Some(target))) }
+                                            SpaceBadge { key: "{space.id}", unread: unread_in(&Scope::Space(space.id.clone())), space: space.clone(), folder: Some(id.clone()), index: None, selected: current.space_id() == Some(&space.id) }
                                         }
                                     }
                                 }
@@ -309,18 +274,6 @@ pub fn Rail() -> Element {
                         }
                     }
                 }
-            }
-            div {
-                class: "rail-drop",
-                class: if drag().0.is_some() { "active" },
-                ondragover: move |e| e.prevent_default(),
-                ondrop: {
-                    let len = entries.len();
-                    move |e| {
-                        e.prevent_default();
-                        drop_at.call((len, None));
-                    }
-                },
             }
             button {
                 class: "rail-item rail-add",
@@ -332,39 +285,33 @@ pub fn Rail() -> Element {
     }
 }
 
-/// One space badge: click to scope, right-click for the server menu, drag
-/// to move; a drop on it starts a folder (or, inside a folder, joins it).
+/// One space badge: click to scope, right-click for the server menu. Pressed
+/// and moved, it is dragged (see [`RAIL_DRAG_JS`]): a line shows where it will
+/// land, and dropping it on another server starts a folder.
 #[component]
 fn SpaceBadge(
     space: RoomSummary,
     folder: Option<String>,
     selected: bool,
     unread: bool,
-    on_drop: Callback<RailEntry>,
+    /// Its place in the rail, for a top-level badge (one in a folder has its
+    /// folder's).
+    index: Option<usize>,
 ) -> Element {
     let mut selected_space = use_context::<SelectedSpace>();
     let session = use_context::<Session>();
     let rooms = use_context::<Rooms>();
-    let mut drag = use_context::<RailDrag>();
     let id = space.id.clone();
-    let target = match &folder {
-        Some(folder_id) => RailEntry::Folder {
-            id: folder_id.clone(),
-            name: String::new(),
-            spaces: Vec::new(),
-        },
-        None => RailEntry::Space(space.id.clone()),
-    };
+    let _ = &folder;
 
     rsx! {
         button {
             class: "rail-item space-badge",
             class: if selected { "selected" },
             class: if unread && !selected { "unread" },
-            class: if drag().0.as_ref() == Some(&id) { "dragging" },
             title: "{space.name}",
-            draggable: "true",
             "data-space": "{space.id}",
+            "data-index": index.map(|i| i.to_string()),
             onclick: {
                 let id = id.clone();
                 move |_| selected_space.set(Scope::Space(id.clone()))
@@ -373,20 +320,6 @@ fn SpaceBadge(
                 let space = space.clone();
                 let session = session.clone();
                 move |e| open_menu(&e, space_menu(&session, rooms, &space), None)
-            },
-            ondragstart: {
-                let id = id.clone();
-                move |_| drag.set(Dragging(Some(id.clone())))
-            },
-            ondragend: move |_| drag.set(Dragging::default()),
-            ondragover: move |e| e.prevent_default(),
-            ondrop: {
-                let target = target.clone();
-                move |e| {
-                    e.prevent_default();
-                    e.stop_propagation();
-                    on_drop(target.clone());
-                }
             },
             RailPill {}
             Avatar { media: space.avatar.clone(), fallback: space.name.clone(), size: 48 }
@@ -412,3 +345,135 @@ fn scope_has_unread(rooms: &morpheus_core::Vector<RoomSummary>, scope: &Scope) -
 fn RailPill() -> Element {
     rsx! { span { class: "rail-pill" } }
 }
+
+/// Put `moved` where it was dropped in the drawn layout `entries`: onto
+/// another server (a new folder of the two, as in Discord), onto a folder
+/// (into it), or before the entry at `before`.
+fn move_badge(
+    p: &mut Prefs,
+    entries: Vec<RailEntry>,
+    moved: OwnedRoomId,
+    before: usize,
+    onto: Option<RailEntry>,
+) {
+    // Taken out first: a server moved down lands one place higher.
+    let was = entries
+        .iter()
+        .position(|e| matches!(e, RailEntry::Space(s) if *s == moved));
+    let before = match was {
+        Some(was) if was < before => before - 1,
+        _ => before,
+    };
+    // Work on the drawn layout so unknown spaces have a position.
+    p.rail = entries;
+    p.detach(&moved);
+    match onto {
+        Some(RailEntry::Folder { id, .. }) => {
+            if let Some(members) = p.folder_mut(&id) {
+                members.push(moved);
+            }
+        }
+        Some(RailEntry::Space(target)) if target != moved => {
+            let folder = RailEntry::Folder {
+                id: p.new_folder_id(),
+                name: "New folder".into(),
+                spaces: vec![target.clone(), moved],
+            };
+            let pos = p
+                .rail
+                .iter()
+                .position(|e| matches!(e, RailEntry::Space(s) if *s == target))
+                .unwrap_or(p.rail.len());
+            p.rail.remove(pos.min(p.rail.len().saturating_sub(1)));
+            p.rail.insert(pos.min(p.rail.len()), folder);
+        }
+        Some(_) => {}
+        None => {
+            let index = before.min(p.rail.len());
+            p.rail.insert(index, RailEntry::Space(moved));
+        }
+    }
+}
+
+/// Dragging a server on the rail, by hand rather than the browser's drag
+/// (which drags a picture of the badge): pressed and moved, the pointer
+/// grabs, a white line shows where it would land (or the server under it
+/// is marked, to make a folder of the two), nothing else moves, and on
+/// letting go the rail is told `{from, index, onto}`. Esc cancels.
+const RAIL_DRAG_JS: &str = r#"
+window.__railDragSend = m => dioxus.send(m);
+if (!window.__railDrag) {
+  window.__railDrag = true;
+  let press = null, dragging = null, line = null, target = null, swallow = false;
+  const entries = () => [...document.querySelectorAll('.rail > [data-index]')];
+  const end = () => {
+    document.body.classList.remove('rail-dragging');
+    if (dragging) dragging.classList.remove('dragging');
+    document.querySelectorAll('.rail .drop-into').forEach(e => e.classList.remove('drop-into'));
+    if (line) line.remove();
+    press = dragging = line = target = null;
+  };
+  // Where a drop at height y goes: onto an entry's middle, else the gap.
+  const where = y => {
+    const list = entries();
+    if (!list.length) return null;
+    for (let i = 0; i < list.length; i++) {
+      const el = list[i], r = el.getBoundingClientRect();
+      const prev = i > 0 ? list[i - 1].getBoundingClientRect().bottom : r.top - 8;
+      const next = i + 1 < list.length ? list[i + 1].getBoundingClientRect().top : r.bottom + 8;
+      if (y < r.top + r.height * 0.25) return { index: +el.dataset.index, onto: false, edge: (prev + r.top) / 2 };
+      if (y <= r.bottom - r.height * 0.25) return el.contains(dragging) ? null : { index: +el.dataset.index, onto: true, el };
+      if (y < next) return { index: +el.dataset.index + 1, onto: false, edge: (r.bottom + next) / 2 };
+    }
+    const last = list[list.length - 1];
+    return { index: +last.dataset.index + 1, onto: false, edge: last.getBoundingClientRect().bottom + 4 };
+  };
+  document.addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    const badge = e.target.closest && e.target.closest('.rail .space-badge');
+    if (badge) press = { badge, x: e.clientX, y: e.clientY };
+  }, true);
+  document.addEventListener('mousemove', e => {
+    if (!press) return;
+    if (!dragging) {
+      if (Math.hypot(e.clientX - press.x, e.clientY - press.y) < 5) return;
+      dragging = press.badge;
+      dragging.classList.add('dragging');
+      document.body.classList.add('rail-dragging');
+      line = document.createElement('div');
+      line.className = 'rail-drop-line';
+      document.body.append(line);
+    }
+    e.preventDefault();
+    document.querySelectorAll('.rail .drop-into').forEach(el => el.classList.remove('drop-into'));
+    target = where(e.clientY);
+    const rail = document.querySelector('.rail').getBoundingClientRect();
+    if (target && !target.onto) {
+      line.style.display = 'block';
+      line.style.left = (rail.left + 12) + 'px';
+      line.style.width = (rail.width - 24) + 'px';
+      line.style.top = (target.edge - 1) + 'px';
+    } else {
+      line.style.display = 'none';
+      if (target) (target.el.querySelector('.rail-item') || target.el).classList.add('drop-into');
+    }
+  }, true);
+  document.addEventListener('mouseup', e => {
+    if (!press) return;
+    const was = dragging, at = target;
+    if (was) {
+      // Only a click that comes with this release (one the browser sends
+      // when the pointer is let go over the badge it pressed).
+      swallow = true;
+      setTimeout(() => { swallow = false; }, 0);
+      if (at) window.__railDragSend({ from: was.dataset.space, index: at.index, onto: at.onto });
+    }
+    end();
+  }, true);
+  // The click that ends a drag is not a click on the badge.
+  document.addEventListener('click', e => {
+    if (swallow) { swallow = false; e.preventDefault(); e.stopPropagation(); }
+  }, true);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && dragging) { swallow = false; end(); } }, true);
+}
+"#;
