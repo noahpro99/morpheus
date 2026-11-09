@@ -1215,6 +1215,7 @@ mod tests {
             space_children: Vec::new(),
             can_edit_children: false,
             is_voice: false,
+            is_encrypted: false,
         }
     }
 

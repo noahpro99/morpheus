@@ -646,6 +646,7 @@ fn dm_menu(
         .collect();
         items.push(MenuItem::submenu(format!("Mute @{name}"), choices));
     }
+    items.push(privacy_item(room));
     items.push(MenuItem::new("Copy user ID", {
         let id = user_id.to_string();
         move || copy_to_clipboard(&id)
@@ -694,6 +695,7 @@ fn room_menu(session: &Session, room: &RoomSummary, mode: Option<NotifyMode>) ->
             consume_context::<OpenRoomDialog>().set(RoomDialog::Create);
         }));
     }
+    items.push(privacy_item(room));
     items.push(MenuItem::new("Copy link", {
         let link = format!("https://matrix.to/#/{room_id}");
         move || copy_to_clipboard(&link)
@@ -716,4 +718,13 @@ fn room_menu(session: &Session, room: &RoomSummary, mode: Option<NotifyMode>) ->
         .danger(),
     );
     items
+}
+
+/// The room's privacy settings: its encryption, and for rooms who can join
+/// and what history newcomers see.
+fn privacy_item(room: &RoomSummary) -> MenuItem {
+    let room_id = room.id.clone();
+    MenuItem::new("Privacy & encryption", move || {
+        consume_context::<OpenRoomDialog>().set(RoomDialog::Privacy(room_id.clone()))
+    })
 }

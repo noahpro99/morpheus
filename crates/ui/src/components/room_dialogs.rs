@@ -1,6 +1,7 @@
 //! Dialogs reached from a room's right-click menu (and the sidebar "+"):
 //! invite someone, edit name and topic, create a room in the current scope.
 
+use crate::icons::{Icon, LOCK, LOCK_OPEN};
 use dioxus::prelude::*;
 use morpheus_core::{History, OwnedRoomId, OwnedUserId, Privacy, Session};
 
@@ -275,6 +276,51 @@ pub fn PrivacyModal(room_id: OwnedRoomId) -> Element {
     let mut busy = use_signal(|| false);
     let mut message = use_signal(|| None::<Result<&'static str, String>>);
     let mut close = move || dialog.set(RoomDialog::None);
+    // A DM has no join rule or history to choose; only its encryption.
+    let rooms = use_context::<Rooms>();
+    let is_dm = rooms
+        .read()
+        .iter()
+        .any(|room| room.id == room_id && room.is_dm);
+    let is_space = rooms
+        .read()
+        .iter()
+        .any(|room| room.id == room_id && room.is_space);
+    // Encryption: as the server has it; `confirming` once asked to turn it on.
+    let mut encrypted = use_signal(|| None::<bool>);
+    let mut confirming = use_signal(|| false);
+    let mut encryption_error = use_signal(|| None::<String>);
+    use_future({
+        let (session, room_id) = (session.clone(), room_id.clone());
+        move || {
+            let (session, room_id) = (session.clone(), room_id.clone());
+            async move {
+                if let Ok(on) = session.is_encrypted(room_id).await {
+                    encrypted.set(Some(on));
+                }
+            }
+        }
+    });
+    let turn_on = {
+        let (session, room_id) = (session.clone(), room_id.clone());
+        move |_| {
+            if busy() {
+                return;
+            }
+            busy.set(true);
+            let future = session.enable_encryption(room_id.clone());
+            spawn(async move {
+                match future.await {
+                    Ok(()) => {
+                        encrypted.set(Some(true));
+                        confirming.set(false);
+                    }
+                    Err(err) => encryption_error.set(Some(err.to_string())),
+                }
+                busy.set(false);
+            });
+        }
+    };
 
     let current = use_resource({
         let session = session.clone();
@@ -322,6 +368,49 @@ pub fn PrivacyModal(room_id: OwnedRoomId) -> Element {
         div { class: "overlay", onclick: move |_| close(),
             form { class: "message-dialog room-dialog privacy-dialog", tabindex: "-1", autofocus: true, onclick: move |e| e.stop_propagation(), onsubmit: save,
                 h2 { "Privacy" }
+                if !is_space {
+                    section { class: "encryption-setting",
+                        h3 {
+                            Icon { glyph: if encrypted() == Some(true) { LOCK } else { LOCK_OPEN }, size: 16 }
+                            "Encryption"
+                        }
+                        match (encrypted(), confirming()) {
+                            (None, _) => rsx! { p { class: "muted", "Checking…" } },
+                            (Some(true), _) => rsx! {
+                                p { class: "ok", "End-to-end encrypted: only the people in this room can read its messages." }
+                                p { class: "muted", "Matrix rooms cannot turn encryption off again." }
+                            },
+                            (Some(false), false) => rsx! {
+                                p { class: "muted", "Not encrypted: the servers of everyone in this room can read its messages." }
+                                button {
+                                    r#type: "button",
+                                    class: "secondary turn-on-encryption",
+                                    onclick: move |_| confirming.set(true),
+                                    Icon { glyph: LOCK, size: 16 }
+                                    "Turn on encryption"
+                                }
+                            },
+                            (Some(false), true) => rsx! {
+                                p { class: "warning", "Once on, encryption cannot be turned off. Bots and bridges that cannot decrypt will stop seeing new messages, and people joining later will not read what came before." }
+                                div { class: "settings-actions",
+                                    button {
+                                        r#type: "button",
+                                        class: "danger confirm-encryption",
+                                        disabled: busy(),
+                                        onclick: turn_on,
+                                        Icon { glyph: LOCK, size: 16 }
+                                        "Turn on for good"
+                                    }
+                                    button { r#type: "button", class: "secondary", onclick: move |_| confirming.set(false), "Cancel" }
+                                }
+                            },
+                        }
+                        if let Some(err) = encryption_error() {
+                            p { class: "error", "{err}" }
+                        }
+                    }
+                }
+                if !is_dm {
                 fieldset { class: "choice-group",
                     legend { "Who can join" }
                     label { class: "choice",
@@ -342,13 +431,16 @@ pub fn PrivacyModal(room_id: OwnedRoomId) -> Element {
                         }
                     }
                 }
+                }
                 match message() {
                     Some(Ok(text)) => rsx! { p { class: "ok", "{text}" } },
                     Some(Err(text)) => rsx! { p { class: "error", "{text}" } },
                     None => rsx! {},
                 }
                 div { class: "settings-actions",
-                    button { r#type: "submit", class: "primary", disabled: busy(), "Save" }
+                    if !is_dm {
+                        button { r#type: "submit", class: "primary", disabled: busy(), "Save" }
+                    }
                     button { r#type: "button", class: "secondary", onclick: move |_| close(), "Close" }
                 }
             }
