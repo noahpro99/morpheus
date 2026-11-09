@@ -24,7 +24,24 @@ use crate::{
 
 /// Throwaway store used only to query a server before logging in.
 const PROBE_STORE_DIR: &str = "probe-store";
-const DEVICE_NAME: &str = "Morpheus";
+/// What other apps' device lists call a sign-in: the app and the system
+/// it runs on.
+pub(crate) fn device_name() -> &'static str {
+    if cfg!(target_os = "android") {
+        "Morpheus Android"
+    } else if cfg!(target_os = "ios") {
+        "Morpheus iOS"
+    } else if cfg!(target_os = "macos") {
+        "Morpheus macOS"
+    } else if cfg!(target_os = "windows") {
+        "Morpheus Windows"
+    } else {
+        "Morpheus Linux"
+    }
+}
+
+/// The name devices signed in before got (now `device_name`).
+const OLD_DEVICE_NAME: &str = "Morpheus";
 
 /// Credentials for a password login.
 #[derive(Debug, Clone)]
@@ -100,7 +117,9 @@ impl Core {
             let session = Session::start(core.clone(), client.clone(), dir).await?;
             // Signed in before the app did this at sign-in: an account still
             // without a cross-signing identity gets it from this device now.
+            let renamer = client.clone();
             core.spawn(async move { first_device(&client, None).await });
+            core.spawn(async move { rename_old_device(&renamer).await });
             Ok(Some(session))
         })
     }
@@ -145,7 +164,7 @@ impl Core {
             } else {
                 auth.login_username(&request.username, &request.password)
             };
-            if let Err(err) = login.initial_device_display_name(DEVICE_NAME).await {
+            if let Err(err) = login.initial_device_display_name(device_name()).await {
                 abandon(&core, client, &dir).await;
                 return Err(err.into());
             }
@@ -190,7 +209,7 @@ impl Core {
                     }
                     .map_err(|err| matrix_sdk::Error::UnknownError(Box::new(err)))
                 })
-                .initial_device_display_name(DEVICE_NAME)
+                .initial_device_display_name(device_name())
                 .await;
             if let Err(err) = signed_in {
                 abandon(&core, client, &dir).await;
@@ -615,4 +634,21 @@ async fn first_device(client: &Client, password: Option<String>) {
         return;
     }
     crate::recovery::set_up_first_device(client, password).await;
+}
+
+/// A device signed in when the app named every device just "Morpheus":
+/// named for its system now, as new sign-ins are.
+async fn rename_old_device(client: &Client) {
+    let Some(device_id) = client.device_id().map(ToOwned::to_owned) else {
+        return;
+    };
+    let Ok(devices) = client.devices().await else {
+        return;
+    };
+    let old = devices.devices.iter().any(|device| {
+        device.device_id == device_id && device.display_name.as_deref() == Some(OLD_DEVICE_NAME)
+    });
+    if old && let Err(err) = client.rename_device(&device_id, device_name()).await {
+        tracing::debug!(%err, "renaming this device failed");
+    }
 }
