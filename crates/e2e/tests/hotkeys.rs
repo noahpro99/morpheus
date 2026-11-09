@@ -720,11 +720,19 @@ async fn overlays_scroll_on_their_own_layer() {
     app.wait_for(".help-dialog", DEFAULT_WAIT)
         .await
         .expect("shortcuts");
-    assert_eq!(app.eval(layered).await.expect("layers"), serde_json::json!([]), "shortcuts");
+    assert_eq!(
+        app.eval(layered).await.expect("layers"),
+        serde_json::json!([]),
+        "shortcuts"
+    );
     app.press("body", "Escape").await.expect("close");
     app.click(".settings-button").await.expect("settings");
     app.wait_for(".settings-page", DEFAULT_WAIT)
         .await
         .expect("settings");
-    assert_eq!(app.eval(layered).await.expect("layers"), serde_json::json!([]), "settings");
+    assert_eq!(
+        app.eval(layered).await.expect("layers"),
+        serde_json::json!([]),
+        "settings"
+    );
 }

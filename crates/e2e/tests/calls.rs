@@ -55,6 +55,8 @@ async fn login_and_open(app: &mut App, user: &str, room: &str) {
     // join from the call button as a step of its own.
     if VOICE_CHANNELS.contains(&room) {
         open_without_joining(app, room).await;
+        // A voice channel opens as a call page (no message box).
+        return;
     } else if let Err(err) = app.open_room(room).await {
         let rows = app.eval("return [...document.querySelectorAll('.room')].map(r => r.textContent).join(' | ');").await;
         let _ = app.screenshot("open-room-failed").await;
@@ -169,6 +171,15 @@ async fn join_a_call_see_who_is_in_it_mute_and_hang_up() {
         .await
         .expect("bob speaking");
     // Joins and leaves stay out of the timeline.
+    // (A voice channel's page shows the call; its chat opens beside it.)
+    alice
+        .click(".chat-header .voice-chat-toggle")
+        .await
+        .expect("open the chat");
+    alice
+        .wait_for(".voice-chat .timeline", DEFAULT_WAIT)
+        .await
+        .expect("the chat");
     assert_eq!(
         alice
             .eval("return document.querySelector('.timeline').textContent.includes('call.member');")
@@ -1184,7 +1195,9 @@ async fn the_call_stage_is_resized_by_dragging_its_edge() {
         return;
     };
     let mut alice = App::launch_desktop(&hs).await.expect("launch alice");
-    login_and_open(&mut alice, "alice", "hangout").await;
+    // A DM call: a voice channel's page is all call, with nothing to resize.
+    login_and_open(&mut alice, "alice", "general").await;
+    open_dm(&mut alice, "bob").await;
     alice
         .click(".chat-header .call-button")
         .await
@@ -1291,13 +1304,12 @@ async fn a_camera_shows_in_its_persons_card_among_equal_cards() {
         return;
     };
     let mut alice = App::launch_desktop(&hs).await.expect("launch alice");
-    // A channel of its own: someone left in #hangout would add a card.
-    let channel = fresh_voice_channel(&hs);
+    // A DM call (a voice channel's page is all call, with nothing to resize).
     login_and_open(&mut alice, "alice", "general").await;
-    open_without_joining(&mut alice, &channel).await;
+    open_dm(&mut alice, "bob").await;
     let mut bob = App::launch_desktop(&hs).await.expect("launch bob");
     login_and_open(&mut bob, "bob", "general").await;
-    open_without_joining(&mut bob, &channel).await;
+    open_dm(&mut bob, "alice").await;
     alice
         .click(".chat-header .call-button")
         .await
@@ -2240,5 +2252,85 @@ async fn joining_lists_you_at_once_greyed_until_connected() {
         )
         .await
         .expect("not greyed once connected");
+    alice.click(".voice-panel .hang-up").await.expect("leave");
+}
+
+/// A server's voice channel, as Discord has it: a click joins its call and
+/// leaves you where you were; clicking it again while in the call opens it,
+/// all call (no timeline, no resize handle), with a chat button at the top
+/// left for its text chat.
+#[tokio::test]
+async fn a_voice_channel_joins_in_place_and_opens_as_a_call_page() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    login_and_open(&mut alice, "alice", "general").await;
+    let channel = fresh_voice_channel(&hs);
+    let row = format!(
+        "[...document.querySelectorAll('.room')].find(r => r.querySelector('.room-name')?.textContent.trim() === {})",
+        serde_json::to_string(&channel).expect("json")
+    );
+    alice
+        .wait_for_js(&format!("return !!{row};"), DEFAULT_WAIT)
+        .await
+        .expect("listed");
+    alice
+        .eval(&format!("{row}.click(); return true;"))
+        .await
+        .expect("click");
+    alice
+        .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("joined");
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    alice
+        .wait_for_text(".chat-header h2", "general", DEFAULT_WAIT)
+        .await
+        .expect("still in #general");
+    assert_eq!(
+        alice.count(".call-stage").await.expect("count"),
+        0,
+        "no call view over #general"
+    );
+
+    alice
+        .eval(&format!("{row}.click(); return true;"))
+        .await
+        .expect("click again");
+    alice
+        .wait_for_text(".chat-header h2", &channel, DEFAULT_WAIT)
+        .await
+        .expect("the channel open");
+    alice
+        .wait_for(".call-stage.voice-page", DEFAULT_WAIT)
+        .await
+        .expect("all call");
+    assert_eq!(
+        alice
+            .count(".call-stage-resize, .chat > .timeline, .chat .composer")
+            .await
+            .expect("count"),
+        0,
+        "no resize handle, timeline or message box"
+    );
+    let left = alice
+        .eval("const b = document.querySelector('.chat-header .voice-chat-toggle'), h = document.querySelector('.chat-header h2'); return !!b && b.getBoundingClientRect().right <= h.getBoundingClientRect().left;")
+        .await
+        .expect("toggle");
+    assert_eq!(
+        left,
+        serde_json::json!(true),
+        "a chat button at the top left"
+    );
+    alice
+        .click(".chat-header .voice-chat-toggle")
+        .await
+        .expect("open the chat");
+    alice
+        .wait_for(".voice-chat .composer .composer-input", DEFAULT_WAIT)
+        .await
+        .expect("its text chat");
     alice.click(".voice-panel .hang-up").await.expect("leave");
 }

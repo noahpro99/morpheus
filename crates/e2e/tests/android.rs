@@ -1151,6 +1151,11 @@ async fn phone_starts_a_call_with_the_real_microphone_without_crashing() {
         .await
         .expect("in the call");
     shot(&mut app, "android-call-list").await;
+    // Scrolled to, as a person would: the room list scrolls on its own.
+    app.eval("[...document.querySelectorAll('.room')].find(r => r.textContent.includes('hangout'))?.scrollIntoView({ block: 'center' }); return true;")
+        .await
+        .expect("scroll to it");
+    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
     app.tap_text(".room", "hangout")
         .await
         .expect("back into the room");

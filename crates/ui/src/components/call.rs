@@ -271,8 +271,13 @@ pub fn join_call(session: Session, room_id: OwnedRoomId, room_name: String) {
     {
         return;
     }
-    // A phone shows the call full screen, as Discord's app does.
-    if try_consume_context::<super::shell::NarrowWindow>().is_some_and(|narrow| narrow.peek().0) {
+    // A phone shows the call full screen, as Discord's app does; a server's
+    // voice channel is joined in place (you stay where you were).
+    let voice_channel = try_consume_context::<super::shell::Rooms>()
+        .is_some_and(|rooms| rooms.peek().iter().any(|r| r.id == room_id && r.is_voice));
+    if !voice_channel
+        && try_consume_context::<super::shell::NarrowWindow>().is_some_and(|narrow| narrow.peek().0)
+    {
         show_call_screen(true);
     }
     let microphone = try_consume_context::<crate::AppConfig>()
@@ -1391,6 +1396,41 @@ fn IncomingCallCard(call: IncomingCall, room: Option<RoomSummary>) -> Element {
             button { class: "accept-call", title: "Accept", onclick: accept,
                 Icon { glyph: PHONE, size: 20 }
             }
+        }
+    }
+}
+
+/// A server's voice channel opened: all call, as Discord has it (the cards
+/// fill the page, the controls below, no handle to resize), or a way to join
+/// when not in it.
+#[component]
+pub fn VoicePage(room_id: OwnedRoomId, room_name: String) -> Element {
+    let session = use_context::<Session>();
+    let active = use_context::<ActiveCall>();
+    let rooms = use_context::<super::shell::Rooms>();
+    let Some(call) = active().0.filter(|call| call.room_id == room_id) else {
+        return rsx! {
+            div { class: "voice-page-join",
+                Icon { glyph: VOLUME_2, size: 40 }
+                h2 { "{room_name}" }
+                p { class: "muted", "No one has to be here first: join, and others can drop in." }
+                button {
+                    class: "primary join-voice",
+                    onclick: move |_| join_call(session.clone(), room_id.clone(), room_name.clone()),
+                    Icon { glyph: PHONE, size: 18 }
+                    "Join voice"
+                }
+            }
+        };
+    };
+    let cards = tiles(&call, &rooms.read(), session.user_id());
+    let count = cards.len();
+    rsx! {
+        div { class: "call-stage voice-page", "data-cards": "{count}",
+            div { class: "call-cards",
+                Cards { room_id: room_id.clone(), cards, speaking: call.speaking.clone() }
+            }
+            StageControls { call: call.clone() }
         }
     }
 }
