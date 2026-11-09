@@ -20,6 +20,8 @@ pub enum Sound {
     Undeafen,
     /// Someone is calling (repeats while it rings).
     Ring,
+    /// Your call ringing the other person (repeats until they answer).
+    Ringback,
 }
 
 impl Sound {
@@ -32,6 +34,7 @@ impl Sound {
             Self::Deafen => "deafen",
             Self::Undeafen => "undeafen",
             Self::Ring => "ring",
+            Self::Ringback => "ringback",
         }
     }
 
@@ -45,6 +48,7 @@ impl Sound {
             Self::Deafen => &[(523.25, 90), (392.0, 160)],
             Self::Undeafen => &[(392.0, 90), (523.25, 160)],
             Self::Ring => &[(659.25, 120), (830.61, 120), (987.77, 120), (1318.51, 320)],
+            Self::Ringback => &[(440.0, 380), (440.0, 380)],
         }
     }
 }

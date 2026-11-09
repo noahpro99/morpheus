@@ -450,7 +450,9 @@ fn RoomRow(
                 span { class: "badge", "{room.highlight_count}" }
             }
         }
-        if !room.call_participants.is_empty() || in_this_call() {
+        if !room.call_participants.is_empty()
+            || active().0.as_ref().is_some_and(|call| call.room_id == room.id)
+        {
             super::call::RoomCall {
                 room_id: room.id.clone(),
                 room_name: room.name.clone(),

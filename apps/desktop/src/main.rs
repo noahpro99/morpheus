@@ -440,6 +440,7 @@ fn notifier(session: Session, focus: Focus, open_room: OpenRoom, data_dir: PathB
                         ready.text.body,
                         ready.icon,
                         ready.image,
+                        None,
                     );
                 }
             });
@@ -493,6 +494,7 @@ async fn ring_notifier(session: Session, focus: Focus, data_dir: PathBuf) {
             "Open Morpheus to answer".into(),
             icon,
             None,
+            Some(RING_SOUND),
         );
     }
 }
@@ -508,10 +510,10 @@ fn notify(
     body: String,
     icon: Option<PathBuf>,
     image: Option<PathBuf>,
+    sound: Option<&'static str>,
 ) {
     if std::env::var_os("MORPHEUS_E2E_PORT").is_some() {
-        let line =
-            serde_json::json!({ "title": title, "body": body, "icon": icon, "image": image });
+        let line = serde_json::json!({ "title": title, "body": body, "icon": icon, "image": image, "sound": sound });
         let written = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -527,6 +529,10 @@ fn notify(
     std::thread::spawn(move || {
         let mut notification = notify_rust::Notification::new();
         notification.appname("Morpheus").summary(&title).body(&body);
+        // A ring rings (the window may be hidden, its own ringtone silent).
+        if let Some(sound) = sound {
+            notification.sound_name(sound);
+        }
         if let Some(icon) = &icon {
             notification.icon(&icon.to_string_lossy());
         }
@@ -703,3 +709,7 @@ mod tests {
         assert_eq!(super::default_homeserver(), "matrix.org");
     }
 }
+
+/// The system's sound for an incoming call (freedesktop sound theme name;
+/// macOS and Windows play their default for an unknown name).
+const RING_SOUND: &str = "phone-incoming-call";

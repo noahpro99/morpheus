@@ -1334,24 +1334,58 @@ pub fn IncomingCalls() -> Element {
     // Re-checked every second (rings expire, callers give up), ringing
     // every other second.
     let mut tick = use_signal(|| 0u64);
-    use_future(move || async move {
-        loop {
-            let ringing = still_ringing(
-                &rings.peek(),
-                &active.peek(),
-                &rooms.peek().iter().cloned().collect::<Vec<_>>(),
-            );
-            if ringing.is_empty() {
-                if !rings.peek().0.is_empty() {
-                    rings.with_mut(|list| list.0.retain(|r| ringing.contains(r)));
+    // Your DM call ringing the other person: since when (a ringback plays
+    // until they join, or the ring runs out).
+    let mut ringing_out_since = use_signal(|| None::<std::time::Instant>);
+    let me = use_context::<Session>().user_id();
+    use_future(move || {
+        let me = me.clone();
+        async move {
+            loop {
+                let me = me.clone();
+                let ringing_out = active
+                    .peek()
+                    .0
+                    .as_ref()
+                    .filter(|c| c.connected)
+                    .is_some_and(|c| {
+                        rooms.peek().iter().any(|r| {
+                            r.id == c.room_id
+                                && r.is_dm
+                                && r.call_participants.iter().all(|u| Some(u) == me.as_ref())
+                        })
+                    });
+                if ringing_out {
+                    let started = *ringing_out_since.peek();
+                    let since = started.unwrap_or_else(std::time::Instant::now);
+                    if started.is_none() {
+                        ringing_out_since.set(Some(since));
+                    }
+                    let within =
+                        since.elapsed().as_millis() < u128::from(morpheus_core::RING_FOR_MS);
+                    if within && *tick.peek() % 3 == 0 {
+                        play(Sound::Ringback);
+                    }
+                } else if ringing_out_since.peek().is_some() {
+                    ringing_out_since.set(None);
                 }
-            } else if *tick.peek() % 2 == 0 && active.peek().0.is_none() {
-                // In a call already: the card shows, quietly, so the call
-                // you are in is not drowned out by a ringtone.
-                play(Sound::Ring);
+                let ringing = still_ringing(
+                    &rings.peek(),
+                    &active.peek(),
+                    &rooms.peek().iter().cloned().collect::<Vec<_>>(),
+                );
+                if ringing.is_empty() {
+                    if !rings.peek().0.is_empty() {
+                        rings.with_mut(|list| list.0.retain(|r| ringing.contains(r)));
+                    }
+                } else if *tick.peek() % 2 == 0 && active.peek().0.is_none() {
+                    // In a call already: the card shows, quietly, so the call
+                    // you are in is not drowned out by a ringtone.
+                    play(Sound::Ring);
+                }
+                tick += 1;
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             }
-            tick += 1;
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }
     });
     tick();
