@@ -2518,25 +2518,23 @@ async fn phone_changes_the_avatar_through_the_system_picker() {
         if let Some(downloads) = screen
             .split("<node ")
             .find(|n| n.contains("text=\"Downloads\""))
-        {
-            if let Some(raw) = downloads
+            && let Some(raw) = downloads
                 .split("bounds=\"")
                 .nth(1)
                 .and_then(|s| s.split('"').next())
-            {
-                let n: Vec<i64> = raw
-                    .split(|c: char| !c.is_ascii_digit())
-                    .filter(|p| !p.is_empty())
-                    .filter_map(|p| p.parse().ok())
-                    .collect();
-                if n.len() == 4 {
-                    let _ = adb_shell(&[
-                        "input",
-                        "tap",
-                        &((n[0] + n[2]) / 2).to_string(),
-                        &((n[1] + n[3]) / 2).to_string(),
-                    ]);
-                }
+        {
+            let n: Vec<i64> = raw
+                .split(|c: char| !c.is_ascii_digit())
+                .filter(|p| !p.is_empty())
+                .filter_map(|p| p.parse().ok())
+                .collect();
+            if n.len() == 4 {
+                let _ = adb_shell(&[
+                    "input",
+                    "tap",
+                    &((n[0] + n[2]) / 2).to_string(),
+                    &((n[1] + n[3]) / 2).to_string(),
+                ]);
             }
         }
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
