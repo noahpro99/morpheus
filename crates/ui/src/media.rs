@@ -51,12 +51,22 @@ pub fn use_thumbnail(media: Option<MediaRef>, width: u32, height: u32) -> Memo<O
     }));
 
     use_memo(move || {
-        if let Some(key) = &key
-            && let Some(entry) = cache.read().get(key)
-        {
+        let (media_key, ..) = key.as_ref()?;
+        let cached = cache.read();
+        if let Some(entry) = key.as_ref().and_then(|key| cached.get(key)) {
             return entry.clone();
         }
-        fetch.read().clone().flatten()
+        if let Some(url) = fetch.read().clone().flatten() {
+            return Some(url);
+        }
+        // Another size of the same picture is already here (a member's
+        // picture in the list, before their card asks for a larger one):
+        // shown until this size arrives.
+        cached
+            .iter()
+            .filter(|((k, _, _), url)| k == media_key && url.is_some())
+            .max_by_key(|((_, w, _), _)| *w)
+            .and_then(|(_, url)| url.clone())
     })
 }
 

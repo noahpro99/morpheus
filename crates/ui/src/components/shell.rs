@@ -394,6 +394,10 @@ pub fn Shell(session: Session) -> Element {
     let mut members_open: MembersOpen = use_context_provider(|| Signal::new(MembersShown(true)));
     let mut search_open: SearchOpen = use_context_provider(|| Signal::new(SearchShown(false)));
     use_context_provider(|| Signal::new(JumpTarget(None)) as JumpTo);
+    // Who was last seen where (name and picture), for cards to open with.
+    use_context_provider(|| {
+        Signal::new(std::collections::HashMap::new()) as super::profile::SeenPeople
+    });
     let mut open_profile: OpenProfile =
         use_context_provider(|| Signal::new(ProfileTarget::default()));
     let mut context_menu: ContextMenu = use_context_provider(|| Signal::new(MenuState::default()));

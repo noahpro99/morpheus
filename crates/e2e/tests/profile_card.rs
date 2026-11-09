@@ -317,3 +317,39 @@ fn standing(room: &str, standing: &str) -> String {
         serde_json::to_string(standing).expect("json")
     )
 }
+
+/// Opening someone's card shows their picture at once: the copy already on
+/// screen stands in while a larger one loads, instead of a letter.
+#[tokio::test]
+async fn the_card_shows_the_picture_already_loaded_at_once() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch(&hs).await.expect("launch");
+    login_and_open(&mut app, "alice", "general").await;
+    app.wait_for_js(
+        "return [...document.querySelectorAll('.members .member img.avatar')].some(i => i.src.startsWith('data:'));",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("member pictures loaded");
+    let first = app
+        .eval(
+            "const pic = [...document.querySelectorAll('.members .member img.avatar')].find(i => i.src.startsWith('data:')); \
+             const shown = pic.src; pic.closest('.member').click(); \
+             for (let i = 0; i < 600; i++) { \
+               const a = document.querySelector('.profile-card .avatar'); \
+               if (a) return a.tagName === 'IMG' && a.src ? (a.src === shown ? 'the same picture' : 'another picture') : 'a placeholder'; \
+               await new Promise(r => requestAnimationFrame(r)); \
+             } \
+             return 'no card';",
+        )
+        .await
+        .expect("first frame");
+    assert_eq!(
+        first.as_str(),
+        Some("the same picture"),
+        "what the card showed first"
+    );
+}
