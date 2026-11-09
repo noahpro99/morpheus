@@ -1161,6 +1161,11 @@ pub fn Shell(session: Session) -> Element {
 
 #[component]
 fn ChatRoom(room: RoomSummary) -> Element {
+    // A server's voice channel (not a phone, whose call has its own screen)
+    // opens as a call page; its text chat shows from the header's button.
+    let narrow_now = use_context::<NarrowWindow>();
+    let voice_page = room.is_voice && !room.is_dm && !narrow_now().0;
+    let mut voice_chat = use_signal(|| false);
     let session = use_context::<Session>();
     // Kept for the header buttons; `session` goes into the typing watcher.
     let header_session = session.clone();
@@ -1231,6 +1236,16 @@ fn ChatRoom(room: RoomSummary) -> Element {
                     Icon { glyph: crate::icons::CHEVRON_LEFT, size: 18 }
                 }
             }
+            // A voice channel's page: its text chat, opened beside the call.
+            if voice_page {
+                button {
+                    class: "ghost voice-chat-toggle",
+                    class: if voice_chat() { "active" },
+                    title: if voice_chat() { "Hide the chat" } else { "Show the chat" },
+                    onclick: move |_| voice_chat.toggle(),
+                    Icon { glyph: crate::icons::MESSAGES_SQUARE, size: 18 }
+                }
+            }
             if room.is_dm {
                 Avatar { media: room.avatar.clone(), fallback: room.name.clone(), size: 24 }
             } else {
@@ -1292,6 +1307,11 @@ fn ChatRoom(room: RoomSummary) -> Element {
                                     super::call::hang_up(session.clone());
                                 } else {
                                     super::call::join_call(session.clone(), room_id.clone(), room_name.clone());
+                                    // From the call button a phone opens the call's screen
+                                    // (a voice channel's row joins in place).
+                                    if narrow.peek().0 {
+                                        super::call::show_call_screen(true);
+                                    }
                                 }
                             },
                             Icon { glyph: if in_this_call && !narrow().0 { crate::icons::PHONE_OFF } else { crate::icons::PHONE }, size: 16 }
@@ -1317,20 +1337,40 @@ fn ChatRoom(room: RoomSummary) -> Element {
                 Icon { glyph: crate::icons::SEARCH, size: 16 }
             }
         }
-        // A phone shows the call on its own screen.
-        if !narrow().0 {
-            super::call::CallStage { room_id: room.id.clone() }
-        }
-        TimelineView { room_id: room.id.clone() }
-        TypingLine { names: typing() }
-        if narrow().0 {
-            super::call::CallBar {}
-        }
-        Composer {
-            room_name: room.name.clone(),
-            placeholder: room.is_dm.then(|| format!("Message @{}", room.name)),
-            accepts_drops: true,
-            room_id: Some(room.id.clone()),
+        if voice_page {
+            // A server's voice channel: all call; its text chat beside it
+            // when opened from the chat button.
+            div { class: "voice-room",
+                super::call::VoicePage { room_id: room.id.clone(), room_name: room.name.clone() }
+                if voice_chat() {
+                    div { class: "voice-chat",
+                        TimelineView { room_id: room.id.clone() }
+                        TypingLine { names: typing() }
+                        Composer {
+                            room_name: room.name.clone(),
+                            placeholder: None,
+                            accepts_drops: true,
+                            room_id: Some(room.id.clone()),
+                        }
+                    }
+                }
+            }
+        } else {
+            // A phone shows the call on its own screen.
+            if !narrow().0 {
+                super::call::CallStage { room_id: room.id.clone() }
+            }
+            TimelineView { room_id: room.id.clone() }
+            TypingLine { names: typing() }
+            if narrow().0 {
+                super::call::CallBar {}
+            }
+            Composer {
+                room_name: room.name.clone(),
+                placeholder: room.is_dm.then(|| format!("Message @{}", room.name)),
+                accepts_drops: true,
+                room_id: Some(room.id.clone()),
+            }
         }
         Lightbox {}
     }

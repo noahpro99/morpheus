@@ -426,11 +426,13 @@ fn RoomRow(
             class: if is_selected { "selected" },
             class: if room.unread_messages > 0 || room.marked_unread { "unread" },
             onclick: move |_| {
-                go_to(id.clone());
-                // A voice channel, as in Discord: clicking it joins its call
-                // (already in it, it only opens).
+                // A server's voice channel, as in Discord: a click joins its
+                // call and leaves you where you are; in the call already, it
+                // opens (as a call page).
                 if is_voice && !in_this_call() {
                     super::call::join_call(join_session.clone(), id.clone(), name.clone());
+                } else {
+                    go_to(id.clone());
                 }
             },
             if room.is_dm {
