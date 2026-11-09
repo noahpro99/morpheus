@@ -388,6 +388,8 @@ pub fn Shell(session: Session) -> Element {
     let mut switcher_open = use_signal(|| false);
     let mut settings_open: SettingsOpen = use_context_provider(|| Signal::new(false));
     let mut settings_page: OpenSettingsPage = use_context_provider(|| Signal::new(None));
+    let _setting_highlight: super::settings::SettingHighlight =
+        use_context_provider(|| Signal::new(None));
     let mut verification: ActiveVerification = use_context_provider(|| Signal::new(None));
     let mut members_open: MembersOpen = use_context_provider(|| Signal::new(MembersShown(true)));
     let mut search_open: SearchOpen = use_context_provider(|| Signal::new(SearchShown(false)));
@@ -409,7 +411,7 @@ pub fn Shell(session: Session) -> Element {
     let has_window = use_hook(|| try_consume_context::<crate::WindowControls>().is_some());
     super::keys::provide_key_tracking(session.clone());
     let mut nickname_target = super::nicknames::provide_nicknames(session.clone());
-    let (_, friends_open) = super::friends::provide_friends(session.clone());
+    let (_, mut friends_open) = super::friends::provide_friends(session.clone());
     super::marks::provide_marks(session.clone());
     super::call::provide_calls(session.clone());
     // Owned by the app root: background tasks (calls, sign-out) run there and
@@ -851,6 +853,34 @@ pub fn Shell(session: Session) -> Element {
             "next_room" | "prev_room" | "next_unread" | "prev_unread" => {
                 let list = in_scope();
                 let forward = name.starts_with("next");
+                // In the DMs, Friends sits above the first DM: Alt+Up from
+                // the top lands on it, Alt+Down from the bottom wraps to it,
+                // and from it either way goes to the first or last DM.
+                if !name.ends_with("unread") && *selected_space.peek() == Scope::Dms {
+                    let on_friends = friends_open.peek().0;
+                    let at = selected
+                        .peek()
+                        .as_ref()
+                        .and_then(|id| list.iter().position(|r| &r.id == id));
+                    let to_friends = !on_friends
+                        && match (forward, at) {
+                            (false, Some(0)) => true,
+                            (true, Some(i)) => i + 1 == list.len(),
+                            _ => list.is_empty(),
+                        };
+                    if to_friends {
+                        friends_open.set(super::friends::FriendsShown(true));
+                        chat_open.set(ChatInFront(true));
+                        return;
+                    }
+                    if on_friends {
+                        let target = if forward { list.first() } else { list.last() };
+                        if let Some(room) = target.cloned() {
+                            open(&room);
+                        }
+                        return;
+                    }
+                }
                 if let Some(room) = step(
                     &list,
                     if forward { 1 } else { -1 },

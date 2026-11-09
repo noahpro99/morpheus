@@ -36,6 +36,7 @@ window.addEventListener('keydown', e => {
   else if (k === 'Escape' && shift) name = 'mark_scope_read';
   else if (k === 'Escape') name = 'escape';
   else if (mod && !alt && !shift && key === 'k') name = 'switcher';
+  else if (mod && !alt && shift && key === 'p') name = 'switcher';
   else if (mod && !alt && !shift && key === 'r') name = 'reload';
   else if (mod && !alt && key === '/') name = 'shortcuts';
   else if (alt && !mod && !shift && k === 'ArrowUp') name = 'prev_room';
@@ -72,7 +73,10 @@ pub const GROUPS: &[(&str, &[(&str, &str)])] = &[
     (
         "Navigation",
         &[
-            ("Ctrl+K", "Jump to a room"),
+            (
+                "Ctrl+K or Ctrl+Shift+P",
+                "Command palette: rooms, actions and settings",
+            ),
             ("Alt+↑ / Alt+↓", "Previous / next room"),
             ("Alt+Shift+↑ / ↓", "Previous / next unread room"),
             ("Ctrl+Alt+↑ / ↓", "Previous / next server (rail)"),
