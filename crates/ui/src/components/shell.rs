@@ -857,6 +857,14 @@ pub fn Shell(session: Session) -> Element {
                 }
             }
             "switcher" => switcher_open.toggle(),
+            // Ctrl+F: search the room open (as its header's search bar does).
+            "search" => {
+                if current.peek().is_some() {
+                    search_open.with_mut(|s| s.0 = !s.0);
+                }
+            }
+            // Ctrl+Shift+N: create or join a server.
+            "create_server" => room_dialog.set(RoomDialog::CreateSpace(None)),
             "reload" => {
                 if let Some(mut reloads) = try_consume_context::<crate::app::Reloads>() {
                     reloads.with_mut(|r| r.0 += 1);

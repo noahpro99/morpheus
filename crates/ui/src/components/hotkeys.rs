@@ -38,6 +38,10 @@ window.addEventListener('keydown', e => {
   else if (mod && !alt && !shift && key === 'k') name = 'switcher';
   else if (mod && !alt && shift && key === 'p') name = 'switcher';
   else if (mod && !alt && !shift && key === 'r') name = 'reload';
+  else if (mod && !alt && !shift && key === 'f') name = 'search';
+  else if (mod && !alt && !shift && key === 'e') name = 'emoji';
+  else if (mod && !alt && shift && key === 'n') name = 'create_server';
+  else if (mod && !alt && !shift && k === 'Enter' && document.querySelector('.incoming-call .accept-call')) name = 'answer';
   else if (mod && !alt && key === '/') name = 'shortcuts';
   else if (alt && !mod && !shift && k === 'ArrowUp') name = 'prev_room';
   else if (alt && !mod && !shift && k === 'ArrowDown') name = 'next_room';
@@ -63,6 +67,13 @@ window.addEventListener('keydown', e => {
     return;
   }
   if (!name) return;
+  // Handled here, by the buttons they stand for: the emoji picker and
+  // answering a call ringing.
+  if (name === 'emoji' || name === 'answer') {
+    const button = document.querySelector(name === 'emoji' ? '.composer .emoji-button' : '.incoming-call .accept-call');
+    if (button) { e.preventDefault(); button.click(); }
+    return;
+  }
   if (name !== 'escape' && name !== 'edit_last') e.preventDefault();
   dioxus.send(name);
 });
@@ -93,6 +104,7 @@ pub const GROUPS: &[(&str, &[(&str, &str)])] = &[
             ("Enter", "Send (Shift+Enter for a new line)"),
             ("↑", "Edit your last message (in an empty message box)"),
             ("Ctrl+Shift+U", "Attach a file"),
+            ("Ctrl+E", "Emoji picker"),
             ("Esc", "Close what is open, or jump to the newest message"),
             ("Shift+Esc", "Mark every room in this scope as read"),
             ("Right-click", "Actions for a message, room, or member"),
@@ -101,12 +113,14 @@ pub const GROUPS: &[(&str, &[(&str, &str)])] = &[
     (
         "Panels",
         &[
+            ("Ctrl+F", "Search this room"),
             ("Ctrl+I", "Inbox"),
             ("Ctrl+P", "Pinned messages"),
             ("Ctrl+U", "Show or hide the member list"),
             ("Ctrl+,", "Settings"),
             ("Ctrl+/", "This list"),
             ("Ctrl+R", "Reload the app"),
+            ("Ctrl+Shift+N", "Create or join a server"),
         ],
     ),
     (
@@ -114,6 +128,7 @@ pub const GROUPS: &[(&str, &[(&str, &str)])] = &[
         &[
             ("Ctrl+Shift+M", "Mute or unmute"),
             ("Ctrl+Shift+D", "Deafen or undeafen (deafening mutes too)"),
+            ("Ctrl+Enter", "Answer a call ringing"),
         ],
     ),
 ];
