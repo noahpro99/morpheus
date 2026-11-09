@@ -701,6 +701,10 @@ mod single_instance {
     }
 }
 
+/// The system's sound for an incoming call (freedesktop sound theme name;
+/// macOS and Windows play their default for an unknown name).
+const RING_SOUND: &str = "phone-incoming-call";
+
 #[cfg(test)]
 mod tests {
     /// A release suggests a real homeserver; the dev one is for test builds.
@@ -709,7 +713,3 @@ mod tests {
         assert_eq!(super::default_homeserver(), "matrix.org");
     }
 }
-
-/// The system's sound for an incoming call (freedesktop sound theme name;
-/// macOS and Windows play their default for an unknown name).
-const RING_SOUND: &str = "phone-incoming-call";
