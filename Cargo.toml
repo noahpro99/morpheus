@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/call", "crates/ui", "crates/e2e", "apps/desktop", "apps/mobile"]
+members = ["crates/core", "crates/call", "crates/ui", "crates/e2e", "apps/desktop", "apps/mobile", "apps/web"]
 # `cargo build` / `cargo test` cover desktop by default; mobile builds via `dx`.
 default-members = ["crates/core", "crates/ui", "apps/desktop"]
 
@@ -15,7 +15,9 @@ morpheus-core = { path = "crates/core" }
 morpheus-ui = { path = "crates/ui" }
 morpheus-call = { path = "crates/call" }
 
-matrix-sdk = { version = "0.19.1", features = ["markdown", "sso-login", "experimental-search", "qrcode"] }
+# Shared by every platform; the stores and logins are added per target in
+# crates/core (a browser has IndexedDB, and no local server for SSO).
+matrix-sdk = { version = "0.19.1", default-features = false, features = ["e2e-encryption", "automatic-room-key-forwarding", "markdown", "qrcode"] }
 matrix-sdk-ui = "0.19.1"
 dioxus = "0.7.10"
 
@@ -72,4 +74,13 @@ inherits = "dev"
 debug = "line-tables-only"
 
 [profile.android-dev.package."*"]
+debug = false
+
+# dx builds the web app with this profile. Full debug info made a 1 GB
+# module that wasm-bindgen could not get through.
+[profile.wasm-dev]
+inherits = "dev"
+debug = false
+
+[profile.wasm-dev.package."*"]
 debug = false

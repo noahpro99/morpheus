@@ -29,7 +29,7 @@ pub async fn pick_image() -> Option<PathBuf> {
 
 async fn pick(images: bool) -> Option<PathBuf> {
     if let Some(picker) = PICKER.get().cloned() {
-        return tokio::task::spawn_blocking(move || picker(images))
+        return morpheus_core::rt::spawn_blocking(move || picker(images))
             .await
             .ok()
             .flatten();
@@ -37,7 +37,7 @@ async fn pick(images: bool) -> Option<PathBuf> {
     desktop_pick(images).await
 }
 
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[cfg(not(any(target_os = "android", target_os = "ios", target_arch = "wasm32")))]
 async fn desktop_pick(images: bool) -> Option<PathBuf> {
     let mut dialog = rfd::AsyncFileDialog::new();
     dialog = if images {
@@ -53,8 +53,9 @@ async fn desktop_pick(images: bool) -> Option<PathBuf> {
         .map(|handle| handle.path().to_path_buf())
 }
 
-/// iOS has no picker installed yet (its document picker is still to do).
-#[cfg(any(target_os = "android", target_os = "ios"))]
+/// iOS has no picker installed yet (its document picker is still to do); a
+/// browser picks through the page (FILE_LISTENER_JS).
+#[cfg(any(target_os = "android", target_os = "ios", target_arch = "wasm32"))]
 async fn desktop_pick(_images: bool) -> Option<PathBuf> {
     tracing::warn!("no file picker on this platform yet");
     None
@@ -62,5 +63,11 @@ async fn desktop_pick(_images: bool) -> Option<PathBuf> {
 
 /// Open `path` with whatever the OS considers the default handler for it.
 pub fn open_with_system(path: &Path) -> Result<(), String> {
-    open::that(path).map_err(|err| err.to_string())
+    #[cfg(not(target_arch = "wasm32"))]
+    return open::that(path).map_err(|err| err.to_string());
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = path;
+        Err("a browser saves downloads itself".into())
+    }
 }

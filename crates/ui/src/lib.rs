@@ -11,7 +11,10 @@ mod components;
 pub mod device_prefs;
 #[cfg(feature = "e2e")]
 mod e2e;
-#[cfg(not(feature = "e2e"))]
+#[cfg(all(feature = "web-e2e", not(feature = "e2e")))]
+#[path = "e2e_web.rs"]
+mod e2e;
+#[cfg(not(any(feature = "e2e", feature = "web-e2e")))]
 mod e2e {
     use dioxus::prelude::*;
 
@@ -26,6 +29,7 @@ pub mod icons;
 mod linkify;
 mod media;
 pub mod notices;
+pub mod platform;
 mod sounds;
 mod window;
 

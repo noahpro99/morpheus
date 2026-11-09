@@ -1,0 +1,19 @@
+[package]
+name = "morpheus-web"
+description = "Morpheus in a browser (app.morpheuschat.org): the shared UI on Dioxus web."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+# The page's side of the test bridge (`just e2e-web`).
+e2e = ["morpheus-ui/web-e2e"]
+
+[dependencies]
+dioxus = { workspace = true, features = ["web"] }
+morpheus-ui = { workspace = true }
+tracing = { workspace = true }
+web-sys = { version = "0.3", features = ["Window", "Location", "UrlSearchParams", "History"] }
+
+[lints]
+workspace = true

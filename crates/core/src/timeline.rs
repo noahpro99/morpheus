@@ -16,10 +16,11 @@ use matrix_sdk_ui::timeline::{
 };
 use std::collections::HashSet;
 
+use crate::rt::JoinHandle;
 use matrix_sdk::{
     room::edit::EditedContent, ruma::events::room::message::RoomMessageEventContentWithoutRelation,
 };
-use tokio::{sync::mpsc, task::JoinHandle};
+use tokio::sync::mpsc;
 use tracing::{debug, warn};
 
 use crate::{
@@ -658,7 +659,7 @@ impl TimelineHandle {
     pub fn send_read_receipt(&self) -> CoreFuture<bool> {
         let timeline = self.timeline.clone();
         self.core.run(async move {
-            let started = std::time::Instant::now();
+            let started = crate::rt::Instant::now();
             let sent = timeline.mark_as_read(ReceiptType::Read).await?;
             crate::messages::keep_marked_unread(timeline.room(), started).await;
             Ok(sent)
@@ -676,7 +677,7 @@ impl TimelineHandle {
     pub fn mark_as_fully_read(&self) -> CoreFuture<bool> {
         let timeline = self.timeline.clone();
         self.core.run(async move {
-            let started = std::time::Instant::now();
+            let started = crate::rt::Instant::now();
             let sent = timeline.mark_as_read(ReceiptType::FullyRead).await?;
             crate::messages::keep_marked_unread(timeline.room(), started).await;
             Ok(sent)
@@ -759,7 +760,7 @@ impl Session {
                                         && requested_replies.insert(event_id.clone())
                                     {
                                         let timeline = timeline.clone();
-                                        tokio::spawn(async move {
+                                        crate::rt::spawn(async move {
                                             if let Err(err) =
                                                 timeline.fetch_details_for_event(&event_id).await
                                             {

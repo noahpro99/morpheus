@@ -703,7 +703,7 @@ pub fn VerificationPanel(verification: Rc<Verification>) -> Element {
     use_effect(use_reactive!(|finished| {
         if finished {
             spawn(async move {
-                tokio::time::sleep(std::time::Duration::from_secs(VERIFIED_NOTE_SECS)).await;
+                morpheus_core::rt::sleep(std::time::Duration::from_secs(VERIFIED_NOTE_SECS)).await;
                 if active
                     .peek()
                     .as_ref()
@@ -825,7 +825,7 @@ fn NotificationsPage() -> Element {
     });
     let content_dir = data_dir.clone();
     // Written by the Android push bridge (apps/mobile/src/push.rs).
-    let push = std::fs::read_to_string(data_dir.join("push_status")).ok();
+    let push = morpheus_core::fs::read_to_string(data_dir.join("push_status")).ok();
     let device = if cfg!(target_os = "android") {
         match push.as_deref().map(str::trim) {
             Some(status) if status.starts_with("registered via ") => format!(

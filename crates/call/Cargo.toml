@@ -6,16 +6,22 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+thiserror = { workspace = true }
+
+# A browser has no native WebRTC (src/web.rs).
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 livekit = { version = "0.9.5", default-features = false, features = ["native", "rustls-tls-webpki-roots"] }
 tokio = { workspace = true }
 futures-util = { workspace = true }
 tracing = { workspace = true }
-thiserror = { workspace = true }
 # TLS for `wss://` call services: the app links both crypto backends, so
 # one must be chosen (see `runtime()`).
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 # Video frames for the interface (a web view shows JPEGs as they are).
 jpeg-encoder = "0.6"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+tokio = { version = "1", default-features = false, features = ["sync"] }
 
 # The camera (Video4Linux, without C bindings to build).
 [target.'cfg(target_os = "linux")'.dependencies]

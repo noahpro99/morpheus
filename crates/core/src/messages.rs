@@ -84,8 +84,8 @@ impl Session {
             }
             // The pinned list is room state and only updates locally on the
             // next sync; wait for it so callers can refetch right away.
-            let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(8);
-            while tokio::time::Instant::now() < deadline {
+            let deadline = crate::rt::Instant::now() + std::time::Duration::from_secs(8);
+            while crate::rt::Instant::now() < deadline {
                 let now = room
                     .pinned_event_ids()
                     .unwrap_or_default()
@@ -93,7 +93,7 @@ impl Session {
                 if now == pinned {
                     break;
                 }
-                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                crate::rt::sleep(std::time::Duration::from_millis(100)).await;
             }
             Ok(())
         })
@@ -121,7 +121,7 @@ impl Session {
         let room = self.room(&room_id);
         if let Ok(mut marked) = marked_at().lock() {
             if unread {
-                marked.insert(room_id.clone(), std::time::Instant::now());
+                marked.insert(room_id.clone(), crate::rt::Instant::now());
             } else {
                 marked.remove(&room_id);
             }
@@ -165,9 +165,9 @@ impl Session {
 
 /// When the user last marked each room unread (this process).
 fn marked_at()
--> &'static std::sync::Mutex<std::collections::HashMap<OwnedRoomId, std::time::Instant>> {
+-> &'static std::sync::Mutex<std::collections::HashMap<OwnedRoomId, crate::rt::Instant>> {
     static MARKED: std::sync::OnceLock<
-        std::sync::Mutex<std::collections::HashMap<OwnedRoomId, std::time::Instant>>,
+        std::sync::Mutex<std::collections::HashMap<OwnedRoomId, crate::rt::Instant>>,
     > = std::sync::OnceLock::new();
     MARKED.get_or_init(Default::default)
 }
@@ -177,7 +177,7 @@ fn marked_at()
 /// message they had just sent) must not undo that: put the flag back.
 pub(crate) async fn keep_marked_unread(
     room: &matrix_sdk::Room,
-    receipt_started: std::time::Instant,
+    receipt_started: crate::rt::Instant,
 ) {
     let marked = marked_at()
         .lock()

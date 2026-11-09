@@ -105,7 +105,8 @@ fn write_picture(dir: &Path, stem: &str, fetched: &morpheus_core::Media) -> Opti
         _ => return None,
     };
     let path = dir.join(format!("{stem}.{ext}"));
-    let written = std::fs::create_dir_all(dir).and_then(|()| std::fs::write(&path, &fetched.bytes));
+    let written = morpheus_core::fs::create_dir_all(dir)
+        .and_then(|()| morpheus_core::fs::write(&path, &fetched.bytes));
     if let Err(err) = written {
         tracing::warn!(%err, "notification picture not kept");
         return None;

@@ -38,14 +38,8 @@ fn slot_dir(root: &Path, key: &str) -> PathBuf {
 
 /// Every account folder, the first account's first, then by number.
 fn slots(root: &Path) -> Vec<String> {
-    let mut numbered: Vec<u32> = std::fs::read_dir(root.join(ACCOUNTS_DIR))
-        .map(|entries| {
-            entries
-                .flatten()
-                .filter(|entry| entry.path().is_dir())
-                .filter_map(|entry| entry.file_name().to_str()?.parse().ok())
-                .collect()
-        })
+    let mut numbered: Vec<u32> = crate::fs::list(root.join(ACCOUNTS_DIR))
+        .map(|names| names.iter().filter_map(|name| name.parse().ok()).collect())
         .unwrap_or_default();
     numbered.sort_unstable();
     std::iter::once(String::new())
@@ -54,13 +48,13 @@ fn slots(root: &Path) -> Vec<String> {
 }
 
 fn read_active(root: &Path) -> String {
-    std::fs::read_to_string(root.join(ACTIVE_FILE))
+    crate::fs::read_to_string(root.join(ACTIVE_FILE))
         .map(|text| text.trim().to_owned())
         .unwrap_or_default()
 }
 
 pub(crate) fn write_active(root: &Path, key: &str) -> Result<()> {
-    std::fs::write(root.join(ACTIVE_FILE), key)?;
+    crate::fs::write(root.join(ACTIVE_FILE), key)?;
     Ok(())
 }
 
@@ -106,7 +100,7 @@ impl Core {
         let existing = slots(root);
         if let Some(free) = existing.iter().find(|key| {
             matches!(self.stored(key), Ok(None))
-                && !slot_dir(root, key).join(session_store::STORE_DIR).exists()
+                && !crate::fs::exists(slot_dir(root, key).join(session_store::STORE_DIR))
         }) {
             return Ok(slot_dir(root, free));
         }
@@ -120,7 +114,7 @@ impl Core {
             .max()
             .map_or(1, |n| n + 1);
         let dir = root.join(ACCOUNTS_DIR).join(next.to_string());
-        std::fs::create_dir_all(&dir)?;
+        crate::fs::create_dir_all(&dir)?;
         Ok(dir)
     }
 
@@ -135,7 +129,7 @@ impl Core {
     pub fn accounts(&self) -> CoreFuture<Vec<SavedAccount>> {
         let core = self.clone();
         self.run(async move {
-            tokio::task::spawn_blocking(move || {
+            crate::rt::spawn_blocking(move || {
                 let active = core.account_key(&core.active_account_dir());
                 core.stored_accounts()
                     .into_iter()
@@ -158,7 +152,7 @@ impl Core {
         let core = self.clone();
         self.run(async move {
             let root = core.data_dir().to_path_buf();
-            tokio::task::spawn_blocking(move || write_active(&root, &key)).await??;
+            crate::rt::spawn_blocking(move || write_active(&root, &key)).await??;
             core.restore_session().await
         })
     }

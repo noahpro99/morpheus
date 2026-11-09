@@ -261,8 +261,8 @@ impl Prefs {
             .count();
         format!(
             "folder-{}-{n}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
+            morpheus_core::rt::SystemTime::now()
+                .duration_since(morpheus_core::rt::UNIX_EPOCH)
                 .map(|d| d.as_millis())
                 .unwrap_or(0)
         )
@@ -443,7 +443,7 @@ pub fn Shell(session: Session) -> Element {
             return;
         }
         spawn(async move {
-            tokio::time::sleep(std::time::Duration::from_millis(PANES_SETTLE_MS)).await;
+            morpheus_core::rt::sleep(std::time::Duration::from_millis(PANES_SETTLE_MS)).await;
             panes_ready.set(narrow.peek().0);
         });
     });
@@ -474,7 +474,7 @@ pub fn Shell(session: Session) -> Element {
                             if target.is_some() {
                                 break;
                             }
-                            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                            morpheus_core::rt::sleep(std::time::Duration::from_millis(250)).await;
                         }
                         match target {
                             Some(room) => {
@@ -605,7 +605,7 @@ pub fn Shell(session: Session) -> Element {
     });
     // A room that is gone (left elsewhere) is not waited for forever.
     use_future(move || async move {
-        tokio::time::sleep(std::time::Duration::from_secs(LAST_PLACE_WAIT_SECS)).await;
+        morpheus_core::rt::sleep(std::time::Duration::from_secs(LAST_PLACE_WAIT_SECS)).await;
         pending_place.set(None);
     });
     use_effect(move || {
@@ -999,8 +999,12 @@ pub fn Shell(session: Session) -> Element {
     let mut drops: FileDrops = use_context_provider(|| Signal::new(Drops::default()));
     use_hook(move || {
         spawn(async move {
-            // Phones pick files through the page (see FILE_LISTENER_JS).
-            let page_picker = cfg!(any(target_os = "android", target_os = "ios"));
+            // Phones and browsers pick files through the page (see FILE_LISTENER_JS).
+            let page_picker = cfg!(any(
+                target_os = "android",
+                target_os = "ios",
+                target_arch = "wasm32"
+            ));
             let mut listener = document::eval(&format!(
                 "window.__morpheusPagePicker = {page_picker};\n{LISTENER_JS}\n{FILE_LISTENER_JS}"
             ));
@@ -1507,7 +1511,7 @@ fn open_link(url: &str, open_url: Option<&morpheus_core::UrlOpener>) {
     }
     let result = match open_url {
         Some(open) => open(url),
-        None => open::that_detached(url),
+        None => crate::platform::open_url(url),
     };
     if let Err(err) = result {
         report("opening the link", &err);

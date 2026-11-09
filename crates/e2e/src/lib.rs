@@ -14,6 +14,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+pub mod web;
+
 use anyhow::{Context, Result, anyhow, bail};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -140,6 +142,29 @@ impl App {
         };
         let log_path = data_dir.join("app.log");
         let log = std::fs::File::create(&log_path)?;
+
+        // The web app: a page in a headless Chromium, behind a relay.
+        if web::enabled() && !env.iter().any(|(key, _)| *key == "MORPHEUS_E2E_BIN") {
+            let size = size.unwrap_or((1280, 800));
+            let (child, port) = web::start(homeserver, &data_dir, size, log).await?;
+            let stream = connect(port, &log_path).await?;
+            let (reader, writer) = stream.into_split();
+            // Connected to the relay; the page answers once its app is up.
+            return Ok(Self {
+                child: Some(child),
+                android: false,
+                reader: BufReader::new(reader).lines(),
+                writer,
+                next_id: 1,
+                data_dir,
+                download_dir,
+                log_path,
+                port,
+                homeserver: homeserver.to_owned(),
+                timings: Vec::new(),
+                size,
+            });
+        }
 
         let mut command = Command::new(&bin);
         if let Some((width, height)) = size {

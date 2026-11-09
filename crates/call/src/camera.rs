@@ -22,7 +22,7 @@ use livekit::webrtc::{
 };
 use tracing::{info, warn};
 
-use crate::video::{self, LOCAL_CAMERA};
+use crate::imp::video::{self, LOCAL_CAMERA};
 
 const WANT: (u32, u32) = (640, 480);
 
@@ -35,10 +35,10 @@ pub(crate) struct Camera {
 }
 
 impl Camera {
-    /// The camera chosen ([`crate::choose_camera`]), else the first that can
+    /// The camera chosen ([`crate::imp::choose_camera`]), else the first that can
     /// give YUYV.
     pub(crate) fn open() -> io::Result<Self> {
-        let chosen = crate::chosen_camera()
+        let chosen = crate::imp::chosen_camera()
             .and_then(|path| linuxvideo::Device::open(path).ok())
             .map(Ok);
         for device in chosen.into_iter().chain(linuxvideo::list()?) {
@@ -178,7 +178,7 @@ mod device_tests {
     use livekit::webrtc::video_source::native::NativeVideoSource;
 
     use super::Camera;
-    use crate::video::{LOCAL_CAMERA, latest_frame};
+    use crate::imp::video::{LOCAL_CAMERA, latest_frame};
 
     #[test]
     #[ignore = "needs a webcam"]
@@ -214,7 +214,7 @@ mod device_tests {
 
 /// The cameras that can give YUYV (webcams; not the infrared ones beside
 /// them), by device path and name.
-pub(crate) fn list() -> Vec<crate::CameraDevice> {
+pub(crate) fn list() -> Vec<crate::imp::CameraDevice> {
     let Ok(devices) = linuxvideo::list() else {
         return Vec::new();
     };
@@ -232,7 +232,7 @@ pub(crate) fn list() -> Vec<crate::CameraDevice> {
                 .capabilities()
                 .map(|caps| caps.card().to_owned())
                 .unwrap_or_else(|_| id.clone());
-            Some(crate::CameraDevice { id, name })
+            Some(crate::imp::CameraDevice { id, name })
         })
         .collect()
 }

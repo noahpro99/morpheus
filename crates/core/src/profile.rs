@@ -93,7 +93,7 @@ impl Session {
         let client = self.client.clone();
         self.core.run(async move {
             let mime = mime_guess::from_path(&path).first_or_octet_stream();
-            let bytes = tokio::fs::read(&path).await?;
+            let bytes = crate::fs::nonblocking::read(&path).await?;
             client.account().upload_avatar(&mime, bytes).await?;
             Ok(())
         })

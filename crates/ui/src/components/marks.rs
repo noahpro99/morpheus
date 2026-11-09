@@ -47,8 +47,8 @@ impl Marks {
 }
 
 pub fn now_ms() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    morpheus_core::rt::SystemTime::now()
+        .duration_since(morpheus_core::rt::UNIX_EPOCH)
         .map(|d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
         .unwrap_or(0)
 }
@@ -98,7 +98,7 @@ pub fn provide_marks(session: Session) -> Marks {
                         unmute(&session, room_id);
                     }
                 }
-                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                morpheus_core::rt::sleep(std::time::Duration::from_secs(5)).await;
             }
         }
     });

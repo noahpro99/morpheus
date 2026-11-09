@@ -1,17 +1,22 @@
-use std::path::{Path, PathBuf};
+#[cfg(not(target_arch = "wasm32"))]
+use std::path::Path;
+use std::path::PathBuf;
 
+#[cfg(not(target_arch = "wasm32"))]
+use crate::fs::nonblocking as fs;
+#[cfg(not(target_arch = "wasm32"))]
 use directories::UserDirs;
 use matrix_sdk::{
     media::{MediaFormat, MediaRequestParameters, MediaThumbnailSettings},
     ruma::{OwnedMxcUri, UInt, events::room::MediaSource},
 };
-use tokio::fs;
 use tracing::debug;
 
 use crate::{CoreFuture, Session};
 
 /// Overrides the Downloads directory; used by e2e tests so downloads land in
 /// a disposable, inspectable location instead of the real user directory.
+#[cfg(not(target_arch = "wasm32"))]
 const DOWNLOAD_DIR_ENV: &str = "MORPHEUS_DOWNLOAD_DIR";
 
 /// A reference to a piece of media (avatar, image, file) that the core can fetch.
@@ -151,11 +156,16 @@ impl Session {
             };
             let bytes = media_client.get_media_content(&request, true).await?;
 
-            let dir = downloads_dir();
-            fs::create_dir_all(&dir).await?;
-            let path = unique_path(&dir, &suggested_name).await;
-            fs::write(&path, &bytes).await?;
-            Ok(path)
+            #[cfg(target_arch = "wasm32")]
+            return browser_download(&bytes, &suggested_name);
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                let dir = downloads_dir();
+                fs::create_dir_all(&dir).await?;
+                let path = unique_path(&dir, &suggested_name).await;
+                fs::write(&path, &bytes).await?;
+                Ok(path)
+            }
         })
     }
 
@@ -181,6 +191,7 @@ impl Session {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn downloads_dir() -> PathBuf {
     if let Some(dir) = std::env::var_os(DOWNLOAD_DIR_ENV) {
         return PathBuf::from(dir);
@@ -193,6 +204,7 @@ fn downloads_dir() -> PathBuf {
 /// `dir/suggested_name`, or `dir/<stem> (1).<ext>`, `(2)`, ... if that name
 /// is already taken. Strips any path components from `suggested_name` so a
 /// crafted file name cannot escape `dir`.
+#[cfg(not(target_arch = "wasm32"))]
 async fn unique_path(dir: &Path, suggested_name: &str) -> PathBuf {
     let safe_name = Path::new(suggested_name)
         .file_name()
@@ -218,6 +230,29 @@ async fn unique_path(dir: &Path, suggested_name: &str) -> PathBuf {
         attempt += 1;
     }
     candidate
+}
+
+/// A browser saves a file the way it saves any download.
+#[cfg(target_arch = "wasm32")]
+fn browser_download(bytes: &[u8], name: &str) -> crate::Result<PathBuf> {
+    use wasm_bindgen::JsCast;
+    let fail = |what: &str| crate::Error::Io(std::io::Error::other(what.to_owned()));
+    let parts = js_sys::Array::of1(&js_sys::Uint8Array::from(bytes));
+    let blob = web_sys::Blob::new_with_u8_array_sequence(&parts).map_err(|_| fail("blob"))?;
+    let url = web_sys::Url::create_object_url_with_blob(&blob).map_err(|_| fail("blob url"))?;
+    let document = web_sys::window()
+        .and_then(|w| w.document())
+        .ok_or_else(|| fail("no document"))?;
+    let link: web_sys::HtmlAnchorElement = document
+        .create_element("a")
+        .map_err(|_| fail("link"))?
+        .dyn_into()
+        .map_err(|_| fail("link"))?;
+    link.set_href(&url);
+    link.set_download(name);
+    link.click();
+    let _ = web_sys::Url::revoke_object_url(&url);
+    Ok(PathBuf::from(name))
 }
 
 #[cfg(test)]
@@ -264,8 +299,8 @@ mod tests {
     }
 
     fn uuid() -> u128 {
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
+        crate::rt::SystemTime::now()
+            .duration_since(crate::rt::UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or_default()
     }

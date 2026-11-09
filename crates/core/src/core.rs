@@ -4,9 +4,13 @@ use std::{
     sync::Arc,
 };
 
+#[cfg(not(target_arch = "wasm32"))]
 use tokio::runtime::Runtime;
 
-use crate::{CoreFuture, Result, SessionStoreKind};
+use crate::{
+    CoreFuture, Result, SessionStoreKind,
+    rt::{self, MaybeSend},
+};
 
 /// Operations slower than this are logged at warn level with their call site.
 const SLOW_OP: std::time::Duration = std::time::Duration::from_millis(750);
@@ -19,6 +23,8 @@ pub struct Core {
 
 struct Inner {
     /// `Option` only so `Drop` can take it and shut it down without blocking.
+    /// A browser has no runtime of its own: the page's event loop runs it all.
+    #[cfg(not(target_arch = "wasm32"))]
     runtime: Option<Runtime>,
     data_dir: PathBuf,
     /// Where session credentials go; `None` decides at runtime (see
@@ -46,11 +52,12 @@ impl Core {
         session_store_kind: Option<SessionStoreKind>,
     ) -> Result<Self> {
         let data_dir = data_dir.into();
-        std::fs::create_dir_all(&data_dir)?;
+        crate::fs::create_dir_all(&data_dir)?;
 
         // A few threads, not one per CPU core (and as many again for blocking
         // work): each costs memory, and the allocator keeps a pool per busy
         // thread. A chat client's work is mostly waiting on the network.
+        #[cfg(not(target_arch = "wasm32"))]
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(4)
             .max_blocking_threads(16)
@@ -60,6 +67,7 @@ impl Core {
 
         Ok(Self {
             inner: Arc::new(Inner {
+                #[cfg(not(target_arch = "wasm32"))]
                 runtime: Some(runtime),
                 data_dir,
                 session_store_kind,
@@ -82,8 +90,8 @@ impl Core {
     #[track_caller]
     pub(crate) fn run<T, F>(&self, fut: F) -> CoreFuture<T>
     where
-        T: Send + 'static,
-        F: Future<Output = Result<T>> + Send + 'static,
+        T: MaybeSend + 'static,
+        F: Future<Output = Result<T>> + MaybeSend + 'static,
     {
         // Named after the call site so slow operations are easy to attribute.
         let site = std::panic::Location::caller();
@@ -92,9 +100,9 @@ impl Core {
             site.file().rsplit('/').next().unwrap_or(site.file()),
             site.line()
         );
-        let join = self.runtime().spawn(fut);
-        Box::pin(async move {
-            let started = std::time::Instant::now();
+        let join = self.spawn(fut);
+        rt::boxed(async move {
+            let started = rt::Instant::now();
             let result = join.await?;
             let elapsed = started.elapsed();
             if elapsed > SLOW_OP {
@@ -107,7 +115,8 @@ impl Core {
     }
 
     /// Fire-and-forget a task on the core runtime.
-    pub(crate) fn spawn<F>(&self, fut: F) -> tokio::task::JoinHandle<F::Output>
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn spawn<F>(&self, fut: F) -> rt::JoinHandle<F::Output>
     where
         F: Future + Send + 'static,
         F::Output: Send + 'static,
@@ -115,6 +124,17 @@ impl Core {
         self.runtime().spawn(fut)
     }
 
+    /// Fire-and-forget a task on the page's event loop.
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn spawn<F>(&self, fut: F) -> rt::JoinHandle<F::Output>
+    where
+        F: Future + 'static,
+        F::Output: 'static,
+    {
+        rt::spawn(fut)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     fn runtime(&self) -> &Runtime {
         self.inner
             .runtime
@@ -123,6 +143,7 @@ impl Core {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl Drop for Inner {
     fn drop(&mut self) {
         // The last `Core` may be dropped from inside another runtime (Dioxus

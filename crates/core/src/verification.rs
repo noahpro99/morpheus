@@ -3,6 +3,7 @@ use std::{
     sync::{Arc, Mutex as StdMutex, atomic::Ordering},
 };
 
+use crate::rt::JoinHandle;
 use futures_util::{StreamExt, pin_mut};
 use matrix_sdk::{
     Client,
@@ -20,7 +21,7 @@ use matrix_sdk::{
         },
     },
 };
-use tokio::{sync::mpsc, task::JoinHandle};
+use tokio::sync::mpsc;
 use tracing::{debug, warn};
 
 use crate::{Core, CoreFuture, Error, OwnedDeviceId, Session};
@@ -202,7 +203,7 @@ impl VerificationActions {
             // reached this one: give that a moment to arrive.
             let changes = request.changes();
             pin_mut!(changes);
-            let _ = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            let _ = crate::rt::timeout(std::time::Duration::from_secs(10), async {
                 while !request.is_ready() && changes.next().await.is_some() {}
             })
             .await;
@@ -348,7 +349,7 @@ async fn drive_request(
                         *slot = Some(qr.clone());
                     }
                     let tx = tx.clone();
-                    qr_flow = Some(AbortOnDrop(tokio::spawn(async move {
+                    qr_flow = Some(AbortOnDrop(crate::rt::spawn(async move {
                         drive_qr(qr, &tx).await;
                     })));
                     continue;

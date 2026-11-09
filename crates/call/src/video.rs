@@ -4,7 +4,7 @@
 //! ([`latest_frame`]) and asks again when it has drawn it. A web view draws
 //! a JPEG with no help, on every platform.
 //!
-//! In [`AudioMode::Tone`](crate::AudioMode::Tone) the camera and the screen
+//! In [`AudioMode::Tone`](crate::imp::AudioMode::Tone) the camera and the screen
 //! are test patterns ([`CAMERA_PATTERN`], [`SCREEN_PATTERN`]).
 
 use std::{

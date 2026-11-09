@@ -53,7 +53,7 @@ pub fn SearchPanel(room_id: OwnedRoomId) -> Element {
                     let stamp = *typed.peek() + 1;
                     typed.set(stamp);
                     spawn(async move {
-                        tokio::time::sleep(SEARCH_DEBOUNCE).await;
+                        morpheus_core::rt::sleep(SEARCH_DEBOUNCE).await;
                         if *typed.peek() == stamp {
                             settled.set(value);
                         }

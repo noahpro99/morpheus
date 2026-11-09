@@ -22,6 +22,25 @@ pub fn Login(restore_error: Option<String>) -> Element {
     let mut password = use_signal(String::new);
     let mut error = use_signal(|| restore_error);
     let mut busy = use_signal(|| None::<&'static str>);
+    // Back from a single sign-on (a browser goes to the server's page and
+    // returns with a token): finish signing in.
+    use_hook({
+        let core = core.clone();
+        let returned = config.sso_return.clone();
+        move || {
+            let Some((server, token)) = returned else {
+                return;
+            };
+            busy.set(Some("Signing in…"));
+            spawn(async move {
+                match core.login_with_token(server, token).await {
+                    Ok(active) => session.set(Some(active)),
+                    Err(err) => error.set(Some(err.to_string())),
+                }
+                busy.set(None);
+            });
+        }
+    });
     // An account already on this device (added another from its menu).
     let accounts = use_resource({
         let core = core.clone();
@@ -145,7 +164,7 @@ pub fn Login(restore_error: Option<String>) -> Element {
                             let stamp = *typed.peek() + 1;
                             typed.set(stamp);
                             spawn(async move {
-                                tokio::time::sleep(std::time::Duration::from_millis(PROBE_DEBOUNCE_MS)).await;
+                                morpheus_core::rt::sleep(std::time::Duration::from_millis(PROBE_DEBOUNCE_MS)).await;
                                 if *typed.peek() == stamp && *probe_server.peek() != value {
                                     probe_server.set(value);
                                 }
