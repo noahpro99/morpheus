@@ -158,6 +158,7 @@ timeline → send.
 ## Backlog
 - A video player for video messages: play inline in the timeline (poster frame, play/pause, seek, volume, fullscreen), as Discord does, instead of downloading the file.
 - Reactions: the hover bar's fourth quick reaction becomes a "more" icon that opens a full emoji picker with search (categories, recents, skin tones).
+- A soundboard, as Discord's: short clips anyone in a call can play to everyone; people upload their own clips, managed in Settings → Voice & Video → Soundboard (name, emoji, volume; per-server sets later).
 
 ## Hosting: morpheuschat.org (idea, not scheduled)
 - The client stays open source. Paid hosting on `morpheuschat.org` homeservers
