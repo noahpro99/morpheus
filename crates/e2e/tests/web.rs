@@ -117,3 +117,63 @@ async fn signing_in_and_chatting_work_and_a_reload_stays_signed_in() {
         .await
         .expect("still signed in after a reload");
 }
+
+/// The web bar: the desktop link in the middle, Help and Inbox at the right
+/// (and they work), nothing else.
+#[tokio::test]
+async fn the_web_bar_centres_the_desktop_link_with_help_and_inbox_at_the_right() {
+    let Some(hs) = homeserver() else { return };
+    let mut app = App::launch(&hs).await.expect("launch the web app");
+    sign_in(&mut app, "alice").await;
+    let layout = app
+        .eval(
+            "const a = document.querySelector('.get-desktop').getBoundingClientRect(); \
+             const centred = Math.abs(a.left + a.width / 2 - innerWidth / 2) < 4; \
+             const at = sel => { const el = document.querySelector(sel); if (!el) return null; const r = el.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, left: r.left, right: r.right }; }; \
+             const help = at('.web-actions .help-button'), inbox = at('.web-actions .inbox-button'); \
+             const bar = document.querySelector('.web-bar').getBoundingClientRect(); \
+             const inBar = r => !!r && r.top >= bar.top && r.bottom <= bar.bottom + 1; \
+             return { centred, help: inBar(help) && help.left > innerWidth * 0.75, inbox: inBar(inbox) && inbox.left > innerWidth * 0.75, \
+               others: document.querySelectorAll('.web-actions button').length };",
+        )
+        .await
+        .expect("layout");
+    assert_eq!(
+        layout,
+        serde_json::json!({ "centred": true, "help": true, "inbox": true, "others": 2 }),
+        "the web bar's layout"
+    );
+    app.click(".web-actions .inbox-button")
+        .await
+        .expect("inbox");
+    app.wait_for(".inbox-panel", DEFAULT_WAIT)
+        .await
+        .expect("the inbox opens");
+    app.press("body", "Escape").await.expect("close");
+    app.click(".web-actions .help-button").await.expect("help");
+    app.wait_for(".help-dialog", DEFAULT_WAIT)
+        .await
+        .expect("help opens");
+}
+
+/// Scroll bars in the web app are thin and dark, as the desktop's are, not
+/// the browser's grey ones.
+#[tokio::test]
+async fn web_scroll_bars_are_thin_and_dark() {
+    let Some(hs) = homeserver() else { return };
+    let mut app = App::launch(&hs).await.expect("launch the web app");
+    sign_in(&mut app, "alice").await;
+    app.open_room("general").await.expect("open general");
+    let style = app
+        .eval(
+            "return ['.timeline', '.room-list', '.members'].map(sel => document.querySelector(sel)).filter(Boolean).map(el => { const s = getComputedStyle(el); return [s.scrollbarWidth, s.scrollbarColor]; });",
+        )
+        .await
+        .expect("style");
+    let style = style.as_array().expect("array").clone();
+    assert!(!style.is_empty(), "scroll areas found");
+    for area in style {
+        assert_eq!(area[0], "thin", "thin: {area}");
+        assert_ne!(area[1], "auto", "dark, not the browser's: {area}");
+    }
+}

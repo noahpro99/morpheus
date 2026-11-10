@@ -64,7 +64,6 @@ pub fn TitleBar() -> Element {
     let mut selected = use_context::<Selected>();
     let mut scope = use_context::<SelectedSpace>();
     let mut nav = use_context::<NavHistory>();
-    let mut panel = use_context::<OpenTopPanel>();
     let controls = use_hook(try_consume_context::<WindowControls>);
 
     let title = match scope() {
@@ -78,15 +77,6 @@ pub fn TitleBar() -> Element {
             .map(|r| r.name.clone())
             .unwrap_or_else(|| "Space".into()),
     };
-    let unread = rooms
-        .read()
-        .iter()
-        .filter(|r| {
-            !r.is_space
-                && !r.invited
-                && (r.unread_messages > 0 || r.highlight_count > 0 || r.marked_unread)
-        })
-        .count();
     // For tests and debugging: the visited rooms by name.
     let history_names = nav()
         .entries
@@ -170,23 +160,7 @@ pub fn TitleBar() -> Element {
             }
             div { class: "titlebar-title", Logo { size: 16, class: "titlebar-logo" } "{title}" }
             div { class: "titlebar-actions",
-                button {
-                    class: "ghost titlebar-button help-button",
-                    title: "Help (Ctrl+/)",
-                    onmousedown: move |e| e.stop_propagation(),
-                    onclick: move |_| panel.set(if panel() == TopPanel::Help { TopPanel::None } else { TopPanel::Help }),
-                    Icon { glyph: CIRCLE_HELP, size: 16 }
-                }
-                button {
-                    class: "ghost titlebar-button inbox-button",
-                    title: "Inbox (Ctrl+I)",
-                    onmousedown: move |e| e.stop_propagation(),
-                    onclick: move |_| panel.set(if panel() == TopPanel::Inbox { TopPanel::None } else { TopPanel::Inbox }),
-                    Icon { glyph: INBOX, size: 16 }
-                    if unread > 0 {
-                        span { class: "rail-badge inbox-badge", "{unread}" }
-                    }
-                }
+                TopActions {}
                 if let Some(controls) = controls.clone() {
                     div { class: "window-controls", onmousedown: move |e| e.stop_propagation(),
                         button { class: "ghost", title: "Minimize", onclick: { let c = controls.clone(); move |_| (c.minimize)() }, Icon { glyph: MINUS, size: 14 } }
@@ -472,6 +446,42 @@ pub fn WindowBar() -> Element {
                     button { class: "ghost", title: "Maximize", onclick: { let c = controls.clone(); move |_| (c.toggle_maximize)() }, Icon { glyph: SQUARE, size: 13 } }
                     button { class: "ghost close", title: "Close", onclick: move |_| (controls.close)(), Icon { glyph: X, size: 14 } }
                 }
+            }
+        }
+    }
+}
+
+/// Help and the inbox: the title bar's right end on a desktop, the web
+/// bar's in a browser.
+#[component]
+pub fn TopActions() -> Element {
+    let rooms = use_context::<Rooms>();
+    let mut panel = use_context::<OpenTopPanel>();
+    let unread = rooms
+        .read()
+        .iter()
+        .filter(|r| {
+            !r.is_space
+                && !r.invited
+                && (r.unread_messages > 0 || r.highlight_count > 0 || r.marked_unread)
+        })
+        .count();
+    rsx! {
+        button {
+            class: "ghost titlebar-button help-button",
+            title: "Help (Ctrl+/)",
+            onmousedown: move |e| e.stop_propagation(),
+            onclick: move |_| panel.set(if panel() == TopPanel::Help { TopPanel::None } else { TopPanel::Help }),
+            Icon { glyph: CIRCLE_HELP, size: 16 }
+        }
+        button {
+            class: "ghost titlebar-button inbox-button",
+            title: "Inbox (Ctrl+I)",
+            onmousedown: move |e| e.stop_propagation(),
+            onclick: move |_| panel.set(if panel() == TopPanel::Inbox { TopPanel::None } else { TopPanel::Inbox }),
+            Icon { glyph: INBOX, size: 16 }
+            if unread > 0 {
+                span { class: "rail-badge inbox-badge", "{unread}" }
             }
         }
     }

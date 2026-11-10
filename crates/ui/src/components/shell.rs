@@ -1090,6 +1090,10 @@ pub fn Shell(session: Session) -> Element {
             if has_window {
                 TitleBar {}
             }
+            // The web app's bar (app.rs) has Help and the Inbox at its right.
+            if crate::platform::IS_WEB {
+                div { class: "web-actions", super::titlebar::TopActions {} }
+            }
             div { class: "drop-hint", "Drop to upload" }
             ToastLayer {}
             super::keys::BackupPrompt {}
