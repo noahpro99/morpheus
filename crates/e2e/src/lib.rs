@@ -640,6 +640,21 @@ impl App {
     /// browser): the app is started again with it, on this app's data, and
     /// hands it to this running app. Returns once that second start exits.
     pub fn open_link_from_outside(&self, link: &str) -> Result<()> {
+        // A phone: the link as a VIEW intent, as tapping it elsewhere does.
+        if self.android {
+            adb(&[
+                "shell",
+                "am",
+                "start",
+                "-a",
+                "android.intent.action.VIEW",
+                "-d",
+                &format!("'{link}'"),
+                ANDROID_PACKAGE,
+            ])
+            .ok_or_else(|| anyhow::anyhow!("adb could not open {link}"))?;
+            return Ok(());
+        }
         let status = std::process::Command::new(binary_path()?)
             .arg(link)
             .env("MORPHEUS_DATA_DIR", &self.data_dir)

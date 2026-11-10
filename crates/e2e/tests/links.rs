@@ -237,10 +237,6 @@ async fn links_from_outside_open_in_the_running_app() {
         return;
     };
     let mut app = App::launch(&hs).await.expect("launch app");
-    if app.is_phone() {
-        eprintln!("desktop only (a second start hands the link over); skipping");
-        return;
-    }
     app.wait_for("form.login", DEFAULT_WAIT)
         .await
         .expect("login form");

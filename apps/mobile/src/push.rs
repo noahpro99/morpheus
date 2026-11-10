@@ -137,6 +137,8 @@ const OPEN_ROOM_POLL: Duration = Duration::from_millis(400);
 /// `open_room`; hand it to the shell, which shows that room.
 pub fn watch_open_room(data_dir: PathBuf, commands: morpheus_ui::AppCommands) {
     let path = data_dir.join("open_room");
+    // A Matrix link opened elsewhere (`OpenLinkActivity`).
+    let link = data_dir.join("open_link");
     // Hang up, from the phone's ongoing call notification (`CallService`).
     let hang_up = data_dir.join("hang_up_call");
     let spawned = std::thread::Builder::new()
@@ -146,6 +148,10 @@ pub fn watch_open_room(data_dir: PathBuf, commands: morpheus_ui::AppCommands) {
                 if let Some(room) = read(&path) {
                     let _ = std::fs::remove_file(&path);
                     commands.send(morpheus_ui::AppCommand::OpenRoom(room));
+                }
+                if let Some(url) = read(&link) {
+                    let _ = std::fs::remove_file(&link);
+                    morpheus_ui::external_links::open(url);
                 }
                 if hang_up.exists() {
                     let _ = std::fs::remove_file(&hang_up);

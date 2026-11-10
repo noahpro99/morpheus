@@ -7,6 +7,22 @@
             </intent-filter>
         </service>
         <activity android:name="dev.morpheus.mobile.OpenRoomActivity" android:exported="false" android:theme="@android:style/Theme.NoDisplay" android:excludeFromRecents="true" android:taskAffinity="" />
+        <!-- Matrix links opened elsewhere: matrix: links, and matrix.to (not
+             verified, the domain is not ours: Morpheus is offered for them). -->
+        <activity android:name="dev.morpheus.mobile.OpenLinkActivity" android:exported="true" android:theme="@android:style/Theme.NoDisplay" android:excludeFromRecents="true" android:taskAffinity="">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="matrix" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="matrix.to" />
+            </intent-filter>
+        </activity>
         <service android:name="dev.morpheus.mobile.CallService" android:exported="false" android:foregroundServiceType="microphone" />
         <activity android:name="dev.morpheus.mobile.PickFileActivity" android:exported="false" android:theme="@android:style/Theme.Translucent.NoTitleBar" android:excludeFromRecents="true" />
         <provider android:name="dev.morpheus.mobile.PushStartup" android:authorities="dev.morpheus.mobile.pushstartup" android:exported="false" />
