@@ -2675,7 +2675,7 @@ body.rail-dragging, body.rail-dragging * { cursor: grabbing !important; }
 
 /* A server's voice channel opened: the call fills the page (no resize), its
    text chat a column beside it when opened from the header's chat button. */
-.voice-room { flex: 1; min-height: 0; display: flex; }
+.voice-channel { flex: 1; min-height: 0; display: flex; position: relative; }
 .call-stage.voice-page { flex: 1; height: auto; max-height: none; min-height: 0; border-bottom: none; padding: 16px; }
 .voice-chat {
   width: 380px;
@@ -2699,8 +2699,24 @@ body.rail-dragging, body.rail-dragging * { cursor: grabbing !important; }
 }
 .voice-page-join h2 { color: var(--text); }
 .voice-page-join .join-voice { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border-radius: var(--radius-sm); background: var(--green, #23a559); color: #fff; font-weight: 600; }
-.chat-header .voice-chat-toggle { width: 32px; height: 32px; padding: 0; display: grid; place-items: center; border-radius: var(--radius-sm); }
-.chat-header .voice-chat-toggle.active { background: var(--bg-selected); color: var(--text); }
+/* The chat button, in the call's top right corner (the page has no top bar);
+   with the chat open, at the chat's corner. */
+.voice-chat-toggle {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 3;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text);
+}
+.voice-chat-toggle:hover { background: rgba(0, 0, 0, 0.55); }
+.voice-chat-toggle.active { background: var(--bg-selected); }
 /* Phones: the call bar above the message box is a full-size target. */
 .shell.narrow .call-bar { min-height: 44px; }
 
@@ -2761,3 +2777,7 @@ body.rail-dragging, body.rail-dragging * { cursor: grabbing !important; }
   scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
 }
 .web-root .rail { scrollbar-width: none; }
+/* A voice channel's chat: Jump to present centred over that column, not
+   the window (and no member list to leave room for). */
+.voice-chat { position: relative; }
+.shell .voice-channel .voice-chat .jump-to-bottom { left: 50%; }
