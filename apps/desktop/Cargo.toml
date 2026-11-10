@@ -10,6 +10,8 @@ license.workspace = true
 e2e = ["morpheus-ui/e2e"]
 
 [dependencies]
+# The ringtone, heard with the window in the tray (its page is suspended).
+rodio = { version = "0.23", default-features = false, features = ["playback"] }
 dioxus = { workspace = true, features = ["desktop"] }
 morpheus-ui = { workspace = true }
 morpheus-core = { workspace = true }

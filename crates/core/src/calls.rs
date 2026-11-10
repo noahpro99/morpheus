@@ -483,6 +483,14 @@ pub struct CallMember {
 }
 
 impl Session {
+    /// Who is in `room_id`'s call now (memberships past their expiry left
+    /// out), as the room list shows it.
+    pub fn call_participants(&self, room_id: OwnedRoomId) -> CoreFuture<Vec<OwnedUserId>> {
+        let session = self.clone();
+        self.core
+            .run(async move { Ok(call_participants(&session.room(&room_id)?)) })
+    }
+
     /// The devices currently in `room_id`'s call.
     pub fn call_members(&self, room_id: OwnedRoomId) -> CoreFuture<Vec<CallMember>> {
         let session = self.clone();
