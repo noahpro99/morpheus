@@ -1043,7 +1043,7 @@ pub fn Shell(session: Session) -> Element {
         current().filter(|_| !friends_open().0),
         active_thread(),
         search_open().0,
-        members_open().0,
+        members_open().0 && !current().is_some_and(|room| room.is_voice && !room.is_dm),
     ) {
         (Some(_), Some(_), _, _) => SideColumn::Thread,
         (Some(_), None, true, _) => SideColumn::Search,
@@ -1055,7 +1055,7 @@ pub fn Shell(session: Session) -> Element {
     let parked_members = narrow().0
         && chat_open().0
         && side_column == SideColumn::None
-        && current().is_some_and(|room| !room.invited);
+        && current().is_some_and(|room| !room.invited && !(room.is_voice && !room.is_dm));
     let rendered_side = if parked_members {
         SideColumn::Members
     } else {
@@ -1229,7 +1229,8 @@ fn ChatRoom(room: RoomSummary) -> Element {
     // A server's voice channel (not a phone, whose call has its own screen)
     // opens as a call page; its text chat shows from the header's button.
     let narrow_now = use_context::<NarrowWindow>();
-    let voice_page = room.is_voice && !room.is_dm && !narrow_now().0;
+    let voice_channel = room.is_voice && !room.is_dm;
+    let voice_page = voice_channel && !narrow_now().0;
     let mut voice_chat = use_signal(|| false);
     let session = use_context::<Session>();
     // Kept for the header buttons; `session` goes into the typing watcher.
@@ -1301,16 +1302,6 @@ fn ChatRoom(room: RoomSummary) -> Element {
                     Icon { glyph: crate::icons::CHEVRON_LEFT, size: 18 }
                 }
             }
-            // A voice channel's page: its text chat, opened beside the call.
-            if voice_page {
-                button {
-                    class: "ghost voice-chat-toggle",
-                    class: if voice_chat() { "active" },
-                    title: if voice_chat() { "Hide the chat" } else { "Show the chat" },
-                    onclick: move |_| voice_chat.toggle(),
-                    Icon { glyph: crate::icons::MESSAGES_SQUARE, size: 18 }
-                }
-            }
             if room.is_dm {
                 Avatar { media: room.avatar.clone(), fallback: room.name.clone(), size: 24 }
             } else {
@@ -1345,13 +1336,16 @@ fn ChatRoom(room: RoomSummary) -> Element {
                 },
                 Icon { glyph: crate::icons::ELLIPSIS, size: 16 }
             }
-            button {
-                class: "ghost member-toggle",
+            // A voice channel has no member list: the call shows who is there.
+            if !voice_channel {
+                button {
+                    class: "ghost member-toggle",
                 class: if members_open().0 { "active" },
                 title: "Member list (Ctrl+U)",
                 onclick: move |_| members_open.with_mut(|shown| shown.0 = !shown.0),
                 Icon { glyph: crate::icons::USERS, size: 16 }
                 "{room.member_count}"
+                }
             }
             // Calls belong to DMs and voice channels, as in Discord: a text
             // channel has none.
@@ -1400,6 +1394,16 @@ fn ChatRoom(room: RoomSummary) -> Element {
                 onclick: move |_| search_open.with_mut(|s| s.0 = !s.0),
                 span { class: "search-toggle-label", "Search" }
                 Icon { glyph: crate::icons::SEARCH, size: 16 }
+            }
+            // A voice channel's page: its text chat, opened beside the call.
+            if voice_page {
+                button {
+                    class: "ghost voice-chat-toggle",
+                    class: if voice_chat() { "active" },
+                    title: if voice_chat() { "Hide the chat" } else { "Show the chat" },
+                    onclick: move |_| voice_chat.toggle(),
+                    Icon { glyph: crate::icons::MESSAGES_SQUARE, size: 18 }
+                }
             }
         }
         if voice_page {

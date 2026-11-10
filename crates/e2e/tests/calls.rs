@@ -2315,14 +2315,33 @@ async fn a_voice_channel_joins_in_place_and_opens_as_a_call_page() {
         0,
         "no resize handle, timeline or message box"
     );
-    let left = alice
-        .eval("const b = document.querySelector('.chat-header .voice-chat-toggle'), h = document.querySelector('.chat-header h2'); return !!b && b.getBoundingClientRect().right <= h.getBoundingClientRect().left;")
+    let right = alice
+        .eval("const b = document.querySelector('.chat-header .voice-chat-toggle'); if (!b) return false; const r = b.getBoundingClientRect(); return [...document.querySelectorAll('.chat-header button')].every(o => o === b || o.getBoundingClientRect().right <= r.left + 1);")
         .await
         .expect("toggle");
     assert_eq!(
-        left,
+        right,
         serde_json::json!(true),
-        "a chat button at the top left"
+        "the chat button at the top right"
+    );
+    // A voice channel has no member list: the call shows who is there.
+    assert_eq!(
+        alice
+            .count(".members, .chat-header .member-toggle")
+            .await
+            .expect("count"),
+        0,
+        "no member list or its button"
+    );
+    alice
+        .key_combo("body", "u", true, false, false)
+        .await
+        .expect("Ctrl+U");
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert_eq!(
+        alice.count(".members").await.expect("count"),
+        0,
+        "Ctrl+U opens no member list here"
     );
     alice
         .click(".chat-header .voice-chat-toggle")
