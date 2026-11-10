@@ -107,13 +107,15 @@
             desktopName = "Morpheus";
             genericName = "Matrix client";
             comment = "Chat, voice and video on Matrix";
-            exec = "morpheus";
+            exec = "morpheus %u";
             icon = "morpheus";
             categories = [
               "Network"
               "InstantMessaging"
               "Chat"
             ];
+            # matrix: links open in Morpheus (passed to the running one).
+            mimeTypes = [ "x-scheme-handler/matrix" ];
           };
           morpheus = rustPlatform.buildRustPackage {
             pname = "morpheus";

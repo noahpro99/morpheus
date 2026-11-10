@@ -14,6 +14,7 @@ mod e2e;
 #[cfg(all(feature = "web-e2e", not(feature = "e2e")))]
 #[path = "e2e_web.rs"]
 mod e2e;
+pub mod external_links;
 #[cfg(not(any(feature = "e2e", feature = "web-e2e")))]
 mod e2e {
     use dioxus::prelude::*;
