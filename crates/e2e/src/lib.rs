@@ -636,6 +636,24 @@ impl App {
         &self.download_dir
     }
 
+    /// Open `link` as the desktop does (a `matrix:` link, or matrix.to from a
+    /// browser): the app is started again with it, on this app's data, and
+    /// hands it to this running app. Returns once that second start exits.
+    pub fn open_link_from_outside(&self, link: &str) -> Result<()> {
+        let status = std::process::Command::new(binary_path()?)
+            .arg(link)
+            .env("MORPHEUS_DATA_DIR", &self.data_dir)
+            .env("MORPHEUS_HOMESERVER", &self.homeserver)
+            .env("MORPHEUS_SESSION_STORE", "file")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()?;
+        if !status.success() {
+            bail!("the second start exited with {status}");
+        }
+        Ok(())
+    }
+
     /// Wait until some element matching `selector` has exactly this trimmed text.
     pub async fn wait_for_exact_text(
         &mut self,

@@ -999,6 +999,24 @@ pub fn Shell(session: Session) -> Element {
             _ => {}
         }
     };
+    // Links from outside the app (crate::external_links), opened as they come.
+    use_future({
+        let session = use_context::<Session>();
+        move || {
+            let session = session.clone();
+            async move {
+                loop {
+                    while let Some(url) = crate::external_links::take() {
+                        match morpheus_core::parse_matrix_link(&url) {
+                            Some(link) => open_matrix_link(link, session.clone()),
+                            None => tracing::warn!(%url, "not a Matrix link; ignored"),
+                        }
+                    }
+                    morpheus_core::rt::sleep(std::time::Duration::from_millis(250)).await;
+                }
+            }
+        }
+    });
     // Dropped and pasted files arrive on the same channel, for the composer.
     let link_session = use_context::<Session>();
     let mut drops: FileDrops = use_context_provider(|| Signal::new(Drops::default()));

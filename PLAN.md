@@ -157,7 +157,7 @@ timeline → send.
 
 ## Backlog
 - A share target on phones: Morpheus in Android's share sheet (an `ACTION_SEND`/`ACTION_SEND_MULTIPLE` intent filter for text, links, pictures and files) and iOS's (a share extension), opening a room picker (recent rooms and DMs first, with search) and sending what was shared, with a caption for files; Android's direct-share shortcuts for recent conversations later.
-- Opening matrix.to links: `https://matrix.to/#/…` links (rooms, aliases, users, events) open in Morpheus instead of the browser, clicked in a message or anywhere on the device (Android app links / an intent filter, iOS universal links, the desktop as a `matrix:` URI handler too): a joined room opens (at the event, for an event link), one not joined shows a preview with Join, a user opens their profile.
+- Opening Matrix links from outside, the rest: on Android, matrix.to and `matrix:` intent filters (matrix.to links show Morpheus in the chooser; the domain is not ours to verify); on iOS, the `matrix:` scheme; on Windows, registering the `matrix:` protocol (the link arrives as an argument, as on Linux, and a second start must hand it to the first: single-instance is Unix-only so far); on macOS, the URL type in Info.plist and the open-URL event. Done: clicked links (in messages), and on Linux `matrix:` links and matrix.to arguments, handed to the running app.
 - A soundboard, as Discord's: short clips anyone in a call can play to everyone; people upload their own clips, managed in Settings → Voice & Video → Soundboard (name, emoji, volume; per-server sets later).
 
 ## Hosting: morpheuschat.org (idea, not scheduled)

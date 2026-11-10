@@ -106,20 +106,26 @@ fn main() {
         let data_dir = config.data_dir.clone();
         move |session| notifier(session, focus.clone(), open_room.clone(), data_dir.clone())
     }));
+    // A Matrix link to open (a `matrix:` link the desktop hands over, or
+    // matrix.to): for the Morpheus already running, or for this one.
+    let link = morpheus_ui::external_links::from_args(std::env::args().skip(1));
     // Started by an update: the old version is quitting; wait for it to let
     // go of this data rather than hand over to it.
     if std::env::var_os("MORPHEUS_UPDATED_FROM").is_some() {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
-        while !single_instance::claim(&config.data_dir) {
+        while !single_instance::claim(&config.data_dir, link.as_deref()) {
             if std::time::Instant::now() > deadline {
                 return;
             }
             std::thread::sleep(std::time::Duration::from_millis(200));
         }
         morpheus_core::clean_up_after_update();
-    } else if !single_instance::claim(&config.data_dir) {
+    } else if !single_instance::claim(&config.data_dir, link.as_deref()) {
         tracing::info!("Morpheus already runs on this data; showing its window instead");
         return;
+    }
+    if let Some(link) = link {
+        morpheus_ui::external_links::open(link);
     }
     tracing::info!(?config.data_dir, "starting morpheus desktop");
 
@@ -663,13 +669,18 @@ mod single_instance {
         dir.join(format!("morpheus-{:016x}-{SOCKET}", hasher.finish()))
     }
 
-    pub fn claim(data_dir: &Path) -> bool {
+    /// `link`, if any, is handed to the one running, to open.
+    pub fn claim(data_dir: &Path, link: Option<&str>) -> bool {
         #[cfg(unix)]
         {
             use std::io::Write;
             let path = socket_path(data_dir);
             if let Ok(mut running) = UnixStream::connect(&path) {
-                let _ = running.write_all(b"show\n");
+                let message = match link {
+                    Some(link) => format!("open {link}\n"),
+                    None => "show\n".to_owned(),
+                };
+                let _ = running.write_all(message.as_bytes());
                 return false;
             }
             // Nobody answered: a leftover from a crash, or nothing yet.
@@ -682,16 +693,23 @@ mod single_instance {
             }
         }
         #[cfg(not(unix))]
-        let _ = data_dir;
+        let _ = (data_dir, link);
         true
     }
 
-    /// Call `show` for every later launch that asks.
+    /// Call `show` for every later launch that asks, and open the link it
+    /// brought, if any.
     pub fn on_show(show: impl Fn() + Send + 'static) {
         #[cfg(unix)]
         if let Some(listener) = LISTENER.get() {
             std::thread::spawn(move || {
-                for _ in listener.incoming().flatten() {
+                use std::io::BufRead;
+                for stream in listener.incoming().flatten() {
+                    let mut line = String::new();
+                    let _ = std::io::BufReader::new(stream).read_line(&mut line);
+                    if let Some(link) = line.trim().strip_prefix("open ") {
+                        morpheus_ui::external_links::open(link);
+                    }
                     show();
                 }
             });

@@ -226,3 +226,46 @@ async fn click_link(app: &mut App, link: &str) {
         .await
         .expect("click");
 }
+
+/// Links from outside the app (a `matrix:` link the desktop hands over, or a
+/// matrix.to link opened with Morpheus) open in the running app, which comes
+/// forward: a room by its alias, a person's profile.
+#[tokio::test]
+async fn links_from_outside_open_in_the_running_app() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch(&hs).await.expect("launch app");
+    if app.is_phone() {
+        eprintln!("desktop only (a second start hands the link over); skipping");
+        return;
+    }
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    app.type_into("form.login input[name=username]", "alice")
+        .await
+        .expect("username");
+    app.type_into("form.login input[name=password]", "alice-password")
+        .await
+        .expect("password");
+    app.submit("form.login").await.expect("submit");
+    app.wait_for(".room", DEFAULT_WAIT).await.expect("rooms");
+    app.open_room("general").await.expect("open general");
+    app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
+        .await
+        .expect("composer ready");
+
+    app.open_link_from_outside("https://matrix.to/#/%23random:localhost")
+        .expect("hand over a matrix.to link");
+    app.wait_for_text(".chat-header h2", "random", DEFAULT_WAIT)
+        .await
+        .expect("#random open");
+
+    app.open_link_from_outside("matrix:u/bob:localhost")
+        .expect("hand over a matrix: link");
+    app.wait_for_text(".profile-modal .profile-id", "@bob:localhost", DEFAULT_WAIT)
+        .await
+        .expect("bob's profile");
+}
