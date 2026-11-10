@@ -94,6 +94,7 @@
             gstreamer
             gst-plugins-base
             gst-plugins-good
+            gst-libav # H.264 and H.265 (videos in messages)
           ];
           # LiveKit's prebuilt libwebrtc (calls), which webrtc-sys would
           # download while building: the tag is webrtc-sys-build's WEBRTC_TAG.
@@ -228,6 +229,7 @@
                 gstreamer
                 gst-plugins-base
                 gst-plugins-good
+                gst-libav # H.264 and H.265 (videos in messages)
               ];
             MORPHEUS_HOMESERVER = "http://localhost:8008";
             # Calls: libwebrtc (webrtc-sys) is built against Chromium's libc++ and

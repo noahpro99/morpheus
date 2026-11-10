@@ -192,3 +192,41 @@ async fn dropped_and_pasted_files_upload() {
         .await
         .expect("pasted file in the timeline");
 }
+
+/// A video plays in the message, as in Discord: the play button swaps the
+/// thumbnail for a player (play/pause, seeking, volume and fullscreen are
+/// its controls), playing at once; nothing is downloaded.
+#[tokio::test]
+async fn videos_play_inline() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch(&hs).await.expect("launch app");
+    login_and_open(&mut app, "dev").await;
+    app.reveal_element(".video-card .play-button", DEFAULT_WAIT)
+        .await
+        .expect("the video");
+    app.click(".video-card .play-button").await.expect("play");
+    app.wait_for(".video-card video.video-player[controls]", DEFAULT_WAIT)
+        .await
+        .expect("a player in the message");
+    app.wait_for_js(
+        "const v = document.querySelector('.video-card video.video-player'); \
+         return !!v && v.src.startsWith('blob:') && (v.currentTime > 0 || v.ended);",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("it plays");
+    assert_eq!(
+        app.count(".video-card .play-button, .video-card .video-duration")
+            .await
+            .expect("count"),
+        0,
+        "the overlay gives way to the player"
+    );
+    let downloads = std::fs::read_dir(app.download_dir())
+        .map(|d| d.count())
+        .unwrap_or(0);
+    assert_eq!(downloads, 0, "nothing downloaded");
+}
