@@ -553,6 +553,8 @@ document.addEventListener('click', e => {
   // Short as it may be, the stage keeps its controls and a row of cards.
   const STAGE_MIN = 200;
   const fit = stage => {
+    // A focused card fills the stage by itself (CSS).
+    if (stage.classList.contains('focused')) return;
     const n = stage.children.length;
     if (!n) return;
     const css = getComputedStyle(stage);

@@ -407,6 +407,7 @@ pub fn Shell(session: Session) -> Element {
         use_context_provider(|| Signal::new(ProfileTarget::default()));
     let mut context_menu: ContextMenu = use_context_provider(|| Signal::new(MenuState::default()));
     use_context_provider(|| Signal::new(super::emoji_picker::PickerState::default()));
+    use_context_provider(|| Signal::new(super::call::CallFocus::default()));
     let mut editor: ProfileEditor = use_context_provider(|| Signal::new(Editor::None));
     let _mention: MentionRequest = use_context_provider(|| Signal::new(Mention::default()));
     let mut message_dialog: OpenMessageDialog =
@@ -757,6 +758,7 @@ pub fn Shell(session: Session) -> Element {
             nickname_target.set(super::nicknames::NicknameTarget(None));
         } else if switcher_open() {
             switcher_open.set(false);
+        } else if super::call::clear_call_focus() {
         } else {
             return false;
         }

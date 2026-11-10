@@ -2310,7 +2310,8 @@ h1, h2, h3, h4, .modal-title, .empty-title {
     background: var(--bg-members);
   }
   /* Everything in the chat under its top bar leaves the side card its column. */
-  .shell:not(.narrow):not(.no-side) .chat > :not(.chat-header) { margin-right: var(--members-w); }
+  /* (Not what covers the whole window from inside it, the image viewer.) */
+  .shell:not(.narrow):not(.no-side) .chat > :not(.chat-header):not(.overlay) { margin-right: var(--members-w); }
 }
 
 /* ---- Profile card: in a call, its controls on top and the card taller ------- */
@@ -2815,3 +2816,55 @@ body.rail-dragging, body.rail-dragging * { cursor: grabbing !important; }
 .emoji-cell { aspect-ratio: 1; padding: 0; font-size: 1.45rem; line-height: 1; background: none; border-radius: var(--radius-sm); }
 .emoji-cell:hover { background: var(--bg-hover); }
 .emoji-none { padding: 24px 8px; text-align: center; }
+
+/* A focused card in a call: large, filling the stage, with the others in a
+   strip of small cards under it. */
+.call-cards.focused, .call-tiles.focused {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  justify-content: stretch;
+  gap: 8px;
+}
+.focused > .call-focus-main { flex: 1; min-height: 0; display: flex; }
+.focused > .call-focus-main > * {
+  flex: 1;
+  width: auto !important;
+  height: auto !important;
+  max-width: none;
+  aspect-ratio: auto;
+}
+.focused > .call-strip { flex: none; display: flex; justify-content: center; gap: 8px; overflow-x: auto; scrollbar-width: none; }
+.focused > .call-strip > * {
+  flex: none;
+  width: 144px !important;
+  height: 81px !important;
+  aspect-ratio: auto;
+}
+.focused > .call-strip .avatar { width: 40px !important; height: 40px !important; }
+.focused > .call-strip .video-name { font-size: 0.72rem; }
+.call-tile, .video-tile { cursor: pointer; }
+/* Enlarge (Shrink when focused) at a card's top right: on a hover on a
+   desktop, after a tap on a phone. */
+.card-enlarge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  opacity: 0;
+  pointer-events: none;
+}
+.call-tile:hover .card-enlarge, .video-tile:hover .card-enlarge,
+.revealed .card-enlarge { opacity: 1; pointer-events: auto; }
+.shell.narrow .call-tile:not(.revealed):hover .card-enlarge,
+.shell.narrow .video-tile:not(.revealed):hover .card-enlarge { opacity: 0; pointer-events: none; }
+.card-enlarge:hover { background: rgba(0, 0, 0, 0.8); }
