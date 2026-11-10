@@ -157,7 +157,6 @@ timeline → send.
 
 ## Backlog
 - A video player for video messages: play inline in the timeline (poster frame, play/pause, seek, volume, fullscreen), as Discord does, instead of downloading the file.
-- Reactions: the hover bar's fourth quick reaction becomes a "more" icon that opens a full emoji picker with search (categories, recents, skin tones).
 - A share target on phones: Morpheus in Android's share sheet (an `ACTION_SEND`/`ACTION_SEND_MULTIPLE` intent filter for text, links, pictures and files) and iOS's (a share extension), opening a room picker (recent rooms and DMs first, with search) and sending what was shared, with a caption for files; Android's direct-share shortcuts for recent conversations later.
 - Opening matrix.to links: `https://matrix.to/#/…` links (rooms, aliases, users, events) open in Morpheus instead of the browser, clicked in a message or anywhere on the device (Android app links / an intent filter, iOS universal links, the desktop as a `matrix:` URI handler too): a joined room opens (at the event, for an event link), one not joined shows a preview with Join, a user opens their profile.
 - A soundboard, as Discord's: short clips anyone in a call can play to everyone; people upload their own clips, managed in Settings → Voice & Video → Soundboard (name, emoji, volume; per-server sets later).

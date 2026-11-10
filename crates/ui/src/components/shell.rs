@@ -406,6 +406,7 @@ pub fn Shell(session: Session) -> Element {
     let mut open_profile: OpenProfile =
         use_context_provider(|| Signal::new(ProfileTarget::default()));
     let mut context_menu: ContextMenu = use_context_provider(|| Signal::new(MenuState::default()));
+    use_context_provider(|| Signal::new(super::emoji_picker::PickerState::default()));
     let mut editor: ProfileEditor = use_context_provider(|| Signal::new(Editor::None));
     let _mention: MentionRequest = use_context_provider(|| Signal::new(Mention::default()));
     let mut message_dialog: OpenMessageDialog =
@@ -725,7 +726,8 @@ pub fn Shell(session: Session) -> Element {
     // listener (below) so it works whatever has focus.
     // Returns whether anything was open to close.
     let mut close_top_modal = move || -> bool {
-        if confirming.peek().is_some() {
+        if super::emoji_picker::close_emoji_picker() {
+        } else if confirming.peek().is_some() {
             confirming.set(None);
         } else if lightbox_open().0 {
             escapes.with_mut(|e| e.0 += 1);
@@ -1220,6 +1222,7 @@ pub fn Shell(session: Session) -> Element {
                 super::call::CallScreen {}
             }
             ContextMenuLayer {}
+            super::emoji_picker::EmojiPickerLayer {}
         }
     }
 }

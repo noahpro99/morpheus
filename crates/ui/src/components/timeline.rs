@@ -1075,7 +1075,7 @@ pub(crate) fn MessageRow(message: Message, show_header: bool) -> Element {
                 div { class: "actions",
                     for key in QUICK_REACTIONS {
                         button {
-                            class: "action",
+                            class: "action quick-reaction",
                             title: "React with {key}",
                             onclick: {
                                 let react = react.clone();
@@ -1083,6 +1083,30 @@ pub(crate) fn MessageRow(message: Message, show_header: bool) -> Element {
                             },
                             "{key}"
                         }
+                    }
+                    // Every other emoji: the full picker, beside this button.
+                    button {
+                        class: "action more-reactions",
+                        title: "Add reaction",
+                        onclick: {
+                            let id = message.id.clone();
+                            move |e: Event<MouseData>| {
+                                e.stop_propagation();
+                                let Some(active) = timeline() else { return };
+                                let at = e.client_coordinates();
+                                let id = id.clone();
+                                super::emoji_picker::open_emoji_picker(at.x, at.y, move |key| {
+                                    let (active, id) = (active.clone(), id.clone());
+                                    // Not tied to the picker, which closes as this starts.
+                                    dioxus::core::spawn_forever(async move {
+                                        if let Err(err) = active.toggle_reaction(id, key).await {
+                                            report("reaction", &err);
+                                        }
+                                    });
+                                });
+                            }
+                        },
+                        crate::icons::Icon { glyph: crate::icons::SMILE_PLUS }
                     }
                     if can_reply {
                         button { class: "action reply", title: "Reply", onclick: start_reply, crate::icons::Icon { glyph: crate::icons::REPLY } }

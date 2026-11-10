@@ -387,3 +387,145 @@ async fn the_right_clicked_message_stays_highlighted() {
     .await
     .expect("the highlight goes with the menu");
 }
+
+/// The hover bar's "more" button opens the full emoji picker: every emoji in
+/// categories with a tab for each, a search, skin tones, and recently used
+/// first. Picking one reacts with it and closes the picker.
+#[tokio::test]
+async fn the_hover_bar_opens_a_full_emoji_picker_to_react() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch(&hs).await.expect("launch app");
+    login_and_open(&mut app, "alice", "random").await;
+    let row = send_fresh(&mut app, "pick an emoji").await;
+
+    // Three quick reactions, then "more".
+    let bar = app
+        .eval(&format!(
+            "const row = {row}; return [row.querySelectorAll('.actions .action.quick-reaction').length, !!row.querySelector('.actions .action.more-reactions')];"
+        ))
+        .await
+        .expect("bar");
+    assert_eq!(
+        bar,
+        serde_json::json!([3, true]),
+        "three quick reactions and more"
+    );
+
+    let open = format!("{row}.querySelector('.actions .more-reactions').click(); return true;");
+    app.eval(&open).await.expect("more");
+    app.wait_for(".emoji-picker", DEFAULT_WAIT)
+        .await
+        .expect("the picker");
+    let shape = app
+        .eval(
+            "const p = document.querySelector('.emoji-picker'); \
+             return [document.activeElement === p.querySelector('input.emoji-search'), \
+               p.querySelectorAll('.emoji-tab').length >= 8, \
+               p.querySelectorAll('.emoji-cell').length > 1000];",
+        )
+        .await
+        .expect("shape");
+    assert_eq!(
+        shape,
+        serde_json::json!([true, true, true]),
+        "search focused, a tab per category, every emoji"
+    );
+    // A tab brings its category into view.
+    app.eval("[...document.querySelectorAll('.emoji-tab')].find(t => t.title === 'Travel & Places').click(); return true;")
+        .await
+        .expect("tab");
+    app.wait_for_js(
+        "const g = document.querySelector('.emoji-grid-scroll'), s = [...document.querySelectorAll('.emoji-section')].find(s => s.dataset.group === 'Travel & Places'); \
+         return !!s && Math.abs(s.getBoundingClientRect().top - g.getBoundingClientRect().top) < 8;",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("Travel & Places at the top");
+
+    // Search, and pick: a reaction, and the picker closes.
+    app.type_into(".emoji-picker input.emoji-search", "rocket")
+        .await
+        .expect("search");
+    app.wait_for_js(
+        "const cells = [...document.querySelectorAll('.emoji-picker .emoji-cell')]; return cells.length > 0 && cells.length < 10 && cells[0].textContent === '🚀';",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("the rocket found");
+    app.click(".emoji-picker .emoji-cell").await.expect("pick");
+    app.wait_for_js(
+        &format!("return !document.querySelector('.emoji-picker') && ({row}).querySelector('.reactions')?.textContent.includes('🚀');"),
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("reacted with 🚀, picker closed");
+
+    // Nothing found says so.
+    app.eval(&open).await.expect("more");
+    app.wait_for(".emoji-picker", DEFAULT_WAIT)
+        .await
+        .expect("picker");
+    app.type_into(".emoji-picker input.emoji-search", "zzqqxx")
+        .await
+        .expect("search");
+    app.wait_for_text(".emoji-picker", "No emoji found", DEFAULT_WAIT)
+        .await
+        .expect("none found");
+
+    // A skin tone: emoji that have tones show in it.
+    app.eval("const i = document.querySelector('.emoji-picker input.emoji-search'); i.value = ''; i.dispatchEvent(new Event('input', { bubbles: true })); return true;")
+        .await
+        .expect("clear");
+    app.click(".emoji-picker .skin-tone-button")
+        .await
+        .expect("tones");
+    app.wait_for(".emoji-picker .skin-tone-option", DEFAULT_WAIT)
+        .await
+        .expect("tone options");
+    app.eval("[...document.querySelectorAll('.emoji-picker .skin-tone-option')].find(o => o.dataset.tone === 'Medium').click(); return true;")
+        .await
+        .expect("medium");
+    app.type_into(".emoji-picker input.emoji-search", "thumbsup")
+        .await
+        .expect("search");
+    app.wait_for_js(
+        "const c = document.querySelector('.emoji-picker .emoji-cell'); return !!c && c.textContent === '👍🏽';",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("a medium thumbs up");
+    app.click(".emoji-picker .emoji-cell").await.expect("pick");
+    app.wait_for_js(
+        &format!("return ({row}).querySelector('.reactions')?.textContent.includes('👍🏽');"),
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("reacted with 👍🏽");
+
+    // Recently used come first, newest first; Escape closes.
+    app.eval(&open).await.expect("more");
+    app.wait_for(".emoji-picker", DEFAULT_WAIT)
+        .await
+        .expect("picker");
+    let recent = app
+        .eval("const s = document.querySelector('.emoji-section[data-group=\"Recent\"]'); return s ? [...s.querySelectorAll('.emoji-cell')].slice(0, 2).map(c => c.textContent) : null;")
+        .await
+        .expect("recent");
+    assert_eq!(
+        recent,
+        serde_json::json!(["👍🏽", "🚀"]),
+        "recently used first"
+    );
+    app.press(".emoji-picker input.emoji-search", "Escape")
+        .await
+        .expect("escape");
+    app.wait_for_js(
+        "return !document.querySelector('.emoji-picker');",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("closed");
+}

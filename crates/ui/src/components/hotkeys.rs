@@ -243,7 +243,7 @@ window.addEventListener('paste', e => {
 // list) and turn going back into Escape, which closes the top-most thing.
 // With nothing open there is no entry, so back leaves the app as usual.
 (() => {
-  const OPEN = '.overlay, .context-menu, .card-overlay, .lightbox-overlay, .composer-banner, .composer .autocomplete, .composer .emoji-panel';
+  const OPEN = '.overlay, .context-menu, .emoji-picker-backdrop, .card-overlay, .lightbox-overlay, .composer-banner, .composer .autocomplete, .composer .emoji-panel';
   const backable = () => {
     if (document.querySelector(OPEN)) return true;
     const shell = document.querySelector('.shell');

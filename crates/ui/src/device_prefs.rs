@@ -172,3 +172,53 @@ pub fn set_camera(data_dir: &Path, camera: Option<&str>) -> std::io::Result<()> 
     saved["camera"] = serde_json::json!(camera);
     morpheus_core::fs::write(data_dir.join(AUDIO_DEVICES), saved.to_string())
 }
+
+/// The emoji picker's memory on this device: emoji picked recently (newest
+/// first) and the skin tone chosen.
+pub const EMOJI: &str = "emoji.json";
+const RECENT_EMOJI: usize = 24;
+
+fn emoji_prefs(data_dir: &Path) -> serde_json::Value {
+    morpheus_core::fs::read(data_dir.join(EMOJI))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_else(|| serde_json::json!({}))
+}
+
+pub fn recent_emoji(data_dir: &Path) -> Vec<String> {
+    emoji_prefs(data_dir)
+        .get("recent")
+        .and_then(|v| v.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|v| v.as_str().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// `emoji` used just now: first in the recent ones.
+pub fn note_recent_emoji(data_dir: &Path, emoji: &str) -> std::io::Result<()> {
+    let mut recent = recent_emoji(data_dir);
+    recent.retain(|e| e != emoji);
+    recent.insert(0, emoji.to_owned());
+    recent.truncate(RECENT_EMOJI);
+    let mut saved = emoji_prefs(data_dir);
+    saved["recent"] = serde_json::json!(recent);
+    morpheus_core::fs::write(data_dir.join(EMOJI), saved.to_string())
+}
+
+/// The skin tone chosen (1 light … 5 dark), if any.
+pub fn emoji_tone(data_dir: &Path) -> Option<u8> {
+    emoji_prefs(data_dir)
+        .get("tone")
+        .and_then(|v| v.as_u64())
+        .and_then(|t| u8::try_from(t).ok())
+}
+
+pub fn set_emoji_tone(data_dir: &Path, tone: Option<u8>) -> std::io::Result<()> {
+    let mut saved = emoji_prefs(data_dir);
+    saved["tone"] = serde_json::json!(tone);
+    morpheus_core::fs::write(data_dir.join(EMOJI), saved.to_string())
+}
