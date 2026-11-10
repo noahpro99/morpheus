@@ -32,7 +32,7 @@ mod media;
 pub mod notices;
 pub mod platform;
 pub mod shared;
-mod sounds;
+pub mod sounds;
 mod window;
 
 pub use app::{

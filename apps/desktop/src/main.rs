@@ -128,6 +128,7 @@ fn main() {
         morpheus_ui::external_links::open(link);
     }
     tracing::info!(?config.data_dir, "starting morpheus desktop");
+    native_sounds(config.data_dir.clone());
 
     // Test runs open many windows; they must not steal focus from whatever
     // the developer is typing into. A distinct title lets the e2e driver
@@ -465,10 +466,24 @@ async fn ring_notifier(session: Session, focus: Focus, data_dir: PathBuf) {
             return;
         }
     };
+    // Rings declined (here or on another device): their ringtone stops.
+    let declined: Arc<std::sync::Mutex<std::collections::HashSet<String>>> = Arc::default();
     while let Some(ring) = rings.next().await {
-        let morpheus_core::Ringing::Incoming(call) = ring else {
-            continue;
+        let call = match ring {
+            morpheus_core::Ringing::Incoming(call) => call,
+            morpheus_core::Ringing::Declined { notification, .. } => {
+                if let Ok(mut declined) = declined.lock() {
+                    declined.insert(notification.to_string());
+                }
+                continue;
+            }
         };
+        // The ringtone, window shown or not (the page can't ring from the tray).
+        tokio::spawn(ring_until_answered(
+            session.clone(),
+            call.clone(),
+            declined.clone(),
+        ));
         if focus.0.load(Ordering::Relaxed)
             || !morpheus_ui::device_prefs::notifications_enabled(&data_dir)
         {
@@ -729,5 +744,115 @@ mod tests {
     #[test]
     fn suggests_matrix_org_outside_test_builds() {
         assert_eq!(super::default_homeserver(), "matrix.org");
+    }
+}
+
+/// The ringtone, played by the app itself (rodio) rather than the window's
+/// page, which is suspended while the window is in the tray. One thread owns
+/// the output device, opened on the first ring. Test runs write what would
+/// play to `played-sounds.log`, and play it only when they ask for real
+/// sound (`MORPHEUS_CALL_AUDIO=platform`).
+fn native_sounds(data_dir: PathBuf) {
+    let log = std::env::var_os("MORPHEUS_E2E_PORT")
+        .is_some()
+        .then(|| data_dir.join("played-sounds.log"));
+    // As the call crate decides (AudioMode): tests run with a tone.
+    let audible = std::env::var("MORPHEUS_CALL_AUDIO").as_deref() != Ok("tone");
+    let note = move |name: &str| {
+        let Some(log) = &log else { return };
+        {
+            let written = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(log)
+                .and_then(|mut file| {
+                    std::io::Write::write_all(&mut file, format!("{name}\n").as_bytes())
+                });
+            if let Err(err) = written {
+                tracing::warn!(%err, "test sound log not written");
+            }
+        }
+    };
+    if !audible {
+        morpheus_ui::sounds::set_native_player(move |name, _, _| note(name));
+        return;
+    }
+    let (tx, rx) = std::sync::mpsc::channel::<(Vec<rodio::Sample>, u32)>();
+    let spawned = std::thread::Builder::new()
+        .name("morpheus-sounds".into())
+        .spawn(move || {
+            let mut sink: Option<rodio::MixerDeviceSink> = None;
+            for (samples, rate) in rx {
+                if sink.is_none() {
+                    match rodio::DeviceSinkBuilder::open_default_sink() {
+                        Ok(opened) => sink = Some(opened),
+                        Err(err) => {
+                            tracing::warn!(%err, "no sound output for the ringtone");
+                            continue;
+                        }
+                    }
+                }
+                let (Some(sink), Some(rate), Some(mono)) = (
+                    sink.as_ref(),
+                    std::num::NonZero::new(rate),
+                    std::num::NonZero::new(1u16),
+                ) else {
+                    continue;
+                };
+                sink.mixer()
+                    .add(rodio::buffer::SamplesBuffer::new(mono, rate, samples));
+            }
+        });
+    if let Err(err) = spawned {
+        tracing::warn!(%err, "sound thread failed");
+        return;
+    }
+    morpheus_ui::sounds::set_native_player(move |name, samples, rate| {
+        note(name);
+        let samples = samples
+            .iter()
+            .map(|s| rodio::Sample::from(*s) / rodio::Sample::from(i16::MAX))
+            .collect();
+        let _ = tx.send((samples, rate));
+    });
+}
+
+/// Ring for `call` every other second until it stops ringing: its time is
+/// up, it is declined, the caller has left the call, or this account is in
+/// it (answered here or on another device).
+async fn ring_until_answered(
+    session: Session,
+    call: morpheus_core::IncomingCall,
+    declined: Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
+) {
+    let me = session.user_id();
+    let started = std::time::Instant::now();
+    loop {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or_default();
+        if now >= call.rings_until
+            || declined
+                .lock()
+                .is_ok_and(|d| d.contains(call.notification.as_str()))
+        {
+            return;
+        }
+        let in_call = session
+            .call_participants(call.room_id.clone())
+            .await
+            .unwrap_or_default();
+        if me.as_ref().is_some_and(|me| in_call.contains(me)) {
+            return;
+        }
+        // A moment for the caller's own membership to arrive, then: gone,
+        // they gave up.
+        if started.elapsed() > std::time::Duration::from_secs(5) && !in_call.contains(&call.caller)
+        {
+            return;
+        }
+        morpheus_ui::sounds::ring_natively();
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     }
 }

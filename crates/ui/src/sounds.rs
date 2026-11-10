@@ -55,8 +55,8 @@ impl Sound {
 
 const RATE: u32 = 24_000;
 
-/// A mono 16-bit WAV of the sound's notes, each struck and fading.
-fn wav(sound: Sound) -> Vec<u8> {
+/// The sound's notes as mono 16-bit samples at RATE, each struck and fading.
+fn samples(sound: Sound) -> Vec<i16> {
     let mut samples: Vec<i16> = Vec::new();
     for &(freq, ms) in sound.notes() {
         let n = (RATE * ms / 1000) as usize;
@@ -70,6 +70,12 @@ fn wav(sound: Sound) -> Vec<u8> {
             samples.push((tone * attack * decay * 6_000.0) as i16);
         }
     }
+    samples
+}
+
+/// A mono 16-bit WAV of the sound.
+fn wav(sound: Sound) -> Vec<u8> {
+    let samples = samples(sound);
     let data_len = (samples.len() * 2) as u32;
     let mut out = Vec::with_capacity(44 + data_len as usize);
     out.extend_from_slice(b"RIFF");
@@ -119,6 +125,15 @@ fn data_url(sound: Sound) -> &'static str {
 
 /// Play `sound` (test runs: only note it).
 pub fn play(sound: Sound) {
+    // The ringtone, where the app plays it itself (a desktop, which rings
+    // with the window in the tray too): only noted here.
+    if rings_natively(sound) {
+        document::eval(&format!(
+            "(window.morpheusSounds ??= []).push('{}');",
+            sound.key()
+        ));
+        return;
+    }
     let audible = morpheus_call::AudioMode::from_env() == morpheus_call::AudioMode::Platform;
     let play = if audible {
         // Whether it played (or why not: a page may only play sound after a
@@ -158,4 +173,32 @@ mod tests {
             44 + 2 * (RATE as usize * 110 / 1000 + RATE as usize * 260 / 1000)
         );
     }
+}
+
+/// Plays a ringtone outside the web view: `(sound's name, mono 16-bit
+/// samples, sample rate)`. A desktop sets one: closed to the tray its page
+/// is suspended and can't play, and the ring must still be heard.
+type NativePlayer = Box<dyn Fn(&'static str, &[i16], u32) + Send + Sync>;
+static NATIVE: OnceLock<NativePlayer> = OnceLock::new();
+
+/// Play the ringtone (`Sound::Ring`) through `player` from now on.
+pub fn set_native_player(player: impl Fn(&'static str, &[i16], u32) + Send + Sync + 'static) {
+    let _ = NATIVE.set(Box::new(player));
+}
+
+/// Whether the ringtone is the native player's: then the app (not the
+/// page) rings, with `ring_natively`, and the page's ring is only noted.
+fn rings_natively(sound: Sound) -> bool {
+    sound == Sound::Ring && NATIVE.get().is_some()
+}
+
+/// Ring once through the native player, if there is one.
+pub fn ring_natively() {
+    let Some(player) = NATIVE.get() else { return };
+    static RING: OnceLock<Vec<i16>> = OnceLock::new();
+    player(
+        Sound::Ring.key(),
+        RING.get_or_init(|| samples(Sound::Ring)),
+        RATE,
+    );
 }

@@ -1383,8 +1383,9 @@ async fn sound_plays(app: &mut App) -> Vec<String> {
     .unwrap_or_default()
 }
 
-/// A call ringing a desktop is heard: the ringtone really plays (test runs
-/// otherwise only note their sounds; this one has real audio).
+/// A call ringing a desktop is heard: the app plays the ringtone itself
+/// (not its page, which can't from the tray), through a real audio stream
+/// (test runs otherwise only note their sounds; this one has real audio).
 #[tokio::test]
 async fn a_ring_is_heard_on_the_desktop() {
     let Some(hs) = homeserver() else {
@@ -1407,26 +1408,36 @@ async fn a_ring_is_heard_on_the_desktop() {
     bob.wait_for_text(".incoming-call", "alice", DEFAULT_WAIT)
         .await
         .expect("bob is rung");
+    let pid = bob.pid().expect("a desktop app");
+    let played = bob.data_dir().join("played-sounds.log");
     let deadline = std::time::Instant::now() + DEFAULT_WAIT;
-    let plays = loop {
-        let plays = sound_plays(&mut bob).await;
-        if plays.iter().any(|p| p.starts_with("ring: ")) {
-            break plays;
+    let mut streams = Vec::new();
+    while std::time::Instant::now() < deadline {
+        let rang = std::fs::read_to_string(&played)
+            .unwrap_or_default()
+            .contains("ring");
+        // The page no longer plays the ring: a stream now is the app's. The
+        // ringtone goes through PipeWire's ALSA layer, which names it after
+        // the program but records no process (bob is the one with sound on).
+        streams = playing_streams(pid);
+        streams.extend(alsa_streams_of("morpheus-desktop"));
+        if rang && !streams.is_empty() {
+            break;
         }
-        assert!(
-            std::time::Instant::now() < deadline,
-            "no ringtone tried: {plays:?}"
-        );
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-    };
+    }
     alice.click(hang_up).await.expect("alice hangs up");
     out_of_call(&mut alice).await;
     assert!(
-        plays.iter().any(|p| p == "ring: played")
-            && !plays
-                .iter()
-                .any(|p| p.starts_with("ring: ") && p != "ring: played"),
-        "the ringtone did not play: {plays:?}"
+        std::fs::read_to_string(&played)
+            .unwrap_or_default()
+            .contains("ring"),
+        "the app rang"
+    );
+    assert!(
+        !streams.is_empty(),
+        "no audio stream from the app while ringing; its log ends:\n{}",
+        bob.log_tail(30)
     );
 }
 
@@ -2694,4 +2705,82 @@ async fn on_a_phone_a_card_is_enlarged_from_its_button() {
     bob.click(".voice-panel .hang-up")
         .await
         .expect("bob leaves");
+}
+
+/// Closed to the tray, a desktop still rings for a DM call, again and again
+/// until the call stops: the ringtone plays outside the window (a hidden
+/// window's page is suspended, and notification daemons often ignore a
+/// notification's sound). Test runs write the plays to `played-sounds.log`.
+#[tokio::test]
+async fn a_desktop_in_the_tray_still_rings() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut bob = App::launch_desktop(&hs).await.expect("launch bob");
+    login_and_open(&mut bob, "bob", "general").await;
+    // To the tray: the window hides, the app runs on.
+    bob.eval("setTimeout(() => document.querySelector('.titlebar button.close').click(), 50); return true;")
+        .await
+        .expect("close");
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    assert!(bob.is_running(), "closing the window keeps the app");
+    let played = bob.data_dir().join("played-sounds.log");
+    let rings = || {
+        std::fs::read_to_string(&played)
+            .unwrap_or_default()
+            .lines()
+            .filter(|l| *l == "ring")
+            .count()
+    };
+
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    login_and_open(&mut alice, "alice", "general").await;
+    open_dm(&mut alice, "bob").await;
+    alice.click(CALL_BUTTON).await.expect("call bob");
+    alice
+        .wait_for(".voice-panel .hang-up", DEFAULT_WAIT)
+        .await
+        .expect("alice's call is up");
+    // Rings of an earlier call (still within its half minute) don't count.
+    let before = rings();
+    // It rings, and keeps ringing.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    while rings() < before + 3 && std::time::Instant::now() < deadline {
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+    assert!(
+        rings() >= before + 3,
+        "bob's tray app rang {} times",
+        rings() - before
+    );
+
+    // Alice gives up: the ringing stops.
+    alice.click(".voice-panel .hang-up").await.expect("hang up");
+    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    let after = rings();
+    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    assert_eq!(rings(), after, "it stops ringing when the call stops");
+}
+
+/// Playback streams PipeWire's ALSA layer opened for `program`.
+fn alsa_streams_of(program: &str) -> Vec<String> {
+    let Ok(out) = std::process::Command::new("pw-dump").output() else {
+        return Vec::new();
+    };
+    let nodes: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap_or_default();
+    let name = format!("alsa_playback.{program}");
+    nodes
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|n| n["info"]["props"]["media.class"] == "Stream/Output/Audio")
+        .filter(|n| n["info"]["props"]["node.name"] == name.as_str())
+        .map(|n| {
+            format!(
+                "{} ({})",
+                n["info"]["props"]["node.name"], n["info"]["state"]
+            )
+        })
+        .collect()
 }
