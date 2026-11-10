@@ -2515,3 +2515,183 @@ async fn go_to_the_call_start_a_dm_call_and_decline_by_keyboard() {
     alice.click(".voice-panel .hang-up").await.expect("hang up");
     out_of_call(&mut alice).await;
 }
+
+/// The card focused in the call's view, the cards in the strip beside it,
+/// and whether the focused one is much bigger: `[main, strip, bigger]`.
+const FOCUS_STATE: &str = "const c = document.querySelector('.call-cards.focused, .call-tiles.focused'); \
+     if (!c) return null; \
+     const main = c.querySelector('.call-focus-main > *'), strip = [...c.querySelectorAll('.call-strip > *')]; \
+     const w = el => el.getBoundingClientRect().width; \
+     return [main ? (main.classList.contains('screen') ? 'screen:' : '') + main.dataset.user : null, \
+       strip.map(s => s.dataset.user), \
+       !!main && strip.every(s => w(main) > 2 * w(s))];";
+
+/// Clicking a card in a call focuses it, as in Discord: large, with the
+/// others in a strip. Clicking it again, or Escape, goes back to the grid.
+/// A shared screen focuses the same way.
+#[tokio::test]
+async fn clicking_a_card_in_a_call_focuses_it() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    if alice.is_phone() {
+        eprintln!("phones focus with Enlarge (the next test); skipping");
+        return;
+    }
+    join_hangout(&mut alice, "alice").await;
+    let mut bob = App::launch(&hs).await.expect("launch bob");
+    join_hangout(&mut bob, "bob").await;
+    alice
+        .wait_for(".call-stage [data-user=\"@bob:localhost\"]", DEFAULT_WAIT)
+        .await
+        .expect("bob's card");
+
+    alice
+        .click(".call-stage [data-user=\"@bob:localhost\"]")
+        .await
+        .expect("click bob");
+    alice
+        .wait_for(".call-stage .call-cards.focused", DEFAULT_WAIT)
+        .await
+        .expect("focused");
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert_eq!(
+        alice.eval(FOCUS_STATE).await.expect("state"),
+        serde_json::json!(["@bob:localhost", ["@alice:localhost"], true]),
+        "bob large, alice in the strip"
+    );
+    alice
+        .click(".call-focus-main [data-user=\"@bob:localhost\"]")
+        .await
+        .expect("click bob again");
+    alice
+        .wait_for_js(
+            "return !document.querySelector('.call-cards.focused');",
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("back to the grid");
+
+    // A shared screen.
+    alice
+        .click(".voice-panel .screen-button")
+        .await
+        .expect("share");
+    bob.wait_for(".call-stage .video-tile.screen", DEFAULT_WAIT)
+        .await
+        .expect("bob sees the screen");
+    bob.click(".call-stage .video-tile.screen")
+        .await
+        .expect("click the screen");
+    bob.wait_for_js(
+        &format!("return (() => {{ {FOCUS_STATE} }})()?.[0] === 'screen:@alice:localhost';"),
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("the screen focused");
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert_eq!(
+        bob.eval(FOCUS_STATE).await.expect("state")[2],
+        serde_json::json!(true),
+        "the screen much bigger than the cards in the strip"
+    );
+    bob.press("body", "Escape").await.expect("escape");
+    bob.wait_for_js(
+        "return !document.querySelector('.call-cards.focused');",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("Escape: back to the grid");
+
+    alice
+        .click(".voice-panel .screen-button")
+        .await
+        .expect("stop sharing");
+    bob.click(".voice-panel .hang-up")
+        .await
+        .expect("bob leaves");
+    alice
+        .click(".voice-panel .hang-up")
+        .await
+        .expect("alice leaves");
+}
+
+/// On a phone a tap on a card shows its buttons: Enlarge, at its top right,
+/// focuses it (and then shrinks it back).
+#[tokio::test]
+async fn on_a_phone_a_card_is_enlarged_from_its_button() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut bob = App::launch(&hs).await.expect("launch bob");
+    if bob.is_phone() {
+        eprintln!("needs a desktop beside the phone; skipping");
+        return;
+    }
+    join_hangout(&mut bob, "bob").await;
+    let mut alice = App::launch_sized(&hs, 400, 800)
+        .await
+        .expect("launch a phone-sized alice");
+    login_and_open(&mut alice, "alice", "hangout").await;
+    alice.click(CALL_BUTTON).await.expect("join");
+    alice
+        .wait_for(
+            ".call-screen .call-tiles [data-user=\"@bob:localhost\"]",
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("bob's card on the call screen");
+    let card = ".call-screen .call-tiles [data-user=\"@bob:localhost\"]";
+    assert_eq!(
+        alice
+            .eval(&format!("const e = document.querySelector('{card} .card-enlarge'); return !!e && getComputedStyle(e).display !== 'none' && getComputedStyle(e).visibility !== 'hidden' && getComputedStyle(e).opacity !== '0';"))
+            .await
+            .expect("hidden"),
+        serde_json::json!(false),
+        "no Enlarge before a tap"
+    );
+    alice.click(card).await.expect("tap bob's card");
+    alice
+        .wait_for_js(
+            &format!(
+            "const c = document.querySelector('{card}'), e = c.querySelector('.card-enlarge'); if (!e) return null; \
+             const s = getComputedStyle(e), r = e.getBoundingClientRect(), q = c.getBoundingClientRect(); \
+             return s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0' && r.right > q.right - 56 && r.top < q.top + 56;"
+            ),
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("Enlarge at the card's top right");
+    alice
+        .click(&format!("{card} .card-enlarge"))
+        .await
+        .expect("enlarge");
+    alice
+        .wait_for_js(
+            &format!("return (() => {{ {FOCUS_STATE} }})()?.[0] === '@bob:localhost';"),
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("bob focused");
+    alice
+        .click(".call-focus-main [data-user=\"@bob:localhost\"] .card-enlarge")
+        .await
+        .expect("shrink");
+    alice
+        .wait_for_js(
+            "return !document.querySelector('.call-tiles.focused');",
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("back to the grid");
+    alice
+        .click(".call-screen .hang-up")
+        .await
+        .expect("alice leaves");
+    bob.click(".voice-panel .hang-up")
+        .await
+        .expect("bob leaves");
+}

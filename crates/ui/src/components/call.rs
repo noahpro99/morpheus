@@ -876,10 +876,11 @@ pub fn CallStage(room_id: OwnedRoomId) -> Element {
         return rsx! {};
     };
     let cards = tiles(&call, &rooms.read(), session.user_id());
+    let focused = focused_card(&consume_context::<CallFocused>()(), &cards).is_some();
     let count = cards.len();
     rsx! {
         div { class: "call-stage", "data-cards": "{count}",
-            div { class: "call-cards",
+            div { class: "call-cards", class: if focused { "focused" },
                 Cards { room_id: room_id.clone(), cards, speaking: call.speaking.clone() }
             }
             StageControls { call: call.clone() }
@@ -1012,18 +1013,114 @@ fn tiles(
     cards
 }
 
-/// The cards, each its own size (the stage's script fits them to it).
+impl Card {
+    /// What a card is known by while focused: its video feed, or its person.
+    fn key(&self) -> String {
+        match self {
+            Card::Video(feed) => feed.key.clone(),
+            Card::Person(user) => user.to_string(),
+        }
+    }
+}
+
+/// The card focused in the call's view (a feed's key, or a person's id):
+/// large, with the others in a strip, as in Discord. Provided by the shell
+/// (Escape there goes back to the grid).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct CallFocus(pub Option<String>);
+pub type CallFocused = Signal<CallFocus>;
+
+/// Whether one of `cards` is focused (a focus on a card gone is no focus).
+fn focused_card(focus: &CallFocus, cards: &[Card]) -> Option<String> {
+    focus
+        .0
+        .clone()
+        .filter(|key| cards.iter().any(|card| card.key() == *key))
+}
+
+/// Focus `card`, or, focused already, go back to the grid.
+fn toggle_focus(card: &str) {
+    let mut focus = consume_context::<CallFocused>();
+    let next = (focus.peek().0.as_deref() != Some(card)).then(|| card.to_owned());
+    focus.set(CallFocus(next));
+}
+
+/// Back to the grid, if a card was focused; whether one was (Escape).
+pub fn clear_call_focus() -> bool {
+    let Some(mut focus) = try_consume_context::<CallFocused>() else {
+        return false;
+    };
+    if focus.peek().0.is_none() {
+        return false;
+    }
+    focus.set(CallFocus(None));
+    true
+}
+
+/// The cards: in a grid, each its own size (the stage's script fits them to
+/// it), or one focused, large, with the rest in a strip under it.
 #[component]
 fn Cards(room_id: OwnedRoomId, cards: Vec<Card>, speaking: Vec<OwnedUserId>) -> Element {
-    rsx! {
-        {cards.into_iter().map(|card| match card {
+    let focus = use_context::<CallFocused>();
+    let focused = focused_card(&focus(), &cards);
+    let card = move |card: Card| {
+        let key = card.key();
+        match card {
             Card::Video(feed) => rsx! {
-                VideoTile { key: "{feed.key}", room_id: room_id.clone(), user: feed.user, feed: feed.key, screen: feed.screen }
+                VideoTile { key: "{key}", card: key.clone(), room_id: room_id.clone(), user: feed.user, feed: feed.key, screen: feed.screen }
             },
             Card::Person(user) => rsx! {
-                CallTile { key: "{user}", room_id: room_id.clone(), speaking: speaking.contains(&user), user_id: user }
+                CallTile { key: "{key}", card: key.clone(), room_id: room_id.clone(), speaking: speaking.contains(&user), user_id: user }
             },
-        })}
+        }
+    };
+    let Some(focused) = focused else {
+        return rsx! {
+            {cards.into_iter().map(card)}
+        };
+    };
+    let (main, strip): (Vec<Card>, Vec<Card>) = cards.into_iter().partition(|c| c.key() == focused);
+    rsx! {
+        div { class: "call-focus-main", {main.into_iter().map(card.clone())} }
+        if !strip.is_empty() {
+            div { class: "call-strip", {strip.into_iter().map(card)} }
+        }
+    }
+}
+
+/// A card's click: on a desktop it focuses the card (or goes back to the
+/// grid); on a phone a tap shows the card's buttons, Enlarge among them.
+fn use_card_click(card: String) -> (Signal<bool>, impl FnMut(Event<MouseData>) + Clone) {
+    let narrow = try_use_context::<super::shell::NarrowWindow>();
+    let mut revealed = use_signal(|| false);
+    let click = move |e: Event<MouseData>| {
+        e.stop_propagation();
+        if narrow.is_some_and(|n| n.peek().0) {
+            revealed.toggle();
+        } else {
+            toggle_focus(&card);
+        }
+    };
+    (revealed, click)
+}
+
+/// A card's Enlarge (or, focused, Shrink) at its top right: shown on a hover
+/// on a desktop, after a tap on a phone.
+#[component]
+fn FocusButton(card: String) -> Element {
+    let focus = use_context::<CallFocused>();
+    let focused = focus().0.as_deref() == Some(card.as_str());
+    rsx! {
+        button {
+            class: "card-enlarge",
+            r#type: "button",
+            title: if focused { "Shrink" } else { "Enlarge" },
+            onclick: move |e| {
+                e.stop_propagation();
+                toggle_focus(&card);
+            },
+            Icon { glyph: if focused { crate::icons::MINIMIZE_2 } else { crate::icons::MAXIMIZE_2 }, size: 16 }
+        }
     }
 }
 
@@ -1032,7 +1129,14 @@ const VIDEO_POLL_MS: u64 = 1000 / 30;
 
 /// One person's video: the latest picture, as it comes.
 #[component]
-fn VideoTile(room_id: OwnedRoomId, user: OwnedUserId, feed: String, screen: bool) -> Element {
+fn VideoTile(
+    card: String,
+    room_id: OwnedRoomId,
+    user: OwnedUserId,
+    feed: String,
+    screen: bool,
+) -> Element {
+    let (revealed, click) = use_card_click(card.clone());
     let (name, _) = use_person(&user);
     let media = use_call_media(&room_id, &user);
     use_future({
@@ -1065,10 +1169,13 @@ fn VideoTile(room_id: OwnedRoomId, user: OwnedUserId, feed: String, screen: bool
         div {
             class: "video-tile",
             class: if feed == LOCAL_CAMERA || feed == LOCAL_SCREEN { "self" },
+            class: if revealed() { "revealed" },
             class: if screen { "screen" },
             "data-feed": "{feed}",
             "data-user": "{user}",
+            onclick: click,
             img { class: "video", alt: "" }
+            FocusButton { card }
             span { class: "video-name",
                 if screen { "{name}'s screen" } else { "{name}" }
             }
@@ -1178,6 +1285,7 @@ pub fn CallScreen() -> Element {
         return rsx! {};
     };
     let cards = tiles(&call, &rooms.read(), session.user_id());
+    let focused = focused_card(&consume_context::<CallFocused>()(), &cards).is_some();
     let flags = voice();
     let muted = flags.muted || flags.deafened;
     let room_id = call.room_id.clone();
@@ -1203,7 +1311,7 @@ pub fn CallScreen() -> Element {
                     }
                 }
             }
-            div { class: "call-tiles",
+            div { class: "call-tiles", class: if focused { "focused" },
                 Cards { room_id: call.room_id.clone(), cards, speaking: call.speaking.clone() }
             }
             div { class: "call-controls",
@@ -1261,11 +1369,18 @@ pub fn CallScreen() -> Element {
 
 /// Someone in the call without a camera on: their picture, large.
 #[component]
-fn CallTile(room_id: OwnedRoomId, user_id: OwnedUserId, speaking: bool) -> Element {
+fn CallTile(card: String, room_id: OwnedRoomId, user_id: OwnedUserId, speaking: bool) -> Element {
+    let (revealed, click) = use_card_click(card.clone());
     let (name, avatar) = use_person(&user_id);
     let media = use_call_media(&room_id, &user_id);
     rsx! {
-        div { class: "call-tile", class: if speaking { "speaking" }, "data-user": "{user_id}",
+        div {
+            class: "call-tile",
+            class: if speaking { "speaking" },
+            class: if revealed() { "revealed" },
+            "data-user": "{user_id}",
+            onclick: click,
+            FocusButton { card }
             Avatar { media: avatar, fallback: name.clone(), size: 72 }
             span { class: "video-name", "{name}" }
             span { class: "card-marks", MediaMarks { media, video: false } }
@@ -1475,10 +1590,11 @@ pub fn VoicePage(room_id: OwnedRoomId, room_name: String) -> Element {
         };
     };
     let cards = tiles(&call, &rooms.read(), session.user_id());
+    let focused = focused_card(&consume_context::<CallFocused>()(), &cards).is_some();
     let count = cards.len();
     rsx! {
         div { class: "call-stage voice-page", "data-cards": "{count}",
-            div { class: "call-cards",
+            div { class: "call-cards", class: if focused { "focused" },
                 Cards { room_id: room_id.clone(), cards, speaking: call.speaking.clone() }
             }
             StageControls { call: call.clone() }

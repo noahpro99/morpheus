@@ -170,6 +170,25 @@ async fn clicking_image_opens_lightbox() {
     )
     .await
     .expect("full-size image loaded as a data URL");
+    // The dimming covers the whole window, the member list too, and the
+    // image is in the window's middle (not the chat's).
+    if !app.is_phone() {
+        app.wait_for(".members", DEFAULT_WAIT)
+            .await
+            .expect("the member list beside the chat");
+    }
+    app.wait_for_js(
+        "const o = document.querySelector('.lightbox-overlay').getBoundingClientRect(), \
+           i = document.querySelector('.lightbox-image').getBoundingClientRect(), \
+           m = document.querySelector('.members'); \
+         const top = m && document.elementFromPoint(m.getBoundingClientRect().left + 20, innerHeight / 2); \
+         return o.left <= 0 && o.top <= 0 && o.right >= innerWidth && o.bottom >= innerHeight \
+           && Math.abs((i.left + i.right) / 2 - innerWidth / 2) < 4 \
+           && (!m || !!top?.closest('.lightbox-overlay'));",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("dims the whole window, image centred");
 
     // Esc closes it.
     app.press("body", "Escape").await.expect("escape");
