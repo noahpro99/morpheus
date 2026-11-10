@@ -42,6 +42,12 @@ cp "$(find target -name libwebrtc.jar -path '*android*' -print -quit)" "$app/app
 cp apps/mobile/android/morpheus.pro "$app/app/morpheus.pro"
 grep -q 'libs/libwebrtc.jar' "$app/app/build.gradle.kts" ||
     sed -i 's|^dependencies {|dependencies {\n    implementation(files("libs/libwebrtc.jar"))|' "$app/app/build.gradle.kts"
+# dx writes versionCode = 1 into every build. Android, F-Droid and
+# IzzyOnDroid tell an update by it, so it comes from the version:
+# 0.1.4 → 104 (0.1.3 and earlier went out as 1).
+IFS=. read -r major minor patch <<<"$version"
+code=$((major * 10000 + minor * 100 + patch))
+sed -i "s/versionCode = [0-9]*/versionCode = $code/" "$app/app/build.gradle.kts"
 (cd "$app" && ./gradlew assembleRelease -q)
 
 unsigned=$(find "$app/app/build/outputs/apk/release" -name '*.apk' -print -quit)
