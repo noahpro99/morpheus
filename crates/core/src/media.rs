@@ -93,6 +93,11 @@ impl Media {
                 b'P',
                 ..,
             ] => "image/webp",
+            // ISO media (MP4, QuickTime): a size, then "ftyp" and its brand.
+            [_, _, _, _, b'f', b't', b'y', b'p', b'q', b't', ..] => "video/quicktime",
+            [_, _, _, _, b'f', b't', b'y', b'p', ..] => "video/mp4",
+            // Matroska and WebM.
+            [0x1A, 0x45, 0xDF, 0xA3, ..] => "video/webm",
             _ => "application/octet-stream",
         }
     }

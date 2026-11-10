@@ -20,7 +20,6 @@ use super::{
     thread::ActiveThread,
 };
 use crate::{
-    attach::open_with_system,
     format::{calendar_date, clock_time, human_duration, human_size},
     media::{Avatar, use_thumbnail},
 };
@@ -1413,45 +1412,6 @@ fn AudioBody(
     }
 }
 
-/// "Play" button shown on video cards: downloads the file (if needed) and
-/// hands it to the OS's default player via its registered file handler.
-#[component]
-fn PlayButton(media: MediaRef, suggested_name: String) -> Element {
-    let session = use_context::<Session>();
-    let mut status = use_signal(|| DownloadStatus::Idle);
-    let working = matches!(status(), DownloadStatus::Downloading);
-
-    let start = move |_| {
-        let session = session.clone();
-        let media = media.clone();
-        let suggested_name = suggested_name.clone();
-        status.set(DownloadStatus::Downloading);
-        spawn(async move {
-            let outcome = match session.download(media, suggested_name).await {
-                Ok(path) => match open_with_system(&path) {
-                    Ok(()) => DownloadStatus::Saved(path),
-                    Err(err) => DownloadStatus::Failed(err),
-                },
-                Err(err) => DownloadStatus::Failed(err.to_string()),
-            };
-            status.set(outcome);
-        });
-    };
-
-    rsx! {
-        button {
-            class: "play-button",
-            title: "Play",
-            disabled: working,
-            onclick: start,
-            if working { "…" } else { "▶" }
-        }
-        if let DownloadStatus::Failed(message) = status() {
-            span { class: "attachment-status error", "{message}" }
-        }
-    }
-}
-
 /// Video attachment: its thumbnail with a play button overlaid, and the
 /// clip's duration.
 #[component]
@@ -1469,17 +1429,70 @@ fn VideoBody(
         _ => String::new(),
     };
     let duration_label = duration.map(human_duration);
+    let session = use_context::<Session>();
+    let mut playing = use_signal(|| false);
+    let mut failed = use_signal(|| None::<String>);
+    let key = media.key().to_owned();
+
+    // The file (decrypted, in an encrypted room) into the player, as a blob.
+    let play = {
+        let (media, key) = (media.clone(), key.clone());
+        move |_| {
+            playing.set(true);
+            let (session, media, key) = (session.clone(), media.clone(), key.clone());
+            spawn(async move {
+                match session.media_file(media).await {
+                    Ok(Some(file)) => {
+                        let mime = file.mime();
+                        let data = base64::Engine::encode(
+                            &base64::engine::general_purpose::STANDARD,
+                            &file.bytes,
+                        );
+                        let key = serde_json::to_string(&key).unwrap_or_default();
+                        document::eval(&format!(
+                            "const v = [...document.querySelectorAll('video.video-player')].find(v => v.dataset.media === {key}); \
+                             if (v) {{ \
+                               const bytes = Uint8Array.from(atob('{data}'), c => c.charCodeAt(0)); \
+                               v.src = URL.createObjectURL(new Blob([bytes], {{ type: '{mime}' }})); \
+                               v.play().catch(() => {{}}); \
+                             }}"
+                        ));
+                    }
+                    Ok(None) => failed.set(Some("Couldn't load the video".into())),
+                    Err(err) => failed.set(Some(err.to_string())),
+                }
+            });
+        }
+    };
 
     rsx! {
-        div { class: "video-card", style: "{aspect}",
-            match thumb_url() {
-                Some(src) => rsx! { img { class: "video-thumb", src: "{src}", alt: "{body}", title: "{body}" } },
-                None => rsx! { div { class: "image placeholder", "{body}" } },
-            }
-            div { class: "video-overlay",
-                PlayButton { media, suggested_name: body.clone() }
-                if let Some(duration_label) = duration_label {
-                    span { class: "video-duration", "{duration_label}" }
+        div { class: "video-card", class: if playing() { "playing" }, style: "{aspect}",
+            if playing() {
+                // The web view's own controls: play/pause, seeking, volume,
+                // fullscreen.
+                video {
+                    class: "video-player",
+                    "data-media": "{key}",
+                    controls: true,
+                    autoplay: true,
+                    playsinline: true,
+                    preload: "auto",
+                    poster: thumb_url().map(|s| s.to_string()).unwrap_or_default(),
+                    title: "{body}",
+                }
+                if let Some(message) = failed() {
+                    span { class: "attachment-status error", "{message}" }
+                }
+            } else {
+                match thumb_url() {
+                    Some(src) => rsx! { img { class: "video-thumb", src: "{src}", alt: "{body}", title: "{body}" } },
+                    None => rsx! { div { class: "image placeholder", "{body}" } },
+                }
+                div { class: "video-overlay",
+                    button { class: "play-button", title: "Play", onclick: play, "▶" }
+                    if let Some(duration_label) = duration_label {
+                        span { class: "video-duration", "{duration_label}" }
+                    }
                 }
             }
         }

@@ -1,7 +1,7 @@
 //! Desktop-agnostic wrappers around native file pickers and the system's
 //! file opener, so components never call `rfd`/`open` directly.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 
 /// A platform's own file picker (Android's, through an activity): asked for
@@ -59,15 +59,4 @@ async fn desktop_pick(images: bool) -> Option<PathBuf> {
 async fn desktop_pick(_images: bool) -> Option<PathBuf> {
     tracing::warn!("no file picker on this platform yet");
     None
-}
-
-/// Open `path` with whatever the OS considers the default handler for it.
-pub fn open_with_system(path: &Path) -> Result<(), String> {
-    #[cfg(not(target_arch = "wasm32"))]
-    return open::that(path).map_err(|err| err.to_string());
-    #[cfg(target_arch = "wasm32")]
-    {
-        let _ = path;
-        Err("a browser saves downloads itself".into())
-    }
 }
