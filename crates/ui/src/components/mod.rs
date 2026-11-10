@@ -6,6 +6,7 @@ mod composer;
 mod confirm;
 mod context_menu;
 mod emoji;
+pub(crate) mod emoji_picker;
 mod friends;
 mod hotkeys;
 mod invites;
