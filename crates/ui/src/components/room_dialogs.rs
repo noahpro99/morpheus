@@ -29,6 +29,8 @@ pub enum RoomDialog {
     RenameFolder(String),
     /// Mod view: one person's standing and moderation across your rooms.
     ModView(OwnedUserId),
+    /// A room seen through a link, not joined yet: what it is, and Join.
+    Preview(morpheus_core::LinkedRoom, Vec<String>),
 }
 pub type OpenRoomDialog = Signal<RoomDialog>;
 
@@ -715,6 +717,79 @@ pub fn RenameFolderModal(folder_id: String) -> Element {
                 div { class: "settings-actions",
                     button { r#type: "submit", class: "primary", "Save" }
                     button { r#type: "button", class: "secondary", onclick: move |_| close(), "Cancel" }
+                }
+            }
+        }
+    }
+}
+
+/// A room someone linked to that you are not in: its picture, name, topic
+/// and size, and Join (which opens it).
+#[component]
+pub fn RoomPreviewModal(room: morpheus_core::LinkedRoom, via: Vec<String>) -> Element {
+    let session = use_context::<Session>();
+    let rooms = use_context::<Rooms>();
+    let mut dialog = use_context::<OpenRoomDialog>();
+    let mut busy = use_signal(|| false);
+    let mut error = use_signal(|| None::<String>);
+    let mut close = move || dialog.set(RoomDialog::None);
+    let name = room
+        .name
+        .clone()
+        .unwrap_or_else(|| room.room_id.to_string());
+    let members = match room.members {
+        1 => "1 member".to_owned(),
+        n => format!("{n} members"),
+    };
+    let join = {
+        let room_id = room.room_id.clone();
+        move |_| {
+            if busy() {
+                return;
+            }
+            busy.set(true);
+            let (future, room_id) = (
+                session.join_room_via(room_id.clone(), via.clone()),
+                room_id.clone(),
+            );
+            spawn(async move {
+                match future.await {
+                    Ok(()) => {
+                        // Opened once the room list has it.
+                        for _ in 0..100 {
+                            if rooms.peek().iter().any(|r| r.id == room_id && !r.invited) {
+                                break;
+                            }
+                            morpheus_core::rt::sleep(std::time::Duration::from_millis(100)).await;
+                        }
+                        close();
+                        super::shell::open_room_in_scope(room_id);
+                    }
+                    Err(err) => error.set(Some(err.to_string())),
+                }
+                busy.set(false);
+            });
+        }
+    };
+    rsx! {
+        div { class: "overlay", onclick: move |_| close(),
+            div { class: "message-dialog room-dialog room-preview", tabindex: "-1", autofocus: true, onclick: move |e| e.stop_propagation(),
+                div { class: "room-preview-head",
+                    crate::media::Avatar { media: room.avatar.clone(), fallback: name.clone(), size: 56 }
+                    div {
+                        h2 { "{name}" }
+                        p { class: "muted", "{members}" }
+                    }
+                }
+                if let Some(topic) = room.topic.clone().filter(|t| !t.trim().is_empty()) {
+                    p { class: "room-preview-topic", "{topic}" }
+                }
+                if let Some(text) = error() {
+                    p { class: "error", "{text}" }
+                }
+                div { class: "settings-actions",
+                    button { class: "primary", disabled: busy(), onclick: join, crate::icons::Icon { glyph: crate::icons::LOG_IN } "Join" }
+                    button { class: "secondary", onclick: move |_| close(), "Cancel" }
                 }
             }
         }
