@@ -2735,3 +2735,10 @@ body.rail-dragging, body.rail-dragging * { cursor: grabbing !important; }
   white-space: nowrap;
 }
 .get-desktop:hover { filter: brightness(1.1); }
+
+/* A room seen through a link, before joining. */
+.room-preview { width: min(420px, calc(100vw - 32px)); }
+.room-preview-head { display: flex; align-items: center; gap: 14px; }
+.room-preview-head h2 { margin: 0; }
+.room-preview-head p { margin: 2px 0 0; }
+.room-preview-topic { margin: 12px 0 0; color: var(--text); white-space: pre-wrap; }

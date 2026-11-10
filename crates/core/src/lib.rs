@@ -20,6 +20,7 @@ mod calls;
 mod core;
 mod error;
 pub mod fs;
+mod links;
 mod media;
 mod members;
 mod messages;
@@ -52,6 +53,7 @@ pub use calls::{
     CallCredentials, CallKey, CallKeyUpdates, CallMedia, CallMember, IncomingCall, RING_FOR_MS,
     RingUpdates, Ringing,
 };
+pub use links::{LinkedRoom, MatrixLink, parse_matrix_link};
 pub use media::{Media, MediaRef};
 pub use members::{Member, MemberPermissions, MemberRole, ModRoom, Standing};
 pub use messages::PinnedMessage;

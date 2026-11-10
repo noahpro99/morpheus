@@ -996,6 +996,7 @@ pub fn Shell(session: Session) -> Element {
         }
     };
     // Dropped and pasted files arrive on the same channel, for the composer.
+    let link_session = use_context::<Session>();
     let mut drops: FileDrops = use_context_provider(|| Signal::new(Drops::default()));
     use_hook(move || {
         spawn(async move {
@@ -1015,6 +1016,11 @@ pub fn Shell(session: Session) -> Element {
                         None => tracing::warn!("ignoring an unreadable dropped file"),
                     }
                 } else if let Some(url) = name.strip_prefix("open:") {
+                    // Matrix links (matrix.to) open here, not in the browser.
+                    if let Some(link) = morpheus_core::parse_matrix_link(url) {
+                        open_matrix_link(link, link_session.clone());
+                        continue;
+                    }
                     open_link(url, open_url.as_ref());
                     opened_links.with_mut(|links| links.push(url.to_owned()));
                 } else if let Some(message) = name.strip_prefix("jserr:") {
@@ -1203,6 +1209,7 @@ pub fn Shell(session: Session) -> Element {
                 RoomDialog::LeaveSpace(space_id) => rsx! { LeaveSpaceModal { space_id } },
                 RoomDialog::RenameFolder(folder_id) => rsx! { RenameFolderModal { folder_id } },
                 RoomDialog::ModView(user_id) => rsx! { super::mod_view::ModViewModal { user_id } },
+                RoomDialog::Preview(room, via) => rsx! { super::room_dialogs::RoomPreviewModal { room, via } },
                 RoomDialog::None => rsx! {},
             }
             if narrow().0 {
@@ -1524,4 +1531,64 @@ enum Only {
     Any,
     Unread,
     Mentions,
+}
+
+/// Open `room_id` where it lives: its server (or the DMs, Rooms), then the room.
+pub fn open_room_in_scope(room_id: OwnedRoomId) {
+    let rooms = consume_context::<Rooms>();
+    let mut scope = consume_context::<SelectedSpace>();
+    if let Some(room) = rooms.peek().iter().find(|r| r.id == room_id) {
+        let place = scope_for(&rooms.peek(), room);
+        if place != *scope.peek() {
+            scope.set(place);
+        }
+    }
+    go_to(room_id);
+}
+
+/// A clicked Matrix link: a person's profile; a room you are in (at the
+/// message, for a message's link); a room you are not in, previewed with Join.
+fn open_matrix_link(link: morpheus_core::MatrixLink, session: Session) {
+    match link {
+        morpheus_core::MatrixLink::User(user_id) => {
+            consume_context::<super::profile::OpenProfile>().set(super::profile::ProfileTarget(
+                Some(super::profile::ProfileOpen {
+                    user_id,
+                    at: None,
+                    full: true,
+                }),
+            ));
+        }
+        morpheus_core::MatrixLink::Room { room, event, via } => {
+            let mut dialog = consume_context::<super::room_dialogs::OpenRoomDialog>();
+            let mut jump = consume_context::<JumpTo>();
+            let selected = consume_context::<Selected>();
+            spawn(async move {
+                let linked = match session.linked_room(room, via.clone()).await {
+                    Ok(linked) => linked,
+                    Err(err) => {
+                        report("opening the link", &err);
+                        return;
+                    }
+                };
+                if !linked.joined {
+                    dialog.set(RoomDialog::Preview(linked, via));
+                    return;
+                }
+                let room_id = linked.room_id;
+                open_room_in_scope(room_id.clone());
+                if let Some(event) = event {
+                    // Once the room's own timeline is up (it takes the jump).
+                    for _ in 0..50 {
+                        if selected.peek().as_ref() == Some(&room_id) {
+                            break;
+                        }
+                        morpheus_core::rt::sleep(std::time::Duration::from_millis(50)).await;
+                    }
+                    morpheus_core::rt::sleep(std::time::Duration::from_millis(300)).await;
+                    jump.set(JumpTarget(Some(event.to_string())));
+                }
+            });
+        }
+    }
 }
