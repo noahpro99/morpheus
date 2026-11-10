@@ -738,15 +738,6 @@ mod single_instance {
 /// macOS and Windows play their default for an unknown name).
 const RING_SOUND: &str = "phone-incoming-call";
 
-#[cfg(test)]
-mod tests {
-    /// A release suggests a real homeserver; the dev one is for test builds.
-    #[test]
-    fn suggests_matrix_org_outside_test_builds() {
-        assert_eq!(super::default_homeserver(), "matrix.org");
-    }
-}
-
 /// The ringtone, played by the app itself (rodio) rather than the window's
 /// page, which is suspended while the window is in the tray. One thread owns
 /// the output device, opened on the first ring. Test runs write what would
@@ -854,5 +845,14 @@ async fn ring_until_answered(
         }
         morpheus_ui::sounds::ring_natively();
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// A release suggests a real homeserver; the dev one is for test builds.
+    #[test]
+    fn suggests_matrix_org_outside_test_builds() {
+        assert_eq!(super::default_homeserver(), "matrix.org");
     }
 }

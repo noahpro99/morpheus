@@ -159,22 +159,6 @@ pub fn play(sound: Sound) {
     ));
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn chimes_are_wavs_of_the_right_length() {
-        let bytes = wav(Sound::Join);
-        assert_eq!(&bytes[..4], b"RIFF");
-        // 370 ms of 16-bit mono at 24 kHz, plus the 44-byte header.
-        assert_eq!(
-            bytes.len(),
-            44 + 2 * (RATE as usize * 110 / 1000 + RATE as usize * 260 / 1000)
-        );
-    }
-}
-
 /// Plays a ringtone outside the web view: `(sound's name, mono 16-bit
 /// samples, sample rate)`. A desktop sets one: closed to the tray its page
 /// is suspended and can't play, and the ring must still be heard.
@@ -201,4 +185,20 @@ pub fn ring_natively() {
         RING.get_or_init(|| samples(Sound::Ring)),
         RATE,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chimes_are_wavs_of_the_right_length() {
+        let bytes = wav(Sound::Join);
+        assert_eq!(&bytes[..4], b"RIFF");
+        // 370 ms of 16-bit mono at 24 kHz, plus the 44-byte header.
+        assert_eq!(
+            bytes.len(),
+            44 + 2 * (RATE as usize * 110 / 1000 + RATE as usize * 260 / 1000)
+        );
+    }
 }
