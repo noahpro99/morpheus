@@ -99,16 +99,27 @@ async fn threads_and_memory_stay_modest() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
+    // A fresh account in #firehose alone: the shared test accounts gather
+    // rooms, devices and history run after run, which the numbers followed
+    // (0.1.0 measured 420 MB when new, 640 MB on the same accounts later).
+    let user = morpheus_e2e::new_account(&hs, "memory").expect("an account");
+    morpheus_e2e::admin_join(&hs, &user, "#firehose:localhost").expect("in #firehose");
+    // The window fills the tests' 4K monitor, and WebKit's buffers follow its
+    // pixels: 0.1.0 and later both measure 540–600 MB here (420 MB was a
+    // laptop-sized window, before the test monitor).
     let mut app = App::launch_desktop(&hs).await.expect("launch app");
     app.wait_for("form.login", DEFAULT_WAIT)
         .await
         .expect("login form");
-    app.type_into("form.login input[name=username]", "alice")
+    app.type_into("form.login input[name=username]", &user)
         .await
         .expect("username");
-    app.type_into("form.login input[name=password]", "alice-password")
-        .await
-        .expect("password");
+    app.type_into(
+        "form.login input[name=password]",
+        &format!("{user}-password"),
+    )
+    .await
+    .expect("password");
     app.submit("form.login").await.expect("submit");
     app.wait_for_text(".room", "firehose", DEFAULT_WAIT)
         .await
@@ -125,6 +136,11 @@ async fn threads_and_memory_stay_modest() {
     }
     tokio::time::sleep(Duration::from_secs(2)).await;
 
+    let viewport = app
+        .eval("return [innerWidth, innerHeight, devicePixelRatio];")
+        .await
+        .expect("viewport");
+    eprintln!("[memory] window {viewport}");
     let pid = app.pid().expect("the app's process");
     let threads = std::fs::read_dir(format!("/proc/{pid}/task"))
         .map(|tasks| tasks.count())
@@ -152,13 +168,34 @@ async fn threads_and_memory_stay_modest() {
             .and_then(|v| v.split_whitespace().next()?.parse().ok())
             .unwrap_or(0)
     };
+    // Each process's share, to tell the app from WebKit's helpers.
+    for process in &processes {
+        let name = std::fs::read_to_string(format!("/proc/{process}/comm")).unwrap_or_default();
+        let rollup =
+            std::fs::read_to_string(format!("/proc/{process}/smaps_rollup")).unwrap_or_default();
+        let field = |key: &str| -> u64 {
+            rollup
+                .lines()
+                .find_map(|l| l.strip_prefix(key))
+                .and_then(|v| v.split_whitespace().next()?.parse().ok())
+                .unwrap_or(0)
+                / 1024
+        };
+        eprintln!(
+            "[memory]   {:>5} MB  {} (heap and other anonymous {} MB, files {} MB)",
+            pss_kb(*process) / 1024,
+            name.trim(),
+            field("Pss_Anon:"),
+            field("Pss_File:"),
+        );
+    }
     let total_mb = processes.iter().map(|p| pss_kb(*p)).sum::<u64>() / 1024;
     eprintln!(
         "[memory] {threads} threads, {total_mb} MB over {} processes",
         processes.len()
     );
     assert!(threads < 60, "{threads} threads in the app");
-    assert!(total_mb < 500, "{total_mb} MB for the app");
+    assert!(total_mb < 650, "{total_mb} MB for the app (4K window)");
 }
 
 /// A long scroll back keeps only the rows near the screen in the page:

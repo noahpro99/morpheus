@@ -158,7 +158,8 @@ timeline → send.
 ## Backlog
 - A share target on iOS: a share extension (Android has one: Morpheus in the share sheet, a Share to… dialog with a message and the rooms). Later on Android: direct-share shortcuts for recent conversations.
 - Opening Matrix links from outside, the rest: on iOS, the `matrix:` scheme; on Windows, registering the `matrix:` protocol (the link arrives as an argument, as on Linux, and a second start must hand it to the first: single-instance is Unix-only so far); on macOS, the URL type in Info.plist and the open-URL event. Done: clicked links (in messages); on Linux `matrix:` links and matrix.to arguments, handed to the running app; on Android `matrix:` and matrix.to links (not verified: Morpheus is offered for them).
-- A soundboard, as Discord's: short clips anyone in a call can play to everyone; people upload their own clips, managed in Settings → Voice & Video → Soundboard (name, emoji, volume; per-server sets later).
+- Memory checks: the release build's memory, threads and room-switch time measured on every release (the perf test against a release build, as for the site's numbers) and kept per version, so a regression shows before it ships; a CI job for it on Linux. Measure at a fixed window size: WebKit's memory follows the window's pixels, and the tests' 4K monitor (since Nov 5) made 0.1.0 and 0.1.3 alike measure 540–600 MB where a laptop-sized window gave 420 MB; no regression in the app itself.
+- Later: a soundboard, as Discord's: short clips anyone in a call can play to everyone; people upload their own clips, managed in Settings → Voice & Video → Soundboard (name, emoji, volume; per-server sets later).
 
 ## Hosting: morpheuschat.org (idea, not scheduled)
 - The client stays open source. Paid hosting on `morpheuschat.org` homeservers
