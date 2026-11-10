@@ -1293,6 +1293,9 @@ fn ChatRoom(room: RoomSummary) -> Element {
     });
 
     rsx! {
+        // A server's voice channel (on a desktop) is all call: no top bar,
+        // only its chat button in the corner.
+        if !voice_page {
         header { class: "chat-header",
             if narrow().0 {
                 button {
@@ -1395,8 +1398,12 @@ fn ChatRoom(room: RoomSummary) -> Element {
                 span { class: "search-toggle-label", "Search" }
                 Icon { glyph: crate::icons::SEARCH, size: 16 }
             }
-            // A voice channel's page: its text chat, opened beside the call.
-            if voice_page {
+        }
+        }
+        if voice_page {
+            // A server's voice channel: all call; its text chat beside it
+            // when opened from the chat button.
+            div { class: "voice-channel",
                 button {
                     class: "ghost voice-chat-toggle",
                     class: if voice_chat() { "active" },
@@ -1404,12 +1411,6 @@ fn ChatRoom(room: RoomSummary) -> Element {
                     onclick: move |_| voice_chat.toggle(),
                     Icon { glyph: crate::icons::MESSAGES_SQUARE, size: 18 }
                 }
-            }
-        }
-        if voice_page {
-            // A server's voice channel: all call; its text chat beside it
-            // when opened from the chat button.
-            div { class: "voice-room",
                 super::call::VoicePage { room_id: room.id.clone(), room_name: room.name.clone() }
                 if voice_chat() {
                     div { class: "voice-chat",

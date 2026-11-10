@@ -16,6 +16,10 @@ const VOICE_CHANNELS: [&str; 2] = ["hangout", "vault"];
 
 /// Open a room through the switcher (Ctrl+K), which shows it without joining
 /// a voice channel's call.
+/// The button that starts or joins a call: in a DM's top bar, or a voice
+/// channel's Join (its page has no top bar).
+const CALL_BUTTON: &str = ".chat-header .call-button, .voice-page-join .join-voice";
+
 async fn open_without_joining(app: &mut App, room: &str) {
     app.key_combo("body", "k", true, false, false)
         .await
@@ -30,7 +34,8 @@ async fn open_without_joining(app: &mut App, room: &str) {
         .await
         .expect("room offered");
     app.press(".switcher input", "Enter").await.expect("pick");
-    app.wait_for_text(".chat-header h2", room, DEFAULT_WAIT)
+    // A voice channel's page has no top bar: its name is on the Join screen.
+    app.wait_for_text(".chat-header h2, .voice-page-join h2", room, DEFAULT_WAIT)
         .await
         .expect("room open");
 }
@@ -113,10 +118,7 @@ async fn join_a_call_see_who_is_in_it_mute_and_hang_up() {
         .to_owned();
 
     // Alice starts a call from the header.
-    alice
-        .click(".chat-header .call-button")
-        .await
-        .expect("call");
+    alice.click(CALL_BUTTON).await.expect("call");
     alice
         .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
         .await
@@ -141,7 +143,7 @@ async fn join_a_call_see_who_is_in_it_mute_and_hang_up() {
     bob.wait_for_js(&in_call(&hangout_id, "alice"), DEFAULT_WAIT)
         .await
         .expect("bob sees alice in the call");
-    bob.click(".chat-header .call-button").await.expect("join");
+    bob.click(CALL_BUTTON).await.expect("join");
     bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
         .await
         .expect("bob connected");
@@ -173,7 +175,7 @@ async fn join_a_call_see_who_is_in_it_mute_and_hang_up() {
     // Joins and leaves stay out of the timeline.
     // (A voice channel's page shows the call; its chat opens beside it.)
     alice
-        .click(".chat-header .voice-chat-toggle")
+        .click(".voice-chat-toggle")
         .await
         .expect("open the chat");
     alice
@@ -252,15 +254,12 @@ async fn encrypted_rooms_encrypt_the_call_and_both_sides_still_hear() {
     let mut bob = App::launch(&hs).await.expect("launch bob");
     login_and_open(&mut bob, "bob", "vault").await;
 
-    alice
-        .click(".chat-header .call-button")
-        .await
-        .expect("call");
+    alice.click(CALL_BUTTON).await.expect("call");
     alice
         .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
         .await
         .expect("alice connected");
-    bob.click(".chat-header .call-button").await.expect("join");
+    bob.click(CALL_BUTTON).await.expect("join");
     bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
         .await
         .expect("bob connected");
@@ -410,10 +409,7 @@ async fn choose_the_microphone_and_speaker_for_calls() {
 
     // Calls still connect.
     open_without_joining(&mut alice, "hangout").await;
-    alice
-        .click(".chat-header .call-button")
-        .await
-        .expect("join");
+    alice.click(CALL_BUTTON).await.expect("join");
     alice
         .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
         .await
@@ -444,10 +440,7 @@ async fn a_call_in_a_dm_rings_the_other_person_who_can_answer_or_decline() {
     open_dm(&mut alice, "bob").await;
 
     // Alice calls; bob's app rings.
-    alice
-        .click(".chat-header .call-button")
-        .await
-        .expect("call bob");
+    alice.click(CALL_BUTTON).await.expect("call bob");
     bob.wait_for_text(".incoming-call", "alice", DEFAULT_WAIT)
         .await
         .expect("bob sees alice calling");
@@ -526,10 +519,7 @@ async fn a_call_in_a_dm_rings_the_other_person_who_can_answer_or_decline() {
         .expect("call empty");
 
     // She calls again; this time bob declines, and her call ends.
-    alice
-        .click(".chat-header .call-button")
-        .await
-        .expect("call bob again");
+    alice.click(CALL_BUTTON).await.expect("call bob again");
     alice
         .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
         .await
@@ -593,15 +583,12 @@ async fn a_camera_turned_on_shows_to_everyone_in_the_call_until_turned_off() {
     login_and_open(&mut alice, "alice", "vault").await;
     let mut bob = App::launch(&hs).await.expect("launch bob");
     login_and_open(&mut bob, "bob", "vault").await;
-    alice
-        .click(".chat-header .call-button")
-        .await
-        .expect("call");
+    alice.click(CALL_BUTTON).await.expect("call");
     alice
         .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
         .await
         .expect("alice connected");
-    bob.click(".chat-header .call-button").await.expect("join");
+    bob.click(CALL_BUTTON).await.expect("join");
     bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
         .await
         .expect("bob connected");
@@ -629,10 +616,7 @@ async fn a_camera_turned_on_shows_to_everyone_in_the_call_until_turned_off() {
     if alice.is_phone() {
         open_without_joining(&mut alice, "vault").await;
         // The call's own screen, where a phone shows the video.
-        alice
-            .click(".chat-header .call-button")
-            .await
-            .expect("open the call");
+        alice.click(CALL_BUTTON).await.expect("open the call");
         alice
             .wait_for(".call-screen", DEFAULT_WAIT)
             .await
@@ -785,15 +769,12 @@ async fn a_shared_screen_shows_to_everyone_in_the_call_until_stopped() {
     login_and_open(&mut alice, "alice", "hangout").await;
     let mut bob = App::launch(&hs).await.expect("launch bob");
     login_and_open(&mut bob, "bob", "hangout").await;
-    alice
-        .click(".chat-header .call-button")
-        .await
-        .expect("call");
+    alice.click(CALL_BUTTON).await.expect("call");
     alice
         .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
         .await
         .expect("alice connected");
-    bob.click(".chat-header .call-button").await.expect("join");
+    bob.click(CALL_BUTTON).await.expect("join");
     bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
         .await
         .expect("bob connected");
@@ -888,19 +869,14 @@ async fn joining_a_ringing_call_from_the_room_stops_the_ring_for_good() {
     let mut bob = App::launch(&hs).await.expect("launch bob");
     login_and_open(&mut bob, "bob", "hangout").await;
     open_dm(&mut alice, "bob").await;
-    alice
-        .click(".chat-header .call-button")
-        .await
-        .expect("call bob");
+    alice.click(CALL_BUTTON).await.expect("call bob");
     bob.wait_for_text(".incoming-call", "alice", DEFAULT_WAIT)
         .await
         .expect("bob's app rings");
 
     // Bob goes to the DM and joins from its header instead.
     open_dm(&mut bob, "alice").await;
-    bob.click(".chat-header .call-button")
-        .await
-        .expect("join from the room");
+    bob.click(CALL_BUTTON).await.expect("join from the room");
     bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
         .await
         .expect("bob connected");
@@ -947,10 +923,7 @@ async fn a_ring_during_a_call_is_shown_but_silent() {
     };
     let mut alice = App::launch_desktop(&hs).await.expect("launch alice");
     login_and_open(&mut alice, "alice", "hangout").await;
-    alice
-        .click(".chat-header .call-button")
-        .await
-        .expect("alice in a call");
+    alice.click(CALL_BUTTON).await.expect("alice in a call");
     alice
         .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
         .await
@@ -960,9 +933,7 @@ async fn a_ring_during_a_call_is_shown_but_silent() {
     let mut bob = App::launch(&hs).await.expect("launch bob");
     login_and_open(&mut bob, "bob", "hangout").await;
     open_dm(&mut bob, "alice").await;
-    bob.click(".chat-header .call-button")
-        .await
-        .expect("bob calls alice");
+    bob.click(CALL_BUTTON).await.expect("bob calls alice");
     alice
         .wait_for_text(".incoming-call", "bob", DEFAULT_WAIT)
         .await
@@ -1126,15 +1097,12 @@ async fn encrypted_calls_work_whatever_the_token_service_names_people() {
     let mut bob = App::launch_with_env(&hs, &env).await.expect("launch bob");
     login_and_open(&mut bob, "bob", "vault").await;
 
-    alice
-        .click(".chat-header .call-button")
-        .await
-        .expect("call");
+    alice.click(CALL_BUTTON).await.expect("call");
     alice
         .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
         .await
         .expect("alice connected");
-    bob.click(".chat-header .call-button").await.expect("join");
+    bob.click(CALL_BUTTON).await.expect("join");
     bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
         .await
         .expect("bob connected");
@@ -1198,10 +1166,7 @@ async fn the_call_stage_is_resized_by_dragging_its_edge() {
     // A DM call: a voice channel's page is all call, with nothing to resize.
     login_and_open(&mut alice, "alice", "general").await;
     open_dm(&mut alice, "bob").await;
-    alice
-        .click(".chat-header .call-button")
-        .await
-        .expect("call");
+    alice.click(CALL_BUTTON).await.expect("call");
     alice
         .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
         .await
@@ -1310,15 +1275,12 @@ async fn a_camera_shows_in_its_persons_card_among_equal_cards() {
     let mut bob = App::launch_desktop(&hs).await.expect("launch bob");
     login_and_open(&mut bob, "bob", "general").await;
     open_dm(&mut bob, "alice").await;
-    alice
-        .click(".chat-header .call-button")
-        .await
-        .expect("call");
+    alice.click(CALL_BUTTON).await.expect("call");
     alice
         .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
         .await
         .expect("alice connected");
-    bob.click(".chat-header .call-button").await.expect("join");
+    bob.click(CALL_BUTTON).await.expect("join");
     bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
         .await
         .expect("bob connected");
@@ -1441,10 +1403,7 @@ async fn a_ring_is_heard_on_the_desktop() {
     } else {
         ".voice-panel .hang-up"
     };
-    alice
-        .click(".chat-header .call-button")
-        .await
-        .expect("alice calls bob");
+    alice.click(CALL_BUTTON).await.expect("alice calls bob");
     bob.wait_for_text(".incoming-call", "alice", DEFAULT_WAIT)
         .await
         .expect("bob is rung");
@@ -1718,7 +1677,7 @@ async fn call_controls_live_in_the_profile_card_with_a_red_hang_up() {
 /// Join #hangout by opening it without joining, then the call button.
 async fn join_hangout(app: &mut App, user: &str) {
     login_and_open(app, user, "hangout").await;
-    app.click(".chat-header .call-button").await.expect("join");
+    app.click(CALL_BUTTON).await.expect("join");
     app.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
         .await
         .expect("in the call");
@@ -1928,10 +1887,7 @@ async fn joining_and_rejoining_picks_up_cameras_and_screens() {
             )
             .await
             .expect("left");
-        alice
-            .click(".chat-header .call-button")
-            .await
-            .expect("rejoin");
+        alice.click(CALL_BUTTON).await.expect("rejoin");
         alice
             .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
             .await
@@ -2122,10 +2078,7 @@ async fn quick_device_menus_on_the_mic_headphones_and_camera() {
 
     // In a call: the camera button's right-click lists cameras.
     open_without_joining(&mut alice, "hangout").await;
-    alice
-        .click(".chat-header .call-button")
-        .await
-        .expect("join");
+    alice.click(CALL_BUTTON).await.expect("join");
     alice
         .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
         .await
@@ -2300,10 +2253,6 @@ async fn a_voice_channel_joins_in_place_and_opens_as_a_call_page() {
         .await
         .expect("click again");
     alice
-        .wait_for_text(".chat-header h2", &channel, DEFAULT_WAIT)
-        .await
-        .expect("the channel open");
-    alice
         .wait_for(".call-stage.voice-page", DEFAULT_WAIT)
         .await
         .expect("all call");
@@ -2315,19 +2264,24 @@ async fn a_voice_channel_joins_in_place_and_opens_as_a_call_page() {
         0,
         "no resize handle, timeline or message box"
     );
-    let right = alice
-        .eval("const b = document.querySelector('.chat-header .voice-chat-toggle'); if (!b) return false; const r = b.getBoundingClientRect(); return [...document.querySelectorAll('.chat-header button')].every(o => o === b || o.getBoundingClientRect().right <= r.left + 1);")
+    assert_eq!(
+        alice.count(".chat-header").await.expect("count"),
+        0,
+        "no top bar over the call"
+    );
+    let corner = alice
+        .eval("const b = document.querySelector('.voice-chat-toggle'), p = document.querySelector('.voice-channel'); if (!b || !p) return false; const r = b.getBoundingClientRect(), q = p.getBoundingClientRect(); return r.right > q.right - 64 && r.top < q.top + 64;")
         .await
         .expect("toggle");
     assert_eq!(
-        right,
+        corner,
         serde_json::json!(true),
-        "the chat button at the top right"
+        "the chat button in the top right corner"
     );
     // A voice channel has no member list: the call shows who is there.
     assert_eq!(
         alice
-            .count(".members, .chat-header .member-toggle")
+            .count(".members, .member-toggle")
             .await
             .expect("count"),
         0,
@@ -2344,13 +2298,55 @@ async fn a_voice_channel_joins_in_place_and_opens_as_a_call_page() {
         "Ctrl+U opens no member list here"
     );
     alice
-        .click(".chat-header .voice-chat-toggle")
+        .click(".voice-chat-toggle")
         .await
         .expect("open the chat");
     alice
         .wait_for(".voice-chat .composer .composer-input", DEFAULT_WAIT)
         .await
         .expect("its text chat");
+
+    // Scrolled up in the chat, Jump to present sits in the chat's middle,
+    // above its message box (not placed against the whole window).
+    let room_id = alice
+        .eval(&format!("return {row}.dataset.room;"))
+        .await
+        .expect("room id");
+    let path = room_id
+        .as_str()
+        .expect("id")
+        .replace('!', "%21")
+        .replace(':', "%3A");
+    for n in 0..80 {
+        api_as(
+            &hs,
+            "bob",
+            "PUT",
+            &format!(
+                "rooms/{path}/send/m.room.message/fill-{}-{n}",
+                std::process::id()
+            ),
+            Some(serde_json::json!({ "msgtype": "m.text", "body": format!("filler {n}") })),
+        )
+        .expect("send");
+    }
+    alice
+        .wait_for_text(".voice-chat .message .body", "filler 79", DEFAULT_WAIT)
+        .await
+        .expect("the messages");
+    alice
+        .wait_for_js("const t = document.querySelector('.voice-chat .timeline'); t.scrollTop = -2000; return !!document.querySelector('.voice-chat .jump-to-bottom');", DEFAULT_WAIT)
+        .await
+        .expect("Jump to present");
+    let placed = alice
+        .eval("const b = document.querySelector('.voice-chat .jump-to-bottom').getBoundingClientRect(), c = document.querySelector('.voice-chat').getBoundingClientRect(), m = document.querySelector('.voice-chat .composer').getBoundingClientRect(); return [Math.abs((b.left + b.right) / 2 - (c.left + c.right) / 2) < 4, b.left >= c.left && b.right <= c.right, b.bottom <= m.top];")
+        .await
+        .expect("placed");
+    assert_eq!(
+        placed,
+        serde_json::json!([true, true, true]),
+        "centred in the chat, inside it, above the message box"
+    );
     alice.click(".voice-panel .hang-up").await.expect("leave");
 }
 
@@ -2369,10 +2365,7 @@ async fn a_dm_call_rings_back_for_the_caller_and_the_notification_rings() {
     let mut alice = App::launch(&hs).await.expect("launch alice");
     login_and_open(&mut alice, "alice", "general").await;
     open_dm(&mut alice, "bob").await;
-    alice
-        .click(".chat-header .call-button")
-        .await
-        .expect("call bob");
+    alice.click(CALL_BUTTON).await.expect("call bob");
     let ringbacks = "return (window.morpheusSounds ?? []).filter(s => s === 'ringback').length;";
     alice
         .wait_for_js(
@@ -2401,9 +2394,7 @@ async fn a_dm_call_rings_back_for_the_caller_and_the_notification_rings() {
 
     // Bob answers: the ringback stops.
     open_dm(&mut bob, "alice").await;
-    bob.click(".chat-header .call-button")
-        .await
-        .expect("answer");
+    bob.click(CALL_BUTTON).await.expect("answer");
     bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
         .await
         .expect("bob in");
@@ -2441,10 +2432,7 @@ async fn ctrl_enter_answers_a_ringing_call() {
     let mut alice = App::launch(&hs).await.expect("launch alice");
     login_and_open(&mut alice, "alice", "general").await;
     open_dm(&mut alice, "bob").await;
-    alice
-        .click(".chat-header .call-button")
-        .await
-        .expect("alice calls");
+    alice.click(CALL_BUTTON).await.expect("alice calls");
     bob.wait_for_text(".incoming-call", "alice", DEFAULT_WAIT)
         .await
         .expect("bob is rung");
@@ -2495,10 +2483,6 @@ async fn go_to_the_call_start_a_dm_call_and_decline_by_keyboard() {
         .eval("document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'V', code: 'KeyV', ctrlKey: true, shiftKey: true, altKey: true, bubbles: true })); return true;")
         .await
         .expect("ctrl+shift+alt+v");
-    alice
-        .wait_for_text(".chat-header h2", &channel, DEFAULT_WAIT)
-        .await
-        .expect("at the call");
     alice
         .wait_for(".call-stage.voice-page", DEFAULT_WAIT)
         .await
