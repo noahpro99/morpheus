@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.10.0.schema.json
+PackageIdentifier: noahpro99.Morpheus
+PackageVersion: 0.1.3
+PackageLocale: en-US
+Publisher: noahpro99
+PublisherUrl: https://github.com/noahpro99
+PublisherSupportUrl: https://github.com/noahpro99/morpheus/issues
+PackageName: Morpheus
+PackageUrl: https://morpheuschat.org
+License: MIT OR Apache-2.0
+LicenseUrl: https://github.com/noahpro99/morpheus/blob/main/LICENSE-MIT
+ShortDescription: A Discord-style Matrix client, with voice channels and calls.
+Description: |-
+  Morpheus is a Matrix client laid out like Discord: servers down the side, their channels next to them,
+  and voice channels you join with one click. It works with any Matrix homeserver, with end-to-end
+  encryption, voice and video calls, screen sharing, threads, reactions and Discord's keyboard shortcuts.
+Moniker: morpheus
+Tags:
+  - chat
+  - matrix
+  - messaging
+  - voice
+  - video
+ReleaseNotesUrl: https://github.com/noahpro99/morpheus/releases/tag/v0.1.3
+ManifestType: defaultLocale
+ManifestVersion: 1.10.0
