@@ -194,6 +194,29 @@ pub fn Composer(
             }
         });
     });
+    // Shared from another app to this room (the Share dialog): the files,
+    // then the message, once this room's timeline is the one open.
+    let mut share = use_context::<super::share::ShareToSend>();
+    use_effect(move || {
+        let Some(handle) = timeline() else { return };
+        let Some(pending) = share().0 else { return };
+        if !accepts_drops || handle.room_id() != pending.room {
+            return;
+        }
+        share.set(super::share::SharePending(None));
+        spawn(async move {
+            for file in pending.files {
+                if let Err(err) = handle.send_attachment(file).await {
+                    report("Sharing", &err);
+                }
+            }
+            if let Some(text) = pending.text
+                && let Err(err) = handle.send_text(text).await
+            {
+                report("Sharing", &err);
+            }
+        });
+    });
     // Focus the box as soon as the room is ready to send, so navigating to a
     // room (or opening a thread) lets you type straight away.
     let mut input_el = use_signal(|| None::<std::rc::Rc<MountedData>>);

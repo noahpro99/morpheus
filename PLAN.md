@@ -156,7 +156,7 @@ timeline → send.
   untied donations.
 
 ## Backlog
-- A share target on phones: Morpheus in Android's share sheet (an `ACTION_SEND`/`ACTION_SEND_MULTIPLE` intent filter for text, links, pictures and files) and iOS's (a share extension), opening a room picker (recent rooms and DMs first, with search) and sending what was shared, with a caption for files; Android's direct-share shortcuts for recent conversations later.
+- A share target on iOS: a share extension (Android has one: Morpheus in the share sheet, a Share to… dialog with a message and the rooms). Later on Android: direct-share shortcuts for recent conversations.
 - Opening Matrix links from outside, the rest: on iOS, the `matrix:` scheme; on Windows, registering the `matrix:` protocol (the link arrives as an argument, as on Linux, and a second start must hand it to the first: single-instance is Unix-only so far); on macOS, the URL type in Info.plist and the open-URL event. Done: clicked links (in messages); on Linux `matrix:` links and matrix.to arguments, handed to the running app; on Android `matrix:` and matrix.to links (not verified: Morpheus is offered for them).
 - A soundboard, as Discord's: short clips anyone in a call can play to everyone; people upload their own clips, managed in Settings → Voice & Video → Soundboard (name, emoji, volume; per-server sets later).
 

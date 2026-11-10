@@ -636,6 +636,44 @@ impl App {
         &self.download_dir
     }
 
+    /// Share to Morpheus from another app (Android's share sheet): `text`,
+    /// and a `content:` URI of a file, as SEND intents.
+    pub fn share_from_outside(&self, text: Option<&str>, stream: Option<&str>) -> Result<()> {
+        if !self.android {
+            bail!("sharing from another app is a phone's");
+        }
+        let mut args = vec!["shell", "am", "start", "-a", "android.intent.action.SEND"];
+        let text_arg;
+        let stream_arg;
+        match stream {
+            Some(uri) => {
+                stream_arg = format!("'{uri}'");
+                // As the data too: the read grant covers the intent's data URI.
+                args.extend([
+                    "-t",
+                    "image/*",
+                    "-d",
+                    &stream_arg,
+                    "--eu",
+                    "android.intent.extra.STREAM",
+                    &stream_arg,
+                    "--grant-read-uri-permission",
+                ]);
+            }
+            None => args.extend(["-t", "text/plain"]),
+        }
+        if let Some(text) = text {
+            text_arg = format!("'{text}'");
+            args.extend(["--es", "android.intent.extra.TEXT", &text_arg]);
+        }
+        args.extend([
+            "-n",
+            "dev.morpheus.mobile/dev.morpheus.mobile.ShareActivity",
+        ]);
+        adb(&args).ok_or_else(|| anyhow!("adb could not share"))?;
+        Ok(())
+    }
+
     /// Open `link` as the desktop does (a `matrix:` link, or matrix.to from a
     /// browser): the app is started again with it, on this app's data, and
     /// hands it to this running app. Returns once that second start exits.
@@ -908,6 +946,59 @@ static PHONE_BUSY: AtomicBool = AtomicBool::new(false);
 
 /// The mobile app's package and activity (see `apps/mobile`).
 pub const ANDROID_PACKAGE: &str = "dev.morpheus.mobile";
+
+/// A picture in the device's gallery, as another app would share it: its
+/// `content:` URI (a small PNG pushed to Pictures and indexed).
+pub fn android_gallery_picture() -> Result<String> {
+    use base64::Engine as _;
+    const NAME: &str = "morpheus-share.png";
+    // 16×16, a periwinkle square.
+    let png = base64::engine::general_purpose::STANDARD.decode(
+        "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAF0lEQVR4nGOsmXOHgRTARJLqUQ2jGgYJAAA5CwIBTrRTaAAAAABJRU5ErkJggg==",
+    )?;
+    let local = std::env::temp_dir().join(NAME);
+    std::fs::write(&local, png)?;
+    let remote = format!("/sdcard/Pictures/{NAME}");
+    adb(&["push", &local.to_string_lossy(), &remote]).ok_or_else(|| anyhow!("adb push"))?;
+    adb(&[
+        "shell",
+        "am",
+        "broadcast",
+        "-a",
+        "android.intent.action.MEDIA_SCANNER_SCAN_FILE",
+        "-d",
+        &format!("file://{remote}"),
+    ]);
+    // Indexed shortly after.
+    for _ in 0..20 {
+        let rows = adb(&[
+            "shell",
+            "content",
+            "query",
+            "--uri",
+            "content://media/external/images/media",
+            "--projection",
+            "_id:_display_name",
+        ])
+        .unwrap_or_default();
+        if let Some(id) = rows
+            .lines()
+            .filter(|row| row.contains(&format!("_display_name={NAME}")))
+            .find_map(|row| {
+                row.split("_id=")
+                    .nth(1)?
+                    .split(',')
+                    .next()
+                    .map(str::trim)
+                    .map(str::to_owned)
+            })
+        {
+            return Ok(format!("content://media/external/images/media/{id}"));
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    bail!("{NAME} never showed up in the gallery")
+}
 const ANDROID_ACTIVITY: &str = "dev.morpheus.mobile/dev.dioxus.main.MainActivity";
 /// Where the mobile app's bridge listens on the device (`crates/ui/src/e2e.rs`).
 const ANDROID_BRIDGE_PORT: u16 = 47100;

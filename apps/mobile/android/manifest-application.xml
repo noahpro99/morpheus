@@ -9,6 +9,19 @@
         <activity android:name="dev.morpheus.mobile.OpenRoomActivity" android:exported="false" android:theme="@android:style/Theme.NoDisplay" android:excludeFromRecents="true" android:taskAffinity="" />
         <!-- Matrix links opened elsewhere: matrix: links, and matrix.to (not
              verified, the domain is not ours: Morpheus is offered for them). -->
+        <!-- Morpheus in the share sheet: text, links, pictures and files. -->
+        <activity android:name="dev.morpheus.mobile.ShareActivity" android:exported="true" android:theme="@android:style/Theme.NoDisplay" android:excludeFromRecents="true" android:taskAffinity="">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+        </activity>
         <activity android:name="dev.morpheus.mobile.OpenLinkActivity" android:exported="true" android:theme="@android:style/Theme.NoDisplay" android:excludeFromRecents="true" android:taskAffinity="">
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
