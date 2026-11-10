@@ -31,6 +31,7 @@ mod linkify;
 mod media;
 pub mod notices;
 pub mod platform;
+pub mod shared;
 mod sounds;
 mod window;
 

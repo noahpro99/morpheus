@@ -539,6 +539,11 @@ impl TimelineUpdates {
 }
 
 impl TimelineHandle {
+    /// The room this timeline is of.
+    pub fn room_id(&self) -> matrix_sdk::ruma::OwnedRoomId {
+        self.timeline.room().room_id().to_owned()
+    }
+
     /// Send a message. Markdown is rendered to HTML when it contains any
     /// formatting; plain text otherwise. Shows up as a local echo first.
     pub fn send_text(&self, body: String) -> CoreFuture<()> {

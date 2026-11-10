@@ -24,6 +24,7 @@ mod room_dialogs;
 mod room_list;
 mod search;
 mod settings;
+mod share;
 mod shell;
 mod space_menu;
 mod switcher;

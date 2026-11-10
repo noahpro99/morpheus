@@ -408,6 +408,8 @@ pub fn Shell(session: Session) -> Element {
     let mut context_menu: ContextMenu = use_context_provider(|| Signal::new(MenuState::default()));
     use_context_provider(|| Signal::new(super::emoji_picker::PickerState::default()));
     use_context_provider(|| Signal::new(super::call::CallFocus::default()));
+    let mut share_open = use_context_provider(|| Signal::new(super::share::ShareShown::default()));
+    use_context_provider(|| Signal::new(super::share::SharePending::default()));
     let mut editor: ProfileEditor = use_context_provider(|| Signal::new(Editor::None));
     let _mention: MentionRequest = use_context_provider(|| Signal::new(Mention::default()));
     let mut message_dialog: OpenMessageDialog =
@@ -1006,6 +1008,10 @@ pub fn Shell(session: Session) -> Element {
             let session = session.clone();
             async move {
                 loop {
+                    // Shared from another app: ask where it goes.
+                    if let Some(shared) = crate::shared::take() {
+                        share_open.set(super::share::ShareShown(Some(shared)));
+                    }
                     while let Some(url) = crate::external_links::take() {
                         match morpheus_core::parse_matrix_link(&url) {
                             Some(link) => open_matrix_link(link, session.clone()),
@@ -1243,6 +1249,9 @@ pub fn Shell(session: Session) -> Element {
             }
             ContextMenuLayer {}
             super::emoji_picker::EmojiPickerLayer {}
+            if let Some(shared) = share_open().0 {
+                super::share::ShareDialog { shared }
+            }
         }
     }
 }

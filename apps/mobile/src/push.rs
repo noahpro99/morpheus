@@ -139,6 +139,8 @@ pub fn watch_open_room(data_dir: PathBuf, commands: morpheus_ui::AppCommands) {
     let path = data_dir.join("open_room");
     // A Matrix link opened elsewhere (`OpenLinkActivity`).
     let link = data_dir.join("open_link");
+    // Shared from another app (`ShareActivity`).
+    let share = data_dir.join("share.json");
     // Hang up, from the phone's ongoing call notification (`CallService`).
     let hang_up = data_dir.join("hang_up_call");
     let spawned = std::thread::Builder::new()
@@ -152,6 +154,13 @@ pub fn watch_open_room(data_dir: PathBuf, commands: morpheus_ui::AppCommands) {
                 if let Some(url) = read(&link) {
                     let _ = std::fs::remove_file(&link);
                     morpheus_ui::external_links::open(url);
+                }
+                if let Some(note) = read(&share) {
+                    let _ = std::fs::remove_file(&share);
+                    match morpheus_ui::shared::from_json(&note) {
+                        Some(shared) => morpheus_ui::shared::offer(shared),
+                        None => tracing::warn!("an empty share; ignored"),
+                    }
                 }
                 if hang_up.exists() {
                     let _ = std::fs::remove_file(&hang_up);
