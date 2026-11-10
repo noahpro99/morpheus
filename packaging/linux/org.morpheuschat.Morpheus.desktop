@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Morpheus
+GenericName=Matrix Client
+Comment=Chat, voice and video on Matrix
+Exec=morpheus
+Icon=org.morpheuschat.Morpheus
+Terminal=false
+Categories=Network;InstantMessaging;Chat;
+Keywords=matrix;chat;voice;video;discord;element;
+StartupNotify=true
+StartupWMClass=morpheus-desktop

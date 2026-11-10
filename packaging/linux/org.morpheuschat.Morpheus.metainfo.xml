@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.morpheuschat.Morpheus</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT OR Apache-2.0</project_license>
+  <name>Morpheus</name>
+  <summary>Chat, voice and video on Matrix</summary>
+  <developer id="org.morpheuschat">
+    <name>Morpheus</name>
+  </developer>
+  <description>
+    <p>
+      Morpheus is a Matrix client laid out like Discord: servers down the side,
+      their channels next to them, and voice channels you join with one click.
+      It talks to any Matrix homeserver, so you keep your account and rooms
+      and can talk with people on Element and other clients.
+    </p>
+    <ul>
+      <li>Servers (Matrix spaces) with text and voice channels, direct messages and threads</li>
+      <li>End-to-end encryption, with device verification and secure backup</li>
+      <li>Voice and video calls, screen sharing, and voice channels</li>
+      <li>Replies, reactions, edits, pinned messages, search and a command palette</li>
+      <li>Keyboard shortcuts as in Discord</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">org.morpheuschat.Morpheus.desktop</launchable>
+  <url type="homepage">https://morpheuschat.org</url>
+  <url type="bugtracker">https://github.com/noahpro99/morpheus/issues</url>
+  <url type="vcs-browser">https://github.com/noahpro99/morpheus</url>
+  <url type="donation">https://github.com/sponsors/noahpro99</url>
+  <screenshots>
+    <screenshot type="default">
+      <caption>A server's channel, with reactions, a reply and the member list</caption>
+      <image>https://raw.githubusercontent.com/noahpro99/morpheus/main/packaging/screenshots/desktop-chat.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>A shared picture and a thread</caption>
+      <image>https://raw.githubusercontent.com/noahpro99/morpheus/main/packaging/screenshots/desktop-image.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>A voice channel call</caption>
+      <image>https://raw.githubusercontent.com/noahpro99/morpheus/main/packaging/screenshots/desktop-call.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Jumping to any room or setting from the keyboard</caption>
+      <image>https://raw.githubusercontent.com/noahpro99/morpheus/main/packaging/screenshots/desktop-switcher.png</image>
+    </screenshot>
+  </screenshots>
+  <content_rating type="oars-1.1">
+    <content_attribute id="social-chat">intense</content_attribute>
+    <content_attribute id="social-audio">intense</content_attribute>
+    <content_attribute id="social-contacts">intense</content_attribute>
+  </content_rating>
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+  <requires>
+    <display_length compare="ge">768</display_length>
+  </requires>
+  <branding>
+    <color type="primary" scheme_preference="light">#7c8cff</color>
+    <color type="primary" scheme_preference="dark">#1a1e29</color>
+  </branding>
+  <releases>
+    <release version="0.1.3" date="2026-11-09">
+      <url type="details">https://github.com/noahpro99/morpheus/releases/tag/v0.1.3</url>
+      <description>
+        <p>Calls as in Discord (cards for everyone, one-click voice channels, ringing for direct calls), Discord's keyboard shortcuts, its layout, an encryption lock on every room, and fixes to scrolling through long rooms.</p>
+      </description>
+    </release>
+  </releases>
+</component>

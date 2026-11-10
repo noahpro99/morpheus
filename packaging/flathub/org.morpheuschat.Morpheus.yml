@@ -1,0 +1,69 @@
+# Flathub manifest: the Linux release zip (built from source by the repo's
+# Linux workflow) on GNOME's runtime, which has WebKitGTK 4.1, libsoup 3,
+# GTK 3, OpenSSL and SQLite. Added here: libxdo (the binary links
+# libxdo.so.3) and Ayatana AppIndicator (the tray icon, loaded at run time,
+# from flathub/shared-modules).
+id: org.morpheuschat.Morpheus
+runtime: org.gnome.Platform
+runtime-version: '48'
+sdk: org.gnome.Sdk
+command: morpheus
+finish-args:
+  - --share=network
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  # Calls: the microphone and speakers, and cameras (V4L2).
+  - --socket=pulseaudio
+  - --device=all
+  # Saving attachments where the user expects them.
+  - --filesystem=xdg-download
+  # Message notifications and the tray icon.
+  - --talk-name=org.freedesktop.Notifications
+  - --talk-name=org.kde.StatusNotifierWatcher
+modules:
+  - shared-modules/libayatana-appindicator/libayatana-appindicator-gtk3.json
+
+  - name: xdotool
+    no-autogen: true
+    make-args:
+      - PREFIX=/app
+    make-install-args:
+      - PREFIX=/app
+    sources:
+      - type: archive
+        url: https://github.com/jordansissel/xdotool/releases/download/v3.20211022.1/xdotool-3.20211022.1.tar.gz
+        sha256: 96f0facfde6d78eacad35b91b0f46fecd0b35e474c03e00e30da3fdd345f9ada
+    cleanup:
+      - /bin
+      - /include
+      - /share/man
+
+  - name: morpheus
+    buildsystem: simple
+    build-commands:
+      # The app finds its assets beside its binary.
+      - install -d /app/lib/morpheus /app/bin
+      - cp -r morpheus-desktop assets /app/lib/morpheus/
+      - ln -s ../lib/morpheus/morpheus-desktop /app/bin/morpheus
+      - install -Dm644 org.morpheuschat.Morpheus.desktop -t /app/share/applications
+      - install -Dm644 org.morpheuschat.Morpheus.metainfo.xml -t /app/share/metainfo
+      - install -Dm644 icon.svg /app/share/icons/hicolor/scalable/apps/org.morpheuschat.Morpheus.svg
+    sources:
+      - type: archive
+        url: https://github.com/noahpro99/morpheus/releases/download/v0.1.3/morpheus-0.1.3-linux-x86_64.zip
+        sha256: b5fc3383434eb3efc8a587378dc5ac4b45f39550489a0f4f8a5a2f2c89697be7
+        only-arches:
+          - x86_64
+        x-checker-data:
+          type: json
+          url: https://api.github.com/repos/noahpro99/morpheus/releases/latest
+          version-query: .tag_name | sub("^v"; "")
+          url-query: '"https://github.com/noahpro99/morpheus/releases/download/v" + $version + "/morpheus-" + $version + "-linux-x86_64.zip"'
+      - type: file
+        path: org.morpheuschat.Morpheus.desktop
+      - type: file
+        path: org.morpheuschat.Morpheus.metainfo.xml
+      - type: file
+        path: icon.svg
