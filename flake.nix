@@ -31,50 +31,176 @@
             }
           )
         );
+
+      # Native libraries the Dioxus desktop (webview) build links against on Linux.
+      guiLibsFor =
+        pkgs: with pkgs; [
+          gtk3
+          webkitgtk_4_1
+          libsoup_3
+          glib
+          cairo
+          pango
+          gdk-pixbuf
+          harfbuzz
+          librsvg
+          at-spi2-atk
+          xdotool # libxdo, needed by the desktop renderer (muda/tao)
+          libayatana-appindicator # system tray icon (tray-icon dlopens it)
+          libxkbcommon
+          wayland
+          libGL
+          vulkan-loader
+          openssl
+          sqlite
+          gsettings-desktop-schemas
+          alsa-lib # call audio (cpal)
+          libpulseaudio
+          pipewire
+          # libwebrtc (calls) loads these at runtime, for screen capture.
+          libx11
+          libxext
+          libxfixes
+          libxdamage
+          libxrandr
+          libxcomposite
+          libxtst
+          libdrm
+          libgbm
+        ];
     in
     {
       formatter = forEachSystem (pkgs: pkgs.nixfmt-rfc-style);
+
+      # `nix build` / `nix run`: the desktop app, for installing on NixOS
+      # (github:noahpro99/morpheus). Built as CI builds it, with dx, so its
+      # assets sit beside the binary as the app expects.
+      packages = nixpkgs.lib.genAttrs [ "x86_64-linux" ] (
+        system:
+        let
+          pkgs = import nixpkgs {
+            inherit system;
+            overlays = [ rust-overlay.overlays.default ];
+          };
+          inherit (pkgs) lib;
+          toolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
+          rustPlatform = pkgs.makeRustPlatform {
+            cargo = toolchain;
+            rustc = toolchain;
+          };
+          clang = pkgs.llvmPackages_21.clang;
+          guiLibs = guiLibsFor pkgs;
+          gstPlugins = with pkgs.gst_all_1; [
+            gstreamer
+            gst-plugins-base
+            gst-plugins-good
+          ];
+          # LiveKit's prebuilt libwebrtc (calls), which webrtc-sys would
+          # download while building: the tag is webrtc-sys-build's WEBRTC_TAG.
+          webrtc = pkgs.fetchzip {
+            url = "https://github.com/livekit/rust-sdks/releases/download/webrtc-89d790b/webrtc-linux-x64-release.zip";
+            hash = "sha256-qsjhLygyCqIJrk0PMxoP2aoUdd3DPvtFtYrlIOBLpx0=";
+          };
+          desktopItem = pkgs.makeDesktopItem {
+            name = "morpheus";
+            desktopName = "Morpheus";
+            genericName = "Matrix client";
+            comment = "Chat, voice and video on Matrix";
+            exec = "morpheus";
+            icon = "morpheus";
+            categories = [
+              "Network"
+              "InstantMessaging"
+              "Chat"
+            ];
+          };
+          morpheus = rustPlatform.buildRustPackage {
+            pname = "morpheus";
+            version = (builtins.fromTOML (builtins.readFile ./Cargo.toml)).workspace.package.version;
+            src = lib.fileset.toSource {
+              root = ./.;
+              fileset = lib.fileset.unions [
+                ./Cargo.toml
+                ./Cargo.lock
+                ./rust-toolchain.toml
+                ./apps
+                ./crates
+              ];
+            };
+            cargoLock.lockFile = ./Cargo.lock;
+
+            nativeBuildInputs = [
+              pkgs.dioxus-cli
+              pkgs.pkg-config
+              pkgs.cmake # aws-lc-sys
+              clang # webrtc-sys runs clang++ itself
+              pkgs.makeWrapper
+              pkgs.wrapGAppsHook3
+              pkgs.copyDesktopItems
+            ];
+            buildInputs = guiLibs ++ gstPlugins ++ [ pkgs.glib-networking ];
+
+            LK_CUSTOM_WEBRTC = webrtc;
+            # As in the dev shell: libwebrtc is built against Chromium's libc++.
+            CC_x86_64_unknown_linux_gnu = "${clang}/bin/clang";
+            CXX_x86_64_unknown_linux_gnu = "${clang}/bin/clang++";
+            dontUseCmakeConfigure = true;
+
+            buildPhase = ''
+              runHook preBuild
+              export HOME=$TMPDIR
+              dx build --release --package morpheus-desktop --platform linux
+              runHook postBuild
+            '';
+            doCheck = false;
+            installPhase = ''
+              runHook preInstall
+              app=target/dx/morpheus-desktop/release/linux/app
+              mkdir -p $out/lib/morpheus $out/bin
+              cp -r $app/morpheus-desktop $app/assets $out/lib/morpheus/
+              install -Dm644 apps/desktop/icons/icon.png $out/share/icons/hicolor/1024x1024/apps/morpheus.png
+              install -Dm644 apps/desktop/icons/icon.svg $out/share/icons/hicolor/scalable/apps/morpheus.svg
+              runHook postInstall
+            '';
+
+            desktopItems = [ desktopItem ];
+            # One wrapper, with webkitgtk's schemas and GIO modules, and what is
+            # loaded at run time: the tray, sound, screen capture, GL.
+            dontWrapGApps = true;
+            postFixup = ''
+              makeWrapper $out/lib/morpheus/morpheus-desktop $out/bin/morpheus \
+                "''${gappsWrapperArgs[@]}" \
+                --set WEBKIT_DISABLE_DMABUF_RENDERER 1 \
+                --prefix GST_PLUGIN_SYSTEM_PATH_1_0 : "${
+                  lib.makeSearchPathOutput "lib" "lib/gstreamer-1.0" gstPlugins
+                }" \
+                --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath guiLibs}"
+            '';
+
+            meta = {
+              description = "A Discord-style Matrix client";
+              homepage = "https://github.com/noahpro99/morpheus";
+              license = with lib.licenses; [
+                mit
+                asl20
+              ];
+              mainProgram = "morpheus";
+              platforms = [ "x86_64-linux" ];
+            };
+          };
+        in
+        {
+          inherit morpheus;
+          default = morpheus;
+        }
+      );
 
       devShells = forEachSystem (
         pkgs:
         let
           toolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
 
-          # Native libraries the Dioxus desktop (webview) build links against on Linux.
-          guiLibs = with pkgs; [
-            gtk3
-            webkitgtk_4_1
-            libsoup_3
-            glib
-            cairo
-            pango
-            gdk-pixbuf
-            harfbuzz
-            librsvg
-            at-spi2-atk
-            xdotool # libxdo, needed by the desktop renderer (muda/tao)
-            libayatana-appindicator # system tray icon (tray-icon dlopens it)
-            libxkbcommon
-            wayland
-            libGL
-            vulkan-loader
-            openssl
-            sqlite
-            gsettings-desktop-schemas
-            alsa-lib # call audio (cpal)
-            libpulseaudio
-            pipewire
-            # libwebrtc (calls) loads these at runtime, for screen capture.
-            libx11
-            libxext
-            libxfixes
-            libxdamage
-            libxrandr
-            libxcomposite
-            libxtst
-            libdrm
-            libgbm
-          ];
+          guiLibs = guiLibsFor pkgs;
 
           tools = with pkgs; [
             dioxus-cli
@@ -206,23 +332,23 @@
               };
             in
             pkgs.mkShell (
-            commonEnv
-            // {
-              nativeBuildInputs = tools ++ [
-                (toolchain.override { targets = [ "wasm32-unknown-unknown" ]; })
-                wasmBindgen
-                pkgs.binaryen
-                pkgs.chromium
-                pkgs.llvmPackages_21.clang-unwrapped
-              ];
-              buildInputs = guiLibs;
-              # C in the SDK's dependencies (ring, zstd) compiled for wasm.
-              CC_wasm32_unknown_unknown = "${pkgs.llvmPackages_21.clang-unwrapped}/bin/clang";
-              AR_wasm32_unknown_unknown = "${pkgs.llvmPackages_21.llvm}/bin/llvm-ar";
-              CHROME = "${pkgs.chromium}/bin/chromium";
-              inherit shellHook;
-            }
-          );
+              commonEnv
+              // {
+                nativeBuildInputs = tools ++ [
+                  (toolchain.override { targets = [ "wasm32-unknown-unknown" ]; })
+                  wasmBindgen
+                  pkgs.binaryen
+                  pkgs.chromium
+                  pkgs.llvmPackages_21.clang-unwrapped
+                ];
+                buildInputs = guiLibs;
+                # C in the SDK's dependencies (ring, zstd) compiled for wasm.
+                CC_wasm32_unknown_unknown = "${pkgs.llvmPackages_21.clang-unwrapped}/bin/clang";
+                AR_wasm32_unknown_unknown = "${pkgs.llvmPackages_21.llvm}/bin/llvm-ar";
+                CHROME = "${pkgs.chromium}/bin/chromium";
+                inherit shellHook;
+              }
+            );
           # `nix develop .#android` — the Android SDK/NDK and Rust targets for
           # `dx serve --platform android` on a plugged-in phone.
           android = androidShell false;
