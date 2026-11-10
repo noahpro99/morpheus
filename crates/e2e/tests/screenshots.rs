@@ -51,6 +51,14 @@ async fn login(app: &mut App, user: &str) {
     app.wait_for(".rail-item[title=\"Night Owls\"]", DEFAULT_WAIT)
         .await
         .expect("the space");
+    // Kept out of the pictures: the Secure Backup prompt a new account gets.
+    if app
+        .wait_for(".backup-prompt", Duration::from_secs(10))
+        .await
+        .is_ok()
+    {
+        let _ = app.click_text(".backup-prompt button", "Later").await;
+    }
     tokio::time::sleep(Duration::from_secs(2)).await;
 }
 
@@ -61,6 +69,21 @@ async fn open(app: &mut App, room: &str) {
         .expect("composer");
     // Pictures and reactions settle.
     tokio::time::sleep(Duration::from_secs(2)).await;
+}
+
+/// Click a voice channel's row: the first click joins its call (staying
+/// where you are), the next opens its call page.
+async fn join_voice(app: &mut App, room: &str) {
+    let row = format!(
+        "[...document.querySelectorAll('.room')].find(r => r.querySelector('.room-name')?.textContent.trim() === {})",
+        serde_json::to_string(room).expect("json")
+    );
+    app.wait_for_js(
+        &format!("const r = {row}; if (!r) return false; r.click(); return true;"),
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("the voice channel");
 }
 
 #[tokio::test]
@@ -130,25 +153,35 @@ async fn desktop_tour() {
 
     // A call in #hangout (a voice channel: opening it joins) with Milo,
     // both talking (test runs send a tone).
-    open(&mut app, "hangout").await;
+    join_voice(&mut app, "hangout").await;
     app.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
         .await
         .expect("connected");
     let mut milo = App::launch(&hs).await.expect("milo");
     login(&mut milo, "milo").await;
-    open(&mut milo, "hangout").await;
+    open(&mut milo, "lobby").await;
+    join_voice(&mut milo, "hangout").await;
     app.wait_for_js(
         "return document.querySelectorAll('.call-participant').length >= 2;",
         DEFAULT_WAIT,
     )
     .await
     .expect("both in the call");
+    // A second click on the channel opens its call page: a card each.
+    join_voice(&mut app, "hangout").await;
+    app.wait_for_js(
+        "return document.querySelectorAll('.call-stage.voice-page .call-cards > *').length >= 2;",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("both cards");
     let _ = app
         .wait_for_js(
             "return document.querySelector('.call-participant.speaking') !== null;",
             DEFAULT_WAIT,
         )
         .await;
+    tokio::time::sleep(Duration::from_secs(1)).await;
     shot(&mut app, "desktop-call").await;
     let _ = app
         .eval("document.querySelector('.voice-panel .hang-up')?.click();")
@@ -182,4 +215,19 @@ async fn phone_tour() {
     shot(&mut app, "phone-rooms").await;
     open(&mut app, "design").await;
     shot(&mut app, "phone-image").await;
+}
+
+/// The web app (app.morpheuschat.org) at 1440×900: #lobby. Run with
+/// MORPHEUS_E2E_WEB=1 in `nix develop .#web`, after `just e2e-web-build`.
+#[tokio::test]
+#[ignore = "takes screenshots for the website"]
+async fn web_tour() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping");
+        return;
+    };
+    let mut app = App::launch_sized(&hs, 1440, 900).await.expect("launch");
+    login(&mut app, "luna").await;
+    open(&mut app, "lobby").await;
+    shot(&mut app, "web-chat").await;
 }

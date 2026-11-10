@@ -63,6 +63,8 @@ pub async fn start(
     tokio::spawn(relay(driver, page, site));
 
     let chrome = std::env::var("CHROME").unwrap_or_else(|_| "chromium".into());
+    // Written afresh by this Chromium (a stale one points at a closed port).
+    let _ = std::fs::remove_file(data_dir.join("chrome/DevToolsActivePort"));
     let url = format!(
         "http://127.0.0.1:{page_port}/?e2e=1&homeserver={}",
         encode(homeserver)
@@ -77,6 +79,8 @@ pub async fn start(
             "--disable-renderer-backgrounding",
             "--autoplay-policy=no-user-gesture-required",
             "--enable-logging=stderr",
+            // For screenshots (DevTools; the port is written to the profile).
+            "--remote-debugging-port=0",
             "--v=0",
         ])
         .arg(format!(
@@ -248,4 +252,82 @@ fn mime(path: &Path) -> &'static str {
         "woff2" => "font/woff2",
         _ => "application/octet-stream",
     }
+}
+
+/// A PNG of the page, through Chromium's DevTools protocol (a headless
+/// browser has no window to capture).
+pub(crate) async fn screenshot(data_dir: &Path, size: (u32, u32), to: &Path) -> Result<()> {
+    use futures_util::{SinkExt, StreamExt};
+    use tokio_tungstenite::tungstenite::Message;
+
+    let active = std::fs::read_to_string(data_dir.join("chrome/DevToolsActivePort"))
+        .context("Chromium's DevTools port")?;
+    let port: u16 = active
+        .lines()
+        .next()
+        .and_then(|l| l.trim().parse().ok())
+        .ok_or_else(|| anyhow!("no DevTools port"))?;
+    // The page's own endpoint, from /json/list.
+    let mut http = TcpStream::connect(("127.0.0.1", port))
+        .await
+        .with_context(|| format!("DevTools on port {port} ({active:?})"))?;
+    // The Host (with its port) is what the page's endpoint is built from.
+    http.write_all(
+        format!("GET /json/list HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n")
+            .as_bytes(),
+    )
+    .await?;
+    let mut reply = Vec::new();
+    let _ = tokio::time::timeout(Duration::from_secs(5), http.read_to_end(&mut reply)).await;
+    let reply = String::from_utf8_lossy(&reply).into_owned();
+    let body = reply.split("\r\n\r\n").nth(1).unwrap_or_default();
+    let targets: serde_json::Value =
+        serde_json::from_str(body).with_context(|| format!("DevTools' page list: {reply:?}"))?;
+    let ws = targets
+        .as_array()
+        .and_then(|list| list.iter().find(|t| t["type"] == "page"))
+        .and_then(|t| t["webSocketDebuggerUrl"].as_str())
+        .ok_or_else(|| anyhow!("no page to capture"))?
+        // Chromium listens on IPv4; "localhost" may resolve to ::1 first.
+        .replace("ws://localhost:", "ws://127.0.0.1:");
+    let (mut socket, _) = tokio::time::timeout(
+        Duration::from_secs(10),
+        tokio_tungstenite::connect_async(ws.as_str()),
+    )
+    .await
+    .context("connecting to the page's DevTools")?
+    .with_context(|| format!("the page's DevTools at {ws}"))?;
+    // The page at the size asked for (a headless window's includes the
+    // browser's own bars), laid out again, then the picture.
+    socket
+        .send(Message::text(
+            serde_json::json!({ "id": 1, "method": "Emulation.setDeviceMetricsOverride",
+                "params": { "width": size.0, "height": size.1, "deviceScaleFactor": 1, "mobile": false } })
+            .to_string(),
+        ))
+        .await?;
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    socket
+        .send(Message::text(
+            serde_json::json!({ "id": 2, "method": "Page.captureScreenshot", "params": { "format": "png" } })
+                .to_string(),
+        ))
+        .await?;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+    while let Ok(Some(message)) = tokio::time::timeout_at(deadline, socket.next()).await {
+        let Message::Text(text) = message? else {
+            continue;
+        };
+        let reply: serde_json::Value = serde_json::from_str(&text)?;
+        if reply["id"] != 2 {
+            continue;
+        }
+        let data = reply["result"]["data"]
+            .as_str()
+            .ok_or_else(|| anyhow!("no picture: {reply}"))?;
+        let png = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, data)?;
+        std::fs::write(to, png)?;
+        return Ok(());
+    }
+    Err(anyhow!("DevTools closed before the picture"))
 }

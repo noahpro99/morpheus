@@ -571,6 +571,13 @@ impl App {
         if self.android {
             return android_screenshot(name);
         }
+        if web::enabled() {
+            let dir = workspace_root()?.join("target/e2e");
+            std::fs::create_dir_all(&dir)?;
+            let path = dir.join(format!("{name}.png"));
+            web::screenshot(&self.data_dir, self.size, &path).await?;
+            return Ok(Some(path));
+        }
         let Some(pid) = self.child.as_ref().and_then(Child::id) else {
             return Ok(None);
         };
