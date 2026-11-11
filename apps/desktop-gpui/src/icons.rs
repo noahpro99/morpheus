@@ -58,6 +58,7 @@ pub const LOG_OUT: &str = r#"<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /
 pub const USER_PLUS: &str = r#"<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /> <circle cx="9" cy="7" r="4" /> <line x1="19" x2="19" y1="8" y2="14" /> <line x1="22" x2="16" y1="11" y2="11" />"#;
 pub const USER_X: &str = r#"<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /> <circle cx="9" cy="7" r="4" /> <line x1="17" x2="22" y1="8" y2="13" /> <line x1="22" x2="17" y1="8" y2="13" />"#;
 pub const BAN: &str = r#"<circle cx="12" cy="12" r="10" /> <path d="m4.9 4.9 14.2 14.2" />"#;
+pub const IMAGE: &str = r#"<path d="M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" /> <circle cx="9" cy="9" r="2" /> <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />"#;
 pub const GAVEL: &str = r#"<path d="m14.5 12.5-8 8a2.119 2.119 0 1 1-3-3l8-8" /> <path d="m16 16 6-6" /> <path d="m8 8 6-6" /> <path d="m9 7 8 8" /> <path d="m21 11-8-8" />"#;
 pub const MESSAGE_CIRCLE: &str = r#"<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" />"#;
 pub const EYE_OFF: &str = r#"<path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49" /> <path d="M14.084 14.158a3 3 0 0 1-4.242-4.242" /> <path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143" /> <path d="m2 2 20 20" />"#;
@@ -128,6 +129,7 @@ fn glyph(name: &str) -> Option<&'static str> {
         "user-plus" => USER_PLUS,
         "user-x" => USER_X,
         "ban" => BAN,
+        "image" => IMAGE,
         "gavel" => GAVEL,
         "message-circle" => MESSAGE_CIRCLE,
         "eye-off" => EYE_OFF,

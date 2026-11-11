@@ -1162,6 +1162,91 @@ impl App {
         gpui()
     }
 
+    /// Whether each radio button or checkbox matching `selector` is checked.
+    pub async fn checked(&mut self, selector: &str) -> Result<Vec<bool>> {
+        if gpui() {
+            let list = self
+                .op("attrs", selector, json!({ "name": "checked" }))
+                .await?;
+            let list: Vec<Option<String>> = serde_json::from_value(list).unwrap_or_default();
+            return Ok(list.into_iter().map(|value| value.is_some()).collect());
+        }
+        let js = format!(
+            "return [...document.querySelectorAll({})].map(el => !!el.checked);",
+            js_str(selector)
+        );
+        let list = self.eval(&js).await?;
+        Ok(serde_json::from_value(list).unwrap_or_default())
+    }
+
+    /// Wait until the `index`th radio button or checkbox matching `selector`
+    /// is checked.
+    pub async fn wait_for_checked(
+        &mut self,
+        selector: &str,
+        index: usize,
+        timeout: Duration,
+    ) -> Result<()> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            let states = self.checked(selector).await.unwrap_or_default();
+            if states.get(index).copied().unwrap_or(false) {
+                return Ok(());
+            }
+            if Instant::now() >= deadline {
+                bail!(
+                    "timed out after {timeout:?} waiting for #{index} of {selector} to be checked (now {states:?})\n--- app log ---\n{}",
+                    self.log_tail(30)
+                );
+            }
+            sleep(POLL).await;
+        }
+    }
+
+    /// Choose the `index`th option of the `<select>` matching `selector`.
+    pub async fn choose_option(&mut self, selector: &str, index: usize) -> Result<()> {
+        if gpui() {
+            // The GPUI select opens its list when clicked.
+            let options = format!("{selector} option");
+            self.click(selector).await?;
+            self.wait_for(&options, DEFAULT_WAIT).await?;
+            let labels = self.texts(&options).await?;
+            let Some(label) = labels.get(index) else {
+                bail!("{selector} has no option {index} (only {labels:?})");
+            };
+            return self.click_text(&options, label).await;
+        }
+        let js = format!(
+            "const s = document.querySelector({}); if (!s) throw new Error('no select'); \
+             s.selectedIndex = {index}; s.dispatchEvent(new Event('change', {{ bubbles: true }}));",
+            js_str(selector)
+        );
+        self.eval(&js).await.map(drop)
+    }
+
+    /// Wait until no element matching `selector` has `needle` in its text.
+    pub async fn wait_for_text_gone(
+        &mut self,
+        selector: &str,
+        needle: &str,
+        timeout: Duration,
+    ) -> Result<()> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            let texts = self.texts(selector).await.unwrap_or_default();
+            if !texts.iter().any(|text| text.contains(needle)) {
+                return Ok(());
+            }
+            if Instant::now() >= deadline {
+                bail!(
+                    "timed out after {timeout:?} waiting for {selector} with {needle:?} to go\n--- app log ---\n{}",
+                    self.log_tail(30)
+                );
+            }
+            sleep(POLL).await;
+        }
+    }
+
     /// Wait until the first element matching `selector` has this `value`
     /// (an input's text).
     pub async fn wait_for_value(

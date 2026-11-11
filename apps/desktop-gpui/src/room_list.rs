@@ -12,6 +12,7 @@ use gpui::{Context, FontWeight, IntoElement, MouseButton, div, prelude::*, px, r
 use morpheus_core::{OwnedRoomId, RoomSummary, SpaceRoom};
 
 use crate::{
+    view_model::room_dialogs::RoomDialogKind,
     e2e::E2eExt as _,
     icons::icon,
     media::avatar,
@@ -185,6 +186,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                 })
                 .cursor_pointer()
                 .child(icon("plus", 18.0))
+                .on_click(cx.listener(|this, _, _, cx| this.open_room_dialog(RoomDialogKind::Create, cx)))
                 .e2e("button", "ghost create-room-button")
                 .attr("title", "Create room"),
         );

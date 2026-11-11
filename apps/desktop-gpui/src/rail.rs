@@ -12,6 +12,7 @@ use gpui::{
 use morpheus_core::RoomSummary;
 
 use crate::{
+    view_model::room_dialogs::RoomDialogKind,
     e2e::E2eExt as _,
     icons::icon,
     media::avatar,
@@ -349,6 +350,9 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                     .text_color(rgb(theme::ACCENT))
             })
             .child(icon("plus", 22.0))
+            .on_click(cx.listener(|this, _, _, cx| {
+                this.open_room_dialog(RoomDialogKind::CreateSpace(None), cx)
+            }))
             .e2e("button", "rail-item rail-add")
             .attr("title", "Create a server"),
     )

@@ -9,6 +9,7 @@ use morpheus_core::{NotifyMode, OwnedRoomId, OwnedUserId, RoomSummary};
 use super::{
     marks::MUTE_CHOICES,
     menu::{MenuAction, MenuItem},
+    room_dialogs::RoomDialogKind,
 };
 
 /// The three notification modes, as a submenu with the current one checked.
@@ -38,10 +39,10 @@ fn copy_room_id(room: &RoomSummary) -> MenuItem {
     MenuItem::new("Copy room ID", MenuAction::CopyId(room.id.to_string()))
 }
 
-fn privacy_item() -> MenuItem {
+fn privacy_item(room: &RoomSummary) -> MenuItem {
     MenuItem::new(
         "Privacy & encryption",
-        MenuAction::Unavailable("The room's privacy settings"),
+        MenuAction::RoomDialog(RoomDialogKind::Privacy(room.id.clone())),
     )
 }
 
@@ -51,7 +52,7 @@ pub fn room_menu(room: &RoomSummary, mode: Option<NotifyMode>) -> Vec<MenuItem> 
     if !room.is_dm {
         items.push(MenuItem::new(
             "Invite people",
-            MenuAction::Unavailable("Inviting people"),
+            MenuAction::RoomDialog(RoomDialogKind::Invite(room.id.clone())),
         ));
     }
     items.push(MenuItem::submenu(
@@ -61,14 +62,14 @@ pub fn room_menu(room: &RoomSummary, mode: Option<NotifyMode>) -> Vec<MenuItem> 
     if !room.is_dm {
         items.push(MenuItem::new(
             "Edit room",
-            MenuAction::Unavailable("Editing a room"),
+            MenuAction::RoomDialog(RoomDialogKind::Edit(room.id.clone())),
         ));
         items.push(MenuItem::new(
             "Create room",
-            MenuAction::Unavailable("Creating a room"),
+            MenuAction::RoomDialog(RoomDialogKind::Create),
         ));
     }
-    items.push(privacy_item());
+    items.push(privacy_item(room));
     items.push(MenuItem::new(
         "Copy link",
         MenuAction::CopyLink(format!("https://matrix.to/#/{}", room.id)),
@@ -171,7 +172,7 @@ pub fn dm_menu(room: &RoomSummary, dm: &DmState) -> Vec<MenuItem> {
             .collect();
         items.push(MenuItem::submenu(format!("Mute @{}", dm.name), choices));
     }
-    items.push(privacy_item());
+    items.push(privacy_item(room));
     items.push(MenuItem::new(
         "Copy user ID",
         MenuAction::CopyId(dm.user.to_string()),
@@ -194,7 +195,8 @@ pub fn space_menu(
     let all_muted = !children.is_empty() && children.iter().all(|r| r.muted);
     let mut items = vec![
         MenuItem::new("Mark as read", MenuAction::MarkRead(ids.clone())),
-        MenuItem::new("Invite to server", MenuAction::Unavailable("Inviting people")).icon("user-plus"),
+        MenuItem::new("Invite to server", MenuAction::RoomDialog(RoomDialogKind::Invite(space.id.clone())))
+            .icon("user-plus"),
         MenuItem::new(
             if all_muted { "Unmute server" } else { "Mute server" },
             MenuAction::Notify(
@@ -222,22 +224,22 @@ pub fn space_menu(
             .icon("eye-off"),
     );
     items.push(
-        MenuItem::new("Server settings", MenuAction::Unavailable("Server settings")).icon("settings"),
+        MenuItem::new("Server settings", MenuAction::RoomDialog(RoomDialogKind::Edit(space.id.clone()))).icon("settings"),
     );
     items.push(
-        MenuItem::new("Privacy settings", MenuAction::Unavailable("The server's privacy settings"))
+        MenuItem::new("Privacy settings", MenuAction::RoomDialog(RoomDialogKind::Privacy(space.id.clone())))
             .icon("lock"),
     );
     items.push(
         MenuItem::new(
             "Edit per-server profile",
-            MenuAction::Unavailable("The per-server profile"),
+            MenuAction::RoomDialog(RoomDialogKind::RoomProfile(space.id.clone())),
         )
         .icon("user-cog"),
     );
-    items.push(MenuItem::new("Create channel", MenuAction::Unavailable("Creating a channel")).icon("plus"));
+    items.push(MenuItem::new("Create channel", MenuAction::CreateChannel(space.id.clone())).icon("plus"));
     items.push(
-        MenuItem::new("Create category", MenuAction::Unavailable("Creating a category"))
+        MenuItem::new("Create category", MenuAction::RoomDialog(RoomDialogKind::CreateSpace(Some(space.id.clone()))))
             .icon("folder-plus"),
     );
     // Move to a folder (or out of one).
@@ -257,7 +259,7 @@ pub fn space_menu(
     );
     items.push(MenuItem::submenu("Move to", targets).icon("move"));
     items.push(
-        MenuItem::new("Leave server", MenuAction::Unavailable("Leaving a server")).danger(),
+        MenuItem::new("Leave server", MenuAction::RoomDialog(RoomDialogKind::LeaveSpace(space.id.clone()))).danger(),
     );
     items.push(
         MenuItem::submenu(

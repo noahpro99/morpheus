@@ -158,7 +158,7 @@ async fn handle(request: &Request, cx: &mut AsyncApp) -> Reply {
         return Err(no_op(request));
     };
     match op {
-        "count" | "texts" | "text" | "value" | "bounds" => {
+        "count" | "texts" | "attrs" | "text" | "value" | "bounds" => {
             with_state(|state| read(&state.tree, op, request))
         }
         "scroll_state" => {
@@ -305,6 +305,15 @@ fn read(tree: &Tree, op: &str, request: &Request) -> Reply {
             matches(tree, request)?
                 .into_iter()
                 .map(|i| tree.text(i))
+                .collect::<Vec<_>>()
+        ));
+    }
+    if op == "attrs" {
+        let name = request.name.as_deref().unwrap_or_default();
+        return Ok(json!(
+            matches(tree, request)?
+                .into_iter()
+                .map(|i| tree.nodes[i].attr(name))
                 .collect::<Vec<_>>()
         ));
     }

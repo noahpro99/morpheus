@@ -37,12 +37,13 @@ async fn menu_closed(app: &mut App) {
 }
 
 async fn labels(app: &mut App) -> String {
-    app.eval("return [...document.querySelectorAll('.context-menu > .context-item')].map(e => e.querySelector('.menu-label')?.textContent ?? e.textContent).join('|');")
+    app.texts(".context-menu > .context-item")
         .await
         .expect("labels")
-        .as_str()
-        .unwrap_or_default()
-        .to_owned()
+        .into_iter()
+        .map(|label| label.trim().to_owned())
+        .collect::<Vec<_>>()
+        .join("|")
 }
 
 #[tokio::test]
@@ -107,19 +108,14 @@ async fn server_menu_from_name_and_badge_runs_the_server_lifecycle() {
         .await
         .expect("name");
     app.submit(".create-space-dialog").await.expect("create");
-    app.wait_for_js(
-        "return document.querySelector('.create-space-dialog') === null;",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("closed");
+    app.wait_for_count(".create-space-dialog", 0, DEFAULT_WAIT)
+        .await
+        .expect("closed");
     app.wait_for_text(".sidebar-header h2", &server, DEFAULT_WAIT)
         .await
         .expect("still in the server");
     // The category reaches the room list via sync; retry the dialog until it offers it.
-    app.wait_for_js("return true;", Duration::from_millis(800))
-        .await
-        .expect("settle");
+    tokio::time::sleep(Duration::from_millis(800)).await;
     app.click(".create-room-button").await.expect("plus");
     app.wait_for(".create-room-dialog select[name=category]", DEFAULT_WAIT)
         .await
@@ -127,7 +123,7 @@ async fn server_menu_from_name_and_badge_runs_the_server_lifecycle() {
     app.type_into(".create-room-dialog input[name=name]", "chatter")
         .await
         .expect("name");
-    app.eval("const s = document.querySelector('.create-room-dialog select[name=category]'); s.selectedIndex = 1; s.dispatchEvent(new Event('change', { bubbles: true }));")
+    app.choose_option(".create-room-dialog select[name=category]", 1)
         .await
         .expect("pick category");
     app.submit(".create-room-dialog")
@@ -153,7 +149,7 @@ async fn server_menu_from_name_and_badge_runs_the_server_lifecycle() {
     app.wait_for(".privacy-dialog", DEFAULT_WAIT)
         .await
         .expect("privacy dialog");
-    app.eval("[...document.querySelectorAll('.privacy-dialog input[name=join]')][1].click();")
+    app.click_text(".privacy-dialog label.choice", "Invite only")
         .await
         .expect("invite only");
     app.submit(".privacy-dialog").await.expect("save");
@@ -161,24 +157,18 @@ async fn server_menu_from_name_and_badge_runs_the_server_lifecycle() {
         .await
         .expect("saved");
     app.press("body", "Escape").await.expect("escape");
-    app.wait_for_js(
-        "return document.querySelector('.privacy-dialog') === null;",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("closed");
+    app.wait_for_count(".privacy-dialog", 0, DEFAULT_WAIT)
+        .await
+        .expect("closed");
     app.click(".sidebar-header h2.server-name")
         .await
         .expect("name again");
     app.click_text(".context-item", "Privacy settings")
         .await
         .expect("privacy again");
-    app.wait_for_js(
-        "return document.querySelector('.privacy-dialog') && [...document.querySelectorAll('.privacy-dialog input[name=join]')][1].checked;",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("invite-only remembered");
+    app.wait_for_checked(".privacy-dialog input[name=join]", 1, DEFAULT_WAIT)
+        .await
+        .expect("invite-only remembered");
     app.press("body", "Escape").await.expect("escape");
 
     // Per-server profile: the nickname shows in the member list of its rooms.
@@ -232,15 +222,9 @@ async fn server_menu_from_name_and_badge_runs_the_server_lifecycle() {
     app.click_text(".leave-space-dialog button", "Leave server")
         .await
         .expect("confirm");
-    app.wait_for_js(
-        &format!(
-            "return document.querySelector('.rail-item[title={}]') === null;",
-            serde_json::to_string(&server).expect("json")
-        ),
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("badge gone");
+    app.wait_for_count(&format!(".rail-item[title=\"{server}\"]"), 0, DEFAULT_WAIT)
+        .await
+        .expect("badge gone");
     app.wait_for(".rail-item.selected[title=\"Rooms\"]", DEFAULT_WAIT)
         .await
         .expect("back in Rooms");

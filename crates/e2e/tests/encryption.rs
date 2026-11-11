@@ -123,12 +123,9 @@ async fn a_room_can_turn_on_encryption_for_good() {
     app.wait_for(".chat-header .e2e-badge.on", DEFAULT_WAIT)
         .await
         .expect("encrypted now");
-    app.wait_for_js(
-        "return !document.querySelector('.privacy-dialog .turn-on-encryption');",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("no way to turn it off");
+    app.wait_for_count(".privacy-dialog .turn-on-encryption", 0, DEFAULT_WAIT)
+        .await
+        .expect("no way to turn it off");
     app.wait_for_text(
         ".privacy-dialog .encryption-setting",
         "End-to-end encrypted",

@@ -83,6 +83,10 @@ pub enum MenuAction {
     SetRole(OwnedRoomId, OwnedUserId, MemberRole),
     Kick(OwnedRoomId, OwnedUserId),
     Ban(OwnedRoomId, OwnedUserId),
+    /// Opens a room dialog (invite, edit, create, privacy, leave a server).
+    RoomDialog(super::room_dialogs::RoomDialogKind),
+    /// "Create channel" on a server: lists that server, then asks for the room.
+    CreateChannel(OwnedRoomId),
     /// Opens something the GPUI build does not have yet (the string names it).
     Unavailable(&'static str),
 }

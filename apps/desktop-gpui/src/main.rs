@@ -22,6 +22,7 @@ mod prefs;
 mod profile;
 mod profile_actions;
 mod rail;
+mod room_dialogs;
 mod room_list;
 mod room_menus;
 mod settings;

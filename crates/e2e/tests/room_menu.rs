@@ -307,12 +307,9 @@ async fn create_edit_invite_and_leave_rooms() {
         .await
         .expect("leave");
     menu_closed(&mut app).await;
-    app.wait_for_js(
-        &format!("return ![...document.querySelectorAll('.room')].some(r => r.textContent.includes({}));", serde_json::to_string(&space_room).expect("json")),
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("space room gone");
+    app.wait_for_text_gone(".room", &space_room, DEFAULT_WAIT)
+        .await
+        .expect("space room gone");
     app.click(".rail-item[title=\"Rooms\"]")
         .await
         .expect("rooms");
@@ -321,12 +318,9 @@ async fn create_edit_invite_and_leave_rooms() {
         .await
         .expect("leave");
     menu_closed(&mut app).await;
-    app.wait_for_js(
-        &format!("return ![...document.querySelectorAll('.room')].some(r => r.textContent.includes({}));", serde_json::to_string(&renamed).expect("json")),
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("room gone after leaving");
+    app.wait_for_text_gone(".room", &renamed, DEFAULT_WAIT)
+        .await
+        .expect("room gone after leaving");
 }
 
 /// The chat header's room button opens the same menu as right-clicking the
