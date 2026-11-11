@@ -62,16 +62,27 @@ strip = "debuginfo"
 # Our crates compile fast; the heavy dependencies (matrix-sdk, crypto, webview) get optimised once.
 [profile.dev]
 opt-level = 1
+# Line tables only: panics and backtraces keep file and line; full debug
+# info (dependencies' generics compiled into our crates) was 600 MB more
+# to link and for dx to rewrite.
+debug = "line-tables-only"
 
 [profile.dev.package."*"]
 opt-level = 3
+# No debug info for dependencies: it was 1.9 GB of a 2.2 GB desktop binary,
+# which every build links and dx then reads and rewrites (up to two
+# minutes). Our crates keep theirs; backtraces still name dependencies'
+# functions.
+debug = false
 
-# dx builds phone apps with this profile. Full debug info made a 1 GB APK
-# that no longer fits an emulator's data partition; line tables keep
-# backtraces readable for our crates.
+# dx builds phone apps with this profile. No debug info: full debug info
+# made a 1 GB APK that no longer fits an emulator's data partition, and even
+# line tables were 170 MB of the 470 MB library every build packs into the
+# APK. Function names stay, so backtraces still name the functions.
 [profile.android-dev]
 inherits = "dev"
-debug = "line-tables-only"
+debug = false
+strip = "debuginfo"
 
 [profile.android-dev.package."*"]
 debug = false

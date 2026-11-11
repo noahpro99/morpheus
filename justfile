@@ -97,6 +97,10 @@ _android-extras:
     mkdir -p target/dx/morpheus-mobile/debug/android/app/app/libs
     cp "$(find target -name libwebrtc.jar -path '*android*' -print -quit)" target/dx/morpheus-mobile/debug/android/app/app/libs/libwebrtc.jar
     grep -q 'libs/libwebrtc.jar' target/dx/morpheus-mobile/debug/android/app/app/build.gradle.kts || sed -i 's|^dependencies {|dependencies {\n    implementation(files("libs/libwebrtc.jar"))|' target/dx/morpheus-mobile/debug/android/app/app/build.gradle.kts
+    # The native library stored, not deflated: packing hundreds of MB into
+    # the APK was most of a phone build. Android maps it from the APK as is.
+    sed -i 's|android:extractNativeLibs="true"|android:extractNativeLibs="false"|' target/dx/morpheus-mobile/debug/android/app/app/src/main/AndroidManifest.xml
+    grep -q 'useLegacyPackaging' target/dx/morpheus-mobile/debug/android/app/app/build.gradle.kts || sed -i 's|^\( *\)packaging {|\1packaging {\n\1    jniLibs.useLegacyPackaging = false|' target/dx/morpheus-mobile/debug/android/app/app/build.gradle.kts
     cd target/dx/morpheus-mobile/debug/android/app && ./gradlew assembleDebug -q
 
 # Update the app on a plugged-in phone, keeping its sign-in and data.
@@ -139,8 +143,9 @@ e2e-android-build: sweep
     rm -rf target/dx/morpheus-mobile/debug/android/app/app/src/main/jniLibs/arm64-v8a
     nix develop .#android-emulator -c dx build --package morpheus-mobile --platform android --target x86_64-linux-android --features e2e
     nix develop .#android-emulator -c just _android-extras
-    -nix develop .#android-emulator -c adb -s "${ANDROID_SERIAL:-emulator-5554}" uninstall dev.morpheus.mobile
-    nix develop .#android-emulator -c adb -s "${ANDROID_SERIAL:-emulator-5554}" install -r target/dx/morpheus-mobile/debug/android/app/app/build/outputs/apk/debug/app-debug.apk
+    # Installed over the old one (the tests clear its data themselves);
+    # uninstalled first only when that fails (another build's signature).
+    nix develop .#android-emulator -c bash -c 'apk=target/dx/morpheus-mobile/debug/android/app/app/build/outputs/apk/debug/app-debug.apk; adb -s "${ANDROID_SERIAL:-emulator-5554}" install -r "$apk" || { adb -s "${ANDROID_SERIAL:-emulator-5554}" uninstall dev.morpheus.mobile; adb -s "${ANDROID_SERIAL:-emulator-5554}" install "$apk"; }'
 
 # Drive the app on the virtual phone (`just android-emulator` and `just e2e-android-build` first)
 e2e-android: hs-seed
