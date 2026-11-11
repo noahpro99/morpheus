@@ -196,6 +196,11 @@ impl App {
 
         let stream = connect(port, &log_path).await?;
         let (reader, writer) = stream.into_split();
+        if gpui() {
+            if let Some(pid) = child.id() {
+                fit_window(pid, size.unwrap_or((1280, 800))).await;
+            }
+        }
         Ok(Self {
             child: Some(child),
             android: false,
@@ -1626,6 +1631,17 @@ fn keep_test_windows_unfocused() {
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .status();
+        // The GPUI app floats: tiled it fills the monitor whatever size it
+        // asked for (3838x2141), floating it keeps the size it opens at
+        // (`MORPHEUS_E2E_SIZE`). The Dioxus app is tiled and boxes its page.
+        let _ = std::process::Command::new("hyprctl")
+            .args([
+                "eval",
+                "hl.window_rule({ name = \"morpheus-test-gpui\", match = { class = \"^morpheus-gpui$\", title = \"^(Morpheus \\\\(test\\\\))$\" }, float = true })",
+            ])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
     });
 }
 
@@ -2624,5 +2640,165 @@ impl Bounds {
     }
     pub fn centre_x(&self) -> f64 {
         self.x + self.w / 2.0
+    }
+}
+
+/// Runs a cleanup when dropped, which includes a test failing (the panic
+/// unwinds through it), so a failed run leaves nothing behind for the next.
+pub struct Cleanup(Option<Box<dyn FnOnce() + Send>>);
+
+impl Cleanup {
+    pub fn new(run: impl FnOnce() + Send + 'static) -> Self {
+        Self(Some(Box::new(run)))
+    }
+}
+
+impl Drop for Cleanup {
+    fn drop(&mut self) {
+        if let Some(run) = self.0.take() {
+            run();
+        }
+    }
+}
+
+/// Empties `user`'s friends list now and again when the returned guard drops
+/// (even if the test fails), so friends tests start from none.
+pub fn reset_friends(homeserver: &str, user: &str) -> Cleanup {
+    let (homeserver, user) = (homeserver.to_owned(), user.to_owned());
+    let clear = move || {
+        let _ = api_as(
+            &homeserver,
+            &user,
+            "PUT",
+            &format!("user/@{user}:localhost/account_data/dev.morpheus.friends"),
+            Some(json!({ "users": [] })),
+        );
+    };
+    clear();
+    Cleanup::new(clear)
+}
+
+/// Leaves and forgets every room of `user` whose name starts with `prefix`,
+/// declining an invite to one: the rooms a test creates and invites to.
+pub fn remove_rooms_named(homeserver: &str, user: &str, prefix: &str) {
+    let named = |state: &Value| {
+        state
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|e| {
+                e["type"] == "m.room.name"
+                    && e["content"]["name"]
+                        .as_str()
+                        .is_some_and(|n| n.starts_with(prefix))
+            })
+    };
+    let mut rooms: Vec<String> = Vec::new();
+    // Joined rooms.
+    if let Ok(joined) = api_as(homeserver, user, "GET", "joined_rooms", None) {
+        for id in joined["joined_rooms"].as_array().into_iter().flatten() {
+            let Some(id) = id.as_str() else { continue };
+            let name = api_as(
+                homeserver,
+                user,
+                "GET",
+                &format!("rooms/{id}/state/m.room.name"),
+                None,
+            )
+            .unwrap_or(Value::Null);
+            if name["name"].as_str().is_some_and(|n| n.starts_with(prefix)) {
+                rooms.push(id.to_owned());
+            }
+        }
+    }
+    // Pending invites.
+    let filter = json!({ "room": { "timeline": { "limit": 0 }, "state": { "limit": 0 }, "ephemeral": { "limit": 0 } }, "presence": { "not_types": ["*"] }, "account_data": { "not_types": ["*"] } }).to_string();
+    if let Ok(sync) = api_as(
+        homeserver,
+        user,
+        "GET",
+        &format!("sync?timeout=0&filter={}", percent_encode(&filter)),
+        None,
+    ) {
+        if let Some(invites) = sync["rooms"]["invite"].as_object() {
+            for (id, room) in invites {
+                if named(&room["invite_state"]["events"]) {
+                    rooms.push(id.clone());
+                }
+            }
+        }
+    }
+    for id in rooms {
+        let _ = api_as(homeserver, user, "POST", &format!("rooms/{id}/leave"), Some(json!({})));
+        let _ = api_as(homeserver, user, "POST", &format!("rooms/{id}/forget"), Some(json!({})));
+    }
+}
+
+/// `remove_rooms_named` for several users, now and when the guard drops.
+pub fn reset_rooms_named(homeserver: &str, users: &[&str], prefix: &str) -> Cleanup {
+    let (homeserver, users, prefix) = (
+        homeserver.to_owned(),
+        users.iter().map(|u| (*u).to_owned()).collect::<Vec<_>>(),
+        prefix.to_owned(),
+    );
+    let clear = move || {
+        for user in &users {
+            remove_rooms_named(&homeserver, user, &prefix);
+        }
+    };
+    clear();
+    Cleanup::new(clear)
+}
+
+/// Percent-encodes what curl or a URL would take for syntax (quotes, braces,
+/// brackets, spaces, `*`), for a JSON filter in a query string.
+fn percent_encode(text: &str) -> String {
+    text.chars()
+        .map(|c| match c {
+            '"' | '{' | '}' | '[' | ']' | '*' | ' ' => format!("%{:02X}", c as u8),
+            c => c.to_string(),
+        })
+        .collect()
+}
+
+/// Gives the GPUI app's window the size the test asked for. On Hyprland the
+/// window floats (see `keep_test_windows_unfocused`) but opens at a size of
+/// the compositor's choosing (800x983), not the one the app asked for, so it
+/// is resized by pid and waited for. A no-op without Hyprland.
+async fn fit_window(pid: u32, (width, height): (u32, u32)) {
+    if std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_none() {
+        return;
+    }
+    let hyprctl = |args: &[&str]| {
+        std::process::Command::new("hyprctl")
+            .args(args)
+            .output()
+            .ok()
+            .map(|out| String::from_utf8_lossy(&out.stdout).into_owned())
+    };
+    let size_now = || -> Option<(i64, i64)> {
+        let clients: Value = serde_json::from_str(&hyprctl(&["clients", "-j"])?).ok()?;
+        let window = clients
+            .as_array()?
+            .iter()
+            .find(|c| c["pid"].as_u64() == Some(u64::from(pid)))?;
+        Some((window["size"][0].as_i64()?, window["size"][1].as_i64()?))
+    };
+    let want = (i64::from(width), i64::from(height));
+    for _ in 0..50 {
+        match size_now() {
+            // Within a pixel or two of the ask (borders).
+            Some((w, h)) if (w - want.0).abs() <= 2 && (h - want.1).abs() <= 2 => return,
+            Some(_) => {
+                hyprctl(&[
+                    "eval",
+                    &format!(
+                        "hl.dispatch(hl.dsp.window.resize({{ x = {width}, y = {height}, window = 'pid:{pid}' }}))"
+                    ),
+                ]);
+            }
+            None => {}
+        }
+        sleep(Duration::from_millis(100)).await;
     }
 }

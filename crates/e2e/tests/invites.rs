@@ -4,7 +4,7 @@
 
 #![allow(clippy::expect_used)]
 
-use morpheus_e2e::{App, DEFAULT_WAIT};
+use morpheus_e2e::{App, DEFAULT_WAIT, reset_rooms_named};
 
 fn homeserver() -> Option<String> {
     std::env::var("MORPHEUS_TEST_HOMESERVER").ok()
@@ -63,6 +63,7 @@ async fn invites_are_listed_declined_and_accepted() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
+    let _clean = reset_rooms_named(&hs, &["alice", "bob"], "e2e room invite");
     let mut alice = App::launch(&hs).await.expect("launch alice");
     login(&mut alice, "alice").await;
     alice.open_room("general").await.expect("open general");

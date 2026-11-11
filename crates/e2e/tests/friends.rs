@@ -4,7 +4,7 @@
 
 #![allow(clippy::expect_used)]
 
-use morpheus_e2e::{App, DEFAULT_WAIT};
+use morpheus_e2e::{App, DEFAULT_WAIT, reset_friends};
 
 fn homeserver() -> Option<String> {
     std::env::var("MORPHEUS_TEST_HOMESERVER").ok()
@@ -39,6 +39,7 @@ async fn friends_are_added_listed_messaged_and_removed() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
+    let _clean = reset_friends(&hs, "carol");
     let mut app = App::launch(&hs).await.expect("launch app");
     app.wait_for("form.login", DEFAULT_WAIT)
         .await
@@ -105,6 +106,7 @@ async fn new_message_by_username_opens_a_dm() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
+    let _clean = reset_friends(&hs, "carol");
     let mut app = App::launch(&hs).await.expect("launch app");
     app.wait_for("form.login", DEFAULT_WAIT)
         .await
@@ -174,6 +176,7 @@ async fn a_friends_whole_row_opens_the_dm() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
+    let _clean = reset_friends(&hs, "carol");
     let mut app = App::launch(&hs).await.expect("launch app");
     app.wait_for("form.login", DEFAULT_WAIT)
         .await
@@ -230,6 +233,7 @@ async fn dm_rows_are_tall() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
+    let _clean = reset_friends(&hs, "alice");
     let mut app = App::launch(&hs).await.expect("launch app");
     app.wait_for("form.login", DEFAULT_WAIT)
         .await
