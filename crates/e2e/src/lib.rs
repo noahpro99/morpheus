@@ -636,13 +636,31 @@ impl App {
 
     /// Where the first element matching `selector` is, in window pixels.
     pub async fn bounds(&mut self, selector: &str) -> Result<Option<Bounds>> {
+        self.bounds_of(selector, None).await
+    }
+
+    /// [`Self::bounds`] of the first match whose text contains `text`.
+    pub async fn bounds_containing(
+        &mut self,
+        selector: &str,
+        text: &str,
+    ) -> Result<Option<Bounds>> {
+        self.bounds_of(selector, Some(text)).await
+    }
+
+    async fn bounds_of(&mut self, selector: &str, text: Option<&str>) -> Result<Option<Bounds>> {
         let value = if gpui() {
-            self.op("bounds", selector, json!({})).await?
+            let filter = text.map_or(json!({}), |t| json!({ "contains": t }));
+            self.op("bounds", selector, filter).await?
         } else {
             let js = format!(
-                "const e = document.querySelector({}); if (!e) return null; const r = e.getBoundingClientRect(); \
+                "const e = [...document.querySelectorAll({})].find(e => {}); if (!e) return null; const r = e.getBoundingClientRect(); \
                  return {{ x: r.left, y: r.top, w: r.width, h: r.height }};",
-                js_str(selector)
+                js_str(selector),
+                text.map_or("true".to_owned(), |t| format!(
+                    "e.textContent.includes({})",
+                    js_str(t)
+                ))
             );
             self.eval(&js).await?
         };

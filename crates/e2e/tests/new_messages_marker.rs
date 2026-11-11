@@ -223,3 +223,79 @@ fn fully_read_on_a_redaction(hs: &str, room: &str) {
         &format!("{hs}/_matrix/client/v3/logout"),
     ]);
 }
+
+/// The same as the first half of the test above, without the message box:
+/// bob's message goes in through the API, and the divider is found by where
+/// it sits (so it runs on the GPUI app too).
+#[tokio::test]
+async fn new_message_marker_appears_above_unread_messages() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let general = morpheus_e2e::api_as(
+        &hs,
+        "alice",
+        "GET",
+        "directory/room/%23general:localhost",
+        None,
+    )
+    .expect("general");
+    let general = general["room_id"].as_str().expect("room id").to_owned();
+
+    // Alice catches up on #general first, then looks at #dev while bob posts.
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    login(&mut alice).await;
+    alice.open_room("general").await.expect("open general");
+    alice
+        .wait_for(".message .body", DEFAULT_WAIT)
+        .await
+        .expect("general loaded");
+    alice.open_room("dev").await.expect("open dev");
+    // The fully-read marker goes out when #general is left; let it land.
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    fully_read_on_a_redaction(&hs, "general");
+
+    let body = format!("marker port {}", std::process::id());
+    morpheus_e2e::send_as(&hs, "bob", &general, &body).expect("bob posts");
+
+    alice.open_room("general").await.expect("open general");
+    alice
+        .wait_for_text(".message .body", &body, DEFAULT_WAIT)
+        .await
+        .expect("bob's message visible");
+    alice
+        .wait_for(".new-divider", DEFAULT_WAIT)
+        .await
+        .expect("the NEW divider");
+    let divider = alice
+        .bounds(".new-divider")
+        .await
+        .expect("divider")
+        .expect("divider box");
+    let message = alice
+        .bounds_containing(".message", &body)
+        .await
+        .expect("message")
+        .expect("message box");
+    assert!(
+        divider.bottom() <= message.y + 1.0 && message.y - divider.bottom() < 60.0,
+        "the divider is not just above bob's message: divider {divider:?}, message {message:?}"
+    );
+}
+
+async fn login(app: &mut App) {
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    app.type_into("form.login input[name=username]", "alice")
+        .await
+        .expect("username");
+    app.type_into("form.login input[name=password]", "alice-password")
+        .await
+        .expect("password");
+    app.submit("form.login").await.expect("submit");
+    app.wait_for(".room", DEFAULT_WAIT)
+        .await
+        .expect("room listed");
+}

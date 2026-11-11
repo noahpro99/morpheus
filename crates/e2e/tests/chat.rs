@@ -273,3 +273,61 @@ async fn messages_show_up_live_for_whoever_is_looking() {
         .await
         .expect("carol sees bob's reply arrive while looking");
 }
+
+/// The timeline half of the tests above, without the message box: someone
+/// else's message arrives in the open room while alice only looks, the
+/// seeded history is still there far up, and rooms switch. Runs on the GPUI
+/// app too.
+#[tokio::test]
+async fn the_open_room_shows_history_and_live_messages() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let general = morpheus_e2e::api_as(
+        &hs,
+        "alice",
+        "GET",
+        "directory/room/%23general:localhost",
+        None,
+    )
+    .expect("general");
+    let general = general["room_id"].as_str().expect("room id").to_owned();
+
+    let mut app = App::launch(&hs).await.expect("launch app");
+    login(&mut app, "alice", "alice-password").await;
+    app.wait_for_text(".room", "general", DEFAULT_WAIT)
+        .await
+        .expect("general in room list");
+    app.open_room("general").await.expect("click general");
+    app.wait_for_text(".chat-header h2", "general", DEFAULT_WAIT)
+        .await
+        .expect("general header");
+    app.wait_for(".message .body", DEFAULT_WAIT)
+        .await
+        .expect("timeline loaded");
+    // The first seeded message is far up by now (every run adds messages).
+    app.reveal_message("Welcome to Morpheus", DEFAULT_WAIT)
+        .await
+        .expect("seeded message");
+
+    // Switch rooms.
+    app.open_room("dev").await.expect("click dev");
+    app.wait_for_text(".chat-header h2", "dev", DEFAULT_WAIT)
+        .await
+        .expect("dev header");
+    app.reveal_message("sliding sync is working", DEFAULT_WAIT)
+        .await
+        .expect("dev history");
+
+    // Back in general, a message from bob arrives while alice only looks.
+    app.open_room("general").await.expect("back to general");
+    app.wait_for(".message .body", DEFAULT_WAIT)
+        .await
+        .expect("timeline loaded");
+    let text = format!("live in general {}", std::process::id());
+    morpheus_e2e::send_as(&hs, "bob", &general, &text).expect("bob posts");
+    app.wait_for_text(".message .body", &text, DEFAULT_WAIT)
+        .await
+        .expect("alice sees it arrive");
+}

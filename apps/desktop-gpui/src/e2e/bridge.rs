@@ -376,6 +376,44 @@ fn click(window: &mut gpui::Window, cx: &mut App, (x, y): (f32, f32), button: Mo
     );
 }
 
+/// The first half of a click (move, press) and its second (release), apart:
+/// text with links only listens for the release once a frame has been drawn
+/// after the press, as a real click's time between them lets it.
+fn press_at(window: &mut gpui::Window, cx: &mut App, (x, y): (f32, f32), button: MouseButton) {
+    let position = point(px(x), px(y));
+    let modifiers = Modifiers::default();
+    let _ = window.dispatch_event(
+        PlatformInput::MouseMove(MouseMoveEvent {
+            position,
+            pressed_button: None,
+            modifiers,
+        }),
+        cx,
+    );
+    let _ = window.dispatch_event(
+        PlatformInput::MouseDown(MouseDownEvent {
+            button,
+            position,
+            modifiers,
+            click_count: 1,
+            first_mouse: false,
+        }),
+        cx,
+    );
+}
+
+fn release_at(window: &mut gpui::Window, cx: &mut App, (x, y): (f32, f32), button: MouseButton) {
+    let _ = window.dispatch_event(
+        PlatformInput::MouseUp(MouseUpEvent {
+            button,
+            position: point(px(x), px(y)),
+            modifiers: Modifiers::default(),
+            click_count: 1,
+        }),
+        cx,
+    );
+}
+
 /// Wait (briefly) for a frame after the input just dispatched: its effect
 /// shows in the tree once the app has redrawn. The counter is read now, not
 /// before the input: GPUI draws pending changes before handling an event, so
@@ -426,7 +464,17 @@ async fn act(op: &str, request: &Request, cx: &mut AsyncApp) -> Reply {
             } else {
                 MouseButton::Left
             };
-            cx.update_window(window, |_, window, cx| click(window, cx, centre, button))
+            cx.update_window(window, |_, window, cx| press_at(window, cx, centre, button))
+                .map_err(|err| err.to_string())?;
+            // Let a frame draw between press and release (up to 40 ms).
+            let drawn = with_state(|state| state.frame);
+            for _ in 0..8 {
+                if with_state(|state| state.frame) != drawn {
+                    break;
+                }
+                cx.background_executor().timer(Duration::from_millis(5)).await;
+            }
+            cx.update_window(window, |_, window, cx| release_at(window, cx, centre, button))
                 .map_err(|err| err.to_string())?;
         }
         "type" => {
