@@ -16,14 +16,14 @@ use gpui::{
     ListOffset, ListState, Render, Window, div, list, point, prelude::*, px, relative, rgb,
 };
 use morpheus_core::{
-    MediaRef, MessageKind, OpenTimeline, OwnedRoomId, Session, TimelineEntry, TimelineHandle,
+    MediaRef, Message, MessageKind, OpenTimeline, OwnedRoomId, Session, TimelineEntry, TimelineHandle,
     Vector,
 };
 
 use crate::{
     e2e::{E2eExt as _, ScrollState, Scrollable},
     media::{self, Avatars},
-    message::{self, LinkHandler, Pictures},
+    message::{self, ActionHandler, LinkHandler, Pictures, RowAction},
     theme,
     view_model::rows::{
         MessageRow, Row, changed_range, first_unread_after_marker, first_unread_since, group_rows,
@@ -50,6 +50,20 @@ pub struct LinkClicked(pub String);
 
 impl EventEmitter<LinkClicked> for TimelineView {}
 
+/// What the room's composer needs to hear from its timeline.
+pub enum TimelineEvent {
+    /// The timeline is open: its handle sends messages.
+    Opened(TimelineHandle),
+    /// "Reply" on a message.
+    Reply(Message),
+    /// "Edit" on a message.
+    Edit(Message),
+    /// Your newest message that can be edited changed.
+    LastOwn(Option<Message>),
+}
+
+impl EventEmitter<TimelineEvent> for TimelineView {}
+
 pub struct TimelineView {
     #[allow(dead_code)]
     room_id: OwnedRoomId,
@@ -69,6 +83,10 @@ pub struct TimelineView {
     read_at: Option<u64>,
     images: Avatars,
     links: LinkHandler,
+    actions: ActionHandler,
+    last_own: Option<Message>,
+    /// The newest own message still sending that the view jumped down to.
+    echoed: Option<String>,
 }
 
 /// Scroll numbers of a list, in px: what a test and the jump button read.
@@ -106,6 +124,12 @@ impl TimelineView {
             let url = url.to_owned();
             weak.update(cx, |_, cx| cx.emit(LinkClicked(url))).ok();
         });
+        let weak = cx.weak_entity();
+        let actions: ActionHandler = Rc::new(move |action, unique_id: &str, _window, cx| {
+            let unique_id = unique_id.to_owned();
+            weak.update(cx, |this, cx| this.row_action(action, &unique_id, cx))
+                .ok();
+        });
         let this = Self {
             room_id: room_id.clone(),
             session: session.clone(),
@@ -123,6 +147,9 @@ impl TimelineView {
             read_at: None,
             images: Avatars::default(),
             links,
+            actions,
+            last_own: None,
+            echoed: None,
         };
         if let Some(session) = session {
             cx.spawn(async move |this, cx| {
@@ -135,7 +162,8 @@ impl TimelineView {
                         let read_at = session.fully_read_at(room_id).await.ok().flatten();
                         let alive = this
                             .update(cx, |this, cx| {
-                                this.handle = Some(handle);
+                                this.handle = Some(handle.clone());
+                                cx.emit(TimelineEvent::Opened(handle));
                                 this.read_at = read_at;
                                 this.rebuild();
                                 cx.notify();
@@ -174,6 +202,15 @@ impl TimelineView {
         for diff in diffs {
             diff.apply(&mut self.entries);
         }
+        // The newest own message that can be edited, for "Up to edit".
+        let newest = self.entries.iter().rev().find_map(|entry| match entry {
+            TimelineEntry::Message(m) if m.is_own && m.can_edit => Some((**m).clone()),
+            _ => None,
+        });
+        if newest != self.last_own {
+            self.last_own = newest.clone();
+            cx.emit(TimelineEvent::LastOwn(newest));
+        }
         // The divider goes where the SDK placed its read marker (or where the
         // saved read position says), once, and stays.
         if self.new_marker.is_none()
@@ -209,6 +246,15 @@ impl TimelineView {
         }
         self.last_update = std::time::Instant::now();
         self.rebuild();
+        // Sending a message brings the view to it, wherever it was scrolled.
+        let sending = self.entries.iter().rev().find_map(|entry| match entry {
+            TimelineEntry::Message(m) if m.is_own && m.is_local_echo => Some(m.unique_id.clone()),
+            _ => None,
+        });
+        if sending.is_some() && sending != self.echoed {
+            self.jump_to_present(cx);
+        }
+        self.echoed = sending.or(self.echoed.take());
         // Look again for a column the history does not fill yet, once updates settle.
         cx.spawn(async move |this, cx| {
             cx.background_executor().timer(AUTO_FILL_SETTLE + Duration::from_millis(50)).await;
@@ -356,7 +402,40 @@ impl TimelineView {
             }
             _ => {}
         }
-        message::message_el(&row, show_header, &pictures, None, &self.links)
+        message::message_el(
+            &row,
+            show_header,
+            &pictures,
+            None,
+            &self.links,
+            Some(&self.actions),
+        )
+    }
+
+    /// A click on a message's hover bar.
+    fn row_action(&mut self, action: RowAction, unique_id: &str, cx: &mut Context<Self>) {
+        let Some(message) = self.rows.iter().find_map(|row| match row {
+            Row::Message { row, .. } if row.message.unique_id == unique_id => {
+                Some(row.message.clone())
+            }
+            _ => None,
+        }) else {
+            return;
+        };
+        match action {
+            RowAction::Reply => cx.emit(TimelineEvent::Reply(message)),
+            RowAction::Edit => cx.emit(TimelineEvent::Edit(message)),
+            RowAction::React(key) => {
+                let Some(handle) = &self.handle else { return };
+                let toggling = handle.toggle_reaction(message.id, key.to_owned());
+                cx.spawn(async move |_, _| {
+                    if let Err(err) = toggling.await {
+                        eprintln!("morpheus-gpui: reaction: {err}");
+                    }
+                })
+                .detach();
+            }
+        }
     }
 
     /// Scrolls to the newest message.

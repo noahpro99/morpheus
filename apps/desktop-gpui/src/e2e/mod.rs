@@ -126,3 +126,33 @@ pub fn query(selector: &str) -> Vec<(String, (f32, f32))> {
             .collect()
     })
 }
+
+/// The bounds of the first match in the last frame, for widget tests.
+#[cfg(all(feature = "e2e", test))]
+pub fn query_bounds(selector: &str) -> Option<tree::Rect> {
+    let selector = selector::Selector::parse(selector).expect("selector");
+    tag::with_state(|state| {
+        selector
+            .select(&state.tree)
+            .first()
+            .map(|&i| state.tree.nodes[i].bounds)
+    })
+}
+
+/// An attribute of the first match in the last frame, for widget tests.
+#[cfg(all(feature = "e2e", test))]
+pub fn query_attr(selector: &str, name: &str) -> Option<String> {
+    let selector = selector::Selector::parse(selector).expect("selector");
+    tag::with_state(|state| {
+        selector
+            .select(&state.tree)
+            .first()
+            .and_then(|&i| state.tree.nodes[i].attr(name))
+    })
+}
+
+/// The composer the bridge's `attach_file` hands files to (the open room's).
+#[cfg(feature = "e2e")]
+pub fn on_attach(composer: gpui::WeakEntity<crate::composer::Composer>) {
+    bridge::set_attach_target(composer);
+}
