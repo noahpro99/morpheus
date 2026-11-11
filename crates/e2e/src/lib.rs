@@ -111,13 +111,16 @@ impl App {
             return Self::start_android(false, &[]).await;
         }
         let data_dir = self.data_dir.clone();
+        let size = self.size;
         let homeserver = self.homeserver.clone();
         if let Some(child) = &mut self.child {
             let _ = child.kill().await;
         }
         // Keep the data dir: `Drop` would delete it.
         std::mem::forget(self);
-        Self::launch_with_data_dir(&homeserver, data_dir, None, &[]).await
+        // The same size as before: a window opened after another was killed
+        // can come up as big as the screen.
+        Self::launch_with_data_dir(&homeserver, data_dir, Some(size), &[]).await
     }
 
     async fn launch_with_data_dir(

@@ -18,6 +18,8 @@ pub const BG_ELEVATED: u32 = 0x222736;
 /// `rgba(255, 255, 255, 0.04)` and `0.08`, as 0xRRGGBBAA.
 pub const BG_HOVER: u32 = 0xffffff0a;
 pub const BG_SELECTED: u32 = 0xffffff14;
+/// `--green`: the New Message tab.
+pub const GREEN: u32 = 0x23a559;
 pub const RADIUS_SM: f32 = 6.0;
 pub const RADIUS_LG: f32 = 12.0;
 pub const RADIUS_XL: f32 = 16.0;

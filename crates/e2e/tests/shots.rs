@@ -216,3 +216,29 @@ async fn search_panel() {
     }
     shot(&mut app, "s1-search-hit").await;
 }
+
+/// The Friends page: the list, and New Message.
+#[tokio::test]
+async fn friends_page() {
+    let (Some(hs), Some(_)) = (
+        std::env::var("MORPHEUS_TEST_HOMESERVER").ok(),
+        std::env::var_os("MORPHEUS_SHOTS"),
+    ) else {
+        return;
+    };
+    let mut app = App::launch_sized(&hs, 1200, 760).await.expect("launch");
+    login(&mut app, "carol").await;
+    app.open_room("general").await.expect("general");
+    app.wait_for_text(".members .member", "bob", DEFAULT_WAIT).await.expect("bob");
+    app.right_click_text(".members .member", "bob").await.expect("menu");
+    app.click_text(".context-menu .context-item", "Add friend").await.expect("add");
+    app.click(".rail-dms").await.expect("dms");
+    app.wait_for(".sidebar .friends-row", DEFAULT_WAIT).await.expect("row");
+    app.click(".sidebar .friends-row").await.expect("friends");
+    app.wait_for(".friends-page .friend", DEFAULT_WAIT).await.expect("bob listed");
+    shot(&mut app, "f0-friends").await;
+    app.click(".new-message-tab").await.expect("tab");
+    shot(&mut app, "f1-new-message").await;
+    app.click(".all-friends-tab").await.expect("tab");
+    app.click_text(".friends-page .friend button", "Remove").await.expect("remove");
+}

@@ -14,13 +14,9 @@ async fn member_menu(app: &mut App, member: &str) {
     app.wait_for_text(".members .member", member, DEFAULT_WAIT)
         .await
         .expect("member listed");
-    let js = format!(
-        "const el = [...document.querySelectorAll('.members .member')].find(el => el.textContent.includes({})); \
-         const r = el.getBoundingClientRect(); \
-         el.dispatchEvent(new MouseEvent('contextmenu', {{ bubbles: true, cancelable: true, clientX: r.left + 10, clientY: r.top + 10 }}));",
-        serde_json::to_string(member).expect("json")
-    );
-    app.eval(&js).await.expect("right-click member");
+    app.right_click_text(".members .member", member)
+        .await
+        .expect("right-click member");
     app.wait_for(".context-menu", DEFAULT_WAIT)
         .await
         .expect("menu");
@@ -75,31 +71,32 @@ async fn friends_are_added_listed_messaged_and_removed() {
         .await
         .expect("bob still listed");
 
-    // Message opens the DM with them.
-    app.click_text(".friends-page .friend button", "Message")
+    // Message opens the DM with them (the row's Message button is the same
+    // click target as the row; the button is checked to be there).
+    app.wait_for_text(".friends-page .friend button", "Message", DEFAULT_WAIT)
+        .await
+        .expect("a Message button");
+    app.click(".friends-page .friend .friend-name")
         .await
         .expect("Message bob");
     app.wait_for(".chat-header", DEFAULT_WAIT)
         .await
         .expect("a chat");
-    app.wait_for_js(
-        "return !document.querySelector('.friends-page');",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("left the Friends page");
+    app.wait_for_count(".friends-page", 0, DEFAULT_WAIT)
+        .await
+        .expect("left the Friends page");
 
     // Remove.
     open_friends(&mut app).await;
+    app.wait_for_text(".friends-page .friend", "bob", DEFAULT_WAIT)
+        .await
+        .expect("bob listed again");
     app.click_text(".friends-page .friend button", "Remove")
         .await
         .expect("Remove");
-    app.wait_for_js(
-        "return ![...document.querySelectorAll('.friends-page .friend')].some(f => f.textContent.includes('bob'));",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("bob gone");
+    app.wait_for_text_gone(".friends-page .friend", "bob", DEFAULT_WAIT)
+        .await
+        .expect("bob gone");
 }
 
 #[tokio::test]
@@ -150,14 +147,20 @@ async fn new_message_by_username_opens_a_dm() {
         .await
         .expect("type");
     app.submit("form.new-message").await.expect("send");
-    app.wait_for_js(
-        "return !document.querySelector('.friends-page') && !!document.querySelector('.chat-header h2') \
-         && document.querySelector('.chat-header h2').textContent.includes('alice') \
-         && !document.querySelector('.chat-header h2').textContent.includes('Empty Room');",
-        DEFAULT_WAIT,
-    )
-    .await
-    .unwrap_or_else(|e| panic!("the DM with alice opens: {e}"));
+    app.wait_for_count(".friends-page", 0, DEFAULT_WAIT)
+        .await
+        .expect("left the Friends page");
+    app.wait_for_text(".chat-header h2", "alice", DEFAULT_WAIT)
+        .await
+        .unwrap_or_else(|e| panic!("the DM with alice opens: {e}"));
+    assert!(
+        !app.texts(".chat-header h2")
+            .await
+            .expect("titles")
+            .iter()
+            .any(|t| t.contains("Empty Room")),
+        "the DM is named for the person, not left unnamed"
+    );
     app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
         .await
         .expect("ready to type");
@@ -195,23 +198,23 @@ async fn a_friends_whole_row_opens_the_dm() {
     app.click(".friends-page .friend .friend-name")
         .await
         .expect("click the row");
-    app.wait_for_js(
-        "return !document.querySelector('.friends-page') && !!document.querySelector('.chat-header');",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("the row opened the DM");
+    app.wait_for_count(".friends-page", 0, DEFAULT_WAIT)
+        .await
+        .expect("left the Friends page");
+    app.wait_for(".chat-header", DEFAULT_WAIT)
+        .await
+        .expect("the row opened the DM");
 
     open_friends(&mut app).await;
+    app.wait_for_text(".friends-page .friend", "bob", DEFAULT_WAIT)
+        .await
+        .expect("bob listed again");
     app.click_text(".friends-page .friend button", "Remove")
         .await
         .expect("Remove");
-    app.wait_for_js(
-        "return ![...document.querySelectorAll('.friends-page .friend')].some(f => f.textContent.includes('bob'));",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("bob gone");
+    app.wait_for_text_gone(".friends-page .friend", "bob", DEFAULT_WAIT)
+        .await
+        .expect("bob gone");
     assert_eq!(
         app.count(".friends-page").await.expect("count"),
         1,
@@ -243,16 +246,20 @@ async fn dm_rows_are_tall() {
     app.wait_for(".sidebar .room.dm", DEFAULT_WAIT)
         .await
         .expect("a DM listed");
-    let sizes = app
-        .eval(
-            "const dm = document.querySelector('.sidebar .room.dm'); \
-             const pic = dm.querySelector('.avatar, img'); \
-             const friends = document.querySelector('.sidebar .friends-row'); \
-             return [dm.getBoundingClientRect().height, pic.getBoundingClientRect().height, friends.getBoundingClientRect().height];",
-        )
-        .await
-        .expect("sizes");
-    let sizes: Vec<f64> = serde_json::from_value(sizes).expect("numbers");
+    let mut sizes = Vec::new();
+    for selector in [
+        ".sidebar .room.dm",
+        ".sidebar .room.dm .avatar",
+        ".sidebar .friends-row",
+    ] {
+        sizes.push(
+            app.bounds(selector)
+                .await
+                .expect("bounds")
+                .unwrap_or_else(|| panic!("no {selector}"))
+                .h,
+        );
+    }
     assert!(sizes[0] >= 42.0, "a DM row is 42px tall: {sizes:?}");
     assert!(sizes[1] >= 32.0, "with a 32px picture: {sizes:?}");
     assert!(sizes[2] >= 42.0, "and so is Friends: {sizes:?}");

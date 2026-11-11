@@ -92,11 +92,46 @@ impl Shell {
         cx.spawn(async move |this, cx| {
             if let Ok(friends) = reading.await {
                 this.update(cx, |this, cx| {
-                    this.friends = friends;
+                    this.friends = friends.clone();
+                    if let Some(page) = &this.friends_page {
+                        page.update(cx, |page, cx| page.set_friends(friends, cx));
+                    }
                     cx.notify();
                 })
                 .ok();
             }
+        })
+        .detach();
+    }
+
+    /// Adds or removes a friend: saved in the account, then the list is read
+    /// again.
+    pub fn set_friend(&mut self, user: morpheus_core::OwnedUserId, friend: bool, cx: &mut Context<Self>) {
+        let Some(session) = self.session.clone() else {
+            return;
+        };
+        let setting = session.set_friend(user.clone(), friend);
+        cx.spawn(async move |this, cx| {
+            let result = setting.await;
+            this.update(cx, |this, cx| {
+                match result {
+                    // The list changes here at once: the account data the
+                    // core reads has not come back from sync yet.
+                    Ok(()) => {
+                        this.friends.retain(|id| *id != user);
+                        if friend {
+                            this.friends.push(user);
+                        }
+                        let friends = this.friends.clone();
+                        if let Some(page) = &this.friends_page {
+                            page.update(cx, |page, cx| page.set_friends(friends, cx));
+                        }
+                        cx.notify();
+                    }
+                    Err(err) => this.fail("friend", &err.to_string(), cx),
+                }
+            })
+            .ok();
         })
         .detach();
     }
@@ -291,22 +326,7 @@ impl Shell {
                 self.mute(room, until, cx);
             }
             MenuAction::Unmute(room) => self.unmute(room, cx),
-            MenuAction::Friend(user, friend) => {
-                if let Some(session) = session {
-                    let setting = session.set_friend(user, friend);
-                    cx.spawn(async move |this, cx| {
-                        let result = setting.await;
-                        this.update(cx, |this, cx| {
-                            if let Err(err) = result {
-                                this.fail("friend", &err.to_string(), cx);
-                            }
-                            this.refresh_friends(cx);
-                        })
-                        .ok();
-                    })
-                    .detach();
-                }
-            }
+            MenuAction::Friend(user, friend) => self.set_friend(user, friend, cx),
             MenuAction::Invite(room, user) => {
                 if let Some(session) = session {
                     let inviting = session.invite(room, user);
@@ -370,6 +390,8 @@ impl Shell {
         self.thread = None;
         self.search = None;
         self.pinned.clear();
+        // Closing the open DM goes to the Friends page, as Discord does.
+        self.open_friends(cx);
         cx.notify();
     }
 
@@ -438,6 +460,10 @@ impl Shell {
         if let Some((_, members)) = &self.members {
             let names = names.clone();
             members.update(cx, |members, cx| members.set_nicknames(names, cx));
+        }
+        if let Some(page) = &self.friends_page {
+            let names = names.clone();
+            page.update(cx, |page, cx| page.set_nicknames(names, cx));
         }
         if let Some((_, thread)) = &self.thread {
             thread.update(cx, |thread, cx| thread.set_nicknames(&names, cx));
