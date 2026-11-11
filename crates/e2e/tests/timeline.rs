@@ -249,3 +249,97 @@ async fn pictures_show_in_the_timeline() {
         .await
         .expect("the picture, once fetched");
 }
+
+/// A message row's highlight on hover spans the timeline out to its right
+/// edge, whatever the row holds, so the hover bar (reply, edit, reactions),
+/// which sits at the row's top right, is at the timeline's right too.
+#[tokio::test]
+async fn every_message_row_spans_the_timeline_width() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let (ann, ben, cat) = (
+        new_account(&hs, "tlwann").expect("account"),
+        new_account(&hs, "tlwben").expect("account"),
+        new_account(&hs, "tlwcat").expect("account"),
+    );
+    let room = room_for(&hs, &ann, &ben);
+    api_as(
+        &hs,
+        &cat,
+        "POST",
+        &format!("join/{}", path_id(&room)),
+        Some(json!({})),
+    )
+    .expect("join");
+    let one = send(&hs, &ann, &room, "m.room.message", text("short"));
+    send(&hs, &ann, &room, "m.room.message", text("continuation"));
+    send(
+        &hs,
+        &ben,
+        &room,
+        "m.room.message",
+        text(&format!("longword {}", "and a long message that wraps ".repeat(30))),
+    );
+    send(
+        &hs,
+        &ann,
+        &room,
+        "m.room.message",
+        json!({ "msgtype": "m.text", "body": "a reply", "m.relates_to": { "m.in_reply_to": { "event_id": one } } }),
+    );
+    send_image_as(&hs, &cat, &room, DUSK_PNG, "dusk.png", None).expect("a picture");
+    let mut app = open(&hs, &ann).await;
+    app.wait_for(".message img.image[alt=\"dusk.png\"]", DEFAULT_WAIT)
+        .await
+        .expect("the picture");
+
+    let timeline = app
+        .bounds(".timeline")
+        .await
+        .expect("bounds")
+        .expect("the timeline");
+    // Room for a scrollbar.
+    let slack = 24.0;
+    let rows = [
+        (".message", "continuation"),
+        (".message", "longword"),
+        (".message", "a reply"),
+        (".message", cat.as_str()),
+        (".message.system", "joined"),
+    ];
+    for (selector, containing) in rows {
+        let row = app
+            .bounds_containing(selector, containing)
+            .await
+            .expect("bounds")
+            .unwrap_or_else(|| panic!("a row with {containing:?}"));
+        assert!(
+            (timeline.right() - row.right()).abs() <= slack,
+            "the {containing:?} row ends at {} but the timeline at {}",
+            row.right(),
+            timeline.right()
+        );
+        assert!(
+            row.w >= timeline.w - slack,
+            "the {containing:?} row is {} wide of {}",
+            row.w,
+            timeline.w
+        );
+        // The hover bar is at the row's top right (it is only in the page
+        // while shown on GPUI; Dioxus shows it by `:hover`).
+        if let Some(bar) = app
+            .bounds_within(".message", containing, ".actions")
+            .await
+            .expect("bounds")
+        {
+            assert!(
+                (row.right() - bar.right()).abs() <= 40.0,
+                "the hover bar of the {containing:?} row ends at {} but the row at {}",
+                bar.right(),
+                row.right()
+            );
+        }
+    }
+}

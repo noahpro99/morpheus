@@ -82,7 +82,10 @@ pub fn avatar(
             None => d.rounded_full(),
         });
     match picture {
-        Some(image) => base.child(img(image).size_full()).e2e("img", "avatar"),
+        // gpui clips children to a rectangle: the picture is rounded itself.
+        Some(image) => base
+            .child(img(image).size_full().rounded(px(radius.unwrap_or(size / 2.0))))
+            .e2e("img", "avatar"),
         None => base
             .bg(rgb(theme::ACCENT_STRONG))
             .font_weight(FontWeight::BOLD)

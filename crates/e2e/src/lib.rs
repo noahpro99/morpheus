@@ -676,6 +676,31 @@ impl App {
         }))
     }
 
+    /// [`Self::bounds`] of the first `selector` inside the first `within`
+    /// whose text contains `contains`; GPUI only (None on the web page).
+    pub async fn bounds_within(
+        &mut self,
+        within: &str,
+        contains: &str,
+        selector: &str,
+    ) -> Result<Option<Bounds>> {
+        if !gpui() {
+            return Ok(None);
+        }
+        let extra = json!({ "within": within, "within_contains": contains });
+        let value = self.op("bounds", selector, extra).await?;
+        if value.is_null() {
+            return Ok(None);
+        }
+        let number = |key: &str| value[key].as_f64().unwrap_or(0.0);
+        Ok(Some(Bounds {
+            x: number("x"),
+            y: number("y"),
+            w: number("w"),
+            h: number("h"),
+        }))
+    }
+
     /// Right-click an element: a bubbling `contextmenu` event at its centre.
     pub async fn right_click(&mut self, selector: &str) -> Result<()> {
         if gpui() {
