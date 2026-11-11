@@ -82,3 +82,17 @@ mod off {
 #[cfg(not(feature = "e2e"))]
 #[allow(unused_imports)]
 pub use off::{E2eExt, Tagged, frame};
+
+/// What `selector` matches in the last frame, as `(text, centre)`: for
+/// widget tests, which click at the centre and read the text.
+#[cfg(all(feature = "e2e", test))]
+pub fn query(selector: &str) -> Vec<(String, (f32, f32))> {
+    let selector = selector::Selector::parse(selector).expect("selector");
+    tag::with_state(|state| {
+        selector
+            .select(&state.tree)
+            .into_iter()
+            .map(|i| (state.tree.text(i), state.tree.nodes[i].bounds.centre()))
+            .collect()
+    })
+}
