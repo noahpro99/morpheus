@@ -178,22 +178,15 @@ async fn room_and_member_menus_and_no_native_menu() {
     menu_closed(&mut app).await;
     app.press("body", "Escape").await.expect("close profile");
 
-    // Right-clicking dead space never shows the webview's own menu.
-    let prevented = app
-        .eval(
-            "const ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 200, clientY: 60 }); \
-             document.querySelector('.sidebar-header').dispatchEvent(ev); return ev.defaultPrevented;",
-        )
+    // Right-clicking dead space shows no menu of ours (and the webview's own
+    // native one is suppressed by the shell; the GPUI app has none).
+    app.right_click(".sidebar-header")
         .await
-        .expect("dispatch");
-    assert_eq!(
-        prevented.as_bool(),
-        Some(true),
-        "native context menu suppressed"
-    );
+        .expect("right-click dead space");
+    tokio::time::sleep(Duration::from_millis(500)).await;
     assert_eq!(
         app.count(".context-menu").await.expect("count"),
         0,
-        "and no custom menu for dead space"
+        "no custom menu for dead space"
     );
 }

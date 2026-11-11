@@ -22,7 +22,7 @@ use crate::{
 /// What the member list tells the shell.
 pub enum MemberEvent {
     /// A member's row clicked: their profile.
-    Open(Box<Member>),
+    Open(Box<Member>, Point<Pixels>),
     /// A member's row right-clicked: their menu, with what we may do here.
     Context(Box<Member>, MemberPermissions, Point<Pixels>),
 }
@@ -199,7 +199,9 @@ fn member_row(member: &Member, picture: Option<Arc<Image>>, cx: &mut Context<Mem
         .cursor_pointer()
         .hover(|s| s.bg(rgba(theme::BG_HOVER)).text_color(rgb(theme::TEXT)))
         .when(member.is_ignored, |d| d.opacity(0.6))
-        .on_click(cx.listener(move |_, _, _, cx| cx.emit(MemberEvent::Open(open.clone()))))
+        .on_click(cx.listener(move |_, event: &gpui::ClickEvent, _, cx| {
+            cx.emit(MemberEvent::Open(open.clone(), event.position()))
+        }))
         .on_mouse_down(
             MouseButton::Right,
             cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {

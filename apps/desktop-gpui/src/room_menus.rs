@@ -256,6 +256,7 @@ impl Shell {
                 if let Some(session) = session {
                     let blocking = session.block(user, block);
                     self.moderate("block", blocking, cx);
+                    self.refresh_profile_block(cx);
                 }
             }
             MenuAction::SetRole(room, user, role) => {
@@ -329,8 +330,17 @@ impl Shell {
                 self.save_prefs(cx);
                 cx.notify();
             }
-            MenuAction::Profile(_) => {
-                self.toast("Profiles are not in the GPUI build yet.", cx);
+            MenuAction::Profile(user) => {
+                let at = Some(self.menu_at);
+                self.open_profile(user, at, None, cx);
+            }
+            MenuAction::FullProfile(_) => self.show_full_profile(cx),
+            MenuAction::ShareProfile(link) => {
+                cx.write_to_clipboard(ClipboardItem::new_string(link));
+                self.toast("Link copied", cx);
+            }
+            MenuAction::ReportUser(_) => {
+                self.toast("Reporting a profile is not in the GPUI build yet.", cx);
             }
             MenuAction::Unavailable(what) => {
                 self.toast(format!("{what} is not in the GPUI build yet."), cx);

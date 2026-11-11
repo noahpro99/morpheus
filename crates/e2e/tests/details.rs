@@ -115,20 +115,46 @@ async fn autofill_shortcut_hints_steady_numbers_and_balanced_headings() {
 
 /// Click the hover action `kind` on the message whose body is `text`.
 async fn hover_action(app: &mut App, text: &str, kind: &str) {
-    app.eval(&format!(
-        "const msg = [...document.querySelectorAll('.message')].find(m => m.querySelector('.body')?.textContent.trim() === {}); \
-         msg.querySelector('.action.{kind}').click();",
-        serde_json::to_string(text).expect("json")
-    ))
-    .await
-    .expect("hover action");
+    app.click_in_message(text, &format!(".action.{kind}"))
+        .await
+        .expect("hover action");
 }
 
-fn shown(text: &str) -> String {
-    format!(
-        "return [...document.querySelectorAll('.message .body')].some(b => b.textContent.trim() === {});",
-        serde_json::to_string(text).expect("json")
-    )
+/// Whether some message body is exactly `text`.
+async fn shown(app: &mut App, text: &str) -> bool {
+    app.texts(".message .body")
+        .await
+        .expect("bodies")
+        .iter()
+        .any(|b| b.trim() == text)
+}
+
+/// Wait until a message with exactly this body is (or is not) listed.
+async fn wait_shown(app: &mut App, text: &str, listed: bool, timeout: Duration) {
+    let deadline = std::time::Instant::now() + timeout;
+    while shown(app, text).await != listed {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "{text:?} should be listed: {listed}"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+/// Wait until the room list does (or does not) show `name`.
+async fn wait_room_listed(app: &mut App, name: &str, listed: bool, timeout: Duration) {
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        let names = app.texts(".room .room-name").await.expect("names");
+        if names.iter().any(|n| n.trim() == name) == listed {
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "{name} should be listed: {listed}"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
 }
 
 /// Deleting a message asks nothing: it goes at once, with a moment to undo
@@ -156,26 +182,15 @@ async fn deleting_a_message_can_be_undone() {
     app.click(".confirm-dialog button.danger")
         .await
         .expect("confirm");
-    app.wait_for_js(
-        &shown(&text).replace("return ", "return !"),
-        Duration::from_secs(2),
-    )
-    .await
-    .expect("gone at once");
+    wait_shown(&mut app, &text, false, Duration::from_secs(2)).await;
     app.wait_for_text(".toast", "Message deleted", Duration::from_secs(2))
         .await
         .expect("a toast saying so");
     app.click(".toast .toast-undo").await.expect("undo");
-    app.wait_for_js(&shown(&text), Duration::from_secs(2))
-        .await
-        .expect("back after undo");
+    wait_shown(&mut app, &text, true, Duration::from_secs(2)).await;
     // Not deleted behind the scenes either.
     tokio::time::sleep(Duration::from_secs(8)).await;
-    assert_eq!(
-        app.eval(&shown(&text)).await.expect("look"),
-        serde_json::json!(true),
-        "still there"
-    );
+    assert!(shown(&mut app, &text).await, "still there");
 
     // Left alone, it goes for good.
     hover_action(&mut app, &text, "delete").await;
@@ -196,33 +211,28 @@ async fn leaving_a_room_can_be_undone() {
     };
     let mut app = App::launch_desktop(&hs).await.expect("launch");
     login_and_open(&mut app, "random").await;
-    let row = "[...document.querySelectorAll('.room')].find(r => r.querySelector('.room-name')?.textContent.trim() === 'random')";
-    app.eval(&format!(
-        "const el = {row}; const r = el.getBoundingClientRect(); \
-         el.dispatchEvent(new MouseEvent('contextmenu', {{ bubbles: true, cancelable: true, clientX: r.left + 20, clientY: r.top + 10 }}));"
-    ))
-    .await
-    .expect("room menu");
+    app.right_click_exact(".room .room-name", "random")
+        .await
+        .expect("room menu");
     app.wait_for(".context-menu", DEFAULT_WAIT)
         .await
         .expect("menu open");
     app.click_text(".context-menu .context-item", "Leave room")
         .await
         .expect("leave");
-    app.wait_for_js(&format!("return !{row};"), Duration::from_secs(2))
-        .await
-        .expect("gone from the list at once");
+    wait_room_listed(&mut app, "random", false, Duration::from_secs(2)).await;
     app.wait_for_text(".toast", "Left #random", Duration::from_secs(2))
         .await
         .expect("a toast saying so");
     app.click(".toast .toast-undo").await.expect("undo");
-    app.wait_for_js(&format!("return !!{row};"), Duration::from_secs(2))
-        .await
-        .expect("back after undo");
+    wait_room_listed(&mut app, "random", true, Duration::from_secs(2)).await;
     tokio::time::sleep(Duration::from_secs(8)).await;
-    assert_eq!(
-        app.eval(&format!("return !!{row};")).await.expect("look"),
-        serde_json::json!(true),
+    assert!(
+        app.texts(".room .room-name")
+            .await
+            .expect("names")
+            .iter()
+            .any(|n| n.trim() == "random"),
         "still a member"
     );
 }

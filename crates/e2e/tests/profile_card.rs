@@ -59,12 +59,20 @@ async fn card_shows_mutual_rooms_saves_a_note_and_messages() {
     open_card_for(&mut app, "bob").await;
 
     // Pops up where the click was (not centred), with mutual rooms and the role here.
-    app.wait_for_js(
-        "const c = document.querySelector('.profile-card'); return !!c && c.style.left !== '50%';",
-        Duration::from_secs(5),
-    )
-    .await
-    .expect("anchored at the click");
+    let card = app
+        .bounds(".profile-card")
+        .await
+        .expect("card bounds")
+        .expect("a card");
+    let shell = app
+        .bounds(".shell")
+        .await
+        .expect("shell bounds")
+        .expect("a shell");
+    assert!(
+        (card.centre_x() - shell.centre_x()).abs() > 20.0,
+        "anchored at the click, not centred: {card:?} in {shell:?}"
+    );
     app.wait_for_text(
         ".profile-card .mutual-servers",
         "mutual server",
@@ -81,31 +89,18 @@ async fn card_shows_mutual_rooms_saves_a_note_and_messages() {
     app.type_into(".profile-card textarea.note", &note)
         .await
         .expect("type note");
-    app.eval(
-        "document.querySelector('.profile-card textarea.note').dispatchEvent(new Event('blur'));",
-    )
-    .await
-    .expect("blur");
+    app.blur(".profile-card textarea.note").await.expect("blur");
     app.wait_for_text(".profile-card .note-saved", "Saved", DEFAULT_WAIT)
         .await
         .expect("note saved");
     app.press("body", "Escape").await.expect("escape");
-    app.wait_for_js(
-        "return document.querySelector('.profile-card') === null;",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("closed");
+    app.wait_for_count(".profile-card", 0, DEFAULT_WAIT)
+        .await
+        .expect("closed");
     open_card_for(&mut app, "bob").await;
-    app.wait_for_js(
-        &format!(
-            "return document.querySelector('.profile-card textarea.note').value === {};",
-            serde_json::to_string(&note).expect("json")
-        ),
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("note remembered");
+    app.wait_for_value(".profile-card textarea.note", &note, DEFAULT_WAIT)
+        .await
+        .expect("note remembered");
 
     // The more menu opens the full profile.
     app.click(".profile-card .card-button.more")
@@ -121,12 +116,9 @@ async fn card_shows_mutual_rooms_saves_a_note_and_messages() {
         .await
         .expect("full profile modal");
     app.press("body", "Escape").await.expect("escape");
-    app.wait_for_js(
-        "return document.querySelector('.profile-modal') === null;",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("closed");
+    app.wait_for_count(".profile-modal", 0, DEFAULT_WAIT)
+        .await
+        .expect("closed");
 
     // Messaging from the card lands in the DM.
     open_card_for(&mut app, "bob").await;

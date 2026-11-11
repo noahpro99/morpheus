@@ -747,6 +747,18 @@ impl App {
         self.eval(&js).await.map(drop)
     }
 
+    /// Leave `selector`'s field, as clicking elsewhere does (the webview
+    /// gets a `blur` event). The GPUI app has no such event: fields that
+    /// save on leaving (the profile card's note) save as the writing
+    /// pauses there instead, so this does nothing for it.
+    pub async fn blur(&mut self, selector: &str) -> Result<()> {
+        if gpui() {
+            return Ok(());
+        }
+        let js = format!("{}.dispatchEvent(new Event('blur'));", query(selector));
+        self.eval(&js).await.map(drop)
+    }
+
     /// Right-click the first `selector` element whose trimmed text is exactly `text`.
     pub async fn right_click_exact(&mut self, selector: &str, text: &str) -> Result<()> {
         if gpui() {
