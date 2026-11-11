@@ -2915,3 +2915,81 @@ async fn a_phone_rings_like_a_phone_call() {
         morpheus_e2e::android_telecom_calls().is_empty()
     });
 }
+
+/// With the app closed (Android killed it), a DM call still rings the phone
+/// (by push) and Decline still tells the caller at once: the phone signs in
+/// from its saved session for the one send. Needs pushes (UnifiedPush and
+/// internet), so it runs only with `MORPHEUS_E2E_PUSH=1`.
+#[tokio::test]
+async fn declining_with_the_app_closed_tells_the_caller() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    if std::env::var_os("MORPHEUS_E2E_PUSH").is_none() {
+        eprintln!("needs pushes (MORPHEUS_E2E_PUSH); skipping");
+        return;
+    }
+    let mut bob = App::launch(&hs).await.expect("launch bob");
+    if !bob.is_phone() {
+        eprintln!("a phone's (MORPHEUS_E2E_ANDROID); skipping");
+        return;
+    }
+    login_and_open(&mut bob, "bob", "general").await;
+    // Registered for pushes before it goes.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    while !morpheus_e2e::android_shell(&[
+        "run-as",
+        "dev.morpheus.mobile",
+        "cat",
+        "files/morpheus/push_status",
+    ])
+    .unwrap_or_default()
+    .contains("registered")
+    {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "push never registered"
+        );
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    }
+    let mut alice = App::launch_desktop(&hs).await.expect("launch alice");
+    login_and_open(&mut alice, "alice", "general").await;
+    open_dm(&mut alice, "bob").await;
+
+    // Closed: in the background, then killed as Android reclaims memory (a
+    // force-stop would block pushes too).
+    morpheus_e2e::android_home();
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    let pid = morpheus_e2e::android_shell(&["pidof", "dev.morpheus.mobile"]).unwrap_or_default();
+    let _ =
+        morpheus_e2e::android_shell(&["run-as", "dev.morpheus.mobile", "kill", "-9", pid.trim()]);
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+    alice.click(CALL_BUTTON).await.expect("alice calls");
+    alice
+        .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("alice waiting");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    while !morpheus_e2e::android_telecom_calls()
+        .iter()
+        .any(|s| s == "RINGING")
+    {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the push never rang the phone"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+    let rang_at = std::time::Instant::now();
+    morpheus_e2e::android_tap_text("Decline").expect("tap Decline");
+    alice
+        .wait_for_text(".toast", "bob declined the call", DEFAULT_WAIT)
+        .await
+        .expect("alice told");
+    assert!(
+        rang_at.elapsed() < std::time::Duration::from_secs(25),
+        "told before the ring ran out by itself"
+    );
+}

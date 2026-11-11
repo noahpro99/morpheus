@@ -141,7 +141,23 @@ object CallRinger {
             it.setDisconnected(DisconnectCause(DisconnectCause.REJECTED))
             it.destroy()
         }
-        tell(app, JSONObject().put("action", "decline").put("room_id", roomId).put("notification", ring.notification))
+        val note = JSONObject().put("action", "decline").put("room_id", roomId).put("notification", ring.notification)
+        if (PushStartup.appStarted) {
+            tell(app, note)
+        } else {
+            // The app isn't running (the ring came by push): decline now, from
+            // the saved session, so the caller stops ringing; else at next start.
+            Thread {
+                val sent = nativeLoaded && try {
+                    declineNative(dataDir(app).absolutePath, roomId, ring.notification)
+                } catch (e: Throwable) {
+                    Log.w(TAG, "declining with the app closed failed: $e")
+                    false
+                }
+                Log.d(TAG, "declined with the app closed: $sent")
+                if (!sent) tell(app, note)
+            }.start()
+        }
     }
 
     /**
@@ -318,6 +334,18 @@ object CallRinger {
     }
 
     fun address(roomId: String): Uri = Uri.fromParts("morpheus", roomId, null)
+
+    /** The app's Rust library (loaded already if the app or a push ran it). */
+    private val nativeLoaded: Boolean = try {
+        System.loadLibrary("main")
+        true
+    } catch (e: Throwable) {
+        false
+    }
+
+    /** `apps/mobile/src/push.rs`: send the decline from the saved session. */
+    @JvmStatic
+    private external fun declineNative(dataDir: String, roomId: String, eventId: String): Boolean
 }
 
 /** A Morpheus call to Android's Telecom. */

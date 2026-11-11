@@ -446,3 +446,40 @@ fn follow_rings(session: Session) {
         tracing::warn!(%err, "ring thread failed");
     }
 }
+
+/// Called by `CallRinger` (Kotlin) when Decline is tapped with the app's own
+/// side not running (the ring came by push): sign in from the saved session
+/// and send the decline, so the caller stops ringing now rather than when the
+/// app next starts. Blocks; Kotlin calls it off the main thread.
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_morpheus_mobile_CallRinger_declineNative<'local>(
+    mut env: jni::JNIEnv<'local>,
+    _class: jni::objects::JClass<'local>,
+    data_dir: jni::objects::JString<'local>,
+    room_id: jni::objects::JString<'local>,
+    event_id: jni::objects::JString<'local>,
+) -> jni::sys::jboolean {
+    let mut text = |value: &jni::objects::JString<'local>| -> Option<String> {
+        env.get_string(value).ok().map(Into::into)
+    };
+    let (Some(dir), Some(room), Some(event)) = (text(&data_dir), text(&room_id), text(&event_id))
+    else {
+        return 0;
+    };
+    let declined = (|| {
+        let core = morpheus_core::Core::new(PathBuf::from(dir)).ok()?;
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .ok()?;
+        match runtime.block_on(core.decline_ring(room, event)) {
+            Ok(done) => Some(done),
+            Err(err) => {
+                tracing::warn!(%err, "declining with the app closed");
+                None
+            }
+        }
+    })();
+    u8::from(declined == Some(true))
+}

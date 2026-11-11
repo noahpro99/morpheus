@@ -580,6 +580,46 @@ pub struct NotificationPreview {
 }
 
 impl Core {
+    /// Decline the ring `event_id` in `room_id` with the app closed (the
+    /// phone's Decline, the process started only by the ring's push): the
+    /// saved session signs in for this one encrypted send. `false` when
+    /// nobody is signed in or the room isn't known here.
+    pub fn decline_ring(&self, room_id: String, event_id: String) -> CoreFuture<bool> {
+        let core = self.clone();
+        self.run(async move {
+            use matrix_sdk::ruma::events::rtc::decline::RtcDeclineEventContent;
+            let room_id: crate::OwnedRoomId = room_id
+                .parse()
+                .map_err(|_| Error::Other(format!("not a room id: {room_id}")))?;
+            let event_id: matrix_sdk::ruma::OwnedEventId = event_id
+                .parse()
+                .map_err(|_| Error::Other(format!("not an event id: {event_id}")))?;
+            let blocking = core.clone();
+            let (dir, stored) =
+                crate::rt::spawn_blocking(move || -> Result<(PathBuf, Option<StoredSession>)> {
+                    let dir = blocking.active_account_dir();
+                    let stored =
+                        session_store::resolve(&dir, blocking.session_store_kind()).load()?;
+                    Ok((dir, stored))
+                })
+                .await??;
+            let Some(stored) = stored else {
+                return Ok(false);
+            };
+            let client =
+                build_client(&dir, &stored.homeserver, Some(&stored.store_passphrase)).await?;
+            client
+                .matrix_auth()
+                .restore_session(stored.session, RoomLoadSettings::default())
+                .await?;
+            let Some(room) = client.get_room(&room_id) else {
+                return Ok(false);
+            };
+            room.send(RtcDeclineEventContent::new(event_id)).await?;
+            Ok(true)
+        })
+    }
+
     /// Fetch and decrypt one pushed message for its notification, without
     /// starting the app's sync: for a push that arrives while the app is
     /// closed. Uses the SDK's notification client, which takes a cross-process
