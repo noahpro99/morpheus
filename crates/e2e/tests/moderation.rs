@@ -42,25 +42,40 @@ async fn member_menu(app: &mut App, name: &str) {
     app.wait_for_text(".members .member", name, DEFAULT_WAIT)
         .await
         .expect("member listed");
-    let js = format!(
-        "const el = [...document.querySelectorAll('.members .member')].find(el => el.textContent.includes({})); \
-         const r = el.getBoundingClientRect(); \
-         el.dispatchEvent(new MouseEvent('contextmenu', {{ bubbles: true, cancelable: true, clientX: r.left + 10, clientY: r.top + 10 }}));",
-        serde_json::to_string(name).expect("json")
-    );
-    app.eval(&js).await.expect("right-click member");
+    app.right_click_text(".members .member", name)
+        .await
+        .expect("right-click member");
     app.wait_for(".context-menu", DEFAULT_WAIT)
         .await
         .expect("member menu");
 }
 
 async fn menu_labels(app: &mut App) -> String {
-    app.eval("return [...document.querySelectorAll('.context-menu > .context-item')].map(e => e.textContent).join('|');")
+    app.texts(".context-menu > .context-item")
         .await
         .expect("labels")
-        .as_str()
-        .unwrap_or_default()
-        .to_owned()
+        .join("|")
+}
+
+/// Wait until the texts of `selector` satisfy `ok`.
+async fn wait_texts(app: &mut App, selector: &str, what: &str, ok: impl Fn(&[String]) -> bool) {
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let texts = app.texts(selector).await.expect("texts");
+        if ok(&texts) {
+            return;
+        }
+        assert!(std::time::Instant::now() < deadline, "{what}: {texts:?}");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+/// Wait until no member row has `name` in it.
+async fn wait_member_gone(app: &mut App, name: &str) {
+    wait_texts(app, ".members .member", &format!("{name} gone"), |rows| {
+        !rows.iter().any(|row| row.contains(name))
+    })
+    .await;
 }
 
 /// Hover a submenu item and click one of its children.
@@ -108,44 +123,38 @@ async fn admin_changes_roles_kicks_and_bans() {
     // Promote carol to moderator, then back.
     member_menu(&mut app, "carol").await;
     click_submenu(&mut app, "Roles", "Moderator").await;
-    app.wait_for_js(
-        "const h = [...document.querySelectorAll('.members-header')].find(h => h.textContent.includes('Moderators')); return !!h && h.nextElementSibling?.textContent.includes('carol');",
-        DEFAULT_WAIT,
+    wait_texts(
+        &mut app,
+        ".members-header, .members .member",
+        "carol listed under Moderators",
+        |rows| {
+            rows.iter()
+                .position(|row| row.contains("Moderators"))
+                .and_then(|at| rows.get(at + 1))
+                .is_some_and(|next| next.contains("carol"))
+        },
     )
-    .await
-    .expect("carol listed under Moderators");
+    .await;
     member_menu(&mut app, "carol").await;
     click_submenu(&mut app, "Roles", "Member").await;
-    app.wait_for_js(
-        "return ![...document.querySelectorAll('.members-header')].some(h => h.textContent.includes('Moderators'));",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("carol back to member");
+    wait_texts(&mut app, ".members-header", "carol back to member", |headers| {
+        !headers.iter().any(|h| h.contains("Moderators"))
+    })
+    .await;
 
     // Kick carol: she leaves the list.
     member_menu(&mut app, "carol").await;
     app.click_text(".context-item.danger", "Kick carol")
         .await
         .expect("kick");
-    app.wait_for_js(
-        "return ![...document.querySelectorAll('.members .member')].some(el => el.textContent.includes('carol'));",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("carol gone after kick");
+    wait_member_gone(&mut app, "carol").await;
 
     // Ban bob: same, and the count drops.
     member_menu(&mut app, "bob").await;
     app.click_text(".context-item.danger", "Ban bob")
         .await
         .expect("ban");
-    app.wait_for_js(
-        "return ![...document.querySelectorAll('.members .member')].some(el => el.textContent.includes('bob'));",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("bob gone after ban");
+    wait_member_gone(&mut app, "bob").await;
     app.wait_for_text(".chat-header .member-toggle", "1", DEFAULT_WAIT)
         .await
         .expect("member count follows");
@@ -172,12 +181,16 @@ async fn member_menu_mentions_messages_and_blocks() {
     app.click_text(".context-item", "Mention")
         .await
         .expect("mention");
-    app.wait_for_js(
-        "return document.querySelector('.composer .composer-input').value.includes('@bob');",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("composer holds the mention");
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    while !app
+        .value(".composer .composer-input")
+        .await
+        .expect("value")
+        .is_some_and(|value| value.contains("@bob"))
+    {
+        assert!(std::time::Instant::now() < deadline, "composer holds the mention");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
 
     // Block, then unblock: the row is tagged and the menu flips. A failed
     // earlier run may have left bob blocked, so start from unblocked.
@@ -186,12 +199,9 @@ async fn member_menu_mentions_messages_and_blocks() {
         app.click_text(".context-item", "Unblock")
             .await
             .expect("reset block");
-        app.wait_for_js(
-            "return document.querySelector('.members .member.blocked') === null;",
-            DEFAULT_WAIT,
-        )
-        .await
-        .expect("reset to unblocked");
+        app.wait_for_count(".members .member.blocked", 0, DEFAULT_WAIT)
+            .await
+            .expect("reset to unblocked");
         member_menu(&mut app, "bob").await;
     }
     app.click_text(".context-item", "Block")
@@ -204,12 +214,9 @@ async fn member_menu_mentions_messages_and_blocks() {
     app.click_text(".context-item", "Unblock")
         .await
         .expect("unblock");
-    app.wait_for_js(
-        "return document.querySelector('.members .member.blocked') === null;",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("block lifted");
+    app.wait_for_count(".members .member.blocked", 0, DEFAULT_WAIT)
+        .await
+        .expect("block lifted");
 
     // Message opens (creating if needed) the DM and moves the rail to DMs.
     member_menu(&mut app, "bob").await;

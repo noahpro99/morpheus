@@ -17,6 +17,7 @@ use crate::{
     view_model::{
         menu::{MenuAction, MenuTarget},
         room_menu::{DmState, dm_menu, invite_targets, room_menu, space_menu},
+        nicknames::with_nickname,
         room_dialogs::RoomDialogKind,
     },
 };
@@ -347,10 +348,9 @@ impl Shell {
                 self.open_room_dialog(RoomDialogKind::Create, cx);
             }
             MenuAction::ReportUser(_) => {
-                self.toast("Reporting a profile is not in the GPUI build yet.", cx);
-            }
-            MenuAction::Unavailable(what) => {
-                self.toast(format!("{what} is not in the GPUI build yet."), cx);
+                if let Some(card) = &self.card {
+                    card.update(cx, |card, cx| card.start_report(cx));
+                }
             }
             MenuAction::CopyText(text) | MenuAction::CopyLink(text) | MenuAction::CopyId(text) => {
                 cx.write_to_clipboard(ClipboardItem::new_string(text));
@@ -388,7 +388,8 @@ impl Shell {
         };
         let rooms = self.rooms.clone();
         let scope = self.scope.clone();
-        let dialog = cx.new(|cx| RoomDialog::new(kind, session, rooms, scope, cx));
+        let nicknames = self.nicknames.clone();
+        let dialog = cx.new(|cx| RoomDialog::new(kind, session, rooms, scope, &nicknames, cx));
         cx.subscribe(&dialog, |this, _, _: &Closed, cx| this.dialog_close(cx))
             .detach();
         cx.subscribe(&dialog, |this, _, done: &Done, cx| this.room_dialog_done(done, cx))
@@ -413,6 +414,63 @@ impl Shell {
                 self.set_scope(Scope::Rooms, cx);
             }
             Done::ProfileSaved => self.refresh_members(cx),
+            Done::NicknameSaved { user, nickname } => {
+                self.dialog_close(cx);
+                let names = std::mem::take(&mut self.nicknames);
+                self.nicknames = with_nickname(names, user.as_str(), nickname);
+                self.push_nicknames(cx);
+            }
         }
+    }
+}
+
+impl Shell {
+    /// Tells what shows names (the open timeline, member list, message box
+    /// and profile card) about your nicknames.
+    pub fn push_nicknames(&mut self, cx: &mut Context<Self>) {
+        let names = self.nicknames.clone();
+        if let Some((_, timeline)) = &self.timeline {
+            let shared = std::sync::Arc::new(names.clone());
+            timeline.update(cx, |timeline, cx| timeline.set_nicknames(shared, cx));
+        }
+        if let Some((_, members)) = &self.members {
+            let names = names.clone();
+            members.update(cx, |members, cx| members.set_nicknames(names, cx));
+        }
+        if let Some((_, composer)) = &self.composer {
+            let names = names.clone();
+            composer.update(cx, |composer, cx| composer.set_nicknames(names, cx));
+        }
+        if let Some(card) = &self.card {
+            let nickname = names.get(card.read(cx).user.as_str()).cloned();
+            card.update(cx, |card, cx| {
+                card.nickname = nickname;
+                cx.notify();
+            });
+        }
+        cx.notify();
+    }
+}
+
+impl Shell {
+    /// The mod view of a person, from their card.
+    pub fn open_mod_view(
+        &mut self,
+        user: morpheus_core::OwnedUserId,
+        shown: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(session) = self.session.clone() else {
+            return;
+        };
+        let shown = shown.unwrap_or_else(|| user.localpart().to_owned());
+        let view = cx.new(|cx| crate::mod_view::ModView::new(session, user, shown, cx));
+        cx.subscribe(&view, |this, _, _: &Closed, cx| this.dialog_close(cx))
+            .detach();
+        cx.subscribe(&view, |this, _, _: &crate::mod_view::Moderated, cx| {
+            this.refresh_members(cx)
+        })
+        .detach();
+        self.dialog_open(Dialog::ModView(view), cx);
     }
 }

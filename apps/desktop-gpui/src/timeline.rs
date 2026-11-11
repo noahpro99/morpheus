@@ -37,6 +37,7 @@ use crate::{
         BANNER_RECOVERY, BANNER_TEXT, BANNER_TITLE, BANNER_VERIFY, KeyAccess, SettingsFocus, show_banner,
         undecryptable,
     },
+    view_model::nicknames::NickMap,
     view_model::rows::{
         MessageRow, Row, changed_range, first_unread_after_marker, first_unread_since, group_rows,
     },
@@ -115,6 +116,8 @@ pub struct TimelineView {
     echoed: Option<String>,
     /// Whether this device can read encrypted history (set by the shell).
     keys: KeyAccess,
+    /// Your nicknames for people, shown over their names.
+    nicknames: Arc<NickMap>,
     /// Some message here cannot be decrypted (kept up to date by `rebuild`).
     undecryptable: bool,
     /// Messages hidden while their deletion can still be undone (unique ids).
@@ -186,6 +189,7 @@ impl TimelineView {
             last_own: None,
             echoed: None,
             keys: KeyAccess::default(),
+            nicknames: Arc::default(),
             undecryptable: false,
             hidden: HashSet::new(),
             keep_unread: false,
@@ -300,6 +304,17 @@ impl TimelineView {
             this.update(cx, |_, cx| cx.notify()).ok();
         })
         .detach();
+        cx.notify();
+    }
+
+    /// Your nicknames changed: names over messages are drawn again.
+    pub fn set_nicknames(&mut self, nicknames: Arc<NickMap>, cx: &mut Context<Self>) {
+        if self.nicknames == nicknames {
+            return;
+        }
+        self.nicknames = nicknames;
+        let rows = self.rows.len();
+        self.list.splice(0..rows, rows);
         cx.notify();
     }
 
@@ -469,6 +484,9 @@ impl TimelineView {
             keys: self.keys,
             ..Pictures::default()
         };
+        if show_header {
+            pictures.nickname = self.nicknames.get(row.message.sender.as_str()).cloned();
+        }
         if show_header && let Some(avatar) = &row.message.sender_avatar {
             pictures.avatar = self.picture(avatar, (80, 80), cx);
         }

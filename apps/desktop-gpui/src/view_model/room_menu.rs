@@ -126,7 +126,7 @@ pub fn dm_menu(room: &RoomSummary, dm: &DmState) -> Vec<MenuItem> {
     if dm.friend {
         items.push(MenuItem::new(
             "Change friend nickname",
-            MenuAction::Unavailable("Nicknames"),
+            MenuAction::RoomDialog(RoomDialogKind::Nickname(dm.user.clone(), dm.name.clone())),
         ));
     }
     items.push(MenuItem::new("Close DM", MenuAction::CloseDm(room.id.clone())));

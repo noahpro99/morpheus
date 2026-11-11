@@ -163,17 +163,9 @@ async fn card_mod_view_and_report_form() {
     app.click(".profile-card .card-button.more")
         .await
         .expect("more");
-    if app
-        .wait_for_text(".context-item", "Report user profile", DEFAULT_WAIT)
+    app.wait_for_text(".context-item", "Report user profile", DEFAULT_WAIT)
         .await
-        .is_err()
-    {
-        let shot = app.screenshot("card-more").await.ok().flatten();
-        let items = app
-            .eval("return [...document.querySelectorAll('.context-item')].map(e => e.textContent).join('|');")
-            .await;
-        panic!("no report item: {items:?} {shot:?}");
-    }
+        .expect("a report item in the more menu");
     app.click_text(".context-item", "Report user profile")
         .await
         .expect("report");
@@ -192,8 +184,8 @@ async fn card_mod_view_and_report_form() {
     app.submit(".profile-card .report-user")
         .await
         .expect("submit");
-    app.wait_for_js(
-        "const f = document.querySelector('.profile-card .report-user'); return !!f && (f.querySelector('.ok') !== null || f.querySelector('.error') !== null);",
+    app.wait_for(
+        ".profile-card .report-user .ok, .profile-card .report-user .error",
         DEFAULT_WAIT,
     )
     .await
@@ -201,15 +193,9 @@ async fn card_mod_view_and_report_form() {
 }
 
 async fn gone_js(app: &mut App, selector: &str) {
-    app.wait_for_js(
-        &format!(
-            "return !document.querySelector({});",
-            serde_json::to_string(selector).expect("json")
-        ),
-        DEFAULT_WAIT,
-    )
-    .await
-    .unwrap_or_else(|e| panic!("{selector} still there: {e}"));
+    app.wait_for_count(selector, 0, DEFAULT_WAIT)
+        .await
+        .unwrap_or_else(|e| panic!("{selector} still there: {e}"));
 }
 
 /// The row for `room` in the mod view.
@@ -254,17 +240,18 @@ async fn mod_view_moderates_someone_across_rooms() {
             .await
             .unwrap_or_else(|e| panic!("{room} listed with their role: {e}"));
     }
-    if let Some(path) = app.screenshot("mod-view").await.expect("screenshot") {
+    if !app.is_gpui()
+        && let Some(path) = app.screenshot("mod-view").await.expect("screenshot")
+    {
         eprintln!("screenshot: {}", path.display());
     }
 
     // A role, then a kick, in #general.
-    app.eval(&format!(
-        "const s = document.querySelector({}); s.value = 'Moderator'; s.dispatchEvent(new Event('change', {{ bubbles: true }}));",
-        serde_json::to_string(&format!("{} select.mod-role", row("general"))).expect("json")
-    ))
-    .await
-    .expect("make moderator");
+    // The roles she may give, highest first (she created the room, so
+    // Admin too): Admin, Moderator, Member. Moderator is the second.
+    app.choose_option(&format!("{} select.mod-role", row("general")), 1)
+        .await
+        .expect("make moderator");
     app.wait_for(&standing("general", "Moderator"), DEFAULT_WAIT)
         .await
         .expect("now a moderator");

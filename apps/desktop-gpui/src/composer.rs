@@ -48,6 +48,8 @@ pub struct Composer {
     room_id: OwnedRoomId,
     room_name: String,
     is_dm: bool,
+    /// Your nicknames for people, which the `@` finder matches too.
+    nicknames: HashMap<String, String>,
     session: Option<Session>,
     handle: Option<TimelineHandle>,
     input: Entity<TextInput>,
@@ -92,6 +94,7 @@ impl Composer {
         let mut this = Self {
             room_id,
             room_name,
+            nicknames: HashMap::new(),
             is_dm,
             session,
             handle: None,
@@ -214,10 +217,18 @@ impl Composer {
             })
             .detach();
         }
-        self.suggestions = composer::suggest(&draft, self.members.as_deref(), &HashMap::new());
+        self.suggestions = composer::suggest(&draft, self.members.as_deref(), &self.nicknames);
         self.active = 0;
         self.sync_capture(cx);
         cx.notify();
+    }
+
+    /// Your nicknames changed: the suggestions follow.
+    pub fn set_nicknames(&mut self, nicknames: HashMap<String, String>, cx: &mut Context<Self>) {
+        if self.nicknames != nicknames {
+            self.nicknames = nicknames;
+            self.recompute(cx);
+        }
     }
 
     fn sync_capture(&self, cx: &mut Context<Self>) {

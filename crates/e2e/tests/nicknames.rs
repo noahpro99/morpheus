@@ -35,13 +35,12 @@ async fn set_nickname(app: &mut App, member: &str, nickname: &str) {
     app.wait_for_text(".members .member", member, DEFAULT_WAIT)
         .await
         .expect("member listed");
-    let js = format!(
-        "const el = [...document.querySelectorAll('.members .member')].find(el => el.textContent.includes({})); \
-         const r = el.getBoundingClientRect(); \
-         el.dispatchEvent(new MouseEvent('contextmenu', {{ bubbles: true, cancelable: true, clientX: r.left + 10, clientY: r.top + 10 }}));",
-        serde_json::to_string(member).expect("json")
-    );
-    app.eval(&js).await.expect("right-click member");
+    app.right_click_text(".members .member", member)
+        .await
+        .expect("right-click member");
+    app.wait_for(".context-menu .context-item", DEFAULT_WAIT)
+        .await
+        .expect("member menu");
     app.click_text(".context-menu .context-item", "Set nickname")
         .await
         .expect("Set nickname");
@@ -52,12 +51,28 @@ async fn set_nickname(app: &mut App, member: &str, nickname: &str) {
         .await
         .expect("type nickname");
     app.submit(".nickname-editor").await.expect("save");
-    app.wait_for_js(
-        "return !document.querySelector('.nickname-editor');",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("editor closes");
+    app.wait_for_count(".nickname-editor", 0, DEFAULT_WAIT)
+        .await
+        .expect("editor closes");
+}
+
+/// Wait until the texts of `selector` satisfy `ok`.
+async fn wait_texts(app: &mut App, selector: &str, what: &str, ok: impl Fn(&[String]) -> bool) {
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let texts: Vec<String> = app
+            .texts(selector)
+            .await
+            .expect("texts")
+            .into_iter()
+            .map(|text| text.trim().to_owned())
+            .collect();
+        if ok(&texts) {
+            return;
+        }
+        assert!(std::time::Instant::now() < deadline, "{what}: {texts:?}");
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
 }
 
 #[tokio::test]
@@ -86,17 +101,13 @@ async fn nicknames_replace_display_names_and_follow_you() {
     set_nickname(&mut alice, "bob", &nickname).await;
 
     // Bob's messages are headed by the nickname, and none by his own name.
-    alice
-        .wait_for_js(
-            &format!(
-                "const senders = [...document.querySelectorAll('.timeline .sender')].map(s => s.textContent.trim()); \
-                 return senders.includes({nick}) && !senders.includes('bob');",
-                nick = serde_json::to_string(&nickname).expect("json")
-            ),
-            DEFAULT_WAIT,
-        )
-        .await
-        .expect("bob's messages show the nickname");
+    wait_texts(
+        &mut alice,
+        ".timeline .sender",
+        "bob's messages show the nickname",
+        |senders| senders.contains(&nickname) && !senders.iter().any(|s| s == "bob"),
+    )
+    .await;
     alice
         .wait_for_text(".members .member", &nickname, DEFAULT_WAIT)
         .await
@@ -134,14 +145,10 @@ async fn nicknames_replace_display_names_and_follow_you() {
 
     // Clearing it brings the display name back.
     set_nickname(&mut alice, &nickname, "").await;
-    alice
-        .wait_for_js(
-            "return [...document.querySelectorAll('.members .member')].some(m => m.textContent.trim() === 'bob') \
-                 && ![...document.querySelectorAll('.members .member')].some(m => m.textContent.includes('Bobby'));",
-            DEFAULT_WAIT,
-        )
-        .await
-        .expect("bob again");
+    wait_texts(&mut alice, ".members .member", "bob again", |members| {
+        members.iter().any(|m| m == "bob") && !members.iter().any(|m| m.contains("Bobby"))
+    })
+    .await;
 }
 
 /// Typing `@` finds people by the nickname you gave them too, and shows it;
@@ -181,10 +188,7 @@ async fn mentions_find_people_by_nickname() {
         .await
         .expect("accept");
     carol
-        .wait_for_js(
-            "return document.querySelector('.composer .composer-input').value === 'hi @bob '",
-            DEFAULT_WAIT,
-        )
+        .wait_for_value(".composer .composer-input", "hi @bob ", DEFAULT_WAIT)
         .await
         .expect("his real name goes in, so he is pinged");
 

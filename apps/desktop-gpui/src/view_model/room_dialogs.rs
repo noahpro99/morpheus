@@ -19,6 +19,8 @@ pub enum RoomDialogKind {
     /// A category inside `Some(server)`, or a new server.
     CreateSpace(Option<OwnedRoomId>),
     LeaveSpace(OwnedRoomId),
+    /// Your nickname for someone: who, and the name they show now.
+    Nickname(OwnedUserId, String),
 }
 
 /// The message of a form: a note that it worked, or why it did not.

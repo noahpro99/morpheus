@@ -16,7 +16,10 @@ use crate::{
     e2e::{E2eExt as _, HandleProbe},
     media::{self, Avatars, avatar},
     theme,
-    view_model::members::{PAGE, groups, show_more_label},
+    view_model::{
+        members::{PAGE, groups, show_more_label},
+        nicknames::{NickMap, shown_name},
+    },
 };
 
 /// What the member list tells the shell.
@@ -33,6 +36,8 @@ pub struct MembersView {
     session: Option<Session>,
     room: OwnedRoomId,
     members: Option<Result<Vec<Member>, String>>,
+    /// Your nicknames for people, shown over their names.
+    nicknames: NickMap,
     permissions: MemberPermissions,
     /// How many rows show (the list grows by a page on request).
     shown: usize,
@@ -46,6 +51,7 @@ impl MembersView {
             session,
             room,
             members: None,
+            nicknames: NickMap::new(),
             permissions: MemberPermissions::default(),
             shown: PAGE,
             images: Avatars::default(),
@@ -53,6 +59,13 @@ impl MembersView {
         };
         this.refresh(cx);
         this
+    }
+
+    pub fn set_nicknames(&mut self, nicknames: NickMap, cx: &mut Context<Self>) {
+        if self.nicknames != nicknames {
+            self.nicknames = nicknames;
+            cx.notify();
+        }
     }
 
     /// Reads the list and our powers again (someone joined or left, or a
@@ -150,7 +163,8 @@ impl Render for MembersView {
                     );
                     for member in group.members {
                         let picture = member.avatar.clone().and_then(|m| self.picture(&m, cx));
-                        panel = panel.child(member_row(&member, picture, cx));
+                        let shown = shown_name(&self.nicknames, member.user_id.as_str(), &member.name);
+                        panel = panel.child(member_row(&member, shown, picture, cx));
                     }
                 }
                 if hidden > 0 {
@@ -183,7 +197,12 @@ impl Render for MembersView {
 }
 
 /// One member: picture, name, "blocked" when you blocked them.
-fn member_row(member: &Member, picture: Option<Arc<Image>>, cx: &mut Context<MembersView>) -> impl IntoElement {
+fn member_row(
+    member: &Member,
+    shown: String,
+    picture: Option<Arc<Image>>,
+    cx: &mut Context<MembersView>,
+) -> impl IntoElement {
     let (open, menu) = (Box::new(member.clone()), member.clone());
     let permissions_of = |this: &MembersView| this.permissions;
     let mut row = div()
@@ -217,9 +236,9 @@ fn member_row(member: &Member, picture: Option<Arc<Image>>, cx: &mut Context<Mem
             div()
                 .min_w_0()
                 .truncate()
-                .child(member.name.clone())
+                .child(shown.clone())
                 .e2e("span", "member-name")
-                .text(member.name.clone()),
+                .text(shown),
         );
     if member.is_ignored {
         row = row.child(

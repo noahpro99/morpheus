@@ -27,7 +27,7 @@ use crate::{
     menu::{self, OpenMenu},
     profile::ProfileCard,
     model::{Scope, rooms_in_scope},
-    view_model::{marks::Marks, toast::ToastList},
+    view_model::{marks::Marks, nicknames::NickMap, toast::ToastList},
     prefs::Prefs,
     rail, room_list,
     settings::{KeysChanged, SettingsView, ThemeChosen},
@@ -98,6 +98,8 @@ pub struct Shell {
     pub timeline_handle: Option<TimelineHandle>,
     /// The open room's pinned messages.
     pub pinned: Vec<OwnedEventId>,
+    /// Your nicknames for people.
+    pub nicknames: NickMap,
 }
 
 impl Shell {
@@ -147,6 +149,17 @@ impl Shell {
                         settings.update(cx, |settings, _| settings.theme = theme);
                     }
                     cx.notify();
+                })
+                .ok();
+            }
+        })
+        .detach();
+        let nicknames = session.nicknames();
+        cx.spawn(async move |this, cx| {
+            if let Ok(names) = nicknames.await {
+                this.update(cx, |this, cx| {
+                    this.nicknames = names;
+                    this.push_nicknames(cx);
                 })
                 .ok();
             }
@@ -214,6 +227,7 @@ impl Shell {
             members_count: 0,
             timeline_handle: None,
             pinned: Vec::new(),
+            nicknames: NickMap::new(),
         }
     }
 
@@ -361,6 +375,7 @@ impl Shell {
             self.members = Some((id.clone(), members));
         }
         self.selected = Some(id);
+        self.push_nicknames(cx);
         self.refresh_pinned(cx);
         cx.notify();
     }
