@@ -334,9 +334,13 @@ fn click(window: &mut gpui::Window, cx: &mut App, (x, y): (f32, f32), button: Mo
     );
 }
 
-/// Wait (briefly) for a frame after `before`: the effect of an input shows
-/// in the tree once the app has redrawn. A no-op input draws nothing.
-async fn next_frame(cx: &mut AsyncApp, before: u64) {
+/// Wait (briefly) for a frame after the input just dispatched: its effect
+/// shows in the tree once the app has redrawn. The counter is read now, not
+/// before the input: GPUI draws pending changes before handling an event, so
+/// a frame counted since the input began may predate its last effect. A
+/// no-op input draws nothing.
+async fn next_frame(cx: &mut AsyncApp, _before: u64) {
+    let before = with_state(|state| state.frame);
     let step = Duration::from_millis(5);
     let mut waited = Duration::ZERO;
     while with_state(|state| state.frame) == before && waited < FRAME_WAIT {

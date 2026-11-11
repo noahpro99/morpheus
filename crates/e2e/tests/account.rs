@@ -9,7 +9,7 @@ fn homeserver() -> Option<String> {
     std::env::var("MORPHEUS_TEST_HOMESERVER").ok()
 }
 
-async fn login(app: &mut App, user: &str, password: &str) {
+pub(crate) async fn login(app: &mut App, user: &str, password: &str) {
     app.wait_for("form.login", DEFAULT_WAIT)
         .await
         .expect("login form");
