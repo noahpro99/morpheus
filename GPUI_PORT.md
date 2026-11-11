@@ -99,11 +99,11 @@ instead of JavaScript:
 5. **Timeline (read).** Messages, formatted bodies (HTML subset to styled
    text), images, grouping, day dividers. The hardest piece: plan it first.
 6. **Composer.** Sending, replies, edits, attachments, autocomplete.
-  7. **Decryption.** Locked messages, the key banner, recovery key and backup restore, verification with another device (the scrolling, backup_history, encryption and settings e2e tests).
-7. Onward in the order of `crates/e2e/tests` files, each task naming the
+7. **Decryption.** Locked messages, the key banner, recovery key and backup restore, verification with another device (the scrolling, backup_history, encryption and settings e2e tests).
+8. Onward in the order of `crates/e2e/tests` files, each task naming the
    test file(s) it brings to green.
 
-8. **Later: headless e2e.** Run the app on gpui's test platform
+9. **Later: headless e2e.** Run the app on gpui's test platform
    (`test-support`, `VisualTestContext` in vendor/gpui) with the bridge on
    top, so e2e tests open no windows. Not before the shell and timeline exist.
 
