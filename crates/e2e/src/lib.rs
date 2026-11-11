@@ -2679,59 +2679,86 @@ pub fn reset_friends(homeserver: &str, user: &str) -> Cleanup {
 }
 
 /// Leaves and forgets every room of `user` whose name starts with `prefix`,
-/// declining an invite to one: the rooms a test creates and invites to.
+/// declining an invite to one: the rooms a test creates and invites to. One
+/// login and one filtered sync find them all.
 pub fn remove_rooms_named(homeserver: &str, user: &str, prefix: &str) {
-    let named = |state: &Value| {
-        state
-            .as_array()
-            .into_iter()
-            .flatten()
-            .any(|e| {
-                e["type"] == "m.room.name"
-                    && e["content"]["name"]
-                        .as_str()
-                        .is_some_and(|n| n.starts_with(prefix))
-            })
+    let _ = try_remove_rooms_named(homeserver, user, prefix);
+}
+
+fn try_remove_rooms_named(homeserver: &str, user: &str, prefix: &str) -> Result<()> {
+    let login = curl(&[
+        "-X",
+        "POST",
+        &format!("{homeserver}/_matrix/client/v3/login"),
+        "-d",
+        &json!({ "type": "m.login.password", "identifier": { "type": "m.id.user", "user": user }, "password": format!("{user}-password") }).to_string(),
+    ])?;
+    let login: Value = serde_json::from_str(&login)?;
+    let token = login["access_token"]
+        .as_str()
+        .ok_or_else(|| anyhow!("no token for {user}"))?
+        .to_owned();
+    let auth = format!("Authorization: Bearer {token}");
+    let named = |events: &Value| {
+        events.as_array().into_iter().flatten().any(|e| {
+            e["type"] == "m.room.name"
+                && e["content"]["name"]
+                    .as_str()
+                    .is_some_and(|n| n.starts_with(prefix))
+        })
     };
+    let filter = json!({
+        "room": {
+            "timeline": { "limit": 0 },
+            "state": { "types": ["m.room.name"] },
+            "ephemeral": { "types": [] },
+            "account_data": { "types": [] }
+        },
+        "presence": { "types": [] },
+        "account_data": { "types": [] }
+    })
+    .to_string();
+    let sync = curl(&[
+        "-H",
+        &auth,
+        &format!(
+            "{homeserver}/_matrix/client/v3/sync?timeout=0&filter={}",
+            percent_encode(&filter)
+        ),
+    ])?;
+    let sync: Value = serde_json::from_str(&sync)?;
     let mut rooms: Vec<String> = Vec::new();
-    // Joined rooms.
-    if let Ok(joined) = api_as(homeserver, user, "GET", "joined_rooms", None) {
-        for id in joined["joined_rooms"].as_array().into_iter().flatten() {
-            let Some(id) = id.as_str() else { continue };
-            let name = api_as(
-                homeserver,
-                user,
-                "GET",
-                &format!("rooms/{id}/state/m.room.name"),
-                None,
-            )
-            .unwrap_or(Value::Null);
-            if name["name"].as_str().is_some_and(|n| n.starts_with(prefix)) {
-                rooms.push(id.to_owned());
-            }
+    for (id, room) in sync["rooms"]["join"].as_object().into_iter().flatten() {
+        if named(&room["state"]["events"]) {
+            rooms.push(id.clone());
         }
     }
-    // Pending invites.
-    let filter = json!({ "room": { "timeline": { "limit": 0 }, "state": { "limit": 0 }, "ephemeral": { "limit": 0 } }, "presence": { "not_types": ["*"] }, "account_data": { "not_types": ["*"] } }).to_string();
-    if let Ok(sync) = api_as(
-        homeserver,
-        user,
-        "GET",
-        &format!("sync?timeout=0&filter={}", percent_encode(&filter)),
-        None,
-    ) {
-        if let Some(invites) = sync["rooms"]["invite"].as_object() {
-            for (id, room) in invites {
-                if named(&room["invite_state"]["events"]) {
-                    rooms.push(id.clone());
-                }
-            }
+    for (id, room) in sync["rooms"]["invite"].as_object().into_iter().flatten() {
+        if named(&room["invite_state"]["events"]) {
+            rooms.push(id.clone());
         }
     }
     for id in rooms {
-        let _ = api_as(homeserver, user, "POST", &format!("rooms/{id}/leave"), Some(json!({})));
-        let _ = api_as(homeserver, user, "POST", &format!("rooms/{id}/forget"), Some(json!({})));
+        for action in ["leave", "forget"] {
+            let _ = curl(&[
+                "-X",
+                "POST",
+                "-H",
+                &auth,
+                &format!("{homeserver}/_matrix/client/v3/rooms/{id}/{action}"),
+                "-d",
+                "{}",
+            ]);
+        }
     }
+    let _ = curl(&[
+        "-X",
+        "POST",
+        "-H",
+        &auth,
+        &format!("{homeserver}/_matrix/client/v3/logout"),
+    ]);
+    Ok(())
 }
 
 /// `remove_rooms_named` for several users, now and when the guard drops.
