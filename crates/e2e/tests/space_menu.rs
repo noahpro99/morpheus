@@ -31,12 +31,9 @@ async fn login(app: &mut App, user: &str) {
 }
 
 async fn menu_closed(app: &mut App) {
-    app.wait_for_js(
-        "return document.querySelector('.context-menu') === null;",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("menu closed");
+    app.wait_for_count(".context-menu", 0, DEFAULT_WAIT)
+        .await
+        .expect("menu closed");
 }
 
 async fn labels(app: &mut App) -> String {
@@ -259,4 +256,82 @@ async fn server_menu_from_name_and_badge_runs_the_server_lifecycle() {
         .await
         .expect("unhide");
     menu_closed(&mut app).await;
+}
+
+/// Right-clicking a server's badge, or clicking its name, opens the server
+/// menu with Discord's list; "Hide muted channels" is a check that sticks.
+#[tokio::test]
+async fn the_server_menu_opens_from_the_badge_and_the_name() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch_desktop(&hs).await.expect("launch app");
+    login(&mut app, "alice").await;
+    let badge = ".rail-item[title=\"Engineering\"]";
+    app.wait_for(badge, DEFAULT_WAIT).await.expect("badge");
+
+    let wanted = [
+        "Mark as read",
+        "Invite to server",
+        "Mute server",
+        "Notifications",
+        "Hide muted channels",
+        "Server settings",
+        "Privacy settings",
+        "Edit per-server profile",
+        "Create channel",
+        "Create category",
+        "Move to",
+        "Leave server",
+        "Copy server info",
+    ];
+    async fn items(app: &mut App) -> Vec<String> {
+        app.texts(".context-menu:not(.context-submenu) > .context-item > .menu-label")
+            .await
+            .expect("labels")
+            .into_iter()
+            .map(|l| l.trim().to_owned())
+            .collect()
+    }
+
+    app.right_click(badge).await.expect("right-click the badge");
+    app.wait_for(".context-menu", DEFAULT_WAIT)
+        .await
+        .expect("server menu");
+    assert_eq!(items(&mut app).await, wanted, "from the badge");
+    app.press(".context-menu", "Escape").await.expect("escape");
+    menu_closed(&mut app).await;
+
+    app.click(badge).await.expect("the server");
+    app.wait_for_text(".sidebar-header h2", "Engineering", DEFAULT_WAIT)
+        .await
+        .expect("server scope");
+    app.click(".sidebar-header h2.server-name")
+        .await
+        .expect("click the name");
+    app.wait_for(".context-menu", DEFAULT_WAIT)
+        .await
+        .expect("server menu");
+    assert_eq!(items(&mut app).await, wanted, "from the name");
+
+    // Hide muted channels: a check mark, kept in the account.
+    let hide = ".context-menu:not(.context-submenu) > .context-item.checked";
+    assert_eq!(app.count(hide).await.expect("count"), 0, "not hiding yet");
+    app.click_text(".context-item", "Hide muted channels")
+        .await
+        .expect("hide muted");
+    menu_closed(&mut app).await;
+    app.click(".sidebar-header h2.server-name")
+        .await
+        .expect("name again");
+    app.wait_for_text(hide, "Hide muted channels", DEFAULT_WAIT)
+        .await
+        .expect("checked");
+    app.click_text(".context-item", "Hide muted channels")
+        .await
+        .expect("show muted again");
+    menu_closed(&mut app).await;
+    // The change is saved in the account in the background: let it land.
+    tokio::time::sleep(Duration::from_secs(1)).await;
 }

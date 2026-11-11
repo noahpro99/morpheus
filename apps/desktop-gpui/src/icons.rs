@@ -62,6 +62,13 @@ pub const GAVEL: &str = r#"<path d="m14.5 12.5-8 8a2.119 2.119 0 1 1-3-3l8-8" />
 pub const MESSAGE_CIRCLE: &str = r#"<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" />"#;
 pub const EYE_OFF: &str = r#"<path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49" /> <path d="M14.084 14.158a3 3 0 0 1-4.242-4.242" /> <path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143" /> <path d="m2 2 20 20" />"#;
 
+pub const USER_COG: &str = r#"<circle cx="18" cy="15" r="3" /> <circle cx="9" cy="7" r="4" /> <path d="M10 15H6a4 4 0 0 0-4 4v2" /> <path d="m21.7 16.4-.9-.3" /> <path d="m15.2 13.9-.9-.3" /> <path d="m16.6 18.7.3-.9" /> <path d="m19.1 12.2.3-.9" /> <path d="m19.6 18.7-.4-1" /> <path d="m16.8 12.3-.4-1" /> <path d="m14.3 16.6 1-.4" /> <path d="m20.7 13.8 1-.4" />"#;
+pub const FOLDER_PLUS: &str = r#"<path d="M12 10v6" /> <path d="M9 13h6" /> <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />"#;
+pub const INFO: &str =
+    r#"<circle cx="12" cy="12" r="10" /> <path d="M12 16v-4" /> <path d="M12 8h.01" />"#;
+
+pub const MOVE: &str = r#"<path d="M12 2v20" /> <path d="m15 19-3 3-3-3" /> <path d="m19 9 3 3-3 3" /> <path d="M2 12h20" /> <path d="m5 9-3 3 3 3" /> <path d="m9 5 3-3 3 3" />"#;
+
 /// The glyph named by an asset path `icons/<name>.svg`.
 fn glyph(name: &str) -> Option<&'static str> {
     Some(match name {
@@ -92,6 +99,10 @@ fn glyph(name: &str) -> Option<&'static str> {
         "refresh-cw" => REFRESH_CW,
         "key" => KEY,
         "user" => USER,
+        "user-cog" => USER_COG,
+        "folder-plus" => FOLDER_PLUS,
+        "info" => INFO,
+        "move" => MOVE,
         "smile-plus" => SMILE_PLUS,
         "eye" => EYE,
         "circle-minus" => CIRCLE_MINUS,

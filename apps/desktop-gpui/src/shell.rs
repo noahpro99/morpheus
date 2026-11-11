@@ -1,26 +1,30 @@
 //! The signed-in shell (`crates/ui/src/components/shell.rs`): the rail, the
 //! sidebar with its footer, and the chat area, over the rooms the core syncs.
 
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use gpui::{
     Context, Entity, FocusHandle, IntoElement, Render, ScrollHandle, Window, div, prelude::*, px,
     rgb,
 };
 use morpheus_core::{
-    MediaRef, OwnedEventId, OwnedRoomId, Profile, RoomSummary, Session, SpaceRoom, TimelineHandle,
+    MediaRef, OwnedEventId, OwnedRoomId, OwnedUserId, Profile, RoomSummary, Session, SpaceRoom,
+    TimelineHandle,
     VectorDiff,
 };
 
 use crate::{
     chat,
     composer::Composer,
-    dialogs::{self, Dialog, PendingDelete},
+    dialogs::{self, Dialog, PendingUndo},
     e2e::E2eExt as _,
     media::{self, Avatars},
     menu::{self, OpenMenu},
     model::{Scope, rooms_in_scope},
-    view_model::toast::ToastList,
+    view_model::{marks::Marks, toast::ToastList},
     prefs::Prefs,
     rail, room_list,
     settings::{KeysChanged, SettingsView},
@@ -68,7 +72,13 @@ pub struct Shell {
     pub take_dialog_focus: bool,
     pub toasts: ToastList,
     /// Deletions waiting out their Undo toast, by toast.
-    pub pending_deletes: HashMap<u32, PendingDelete>,
+    pub pending: HashMap<u32, PendingUndo>,
+    /// Rooms just left, still undoable: out of the lists.
+    pub hidden_rooms: HashSet<String>,
+    /// Private marks: pinned and closed DMs, ignored people, timed mutes.
+    pub marks: Marks,
+    /// The people you are friends with.
+    pub friends: Vec<OwnedUserId>,
     /// The open room's timeline, to act on its messages.
     pub timeline_handle: Option<TimelineHandle>,
     /// The open room's pinned messages.
@@ -90,6 +100,7 @@ impl Shell {
                             apply(&mut this.rooms, diff);
                         }
                         crate::model::adopt_children(&mut this.rooms);
+                        this.reopen_closed(cx);
                         cx.notify();
                     })
                     .is_ok();
@@ -127,6 +138,7 @@ impl Shell {
             .detach();
         shell.settings = Some(settings);
         shell.refresh_keys(cx);
+        shell.load_marks(cx);
         // Keys can arrive from elsewhere: look again now and then.
         cx.spawn(async move |this, cx| {
             loop {
@@ -165,7 +177,10 @@ impl Shell {
             dialog_focus: None,
             take_dialog_focus: false,
             toasts: ToastList::default(),
-            pending_deletes: HashMap::new(),
+            pending: HashMap::new(),
+            hidden_rooms: HashSet::new(),
+            marks: Marks::default(),
+            friends: Vec::new(),
             timeline_handle: None,
             pinned: Vec::new(),
         }

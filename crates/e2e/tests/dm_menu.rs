@@ -23,6 +23,22 @@ fn row(name: &str) -> String {
     )
 }
 
+/// Wait until the DM list shows `name` (or not).
+async fn wait_listed(app: &mut App, name: &str, listed: bool) {
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let names = app.texts(".room.dm .room-name").await.expect("names");
+        if names.iter().any(|n| n.trim() == name) == listed {
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the DM with {name} should be listed: {listed}: {names:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
 /// Alice signed in, on the DM list, nothing open (the Friends page).
 async fn alice_on_dms(hs: &str) -> App {
     let mut app = App::launch_desktop(hs).await.expect("launch");
@@ -38,21 +54,18 @@ async fn alice_on_dms(hs: &str) -> App {
     app.submit("form.login").await.expect("submit");
     app.wait_for(".rail-dms", DEFAULT_WAIT).await.expect("rail");
     app.click(".rail-dms").await.expect("DMs");
-    app.wait_for_js(&format!("return !!{};", row("carol")), DEFAULT_WAIT)
-        .await
-        .expect("the DM with carol listed");
-    app.click(".friends-row").await.expect("friends page");
+    wait_listed(&mut app, "carol", true).await;
+    // The Friends page (nothing open) is not in the GPUI app yet.
+    if app.count(".friends-row").await.expect("count") > 0 {
+        app.click(".friends-row").await.expect("friends page");
+    }
     app
 }
 
 async fn dm_menu(app: &mut App, name: &str) {
-    app.eval(&format!(
-        "const el = {}; const r = el.getBoundingClientRect(); \
-         el.dispatchEvent(new MouseEvent('contextmenu', {{ bubbles: true, cancelable: true, clientX: r.left + 20, clientY: r.top + 10 }}));",
-        row(name)
-    ))
-    .await
-    .expect("right-click");
+    app.right_click_exact(".room.dm .room-name", name)
+        .await
+        .expect("right-click");
     app.wait_for(".context-menu", DEFAULT_WAIT)
         .await
         .expect("menu");
@@ -62,51 +75,55 @@ async fn choose(app: &mut App, label: &str) {
     app.click_text(".context-menu .context-item", label)
         .await
         .expect("menu item");
-    app.wait_for_js(
-        "return document.querySelector('.context-menu') === null;",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("menu closed");
+    app.wait_for_count(".context-menu", 0, DEFAULT_WAIT)
+        .await
+        .expect("menu closed");
 }
 
 /// The menu's top-level labels.
 async fn labels(app: &mut App) -> Vec<String> {
-    serde_json::from_value(
-        app.eval("return [...document.querySelectorAll('.context-menu:not(.context-submenu) > .context-item > .menu-label')].map(l => l.textContent.trim());")
-            .await
-            .expect("labels"),
-    )
-    .expect("strings")
+    app.texts(".context-menu:not(.context-submenu) > .context-item > .menu-label")
+        .await
+        .expect("labels")
+        .into_iter()
+        .map(|l| l.trim().to_owned())
+        .collect()
 }
 
 async fn has_class(app: &mut App, name: &str, class: &str) -> bool {
-    app.eval(&format!(
-        "return !!{}?.classList.contains({});",
-        row(name),
-        js(class)
-    ))
-    .await
-    .expect("class")
-        == serde_json::json!(true)
+    app.texts(&format!(".room.dm.{class} .room-name"))
+        .await
+        .expect("class")
+        .iter()
+        .any(|n| n.trim() == name)
 }
 
 async fn wait_class(app: &mut App, name: &str, class: &str, on: bool) {
-    app.wait_for_js(
-        &format!(
-            "return !!{}?.classList.contains({}) === {on};",
-            row(name),
-            js(class)
-        ),
-        DEFAULT_WAIT,
-    )
-    .await
-    .unwrap_or_else(|err| {
-        panic!(
-            "{name} {} {class}: {err}",
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    while has_class(app, name, class).await != on {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "{name} {} {class}",
             if on { "gets" } else { "loses" }
-        )
-    });
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+/// Wait until the first DM listed is `name`.
+async fn wait_first(app: &mut App, name: &str) {
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let names = app.texts(".room.dm .room-name").await.expect("names");
+        if names.first().is_some_and(|n| n.trim() == name) {
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "{name} should be first: {names:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
 }
 
 #[tokio::test]
@@ -136,43 +153,33 @@ async fn a_pinned_dm_stays_at_the_top() {
         return;
     };
     let mut app = alice_on_dms(&hs).await;
-    let names = "return [...document.querySelectorAll('.room.dm .room-name')].map(n => n.textContent.trim());";
-    let order: Vec<String> =
-        serde_json::from_value(app.eval(names).await.expect("names")).expect("strings");
+    let order: Vec<String> = app
+        .texts(".room.dm .room-name")
+        .await
+        .expect("names")
+        .into_iter()
+        .map(|n| n.trim().to_owned())
+        .collect();
     assert!(order.len() >= 2, "two DMs to order: {order:?}");
     let last = order.last().expect("a DM").clone();
 
     dm_menu(&mut app, &last).await;
     choose(&mut app, "Pin").await;
-    app.wait_for_js(
-        &format!(
-            "return document.querySelector('.room.dm .room-name')?.textContent.trim() === {};",
-            js(&last)
-        ),
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("the pinned DM first");
+    wait_first(&mut app, &last).await;
     wait_class(&mut app, &last, "pinned", true).await;
 
     // Kept after a restart (it is in the account, not just this window).
     let mut app = app.relaunch().await.expect("relaunch");
     app.wait_for(".rail-dms", DEFAULT_WAIT).await.expect("rail");
     app.click(".rail-dms").await.expect("DMs");
-    app.wait_for_js(
-        &format!(
-            "return document.querySelector('.room.dm .room-name')?.textContent.trim() === {};",
-            js(&last)
-        ),
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("still first after a restart");
+    wait_first(&mut app, &last).await;
 
     dm_menu(&mut app, &last).await;
     assert!(labels(&mut app).await.contains(&"Unpin".to_owned()));
     choose(&mut app, "Unpin").await;
     wait_class(&mut app, &last, "pinned", false).await;
+    // The change is saved in the account in the background: let it land.
+    tokio::time::sleep(Duration::from_secs(1)).await;
 }
 
 #[tokio::test]
@@ -196,18 +203,13 @@ async fn favorites_get_their_own_place_in_the_rail() {
     app.wait_for_text(".sidebar-header h2", "Favorites", DEFAULT_WAIT)
         .await
         .expect("the Favorites list");
-    app.wait_for_js(&format!("return !!{};", row("carol")), DEFAULT_WAIT)
-        .await
-        .expect("carol's DM in it");
+    wait_listed(&mut app, "carol", true).await;
 
     dm_menu(&mut app, "carol").await;
     choose(&mut app, "Remove from favorites").await;
-    app.wait_for_js(
-        "return document.querySelector('.rail-favorites') === null;",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("no Favorites place once empty");
+    app.wait_for_count(".rail-favorites", 0, DEFAULT_WAIT)
+        .await
+        .expect("no Favorites place once empty");
 }
 
 #[tokio::test]
@@ -335,6 +337,13 @@ async fn mute_a_dm_for_a_while_then_unmute() {
         return;
     };
     let mut app = alice_on_dms(&hs).await;
+    // A run cut short may have left her muted.
+    if has_class(&mut app, "carol", "muted").await {
+        dm_menu(&mut app, "carol").await;
+        choose(&mut app, "Unmute @carol").await;
+        wait_class(&mut app, "carol", "muted", false).await;
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
     dm_menu(&mut app, "carol").await;
     app.click_submenu("Mute @carol", "For 15 minutes")
         .await
@@ -347,6 +356,8 @@ async fn mute_a_dm_for_a_while_then_unmute() {
     );
     choose(&mut app, "Unmute @carol").await;
     wait_class(&mut app, "carol", "muted", false).await;
+    // The change is saved in the account in the background: let it land.
+    tokio::time::sleep(Duration::from_secs(1)).await;
 }
 
 /// Every item of a DM's menu, and of a room's, has an icon.

@@ -747,6 +747,22 @@ impl App {
         self.eval(&js).await.map(drop)
     }
 
+    /// Right-click the first `selector` element whose trimmed text is exactly `text`.
+    pub async fn right_click_exact(&mut self, selector: &str, text: &str) -> Result<()> {
+        if gpui() {
+            let extra = json!({ "exact": text });
+            return self.op("right_click", selector, extra).await.map(drop);
+        }
+        let (sel, text) = (js_str(selector), js_str(text));
+        let js = format!(
+            "const el = [...document.querySelectorAll({sel})].find(el => el.textContent.trim() === {text});
+             if (!el) throw new Error('no element matching ' + {sel} + ' with exact text ' + {text});
+             const r = el.getBoundingClientRect(); \
+             el.dispatchEvent(new MouseEvent('contextmenu', {{ bubbles: true, cancelable: true, button: 2, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 }}));"
+        );
+        self.eval(&js).await.map(drop)
+    }
+
     /// The text of every `selector` match inside the `within` elements whose
     /// text contains `contains` (a message row's reactions, say).
     pub async fn texts_within(

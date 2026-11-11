@@ -46,11 +46,16 @@ pub enum Dialog {
     Pinned(Entity<PinnedDialog>),
 }
 
-/// A deletion waiting out its Undo toast.
-pub struct PendingDelete {
-    timeline: WeakEntity<TimelineView>,
-    handle: TimelineHandle,
-    message: Message,
+/// Something done at once that its Undo toast can still take back.
+pub enum PendingUndo {
+    /// A deleted message, hidden meanwhile.
+    Delete {
+        timeline: WeakEntity<TimelineView>,
+        handle: TimelineHandle,
+        message: Message,
+    },
+    /// A room left, out of the list meanwhile.
+    Leave(OwnedRoomId),
 }
 
 impl Shell {
@@ -132,7 +137,19 @@ impl Shell {
 
     /// Runs what a menu item asked for.
     pub fn run_menu_action(&mut self, action: MenuAction, target: MenuTarget, cx: &mut Context<Self>) {
-        let MenuTarget::Message { message, room } = target;
+        match target {
+            MenuTarget::Message { message, room } => self.run_message_action(action, message, room, cx),
+            MenuTarget::Other => self.run_room_action(action, cx),
+        }
+    }
+
+    fn run_message_action(
+        &mut self,
+        action: MenuAction,
+        message: Box<Message>,
+        room: Option<OwnedRoomId>,
+        cx: &mut Context<Self>,
+    ) {
         let timeline = self.open_timeline();
         let unique_id = message.unique_id.clone();
         let session = self.session.clone();
@@ -213,11 +230,13 @@ impl Shell {
                 }
             }
             MenuAction::Delete => self.ask_to_delete(*message, cx),
+            // The rest is for rooms and people.
+            other => self.run_room_action(other, cx),
         }
     }
 
     /// Runs a core call that has nothing to hand back; a failure is a toast.
-    fn run_in_background(
+    pub(crate) fn run_in_background(
         &mut self,
         what: &'static str,
         future: morpheus_core::CoreFuture<()>,
@@ -282,22 +301,29 @@ impl Shell {
             return;
         };
         timeline.update(cx, |timeline, _| timeline.hide(&message.unique_id));
-        let id = self.toasts.push("Message deleted", true);
-        self.pending_deletes.insert(
-            id,
-            PendingDelete {
+        self.undoable(
+            "Message deleted",
+            PendingUndo::Delete {
                 timeline: timeline.downgrade(),
                 handle,
                 message,
             },
+            cx,
         );
+    }
+
+    /// Shows `text` with an Undo button; once it has gone the action is
+    /// done for good. The caller has already made it look done.
+    pub fn undoable(&mut self, text: &str, pending: PendingUndo, cx: &mut Context<Self>) {
+        let id = self.toasts.push(text, true);
+        self.pending.insert(id, pending);
         cx.notify();
         cx.spawn(async move |this, cx| {
             cx.background_executor()
                 .timer(Duration::from_secs(UNDO_SECS))
                 .await;
             this.update(cx, |this, cx| {
-                this.commit_delete(id, cx);
+                this.commit(id, cx);
                 if this.toasts.dismiss(id) {
                     cx.notify();
                 }
@@ -309,37 +335,66 @@ impl Shell {
 
     /// The Undo button of a toast.
     pub fn undo_toast(&mut self, id: u32, cx: &mut Context<Self>) {
-        if let Some(pending) = self.pending_deletes.remove(&id)
-            && let Some(timeline) = pending.timeline.upgrade()
-        {
-            let unique_id = pending.message.unique_id;
-            timeline.update(cx, |timeline, cx| timeline.show(&unique_id, cx));
+        match self.pending.remove(&id) {
+            Some(PendingUndo::Delete {
+                timeline, message, ..
+            }) => {
+                if let Some(timeline) = timeline.upgrade() {
+                    timeline.update(cx, |timeline, cx| timeline.show(&message.unique_id, cx));
+                }
+            }
+            Some(PendingUndo::Leave(room)) => {
+                self.hidden_rooms.remove(room.as_str());
+            }
+            None => {}
         }
         if self.toasts.dismiss(id) {
             cx.notify();
         }
     }
 
-    /// The toast ran out: the deletion is done for good.
-    fn commit_delete(&mut self, id: u32, cx: &mut Context<Self>) {
-        let Some(pending) = self.pending_deletes.remove(&id) else {
-            return;
-        };
-        let redacting = pending.handle.redact(pending.message.id.clone());
-        let (timeline, unique_id) = (pending.timeline, pending.message.unique_id);
-        cx.spawn(async move |this, cx| {
-            let result = redacting.await;
-            this.update(cx, |this, cx| {
-                if let Err(err) = result {
-                    this.fail("delete", &err.to_string(), cx);
+    /// The toast ran out: the action is done for good.
+    fn commit(&mut self, id: u32, cx: &mut Context<Self>) {
+        match self.pending.remove(&id) {
+            Some(PendingUndo::Delete {
+                timeline,
+                handle,
+                message,
+            }) => {
+                let redacting = handle.redact(message.id.clone());
+                cx.spawn(async move |this, cx| {
+                    let result = redacting.await;
+                    this.update(cx, |this, cx| {
+                        if let Err(err) = result {
+                            this.fail("delete", &err.to_string(), cx);
+                        }
+                        if let Some(timeline) = timeline.upgrade() {
+                            timeline.update(cx, |timeline, cx| timeline.show(&message.unique_id, cx));
+                        }
+                    })
+                    .ok();
+                })
+                .detach();
+            }
+            Some(PendingUndo::Leave(room)) => {
+                if let Some(session) = self.session.clone() {
+                    let leaving = session.leave_room(room.clone());
+                    cx.spawn(async move |this, cx| {
+                        let result = leaving.await;
+                        this.update(cx, |this, cx| {
+                            if let Err(err) = result {
+                                this.fail("leave", &err.to_string(), cx);
+                            }
+                            this.hidden_rooms.remove(room.as_str());
+                            cx.notify();
+                        })
+                        .ok();
+                    })
+                    .detach();
                 }
-                if let Some(timeline) = timeline.upgrade() {
-                    timeline.update(cx, |timeline, cx| timeline.show(&unique_id, cx));
-                }
-            })
-            .ok();
-        })
-        .detach();
+            }
+            None => {}
+        }
     }
 
     pub fn dialog_focus(&mut self, cx: &mut Context<Self>) -> FocusHandle {

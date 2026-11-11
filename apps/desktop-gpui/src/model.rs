@@ -249,6 +249,7 @@ pub mod tests {
         let prefs = Prefs {
             hide_muted: false,
             rail: vec![RailEntry::Space(b.id.clone())],
+            ..Prefs::default()
         };
         let entries = layout(&prefs, &[a.clone(), b.clone()]);
         assert_eq!(entries, [RailEntry::Space(b.id), RailEntry::Space(a.id)]);

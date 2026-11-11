@@ -32,26 +32,34 @@ async fn login(app: &mut App, user: &str) {
 
 /// Right-click the room row whose name contains `name`.
 async fn room_menu(app: &mut App, name: &str) {
-    let js = format!(
-        "const el = [...document.querySelectorAll('.room')].find(el => el.textContent.includes({})); \
-         if (!el) throw new Error('no room ' + {}); const r = el.getBoundingClientRect(); \
-         el.dispatchEvent(new MouseEvent('contextmenu', {{ bubbles: true, cancelable: true, clientX: r.left + 20, clientY: r.top + 10 }}));",
-        serde_json::to_string(name).expect("json"),
-        serde_json::to_string(name).expect("json")
-    );
-    app.eval(&js).await.expect("right-click room");
+    app.right_click_text(".room", name)
+        .await
+        .expect("right-click room");
     app.wait_for(".context-menu", DEFAULT_WAIT)
         .await
         .expect("room menu");
 }
 
 async fn menu_closed(app: &mut App) {
-    app.wait_for_js(
-        "return document.querySelector('.context-menu') === null;",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("menu closed");
+    app.wait_for_count(".context-menu", 0, DEFAULT_WAIT)
+        .await
+        .expect("menu closed");
+}
+
+/// Wait until the room list shows `room` as unread (or not).
+async fn wait_unread(app: &mut App, room: &str, unread: bool) {
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let rows = app.texts(".room.unread").await.expect("rows");
+        if rows.iter().any(|r| r.contains(room)) == unread {
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "{room} unread should be {unread}: {rows:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
 }
 
 async fn click_submenu(app: &mut App, parent: &str, child: &str) {
@@ -81,12 +89,20 @@ async fn checked_label(app: &mut App) -> String {
             .expect("back");
         return label;
     }
-    app.eval("return [...document.querySelectorAll('.context-submenu .context-item.checked')].map(e => e.textContent.trim()).join('|');")
+    // Hovering the row shows its flyout; a click moves the pointer there.
+    app.click_text(".context-menu > .context-item.has-submenu", "Notifications")
+        .await
+        .expect("notifications row");
+    app.wait_for(".context-submenu", DEFAULT_WAIT)
+        .await
+        .expect("modes shown");
+    app.texts(".context-submenu .context-item.checked")
         .await
         .expect("checked")
-        .as_str()
-        .unwrap_or_default()
-        .to_owned()
+        .iter()
+        .map(|t| t.trim())
+        .collect::<Vec<_>>()
+        .join("|")
 }
 
 #[tokio::test]
@@ -117,13 +133,7 @@ async fn room_menu_marks_read_and_sets_notification_mode() {
         .await
         .expect("send");
 
-    alice
-        .wait_for_js(
-            "return [...document.querySelectorAll('.room.unread')].some(r => r.textContent.includes('random'));",
-            DEFAULT_WAIT,
-        )
-        .await
-        .expect("random shows unread");
+    wait_unread(&mut alice, "random", true).await;
     room_menu(&mut alice, "random").await;
     for label in [
         "Mark as read",
@@ -145,13 +155,7 @@ async fn room_menu_marks_read_and_sets_notification_mode() {
         .await
         .expect("mark read");
     menu_closed(&mut alice).await;
-    alice
-        .wait_for_js(
-            "return ![...document.querySelectorAll('.room.unread')].some(r => r.textContent.includes('random'));",
-            DEFAULT_WAIT,
-        )
-        .await
-        .expect("random no longer unread");
+    wait_unread(&mut alice, "random", false).await;
 
     // Notification mode round-trips through the push rules.
     room_menu(&mut alice, "general").await;
@@ -352,11 +356,12 @@ async fn header_button_opens_the_room_menu() {
 
 /// The top level of the open menu, label by label.
 async fn menu_labels(app: &mut App) -> Vec<String> {
-    let labels = app
-        .eval("return [...document.querySelectorAll('.context-menu:not(.context-submenu) > .context-item > .menu-label')].map(l => l.textContent.trim());")
+    app.texts(".context-menu:not(.context-submenu) > .context-item > .menu-label")
         .await
-        .expect("labels");
-    serde_json::from_value(labels).expect("strings")
+        .expect("labels")
+        .into_iter()
+        .map(|l| l.trim().to_owned())
+        .collect()
 }
 
 /// Right-clicking a DM with a friend offers what Discord's does: mark as
@@ -431,25 +436,36 @@ async fn a_dm_menu_has_what_discord_has() {
         "friends"
     );
     // The mute choices, as Discord's.
+    // (Hovering the row shows its flyout; a click moves the pointer there.)
+    alice
+        .click_text(".context-menu > .context-item.has-submenu", "Mute @bob")
+        .await
+        .expect("mute row");
+    alice
+        .wait_for(".context-submenu", DEFAULT_WAIT)
+        .await
+        .expect("flyout");
     let durations = alice
-        .eval("const row = [...document.querySelectorAll('.context-item.has-submenu')].find(r => r.querySelector('.menu-label').textContent.trim() === 'Mute @bob'); \
-               return [...row.querySelectorAll('.context-submenu .menu-label')].map(l => l.textContent.trim());")
+        .texts_within(".context-item.has-submenu", "Mute @bob", ".context-submenu .menu-label")
         .await
         .expect("durations");
+    let durations: Vec<_> = durations.iter().map(|d| d.trim()).collect();
     assert_eq!(
         durations,
-        serde_json::json!([
+        [
             "For 15 minutes",
             "For 1 hour",
             "For 3 hours",
             "For 8 hours",
             "For 24 hours",
             "Until I turn it back on"
-        ])
+        ]
     );
     // Back as it was, for other tests.
     alice
         .click_text(".context-item", "Remove friend")
         .await
         .expect("unfriend");
+    // The change is saved in the account in the background: let it land.
+    tokio::time::sleep(Duration::from_secs(1)).await;
 }

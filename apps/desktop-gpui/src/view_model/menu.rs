@@ -5,7 +5,7 @@
 //! [`MenuAction`] (data), not a closure, so this is testable and the front
 //! end only has to draw the menu and run the action it is handed.
 
-use morpheus_core::{Message, MessageId, OwnedRoomId, RoomSummary};
+use morpheus_core::{Message, MessageId, NotifyMode, OwnedRoomId, OwnedUserId, RoomSummary};
 
 /// The reactions a message's hover bar and menu offer at once.
 pub const QUICK_REACTIONS: [&str; 3] = ["👍", "❤️", "😂"];
@@ -40,6 +40,33 @@ pub enum MenuAction {
     Delete,
     /// Takes back each of these (our own) reactions.
     RemoveReactions(Vec<String>),
+
+    // On rooms, servers and people (`room_menu`).
+    /// Reads a room (or, for a server, each of its rooms).
+    MarkRead(Vec<OwnedRoomId>),
+    MarkRoomUnread(OwnedRoomId),
+    Notify(Vec<OwnedRoomId>, NotifyMode),
+    /// Leaves a room, undoably: its name for the toast.
+    Leave(OwnedRoomId, String),
+    Favorite(OwnedRoomId, bool),
+    PinDm(OwnedRoomId, bool),
+    CloseDm(OwnedRoomId),
+    Ignore(OwnedUserId, bool),
+    Block(OwnedUserId, bool),
+    /// Mutes a room for this many milliseconds (0: until turned back on).
+    Mute(OwnedRoomId, i64),
+    Unmute(OwnedRoomId),
+    Friend(OwnedUserId, bool),
+    Invite(OwnedRoomId, OwnedUserId),
+    /// Show or hide muted channels in the lists.
+    ToggleHideMuted,
+    /// Moves a server into a folder of the rail, a new one, or out of folders.
+    MoveToFolder(OwnedRoomId, String),
+    MoveToNewFolder(OwnedRoomId),
+    MoveOutOfFolders(OwnedRoomId),
+    Profile(OwnedUserId),
+    /// Opens something the GPUI build does not have yet (the string names it).
+    Unavailable(&'static str),
 }
 
 /// One row of a menu.
@@ -57,6 +84,9 @@ pub struct MenuItem {
     pub grid: bool,
     /// Lucide glyph name in front of the label; falls back to [`default_icon`].
     pub icon: Option<&'static str>,
+    /// A picture in front of the label instead of a glyph (rooms, servers):
+    /// the name its letter comes from.
+    pub avatar: Option<String>,
 }
 
 impl MenuItem {
@@ -69,7 +99,19 @@ impl MenuItem {
             children: Vec::new(),
             grid: false,
             icon: None,
+            avatar: None,
         }
+    }
+
+    pub fn checked(mut self, checked: bool) -> Self {
+        self.checked = checked;
+        self
+    }
+
+    /// Shows the room's (or server's) picture, its letter for now.
+    pub fn avatar(mut self, name: impl Into<String>) -> Self {
+        self.avatar = Some(name.into());
+        self
     }
 
     /// A row that opens `children` in a flyout.
@@ -101,6 +143,9 @@ impl MenuItem {
 
     /// The glyph drawn in front of the label, if any.
     pub fn glyph(&self) -> Option<&'static str> {
+        if self.avatar.is_some() {
+            return None;
+        }
         self.icon.or_else(|| default_icon(&self.label))
     }
 
@@ -116,6 +161,8 @@ pub enum MenuTarget {
         message: Box<Message>,
         room: Option<OwnedRoomId>,
     },
+    /// A room, server or person: the actions say which.
+    Other,
 }
 
 /// A room a message can be forwarded to.
