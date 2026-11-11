@@ -332,7 +332,7 @@ fn backup_prompt(cx: &mut Context<Shell>) -> impl IntoElement {
         .absolute()
         .right(px(16.0))
         .top(px(48.0))
-        .max_w(px(360.0))
+        .w(px(360.0))
         .flex()
         .gap(px(12.0))
         .px(px(16.0))
@@ -351,6 +351,8 @@ fn backup_prompt(cx: &mut Context<Shell>) -> impl IntoElement {
             div()
                 .flex()
                 .flex_col()
+                .flex_1()
+                .min_w_0()
                 .gap(px(4.0))
                 .text_size(px(0.9 * theme::REM))
                 .child(

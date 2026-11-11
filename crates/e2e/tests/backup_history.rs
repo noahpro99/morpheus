@@ -66,11 +66,11 @@ async fn the_recovery_key_unlocks_old_messages_on_a_new_device() {
         .await
         .expect("the recovery key");
     let key = first
-        .eval("return document.querySelector('.recovery-key-new code').textContent.trim();")
+        .text(".recovery-key-new code")
         .await
         .expect("key")
-        .as_str()
         .unwrap_or_default()
+        .trim()
         .to_owned();
     first.press("body", "Escape").await.expect("close");
     first.open_room("secrets").await.expect("open the room");
@@ -165,11 +165,11 @@ async fn new_key_shown(app: &mut App) -> String {
     app.wait_for(".recovery-key-new code", DEFAULT_WAIT)
         .await
         .expect("the recovery key");
-    app.eval("return document.querySelector('.recovery-key-new code').textContent.trim();")
+    app.text(".recovery-key-new code")
         .await
         .expect("key")
-        .as_str()
         .unwrap_or_default()
+        .trim()
         .to_owned()
 }
 
