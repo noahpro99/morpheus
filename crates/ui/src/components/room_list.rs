@@ -421,6 +421,7 @@ fn RoomRow(
             },
             class: if room.is_dm { "dm" },
             class: if room.is_voice { "voice" },
+            class: if in_this_call() { "in-call" },
             class: if pinned { "pinned" },
             class: if muted { "muted" },
             class: if is_selected { "selected" },
