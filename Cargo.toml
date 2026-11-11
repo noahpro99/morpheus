@@ -104,9 +104,3 @@ xattr = { path = "vendor/xattr" }
 # so no outside code can call it; vendor/gpui makes DispatchEventResult pub
 # (the only change) for the e2e bridge's mouse input.
 gpui = { path = "vendor/gpui" }
-
-# The GPUI app at opt-level 0 in dev: a change rebuilds in ~7 s instead of
-# ~30 s (it is one large crate; the optimiser was most of the time). GPUI and
-# every other dependency stay at opt-level 3, so drawing stays fast.
-[profile.dev.package.morpheus-desktop-gpui]
-opt-level = 0
