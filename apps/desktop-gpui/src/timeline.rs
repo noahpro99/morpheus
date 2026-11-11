@@ -80,6 +80,10 @@ pub enum TimelineEvent {
     Picker(Box<Message>, Point<Pixels>),
     /// The hover bar's bin; true when Shift skipped the question.
     Delete(Box<Message>, bool),
+    /// Someone's picture or name clicked: their profile, near this point.
+    Sender(Box<Message>, Point<Pixels>),
+    /// Someone's picture or name right-clicked: their member menu.
+    SenderMenu(Box<Message>, Point<Pixels>),
     /// A background action failed: what it was, and why (a toast).
     Failed(&'static str, String),
 }
@@ -509,6 +513,8 @@ impl TimelineView {
             RowAction::Delete(skip_asking) => {
                 cx.emit(TimelineEvent::Delete(Box::new(message), skip_asking))
             }
+            RowAction::Sender(at) => cx.emit(TimelineEvent::Sender(Box::new(message), at)),
+            RowAction::SenderMenu(at) => cx.emit(TimelineEvent::SenderMenu(Box::new(message), at)),
         }
     }
 

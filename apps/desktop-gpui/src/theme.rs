@@ -35,3 +35,4 @@ pub const ACCENT_TINT: u32 = 0x7c8cff26;
 pub const MONO: &str = "JetBrains Mono";
 /// What body text is: Inter at `html { font-size: 15px; line-height: 1.4 }`.
 pub const LINE_HEIGHT: f32 = 1.4;
+pub const MEMBERS_W: f32 = 232.0;

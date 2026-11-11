@@ -11,6 +11,7 @@ pub mod format;
 pub mod keys;
 pub mod linkify;
 pub mod marks;
+pub mod members;
 pub mod menu;
 pub mod room_menu;
 pub mod rich;
