@@ -139,12 +139,6 @@ pub struct Attached {
     pub bytes: Vec<u8>,
 }
 
-impl Attached {
-    pub fn is_image(&self) -> bool {
-        self.mime.starts_with("image/")
-    }
-}
-
 /// The kind of send the box makes of its draft.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SendKind {

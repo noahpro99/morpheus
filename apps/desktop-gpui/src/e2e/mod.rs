@@ -46,6 +46,28 @@ pub trait Scrollable {
     fn scroll_to(&self, from_bottom: f32);
 }
 
+/// A scroll container's own handle as a probe (offset 0 at the top).
+pub struct HandleProbe(pub gpui::ScrollHandle);
+
+impl Scrollable for HandleProbe {
+    fn scroll_state(&self) -> ScrollState {
+        let max = f32::from(self.0.max_offset().height);
+        let offset = f32::from(self.0.offset().y);
+        ScrollState {
+            from_bottom: (max + offset).max(0.0),
+            range: max,
+            viewport: f32::from(self.0.bounds().size.height),
+        }
+    }
+
+    fn scroll_to(&self, from_bottom: f32) {
+        let max = f32::from(self.0.max_offset().height);
+        let mut offset = self.0.offset();
+        offset.y = gpui::px(from_bottom.clamp(0.0, max) - max);
+        self.0.set_offset(offset);
+    }
+}
+
 #[cfg(feature = "e2e")]
 pub use bridge::start;
 #[cfg(feature = "e2e")]

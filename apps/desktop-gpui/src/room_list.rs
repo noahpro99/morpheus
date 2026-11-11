@@ -159,6 +159,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         .flex_1()
         .min_h_0()
         .overflow_y_scroll()
+        .track_scroll(&shell.room_scroll)
         .p(px(8.0))
         .pb(px(4.0))
         .flex()
@@ -223,7 +224,12 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         .h_full()
         .bg(rgb(theme::BG_SIDEBAR))
         .child(header.e2e("header", "sidebar-header"))
-        .child(list.e2e("div", "room-list"))
+        .child(
+            list.e2e("div", "room-list")
+                .scrollable(std::rc::Rc::new(crate::e2e::HandleProbe(
+                    shell.room_scroll.clone(),
+                ))),
+        )
         .e2e("aside", "sidebar")
 }
 
