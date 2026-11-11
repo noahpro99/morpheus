@@ -367,6 +367,8 @@ impl Shell {
         self.composer = None;
         self.timeline_handle = None;
         self.members = None;
+        self.thread = None;
+        self.search = None;
         self.pinned.clear();
         cx.notify();
     }

@@ -51,6 +51,10 @@ const FILL_PX: f32 = 400.0;
 /// How far from the newest message (px) before the jump button appears.
 const JUMP_THRESHOLD_PX: f32 = 240.0;
 const PAGE_SIZE: u16 = 40;
+/// Most history pages loaded looking for a message jumped to.
+const JUMP_MAX_PAGES: u32 = 50;
+/// How long a message jumped to stays highlighted.
+const JUMP_HIGHLIGHT: Duration = Duration::from_millis(2000);
 /// Quiet time after the last update before checking whether the column needs
 /// more history to fill it.
 const AUTO_FILL_SETTLE: Duration = Duration::from_millis(400);
@@ -130,6 +134,11 @@ pub struct TimelineView {
     keep_unread: bool,
     /// Set for a thread's replies: the root they belong to.
     thread_root: Option<OwnedEventId>,
+    /// A message being jumped to (a search result): its event ID and the
+    /// history pages loaded looking for it so far.
+    jump: Option<(String, u32)>,
+    /// The message just jumped to, glowing for a moment (unique ID).
+    highlight: Option<String>,
 }
 
 /// Scroll numbers of a list, in px: what a test and the jump button read.
@@ -219,6 +228,8 @@ impl TimelineView {
             keep_unread: false,
             // A thread is never read or marked: the room's own timeline does.
             thread_root: thread_root.clone(),
+            jump: None,
+            highlight: None,
         };
         if let Some(session) = session {
             cx.spawn(async move |this, cx| {
@@ -242,6 +253,7 @@ impl TimelineView {
                                 cx.emit(TimelineEvent::Opened(handle));
                                 this.read_at = read_at;
                                 this.rebuild();
+                                this.continue_jump(cx);
                                 cx.notify();
                             })
                             .is_ok();
@@ -326,6 +338,7 @@ impl TimelineView {
         }
         self.last_update = std::time::Instant::now();
         self.rebuild();
+        self.continue_jump(cx);
         // Sending a message brings the view to it, wherever it was scrolled.
         let sending = self.entries.iter().rev().find_map(|entry| match entry {
             TimelineEntry::Message(m) if m.is_own && m.is_local_echo => Some(m.unique_id.clone()),
@@ -447,11 +460,71 @@ impl TimelineView {
                 }
                 this.last_update = std::time::Instant::now();
                 this.rebuild();
+                this.continue_jump(cx);
                 cx.notify();
             })
             .ok();
         })
         .detach();
+    }
+
+    /// Shows a message (a search result): scrolls to it, paging back through
+    /// history first if it is not loaded, and lets it glow for a moment.
+    pub fn jump_to(&mut self, event_id: String, cx: &mut Context<Self>) {
+        self.jump = Some((event_id, 0));
+        self.continue_jump(cx);
+        cx.notify();
+    }
+
+    /// The row of the message with this event ID.
+    fn row_of_event(&self, event_id: &str) -> Option<(usize, String)> {
+        self.rows.iter().enumerate().find_map(|(ix, row)| match row {
+            Row::Message { row, .. }
+                if matches!(&row.message.id, MessageId::Event(id) if id.as_str() == event_id) =>
+            {
+                Some((ix, row.message.unique_id.clone()))
+            }
+            _ => None,
+        })
+    }
+
+    /// Takes the pending jump a step: scroll if the message is here, else
+    /// load another page back.
+    fn continue_jump(&mut self, cx: &mut Context<Self>) {
+        let Some((event_id, pages)) = self.jump.clone() else {
+            return;
+        };
+        if let Some((ix, unique_id)) = self.row_of_event(&event_id) {
+            self.jump = None;
+            // A little context above it.
+            self.list.scroll_to(ListOffset {
+                item_ix: ix.saturating_sub(2),
+                offset_in_item: px(0.0),
+            });
+            self.highlight = Some(unique_id.clone());
+            cx.spawn(async move |this, cx| {
+                cx.background_executor().timer(JUMP_HIGHLIGHT).await;
+                this.update(cx, |this, cx| {
+                    if this.highlight.as_ref() == Some(&unique_id) {
+                        this.highlight = None;
+                        cx.notify();
+                    }
+                })
+                .ok();
+            })
+            .detach();
+            cx.notify();
+            return;
+        }
+        if self.handle.is_none() || self.paginating {
+            return;
+        }
+        if self.at_start() || pages >= JUMP_MAX_PAGES {
+            self.jump = None;
+            return;
+        }
+        self.jump = Some((event_id, pages + 1));
+        self.load_older(cx);
     }
 
     /// Older history when the view is near the top of what is loaded, or
@@ -519,6 +592,7 @@ impl TimelineView {
         };
         let mut pictures = Pictures {
             keys: self.keys,
+            highlight: self.highlight.as_deref() == Some(row.message.unique_id.as_str()),
             ..Pictures::default()
         };
         if show_header {

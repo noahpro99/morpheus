@@ -22,6 +22,7 @@ pub mod room_menu;
 pub mod settings;
 pub mod rich;
 pub mod rows;
+pub mod search;
 pub mod text_buffer;
 pub mod threads;
 pub mod toast;

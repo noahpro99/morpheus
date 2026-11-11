@@ -177,6 +177,46 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                     .attr("title", "Pinned messages (Ctrl+P)")
                     .text(pins.to_string()),
             );
+            // A search bar at the right end; opens the search panel.
+            let searching = shell.search.is_some();
+            header = header.child(
+                div()
+                    .id("search-toggle")
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .gap(px(8.0))
+                    .w(px(180.0))
+                    .h(px(28.0))
+                    .px(px(8.0))
+                    .rounded(px(theme::RADIUS_SM))
+                    .bg(if searching {
+                        gpui::Hsla::from(gpui::rgba(theme::BG_SELECTED))
+                    } else {
+                        gpui::Hsla::from(rgb(theme::BG_INPUT))
+                    })
+                    .text_size(px(0.85 * theme::REM))
+                    .text_color(rgb(if searching { theme::TEXT } else { theme::TEXT_MUTED }))
+                    .cursor_pointer()
+                    .hover(|s| s.text_color(rgb(theme::TEXT)))
+                    .child("Search")
+                    .child(icon("search", 16.0).text_color(rgb(if searching {
+                        theme::TEXT
+                    } else {
+                        theme::TEXT_MUTED
+                    })))
+                    .on_click(cx.listener(|this, _, _, cx| this.toggle_search(cx)))
+                    .e2e(
+                        "button",
+                        if searching {
+                            "ghost search-toggle active"
+                        } else {
+                            "ghost search-toggle"
+                        },
+                    )
+                    .attr("title", "Search this room")
+                    .text("Search"),
+            );
             // The messages and the message box; the member list beside them,
             // under the header, which runs over both.
             let mut content = div().flex().flex_col().flex_1().min_w_0().min_h_0();
@@ -199,6 +239,10 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                 && id == &room.id
             {
                 Some(thread.clone().into_any_element())
+            } else if let Some((id, search)) = &shell.search
+                && id == &room.id
+            {
+                Some(search.clone().into_any_element())
             } else if shell.members_open
                 && let Some((id, members)) = &shell.members
                 && id == &room.id

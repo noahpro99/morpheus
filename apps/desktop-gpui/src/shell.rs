@@ -32,6 +32,7 @@ use crate::{
     rail, room_list,
     settings::{KeysChanged, SettingsView, ThemeChosen},
     theme,
+    search::{SearchEvent, SearchPanel},
     thread::{ThreadEvent, ThreadPanel},
     timeline::{LinkClicked, TimelineEvent, TimelineView},
     user_bar,
@@ -103,6 +104,8 @@ pub struct Shell {
     pub nicknames: NickMap,
     /// The open thread, in the side column in place of the members.
     pub thread: Option<(OwnedRoomId, Entity<ThreadPanel>)>,
+    /// The room search panel, in the side column when no thread is open.
+    pub search: Option<(OwnedRoomId, Entity<SearchPanel>)>,
 }
 
 impl Shell {
@@ -232,7 +235,41 @@ impl Shell {
             pinned: Vec::new(),
             nicknames: NickMap::new(),
             thread: None,
+            search: None,
         }
+    }
+
+    /// The header's search bar: opens the search panel, or closes it.
+    pub fn toggle_search(&mut self, cx: &mut Context<Self>) {
+        if self.search.take().is_some() {
+            cx.notify();
+        } else {
+            self.open_search(cx);
+        }
+    }
+
+    /// Opens the search panel for the open room, with the caret in its box.
+    pub fn open_search(&mut self, cx: &mut Context<Self>) {
+        let Some(room) = self.selected.clone() else {
+            return;
+        };
+        let session = self.session.clone();
+        let id = room.clone();
+        let panel = cx.new(|cx| SearchPanel::new(session, id, cx));
+        cx.subscribe(&panel, |this: &mut Self, _, event: &SearchEvent, cx| match event {
+            SearchEvent::Jump(event_id) => {
+                if let Some((_, timeline)) = &this.timeline {
+                    timeline.update(cx, |timeline, cx| timeline.jump_to(event_id.clone(), cx));
+                }
+            }
+            SearchEvent::Close => {
+                this.search = None;
+                cx.notify();
+            }
+        })
+        .detach();
+        self.search = Some((room, panel));
+        cx.notify();
     }
 
     /// Opens a message's thread in the side column.
@@ -418,7 +455,11 @@ impl Shell {
                 .map_or(0, |r| r.member_count);
             self.members = Some((id.clone(), members));
         }
-        self.selected = Some(id);
+        self.selected = Some(id.clone());
+        // The search stays open across rooms, asking about the new one.
+        if self.search.as_ref().is_some_and(|(room, _)| room != &id) {
+            self.open_search(cx);
+        }
         self.push_nicknames(cx);
         self.refresh_pinned(cx);
         cx.notify();

@@ -47,6 +47,8 @@ pub struct Pictures {
     pub keys: KeyAccess,
     /// Your nickname for the sender, shown over their name.
     pub nickname: Option<String>,
+    /// Jumped to from a search result: glowing for a moment.
+    pub highlight: bool,
 }
 
 /// A file's download, as its card shows it.
@@ -1124,6 +1126,10 @@ pub fn message_el(
     }
     if m.is_own {
         classes.push_str(" own");
+    }
+    if pics.highlight {
+        classes.push_str(" jump-target");
+        line = line.bg(rgba(0x7c8cff2e));
     }
     let mut line = line.child(main.e2e("div", "message-main"));
     if let Some(actions) = actions {

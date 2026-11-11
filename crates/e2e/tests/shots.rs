@@ -187,3 +187,32 @@ async fn thread_panel() {
     app.wait_for(".thread-panel .message .body", DEFAULT_WAIT).await.expect("panel");
     shot(&mut app, "t1-thread-panel").await;
 }
+
+/// The room search panel with a result.
+#[tokio::test]
+async fn search_panel() {
+    let (Some(hs), Some(_)) = (
+        std::env::var("MORPHEUS_TEST_HOMESERVER").ok(),
+        std::env::var_os("MORPHEUS_SHOTS"),
+    ) else {
+        return;
+    };
+    let mut app = App::launch_sized(&hs, 1200, 760).await.expect("launch");
+    login(&mut app, "alice").await;
+    app.open_room("general").await.expect("open general");
+    app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT).await.expect("composer");
+    let word = format!("okapi{}", std::process::id());
+    app.type_into(".composer .composer-input", &format!("an {word} in the forest")).await.expect("type");
+    app.press(".composer .composer-input", "Enter").await.expect("send");
+    app.wait_for_text(".message.own:not(.pending) .body", &word, DEFAULT_WAIT).await.expect("sent");
+    app.click(".chat-header .search-toggle").await.expect("search");
+    app.wait_for(".search-panel input[name=search]", DEFAULT_WAIT).await.expect("panel");
+    shot(&mut app, "s0-search-empty").await;
+    for _ in 0..10 {
+        app.type_into(".search-panel input[name=search]", &word).await.expect("query");
+        if app.wait_for(".search-hit", Duration::from_secs(2)).await.is_ok() {
+            break;
+        }
+    }
+    shot(&mut app, "s1-search-hit").await;
+}
