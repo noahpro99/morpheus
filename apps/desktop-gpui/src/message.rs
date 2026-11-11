@@ -8,9 +8,9 @@ use std::{ops::Range, rc::Rc, sync::Arc};
 use gpui::{
     AnyElement, App, Div, ElementId, FontStyle, FontWeight, Hsla, InteractiveText, Image,
     ObjectFit, SharedString, StrikethroughStyle, StyledImage as _, StyledText, TextRun,
-    UnderlineStyle, div, font, img, prelude::*, px, relative, rgb, rgba,
+    UnderlineStyle, Window, div, font, img, prelude::*, px, relative, rgb, rgba,
 };
-use morpheus_core::{MessageKind, Reaction, ThreadSummary};
+use morpheus_core::{Message, MessageKind, Reaction, ThreadSummary};
 
 use crate::{
     e2e::{self, E2eExt as _},
@@ -743,6 +743,102 @@ fn muted_body(text: &str) -> AnyElement {
         .into_any_element()
 }
 
+/// What a message's hover bar does.
+#[derive(Clone, Debug, PartialEq)]
+pub enum RowAction {
+    Reply,
+    Edit,
+    React(&'static str),
+}
+
+/// What a click on a hover action does: the action, the message's unique ID.
+pub type ActionHandler = Rc<dyn Fn(RowAction, &str, &mut Window, &mut App)>;
+
+/// The reactions a message's bar offers at once.
+pub const QUICK_REACTIONS: [&str; 3] = ["👍", "❤️", "😂"];
+
+/// One button of the hover bar.
+fn action_button(
+    id: SharedString,
+    classes: &str,
+    title: &str,
+    glyph: AnyElement,
+    action: RowAction,
+    unique_id: &str,
+    actions: &ActionHandler,
+) -> AnyElement {
+    let (actions, unique_id) = (actions.clone(), unique_id.to_owned());
+    div()
+        .id(ElementId::from(id))
+        .flex()
+        .items_center()
+        .justify_center()
+        .p(px(6.0))
+        .rounded(px(4.0))
+        .text_size(rem(0.95))
+        .text_color(rgb(theme::TEXT_MUTED))
+        .cursor_pointer()
+        .hover(|s| s.bg(rgba(theme::BG_HOVER)).text_color(rgb(theme::TEXT)))
+        .child(glyph)
+        .on_click(move |_, window, cx| actions(action.clone(), &unique_id, window, cx))
+        .e2e("button", classes)
+        .attr("title", title)
+        .into_any_element()
+}
+
+/// The bar that shows on hover, top right of a message: quick reactions,
+/// reply, and edit on your own text.
+fn actions_bar(m: &Message, group: SharedString, actions: &ActionHandler) -> AnyElement {
+    let mut bar = div()
+        .absolute()
+        .top(px(-14.0))
+        .right(px(16.0))
+        .flex()
+        .gap(px(2.0))
+        .p(px(2.0))
+        .rounded(px(theme::RADIUS_SM))
+        .bg(rgb(theme::BG_ELEVATED))
+        .shadow_md()
+        .opacity(0.0)
+        .group_hover(group, |s| s.opacity(1.0));
+    let uid = m.unique_id.as_str();
+    for key in QUICK_REACTIONS {
+        bar = bar.child(action_button(
+            format!("react-{uid}-{key}").into(),
+            "action quick-reaction",
+            &format!("React with {key}"),
+            div().child(key).into_any_element(),
+            RowAction::React(key),
+            uid,
+            actions,
+        ));
+    }
+    let can_reply = matches!(m.id, morpheus_core::MessageId::Event(_));
+    if can_reply {
+        bar = bar.child(action_button(
+            format!("reply-{uid}").into(),
+            "action reply",
+            "Reply",
+            icon("reply", 15.0).into_any_element(),
+            RowAction::Reply,
+            uid,
+            actions,
+        ));
+    }
+    if m.can_edit {
+        bar = bar.child(action_button(
+            format!("edit-{uid}").into(),
+            "action edit",
+            "Edit",
+            icon("pencil", 15.0).into_any_element(),
+            RowAction::Edit,
+            uid,
+            actions,
+        ));
+    }
+    bar.e2e("div", "actions").into_any_element()
+}
+
 /// A message's row. `show_header`: its sender's avatar, name and time lead it.
 pub fn message_el(
     row: &MessageRow,
@@ -750,6 +846,7 @@ pub fn message_el(
     pics: &Pictures,
     download: Option<&Download>,
     links: &LinkHandler,
+    actions: Option<&ActionHandler>,
 ) -> AnyElement {
     let m = &row.message;
     let event_id = match &m.id {
@@ -858,6 +955,7 @@ pub fn message_el(
     let mut line = div()
         .id(ElementId::from(key))
         .group(group.clone())
+        .relative()
         .flex()
         .gap(px(12.0))
         .px(px(16.0))
@@ -885,7 +983,7 @@ pub fn message_el(
                 .text_size(rem(0.75))
                 .text_color(rgb(theme::TEXT_FAINT))
                 .opacity(0.0)
-                .group_hover(group, |s| s.opacity(1.0))
+                .group_hover(group.clone(), |s| s.opacity(1.0))
                 .child(row.time.clone())
                 .e2e("span", "time gutter")
                 .text(row.time.clone()),
@@ -901,8 +999,13 @@ pub fn message_el(
     if m.is_own {
         classes.push_str(" own");
     }
+    let mut line = line.child(main.e2e("div", "message-main"));
+    if let Some(actions) = actions
+        && !m.is_local_echo
+    {
+        line = line.child(actions_bar(m, group, actions));
+    }
     let line = line
-        .child(main.e2e("div", "message-main"))
         .e2e("div", &classes)
         .attr("data-event-id", event_id);
     if show_header {

@@ -5,7 +5,10 @@
 //! these to elements. Kept apart so it can move to a crate shared with other
 //! front ends.
 
+pub mod composer;
+pub mod emoji;
 pub mod format;
 pub mod linkify;
 pub mod rich;
 pub mod rows;
+pub mod text_buffer;

@@ -5,6 +5,7 @@
 use std::{borrow::Cow, path::PathBuf};
 
 mod chat;
+mod composer;
 mod e2e;
 mod icons;
 mod message;

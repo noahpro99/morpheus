@@ -63,13 +63,20 @@ async fn links_are_detected_and_open_outside_the_app() {
         .await
         .expect("a bare URL in a formatted message is a link");
 
-    let page = app.eval("return location.href;").await.expect("page url");
+    // The page address is a web view's: the GPUI app has none to keep.
+    let page = if app.is_gpui() {
+        None
+    } else {
+        Some(app.eval("return location.href;").await.expect("page url"))
+    };
     app.click(&plain_link).await.expect("click the link");
     app.wait_for_text(".link-log li", &plain, DEFAULT_WAIT)
         .await
         .expect("the link was handed to the browser");
-    let after = app.eval("return location.href;").await.expect("page url");
-    assert_eq!(page, after, "clicking a link must not navigate the app");
+    if let Some(page) = page {
+        let after = app.eval("return location.href;").await.expect("page url");
+        assert_eq!(page, after, "clicking a link must not navigate the app");
+    }
     app.wait_for(".composer .composer-input", DEFAULT_WAIT)
         .await
         .expect("the app is still there");

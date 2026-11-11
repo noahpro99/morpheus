@@ -48,12 +48,9 @@ async fn emoji_and_mention_autocomplete_and_emoji_panel() {
     app.press(".composer .composer-input", "Enter")
         .await
         .expect("accept");
-    app.wait_for_js(
-        "return document.querySelector('.composer .composer-input').value === 'hot 🔥 '",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("emoji inserted");
+    app.wait_for_value(".composer .composer-input", "hot 🔥 ", DEFAULT_WAIT)
+        .await
+        .expect("emoji inserted");
     assert_eq!(
         app.count(".autocomplete").await.expect("count"),
         0,
@@ -70,12 +67,9 @@ async fn emoji_and_mention_autocomplete_and_emoji_panel() {
     app.press(".composer .composer-input", "Tab")
         .await
         .expect("accept with tab");
-    app.wait_for_js(
-        "return document.querySelector('.composer .composer-input').value === 'hey @bob '",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("mention inserted");
+    app.wait_for_value(".composer .composer-input", "hey @bob ", DEFAULT_WAIT)
+        .await
+        .expect("mention inserted");
 
     // Escape closes suggestions without inserting.
     app.type_into(".composer .composer-input", ":hea")
@@ -87,18 +81,12 @@ async fn emoji_and_mention_autocomplete_and_emoji_panel() {
     app.press(".composer .composer-input", "Escape")
         .await
         .expect("escape");
-    app.wait_for_js(
-        "return !document.querySelector('.autocomplete')",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("closed");
-    app.wait_for_js(
-        "return document.querySelector('.composer .composer-input').value === ':hea'",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("draft kept");
+    app.wait_for_count(".autocomplete", 0, DEFAULT_WAIT)
+        .await
+        .expect("closed");
+    app.wait_for_value(".composer .composer-input", ":hea", DEFAULT_WAIT)
+        .await
+        .expect("draft kept");
 
     // The emoji panel inserts at the end and closes.
     app.type_into(".composer .composer-input", "")
@@ -111,16 +99,10 @@ async fn emoji_and_mention_autocomplete_and_emoji_panel() {
     app.click(".emoji-panel button[title=rocket]")
         .await
         .expect("pick rocket");
-    app.wait_for_js(
-        "return document.querySelector('.composer .composer-input').value === '🚀 '",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("rocket inserted");
-    app.wait_for_js(
-        "return !document.querySelector('.emoji-panel')",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("panel closed");
+    app.wait_for_value(".composer .composer-input", "🚀 ", DEFAULT_WAIT)
+        .await
+        .expect("rocket inserted");
+    app.wait_for_count(".emoji-panel", 0, DEFAULT_WAIT)
+        .await
+        .expect("panel closed");
 }

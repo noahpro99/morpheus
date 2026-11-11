@@ -7242,6 +7242,7 @@ name = "morpheus-desktop-gpui"
 version = "0.1.4"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "directories",
  "futures",
  "gpui",

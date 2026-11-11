@@ -114,28 +114,6 @@ async fn renders_and_downloads_attachments() {
     }
 }
 
-/// JS that builds a `File` from bytes and dispatches `event` ("drop" or
-/// "paste") carrying it on the window.
-fn file_event_js(event: &str, name: &str, mime: &str, bytes: &[u8]) -> String {
-    let bytes: Vec<String> = bytes.iter().map(|b| b.to_string()).collect();
-    let name = serde_json::to_string(name).expect("json");
-    let mime = serde_json::to_string(mime).expect("json");
-    let transfer = format!(
-        "const dt = new DataTransfer(); dt.items.add(new File([new Uint8Array([{}])], {name}, {{ type: {mime} }}));",
-        bytes.join(",")
-    );
-    match event {
-        "drop" => format!(
-            "{transfer} const target = document.querySelector('.chat'); \
-             target.dispatchEvent(new DragEvent('dragover', {{ bubbles: true, cancelable: true, dataTransfer: dt }})); \
-             target.dispatchEvent(new DragEvent('drop', {{ bubbles: true, cancelable: true, dataTransfer: dt }}));"
-        ),
-        _ => format!(
-            "{transfer} document.querySelector('.composer .composer-input').dispatchEvent(new ClipboardEvent('paste', {{ bubbles: true, cancelable: true, clipboardData: dt }}));"
-        ),
-    }
-}
-
 /// A 1x1 PNG.
 const TINY_PNG: &[u8] = &[
     0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
@@ -144,6 +122,30 @@ const TINY_PNG: &[u8] = &[
     0x00, 0x03, 0x01, 0x01, 0x00, 0x18, 0xDD, 0x8D, 0xB0, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E,
     0x44, 0xAE, 0x42, 0x60, 0x82,
 ];
+
+/// Whether the timeline shows a picture or a file card for `name`.
+async fn in_timeline(app: &mut App, name: &str) -> bool {
+    let picture = format!(".timeline .image[alt={}]", serde_json::to_string(name).expect("json"));
+    app.count(&picture).await.expect("count") > 0
+        || app
+            .texts(".timeline .attachment-card")
+            .await
+            .expect("texts")
+            .iter()
+            .any(|card| card.contains(name))
+}
+
+/// Wait until [`in_timeline`] holds.
+async fn wait_in_timeline(app: &mut App, name: &str) -> Result<(), String> {
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    while !in_timeline(app, name).await {
+        if std::time::Instant::now() >= deadline {
+            return Err(format!("{name} never showed in the timeline"));
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    Ok(())
+}
 
 /// Pasting or dropping a file attaches it to the message being written, as
 /// in Discord: a tile above the box (the picture itself for an image) with a
@@ -158,16 +160,10 @@ async fn pasted_and_dropped_files_attach_to_the_message() {
     let mut app = App::launch(&hs).await.expect("launch app");
     login_and_open(&mut app, "random").await;
     let pid = std::process::id();
-    let in_timeline = |name: &str| {
-        format!(
-            "return [...document.querySelectorAll('.timeline .image, .timeline .attachment-card')].some(el => el.alt === {0} || el.textContent.includes({0}))",
-            serde_json::to_string(name).expect("json")
-        )
-    };
 
     // A pasted picture waits in the composer, shown as itself.
     let removed = format!("removed-{pid}.png");
-    app.eval(&file_event_js("paste", &removed, "image/png", TINY_PNG))
+    app.attach_file(false, &removed, "image/png", TINY_PNG)
         .await
         .expect("paste");
     app.wait_for(
@@ -180,57 +176,33 @@ async fn pasted_and_dropped_files_attach_to_the_message() {
     app.click(".composer .composer-attachment .remove-attachment")
         .await
         .expect("remove");
-    app.wait_for_js(
-        "return document.querySelectorAll('.composer .composer-attachment').length === 0",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("taken off");
+    app.wait_for_count(".composer .composer-attachment", 0, DEFAULT_WAIT)
+        .await
+        .expect("taken off");
 
     // A pasted picture and a dropped file wait together, until Enter.
     let image = format!("paste-{pid}.png");
     let text = format!("drop-{pid}.txt");
-    app.eval(&file_event_js("paste", &image, "image/png", TINY_PNG))
+    app.attach_file(false, &image, "image/png", TINY_PNG)
         .await
         .expect("paste");
-    app.eval(&file_event_js(
-        "drop",
-        &text,
-        "text/plain",
-        b"dropped contents",
-    ))
-    .await
-    .expect("drop");
-    app.wait_for_js(
-        "return document.querySelectorAll('.composer .composer-attachment').length === 2",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("both attached");
+    app.attach_file(true, &text, "text/plain", b"dropped contents")
+        .await
+        .expect("drop");
+    app.wait_for_count(".composer .composer-attachment", 2, DEFAULT_WAIT)
+        .await
+        .expect("both attached");
     if std::env::var_os("MORPHEUS_E2E_SHOTS").is_some() {
         let _ = app.screenshot("composer-attachments").await;
     }
-    assert!(
-        !app.eval("return document.body.classList.contains('dropping')")
-            .await
-            .expect("eval")
-            .as_bool()
-            .unwrap_or(true),
+    assert_eq!(
+        app.count("body.dropping").await.expect("count"),
+        0,
         "hint hidden after the drop"
     );
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     assert!(
-        !app.eval(&in_timeline(&image))
-            .await
-            .expect("eval")
-            .as_bool()
-            .unwrap_or(true)
-            && !app
-                .eval(&in_timeline(&text))
-                .await
-                .expect("eval")
-                .as_bool()
-                .unwrap_or(true),
+        !in_timeline(&mut app, &image).await && !in_timeline(&mut app, &text).await,
         "nothing sent before the message"
     );
 
@@ -244,10 +216,10 @@ async fn pasted_and_dropped_files_attach_to_the_message() {
     app.wait_for_text(".timeline", &message, DEFAULT_WAIT)
         .await
         .expect("the message");
-    app.wait_for_js(&in_timeline(&image), DEFAULT_WAIT)
+    wait_in_timeline(&mut app, &image)
         .await
         .expect("the picture sent with it");
-    app.wait_for_js(&in_timeline(&text), DEFAULT_WAIT)
+    wait_in_timeline(&mut app, &text)
         .await
         .expect("the file sent with it");
     assert_eq!(
@@ -258,11 +230,7 @@ async fn pasted_and_dropped_files_attach_to_the_message() {
         "the composer is empty again"
     );
     assert!(
-        !app.eval(&in_timeline(&removed))
-            .await
-            .expect("eval")
-            .as_bool()
-            .unwrap_or(true),
+        !in_timeline(&mut app, &removed).await,
         "the removed picture was never sent"
     );
 }

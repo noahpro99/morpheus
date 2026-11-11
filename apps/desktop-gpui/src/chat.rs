@@ -3,7 +3,7 @@
 //! (task 5) and composer (task 6) come later. With no room open, the
 //! "Pick a room" placeholder.
 
-use gpui::{Context, FontWeight, IntoElement, div, prelude::*, px, rgb};
+use gpui::{Context, ExternalPaths, FontWeight, IntoElement, div, prelude::*, px, rgb};
 
 use crate::{e2e::E2eExt as _, icons::icon, media::avatar, shell::Shell, theme};
 
@@ -103,6 +103,14 @@ pub fn render(shell: &Shell, _cx: &mut Context<Shell>) -> impl IntoElement {
             {
                 column = column.child(timeline.clone());
             }
+            if let Some((id, composer)) = &shell.composer
+                && id == &room.id
+            {
+                // The line where who is typing shows: room for it, empty here.
+                column = column
+                    .child(div().h(px(8.0)).flex_none().e2e("div", "typing empty"))
+                    .child(composer.clone());
+            }
             column.into_any_element()
         }
         None => div()
@@ -129,6 +137,7 @@ pub fn render(shell: &Shell, _cx: &mut Context<Shell>) -> impl IntoElement {
             .e2e("div", "empty-state")
             .into_any_element(),
     };
+    let composer = shell.composer.as_ref().map(|(_, c)| c.clone());
     div()
         .flex()
         .flex_col()
@@ -136,6 +145,12 @@ pub fn render(shell: &Shell, _cx: &mut Context<Shell>) -> impl IntoElement {
         .min_w_0()
         .h_full()
         .bg(rgb(theme::BG_CHAT))
+        // Files dropped anywhere on the chat wait on the message being written.
+        .on_drop::<ExternalPaths>(move |paths, _, cx| {
+            if let Some(composer) = &composer {
+                crate::composer::dropped(composer, paths, cx);
+            }
+        })
         .child(body)
         .e2e("main", "chat")
 }

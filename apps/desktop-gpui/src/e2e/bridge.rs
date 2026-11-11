@@ -53,6 +53,10 @@ struct Request {
     index: Option<usize>,
     contains: Option<String>,
     exact: Option<String>,
+    /// Only matches inside an element matching this selector (and, with
+    /// `within_contains`, whose text has this in it).
+    within: Option<String>,
+    within_contains: Option<String>,
     /// The text for `type`.
     text: Option<String>,
     /// The key for `press` (`Enter`, `ArrowDown`, `a`, …).
@@ -62,6 +66,11 @@ struct Request {
     /// For `scroll`: `top` or `bottom`, or `from_bottom` pixels.
     to: Option<String>,
     from_bottom: Option<f32>,
+    /// For `attach_file`: the file (`data` is base64), and `via` `paste` or `drop`.
+    name: Option<String>,
+    mime: Option<String>,
+    data: Option<String>,
+    via: Option<String>,
 }
 
 type Reply = Result<Value, String>;
@@ -173,6 +182,7 @@ async fn handle(request: &Request, cx: &mut AsyncApp) -> Reply {
             next_frame(cx, before).await;
             Ok(Value::Null)
         }
+        "attach_file" => attach_file(request, cx).await,
         "click" | "right_click" | "type" | "press" | "submit" => act(op, request, cx).await,
         _ => Err(format!("unknown op: {op}")),
     }
@@ -197,10 +207,38 @@ fn parse_selector(request: &Request) -> Result<Selector, String> {
 /// The matches of the request's selector that pass its text filters.
 fn matches(tree: &Tree, request: &Request) -> Result<Vec<usize>, String> {
     let selector = parse_selector(request)?;
+    let scopes: Option<Vec<usize>> = match &request.within {
+        None => None,
+        Some(within) => Some(
+            Selector::parse(within)?
+                .select(tree)
+                .into_iter()
+                .filter(|&i| {
+                    request
+                        .within_contains
+                        .as_ref()
+                        .is_none_or(|c| tree.text(i).contains(c))
+                })
+                .collect(),
+        ),
+    };
+    let inside = |mut i: usize| -> bool {
+        let Some(scopes) = &scopes else { return true };
+        while let Some(parent) = tree.nodes[i].parent {
+            if scopes.contains(&parent) {
+                return true;
+            }
+            i = parent;
+        }
+        false
+    };
     Ok(selector
         .select(tree)
         .into_iter()
         .filter(|&i| {
+            if !inside(i) {
+                return false;
+            }
             let text = tree.text(i);
             request.contains.as_ref().is_none_or(|c| text.contains(c))
                 && request.exact.as_ref().is_none_or(|e| text.trim() == e)
@@ -327,8 +365,12 @@ fn keystroke(key: &str, names: &[String]) -> Result<Keystroke, String> {
 /// What typing `c` is: its key, shifted for capitals, with the character.
 fn char_keystroke(c: char) -> Keystroke {
     if c == '\n' {
+        // A line break typed into a box: a new line, not a send.
         return Keystroke {
-            modifiers: Modifiers::default(),
+            modifiers: Modifiers {
+                shift: true,
+                ..Modifiers::default()
+            },
             key: "enter".into(),
             key_char: None,
         };
@@ -429,6 +471,52 @@ async fn next_frame(cx: &mut AsyncApp, _before: u64) {
     }
 }
 
+thread_local! {
+    /// The open room's composer, for `attach_file`.
+    static ATTACH: std::cell::RefCell<Option<gpui::WeakEntity<crate::composer::Composer>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+pub fn set_attach_target(composer: gpui::WeakEntity<crate::composer::Composer>) {
+    ATTACH.with(|target| *target.borrow_mut() = Some(composer));
+}
+
+/// A file pasted into the message box or dropped on the chat: what the
+/// platform's clipboard and drag-and-drop would deliver, made by a test.
+/// `via` `paste` goes through the box's paste handling (as a picture on the
+/// clipboard would); `drop` writes the file to disk and hands the composer
+/// its path, as a dropped file is.
+async fn attach_file(request: &Request, cx: &mut AsyncApp) -> Reply {
+    use base64::Engine as _;
+    let name = request.name.clone().ok_or("attach_file needs `name`")?;
+    let mime = request.mime.clone().ok_or("attach_file needs `mime`")?;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(request.data.as_deref().ok_or("attach_file needs `data`")?)
+        .map_err(|err| format!("bad base64: {err}"))?;
+    let dropped = match request.via.as_deref() {
+        Some("drop") => true,
+        Some("paste") | None => false,
+        Some(other) => return Err(format!("attach_file via {other:?}: paste or drop")),
+    };
+    let target = ATTACH
+        .with(|target| target.borrow().clone())
+        .ok_or("no composer is open")?;
+    let before = with_state(|state| state.frame);
+    cx.update(|cx| {
+        target.update(cx, |composer, cx| {
+            composer.attach_from_bridge(
+                crate::input::PastedFile { name, mime, bytes },
+                dropped,
+                cx,
+            )
+        })
+    })
+    .map_err(|err| err.to_string())?
+    .map_err(|err| err.to_string())?;
+    next_frame(cx, before).await;
+    Ok(Value::Null)
+}
+
 async fn act(op: &str, request: &Request, cx: &mut AsyncApp) -> Reply {
     // Where to act: the element's centre, and its focus handle if it has one.
     let (centre, focus) = if request.selector.is_none() && op == "press" {
@@ -491,6 +579,12 @@ async fn act(op: &str, request: &Request, cx: &mut AsyncApp) -> Reply {
             let before = with_state(|state| state.frame);
             cx.update_window(window, |_, window, cx| {
                 window.dispatch_keystroke(select_all, cx);
+                if text.is_empty() {
+                    // Replacing with nothing: clear what is selected.
+                    if let Ok(clear) = Keystroke::parse("backspace") {
+                        window.dispatch_keystroke(clear, cx);
+                    }
+                }
                 for c in text.chars() {
                     window.dispatch_keystroke(char_keystroke(c), cx);
                 }

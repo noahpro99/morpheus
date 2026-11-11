@@ -8,13 +8,14 @@ use morpheus_core::{MediaRef, OwnedRoomId, Profile, RoomSummary, Session, SpaceR
 
 use crate::{
     chat,
+    composer::Composer,
     e2e::E2eExt as _,
     media::{self, Avatars},
     model::{Scope, rooms_in_scope},
     prefs::Prefs,
     rail, room_list,
     theme,
-    timeline::{LinkClicked, TimelineView},
+    timeline::{LinkClicked, TimelineEvent, TimelineView},
     user_bar,
 };
 
@@ -32,6 +33,8 @@ pub struct Shell {
     pub avatars: Avatars,
     /// The open room's messages.
     pub timeline: Option<(OwnedRoomId, Entity<TimelineView>)>,
+    /// The open room's message box.
+    pub composer: Option<(OwnedRoomId, Entity<Composer>)>,
     /// Links handed to the browser (the test bridge's `.link-log`).
     pub opened_links: Vec<String>,
 }
@@ -99,6 +102,7 @@ impl Shell {
             directory: Vec::new(),
             avatars: Avatars::default(),
             timeline: None,
+            composer: None,
             opened_links: Vec::new(),
         }
     }
@@ -134,13 +138,31 @@ impl Shell {
         if self.session.is_some() && self.timeline.as_ref().is_none_or(|(room, _)| room != &id) {
             let session = self.session.clone();
             let room = id.clone();
-            let timeline = cx.new(|cx| TimelineView::new(session, room, cx));
+            let timeline = cx.new(|cx| TimelineView::new(session, room.clone(), cx));
             cx.subscribe(&timeline, |this: &mut Self, _, event: &LinkClicked, cx| {
                 this.link_clicked(&event.0, cx)
             })
             .detach();
+            let (name, is_dm) = self
+                .rooms
+                .iter()
+                .find(|r| r.id == id)
+                .map(|r| (r.name.clone(), r.is_dm))
+                .unwrap_or_default();
+            let composer = cx.new(|cx| Composer::new(self.session.clone(), room.clone(), name, is_dm, cx));
+            let target = composer.clone();
+            cx.subscribe(&timeline, move |_, _, event: &TimelineEvent, cx| {
+                target.update(cx, |composer, cx| match event {
+                    TimelineEvent::Opened(handle) => composer.opened(handle.clone(), cx),
+                    TimelineEvent::Reply(message) => composer.reply_to(message, cx),
+                    TimelineEvent::Edit(message) => composer.edit(message, cx),
+                    TimelineEvent::LastOwn(message) => composer.set_last_own(message.clone()),
+                })
+            })
+            .detach();
             // The old one is dropped here: leaving a room reads it.
             self.timeline = Some((id.clone(), timeline));
+            self.composer = Some((id.clone(), composer));
         }
         self.selected = Some(id);
         cx.notify();

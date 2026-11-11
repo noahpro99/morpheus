@@ -234,7 +234,22 @@ fn sub_blocks(node: &NodeRef, style: &Style) -> Vec<Block> {
 fn walk(node: &NodeRef, style: &Style, inline: &mut Inline, out: &mut Vec<Block>) {
     let el = match node.data() {
         NodeData::Text(text) => {
-            inline.text(&text.borrow(), style);
+            // Bare web links in the text of a formatted message are links too
+            // (but not inside a link or code).
+            if style.link.is_some() || style.code {
+                inline.text(&text.borrow(), style);
+            } else {
+                for segment in super::linkify::segments(&text.borrow()) {
+                    match segment {
+                        super::linkify::Segment::Text(piece) => inline.text(&piece, style),
+                        super::linkify::Segment::Link { text, url } => {
+                            let mut linked = style.clone();
+                            linked.link = Some(url.into());
+                            inline.para.push(&text, linked);
+                        }
+                    }
+                }
+            }
             return;
         }
         NodeData::Element(el) => el,
@@ -382,6 +397,20 @@ mod tests {
         assert!(p.spans[0].style.mention && !p.spans[1].style.mention);
         assert_eq!(&p.text[links[1].0.clone()], "here");
         assert_eq!(&*links[1].1, "https://example.org");
+    }
+
+    #[test]
+    fn bare_urls_in_formatted_text_are_links_except_in_code() {
+        let blocks = html(
+            "<p><strong>bold</strong> and https://example.org/rich-1. <code>https://example.org/code</code> <a href=\"https://a.example\">https://b.example</a></p>",
+        );
+        let p = para(&blocks, 0);
+        let links = p.links();
+        assert_eq!(links.len(), 2, "{links:?}");
+        assert_eq!(&p.text[links[0].0.clone()], "https://example.org/rich-1");
+        assert_eq!(&*links[0].1, "https://example.org/rich-1");
+        assert_eq!(&*links[1].1, "https://a.example", "an anchor keeps its own target");
+        assert!(p.text.contains("rich-1. https://example.org/code"));
     }
 
     #[test]

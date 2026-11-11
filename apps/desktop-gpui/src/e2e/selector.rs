@@ -1,6 +1,7 @@
 //! The CSS selector subset the e2e tests use: tag, `.class`, `#id`, `[attr]`,
-//! `[attr=value]`, `[attr="value"]`, descendant (space), child (`>`) and
-//! comma lists. Anything else is an "unsupported selector" error.
+//! `[attr=value]`, `[attr="value"]`, `[attr^=value]`, `:not(compound)`,
+//! descendant (space), child (`>`) and comma lists. Anything else is an
+//! "unsupported selector" error.
 
 use super::tree::Tree;
 
@@ -8,6 +9,7 @@ use super::tree::Tree;
 enum AttrTest {
     Exists(String),
     Equals(String, String),
+    StartsWith(String, String),
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -17,6 +19,8 @@ struct Compound {
     classes: Vec<String>,
     id: Option<String>,
     attrs: Vec<AttrTest>,
+    /// `:not(...)`: none of these may match.
+    nots: Vec<Compound>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -76,7 +80,13 @@ fn matches_compound(tree: &Tree, index: usize, compound: &Compound) -> bool {
     compound.attrs.iter().all(|test| match test {
         AttrTest::Exists(name) => node.attr(name).is_some(),
         AttrTest::Equals(name, value) => node.attr(name).as_ref() == Some(value),
-    })
+        AttrTest::StartsWith(name, value) => node
+            .attr(name)
+            .is_some_and(|actual| actual.starts_with(value.as_str())),
+    }) && !compound
+        .nots
+        .iter()
+        .any(|excluded| matches_compound(tree, index, excluded))
 }
 
 /// Whether `parts[..=k]` match with `parts[k]` on node `index`.
@@ -146,6 +156,13 @@ impl Parser<'_> {
         self.skip_space();
         let name = self.ident()?;
         self.skip_space();
+        let prefix = self.chars.peek() == Some(&'^');
+        if prefix {
+            self.chars.next();
+            if self.chars.peek() != Some(&'=') {
+                return Err("^ without =".into());
+            }
+        }
         let value = match self.chars.next() {
             Some(']') => return Ok(AttrTest::Exists(name)),
             Some('=') => {
@@ -185,6 +202,7 @@ impl Parser<'_> {
         };
         self.skip_space();
         match self.chars.next() {
+            Some(']') if prefix => Ok(AttrTest::StartsWith(name, value)),
             Some(']') => Ok(AttrTest::Equals(name, value)),
             Some(c) => Err(format!("unexpected {c:?} in attribute")),
             None => Err("unterminated [".into()),
@@ -220,6 +238,19 @@ impl Parser<'_> {
                 Some('[') => {
                     self.chars.next();
                     compound.attrs.push(self.attribute()?);
+                }
+                Some(':') => {
+                    self.chars.next();
+                    if self.ident()? != "not" || self.chars.next() != Some('(') {
+                        return Err("only :not(...) is supported".into());
+                    }
+                    self.skip_space();
+                    let excluded = self.compound()?;
+                    self.skip_space();
+                    if self.chars.next() != Some(')') {
+                        return Err("unterminated :not(".into());
+                    }
+                    compound.nots.push(excluded);
                 }
                 _ => break,
             }
@@ -419,6 +450,22 @@ mod tests {
     }
 
     #[test]
+    fn not_and_prefix_tests() {
+        assert_eq!(count(".room:not(.active)"), 1);
+        assert_eq!(count(".room:not(.active) .room-name"), 1);
+        assert_eq!(count("input:not([type=password])"), 1);
+        assert_eq!(count("input:not([name=username]):not([type])"), 0);
+        assert_eq!(count("input:not( .nothing )"), 2);
+        assert_eq!(count("[name^=us]"), 1);
+        assert_eq!(count("[data-id^='!']"), 2);
+        assert_eq!(count("[data-id^=\"!a\"]"), 1);
+        assert_eq!(count("[name^=x]"), 0);
+        assert!(Selector::parse(".room:hover").is_err());
+        assert!(Selector::parse(".room:not(.a").is_err());
+        assert!(Selector::parse("[name^x]").is_err());
+    }
+
+    #[test]
     fn lists() {
         assert_eq!(count("input, button"), 3);
         assert_eq!(count("input,button"), 3);
@@ -444,7 +491,6 @@ mod tests {
             ".room:hover",
             "a + b",
             "a ~ b",
-            "[name^=us]",
             "[name$=me]",
             "[name*=ser]",
             "[name~=x]",

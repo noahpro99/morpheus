@@ -32,18 +32,34 @@ async fn login_and_open(app: &mut App, user: &str, password: &str, room: &str) {
         .expect("composer ready");
 }
 
-/// JS that returns true once `.new-divider` and a timeline row containing
-/// `needle` both exist, with the divider sitting above the message. Rows are
-/// rendered newest-first (CSS flips it visually), so "above" means the
-/// divider must appear *after* the message in document order.
-fn marker_above_message_js(needle: &str) -> String {
-    format!(
-        "const rows = [...document.querySelectorAll('.timeline > *')];
-         const dividerIdx = rows.findIndex(el => el.classList.contains('new-divider'));
-         const msgIdx = rows.findIndex(el => el.textContent && el.textContent.includes({needle}));
-         return dividerIdx !== -1 && msgIdx !== -1 && msgIdx < dividerIdx;",
-        needle = serde_json::to_string(needle).expect("json"),
-    )
+/// Whether `.new-divider` and the message containing `needle` are both
+/// there, the divider just above the message (found by where they sit, so
+/// it does not depend on how the app orders its rows).
+async fn marker_above_message(app: &mut App, needle: &str) -> bool {
+    let (Some(divider), Some(message)) = (
+        app.bounds(".new-divider").await.ok().flatten(),
+        app.bounds_containing(".message", needle)
+            .await
+            .ok()
+            .flatten(),
+    ) else {
+        return false;
+    };
+    divider.bottom() <= message.y + 1.0 && message.y - divider.bottom() < 60.0
+}
+
+/// Wait until [`marker_above_message`] holds.
+async fn wait_for_marker_above(app: &mut App, needle: &str) -> Result<(), String> {
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        if marker_above_message(app, needle).await {
+            return Ok(());
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err(format!("no NEW divider just above {needle:?}"));
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
 }
 
 #[tokio::test]
@@ -97,10 +113,7 @@ async fn new_message_marker_appears_above_unread_and_clears_on_send() {
         .wait_for_text(".message .body", &body, DEFAULT_WAIT)
         .await
         .expect("bob's message visible");
-    if let Err(err) = alice
-        .wait_for_js(&marker_above_message_js(&body), DEFAULT_WAIT)
-        .await
-    {
+    if let Err(err) = wait_for_marker_above(&mut alice, &body).await {
         // What the newest rows were instead (this has failed only in long runs).
         let rows = alice
             .eval(
@@ -132,10 +145,7 @@ async fn new_message_marker_appears_above_unread_and_clears_on_send() {
         .await
         .expect("alice's message echoed");
     alice
-        .wait_for_js(
-            "return document.querySelector('.new-divider') === null;",
-            DEFAULT_WAIT,
-        )
+        .wait_for_count(".new-divider", 0, DEFAULT_WAIT)
         .await
         .expect("divider cleared after sending");
 }

@@ -1002,6 +1002,128 @@ impl App {
             .await
     }
 
+    /// Whether the app under test is the GPUI one.
+    pub fn is_gpui(&self) -> bool {
+        gpui()
+    }
+
+    /// Wait until the first element matching `selector` has this `value`
+    /// (an input's text).
+    pub async fn wait_for_value(
+        &mut self,
+        selector: &str,
+        expected: &str,
+        timeout: Duration,
+    ) -> Result<()> {
+        let deadline = Instant::now() + timeout;
+        let mut seen = None;
+        loop {
+            seen = self.value(selector).await.unwrap_or(seen);
+            if seen.as_deref() == Some(expected) {
+                return Ok(());
+            }
+            if Instant::now() >= deadline {
+                bail!(
+                    "timed out after {timeout:?} waiting for {selector} to have value {expected:?} (last {seen:?})\n--- app log ---\n{}",
+                    self.log_tail(30)
+                );
+            }
+            sleep(POLL).await;
+        }
+    }
+
+    /// Wait until exactly `count` elements match `selector` (0: until it is gone).
+    pub async fn wait_for_count(
+        &mut self,
+        selector: &str,
+        count: usize,
+        timeout: Duration,
+    ) -> Result<()> {
+        let deadline = Instant::now() + timeout;
+        let mut seen = usize::MAX;
+        loop {
+            seen = self.count(selector).await.unwrap_or(seen);
+            if seen == count {
+                return Ok(());
+            }
+            if Instant::now() >= deadline {
+                bail!(
+                    "timed out after {timeout:?} waiting for {count} of {selector} (last {seen})\n--- app log ---\n{}",
+                    self.log_tail(30)
+                );
+            }
+            sleep(POLL).await;
+        }
+    }
+
+    /// Click `selector` inside the element matching `within` whose text
+    /// contains `contains` (a message's hover action, say). Hovers first.
+    pub async fn click_within(
+        &mut self,
+        within: &str,
+        contains: &str,
+        selector: &str,
+    ) -> Result<()> {
+        if gpui() {
+            let extra = json!({ "within": within, "within_contains": contains });
+            return self.op("click", selector, extra).await.map(drop);
+        }
+        let js = format!(
+            "const scope = [...document.querySelectorAll({})].find(el => el.textContent.includes({})); \
+             if (!scope) throw new Error('no ' + {} + ' containing ' + {}); \
+             const el = scope.querySelector({}); \
+             if (!el) throw new Error('no ' + {} + ' inside it'); \
+             el.click();",
+            js_str(within),
+            js_str(contains),
+            js_str(within),
+            js_str(contains),
+            js_str(selector),
+            js_str(selector),
+        );
+        self.eval(&js).await.map(drop)
+    }
+
+    /// A file pasted into the message box (`dropped` false) or dropped on
+    /// the chat (`dropped` true), as the clipboard or a drag would deliver it.
+    pub async fn attach_file(
+        &mut self,
+        dropped: bool,
+        name: &str,
+        mime: &str,
+        bytes: &[u8],
+    ) -> Result<()> {
+        use base64::Engine as _;
+        if gpui() {
+            let extra = json!({
+                "name": name,
+                "mime": mime,
+                "data": base64::engine::general_purpose::STANDARD.encode(bytes),
+                "via": if dropped { "drop" } else { "paste" },
+            });
+            return self.op("attach_file", "", extra).await.map(drop);
+        }
+        let list: Vec<String> = bytes.iter().map(|b| b.to_string()).collect();
+        let transfer = format!(
+            "const dt = new DataTransfer(); dt.items.add(new File([new Uint8Array([{}])], {}, {{ type: {} }}));",
+            list.join(","),
+            js_str(name),
+            js_str(mime)
+        );
+        let js = if dropped {
+            format!(
+                "{transfer} const target = document.querySelector('.chat'); \
+                 target.dispatchEvent(new DragEvent('dragover', {{ bubbles: true, cancelable: true, dataTransfer: dt }})); \
+                 target.dispatchEvent(new DragEvent('drop', {{ bubbles: true, cancelable: true, dataTransfer: dt }}));"
+            )
+        } else {
+            format!(
+                "{transfer} document.querySelector('.composer .composer-input').dispatchEvent(new ClipboardEvent('paste', {{ bubbles: true, cancelable: true, clipboardData: dt }}));"
+            )
+        };
+        self.eval(&js).await.map(drop)
+    }
+
     /// Wait until a JavaScript predicate (it must `return` a boolean) holds.
     pub async fn wait_for_js(&mut self, predicate_js: &str, timeout: Duration) -> Result<()> {
         self.wait_until(timeout, predicate_js, predicate_js).await
