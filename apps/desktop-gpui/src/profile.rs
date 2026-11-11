@@ -24,7 +24,8 @@ use crate::{
     media::{self, Avatars, avatar},
     theme,
     view_model::profile::{
-        CARD_W, Area, mutual_heading, mutual_servers_label, place_card, role_tag, shared_servers,
+        CARD_W, Area, card_max_height, mutual_heading, mutual_servers_label, place_card, role_tag,
+        shared_servers,
     },
 };
 
@@ -515,7 +516,7 @@ impl Render for ProfileCard {
             .on_mouse_down(MouseButton::Right, |_, _, cx| cx.stop_propagation())
             .occlude()
             .w(px(CARD_W))
-            .max_h(px(f32::from(size.height) - 16.0))
+            .max_h(px(card_max_height(app)))
             .overflow_y_scroll()
             .flex()
             .flex_col()

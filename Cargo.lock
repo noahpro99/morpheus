@@ -7244,6 +7244,7 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "directories",
+ "emojis",
  "futures",
  "gpui",
  "jiff",

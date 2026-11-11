@@ -389,69 +389,79 @@ async fn the_hover_bar_opens_a_full_emoji_picker_to_react() {
     let row = send_fresh(&mut app, "pick an emoji").await;
 
     // Three quick reactions, then "more".
-    let bar = app
-        .eval(&format!(
-            "const row = {row}; return [row.querySelectorAll('.actions .action.quick-reaction').length, !!row.querySelector('.actions .action.more-reactions')];"
-        ))
+    let quick = app
+        .texts_within(".message", &row, ".actions .action.quick-reaction")
         .await
-        .expect("bar");
-    assert_eq!(
-        bar,
-        serde_json::json!([3, true]),
-        "three quick reactions and more"
-    );
+        .expect("quick reactions");
+    let more = app
+        .texts_within(".message", &row, ".actions .action.more-reactions")
+        .await
+        .expect("more");
+    assert_eq!((quick.len(), more.len()), (3, 1), "three quick reactions and more");
 
-    let open = format!("{row}.querySelector('.actions .more-reactions').click(); return true;");
-    app.eval(&open).await.expect("more");
+    app.click_in_message(&row, ".actions .more-reactions")
+        .await
+        .expect("more");
     app.wait_for(".emoji-picker", DEFAULT_WAIT)
         .await
         .expect("the picker");
-    let shape = app
-        .eval(
-            "const p = document.querySelector('.emoji-picker'); \
-             return [document.activeElement === p.querySelector('input.emoji-search'), \
-               p.querySelectorAll('.emoji-tab').length >= 8, \
-               p.querySelectorAll('.emoji-cell').length > 1000];",
-        )
-        .await
-        .expect("shape");
     assert_eq!(
-        shape,
-        serde_json::json!([true, true, true]),
-        "search focused, a tab per category, every emoji"
+        app.count(".emoji-picker input.emoji-search")
+            .await
+            .expect("count"),
+        1,
+        "a search"
     );
+    assert!(
+        app.count(".emoji-picker .emoji-tab").await.expect("count") >= 8,
+        "a tab per category"
+    );
+    assert!(
+        app.count(".emoji-picker .emoji-cell").await.expect("count") > 1000,
+        "every emoji"
+    );
+
     // A tab brings its category into view.
-    app.eval("[...document.querySelectorAll('.emoji-tab')].find(t => t.title === 'Travel & Places').click(); return true;")
+    app.click(".emoji-tab[title=\"Travel & Places\"]")
         .await
         .expect("tab");
-    app.wait_for_js(
-        "const g = document.querySelector('.emoji-grid-scroll'), s = [...document.querySelectorAll('.emoji-section')].find(s => s.dataset.group === 'Travel & Places'); \
-         return !!s && Math.abs(s.getBoundingClientRect().top - g.getBoundingClientRect().top) < 8;",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("Travel & Places at the top");
+    let section = ".emoji-section[data-group=\"Travel & Places\"]";
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let top = app.bounds(section).await.expect("bounds");
+        let grid = app.bounds(".emoji-grid-scroll").await.expect("bounds");
+        if let (Some(top), Some(grid)) = (top, grid)
+            && (top.y - grid.y).abs() < 8.0
+        {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "Travel & Places at the top"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
 
     // Search, and pick: a reaction, and the picker closes.
     app.type_into(".emoji-picker input.emoji-search", "rocket")
         .await
         .expect("search");
-    app.wait_for_js(
-        "const cells = [...document.querySelectorAll('.emoji-picker .emoji-cell')]; return cells.length > 0 && cells.length < 10 && cells[0].textContent === '🚀';",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("the rocket found");
+    wait_cells(&mut app, |cells| {
+        !cells.is_empty() && cells.len() < 10 && cells[0].trim() == "🚀"
+    })
+    .await;
     app.click(".emoji-picker .emoji-cell").await.expect("pick");
-    app.wait_for_js(
-        &format!("return !document.querySelector('.emoji-picker') && ({row}).querySelector('.reactions')?.textContent.includes('🚀');"),
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("reacted with 🚀, picker closed");
+    app.wait_for_count(".emoji-picker", 0, DEFAULT_WAIT)
+        .await
+        .expect("picker closed");
+    app.wait_for_within(".message", &row, ".reactions", Some("🚀"), DEFAULT_WAIT)
+        .await
+        .expect("reacted with 🚀");
 
     // Nothing found says so.
-    app.eval(&open).await.expect("more");
+    app.click_in_message(&row, ".actions .more-reactions")
+        .await
+        .expect("more");
     app.wait_for(".emoji-picker", DEFAULT_WAIT)
         .await
         .expect("picker");
@@ -463,7 +473,7 @@ async fn the_hover_bar_opens_a_full_emoji_picker_to_react() {
         .expect("none found");
 
     // A skin tone: emoji that have tones show in it.
-    app.eval("const i = document.querySelector('.emoji-picker input.emoji-search'); i.value = ''; i.dispatchEvent(new Event('input', { bubbles: true })); return true;")
+    app.type_into(".emoji-picker input.emoji-search", "")
         .await
         .expect("clear");
     app.click(".emoji-picker .skin-tone-button")
@@ -472,47 +482,55 @@ async fn the_hover_bar_opens_a_full_emoji_picker_to_react() {
     app.wait_for(".emoji-picker .skin-tone-option", DEFAULT_WAIT)
         .await
         .expect("tone options");
-    app.eval("[...document.querySelectorAll('.emoji-picker .skin-tone-option')].find(o => o.dataset.tone === 'Medium').click(); return true;")
+    app.click(".emoji-picker .skin-tone-option[data-tone=\"Medium\"]")
         .await
         .expect("medium");
     app.type_into(".emoji-picker input.emoji-search", "thumbsup")
         .await
         .expect("search");
-    app.wait_for_js(
-        "const c = document.querySelector('.emoji-picker .emoji-cell'); return !!c && c.textContent === '👍🏽';",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("a medium thumbs up");
+    wait_cells(&mut app, |cells| cells.first().is_some_and(|c| c.trim() == "👍🏽")).await;
     app.click(".emoji-picker .emoji-cell").await.expect("pick");
-    app.wait_for_js(
-        &format!("return ({row}).querySelector('.reactions')?.textContent.includes('👍🏽');"),
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("reacted with 👍🏽");
+    app.wait_for_within(".message", &row, ".reactions", Some("👍🏽"), DEFAULT_WAIT)
+        .await
+        .expect("reacted with 👍🏽");
 
     // Recently used come first, newest first; Escape closes.
-    app.eval(&open).await.expect("more");
+    app.click_in_message(&row, ".actions .more-reactions")
+        .await
+        .expect("more");
     app.wait_for(".emoji-picker", DEFAULT_WAIT)
         .await
         .expect("picker");
     let recent = app
-        .eval("const s = document.querySelector('.emoji-section[data-group=\"Recent\"]'); return s ? [...s.querySelectorAll('.emoji-cell')].slice(0, 2).map(c => c.textContent) : null;")
+        .texts_within(".emoji-section[data-group=\"Recent\"]", "", ".emoji-cell")
         .await
         .expect("recent");
-    assert_eq!(
-        recent,
-        serde_json::json!(["👍🏽", "🚀"]),
-        "recently used first"
-    );
+    let recent: Vec<_> = recent.iter().take(2).map(|c| c.trim()).collect();
+    assert_eq!(recent, ["👍🏽", "🚀"], "recently used first");
     app.press(".emoji-picker input.emoji-search", "Escape")
         .await
         .expect("escape");
-    app.wait_for_js(
-        "return !document.querySelector('.emoji-picker');",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("closed");
+    app.wait_for_count(".emoji-picker", 0, DEFAULT_WAIT)
+        .await
+        .expect("closed");
+}
+
+/// Wait until the picker's cells (in order) satisfy `ok`.
+async fn wait_cells(app: &mut App, ok: impl Fn(&[String]) -> bool) {
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let cells = app
+            .texts(".emoji-picker .emoji-cell")
+            .await
+            .expect("cells");
+        if ok(&cells) {
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the cells never matched: {:?}",
+            cells.iter().take(12).collect::<Vec<_>>()
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
 }

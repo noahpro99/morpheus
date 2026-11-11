@@ -24,6 +24,7 @@ serde_json = { workspace = true }
 ruma-html = { workspace = true }
 base64 = { workspace = true, optional = true }
 jiff = "0.2"
+emojis = "0.9.1"
 
 [dev-dependencies]
 gpui = { version = "0.2", features = ["test-support"] }

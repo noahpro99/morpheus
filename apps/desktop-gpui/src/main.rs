@@ -8,6 +8,7 @@ mod chat;
 mod composer;
 mod dialogs;
 mod e2e;
+mod emoji_picker;
 mod icons;
 mod message;
 mod input;
@@ -180,7 +181,7 @@ fn window_size() -> gpui::Size<gpui::Pixels> {
 
 /// `MORPHEUS_DATA_DIR`, else its own platform data directory ("Morpheus GPUI"),
 /// apart from the Dioxus app's so the two never share a store.
-fn data_dir() -> PathBuf {
+pub(crate) fn data_dir() -> PathBuf {
     if let Some(dir) = std::env::var_os("MORPHEUS_DATA_DIR") {
         return PathBuf::from(dir);
     }
