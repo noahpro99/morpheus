@@ -281,7 +281,7 @@ pub fn space_menu(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::tests::room;
+    use crate::test_room::room;
 
     fn labels(items: &[MenuItem]) -> Vec<&str> {
         items.iter().map(|i| i.label.as_str()).collect()

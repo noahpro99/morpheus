@@ -135,7 +135,7 @@ pub fn more_menu(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::tests::room;
+    use crate::test_room::room;
 
     fn bob() -> OwnedUserId {
         OwnedUserId::try_from("@bob:x").expect("user id")

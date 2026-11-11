@@ -118,7 +118,7 @@ impl Marks {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::tests::room;
+    use crate::test_room::room;
 
     fn dm(id: &str, name: &str, latest: u64) -> RoomSummary {
         let mut r = room(id, name);

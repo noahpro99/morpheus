@@ -17,6 +17,7 @@ e2e = ["dep:futures", "dep:serde", "dep:base64"]
 gpui = "0.2"
 anyhow = { workspace = true }
 morpheus-core = { workspace = true }
+morpheus-view-model = { workspace = true }
 directories = { workspace = true }
 futures = { version = "0.3", optional = true }
 serde = { workspace = true, optional = true }

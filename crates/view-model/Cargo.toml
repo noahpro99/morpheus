@@ -1,0 +1,16 @@
+[package]
+name = "morpheus-view-model"
+description = "Morpheus view-models: the logic behind the screens, with no UI toolkit in it."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+morpheus-core = { workspace = true }
+serde_json = { workspace = true }
+ruma-html = { workspace = true }
+jiff = "0.2"
+emojis = "0.9.1"
+
+[lints]
+workspace = true

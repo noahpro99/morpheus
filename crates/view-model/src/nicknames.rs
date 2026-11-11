@@ -59,7 +59,7 @@ mod tests {
     #[test]
     fn a_dm_goes_by_the_nickname_but_a_room_does_not() {
         let map = with_nickname(NickMap::new(), "@bob:x", "Bobby");
-        let mut dm = crate::model::tests::room("!d:x", "bob");
+        let mut dm = crate::test_room::room("!d:x", "bob");
         dm.is_dm = true;
         dm.dm_user = Some("@bob:x".try_into().unwrap());
         assert_eq!(room_title(&map, &dm), "Bobby");
