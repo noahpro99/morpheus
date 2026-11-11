@@ -63,6 +63,9 @@ pub struct Composer {
     emoji_open: bool,
     /// Put the caret in the box on the next frame (a window is needed).
     pending_focus: bool,
+    /// The room opened: take the caret too, but only if nothing else holds it
+    /// (a dialog opened meanwhile keeps its own field focused).
+    open_focus: bool,
     /// A placeholder of its own (a thread's box), instead of the room's.
     placeholder: Option<String>,
 }
@@ -110,6 +113,7 @@ impl Composer {
             fetching_members: false,
             emoji_open: false,
             pending_focus: false,
+            open_focus: false,
             placeholder: None,
         };
         this.refresh_placeholder(cx);
@@ -142,7 +146,7 @@ impl Composer {
         self.handle = Some(handle);
         self.input
             .update(cx, |input, cx| input.set_disabled(false, cx));
-        self.pending_focus = true;
+        self.open_focus = true;
         cx.notify();
     }
 
@@ -787,6 +791,9 @@ fn tool_button(
 impl Render for Composer {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if std::mem::take(&mut self.pending_focus) {
+            self.input.read(cx).focus(window);
+        }
+        if std::mem::take(&mut self.open_focus) && window.focused(cx).is_none() {
             self.input.read(cx).focus(window);
         }
         let ready = self.handle.is_some();
