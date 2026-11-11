@@ -18,6 +18,7 @@ use morpheus_core::{
 
 use crate::{
     chat,
+    friends::{FriendsEvent, FriendsPage},
     composer::Composer,
     dialogs::{self, Dialog, PendingUndo},
     e2e::E2eExt as _,
@@ -106,6 +107,11 @@ pub struct Shell {
     pub thread: Option<(OwnedRoomId, Entity<ThreadPanel>)>,
     /// The room search panel, in the side column when no thread is open.
     pub search: Option<(OwnedRoomId, Entity<SearchPanel>)>,
+    /// Whether the Friends page fills the chat area, and the page itself.
+    pub friends_open: bool,
+    pub friends_page: Option<Entity<FriendsPage>>,
+    /// A direct message just made, to open once the room list has it.
+    pub pending_dm: Option<OwnedRoomId>,
 }
 
 impl Shell {
@@ -124,6 +130,7 @@ impl Shell {
                         }
                         crate::model::adopt_children(&mut this.rooms);
                         this.reopen_closed(cx);
+                        this.open_pending_dm(cx);
                         this.sync_members(cx);
                         cx.notify();
                     })
@@ -236,6 +243,9 @@ impl Shell {
             nicknames: NickMap::new(),
             thread: None,
             search: None,
+            friends_open: false,
+            friends_page: None,
+            pending_dm: None,
         }
     }
 
@@ -308,6 +318,45 @@ impl Shell {
         }
     }
 
+    /// The Friends page takes the chat area (the top of the DMs).
+    pub fn open_friends(&mut self, cx: &mut Context<Self>) {
+        if self.friends_page.is_none() {
+            let (session, friends, names) =
+                (self.session.clone(), self.friends.clone(), self.nicknames.clone());
+            let page = cx.new(|cx| FriendsPage::new(session, friends, names, cx));
+            cx.subscribe(&page, |this: &mut Self, _, event: &FriendsEvent, cx| match event {
+                FriendsEvent::OpenDm(id) => this.open_dm_when_listed(id.clone(), cx),
+                FriendsEvent::Remove(user) => this.set_friend(user.clone(), false, cx),
+                FriendsEvent::Failed(what, err) => this.fail(what, err, cx),
+            })
+            .detach();
+            self.friends_page = Some(page);
+        }
+        self.friends_open = true;
+        cx.notify();
+    }
+
+    /// A direct message that was just made is opened once the room list has
+    /// it (before that it would have no name).
+    fn open_dm_when_listed(&mut self, id: OwnedRoomId, cx: &mut Context<Self>) {
+        self.set_scope(Scope::Dms, cx);
+        if self.rooms.iter().any(|room| room.id == id) {
+            self.open_room(id, cx);
+        } else {
+            self.pending_dm = Some(id);
+        }
+    }
+
+    /// Opens the DM waiting for the room list, if it has come.
+    pub fn open_pending_dm(&mut self, cx: &mut Context<Self>) {
+        if let Some(id) = self.pending_dm.clone()
+            && self.rooms.iter().any(|room| room.id == id)
+        {
+            self.pending_dm = None;
+            self.open_room(id, cx);
+        }
+    }
+
     /// Opens Settings, on the page `focus` asks for.
     pub fn open_settings(&mut self, focus: SettingsFocus, cx: &mut Context<Self>) {
         if let Some(settings) = &self.settings {
@@ -368,6 +417,8 @@ impl Shell {
     }
 
     pub fn open_room(&mut self, id: OwnedRoomId, cx: &mut Context<Self>) {
+        // Going to a room leaves the Friends page.
+        self.friends_open = false;
         if self.session.is_some() && self.timeline.as_ref().is_none_or(|(room, _)| room != &id) {
             let session = self.session.clone();
             let room = id.clone();

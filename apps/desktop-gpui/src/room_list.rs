@@ -222,6 +222,10 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                 .text(text),
         );
     }
+    // The Friends page, at the top of the DMs (as in Discord).
+    if *scope == Scope::Dms {
+        list = list.child(friends_row(shell, cx));
+    }
     if !found.dms.is_empty() {
         if grouped {
             list = list.child(section("Direct messages", ""));
@@ -271,6 +275,59 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         .e2e("aside", "sidebar")
 }
 
+/// The row that opens the Friends page.
+fn friends_row(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
+    let selected = shell.friends_open;
+    div()
+        .id("friends-row")
+        .flex()
+        .items_center()
+        .gap(px(12.0))
+        .px(px(8.0))
+        .py(px(5.0))
+        .mb(px(6.0))
+        .min_h(px(42.0))
+        .rounded(px(theme::RADIUS_SM))
+        .cursor_pointer()
+        .text_color(rgb(if selected { theme::TEXT } else { theme::TEXT_MUTED }))
+        .when(selected, |d| d.bg(gpui::rgba(theme::BG_SELECTED)))
+        .when(!selected, |d| {
+            d.hover(|s| {
+                s.bg(gpui::rgba(theme::BG_HOVER))
+                    .text_color(rgb(theme::TEXT))
+            })
+        })
+        .on_click(cx.listener(|this, _, _, cx| this.open_friends(cx)))
+        .child(
+            div()
+                .w(px(32.0))
+                .flex_none()
+                .flex()
+                .items_center()
+                .child(icon("users", 22.0).text_color(rgb(if selected {
+                    theme::TEXT
+                } else {
+                    theme::TEXT_MUTED
+                }))),
+        )
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .child("Friends")
+                .e2e("span", "room-name")
+                .text("Friends"),
+        )
+        .e2e(
+            "button",
+            if selected {
+                "room friends-row selected"
+            } else {
+                "room friends-row"
+            },
+        )
+}
+
 /// A small upper-case heading.
 fn section(text: &str, class: &str) -> impl IntoElement {
     div()
@@ -286,7 +343,7 @@ fn section(text: &str, class: &str) -> impl IntoElement {
 }
 
 fn row(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -> impl IntoElement {
-    let selected = shell.selected.as_ref() == Some(&room.id);
+    let selected = shell.selected.as_ref() == Some(&room.id) && !shell.friends_open;
     let unread = room.unread_messages > 0 || room.marked_unread;
     let pinned = shell.marks.is_pinned(room);
     let mut classes = String::from("room");

@@ -9,6 +9,7 @@ mod composer;
 mod dialogs;
 mod e2e;
 mod emoji_picker;
+mod friends;
 mod icons;
 mod message;
 mod input;

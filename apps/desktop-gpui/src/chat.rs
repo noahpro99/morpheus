@@ -11,7 +11,15 @@ use crate::{
 };
 
 pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
-    let body = match shell.current() {
+    let friends = shell
+        .friends_page
+        .clone()
+        .filter(|_| shell.friends_open);
+    let body = match shell.current().filter(|_| friends.is_none()) {
+        _ if friends.is_some() => friends.into_iter().next().map_or_else(
+            || div().into_any_element(),
+            |page| page.into_any_element(),
+        ),
         Some(room) => {
             let mut header = div()
                 .h(px(48.0))
