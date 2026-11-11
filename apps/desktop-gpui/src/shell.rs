@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use gpui::{Context, Entity, IntoElement, Render, Window, div, prelude::*, px, rgb};
+use gpui::{Context, Entity, IntoElement, Render, ScrollHandle, Window, div, prelude::*, px, rgb};
 use morpheus_core::{MediaRef, OwnedRoomId, Profile, RoomSummary, Session, SpaceRoom, VectorDiff};
 
 use crate::{
@@ -35,6 +35,8 @@ pub struct Shell {
     pub timeline: Option<(OwnedRoomId, Entity<TimelineView>)>,
     /// The open room's message box.
     pub composer: Option<(OwnedRoomId, Entity<Composer>)>,
+    /// The sidebar's room list scrolling.
+    pub room_scroll: ScrollHandle,
     /// Links handed to the browser (the test bridge's `.link-log`).
     pub opened_links: Vec<String>,
 }
@@ -103,6 +105,7 @@ impl Shell {
             avatars: Avatars::default(),
             timeline: None,
             composer: None,
+            room_scroll: ScrollHandle::new(),
             opened_links: Vec::new(),
         }
     }

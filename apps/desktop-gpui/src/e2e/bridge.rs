@@ -517,7 +517,50 @@ async fn attach_file(request: &Request, cx: &mut AsyncApp) -> Reply {
     Ok(Value::Null)
 }
 
+/// A click on something a scrolling ancestor has clipped (a row far down a
+/// long list): scrolls it to the middle of that ancestor first, as a person
+/// would scroll to it, and waits for the redraw.
+async fn scroll_into_view(request: &Request, cx: &mut AsyncApp) -> Result<(), String> {
+    let wanted = with_state(|state| -> Result<_, String> {
+        let tree = &state.tree;
+        let Some(index) = target(tree, request)? else {
+            return Ok(None);
+        };
+        let at = tree.nodes[index].bounds;
+        let middle = at.y + at.h / 2.0;
+        let mut ancestor = tree.nodes[index].parent;
+        while let Some(a) = ancestor {
+            if let Some(probe) = state.scroll.get(&a) {
+                let view = tree.nodes[a].bounds;
+                if middle >= view.y && middle <= view.y + view.h {
+                    return Ok(None);
+                }
+                let delta = middle - (view.y + view.h / 2.0);
+                return Ok(Some((probe.clone(), probe.scroll_state().from_bottom - delta)));
+            }
+            ancestor = tree.nodes[a].parent;
+        }
+        Ok(None)
+    })?;
+    let Some((probe, to)) = wanted else {
+        return Ok(());
+    };
+    let before = with_state(|state| state.frame);
+    probe.scroll_to(to);
+    let window = cx
+        .update(|cx| cx.windows().first().copied())
+        .map_err(|err| err.to_string())?
+        .ok_or("the app has no window")?;
+    cx.update_window(window, |_, window, _| window.refresh())
+        .map_err(|err| err.to_string())?;
+    next_frame(cx, before).await;
+    Ok(())
+}
+
 async fn act(op: &str, request: &Request, cx: &mut AsyncApp) -> Reply {
+    if matches!(op, "click" | "right_click" | "submit") {
+        scroll_into_view(request, cx).await?;
+    }
     // Where to act: the element's centre, and its focus handle if it has one.
     let (centre, focus) = if request.selector.is_none() && op == "press" {
         ((0.0, 0.0), None)

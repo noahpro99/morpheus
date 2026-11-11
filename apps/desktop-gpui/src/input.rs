@@ -142,10 +142,6 @@ impl TextInput {
         window.focus(&self.focus);
     }
 
-    pub fn is_focused(&self, window: &Window) -> bool {
-        self.focus.is_focused(window)
-    }
-
     /// Replaces the text (the caret goes to the end); no `Changed`.
     pub fn set_value(&mut self, text: &str, cx: &mut Context<Self>) {
         self.buf.set_text(text);
