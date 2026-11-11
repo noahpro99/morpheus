@@ -29,7 +29,9 @@ impl Shell {
             .collect();
         let session = self.session.clone();
         let room = self.selected.clone();
+        let nickname = self.nicknames.get(user.as_str()).cloned();
         let card = cx.new(|cx| ProfileCard::new(session, user, room, at, seen, servers, cx));
+        card.update(cx, |card, _| card.nickname = nickname);
         cx.subscribe(&card, |this: &mut Self, card, event: &ProfileEvent, cx| match event {
             ProfileEvent::Closed => {
                 this.card = None;
@@ -43,6 +45,11 @@ impl Shell {
                 this.card = None;
                 this.set_scope(Scope::Dms, cx);
                 this.open_room(room.clone(), cx);
+            }
+            ProfileEvent::ModView(user) => {
+                let shown = this.card.as_ref().map(|card| card.read(cx).name());
+                this.card = None;
+                this.open_mod_view(user.clone(), shown, cx);
             }
             ProfileEvent::More(at) => {
                 let (user, own, blocked) = {

@@ -6,7 +6,10 @@
 
 use morpheus_core::{Member, MemberPermissions, MemberRole, OwnedRoomId, OwnedUserId};
 
-use super::menu::{MenuAction, MenuItem};
+use super::{
+    menu::{MenuAction, MenuItem},
+    room_dialogs::RoomDialogKind,
+};
 
 /// Rows shown at first. Big rooms have thousands of members, and every
 /// shown row fetches a picture, so the list grows only on request.
@@ -101,7 +104,7 @@ pub fn member_menu(input: &MemberMenuInput) -> Vec<MenuItem> {
     ));
     items.push(MenuItem::new(
         "Set nickname…",
-        MenuAction::Unavailable("Nicknames"),
+        MenuAction::RoomDialog(RoomDialogKind::Nickname(user.clone(), member.name.clone())),
     ));
     items.push(MenuItem::new("Mention", MenuAction::Mention(member.name.clone())));
     items.push(MenuItem::new("Message", MenuAction::Message(user.clone())));

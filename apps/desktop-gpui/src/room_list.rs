@@ -12,7 +12,7 @@ use gpui::{Context, FontWeight, IntoElement, MouseButton, div, prelude::*, px, r
 use morpheus_core::{OwnedRoomId, RoomSummary, SpaceRoom};
 
 use crate::{
-    view_model::room_dialogs::RoomDialogKind,
+    view_model::{nicknames::room_title, room_dialogs::RoomDialogKind},
     e2e::E2eExt as _,
     icons::icon,
     media::avatar,
@@ -332,10 +332,11 @@ fn row(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -> impl IntoE
                 this.open_room_menu(room.clone(), event.position, cx)
             })
         });
+    let title = room_title(&shell.nicknames, room);
     button = if room.is_dm {
         button.child(avatar(
             shell.picture(&room.avatar, 32),
-            &room.name,
+            &title,
             32.0,
             None,
         ))
@@ -356,9 +357,9 @@ fn row(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -> impl IntoE
             .flex_1()
             .min_w_0()
             .truncate()
-            .child(room.name.clone())
+            .child(title.clone())
             .e2e("span", "room-name")
-            .text(room.name.clone()),
+            .text(title.clone()),
     );
     if pinned {
         button = button.child(icon("pin", 12.0).text_color(rgb(theme::TEXT_FAINT)));

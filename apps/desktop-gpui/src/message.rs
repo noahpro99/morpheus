@@ -45,6 +45,8 @@ pub struct Pictures {
     /// Whether this device can read encrypted history: a message it cannot
     /// decrypt is a locked row or a loading shimmer by it.
     pub keys: KeyAccess,
+    /// Your nickname for the sender, shown over their name.
+    pub nickname: Option<String>,
 }
 
 /// A file's download, as its card shows it.
@@ -987,7 +989,7 @@ pub fn message_el(
 
     let mut main = div().flex_1().min_w_0().flex().flex_col();
     if show_header {
-        let name = m.sender_name.clone();
+        let name = pics.nickname.clone().unwrap_or_else(|| m.sender_name.clone());
         main = main.child(
             div()
                 .flex()

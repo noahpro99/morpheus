@@ -17,6 +17,7 @@ mod members;
 mod media;
 mod member_actions;
 mod menu;
+mod mod_view;
 mod model;
 mod prefs;
 mod profile;

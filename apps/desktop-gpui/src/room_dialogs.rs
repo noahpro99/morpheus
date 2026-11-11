@@ -33,6 +33,8 @@ pub enum Done {
     /// A server or category was made (under `parent`, if a category).
     SpaceCreated { space: OwnedRoomId, parent: Option<OwnedRoomId> },
     LeftServer,
+    /// A nickname was saved (empty: cleared).
+    NicknameSaved { user: morpheus_core::OwnedUserId, nickname: String },
     /// Your per-server profile changed: member lists read again.
     ProfileSaved,
 }
@@ -73,6 +75,7 @@ impl RoomDialog {
         session: Session,
         rooms: Vec<RoomSummary>,
         scope: Scope,
+        nicknames: &crate::view_model::nicknames::NickMap,
         cx: &mut Context<Self>,
     ) -> Self {
         let current = |id: &OwnedRoomId| rooms.iter().find(|room| &room.id == id).cloned();
@@ -105,6 +108,10 @@ impl RoomDialog {
             }
             RoomDialogKind::CreateSpace(_) => name = field(cx, "name", "", ""),
             RoomDialogKind::RoomProfile(_) => name = field(cx, "nickname", "", ""),
+            RoomDialogKind::Nickname(user, current) => {
+                let existing = nicknames.get(user.as_str()).cloned().unwrap_or_default();
+                name = field(cx, "nickname", current, &existing);
+            }
             RoomDialogKind::Privacy(_) | RoomDialogKind::LeaveSpace(_) => {}
         }
         let categories = match &kind {
@@ -299,6 +306,14 @@ impl RoomDialog {
                         }
                         Err(err) => Note::error(err),
                     });
+                });
+            }
+            RoomDialogKind::Nickname(user, _) => {
+                let nickname = self.text(&self.name, cx).trim().to_owned();
+                let saving = self.session.set_nickname(user.clone(), nickname.clone());
+                self.run(saving, cx, move |this, result, cx| match result {
+                    Ok(()) => cx.emit(Done::NicknameSaved { user, nickname }),
+                    Err(err) => this.note = Some(Note::error(err)),
                 });
             }
             RoomDialogKind::LeaveSpace(space) => {
@@ -903,6 +918,22 @@ impl RoomDialog {
                     .into_any_element(),
                 );
                 ("room-profile-dialog", parts)
+            }
+            RoomDialogKind::Nickname(_, current) => {
+                parts.push(heading("Nickname").into_any_element());
+                parts.push(muted(&crate::view_model::nicknames::nickname_blurb(&current), "muted").into_any_element());
+                if let Some(name) = &self.name {
+                    parts.push(name.clone().into_any_element());
+                }
+                parts.extend(note);
+                parts.push(
+                    actions(vec![
+                        self.submit_button(None, "Save", cx),
+                        self.close_button("Cancel", cx),
+                    ])
+                    .into_any_element(),
+                );
+                ("nickname-editor", parts)
             }
             RoomDialogKind::LeaveSpace(space) => {
                 let name = self.name_of(&space);

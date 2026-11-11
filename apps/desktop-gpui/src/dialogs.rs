@@ -45,6 +45,7 @@ pub enum Dialog {
     Report(Entity<ReportDialog>),
     Pinned(Entity<PinnedDialog>),
     Room(Entity<crate::room_dialogs::RoomDialog>),
+    ModView(Entity<crate::mod_view::ModView>),
 }
 
 /// Something done at once that its Undo toast can still take back.
@@ -609,6 +610,7 @@ pub fn render_dialog(shell: &mut Shell, window: &mut Window, cx: &mut Context<Sh
         Dialog::Report(entity) => Some(entity.clone().into_any_element()),
         Dialog::Pinned(entity) => Some(entity.clone().into_any_element()),
         Dialog::Room(entity) => Some(entity.clone().into_any_element()),
+        Dialog::ModView(entity) => Some(entity.clone().into_any_element()),
     }
 }
 

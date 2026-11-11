@@ -3,8 +3,8 @@
 //! list, or "Profile" in a menu. The card pops up beside the click with the
 //! person's picture and name, their role in the open room, the servers you
 //! share, a private note (saved as you write) and a box to message them;
-//! its "…" opens a menu (the full profile, share, invite, block, copy). Not
-//! ported: the mod view button and the report form (a toast says so).
+//! its "…" opens a menu (the full profile, share, invite, block, report,
+//! copy), and the shield opens the mod view.
 
 use std::{sync::Arc, time::Duration};
 
@@ -23,6 +23,7 @@ use crate::{
     input::{Changed, Submit, TextInput},
     media::{self, Avatars, avatar},
     theme,
+    view_model::room_dialogs::Note,
     view_model::profile::{
         CARD_W, Area, card_max_height, mutual_heading, mutual_servers_label, place_card, role_tag,
         shared_servers,
@@ -38,6 +39,8 @@ pub enum ProfileEvent {
     OpenDm(OwnedRoomId),
     /// The "…" button, where: the menu is the shell's.
     More(Point<Pixels>),
+    /// The shield button: this person's mod view.
+    ModView(OwnedUserId),
 }
 
 impl EventEmitter<ProfileEvent> for ProfileCard {}
@@ -54,6 +57,15 @@ pub struct ProfileCard {
     /// The full-page profile instead of the card.
     full: bool,
     profile: Option<Profile>,
+    /// Your nickname for them, shown over their name.
+    pub nickname: Option<String>,
+    /// Whether a room was open where it was opened (the mod view needs one).
+    in_room: bool,
+    /// "Report user profile": the inline form, its reason and answer.
+    reporting: bool,
+    report_reason: Entity<TextInput>,
+    report_note: Option<Note>,
+    report_busy: bool,
     /// As seen where it was opened from, until the profile arrives.
     seen: Option<(String, Option<MediaRef>)>,
     role: Option<MemberRole>,
@@ -101,7 +113,9 @@ impl ProfileCard {
             TextInput::new("message", &format!("Message @{name}"), false, "", cx)
                 .bare("input", "card-message")
         });
+        let report_reason = cx.new(|cx| TextInput::new("reason", "What is wrong?", false, "", cx).framed());
         let subscriptions = vec![
+            cx.subscribe(&report_reason, |this, _, _: &Submit, cx| this.send_report(cx)),
             cx.subscribe(&note, |this, _, _: &Changed, cx| this.note_changed(cx)),
             cx.subscribe(&message, |this, _, _: &Submit, cx| this.send_message(cx)),
         ];
@@ -113,6 +127,12 @@ impl ProfileCard {
             full: false,
             profile: None,
             seen,
+            nickname: None,
+            in_room: open_in.is_some(),
+            reporting: false,
+            report_reason,
+            report_note: None,
+            report_busy: false,
             role: None,
             blocked: false,
             mutual: Vec::new(),
@@ -191,12 +211,47 @@ impl ProfileCard {
         self.blocked
     }
 
+    /// "Report user profile": shows the form.
+    pub fn start_report(&mut self, cx: &mut Context<Self>) {
+        self.reporting = true;
+        self.report_note = None;
+        cx.notify();
+    }
+
+    fn send_report(&mut self, cx: &mut Context<Self>) {
+        let Some(session) = self.session.clone() else {
+            return;
+        };
+        if self.report_busy {
+            return;
+        }
+        self.report_busy = true;
+        let reporting = session.report_user(self.user.clone(), self.report_reason.read(cx).value().to_owned());
+        cx.spawn(async move |this, cx| {
+            let result = reporting.await;
+            this.update(cx, |this, cx| {
+                this.report_busy = false;
+                this.report_note = Some(match result {
+                    Ok(()) => Note::ok("Reported to the server admins."),
+                    Err(err) => Note::error(err.to_string()),
+                });
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+        cx.notify();
+    }
+
     pub fn is_own(&self) -> bool {
         self.own
     }
 
     /// The person's name as known now.
-    fn name(&self) -> String {
+    pub fn name(&self) -> String {
+        if let Some(nickname) = &self.nickname {
+            return nickname.clone();
+        }
         match (&self.profile, &self.seen) {
             (Some(p), _) => p.name.clone(),
             (None, Some((name, _))) => name.clone(),
@@ -359,6 +414,23 @@ impl Render for ProfileCard {
                     .right(px(8.0))
                     .flex()
                     .gap(px(4.0))
+                    .children((!self.own && self.in_room).then(|| {
+                        let user = self.user.clone();
+                        div()
+                            .id("card-mod-view")
+                            .size(px(28.0))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded(px(theme::RADIUS_SM))
+                            .bg(rgba(0x00000059))
+                            .hover(|s| s.bg(rgba(0x0000008c)))
+                            .cursor_pointer()
+                            .child(icon("shield-check", 16.0).text_color(rgb(0xffffff)))
+                            .on_click(cx.listener(move |_, _, _, cx| cx.emit(ProfileEvent::ModView(user.clone()))))
+                            .e2e("button", "ghost card-button card-mod-view")
+                            .attr("title", "Mod view")
+                    }))
                     .child(
                         div()
                             .id("card-more")
@@ -529,6 +601,7 @@ impl Render for ProfileCard {
             .line_height(relative(theme::LINE_HEIGHT))
             .child(banner)
             .child(body)
+            .children(self.reporting.then(|| self.report_form(cx)))
             .e2e("div", "profile-card")
             .focusable(&self.focus);
         let layer = div()
@@ -551,6 +624,63 @@ impl Render for ProfileCard {
 }
 
 impl ProfileCard {
+    /// The inline form under the card: why you report them.
+    fn report_form(&self, cx: &mut Context<Self>) -> AnyElement {
+        let note = self.report_note.as_ref().map(|note| match note {
+            Note::Ok(text) => div().text_color(rgb(0x4fd1a5)).child(text.clone()).e2e("p", "ok").text(text.clone()).into_any_element(),
+            Note::Error(text) => div().text_color(rgb(theme::DANGER)).child(text.clone()).e2e("p", "error").text(text.clone()).into_any_element(),
+        });
+        let button = |id: &'static str, label: &'static str, danger: bool, kind: &'static str, submit: bool, on_click: Box<dyn Fn(&mut Self, &mut Context<Self>)>| {
+            div()
+                .id(id)
+                .flex()
+                .items_center()
+                .gap(px(6.0))
+                .cursor_pointer()
+                .rounded(px(6.0))
+                .when(danger, |d| d.bg(rgb(theme::DANGER)).text_color(rgb(0xffffff)).px(px(14.0)).py(px(8.0)))
+                .when(!danger, |d| d.px(px(6.0)).py(px(1.0)))
+                .when(danger, |d| d.child(icon("flag", 16.0).text_color(rgb(0xffffff))))
+                .child(label)
+                .on_click(cx.listener(move |this, _, _, cx| on_click(this, cx)))
+                .e2e("button", kind)
+                .attr("type", if submit { "submit" } else { "button" })
+                .text(label)
+                .into_any_element()
+        };
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(12.0))
+            .px(px(16.0))
+            .pb(px(16.0))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(6.0))
+                    .text_size(px(0.85 * theme::REM))
+                    .text_color(rgb(theme::TEXT_MUTED))
+                    .child("Report this user")
+                    .child(div().text_size(px(theme::REM)).text_color(rgb(theme::TEXT)).child(self.report_reason.clone()))
+                    .e2e("label", "")
+                    .text("Report this user"),
+            )
+            .children(note)
+            .child(
+                div()
+                    .flex()
+                    .gap(px(8.0))
+                    .child(button("report-send", "Report", true, "danger", true, Box::new(|this, cx| this.send_report(cx))))
+                    .child(button("report-cancel", "Cancel", false, "secondary", false, Box::new(|this, cx| {
+                        this.reporting = false;
+                        cx.notify();
+                    }))),
+            )
+            .e2e("form", "report-user")
+            .into_any_element()
+    }
+
     /// The full-page profile: the card's person larger, with the servers
     /// you share listed (each opens its server).
     fn render_full(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {

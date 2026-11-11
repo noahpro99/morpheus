@@ -7,7 +7,7 @@ use gpui::{Context, ExternalPaths, FontWeight, IntoElement, div, prelude::*, px,
 
 use crate::{
     e2e::E2eExt as _, icons::icon, media::avatar, shell::Shell, theme,
-    view_model::room_dialogs::RoomDialogKind,
+    view_model::{nicknames::room_title, room_dialogs::RoomDialogKind},
 };
 
 pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
@@ -22,10 +22,11 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                 .px(px(16.0))
                 .border_b_1()
                 .border_color(gpui::rgba(0x0000004d));
+            let title = room_title(&shell.nicknames, room);
             header = if room.is_dm {
                 header.child(avatar(
                     shell.picture(&room.avatar, 24),
-                    &room.name,
+                    &title,
                     24.0,
                     None,
                 ))
@@ -42,9 +43,9 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             header = header.child(
                 div()
                     .font_weight(FontWeight::BOLD)
-                    .child(room.name.clone())
+                    .child(title.clone())
                     .e2e("h2", "")
-                    .text(room.name.clone()),
+                    .text(title.clone()),
             );
             header = header.child(
                 div()
