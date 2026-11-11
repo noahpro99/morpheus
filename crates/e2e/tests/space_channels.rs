@@ -188,14 +188,25 @@ async fn an_unjoined_channel_opens_a_join_card() {
     app.wait_for(".chat .composer", DEFAULT_WAIT)
         .await
         .expect("the room, joined");
-    app.wait_for_js(
-        "return document.querySelectorAll('.room.unjoined').length === 0 && \
-         [...document.querySelectorAll('.room-list .room .room-name')].map(e => e.textContent).join() \
-         === 'projects-news,projects-general,projects-archive';",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("archive among the joined, in order");
+    app.wait_for_count(".room.unjoined", 0, DEFAULT_WAIT)
+        .await
+        .expect("no longer unjoined");
+    let want = ["projects-news", "projects-general", "projects-archive"];
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let names = app
+            .texts(".room-list .room .room-name")
+            .await
+            .expect("room names");
+        if names == want {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "archive among the joined, in order: {names:?}"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
     reset(&hs);
 }
 

@@ -31,13 +31,9 @@ async fn login(app: &mut App, user: &str) {
 
 /// Right-click the joined room row whose name contains `name`.
 async fn room_menu(app: &mut App, name: &str) {
-    let needle = serde_json::to_string(name).expect("json");
-    let js = format!(
-        "const el = [...document.querySelectorAll('.room:not(.invite-row)')].find(el => el.textContent.includes({needle})); \
-         if (!el) throw new Error('no room ' + {needle}); const r = el.getBoundingClientRect(); \
-         el.dispatchEvent(new MouseEvent('contextmenu', {{ bubbles: true, cancelable: true, clientX: r.left + 20, clientY: r.top + 10 }}));"
-    );
-    app.eval(&js).await.expect("right-click room");
+    app.right_click_text(".room:not(.invite-row)", name)
+        .await
+        .expect("right-click room");
     app.wait_for(".context-menu", DEFAULT_WAIT)
         .await
         .expect("room menu");
@@ -59,19 +55,6 @@ async fn invite_bob(app: &mut App, room: &str) {
         .await
         .expect("invited");
     app.press(".invite-dialog", "Escape").await.expect("escape");
-}
-
-/// JS predicate: an `.invite-row` whose text contains `name` exists (or not).
-fn invite_row_js(name: &str, present: bool) -> String {
-    let needle = serde_json::to_string(name).expect("json");
-    let found = format!(
-        "[...document.querySelectorAll('.invite-row')].some(el => el.textContent.includes({needle}))"
-    );
-    if present {
-        format!("return {found}")
-    } else {
-        format!("return !({found})")
-    }
 }
 
 #[tokio::test]
@@ -102,14 +85,14 @@ async fn invites_are_listed_declined_and_accepted() {
     let mut bob = App::launch(&hs).await.expect("launch bob");
     login(&mut bob, "bob").await;
     // Nothing pending before the invite.
-    bob.wait_for_js(&invite_row_js(&name, false), DEFAULT_WAIT)
+    bob.wait_for_text_gone(".invite-row", &name, DEFAULT_WAIT)
         .await
         .expect("no invite yet");
 
     invite_bob(&mut alice, &name).await;
 
     // Sidebar row with the inviter, rail badge, card in the chat column.
-    bob.wait_for_js(&invite_row_js(&name, true), DEFAULT_WAIT)
+    bob.wait_for_text(".invite-row", &name, DEFAULT_WAIT)
         .await
         .expect("invite listed");
     bob.wait_for_text(".invite-row", "from alice", DEFAULT_WAIT)
@@ -147,25 +130,22 @@ async fn invites_are_listed_declined_and_accepted() {
     bob.click(".invite-card .invite-decline")
         .await
         .expect("decline");
-    bob.wait_for_js(&invite_row_js(&name, false), DEFAULT_WAIT)
+    bob.wait_for_text_gone(".invite-row", &name, DEFAULT_WAIT)
         .await
         .expect("invite gone");
-    bob.wait_for_js(
-        "return !document.querySelector('.invite-card')",
-        DEFAULT_WAIT,
-    )
+    bob.wait_for_count(".invite-card", 0, DEFAULT_WAIT)
     .await
     .expect("card gone");
 
     // Invite again and accept from the sidebar row.
     invite_bob(&mut alice, &name).await;
-    bob.wait_for_js(&invite_row_js(&name, true), DEFAULT_WAIT)
+    bob.wait_for_text(".invite-row", &name, DEFAULT_WAIT)
         .await
         .expect("invited again");
     bob.click(".invite-row .invite-accept")
         .await
         .expect("accept");
-    bob.wait_for_js(&invite_row_js(&name, false), DEFAULT_WAIT)
+    bob.wait_for_text_gone(".invite-row", &name, DEFAULT_WAIT)
         .await
         .expect("no longer pending");
     bob.open_room(&name).await.expect("joined room opens");

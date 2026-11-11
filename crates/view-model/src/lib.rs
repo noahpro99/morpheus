@@ -10,6 +10,7 @@ pub mod emoji;
 pub mod emoji_picker;
 pub mod format;
 pub mod friends;
+pub mod invites;
 pub mod keys;
 pub mod linkify;
 pub mod marks;

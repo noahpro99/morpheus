@@ -242,3 +242,35 @@ async fn friends_page() {
     app.click(".all-friends-tab").await.expect("tab");
     app.click_text(".friends-page .friend button", "Remove").await.expect("remove");
 }
+
+/// An invite: the sidebar row, its card, the inbox.
+#[tokio::test]
+async fn invite_card_and_inbox() {
+    let (Some(hs), Some(_)) = (
+        std::env::var("MORPHEUS_TEST_HOMESERVER").ok(),
+        std::env::var_os("MORPHEUS_SHOTS"),
+    ) else {
+        return;
+    };
+    let name = format!("e2e room invite shot {}", std::process::id());
+    let room = morpheus_e2e::api_as(
+        &hs,
+        "alice",
+        "POST",
+        "createRoom",
+        Some(serde_json::json!({ "name": name, "topic": "Come and see", "invite": ["@bob:localhost"] })),
+    )
+    .expect("room");
+    let _ = room;
+    let mut app = App::launch_sized(&hs, 1200, 760).await.expect("launch");
+    login(&mut app, "bob").await;
+    app.wait_for(".invite-row", DEFAULT_WAIT).await.expect("invite");
+    app.click_text(".invite-row", &name).await.expect("open");
+    app.wait_for(".invite-card", DEFAULT_WAIT).await.expect("card");
+    shot(&mut app, "i0-invite-card").await;
+    app.click(".titlebar .inbox-button").await.expect("inbox");
+    app.wait_for(".inbox-panel", DEFAULT_WAIT).await.expect("panel");
+    shot(&mut app, "i1-inbox").await;
+    app.press(".inbox-panel", "Escape").await.expect("close");
+    app.click(".invite-card .invite-decline").await.expect("decline");
+}

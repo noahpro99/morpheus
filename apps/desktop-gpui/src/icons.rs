@@ -54,6 +54,7 @@ pub const BELL_OFF: &str = r#"<path d="M8.7 3A6 6 0 0 1 18 8a21.3 21.3 0 0 0 .6 
 pub const USERS: &str = r#"<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /> <circle cx="9" cy="7" r="4" /> <path d="M22 21v-2a4 4 0 0 0-3-3.87" /> <path d="M16 3.13a4 4 0 0 1 0 7.75" />"#;
 pub const SEARCH: &str = r#"<circle cx="11" cy="11" r="8" /> <path d="m21 21-4.3-4.3" />"#;
 pub const CHECK: &str = r#"<path d="M20 6 9 17l-5-5" />"#;
+pub const INBOX: &str = r#"<polyline points="22 12 16 12 14 15 10 15 8 12 2 12" /> <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />"#;
 pub const LOG_OUT: &str = r#"<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /> <polyline points="16 17 21 12 16 7" /> <line x1="21" x2="9" y1="12" y2="12" />"#;
 pub const USER_PLUS: &str = r#"<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /> <circle cx="9" cy="7" r="4" /> <line x1="19" x2="19" y1="8" y2="14" /> <line x1="22" x2="16" y1="11" y2="11" />"#;
 pub const USER_X: &str = r#"<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /> <circle cx="9" cy="7" r="4" /> <line x1="17" x2="22" y1="8" y2="13" /> <line x1="22" x2="17" y1="8" y2="13" />"#;
@@ -130,6 +131,7 @@ fn glyph(name: &str) -> Option<&'static str> {
         "users" => USERS,
         "search" => SEARCH,
         "check" => CHECK,
+        "inbox" => INBOX,
         "log-out" => LOG_OUT,
         "user-plus" => USER_PLUS,
         "user-x" => USER_X,

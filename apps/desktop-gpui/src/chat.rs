@@ -20,6 +20,13 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             || div().into_any_element(),
             |page| page.into_any_element(),
         ),
+        Some(room) if room.invited => crate::invites::invite_card(shell, cx, room),
+        None if shell.preview.as_ref().is_some_and(|p| Some(&p.id) == shell.selected.as_ref()) => {
+            match &shell.preview {
+                Some(room) => crate::invites::join_card(shell, cx, room),
+                None => div().into_any_element(),
+            }
+        }
         Some(room) => {
             let mut header = div()
                 .h(px(48.0))
