@@ -179,6 +179,9 @@ async fn deleting_a_message_can_be_undone() {
 
     // Left alone, it goes for good.
     hover_action(&mut app, &text, "delete").await;
+    app.click(".confirm-dialog button.danger")
+        .await
+        .expect("confirm again");
     app.wait_for_text(".message .body", "Message deleted", DEFAULT_WAIT)
         .await
         .expect("deleted for everyone once the toast is gone");
@@ -540,6 +543,13 @@ async fn pictures_blur_in_from_a_placeholder() {
     ))
     .await
     .expect("drop a picture");
+    // It waits on the message being written, and goes with it.
+    app.wait_for(".composer .composer-attachment", DEFAULT_WAIT)
+        .await
+        .expect("attached");
+    app.press(".composer .composer-input", "Enter")
+        .await
+        .expect("send");
     app.wait_for_js(&blurred(&ours), DEFAULT_WAIT)
         .await
         .expect("sent with a blurhash of its own");

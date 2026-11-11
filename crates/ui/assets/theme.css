@@ -2954,3 +2954,73 @@ body.rail-dragging, body.rail-dragging * { cursor: grabbing !important; }
 .brand .mark { width: 2.083em; height: auto; color: var(--moon); flex: none; }
 .brand .tm { font-family: var(--font); font-size: 0.5em; font-weight: 500; vertical-align: 0.9em; margin-left: 2px; color: var(--text-muted); }
 .titlebar-title .brand { font-size: 13px; }
+
+/* ---- A phone's channel: the name is the bar's menu; the rest is with the
+   members (as in Discord's app) ------------------------------------------- */
+.shell.narrow .chat-header .room-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 1 auto;
+  min-width: 0;
+  min-height: 44px;
+  padding: 4px 10px 4px 6px;
+  border-radius: var(--radius);
+  color: var(--text);
+}
+.shell.narrow .chat-header .room-title:active { background: var(--bg-selected); }
+.shell.narrow .chat-header .room-title h2 { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.shell.narrow .chat-header .room-title .hash { flex: none; color: var(--text-faint); }
+.shell.narrow .chat-header .room-title-more { flex: none; color: var(--text-faint); }
+.shell.narrow .chat-header > .call-button { margin-left: auto; min-width: 44px; min-height: 44px; }
+
+.room-info {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 16px 16px;
+  background: var(--bg-members);
+  border-bottom: 1px solid var(--bg-selected);
+}
+.room-info-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.room-info-head .hash { font-size: 1.4rem; line-height: 1; color: var(--text-faint); }
+.room-info-name {
+  min-width: 0;
+  font-family: var(--display);
+  font-size: 1.15rem;
+  font-weight: 700;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.room-info-topic { margin: 0; font-size: 0.85rem; color: var(--text-muted); line-height: 1.4; }
+/* Whether it is encrypted: a small pill, green when it is. */
+.room-info .e2e-badge {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px 5px 10px;
+  border-radius: var(--radius-pill);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.room-info .e2e-badge.on { color: var(--green, #23a559); background: rgba(35, 165, 89, 0.14); }
+.room-info .e2e-badge.off { color: var(--text-muted); background: var(--bg-hover); }
+.room-info-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px; }
+.room-info-actions button {
+  display: flex;
+  margin: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 8px 10px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.room-info-actions button:active { background: var(--bg-selected); }
+.room-info-actions .count { color: var(--text-muted); font-weight: 500; }

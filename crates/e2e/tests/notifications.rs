@@ -275,6 +275,15 @@ async fn notifications_show_the_senders_picture_and_the_photo() {
         ))
         .await
         .expect("drop a photo");
+    // It waits on the message being written, and goes with it.
+    alice
+        .wait_for(".composer .composer-attachment", DEFAULT_WAIT)
+        .await
+        .expect("attached");
+    alice
+        .press(".composer .composer-input", "Enter")
+        .await
+        .expect("send");
     let deadline = std::time::Instant::now() + DEFAULT_WAIT;
     let notice = loop {
         if let Some(notice) = shown(&bob)

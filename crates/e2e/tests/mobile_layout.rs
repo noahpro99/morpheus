@@ -142,7 +142,8 @@ async fn narrow_window_shows_one_pane_at_a_time() {
         .await
         .expect("open general again");
     pane(&mut app, "chat").await;
-    app.click(".chat-header .member-toggle")
+    // (Ctrl+U: a phone has no member button; a leftward swipe opens it.)
+    app.key_combo("body", "u", true, false, false)
         .await
         .expect("members");
     pane(&mut app, "side").await;
@@ -165,6 +166,171 @@ async fn narrow_window_shows_one_pane_at_a_time() {
     pane(&mut app, "rooms").await;
 
     if let Some(path) = app.screenshot("mobile-rooms").await.expect("screenshot") {
+        eprintln!("screenshot: {}", path.display());
+    }
+}
+
+/// A channel's top bar on a phone, as in Discord's app: the back button and
+/// the channel's name, which is its menu; a call button only in a DM. Pins,
+/// search and whether it is encrypted are in the member panel beside it.
+#[tokio::test]
+async fn phone_channel_bar_is_its_name_and_the_rest_is_with_the_members() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch_sized(&hs, 420, 800)
+        .await
+        .expect("launch phone-sized app");
+    login(&mut app, "alice").await;
+    app.wait_for(".shell.narrow", DEFAULT_WAIT)
+        .await
+        .expect("narrow layout");
+    app.wait_for_text(".room", "general", DEFAULT_WAIT)
+        .await
+        .expect("general listed");
+    app.click_text(".room", "general")
+        .await
+        .expect("open general");
+    pane(&mut app, "chat").await;
+
+    // Only the back button and the name in the bar.
+    let shown = |selectors: &str| {
+        format!(
+            "return [...document.querySelectorAll({})].filter(el => el.offsetParent !== null).map(el => el.className);",
+            serde_json::to_string(selectors).expect("json")
+        )
+    };
+    let extra = app
+        .eval(&shown(
+            ".chat-header .member-toggle, .chat-header .pin-toggle, .chat-header .search-toggle, \
+             .chat-header .e2e-badge, .chat-header .room-menu-button, .chat-header .call-button",
+        ))
+        .await
+        .expect("eval");
+    assert_eq!(
+        extra,
+        serde_json::json!([]),
+        "nothing else in a channel's bar"
+    );
+    // (The backup prompt would cover the bar in the picture.)
+    let _ = app
+        .eval("[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Later')?.click();")
+        .await;
+    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+    if let Some(path) = app
+        .screenshot("mobile-channel-bar")
+        .await
+        .expect("screenshot")
+    {
+        eprintln!("screenshot: {}", path.display());
+    }
+
+    // The name is the channel's menu.
+    app.click(".chat-header .room-title")
+        .await
+        .expect("the name");
+    app.wait_for(".context-menu.sheet", DEFAULT_WAIT)
+        .await
+        .expect("the channel's menu");
+    app.key_combo("body", "Escape", false, false, false)
+        .await
+        .expect("close the menu");
+    app.wait_for_js(
+        "return !document.querySelector('.context-menu');",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("menu closed");
+    pane(&mut app, "chat").await;
+
+    // The member panel has the channel, whether it is encrypted, pins and
+    // search, above the members.
+    app.key_combo("body", "u", true, false, false)
+        .await
+        .expect("members");
+    pane(&mut app, "side").await;
+    for part in [
+        ".side-pane .room-info .room-info-name",
+        ".side-pane .room-info .e2e-badge",
+        ".side-pane .room-info .pin-toggle",
+        ".side-pane .room-info .search-toggle",
+    ] {
+        app.wait_for_js(&visible(part), DEFAULT_WAIT)
+            .await
+            .unwrap_or_else(|e| panic!("{part} in the member panel: {e}"));
+    }
+    app.wait_for_text(
+        ".side-pane .room-info .room-info-name",
+        "general",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("the channel's name");
+    let order = app
+        .eval(
+            "const info = document.querySelector('.side-pane .room-info'), m = document.querySelector('.side-pane .members'); \
+             return info.getBoundingClientRect().bottom <= m.getBoundingClientRect().top + 1;",
+        )
+        .await
+        .expect("eval");
+    assert_eq!(order, serde_json::json!(true), "above the members");
+    if let Some(path) = app
+        .screenshot("mobile-member-panel")
+        .await
+        .expect("screenshot")
+    {
+        eprintln!("screenshot: {}", path.display());
+    }
+
+    // Pins open from there.
+    app.click(".side-pane .room-info .pin-toggle")
+        .await
+        .expect("pins");
+    app.wait_for(".pinned-dialog", DEFAULT_WAIT)
+        .await
+        .expect("pinned messages");
+    app.key_combo("body", "Escape", false, false, false)
+        .await
+        .expect("close pins");
+    app.wait_for_js(
+        "return !document.querySelector('.pinned-dialog');",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("pins closed");
+    // Search too; back from it returns to the members.
+    app.click(".side-pane .room-info .search-toggle")
+        .await
+        .expect("search");
+    app.wait_for_js(&visible(".side-pane .search-panel"), DEFAULT_WAIT)
+        .await
+        .expect("search panel");
+    app.click(".side-pane .pane-back").await.expect("back");
+    app.wait_for_js(&visible(".side-pane .members"), DEFAULT_WAIT)
+        .await
+        .expect("back to the members");
+
+    // A DM's bar has its call button.
+    app.click(".side-pane .pane-back")
+        .await
+        .expect("back to chat");
+    app.click(".chat-header .pane-back")
+        .await
+        .expect("back to rooms");
+    pane(&mut app, "rooms").await;
+    app.click(".rail-item[title=\"Direct messages\"]")
+        .await
+        .expect("direct messages");
+    app.wait_for_text(".room", "bob", DEFAULT_WAIT)
+        .await
+        .expect("the dm listed");
+    app.click_text(".room", "bob").await.expect("the dm");
+    pane(&mut app, "chat").await;
+    app.wait_for_js(&visible(".chat-header .call-button"), DEFAULT_WAIT)
+        .await
+        .expect("a call button in a DM");
+    if let Some(path) = app.screenshot("mobile-dm-bar").await.expect("screenshot") {
         eprintln!("screenshot: {}", path.display());
     }
 }

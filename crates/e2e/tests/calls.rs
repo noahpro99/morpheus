@@ -2647,7 +2647,26 @@ async fn on_a_phone_a_card_is_enlarged_from_its_button() {
         .await
         .expect("launch a phone-sized alice");
     login_and_open(&mut alice, "alice", "hangout").await;
-    alice.click(CALL_BUTTON).await.expect("join");
+    // On a phone a channel's row joins its call (its bar has no call
+    // button); then the call's bar in the chat opens its screen.
+    alice.click(".chat-header .pane-back").await.expect("back");
+    alice
+        .click_text(".room.voice", "hangout")
+        .await
+        .expect("join");
+    alice
+        .wait_for(".room.voice.in-call", DEFAULT_WAIT)
+        .await
+        .expect("in the call");
+    alice
+        .click_text(".room.voice", "hangout")
+        .await
+        .expect("open the channel");
+    alice
+        .wait_for(".chat .call-bar", DEFAULT_WAIT)
+        .await
+        .expect("the call's bar");
+    alice.click(".chat .call-bar").await.expect("open the call");
     alice
         .wait_for(
             ".call-screen .call-tiles [data-user=\"@bob:localhost\"]",

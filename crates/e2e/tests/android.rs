@@ -185,9 +185,7 @@ async fn phone_signs_in_navigates_and_sends() {
     shot(&mut app, "android-chat").await;
 
     // Members are their own pane; back buttons walk out again.
-    app.tap(".chat-header .member-toggle")
-        .await
-        .expect("members");
+    open_members(&mut app).await;
     pane(&mut app, "side").await;
     app.wait_for(".side-pane .member", DEFAULT_WAIT)
         .await
@@ -533,9 +531,7 @@ async fn phone_back_key_closes_and_steps_back() {
     // Opening a room does not raise the keyboard over it (Discord does not).
     tokio::time::sleep(std::time::Duration::from_millis(800)).await;
     assert!(!keyboard_shown(), "opening a room raised the keyboard");
-    app.tap(".chat-header .member-toggle")
-        .await
-        .expect("members");
+    open_members(&mut app).await;
     pane(&mut app, "side").await;
     back_key();
     pane(&mut app, "chat").await;
@@ -951,6 +947,14 @@ async fn phone_attach_button_picks_and_uploads_a_file() {
     ))
     .await
     .expect("hand the input a file");
+    // It waits on the message being written, as in Discord's app; the send
+    // button sends it.
+    app.wait_for(".composer .composer-attachment", DEFAULT_WAIT)
+        .await
+        .expect("attached to the message");
+    app.press(".composer .composer-input", "Enter")
+        .await
+        .expect("send");
     app.wait_for_text(".attachment-card .attachment-name", &name, DEFAULT_WAIT)
         .await
         .expect("the picked file is uploaded");
@@ -1061,7 +1065,7 @@ async fn phone_calls_use_the_loudspeaker_and_switch_to_the_earpiece() {
         .await
         .expect("rooms listed");
     open_without_joining(&mut app, "hangout").await;
-    app.click(".chat-header .call-button").await.expect("call");
+    join_from_the_row(&mut app).await;
     app.click(".chat-header .pane-back")
         .await
         .expect("back to the list");
@@ -1133,7 +1137,7 @@ async fn phone_starts_a_call_with_the_real_microphone_without_crashing() {
         .await
         .expect("rooms listed");
     open_without_joining(&mut app, "hangout").await;
-    app.click(".chat-header .call-button").await.expect("call");
+    join_from_the_row(&mut app).await;
     // Give a crash time to happen: the microphone opens as the call connects.
     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     let crashed = crash_log();
@@ -1397,7 +1401,7 @@ async fn phone_call_fills_the_screen_and_minimizes_to_a_bar() {
         .await
         .expect("rooms listed");
     open_without_joining(&mut app, "hangout").await;
-    app.tap(".chat-header .call-button").await.expect("call");
+    join_from_the_row(&mut app).await;
 
     // Full screen: the room's name, a tile for alice, the controls.
     app.wait_for_text(".call-screen .call-screen-title", "hangout", DEFAULT_WAIT)
@@ -1459,13 +1463,17 @@ async fn phone_call_fills_the_screen_and_minimizes_to_a_bar() {
         .await
         .expect("minimize");
     gone(&mut app, ".call-screen", "the call screen").await;
-    // The header's call button opens it rather than hanging up.
-    app.tap(".chat-header .call-button")
-        .await
-        .expect("call button");
+    // A channel's top bar has no call button on a phone (only a DM's
+    // has): the bar is the way back in.
+    assert_eq!(
+        app.count(".chat-header .call-button").await.expect("count"),
+        0,
+        "no call button in a channel's bar"
+    );
+    app.tap(".chat .call-bar").await.expect("the call bar");
     app.wait_for(".call-screen", DEFAULT_WAIT)
         .await
-        .expect("the call screen from the header");
+        .expect("the call screen from the bar");
 
     app.tap(".call-screen .hang-up").await.expect("hang up");
     gone(&mut app, ".call-screen", "the call screen").await;
@@ -1950,7 +1958,7 @@ async fn phone_call_screen_swipes_down_and_not_sideways() {
         .await
         .expect("rooms listed");
     open_without_joining(&mut app, "hangout").await;
-    app.tap(".chat-header .call-button").await.expect("call");
+    join_from_the_row(&mut app).await;
     app.wait_for_text(".call-screen .call-screen-state", "Connected", DEFAULT_WAIT)
         .await
         .expect("the call screen");
@@ -2123,7 +2131,7 @@ async fn phone_camera_shows_on_the_desktop() {
     phone.submit("form.login").await.expect("submit");
     phone.wait_for(".room", DEFAULT_WAIT).await.expect("rooms");
     open_without_joining(&mut phone, "hangout").await;
-    phone.tap(".chat-header .call-button").await.expect("call");
+    join_from_the_row(&mut phone).await;
     phone
         .wait_for_text(".call-screen .call-screen-state", "Connected", DEFAULT_WAIT)
         .await
@@ -2141,8 +2149,12 @@ async fn phone_camera_shows_on_the_desktop() {
         .expect("password");
     bob.submit("form.login").await.expect("submit");
     bob.wait_for(".room", DEFAULT_WAIT).await.expect("rooms");
-    open_without_joining(&mut bob, "hangout").await;
-    bob.click(".chat-header .call-button")
+    // On the desktop a voice channel's row joins its call (its page has no
+    // top bar).
+    bob.wait_for_text(".room.voice", "hangout", DEFAULT_WAIT)
+        .await
+        .expect("the channel listed");
+    bob.click_text(".room.voice", "hangout")
         .await
         .expect("bob joins");
     bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
@@ -2413,6 +2425,54 @@ async fn phone_reopens_the_last_chat_after_quitting() {
 /// Open a room through the switcher (Ctrl+K), which shows a voice channel
 /// without joining its call (tapping its row joins), so a test can start or
 /// join from the call button. Calls belong to voice channels and DMs.
+/// Join the open voice channel's call as a phone does (its top bar has no
+/// call button: a channel's row joins), then open the call's screen from
+/// its bar in the chat.
+async fn join_from_the_row(app: &mut App) {
+    let room = app
+        .text(".chat-header h2")
+        .await
+        .expect("room name")
+        .expect("a room open");
+    app.click(".chat-header .pane-back")
+        .await
+        .expect("back to the list");
+    app.wait_for(".shell[data-pane=\"rooms\"]", DEFAULT_WAIT)
+        .await
+        .expect("the list in front");
+    app.wait_for_text(".room.voice", &room, DEFAULT_WAIT)
+        .await
+        .expect("the channel listed");
+    app.click_text(".room.voice", &room)
+        .await
+        .expect("join from the row");
+    app.wait_for(".room.voice.in-call", DEFAULT_WAIT)
+        .await
+        .expect("in its call");
+    // In the call, the row opens the channel, with the call's bar.
+    app.click_text(".room.voice", &room)
+        .await
+        .expect("open the channel");
+    app.wait_for(".chat .call-bar", DEFAULT_WAIT)
+        .await
+        .expect("the call's bar");
+    app.click(".chat .call-bar").await.expect("open the call");
+    app.wait_for(".call-screen", DEFAULT_WAIT)
+        .await
+        .expect("the call's screen");
+}
+
+/// Pull the member panel in, as on a phone: a leftward swipe on the chat
+/// (its top bar has no member button).
+async fn open_members(app: &mut App) {
+    let (width, height) = app.page_size().await.expect("page size");
+    // Clear of the screen edges, where Android's own back gesture takes the touch.
+    let inset = width * 0.15;
+    app.swipe((width - inset, height / 2.0), (inset, height / 2.0), 200)
+        .await
+        .expect("swipe left on the chat");
+}
+
 async fn open_without_joining(app: &mut App, room: &str) {
     app.wait_for(".room", DEFAULT_WAIT).await.expect("rooms");
     app.key_combo("body", "k", true, false, false)
@@ -2660,7 +2720,7 @@ async fn phone_calls_show_an_ongoing_call_notification() {
         .await
         .expect("rooms listed");
     open_without_joining(&mut app, "hangout").await;
-    app.tap(".chat-header .call-button").await.expect("call");
+    join_from_the_row(&mut app).await;
     app.wait_for_text(".call-screen .call-screen-state", "Connected", DEFAULT_WAIT)
         .await
         .expect("connected");
@@ -2702,9 +2762,7 @@ async fn phone_calls_show_an_ongoing_call_notification() {
     }
 
     // Again, and this time Hang up in the notification ends it.
-    app.tap(".chat-header .call-button")
-        .await
-        .expect("call again");
+    join_from_the_row(&mut app).await;
     app.wait_for_text(".call-screen .call-screen-state", "Connected", DEFAULT_WAIT)
         .await
         .expect("connected");

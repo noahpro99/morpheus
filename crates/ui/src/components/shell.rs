@@ -1199,6 +1199,10 @@ pub fn Shell(session: Session) -> Element {
                     }
                     match (rendered_side, current(), active_thread()) {
                         (SideColumn::Thread, Some(room), Some(root)) => rsx! { ThreadPanel { room_id: room.id.clone(), root } },
+                        (SideColumn::Members, Some(room), _) if narrow().0 => rsx! {
+                            RoomInfo { room: room.clone() }
+                            Members { room_id: room.id.clone(), member_count: room.member_count }
+                        },
                         (SideColumn::Members, Some(room), _) => rsx! { Members { room_id: room.id.clone(), member_count: room.member_count } },
                         (SideColumn::Search, Some(room), _) => rsx! { super::search::SearchPanel { key: "{room.id}", room_id: room.id.clone() } },
                         _ => rsx! {},
@@ -1346,14 +1350,41 @@ fn ChatRoom(room: RoomSummary) -> Element {
                     Icon { glyph: crate::icons::CHEVRON_LEFT, size: 18 }
                 }
             }
-            if room.is_dm {
-                Avatar { media: room.avatar.clone(), fallback: room.name.clone(), size: 24 }
+            if narrow().0 {
+                // A phone, as in Discord's app: the name is the room's menu;
+                // pins, search and the lock are in the member panel.
+                button {
+                    class: "ghost room-title",
+                    title: "Room options",
+                    onclick: {
+                        let (session, room) = (header_session.clone(), room.clone());
+                        move |e: Event<MouseData>| {
+                            e.stop_propagation();
+                            let at = e.client_coordinates();
+                            super::room_list::open_room_menu_at(&session, room.clone(), at.x, at.y);
+                        }
+                    },
+                    if room.is_dm {
+                        Avatar { media: room.avatar.clone(), fallback: room.name.clone(), size: 24 }
+                    } else if room.is_voice {
+                        Icon { glyph: crate::icons::VOLUME_2, size: 18, class: "hash" }
+                    } else {
+                        span { class: "hash", "#" }
+                    }
+                    h2 { "{title}" }
+                    Icon { glyph: crate::icons::CHEVRON_RIGHT, size: 14, class: "room-title-more" }
+                }
             } else {
-                span { class: "hash", "#" }
+                if room.is_dm {
+                    Avatar { media: room.avatar.clone(), fallback: room.name.clone(), size: 24 }
+                } else {
+                    span { class: "hash", "#" }
+                }
+                h2 { "{title}" }
             }
-            h2 { "{title}" }
             // Whether the room is end-to-end encrypted; opens its privacy
             // settings, where encryption is turned on.
+            if !narrow().0 {
             button {
                 class: "ghost e2e-badge",
                 class: if room.is_encrypted { "on" } else { "off" },
@@ -1391,9 +1422,11 @@ fn ChatRoom(room: RoomSummary) -> Element {
                 "{room.member_count}"
                 }
             }
+            }
             // Calls belong to DMs and voice channels, as in Discord: a text
-            // channel has none.
-            if room.is_dm || room.is_voice {
+            // channel has none. On a phone only a DM's: a voice channel is
+            // joined from its row.
+            if room.is_dm || (room.is_voice && !narrow().0) {
                 {
                     let in_this_call = call_room.as_ref() == Some(&room.id);
                     let (session, room_id, room_name) = (header_session.clone(), room.id.clone(), room.name.clone());
@@ -1422,22 +1455,23 @@ fn ChatRoom(room: RoomSummary) -> Element {
                     }
                 }
             }
-            button {
-                class: "ghost pin-toggle",
-                title: "Pinned messages (Ctrl+P)",
-                onclick: move |_| message_dialog.set(MessageDialog::Pinned),
-                Icon { glyph: crate::icons::PIN, size: 16 }
-                "{pinned().0.len()}"
-            }
-            // A search bar at the top right (an icon on a phone); opens the
-            // search panel.
-            button {
-                class: "ghost search-toggle",
-                class: if search_open().0 { "active" },
-                title: "Search this room",
-                onclick: move |_| search_open.with_mut(|s| s.0 = !s.0),
-                span { class: "search-toggle-label", "Search" }
-                Icon { glyph: crate::icons::SEARCH, size: 16 }
+            if !narrow().0 {
+                button {
+                    class: "ghost pin-toggle",
+                    title: "Pinned messages (Ctrl+P)",
+                    onclick: move |_| message_dialog.set(MessageDialog::Pinned),
+                    Icon { glyph: crate::icons::PIN, size: 16 }
+                    "{pinned().0.len()}"
+                }
+                // A search bar at the top right; opens the search panel.
+                button {
+                    class: "ghost search-toggle",
+                    class: if search_open().0 { "active" },
+                    title: "Search this room",
+                    onclick: move |_| search_open.with_mut(|s| s.0 = !s.0),
+                    span { class: "search-toggle-label", "Search" }
+                    Icon { glyph: crate::icons::SEARCH, size: 16 }
+                }
             }
         }
         }
@@ -1484,6 +1518,68 @@ fn ChatRoom(room: RoomSummary) -> Element {
             }
         }
         Lightbox {}
+    }
+}
+
+/// The top of a phone's member panel, as in Discord's app: the room's name
+/// and topic, whether it is end-to-end encrypted, then search and the pins
+/// (the desktop has these in the room's top bar).
+#[component]
+fn RoomInfo(room: RoomSummary) -> Element {
+    let mut search_open = use_context::<SearchOpen>();
+    let mut message_dialog = use_context::<OpenMessageDialog>();
+    let pinned = use_context::<Pinned>();
+    let title = try_use_context::<super::nicknames::Nicknames>()
+        .map(|map| super::nicknames::room_title(&map(), &room))
+        .unwrap_or_else(|| room.name.clone());
+    let privacy = {
+        let room_id = room.id.clone();
+        move |_| consume_context::<OpenRoomDialog>().set(RoomDialog::Privacy(room_id.clone()))
+    };
+    rsx! {
+        section { class: "room-info",
+            div { class: "room-info-head",
+                if room.is_dm {
+                    Avatar { media: room.avatar.clone(), fallback: room.name.clone(), size: 28 }
+                } else {
+                    span { class: "hash", "#" }
+                }
+                h3 { class: "room-info-name", "{title}" }
+            }
+            if let Some(topic) = room.topic.as_deref().filter(|t| !t.is_empty()) {
+                p { class: "room-info-topic", "{topic}" }
+            }
+            // Opens the privacy settings, where encryption is turned on.
+            button {
+                class: "ghost e2e-badge",
+                class: if room.is_encrypted { "on" } else { "off" },
+                title: if room.is_encrypted { "End-to-end encrypted" } else { "Not encrypted" },
+                onclick: privacy,
+                Icon { glyph: if room.is_encrypted { crate::icons::LOCK } else { crate::icons::LOCK_OPEN }, size: 14 }
+                span { if room.is_encrypted { "End-to-end encrypted" } else { "Not encrypted" } }
+            }
+            div { class: "room-info-actions",
+                button {
+                    class: "ghost search-toggle",
+                    title: "Search this room",
+                    onclick: move |_| search_open.set(SearchShown(true)),
+                    Icon { glyph: crate::icons::SEARCH, size: 20 }
+                    span { "Search" }
+                }
+                button {
+                    class: "ghost pin-toggle",
+                    title: "Pinned messages",
+                    onclick: move |_| message_dialog.set(MessageDialog::Pinned),
+                    Icon { glyph: crate::icons::PIN, size: 20 }
+                    span {
+                        "Pins"
+                        if !pinned().0.is_empty() {
+                            span { class: "count", " {pinned().0.len()}" }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
