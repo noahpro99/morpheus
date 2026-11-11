@@ -163,25 +163,18 @@ async fn thread_panel_shows_replies_and_posts_a_new_one() {
     app.click(".thread-panel-header .ghost")
         .await
         .expect("close thread");
-    app.wait_for_js(
-        "return document.querySelector('.thread-panel') === null;",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("panel closes");
+    app.wait_for_count(".thread-panel", 0, DEFAULT_WAIT)
+        .await
+        .expect("panel closes");
     app.wait_for(".members", DEFAULT_WAIT)
         .await
         .expect("members panel restored");
 
-    app.wait_for_js(
-        &format!(
-            "const msg = [...document.querySelectorAll('.message')].find(m => m.querySelector('.body')?.textContent.includes({}));
-             const chip = msg && msg.querySelector('.thread-chip');
-             const match = chip && chip.textContent.match(/\\d+/);
-             return !!match && parseInt(match[0], 10) === {};",
-            serde_json::to_string(ROOT).expect("json"),
-            count_before + 1
-        ),
+    // The root's chip counts one more reply (the root is the only message
+    // with a chip in this room).
+    app.wait_for_text(
+        ".thread-chip",
+        &format!("{} replies", count_before + 1),
         DEFAULT_WAIT,
     )
     .await

@@ -437,6 +437,9 @@ impl Shell {
             let names = names.clone();
             members.update(cx, |members, cx| members.set_nicknames(names, cx));
         }
+        if let Some((_, thread)) = &self.thread {
+            thread.update(cx, |thread, cx| thread.set_nicknames(&names, cx));
+        }
         if let Some((_, composer)) = &self.composer {
             let names = names.clone();
             composer.update(cx, |composer, cx| composer.set_nicknames(names, cx));

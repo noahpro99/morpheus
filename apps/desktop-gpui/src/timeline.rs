@@ -22,7 +22,8 @@ use gpui::{
     rgb,
 };
 use morpheus_core::{
-    MediaRef, Message, MessageId, MessageKind, OpenTimeline, OwnedRoomId, Session, TimelineEntry,
+    MediaRef, Message, MessageId, MessageKind, OpenTimeline, OwnedEventId, OwnedRoomId, Session,
+    TimelineEntry,
     TimelineHandle,
     Vector,
 };
@@ -87,6 +88,8 @@ pub enum TimelineEvent {
     SenderMenu(Box<Message>, Point<Pixels>),
     /// A background action failed: what it was, and why (a toast).
     Failed(&'static str, String),
+    /// "Reply in thread" or a thread chip: open this message's thread.
+    Thread(Box<Message>),
 }
 
 impl EventEmitter<TimelineEvent> for TimelineView {}
@@ -125,6 +128,8 @@ pub struct TimelineView {
     /// The room was marked unread from here: no read receipts (any of them
     /// would clear the flag) until the room is opened again.
     keep_unread: bool,
+    /// Set for a thread's replies: the root they belong to.
+    thread_root: Option<OwnedEventId>,
 }
 
 /// Scroll numbers of a list, in px: what a test and the jump button read.
@@ -155,6 +160,25 @@ impl Scrollable for ListProbe {
 
 impl TimelineView {
     pub fn new(session: Option<Session>, room_id: OwnedRoomId, cx: &mut Context<Self>) -> Self {
+        Self::open(session, room_id, None, cx)
+    }
+
+    /// The replies to `root`, in the thread panel.
+    pub fn new_thread(
+        session: Option<Session>,
+        room_id: OwnedRoomId,
+        root: OwnedEventId,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        Self::open(session, room_id, Some(root), cx)
+    }
+
+    fn open(
+        session: Option<Session>,
+        room_id: OwnedRoomId,
+        thread_root: Option<OwnedEventId>,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let list = ListState::new(0, ListAlignment::Bottom, px(OVERDRAW));
         list.splice(0..0, 1);
         let weak = cx.weak_entity();
@@ -193,16 +217,25 @@ impl TimelineView {
             undecryptable: false,
             hidden: HashSet::new(),
             keep_unread: false,
+            // A thread is never read or marked: the room's own timeline does.
+            thread_root: thread_root.clone(),
         };
         if let Some(session) = session {
             cx.spawn(async move |this, cx| {
-                let opened = session.timeline(room_id.clone()).await;
+                let opened = match thread_root.clone() {
+                    Some(root) => session.thread(room_id.clone(), root).await,
+                    None => session.timeline(room_id.clone()).await,
+                };
                 match opened {
                     Ok(OpenTimeline {
                         handle,
                         mut updates,
                     }) => {
-                        let read_at = session.fully_read_at(room_id).await.ok().flatten();
+                        let read_at = if thread_root.is_some() {
+                            None
+                        } else {
+                            session.fully_read_at(room_id).await.ok().flatten()
+                        };
                         let alive = this
                             .update(cx, |this, cx| {
                                 this.handle = Some(handle.clone());
@@ -274,11 +307,15 @@ impl TimelineView {
         {
             self.caught_up = true;
             self.new_marker = None;
-            if let Some(handle) = &self.handle {
+            if let Some(handle) = self.handle.as_ref().filter(|_| self.thread_root.is_none()) {
                 drop(handle.mark_as_fully_read());
             }
         }
-        if let Some(handle) = self.handle.as_ref().filter(|_| !self.keep_unread) {
+        if let Some(handle) = self
+            .handle
+            .as_ref()
+            .filter(|_| !self.keep_unread && self.thread_root.is_none())
+        {
             let receipt = handle.send_read_receipt();
             cx.spawn(async move |_, _| {
                 if let Err(err) = receipt.await {
@@ -525,6 +562,7 @@ impl TimelineView {
         match action {
             RowAction::Reply => cx.emit(TimelineEvent::Reply(message)),
             RowAction::Edit => cx.emit(TimelineEvent::Edit(message)),
+            RowAction::Thread => cx.emit(TimelineEvent::Thread(Box::new(message))),
             RowAction::React(key) => self.react(message.id, key.to_owned(), cx),
             RowAction::Context(at) => cx.emit(TimelineEvent::Menu(Box::new(message), at)),
             RowAction::MoreReactions(at) => cx.emit(TimelineEvent::Picker(Box::new(message), at)),
@@ -591,6 +629,7 @@ impl Drop for TimelineView {
         // marked unread from here).
         if let Some(handle) = self.handle.take()
             && !self.keep_unread
+            && self.thread_root.is_none()
         {
             drop(handle.mark_as_fully_read());
         }
@@ -660,7 +699,8 @@ impl Render for TimelineView {
         let timeline = timeline
             .e2e("section", "timeline")
             .scrollable(Rc::new(ListProbe(self.list.clone())));
-        let banner = show_banner(true, self.keys, self.has_undecryptable());
+        let banner = self.thread_root.is_none()
+            && show_banner(true, self.keys, self.has_undecryptable());
         div()
             .flex()
             .flex_col()

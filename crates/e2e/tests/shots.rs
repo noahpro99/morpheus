@@ -129,3 +129,61 @@ async fn settings_pages() {
         shot(&mut app, name).await;
     }
 }
+
+/// A thread: the chip under its root, then the panel.
+#[tokio::test]
+async fn thread_panel() {
+    let (Some(hs), Some(_)) = (
+        std::env::var("MORPHEUS_TEST_HOMESERVER").ok(),
+        std::env::var_os("MORPHEUS_SHOTS"),
+    ) else {
+        return;
+    };
+    let user = morpheus_e2e::new_account(&hs, "shotthreads").expect("account");
+    let room = morpheus_e2e::api_as(
+        &hs,
+        &user,
+        "POST",
+        "createRoom",
+        Some(serde_json::json!({ "name": "plans" })),
+    )
+    .expect("a room");
+    let room = room["room_id"]
+        .as_str()
+        .expect("room id")
+        .replace('!', "%21")
+        .replace(':', "%3A");
+    let send = |txn: &str, body: serde_json::Value| {
+        let sent = morpheus_e2e::api_as(
+            &hs,
+            &user,
+            "PUT",
+            &format!("rooms/{room}/send/m.room.message/{txn}"),
+            Some(body),
+        )
+        .expect("sent");
+        sent["event_id"].as_str().expect("event id").to_owned()
+    };
+    let root = send(
+        "root",
+        serde_json::json!({ "msgtype": "m.text", "body": "Let's plan Q4 in this thread" }),
+    );
+    for (txn, text) in [("a", "I think threads should ship first"), ("b", "Agreed, then the emoji picker")] {
+        send(
+            txn,
+            serde_json::json!({
+                "msgtype": "m.text", "body": text,
+                "m.relates_to": { "rel_type": "m.thread", "event_id": root,
+                    "is_falling_back": true, "m.in_reply_to": { "event_id": root } }
+            }),
+        );
+    }
+    let mut app = App::launch_sized(&hs, 1200, 760).await.expect("launch");
+    login(&mut app, &user).await;
+    app.open_room("plans").await.expect("open plans");
+    app.wait_for(".thread-chip", DEFAULT_WAIT).await.expect("chip");
+    shot(&mut app, "t0-thread-chip").await;
+    app.click(".thread-chip").await.expect("open thread");
+    app.wait_for(".thread-panel .message .body", DEFAULT_WAIT).await.expect("panel");
+    shot(&mut app, "t1-thread-panel").await;
+}

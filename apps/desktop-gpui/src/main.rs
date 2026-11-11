@@ -28,6 +28,7 @@ mod room_list;
 mod room_menus;
 mod settings;
 mod shell;
+mod thread;
 mod timeline;
 mod theme;
 mod user_bar;

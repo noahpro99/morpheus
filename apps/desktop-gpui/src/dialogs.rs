@@ -170,9 +170,7 @@ impl Shell {
                     timeline.update(cx, |timeline, cx| timeline.row_action(row, &unique_id, cx));
                 }
             }
-            MenuAction::ReplyInThread => {
-                self.toast("Threads are not in the GPUI build yet.", cx);
-            }
+            MenuAction::ReplyInThread => self.open_thread(*message, cx),
             MenuAction::React(key) => {
                 if let Some(timeline) = timeline {
                     timeline.update(cx, |timeline, cx| timeline.react(message.id.clone(), key, cx));

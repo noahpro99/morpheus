@@ -23,6 +23,7 @@ pub mod settings;
 pub mod rich;
 pub mod rows;
 pub mod text_buffer;
+pub mod threads;
 pub mod toast;
 pub mod verification;
 

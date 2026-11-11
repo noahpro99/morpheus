@@ -156,12 +156,14 @@ pub fn svg_for(path: &str) -> Option<String> {
     ))
 }
 
-/// A glyph (`"plus"`, `"lock"`, ...) at `size` pixels, in the text colour.
+/// A glyph (`"plus"`, `"lock"`, ...) at `size` pixels. gpui draws an svg in
+/// its own colour, not the text's: muted unless the caller sets another.
 pub fn icon(name: &str, size: f32) -> Svg {
     svg()
         .path(format!("icons/{name}.svg"))
         .size(px(size))
         .flex_none()
+        .text_color(gpui::rgb(crate::theme::TEXT_MUTED))
 }
 
 #[cfg(test)]
