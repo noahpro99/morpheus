@@ -86,12 +86,9 @@ async fn settings_shows_devices_and_rejects_a_bad_recovery_key() {
         .expect("recovery error shown");
 
     app.click(".settings-header .ghost").await.expect("close");
-    app.wait_for_js(
-        "return document.querySelector('.settings') === null;",
-        Duration::from_secs(5),
-    )
-    .await
-    .expect("modal closed");
+    app.wait_for_count(".settings", 0, Duration::from_secs(5))
+        .await
+        .expect("modal closed");
 }
 
 #[tokio::test]
@@ -135,10 +132,8 @@ async fn emoji_verification_between_two_devices() {
     b.wait_for(".emoji-grid", DEFAULT_WAIT)
         .await
         .expect("B emoji");
-    let names =
-        "return [...document.querySelectorAll('.emoji-name')].map(e => e.textContent).join(',');";
-    let a_names = a.eval(names).await.expect("A names");
-    let b_names = b.eval(names).await.expect("B names");
+    let a_names = a.texts(".emoji-name").await.expect("A names");
+    let b_names = b.texts(".emoji-name").await.expect("B names");
     assert_eq!(a_names, b_names, "both devices show the same emoji");
 
     a.click_text(".verification button", "They match")
@@ -160,20 +155,25 @@ async fn emoji_verification_between_two_devices() {
         0,
         "a finished verification offers no buttons"
     );
-    a.wait_for_js(
-        "return !document.querySelector('.verification');",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("the finished panel goes away by itself");
+    a.wait_for_count(".verification", 0, DEFAULT_WAIT)
+        .await
+        .expect("the finished panel goes away by itself");
 
     // The device list refreshes: the other device now shows as verified.
-    a.wait_for_js(
-        "return [...document.querySelectorAll('.device')].some(d => !d.textContent.includes('this device') && d.textContent.includes('verified') && !d.textContent.includes('unverified'));",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("A lists B as verified");
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let devices = a.texts(".device").await.expect("devices");
+        if devices.iter().any(|d| {
+            !d.contains("this device") && d.contains("verified") && !d.contains("unverified")
+        }) {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "A lists B as verified: {devices:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(300)).await;
+    }
 
     if let Some(path) = a.screenshot("verification").await.expect("screenshot") {
         eprintln!("screenshot: {}", path.display());
@@ -212,12 +212,9 @@ async fn verification_survives_closing_and_reopening_settings() {
     a.click(".settings-header button[title=Close]")
         .await
         .expect("close settings");
-    a.wait_for_js(
-        "return document.querySelector('.settings') === null;",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("settings closed");
+    a.wait_for_count(".settings", 0, DEFAULT_WAIT)
+        .await
+        .expect("settings closed");
     open_settings(&mut a).await;
     a.wait_for_text(
         ".verification",
@@ -277,11 +274,11 @@ async fn new_account_sets_up_recovery_from_settings() {
         .await
         .expect("the new key is shown");
     let key = app
-        .eval("return document.querySelector('.recovery-key-new code').textContent.trim();")
+        .text(".recovery-key-new code")
         .await
         .expect("key")
-        .as_str()
         .unwrap_or_default()
+        .trim()
         .to_owned();
     assert!(
         key.split_whitespace().count() >= 8,
@@ -351,25 +348,39 @@ async fn qr_code_verification_with_a_device_that_scans() {
     app.click_text(".verification button", "Accept")
         .await
         .expect("accept");
-    app.wait_for(".verification .verification-qr svg", DEFAULT_WAIT)
-        .await
-        .expect("the app shows a code");
-    // Kept for a look (and a real scanner's read) after the run.
-    let svg = app
-        .eval("return document.querySelector('.verification-qr').innerHTML;")
-        .await
-        .expect("the code's picture");
-    let saved = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/e2e/verification-qr.svg");
-    let _ = std::fs::write(&saved, svg.as_str().unwrap_or_default());
-    let bytes: Vec<u8> = serde_json::from_value(
-        app.eval(
-            "return Array.from(atob(document.querySelector('.verification-qr').dataset.qr), c => c.charCodeAt(0));",
+    let bytes: Vec<u8> = if app.is_gpui() {
+        // The app drawn natively: the code's bytes are the element's value.
+        app.wait_for(".verification .verification-qr", DEFAULT_WAIT)
+            .await
+            .expect("the app shows a code");
+        app.value(".verification-qr")
+            .await
+            .expect("the code's bytes")
+            .unwrap_or_default()
+            .split(',')
+            .map(|b| b.parse().expect("a byte"))
+            .collect()
+    } else {
+        app.wait_for(".verification .verification-qr svg", DEFAULT_WAIT)
+            .await
+            .expect("the app shows a code");
+        // Kept for a look (and a real scanner's read) after the run.
+        let svg = app
+            .eval("return document.querySelector('.verification-qr').innerHTML;")
+            .await
+            .expect("the code's picture");
+        let saved = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target/e2e/verification-qr.svg");
+        let _ = std::fs::write(&saved, svg.as_str().unwrap_or_default());
+        serde_json::from_value(
+            app.eval(
+                "return Array.from(atob(document.querySelector('.verification-qr').dataset.qr), c => c.charCodeAt(0));",
+            )
+            .await
+            .expect("the code's bytes"),
         )
-        .await
-        .expect("the code's bytes"),
-    )
-    .expect("bytes");
+        .expect("bytes")
+    };
     scanner.actions().scan_qr(bytes).await.expect("scan");
 
     app.wait_for(".verification .confirm-scanned", DEFAULT_WAIT)
@@ -434,12 +445,9 @@ async fn a_new_accounts_first_device_is_verified_and_offers_secure_backup() {
         .expect("the recovery key, to keep");
     // Set up, the offer goes.
     app.press("body", "Escape").await.expect("close");
-    app.wait_for_js(
-        "return document.querySelector('.backup-prompt') === null;",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("no more offer once it is set up");
+    app.wait_for_count(".backup-prompt", 0, DEFAULT_WAIT)
+        .await
+        .expect("no more offer once it is set up");
 }
 
 /// Someone already signed in from before the app set up a new account's
@@ -488,10 +496,10 @@ async fn this_device_is_named_for_its_system() {
     app.click_text(".settings-nav button", "Security & Privacy")
         .await
         .expect("security");
-    app.wait_for_js(
-        "return [...document.querySelectorAll('.device')].some(d => d.textContent.includes('this device') && d.querySelector('.device-name')?.textContent.trim() === 'Morpheus Linux');",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("this device is Morpheus Linux");
+    app.wait_for_text(".device", "this device", DEFAULT_WAIT)
+        .await
+        .expect("this device is listed");
+    app.wait_for_text(".device .device-name", "Morpheus Linux", DEFAULT_WAIT)
+        .await
+        .expect("this device is Morpheus Linux");
 }

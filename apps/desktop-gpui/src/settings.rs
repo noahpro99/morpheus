@@ -339,6 +339,8 @@ impl SettingsView {
     fn end_flow(&mut self, cx: &mut Context<Self>) {
         self.flow = None;
         self.flow_watch = None;
+        // The other device's trust has settled by now.
+        self.refresh(cx);
         cx.notify();
     }
 
@@ -482,18 +484,16 @@ fn qr_el(code: &QrImage) -> impl IntoElement {
         );
     shown
         .e2e("div", "verification-qr")
-        .attr("data-qr", qr_data(code))
+        .attr("value", qr_data(code))
 }
 
-/// What the code holds, for test runs to scan it.
-#[cfg(feature = "e2e")]
+/// What the code holds (its bytes, comma separated), for test runs to scan it.
 fn qr_data(code: &QrImage) -> String {
-    base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &code.data)
-}
-
-#[cfg(not(feature = "e2e"))]
-fn qr_data(_: &QrImage) -> String {
-    String::new()
+    code.data
+        .iter()
+        .map(|byte| byte.to_string())
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 impl SettingsView {

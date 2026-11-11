@@ -29,15 +29,15 @@ async fn login(app: &mut App, user: &str) {
 
 /// The badge in the top bar: `on`, `off`, or missing.
 async fn badge(app: &mut App) -> String {
-    app.eval(
-        "const b = document.querySelector('.chat-header .e2e-badge'); \
-         return !b ? 'missing' : (b.classList.contains('on') ? 'on' : 'off') + ':' + (b.title || '');",
-    )
-    .await
-    .expect("badge")
-    .as_str()
-    .expect("string")
-    .to_owned()
+    let on = ".chat-header .e2e-badge.on[title=\"End-to-end encrypted\"]";
+    let off = ".chat-header .e2e-badge.off[title=\"Not encrypted\"]";
+    if app.count(on).await.expect("badge") > 0 {
+        "on:End-to-end encrypted".into()
+    } else if app.count(off).await.expect("badge") > 0 {
+        "off:Not encrypted".into()
+    } else {
+        "missing".into()
+    }
 }
 
 #[tokio::test]
