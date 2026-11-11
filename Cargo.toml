@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/call", "crates/ui", "crates/e2e", "apps/desktop", "apps/mobile", "apps/web"]
+members = ["crates/core", "crates/call", "crates/ui", "crates/e2e", "apps/desktop", "apps/desktop-gpui", "apps/mobile", "apps/web"]
 # `cargo build` / `cargo test` cover desktop by default; mobile builds via `dx`.
 default-members = ["crates/core", "crates/ui", "apps/desktop"]
 
@@ -95,3 +95,8 @@ debug = false
 
 [profile.wasm-dev.package."*"]
 debug = false
+
+# xattr 0.2.3 (a dependency of GPUI's tar) names libc::ENOATTR, which libc
+# dropped for Linux; the copy in vendor/xattr uses ENODATA (what it was).
+[patch.crates-io]
+xattr = { path = "vendor/xattr" }
