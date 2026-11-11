@@ -93,7 +93,9 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                         .text(topic),
                 );
             }
-            // The same menu as right-clicking the room.
+            // The rest of the header sits at the right: the room's menu, the
+            // member list's toggle, the pinned messages.
+            header = header.child(div().flex_1());
             let menu_room = room.clone();
             header = header.child(
                 div()
@@ -111,8 +113,39 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                     .e2e("button", "ghost room-menu-button")
                     .attr("title", "Room options"),
             );
-            // The rest of the header sits at the right.
-            header = header.child(div().flex_1());
+            let count = room.member_count.to_string();
+            let open = shell.members_open;
+            header = header.child(
+                div()
+                    .id("member-toggle")
+                    .flex()
+                    .items_center()
+                    .gap(px(5.0))
+                    .px(px(8.0))
+                    .py(px(6.0))
+                    .rounded(px(theme::RADIUS_SM))
+                    .text_size(px(0.85 * theme::REM))
+                    .text_color(rgb(if open { theme::TEXT } else { theme::TEXT_MUTED }))
+                    .cursor_pointer()
+                    .hover(|s| s.text_color(rgb(theme::TEXT)))
+                    .child(icon("users", 16.0).text_color(rgb(if open {
+                        theme::TEXT
+                    } else {
+                        theme::TEXT_MUTED
+                    })))
+                    .child(count.clone())
+                    .on_click(cx.listener(|this, _, _, cx| this.toggle_members(cx)))
+                    .e2e(
+                        "button",
+                        if open {
+                            "ghost member-toggle active"
+                        } else {
+                            "ghost member-toggle"
+                        },
+                    )
+                    .attr("title", "Member list (Ctrl+U)")
+                    .text(count),
+            );
             let pins = shell.pinned.len();
             header = header.child(
                 div()
@@ -134,25 +167,52 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                     .attr("title", "Pinned messages (Ctrl+P)")
                     .text(pins.to_string()),
             );
-            let mut column = div()
-                .flex()
-                .flex_col()
-                .flex_1()
-                .min_h_0()
-                .child(header.e2e("header", "chat-header"));
+            // The messages and the message box; the member list beside them,
+            // under the header, which runs over both.
+            let mut content = div().flex().flex_col().flex_1().min_w_0().min_h_0();
             if let Some((id, timeline)) = &shell.timeline
                 && id == &room.id
             {
-                column = column.child(timeline.clone());
+                content = content.child(timeline.clone());
             }
             if let Some((id, composer)) = &shell.composer
                 && id == &room.id
             {
                 // The line where who is typing shows: room for it, empty here.
-                column = column
+                content = content
                     .child(div().h(px(8.0)).flex_none().e2e("div", "typing empty"))
                     .child(composer.clone());
             }
+            let mut body = div().flex().flex_1().min_h_0().child(content);
+            if shell.members_open
+                && let Some((id, members)) = &shell.members
+                && id == &room.id
+            {
+                body = body.child(
+                    div()
+                        .w(px(theme::MEMBERS_W))
+                        .flex_none()
+                        .pt(px(8.0))
+                        .pr(px(8.0))
+                        .pb(px(8.0))
+                        .child(
+                            div()
+                                .size_full()
+                                .rounded(px(theme::RADIUS_LG))
+                                .overflow_hidden()
+                                .bg(rgb(theme::BG_SIDEBAR))
+                                .child(members.clone())
+                                .e2e("div", "side-pane"),
+                        ),
+                );
+            }
+            let column = div()
+                .flex()
+                .flex_col()
+                .flex_1()
+                .min_h_0()
+                .child(header.e2e("header", "chat-header"))
+                .child(body);
             column.into_any_element()
         }
         None => div()

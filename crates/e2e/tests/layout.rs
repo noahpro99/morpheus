@@ -41,12 +41,12 @@ async fn member_toggle_hides_and_shows_the_member_list() {
         .expect("members shown by default");
 
     app.click(".member-toggle").await.expect("toggle off");
-    app.wait_for_js(
-        "return document.querySelector('.members') === null && document.querySelector('.shell').classList.contains('no-side');",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("member list hidden and the column collapsed");
+    app.wait_for_count(".members", 0, DEFAULT_WAIT)
+        .await
+        .expect("member list hidden");
+    app.wait_for(".shell.no-side", DEFAULT_WAIT)
+        .await
+        .expect("the column collapsed");
 
     // The choice sticks across rooms.
     app.open_room("random").await.expect("switch room");
@@ -223,4 +223,65 @@ async fn member_list_is_windowed_for_big_rooms() {
     )
     .await
     .expect("everyone listed after one click");
+}
+
+/// The member list groups people by role with a count, shows everyone with
+/// a picture, and a right click on a row offers what you may do: only your
+/// own profile and ID for yourself, and as an admin roles, kick and ban for
+/// those below you.
+#[tokio::test]
+async fn the_member_list_groups_by_role_and_offers_what_you_may_do() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch_desktop(&hs).await.expect("launch app");
+    login_and_open(&mut app, "general").await;
+
+    app.wait_for_text(".members-header", "Admins", DEFAULT_WAIT)
+        .await
+        .expect("admins group");
+    for name in ["alice", "bob", "carol"] {
+        app.wait_for_text(".members .member", name, DEFAULT_WAIT)
+            .await
+            .unwrap_or_else(|e| panic!("member {name}: {e}"));
+    }
+    app.wait_for_text(".chat-header .member-toggle", "3", DEFAULT_WAIT)
+        .await
+        .expect("member count");
+    assert_eq!(
+        app.count(".members .member .avatar").await.expect("count"),
+        3,
+        "a picture (or letter) each"
+    );
+
+    async fn labels(app: &mut App) -> Vec<String> {
+        app.texts(".context-menu:not(.context-submenu) > .context-item > .menu-label")
+            .await
+            .expect("labels")
+            .into_iter()
+            .map(|l| l.trim().to_owned())
+            .collect()
+    }
+    // Yourself: nothing to do to you.
+    app.right_click_text(".members .member", "alice")
+        .await
+        .expect("right-click yourself");
+    app.wait_for(".context-menu", DEFAULT_WAIT).await.expect("menu");
+    assert_eq!(labels(&mut app).await, ["Profile", "Copy user ID"]);
+    app.press(".context-menu", "Escape").await.expect("escape");
+    app.wait_for_count(".context-menu", 0, DEFAULT_WAIT)
+        .await
+        .expect("closed");
+
+    // Someone below you.
+    app.right_click_text(".members .member", "bob")
+        .await
+        .expect("right-click bob");
+    app.wait_for(".context-menu", DEFAULT_WAIT).await.expect("menu");
+    let items = labels(&mut app).await;
+    for wanted in ["Profile", "Mention", "Message", "Block", "Roles", "Kick bob", "Ban bob", "Copy user ID"] {
+        assert!(items.iter().any(|l| l == wanted), "missing {wanted} in {items:?}");
+    }
+    app.press(".context-menu", "Escape").await.expect("escape");
 }

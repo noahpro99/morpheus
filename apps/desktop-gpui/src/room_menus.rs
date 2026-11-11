@@ -255,7 +255,31 @@ impl Shell {
             MenuAction::Block(user, block) => {
                 if let Some(session) = session {
                     let blocking = session.block(user, block);
-                    self.run_in_background("block", blocking, cx);
+                    self.moderate("block", blocking, cx);
+                }
+            }
+            MenuAction::SetRole(room, user, role) => {
+                if let Some(session) = session {
+                    let setting = session.set_role(room, user, role);
+                    self.moderate("role change", setting, cx);
+                }
+            }
+            MenuAction::Kick(room, user) => {
+                if let Some(session) = session {
+                    let kicking = session.kick(room, user, None);
+                    self.moderate("kick", kicking, cx);
+                }
+            }
+            MenuAction::Ban(room, user) => {
+                if let Some(session) = session {
+                    let banning = session.ban(room, user, None);
+                    self.moderate("ban", banning, cx);
+                }
+            }
+            MenuAction::Message(user) => self.message_user(user, cx),
+            MenuAction::Mention(name) => {
+                if let Some((_, composer)) = &self.composer {
+                    composer.update(cx, |composer, cx| composer.mention(&name, cx));
                 }
             }
             MenuAction::Mute(room, length) => {
@@ -325,6 +349,7 @@ impl Shell {
         self.timeline = None;
         self.composer = None;
         self.timeline_handle = None;
+        self.members = None;
         self.pinned.clear();
         cx.notify();
     }

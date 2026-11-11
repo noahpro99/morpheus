@@ -154,6 +154,14 @@ impl Composer {
         cx.notify();
     }
 
+    /// "Mention" on a member: `@name ` goes at the end of the draft.
+    pub fn mention(&mut self, name: &str, cx: &mut Context<Self>) {
+        let text = composer::with_mention(&self.draft(cx), name);
+        self.set_draft(&text, cx);
+        self.pending_focus = true;
+        cx.notify();
+    }
+
     fn draft(&self, cx: &gpui::App) -> String {
         self.input.read(cx).value().to_owned()
     }

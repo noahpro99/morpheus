@@ -5,7 +5,9 @@
 //! [`MenuAction`] (data), not a closure, so this is testable and the front
 //! end only has to draw the menu and run the action it is handed.
 
-use morpheus_core::{Message, MessageId, NotifyMode, OwnedRoomId, OwnedUserId, RoomSummary};
+use morpheus_core::{
+    MemberRole, Message, MessageId, NotifyMode, OwnedRoomId, OwnedUserId, RoomSummary,
+};
 
 /// The reactions a message's hover bar and menu offer at once.
 pub const QUICK_REACTIONS: [&str; 3] = ["👍", "❤️", "😂"];
@@ -65,6 +67,15 @@ pub enum MenuAction {
     MoveToNewFolder(OwnedRoomId),
     MoveOutOfFolders(OwnedRoomId),
     Profile(OwnedUserId),
+
+    // On a member (`members`).
+    /// Adds `@name ` to the message being written.
+    Mention(String),
+    /// Opens the direct message with them (making it if need be).
+    Message(OwnedUserId),
+    SetRole(OwnedRoomId, OwnedUserId, MemberRole),
+    Kick(OwnedRoomId, OwnedUserId),
+    Ban(OwnedRoomId, OwnedUserId),
     /// Opens something the GPUI build does not have yet (the string names it).
     Unavailable(&'static str),
 }

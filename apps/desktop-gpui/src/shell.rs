@@ -22,6 +22,7 @@ use crate::{
     dialogs::{self, Dialog, PendingUndo},
     e2e::E2eExt as _,
     media::{self, Avatars},
+    members::{MemberEvent, MembersView},
     menu::{self, OpenMenu},
     model::{Scope, rooms_in_scope},
     view_model::{marks::Marks, toast::ToastList},
@@ -79,6 +80,12 @@ pub struct Shell {
     pub marks: Marks,
     /// The people you are friends with.
     pub friends: Vec<OwnedUserId>,
+    /// The open room's member list.
+    pub members: Option<(OwnedRoomId, Entity<MembersView>)>,
+    /// Whether the member list shows (kept across rooms).
+    pub members_open: bool,
+    /// The member count the list was last read at.
+    pub members_count: u64,
     /// The open room's timeline, to act on its messages.
     pub timeline_handle: Option<TimelineHandle>,
     /// The open room's pinned messages.
@@ -101,6 +108,7 @@ impl Shell {
                         }
                         crate::model::adopt_children(&mut this.rooms);
                         this.reopen_closed(cx);
+                        this.sync_members(cx);
                         cx.notify();
                     })
                     .is_ok();
@@ -181,6 +189,9 @@ impl Shell {
             hidden_rooms: HashSet::new(),
             marks: Marks::default(),
             friends: Vec::new(),
+            members: None,
+            members_open: true,
+            members_count: 0,
             timeline_handle: None,
             pinned: Vec::new(),
         }
@@ -272,6 +283,8 @@ impl Shell {
                     | TimelineEvent::Menu(..)
                     | TimelineEvent::Picker(..)
                     | TimelineEvent::Delete(..)
+                    | TimelineEvent::Sender(..)
+                    | TimelineEvent::SenderMenu(..)
                     | TimelineEvent::Failed(..) => {}
                 })
             })
@@ -284,6 +297,8 @@ impl Shell {
                     this.delete_message((**message).clone(), *skip, cx)
                 }
                 TimelineEvent::Failed(what, err) => this.fail(what, err, cx),
+                TimelineEvent::SenderMenu(message, at) => this.open_sender_menu(message, *at, cx),
+                TimelineEvent::Sender(..) => {}
                 _ => {}
             })
             .detach();
@@ -300,6 +315,24 @@ impl Shell {
             self.composer = Some((id.clone(), composer));
             self.timeline_handle = None;
             self.pinned.clear();
+        }
+        if self.session.is_some() && self.members.as_ref().is_none_or(|(room, _)| room != &id) {
+            let session = self.session.clone();
+            let room = id.clone();
+            let members = cx.new(|cx| MembersView::new(session, room, cx));
+            cx.subscribe(&members, |this: &mut Self, _, event: &MemberEvent, cx| match event {
+                MemberEvent::Context(member, permissions, at) => {
+                    this.open_member_menu(member, *permissions, *at, cx)
+                }
+                MemberEvent::Open(_) => {}
+            })
+            .detach();
+            self.members_count = self
+                .rooms
+                .iter()
+                .find(|r| r.id == id)
+                .map_or(0, |r| r.member_count);
+            self.members = Some((id.clone(), members));
         }
         self.selected = Some(id);
         self.refresh_pinned(cx);
@@ -553,7 +586,7 @@ impl Render for Shell {
             .children(dialog)
             .children(menu)
             .children(toasts)
-            .e2e("div", "shell")
+            .e2e("div", if self.members_open { "shell" } else { "shell no-side" })
     }
 }
 

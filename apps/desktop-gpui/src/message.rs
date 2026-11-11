@@ -7,7 +7,7 @@ use std::{ops::Range, rc::Rc, sync::Arc};
 
 use gpui::{
     AnyElement, App, Div, ElementId, FontStyle, FontWeight, Hsla, InteractiveText, Image,
-    ObjectFit, SharedString, StrikethroughStyle, StyledImage as _, StyledText, TextRun,
+    ObjectFit, SharedString, Stateful, StrikethroughStyle, StyledImage as _, StyledText, TextRun,
     UnderlineStyle, MouseButton, Pixels, Point, Window, div, font, img, prelude::*, px, relative, rgb,
     rgba,
 };
@@ -787,6 +787,10 @@ pub enum RowAction {
     Delete(bool),
     /// A right click on the message, where.
     Context(Point<Pixels>),
+    /// Their picture or name clicked, where: their profile.
+    Sender(Point<Pixels>),
+    /// Their picture or name right-clicked, where: their member menu.
+    SenderMenu(Point<Pixels>),
 }
 
 /// What a click on a hover action does: the action, the message's unique ID.
@@ -906,6 +910,29 @@ fn actions_bar(m: &Message, group: SharedString, actions: &ActionHandler) -> Any
     bar.e2e("div", "actions").into_any_element()
 }
 
+/// Who sent a message (their picture or name): a click opens their
+/// profile, a right click their member menu (not the message's).
+fn sender_target(
+    el: Div,
+    id: String,
+    unique_id: &str,
+    actions: Option<&ActionHandler>,
+) -> Stateful<Div> {
+    let mut el = el.id(ElementId::from(SharedString::from(id))).cursor_pointer();
+    if let Some(actions) = actions {
+        let (open, uid) = (actions.clone(), unique_id.to_owned());
+        el = el.on_click(move |event, window, cx| {
+            open(RowAction::Sender(event.position()), &uid, window, cx)
+        });
+        let (menu, uid) = (actions.clone(), unique_id.to_owned());
+        el = el.on_mouse_down(MouseButton::Right, move |event, window, cx| {
+            cx.stop_propagation();
+            menu(RowAction::SenderMenu(event.position), &uid, window, cx)
+        });
+    }
+    el
+}
+
 /// A message's row. `show_header`: its sender's avatar, name and time lead it.
 pub fn message_el(
     row: &MessageRow,
@@ -967,11 +994,15 @@ pub fn message_el(
                 .items_baseline()
                 .gap(px(8.0))
                 .child(
-                    div()
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(rgb(if m.is_own { theme::OWN } else { theme::TEXT }))
-                        .cursor_pointer()
-                        .child(name.clone())
+                    sender_target(
+                        div()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(rgb(if m.is_own { theme::OWN } else { theme::TEXT }))
+                            .child(name.clone()),
+                        format!("sender-{}", m.unique_id),
+                        &m.unique_id,
+                        actions,
+                    )
                         .e2e("button", "sender")
                         .attr("title", m.sender.to_string())
                         .text(name),
@@ -1036,10 +1067,14 @@ pub fn message_el(
     }
     line = if show_header {
         line.child(
-            div()
-                .mt(px(2.0))
-                .cursor_pointer()
-                .child(avatar(pics.avatar.clone(), &m.sender_name, 40.0, None))
+            sender_target(
+                div()
+                    .mt(px(2.0))
+                    .child(avatar(pics.avatar.clone(), &m.sender_name, 40.0, None)),
+                format!("avatar-{}", m.unique_id),
+                &m.unique_id,
+                actions,
+            )
                 .e2e("button", "avatar-button")
                 .attr("title", m.sender.to_string()),
         )
