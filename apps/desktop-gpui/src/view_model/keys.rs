@@ -77,38 +77,8 @@ pub enum SettingsFocus {
     Security,
 }
 
-/// The settings pages this port has so far, in the side list's order.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SettingsPage {
-    Account,
-    Security,
-}
-
-impl SettingsPage {
-    pub const ALL: [SettingsPage; 2] = [SettingsPage::Account, SettingsPage::Security];
-
-    pub fn label(self) -> &'static str {
-        match self {
-            SettingsPage::Account => "My Account",
-            SettingsPage::Security => "Security & Privacy",
-        }
-    }
-
-    pub fn glyph(self) -> &'static str {
-        match self {
-            SettingsPage::Account => "user",
-            SettingsPage::Security => "shield",
-        }
-    }
-
-    /// The page a notice's target wants, if any.
-    pub fn for_focus(focus: SettingsFocus) -> Option<SettingsPage> {
-        match focus {
-            SettingsFocus::None => None,
-            _ => Some(SettingsPage::Security),
-        }
-    }
-}
+#[cfg(test)]
+use super::settings::SettingsPage;
 
 /// One line of the Security page's status list, with its colour class.
 #[derive(Debug, Clone, PartialEq, Eq)]

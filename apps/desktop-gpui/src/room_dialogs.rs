@@ -77,7 +77,7 @@ impl RoomDialog {
     ) -> Self {
         let current = |id: &OwnedRoomId| rooms.iter().find(|room| &room.id == id).cloned();
         let field = |cx: &mut Context<Self>, name: &'static str, placeholder: &str, value: &str| {
-            let input = cx.new(|cx| TextInput::new(name, placeholder, false, value, cx));
+            let input = cx.new(|cx| TextInput::new(name, placeholder, false, value, cx).framed());
             cx.subscribe(&input, |this, _, _: &Submit, cx| this.submit(cx)).detach();
             Some(input)
         };

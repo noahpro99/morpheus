@@ -79,6 +79,10 @@ pub struct TextInput {
     max_lines: usize,
     /// No box of its own (the message box sits in the composer's).
     bare: bool,
+    /// A dialog's field: an always-visible elevated border, no focus ring.
+    framed: bool,
+    /// The settings search box: smaller, no ring.
+    compact: bool,
     disabled: bool,
     buf: TextBuffer,
     /// Navigation keys go to the owner (suggestions are open).
@@ -109,6 +113,8 @@ impl TextInput {
             password,
             max_lines: 1,
             bare: false,
+            framed: false,
+            compact: false,
             disabled: false,
             buf: TextBuffer::new(value),
             capture_nav: false,
@@ -123,6 +129,24 @@ impl TextInput {
     /// Grows with its lines up to `max_lines`; Shift+Enter adds a line.
     pub fn multiline(mut self, max_lines: usize) -> Self {
         self.max_lines = max_lines.max(2);
+        self
+    }
+
+    /// The test bridge's classes for the field (`settings-search`).
+    pub fn with_class(mut self, class: &'static str) -> Self {
+        self.class = class;
+        self
+    }
+
+    /// The settings search box (`.settings-search`): small padding, no ring.
+    pub fn compact(mut self) -> Self {
+        self.compact = true;
+        self
+    }
+
+    /// A dialog's field (`.message-dialog input`): bordered, no focus colour.
+    pub fn framed(mut self) -> Self {
+        self.framed = true;
         self
     }
 
@@ -689,11 +713,14 @@ impl Render for TextInput {
             outer = outer.flex_1().py(px(12.0)).pl(px(4.0)).pr(px(8.0));
         } else {
             outer = outer
-                .px(px(12.0))
-                .py(px(10.0))
-                .rounded(px(theme::RADIUS))
+                .px(px(if self.compact { 10.0 } else { 12.0 }))
+                .py(px(if self.compact { 7.0 } else { 10.0 }))
+                .when(self.compact, |d| d.text_size(px(0.9 * theme::REM)))
+                .rounded(px(if self.compact { theme::RADIUS_SM } else { theme::RADIUS }))
                 .border_1()
-                .border_color(if focused {
+                .border_color(if self.framed || self.compact {
+                    rgb(if self.compact { theme::BG_INPUT } else { theme::BG_ELEVATED })
+                } else if focused {
                     rgb(theme::ACCENT)
                 } else {
                     rgb(theme::BG_INPUT)

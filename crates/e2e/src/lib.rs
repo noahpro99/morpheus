@@ -1179,6 +1179,18 @@ impl App {
         Ok(serde_json::from_value(list).unwrap_or_default())
     }
 
+    /// Wait until the first element matching `selector` has the keyboard.
+    pub async fn wait_for_focus(&mut self, selector: &str, timeout: Duration) -> Result<()> {
+        if gpui() {
+            return self.wait_for(&format!("{selector}[data-focused]"), timeout).await;
+        }
+        let js = format!(
+            "return document.activeElement === document.querySelector({});",
+            js_str(selector)
+        );
+        self.wait_until(timeout, &format!("{selector} focused"), &js).await
+    }
+
     /// Wait until the `index`th radio button or checkbox matching `selector`
     /// is checked.
     pub async fn wait_for_checked(

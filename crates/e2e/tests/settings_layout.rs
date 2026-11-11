@@ -61,13 +61,35 @@ fn visible(selector: &str) -> String {
     )
 }
 
-async fn theme(app: &mut App) -> String {
-    app.eval("return document.documentElement.dataset.theme || '';")
-        .await
-        .expect("theme")
-        .as_str()
-        .unwrap_or_default()
-        .to_owned()
+/// The theme the page has applied (the GPUI app draws the dark one only for
+/// now, so there only the choice is checked: `.theme-option.selected`).
+async fn wait_theme(app: &mut App, key: &str) {
+    app.wait_for(
+        &format!(".theme-option.selected[data-theme={key}]"),
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("theme chosen");
+    if app.is_gpui() {
+        return;
+    }
+    app.wait_for_js(
+        &format!("return document.documentElement.dataset.theme === '{key}';"),
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("theme applied");
+}
+
+async fn bg_chat(app: &mut App) -> Option<serde_json::Value> {
+    if app.is_gpui() {
+        return None;
+    }
+    Some(
+        app.eval("return getComputedStyle(document.documentElement).getPropertyValue('--bg-chat').trim();")
+            .await
+            .expect("colour"),
+    )
 }
 
 #[tokio::test]
@@ -81,12 +103,9 @@ async fn desktop_settings_have_categories_themes_and_notification_defaults() {
     open_settings(&mut app).await;
 
     // About 70% of the window, categories down the side, My Account first.
-    let share = app
-        .eval("return document.querySelector('.settings').getBoundingClientRect().width / innerWidth;")
-        .await
-        .expect("width")
-        .as_f64()
-        .expect("number");
+    let settings = app.bounds(".settings").await.expect("settings box").expect("settings");
+    let window = app.bounds(".shell").await.expect("shell box").expect("shell");
+    let share = settings.w / window.w;
     assert!(
         (0.66..=0.74).contains(&share),
         "settings is {share:.2} of the window"
@@ -114,27 +133,16 @@ async fn desktop_settings_have_categories_themes_and_notification_defaults() {
 
     // Appearance: picking a theme applies it at once.
     page(&mut app, "Appearance").await;
-    let before = app
-        .eval("return getComputedStyle(document.documentElement).getPropertyValue('--bg-chat').trim();")
-        .await
-        .expect("colour");
+    let before = bg_chat(&mut app).await;
     app.click_text(".theme-option", "Light")
         .await
         .expect("pick Light");
-    app.wait_for_js(
-        "return document.documentElement.dataset.theme === 'light';",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("light theme applied");
-    let after = app
-        .eval("return getComputedStyle(document.documentElement).getPropertyValue('--bg-chat').trim();")
-        .await
-        .expect("colour");
-    assert_ne!(before, after, "the chat background changes with the theme");
-    app.wait_for(".theme-option.selected[data-theme=light]", DEFAULT_WAIT)
-        .await
-        .expect("Light marked as chosen");
+    wait_theme(&mut app, "light").await;
+    let after = bg_chat(&mut app).await;
+    assert!(
+        app.is_gpui() || before != after,
+        "the chat background changes with the theme"
+    );
 
     // Notifications: the group-room default saves to the server.
     page(&mut app, "Notifications").await;
@@ -145,9 +153,10 @@ async fn desktop_settings_have_categories_themes_and_notification_defaults() {
     .await
     .expect("current group default shown");
     let was = app
-        .eval("return document.querySelector('.notify-default[data-kind=group] input:checked').value;")
+        .value(".notify-default[data-kind=group] input:checked")
         .await
-        .expect("current default");
+        .expect("current default")
+        .expect("a checked default");
     let other = if was == "all" { "mentions" } else { "all" };
     app.click(&format!(
         ".notify-default[data-kind=group] input[value={other}]"
@@ -167,13 +176,9 @@ async fn desktop_settings_have_categories_themes_and_notification_defaults() {
     app.wait_for(".room", DEFAULT_WAIT)
         .await
         .expect("rooms after restart");
-    app.wait_for_js(
-        "return document.documentElement.dataset.theme === 'light';",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("light theme kept");
     open_settings(&mut app).await;
+    page(&mut app, "Appearance").await;
+    wait_theme(&mut app, "light").await;
     page(&mut app, "Notifications").await;
     app.wait_for(
         &format!(".notify-default[data-kind=group] input[value={other}]:checked"),
@@ -185,7 +190,7 @@ async fn desktop_settings_have_categories_themes_and_notification_defaults() {
     // Put both back for other tests.
     app.click(&format!(
         ".notify-default[data-kind=group] input[value={}]",
-        was.as_str().unwrap_or("all")
+was
     ))
     .await
     .expect("restore default");
@@ -200,13 +205,7 @@ async fn desktop_settings_have_categories_themes_and_notification_defaults() {
     app.click_text(".theme-option", "Dark")
         .await
         .expect("back to Dark");
-    app.wait_for_js(
-        "return document.documentElement.dataset.theme === 'dark';",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("dark again");
-    assert_eq!(theme(&mut app).await, "dark");
+    wait_theme(&mut app, "dark").await;
 }
 
 #[tokio::test]
@@ -275,12 +274,9 @@ async fn settings_open_with_the_search_bar_focused() {
     let mut app = morpheus_e2e::App::launch(&hs).await.expect("launch");
     login(&mut app, "alice").await;
     app.click(".settings-button").await.expect("gear");
-    app.wait_for_js(
-        "return document.activeElement === document.querySelector('.settings .settings-search');",
-        morpheus_e2e::DEFAULT_WAIT,
-    )
-    .await
-    .expect("the search bar focused");
+    app.wait_for_focus(".settings .settings-search", morpheus_e2e::DEFAULT_WAIT)
+        .await
+        .expect("the search bar focused");
     app.type_into(".settings .settings-search", "microphone")
         .await
         .expect("type");

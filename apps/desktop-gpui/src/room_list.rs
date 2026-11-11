@@ -157,7 +157,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         );
     }
     if in_space {
-        name = name.child(icon("chevron-right", 14.0).text_color(rgb(theme::TEXT_FAINT)));
+        name = name.child(icon("chevron-down", 14.0).text_color(rgb(theme::TEXT_FAINT)));
     }
     let mut header = div()
         .h(px(48.0))
@@ -185,7 +185,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                         .text_color(rgb(theme::TEXT))
                 })
                 .cursor_pointer()
-                .child(icon("plus", 18.0))
+                .child(icon("plus", 18.0).text_color(rgb(theme::TEXT_MUTED)))
                 .on_click(cx.listener(|this, _, _, cx| this.open_room_dialog(RoomDialogKind::Create, cx)))
                 .e2e("button", "ghost create-room-button")
                 .attr("title", "Create room"),

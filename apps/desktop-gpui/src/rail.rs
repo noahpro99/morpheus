@@ -349,7 +349,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                 s.border_color(rgb(theme::ACCENT_STRONG))
                     .text_color(rgb(theme::ACCENT))
             })
-            .child(icon("plus", 22.0))
+            .child(icon("plus", 22.0).text_color(rgb(theme::TEXT_FAINT)))
             .on_click(cx.listener(|this, _, _, cx| {
                 this.open_room_dialog(RoomDialogKind::CreateSpace(None), cx)
             }))

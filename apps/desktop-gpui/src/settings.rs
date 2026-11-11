@@ -16,9 +16,11 @@ use gpui::{
     prelude::*, px, relative, rgb, rgba,
 };
 use morpheus_core::{
-    Device, EncryptionStatus, QrImage, Session, VerificationActions, VerificationHandle,
+    Device, EncryptionStatus, NotifyMode, QrImage, Session, VerificationActions, VerificationHandle,
     VerificationStep,
 };
+
+mod pages;
 
 use crate::{
     e2e::E2eExt as _,
@@ -27,8 +29,12 @@ use crate::{
     theme,
     view_model::{
         keys::{
-            self, RecoveryForm, RecoveryOffer, SettingsFocus, SettingsPage, recovery_key_ready,
-            recovery_offer, status_lines,
+            self, RecoveryForm, RecoveryOffer, SettingsFocus, recovery_key_ready, recovery_offer,
+            status_lines,
+        },
+        settings::{
+            Autostart, NotificationContent, SettingEntry, SettingsPage, Theme, find_settings,
+            notification_content, notifications_enabled, read_autostart,
         },
         verification::{self, Action, Kind, Tone, VERIFIED_NOTE_SECS},
     },
@@ -39,6 +45,11 @@ use crate::{
 pub struct KeysChanged;
 
 impl EventEmitter<KeysChanged> for SettingsView {}
+
+/// A theme was picked: the shell keeps it in the account's prefs.
+pub struct ThemeChosen(pub Theme);
+
+impl EventEmitter<ThemeChosen> for SettingsView {}
 
 /// A verification flow as the window shows it: the core's steps, mirrored
 /// as they come, and the actions that drive it.
@@ -68,6 +79,21 @@ pub struct SettingsView {
     focus_key: bool,
     /// Opened from the Secure Backup offer: set it up once the status is in.
     set_up_when_ready: bool,
+    /// The search field, and the setting a search opened (flashing).
+    search: Entity<TextInput>,
+    highlight: Option<&'static str>,
+    /// The defaults for direct messages (0) and group rooms (1), as the
+    /// server has them, and what saving them said.
+    notify_defaults: [Option<NotifyMode>; 2],
+    notify_notes: [Option<Result<&'static str, String>>; 2],
+    /// This device's notification settings, and the autostart entry.
+    on_here: bool,
+    content: NotificationContent,
+    autostart: Option<Autostart>,
+    startup_note: Option<String>,
+    /// The theme in the account's prefs (the shell tells us).
+    pub theme: Theme,
+    data_dir: std::path::PathBuf,
 }
 
 impl SettingsView {
@@ -77,6 +103,19 @@ impl SettingsView {
         });
         cx.subscribe(&key_input, |this, _, _: &Submit, cx| this.submit_key(cx))
             .detach();
+        let search = cx.new(|cx| {
+            TextInput::new("settings-search", "Search settings", false, "", cx)
+                .with_class("settings-search")
+                .compact()
+        });
+        cx.subscribe(&search, |this, _, _: &Submit, cx| {
+            let query = this.search.read(cx).value().to_owned();
+            if let Some(entry) = find_settings(&query, true).first() {
+                this.show_setting(entry, cx);
+            }
+        })
+        .detach();
+        let data_dir = crate::data_dir();
         if let Some(session) = session.clone() {
             // Incoming requests from the user's other devices pop the window.
             let requests = session.verification_requests();
@@ -114,6 +153,16 @@ impl SettingsView {
             take_focus: false,
             focus_key: false,
             set_up_when_ready: false,
+            search,
+            highlight: None,
+            notify_defaults: [None, None],
+            notify_notes: [None, None],
+            on_here: true,
+            content: NotificationContent::Full,
+            autostart: None,
+            startup_note: None,
+            theme: Theme::Dark,
+            data_dir,
         }
     }
 
@@ -127,6 +176,13 @@ impl SettingsView {
         } else {
             SettingsPage::Account
         });
+        self.search.update(cx, |input, cx| input.set_value("", cx));
+        self.highlight = None;
+        self.on_here = notifications_enabled(&self.data_dir);
+        self.content = notification_content(&self.data_dir);
+        self.autostart = read_autostart();
+        self.startup_note = None;
+        self.load_notify_defaults(cx);
         self.take_focus = true;
         self.focus_key = focus == SettingsFocus::RecoveryKey;
         self.set_up_when_ready = focus == SettingsFocus::SetUpBackup;
@@ -422,15 +478,21 @@ fn note(text: &str, class: &'static str, color: u32) -> impl IntoElement {
 const OK: u32 = 0x4fd1a5;
 const WARN: u32 = 0xffb020;
 
-fn section(title: &str, anchor: &'static str, children: Vec<gpui::AnyElement>) -> impl IntoElement {
+fn section(
+    title: &str,
+    anchor: &'static str,
+    children: Vec<gpui::AnyElement>,
+    highlighted: bool,
+) -> impl IntoElement {
     div()
         .flex()
         .flex_col()
-        .gap(px(8.0))
+        .gap(px(4.0))
         .px(px(20.0))
         .py(px(16.0))
         .border_b_1()
         .border_color(rgb(theme::BG_ELEVATED))
+        .when(highlighted, |d| d.bg(rgba(theme::ACCENT_TINT)))
         .child(
             div()
                 .mb(px(8.0))
@@ -442,7 +504,14 @@ fn section(title: &str, anchor: &'static str, children: Vec<gpui::AnyElement>) -
                 .text(title),
         )
         .children(children)
-        .e2e("section", "settings-section")
+        .e2e(
+            "section",
+            if highlighted {
+                "settings-section setting-highlight"
+            } else {
+                "settings-section"
+            },
+        )
         .attr("data-setting", anchor)
 }
 
@@ -783,8 +852,8 @@ impl SettingsView {
             ],
         };
         vec![
-            section("Encryption", "encryption", encryption).into_any_element(),
-            section("Devices", "sessions", devices).into_any_element(),
+            section("Encryption", "encryption", encryption, self.hl("encryption")).into_any_element(),
+            section("Devices", "sessions", devices, self.hl("sessions")).into_any_element(),
         ]
     }
 
@@ -811,7 +880,7 @@ impl SettingsView {
                 .unwrap_or_default();
             children.push(muted(&format!("This device: {device}"), "muted").into_any_element());
         }
-        vec![section("Account", "account", children).into_any_element()]
+        vec![section("Account", "account", children, self.hl("account")).into_any_element()]
     }
 }
 
@@ -868,13 +937,53 @@ impl Render for SettingsView {
         }
         if self.take_focus {
             self.take_focus = false;
-            window.focus(&self.focus);
+            if self.focus_key || self.flow.is_some() {
+                window.focus(&self.focus);
+            } else {
+                // Settings opens with the search bar ready to type in.
+                self.search.read(cx).focus(window);
+            }
         }
         if self.focus_key && self.page == SettingsPage::Security && self.flow.is_none() {
             self.focus_key = false;
             self.key_input.read(cx).focus(window);
         }
         let page = self.page;
+        let query = self.search.read(cx).value().to_owned();
+        let searching = !query.trim().is_empty();
+        let mut results: Vec<gpui::AnyElement> = find_settings(&query, true)
+            .into_iter()
+            .map(|entry: &'static SettingEntry| {
+                div()
+                    .id(ElementId::from(SharedString::from(format!("result-{}", entry.anchor))))
+                    .flex()
+                    .items_center()
+                    .gap(px(10.0))
+                    .w_full()
+                    .px(px(10.0))
+                    .py(px(8.0))
+                    .rounded(px(theme::RADIUS_SM))
+                    .cursor_pointer()
+                    .hover(|s| s.bg(rgba(theme::BG_HOVER)))
+                    .child(icon(entry.page.glyph(), 18.0).text_color(rgb(theme::TEXT)))
+                    .child(div().child(entry.label).e2e("span", "").text(entry.label))
+                    .child(
+                        div()
+                            .ml_auto()
+                            .text_size(px(0.75 * theme::REM))
+                            .text_color(rgb(theme::TEXT_MUTED))
+                            .child(entry.page.label())
+                            .e2e("span", "settings-result-page muted")
+                            .text(entry.page.label()),
+                    )
+                    .on_click(cx.listener(move |this, _, _, cx| this.show_setting(entry, cx)))
+                    .e2e("button", "settings-result")
+                    .into_any_element()
+            })
+            .collect();
+        if searching && results.is_empty() {
+            results.push(muted("No setting matches.", "muted settings-no-result").into_any_element());
+        }
         let nav = div()
             .flex()
             .flex_col()
@@ -897,7 +1006,9 @@ impl Render for SettingsView {
                     .e2e("h2", "")
                     .text("Settings"),
             )
-            .children(SettingsPage::ALL.into_iter().map(|item| {
+            .child(div().mb(px(8.0)).child(self.search.clone()))
+            .children(results)
+            .children(SettingsPage::listed(true).into_iter().filter(|_| !searching).map(|item| {
                 let selected = item == page;
                 div()
                     .id(ElementId::from(SharedString::from(format!("nav-{}", item.label()))))
@@ -906,7 +1017,7 @@ impl Render for SettingsView {
                     .gap(px(10.0))
                     .w_full()
                     .px(px(10.0))
-                    .py(px(8.0))
+                    .py(px(6.5))
                     .rounded(px(theme::RADIUS_SM))
                     .cursor_pointer()
                     .text_color(rgb(if selected { theme::TEXT } else { theme::TEXT_MUTED }))
@@ -933,6 +1044,11 @@ impl Render for SettingsView {
         let body = match page {
             SettingsPage::Account => self.account_page(),
             SettingsPage::Security => self.security_page(cx),
+            SettingsPage::Notifications => self.notifications_page(cx),
+            SettingsPage::Appearance => self.appearance_page(cx),
+            SettingsPage::VoiceVideo => self.voice_page(),
+            SettingsPage::Startup => self.startup_page(cx),
+            SettingsPage::Help => self.help_page(cx),
         };
         let header = div()
             .flex()
