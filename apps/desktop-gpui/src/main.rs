@@ -1,24 +1,24 @@
-//! Morpheus desktop, drawn with GPUI. Scaffold: a window with the theme's
-//! chat background and the bundled fonts.
+//! Morpheus desktop, drawn with GPUI. The window, the bundled fonts and the
+//! root view: a splash while the saved session restores, then the sign-in
+//! screen or the room list.
 
-use std::borrow::Cow;
+use std::{borrow::Cow, path::PathBuf};
 
 mod e2e;
+mod input;
+mod login;
+mod room_list;
+mod theme;
 
 use e2e::E2eExt as _;
 use gpui::{
-    App, Application, Bounds, Context, IntoElement, Render, SharedString, TitlebarOptions, Window,
-    WindowBounds, WindowOptions, div, prelude::*, px, rgb, size,
+    App, Application, AssetSource, Bounds, Context, Entity, IntoElement, Render, SharedString,
+    TitlebarOptions, Window, WindowBounds, WindowOptions, div, prelude::*, px, rgb, size, svg,
 };
+use morpheus_core::Core;
 
-/// Theme tokens (dark), from `crates/ui/assets/theme.css`.
-mod theme {
-    pub const BG_CHAT: u32 = 0x1a1e29;
-    pub const TEXT: u32 = 0xe6e9f2;
-}
-
-/// The brand label's text.
-const BRAND: &str = "Morpheus";
+use login::{Login, SignedIn};
+use room_list::RoomList;
 
 /// Static instances of Inter and Unbounded (GPUI cannot read the woff2
 /// variable fonts the Dioxus app uses), made from `crates/ui/assets/fonts`.
@@ -31,29 +31,109 @@ const FONTS: &[&[u8]] = &[
     include_bytes!("../assets/fonts/Unbounded-700.ttf"),
 ];
 
-struct Root;
+/// Files `svg().path(..)` loads: the logo.
+struct Assets;
+
+impl AssetSource for Assets {
+    fn load(&self, path: &str) -> anyhow::Result<Option<Cow<'static, [u8]>>> {
+        Ok(match path {
+            "logo.svg" => Some(Cow::Borrowed(
+                include_bytes!("../../../crates/ui/assets/logo.svg").as_slice(),
+            )),
+            _ => None,
+        })
+    }
+
+    fn list(&self, _path: &str) -> anyhow::Result<Vec<SharedString>> {
+        Ok(Vec::new())
+    }
+}
+
+enum Screen {
+    /// The saved session is being restored.
+    Splash,
+    Login(Entity<Login>),
+    Rooms(Entity<RoomList>),
+}
+
+struct Root {
+    core: Core,
+    homeserver: String,
+    screen: Screen,
+}
+
+impl Root {
+    fn new(core: Core, homeserver: String, cx: &mut Context<Self>) -> Self {
+        let restoring = core.restore_session();
+        cx.spawn(async move |this, cx| {
+            let result = restoring.await;
+            cx.update(|cx| {
+                this.update(cx, |this, cx| match result {
+                    Ok(Some(session)) => this.signed_in(session, cx),
+                    Ok(None) => this.show_login(None, cx),
+                    Err(err) => this.show_login(Some(err.to_string()), cx),
+                })
+            })
+            .ok();
+        })
+        .detach();
+        Self {
+            core,
+            homeserver,
+            screen: Screen::Splash,
+        }
+    }
+
+    fn show_login(&mut self, restore_error: Option<String>, cx: &mut Context<Self>) {
+        let (core, homeserver) = (self.core.clone(), self.homeserver.clone());
+        let Some(window) = cx.windows().first().copied() else {
+            return;
+        };
+        let login = window
+            .update(cx, |_, window, cx| {
+                let login =
+                    cx.new(|cx| Login::new(core, &homeserver, restore_error, window, cx));
+                login
+            })
+            .ok();
+        if let Some(login) = login {
+            cx.subscribe(&login, |this: &mut Root, _, event: &SignedIn, cx| {
+                this.signed_in(event.0.clone(), cx);
+            })
+            .detach();
+            self.screen = Screen::Login(login);
+        }
+        cx.notify();
+    }
+
+    fn signed_in(&mut self, session: morpheus_core::Session, cx: &mut Context<Self>) {
+        self.screen = Screen::Rooms(cx.new(|cx| RoomList::new(session, cx)));
+        cx.notify();
+    }
+}
 
 impl Render for Root {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        let base = div()
+            .size_full()
+            .bg(rgb(theme::BG_CHAT))
+            .font_family("Inter")
+            .text_size(px(theme::REM))
+            .text_color(rgb(theme::TEXT));
         e2e::frame(
-            div()
-                .size_full()
-                .bg(rgb(theme::BG_CHAT))
-                .flex()
-                .items_center()
-                .justify_center()
-                .font_family("Inter")
-                .text_color(rgb(theme::TEXT))
-                .child(
-                    div()
-                        .font_family("Unbounded")
-                        .font_weight(gpui::FontWeight::SEMIBOLD)
-                        .text_size(px(36.0))
-                        .child(BRAND)
-                        .e2e("h1", "brand")
-                        .text(BRAND),
-                )
-                .e2e("div", "app"),
+            match &self.screen {
+                // The logo, no name.
+                Screen::Splash => base.flex().items_center().justify_center().child(
+                    svg()
+                        .path("logo.svg")
+                        .size(px(160.0))
+                        .text_color(rgb(theme::ACCENT))
+                        .e2e("svg", "splash-logo"),
+                ),
+                Screen::Login(login) => base.child(login.clone()),
+                Screen::Rooms(rooms) => base.child(rooms.clone()),
+            }
+            .e2e("div", "app"),
         )
     }
 }
@@ -79,8 +159,37 @@ fn window_size() -> gpui::Size<gpui::Pixels> {
     size(px(w), px(h))
 }
 
+/// `MORPHEUS_DATA_DIR`, else the platform's data directory (as the Dioxus app).
+fn data_dir() -> PathBuf {
+    if let Some(dir) = std::env::var_os("MORPHEUS_DATA_DIR") {
+        return PathBuf::from(dir);
+    }
+    directories::ProjectDirs::from("dev", "morpheus", "Morpheus")
+        .map(|dirs| dirs.data_dir().to_owned())
+        .unwrap_or_else(|| std::env::temp_dir().join("morpheus"))
+}
+
+/// What the sign-in form suggests: `MORPHEUS_HOMESERVER`, else the dev server
+/// in test builds and matrix.org otherwise.
+fn default_homeserver() -> String {
+    std::env::var("MORPHEUS_HOMESERVER").unwrap_or_else(|_| {
+        if cfg!(feature = "e2e") {
+            "http://localhost:8008".into()
+        } else {
+            "matrix.org".into()
+        }
+    })
+}
+
 fn main() {
-    Application::new().run(|cx: &mut App| {
+    let core = match Core::new(data_dir()) {
+        Ok(core) => core,
+        Err(err) => {
+            eprintln!("morpheus-gpui: starting the core failed: {err}");
+            std::process::exit(1);
+        }
+    };
+    Application::new().with_assets(Assets).run(move |cx: &mut App| {
         if let Err(e) = cx
             .text_system()
             .add_fonts(FONTS.iter().map(|f| Cow::Borrowed(*f)).collect())
@@ -100,7 +209,7 @@ fn main() {
             },
             |window, cx| {
                 window.set_window_title(TITLE);
-                cx.new(|_| Root)
+                cx.new(|cx| Root::new(core, default_homeserver(), cx))
             },
         );
         if let Err(e) = opened {

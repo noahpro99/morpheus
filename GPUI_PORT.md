@@ -108,7 +108,7 @@ Progress is recorded here: tick tasks off and note what each left undone.
 
 - [x] 1 Scaffold — window "Morpheus" on --bg-chat, centred label in Unbounded; fonts are static TTFs made from the woff2 (GPUI cannot read woff2); xattr patched in vendor/xattr (libc dropped ENOATTR); title needs window.set_window_title on Wayland
 - [x] 2 Bridge and driver — `e2e` feature: `.e2e("tag","classes").attr().text().focusable()` wrappers (see src/e2e/mod.rs) rebuild a tree per frame from `e2e::frame(root)`; selector subset matcher (21 unit tests); bridge ops count/texts/text/value/bounds/click/right_click/type/press/submit with contains/exact/index filters, input injected via Window::dispatch_event and dispatch_keystroke (needs vendor/gpui: one-line pub patch of DispatchEventResult); driver maps App methods under MORPHEUS_E2E_UI=gpui, eval/wait_for_js/reveal* error "needs porting". Undone: `deferred` popups are tagged without a parent; `type` needs an input widget (task 3) and is untested; submit clicks a descendant `[type=submit]`
-- [ ] 3 Sign-in
+- [x] 3 Sign-in — src/login.rs (form.login, homeserver probe, SSO, "Back to" button, errors as Dioxus), src/input.rs (own minimal TextInput: typing, backspace/delete, arrows, Ctrl+A, password mask, Enter; no IME or clipboard; gpui-component not used), session restore at startup behind a logo splash, src/room_list.rs stub (`.room` per joined room); bridge `next_frame` now waits for a frame after the dispatch; tests/gpui_login.rs shares account.rs `login`. Undone: Tab between fields, IME/clipboard, SSO-return config
 - [ ] 4 Shell and room list
 - [ ] 5 Timeline (read)
 - [ ] 6 Composer

@@ -7171,8 +7171,10 @@ name = "morpheus-desktop-gpui"
 version = "0.1.4"
 dependencies = [
  "anyhow",
+ "directories",
  "futures",
  "gpui",
+ "morpheus-core",
  "serde",
  "serde_json",
 ]
