@@ -1695,6 +1695,53 @@ fn open_voice_settings_item() -> super::context_menu::MenuItem {
     .icon(crate::icons::SETTINGS)
 }
 
+/// Answer the call in `room_id` from outside the app (the phone's incoming
+/// call screen): open the room and join, as the ringing card's Answer does.
+/// The app may have just started: the room is given a moment to arrive.
+pub async fn answer_from_outside(room_id: String) {
+    let Ok(room_id) = OwnedRoomId::try_from(room_id) else {
+        return;
+    };
+    let rooms = consume_context::<super::shell::Rooms>();
+    let mut rings = consume_context::<Rings>();
+    let mut name = None;
+    for _ in 0..50 {
+        name = rooms
+            .peek()
+            .iter()
+            .find(|r| r.id == room_id)
+            .map(|r| r.name.clone());
+        if name.is_some() {
+            break;
+        }
+        morpheus_core::rt::sleep(std::time::Duration::from_millis(200)).await;
+    }
+    rings.with_mut(|list| list.0.retain(|r| r.room_id != room_id));
+    go_to(room_id.clone());
+    join_call(
+        consume_context::<Session>(),
+        room_id.clone(),
+        name.unwrap_or_else(|| room_id.to_string()),
+    );
+}
+
+/// Decline the ring `notification` in `room_id` from outside the app.
+pub fn decline_from_outside(room_id: String, notification: String) {
+    let (Ok(room_id), Ok(notification)) = (
+        OwnedRoomId::try_from(room_id),
+        morpheus_core::OwnedEventId::try_from(notification),
+    ) else {
+        return;
+    };
+    consume_context::<Rings>().with_mut(|list| list.0.retain(|r| r.notification != notification));
+    let future = consume_context::<Session>().decline_call(room_id, notification);
+    spawn(async move {
+        if let Err(err) = future.await {
+            report("declining the call", &err);
+        }
+    });
+}
+
 #[cfg(test)]
 #[allow(clippy::expect_used)]
 mod tests {
@@ -1756,51 +1803,4 @@ mod tests {
         let alone = [dm("!new:x", "@bob:x", &[]), dm("!old:x", "@bob:x", &[])];
         assert_eq!(call_room_for(&asked, &alone), None);
     }
-}
-
-/// Answer the call in `room_id` from outside the app (the phone's incoming
-/// call screen): open the room and join, as the ringing card's Answer does.
-/// The app may have just started: the room is given a moment to arrive.
-pub async fn answer_from_outside(room_id: String) {
-    let Ok(room_id) = OwnedRoomId::try_from(room_id) else {
-        return;
-    };
-    let rooms = consume_context::<super::shell::Rooms>();
-    let mut rings = consume_context::<Rings>();
-    let mut name = None;
-    for _ in 0..50 {
-        name = rooms
-            .peek()
-            .iter()
-            .find(|r| r.id == room_id)
-            .map(|r| r.name.clone());
-        if name.is_some() {
-            break;
-        }
-        morpheus_core::rt::sleep(std::time::Duration::from_millis(200)).await;
-    }
-    rings.with_mut(|list| list.0.retain(|r| r.room_id != room_id));
-    go_to(room_id.clone());
-    join_call(
-        consume_context::<Session>(),
-        room_id.clone(),
-        name.unwrap_or_else(|| room_id.to_string()),
-    );
-}
-
-/// Decline the ring `notification` in `room_id` from outside the app.
-pub fn decline_from_outside(room_id: String, notification: String) {
-    let (Ok(room_id), Ok(notification)) = (
-        OwnedRoomId::try_from(room_id),
-        morpheus_core::OwnedEventId::try_from(notification),
-    ) else {
-        return;
-    };
-    consume_context::<Rings>().with_mut(|list| list.0.retain(|r| r.notification != notification));
-    let future = consume_context::<Session>().decline_call(room_id, notification);
-    spawn(async move {
-        if let Err(err) = future.await {
-            report("declining the call", &err);
-        }
-    });
 }
