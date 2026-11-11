@@ -106,7 +106,7 @@ Progress is recorded here: tick tasks off and note what each left undone.
 
 ## Progress
 
-- [ ] 1 Scaffold
+- [x] 1 Scaffold — window "Morpheus" on --bg-chat, centred label in Unbounded; fonts are static TTFs made from the woff2 (GPUI cannot read woff2); xattr patched in vendor/xattr (libc dropped ENOATTR); title needs window.set_window_title on Wayland
 - [ ] 2 Bridge and driver
 - [ ] 3 Sign-in
 - [ ] 4 Shell and room list
