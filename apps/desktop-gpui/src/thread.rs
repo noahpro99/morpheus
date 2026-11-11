@@ -29,6 +29,12 @@ pub enum ThreadEvent {
     Sender(Box<Message>, Point<Pixels>),
     /// Someone's picture or name right-clicked: their member menu.
     SenderMenu(Box<Message>, Point<Pixels>),
+    /// A right click on one of the replies.
+    Menu(Box<Message>, Point<Pixels>),
+    /// A reply's "more reactions" button.
+    Picker(Box<Message>, Point<Pixels>),
+    /// A reply's bin; true when Shift skipped the question.
+    Delete(Box<Message>, bool),
     /// A background action failed: what it was, and why.
     Failed(&'static str, String),
 }
@@ -41,6 +47,7 @@ pub struct ThreadPanel {
     row: Arc<MessageRow>,
     timeline: Entity<TimelineView>,
     composer: Entity<Composer>,
+    handle: Option<morpheus_core::TimelineHandle>,
     avatars: Avatars,
     nickname: Option<String>,
 }
@@ -71,6 +78,10 @@ impl ThreadPanel {
                 _ => {}
             });
             match event {
+                TimelineEvent::Opened(handle) => this.handle = Some(handle.clone()),
+                TimelineEvent::Menu(message, at) => cx.emit(ThreadEvent::Menu(message.clone(), *at)),
+                TimelineEvent::Picker(message, at) => cx.emit(ThreadEvent::Picker(message.clone(), *at)),
+                TimelineEvent::Delete(message, skip) => cx.emit(ThreadEvent::Delete(message.clone(), *skip)),
                 TimelineEvent::Sender(message, at) => {
                     cx.emit(ThreadEvent::Sender(message.clone(), *at))
                 }
@@ -80,7 +91,6 @@ impl ThreadPanel {
                 TimelineEvent::Failed(what, err) => cx.emit(ThreadEvent::Failed(what, err.clone())),
                 _ => {}
             }
-            let _ = this;
         })
         .detach();
         let shared = Arc::new(nicknames.clone());
@@ -92,8 +102,14 @@ impl ThreadPanel {
             root,
             timeline,
             composer,
+            handle: None,
             avatars: Avatars::default(),
         }
+    }
+
+    /// The replies' timeline, and its handle once open: what a menu acts on.
+    pub fn timeline(&self) -> (Entity<TimelineView>, Option<morpheus_core::TimelineHandle>) {
+        (self.timeline.clone(), self.handle.clone())
     }
 
     /// Your nicknames changed.

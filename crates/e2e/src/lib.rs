@@ -1366,6 +1366,27 @@ impl App {
         self.eval(&js).await.map(drop)
     }
 
+    /// [`Self::click_in_message`] with Shift held down (Shift-click on the
+    /// bin deletes without asking).
+    pub async fn shift_click_in_message(&mut self, body: &str, selector: &str) -> Result<()> {
+        if gpui() {
+            let extra = json!({ "within": ".message", "within_contains": body, "within_in": ".body", "modifiers": ["shift"] });
+            return self.op("click", selector, extra).await.map(drop);
+        }
+        let js = format!(
+            "const scope = [...document.querySelectorAll('.message')].find(el => el.querySelector('.body')?.textContent.includes({})); \
+             if (!scope) throw new Error('no message with ' + {}); \
+             const el = scope.querySelector({}); \
+             if (!el) throw new Error('no ' + {} + ' inside it'); \
+             el.dispatchEvent(new MouseEvent('click', {{ bubbles: true, cancelable: true, shiftKey: true }}));",
+            js_str(body),
+            js_str(body),
+            js_str(selector),
+            js_str(selector),
+        );
+        self.eval(&js).await.map(drop)
+    }
+
     /// A file pasted into the message box (`dropped` false) or dropped on
     /// the chat (`dropped` true), as the clipboard or a drag would deliver it.
     pub async fn attach_file(

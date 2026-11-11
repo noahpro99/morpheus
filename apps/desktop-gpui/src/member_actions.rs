@@ -154,7 +154,7 @@ impl Shell {
                 return;
             };
             if let PickerEvent::Picked(emoji) = event
-                && let Some((_, timeline)) = &this.timeline
+                && let Some((timeline, _)) = this.active_timeline(cx)
             {
                 timeline.update(cx, |timeline, cx| timeline.react(message, emoji.clone(), cx));
             }

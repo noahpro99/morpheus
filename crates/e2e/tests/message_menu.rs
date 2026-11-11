@@ -356,23 +356,25 @@ async fn the_right_clicked_message_stays_highlighted() {
     let mut app = App::launch(&hs).await.expect("launch");
     login_and_open(&mut app, "alice", "random").await;
     let row = send_fresh(&mut app, "highlight me").await;
-    let background =
-        format!("const row = {row}; return row ? getComputedStyle(row).backgroundColor : null;");
-    let before = app.eval(&background).await.expect("before");
+    // The row carries `data-menu-open` while its menu is open (the style
+    // that highlights it hangs on it).
+    app.wait_for_count(".message[data-menu-open]", 0, DEFAULT_WAIT)
+        .await
+        .expect("not highlighted before");
     open_menu_on(&mut app, &row).await;
-    let during = app.eval(&background).await.expect("during");
-    assert_ne!(during, before, "not highlighted while its menu is open");
+    app.wait_for_text(".message[data-menu-open] .body", &row, DEFAULT_WAIT)
+        .await
+        .expect("highlighted while its menu is open");
+    assert_eq!(
+        app.count(".message[data-menu-open]").await.expect("count"),
+        1,
+        "only the right-clicked message"
+    );
     app.press("body", "Escape").await.expect("close");
     menu_closed(&mut app).await;
-    app.wait_for_js(
-        &format!(
-            "return JSON.stringify((() => {{ {background} }})()) === {};",
-            serde_json::to_string(&before.to_string()).expect("json")
-        ),
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("the highlight goes with the menu");
+    app.wait_for_count(".message[data-menu-open]", 0, DEFAULT_WAIT)
+        .await
+        .expect("the highlight goes with the menu");
 }
 
 /// The hover bar's "more" button opens the full emoji picker: every emoji in

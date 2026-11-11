@@ -139,6 +139,8 @@ pub struct TimelineView {
     jump: Option<(String, u32)>,
     /// The message just jumped to, glowing for a moment (unique ID).
     highlight: Option<String>,
+    /// The message whose right-click menu is open (unique ID).
+    menu_message: Option<String>,
 }
 
 /// Scroll numbers of a list, in px: what a test and the jump button read.
@@ -230,6 +232,7 @@ impl TimelineView {
             thread_root: thread_root.clone(),
             jump: None,
             highlight: None,
+            menu_message: None,
         };
         if let Some(session) = session {
             cx.spawn(async move |this, cx| {
@@ -583,6 +586,14 @@ impl TimelineView {
         None
     }
 
+    /// The message whose menu is open stays highlighted while it is.
+    pub fn set_menu_message(&mut self, id: Option<String>, cx: &mut Context<Self>) {
+        if self.menu_message != id {
+            self.menu_message = id;
+            cx.notify();
+        }
+    }
+
     fn render_row(&mut self, ix: usize, cx: &mut Context<Self>) -> AnyElement {
         let Some(row) = self.rows.get(ix).cloned() else {
             return div().into_any_element();
@@ -593,6 +604,7 @@ impl TimelineView {
         let mut pictures = Pictures {
             keys: self.keys,
             highlight: self.highlight.as_deref() == Some(row.message.unique_id.as_str()),
+            menu_open: self.menu_message.as_deref() == Some(row.message.unique_id.as_str()),
             ..Pictures::default()
         };
         if show_header {

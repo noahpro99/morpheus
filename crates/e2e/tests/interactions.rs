@@ -349,22 +349,12 @@ async fn shift_click_deletes_without_asking() {
     app.wait_for_exact_text(".message.own:not(.pending) .body", &text, DEFAULT_WAIT)
         .await
         .expect("sent");
-    app.eval(&format!(
-        "const msg = [...document.querySelectorAll('.message')].find(m => m.querySelector('.body')?.textContent.includes({})); \
-         msg.querySelector('.action.delete').dispatchEvent(new MouseEvent('click', {{ bubbles: true, cancelable: true, shiftKey: true }})); return true;",
-        serde_json::to_string(&text).expect("json")
-    ))
-    .await
-    .expect("shift-click delete");
-    app.wait_for_js(
-        &format!(
-            "return ![...document.querySelectorAll('.message .body')].some(el => el.textContent.includes({}));",
-            serde_json::to_string(&text).expect("json")
-        ),
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("deleted at once");
+    app.shift_click_in_message(&text, ".actions .action.delete")
+        .await
+        .expect("shift-click delete");
+    app.wait_for_text_gone(".message .body", &text, DEFAULT_WAIT)
+        .await
+        .expect("deleted at once");
     assert_eq!(
         app.count(".confirm-dialog").await.expect("count"),
         0,

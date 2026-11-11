@@ -422,9 +422,14 @@ fn char_keystroke(c: char) -> Keystroke {
 }
 
 /// A pointer click at `(x, y)`: move, press, release.
-fn click(window: &mut gpui::Window, cx: &mut App, (x, y): (f32, f32), button: MouseButton) {
+fn click(
+    window: &mut gpui::Window,
+    cx: &mut App,
+    (x, y): (f32, f32),
+    button: MouseButton,
+    modifiers: Modifiers,
+) {
     let position = point(px(x), px(y));
-    let modifiers = Modifiers::default();
     let _ = window.dispatch_event(
         PlatformInput::MouseMove(MouseMoveEvent {
             position,
@@ -457,9 +462,14 @@ fn click(window: &mut gpui::Window, cx: &mut App, (x, y): (f32, f32), button: Mo
 /// The first half of a click (move, press) and its second (release), apart:
 /// text with links only listens for the release once a frame has been drawn
 /// after the press, as a real click's time between them lets it.
-fn press_at(window: &mut gpui::Window, cx: &mut App, (x, y): (f32, f32), button: MouseButton) {
+fn press_at(
+    window: &mut gpui::Window,
+    cx: &mut App,
+    (x, y): (f32, f32),
+    button: MouseButton,
+    modifiers: Modifiers,
+) {
     let position = point(px(x), px(y));
-    let modifiers = Modifiers::default();
     let _ = window.dispatch_event(
         PlatformInput::MouseMove(MouseMoveEvent {
             position,
@@ -480,12 +490,18 @@ fn press_at(window: &mut gpui::Window, cx: &mut App, (x, y): (f32, f32), button:
     );
 }
 
-fn release_at(window: &mut gpui::Window, cx: &mut App, (x, y): (f32, f32), button: MouseButton) {
+fn release_at(
+    window: &mut gpui::Window,
+    cx: &mut App,
+    (x, y): (f32, f32),
+    button: MouseButton,
+    modifiers: Modifiers,
+) {
     let _ = window.dispatch_event(
         PlatformInput::MouseUp(MouseUpEvent {
             button,
             position: point(px(x), px(y)),
-            modifiers: Modifiers::default(),
+            modifiers,
             click_count: 1,
         }),
         cx,
@@ -622,6 +638,7 @@ async fn act(op: &str, request: &Request, cx: &mut AsyncApp) -> Reply {
         .update(|cx| cx.windows().first().copied())
         .map_err(|err| err.to_string())?
         .ok_or("the app has no window")?;
+    let held = modifiers(&request.modifiers)?;
     let before = with_state(|state| state.frame);
 
     match op {
@@ -631,7 +648,7 @@ async fn act(op: &str, request: &Request, cx: &mut AsyncApp) -> Reply {
             } else {
                 MouseButton::Left
             };
-            cx.update_window(window, |_, window, cx| press_at(window, cx, centre, button))
+            cx.update_window(window, |_, window, cx| press_at(window, cx, centre, button, held))
                 .map_err(|err| err.to_string())?;
             // Let a frame draw between press and release (up to 40 ms).
             let drawn = with_state(|state| state.frame);
@@ -641,7 +658,7 @@ async fn act(op: &str, request: &Request, cx: &mut AsyncApp) -> Reply {
                 }
                 cx.background_executor().timer(Duration::from_millis(5)).await;
             }
-            cx.update_window(window, |_, window, cx| release_at(window, cx, centre, button))
+            cx.update_window(window, |_, window, cx| release_at(window, cx, centre, button, held))
                 .map_err(|err| err.to_string())?;
         }
         "type" => {
@@ -650,7 +667,7 @@ async fn act(op: &str, request: &Request, cx: &mut AsyncApp) -> Reply {
             // its input handler is the window's, then replace its content.
             cx.update_window(window, |_, window, cx| match &focus {
                 Some(handle) => window.focus(handle),
-                None => click(window, cx, centre, MouseButton::Left),
+                None => click(window, cx, centre, MouseButton::Left, Modifiers::default()),
             })
             .map_err(|err| err.to_string())?;
             next_frame(cx, before).await;
