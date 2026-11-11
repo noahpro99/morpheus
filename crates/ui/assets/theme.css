@@ -32,7 +32,10 @@
   --sidebar-w: 248px;
   --members-w: 232px;
 
-  --font: "Inter", "SF Pro Text", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font: "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* The wordmark and headings, as on morpheuschat.org. */
+  --display: "Unbounded Variable", "Inter Variable", system-ui, sans-serif;
+  --moon: #b8c0ff;
   --mono: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace;
 }
 
@@ -98,7 +101,7 @@ h1, h2, h3, p { margin: 0; }
 /* ---- Login --------------------------------------------------------------- */
 
 .login { display: flex; flex-direction: column; gap: 16px; }
-.login h1 { font-size: 1.5rem; }
+.login h1 { font-size: 1.5rem; font-family: var(--display); font-weight: 700; }
 .login label {
   display: flex;
   flex-direction: column;
@@ -2885,3 +2888,11 @@ body.rail-dragging, body.rail-dragging * { cursor: grabbing !important; }
 .share-room:hover { background: var(--bg-hover); }
 .share-room.picked { background: var(--bg-selected); }
 .share-room-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The Morpheus lockup, as morpheuschat.org's header: the glasses cropped
+   tight (2.083em wide) in the moon colour, the name in Unbounded 700, a
+   small ™ in Inter. Sized by the name's font size. */
+.brand { display: inline-flex; align-items: center; gap: 0.5em; font-family: var(--display); font-weight: 700; color: var(--text); line-height: 1; }
+.brand .mark { width: 2.083em; height: auto; color: var(--moon); flex: none; }
+.brand .tm { font-family: var(--font); font-size: 0.5em; font-weight: 500; vertical-align: 0.9em; margin-left: 2px; color: var(--text-muted); }
+.titlebar-title .brand { font-size: 13px; }

@@ -50,6 +50,9 @@ async fn titlebar_title_history_help_and_controls() {
     )
     .await
     .expect("window controls on desktop");
+    app.wait_for(".rail-item[title=\"Engineering\"]", DEFAULT_WAIT)
+        .await
+        .expect("the space on the rail");
     app.click(".rail-item[title=\"Engineering\"]")
         .await
         .expect("space");
@@ -160,6 +163,13 @@ async fn inbox_lists_unread_rooms_and_opens_them() {
         .wait_for_text(".inbox-panel .inbox-item", "random", DEFAULT_WAIT)
         .await
         .expect("random listed");
+    // Other rooms may be unread too (the shared test account): the count now.
+    let unread_before = alice
+        .eval("return document.querySelectorAll('.inbox-panel .inbox-item').length;")
+        .await
+        .expect("inbox items")
+        .as_i64()
+        .unwrap_or(0);
     alice
         .click_text(".inbox-item", "random")
         .await
@@ -179,12 +189,12 @@ async fn inbox_lists_unread_rooms_and_opens_them() {
         .wait_for_text(".message .body", &ping, DEFAULT_WAIT)
         .await
         .expect("bob's ping visible");
-    // Reading the room clears it from the inbox.
+    // Reading the room takes it off the inbox's count.
     alice
         .wait_for_js(
-            "return document.querySelector('.inbox-badge') === null;",
+            &format!("const b = document.querySelector('.inbox-badge'); return !b || parseInt(b.textContent, 10) < {unread_before};"),
             DEFAULT_WAIT,
         )
         .await
-        .expect("badge clears once the room is read");
+        .expect("the badge counts one fewer once the room is read");
 }
