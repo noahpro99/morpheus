@@ -166,14 +166,15 @@ fn window_size() -> gpui::Size<gpui::Pixels> {
     size(px(w), px(h))
 }
 
-/// `MORPHEUS_DATA_DIR`, else the platform's data directory (as the Dioxus app).
+/// `MORPHEUS_DATA_DIR`, else its own platform data directory ("Morpheus GPUI"),
+/// apart from the Dioxus app's so the two never share a store.
 fn data_dir() -> PathBuf {
     if let Some(dir) = std::env::var_os("MORPHEUS_DATA_DIR") {
         return PathBuf::from(dir);
     }
-    directories::ProjectDirs::from("dev", "morpheus", "Morpheus")
+    directories::ProjectDirs::from("dev", "morpheus", "Morpheus GPUI")
         .map(|dirs| dirs.data_dir().to_owned())
-        .unwrap_or_else(|| std::env::temp_dir().join("morpheus"))
+        .unwrap_or_else(|| std::env::temp_dir().join("morpheus-gpui"))
 }
 
 /// What the sign-in form suggests: `MORPHEUS_HOMESERVER`, else the dev server

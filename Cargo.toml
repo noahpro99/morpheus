@@ -2,7 +2,7 @@
 resolver = "3"
 members = ["crates/core", "crates/call", "crates/ui", "crates/e2e", "apps/desktop", "apps/desktop-gpui", "apps/mobile", "apps/web"]
 # `cargo build` / `cargo test` cover desktop by default; mobile builds via `dx`.
-default-members = ["crates/core", "crates/ui", "apps/desktop"]
+default-members = ["crates/core", "apps/desktop-gpui"]
 
 [workspace.package]
 version = "0.1.4"
