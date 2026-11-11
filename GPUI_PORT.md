@@ -102,6 +102,18 @@ instead of JavaScript:
 7. Onward in the order of `crates/e2e/tests` files, each task naming the
    test file(s) it brings to green.
 
+8. **Later: headless e2e.** Run the app on gpui's test platform
+   (`test-support`, `VisualTestContext` in vendor/gpui) with the bridge on
+   top, so e2e tests open no windows. Not before the shell and timeline exist.
+
+Every task also adds `#[gpui::test]` tests (gpui's `test-support` feature,
+as a dev-dependency) for the widgets it builds: headless and fast, alongside
+the e2e acceptance, not replacing it.
+
+Shared test helpers (like `login`) live in a common module that test files
+include, not by including another test file with `#[path]` (that pulls in
+its tests too).
+
 Progress is recorded here: tick tasks off and note what each left undone.
 
 ## Progress
