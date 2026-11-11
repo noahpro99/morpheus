@@ -467,7 +467,7 @@ async fn ring_notifier(session: Session, focus: Focus, data_dir: PathBuf) {
         }
     };
     // Rings declined (here or on another device): their ringtone stops.
-    let declined: Arc<std::sync::Mutex<std::collections::HashSet<String>>> = Arc::default();
+    let declined = morpheus_ui::ringing::Declined::default();
     while let Some(ring) = rings.next().await {
         let call = match ring {
             morpheus_core::Ringing::Incoming(call) => call,
@@ -479,11 +479,18 @@ async fn ring_notifier(session: Session, focus: Focus, data_dir: PathBuf) {
             }
         };
         // The ringtone, window shown or not (the page can't ring from the tray).
-        tokio::spawn(ring_until_answered(
-            session.clone(),
-            call.clone(),
-            declined.clone(),
-        ));
+        {
+            let (session, call, declined) = (session.clone(), call.clone(), declined.clone());
+            tokio::spawn(async move {
+                morpheus_ui::ringing::while_ringing(
+                    &session,
+                    &call,
+                    &declined,
+                    morpheus_ui::sounds::ring_natively,
+                )
+                .await;
+            });
+        }
         if focus.0.load(Ordering::Relaxed)
             || !morpheus_ui::device_prefs::notifications_enabled(&data_dir)
         {
@@ -806,46 +813,6 @@ fn native_sounds(data_dir: PathBuf) {
             .collect();
         let _ = tx.send((samples, rate));
     });
-}
-
-/// Ring for `call` every other second until it stops ringing: its time is
-/// up, it is declined, the caller has left the call, or this account is in
-/// it (answered here or on another device).
-async fn ring_until_answered(
-    session: Session,
-    call: morpheus_core::IncomingCall,
-    declined: Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
-) {
-    let me = session.user_id();
-    let started = std::time::Instant::now();
-    loop {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or_default();
-        if now >= call.rings_until
-            || declined
-                .lock()
-                .is_ok_and(|d| d.contains(call.notification.as_str()))
-        {
-            return;
-        }
-        let in_call = session
-            .call_participants(call.room_id.clone())
-            .await
-            .unwrap_or_default();
-        if me.as_ref().is_some_and(|me| in_call.contains(me)) {
-            return;
-        }
-        // A moment for the caller's own membership to arrive, then: gone,
-        // they gave up.
-        if started.elapsed() > std::time::Duration::from_secs(5) && !in_call.contains(&call.caller)
-        {
-            return;
-        }
-        morpheus_ui::sounds::ring_natively();
-        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-    }
 }
 
 #[cfg(test)]

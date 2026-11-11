@@ -24,17 +24,21 @@ class CallService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        android.util.Log.d("MorpheusCalls", "call service: ${intent?.action}")
         when (intent?.action) {
             STOP -> {
+                CallRinger.callEnded()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
             HANG_UP -> {
+                CallRinger.callEnded()
                 File(File(filesDir, "morpheus").apply { mkdirs() }, "hang_up_call").writeText("")
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
             else -> {
+                CallRinger.callGoing()
                 val room = intent?.getStringExtra("room").orEmpty().ifEmpty { "Call" }
                 val roomId = intent?.getStringExtra("room_id").orEmpty()
                 val notification = build(room, roomId)

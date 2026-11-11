@@ -26,8 +26,10 @@ class PushStartup : ContentProvider() {
             private var done = false
 
             override fun onActivityResumed(activity: Activity) {
+                // The app itself, not the call screen or a pass-through.
+                if (!isMain(activity)) return
                 visible = true
-                stopRinging(activity)
+                CallRinger.appOnScreen(activity)
                 if (done) return
                 done = true
                 askForNotifications(activity)
@@ -41,7 +43,9 @@ class PushStartup : ContentProvider() {
             }
             override fun onActivityStarted(activity: Activity) {}
             override fun onActivityPaused(activity: Activity) {
+                if (!isMain(activity)) return
                 visible = false
+                CallRinger.appLeftScreen(activity)
             }
             override fun onActivityStopped(activity: Activity) {}
             override fun onActivitySaveInstanceState(activity: Activity, state: Bundle) {}
@@ -50,17 +54,8 @@ class PushStartup : ContentProvider() {
         return true
     }
 
-    /**
-     * A ringing call notification loops the ringtone (it is insistent) until
-     * it goes. Once the app is open it rings and answers in its own screen,
-     * so the system's ringing stops: it rang on behind the call before.
-     */
-    private fun stopRinging(activity: Activity) {
-        val manager = activity.getSystemService(NotificationManager::class.java) ?: return
-        manager.activeNotifications
-            .filter { it.notification.channelId == MorpheusPushService.CALL_CHANNEL }
-            .forEach { manager.cancel(it.tag, it.id) }
-    }
+    /** The app's own screen (Dioxus's activity), not one of ours. */
+    private fun isMain(activity: Activity) = activity.javaClass.name == "dev.dioxus.main.MainActivity"
 
     private fun askForNotifications(activity: Activity) {
         if (Build.VERSION.SDK_INT >= 33 &&

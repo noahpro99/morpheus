@@ -22,6 +22,7 @@ static ACTIVE: OnceLock<Mutex<Option<Session>>> = OnceLock::new();
 /// Called for every session that becomes active. Starts the bridge thread
 /// the first time.
 pub fn on_session(session: Session, data_dir: PathBuf) {
+    follow_rings(session.clone());
     write_notices(session.clone(), data_dir.clone());
     let first = ACTIVE.get().is_none();
     let slot = ACTIVE.get_or_init(|| Mutex::new(None));
@@ -141,6 +142,8 @@ pub fn watch_open_room(data_dir: PathBuf, commands: morpheus_ui::AppCommands) {
     let link = data_dir.join("open_link");
     // Shared from another app (`ShareActivity`).
     let share = data_dir.join("share.json");
+    // Answer or Decline on the phone's incoming call (`CallRinger`).
+    let call_action = data_dir.join("call_action");
     // Hang up, from the phone's ongoing call notification (`CallService`).
     let hang_up = data_dir.join("hang_up_call");
     let spawned = std::thread::Builder::new()
@@ -160,6 +163,12 @@ pub fn watch_open_room(data_dir: PathBuf, commands: morpheus_ui::AppCommands) {
                     match morpheus_ui::shared::from_json(&note) {
                         Some(shared) => morpheus_ui::shared::offer(shared),
                         None => tracing::warn!("an empty share; ignored"),
+                    }
+                }
+                if let Some(action) = read(&call_action) {
+                    let _ = std::fs::remove_file(&call_action);
+                    if let Some(command) = call_command(&action) {
+                        commands.send(command);
                     }
                 }
                 if hang_up.exists() {
@@ -351,5 +360,89 @@ fn preview(dir: PathBuf, room_id: String, event_id: String) -> Option<String> {
             tracing::warn!(%err, "previewing a pushed message failed");
             None
         }
+    }
+}
+
+/// `{"action": "answer"|"decline", "room_id", "notification"}`, from the
+/// phone's incoming call (`CallRinger`), as the command it asks for.
+fn call_command(action: &str) -> Option<morpheus_ui::AppCommand> {
+    let value: serde_json::Value = serde_json::from_str(action).ok()?;
+    let room_id = value.get("room_id")?.as_str()?.to_owned();
+    match value.get("action")?.as_str()? {
+        "answer" => Some(morpheus_ui::AppCommand::AnswerCall { room_id }),
+        "decline" => Some(morpheus_ui::AppCommand::DeclineCall {
+            room_id,
+            notification: value.get("notification")?.as_str()?.to_owned(),
+        }),
+        _ => None,
+    }
+}
+
+/// Incoming calls ring as the phone's (`CallRinger`: Android's Telecom, the
+/// call notification and full-screen incoming call) when the app isn't on
+/// screen, until the ring ends here (answered, declined, given up, out of
+/// time; `morpheus_ui::ringing`). On screen, the app's own card rings.
+fn follow_rings(session: Session) {
+    // One follower: a newer session (signed in again, restored) retires
+    // the ones before it, which would ring the same calls twice.
+    static GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let generation = GENERATION.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+    let current = move || GENERATION.load(std::sync::atomic::Ordering::SeqCst) == generation;
+    let spawned = std::thread::Builder::new()
+        .name("morpheus-rings".into())
+        .spawn(move || {
+            let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            else {
+                tracing::warn!("ring runtime failed");
+                return;
+            };
+            runtime.block_on(async move {
+                let mut rings = match session.ring_updates().await {
+                    Ok(rings) => rings,
+                    Err(err) => {
+                        tracing::warn!(%err, "ring subscription failed");
+                        return;
+                    }
+                };
+                tracing::info!("following rings, to ring as the phone's");
+                let declined = morpheus_ui::ringing::Declined::default();
+                while let Some(ring) = rings.next().await {
+                    tracing::info!(?ring, "ring");
+                    if !current() {
+                        return;
+                    }
+                    let call = match ring {
+                        morpheus_core::Ringing::Incoming(call) => call,
+                        morpheus_core::Ringing::Declined { notification, .. } => {
+                            if let Ok(mut declined) = declined.lock() {
+                                declined.insert(notification.to_string());
+                            }
+                            continue;
+                        }
+                    };
+                    let caller = match session.profile(call.caller.clone()).await {
+                        Ok(profile) => profile.name,
+                        Err(_) => call.caller.localpart().to_owned(),
+                    };
+                    let (session, declined) = (session.clone(), declined.clone());
+                    tokio::spawn(async move {
+                        let room = call.room_id.to_string();
+                        tracing::info!(%room, "ringing as the phone's");
+                        crate::android::call_ringer(
+                            "ring",
+                            &[&room, call.notification.as_str(), &caller],
+                        );
+                        morpheus_ui::ringing::while_ringing(&session, &call, &declined, || {})
+                            .await;
+                        tracing::info!(%room, "the ring is over");
+                        crate::android::call_ringer("stop", &[&room]);
+                    });
+                }
+            });
+        });
+    if let Err(err) = spawned {
+        tracing::warn!(%err, "ring thread failed");
     }
 }

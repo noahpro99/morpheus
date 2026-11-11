@@ -13,6 +13,8 @@ publisher = "Morpheus"
 "android.permission.MODIFY_AUDIO_SETTINGS" = { description = "Speaker and earpiece switching in calls" }
 "android.permission.FOREGROUND_SERVICE" = { description = "Keeping a call going while the app is in the background" }
 "android.permission.FOREGROUND_SERVICE_MICROPHONE" = { description = "Keeping your microphone in a call while the app is in the background" }
+"android.permission.MANAGE_OWN_CALLS" = { description = "Calls ring as the phone's: headsets and cars can answer them" }
+"android.permission.USE_FULL_SCREEN_INTENT" = { description = "The incoming call screen, over the lock screen" }
 
 [android]
 # UnifiedPush: the app registers with the phone's push app (Sunup, ntfy, …).

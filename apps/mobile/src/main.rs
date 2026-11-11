@@ -405,6 +405,57 @@ mod android {
         }
     }
 
+    /// `CallRinger.<method>(context, args…)`, every argument a string: the
+    /// phone's own ringing of an incoming call (`ring`: room id, ring's event
+    /// id, caller; `stop`: room id).
+    #[allow(unsafe_code)]
+    pub fn call_ringer(method: &str, args: &[&str]) {
+        let ctx = ndk_context::android_context();
+        // SAFETY: as in `files_dir`.
+        let Ok(vm) = (unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }) else {
+            return;
+        };
+        let Ok(mut env) = vm.attach_current_thread() else {
+            return;
+        };
+        let context = unsafe { JObject::from_raw(ctx.context().cast()) };
+        let told = (|| -> jni::errors::Result<()> {
+            let loader = env
+                .call_method(&context, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])?
+                .l()?;
+            let name = env.new_string("dev.morpheus.mobile.CallRinger")?;
+            let class = env
+                .call_method(
+                    &loader,
+                    "loadClass",
+                    "(Ljava/lang/String;)Ljava/lang/Class;",
+                    &[JValue::Object(&name)],
+                )?
+                .l()?;
+            let strings = args
+                .iter()
+                .map(|arg| env.new_string(arg).map(JObject::from))
+                .collect::<jni::errors::Result<Vec<_>>>()?;
+            let mut values = vec![JValue::Object(&context)];
+            values.extend(strings.iter().map(JValue::Object));
+            let signature = format!(
+                "(Landroid/content/Context;{})V",
+                "Ljava/lang/String;".repeat(args.len())
+            );
+            env.call_static_method(
+                jni::objects::JClass::from(class),
+                method,
+                signature,
+                &values,
+            )?;
+            Ok(())
+        })();
+        if let Err(err) = told {
+            let _ = env.exception_clear();
+            tracing::warn!(%err, method, "call ringer");
+        }
+    }
+
     /// How long a picker may stay open.
     const PICK_WAIT_SECS: u64 = 600;
 
