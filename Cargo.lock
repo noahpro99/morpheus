@@ -7249,6 +7249,7 @@ dependencies = [
  "gpui",
  "jiff",
  "morpheus-core",
+ "morpheus-view-model",
  "ruma-html",
  "serde",
  "serde_json",
@@ -7302,6 +7303,17 @@ dependencies = [
  "serde_json",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "morpheus-view-model"
+version = "0.1.4"
+dependencies = [
+ "emojis",
+ "jiff",
+ "morpheus-core",
+ "ruma-html",
+ "serde_json",
 ]
 
 [[package]]

@@ -589,7 +589,7 @@ mod tests {
 
     #[test]
     fn forward_targets_skip_spaces_and_the_current_room() {
-        let mk = |id: &str, name: &str| crate::model::tests::room(id, name);
+        let mk = |id: &str, name: &str| crate::test_room::room(id, name);
         let mut space = mk("!s:x", "Space");
         space.is_space = true;
         let mut dm = mk("!d:x", "carol");

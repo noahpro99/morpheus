@@ -210,7 +210,7 @@ mod tests {
     use super::*;
 
     fn room(id: &str, name: &str, space: bool, dm: bool, parents: &[&str]) -> RoomSummary {
-        let mut room = crate::model::tests::room(id, name);
+        let mut room = crate::test_room::room(id, name);
         room.is_space = space;
         room.is_dm = dm;
         room.parent_spaces = parents.iter().map(|p| (*p).try_into().unwrap()).collect();

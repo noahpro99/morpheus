@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/call", "crates/ui", "crates/e2e", "apps/desktop", "apps/desktop-gpui", "apps/mobile", "apps/web"]
+members = ["crates/core", "crates/call", "crates/view-model", "crates/ui", "crates/e2e", "apps/desktop", "apps/desktop-gpui", "apps/mobile", "apps/web"]
 # `cargo build` / `cargo test` cover desktop by default; mobile builds via `dx`.
 default-members = ["crates/core", "apps/desktop-gpui"]
 
@@ -14,6 +14,7 @@ repository = "https://github.com/noahpro/morpheus"
 morpheus-core = { path = "crates/core" }
 morpheus-ui = { path = "crates/ui" }
 morpheus-call = { path = "crates/call" }
+morpheus-view-model = { path = "crates/view-model" }
 
 # Shared by every platform; the stores and logins are added per target in
 # crates/core (a browser has IndexedDB, and no local server for SSO).
