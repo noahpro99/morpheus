@@ -46,15 +46,9 @@ async fn a_forbidden_pin_shows_a_toast_that_dismisses_on_click() {
     app.wait_for_exact_text(".message.own:not(.pending) .body", &text, DEFAULT_WAIT)
         .await
         .expect("message sent");
-    let row = format!(
-        "[...document.querySelectorAll('.message.own')].find(m => m.querySelector('.body')?.textContent === {})",
-        serde_json::to_string(&text).expect("json")
-    );
-    app.eval(&format!(
-        "{row}.dispatchEvent(new MouseEvent('contextmenu', {{ bubbles: true, cancelable: true, clientX: 420, clientY: 320 }}));"
-    ))
-    .await
-    .expect("right-click");
+    app.right_click_text(".message.own", &text)
+        .await
+        .expect("right-click");
     app.wait_for_text(".context-item", "Pin message", DEFAULT_WAIT)
         .await
         .expect("menu built");
@@ -65,7 +59,7 @@ async fn a_forbidden_pin_shows_a_toast_that_dismisses_on_click() {
         .await
         .expect("toast shown");
     app.click(".toast").await.expect("dismiss");
-    app.wait_for_js("return !document.querySelector('.toast')", DEFAULT_WAIT)
+    app.wait_for_count(".toast", 0, DEFAULT_WAIT)
         .await
         .expect("toast gone");
 }

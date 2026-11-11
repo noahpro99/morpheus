@@ -57,6 +57,10 @@ struct Request {
     /// `within_contains`, whose text has this in it).
     within: Option<String>,
     within_contains: Option<String>,
+    /// With `within_contains`: the text that counts is that of the
+    /// descendants of the `within` element matching this selector (a
+    /// message's `.body`, not the quote of another message in it).
+    within_in: Option<String>,
     /// The text for `type`.
     text: Option<String>,
     /// The key for `press` (`Enter`, `ArrowDown`, `a`, …).
@@ -207,6 +211,29 @@ fn parse_selector(request: &Request) -> Result<Selector, String> {
 /// The matches of the request's selector that pass its text filters.
 fn matches(tree: &Tree, request: &Request) -> Result<Vec<usize>, String> {
     let selector = parse_selector(request)?;
+    let inner: Option<Vec<usize>> = match &request.within_in {
+        None => None,
+        Some(selector) => Some(Selector::parse(selector)?.select(tree)),
+    };
+    let scope_text = |i: usize| -> String {
+        let Some(inner) = &inner else {
+            return tree.text(i);
+        };
+        inner
+            .iter()
+            .filter(|&&n| {
+                let mut at = n;
+                while let Some(parent) = tree.nodes[at].parent {
+                    if parent == i {
+                        return true;
+                    }
+                    at = parent;
+                }
+                false
+            })
+            .map(|&n| tree.text(n))
+            .collect()
+    };
     let scopes: Option<Vec<usize>> = match &request.within {
         None => None,
         Some(within) => Some(
@@ -217,7 +244,7 @@ fn matches(tree: &Tree, request: &Request) -> Result<Vec<usize>, String> {
                     request
                         .within_contains
                         .as_ref()
-                        .is_none_or(|c| tree.text(i).contains(c))
+                        .is_none_or(|c| scope_text(i).contains(c))
                 })
                 .collect(),
         ),

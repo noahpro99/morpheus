@@ -58,17 +58,25 @@ async fn click_action_until(
 
 /// Click a hover action (`.action.<kind>`) on the message containing `text`.
 async fn click_action(app: &mut App, text: &str, kind: &str) {
-    let js = format!(
-        "const msg = [...document.querySelectorAll('.message')].find(m => m.querySelector('.body')?.textContent.includes({}));
-         if (!msg) throw new Error('no message with that text');
-         const btn = msg.querySelector('.action.{kind}');
-         if (!btn) throw new Error('no {kind} action on that message');
-         btn.click();",
-        serde_json::to_string(text).expect("json"),
-    );
-    app.eval(&js)
+    app.click_in_message(text, &format!(".action.{kind}"))
         .await
         .unwrap_or_else(|e| panic!("{kind} action on {text:?}: {e}"));
+}
+
+/// Wait until some message body contains `text` (or until none does).
+async fn wait_body(app: &mut App, text: &str, present: bool) {
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let bodies = app.texts(".message .body").await.expect("bodies");
+        if bodies.iter().any(|b| b.contains(text)) == present {
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "a message body containing {text:?} should be present: {present}"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
 }
 
 #[tokio::test]
@@ -100,12 +108,11 @@ async fn reply_edit_and_delete_own_messages() {
     app.press(".composer .composer-input", "Enter")
         .await
         .expect("send reply");
-    app.wait_for_js(
-        &format!(
-            "const m = [...document.querySelectorAll('.message:not(.pending)')].find(m => m.textContent.includes({}));
-             return !!m && !!m.querySelector('.reply-quote') && m.querySelector('.reply-quote').textContent.includes('sliding sync');",
-            serde_json::to_string(&reply).expect("json")
-        ),
+    app.wait_for_within(
+        ".message:not(.pending)",
+        &reply,
+        ".reply-quote",
+        Some("sliding sync"),
         DEFAULT_WAIT,
     )
     .await
@@ -142,16 +149,9 @@ async fn reply_edit_and_delete_own_messages() {
     app.press(".composer .composer-input", "Enter")
         .await
         .expect("save edit");
-    app.wait_for_js(
-        &format!(
-            "const m = [...document.querySelectorAll('.message')].find(m => m.textContent.includes({}));
-             return !!m && m.textContent.includes('(edited)');",
-            serde_json::to_string(&edited).expect("json")
-        ),
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("edited marker");
+    app.wait_for_within(".message", &edited, ".body", Some("(edited)"), DEFAULT_WAIT)
+        .await
+        .expect("edited marker");
 
     // Delete asks first, then the row goes at once (undoable from a toast)
     // and becomes a tombstone.
@@ -165,15 +165,7 @@ async fn reply_edit_and_delete_own_messages() {
     app.click(".confirm-dialog button.danger")
         .await
         .expect("confirm");
-    app.wait_for_js(
-        &format!(
-            "return ![...document.querySelectorAll('.message .body')].some(el => el.textContent.includes({}));",
-            serde_json::to_string(&edited).expect("json")
-        ),
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("edited text gone");
+    wait_body(&mut app, &edited, false).await;
     app.wait_for_text(".message .body", "Message deleted", DEFAULT_WAIT)
         .await
         .expect("tombstone");

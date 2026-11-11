@@ -731,11 +731,113 @@ impl App {
         self.eval(&js).await.map(drop)
     }
 
+    /// Right-click the first `selector` element whose text contains `needle`.
+    pub async fn right_click_text(&mut self, selector: &str, needle: &str) -> Result<()> {
+        if gpui() {
+            let extra = json!({ "contains": needle });
+            return self.op("right_click", selector, extra).await.map(drop);
+        }
+        let (sel, text) = (js_str(selector), js_str(needle));
+        let js = format!(
+            "const el = [...document.querySelectorAll({sel})].find(el => el.textContent.includes({text}));
+             if (!el) throw new Error('no element matching ' + {sel} + ' with text ' + {text});
+             const r = el.getBoundingClientRect(); \
+             el.dispatchEvent(new MouseEvent('contextmenu', {{ bubbles: true, cancelable: true, button: 2, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 }}));"
+        );
+        self.eval(&js).await.map(drop)
+    }
+
+    /// The text of every `selector` match inside the `within` elements whose
+    /// text contains `contains` (a message row's reactions, say).
+    pub async fn texts_within(
+        &mut self,
+        within: &str,
+        contains: &str,
+        selector: &str,
+    ) -> Result<Vec<String>> {
+        let list = if gpui() {
+            let extra = json!({ "within": within, "within_contains": contains });
+            self.op("texts", selector, extra).await?
+        } else {
+            let js = format!(
+                "return [...document.querySelectorAll({})].filter(el => el.textContent.includes({})) \
+                 .flatMap(scope => [...scope.querySelectorAll({})].map(el => el.textContent));",
+                js_str(within),
+                js_str(contains),
+                js_str(selector)
+            );
+            self.eval(&js).await?
+        };
+        Ok(serde_json::from_value(list).unwrap_or_default())
+    }
+
+    /// Wait until a `selector` match inside the `within` element containing
+    /// `contains` has text containing `needle`; `None` waits for there to be
+    /// no match at all.
+    pub async fn wait_for_within(
+        &mut self,
+        within: &str,
+        contains: &str,
+        selector: &str,
+        needle: Option<&str>,
+        timeout: Duration,
+    ) -> Result<()> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            let found = self.texts_within(within, contains, selector).await?;
+            let ok = match needle {
+                Some(needle) => found.iter().any(|t| t.contains(needle)),
+                None => found.is_empty(),
+            };
+            if ok {
+                return Ok(());
+            }
+            if Instant::now() >= deadline {
+                bail!(
+                    "timed out after {timeout:?} waiting for {selector} ({needle:?}) inside {within} containing {contains:?} (found {found:?})\n--- app log ---\n{}",
+                    self.log_tail(30)
+                );
+            }
+            sleep(POLL).await;
+        }
+    }
+
     /// Pick `child` from the open menu's `parent` submenu. On a desktop the
     /// submenu is in the page under its row; a phone's sheet opens it in
     /// place when the row is tapped. The child matches by its whole text or
     /// label, else by containing `child`.
     pub async fn click_submenu(&mut self, parent: &str, child: &str) -> Result<()> {
+        if gpui() {
+            // A click moves the pointer onto the row first, which opens the
+            // flyout (as hovering does), and keeps it open.
+            self.op(
+                "click",
+                ".context-menu > .context-item.has-submenu",
+                json!({ "contains": parent }),
+            )
+            .await?;
+            let deadline = Instant::now() + DEFAULT_WAIT;
+            loop {
+                for filter in ["exact", "contains"] {
+                    let extra = json!({
+                        filter: child,
+                        "within": ".context-menu > .context-item.has-submenu",
+                        "within_contains": parent,
+                    });
+                    if self
+                        .op("click", ".context-submenu .context-item", extra)
+                        .await
+                        .is_ok()
+                    {
+                        return Ok(());
+                    }
+                }
+                if Instant::now() >= deadline {
+                    bail!("no item {child:?} in the {parent:?} submenu");
+                }
+                sleep(POLL).await;
+            }
+        }
         let (parent_js, child_js) = (js_str(parent), js_str(child));
         let pick = |items: &str| {
             format!(
@@ -1103,6 +1205,28 @@ impl App {
             js_str(contains),
             js_str(within),
             js_str(contains),
+            js_str(selector),
+            js_str(selector),
+        );
+        self.eval(&js).await.map(drop)
+    }
+
+    /// Click `selector` inside the message whose body (`.body`) contains
+    /// `body`: unlike [`Self::click_within`], not inside a reply that only
+    /// quotes it. Hovers first.
+    pub async fn click_in_message(&mut self, body: &str, selector: &str) -> Result<()> {
+        if gpui() {
+            let extra = json!({ "within": ".message", "within_contains": body, "within_in": ".body" });
+            return self.op("click", selector, extra).await.map(drop);
+        }
+        let js = format!(
+            "const scope = [...document.querySelectorAll('.message')].find(el => el.querySelector('.body')?.textContent.includes({})); \
+             if (!scope) throw new Error('no message with ' + {}); \
+             const el = scope.querySelector({}); \
+             if (!el) throw new Error('no ' + {} + ' inside it'); \
+             el.click();",
+            js_str(body),
+            js_str(body),
             js_str(selector),
             js_str(selector),
         );

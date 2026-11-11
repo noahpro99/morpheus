@@ -34,7 +34,7 @@ async fn login_and_open(app: &mut App, user: &str, room: &str) {
         .expect("composer ready");
 }
 
-/// Send a message and return a JS expression selecting its row.
+/// Send a message and return its text (rows are found by it).
 async fn send_fresh(app: &mut App, tag: &str) -> String {
     let text = format!("{tag} {}", std::process::id());
     app.type_into(".composer .composer-input", &text)
@@ -46,35 +46,29 @@ async fn send_fresh(app: &mut App, tag: &str) -> String {
     app.wait_for_exact_text(".message.own:not(.pending) .body", &text, DEFAULT_WAIT)
         .await
         .expect("message sent");
-    format!(
-        "[...document.querySelectorAll('.message.own')].find(m => m.querySelector('.body')?.textContent === {})",
-        serde_json::to_string(&text).expect("json")
-    )
+    text
 }
 
-async fn open_menu_on(app: &mut App, row_js: &str) {
+async fn open_menu_on(app: &mut App, text: &str) {
     // Retried: the row can be re-rendered (a timeline reset) right after sending.
-    app.wait_for_js(
-        &format!(
-            "const row = {row_js}; if (!row) return false; \
-             row.dispatchEvent(new MouseEvent('contextmenu', {{ bubbles: true, cancelable: true, clientX: 420, clientY: 320 }})); return true;"
-        ),
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("right-click");
-    app.wait_for(".context-menu", DEFAULT_WAIT)
-        .await
-        .expect("menu");
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        if app.right_click_text(".message", text).await.is_ok()
+            && app
+                .wait_for(".context-menu", Duration::from_secs(2))
+                .await
+                .is_ok()
+        {
+            return;
+        }
+        assert!(std::time::Instant::now() < deadline, "no menu on {text:?}");
+    }
 }
 
 async fn menu_closed(app: &mut App) {
-    app.wait_for_js(
-        "return document.querySelector('.context-menu') === null;",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("menu closed");
+    app.wait_for_count(".context-menu", 0, DEFAULT_WAIT)
+        .await
+        .expect("menu closed");
 }
 
 async fn click_submenu(app: &mut App, parent: &str, child: &str) {
@@ -97,12 +91,9 @@ async fn reactions_picker_viewer_and_removal() {
     open_menu_on(&mut app, &row).await;
     click_submenu(&mut app, "Add reaction", "🎉").await;
     menu_closed(&mut app).await;
-    app.wait_for_js(
-        &format!("return [...{row}.querySelectorAll('.reaction.mine')].some(r => r.textContent.includes('🎉'));"),
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("🎉 reaction on the message");
+    app.wait_for_within(".message", &row, ".reaction.mine", Some("🎉"), DEFAULT_WAIT)
+        .await
+        .expect("🎉 reaction on the message");
 
     // View reactions lists the sender.
     open_menu_on(&mut app, &row).await;
@@ -115,12 +106,9 @@ async fn reactions_picker_viewer_and_removal() {
     app.press(".reactions-dialog", "Escape")
         .await
         .expect("escape");
-    app.wait_for_js(
-        "return document.querySelector('.reactions-dialog') === null;",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("dialog closed");
+    app.wait_for_count(".reactions-dialog", 0, DEFAULT_WAIT)
+        .await
+        .expect("dialog closed");
 
     // Remove all my reactions.
     open_menu_on(&mut app, &row).await;
@@ -128,12 +116,9 @@ async fn reactions_picker_viewer_and_removal() {
         .await
         .expect("remove");
     menu_closed(&mut app).await;
-    app.wait_for_js(
-        &format!("return {row}.querySelector('.reaction.mine') === null;"),
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("reaction removed");
+    app.wait_for_within(".message", &row, ".reaction.mine", None, DEFAULT_WAIT)
+        .await
+        .expect("reaction removed");
 
     // Copy message ID is offered; so is Report on someone else's message.
     open_menu_on(&mut app, &row).await;
@@ -142,10 +127,10 @@ async fn reactions_picker_viewer_and_removal() {
         .expect("copy id");
     app.press(".context-menu", "Escape").await.expect("escape");
     // Recent rows may all be ours; scroll up to someone else's message.
-    app.reveal_element(".message:not(.own):not(.system)", DEFAULT_WAIT)
+    app.reveal_element(".message:not(.own):not(.system):not(.skeleton-row)", DEFAULT_WAIT)
         .await
         .expect("another sender's message");
-    app.right_click(".message:not(.own):not(.system)")
+    app.right_click(".message:not(.own):not(.system):not(.skeleton-row)")
         .await
         .expect("other");
     app.wait_for_text(".context-item", "Report message", DEFAULT_WAIT)
@@ -184,29 +169,31 @@ async fn pin_unpin_and_the_pinned_panel() {
     app.wait_for(".pinned-dialog", DEFAULT_WAIT)
         .await
         .expect("panel");
-    app.wait_for_js("return document.querySelector('.pinned-dialog .muted') !== null || document.querySelector('.pinned-item') !== null;", DEFAULT_WAIT)
+    app.wait_for(".pinned-dialog .muted, .pinned-item", DEFAULT_WAIT)
         .await
         .expect("panel loaded");
-    app.eval("[...document.querySelectorAll('.pinned-item')].filter(i => i.textContent.includes('pin me')).forEach(i => i.querySelector('button').click());")
-        .await
-        .expect("sweep");
-    app.wait_for_js("return ![...document.querySelectorAll('.pinned-item')].some(i => i.textContent.includes('pin me'));", DEFAULT_WAIT)
+    for _ in 0..30 {
+        let left = app
+            .texts_within(".pinned-item", "pin me", "button")
+            .await
+            .expect("pinned items");
+        if left.is_empty() {
+            break;
+        }
+        app.click_within(".pinned-item", "pin me", "button")
+            .await
+            .expect("sweep");
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    app.wait_for_within(".pinned-item", "pin me", "button", None, DEFAULT_WAIT)
         .await
         .expect("leftovers unpinned");
     app.press(".pinned-dialog", "Escape").await.expect("escape");
-    app.wait_for_js(
-        "return document.querySelector('.pinned-dialog') === null;",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("panel closed");
-
-    let row = send_fresh(&mut app, "pin me").await;
-    let text = app
-        .eval(&format!("return {row}.querySelector('.body').textContent;"))
+    app.wait_for_count(".pinned-dialog", 0, DEFAULT_WAIT)
         .await
-        .expect("text");
-    let text = text.as_str().unwrap_or_default().to_owned();
+        .expect("panel closed");
+
+    let text = send_fresh(&mut app, "pin me").await;
     let before: usize = app
         .text(".pin-toggle")
         .await
@@ -217,7 +204,7 @@ async fn pin_unpin_and_the_pinned_panel() {
         .parse()
         .unwrap_or(0);
 
-    open_menu_on(&mut app, &row).await;
+    open_menu_on(&mut app, &text).await;
     app.click_text(".context-item", "Pin message")
         .await
         .expect("pin");
@@ -232,27 +219,37 @@ async fn pin_unpin_and_the_pinned_panel() {
         .expect("pinned message listed");
 
     // Unpin from the panel.
-    let needle = serde_json::to_string(&text).expect("json");
-    app.eval(&format!(
-        "[...document.querySelectorAll('.pinned-item')].find(i => i.textContent.includes({needle})).querySelector('button').click();"
-    ))
-    .await
-    .expect("unpin");
-    app.wait_for_js(
-        &format!("return ![...document.querySelectorAll('.pinned-item')].some(i => i.textContent.includes({needle}));"),
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("gone from the panel");
+    app.click_within(".pinned-item", &text, "button")
+        .await
+        .expect("unpin");
+    app.wait_for_within(".pinned-item", &text, "button", None, DEFAULT_WAIT)
+        .await
+        .expect("gone from the panel");
     app.press(".pinned-dialog", "Escape").await.expect("escape");
     app.wait_for_text(".pin-toggle", &before.to_string(), DEFAULT_WAIT)
         .await
         .expect("header count back");
-    open_menu_on(&mut app, &row).await;
+    open_menu_on(&mut app, &text).await;
     app.wait_for_text(".context-item", "Pin message", Duration::from_secs(2))
         .await
         .expect("menu offers pin again");
     app.press(".context-menu", "Escape").await.expect("escape");
+}
+
+/// Wait until the room list shows `room` as unread (or not).
+async fn wait_unread(app: &mut App, room: &str, unread: bool) {
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let rows = app.texts(".room.unread").await.expect("rows");
+        if rows.iter().any(|r| r.contains(room)) == unread {
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "{room} unread should be {unread}: {rows:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
 }
 
 #[tokio::test]
@@ -285,19 +282,9 @@ async fn mark_unread_and_forward() {
         .await
         .expect("still flagged");
     app.open_room("random").await.expect("leave");
-    app.wait_for_js(
-        "return [...document.querySelectorAll('.room.unread')].some(r => r.textContent.includes('general'));",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("still unread from elsewhere");
+    wait_unread(&mut app, "general", true).await;
     app.open_room("general").await.expect("return");
-    app.wait_for_js(
-        "return ![...document.querySelectorAll('.room.unread')].some(r => r.textContent.includes('general'));",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("opening clears the flag");
+    wait_unread(&mut app, "general", false).await;
 
     // Forward to #random: the same text shows up there.
     open_menu_on(&mut app, &row).await;

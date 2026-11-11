@@ -1,17 +1,26 @@
 //! The signed-in shell (`crates/ui/src/components/shell.rs`): the rail, the
 //! sidebar with its footer, and the chat area, over the rooms the core syncs.
 
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
-use gpui::{Context, Entity, IntoElement, Render, ScrollHandle, Window, div, prelude::*, px, rgb};
-use morpheus_core::{MediaRef, OwnedRoomId, Profile, RoomSummary, Session, SpaceRoom, VectorDiff};
+use gpui::{
+    Context, Entity, FocusHandle, IntoElement, Render, ScrollHandle, Window, div, prelude::*, px,
+    rgb,
+};
+use morpheus_core::{
+    MediaRef, OwnedEventId, OwnedRoomId, Profile, RoomSummary, Session, SpaceRoom, TimelineHandle,
+    VectorDiff,
+};
 
 use crate::{
     chat,
     composer::Composer,
+    dialogs::{self, Dialog, PendingDelete},
     e2e::E2eExt as _,
     media::{self, Avatars},
+    menu::{self, OpenMenu},
     model::{Scope, rooms_in_scope},
+    view_model::toast::ToastList,
     prefs::Prefs,
     rail, room_list,
     settings::{KeysChanged, SettingsView},
@@ -50,6 +59,20 @@ pub struct Shell {
     pub keys: KeyAccess,
     /// "Later" on the Secure Backup offer, until the app next starts.
     pub backup_later: bool,
+    /// The right-click menu, if open.
+    pub menu: Option<OpenMenu>,
+    pub menu_focus: Option<FocusHandle>,
+    /// The dialog over the chat, if any.
+    pub dialog: Option<Dialog>,
+    pub dialog_focus: Option<FocusHandle>,
+    pub take_dialog_focus: bool,
+    pub toasts: ToastList,
+    /// Deletions waiting out their Undo toast, by toast.
+    pub pending_deletes: HashMap<u32, PendingDelete>,
+    /// The open room's timeline, to act on its messages.
+    pub timeline_handle: Option<TimelineHandle>,
+    /// The open room's pinned messages.
+    pub pinned: Vec<OwnedEventId>,
 }
 
 impl Shell {
@@ -136,6 +159,15 @@ impl Shell {
             settings: None,
             keys: KeyAccess::default(),
             backup_later: false,
+            menu: None,
+            menu_focus: None,
+            dialog: None,
+            dialog_focus: None,
+            take_dialog_focus: false,
+            toasts: ToastList::default(),
+            pending_deletes: HashMap::new(),
+            timeline_handle: None,
+            pinned: Vec::new(),
         }
     }
 
@@ -221,8 +253,23 @@ impl Shell {
                     TimelineEvent::Reply(message) => composer.reply_to(message, cx),
                     TimelineEvent::Edit(message) => composer.edit(message, cx),
                     TimelineEvent::LastOwn(message) => composer.set_last_own(message.clone()),
-                    TimelineEvent::OpenSettings(_) => {}
+                    TimelineEvent::OpenSettings(_)
+                    | TimelineEvent::Menu(..)
+                    | TimelineEvent::Picker(..)
+                    | TimelineEvent::Delete(..)
+                    | TimelineEvent::Failed(..) => {}
                 })
+            })
+            .detach();
+            cx.subscribe(&timeline, |this: &mut Self, _, event: &TimelineEvent, cx| match event {
+                TimelineEvent::Opened(handle) => this.timeline_handle = Some(handle.clone()),
+                TimelineEvent::Menu(message, at) => this.open_message_menu(message, *at, cx),
+                TimelineEvent::Picker(..) => {}
+                TimelineEvent::Delete(message, skip) => {
+                    this.delete_message((**message).clone(), *skip, cx)
+                }
+                TimelineEvent::Failed(what, err) => this.fail(what, err, cx),
+                _ => {}
             })
             .detach();
             cx.subscribe(&timeline, |this: &mut Self, _, event: &TimelineEvent, cx| {
@@ -236,8 +283,11 @@ impl Shell {
             // The old one is dropped here: leaving a room reads it.
             self.timeline = Some((id.clone(), timeline));
             self.composer = Some((id.clone(), composer));
+            self.timeline_handle = None;
+            self.pinned.clear();
         }
         self.selected = Some(id);
+        self.refresh_pinned(cx);
         cx.notify();
     }
 
@@ -434,8 +484,11 @@ pub fn apply(rooms: &mut Vec<RoomSummary>, diff: VectorDiff<RoomSummary>) {
 }
 
 impl Render for Shell {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.fetch_avatars(cx);
+        let menu = menu::render(self, window, cx);
+        let dialog = dialogs::render_dialog(self, window, cx);
+        let toasts = dialogs::render_toasts(self, cx);
         // The Rooms scope is empty of rooms at first; nothing else to wait for.
         let _ = rooms_in_scope;
         let left = div()
@@ -482,6 +535,9 @@ impl Render for Shell {
                 d.child(backup_prompt(cx))
             })
             .children(self.settings.clone())
+            .children(dialog)
+            .children(menu)
+            .children(toasts)
             .e2e("div", "shell")
     }
 }

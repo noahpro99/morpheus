@@ -6,12 +6,14 @@ use std::{borrow::Cow, path::PathBuf};
 
 mod chat;
 mod composer;
+mod dialogs;
 mod e2e;
 mod icons;
 mod message;
 mod input;
 mod login;
 mod media;
+mod menu;
 mod model;
 mod prefs;
 mod rail;

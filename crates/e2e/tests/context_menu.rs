@@ -33,12 +33,9 @@ async fn login_and_open(app: &mut App, room: &str) {
 }
 
 async fn menu_closed(app: &mut App) {
-    app.wait_for_js(
-        "return document.querySelector('.context-menu') === null;",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("menu closed");
+    app.wait_for_count(".context-menu", 0, DEFAULT_WAIT)
+        .await
+        .expect("menu closed");
 }
 
 #[tokio::test]
@@ -61,12 +58,7 @@ async fn message_menu_replies_reacts_and_offers_edit_delete() {
     app.wait_for_exact_text(".message.own:not(.pending) .body", &text, DEFAULT_WAIT)
         .await
         .expect("message sent");
-    let mine = "[...document.querySelectorAll('.message.own')].at(-1)";
-    let select_mine = format!(
-        "{mine}.dispatchEvent(new MouseEvent('contextmenu', {{ bubbles: true, cancelable: true, clientX: 400, clientY: 300 }}));"
-    );
-
-    app.eval(&select_mine)
+    app.right_click_text(".message.own", &text)
         .await
         .expect("right-click own message");
     app.wait_for(".context-menu", DEFAULT_WAIT)
@@ -95,7 +87,9 @@ async fn message_menu_replies_reacts_and_offers_edit_delete() {
     menu_closed(&mut app).await;
 
     // React from the menu.
-    app.eval(&select_mine).await.expect("right-click again");
+    app.right_click_text(".message.own", &text)
+        .await
+        .expect("right-click again");
     app.wait_for(".context-menu", DEFAULT_WAIT)
         .await
         .expect("menu");
@@ -103,15 +97,14 @@ async fn message_menu_replies_reacts_and_offers_edit_delete() {
         .await
         .expect("thumbs up");
     menu_closed(&mut app).await;
-    app.wait_for_js(
-        &format!("return {mine}.querySelector('.reaction.mine') !== null;"),
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("reaction landed on the message");
+    app.wait_for_within(".message.own", &text, ".reaction.mine", Some(""), DEFAULT_WAIT)
+        .await
+        .expect("reaction landed on the message");
 
     // Reply from the menu puts the composer in reply mode.
-    app.eval(&select_mine).await.expect("right-click again");
+    app.right_click_text(".message.own", &text)
+        .await
+        .expect("right-click again");
     app.wait_for(".context-menu", DEFAULT_WAIT)
         .await
         .expect("menu");
@@ -125,20 +118,20 @@ async fn message_menu_replies_reacts_and_offers_edit_delete() {
 
     // Someone else's message: no edit or delete. Recent rows may all be
     // ours, so scroll up until another sender shows.
-    app.reveal_element(".message:not(.own):not(.system)", DEFAULT_WAIT)
+    app.reveal_element(".message:not(.own):not(.system):not(.skeleton-row)", DEFAULT_WAIT)
         .await
         .expect("another sender's message");
-    app.right_click(".message:not(.own):not(.system)")
+    app.right_click(".message:not(.own):not(.system):not(.skeleton-row)")
         .await
         .expect("right-click other");
     app.wait_for(".context-menu", DEFAULT_WAIT)
         .await
         .expect("menu");
     let labels = app
-        .eval("return [...document.querySelectorAll('.context-item')].map(e => e.textContent).join('|');")
+        .texts(".context-item")
         .await
-        .expect("labels");
-    let labels = labels.as_str().unwrap_or_default().to_owned();
+        .expect("labels")
+        .join("|");
     assert!(
         labels.contains("Reply") && !labels.contains("Delete") && !labels.contains("Edit"),
         "got {labels}"
