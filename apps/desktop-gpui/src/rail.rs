@@ -4,7 +4,11 @@
 //! Not ported yet: dragging badges, the server and folder menus, the
 //! create-a-server dialog.
 
-use gpui::{Context, Div, IntoElement, Stateful, div, prelude::*, px, rgb, rgba, svg};
+use std::rc::Rc;
+
+use gpui::{
+    Context, Div, IntoElement, MouseButton, Pixels, Point, Stateful, div, prelude::*, px, rgb, rgba, svg,
+};
 use morpheus_core::RoomSummary;
 
 use crate::{
@@ -26,6 +30,8 @@ struct Badge {
     selected: bool,
     unread: bool,
     extra: Vec<(&'static str, String)>,
+    /// A right click, where.
+    context: Option<Rc<dyn Fn(Point<Pixels>, &mut gpui::Window, &mut gpui::App)>>,
 }
 
 impl Badge {
@@ -44,6 +50,7 @@ impl Badge {
             selected,
             unread: unread && !selected,
             extra: Vec::new(),
+            context: None,
         }
     }
 
@@ -91,6 +98,11 @@ impl Badge {
                 }
             })
             .on_click(move |_, window, cx| on_click(window, cx));
+        if let Some(context) = self.context.clone() {
+            button = button.on_mouse_down(MouseButton::Right, move |event, window, cx| {
+                context(event.position, window, cx)
+            });
+        }
         button = button
             .child(
                 div()
@@ -363,6 +375,11 @@ fn space_badge(
     badge.extra.push(("data-space", space.id.to_string()));
     let id = space.id.clone();
     let view = cx.entity();
+    // Right click: the server's menu.
+    badge.context = Some({
+        let (view, id) = (view.clone(), id.clone());
+        Rc::new(move |at, _, cx| view.update(cx, |s, cx| s.open_space_menu(&id, at, cx)))
+    });
     badge.build(
         avatar(picture, &space.name, size, Some(theme::RADIUS_XL)),
         false,

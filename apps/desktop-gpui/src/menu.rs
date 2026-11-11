@@ -250,7 +250,8 @@ fn item_el(
     if item.has_submenu() {
         classes.push_str(" has-submenu");
     }
-    if glyph.is_none() {
+    let iconless = glyph.is_none() && item.avatar.is_none();
+    if iconless {
         classes.push_str(" no-icon");
     }
     let id = gpui::ElementId::from(gpui::SharedString::from(format!(
@@ -279,11 +280,21 @@ fn item_el(
     el = if in_grid {
         // Emoji in a grid: a square cell, centred.
         el.w(px(36.0)).px(px(0.0)).py(px(6.0)).justify_center().text_size(px(1.1 * theme::REM))
-    } else if glyph.is_none() {
+    } else if iconless {
         el.pl(px(36.0)).pr(px(10.0))
     } else {
         el.px(px(10.0))
     };
+    if let Some(name) = &item.avatar {
+        // A server's or room's picture (its letter, until pictures are fetched here).
+        el = el.child(
+            div()
+                .size(px(20.0))
+                .flex_none()
+                .child(crate::media::avatar(None, name, 20.0, None).text(String::new()))
+                .e2e("span", "menu-avatar"),
+        );
+    }
     if let Some(glyph) = glyph {
         el = el.child(icon(glyph, 16.0).text_color(rgb(if lit || hovered {
             0xffffff
@@ -291,10 +302,14 @@ fn item_el(
             theme::TEXT_FAINT
         })));
     }
+    let text = div()
+        .child(label.clone())
+        .e2e("span", "menu-label")
+        .text(label);
     el = if in_grid {
-        el.child(label.clone())
+        el.child(text)
     } else {
-        el.child(div().flex_1().child(label.clone()))
+        el.child(div().flex_1().child(text))
     };
     if item.checked {
         el = el.child(div().text_color(rgb(theme::ACCENT)).child("✓"));
@@ -309,15 +324,9 @@ fn item_el(
             el = el.child(flyout(menu, row, item, width, height, cx));
         }
     }
-    let mut tagged = el
-        .e2e(if item.has_submenu() { "div" } else { "button" }, &classes)
-        .attr("role", "menuitem");
-    if !item.has_submenu() {
-        tagged = tagged.text(label);
-    } else {
-        tagged = tagged.text(item.label.clone());
-    }
-    tagged.into_any_element()
+    el.e2e(if item.has_submenu() { "div" } else { "button" }, &classes)
+        .attr("role", "menuitem")
+        .into_any_element()
 }
 
 /// The flyout of row `row`, beside it (on the other side near the window's edge).

@@ -6,7 +6,9 @@
 //! closed DMs, the room and server menus, drag to reorder, the create-room
 //! dialog.
 
-use gpui::{Context, FontWeight, IntoElement, div, prelude::*, px, rgb};
+use std::collections::HashSet;
+
+use gpui::{Context, FontWeight, IntoElement, MouseButton, div, prelude::*, px, rgb};
 use morpheus_core::{OwnedRoomId, RoomSummary, SpaceRoom};
 
 use crate::{
@@ -16,6 +18,7 @@ use crate::{
     model::{Scope, header_title, rooms_in_scope},
     shell::Shell,
     theme,
+    view_model::marks::Marks,
 };
 
 /// The sidebar's rows, in the order they are drawn.
@@ -29,18 +32,30 @@ pub struct Sections {
     pub unjoined: Vec<SpaceRoom>,
 }
 
+/// What decides which rooms the lists show besides the scope.
+pub struct Filters<'a> {
+    pub hide_muted: bool,
+    pub open: Option<&'a OwnedRoomId>,
+    pub marks: &'a Marks,
+    /// Rooms just left, still undoable.
+    pub hidden: &'a HashSet<String>,
+}
+
 pub fn sections(
     rooms: &[RoomSummary],
     scope: &Scope,
     directory: &[SpaceRoom],
-    hide_muted: bool,
-    open: Option<&OwnedRoomId>,
+    filters: &Filters,
 ) -> Sections {
+    let open = filters.open;
     let (dms, channels): (Vec<_>, Vec<_>) = rooms_in_scope(rooms, scope)
         .into_iter()
         // "Hide muted channels" keeps the open room visible.
-        .filter(|r| !hide_muted || !r.muted || Some(&r.id) == open)
+        .filter(|r| !filters.hide_muted || !r.muted || Some(&r.id) == open)
+        .filter(|r| !filters.hidden.contains(r.id.as_str()))
         .partition(|r| r.is_dm);
+    // Closed DMs stay out until a new message; pinned ones come first.
+    let dms = filters.marks.visible_dms(dms, open, false);
     let mut categories: Vec<(OwnedRoomId, String)> = match scope {
         Scope::Space(space_id) => rooms
             .iter()
@@ -105,8 +120,12 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         &shell.rooms,
         scope,
         &shell.directory,
-        shell.prefs.hide_muted,
-        shell.selected.as_ref(),
+        &Filters {
+            hide_muted: shell.prefs.hide_muted,
+            open: shell.selected.as_ref(),
+            marks: &shell.marks,
+            hidden: &shell.hidden_rooms,
+        },
     );
     let in_space = matches!(scope, Scope::Space(_));
     // Inside a space (and favorites) both kinds can appear: label the groups.
@@ -114,11 +133,28 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
     let title = header_title(&shell.rooms, scope);
 
     let mut name = div()
+        .id("sidebar-title")
         .flex()
         .items_center()
         .gap(px(4.0))
         .font_weight(FontWeight::BOLD)
         .child(title.clone());
+    // Clicking the server's name (or right-clicking it) opens the server menu.
+    if let Scope::Space(space_id) = scope {
+        let space_id = space_id.clone();
+        name = name.cursor_pointer().on_click(cx.listener({
+            let space_id = space_id.clone();
+            move |this, event: &gpui::ClickEvent, _, cx| {
+                this.open_space_menu(&space_id, event.position(), cx)
+            }
+        }));
+        name = name.on_mouse_down(
+            MouseButton::Right,
+            cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+                this.open_space_menu(&space_id, event.position, cx)
+            }),
+        );
+    }
     if in_space {
         name = name.child(icon("chevron-right", 14.0).text_color(rgb(theme::TEXT_FAINT)));
     }
@@ -250,11 +286,13 @@ fn section(text: &str, class: &str) -> impl IntoElement {
 fn row(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -> impl IntoElement {
     let selected = shell.selected.as_ref() == Some(&room.id);
     let unread = room.unread_messages > 0 || room.marked_unread;
+    let pinned = shell.marks.is_pinned(room);
     let mut classes = String::from("room");
     for (on, class) in [
         (room.is_dm, "dm"),
         (room.is_voice, "voice"),
-        (room.muted, "muted"),
+        (pinned, "pinned"),
+        (shell.marks.is_muted(room), "muted"),
         (selected, "selected"),
         (unread, "unread"),
     ] {
@@ -285,7 +323,13 @@ fn row(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -> impl IntoE
                     .text_color(rgb(theme::TEXT))
             })
         })
-        .on_click(move |_, _, cx| view.update(cx, |s, cx| s.open_room(id.clone(), cx)));
+        .on_click(move |_, _, cx| view.update(cx, |s, cx| s.open_room(id.clone(), cx)))
+        .on_mouse_down(MouseButton::Right, {
+            let room = room.clone();
+            cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+                this.open_room_menu(room.clone(), event.position, cx)
+            })
+        });
     button = if room.is_dm {
         button.child(avatar(
             shell.picture(&room.avatar, 32),
@@ -314,6 +358,9 @@ fn row(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -> impl IntoE
             .e2e("span", "room-name")
             .text(room.name.clone()),
     );
+    if pinned {
+        button = button.child(icon("pin", 12.0).text_color(rgb(theme::TEXT_FAINT)));
+    }
     if room.highlight_count > 0 {
         let count = room.highlight_count.to_string();
         button = button.child(
@@ -421,17 +468,23 @@ mod tests {
             via: Vec::new(),
         };
         let all = [server.clone(), a, b];
+        let (marks, left) = (Marks::default(), HashSet::new());
+        let filters = |hide_muted, open| Filters {
+            hide_muted,
+            open,
+            marks: &marks,
+            hidden: &left,
+        };
         let found = sections(
             &all,
             &Scope::Space(server.id.clone()),
             &[archive.clone()],
-            false,
-            None,
+            &filters(false, None),
         );
         assert_eq!(names(&found.channels), ["general", "news"]);
         assert_eq!(found.unjoined.len(), 1);
         // Joined ones are not listed twice.
-        let again = sections(&all, &Scope::Space(server.id), &[archive], false, None);
+        let again = sections(&all, &Scope::Space(server.id), &[archive], &filters(false, None));
         assert_eq!(again.unjoined[0].name, "archive");
     }
 
@@ -441,9 +494,46 @@ mod tests {
         quiet.muted = true;
         let loud = room("!l:x", "loud");
         let all = [quiet.clone(), loud];
-        let hidden = sections(&all, &Scope::Rooms, &[], true, None);
+        let (marks, left) = (Marks::default(), HashSet::new());
+        let filters = |open| Filters {
+            hide_muted: true,
+            open,
+            marks: &marks,
+            hidden: &left,
+        };
+        let hidden = sections(&all, &Scope::Rooms, &[], &filters(None));
         assert_eq!(names(&hidden.channels), ["loud"]);
-        let open = sections(&all, &Scope::Rooms, &[], true, Some(&quiet.id));
+        let open = sections(&all, &Scope::Rooms, &[], &filters(Some(&quiet.id)));
         assert_eq!(names(&open.channels), ["quiet", "loud"]);
+    }
+
+    #[test]
+    fn rooms_just_left_and_closed_dms_are_not_listed_and_pinned_ones_come_first() {
+        let (a, b) = (room("!a:x", "a"), room("!b:x", "b"));
+        let (mut d1, mut d2) = (room("!d1:x", "d1"), room("!d2:x", "d2"));
+        d1.is_dm = true;
+        d2.is_dm = true;
+        let all = [a.clone(), b, d1.clone(), d2.clone()];
+        let mut marks = Marks::default();
+        marks.set(morpheus_core::marks::PINNED, "!d2:x", Some(5));
+        let left: HashSet<String> = ["!a:x".to_owned()].into();
+        let filters = Filters {
+            hide_muted: false,
+            open: None,
+            marks: &marks,
+            hidden: &left,
+        };
+        let found = sections(&all, &Scope::Dms, &[], &filters);
+        assert_eq!(names(&found.dms), ["d2", "d1"]);
+        let found = sections(&all, &Scope::Rooms, &[], &filters);
+        assert_eq!(names(&found.channels), ["b"]);
+        let mut closed = marks.clone();
+        closed.set(morpheus_core::marks::CLOSED, "!d1:x", Some(i64::MAX));
+        let filters = Filters {
+            marks: &closed,
+            ..filters
+        };
+        let found = sections(&all, &Scope::Dms, &[], &filters);
+        assert_eq!(names(&found.dms), ["d2"]);
     }
 }

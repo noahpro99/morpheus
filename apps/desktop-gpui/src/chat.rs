@@ -93,6 +93,24 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                         .text(topic),
                 );
             }
+            // The same menu as right-clicking the room.
+            let menu_room = room.clone();
+            header = header.child(
+                div()
+                    .id("room-menu-button")
+                    .px(px(8.0))
+                    .py(px(6.0))
+                    .rounded(px(theme::RADIUS_SM))
+                    .text_color(rgb(theme::TEXT_MUTED))
+                    .cursor_pointer()
+                    .hover(|s| s.text_color(rgb(theme::TEXT)))
+                    .child(icon("ellipsis", 16.0).text_color(rgb(theme::TEXT_MUTED)))
+                    .on_click(cx.listener(move |this, event: &gpui::ClickEvent, _, cx| {
+                        this.open_room_menu(menu_room.clone(), event.position(), cx)
+                    }))
+                    .e2e("button", "ghost room-menu-button")
+                    .attr("title", "Room options"),
+            );
             // The rest of the header sits at the right.
             header = header.child(div().flex_1());
             let pins = shell.pinned.len();
