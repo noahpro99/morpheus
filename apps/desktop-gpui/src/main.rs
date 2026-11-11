@@ -26,6 +26,7 @@ mod rail;
 mod room_dialogs;
 mod room_list;
 mod room_menus;
+mod search;
 mod settings;
 mod shell;
 mod thread;
