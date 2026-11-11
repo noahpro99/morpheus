@@ -5,7 +5,10 @@
 
 use gpui::{Context, ExternalPaths, FontWeight, IntoElement, div, prelude::*, px, rgb};
 
-use crate::{e2e::E2eExt as _, icons::icon, media::avatar, shell::Shell, theme};
+use crate::{
+    e2e::E2eExt as _, icons::icon, media::avatar, shell::Shell, theme,
+    view_model::room_dialogs::RoomDialogKind,
+};
 
 pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
     let body = match shell.current() {
@@ -51,6 +54,12 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                     .rounded(px(theme::RADIUS_SM))
                     .text_color(rgb(theme::TEXT_MUTED))
                     .cursor_pointer()
+                    .on_click({
+                        let id = room.id.clone();
+                        cx.listener(move |this, _, _, cx| {
+                            this.open_room_dialog(RoomDialogKind::Privacy(id.clone()), cx)
+                        })
+                    })
                     .child(icon(
                         if room.is_encrypted {
                             "lock"

@@ -5,17 +5,19 @@
 
 use std::time::Duration;
 
-use gpui::{ClipboardItem, Context, Pixels, Point};
+use gpui::{AppContext as _, ClipboardItem, Context, Pixels, Point};
 use morpheus_core::{NotifyMode, OwnedRoomId, RoomSummary, marks};
 
 use crate::{
-    dialogs::PendingUndo,
+    dialogs::{Closed, Dialog, PendingUndo},
+    room_dialogs::{Done, RoomDialog},
     menu::OpenMenu,
     model::{Scope, rooms_in_scope},
     shell::Shell,
     view_model::{
         menu::{MenuAction, MenuTarget},
         room_menu::{DmState, dm_menu, invite_targets, room_menu, space_menu},
+        room_dialogs::RoomDialogKind,
     },
 };
 
@@ -339,6 +341,11 @@ impl Shell {
                 cx.write_to_clipboard(ClipboardItem::new_string(link));
                 self.toast("Link copied", cx);
             }
+            MenuAction::RoomDialog(kind) => self.open_room_dialog(kind, cx),
+            MenuAction::CreateChannel(space) => {
+                self.set_scope(Scope::Space(space), cx);
+                self.open_room_dialog(RoomDialogKind::Create, cx);
+            }
             MenuAction::ReportUser(_) => {
                 self.toast("Reporting a profile is not in the GPUI build yet.", cx);
             }
@@ -369,6 +376,43 @@ impl Shell {
         if let Some(session) = self.session.clone() {
             let saving = session.set_ui_prefs(self.prefs.to_json());
             self.run_in_background("save prefs", saving, cx);
+        }
+    }
+}
+
+impl Shell {
+    /// Opens one of the room dialogs over the chat.
+    pub fn open_room_dialog(&mut self, kind: RoomDialogKind, cx: &mut Context<Self>) {
+        let Some(session) = self.session.clone() else {
+            return;
+        };
+        let rooms = self.rooms.clone();
+        let scope = self.scope.clone();
+        let dialog = cx.new(|cx| RoomDialog::new(kind, session, rooms, scope, cx));
+        cx.subscribe(&dialog, |this, _, _: &Closed, cx| this.dialog_close(cx))
+            .detach();
+        cx.subscribe(&dialog, |this, _, done: &Done, cx| this.room_dialog_done(done, cx))
+            .detach();
+        self.dialog_open(Dialog::Room(dialog), cx);
+    }
+
+    /// A room dialog did its job: land where the new thing is.
+    fn room_dialog_done(&mut self, done: &Done, cx: &mut Context<Self>) {
+        match done {
+            Done::RoomCreated { room, space } => {
+                self.dialog_close(cx);
+                self.set_scope(space.clone().map_or(Scope::Rooms, Scope::Space), cx);
+                self.open_room(room.clone(), cx);
+            }
+            Done::SpaceCreated { space, parent } => {
+                self.dialog_close(cx);
+                self.set_scope(Scope::Space(parent.clone().unwrap_or_else(|| space.clone())), cx);
+            }
+            Done::LeftServer => {
+                self.dialog_close(cx);
+                self.set_scope(Scope::Rooms, cx);
+            }
+            Done::ProfileSaved => self.refresh_members(cx),
         }
     }
 }

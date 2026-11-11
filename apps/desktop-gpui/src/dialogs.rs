@@ -44,6 +44,7 @@ pub enum Dialog {
     Reactions(Box<Message>),
     Report(Entity<ReportDialog>),
     Pinned(Entity<PinnedDialog>),
+    Room(Entity<crate::room_dialogs::RoomDialog>),
 }
 
 /// Something done at once that its Undo toast can still take back.
@@ -413,7 +414,7 @@ impl Shell {
 // ---- drawing --------------------------------------------------------------
 
 /// `.overlay`: the dimmed window, the dialog near the top.
-fn overlay(window: &Window, content: AnyElement, close: impl Fn(&mut Window, &mut gpui::App) + 'static) -> AnyElement {
+pub(crate) fn overlay(window: &Window, content: AnyElement, close: impl Fn(&mut Window, &mut gpui::App) + 'static) -> AnyElement {
     let top = 0.15 * f32::from(window.viewport_size().height);
     let layer = div()
         .absolute()
@@ -432,7 +433,7 @@ fn overlay(window: &Window, content: AnyElement, close: impl Fn(&mut Window, &mu
 }
 
 /// `.message-dialog`: the box.
-fn dialog_box() -> Div {
+pub(crate) fn dialog_box() -> Div {
     div()
         .flex()
         .flex_col()
@@ -449,7 +450,7 @@ fn dialog_box() -> Div {
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
 }
 
-fn heading(text: &str) -> impl IntoElement {
+pub(crate) fn heading(text: &str) -> impl IntoElement {
     div()
         .text_size(px(1.1 * theme::REM))
         .font_weight(FontWeight::BOLD)
@@ -458,7 +459,7 @@ fn heading(text: &str) -> impl IntoElement {
         .text(text)
 }
 
-fn muted(text: &str, class: &str) -> impl IntoElement {
+pub(crate) fn muted(text: &str, class: &str) -> impl IntoElement {
     div()
         .text_color(rgb(theme::TEXT_MUTED))
         .child(text.to_owned())
@@ -467,7 +468,7 @@ fn muted(text: &str, class: &str) -> impl IntoElement {
 }
 
 /// A button of a dialog: danger is a red block, others plain text.
-fn dialog_button(id: impl Into<SharedString>, label: &str, danger: bool) -> Stateful<Div> {
+pub(crate) fn dialog_button(id: impl Into<SharedString>, label: &str, danger: bool) -> Stateful<Div> {
     let id: SharedString = id.into();
     div()
         .id(ElementId::from(id))
@@ -486,7 +487,7 @@ fn dialog_button(id: impl Into<SharedString>, label: &str, danger: bool) -> Stat
         .child(label.to_owned())
 }
 
-fn actions(buttons: Vec<AnyElement>) -> impl IntoElement {
+pub(crate) fn actions(buttons: Vec<AnyElement>) -> impl IntoElement {
     div()
         .flex()
         .gap(px(8.0))
@@ -606,6 +607,7 @@ pub fn render_dialog(shell: &mut Shell, window: &mut Window, cx: &mut Context<Sh
         }
         Dialog::Report(entity) => Some(entity.clone().into_any_element()),
         Dialog::Pinned(entity) => Some(entity.clone().into_any_element()),
+        Dialog::Room(entity) => Some(entity.clone().into_any_element()),
     }
 }
 
