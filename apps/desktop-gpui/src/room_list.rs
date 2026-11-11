@@ -222,6 +222,14 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                 .text(text),
         );
     }
+    // Invites show in every scope, above everything else.
+    let pending = crate::view_model::invites::pending_invites(&shell.rooms);
+    if !pending.is_empty() {
+        list = list.child(section("Invites", "invites"));
+        for room in &pending {
+            list = list.child(crate::invites::invite_row(shell, cx, room));
+        }
+    }
     // The Friends page, at the top of the DMs (as in Discord).
     if *scope == Scope::Dms {
         list = list.child(friends_row(shell, cx));
@@ -444,7 +452,6 @@ fn row(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -> impl IntoE
 
 fn unjoined_row(shell: &Shell, cx: &mut Context<Shell>, room: &SpaceRoom) -> impl IntoElement {
     let selected = shell.selected.as_ref() == Some(&room.id);
-    let id = room.id.clone();
     let view = cx.entity();
     let mut classes = String::from("room unjoined");
     if selected {
@@ -471,7 +478,10 @@ fn unjoined_row(shell: &Shell, cx: &mut Context<Shell>, room: &SpaceRoom) -> imp
                     .text_color(rgb(theme::TEXT))
             })
         })
-        .on_click(move |_, _, cx| view.update(cx, |s, cx| s.open_room(id.clone(), cx)))
+        .on_click({
+            let room = room.clone();
+            move |_, _, cx| view.update(cx, |s, cx| s.open_unjoined(room.clone(), cx))
+        })
         .child(if room.is_voice {
             icon("volume-2", 18.0)
                 .text_color(rgb(theme::TEXT_FAINT))

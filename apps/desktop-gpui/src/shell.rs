@@ -112,6 +112,16 @@ pub struct Shell {
     pub friends_page: Option<Entity<FriendsPage>>,
     /// A direct message just made, to open once the room list has it.
     pub pending_dm: Option<OwnedRoomId>,
+    /// The inbox panel, shown or not, and where its keys go.
+    pub inbox_open: bool,
+    pub inbox_focus: Option<FocusHandle>,
+    pub inbox_take_focus: bool,
+    /// A channel of the server that you are not in, shown as a join card.
+    pub preview: Option<SpaceRoom>,
+    /// The join card's Join was pressed.
+    pub joining: bool,
+    /// Invites accepted here whose join the room list has not shown yet.
+    pub joined_here: HashSet<OwnedRoomId>,
 }
 
 impl Shell {
@@ -129,6 +139,7 @@ impl Shell {
                             apply(&mut this.rooms, diff);
                         }
                         crate::model::adopt_children(&mut this.rooms);
+                        this.keep_joined_here();
                         this.reopen_closed(cx);
                         this.open_pending_dm(cx);
                         this.sync_members(cx);
@@ -246,6 +257,12 @@ impl Shell {
             friends_open: false,
             friends_page: None,
             pending_dm: None,
+            inbox_open: false,
+            inbox_focus: None,
+            inbox_take_focus: false,
+            preview: None,
+            joining: false,
+            joined_here: HashSet::new(),
         }
     }
 
@@ -347,12 +364,41 @@ impl Shell {
         }
     }
 
-    /// Opens the DM waiting for the room list, if it has come.
+
+    /// A room just accepted shows as joined even while the list still says
+    /// invited; once the list agrees, it is left to it.
+    fn keep_joined_here(&mut self) {
+        let joined = &mut self.joined_here;
+        for room in &mut self.rooms {
+            if joined.contains(&room.id) {
+                if room.invited {
+                    room.invited = false;
+                } else {
+                    joined.remove(&room.id);
+                }
+            }
+        }
+    }
+    /// Opens the DM or joined channel waiting for the room list, if it has
+    /// come; and the open room that was only an invite or a join card, once
+    /// it is joined.
     pub fn open_pending_dm(&mut self, cx: &mut Context<Self>) {
+        let listed = |this: &Self, id: &OwnedRoomId| {
+            this.rooms.iter().any(|room| &room.id == id && !room.invited)
+        };
         if let Some(id) = self.pending_dm.clone()
-            && self.rooms.iter().any(|room| room.id == id)
+            && listed(self, &id)
         {
             self.pending_dm = None;
+            self.open_room(id, cx);
+            return;
+        }
+        if let Some(id) = self.selected.clone()
+            && self.session.is_some()
+            && self.timeline.is_none()
+            && !self.friends_open
+            && listed(self, &id)
+        {
             self.open_room(id, cx);
         }
     }
@@ -419,6 +465,18 @@ impl Shell {
     pub fn open_room(&mut self, id: OwnedRoomId, cx: &mut Context<Self>) {
         // Going to a room leaves the Friends page.
         self.friends_open = false;
+        // An invite (or a channel not joined) has no timeline: its card shows.
+        self.preview = None;
+        if self.rooms.iter().any(|room| room.id == id && room.invited) {
+            self.timeline = None;
+            self.composer = None;
+            self.timeline_handle = None;
+            self.members = None;
+            self.thread = None;
+            self.selected = Some(id);
+            cx.notify();
+            return;
+        }
         if self.session.is_some() && self.timeline.as_ref().is_none_or(|(room, _)| room != &id) {
             let session = self.session.clone();
             let room = id.clone();
@@ -539,6 +597,13 @@ impl Shell {
         for room in &self.rooms {
             let size = if room.is_space { 48 } else { 32 };
             wanted.extend(room.avatar.clone().map(|m| (m, size)));
+        }
+        // Invites: the sidebar row, and the card for the one open.
+        for room in self.rooms.iter().filter(|r| r.invited) {
+            wanted.extend(room.avatar.clone().into_iter().flat_map(|m| [(m.clone(), 24), (m, 72)]));
+        }
+        if let Some(room) = &self.preview {
+            wanted.extend(room.avatar.clone().map(|m| (m, 72)));
         }
         wanted.extend(
             self.profile
@@ -713,6 +778,7 @@ impl Render for Shell {
         self.fetch_avatars(cx);
         let menu = menu::render(self, window, cx);
         let dialog = dialogs::render_dialog(self, window, cx);
+        let inbox = crate::invites::inbox(self, window, cx);
         let toasts = dialogs::render_toasts(self, cx);
         // The Rooms scope is empty of rooms at first; nothing else to wait for.
         let _ = rooms_in_scope;
@@ -747,6 +813,7 @@ impl Render for Shell {
                     )
                     .e2e("ul", "link-log"),
             )
+            .child(crate::titlebar::render(self, cx))
             .child(
                 div()
                     .flex()
@@ -760,6 +827,7 @@ impl Render for Shell {
                 d.child(backup_prompt(cx))
             })
             .children(self.settings.clone())
+            .children(inbox)
             .children(dialog)
             .children(self.card.clone())
             .children(self.picker.as_ref().map(|(picker, _)| picker.clone()))

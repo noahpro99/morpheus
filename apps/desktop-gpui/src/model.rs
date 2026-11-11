@@ -27,6 +27,31 @@ impl Scope {
     }
 }
 
+/// The rail scope a room belongs to: DMs, Rooms, or its top-level space.
+/// Used when something other than the rail opens a room (the inbox), so the
+/// sidebar follows instead of bouncing the selection back.
+pub fn scope_for(rooms: &[RoomSummary], room: &RoomSummary) -> Scope {
+    if room.is_dm {
+        return Scope::Dms;
+    }
+    let mut current = room.parent_spaces.first().cloned();
+    let mut hops = 0;
+    while let Some(space_id) = current {
+        let Some(space) = rooms.iter().find(|r| r.id == space_id) else {
+            return Scope::Rooms;
+        };
+        match space.parent_spaces.first() {
+            None => return Scope::Space(space_id),
+            Some(parent) if hops < 16 => {
+                hops += 1;
+                current = Some(parent.clone());
+            }
+            Some(_) => return Scope::Rooms,
+        }
+    }
+    Scope::Rooms
+}
+
 /// Rooms visible for a scope: DMs; rooms that are neither DMs nor in a space;
 /// favorites; or a space's whole subtree.
 pub fn rooms_in_scope(rooms: &[RoomSummary], scope: &Scope) -> Vec<RoomSummary> {
