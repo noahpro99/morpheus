@@ -9,6 +9,15 @@
         <activity android:name="dev.morpheus.mobile.OpenRoomActivity" android:exported="false" android:theme="@android:style/Theme.NoDisplay" android:excludeFromRecents="true" android:taskAffinity="" />
         <!-- Matrix links opened elsewhere: matrix: links, and matrix.to (not
              verified, the domain is not ours: Morpheus is offered for them). -->
+        <!-- Calls as the phone's (CallRinger): Telecom's self-managed calls,
+             the call notification's buttons, the full-screen incoming call. -->
+        <service android:name="dev.morpheus.mobile.CallConnectionService" android:exported="true" android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+        <receiver android:name="dev.morpheus.mobile.CallActionReceiver" android:exported="false" />
+        <activity android:name="dev.morpheus.mobile.IncomingCallActivity" android:exported="false" android:excludeFromRecents="true" android:taskAffinity="" android:launchMode="singleInstance" android:showWhenLocked="true" android:turnScreenOn="true" />
         <!-- Morpheus in the share sheet: text, links, pictures and files. -->
         <activity android:name="dev.morpheus.mobile.ShareActivity" android:exported="true" android:theme="@android:style/Theme.NoDisplay" android:excludeFromRecents="true" android:taskAffinity="">
             <intent-filter>

@@ -73,7 +73,9 @@ class MorpheusPushService : PushService() {
                 ?: if (private) null else roomName(roomId)
             val sender = notice?.optString("sender")?.ifEmpty { null }
             if (notice?.optBoolean("call") == true) {
-                showCall(roomId, sender ?: room ?: "Someone")
+                // As the phone's call (Telecom, the full-screen incoming call).
+                Log.d(TAG, "push rings: $eventId")
+                CallRinger.ring(this, roomId, eventId, sender ?: room ?: "Someone")
                 return@Thread
             }
             // The notice is worded already (`notices.rs`): a room of two by
@@ -166,42 +168,6 @@ class MorpheusPushService : PushService() {
             builder.setStyle(Notification.BigPictureStyle().bigPicture(it).setSummaryText(text))
         }
         manager.notify(roomId.hashCode(), builder.build())
-    }
-
-    /** Someone calling: rings like a phone call until answered or for half a minute. */
-    private fun showCall(roomId: String, caller: String) {
-        val manager = manager()
-        manager.createNotificationChannel(
-            NotificationChannel(CALL_CHANNEL, "Calls", NotificationManager.IMPORTANCE_HIGH).apply {
-                setSound(
-                    RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE),
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
-                        .build()
-                )
-            }
-        )
-        val open = Intent(this, OpenRoomActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            putExtra("room_id", roomId)
-        }
-        val tap = PendingIntent.getActivity(
-            this, ("call" + roomId).hashCode(), open,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        val icon = resources.getIdentifier("ic_notification", "drawable", packageName)
-            .takeIf { it != 0 } ?: applicationInfo.icon
-        val built = Notification.Builder(this, CALL_CHANNEL)
-            .setSmallIcon(icon)
-            .setContentTitle("$caller is calling")
-            .setContentText("Tap to answer")
-            .setCategory(Notification.CATEGORY_CALL)
-            .setTimeoutAfter(RING_MS)
-            .setAutoCancel(true)
-            .setContentIntent(tap)
-            .build()
-        built.flags = built.flags or Notification.FLAG_INSISTENT
-        manager.notify(("call" + roomId).hashCode(), built)
     }
 
     companion object {

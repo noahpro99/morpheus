@@ -465,6 +465,15 @@ pub fn Shell(session: Session) -> Element {
                     crate::AppCommand::Acknowledgements => about_open.set(AboutShown(true)),
                     crate::AppCommand::CheckForUpdates => check_for_updates(),
                     crate::AppCommand::HangUp => super::call::hang_up(consume_context::<Session>()),
+                    crate::AppCommand::AnswerCall { room_id } => {
+                        super::call::answer_from_outside(room_id).await;
+                    }
+                    crate::AppCommand::DeclineCall {
+                        room_id,
+                        notification,
+                    } => {
+                        super::call::decline_from_outside(room_id, notification);
+                    }
                     crate::AppCommand::OpenRoom(id) => {
                         // A notification tap can start the app: give the room
                         // list a moment to arrive.

@@ -947,6 +947,84 @@ static PHONE_BUSY: AtomicBool = AtomicBool::new(false);
 /// The mobile app's package and activity (see `apps/mobile`).
 pub const ANDROID_PACKAGE: &str = "dev.morpheus.mobile";
 
+/// `adb shell <args>` on the phone; its output when it succeeds.
+pub fn android_shell(args: &[&str]) -> Option<String> {
+    let mut all = vec!["shell"];
+    all.extend_from_slice(args);
+    adb(&all)
+}
+
+/// The phone's Home button: the app goes to the background (it keeps running).
+pub fn android_home() {
+    let _ = android_shell(&["input", "keyevent", "KEYCODE_HOME"]);
+}
+
+/// The calls Android's Telecom knows of for the app, as `dumpsys telecom`
+/// lists them: each one's state (RINGING, ACTIVE, …).
+pub fn android_telecom_calls() -> Vec<String> {
+    let dump = android_shell(&["dumpsys", "telecom"]).unwrap_or_default();
+    // "Call TC@1 [...] ... state=RINGING ... dev.morpheus.mobile" lines.
+    dump.lines()
+        .filter(|line| line.contains(ANDROID_PACKAGE) && line.contains("state"))
+        .filter_map(|line| {
+            let state = line.split("state").nth(1)?;
+            let state: String = state
+                .trim_start_matches(['=', ':', ' '])
+                .chars()
+                .take_while(|c| c.is_ascii_uppercase() || *c == '_')
+                .collect();
+            (!state.is_empty()).then_some(state)
+        })
+        .collect()
+}
+
+/// Tap what shows `text` on the phone's screen (a notification's button,
+/// say), as a person would: found through `uiautomator dump`.
+pub fn android_tap_text(text: &str) -> Result<()> {
+    for attempt in 0..20 {
+        // Not on screen after a while: in the notification shade, then.
+        if attempt == 3 || attempt == 12 {
+            let _ = android_shell(&["cmd", "statusbar", "expand-notifications"]);
+        }
+        let _ = android_shell(&["uiautomator", "dump", "/sdcard/ui.xml"]);
+        let ui = android_shell(&["cat", "/sdcard/ui.xml"]).unwrap_or_default();
+        let wanted = [
+            format!("text=\"{text}\""),
+            format!("content-desc=\"{text}\""),
+        ];
+        if let Some(node) = ui
+            .split("<node ")
+            .find(|node| wanted.iter().any(|w| node.contains(w.as_str())))
+            && let Some(bounds) = node
+                .split("bounds=\"")
+                .nth(1)
+                .and_then(|b| b.split('"').next())
+        {
+            // "[x1,y1][x2,y2]": its middle.
+            let numbers: Vec<i64> = bounds
+                .split(|c: char| !c.is_ascii_digit())
+                .filter_map(|n| n.parse().ok())
+                .collect();
+            if let [x1, y1, x2, y2] = numbers[..] {
+                let (x, y) = ((x1 + x2) / 2, (y1 + y2) / 2);
+                android_shell(&["input", "tap", &x.to_string(), &y.to_string()])
+                    .ok_or_else(|| anyhow!("tap failed"))?;
+                return Ok(());
+            }
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    let _ = android_shell(&["uiautomator", "dump", "/sdcard/ui.xml"]);
+    let ui = android_shell(&["cat", "/sdcard/ui.xml"]).unwrap_or_default();
+    let shown: Vec<&str> = ui
+        .split("text=\"")
+        .skip(1)
+        .filter_map(|t| t.split('"').next())
+        .filter(|t| !t.is_empty())
+        .collect();
+    bail!("nothing showing {text:?} on the phone; it shows {shown:?}")
+}
+
 /// A picture in the device's gallery, as another app would share it: its
 /// `content:` URI (a small PNG pushed to Pictures and indexed).
 pub fn android_gallery_picture() -> Result<String> {

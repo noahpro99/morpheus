@@ -40,6 +40,15 @@ pub enum AppCommand {
     OpenRoom(String),
     /// Hang up the call going (the phone's call notification).
     HangUp,
+    /// Answer the call ringing in this room (the phone's incoming call).
+    AnswerCall {
+        room_id: String,
+    },
+    /// Decline the ring (`notification`, its event id) in this room.
+    DeclineCall {
+        room_id: String,
+        notification: String,
+    },
 }
 
 /// A queue of [`AppCommand`]s any thread can push to; the shell drains it.

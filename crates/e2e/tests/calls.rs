@@ -2784,3 +2784,134 @@ fn alsa_streams_of(program: &str) -> Vec<String> {
         })
         .collect()
 }
+
+/// On a phone a DM call rings as a real call, as Discord's do: the app in
+/// the background hands it to Android (Telecom, ringing with the phone's
+/// ringtone, a call notification with Answer and Decline, the full-screen
+/// incoming call over the lock screen). Answer opens the app in the call;
+/// Decline tells the caller; a caller giving up stops the ringing.
+#[tokio::test]
+async fn a_phone_rings_like_a_phone_call() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut bob = App::launch(&hs).await.expect("launch bob");
+    if !bob.is_phone() {
+        eprintln!("a phone's call handling (MORPHEUS_E2E_ANDROID); skipping");
+        return;
+    }
+    login_and_open(&mut bob, "bob", "general").await;
+    let mut alice = App::launch_desktop(&hs).await.expect("launch alice");
+    login_and_open(&mut alice, "alice", "general").await;
+    open_dm(&mut alice, "bob").await;
+    let ringing = || {
+        morpheus_e2e::android_telecom_calls()
+            .iter()
+            .any(|s| s == "RINGING")
+    };
+    let active = || {
+        morpheus_e2e::android_telecom_calls()
+            .iter()
+            .any(|s| s == "ACTIVE")
+    };
+    let wait = |what: &str, check: &dyn Fn() -> bool| {
+        let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+        while !check() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "{what}: {:?}",
+                morpheus_e2e::android_telecom_calls()
+            );
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        }
+    };
+
+    // In the background, a call rings as the phone's.
+    morpheus_e2e::android_home();
+    alice.click(CALL_BUTTON).await.expect("alice calls");
+    alice
+        .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("alice waiting");
+    wait("ringing as a phone call", &ringing);
+
+    // Answer, as from the notification: the app comes up, in the call.
+    morpheus_e2e::android_tap_text("Answer").expect("tap Answer");
+    wait("the call active", &active);
+    bob.wait_for_js(
+        "return !!document.querySelector('.call-screen, .call-bar, .voice-panel');",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("bob in the call");
+    alice
+        .wait_for(".call-stage [data-user=\"@bob:localhost\"]", DEFAULT_WAIT)
+        .await
+        .expect("alice sees bob join");
+    // Both hang up (a DM call stays up for whoever is still in it).
+    alice
+        .click(".voice-panel .hang-up")
+        .await
+        .expect("alice hangs up");
+    bob.wait_for_js(
+        "const b = document.querySelector('.call-screen .hang-up, .call-bar .hang-up, .voice-panel .hang-up'); if (!b) return false; b.click(); return true;",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("bob hangs up");
+    bob.wait_for_js(
+        "return !document.querySelector('.call-screen, .call-bar');",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("bob's call over");
+    wait("Android's call over", &|| {
+        morpheus_e2e::android_telecom_calls().is_empty()
+    });
+
+    // Declined from the phone: the caller is told.
+    alice
+        .wait_for(
+            ".chat-header .call-button[title=\"Start a call\"]",
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("call empty");
+    morpheus_e2e::android_home();
+    alice.click(CALL_BUTTON).await.expect("alice calls again");
+    alice
+        .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("alice waiting");
+    wait("ringing again", &ringing);
+    morpheus_e2e::android_tap_text("Decline").expect("tap Decline");
+    alice
+        .wait_for_text(".toast", "bob declined the call", DEFAULT_WAIT)
+        .await
+        .expect("alice told");
+    wait("no call left", &|| {
+        morpheus_e2e::android_telecom_calls().is_empty()
+    });
+
+    // The caller gives up: the phone stops ringing.
+    alice
+        .wait_for(
+            ".chat-header .call-button[title=\"Start a call\"]",
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("call empty");
+    alice
+        .click(CALL_BUTTON)
+        .await
+        .expect("alice calls a third time");
+    wait("ringing a third time", &ringing);
+    alice
+        .click(".voice-panel .hang-up")
+        .await
+        .expect("alice gives up");
+    wait("ringing stops", &|| {
+        morpheus_e2e::android_telecom_calls().is_empty()
+    });
+}
