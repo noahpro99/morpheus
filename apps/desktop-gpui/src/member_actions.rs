@@ -141,3 +141,27 @@ impl Shell {
         .detach();
     }
 }
+
+impl Shell {
+    /// The full emoji picker beside the hover bar's "more" button; what is
+    /// chosen reacts to `message`.
+    pub fn open_picker(&mut self, message: morpheus_core::MessageId, at: Point<Pixels>, cx: &mut Context<Self>) {
+        use crate::emoji_picker::{EmojiPicker, PickerEvent};
+        use gpui::AppContext as _;
+        let picker = cx.new(|cx| EmojiPicker::new(at, cx));
+        cx.subscribe(&picker, |this: &mut Self, _, event: &PickerEvent, cx| {
+            let Some((_, message)) = this.picker.take() else {
+                return;
+            };
+            if let PickerEvent::Picked(emoji) = event
+                && let Some((_, timeline)) = &this.timeline
+            {
+                timeline.update(cx, |timeline, cx| timeline.react(message, emoji.clone(), cx));
+            }
+            cx.notify();
+        })
+        .detach();
+        self.picker = Some((picker, message));
+        cx.notify();
+    }
+}

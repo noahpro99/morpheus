@@ -11,7 +11,7 @@ use gpui::{
     rgb,
 };
 use morpheus_core::{
-    MediaRef, OwnedEventId, OwnedRoomId, OwnedUserId, Profile, RoomSummary, Session, SpaceRoom,
+    MediaRef, MessageId, OwnedEventId, OwnedRoomId, OwnedUserId, Profile, RoomSummary, Session, SpaceRoom,
     TimelineHandle,
     VectorDiff,
 };
@@ -23,6 +23,7 @@ use crate::{
     e2e::E2eExt as _,
     media::{self, Avatars},
     members::{MemberEvent, MembersView},
+    emoji_picker::EmojiPicker,
     menu::{self, OpenMenu},
     profile::ProfileCard,
     model::{Scope, rooms_in_scope},
@@ -81,6 +82,8 @@ pub struct Shell {
     pub marks: Marks,
     /// The people you are friends with.
     pub friends: Vec<OwnedUserId>,
+    /// The full emoji picker, and the message it reacts to.
+    pub picker: Option<(Entity<EmojiPicker>, MessageId)>,
     /// The profile card (or full profile) that is open.
     pub card: Option<Entity<ProfileCard>>,
     /// Where the last menu opened, for what it opens in its place.
@@ -194,6 +197,7 @@ impl Shell {
             hidden_rooms: HashSet::new(),
             marks: Marks::default(),
             friends: Vec::new(),
+            picker: None,
             card: None,
             menu_at: gpui::Point::default(),
             members: None,
@@ -299,7 +303,7 @@ impl Shell {
             cx.subscribe(&timeline, |this: &mut Self, _, event: &TimelineEvent, cx| match event {
                 TimelineEvent::Opened(handle) => this.timeline_handle = Some(handle.clone()),
                 TimelineEvent::Menu(message, at) => this.open_message_menu(message, *at, cx),
-                TimelineEvent::Picker(..) => {}
+                TimelineEvent::Picker(message, at) => this.open_picker(message.id.clone(), *at, cx),
                 TimelineEvent::Delete(message, skip) => {
                     this.delete_message((**message).clone(), *skip, cx)
                 }
@@ -598,6 +602,7 @@ impl Render for Shell {
             .children(self.settings.clone())
             .children(dialog)
             .children(self.card.clone())
+            .children(self.picker.as_ref().map(|(picker, _)| picker.clone()))
             .children(menu)
             .children(toasts)
             .e2e("div", if self.members_open { "shell" } else { "shell no-side" })
