@@ -4417,8 +4417,6 @@ dependencies = [
 [[package]]
 name = "gpui"
 version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4d6cc8eeb8b75347d602fb1919e2c42f26c43c2a75d71b46200a8c24e8ba4c4c"
 dependencies = [
  "anyhow",
  "as-raw-xcb-connection",
@@ -7173,7 +7171,10 @@ name = "morpheus-desktop-gpui"
 version = "0.1.4"
 dependencies = [
  "anyhow",
+ "futures",
  "gpui",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

@@ -233,10 +233,21 @@ impl App {
     }
 
     /// Evaluate JavaScript in the webview. Use `return` to get a value back.
+    /// The GPUI app (`MORPHEUS_E2E_UI=gpui`) runs none: the test needs porting.
     pub async fn eval(&mut self, js: &str) -> Result<Value> {
+        if gpui() {
+            bail!("{NEEDS_PORTING}\n  js: {js}");
+        }
+        self.send(|id| json!({ "id": id, "js": js }), &format!("js: {js}"))
+            .await
+    }
+
+    /// Send one request to the app's bridge (`build` makes it from its ID)
+    /// and wait for the answer; `detail` says what it was, for failures.
+    async fn send(&mut self, build: impl FnOnce(u64) -> Value, detail: &str) -> Result<Value> {
         let id = self.next_id;
         self.next_id += 1;
-        let mut request = json!({ "id": id, "js": js }).to_string();
+        let mut request = build(id).to_string();
         request.push('\n');
         self.writer.write_all(request.as_bytes()).await?;
 
@@ -245,7 +256,7 @@ impl App {
             .await
             .map_err(|_| {
                 anyhow!(
-                    "the app did not answer for {EVAL_TIMEOUT:?}\n  js: {js}\n--- app log ---\n{}",
+                    "the app did not answer for {EVAL_TIMEOUT:?}\n  {detail}\n--- app log ---\n{}",
                     self.log_tail(40)
                 )
             })??
@@ -259,14 +270,60 @@ impl App {
         }
         if !response.ok {
             bail!(
-                "eval failed: {}\n  js: {js}",
+                "eval failed: {}\n  {detail}",
                 response.error.unwrap_or_default()
             );
         }
         Ok(response.value)
     }
 
+    /// A structured request to the GPUI app: operation `op` on the elements
+    /// matching `selector`; `extra` holds the operation's other fields
+    /// (`contains`, `exact`, `index`, `text`, `key`, `modifiers`).
+    async fn op(&mut self, op: &str, selector: &str, extra: Value) -> Result<Value> {
+        self.send(
+            |id| {
+                let mut request = json!({ "id": id, "op": op, "selector": selector });
+                if let (Some(request), Some(extra)) = (request.as_object_mut(), extra.as_object()) {
+                    request.extend(extra.clone());
+                }
+                request
+            },
+            &format!("{op} {selector}"),
+        )
+        .await
+    }
+
+    /// Poll the GPUI app until some element matches `selector` (and `filter`).
+    async fn wait_gpui(
+        &mut self,
+        timeout: Duration,
+        what: &str,
+        selector: &str,
+        filter: Value,
+    ) -> Result<()> {
+        let started = Instant::now();
+        let deadline = started + timeout;
+        loop {
+            if self.op("count", selector, filter.clone()).await?.as_u64() > Some(0) {
+                self.timings.push((what.to_owned(), started.elapsed()));
+                return Ok(());
+            }
+            if Instant::now() >= deadline {
+                bail!(
+                    "timed out after {timeout:?} waiting for {what}\n--- app log ---\n{}",
+                    self.log_tail(30)
+                );
+            }
+            sleep(POLL).await;
+        }
+    }
+
     pub async fn count(&mut self, selector: &str) -> Result<usize> {
+        if gpui() {
+            let count = self.op("count", selector, json!({})).await?;
+            return Ok(count.as_u64().unwrap_or(0) as usize);
+        }
         let js = format!(
             "return document.querySelectorAll({}).length;",
             js_str(selector)
@@ -276,6 +333,10 @@ impl App {
 
     /// `textContent` of the first match, if any.
     pub async fn text(&mut self, selector: &str) -> Result<Option<String>> {
+        if gpui() {
+            let text = self.op("text", selector, json!({})).await?;
+            return Ok(text.as_str().map(ToOwned::to_owned));
+        }
         let js = format!(
             "const el = document.querySelector({}); return el ? el.textContent : null;",
             js_str(selector)
@@ -285,6 +346,10 @@ impl App {
 
     /// Current `value` of the first matching input.
     pub async fn value(&mut self, selector: &str) -> Result<Option<String>> {
+        if gpui() {
+            let value = self.op("value", selector, json!({})).await?;
+            return Ok(value.as_str().map(ToOwned::to_owned));
+        }
         let js = format!(
             "const el = document.querySelector({}); return el ? el.value : null;",
             js_str(selector)
@@ -294,6 +359,10 @@ impl App {
 
     /// Wait until at least one element matches.
     pub async fn wait_for(&mut self, selector: &str, timeout: Duration) -> Result<()> {
+        if gpui() {
+            let what = format!("element matching {selector}");
+            return self.wait_gpui(timeout, &what, selector, json!({})).await;
+        }
         let js = format!(
             "return document.querySelectorAll({}).length > 0;",
             js_str(selector)
@@ -309,6 +378,12 @@ impl App {
         needle: &str,
         timeout: Duration,
     ) -> Result<()> {
+        if gpui() {
+            let what = format!("{selector} containing {needle:?}");
+            return self
+                .wait_gpui(timeout, &what, selector, json!({ "contains": needle }))
+                .await;
+        }
         let js = format!(
             "return [...document.querySelectorAll({})].some(el => el.textContent.includes({}));",
             js_str(selector),
@@ -321,6 +396,9 @@ impl App {
     /// Open a room by name. Rooms inside a space are hidden in Home, so if
     /// the row is not visible this clicks through the space badges to find it.
     pub async fn open_room(&mut self, name: &str) -> Result<()> {
+        if gpui() {
+            return self.open_room_gpui(name).await;
+        }
         // An exact name first: "bob" is not "Empty Room (was bob)".
         let click = format!(
             "const want = {}; const rows = [...document.querySelectorAll('.room')]; \
@@ -366,6 +444,9 @@ impl App {
     /// Click an element with a real-looking pointer position (its centre), so
     /// handlers that anchor popups to the click behave as they do for a mouse.
     pub async fn click(&mut self, selector: &str) -> Result<()> {
+        if gpui() {
+            return self.op("click", selector, json!({})).await.map(drop);
+        }
         let js = format!(
             "const el = {}; const r = el.getBoundingClientRect(); \
              el.dispatchEvent(new MouseEvent('click', {{ bubbles: true, cancelable: true, button: 0, \
@@ -434,6 +515,9 @@ impl App {
 
     /// Right-click an element: a bubbling `contextmenu` event at its centre.
     pub async fn right_click(&mut self, selector: &str) -> Result<()> {
+        if gpui() {
+            return self.op("right_click", selector, json!({})).await.map(drop);
+        }
         let js = format!(
             "const el = {}; const r = el.getBoundingClientRect(); \
              el.dispatchEvent(new MouseEvent('contextmenu', {{ bubbles: true, cancelable: true, button: 2, \
@@ -445,6 +529,10 @@ impl App {
 
     /// Click the first `selector` element whose text contains `needle`.
     pub async fn click_text(&mut self, selector: &str, needle: &str) -> Result<()> {
+        if gpui() {
+            let extra = json!({ "contains": needle });
+            return self.op("click", selector, extra).await.map(drop);
+        }
         let (sel, text) = (js_str(selector), js_str(needle));
         let js = format!(
             "const el = [...document.querySelectorAll({sel})].find(el => el.textContent.includes({text}));
@@ -499,6 +587,10 @@ impl App {
 
     /// Replace an input's value and fire `input` so the UI sees it.
     pub async fn type_into(&mut self, selector: &str, text: &str) -> Result<()> {
+        if gpui() {
+            let extra = json!({ "text": text });
+            return self.op("type", selector, extra).await.map(drop);
+        }
         let js = format!(
             "const el = {}; el.focus(); el.value = {}; el.dispatchEvent(new Event('input', {{ bubbles: true }}));",
             query(selector),
@@ -509,6 +601,10 @@ impl App {
 
     /// Dispatch a `keydown` for `key` (e.g. "Enter") on the element.
     pub async fn press(&mut self, selector: &str, key: &str) -> Result<()> {
+        if gpui() {
+            let extra = json!({ "key": key });
+            return self.op("press", selector, extra).await.map(drop);
+        }
         // On a phone the keyboard's Enter is a new line in the message box;
         // sending is the send button, so "Enter to send" taps it (unless a
         // suggestion list is open, where Enter picks).
@@ -539,6 +635,14 @@ impl App {
         alt: bool,
         shift: bool,
     ) -> Result<()> {
+        if gpui() {
+            let modifiers: Vec<&str> = [(ctrl, "ctrl"), (alt, "alt"), (shift, "shift")]
+                .into_iter()
+                .filter_map(|(held, name)| held.then_some(name))
+                .collect();
+            let extra = json!({ "key": key, "modifiers": modifiers });
+            return self.op("press", selector, extra).await.map(drop);
+        }
         let js = format!(
             "{}.dispatchEvent(new KeyboardEvent('keydown', {{ key: {}, ctrlKey: {ctrl}, altKey: {alt}, shiftKey: {shift}, bubbles: true, cancelable: true }}));",
             query(selector),
@@ -549,6 +653,9 @@ impl App {
 
     /// Dispatch a keyboard shortcut (e.g. Ctrl+K) on an element.
     pub async fn shortcut(&mut self, selector: &str, key: &str, ctrl: bool) -> Result<()> {
+        if gpui() {
+            return self.key_combo(selector, key, ctrl, false, false).await;
+        }
         let js = format!(
             "{}.dispatchEvent(new KeyboardEvent('keydown', {{ key: {}, ctrlKey: {ctrl}, bubbles: true, cancelable: true }}));",
             query(selector),
@@ -558,6 +665,9 @@ impl App {
     }
 
     pub async fn submit(&mut self, form_selector: &str) -> Result<()> {
+        if gpui() {
+            return self.op("submit", form_selector, json!({})).await.map(drop);
+        }
         self.eval(&format!("{}.requestSubmit();", query(form_selector)))
             .await
             .map(drop)
@@ -714,6 +824,12 @@ impl App {
         text: &str,
         timeout: Duration,
     ) -> Result<()> {
+        if gpui() {
+            let what = format!("{selector} with text {text:?}");
+            return self
+                .wait_gpui(timeout, &what, selector, json!({ "exact": text }))
+                .await;
+        }
         let js = format!(
             "return [...document.querySelectorAll({})].some(el => el.textContent.trim() === {});",
             js_str(selector),
@@ -735,6 +851,9 @@ impl App {
         what: &str,
         predicate_js: &str,
     ) -> Result<()> {
+        if gpui() {
+            bail!("{NEEDS_PORTING}\n  waiting for: {what}");
+        }
         let started = Instant::now();
         let deadline = started + timeout;
         loop {
@@ -754,6 +873,50 @@ impl App {
 }
 
 impl App {
+    /// [`Self::open_room`] in the GPUI app: click the row whose name is
+    /// exactly `name` (else one containing it), looking through the spaces.
+    async fn open_room_gpui(&mut self, name: &str) -> Result<()> {
+        let deadline = Instant::now() + DEFAULT_WAIT;
+        loop {
+            for filter in [json!({ "exact": name }), json!({ "contains": name })] {
+                if self
+                    .op("count", ".room .room-name", filter.clone())
+                    .await?
+                    .as_u64()
+                    > Some(0)
+                {
+                    self.op("click", ".room .room-name", filter).await?;
+                    return self
+                        .wait_for_text(".chat-header h2", name, DEFAULT_WAIT)
+                        .await;
+                }
+            }
+            let badges = self.count(".rail-item").await?;
+            for index in 0..badges {
+                self.op("click", ".rail-item", json!({ "index": index }))
+                    .await?;
+                sleep(Duration::from_millis(300)).await;
+                let filter = json!({ "exact": name });
+                if self
+                    .op("count", ".room .room-name", filter.clone())
+                    .await?
+                    .as_u64()
+                    > Some(0)
+                {
+                    self.op("click", ".room .room-name", filter).await?;
+                    return self
+                        .wait_for_text(".chat-header h2", name, DEFAULT_WAIT)
+                        .await;
+                }
+            }
+            if Instant::now() >= deadline {
+                let rows = self.op("texts", ".room", json!({})).await;
+                bail!("no room named {name:?} in any space\nrows: {rows:?}");
+            }
+            sleep(POLL).await;
+        }
+    }
+
     /// Every wait so far, as `(what, elapsed)`, in order.
     pub fn timings(&self) -> &[(String, Duration)] {
         &self.timings
@@ -788,6 +951,15 @@ impl Drop for App {
         }
     }
 }
+
+/// Whether the app under test is the GPUI one (`MORPHEUS_E2E_UI=gpui`): its
+/// bridge takes structured requests, not JavaScript.
+fn gpui() -> bool {
+    std::env::var("MORPHEUS_E2E_UI").as_deref() == Ok("gpui")
+}
+
+const NEEDS_PORTING: &str =
+    "the GPUI app runs no JavaScript: this test needs porting to selector calls";
 
 /// `document.querySelector(sel)` that throws a useful error when missing.
 fn query(selector: &str) -> String {
@@ -1378,6 +1550,9 @@ fn screen_metrics() -> (f64, f64) {
 impl App {
     /// [`Self::tap`] on the first `selector` match whose text contains `needle`.
     pub async fn tap_text(&mut self, selector: &str, needle: &str) -> Result<()> {
+        if gpui() {
+            return self.click_text(selector, needle).await;
+        }
         self.eval(&format!(
             "document.querySelectorAll('[data-e2e-tap]').forEach(e => e.removeAttribute('data-e2e-tap')); \
              const el = [...document.querySelectorAll({})].find(e => e.textContent.includes({})); \
