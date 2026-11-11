@@ -49,6 +49,8 @@ pub struct Pictures {
     pub nickname: Option<String>,
     /// Jumped to from a search result: glowing for a moment.
     pub highlight: bool,
+    /// Its right-click menu is open: stays highlighted (`data-menu-open`).
+    pub menu_open: bool,
 }
 
 /// A file's download, as its card shows it.
@@ -1142,9 +1144,16 @@ pub fn message_el(
             line = line.child(actions_bar(m, group, actions));
         }
     }
-    let line = line
+    let mut line = line;
+    if pics.menu_open {
+        line = line.bg(rgba(theme::BG_HOVER));
+    }
+    let mut line = line
         .e2e("div", &classes)
         .attr("data-event-id", event_id);
+    if pics.menu_open {
+        line = line.attr("data-menu-open", "");
+    }
     if show_header {
         div().w_full().pt(px(12.0)).child(line).into_any_element()
     } else {

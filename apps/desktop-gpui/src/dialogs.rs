@@ -133,8 +133,25 @@ impl Shell {
         self.open_menu(OpenMenu::new(at, items, react, target), cx);
     }
 
-    fn open_timeline(&self) -> Option<Entity<TimelineView>> {
-        self.timeline.as_ref().map(|(_, timeline)| timeline.clone())
+    /// The timeline a message action acts on: the thread panel's replies if
+    /// the menu came from there, else the room's.
+    pub(crate) fn open_timeline(&self, cx: &gpui::App) -> Option<Entity<TimelineView>> {
+        self.active_timeline(cx).map(|(timeline, _)| timeline)
+    }
+
+    /// That timeline and its handle.
+    pub(crate) fn active_timeline(
+        &self,
+        cx: &gpui::App,
+    ) -> Option<(Entity<TimelineView>, Option<morpheus_core::TimelineHandle>)> {
+        if self.acting_in_thread
+            && let Some((_, panel)) = &self.thread
+        {
+            return Some(panel.read(cx).timeline());
+        }
+        self.timeline
+            .as_ref()
+            .map(|(_, timeline)| (timeline.clone(), self.timeline_handle.clone()))
     }
 
     /// Runs what a menu item asked for.
@@ -152,7 +169,7 @@ impl Shell {
         room: Option<OwnedRoomId>,
         cx: &mut Context<Self>,
     ) {
-        let timeline = self.open_timeline();
+        let timeline = self.open_timeline(cx);
         let unique_id = message.unique_id.clone();
         let session = self.session.clone();
         let event_id = match &message.id {
@@ -294,10 +311,7 @@ impl Shell {
 
     /// Deletes a message undoably: it goes now, for good once its toast has.
     fn delete_with_undo(&mut self, message: Message, cx: &mut Context<Self>) {
-        let (Some(timeline), Some(handle)) = (
-            self.open_timeline(),
-            self.timeline_handle.clone(),
-        ) else {
+        let Some((timeline, Some(handle))) = self.active_timeline(cx) else {
             return;
         };
         timeline.update(cx, |timeline, _| timeline.hide(&message.unique_id));

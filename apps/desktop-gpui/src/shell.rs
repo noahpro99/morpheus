@@ -99,6 +99,9 @@ pub struct Shell {
     pub members_count: u64,
     /// The open room's timeline, to act on its messages.
     pub timeline_handle: Option<TimelineHandle>,
+    /// Whether the message menu, picker or bin in use came from the thread
+    /// panel's replies rather than the room's timeline.
+    pub acting_in_thread: bool,
     /// The open room's pinned messages.
     pub pinned: Vec<OwnedEventId>,
     /// Your nicknames for people.
@@ -250,6 +253,7 @@ impl Shell {
             members_open: true,
             members_count: 0,
             timeline_handle: None,
+            acting_in_thread: false,
             pinned: Vec::new(),
             nicknames: NickMap::new(),
             thread: None,
@@ -321,6 +325,18 @@ impl Shell {
                 this.open_profile(message.sender.clone(), Some(*at), seen, cx)
             }
             ThreadEvent::SenderMenu(message, at) => this.open_sender_menu(message, *at, cx),
+            ThreadEvent::Menu(message, at) => {
+                this.acting_in_thread = true;
+                this.open_message_menu(message, *at, cx)
+            }
+            ThreadEvent::Picker(message, at) => {
+                this.acting_in_thread = true;
+                this.open_picker(message.id.clone(), *at, cx)
+            }
+            ThreadEvent::Delete(message, skip) => {
+                this.acting_in_thread = true;
+                this.delete_message((**message).clone(), *skip, cx)
+            }
             ThreadEvent::Failed(what, err) => this.fail(what, err, cx),
         })
         .detach();
@@ -512,9 +528,16 @@ impl Shell {
             .detach();
             cx.subscribe(&timeline, |this: &mut Self, _, event: &TimelineEvent, cx| match event {
                 TimelineEvent::Opened(handle) => this.timeline_handle = Some(handle.clone()),
-                TimelineEvent::Menu(message, at) => this.open_message_menu(message, *at, cx),
-                TimelineEvent::Picker(message, at) => this.open_picker(message.id.clone(), *at, cx),
+                TimelineEvent::Menu(message, at) => {
+                    this.acting_in_thread = false;
+                    this.open_message_menu(message, *at, cx)
+                }
+                TimelineEvent::Picker(message, at) => {
+                    this.acting_in_thread = false;
+                    this.open_picker(message.id.clone(), *at, cx)
+                }
                 TimelineEvent::Delete(message, skip) => {
+                    this.acting_in_thread = false;
                     this.delete_message((**message).clone(), *skip, cx)
                 }
                 TimelineEvent::Failed(what, err) => this.fail(what, err, cx),
@@ -585,6 +608,24 @@ impl Shell {
             cx.notify();
         } else {
             cx.open_url(url);
+        }
+    }
+
+    /// Tells the timelines which message has its right-click menu open, so it
+    /// stays highlighted while it is.
+    fn mark_menu_message(&mut self, cx: &mut Context<Self>) {
+        let open = self.menu.as_ref().and_then(|menu| match &menu.target {
+            crate::view_model::menu::MenuTarget::Message { message, .. } => {
+                Some(message.unique_id.clone())
+            }
+            _ => None,
+        });
+        if let Some((_, timeline)) = &self.timeline {
+            timeline.update(cx, |timeline, cx| timeline.set_menu_message(open.clone(), cx));
+        }
+        if let Some((_, panel)) = &self.thread {
+            let (timeline, _) = panel.read(cx).timeline();
+            timeline.update(cx, |timeline, cx| timeline.set_menu_message(open, cx));
         }
     }
 
@@ -776,6 +817,7 @@ pub fn apply(rooms: &mut Vec<RoomSummary>, diff: VectorDiff<RoomSummary>) {
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.fetch_avatars(cx);
+        self.mark_menu_message(cx);
         let menu = menu::render(self, window, cx);
         let dialog = dialogs::render_dialog(self, window, cx);
         let inbox = crate::invites::inbox(self, window, cx);
