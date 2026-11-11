@@ -347,12 +347,12 @@ fn reactions_el(reactions: &[Reaction]) -> impl IntoElement {
         .e2e("div", "reactions")
 }
 
-fn thread_chip(thread: &ThreadSummary) -> impl IntoElement {
-    let count = if thread.reply_count == 1 {
-        "1 reply".to_owned()
-    } else {
-        format!("{} replies", thread.reply_count)
-    };
+fn thread_chip(
+    thread: &ThreadSummary,
+    unique_id: &str,
+    actions: Option<&ActionHandler>,
+) -> impl IntoElement {
+    let count = crate::view_model::threads::chip_count(thread);
     let mut chip = div()
         .flex()
         .items_center()
@@ -379,8 +379,7 @@ fn thread_chip(thread: &ThreadSummary) -> impl IntoElement {
                 .e2e("span", "thread-chip-count")
                 .text(count),
         );
-    if let Some(name) = &thread.latest_sender_name {
-        let text = format!("· last from {name}");
+    if let Some(text) = crate::view_model::threads::chip_latest(thread) {
         chip = chip.child(
             div()
                 .max_w(px(160.0))
@@ -389,6 +388,15 @@ fn thread_chip(thread: &ThreadSummary) -> impl IntoElement {
                 .e2e("span", "thread-chip-latest")
                 .text(text),
         );
+    }
+    let mut chip = chip
+        .id(ElementId::from(SharedString::from(format!("thread-chip-{unique_id}"))))
+        .hover(|s| s.bg(rgba(theme::BG_HOVER)).text_color(rgb(theme::TEXT)));
+    if let Some(actions) = actions {
+        let (actions, unique_id) = (actions.clone(), unique_id.to_owned());
+        chip = chip.on_click(move |_, window, cx| {
+            actions(RowAction::Thread, &unique_id, window, cx)
+        });
     }
     chip.w_auto().e2e("button", "thread-chip")
 }
@@ -781,6 +789,8 @@ fn muted_body(text: &str) -> AnyElement {
 #[derive(Clone, Debug, PartialEq)]
 pub enum RowAction {
     Reply,
+    /// "Reply in thread", or a thread chip: open the thread panel.
+    Thread,
     Edit,
     React(&'static str),
     /// The "more reactions" button, where it is (the picker opens there).
@@ -883,6 +893,15 @@ fn actions_bar(m: &Message, group: SharedString, actions: &ActionHandler) -> Any
             "Reply",
             icon("reply", 15.0).into_any_element(),
             RowAction::Reply,
+            uid,
+            actions,
+        ));
+        bar = bar.child(action_button(
+            format!("thread-{uid}").into(),
+            "action thread",
+            "Reply in thread",
+            icon("messages-square", 15.0).into_any_element(),
+            RowAction::Thread,
             uid,
             actions,
         ));
@@ -1050,7 +1069,7 @@ pub fn message_el(
         main = main.child(reactions_el(&m.reactions));
     }
     if let Some(thread) = &m.thread {
-        main = main.child(thread_chip(thread));
+        main = main.child(thread_chip(thread, &m.unique_id, actions));
     }
 
     let group = SharedString::from("message");

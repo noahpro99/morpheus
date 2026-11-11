@@ -11,7 +11,7 @@ use gpui::{
     rgb,
 };
 use morpheus_core::{
-    MediaRef, MessageId, OwnedEventId, OwnedRoomId, OwnedUserId, Profile, RoomSummary, Session, SpaceRoom,
+    MediaRef, Message, MessageId, OwnedEventId, OwnedRoomId, OwnedUserId, Profile, RoomSummary, Session, SpaceRoom,
     TimelineHandle,
     VectorDiff,
 };
@@ -32,6 +32,7 @@ use crate::{
     rail, room_list,
     settings::{KeysChanged, SettingsView, ThemeChosen},
     theme,
+    thread::{ThreadEvent, ThreadPanel},
     timeline::{LinkClicked, TimelineEvent, TimelineView},
     user_bar,
     view_model::keys::{KeyAccess, SettingsFocus, show_backup_prompt},
@@ -100,6 +101,8 @@ pub struct Shell {
     pub pinned: Vec<OwnedEventId>,
     /// Your nicknames for people.
     pub nicknames: NickMap,
+    /// The open thread, in the side column in place of the members.
+    pub thread: Option<(OwnedRoomId, Entity<ThreadPanel>)>,
 }
 
 impl Shell {
@@ -228,6 +231,43 @@ impl Shell {
             timeline_handle: None,
             pinned: Vec::new(),
             nicknames: NickMap::new(),
+            thread: None,
+        }
+    }
+
+    /// Opens a message's thread in the side column.
+    pub fn open_thread(&mut self, root: Message, cx: &mut Context<Self>) {
+        let Some(room) = self.selected.clone() else {
+            return;
+        };
+        if !crate::view_model::threads::can_open(&root) {
+            return;
+        }
+        let session = self.session.clone();
+        let nicknames = self.nicknames.clone();
+        let MessageId::Event(root_id) = root.id.clone() else {
+            return;
+        };
+        let room_id = room.clone();
+        let panel = cx.new(|cx| ThreadPanel::new(session, room_id, root, root_id, &nicknames, cx));
+        cx.subscribe(&panel, |this: &mut Self, _, event: &ThreadEvent, cx| match event {
+            ThreadEvent::Close => this.close_thread(cx),
+            ThreadEvent::Sender(message, at) => {
+                let seen = Some((message.sender_name.clone(), message.sender_avatar.clone()));
+                this.open_profile(message.sender.clone(), Some(*at), seen, cx)
+            }
+            ThreadEvent::SenderMenu(message, at) => this.open_sender_menu(message, *at, cx),
+            ThreadEvent::Failed(what, err) => this.fail(what, err, cx),
+        })
+        .detach();
+        self.thread = Some((room, panel));
+        cx.notify();
+    }
+
+    /// Closes the thread panel; the member list comes back.
+    pub fn close_thread(&mut self, cx: &mut Context<Self>) {
+        if self.thread.take().is_some() {
+            cx.notify();
         }
     }
 
@@ -319,6 +359,7 @@ impl Shell {
                     | TimelineEvent::Delete(..)
                     | TimelineEvent::Sender(..)
                     | TimelineEvent::SenderMenu(..)
+                    | TimelineEvent::Thread(..)
                     | TimelineEvent::Failed(..) => {}
                 })
             })
@@ -331,6 +372,7 @@ impl Shell {
                     this.delete_message((**message).clone(), *skip, cx)
                 }
                 TimelineEvent::Failed(what, err) => this.fail(what, err, cx),
+                TimelineEvent::Thread(message) => this.open_thread((**message).clone(), cx),
                 TimelineEvent::SenderMenu(message, at) => this.open_sender_menu(message, *at, cx),
                 TimelineEvent::Sender(message, at) => {
                     let seen = Some((message.sender_name.clone(), message.sender_avatar.clone()));
@@ -352,6 +394,8 @@ impl Shell {
             self.composer = Some((id.clone(), composer));
             self.timeline_handle = None;
             self.pinned.clear();
+            // A thread belongs to the room it was opened from.
+            self.thread = None;
         }
         if self.session.is_some() && self.members.as_ref().is_none_or(|(room, _)| room != &id) {
             let session = self.session.clone();

@@ -194,10 +194,20 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                     .child(composer.clone());
             }
             let mut body = div().flex().flex_1().min_h_0().child(content);
-            if shell.members_open
+            // The side column: an open thread, else the member list.
+            let side = if let Some((id, thread)) = &shell.thread
+                && id == &room.id
+            {
+                Some(thread.clone().into_any_element())
+            } else if shell.members_open
                 && let Some((id, members)) = &shell.members
                 && id == &room.id
             {
+                Some(members.clone().into_any_element())
+            } else {
+                None
+            };
+            if let Some(side) = side {
                 body = body.child(
                     div()
                         .w(px(theme::MEMBERS_W))
@@ -211,7 +221,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                                 .rounded(px(theme::RADIUS_LG))
                                 .overflow_hidden()
                                 .bg(rgb(theme::BG_SIDEBAR))
-                                .child(members.clone())
+                                .child(side)
                                 .e2e("div", "side-pane"),
                         ),
                 );

@@ -63,6 +63,8 @@ pub struct Composer {
     emoji_open: bool,
     /// Put the caret in the box on the next frame (a window is needed).
     pending_focus: bool,
+    /// A placeholder of its own (a thread's box), instead of the room's.
+    placeholder: Option<String>,
 }
 
 impl Composer {
@@ -108,6 +110,7 @@ impl Composer {
             fetching_members: false,
             emoji_open: false,
             pending_focus: false,
+            placeholder: None,
         };
         this.refresh_placeholder(cx);
         #[cfg(feature = "e2e")]
@@ -115,8 +118,17 @@ impl Composer {
         this
     }
 
+    /// A placeholder of its own, as a thread's box has.
+    pub fn with_placeholder(mut self, text: &str, cx: &mut Context<Self>) -> Self {
+        self.placeholder = Some(text.to_owned());
+        self.refresh_placeholder(cx);
+        self
+    }
+
     fn refresh_placeholder(&mut self, cx: &mut Context<Self>) {
-        let text = if self.is_dm {
+        let text = if let Some(text) = &self.placeholder {
+            text.clone()
+        } else if self.is_dm {
             format!("Message @{}", self.room_name)
         } else {
             format!("Message #{}", self.room_name)
