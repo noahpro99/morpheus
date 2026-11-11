@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use gpui::{Context, IntoElement, Render, Window, div, prelude::*, px, rgb};
+use gpui::{Context, Entity, IntoElement, Render, Window, div, prelude::*, px, rgb};
 use morpheus_core::{MediaRef, OwnedRoomId, Profile, RoomSummary, Session, SpaceRoom, VectorDiff};
 
 use crate::{
@@ -12,7 +12,10 @@ use crate::{
     media::{self, Avatars},
     model::{Scope, rooms_in_scope},
     prefs::Prefs,
-    rail, room_list, theme, user_bar,
+    rail, room_list,
+    theme,
+    timeline::{LinkClicked, TimelineView},
+    user_bar,
 };
 
 pub struct Shell {
@@ -27,6 +30,10 @@ pub struct Shell {
     /// The rooms the selected server lists, joined or not.
     pub directory: Vec<SpaceRoom>,
     pub avatars: Avatars,
+    /// The open room's messages.
+    pub timeline: Option<(OwnedRoomId, Entity<TimelineView>)>,
+    /// Links handed to the browser (the test bridge's `.link-log`).
+    pub opened_links: Vec<String>,
 }
 
 impl Shell {
@@ -91,6 +98,8 @@ impl Shell {
             profile: None,
             directory: Vec::new(),
             avatars: Avatars::default(),
+            timeline: None,
+            opened_links: Vec::new(),
         }
     }
 
@@ -122,8 +131,33 @@ impl Shell {
     }
 
     pub fn open_room(&mut self, id: OwnedRoomId, cx: &mut Context<Self>) {
+        if self.session.is_some() && self.timeline.as_ref().is_none_or(|(room, _)| room != &id) {
+            let session = self.session.clone();
+            let room = id.clone();
+            let timeline = cx.new(|cx| TimelineView::new(session, room, cx));
+            cx.subscribe(&timeline, |this: &mut Self, _, event: &LinkClicked, cx| {
+                this.link_clicked(&event.0, cx)
+            })
+            .detach();
+            // The old one is dropped here: leaving a room reads it.
+            self.timeline = Some((id.clone(), timeline));
+        }
         self.selected = Some(id);
         cx.notify();
+    }
+
+    /// A link in a message: Matrix links open in the app (not yet ported),
+    /// others in the browser; test runs only log the hand-off.
+    fn link_clicked(&mut self, url: &str, cx: &mut Context<Self>) {
+        if morpheus_core::parse_matrix_link(url).is_some() {
+            return;
+        }
+        if std::env::var_os("MORPHEUS_E2E_PORT").is_some() {
+            self.opened_links.push(url.to_owned());
+            cx.notify();
+        } else {
+            cx.open_url(url);
+        }
     }
 
     /// Starts fetching every picture the frame will draw.
@@ -238,6 +272,16 @@ impl Render for Shell {
             .flex()
             .flex_col()
             .bg(rgb(theme::BG_CHAT))
+            .child(
+                div()
+                    .size_0()
+                    .children(
+                        self.opened_links
+                            .iter()
+                            .map(|url| div().size_0().e2e("li", "").text(url.clone())),
+                    )
+                    .e2e("ul", "link-log"),
+            )
             .child(
                 div()
                     .flex()

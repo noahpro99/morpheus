@@ -25,3 +25,13 @@ pub const RAIL_W: f32 = 72.0;
 pub const SIDEBAR_W: f32 = 248.0;
 pub const BOTTOM_H: f32 = 50.0;
 pub const BOTTOM_GAP: f32 = 12.0;
+/// `--own`: the colour of your own name.
+pub const OWN: u32 = 0xb8c0ff;
+/// `.body a`: links in messages.
+pub const LINK: u32 = 0x8fa0ff;
+/// `rgba(124, 140, 255, 0.15)`, as 0xRRGGBBAA: a reaction of yours, a jumped-to message.
+pub const ACCENT_TINT: u32 = 0x7c8cff26;
+/// `--mono`.
+pub const MONO: &str = "JetBrains Mono";
+/// What body text is: Inter at `html { font-size: 15px; line-height: 1.4 }`.
+pub const LINE_HEIGHT: f32 = 1.4;

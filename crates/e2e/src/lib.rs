@@ -489,6 +489,11 @@ impl App {
 
     /// [`Self::reveal`] for an element matching `selector`.
     pub async fn reveal_element(&mut self, selector: &str, timeout: Duration) -> Result<()> {
+        if gpui() {
+            return self
+                .reveal_gpui(&format!("element matching {selector}"), selector, None, timeout)
+                .await;
+        }
         let predicate = format!(
             "return document.querySelector({}) !== null;",
             js_str(selector)
@@ -504,6 +509,11 @@ impl App {
         text: &str,
         timeout: Duration,
     ) -> Result<()> {
+        if gpui() {
+            return self
+                .reveal_gpui(&format!("{selector} containing {text:?}"), selector, Some(text), timeout)
+                .await;
+        }
         let predicate = format!(
             "return [...document.querySelectorAll({})].some(el => el.textContent.includes({}));",
             js_str(selector),
@@ -519,12 +529,133 @@ impl App {
 
     /// [`Self::reveal`] for a message whose body contains `text`.
     pub async fn reveal_message(&mut self, text: &str, timeout: Duration) -> Result<()> {
+        if gpui() {
+            return self
+                .reveal_gpui(&format!("message {text:?}"), ".message .body", Some(text), timeout)
+                .await;
+        }
         let predicate = format!(
             "return [...document.querySelectorAll('.message .body')].some(el => el.textContent.includes({}));",
             js_str(text)
         );
         self.reveal(&format!("message {text:?}"), &predicate, timeout)
             .await
+    }
+
+    /// Scroll the timeline up until an element matching `selector` (whose
+    /// text contains `contains`, when given) is on screen. The GPUI app
+    /// paints only the rows in view, so this is how tests reach old ones.
+    async fn reveal_gpui(
+        &mut self,
+        what: &str,
+        selector: &str,
+        contains: Option<&str>,
+        timeout: Duration,
+    ) -> Result<()> {
+        let filter = match contains {
+            Some(text) => json!({ "contains": text }),
+            None => json!({}),
+        };
+        let deadline = Instant::now() + timeout;
+        loop {
+            if self.op("count", selector, filter.clone()).await?.as_u64() > Some(0) {
+                return Ok(());
+            }
+            if Instant::now() >= deadline {
+                bail!(
+                    "timed out after {timeout:?} waiting for {what} after scrolling up\n--- app log ---\n{}",
+                    self.log_tail(30)
+                );
+            }
+            self.scroll_to(".timeline", ScrollTo::Top).await?;
+            sleep(POLL).await;
+        }
+    }
+
+    /// How far the scrolling element `selector` is scrolled (see
+    /// [`ScrollState`]); `None` when nothing matches. On the Dioxus app a
+    /// `column-reverse` container (the timeline) reads as scrolled from its
+    /// bottom edge too.
+    pub async fn scroll_state(&mut self, selector: &str) -> Result<Option<ScrollState>> {
+        let value = if gpui() {
+            self.op("scroll_state", selector, json!({})).await.or_else(|err| {
+                // Nothing there is not an error.
+                if err.to_string().contains("no element matching") {
+                    Ok(Value::Null)
+                } else {
+                    Err(err)
+                }
+            })?
+        } else {
+            let js = format!(
+                "const t = document.querySelector({}); if (!t) return null; \
+                 const rev = getComputedStyle(t).flexDirection === 'column-reverse'; \
+                 const range = t.scrollHeight - t.clientHeight; \
+                 return {{ from_bottom: rev ? -t.scrollTop : range - t.scrollTop, range, viewport: t.clientHeight }};",
+                js_str(selector)
+            );
+            self.eval(&js).await?
+        };
+        if value.is_null() {
+            return Ok(None);
+        }
+        let number = |key: &str| value[key].as_f64().unwrap_or(0.0);
+        Ok(Some(ScrollState {
+            from_bottom: number("from_bottom"),
+            range: number("range"),
+            viewport: number("viewport"),
+        }))
+    }
+
+    /// Scroll the element `selector` to its top or bottom, or to a distance
+    /// from the bottom (clamped to what it can scroll).
+    pub async fn scroll_to(&mut self, selector: &str, to: ScrollTo) -> Result<()> {
+        if gpui() {
+            let extra = match to {
+                ScrollTo::Top => json!({ "to": "top" }),
+                ScrollTo::Bottom => json!({ "to": "bottom" }),
+                ScrollTo::FromBottom(px) => json!({ "from_bottom": px }),
+            };
+            return self.op("scroll", selector, extra).await.map(drop);
+        }
+        let wanted = match to {
+            ScrollTo::Top => "range".to_owned(),
+            ScrollTo::Bottom => "0".to_owned(),
+            ScrollTo::FromBottom(px) => px.to_string(),
+        };
+        let js = format!(
+            "const t = document.querySelector({}); if (!t) return false; \
+             const rev = getComputedStyle(t).flexDirection === 'column-reverse'; \
+             const range = t.scrollHeight - t.clientHeight; \
+             const from_bottom = Math.max(0, Math.min({wanted}, range)); \
+             t.scrollTop = rev ? -from_bottom : range - from_bottom; return true;",
+            js_str(selector)
+        );
+        self.eval(&js).await.map(drop)
+    }
+
+    /// Where the first element matching `selector` is, in window pixels.
+    pub async fn bounds(&mut self, selector: &str) -> Result<Option<Bounds>> {
+        let value = if gpui() {
+            self.op("bounds", selector, json!({})).await?
+        } else {
+            let js = format!(
+                "const e = document.querySelector({}); if (!e) return null; const r = e.getBoundingClientRect(); \
+                 return {{ x: r.left, y: r.top, w: r.width, h: r.height }};",
+                js_str(selector)
+            );
+            self.eval(&js).await?
+        };
+        if value.is_null() {
+            return Ok(None);
+        }
+        let number = |key: &str| value[key].as_f64().unwrap_or(0.0);
+        Ok(Some(Bounds {
+            x: number("x"),
+            y: number("y"),
+            w: number("w"),
+            h: number("h"),
+        }))
     }
 
     /// Right-click an element: a bubbling `contextmenu` event at its centre.
@@ -2036,4 +2167,45 @@ pub fn send_image_as(
         &format!("{homeserver}/_matrix/client/v3/logout"),
     ]);
     Ok(())
+}
+
+/// How far a scrolling element is scrolled, in pixels: `from_bottom` (0 at
+/// its newest end), the `range` it can scroll, and its `viewport` height.
+/// (The GPUI timeline only knows the rows it has measured, so its range
+/// grows as one scrolls up.)
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ScrollState {
+    pub from_bottom: f64,
+    pub range: f64,
+    pub viewport: f64,
+}
+
+/// Where [`App::scroll_to`] goes.
+#[derive(Clone, Copy, Debug)]
+pub enum ScrollTo {
+    Top,
+    Bottom,
+    /// This many pixels up from the bottom.
+    FromBottom(f64),
+}
+
+/// An element's box in window pixels.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Bounds {
+    pub x: f64,
+    pub y: f64,
+    pub w: f64,
+    pub h: f64,
+}
+
+impl Bounds {
+    pub fn right(&self) -> f64 {
+        self.x + self.w
+    }
+    pub fn bottom(&self) -> f64 {
+        self.y + self.h
+    }
+    pub fn centre_x(&self) -> f64 {
+        self.x + self.w / 2.0
+    }
 }

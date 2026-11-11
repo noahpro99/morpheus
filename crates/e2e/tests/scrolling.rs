@@ -1,13 +1,15 @@
 //! Timeline scrolling: rooms open at the newest message (also after switching
 //! rooms), a jump button appears once you scroll up, and messages that cannot
 //! be decrypted yet render as placeholders rather than an error.
+//!
+//! The scroll checks read the timeline through `App::scroll_state`,
+//! `scroll_to` and `bounds`, so they run on the Dioxus and GPUI apps alike.
 
 #![allow(clippy::expect_used)]
 
-use morpheus_e2e::{App, DEFAULT_WAIT};
+use std::time::{Duration, Instant};
 
-/// Holds once the timeline has more history than fits on screen.
-const SCROLLABLE: &str = "const t = document.querySelector('.timeline'); return !!t && t.scrollHeight > t.clientHeight + 600;";
+use morpheus_e2e::{App, DEFAULT_WAIT, ScrollTo};
 
 fn homeserver() -> Option<String> {
     std::env::var("MORPHEUS_TEST_HOMESERVER").ok()
@@ -29,11 +31,44 @@ async fn login(app: &mut App) {
         .expect("room listed");
 }
 
-/// The newest row is inside the viewport and the container sits at its end.
-const AT_BOTTOM: &str = "const t = document.querySelector('.timeline'); if (!t) return false; \
-    const last = t.querySelector('.message'); if (!last) return false; \
-    const box = t.getBoundingClientRect(); const row = last.getBoundingClientRect(); \
-    return Math.abs(t.scrollTop) < 2 && row.bottom <= box.bottom + 1 && row.top >= box.top - 1;";
+/// Poll an async condition until it holds or `timeout` runs out.
+macro_rules! until {
+    ($what:expr, $timeout:expr, $check:expr) => {{
+        let deadline = Instant::now() + $timeout;
+        loop {
+            if $check {
+                break;
+            }
+            assert!(Instant::now() < deadline, "timed out waiting for {}", $what);
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    }};
+}
+
+/// The view sits at its newest end and a message is showing there.
+async fn at_bottom(app: &mut App) -> bool {
+    let Some(state) = app.scroll_state(".timeline").await.expect("scroll state") else {
+        return false;
+    };
+    state.from_bottom.abs() < 2.0 && app.count(".timeline .message").await.expect("count") > 0
+}
+
+/// Scroll to the top until the timeline can scroll more than 600 px.
+async fn reveal_scrollable(app: &mut App) {
+    until!("a scrollable timeline", DEFAULT_WAIT, {
+        let range = app
+            .scroll_state(".timeline")
+            .await
+            .expect("scroll state")
+            .map_or(0.0, |s| s.range);
+        if range <= 600.0 {
+            app.scroll_to(".timeline", ScrollTo::Top)
+                .await
+                .expect("scroll up");
+        }
+        range > 600.0
+    });
+}
 
 #[tokio::test]
 async fn rooms_open_at_the_newest_message_and_jump_back_after_scrolling() {
@@ -48,9 +83,11 @@ async fn rooms_open_at_the_newest_message_and_jump_back_after_scrolling() {
     app.wait_for_exact_text(".message .body", "firehose message 600", DEFAULT_WAIT)
         .await
         .expect("newest message loaded");
-    app.wait_for_js(AT_BOTTOM, DEFAULT_WAIT)
-        .await
-        .expect("opened at the newest message");
+    until!(
+        "opened at the newest message",
+        DEFAULT_WAIT,
+        at_bottom(&mut app).await
+    );
     assert_eq!(
         app.count(".jump-to-bottom").await.expect("count"),
         0,
@@ -59,41 +96,46 @@ async fn rooms_open_at_the_newest_message_and_jump_back_after_scrolling() {
 
     // Scroll up a few screens: the button appears.
     // A tall window can show the whole first page; load enough history to scroll.
-    app.reveal("a scrollable timeline", SCROLLABLE, DEFAULT_WAIT)
-        .await
-        .expect("history");
-    app.eval("document.querySelector('.timeline').scrollTop = -2000;")
+    reveal_scrollable(&mut app).await;
+    app.scroll_to(".timeline", ScrollTo::FromBottom(2000.0))
         .await
         .expect("scroll up");
     app.wait_for(".jump-to-bottom", DEFAULT_WAIT)
         .await
         .expect("jump button after scrolling up");
     // Centred over the messages, clear of the message box's buttons.
-    let off = app
-        .eval("const b = document.querySelector('.jump-to-bottom').getBoundingClientRect(), t = document.querySelector('.timeline').getBoundingClientRect(); return Math.abs((b.left + b.right) / 2 - (t.left + t.right) / 2);")
+    let button = app
+        .bounds(".jump-to-bottom")
         .await
-        .expect("where");
-    assert!(
-        off.as_f64().unwrap_or(999.0) <= 4.0,
-        "jump button {off}px off centre"
-    );
+        .expect("button")
+        .expect("button box");
+    let timeline = app
+        .bounds(".timeline")
+        .await
+        .expect("timeline")
+        .expect("timeline box");
+    let off = (button.centre_x() - timeline.centre_x()).abs();
+    assert!(off <= 4.0, "jump button {off}px off centre");
     app.click(".jump-to-bottom").await.expect("jump");
-    app.wait_for_js(AT_BOTTOM, DEFAULT_WAIT)
-        .await
-        .expect("back at the newest message");
-    app.wait_for_js(
-        "return document.querySelector('.jump-to-bottom') === null;",
+    until!(
+        "back at the newest message",
         DEFAULT_WAIT,
-    )
-    .await
-    .expect("button gone at the bottom");
+        at_bottom(&mut app).await
+    );
+    until!(
+        "button gone at the bottom",
+        DEFAULT_WAIT,
+        app.count(".jump-to-bottom").await.expect("count") == 0
+    );
 
     // Switching rooms (and back) lands at the newest message every time.
     for room in ["random", "firehose", "bob", "random"] {
         app.open_room(room).await.expect("switch room");
-        app.wait_for_js(AT_BOTTOM, DEFAULT_WAIT)
-            .await
-            .unwrap_or_else(|e| panic!("{room} opened at the newest message: {e}"));
+        until!(
+            format!("{room} opened at the newest message"),
+            DEFAULT_WAIT,
+            at_bottom(&mut app).await
+        );
     }
 }
 
@@ -197,62 +239,61 @@ async fn scrolling_up_reaches_the_start_of_a_long_room() {
     app.wait_for_text(".timeline", "history message 500", DEFAULT_WAIT)
         .await
         .expect("the newest message");
-    // What shows above the oldest loaded message on the way up: placeholder
-    // rows to scroll onto, never a "loading" line.
-    app.eval(
-        "window.__loadingText = false; window.__olderSkeletons = false; \
-         const look = () => { const t = document.querySelector('.timeline'); if (!t) return; \
-           if (/Loading older/.test(t.textContent)) window.__loadingText = true; \
-           if (t.querySelector('.older-skeleton')) window.__olderSkeletons = true; }; \
-         new MutationObserver(look).observe(document.body, { childList: true, subtree: true, characterData: true }); look(); return true;",
-    )
-    .await
-    .expect("watch");
 
     // The wheel: the view moves up a little at a time; at the top it stays.
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(45);
+    // What shows above the oldest loaded message on the way up: placeholder
+    // rows to scroll onto, never a "loading" line.
+    let (mut skeletons, mut loading_text) = (false, false);
+    let deadline = Instant::now() + Duration::from_secs(45);
     loop {
-        let found = app
-            .eval(
-                "const t = document.querySelector('.timeline');
-                 if ([...t.querySelectorAll('.message .body')].some(b => b.textContent.includes('the very first message'))) return true;
-                 t.scrollTop -= 600; return false;",
-            )
+        skeletons |= app.count(".timeline .older-skeleton").await.expect("count") > 0;
+        loading_text |= app
+            .text(".timeline")
             .await
-            .expect("scroll");
-        if found.as_bool() == Some(true) {
+            .expect("text")
+            .is_some_and(|t| t.contains("Loading older"));
+        if app
+            .count(".message .body")
+            .await
+            .expect("count")
+            > 0
+            && app
+                .texts(".message .body")
+                .await
+                .expect("texts")
+                .iter()
+                .any(|b| b.contains("the very first message"))
+        {
             break;
         }
-        let at = app
-            .eval(
-                "const t = document.querySelector('.timeline'); return [t.dataset.skip, t.dataset.window, [...t.querySelectorAll('.message .body')].map(b => b.textContent).filter(s => s.startsWith('history')).pop()];",
-            )
+        let from_bottom = app
+            .scroll_state(".timeline")
             .await
-            .expect("where");
+            .expect("scroll state")
+            .map_or(0.0, |s| s.from_bottom);
+        app.scroll_to(".timeline", ScrollTo::FromBottom(from_bottom + 600.0))
+            .await
+            .expect("scroll");
         assert!(
-            std::time::Instant::now() < deadline,
-            "scrolling up stopped short of the room's first message (skip, window, oldest shown: {at})"
+            Instant::now() < deadline,
+            "scrolling up stopped short of the room's first message (from the bottom: {from_bottom})"
         );
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
     }
     // Past the first message are the room's creation events: once those are
     // in, the placeholders give way to the room's beginning.
-    app.wait_for_js(
-        "const t = document.querySelector('.timeline'); t.scrollTop = -t.scrollHeight; \
-         return !t.querySelector('.older-skeleton') && !!t.querySelector('.timeline-start');",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("the beginning of the room, no placeholders");
-    let seen = app
-        .eval("return [window.__olderSkeletons, window.__loadingText, document.querySelectorAll('.timeline .older-skeleton').length];")
-        .await
-        .expect("what showed");
-    assert_eq!(
-        seen,
-        serde_json::json!([true, false, 0]),
-        "placeholder rows on the way up (and none at the start), never a loading line"
+    until!("the beginning of the room, no placeholders", DEFAULT_WAIT, {
+        app.scroll_to(".timeline", ScrollTo::Top)
+            .await
+            .expect("scroll");
+        app.count(".timeline .older-skeleton").await.expect("count") == 0
+            && app.count(".timeline .timeline-start").await.expect("count") > 0
+    });
+    assert!(
+        skeletons,
+        "placeholder rows on the way up"
     );
+    assert!(!loading_text, "never a loading line");
 }
 
 /// Scrolled to the top, the view stays up there while older messages load
@@ -293,23 +334,25 @@ async fn reaching_the_top_stays_there_while_older_messages_load() {
     app.wait_for_exact_text(".message .body", "line 80", morpheus_e2e::DEFAULT_WAIT)
         .await
         .expect("the newest");
-    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    tokio::time::sleep(Duration::from_secs(2)).await;
     // Once to the top, as a scroll wheel would, then watch.
-    let lowest = app
-        .eval(
-            "const t = document.querySelector('.timeline'); t.scrollTop = -t.scrollHeight; \
-             let lowest = t.scrollTop; \
-             for (let i = 0; i < 90; i++) { await new Promise(r => requestAnimationFrame(r)); lowest = Math.max(lowest, t.scrollTop); } \
-             return [Math.round(lowest), Math.round(t.scrollHeight - t.clientHeight)];",
-        )
+    app.scroll_to(".timeline", ScrollTo::Top)
         .await
-        .expect("watch");
-    let (lowest, range) = (
-        lowest[0].as_f64().expect("n"),
-        lowest[1].as_f64().expect("n"),
-    );
+        .expect("scroll up");
+    let mut lowest = f64::MAX;
+    let mut range = 0.0;
+    for _ in 0..30 {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        let state = app
+            .scroll_state(".timeline")
+            .await
+            .expect("scroll state")
+            .expect("timeline");
+        lowest = lowest.min(state.from_bottom);
+        range = state.range;
+    }
     assert!(
-        lowest < -range / 2.0,
-        "thrown back down while older messages loaded: at {lowest} of -{range}"
+        lowest > range / 2.0,
+        "thrown back down while older messages loaded: down to {lowest} from the bottom of {range}"
     );
 }

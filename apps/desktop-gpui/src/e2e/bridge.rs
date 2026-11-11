@@ -6,7 +6,9 @@
 //!
 //! `{"id": 1, "op": "count", "selector": ".room"}`
 //!
-//! Operations: `count`, `texts`, `text`, `value`, `bounds` (reads);
+//! Operations: `count`, `texts`, `text`, `value`, `bounds`, `scroll_state` (reads);
+//! `scroll` (to `top`/`bottom` or `from_bottom` pixels, on an element that
+//! offers a [`super::Scrollable`]);
 //! `click`, `right_click`, `type`, `press`, `submit` (input, injected through
 //! the window's own dispatch, [`gpui::Window::dispatch_event`] and
 //! [`gpui::Window::dispatch_keystroke`], at the element's centre or to the
@@ -57,6 +59,9 @@ struct Request {
     key: Option<String>,
     #[serde(default)]
     modifiers: Vec<String>,
+    /// For `scroll`: `top` or `bottom`, or `from_bottom` pixels.
+    to: Option<String>,
+    from_bottom: Option<f32>,
 }
 
 type Reply = Result<Value, String>;
@@ -143,9 +148,46 @@ async fn handle(request: &Request, cx: &mut AsyncApp) -> Reply {
         "count" | "texts" | "text" | "value" | "bounds" => {
             with_state(|state| read(&state.tree, op, request))
         }
+        "scroll_state" => {
+            let probe = probe(request)?;
+            let s = probe.scroll_state();
+            Ok(json!({ "from_bottom": s.from_bottom, "range": s.range, "viewport": s.viewport }))
+        }
+        "scroll" => {
+            let probe = probe(request)?;
+            let from_bottom = match (request.to.as_deref(), request.from_bottom) {
+                (Some("top"), _) => f32::MAX,
+                (Some("bottom"), _) => 0.0,
+                (Some(other), _) => return Err(format!("scroll to {other:?}: top or bottom")),
+                (None, Some(px)) => px,
+                (None, None) => return Err("scroll needs `to` or `from_bottom`".into()),
+            };
+            let before = with_state(|state| state.frame);
+            probe.scroll_to(from_bottom);
+            let window = cx
+                .update(|cx| cx.windows().first().copied())
+                .map_err(|err| err.to_string())?
+                .ok_or("the app has no window")?;
+            cx.update_window(window, |_, window, _| window.refresh())
+                .map_err(|err| err.to_string())?;
+            next_frame(cx, before).await;
+            Ok(Value::Null)
+        }
         "click" | "right_click" | "type" | "press" | "submit" => act(op, request, cx).await,
         _ => Err(format!("unknown op: {op}")),
     }
+}
+
+/// The scroll probe of the element the request's selector matches.
+fn probe(request: &Request) -> Result<std::rc::Rc<dyn super::Scrollable>, String> {
+    with_state(|state| {
+        let index = target(&state.tree, request)?.ok_or_else(|| missing(request))?;
+        state
+            .scroll
+            .get(&index)
+            .cloned()
+            .ok_or_else(|| format!("{} does not scroll", request.selector.as_deref().unwrap_or("")))
+    })
 }
 
 fn parse_selector(request: &Request) -> Result<Selector, String> {

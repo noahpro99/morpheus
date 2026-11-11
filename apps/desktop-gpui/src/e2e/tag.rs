@@ -1,11 +1,11 @@
 //! Element tags: a wrapper element that records its tag, bounds and parent
 //! into the frame's tree while painting.
 
-use std::{cell::RefCell, collections::HashMap};
+use std::{cell::RefCell, collections::HashMap, ops::Range, rc::Rc};
 
 use gpui::{
     App, Bounds, Element, ElementId, FocusHandle, GlobalElementId, InspectorElementId, IntoElement,
-    LayoutId, Pixels, Window,
+    LayoutId, Pixels, TextLayout, Window,
 };
 
 use super::tree::{Node, Rect, Tree};
@@ -21,6 +21,8 @@ pub struct State {
     pub frame: u64,
     /// Focus handles of tagged elements, by node index.
     pub focus: HashMap<usize, FocusHandle>,
+    /// Scroll probes of tagged elements, by node index.
+    pub scroll: HashMap<usize, Rc<dyn super::Scrollable>>,
 }
 
 thread_local! {
@@ -38,6 +40,7 @@ struct Meta {
     attrs: Vec<(String, String)>,
     text: String,
     focus: Option<FocusHandle>,
+    scroll: Option<Rc<dyn super::Scrollable>>,
     root: bool,
 }
 
@@ -61,6 +64,12 @@ impl<E> Tagged<E> {
 
     pub fn focusable(mut self, handle: &FocusHandle) -> Self {
         self.meta.focus = Some(handle.clone());
+        self
+    }
+
+    /// Lets the bridge read and set this element's scroll position.
+    pub fn scrollable(mut self, probe: Rc<dyn super::Scrollable>) -> Self {
+        self.meta.scroll = Some(probe);
         self
     }
 }
@@ -181,6 +190,7 @@ fn open(meta: Meta, bounds: Bounds<Pixels>) {
             state.tree.clear();
             state.stack.clear();
             state.focus.clear();
+            state.scroll.clear();
             state.frame += 1;
         }
         let node = Node {
@@ -200,6 +210,124 @@ fn open(meta: Meta, bounds: Bounds<Pixels>) {
         if let Some(handle) = meta.focus {
             state.focus.insert(index, handle);
         }
+        if let Some(probe) = meta.scroll {
+            state.scroll.insert(index, probe);
+        }
         state.stack.push(index);
     });
+}
+
+/// Wraps text that has links in it (an `InteractiveText`): once the text is
+/// painted, each link's range is added to the tree as a detached `a[href]`
+/// node (its text is its own, not part of its parent's), placed where the
+/// text layout put it, so a test can find a link and click it.
+pub fn text_links<E: IntoElement>(
+    inner: E,
+    layout: &TextLayout,
+    links: Vec<(Range<usize>, String)>,
+) -> TextLinks<E::Element> {
+    TextLinks {
+        inner: inner.into_element(),
+        layout: layout.clone(),
+        links,
+    }
+}
+
+pub struct TextLinks<E> {
+    inner: E,
+    layout: TextLayout,
+    links: Vec<(Range<usize>, String)>,
+}
+
+impl<E: Element> IntoElement for TextLinks<E> {
+    type Element = Self;
+
+    fn into_element(self) -> Self {
+        self
+    }
+}
+
+impl<E: Element> Element for TextLinks<E> {
+    type RequestLayoutState = E::RequestLayoutState;
+    type PrepaintState = E::PrepaintState;
+
+    fn id(&self) -> Option<ElementId> {
+        self.inner.id()
+    }
+
+    fn source_location(&self) -> Option<&'static std::panic::Location<'static>> {
+        self.inner.source_location()
+    }
+
+    fn request_layout(
+        &mut self,
+        id: Option<&GlobalElementId>,
+        inspector_id: Option<&InspectorElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (LayoutId, Self::RequestLayoutState) {
+        self.inner.request_layout(id, inspector_id, window, cx)
+    }
+
+    fn prepaint(
+        &mut self,
+        id: Option<&GlobalElementId>,
+        inspector_id: Option<&InspectorElementId>,
+        bounds: Bounds<Pixels>,
+        request_layout: &mut Self::RequestLayoutState,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Self::PrepaintState {
+        self.inner
+            .prepaint(id, inspector_id, bounds, request_layout, window, cx)
+    }
+
+    fn paint(
+        &mut self,
+        id: Option<&GlobalElementId>,
+        inspector_id: Option<&InspectorElementId>,
+        bounds: Bounds<Pixels>,
+        request_layout: &mut Self::RequestLayoutState,
+        prepaint: &mut Self::PrepaintState,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        self.inner.paint(
+            id,
+            inspector_id,
+            bounds,
+            request_layout,
+            prepaint,
+            window,
+            cx,
+        );
+        let line = f32::from(self.layout.line_height());
+        let right = f32::from(bounds.right());
+        let text = self.layout.text();
+        with_state(|state| {
+            let parent = state.stack.last().copied();
+            for (range, href) in &self.links {
+                let Some(start) = self.layout.position_for_index(range.start) else {
+                    continue;
+                };
+                let (x, y) = (f32::from(start.x), f32::from(start.y));
+                let end = self.layout.position_for_index(range.end);
+                let w = match end {
+                    Some(end) if (f32::from(end.y) - y).abs() < 1.0 && f32::from(end.x) > x => {
+                        f32::from(end.x) - x
+                    }
+                    _ => (right - x).max(8.0),
+                };
+                let node = Node {
+                    tag: "a".into(),
+                    attrs: vec![("href".into(), href.clone())],
+                    text: text.get(range.clone()).unwrap_or_default().to_owned(),
+                    bounds: Rect { x, y, w, h: line },
+                    detached: true,
+                    ..Node::default()
+                };
+                state.tree.push(node, parent);
+            }
+        });
+    }
 }

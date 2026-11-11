@@ -31,6 +31,9 @@ pub struct Node {
     pub parent: Option<usize>,
     /// Distance from the root; with pre-order, a subtree is contiguous.
     pub depth: usize,
+    /// Marks a part of its parent's text (a link in a message): it matches
+    /// selectors, but its text is not added again to its ancestors'.
+    pub detached: bool,
 }
 
 impl Node {
@@ -73,6 +76,7 @@ impl Tree {
         for node in self.nodes[index + 1..]
             .iter()
             .take_while(|node| node.depth > depth)
+            .filter(|node| !node.detached)
         {
             out.push_str(&node.text);
         }

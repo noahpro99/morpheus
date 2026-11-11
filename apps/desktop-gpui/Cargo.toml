@@ -21,6 +21,8 @@ directories = { workspace = true }
 futures = { version = "0.3", optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true }
+ruma-html = { workspace = true }
+jiff = "0.2"
 
 [dev-dependencies]
 gpui = { version = "0.2", features = ["test-support"] }
