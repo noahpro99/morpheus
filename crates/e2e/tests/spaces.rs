@@ -33,15 +33,11 @@ async fn login(app: &mut App) {
 /// Whether any `.room-name` currently reads `name`. Unlike `wait_for_text`
 /// this doesn't wait, so it can assert absence without racing a timeout.
 async fn has_room(app: &mut App, name: &str) -> bool {
-    let js = format!(
-        "return [...document.querySelectorAll('.room-name')].some(el => el.textContent.includes({}));",
-        serde_json::to_string(name).expect("string always serialises")
-    );
-    app.eval(&js)
+    app.texts(".room-name")
         .await
-        .expect("eval")
-        .as_bool()
-        .unwrap_or(false)
+        .expect("room names")
+        .iter()
+        .any(|text| text.contains(name))
 }
 
 #[tokio::test]
@@ -153,12 +149,15 @@ async fn clicking_rooms_keeps_the_rooms_scope() {
         app.wait_for_text(".chat-header h2", room, DEFAULT_WAIT)
             .await
             .expect("room opened");
-        app.wait_for_js(
-            "return document.querySelector('.rail-item.selected')?.title === 'Rooms' && [...document.querySelectorAll('.room')].some(r => r.textContent.includes('random'));",
+        app.wait_for(
+            ".rail-item.selected[title=\"Rooms\"]",
             std::time::Duration::from_secs(5),
         )
         .await
-        .expect("still in Rooms scope with all rooms listed");
+        .expect("still in the Rooms scope");
+        app.wait_for_text(".room", "random", std::time::Duration::from_secs(5))
+            .await
+            .expect("with all rooms listed");
     }
 }
 

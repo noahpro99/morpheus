@@ -24,8 +24,8 @@ use futures::{
     channel::{mpsc, oneshot},
 };
 use gpui::{
-    App, AppContext as _, AsyncApp, Keystroke, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    PlatformInput, point, px,
+    App, AppContext as _, AsyncApp, Keystroke, Modifiers, MouseButton, MouseDownEvent,
+    MouseMoveEvent, MouseUpEvent, PlatformInput, point, px,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};

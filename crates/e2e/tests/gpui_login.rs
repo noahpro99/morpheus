@@ -1,11 +1,9 @@
-//! Sign-in in the GPUI app: the `login` helper of account.rs (shared, not
-//! copied) reaches the room list. Runs only with `MORPHEUS_E2E_UI=gpui` and
+//! Sign-in in the GPUI app: the shared `login` helper (common/mod.rs) reaches the room list. Runs only with `MORPHEUS_E2E_UI=gpui` and
 //! `MORPHEUS_E2E_BIN` set to a `morpheus-gpui` built with `--features e2e`.
 
 #![allow(clippy::expect_used, dead_code)]
 
-#[path = "account.rs"]
-mod account;
+mod common;
 
 use morpheus_e2e::{App, DEFAULT_WAIT};
 
@@ -25,7 +23,7 @@ fn gpui_homeserver() -> Option<String> {
 async fn gpui_login_reaches_the_room_list() {
     let Some(hs) = gpui_homeserver() else { return };
     let mut app = App::launch(&hs).await.expect("launch app");
-    account::login(&mut app, "bob", "bob-password").await;
+    common::login(&mut app, "bob", "bob-password").await;
     app.wait_for_text(".room", "random", DEFAULT_WAIT)
         .await
         .expect("rooms synced");
@@ -36,7 +34,7 @@ async fn gpui_login_reaches_the_room_list() {
 async fn gpui_session_survives_relaunch() {
     let Some(hs) = gpui_homeserver() else { return };
     let mut app = App::launch(&hs).await.expect("launch app");
-    account::login(&mut app, "bob", "bob-password").await;
+    common::login(&mut app, "bob", "bob-password").await;
     let mut app = app.relaunch().await.expect("relaunch");
     app.wait_for_text(".room", "random", DEFAULT_WAIT)
         .await

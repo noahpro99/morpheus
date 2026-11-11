@@ -344,6 +344,20 @@ impl App {
         Ok(self.eval(&js).await?.as_str().map(ToOwned::to_owned))
     }
 
+    /// `textContent` of every match, in document order.
+    pub async fn texts(&mut self, selector: &str) -> Result<Vec<String>> {
+        let list = if gpui() {
+            self.op("texts", selector, json!({})).await?
+        } else {
+            let js = format!(
+                "return [...document.querySelectorAll({})].map(el => el.textContent);",
+                js_str(selector)
+            );
+            self.eval(&js).await?
+        };
+        Ok(serde_json::from_value(list).unwrap_or_default())
+    }
+
     /// Current `value` of the first matching input.
     pub async fn value(&mut self, selector: &str) -> Result<Option<String>> {
         if gpui() {

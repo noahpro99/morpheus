@@ -4,11 +4,19 @@
 
 use std::{borrow::Cow, path::PathBuf};
 
+mod chat;
 mod e2e;
+mod icons;
 mod input;
 mod login;
+mod media;
+mod model;
+mod prefs;
+mod rail;
 mod room_list;
+mod shell;
 mod theme;
+mod user_bar;
 
 use e2e::E2eExt as _;
 use gpui::{
@@ -18,7 +26,7 @@ use gpui::{
 use morpheus_core::Core;
 
 use login::{Login, SignedIn};
-use room_list::RoomList;
+use shell::Shell;
 
 /// Static instances of Inter and Unbounded (GPUI cannot read the woff2
 /// variable fonts the Dioxus app uses), made from `crates/ui/assets/fonts`.
@@ -40,7 +48,7 @@ impl AssetSource for Assets {
             "logo.svg" => Some(Cow::Borrowed(
                 include_bytes!("../../../crates/ui/assets/logo.svg").as_slice(),
             )),
-            _ => None,
+            other => icons::svg_for(other).map(|svg| Cow::Owned(svg.into_bytes())),
         })
     }
 
@@ -53,7 +61,7 @@ enum Screen {
     /// The saved session is being restored.
     Splash,
     Login(Entity<Login>),
-    Rooms(Entity<RoomList>),
+    Rooms(Entity<Shell>),
 }
 
 struct Root {
@@ -91,8 +99,7 @@ impl Root {
         };
         let login = window
             .update(cx, |_, window, cx| {
-                let login =
-                    cx.new(|cx| Login::new(core, &homeserver, restore_error, window, cx));
+                let login = cx.new(|cx| Login::new(core, &homeserver, restore_error, window, cx));
                 login
             })
             .ok();
@@ -107,7 +114,7 @@ impl Root {
     }
 
     fn signed_in(&mut self, session: morpheus_core::Session, cx: &mut Context<Self>) {
-        self.screen = Screen::Rooms(cx.new(|cx| RoomList::new(session, cx)));
+        self.screen = Screen::Rooms(cx.new(|cx| Shell::new(session, cx)));
         cx.notify();
     }
 }
@@ -189,34 +196,36 @@ fn main() {
             std::process::exit(1);
         }
     };
-    Application::new().with_assets(Assets).run(move |cx: &mut App| {
-        if let Err(e) = cx
-            .text_system()
-            .add_fonts(FONTS.iter().map(|f| Cow::Borrowed(*f)).collect())
-        {
-            eprintln!("morpheus-gpui: loading fonts failed: {e}");
-        }
-        let bounds = Bounds::centered(None, window_size(), cx);
-        let opened = cx.open_window(
-            WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
-                titlebar: Some(TitlebarOptions {
-                    title: Some(SharedString::from(TITLE)),
+    Application::new()
+        .with_assets(Assets)
+        .run(move |cx: &mut App| {
+            if let Err(e) = cx
+                .text_system()
+                .add_fonts(FONTS.iter().map(|f| Cow::Borrowed(*f)).collect())
+            {
+                eprintln!("morpheus-gpui: loading fonts failed: {e}");
+            }
+            let bounds = Bounds::centered(None, window_size(), cx);
+            let opened = cx.open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(bounds)),
+                    titlebar: Some(TitlebarOptions {
+                        title: Some(SharedString::from(TITLE)),
+                        ..Default::default()
+                    }),
+                    app_id: Some("morpheus-gpui".into()),
                     ..Default::default()
-                }),
-                app_id: Some("morpheus-gpui".into()),
-                ..Default::default()
-            },
-            |window, cx| {
-                window.set_window_title(TITLE);
-                cx.new(|cx| Root::new(core, default_homeserver(), cx))
-            },
-        );
-        if let Err(e) = opened {
-            eprintln!("morpheus-gpui: opening the window failed: {e}");
-            cx.quit();
-        }
-        #[cfg(feature = "e2e")]
-        e2e::start(cx);
-    });
+                },
+                |window, cx| {
+                    window.set_window_title(TITLE);
+                    cx.new(|cx| Root::new(core, default_homeserver(), cx))
+                },
+            );
+            if let Err(e) = opened {
+                eprintln!("morpheus-gpui: opening the window failed: {e}");
+                cx.quit();
+            }
+            #[cfg(feature = "e2e")]
+            e2e::start(cx);
+        });
 }

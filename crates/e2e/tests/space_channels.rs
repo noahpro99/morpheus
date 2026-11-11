@@ -39,20 +39,15 @@ async fn login(app: &mut App, user: &str) {
 
 /// The names in the list, in order: (joined, not joined).
 async fn channels(app: &mut App) -> (Vec<String>, Vec<String>) {
-    let names = |selector: &str| {
-        format!(
-            "return [...document.querySelectorAll('.room-list {selector} .room-name')].map(e => e.textContent);"
-        )
-    };
-    let joined = app
-        .eval(&names(".room:not(.unjoined)"))
+    // Every row, then the unjoined ones, which are listed last.
+    let mut joined = app.texts(".room-list .room-name").await.expect("joined");
+    let unjoined = app
+        .texts(".room-list .room.unjoined .room-name")
         .await
-        .expect("joined");
-    let unjoined = app.eval(&names(".room.unjoined")).await.expect("unjoined");
-    (
-        serde_json::from_value(joined).unwrap_or_default(),
-        serde_json::from_value(unjoined).unwrap_or_default(),
-    )
+        .expect("unjoined");
+    let kept = joined.len().saturating_sub(unjoined.len());
+    joined.truncate(kept);
+    (joined, unjoined)
 }
 
 async fn open_projects(app: &mut App) {
@@ -143,7 +138,15 @@ async fn a_servers_rooms_are_under_it_in_its_order() {
     app.wait_for(".room.unjoined", DEFAULT_WAIT)
         .await
         .expect("the room not joined, listed");
-    let (joined, unjoined) = channels(&mut app).await;
+    // The list fills in as the sync delivers rooms: wait for it to settle.
+    let started = std::time::Instant::now();
+    let (joined, unjoined) = loop {
+        let seen = channels(&mut app).await;
+        if seen.0 == ["projects-news", "projects-general"] || started.elapsed() > DEFAULT_WAIT {
+            break seen;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    };
     assert_eq!(
         joined,
         ["projects-news", "projects-general"],

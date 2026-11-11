@@ -52,8 +52,10 @@ impl Login {
         let username = cx.new(|cx| TextInput::new("username", "", false, "", cx));
         let password = cx.new(|cx| TextInput::new("password", "", true, "", cx));
         username.read(cx).focus(window);
-        cx.subscribe(&homeserver, |this, _, _: &Changed, cx| this.homeserver_typed(cx))
-            .detach();
+        cx.subscribe(&homeserver, |this, _, _: &Changed, cx| {
+            this.homeserver_typed(cx)
+        })
+        .detach();
         for input in [&homeserver, &username, &password] {
             cx.subscribe(input, |this, _, _: &Submit, cx| this.submit(cx))
                 .detach();
@@ -226,7 +228,12 @@ fn label(text: &str, field: Entity<TextInput>) -> impl IntoElement {
         .font_weight(FontWeight::SEMIBOLD)
         .text_color(rgb(theme::TEXT_MUTED))
         .child(text.to_uppercase())
-        .child(div().text_size(px(theme::REM)).text_color(rgb(theme::TEXT)).child(field))
+        .child(
+            div()
+                .text_size(px(theme::REM))
+                .text_color(rgb(theme::TEXT))
+                .child(field),
+        )
         .e2e("label", "")
         .text(text)
 }
@@ -305,7 +312,10 @@ impl Render for Login {
             form = form.child(
                 button("Sign in", true, busy)
                     .mt(px(8.0))
-                    .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| this.submit(cx)))
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _, _, cx| this.submit(cx)),
+                    )
                     .e2e("button", "")
                     .attr("type", "submit")
                     .attr("disabled", busy.to_string())
@@ -315,7 +325,10 @@ impl Render for Login {
         if flows.sso {
             form = form.child(
                 button("Sign in with single sign-on", false, busy)
-                    .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| this.sso(cx)))
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _, _, cx| this.sso(cx)),
+                    )
                     .e2e("button", "secondary")
                     .attr("type", "button")
                     .text("Sign in with single sign-on"),
@@ -325,7 +338,10 @@ impl Render for Login {
             let text = format!("Back to {account}");
             form = form.child(
                 button(text.clone(), false, busy)
-                    .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| this.back(cx)))
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _, _, cx| this.back(cx)),
+                    )
                     .e2e("button", "secondary back-to-account")
                     .attr("type", "button")
                     .text(text),

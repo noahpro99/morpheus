@@ -3,26 +3,13 @@
 
 #![allow(clippy::expect_used)]
 
+mod common;
+
+use common::login;
 use morpheus_e2e::{App, DEFAULT_WAIT};
 
 fn homeserver() -> Option<String> {
     std::env::var("MORPHEUS_TEST_HOMESERVER").ok()
-}
-
-pub(crate) async fn login(app: &mut App, user: &str, password: &str) {
-    app.wait_for("form.login", DEFAULT_WAIT)
-        .await
-        .expect("login form");
-    app.type_into("form.login input[name=username]", user)
-        .await
-        .expect("username");
-    app.type_into("form.login input[name=password]", password)
-        .await
-        .expect("password");
-    app.submit("form.login").await.expect("submit");
-    app.wait_for(".room", DEFAULT_WAIT)
-        .await
-        .expect("rooms listed");
 }
 
 async fn open_chip_menu(app: &mut App) {

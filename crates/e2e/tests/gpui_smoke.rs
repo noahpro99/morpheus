@@ -19,7 +19,10 @@ async fn the_gpui_app_serves_tagged_elements() {
         .await
         .expect("sign-in heading");
     assert_eq!(
-        app.text(".app form.login h1").await.expect("text").as_deref(),
+        app.text(".app form.login h1")
+            .await
+            .expect("text")
+            .as_deref(),
         Some("Welcome back")
     );
     assert_eq!(app.count(".app form.login h1").await.expect("count"), 1);
