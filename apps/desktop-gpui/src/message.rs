@@ -557,7 +557,12 @@ fn image_el(body: &str, width: Option<u32>, height: Option<u32>, picture: Option
     match picture {
         Some(image) => base
             .cursor_pointer()
-            .child(img(image).size_full().object_fit(ObjectFit::Contain))
+            .child(
+                img(image)
+                    .size_full()
+                    .rounded(px(theme::RADIUS))
+                    .object_fit(ObjectFit::Contain),
+            )
             .e2e("img", "image")
             .attr("alt", body)
             .attr("title", body)
@@ -597,6 +602,7 @@ fn video_el(
         Some(image) => card.child(
             img(image)
                 .size_full()
+                .rounded(px(theme::RADIUS))
                 .object_fit(ObjectFit::Cover)
                 .e2e("img", "video-thumb")
                 .attr("alt", body)
@@ -884,8 +890,10 @@ pub fn message_el(
     if let MessageKind::State(text) = &m.kind {
         return div()
             .id(ElementId::from(key))
+            .w_full()
             .flex()
             .gap(px(12.0))
+            .hover(|s| s.bg(rgba(theme::BG_HOVER)))
             .py(px(2.0))
             .pl(px(68.0))
             .pr(px(16.0))
@@ -981,6 +989,7 @@ pub fn message_el(
         .id(ElementId::from(key))
         .group(group.clone())
         .relative()
+        .w_full()
         .flex()
         .gap(px(12.0))
         .px(px(16.0))
@@ -1034,7 +1043,7 @@ pub fn message_el(
         .e2e("div", &classes)
         .attr("data-event-id", event_id);
     if show_header {
-        div().pt(px(12.0)).child(line).into_any_element()
+        div().w_full().pt(px(12.0)).child(line).into_any_element()
     } else {
         line.into_any_element()
     }
