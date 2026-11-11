@@ -9,14 +9,21 @@
 //! element's state, so the whole list is never rebuilt, and each frame only
 //! builds the rows in or near the view.
 
-use std::{collections::HashMap, rc::Rc, sync::Arc, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    rc::Rc,
+    sync::Arc,
+    time::Duration,
+};
 
 use gpui::{
     AnyElement, App, Context, EventEmitter, FontWeight, Image, IntoElement, ListAlignment,
-    ListOffset, ListState, Render, Window, div, list, point, prelude::*, px, relative, rgb,
+    ListOffset, ListState, Pixels, Point, Render, Window, div, list, point, prelude::*, px, relative,
+    rgb,
 };
 use morpheus_core::{
-    MediaRef, Message, MessageKind, OpenTimeline, OwnedRoomId, Session, TimelineEntry, TimelineHandle,
+    MediaRef, Message, MessageId, MessageKind, OpenTimeline, OwnedRoomId, Session, TimelineEntry,
+    TimelineHandle,
     Vector,
 };
 
@@ -67,6 +74,14 @@ pub enum TimelineEvent {
     LastOwn(Option<Message>),
     /// A button of the key banner: open Settings there.
     OpenSettings(SettingsFocus),
+    /// A right click on a message, at this point.
+    Menu(Box<Message>, Point<Pixels>),
+    /// The hover bar's "more reactions" button, at this point.
+    Picker(Box<Message>, Point<Pixels>),
+    /// The hover bar's bin; true when Shift skipped the question.
+    Delete(Box<Message>, bool),
+    /// A background action failed: what it was, and why (a toast).
+    Failed(&'static str, String),
 }
 
 impl EventEmitter<TimelineEvent> for TimelineView {}
@@ -98,6 +113,11 @@ pub struct TimelineView {
     keys: KeyAccess,
     /// Some message here cannot be decrypted (kept up to date by `rebuild`).
     undecryptable: bool,
+    /// Messages hidden while their deletion can still be undone (unique ids).
+    hidden: HashSet<String>,
+    /// The room was marked unread from here: no read receipts (any of them
+    /// would clear the flag) until the room is opened again.
+    keep_unread: bool,
 }
 
 /// Scroll numbers of a list, in px: what a test and the jump button read.
@@ -163,6 +183,8 @@ impl TimelineView {
             echoed: None,
             keys: KeyAccess::default(),
             undecryptable: false,
+            hidden: HashSet::new(),
+            keep_unread: false,
         };
         if let Some(session) = session {
             cx.spawn(async move |this, cx| {
@@ -248,7 +270,7 @@ impl TimelineView {
                 drop(handle.mark_as_fully_read());
             }
         }
-        if let Some(handle) = &self.handle {
+        if let Some(handle) = self.handle.as_ref().filter(|_| !self.keep_unread) {
             let receipt = handle.send_read_receipt();
             cx.spawn(async move |_, _| {
                 if let Err(err) = receipt.await {
@@ -321,7 +343,21 @@ impl TimelineView {
         self.undecryptable = self.entries.iter().any(|entry| {
             matches!(entry, TimelineEntry::Message(m) if matches!(m.kind, MessageKind::UnableToDecrypt))
         });
-        let mut rows = group_rows(&self.entries, self.new_marker.as_deref(), &known);
+        let visible: Vector<TimelineEntry>;
+        let entries = if self.hidden.is_empty() {
+            &self.entries
+        } else {
+            visible = self
+                .entries
+                .iter()
+                .filter(|entry| {
+                    !matches!(entry, TimelineEntry::Message(m) if self.hidden.contains(&m.unique_id))
+                })
+                .cloned()
+                .collect();
+            &visible
+        };
+        let mut rows = group_rows(entries, self.new_marker.as_deref(), &known);
         if self.entries.is_empty() {
             if self.load_error.is_none() {
                 rows = vec![Row::Skeleton { older: false }];
@@ -454,8 +490,8 @@ impl TimelineView {
         )
     }
 
-    /// A click on a message's hover bar.
-    fn row_action(&mut self, action: RowAction, unique_id: &str, cx: &mut Context<Self>) {
+    /// A click on a message's hover bar, or a right click on it.
+    pub fn row_action(&mut self, action: RowAction, unique_id: &str, cx: &mut Context<Self>) {
         let Some(message) = self.rows.iter().find_map(|row| match row {
             Row::Message { row, .. } if row.message.unique_id == unique_id => {
                 Some(row.message.clone())
@@ -467,17 +503,46 @@ impl TimelineView {
         match action {
             RowAction::Reply => cx.emit(TimelineEvent::Reply(message)),
             RowAction::Edit => cx.emit(TimelineEvent::Edit(message)),
-            RowAction::React(key) => {
-                let Some(handle) = &self.handle else { return };
-                let toggling = handle.toggle_reaction(message.id, key.to_owned());
-                cx.spawn(async move |_, _| {
-                    if let Err(err) = toggling.await {
-                        eprintln!("morpheus-gpui: reaction: {err}");
-                    }
-                })
-                .detach();
+            RowAction::React(key) => self.react(message.id, key.to_owned(), cx),
+            RowAction::Context(at) => cx.emit(TimelineEvent::Menu(Box::new(message), at)),
+            RowAction::MoreReactions(at) => cx.emit(TimelineEvent::Picker(Box::new(message), at)),
+            RowAction::Delete(skip_asking) => {
+                cx.emit(TimelineEvent::Delete(Box::new(message), skip_asking))
             }
         }
+    }
+
+    /// Adds our `key` reaction to a message, or takes it back.
+    pub fn react(&mut self, id: MessageId, key: String, cx: &mut Context<Self>) {
+        let Some(handle) = &self.handle else { return };
+        let toggling = handle.toggle_reaction(id, key);
+        cx.spawn(async move |this, cx| {
+            if let Err(err) = toggling.await {
+                this.update(cx, |_, cx| cx.emit(TimelineEvent::Failed("reaction", err.to_string())))
+                    .ok();
+            }
+        })
+        .detach();
+    }
+
+    /// Takes a message off the list while its deletion can be undone.
+    pub fn hide(&mut self, unique_id: &str) {
+        if self.hidden.insert(unique_id.to_owned()) {
+            self.rebuild();
+        }
+    }
+
+    /// Puts a hidden message back.
+    pub fn show(&mut self, unique_id: &str, cx: &mut Context<Self>) {
+        if self.hidden.remove(unique_id) {
+            self.rebuild();
+            cx.notify();
+        }
+    }
+
+    /// The room was marked unread: leaving it must not read it again.
+    pub fn keep_unread(&mut self) {
+        self.keep_unread = true;
     }
 
     /// Scrolls to the newest message.
@@ -498,8 +563,11 @@ impl TimelineView {
 
 impl Drop for TimelineView {
     fn drop(&mut self) {
-        // Leaving a room reads it up to its newest message.
-        if let Some(handle) = self.handle.take() {
+        // Leaving a room reads it up to its newest message (unless it was
+        // marked unread from here).
+        if let Some(handle) = self.handle.take()
+            && !self.keep_unread
+        {
             drop(handle.mark_as_fully_read());
         }
     }

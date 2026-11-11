@@ -8,7 +8,8 @@ use std::{ops::Range, rc::Rc, sync::Arc};
 use gpui::{
     AnyElement, App, Div, ElementId, FontStyle, FontWeight, Hsla, InteractiveText, Image,
     ObjectFit, SharedString, StrikethroughStyle, StyledImage as _, StyledText, TextRun,
-    UnderlineStyle, Window, div, font, img, prelude::*, px, relative, rgb, rgba,
+    UnderlineStyle, MouseButton, Pixels, Point, Window, div, font, img, prelude::*, px, relative, rgb,
+    rgba,
 };
 use morpheus_core::{Message, MessageKind, Reaction, ThreadSummary};
 
@@ -780,13 +781,18 @@ pub enum RowAction {
     Reply,
     Edit,
     React(&'static str),
+    /// The "more reactions" button, where it is (the picker opens there).
+    MoreReactions(Point<Pixels>),
+    /// The bin; true when Shift was held: no question asked.
+    Delete(bool),
+    /// A right click on the message, where.
+    Context(Point<Pixels>),
 }
 
 /// What a click on a hover action does: the action, the message's unique ID.
 pub type ActionHandler = Rc<dyn Fn(RowAction, &str, &mut Window, &mut App)>;
 
-/// The reactions a message's bar offers at once.
-pub const QUICK_REACTIONS: [&str; 3] = ["👍", "❤️", "😂"];
+use crate::view_model::menu::QUICK_REACTIONS;
 
 /// One button of the hover bar.
 fn action_button(
@@ -811,7 +817,16 @@ fn action_button(
         .cursor_pointer()
         .hover(|s| s.bg(rgba(theme::BG_HOVER)).text_color(rgb(theme::TEXT)))
         .child(glyph)
-        .on_click(move |_, window, cx| actions(action.clone(), &unique_id, window, cx))
+        .on_click(move |event, window, cx| {
+            // Where it was clicked (the picker opens there) and whether
+            // Shift was held (delete without asking).
+            let action = match &action {
+                RowAction::MoreReactions(_) => RowAction::MoreReactions(event.position()),
+                RowAction::Delete(_) => RowAction::Delete(event.modifiers().shift),
+                other => other.clone(),
+            };
+            actions(action, &unique_id, window, cx)
+        })
         .e2e("button", classes)
         .attr("title", title)
         .into_any_element()
@@ -844,6 +859,16 @@ fn actions_bar(m: &Message, group: SharedString, actions: &ActionHandler) -> Any
             actions,
         ));
     }
+    // Every other emoji: the full picker, beside this button.
+    bar = bar.child(action_button(
+        format!("more-{uid}").into(),
+        "action more-reactions",
+        "Add reaction",
+        icon("smile-plus", 15.0).into_any_element(),
+        RowAction::MoreReactions(Point::default()),
+        uid,
+        actions,
+    ));
     let can_reply = matches!(m.id, morpheus_core::MessageId::Event(_));
     if can_reply {
         bar = bar.child(action_button(
@@ -863,6 +888,17 @@ fn actions_bar(m: &Message, group: SharedString, actions: &ActionHandler) -> Any
             "Edit",
             icon("pencil", 15.0).into_any_element(),
             RowAction::Edit,
+            uid,
+            actions,
+        ));
+    }
+    if m.is_own && can_reply {
+        bar = bar.child(action_button(
+            format!("delete-{uid}").into(),
+            "action delete",
+            "Delete",
+            icon("trash-2", 15.0).into_any_element(),
+            RowAction::Delete(false),
             uid,
             actions,
         ));
@@ -1034,10 +1070,15 @@ pub fn message_el(
         classes.push_str(" own");
     }
     let mut line = line.child(main.e2e("div", "message-main"));
-    if let Some(actions) = actions
-        && !m.is_local_echo
-    {
-        line = line.child(actions_bar(m, group, actions));
+    if let Some(actions) = actions {
+        // Right click: the message menu.
+        let (menu, unique_id) = (actions.clone(), m.unique_id.clone());
+        line = line.on_mouse_down(MouseButton::Right, move |event, window, cx| {
+            menu(RowAction::Context(event.position), &unique_id, window, cx)
+        });
+        if !m.is_local_echo {
+            line = line.child(actions_bar(m, group, actions));
+        }
     }
     let line = line
         .e2e("div", &classes)

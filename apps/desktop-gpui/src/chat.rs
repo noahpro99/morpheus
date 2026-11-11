@@ -7,7 +7,7 @@ use gpui::{Context, ExternalPaths, FontWeight, IntoElement, div, prelude::*, px,
 
 use crate::{e2e::E2eExt as _, icons::icon, media::avatar, shell::Shell, theme};
 
-pub fn render(shell: &Shell, _cx: &mut Context<Shell>) -> impl IntoElement {
+pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
     let body = match shell.current() {
         Some(room) => {
             let mut header = div()
@@ -93,6 +93,29 @@ pub fn render(shell: &Shell, _cx: &mut Context<Shell>) -> impl IntoElement {
                         .text(topic),
                 );
             }
+            // The rest of the header sits at the right.
+            header = header.child(div().flex_1());
+            let pins = shell.pinned.len();
+            header = header.child(
+                div()
+                    .id("pin-toggle")
+                    .flex()
+                    .items_center()
+                    .gap(px(5.0))
+                    .px(px(8.0))
+                    .py(px(6.0))
+                    .rounded(px(theme::RADIUS_SM))
+                    .text_size(px(0.85 * theme::REM))
+                    .text_color(rgb(theme::TEXT_MUTED))
+                    .cursor_pointer()
+                    .hover(|s| s.text_color(rgb(theme::TEXT)))
+                    .child(icon("pin", 16.0).text_color(rgb(theme::TEXT_MUTED)))
+                    .child(pins.to_string())
+                    .on_click(cx.listener(|this, _, _, cx| this.open_pinned(cx)))
+                    .e2e("button", "ghost pin-toggle")
+                    .attr("title", "Pinned messages (Ctrl+P)")
+                    .text(pins.to_string()),
+            );
             let mut column = div()
                 .flex()
                 .flex_col()
