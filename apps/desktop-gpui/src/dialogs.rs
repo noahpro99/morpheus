@@ -423,6 +423,7 @@ pub(crate) fn overlay(window: &Window, content: AnyElement, close: impl Fn(&mut 
         .size_full()
         .flex()
         .justify_center()
+        .items_start()
         .pt(px(top))
         .bg(rgba(0x0000008c))
         .occlude()
@@ -699,7 +700,7 @@ impl EventEmitter<Closed> for ReportDialog {}
 
 impl ReportDialog {
     fn new(session: Session, room: OwnedRoomId, event_id: OwnedEventId, cx: &mut Context<Self>) -> Self {
-        let input = cx.new(|cx| TextInput::new("reason", "Spam, abuse, …", false, "", cx));
+        let input = cx.new(|cx| TextInput::new("reason", "Spam, abuse, …", false, "", cx).framed());
         cx.subscribe(&input, |this, _, _: &Submit, cx| this.submit(cx)).detach();
         Self {
             session,

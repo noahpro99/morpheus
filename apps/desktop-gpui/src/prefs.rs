@@ -86,6 +86,19 @@ impl Prefs {
     }
 
     /// As kept in the account: what was read, with the settings changed here.
+    /// The colour theme chosen (kept with the rest of the account's prefs).
+    pub fn theme(&self) -> crate::view_model::settings::Theme {
+        self.extra
+            .get("theme")
+            .and_then(|v| v.as_str())
+            .map(crate::view_model::settings::Theme::from_key)
+            .unwrap_or_default()
+    }
+
+    pub fn set_theme(&mut self, theme: crate::view_model::settings::Theme) {
+        self.extra.insert("theme".into(), theme.key().into());
+    }
+
     pub fn to_json(&self) -> serde_json::Value {
         let rail: Vec<serde_json::Value> = self
             .rail

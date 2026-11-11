@@ -30,7 +30,7 @@ use crate::{
     view_model::{marks::Marks, toast::ToastList},
     prefs::Prefs,
     rail, room_list,
-    settings::{KeysChanged, SettingsView},
+    settings::{KeysChanged, SettingsView, ThemeChosen},
     theme,
     timeline::{LinkClicked, TimelineEvent, TimelineView},
     user_bar,
@@ -142,6 +142,10 @@ impl Shell {
             if let Ok(value) = prefs.await {
                 this.update(cx, |this, cx| {
                     this.prefs = Prefs::from_json(&value);
+                    let theme = this.prefs.theme();
+                    if let Some(settings) = &this.settings {
+                        settings.update(cx, |settings, _| settings.theme = theme);
+                    }
                     cx.notify();
                 })
                 .ok();
@@ -152,6 +156,11 @@ impl Shell {
         let settings = cx.new(|cx| SettingsView::new(Some(session), cx));
         cx.subscribe(&settings, |this, _, _: &KeysChanged, cx| this.refresh_keys(cx))
             .detach();
+        cx.subscribe(&settings, |this, _, chosen: &ThemeChosen, cx| {
+            this.prefs.set_theme(chosen.0);
+            this.save_prefs(cx);
+        })
+        .detach();
         shell.settings = Some(settings);
         shell.refresh_keys(cx);
         shell.load_marks(cx);
