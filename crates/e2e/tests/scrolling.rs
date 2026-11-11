@@ -160,13 +160,9 @@ async fn locked_messages_say_how_to_unlock_them() {
     app.wait_for_text(".message .undecrypted.locked", "Encrypted", DEFAULT_WAIT)
         .await
         .expect("the row says it is encrypted");
-    let shimmer = app
-        .eval("return getComputedStyle(document.querySelector('.undecrypted')).animationName;")
-        .await
-        .expect("animation");
-    assert_ne!(
-        shimmer,
-        serde_json::json!("shimmer"),
+    assert_eq!(
+        app.count(".undecrypted.skeleton").await.expect("skeletons"),
+        0,
         "locked rows must not look like loading"
     );
 
@@ -189,12 +185,18 @@ async fn locked_messages_say_how_to_unlock_them() {
     app.wait_for(".settings .recovery-form input", DEFAULT_WAIT)
         .await
         .expect("settings open at the recovery key");
-    app.wait_for_js(
-        "return document.activeElement === document.querySelector('.settings .recovery-form input');",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("the recovery key field is focused");
+    if app.is_gpui() {
+        app.wait_for(".settings .recovery-form input[data-focused]", DEFAULT_WAIT)
+            .await
+            .expect("the recovery key field is focused");
+    } else {
+        app.wait_for_js(
+            "return document.activeElement === document.querySelector('.settings .recovery-form input');",
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("the recovery key field is focused");
+    }
 }
 
 /// Scrolling up through a long room keeps loading older messages until its

@@ -16,6 +16,7 @@ mod model;
 mod prefs;
 mod rail;
 mod room_list;
+mod settings;
 mod shell;
 mod timeline;
 mod theme;

@@ -25,6 +25,11 @@ use crate::{
     media::{self, Avatars},
     message::{self, ActionHandler, LinkHandler, Pictures, RowAction},
     theme,
+    icons::icon,
+    view_model::keys::{
+        BANNER_RECOVERY, BANNER_TEXT, BANNER_TITLE, BANNER_VERIFY, KeyAccess, SettingsFocus, show_banner,
+        undecryptable,
+    },
     view_model::rows::{
         MessageRow, Row, changed_range, first_unread_after_marker, first_unread_since, group_rows,
     },
@@ -60,6 +65,8 @@ pub enum TimelineEvent {
     Edit(Message),
     /// Your newest message that can be edited changed.
     LastOwn(Option<Message>),
+    /// A button of the key banner: open Settings there.
+    OpenSettings(SettingsFocus),
 }
 
 impl EventEmitter<TimelineEvent> for TimelineView {}
@@ -87,6 +94,10 @@ pub struct TimelineView {
     last_own: Option<Message>,
     /// The newest own message still sending that the view jumped down to.
     echoed: Option<String>,
+    /// Whether this device can read encrypted history (set by the shell).
+    keys: KeyAccess,
+    /// Some message here cannot be decrypted (kept up to date by `rebuild`).
+    undecryptable: bool,
 }
 
 /// Scroll numbers of a list, in px: what a test and the jump button read.
@@ -150,6 +161,8 @@ impl TimelineView {
             actions,
             last_own: None,
             echoed: None,
+            keys: KeyAccess::default(),
+            undecryptable: false,
         };
         if let Some(session) = session {
             cx.spawn(async move |this, cx| {
@@ -264,6 +277,29 @@ impl TimelineView {
         cx.notify();
     }
 
+    /// What this device can read changed: rows it cannot decrypt are drawn
+    /// as the new state says, so they are measured again.
+    pub fn set_keys(&mut self, keys: KeyAccess, cx: &mut Context<Self>) {
+        if self.keys == keys {
+            return;
+        }
+        let was = undecryptable(self.keys);
+        self.keys = keys;
+        if undecryptable(keys) != was {
+            for (ix, row) in self.rows.iter().enumerate() {
+                if matches!(row, Row::Message { row, .. } if matches!(row.message.kind, MessageKind::UnableToDecrypt)) {
+                    self.list.splice(ix..ix + 1, 1);
+                }
+            }
+        }
+        cx.notify();
+    }
+
+    /// Whether any message here cannot be decrypted.
+    pub fn has_undecryptable(&self) -> bool {
+        self.undecryptable
+    }
+
     fn at_start(&self) -> bool {
         self.reached_start
             || self
@@ -282,6 +318,9 @@ impl TimelineView {
                 _ => None,
             })
             .collect();
+        self.undecryptable = self.entries.iter().any(|entry| {
+            matches!(entry, TimelineEntry::Message(m) if matches!(m.kind, MessageKind::UnableToDecrypt))
+        });
         let mut rows = group_rows(&self.entries, self.new_marker.as_deref(), &known);
         if self.entries.is_empty() {
             if self.load_error.is_none() {
@@ -386,7 +425,10 @@ impl TimelineView {
         let Row::Message { row, show_header } = row else {
             return message::other_row(&row);
         };
-        let mut pictures = Pictures::default();
+        let mut pictures = Pictures {
+            keys: self.keys,
+            ..Pictures::default()
+        };
         if show_header && let Some(avatar) = &row.message.sender_avatar {
             pictures.avatar = self.picture(avatar, (80, 80), cx);
         }
@@ -523,10 +565,114 @@ impl Render for TimelineView {
                     ),
             );
         }
-        timeline
+        let timeline = timeline
             .e2e("section", "timeline")
-            .scrollable(Rc::new(ListProbe(self.list.clone())))
+            .scrollable(Rc::new(ListProbe(self.list.clone())));
+        let banner = show_banner(true, self.keys, self.has_undecryptable());
+        div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_h_0()
+            .w_full()
+            .when(banner, |d| d.child(key_banner(cx)))
+            .child(timeline)
     }
+}
+
+/// The notice above a chat with messages this device cannot read.
+fn key_banner(cx: &mut Context<TimelineView>) -> impl IntoElement {
+    let action = |id: &'static str, label: &'static str, glyph: &'static str, primary: bool, focus: SettingsFocus, cx: &mut Context<TimelineView>| {
+        div()
+            .id(id)
+            .flex()
+            .items_center()
+            .gap(px(6.0))
+            .px(px(12.0))
+            .py(px(8.0))
+            .rounded(px(theme::RADIUS))
+            .cursor_pointer()
+            .bg(if primary {
+                rgb(theme::ACCENT)
+            } else {
+                gpui::rgba(theme::BG_HOVER).into()
+            })
+            .text_color(if primary { rgb(0xffffff) } else { rgb(theme::TEXT) })
+            .child(icon(glyph, 16.0).text_color(if primary { rgb(0xffffff) } else { rgb(theme::TEXT) }))
+            .child(label)
+            .on_click(cx.listener(move |_, _, _, cx| cx.emit(TimelineEvent::OpenSettings(focus))))
+            .e2e("button", if primary { "primary" } else { "secondary" })
+            .text(label)
+    };
+    div()
+        .flex()
+        .flex_none()
+        .items_center()
+        .flex_wrap()
+        .gap(px(12.0))
+        .mx(px(16.0))
+        .mt(px(8.0))
+        .px(px(14.0))
+        .py(px(10.0))
+        .rounded(px(theme::RADIUS_LG))
+        .bg(rgb(theme::BG_ELEVATED))
+        .border_1()
+        .border_color(gpui::rgba(0x7c8cff59))
+        .child(
+            div()
+                .text_color(rgb(theme::ACCENT))
+                .child(icon("lock", 18.0).text_color(rgb(theme::ACCENT)))
+                .e2e("span", "key-banner-icon"),
+        )
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(2.0))
+                .flex_1()
+                .min_w(px(200.0))
+                .text_size(px(0.9 * theme::REM))
+                .child(
+                    div()
+                        .font_weight(FontWeight::BOLD)
+                        .child(BANNER_TITLE)
+                        .e2e("strong", "")
+                        .text(BANNER_TITLE),
+                )
+                .child(
+                    div()
+                        .text_color(rgb(theme::TEXT_MUTED))
+                        .child(BANNER_TEXT)
+                        .e2e("span", "")
+                        .text(BANNER_TEXT),
+                )
+                .e2e("div", "key-banner-text"),
+        )
+        .child(
+            div()
+                .flex()
+                .flex_wrap()
+                .gap(px(8.0))
+                .child(action(
+                    "key-verify",
+                    BANNER_VERIFY,
+                    "shield-check",
+                    true,
+                    SettingsFocus::Security,
+                    cx,
+                ))
+                .child(action(
+                    "key-recovery",
+                    BANNER_RECOVERY,
+                    "key",
+                    false,
+                    SettingsFocus::RecoveryKey,
+                    cx,
+                ))
+                .e2e("div", "key-banner-actions"),
+        )
+        .e2e("div", "key-banner")
+        .attr("role", "status")
 }
 
 #[cfg(all(test, feature = "e2e"))]
@@ -534,6 +680,7 @@ mod widget_tests {
     use super::*;
     use crate::e2e::{self, query};
     use gpui::{Entity, TestAppContext, VisualTestContext};
+    use crate::view_model::keys::{BANNER_RECOVERY, BANNER_VERIFY, LOCKED_TEXT};
     use morpheus_core::{Message, MessageId, OwnedEventId, OwnedUserId, VectorDiff};
 
     struct Harness(Entity<TimelineView>);
@@ -609,6 +756,87 @@ mod widget_tests {
 
     fn texts(selector: &str) -> Vec<String> {
         query(selector).into_iter().map(|(t, _)| t).collect()
+    }
+
+    fn locked() -> KeyAccess {
+        KeyAccess {
+            locked: true,
+            backup_missing: false,
+        }
+    }
+
+    fn redraw(cx: &mut VisualTestContext) {
+        cx.run_until_parked();
+        cx.draw(point(px(0.0), px(0.0)), gpui::size(px(700.0), px(500.0)), |_, _| div());
+        cx.run_until_parked();
+    }
+
+    #[gpui::test]
+    fn messages_without_keys_are_locked_rows_with_a_banner_never_a_skeleton(
+        cx: &mut TestAppContext,
+    ) {
+        let (view, cx) = open(cx);
+        feed(
+            &view,
+            cx,
+            vec![
+                entry(1, "@bob:x", 0, MessageKind::UnableToDecrypt),
+                entry(2, "@bob:x", 1000, text("readable")),
+            ],
+        );
+        // Keys unknown yet: a loading shimmer, and no banner.
+        assert_eq!(query(".message .undecrypted.skeleton").len(), 1);
+        assert!(query(".key-banner").is_empty());
+
+        view.update(cx, |t, cx| t.set_keys(locked(), cx));
+        redraw(cx);
+        assert!(query(".undecrypted.skeleton").is_empty());
+        assert_eq!(texts(".message .undecrypted.locked"), [LOCKED_TEXT]);
+        assert_eq!(texts(".key-banner button"), [BANNER_VERIFY, BANNER_RECOVERY]);
+        assert_eq!(texts(".message .body:not(.undecrypted)"), ["readable"]);
+
+        // The message is decrypted later: the row becomes it, the banner goes.
+        view.update(cx, |t, cx| {
+            t.apply(
+                vec![VectorDiff::Set { index: 0, value: entry(1, "@bob:x", 0, text("now readable")) }],
+                cx,
+            )
+        });
+        redraw(cx);
+        assert!(query(".undecrypted").is_empty());
+        assert!(query(".key-banner").is_empty());
+        assert_eq!(texts(".message .body"), ["now readable", "readable"]);
+    }
+
+    #[gpui::test]
+    fn the_banner_buttons_ask_for_settings(cx: &mut TestAppContext) {
+        use std::{cell::RefCell, rc::Rc};
+        let (view, cx) = open(cx);
+        let asked: Rc<RefCell<Vec<SettingsFocus>>> = Rc::default();
+        let log = asked.clone();
+        cx.update(|_, cx| {
+            cx.subscribe(&view, move |_, event: &TimelineEvent, _| {
+                if let TimelineEvent::OpenSettings(focus) = event {
+                    log.borrow_mut().push(*focus);
+                }
+            })
+            .detach();
+        });
+        feed(&view, cx, vec![entry(1, "@bob:x", 0, MessageKind::UnableToDecrypt)]);
+        view.update(cx, |t, cx| t.set_keys(locked(), cx));
+        redraw(cx);
+        for label in [BANNER_VERIFY, BANNER_RECOVERY] {
+            let (_, (x, y)) = query(".key-banner button")
+                .into_iter()
+                .find(|(text, _)| text == label)
+                .expect(label);
+            cx.simulate_click(point(px(x), px(y)), gpui::Modifiers::none());
+            cx.run_until_parked();
+        }
+        assert_eq!(
+            *asked.borrow(),
+            [SettingsFocus::Security, SettingsFocus::RecoveryKey]
+        );
     }
 
     #[gpui::test]

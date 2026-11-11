@@ -716,6 +716,10 @@ impl Render for TextInput {
         if self.disabled {
             tagged = tagged.attr("disabled", "");
         }
+        if focused {
+            // Which field has the keyboard, for the test bridge.
+            tagged = tagged.attr("data-focused", "");
+        }
         tagged
     }
 }

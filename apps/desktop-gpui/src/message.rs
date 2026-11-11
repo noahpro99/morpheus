@@ -15,6 +15,9 @@ use morpheus_core::{Message, MessageKind, Reaction, ThreadSummary};
 use crate::{
     e2e::{self, E2eExt as _},
     view_model::format::{human_duration, human_size},
+    view_model::keys::{
+        KeyAccess, LOCKED_HINT, LOCKED_TEXT, Undecryptable, WAITING_HINT, undecryptable,
+    },
     icons::icon,
     media::avatar,
     view_model::rich::{self, Block, Para},
@@ -38,6 +41,9 @@ pub struct Pictures {
     pub avatar: Option<Arc<Image>>,
     /// An image message's picture, or a video's thumbnail.
     pub media: Option<Arc<Image>>,
+    /// Whether this device can read encrypted history: a message it cannot
+    /// decrypt is a locked row or a loading shimmer by it.
+    pub keys: KeyAccess,
 }
 
 /// A file's download, as its card shows it.
@@ -706,20 +712,39 @@ fn body_el(
         MessageKind::Redacted => {
             return muted_body("Message deleted");
         }
-        MessageKind::UnableToDecrypt => {
-            return div()
-                .w(relative(0.55))
-                .max_w(px(420.0))
-                .min_w(px(120.0))
-                .h(px(14.0))
-                .my(px(5.0))
-                .rounded(px(7.0))
-                .bg(rgb(theme::BG_ELEVATED))
-                .e2e("div", "body skeleton skeleton-line undecrypted")
-                .attr("title", "Waiting for the keys to decrypt this message")
-                .attr("aria-label", "Encrypted message, waiting for keys")
-                .into_any_element();
-        }
+        // On a device that can read encrypted history, keys usually arrive
+        // shortly: a loading shimmer. On one that cannot, they never will
+        // until the user acts, so say so instead of looking like loading.
+        MessageKind::UnableToDecrypt => match undecryptable(pics.keys) {
+            Undecryptable::Locked => {
+                return div()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.0))
+                    .italic()
+                    .text_color(rgb(theme::TEXT_MUTED))
+                    .child(icon("lock", 14.0).text_color(rgb(theme::TEXT_MUTED)))
+                    .child(LOCKED_TEXT)
+                    .e2e("p", "body muted undecrypted locked")
+                    .attr("title", LOCKED_HINT)
+                    .text(LOCKED_TEXT)
+                    .into_any_element();
+            }
+            Undecryptable::Waiting => {
+                return div()
+                    .w(relative(0.55))
+                    .max_w(px(420.0))
+                    .min_w(px(120.0))
+                    .h(px(14.0))
+                    .my(px(5.0))
+                    .rounded(px(7.0))
+                    .bg(rgb(theme::BG_ELEVATED))
+                    .e2e("div", "body skeleton skeleton-line undecrypted")
+                    .attr("title", WAITING_HINT)
+                    .attr("aria-label", "Encrypted message, waiting for keys")
+                    .into_any_element();
+            }
+        },
         MessageKind::State(text) => return muted_body(text),
         MessageKind::Unsupported(what) => return muted_body(&format!("Unsupported: {what}")),
         MessageKind::ProfileChange | MessageKind::CallPlumbing => return div().into_any_element(),

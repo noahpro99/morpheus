@@ -8,7 +8,9 @@
 pub mod composer;
 pub mod emoji;
 pub mod format;
+pub mod keys;
 pub mod linkify;
 pub mod rich;
 pub mod rows;
 pub mod text_buffer;
+pub mod verification;

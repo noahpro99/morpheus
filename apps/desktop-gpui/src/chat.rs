@@ -58,7 +58,8 @@ pub fn render(shell: &Shell, _cx: &mut Context<Shell>) -> impl IntoElement {
                             "lock-open"
                         },
                         14.0,
-                    ))
+                    )
+                    .text_color(rgb(theme::TEXT_MUTED)))
                     .e2e(
                         "button",
                         if room.is_encrypted {
