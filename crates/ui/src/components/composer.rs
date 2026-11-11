@@ -3,11 +3,34 @@ use dioxus::prelude::*;
 use morpheus_core::{Member, MessageId, OwnedEventId, OwnedRoomId, Session, TimelineHandle};
 
 use super::emoji;
-use super::hotkeys::{FileDrops, Hotkey, HotkeyRequest};
+use super::hotkeys::{DroppedFile, FileDrops, Hotkey, HotkeyRequest};
 use super::shell::{Mention, MentionRequest};
 use super::timeline::LastOwnMessage;
 use crate::attach::pick_attachment;
-use crate::icons::{Icon, PLUS, SEND, SMILE};
+use crate::icons::{Icon, PAPERCLIP, PLUS, SEND, SMILE, X};
+
+/// A file waiting on the message being written (pasted or dropped).
+#[derive(Debug, Clone, PartialEq)]
+struct Attached {
+    id: u64,
+    file: DroppedFile,
+    /// A `data:` URL of the picture, for an image's tile.
+    preview: Option<String>,
+}
+
+impl Attached {
+    fn new(id: u64, file: DroppedFile) -> Self {
+        use base64::Engine as _;
+        let preview = file.mime.starts_with("image/").then(|| {
+            format!(
+                "data:{};base64,{}",
+                file.mime,
+                base64::engine::general_purpose::STANDARD.encode(&file.bytes)
+            )
+        });
+        Self { id, file, preview }
+    }
+}
 
 /// One row of the composer's autocomplete.
 #[derive(Debug, Clone, PartialEq)]
@@ -173,26 +196,20 @@ pub fn Composer(
         draft.set(text);
         suggestions.set(Vec::new());
     };
-    // Dropped and pasted files go out through this room's timeline.
+    // Dropped and pasted files wait on the message being written (tiles
+    // above the box, each with its ✕) and go out with it, as in Discord.
+    let mut attached = use_signal(Vec::<Attached>::new);
     let mut drops = use_context::<FileDrops>();
     use_effect(move || {
         if !accepts_drops || drops().0.is_empty() {
             return;
         }
-        let Some(handle) = timeline.peek().clone() else {
-            return;
-        };
         let files = std::mem::take(&mut drops.write().0);
-        spawn(async move {
-            for file in files {
-                if let Err(err) = handle
-                    .send_attachment_bytes(file.name, file.mime, file.bytes)
-                    .await
-                {
-                    report("Upload", &err);
-                }
-            }
-        });
+        let mut list = attached.write();
+        for file in files {
+            let id = list.iter().map(|a| a.id + 1).max().unwrap_or(0);
+            list.push(Attached::new(id, file));
+        }
     });
     // Shared from another app to this room (the Share dialog): the files,
     // then the message, once this room's timeline is the one open.
@@ -264,23 +281,37 @@ pub fn Composer(
     let mut send = move || {
         let body = draft().trim().to_owned();
         let Some(handle) = timeline() else { return };
-        if body.is_empty() {
+        let editing = matches!(*mode.peek(), Some(ComposerMode::Edit { .. }));
+        // An edit changes the text only; attached files wait for a message.
+        let files = if editing { Vec::new() } else { attached.take() };
+        if body.is_empty() && files.is_empty() {
             return;
         }
         draft.set(String::new());
         let action = mode.take();
         // Sending first: the message shows (greyed) the moment it is queued.
         // Waiting on the typing notice before it held it back a round trip.
-        let sending = match action {
+        let sending = (!body.is_empty()).then(|| match action {
             None => handle.send_text(body),
             Some(ComposerMode::Reply { event_id, .. }) => handle.send_reply(body, event_id),
             Some(ComposerMode::Edit { id, .. }) => handle.edit(id, body),
-        };
+        });
         let typing = handle.stop_typing();
         spawn(async move {
             let _ = typing.await;
-            if let Err(err) = sending.await {
+            if let Some(sending) = sending
+                && let Err(err) = sending.await
+            {
                 report("Sending", &err);
+            }
+            // The files after the text, so they read below it, as in Discord.
+            for Attached { file, .. } in files {
+                if let Err(err) = handle
+                    .send_attachment_bytes(file.name, file.mime, file.bytes)
+                    .await
+                {
+                    report("Upload", &err);
+                }
             }
         });
     };
@@ -359,6 +390,34 @@ pub fn Composer(
                     button { class: "ghost", title: "Cancel (Esc)", onclick: move |_| cancel(), "✕" }
                 }
             }
+            if !attached().is_empty() {
+                div { class: "composer-attachments",
+                    for item in attached() {
+                        div {
+                            key: "{item.id}",
+                            class: "composer-attachment",
+                            title: "{item.file.name}",
+                            if let Some(src) = &item.preview {
+                                img { src: "{src}", alt: "{item.file.name}" }
+                            } else {
+                                div { class: "attachment-file",
+                                    Icon { glyph: PAPERCLIP, size: 28 }
+                                }
+                            }
+                            span { class: "attachment-label", "{item.file.name}" }
+                            button {
+                                class: "remove-attachment",
+                                r#type: "button",
+                                title: "Remove",
+                                aria_label: "Remove {item.file.name}",
+                                onmousedown: move |e| e.prevent_default(),
+                                onclick: move |_| attached.write().retain(|a| a.id != item.id),
+                                Icon { glyph: X, size: 14 }
+                            }
+                        }
+                    }
+                }
+            }
             div { class: "composer-row",
                 button {
                     class: "attach-button",
@@ -428,10 +487,11 @@ pub fn Composer(
                 if on_phone {
                     button {
                         class: "send-button",
-                        class: if !draft().trim().is_empty() { "ready" },
+                        class: if !draft().trim().is_empty() || !attached().is_empty() { "ready" },
                         title: "Send",
                         r#type: "button",
-                        disabled: timeline().is_none() || draft().trim().is_empty(),
+                        disabled: timeline().is_none()
+                            || (draft().trim().is_empty() && attached().is_empty()),
                         // The keyboard stays up: tapping does not take focus.
                         onmousedown: move |e| e.prevent_default(),
                         onclick: move |_| send(),

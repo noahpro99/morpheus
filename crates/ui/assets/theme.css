@@ -577,6 +577,61 @@ img.avatar { object-fit: cover; }
 .composer-banner .banner-preview { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--text-faint); }
 .composer-banner + input { border-radius: 0 0 var(--radius) var(--radius); }
 
+/* Files waiting on the message being written: a tile each above the box,
+   the picture itself for an image, with a ✕ top right that takes it off. */
+.composer-attachments {
+  display: flex;
+  gap: 10px;
+  padding: 12px 12px 4px;
+  overflow-x: auto;
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: var(--bg-elevated);
+}
+.composer-attachment {
+  position: relative;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 140px;
+  padding: 8px;
+  border-radius: var(--radius);
+  background: var(--bg-input);
+}
+.composer-attachment img,
+.composer-attachment .attachment-file {
+  width: 100%;
+  height: 110px;
+  border-radius: calc(var(--radius) - 2px);
+  object-fit: cover;
+  background: var(--bg-chat);
+}
+.composer-attachment .attachment-file { display: grid; place-items: center; color: var(--text-muted); }
+.composer-attachment .attachment-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.composer-attachment .remove-attachment {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.4);
+  cursor: pointer;
+}
+.composer-attachment .remove-attachment:hover { background: var(--danger); color: #fff; }
+
 .reply-quote {
   display: flex;
   gap: 6px;
@@ -1371,6 +1426,9 @@ button.sender:hover { text-decoration: underline; }
 .composer-banner { border-radius: var(--radius-lg) var(--radius-lg) 0 0; margin-bottom: 0; }
 .composer-banner + .composer-row { border-radius: 0 0 var(--radius-lg) var(--radius-lg); }
 .composer-banner + input { border-radius: 0; }
+.composer-attachments { border-radius: var(--radius-lg) var(--radius-lg) 0 0; padding-bottom: 8px; border-bottom: 1px solid var(--bg-hover); }
+.composer-banner + .composer-attachments { border-radius: 0; }
+.composer-attachments + .composer-row { border-radius: 0 0 var(--radius-lg) var(--radius-lg); }
 .typing { height: 20px; }
 
 /* Concentric corners elsewhere: dialogs are xl with sm/md inside, menus lg with sm rows. */
