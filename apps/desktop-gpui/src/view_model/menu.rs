@@ -68,6 +68,13 @@ pub enum MenuAction {
     MoveOutOfFolders(OwnedRoomId),
     Profile(OwnedUserId),
 
+    // On a profile card (`profile`).
+    /// Swaps the card for the full profile.
+    FullProfile(OwnedUserId),
+    /// Copies the profile's link and says so.
+    ShareProfile(String),
+    ReportUser(OwnedUserId),
+
     // On a member (`members`).
     /// Adds `@name ` to the message being written.
     Mention(String),

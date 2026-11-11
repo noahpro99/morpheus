@@ -24,6 +24,7 @@ use crate::{
     media::{self, Avatars},
     members::{MemberEvent, MembersView},
     menu::{self, OpenMenu},
+    profile::ProfileCard,
     model::{Scope, rooms_in_scope},
     view_model::{marks::Marks, toast::ToastList},
     prefs::Prefs,
@@ -80,6 +81,10 @@ pub struct Shell {
     pub marks: Marks,
     /// The people you are friends with.
     pub friends: Vec<OwnedUserId>,
+    /// The profile card (or full profile) that is open.
+    pub card: Option<Entity<ProfileCard>>,
+    /// Where the last menu opened, for what it opens in its place.
+    pub menu_at: gpui::Point<gpui::Pixels>,
     /// The open room's member list.
     pub members: Option<(OwnedRoomId, Entity<MembersView>)>,
     /// Whether the member list shows (kept across rooms).
@@ -189,6 +194,8 @@ impl Shell {
             hidden_rooms: HashSet::new(),
             marks: Marks::default(),
             friends: Vec::new(),
+            card: None,
+            menu_at: gpui::Point::default(),
             members: None,
             members_open: true,
             members_count: 0,
@@ -298,7 +305,10 @@ impl Shell {
                 }
                 TimelineEvent::Failed(what, err) => this.fail(what, err, cx),
                 TimelineEvent::SenderMenu(message, at) => this.open_sender_menu(message, *at, cx),
-                TimelineEvent::Sender(..) => {}
+                TimelineEvent::Sender(message, at) => {
+                    let seen = Some((message.sender_name.clone(), message.sender_avatar.clone()));
+                    this.open_profile(message.sender.clone(), Some(*at), seen, cx)
+                }
                 _ => {}
             })
             .detach();
@@ -324,7 +334,10 @@ impl Shell {
                 MemberEvent::Context(member, permissions, at) => {
                     this.open_member_menu(member, *permissions, *at, cx)
                 }
-                MemberEvent::Open(_) => {}
+                MemberEvent::Open(member, at) => {
+                    let seen = Some((member.name.clone(), member.avatar.clone()));
+                    this.open_profile(member.user_id.clone(), Some(*at), seen, cx)
+                }
             })
             .detach();
             self.members_count = self
@@ -584,6 +597,7 @@ impl Render for Shell {
             })
             .children(self.settings.clone())
             .children(dialog)
+            .children(self.card.clone())
             .children(menu)
             .children(toasts)
             .e2e("div", if self.members_open { "shell" } else { "shell no-side" })

@@ -69,6 +69,8 @@ pub const INFO: &str =
 
 pub const MOVE: &str = r#"<path d="M12 2v20" /> <path d="m15 19-3 3-3-3" /> <path d="m19 9 3 3-3 3" /> <path d="M2 12h20" /> <path d="m5 9-3 3 3 3" /> <path d="m9 5 3-3 3 3" />"#;
 
+pub const SHARE_2: &str = r#"<circle cx="18" cy="5" r="3" /> <circle cx="6" cy="12" r="3" /> <circle cx="18" cy="19" r="3" /> <line x1="8.59" x2="15.42" y1="13.51" y2="17.49" /> <line x1="15.41" x2="8.59" y1="6.51" y2="10.49" />"#;
+
 /// The glyph named by an asset path `icons/<name>.svg`.
 fn glyph(name: &str) -> Option<&'static str> {
     Some(match name {
@@ -103,6 +105,7 @@ fn glyph(name: &str) -> Option<&'static str> {
         "folder-plus" => FOLDER_PLUS,
         "info" => INFO,
         "move" => MOVE,
+        "share-2" => SHARE_2,
         "smile-plus" => SMILE_PLUS,
         "eye" => EYE,
         "circle-minus" => CIRCLE_MINUS,

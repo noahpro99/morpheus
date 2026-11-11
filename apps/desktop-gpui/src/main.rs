@@ -18,6 +18,8 @@ mod member_actions;
 mod menu;
 mod model;
 mod prefs;
+mod profile;
+mod profile_actions;
 mod rail;
 mod room_list;
 mod room_menus;

@@ -79,6 +79,7 @@ impl Shell {
         match item.action.clone() {
             Some(action) if !item.has_submenu() => {
                 let menu = self.menu.take().expect("open");
+                self.menu_at = menu.at;
                 cx.notify();
                 self.run_menu_action(action, menu.target, cx);
             }
