@@ -5,11 +5,21 @@
 
 use gpui::{Context, FontWeight, IntoElement, div, linear_gradient, prelude::*, px, rgb};
 
-use crate::{e2e::E2eExt as _, icons::icon, media::avatar, shell::Shell, theme};
+use crate::{
+    e2e::E2eExt as _, icons::icon, media::avatar, shell::Shell, theme,
+    view_model::keys::SettingsFocus,
+};
 
-fn ghost(id: &'static str, glyph: &str, title: &str, classes: &str) -> impl IntoElement {
+fn ghost(
+    id: &'static str,
+    glyph: &str,
+    title: &str,
+    classes: &str,
+    on_click: Option<Box<dyn Fn(&gpui::ClickEvent, &mut gpui::Window, &mut gpui::App)>>,
+) -> impl IntoElement {
     div()
         .id(id)
+        .when_some(on_click, |d, f| d.on_click(f))
         .size(px(32.0))
         .flex_none()
         .flex()
@@ -22,12 +32,12 @@ fn ghost(id: &'static str, glyph: &str, title: &str, classes: &str) -> impl Into
             s.bg(gpui::rgba(theme::BG_HOVER))
                 .text_color(rgb(theme::TEXT))
         })
-        .child(icon(glyph, 18.0))
+        .child(icon(glyph, 18.0).text_color(rgb(theme::TEXT_MUTED)))
         .e2e("button", classes)
         .attr("title", title)
 }
 
-pub fn render(shell: &Shell, _cx: &mut Context<Shell>) -> impl IntoElement {
+pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
     let user_id = shell
         .session
         .as_ref()
@@ -88,18 +98,23 @@ pub fn render(shell: &Shell, _cx: &mut Context<Shell>) -> impl IntoElement {
             "mic",
             "Mute (Ctrl+Shift+M)",
             "ghost mute-button",
+            None,
         ))
         .child(ghost(
             "deafen",
             "headphones",
             "Deafen (Ctrl+Shift+D)",
             "ghost deafen-button",
+            None,
         ))
         .child(ghost(
             "settings",
             "settings",
             "Settings (Ctrl+,)",
             "ghost settings-button",
+            Some(Box::new(cx.listener(|this, _, _, cx| {
+                this.open_settings(SettingsFocus::None, cx)
+            }))),
         ))
         .e2e("div", "user-pill");
     // The band keeps the rail's and the sidebar's colours; the pill floats on it.

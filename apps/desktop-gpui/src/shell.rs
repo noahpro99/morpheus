@@ -14,10 +14,15 @@ use crate::{
     model::{Scope, rooms_in_scope},
     prefs::Prefs,
     rail, room_list,
+    settings::{KeysChanged, SettingsView},
     theme,
     timeline::{LinkClicked, TimelineEvent, TimelineView},
     user_bar,
+    view_model::keys::{KeyAccess, SettingsFocus, show_backup_prompt},
 };
+
+/// How often the lock state is re-read.
+const KEYS_RECHECK: std::time::Duration = std::time::Duration::from_secs(30);
 
 pub struct Shell {
     /// Absent only in widget tests, which feed `rooms` themselves.
@@ -39,6 +44,12 @@ pub struct Shell {
     pub room_scroll: ScrollHandle,
     /// Links handed to the browser (the test bridge's `.link-log`).
     pub opened_links: Vec<String>,
+    /// The settings window, shown or not (absent only in widget tests).
+    pub settings: Option<Entity<SettingsView>>,
+    /// Whether this device can read encrypted history.
+    pub keys: KeyAccess,
+    /// "Later" on the Secure Backup offer, until the app next starts.
+    pub backup_later: bool,
 }
 
 impl Shell {
@@ -88,6 +99,21 @@ impl Shell {
         })
         .detach();
         shell.scope = Scope::Rooms;
+        let settings = cx.new(|cx| SettingsView::new(Some(session), cx));
+        cx.subscribe(&settings, |this, _, _: &KeysChanged, cx| this.refresh_keys(cx))
+            .detach();
+        shell.settings = Some(settings);
+        shell.refresh_keys(cx);
+        // Keys can arrive from elsewhere: look again now and then.
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor().timer(KEYS_RECHECK).await;
+                if this.update(cx, |this, cx| this.refresh_keys(cx)).is_err() {
+                    break;
+                }
+            }
+        })
+        .detach();
         shell
     }
 
@@ -107,7 +133,42 @@ impl Shell {
             composer: None,
             room_scroll: ScrollHandle::new(),
             opened_links: Vec::new(),
+            settings: None,
+            keys: KeyAccess::default(),
+            backup_later: false,
         }
+    }
+
+    /// Opens Settings, on the page `focus` asks for.
+    pub fn open_settings(&mut self, focus: SettingsFocus, cx: &mut Context<Self>) {
+        if let Some(settings) = &self.settings {
+            settings.update(cx, |settings, cx| settings.open(focus, cx));
+        }
+    }
+
+    /// Reads whether this device can read encrypted history, and tells the
+    /// open timeline (its locked rows and banner follow).
+    pub fn refresh_keys(&mut self, cx: &mut Context<Self>) {
+        let Some(session) = self.session.clone() else {
+            return;
+        };
+        let status = session.encryption_status();
+        cx.spawn(async move |this, cx| {
+            if let Ok(status) = status.await {
+                this.update(cx, |this, cx| {
+                    let keys = KeyAccess::from_status(&status);
+                    if keys != this.keys {
+                        this.keys = keys;
+                        if let Some((_, timeline)) = &this.timeline {
+                            timeline.update(cx, |timeline, cx| timeline.set_keys(keys, cx));
+                        }
+                        cx.notify();
+                    }
+                })
+                .ok();
+            }
+        })
+        .detach();
     }
 
     /// The open room, if it is one we have joined.
@@ -160,9 +221,18 @@ impl Shell {
                     TimelineEvent::Reply(message) => composer.reply_to(message, cx),
                     TimelineEvent::Edit(message) => composer.edit(message, cx),
                     TimelineEvent::LastOwn(message) => composer.set_last_own(message.clone()),
+                    TimelineEvent::OpenSettings(_) => {}
                 })
             })
             .detach();
+            cx.subscribe(&timeline, |this: &mut Self, _, event: &TimelineEvent, cx| {
+                if let TimelineEvent::OpenSettings(focus) = event {
+                    this.open_settings(*focus, cx);
+                }
+            })
+            .detach();
+            let keys = self.keys;
+            timeline.update(cx, |timeline, cx| timeline.set_keys(keys, cx));
             // The old one is dropped here: leaving a room reads it.
             self.timeline = Some((id.clone(), timeline));
             self.composer = Some((id.clone(), composer));
@@ -240,6 +310,95 @@ impl Shell {
     }
 }
 
+/// The Secure Backup offer: a card in the corner while the account has no
+/// key backup (a new account's first sign-in), until set up or "Later".
+fn backup_prompt(cx: &mut Context<Shell>) -> impl IntoElement {
+    let action = |id: &'static str, label: &'static str, primary: bool| {
+        div()
+            .id(id)
+            .px(px(12.0))
+            .py(px(8.0))
+            .rounded(px(theme::RADIUS))
+            .cursor_pointer()
+            .bg(if primary {
+                rgb(theme::ACCENT)
+            } else {
+                gpui::rgba(theme::BG_HOVER).into()
+            })
+            .text_color(if primary { rgb(0xffffff) } else { rgb(theme::TEXT) })
+            .child(label)
+    };
+    div()
+        .absolute()
+        .right(px(16.0))
+        .top(px(48.0))
+        .max_w(px(360.0))
+        .flex()
+        .gap(px(12.0))
+        .px(px(16.0))
+        .py(px(14.0))
+        .rounded(px(10.0))
+        .bg(rgb(theme::BG_ELEVATED))
+        .shadow_md()
+        .occlude()
+        .child(
+            div()
+                .mt(px(2.0))
+                .text_color(rgb(theme::ACCENT))
+                .child(crate::icons::icon("key", 18.0).text_color(rgb(theme::ACCENT))),
+        )
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(4.0))
+                .text_size(px(0.9 * theme::REM))
+                .child(
+                    div()
+                        .font_weight(gpui::FontWeight::BOLD)
+                        .child("Set up Secure Backup")
+                        .e2e("strong", "")
+                        .text("Set up Secure Backup"),
+                )
+                .child(
+                    div()
+                        .text_color(rgb(theme::TEXT_MUTED))
+                        .child("Keep your encrypted messages if you lose this device: you'll get a recovery key to save.")
+                        .e2e("span", "")
+                        .text("Keep your encrypted messages if you lose this device: you'll get a recovery key to save."),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .gap(px(8.0))
+                        .justify_end()
+                        .mt(px(6.0))
+                        .child(
+                            action("backup-later", "Later", false)
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.backup_later = true;
+                                    cx.notify();
+                                }))
+                                .e2e("button", "secondary")
+                                .text("Later"),
+                        )
+                        .child(
+                            action("backup-set-up", "Set up", true)
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.open_settings(SettingsFocus::SetUpBackup, cx)
+                                }))
+                                .e2e("button", "primary")
+                                .text("Set up"),
+                        )
+                        .e2e("div", "backup-prompt-actions"),
+                )
+                .e2e("div", "backup-prompt-text"),
+        )
+        .e2e("div", "backup-prompt")
+        .attr("role", "status")
+}
+
+
 /// One batch change of the core's list, applied to a plain vector.
 pub fn apply(rooms: &mut Vec<RoomSummary>, diff: VectorDiff<RoomSummary>) {
     use VectorDiff::*;
@@ -294,6 +453,7 @@ impl Render for Shell {
             .child(user_bar::render(self, cx));
         div()
             .size_full()
+            .relative()
             .flex()
             .flex_col()
             .bg(rgb(theme::BG_CHAT))
@@ -316,6 +476,10 @@ impl Render for Shell {
                     .child(chat::render(self, cx))
                     .e2e("div", "shell-body"),
             )
+            .when(show_backup_prompt(self.keys, self.backup_later), |d| {
+                d.child(backup_prompt(cx))
+            })
+            .children(self.settings.clone())
             .e2e("div", "shell")
     }
 }
