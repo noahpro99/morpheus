@@ -51,6 +51,7 @@ pub struct LinkClicked(pub String);
 impl EventEmitter<LinkClicked> for TimelineView {}
 
 pub struct TimelineView {
+    #[allow(dead_code)]
     room_id: OwnedRoomId,
     session: Option<Session>,
     handle: Option<TimelineHandle>,

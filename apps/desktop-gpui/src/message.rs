@@ -42,6 +42,7 @@ pub struct Pictures {
 
 /// A file's download, as its card shows it.
 #[derive(Clone, Debug, PartialEq)]
+#[allow(dead_code)] // the card shows them; starting a download is not ported yet
 pub enum Download {
     Downloading,
     Saved(String),
