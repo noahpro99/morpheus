@@ -30,11 +30,27 @@ mod tag;
 #[cfg(feature = "e2e")]
 mod tree;
 
+/// How far a scrolling element is scrolled, in pixels: `from_bottom` (0 at
+/// the newest end), the `range` it can scroll and its `viewport` height.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ScrollState {
+    pub from_bottom: f32,
+    pub range: f32,
+    pub viewport: f32,
+}
+
+/// What a scrolling element offers the bridge (`scroll_state`, `scroll`).
+pub trait Scrollable {
+    fn scroll_state(&self) -> ScrollState;
+    /// Scrolls to `from_bottom` pixels from the bottom (clamped to the range).
+    fn scroll_to(&self, from_bottom: f32);
+}
+
 #[cfg(feature = "e2e")]
 pub use bridge::start;
 #[cfg(feature = "e2e")]
 #[allow(unused_imports)]
-pub use tag::{E2eExt, Tagged, frame};
+pub use tag::{E2eExt, Tagged, frame, text_links};
 
 #[cfg(not(feature = "e2e"))]
 mod off {
@@ -56,6 +72,20 @@ mod off {
         pub fn focusable(self, _handle: &FocusHandle) -> Self {
             self
         }
+        #[inline(always)]
+        pub fn scrollable(self, _probe: std::rc::Rc<dyn super::Scrollable>) -> Self {
+            self
+        }
+    }
+
+    /// Text with links in it (feature off: the element itself).
+    #[inline(always)]
+    pub fn text_links<E: IntoElement>(
+        inner: E,
+        _layout: &gpui::TextLayout,
+        _links: Vec<(std::ops::Range<usize>, String)>,
+    ) -> E {
+        inner
     }
 
     impl<E: IntoElement> IntoElement for Tagged<E> {
@@ -81,7 +111,7 @@ mod off {
 }
 #[cfg(not(feature = "e2e"))]
 #[allow(unused_imports)]
-pub use off::{E2eExt, Tagged, frame};
+pub use off::{E2eExt, Tagged, frame, text_links};
 
 /// What `selector` matches in the last frame, as `(text, centre)`: for
 /// widget tests, which click at the centre and read the text.

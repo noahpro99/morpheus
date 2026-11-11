@@ -7,6 +7,7 @@ use std::{borrow::Cow, path::PathBuf};
 mod chat;
 mod e2e;
 mod icons;
+mod message;
 mod input;
 mod login;
 mod media;
@@ -15,8 +16,10 @@ mod prefs;
 mod rail;
 mod room_list;
 mod shell;
+mod timeline;
 mod theme;
 mod user_bar;
+mod view_model;
 
 use e2e::E2eExt as _;
 use gpui::{

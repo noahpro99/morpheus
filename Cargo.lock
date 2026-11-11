@@ -7245,7 +7245,9 @@ dependencies = [
  "directories",
  "futures",
  "gpui",
+ "jiff",
  "morpheus-core",
+ "ruma-html",
  "serde",
  "serde_json",
 ]

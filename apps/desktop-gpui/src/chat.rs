@@ -92,13 +92,18 @@ pub fn render(shell: &Shell, _cx: &mut Context<Shell>) -> impl IntoElement {
                         .text(topic),
                 );
             }
-            div()
+            let mut column = div()
                 .flex()
                 .flex_col()
                 .flex_1()
                 .min_h_0()
-                .child(header.e2e("header", "chat-header"))
-                .into_any_element()
+                .child(header.e2e("header", "chat-header"));
+            if let Some((id, timeline)) = &shell.timeline
+                && id == &room.id
+            {
+                column = column.child(timeline.clone());
+            }
+            column.into_any_element()
         }
         None => div()
             .flex_1()
