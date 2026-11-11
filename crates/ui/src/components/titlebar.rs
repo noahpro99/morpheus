@@ -439,7 +439,7 @@ pub fn WindowBar() -> Element {
             },
             ondoubleclick: move |_| (maximize.toggle_maximize)(),
             div {}
-            div { class: "titlebar-title", Logo { size: 16, class: "titlebar-logo" } "Morpheus" }
+            div { class: "titlebar-title", Brand {} }
             div { class: "titlebar-actions",
                 div { class: "window-controls", onmousedown: move |e| e.stop_propagation(),
                     button { class: "ghost", title: "Minimize", onclick: { let c = controls.clone(); move |_| (c.minimize)() }, Icon { glyph: MINUS, size: 14 } }
@@ -482,6 +482,21 @@ pub fn TopActions() -> Element {
             Icon { glyph: INBOX, size: 16 }
             if unread > 0 {
                 span { class: "rail-badge inbox-badge", "{unread}" }
+            }
+        }
+    }
+}
+
+/// The Morpheus lockup, as morpheuschat.org's header has it: the glasses
+/// cropped tight in the moon colour, the name in Unbounded, a small ™.
+#[component]
+pub fn Brand() -> Element {
+    rsx! {
+        span { class: "brand", "aria-label": "Morpheus",
+            Logo { tight: true, class: "mark" }
+            span { class: "brand-text",
+                span { class: "brand-name", "Morpheus" }
+                span { class: "tm", "™" }
             }
         }
     }

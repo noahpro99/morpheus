@@ -97,7 +97,23 @@ pub const LOGO: &str = r#"<path d="M292.355 256.433 C293.616 220.336 330.594 192
 
 /// The logo at `size` pixels in the current text colour.
 #[component]
-pub fn Logo(#[props(default = 24)] size: u32, #[props(default)] class: String) -> Element {
+pub fn Logo(
+    #[props(default = 24)] size: u32,
+    #[props(default)] class: String,
+    /// Cropped to the glasses (as the wordmark has them), sized by CSS.
+    #[props(default)]
+    tight: bool,
+) -> Element {
+    if tight {
+        return rsx! {
+            svg {
+                class: "logo {class}",
+                view_box: "48 182 416 154",
+                "aria-hidden": "true",
+                dangerous_inner_html: "{LOGO}",
+            }
+        };
+    }
     rsx! {
         svg {
             class: "logo {class}",

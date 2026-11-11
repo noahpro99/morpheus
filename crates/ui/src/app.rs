@@ -132,6 +132,39 @@ impl std::fmt::Debug for AppConfig {
 
 const THEME: Asset = asset!("/assets/theme.css");
 
+// The site's fonts (morpheuschat.org, the same files), bundled so the app
+// looks the same everywhere instead of taking the system's: Inter for text,
+// Unbounded for the wordmark and headings. Variable, Latin and Latin
+// Extended (accented names). SIL OFL, licences beside them in assets/fonts.
+const INTER_LATIN: Asset = asset!("/assets/fonts/inter-latin-wght-normal.woff2");
+const INTER_LATIN_EXT: Asset = asset!("/assets/fonts/inter-latin-ext-wght-normal.woff2");
+const UNBOUNDED_LATIN: Asset = asset!("/assets/fonts/unbounded-latin-wght-normal.woff2");
+const UNBOUNDED_LATIN_EXT: Asset = asset!("/assets/fonts/unbounded-latin-ext-wght-normal.woff2");
+const LATIN: &str = "U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD";
+const LATIN_EXT: &str = "U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF";
+
+/// The `@font-face` rules, with the bundled files' served paths.
+fn font_faces() -> String {
+    let face = |family: &str, weights: &str, file: Asset, range: &str| {
+        format!(
+            "@font-face {{ font-family: '{family}'; font-style: normal; font-display: swap; \
+             font-weight: {weights}; src: url({file}) format('woff2'); unicode-range: {range}; }}"
+        )
+    };
+    [
+        face("Inter Variable", "100 900", INTER_LATIN_EXT, LATIN_EXT),
+        face("Inter Variable", "100 900", INTER_LATIN, LATIN),
+        face(
+            "Unbounded Variable",
+            "200 900",
+            UNBOUNDED_LATIN_EXT,
+            LATIN_EXT,
+        ),
+        face("Unbounded Variable", "200 900", UNBOUNDED_LATIN, LATIN),
+    ]
+    .join("\n")
+}
+
 /// Root component. Boots the core, restores a session, and routes between
 /// the login screen and the main shell.
 #[component]
@@ -140,6 +173,7 @@ pub fn App() -> Element {
     let core = use_hook(|| Core::new(&config.data_dir).map_err(|e| e.to_string()));
 
     rsx! {
+        document::Style { {font_faces()} }
         document::Stylesheet { href: THEME }
         // No-op unless built with the `e2e` feature.
         E2eBridge {}
