@@ -145,8 +145,12 @@ const TINY_PNG: &[u8] = &[
     0x44, 0xAE, 0x42, 0x60, 0x82,
 ];
 
+/// Pasting or dropping a file attaches it to the message being written, as
+/// in Discord: a tile above the box (the picture itself for an image) with a
+/// ✕ top right that takes it off; nothing goes out until the message is sent,
+/// and then the files go with it.
 #[tokio::test]
-async fn dropped_and_pasted_files_upload() {
+async fn pasted_and_dropped_files_attach_to_the_message() {
     let Some(hs) = homeserver() else {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
@@ -154,21 +158,58 @@ async fn dropped_and_pasted_files_upload() {
     let mut app = App::launch(&hs).await.expect("launch app");
     login_and_open(&mut app, "random").await;
     let pid = std::process::id();
+    let in_timeline = |name: &str| {
+        format!(
+            "return [...document.querySelectorAll('.timeline .image, .timeline .attachment-card')].some(el => el.alt === {0} || el.textContent.includes({0}))",
+            serde_json::to_string(name).expect("json")
+        )
+    };
 
-    // Dragging a file over the window shows the hint; dropping it sends an image.
-    let image = format!("drop-{pid}.png");
-    app.eval(&file_event_js("drop", &image, "image/png", TINY_PNG))
+    // A pasted picture waits in the composer, shown as itself.
+    let removed = format!("removed-{pid}.png");
+    app.eval(&file_event_js("paste", &removed, "image/png", TINY_PNG))
         .await
-        .expect("drop");
-    app.wait_for_js(
-        &format!(
-            "return [...document.querySelectorAll('.image')].some(el => el.alt === {0} || el.textContent.includes({0}))",
-            serde_json::to_string(&image).expect("json")
-        ),
+        .expect("paste");
+    app.wait_for(
+        ".composer .composer-attachment img[src^='data:image/png']",
         DEFAULT_WAIT,
     )
     .await
-    .expect("dropped image in the timeline");
+    .expect("the picture attached to the message");
+    // Its ✕ takes it off again; it is never sent.
+    app.click(".composer .composer-attachment .remove-attachment")
+        .await
+        .expect("remove");
+    app.wait_for_js(
+        "return document.querySelectorAll('.composer .composer-attachment').length === 0",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("taken off");
+
+    // A pasted picture and a dropped file wait together, until Enter.
+    let image = format!("paste-{pid}.png");
+    let text = format!("drop-{pid}.txt");
+    app.eval(&file_event_js("paste", &image, "image/png", TINY_PNG))
+        .await
+        .expect("paste");
+    app.eval(&file_event_js(
+        "drop",
+        &text,
+        "text/plain",
+        b"dropped contents",
+    ))
+    .await
+    .expect("drop");
+    app.wait_for_js(
+        "return document.querySelectorAll('.composer .composer-attachment').length === 2",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("both attached");
+    if std::env::var_os("MORPHEUS_E2E_SHOTS").is_some() {
+        let _ = app.screenshot("composer-attachments").await;
+    }
     assert!(
         !app.eval("return document.body.classList.contains('dropping')")
             .await
@@ -177,20 +218,53 @@ async fn dropped_and_pasted_files_upload() {
             .unwrap_or(true),
         "hint hidden after the drop"
     );
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    assert!(
+        !app.eval(&in_timeline(&image))
+            .await
+            .expect("eval")
+            .as_bool()
+            .unwrap_or(true)
+            && !app
+                .eval(&in_timeline(&text))
+                .await
+                .expect("eval")
+                .as_bool()
+                .unwrap_or(true),
+        "nothing sent before the message"
+    );
 
-    // Pasting a file sends it as a file attachment.
-    let text = format!("paste-{pid}.txt");
-    app.eval(&file_event_js(
-        "paste",
-        &text,
-        "text/plain",
-        b"pasted contents",
-    ))
-    .await
-    .expect("paste");
-    app.wait_for_text(".attachment-card .attachment-name", &text, DEFAULT_WAIT)
+    let message = format!("with files {pid}");
+    app.type_into(".composer .composer-input", &message)
         .await
-        .expect("pasted file in the timeline");
+        .expect("type");
+    app.press(".composer .composer-input", "Enter")
+        .await
+        .expect("send");
+    app.wait_for_text(".timeline", &message, DEFAULT_WAIT)
+        .await
+        .expect("the message");
+    app.wait_for_js(&in_timeline(&image), DEFAULT_WAIT)
+        .await
+        .expect("the picture sent with it");
+    app.wait_for_js(&in_timeline(&text), DEFAULT_WAIT)
+        .await
+        .expect("the file sent with it");
+    assert_eq!(
+        app.count(".composer .composer-attachment")
+            .await
+            .expect("count"),
+        0,
+        "the composer is empty again"
+    );
+    assert!(
+        !app.eval(&in_timeline(&removed))
+            .await
+            .expect("eval")
+            .as_bool()
+            .unwrap_or(true),
+        "the removed picture was never sent"
+    );
 }
 
 /// A video plays in the message, as in Discord: the play button swaps the

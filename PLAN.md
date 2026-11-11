@@ -156,7 +156,6 @@ timeline → send.
   untied donations.
 
 ## Backlog
-- Pasting or dropping a file attaches it to the message being written (a tile above the box, a small ✕ top right removes it) and sends with it, as in Discord; not sent on the spot.
 - Done: faster builds. A UI change rebuilds the desktop test app in 5–15 s (was 20 s to almost 4 min: a 2.2 GB binary of debug info that dx reads and rewrites; now 390 MB, dependencies without debug info, ours with line tables) and the phone test app in about 15 s (was 80 s: Gradle deflated a 470 MB library each time; now 280 MB, stored uncompressed), installed over the old one. Left if wanted: mold (linking is now about 2 s), faster release builds.
 - A share target on iOS: a share extension (Android has one: Morpheus in the share sheet, a Share to… dialog with a message and the rooms). Later on Android: direct-share shortcuts for recent conversations.
 - Opening Matrix links from outside, the rest: on iOS, the `matrix:` scheme; on Windows, registering the `matrix:` protocol (the link arrives as an argument, as on Linux, and a second start must hand it to the first: single-instance is Unix-only so far); on macOS, the URL type in Info.plist and the open-URL event. Done: clicked links (in messages); on Linux `matrix:` links and matrix.to arguments, handed to the running app; on Android `matrix:` and matrix.to links (not verified: Morpheus is offered for them).
