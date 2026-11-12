@@ -77,7 +77,7 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                 header.child(
                     div()
                         .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(rgb(theme::TEXT_FAINT))
+                        .text_color(rgb(theme::text_faint()))
                         .child("#")
                         .e2e("span", "hash")
                         .text("#"),
@@ -96,7 +96,7 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                     .px(px(8.0))
                     .py(px(6.0))
                     .rounded(px(theme::RADIUS_SM))
-                    .text_color(rgb(theme::TEXT_MUTED))
+                    .text_color(rgb(theme::text_muted()))
                     .cursor_pointer()
                     .on_click({
                         let id = room.id.clone();
@@ -112,7 +112,7 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                         },
                         14.0,
                     )
-                    .text_color(rgb(theme::TEXT_MUTED)))
+                    .text_color(rgb(theme::text_muted())))
                     .e2e(
                         "button",
                         if room.is_encrypted {
@@ -138,8 +138,8 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                         .min_w_0()
                         .truncate()
                         .border_l_1()
-                        .border_color(rgb(theme::BG_ELEVATED))
-                        .text_color(rgb(theme::TEXT_MUTED))
+                        .border_color(rgb(theme::bg_elevated()))
+                        .text_color(rgb(theme::text_muted()))
                         .text_size(px(0.85 * theme::REM))
                         .child(topic.clone())
                         .e2e("span", "topic")
@@ -156,10 +156,10 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                     .px(px(8.0))
                     .py(px(6.0))
                     .rounded(px(theme::RADIUS_SM))
-                    .text_color(rgb(theme::TEXT_MUTED))
+                    .text_color(rgb(theme::text_muted()))
                     .cursor_pointer()
-                    .hover(|s| s.text_color(rgb(theme::TEXT)))
-                    .child(icon("ellipsis", 16.0).text_color(rgb(theme::TEXT_MUTED)))
+                    .hover(|s| s.text_color(rgb(theme::text())))
+                    .child(icon("ellipsis", 16.0).text_color(rgb(theme::text_muted())))
                     .on_click(cx.listener(move |this, event: &gpui::ClickEvent, _, cx| {
                         this.open_room_menu(menu_room.clone(), event.position(), cx)
                     }))
@@ -178,13 +178,13 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                     .py(px(6.0))
                     .rounded(px(theme::RADIUS_SM))
                     .text_size(px(0.85 * theme::REM))
-                    .text_color(rgb(if open { theme::TEXT } else { theme::TEXT_MUTED }))
+                    .text_color(rgb(if open { theme::text() } else { theme::text_muted() }))
                     .cursor_pointer()
-                    .hover(|s| s.text_color(rgb(theme::TEXT)))
+                    .hover(|s| s.text_color(rgb(theme::text())))
                     .child(icon("users", 16.0).text_color(rgb(if open {
-                        theme::TEXT
+                        theme::text()
                     } else {
-                        theme::TEXT_MUTED
+                        theme::text_muted()
                     })))
                     .child(count.clone())
                     .on_click(cx.listener(|this, _, _, cx| this.toggle_members(cx)))
@@ -214,10 +214,10 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                     .py(px(6.0))
                     .rounded(px(theme::RADIUS_SM))
                     .text_size(px(0.85 * theme::REM))
-                    .text_color(rgb(theme::TEXT_MUTED))
+                    .text_color(rgb(theme::text_muted()))
                     .cursor_pointer()
-                    .hover(|s| s.text_color(rgb(theme::TEXT)))
-                    .child(icon("pin", 16.0).text_color(rgb(theme::TEXT_MUTED)))
+                    .hover(|s| s.text_color(rgb(theme::text())))
+                    .child(icon("pin", 16.0).text_color(rgb(theme::text_muted())))
                     .child(pins.to_string())
                     .on_click(cx.listener(|this, _, _, cx| this.open_pinned(cx)))
                     .e2e("button", "ghost pin-toggle")
@@ -238,19 +238,19 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                     .px(px(8.0))
                     .rounded(px(theme::RADIUS_SM))
                     .bg(if searching {
-                        gpui::Hsla::from(gpui::rgba(theme::BG_SELECTED))
+                        gpui::Hsla::from(gpui::rgba(theme::bg_selected()))
                     } else {
-                        gpui::Hsla::from(rgb(theme::BG_INPUT))
+                        gpui::Hsla::from(rgb(theme::bg_input()))
                     })
                     .text_size(px(0.85 * theme::REM))
-                    .text_color(rgb(if searching { theme::TEXT } else { theme::TEXT_MUTED }))
+                    .text_color(rgb(if searching { theme::text() } else { theme::text_muted() }))
                     .cursor_pointer()
-                    .hover(|s| s.text_color(rgb(theme::TEXT)))
+                    .hover(|s| s.text_color(rgb(theme::text())))
                     .child("Search")
                     .child(icon("search", 16.0).text_color(rgb(if searching {
-                        theme::TEXT
+                        theme::text()
                     } else {
-                        theme::TEXT_MUTED
+                        theme::text_muted()
                     })))
                     .on_click(cx.listener(|this, _, _, cx| this.toggle_search(cx)))
                     .e2e(
@@ -312,7 +312,7 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                                 .size_full()
                                 .rounded(px(theme::RADIUS_LG))
                                 .overflow_hidden()
-                                .bg(rgb(theme::BG_SIDEBAR))
+                                .bg(rgb(theme::bg_sidebar()))
                                 .child(side)
                                 .e2e("div", "side-pane"),
                         ),
@@ -343,7 +343,7 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
             )
             .child(
                 div()
-                    .text_color(rgb(theme::TEXT_MUTED))
+                    .text_color(rgb(theme::text_muted()))
                     .child("Your conversations will show up here.")
                     .e2e("p", "muted")
                     .text("Your conversations will show up here."),
@@ -358,7 +358,7 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
         .flex_1()
         .min_w_0()
         .h_full()
-        .bg(rgb(theme::BG_CHAT))
+        .bg(rgb(theme::bg_chat()))
         // Files dropped anywhere on the chat wait on the message being written.
         .on_drop::<ExternalPaths>(move |paths, _, cx| {
             if let Some(composer) = &composer {

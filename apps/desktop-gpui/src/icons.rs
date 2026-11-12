@@ -179,12 +179,33 @@ pub fn svg_for(path: &str) -> Option<String> {
 
 /// A glyph (`"plus"`, `"lock"`, ...) at `size` pixels. gpui draws an svg in
 /// its own colour, not the text's: muted unless the caller sets another.
-pub fn icon(name: &str, size: f32) -> Svg {
-    svg()
-        .path(format!("icons/{name}.svg"))
-        .size(px(size))
-        .flex_none()
-        .text_color(gpui::rgb(crate::theme::TEXT_MUTED))
+pub fn icon(name: &str, size: f32) -> Icon {
+    Icon(
+        svg()
+            .path(format!("icons/{name}.svg"))
+            .size(px(size))
+            .flex_none()
+            .text_color(gpui::rgb(crate::theme::text_muted())),
+    )
+}
+
+/// A drawn glyph: styled like an svg, and in test builds an `svg.icon` in the
+/// element tree (so a test can tell a button has one).
+pub struct Icon(Svg);
+
+impl gpui::Styled for Icon {
+    fn style(&mut self) -> &mut gpui::StyleRefinement {
+        self.0.style()
+    }
+}
+
+impl gpui::IntoElement for Icon {
+    type Element = <crate::e2e::Tagged<Svg> as gpui::IntoElement>::Element;
+
+    fn into_element(self) -> Self::Element {
+        use crate::e2e::E2eExt as _;
+        self.0.e2e("svg", "icon").into_element()
+    }
 }
 
 #[cfg(test)]

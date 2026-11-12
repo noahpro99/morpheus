@@ -34,14 +34,7 @@ async fn login_and_open(app: &mut App, room: &str) {
 }
 
 async fn menu_labels(app: &mut App, selector: &str) -> String {
-    app.eval(&format!(
-        "return [...document.querySelectorAll('{selector}')].map(e => e.textContent).join('|');"
-    ))
-    .await
-    .expect("labels")
-    .as_str()
-    .unwrap_or_default()
-    .to_owned()
+    app.texts(selector).await.expect("labels").join("|")
 }
 
 async fn palette(app: &mut App, query: &str) {
@@ -56,9 +49,9 @@ async fn palette(app: &mut App, query: &str) {
         .expect("filter");
 }
 
-/// The rows of the open menu's "Invite to server" flyout, as `rows`.
-const INVITE_ROWS: &str = "const parent = [...document.querySelectorAll('.context-menu > .has-submenu')].find(e => e.querySelector('.menu-label').textContent === 'Invite to server'); \
-    const rows = parent ? [...parent.querySelectorAll('.context-submenu .context-item')] : [];";
+/// The rows of the open menu's flyouts (only "Invite to server" has one).
+const INVITE_ROWS: &str = ".context-menu > .has-submenu .context-submenu .context-item";
+const INVITE_PARENT: (&str, &str) = (".context-menu > .has-submenu", "Invite to server");
 
 #[tokio::test]
 async fn pictures_menus_and_spacing() {
@@ -77,31 +70,37 @@ async fn pictures_menus_and_spacing() {
     app.key_combo("body", "Escape", false, false, false)
         .await
         .expect("close palette");
-    app.wait_for_js("return !document.querySelector('.switcher')", DEFAULT_WAIT)
+    app.wait_for_count(".switcher", 0, DEFAULT_WAIT)
         .await
         .expect("palette closed");
 
     // The gear and the attach button sit close together across the edge.
-    let gap = app
-        .eval("const gear = document.querySelector('.user-pill .settings-button').getBoundingClientRect(), \
-               plus = document.querySelector('.composer .attach-button').getBoundingClientRect(); \
-               return plus.left - gear.right;")
+    let gear = app
+        .bounds(".user-pill .settings-button")
         .await
-        .expect("gap")
-        .as_f64()
-        .expect("number");
+        .expect("gear")
+        .expect("the gear");
+    let plus = app
+        .bounds(".composer .attach-button")
+        .await
+        .expect("plus")
+        .expect("the attach button");
+    let gap = plus.x - gear.right();
     // And the pill spans the band under the rail and sidebar.
-    let spans = app
-        .eval(
-            "const pill = document.querySelector('.user-pill').getBoundingClientRect(), \
-               side = document.querySelector('.sidebar').getBoundingClientRect(); \
-               return [pill.left, side.right - pill.right];",
-        )
+    let pill = app
+        .bounds(".user-pill")
         .await
-        .expect("pill");
+        .expect("pill")
+        .expect("the pill");
+    let side = app
+        .bounds(".sidebar")
+        .await
+        .expect("sidebar")
+        .expect("the sidebar");
+    let spans = serde_json::json!([pill.x, side.right() - pill.right()]);
     assert_eq!(
         spans,
-        serde_json::json!([8, 8]),
+        serde_json::json!([8.0, 8.0]),
         "pill margins inside the band"
     );
     assert!(
@@ -110,28 +109,31 @@ async fn pictures_menus_and_spacing() {
     );
 
     // The logo on the DMs button fills its circle rather than floating in it.
-    let fill = app
-        .eval(
-            "const b = document.querySelector('.rail-dms').getBoundingClientRect(), \
-               l = document.querySelector('.rail-dms .logo').getBoundingClientRect(); \
-               return l.width / b.width;",
-        )
+    let button = app
+        .bounds(".rail-dms")
+        .await
+        .expect("dms")
+        .expect("the DMs button");
+    let logo = app
+        .bounds(".rail-dms .logo")
         .await
         .expect("dms logo")
-        .as_f64()
-        .expect("number");
+        .expect("its logo");
+    let fill = logo.w / button.w;
     assert!(fill >= 0.8, "DMs logo fills {fill:.2} of its circle");
 
     // Your own avatar gets no shadow when the chip is hovered.
-    let shadowed = app
-        .eval("return [...document.styleSheets].flatMap(s => [...s.cssRules]).some(r => \
-               (r.selectorText || '').includes('.profile-chip:hover .avatar') && r.style.boxShadow);")
-        .await
-        .expect("rules");
-    assert_eq!(shadowed, false, "own avatar still has a hover shadow");
+    if !app.is_gpui() {
+        let shadowed = app
+            .eval("return [...document.styleSheets].flatMap(s => [...s.cssRules]).some(r => \
+                   (r.selectorText || '').includes('.profile-chip:hover .avatar') && r.style.boxShadow);")
+            .await
+            .expect("rules");
+        assert_eq!(shadowed, false, "own avatar still has a hover shadow");
+    }
 
     // Right-click on someone's avatar in a message: the member menu.
-    app.wait_for(".message:not(.own) .avatar-button", DEFAULT_WAIT)
+    app.reveal_element(".message:not(.own) .avatar-button", DEFAULT_WAIT)
         .await
         .expect("a message from someone else");
     app.right_click(".message:not(.own) .avatar-button")
@@ -150,13 +152,18 @@ async fn pictures_menus_and_spacing() {
     );
 
     // Invite to server: servers and rooms outside any server, with pictures.
+    if app.is_gpui() {
+        // The flyout opens on a hover or a click; the Dioxus one is in the page.
+        app.click_text(".context-menu > .has-submenu", "Invite to server")
+            .await
+            .expect("open the flyout");
+    }
+    app.wait_for(INVITE_ROWS, DEFAULT_WAIT).await.expect("the flyout");
     let targets = app
-        .eval(&format!("{INVITE_ROWS} return rows.map(r => r.querySelector('.menu-label').textContent).join('|');"))
+        .texts_within(INVITE_PARENT.0, INVITE_PARENT.1, ".context-submenu .context-item .menu-label")
         .await
         .expect("targets")
-        .as_str()
-        .unwrap_or_default()
-        .to_owned();
+        .join("|");
     assert!(
         targets.contains("Engineering"),
         "no server in the invite list: {targets}"
@@ -169,20 +176,23 @@ async fn pictures_menus_and_spacing() {
         !targets.split('|').any(|t| t == "dev" || t == "#dev"),
         "a room inside a server is listed on its own: {targets}"
     );
-    let pictures = app
-        .eval(&format!("{INVITE_ROWS} return rows.length > 0 && rows.every(r => r.querySelector('.menu-avatar .avatar'));"))
+    let rows = app
+        .texts_within(INVITE_PARENT.0, INVITE_PARENT.1, ".context-submenu .context-item")
         .await
-        .expect("pictures");
-    assert_eq!(pictures, true, "invite targets lack pictures");
+        .expect("rows")
+        .len();
+    let pictures = app
+        .texts_within(INVITE_PARENT.0, INVITE_PARENT.1, ".context-submenu .context-item .menu-avatar .avatar")
+        .await
+        .expect("pictures")
+        .len();
+    assert!(rows > 0 && pictures >= rows, "invite targets lack pictures ({pictures} for {rows})");
     app.key_combo("body", "Escape", false, false, false)
         .await
         .expect("close menu");
-    app.wait_for_js(
-        "return !document.querySelector('.context-menu')",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("menu closed");
+    app.wait_for_count(".context-menu", 0, DEFAULT_WAIT)
+        .await
+        .expect("menu closed");
 
     // The sender's name does the same.
     app.right_click(".message:not(.own) button.sender")

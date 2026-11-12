@@ -73,9 +73,9 @@ fn mark_elements(media: morpheus_core::CallMedia, video: bool, size: f32) -> Vec
                 .flex()
                 .items_center()
                 .child(icon(glyph, size).text_color(rgb(if mark.class.starts_with("voice-state") {
-                    theme::DANGER
+                    theme::danger()
                 } else {
-                    theme::TEXT_MUTED
+                    theme::text_muted()
                 })))
                 .e2e("span", mark.class)
                 .attr("title", mark.title)
@@ -85,7 +85,7 @@ fn mark_elements(media: morpheus_core::CallMedia, video: bool, size: f32) -> Vec
                 .px(px(5.0))
                 .py(px(1.0))
                 .rounded(px(4.0))
-                .bg(rgb(theme::DANGER))
+                .bg(rgb(theme::danger()))
                 .text_color(rgb(0xffffff))
                 .text_size(px(0.65 * theme::REM))
                 .font_weight(FontWeight::EXTRA_BOLD)
@@ -140,7 +140,7 @@ pub fn room_call(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -> 
                 .py(px(3.0))
                 .rounded(px(theme::RADIUS_SM))
                 .text_size(px(0.85 * theme::REM))
-                .text_color(rgb(if speaks { theme::TEXT } else { theme::TEXT_MUTED }))
+                .text_color(rgb(if speaks { theme::text() } else { theme::text_muted() }))
                 .when(connecting, |d| d.opacity(0.45))
                 .child(
                     div()
@@ -148,7 +148,7 @@ pub fn room_call(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -> 
                         .rounded_full()
                         .border_2()
                         .border_color(if speaks {
-                            gpui::Hsla::from(rgb(theme::GREEN))
+                            gpui::Hsla::from(rgb(theme::green()))
                         } else {
                             gpui::Hsla::from(gpui::transparent_black())
                         })
@@ -219,11 +219,11 @@ fn control_button(
     let hang = classes.split(' ').any(|c| c == "hang-up");
     let mute = classes.split(' ').any(|c| c == "mute-button");
     let (bg, fg) = if hang || (mute && active) {
-        (rgb(theme::DANGER), rgb(0xffffff))
+        (rgb(theme::danger()), rgb(0xffffff))
     } else if active {
-        (rgb(theme::TEXT), rgb(theme::BG_RAIL))
+        (rgb(theme::text()), rgb(theme::bg_rail()))
     } else {
-        (rgb(theme::BG_ELEVATED), rgb(theme::TEXT))
+        (rgb(theme::bg_elevated()), rgb(theme::text()))
     };
     let side = size + 24.0;
     let mut button = div()
@@ -420,17 +420,17 @@ fn ghost_button(
         .justify_center()
         .rounded(px(theme::RADIUS_SM))
         .cursor_pointer()
-        .when(hang, |d| d.bg(rgb(theme::DANGER)))
-        .when(!hang, |d| d.hover(|s| s.bg(rgba(theme::BG_HOVER))))
+        .when(hang, |d| d.bg(rgb(theme::danger())))
+        .when(!hang, |d| d.hover(|s| s.bg(rgba(theme::bg_hover()))))
         .when(hang, |d| d.hover(|s| s.opacity(0.9)))
         .when(!enabled, |d| d.opacity(0.4))
         .when(pending, |d| d.opacity(0.7))
         .child(icon(glyph, 18.0).text_color(if hang {
             rgb(0xffffff)
         } else if active {
-            rgb(theme::ACCENT)
+            rgb(theme::accent())
         } else {
-            rgb(theme::TEXT_MUTED)
+            rgb(theme::text_muted())
         }))
         .on_click(on_click);
     if let Some(on_right) = on_right {
@@ -462,9 +462,9 @@ pub fn voice_panel(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElement>
                 .text_size(px(0.85 * theme::REM))
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(rgb(if call.connected {
-                    theme::GREEN
+                    theme::green()
                 } else {
-                    theme::TEXT_MUTED
+                    theme::text_muted()
                 }))
                 .truncate()
                 .child(if call.connected {
@@ -490,10 +490,10 @@ pub fn voice_panel(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElement>
             div()
                 .id("voice-room")
                 .text_size(px(0.8 * theme::REM))
-                .text_color(rgb(theme::TEXT_MUTED))
+                .text_color(rgb(theme::text_muted()))
                 .truncate()
                 .cursor_pointer()
-                .hover(|s| s.text_color(rgb(theme::TEXT)))
+                .hover(|s| s.text_color(rgb(theme::text())))
                 .child(call.room_name.clone())
                 .on_click(cx.listener(move |this, _, _, cx| this.open_room(room_id.clone(), cx)))
                 .e2e("button", "voice-room")
@@ -510,7 +510,7 @@ pub fn voice_panel(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElement>
         .pl(px(12.0))
         .pr(px(6.0))
         .border_b_1()
-        .border_color(rgba(theme::BG_HOVER))
+        .border_color(rgba(theme::bg_hover()))
         .child(status);
     if morpheus_call::can_send_video() {
         let on = !call.camera;
@@ -654,7 +654,7 @@ fn card_marks(media: morpheus_core::CallMedia) -> Option<AnyElement> {
             .justify_center()
             .rounded_full()
             .bg(black(0.6))
-            .child(icon(mark.glyph.unwrap_or("mic-off"), 14.0).text_color(rgb(theme::DANGER)))
+            .child(icon(mark.glyph.unwrap_or("mic-off"), 14.0).text_color(rgb(theme::danger())))
             .e2e("span", mark.class)
             .attr("title", mark.title)
     });
@@ -702,10 +702,10 @@ fn person_card(
     .items_center()
     .justify_center()
     .rounded(px(theme::RADIUS_LG))
-    .bg(rgb(theme::BG_ELEVATED))
+    .bg(rgb(theme::bg_elevated()))
     .border_2()
     .border_color(if speaking {
-        gpui::Hsla::from(rgb(theme::GREEN))
+        gpui::Hsla::from(rgb(theme::green()))
     } else {
         gpui::Hsla::from(gpui::transparent_black())
     })
@@ -716,7 +716,7 @@ fn person_card(
             .rounded_full()
             .border_3()
             .border_color(if speaking {
-                gpui::Hsla::from(rgb(theme::GREEN))
+                gpui::Hsla::from(rgb(theme::green()))
             } else {
                 gpui::Hsla::from(gpui::transparent_black())
             })
@@ -774,7 +774,7 @@ fn video_card(
     .bg(if feed.screen {
         rgb(0x000000)
     } else {
-        rgb(theme::BG_ELEVATED)
+        rgb(theme::bg_elevated())
     })
     .cursor_pointer()
     .on_click(cx.listener(move |this, _, _, cx| this.toggle_focus(&click_key, cx)));
@@ -890,7 +890,7 @@ fn stage_body(
         .px(px(if voice_page { 16.0 } else { 16.0 }))
         .pt(px(if voice_page { 16.0 } else { 8.0 }))
         .pb(px(8.0))
-        .bg(rgb(theme::BG_RAIL))
+        .bg(rgb(theme::bg_rail()))
         .min_h(px(200.0));
     stage = if voice_page {
         stage.flex_1().min_h_0()
@@ -898,7 +898,7 @@ fn stage_body(
         stage
             .h(px(height))
             .border_b_1()
-            .border_color(rgba(theme::BG_SELECTED))
+            .border_color(rgba(theme::bg_selected()))
     };
     let area = div()
         .relative()
@@ -951,7 +951,7 @@ pub fn call_stage(
         .mt(px(-3.0))
         .w_full()
         .cursor_row_resize()
-        .hover(|s| s.bg(rgb(theme::ACCENT)))
+        .hover(|s| s.bg(rgb(theme::accent())))
         .on_mouse_down(MouseButton::Left, move |event, _, cx| {
             let y = f32::from(event.position.y);
             view.update(cx, |this, cx| {
@@ -992,14 +992,14 @@ pub fn voice_page(
                 .items_center()
                 .justify_center()
                 .gap(px(12.0))
-                .bg(rgb(theme::BG_RAIL))
-                .text_color(rgb(theme::TEXT_MUTED))
+                .bg(rgb(theme::bg_rail()))
+                .text_color(rgb(theme::text_muted()))
                 .child(icon("volume-2", 40.0))
                 .child(
                     div()
                         .text_size(px(1.5 * theme::REM))
                         .font_weight(FontWeight::BOLD)
-                        .text_color(rgb(theme::TEXT))
+                        .text_color(rgb(theme::text()))
                         .child(room.name.clone())
                         .e2e("h2", "")
                         .text(room.name.clone()),
@@ -1019,7 +1019,7 @@ pub fn voice_page(
                         .px(px(18.0))
                         .py(px(10.0))
                         .rounded(px(theme::RADIUS_SM))
-                        .bg(rgb(theme::GREEN))
+                        .bg(rgb(theme::green()))
                         .text_color(rgb(0xffffff))
                         .font_weight(FontWeight::SEMIBOLD)
                         .cursor_pointer()
@@ -1058,12 +1058,12 @@ pub fn voice_channel(
         .justify_center()
         .rounded(px(theme::RADIUS_SM))
         .bg(if open {
-            gpui::Hsla::from(rgba(theme::BG_SELECTED))
+            gpui::Hsla::from(rgba(theme::bg_selected()))
         } else {
             black(0.35)
         })
         .cursor_pointer()
-        .child(icon("messages-square", 18.0).text_color(rgb(theme::TEXT)))
+        .child(icon("messages-square", 18.0).text_color(rgb(theme::text())))
         .on_click(cx.listener(|this, _, _, cx| {
             this.calls.voice_chat = !this.calls.voice_chat;
             cx.notify();
@@ -1094,8 +1094,8 @@ pub fn voice_channel(
                 .flex_col()
                 .relative()
                 .border_l_1()
-                .border_color(rgba(theme::BG_SELECTED))
-                .bg(rgb(theme::BG_CHAT))
+                .border_color(rgba(theme::bg_selected()))
+                .bg(rgb(theme::bg_chat()))
                 .child(chat)
                 .e2e("div", "voice-chat"),
         );
@@ -1126,8 +1126,8 @@ pub fn incoming_calls(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyEleme
             .px(px(14.0))
             .py(px(12.0))
             .rounded(px(theme::RADIUS_LG))
-            .bg(rgb(theme::BG_ELEVATED))
-            .text_color(rgb(theme::TEXT))
+            .bg(rgb(theme::bg_elevated()))
+            .text_color(rgb(theme::text()))
             .shadow_lg()
             .child(avatar(picture, &name, 48.0, None))
             .child(
@@ -1147,7 +1147,7 @@ pub fn incoming_calls(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyEleme
                     .child(
                         div()
                             .text_size(px(0.85 * theme::REM))
-                            .text_color(rgb(theme::TEXT_MUTED))
+                            .text_color(rgb(theme::text_muted()))
                             .child("Incoming call…")
                             .e2e("span", "incoming-call-what")
                             .text("Incoming call…"),
@@ -1161,7 +1161,7 @@ pub fn incoming_calls(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyEleme
                     .items_center()
                     .justify_center()
                     .rounded_full()
-                    .bg(rgb(theme::DANGER))
+                    .bg(rgb(theme::danger()))
                     .cursor_pointer()
                     .child(icon("phone-off", 20.0).text_color(rgb(0xffffff)))
                     .on_click(cx.listener(move |this, _, _, cx| this.decline_ring(&decline, cx)))
@@ -1176,7 +1176,7 @@ pub fn incoming_calls(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyEleme
                     .items_center()
                     .justify_center()
                     .rounded_full()
-                    .bg(rgb(theme::GREEN))
+                    .bg(rgb(theme::green()))
                     .cursor_pointer()
                     .child(icon("phone", 20.0).text_color(rgb(0xffffff)))
                     .on_click(cx.listener(move |this, _, _, cx| this.answer_call(&accept, cx)))
@@ -1221,10 +1221,10 @@ pub fn header_call_button(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSum
         .py(px(6.0))
         .rounded(px(theme::RADIUS_SM))
         .cursor_pointer()
-        .when(in_this, |d| d.bg(rgba(theme::BG_SELECTED)))
-        .hover(|s| s.bg(rgba(theme::BG_HOVER)))
+        .when(in_this, |d| d.bg(rgba(theme::bg_selected())))
+        .hover(|s| s.bg(rgba(theme::bg_hover())))
         .child(icon(if in_this { "phone-off" } else { "phone" }, 16.0).text_color(rgb(
-            if in_this { theme::GREEN } else { theme::TEXT_MUTED },
+            if in_this { theme::green() } else { theme::text_muted() },
         )))
         .on_click(cx.listener(move |this, _, _, cx| {
             if this.calls.in_call(&id) {

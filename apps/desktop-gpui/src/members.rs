@@ -126,7 +126,7 @@ impl Render for MembersView {
             .size_full()
             .overflow_y_scroll()
             .track_scroll(&self.scroll)
-            .bg(rgb(theme::BG_SIDEBAR))
+            .bg(rgb(theme::bg_sidebar()))
             .line_height(gpui::relative(theme::LINE_HEIGHT));
         match self.members.clone() {
             None => {}
@@ -135,7 +135,7 @@ impl Render for MembersView {
                     div()
                         .px(px(16.0))
                         .py(px(12.0))
-                        .text_color(rgb(theme::DANGER))
+                        .text_color(rgb(theme::danger()))
                         .child(err.clone())
                         .e2e("p", "error pad")
                         .text(err),
@@ -154,7 +154,7 @@ impl Render for MembersView {
                                 div()
                                     .text_size(px(0.75 * theme::REM))
                                     .font_weight(FontWeight::BOLD)
-                                    .text_color(rgb(theme::TEXT_MUTED))
+                                    .text_color(rgb(theme::text_muted()))
                                     .child(heading.to_uppercase())
                                     .e2e("h3", "")
                                     .text(heading),
@@ -176,9 +176,9 @@ impl Render for MembersView {
                             .mt(px(8.0))
                             .mb(px(16.0))
                             .text_size(px(0.85 * theme::REM))
-                            .text_color(rgb(theme::TEXT_MUTED))
+                            .text_color(rgb(theme::text_muted()))
                             .cursor_pointer()
-                            .hover(|s| s.text_color(rgb(theme::TEXT)))
+                            .hover(|s| s.text_color(rgb(theme::text())))
                             .child(label.clone())
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.shown += PAGE;
@@ -214,9 +214,9 @@ fn member_row(
         .px(px(8.0))
         .py(px(4.0))
         .rounded(px(theme::RADIUS_SM))
-        .text_color(rgb(theme::TEXT_MUTED))
+        .text_color(rgb(theme::text_muted()))
         .cursor_pointer()
-        .hover(|s| s.bg(rgba(theme::BG_HOVER)).text_color(rgb(theme::TEXT)))
+        .hover(|s| s.bg(rgba(theme::bg_hover())).text_color(rgb(theme::text())))
         .when(member.is_ignored, |d| d.opacity(0.6))
         .on_click(cx.listener(move |_, event: &gpui::ClickEvent, _, cx| {
             cx.emit(MemberEvent::Open(open.clone(), event.position()))

@@ -157,7 +157,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         );
     }
     if in_space {
-        name = name.child(icon("chevron-down", 14.0).text_color(rgb(theme::TEXT_FAINT)));
+        name = name.child(icon("chevron-down", 14.0).text_color(rgb(theme::text_faint())));
     }
     let mut header = div()
         .h(px(48.0))
@@ -179,13 +179,13 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                 .px(px(8.0))
                 .py(px(4.0))
                 .rounded(px(theme::RADIUS_SM))
-                .text_color(rgb(theme::TEXT_MUTED))
+                .text_color(rgb(theme::text_muted()))
                 .hover(|s| {
-                    s.bg(gpui::rgba(theme::BG_HOVER))
-                        .text_color(rgb(theme::TEXT))
+                    s.bg(gpui::rgba(theme::bg_hover()))
+                        .text_color(rgb(theme::text()))
                 })
                 .cursor_pointer()
-                .child(icon("plus", 18.0).text_color(rgb(theme::TEXT_MUTED)))
+                .child(icon("plus", 18.0).text_color(rgb(theme::text_muted())))
                 .on_click(cx.listener(|this, _, _, cx| this.open_room_dialog(RoomDialogKind::Create, cx)))
                 .e2e("button", "ghost create-room-button")
                 .attr("title", "Create room"),
@@ -216,7 +216,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             div()
                 .px(px(16.0))
                 .py(px(12.0))
-                .text_color(rgb(theme::TEXT_MUTED))
+                .text_color(rgb(theme::text_muted()))
                 .child(text)
                 .e2e("p", "muted pad")
                 .text(text),
@@ -269,10 +269,12 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
     div()
         .flex()
         .flex_col()
-        .flex_1()
+        // The grid's column: as wide as the CSS has it whatever the names inside.
+        .w(px(theme::SIDEBAR_W))
+        .flex_none()
         .min_h_0()
         .h_full()
-        .bg(rgb(theme::BG_SIDEBAR))
+        .bg(rgb(theme::bg_sidebar()))
         .child(header.e2e("header", "sidebar-header"))
         .child(
             list.e2e("div", "room-list")
@@ -297,12 +299,12 @@ fn friends_row(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         .min_h(px(42.0))
         .rounded(px(theme::RADIUS_SM))
         .cursor_pointer()
-        .text_color(rgb(if selected { theme::TEXT } else { theme::TEXT_MUTED }))
-        .when(selected, |d| d.bg(gpui::rgba(theme::BG_SELECTED)))
+        .text_color(rgb(if selected { theme::text() } else { theme::text_muted() }))
+        .when(selected, |d| d.bg(gpui::rgba(theme::bg_selected())))
         .when(!selected, |d| {
             d.hover(|s| {
-                s.bg(gpui::rgba(theme::BG_HOVER))
-                    .text_color(rgb(theme::TEXT))
+                s.bg(gpui::rgba(theme::bg_hover()))
+                    .text_color(rgb(theme::text()))
             })
         })
         .on_click(cx.listener(|this, _, _, cx| this.open_friends(cx)))
@@ -313,9 +315,9 @@ fn friends_row(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                 .flex()
                 .items_center()
                 .child(icon("users", 22.0).text_color(rgb(if selected {
-                    theme::TEXT
+                    theme::text()
                 } else {
-                    theme::TEXT_MUTED
+                    theme::text_muted()
                 }))),
         )
         .child(
@@ -344,7 +346,7 @@ fn section(text: &str, class: &str) -> impl IntoElement {
         .mb(px(4.0))
         .text_size(px(0.7 * theme::REM))
         .font_weight(FontWeight::BOLD)
-        .text_color(rgb(theme::TEXT_FAINT))
+        .text_color(rgb(theme::text_faint()))
         .child(text.to_uppercase())
         .e2e("h4", &format!("section {class}"))
         .text(text)
@@ -391,13 +393,13 @@ fn room_button(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -> im
         .when(room.is_dm, |d| d.min_h(px(42.0)))
         .rounded(px(theme::RADIUS_SM))
         .cursor_pointer()
-        .text_color(rgb(if lit { theme::TEXT } else { theme::TEXT_MUTED }))
+        .text_color(rgb(if lit { theme::text() } else { theme::text_muted() }))
         .when(unread, |d| d.font_weight(FontWeight::SEMIBOLD))
-        .when(selected, |d| d.bg(gpui::rgba(theme::BG_SELECTED)))
+        .when(selected, |d| d.bg(gpui::rgba(theme::bg_selected())))
         .when(!selected, |d| {
             d.hover(|s| {
-                s.bg(gpui::rgba(theme::BG_HOVER))
-                    .text_color(rgb(theme::TEXT))
+                s.bg(gpui::rgba(theme::bg_hover()))
+                    .text_color(rgb(theme::text()))
             })
         })
         .on_click({
@@ -430,12 +432,12 @@ fn room_button(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -> im
             None,
         ))
     } else if room.is_voice {
-        button.child(icon("volume-2", 18.0).text_color(rgb(theme::TEXT_FAINT)).e2e("svg", "voice-icon"))
+        button.child(icon("volume-2", 18.0).text_color(rgb(theme::text_faint())).e2e("svg", "voice-icon"))
     } else {
         button.child(
             div()
                 .font_weight(FontWeight::SEMIBOLD)
-                .text_color(rgb(theme::TEXT_FAINT))
+                .text_color(rgb(theme::text_faint()))
                 .child("#")
                 .e2e("span", "hash")
                 .text("#"),
@@ -451,7 +453,7 @@ fn room_button(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -> im
             .text(title.clone()),
     );
     if pinned {
-        button = button.child(icon("pin", 12.0).text_color(rgb(theme::TEXT_FAINT)));
+        button = button.child(icon("pin", 12.0).text_color(rgb(theme::text_faint())));
     }
     if room.highlight_count > 0 {
         let count = room.highlight_count.to_string();
@@ -460,7 +462,7 @@ fn room_button(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -> im
                 .min_w(px(18.0))
                 .px(px(6.0))
                 .rounded(px(9.0))
-                .bg(rgb(theme::DANGER))
+                .bg(rgb(theme::danger()))
                 .text_color(rgb(0xffffff))
                 .text_size(px(0.75 * theme::REM))
                 .font_weight(FontWeight::BOLD)
@@ -491,15 +493,15 @@ fn unjoined_row(shell: &Shell, cx: &mut Context<Shell>, room: &SpaceRoom) -> imp
         .rounded(px(theme::RADIUS_SM))
         .cursor_pointer()
         .text_color(rgb(if selected {
-            theme::TEXT
+            theme::text()
         } else {
-            theme::TEXT_MUTED
+            theme::text_muted()
         }))
-        .when(selected, |d| d.bg(gpui::rgba(theme::BG_SELECTED)))
+        .when(selected, |d| d.bg(gpui::rgba(theme::bg_selected())))
         .when(!selected, |d| {
             d.hover(|s| {
-                s.bg(gpui::rgba(theme::BG_HOVER))
-                    .text_color(rgb(theme::TEXT))
+                s.bg(gpui::rgba(theme::bg_hover()))
+                    .text_color(rgb(theme::text()))
             })
         })
         .on_click({
@@ -508,12 +510,12 @@ fn unjoined_row(shell: &Shell, cx: &mut Context<Shell>, room: &SpaceRoom) -> imp
         })
         .child(if room.is_voice {
             icon("volume-2", 18.0)
-                .text_color(rgb(theme::TEXT_FAINT))
+                .text_color(rgb(theme::text_faint()))
                 .into_any_element()
         } else {
             div()
                 .font_weight(FontWeight::SEMIBOLD)
-                .text_color(rgb(theme::TEXT_FAINT))
+                .text_color(rgb(theme::text_faint()))
                 .child("#")
                 .e2e("span", "hash")
                 .text("#")

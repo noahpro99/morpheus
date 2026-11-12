@@ -87,7 +87,7 @@ pub fn avatar(
             .child(img(image).size_full().rounded(px(radius.unwrap_or(size / 2.0))))
             .e2e("img", "avatar"),
         None => base
-            .bg(rgb(theme::ACCENT_STRONG))
+            .bg(rgb(theme::accent_strong()))
             .font_weight(FontWeight::BOLD)
             .text_size(px(size / 2.0))
             .child(letter(fallback))

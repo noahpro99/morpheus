@@ -212,9 +212,9 @@ fn button(label: impl Into<SharedString>, primary: bool, busy: bool) -> gpui::St
         .when(busy, |d| d.opacity(0.6))
         .when(!busy, |d| d.cursor_pointer())
         .bg(rgb(if primary {
-            theme::ACCENT_STRONG
+            theme::accent_strong()
         } else {
-            theme::BG_INPUT
+            theme::bg_input()
         }))
         .child(label)
 }
@@ -226,12 +226,12 @@ fn label(text: &str, field: Entity<TextInput>) -> impl IntoElement {
         .gap(px(6.0))
         .text_size(px(0.75 * theme::REM))
         .font_weight(FontWeight::SEMIBOLD)
-        .text_color(rgb(theme::TEXT_MUTED))
+        .text_color(rgb(theme::text_muted()))
         .child(text.to_uppercase())
         .child(
             div()
                 .text_size(px(theme::REM))
-                .text_color(rgb(theme::TEXT))
+                .text_color(rgb(theme::text()))
                 .child(field),
         )
         .e2e("label", "")
@@ -259,12 +259,12 @@ impl Render for Login {
             .flex_col()
             .gap(px(16.0))
             .rounded(px(16.0))
-            .bg(rgb(theme::BG_SIDEBAR))
+            .bg(rgb(theme::bg_sidebar()))
             .child(
                 svg()
                     .path("logo.svg")
                     .size(px(48.0))
-                    .text_color(rgb(theme::ACCENT)),
+                    .text_color(rgb(theme::accent())),
             )
             .child(
                 div()
@@ -273,11 +273,12 @@ impl Render for Login {
                     .text_size(px(1.5 * theme::REM))
                     .child("Welcome back")
                     .e2e("h1", "")
+                    .attr("data-font", "Unbounded")
                     .text("Welcome back"),
             )
             .child(
                 div()
-                    .text_color(rgb(theme::TEXT_MUTED))
+                    .text_color(rgb(theme::text_muted()))
                     .child("Sign in to your Matrix account")
                     .e2e("p", "muted")
                     .text("Sign in to your Matrix account"),
@@ -292,7 +293,7 @@ impl Render for Login {
         if let Some(message) = message {
             form = form.child(
                 div()
-                    .text_color(rgb(theme::DANGER))
+                    .text_color(rgb(theme::danger()))
                     .text_size(px(0.9 * theme::REM))
                     .child(message.clone())
                     .e2e("p", "error")
@@ -302,7 +303,7 @@ impl Render for Login {
         if let Some(status) = self.busy {
             form = form.child(
                 div()
-                    .text_color(rgb(theme::TEXT_MUTED))
+                    .text_color(rgb(theme::text_muted()))
                     .child(status)
                     .e2e("p", "muted status")
                     .text(status),
@@ -350,7 +351,7 @@ impl Render for Login {
         if probing {
             form = form.child(
                 div()
-                    .text_color(rgb(theme::TEXT_MUTED))
+                    .text_color(rgb(theme::text_muted()))
                     .child("Checking sign-in options…")
                     .e2e("p", "muted status")
                     .text("Checking sign-in options…"),
@@ -360,7 +361,7 @@ impl Render for Login {
             let text = "This server offers no sign-in method Morpheus supports yet.";
             form = form.child(
                 div()
-                    .text_color(rgb(theme::DANGER))
+                    .text_color(rgb(theme::danger()))
                     .child(text)
                     .e2e("p", "error")
                     .text(text),
@@ -371,7 +372,7 @@ impl Render for Login {
             .flex()
             .items_center()
             .justify_center()
-            .bg(rgb(theme::BG_RAIL))
+            .bg(rgb(theme::bg_rail()))
             .child(form.e2e("form", "card login"))
             .e2e("main", "centered")
     }

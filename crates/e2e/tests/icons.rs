@@ -28,6 +28,30 @@ async fn login(app: &mut App, user: &str) {
 
 /// Labels of the buttons under `scope` that have no icon.
 async fn without_icons(app: &mut App, scope: &str) -> Vec<String> {
+    if app.is_gpui() {
+        // A button has an icon when one is drawn inside its box.
+        let mut missing = Vec::new();
+        for selector in scope.split(", ") {
+            let buttons = app.all_bounds(selector).await.expect("buttons");
+            let labels = app.texts(selector).await.expect("labels");
+            let icons = app
+                .all_bounds(&format!("{selector} svg.icon"))
+                .await
+                .expect("icons");
+            for (button, label) in buttons.iter().zip(labels) {
+                let inside = icons.iter().any(|i| {
+                    i.x >= button.x - 1.0
+                        && i.right() <= button.right() + 1.0
+                        && i.y >= button.y - 1.0
+                        && i.bottom() <= button.bottom() + 1.0
+                });
+                if !inside {
+                    missing.push(label);
+                }
+            }
+        }
+        return missing;
+    }
     let js = format!(
         "return [...document.querySelectorAll({scope:?})]
             .filter(b => b.offsetParent !== null && !b.querySelector('svg.icon'))
@@ -57,16 +81,12 @@ async fn every_settings_button_has_an_icon() {
     app.wait_for(".settings-nav", DEFAULT_WAIT)
         .await
         .expect("settings open");
-    let pages = app
-        .eval("return [...document.querySelectorAll('.settings-nav button.settings-nav-item')].map(b => b.textContent.trim());")
+    let pages: Vec<String> = app
+        .texts(".settings-nav button.settings-nav-item")
         .await
-        .expect("pages");
-    let pages: Vec<String> = pages
-        .as_array()
-        .cloned()
-        .unwrap_or_default()
+        .expect("pages")
         .into_iter()
-        .filter_map(|v| v.as_str().map(str::to_owned))
+        .map(|page| page.trim().to_owned())
         .collect();
     assert!(pages.len() >= 7, "settings pages: {pages:?}");
     let mut missing = Vec::new();

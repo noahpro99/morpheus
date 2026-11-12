@@ -463,9 +463,9 @@ pub(crate) fn dialog_box() -> Div {
         .max_h(relative(0.8))
         .p(px(20.0))
         .rounded(px(theme::RADIUS_XL))
-        .bg(rgb(theme::BG_SIDEBAR))
+        .bg(rgb(theme::bg_sidebar()))
         .shadow_lg()
-        .text_color(rgb(theme::TEXT))
+        .text_color(rgb(theme::text()))
         .line_height(relative(theme::LINE_HEIGHT))
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
 }
@@ -481,7 +481,7 @@ pub(crate) fn heading(text: &str) -> impl IntoElement {
 
 pub(crate) fn muted(text: &str, class: &str) -> impl IntoElement {
     div()
-        .text_color(rgb(theme::TEXT_MUTED))
+        .text_color(rgb(theme::text_muted()))
         .child(text.to_owned())
         .e2e("p", class)
         .text(text)
@@ -498,7 +498,7 @@ pub(crate) fn dialog_button(id: impl Into<SharedString>, label: &str, danger: bo
         .cursor_pointer()
         .rounded(px(theme::RADIUS))
         .when(danger, |d| {
-            d.bg(rgb(theme::DANGER))
+            d.bg(rgb(theme::danger()))
                 .text_color(rgb(0xffffff))
                 .px(px(14.0))
                 .py(px(8.0))
@@ -554,7 +554,7 @@ pub fn render_dialog(shell: &mut Shell, window: &mut Window, cx: &mut Context<Sh
                 .child(muted(&confirm.body, "muted"))
                 .child(actions(vec![
                     dialog_button("confirm-cancel", "Cancel", false)
-                        .text_color(rgb(theme::TEXT))
+                        .text_color(rgb(theme::text()))
                         .on_click(cx.listener(|this, _, _, cx| this.dialog_close(cx)))
                         .e2e("button", "secondary")
                         .text("Cancel")
@@ -598,7 +598,7 @@ pub fn render_dialog(shell: &mut Shell, window: &mut Window, cx: &mut Context<Sh
                         .child(
                             div()
                                 .flex()
-                                .text_color(rgb(theme::TEXT_MUTED))
+                                .text_color(rgb(theme::text_muted()))
                                 .text_size(px(0.9 * theme::REM))
                                 .children(reaction.senders.iter().enumerate().map(|(i, sender)| {
                                     let name = sender.localpart().to_owned();
@@ -615,7 +615,7 @@ pub fn render_dialog(shell: &mut Shell, window: &mut Window, cx: &mut Context<Sh
                 }))
                 .child(actions(vec![
                     dialog_button("reactions-close", "Close", false)
-                        .text_color(rgb(theme::TEXT))
+                        .text_color(rgb(theme::text()))
                         .on_click(cx.listener(|this, _, _, cx| this.dialog_close(cx)))
                         .e2e("button", "secondary")
                         .text("Close")
@@ -651,7 +651,7 @@ pub fn render_dialog(shell: &mut Shell, window: &mut Window, cx: &mut Context<Sh
                                 .mt(px(8.0))
                                 .text_size(px(0.75 * theme::REM))
                                 .font_weight(FontWeight::SEMIBOLD)
-                                .text_color(rgb(theme::TEXT_FAINT))
+                                .text_color(rgb(theme::text_faint()))
                                 .child(group.to_string())
                                 .e2e("h3", "")
                                 .text(group.to_string()),
@@ -671,7 +671,7 @@ pub fn render_dialog(shell: &mut Shell, window: &mut Window, cx: &mut Context<Sh
                                 )
                                 .child(
                                     div()
-                                        .text_color(rgb(theme::TEXT_MUTED))
+                                        .text_color(rgb(theme::text_muted()))
                                         .child(what.to_string())
                                         .e2e("span", "")
                                         .text(what.to_string()),
@@ -722,12 +722,12 @@ pub fn render_toasts(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElemen
                 .px(px(14.0))
                 .py(px(10.0))
                 .rounded(px(theme::RADIUS))
-                .bg(rgb(theme::BG_ELEVATED))
+                .bg(rgb(theme::bg_elevated()))
                 .border_l_4()
-                .border_color(rgb(theme::DANGER))
+                .border_color(rgb(theme::danger()))
                 .shadow_md()
                 .text_size(px(0.9 * theme::REM))
-                .text_color(rgb(theme::TEXT))
+                .text_color(rgb(theme::text()))
                 .cursor_pointer()
                 .occlude()
                 .on_click(cx.listener(move |this, _, _, cx| {
@@ -743,7 +743,7 @@ pub fn render_toasts(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElemen
                             .px(px(4.0))
                             .py(px(6.0))
                             .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(rgb(theme::ACCENT))
+                            .text_color(rgb(theme::accent()))
                             .cursor_pointer()
                             .hover(|s| s.underline())
                             .child("Undo")
@@ -838,7 +838,7 @@ impl Render for ReportDialog {
         }
         buttons.push(
             dialog_button("report-close", "Close", false)
-                .text_color(rgb(theme::TEXT))
+                .text_color(rgb(theme::text()))
                 .on_click(cx.listener(|_, _, _, cx| cx.emit(Closed)))
                 .e2e("button", "secondary")
                 .attr("type", "button")
@@ -864,12 +864,12 @@ impl Render for ReportDialog {
                     .flex_col()
                     .gap(px(6.0))
                     .text_size(px(0.85 * theme::REM))
-                    .text_color(rgb(theme::TEXT_MUTED))
+                    .text_color(rgb(theme::text_muted()))
                     .child("Reason")
                     .child(
                         div()
                             .text_size(px(theme::REM))
-                            .text_color(rgb(theme::TEXT))
+                            .text_color(rgb(theme::text()))
                             .child(self.input.clone()),
                     )
                     .e2e("label", "")
@@ -878,7 +878,7 @@ impl Render for ReportDialog {
             .children(match &self.result {
                 Some(Ok(text)) => Some(
                     div()
-                        .text_color(rgb(0x6bd68a))
+                        .text_color(rgb(theme::ok()))
                         .child(*text)
                         .e2e("p", "ok")
                         .text(*text)
@@ -886,7 +886,7 @@ impl Render for ReportDialog {
                 ),
                 Some(Err(text)) => Some(
                     div()
-                        .text_color(rgb(theme::DANGER))
+                        .text_color(rgb(theme::danger()))
                         .child(text.clone())
                         .e2e("p", "error")
                         .text(text.clone())
@@ -985,7 +985,7 @@ impl Render for PinnedDialog {
             Some(Err(err)) => {
                 boxed = boxed.child(
                     div()
-                        .text_color(rgb(theme::DANGER))
+                        .text_color(rgb(theme::danger()))
                         .child(err.clone())
                         .e2e("p", "error")
                         .text(err.clone()),
@@ -1008,7 +1008,7 @@ impl Render for PinnedDialog {
                             .px(px(10.0))
                             .py(px(8.0))
                             .rounded(px(theme::RADIUS))
-                            .bg(rgb(theme::BG_ELEVATED))
+                            .bg(rgb(theme::bg_elevated()))
                             .child(
                                 div()
                                     .flex_1()
@@ -1035,7 +1035,7 @@ impl Render for PinnedDialog {
                                         item.event_id
                                     ))))
                                     .cursor_pointer()
-                                    .text_color(rgb(theme::TEXT_MUTED))
+                                    .text_color(rgb(theme::text_muted()))
                                     .child("✕")
                                     .on_click(cx.listener(move |this, _, _, cx| {
                                         this.unpin(event_id.clone(), cx)
@@ -1052,7 +1052,7 @@ impl Render for PinnedDialog {
         let boxed = boxed
             .child(actions(vec![
                 dialog_button("pinned-close", "Close", false)
-                    .text_color(rgb(theme::TEXT))
+                    .text_color(rgb(theme::text()))
                     .on_click(cx.listener(|_, _, _, cx| cx.emit(Closed)))
                     .e2e("button", "secondary")
                     .text("Close")

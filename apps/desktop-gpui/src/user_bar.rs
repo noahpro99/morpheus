@@ -26,13 +26,13 @@ fn ghost(
         .items_center()
         .justify_center()
         .rounded(px(theme::RADIUS_SM))
-        .text_color(rgb(theme::TEXT_MUTED))
+        .text_color(rgb(theme::text_muted()))
         .cursor_pointer()
         .hover(|s| {
-            s.bg(gpui::rgba(theme::BG_HOVER))
-                .text_color(rgb(theme::TEXT))
+            s.bg(gpui::rgba(theme::bg_hover()))
+                .text_color(rgb(theme::text()))
         })
-        .child(icon(glyph, 18.0).text_color(rgb(theme::TEXT_MUTED)))
+        .child(icon(glyph, 18.0).text_color(rgb(theme::text_muted())))
         .e2e("button", classes)
         .attr("title", title)
 }
@@ -60,7 +60,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         .px(px(4.0))
         .rounded(px(theme::RADIUS_SM))
         .cursor_pointer()
-        .hover(|s| s.bg(gpui::rgba(theme::BG_HOVER)))
+        .hover(|s| s.bg(gpui::rgba(theme::bg_hover())))
         .child(avatar(shell.picture(&media, 34), &name, 34.0, None))
         .child(
             div()
@@ -86,8 +86,8 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                 speakers: bool,
                 arrow_title: &'static str,
                 cx: &mut Context<Shell>| {
-        let colour = if active { theme::DANGER } else { theme::TEXT_MUTED };
-        let tint = |alpha: u32| gpui::rgba((theme::DANGER << 8) | alpha);
+        let colour = if active { theme::danger() } else { theme::text_muted() };
+        let tint = |alpha: u32| gpui::rgba((theme::danger() << 8) | alpha);
         let main = div()
             .id(id)
             .size(px(32.0))
@@ -98,7 +98,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             .rounded_l(px(theme::RADIUS_SM))
             .cursor_pointer()
             .when(active, |d| d.bg(tint(0x2e)))
-            .hover(|s| if active { s.bg(tint(0x47)) } else { s.bg(gpui::rgba(theme::BG_HOVER)) })
+            .hover(|s| if active { s.bg(tint(0x47)) } else { s.bg(gpui::rgba(theme::bg_hover())) })
             .child(icon(glyph, 18.0).text_color(rgb(colour)))
             .on_click(cx.listener(move |this, _, _, cx| toggle(this, cx)))
             .on_mouse_down(
@@ -123,7 +123,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             .rounded_r(px(theme::RADIUS_SM))
             .cursor_pointer()
             .when(active, |d| d.bg(tint(0x2e)))
-            .hover(|s| if active { s.bg(tint(0x47)) } else { s.bg(gpui::rgba(theme::BG_HOVER)) })
+            .hover(|s| if active { s.bg(tint(0x47)) } else { s.bg(gpui::rgba(theme::bg_hover())) })
             .child(icon("chevron-down", 12.0).text_color(rgb(colour)))
             .on_click(cx.listener(move |this, event: &gpui::ClickEvent, _, cx| {
                 this.open_audio_menu(speakers, event.position(), cx)
@@ -191,10 +191,11 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         .e2e("div", "user-row");
     // In a call, its controls sit at the top of this card.
     let pill = div()
+        .w_full()
         .flex()
         .flex_col()
         .rounded(px(theme::RADIUS_LG))
-        .bg(rgb(theme::BG_ELEVATED))
+        .bg(rgb(theme::bg_elevated()))
         .children(crate::call_ui::voice_panel(shell, cx))
         .child(row)
         .e2e("div", "user-pill");
@@ -202,12 +203,14 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
     div()
         .w_full()
         .flex_none()
+        .flex()
+        .flex_col()
         .px(px(8.0))
         .pb(px(theme::BOTTOM_GAP))
         .bg(linear_gradient(
             90.0,
-            gpui::linear_color_stop(rgb(theme::BG_RAIL), 0.0),
-            gpui::linear_color_stop(rgb(theme::BG_SIDEBAR), 1.0),
+            gpui::linear_color_stop(rgb(theme::bg_rail()), 0.0),
+            gpui::linear_color_stop(rgb(theme::bg_sidebar()), 1.0),
         ))
         .child(pill)
         .e2e("footer", "sidebar-footer user-bar")

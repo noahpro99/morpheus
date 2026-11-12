@@ -232,10 +232,10 @@ impl Render for Root {
             .size_full()
             .flex()
             .flex_col()
-            .bg(rgb(theme::BG_CHAT))
+            .bg(rgb(theme::bg_chat()))
             .font_family("Inter")
             .text_size(px(theme::REM))
-            .text_color(rgb(theme::TEXT));
+            .text_color(rgb(theme::text()));
         e2e::frame(
             match &self.screen {
                 // The logo, no name.
@@ -244,7 +244,7 @@ impl Render for Root {
                         svg()
                             .path("logo.svg")
                             .size(px(160.0))
-                            .text_color(rgb(theme::ACCENT))
+                            .text_color(rgb(theme::accent()))
                             .e2e("svg", "splash-logo"),
                     ),
                 ),
@@ -254,7 +254,9 @@ impl Render for Root {
                 Screen::Rooms(rooms) => base.child(div().flex_1().min_h_0().child(rooms.clone())),
             }
             .child(chrome::resize_edges(window))
-            .e2e("body", "app"),
+            .e2e("body", "app")
+            .attr("data-font", "Inter")
+            .attr("data-bg", format!("{:06x}", theme::bg_chat())),
         )
     }
 }

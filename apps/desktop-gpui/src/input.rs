@@ -606,7 +606,7 @@ impl Element for EditorText {
             for (origin, width) in boxes {
                 window.paint_quad(fill(
                     Bounds::new(origin, size(width, line)),
-                    rgba(0x5f72ff73),
+                    rgba(theme::alpha(theme::accent_strong(), 0x73)),
                 ));
             }
         }
@@ -617,7 +617,7 @@ impl Element for EditorText {
         if let Some(at) = self.caret.and_then(|i| layout.position_for_index(i)) {
             window.paint_quad(fill(
                 Bounds::new(at, size(px(1.5), line)),
-                rgb(theme::TEXT),
+                rgb(theme::text()),
             ));
             let input = self.input.clone();
             input.update(cx, |input, _| input.follow_caret(at, window));
@@ -657,7 +657,7 @@ impl Render for TextInput {
             text = text.with_highlights([(
                 0..shown.len(),
                 HighlightStyle {
-                    color: Some(rgb(theme::TEXT_FAINT).into()),
+                    color: Some(rgb(theme::text_faint()).into()),
                     ..HighlightStyle::default()
                 },
             )]);
@@ -719,13 +719,13 @@ impl Render for TextInput {
                 .rounded(px(if self.compact { theme::RADIUS_SM } else { theme::RADIUS }))
                 .border_1()
                 .border_color(if self.framed || self.compact {
-                    rgb(if self.compact { theme::BG_INPUT } else { theme::BG_ELEVATED })
+                    rgb(if self.compact { theme::bg_input() } else { theme::bg_elevated() })
                 } else if focused {
-                    rgb(theme::ACCENT)
+                    rgb(theme::accent())
                 } else {
-                    rgb(theme::BG_INPUT)
+                    rgb(theme::bg_input())
                 })
-                .bg(rgb(theme::BG_INPUT));
+                .bg(rgb(theme::bg_input()));
         }
         let mut tagged = outer
             .e2e(self.tag, self.class)

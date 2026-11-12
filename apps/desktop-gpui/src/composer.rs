@@ -483,16 +483,16 @@ impl Composer {
             .px(px(12.0))
             .py(px(6.0))
             .rounded_t(px(theme::RADIUS_LG))
-            .bg(rgb(theme::BG_ELEVATED))
+            .bg(rgb(theme::bg_elevated()))
             .text_size(rem(0.85))
-            .text_color(rgb(theme::TEXT_MUTED))
+            .text_color(rgb(theme::text_muted()))
             .child(label);
         banner = banner.child(match preview {
             Some(preview) => div()
                 .flex_1()
                 .min_w_0()
                 .truncate()
-                .text_color(rgb(theme::TEXT_FAINT))
+                .text_color(rgb(theme::text_faint()))
                 .child(preview.clone())
                 .e2e("span", "banner-preview")
                 .text(preview)
@@ -505,7 +505,7 @@ impl Composer {
                 .px(px(6.0))
                 .rounded(px(theme::RADIUS_SM))
                 .cursor_pointer()
-                .hover(|s| s.bg(rgba(theme::BG_HOVER)).text_color(rgb(theme::TEXT)))
+                .hover(|s| s.bg(rgba(theme::bg_hover())).text_color(rgb(theme::text())))
                 .child("✕")
                 .on_click(cx.listener(|this, _, _, cx| this.cancel(cx)))
                 .e2e("button", "ghost")
@@ -525,9 +525,9 @@ impl Composer {
             .px(px(12.0))
             .pt(px(12.0))
             .pb(px(8.0))
-            .bg(rgb(theme::BG_ELEVATED))
+            .bg(rgb(theme::bg_elevated()))
             .border_b_1()
-            .border_color(rgba(theme::BG_HOVER));
+            .border_color(rgba(theme::bg_hover()));
         if !with_banner {
             row = row.rounded_t(px(theme::RADIUS_LG));
         }
@@ -550,8 +550,8 @@ impl Composer {
                     .items_center()
                     .justify_center()
                     .rounded(px(theme::RADIUS - 2.0))
-                    .bg(rgb(theme::BG_CHAT))
-                    .text_color(rgb(theme::TEXT_MUTED))
+                    .bg(rgb(theme::bg_chat()))
+                    .text_color(rgb(theme::text_muted()))
                     .child(icon("paperclip", 28.0))
                     .e2e("div", "attachment-file")
                     .into_any_element(),
@@ -566,13 +566,13 @@ impl Composer {
                     .w(px(140.0))
                     .p(px(8.0))
                     .rounded(px(theme::RADIUS))
-                    .bg(rgb(theme::BG_INPUT))
+                    .bg(rgb(theme::bg_input()))
                     .child(picture)
                     .child(
                         div()
                             .truncate()
                             .text_size(rem(0.75))
-                            .text_color(rgb(theme::TEXT_MUTED))
+                            .text_color(rgb(theme::text_muted()))
                             .child(tile.name.clone())
                             .e2e("span", "attachment-label")
                             .text(tile.name.clone()),
@@ -588,11 +588,11 @@ impl Composer {
                             .items_center()
                             .justify_center()
                             .rounded_full()
-                            .bg(rgb(theme::BG_ELEVATED))
-                            .text_color(rgb(theme::TEXT_MUTED))
+                            .bg(rgb(theme::bg_elevated()))
+                            .text_color(rgb(theme::text_muted()))
                             .shadow_sm()
                             .cursor_pointer()
-                            .hover(|s| s.bg(rgb(theme::DANGER)).text_color(rgb(0xffffff)))
+                            .hover(|s| s.bg(rgb(theme::danger())).text_color(rgb(0xffffff)))
                             .child(icon("x", 14.0))
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.state.remove(id);
@@ -620,9 +620,9 @@ impl Composer {
             .gap(px(2.0))
             .p(px(6.0))
             .rounded(px(theme::RADIUS_LG))
-            .bg(rgb(theme::BG_ELEVATED))
+            .bg(rgb(theme::bg_elevated()))
             .border_1()
-            .border_color(rgba(0xffffff14))
+            .border_color(rgba(theme::bg_selected()))
             .shadow_lg()
             .occlude();
         for (index, row) in self.suggestions.iter().enumerate() {
@@ -648,7 +648,7 @@ impl Composer {
                 .py(px(6.0))
                 .rounded(px(theme::RADIUS_SM))
                 .cursor_pointer()
-                .hover(|s| s.bg(rgba(theme::BG_HOVER)))
+                .hover(|s| s.bg(rgba(theme::bg_hover())))
                 .child(
                     div()
                         .w(px(24.0))
@@ -664,7 +664,7 @@ impl Composer {
                 item = item.child(
                     div()
                         .text_size(rem(0.8))
-                        .text_color(rgb(theme::TEXT_MUTED))
+                        .text_color(rgb(theme::text_muted()))
                         .child(muted.clone())
                         .e2e("span", "muted")
                         .text(muted.clone()),
@@ -672,7 +672,7 @@ impl Composer {
             }
             let active = index == self.active;
             if active {
-                item = item.bg(rgba(theme::BG_HOVER));
+                item = item.bg(rgba(theme::bg_hover()));
             }
             list = list.child(
                 item.on_click(cx.listener(move |this, _, _, cx| this.accept(index, cx)))
@@ -712,9 +712,9 @@ impl Composer {
             .overflow_y_scroll()
             .p(px(6.0))
             .rounded(px(theme::RADIUS_LG))
-            .bg(rgb(theme::BG_ELEVATED))
+            .bg(rgb(theme::bg_elevated()))
             .border_1()
-            .border_color(rgba(0xffffff14))
+            .border_color(rgba(theme::bg_selected()))
             .shadow_lg()
             .occlude();
         for (glyph, code) in emoji::EMOJI.iter().copied() {
@@ -728,7 +728,7 @@ impl Composer {
                     .rounded(px(theme::RADIUS_SM))
                     .text_size(rem(1.25))
                     .cursor_pointer()
-                    .hover(|s| s.bg(rgba(theme::BG_HOVER)))
+                    .hover(|s| s.bg(rgba(theme::bg_hover())))
                     .child(glyph)
                     .on_click(cx.listener(move |this, _, _, cx| {
                         let text = composer::with_emoji(&this.draft(cx), glyph);
@@ -788,9 +788,9 @@ fn tool_button(
         .items_center()
         .justify_center()
         .rounded(px(theme::RADIUS_SM))
-        .text_color(rgb(theme::TEXT_MUTED))
+        .text_color(rgb(theme::text_muted()))
         .cursor_pointer()
-        .hover(|s| s.bg(rgba(theme::BG_HOVER)).text_color(rgb(theme::TEXT)))
+        .hover(|s| s.bg(rgba(theme::bg_hover())).text_color(rgb(theme::text())))
         .child(glyph)
         .on_click(on_click)
         .e2e("button", classes)
@@ -850,7 +850,7 @@ impl Render for Composer {
             .pl(px(4.0))
             .pr(px(6.0))
             .min_h(px(theme::BOTTOM_H))
-            .bg(rgb(theme::BG_ELEVATED))
+            .bg(rgb(theme::bg_elevated()))
             .text_size(rem(1.0))
             .line_height(relative(theme::LINE_HEIGHT))
             .child(attach)

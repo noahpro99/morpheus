@@ -70,9 +70,9 @@ impl Badge {
             0.0
         };
         let (bg, fg) = match (folder, self.selected) {
-            (_, true) => (theme::ACCENT_STRONG, theme::TEXT),
-            (true, false) => (0x7c8cff1f, theme::ACCENT),
-            (false, false) => (theme::BG_ELEVATED, theme::TEXT_MUTED),
+            (_, true) => (theme::accent_strong(), theme::text()),
+            (true, false) => (theme::alpha(theme::accent(), 0x1f), theme::accent()),
+            (false, false) => (theme::bg_elevated(), theme::text_muted()),
         };
         let mut button: Stateful<Div> = div()
             .id(gpui::SharedString::from(self.id.clone()))
@@ -93,9 +93,9 @@ impl Badge {
                 if self.selected {
                     s
                 } else if folder {
-                    s.bg(rgba(0x7c8cff33))
+                    s.bg(rgba(theme::alpha(theme::accent(), 0x33)))
                 } else {
-                    s.bg(rgb(theme::ACCENT_STRONG)).text_color(rgb(theme::TEXT))
+                    s.bg(rgb(theme::accent_strong())).text_color(rgb(theme::text()))
                 }
             })
             .on_click(move |_, window, cx| on_click(window, cx));
@@ -149,11 +149,11 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         .h_full()
         .pt(px(12.0))
         .pb(px(8.0))
-        .bg(rgb(theme::BG_RAIL));
+        .bg(rgb(theme::bg_rail()));
 
     // Direct messages: the logo; its count of unread conversations.
     let dms_selected = *current == Scope::Dms;
-    let logo_color = if dms_selected { 0xffffff } else { theme::TEXT };
+    let logo_color = if dms_selected { 0xffffff } else { theme::text() };
     let dms = Badge::new(
         "rail-dms".into(),
         "Direct messages",
@@ -171,7 +171,8 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             svg()
                 .path("logo.svg")
                 .size(px(40.0))
-                .text_color(rgb(logo_color)),
+                .text_color(rgb(logo_color))
+                .e2e("svg", "logo"),
         );
     if unread_dms > 0 {
         dms_content = dms_content.child(
@@ -183,7 +184,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                 .h(px(16.0))
                 .px(px(4.0))
                 .rounded(px(8.0))
-                .bg(rgb(theme::DANGER))
+                .bg(rgb(theme::danger()))
                 .text_color(rgb(0xffffff))
                 .text_size(px(0.65 * theme::REM))
                 .child(unread_dms.to_string())
@@ -235,7 +236,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             .w(px(32.0))
             .h(px(2.0))
             .rounded(px(1.0))
-            .bg(rgb(theme::BG_ELEVATED))
+            .bg(rgb(theme::bg_elevated()))
             .e2e("div", "rail-divider"),
     );
 
@@ -309,7 +310,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                     .items_center()
                     .gap(px(8.0))
                     .rounded(px(theme::RADIUS_XL))
-                    .when(open, |d| d.bg(rgba(0xffffff0a)).pb(px(8.0)))
+                    .when(open, |d| d.bg(rgba(theme::bg_hover())).pb(px(8.0)))
                     .child(badge);
                 if open {
                     let mut items = div().flex().flex_col().gap(px(8.0));
@@ -342,14 +343,14 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             .rounded(px(theme::RADIUS_XL))
             .border_2()
             .border_dashed()
-            .border_color(rgb(theme::BG_ELEVATED))
-            .text_color(rgb(theme::TEXT_FAINT))
+            .border_color(rgb(theme::bg_elevated()))
+            .text_color(rgb(theme::text_faint()))
             .cursor_pointer()
             .hover(|s| {
-                s.border_color(rgb(theme::ACCENT_STRONG))
-                    .text_color(rgb(theme::ACCENT))
+                s.border_color(rgb(theme::accent_strong()))
+                    .text_color(rgb(theme::accent()))
             })
-            .child(icon("plus", 22.0).text_color(rgb(theme::TEXT_FAINT)))
+            .child(icon("plus", 22.0).text_color(rgb(theme::text_faint())))
             .on_click(cx.listener(|this, _, _, cx| {
                 this.open_room_dialog(RoomDialogKind::CreateSpace(None), cx)
             }))

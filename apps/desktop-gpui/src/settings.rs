@@ -459,9 +459,9 @@ impl SettingsView {
 fn button(id: impl Into<SharedString>, _label: &str, kind: Kind, _classes: &str) -> Stateful<gpui::Div> {
     let id: SharedString = id.into();
     let (bg, fg) = match kind {
-        Kind::Primary => (rgb(theme::ACCENT_STRONG), rgb(theme::TEXT)),
-        Kind::Secondary => (rgb(theme::BG_ELEVATED), rgb(theme::TEXT)),
-        Kind::Danger => (rgba(0xff6b6b26), rgb(theme::DANGER)),
+        Kind::Primary => (rgb(theme::accent_strong()), rgb(theme::text())),
+        Kind::Secondary => (rgb(theme::bg_elevated()), rgb(theme::text())),
+        Kind::Danger => (rgba(theme::alpha(theme::danger(), 0x26)), rgb(theme::danger())),
     };
     div()
         .id(ElementId::from(id))
@@ -488,7 +488,7 @@ fn kind_class(kind: Kind) -> &'static str {
 
 fn muted(text: &str, class: &str) -> impl IntoElement {
     div()
-        .text_color(rgb(theme::TEXT_MUTED))
+        .text_color(rgb(theme::text_muted()))
         .child(text.to_owned())
         .e2e("p", class)
         .text(text)
@@ -502,8 +502,6 @@ fn note(text: &str, class: &'static str, color: u32) -> impl IntoElement {
         .text(text)
 }
 
-const OK: u32 = 0x4fd1a5;
-const WARN: u32 = 0xffb020;
 
 fn section(
     title: &str,
@@ -535,14 +533,14 @@ fn section_classed(
         .px(px(20.0))
         .py(px(16.0))
         .border_b_1()
-        .border_color(rgb(theme::BG_ELEVATED))
-        .when(highlighted, |d| d.bg(rgba(theme::ACCENT_TINT)))
+        .border_color(rgb(theme::bg_elevated()))
+        .when(highlighted, |d| d.bg(rgba(theme::accent_tint())))
         .child(
             div()
                 .mb(px(8.0))
                 .text_size(px(0.75 * theme::REM))
                 .font_weight(FontWeight::BOLD)
-                .text_color(rgb(theme::TEXT_MUTED))
+                .text_color(rgb(theme::text_muted()))
                 .child(title.to_uppercase())
                 .e2e("h3", "")
                 .text(title),
@@ -612,7 +610,7 @@ impl SettingsView {
             .gap(px(8.0))
             .p(px(12.0))
             .rounded(px(theme::RADIUS))
-            .bg(rgb(theme::BG_ELEVATED));
+            .bg(rgb(theme::bg_elevated()));
         column = column.child(note(
             &panel.text,
             match panel.tone {
@@ -621,9 +619,9 @@ impl SettingsView {
                 Tone::Error => "error",
             },
             match panel.tone {
-                Tone::Plain => theme::TEXT,
-                Tone::Ok => OK,
-                Tone::Error => theme::DANGER,
+                Tone::Plain => theme::text(),
+                Tone::Ok => theme::ok(),
+                Tone::Error => theme::danger(),
             },
         ));
         if let Some(code) = &panel.qr {
@@ -653,7 +651,7 @@ impl SettingsView {
                             .child(
                                 div()
                                     .text_size(px(0.75 * theme::REM))
-                                    .text_color(rgb(theme::TEXT_MUTED))
+                                    .text_color(rgb(theme::text_muted()))
                                     .child(name.clone())
                                     .e2e("span", "emoji-name")
                                     .text(name.clone()),
@@ -688,7 +686,7 @@ impl SettingsView {
         match &self.status {
             None => encryption.push(muted("Checking…", "muted").into_any_element()),
             Some(Err(err)) => {
-                encryption.push(note(err, "error", theme::DANGER).into_any_element())
+                encryption.push(note(err, "error", theme::danger()).into_any_element())
             }
             Some(Ok(status)) => encryption.push(
                 div()
@@ -697,9 +695,9 @@ impl SettingsView {
                     .gap(px(4.0))
                     .children(status_lines(status).into_iter().map(|line| {
                         let color = match line.class {
-                            "ok" => OK,
-                            "warn" => WARN,
-                            _ => theme::TEXT_MUTED,
+                            "ok" => theme::ok(),
+                            "warn" => theme::warn(),
+                            _ => theme::text_muted(),
                         };
                         let text = format!("● {}", line.text);
                         div()
@@ -730,7 +728,7 @@ impl SettingsView {
                         .my(px(12.0))
                         .p(px(12.0))
                         .rounded(px(theme::RADIUS_LG))
-                        .bg(rgb(theme::BG_ELEVATED))
+                        .bg(rgb(theme::bg_elevated()))
                         .child(
                             div()
                                 .font_weight(FontWeight::BOLD)
@@ -749,7 +747,7 @@ impl SettingsView {
                         )
                         .child(
                             button("copy-key", "Copy", Kind::Secondary, "")
-                                .child(icon("copy", 16.0).text_color(rgb(theme::TEXT)))
+                                .child(icon("copy", 16.0).text_color(rgb(theme::text())))
                                 .child("Copy")
                                 .on_click(move |_, _, cx| {
                                     cx.write_to_clipboard(gpui::ClipboardItem::new_string(
@@ -770,7 +768,7 @@ impl SettingsView {
                     .child(
                         button("setup-recovery", "Set up recovery", Kind::Primary, "")
                             .when(busy, |d| d.opacity(0.6))
-                            .child(icon("shield", 16.0).text_color(rgb(theme::TEXT)))
+                            .child(icon("shield", 16.0).text_color(rgb(theme::text())))
                             .child("Set up recovery")
                             .on_click(cx.listener(|this, _, _, cx| this.set_up_recovery(cx)))
                             .e2e("button", "primary setup-recovery")
@@ -789,7 +787,7 @@ impl SettingsView {
                     .child(
                         button("change-key", "Change recovery key", Kind::Secondary, "")
                             .when(busy, |d| d.opacity(0.6))
-                            .child(icon("refresh-cw", 16.0).text_color(rgb(theme::TEXT)))
+                            .child(icon("refresh-cw", 16.0).text_color(rgb(theme::text())))
                             .child("Change recovery key")
                             .on_click(cx.listener(|this, _, _, cx| this.change_key(cx)))
                             .e2e("button", "secondary change-recovery-key")
@@ -819,7 +817,7 @@ impl SettingsView {
                             "",
                         )
                         .when(busy, |d| d.opacity(0.6))
-                        .child(icon("shield-check", 16.0).text_color(rgb(theme::TEXT)))
+                        .child(icon("shield-check", 16.0).text_color(rgb(theme::text())))
                         .child("Verify with another signed-in device")
                         .on_click(cx.listener(|this, _, _, cx| this.start_verification(cx)))
                         .e2e("button", "primary")
@@ -840,12 +838,12 @@ impl SettingsView {
                             .gap(px(6.0))
                             .text_size(px(0.75 * theme::REM))
                             .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(rgb(theme::TEXT_MUTED))
+                            .text_color(rgb(theme::text_muted()))
                             .child("RECOVERY KEY OR PASSPHRASE")
                             .child(
                                 div()
                                     .text_size(px(theme::REM))
-                                    .text_color(rgb(theme::TEXT))
+                                    .text_color(rgb(theme::text()))
                                     .child(self.key_input.clone()),
                             )
                             .e2e("label", "")
@@ -855,7 +853,7 @@ impl SettingsView {
                         div().flex().child(
                             button("restore-backup", "Restore from backup", Kind::Secondary, "")
                                 .when(busy, |d| d.opacity(0.6))
-                                .child(icon("key", 16.0).text_color(rgb(theme::TEXT)))
+                                .child(icon("key", 16.0).text_color(rgb(theme::text())))
                                 .child("Restore from backup")
                                 .on_click(cx.listener(|this, _, _, cx| this.submit_key(cx)))
                                 .e2e("button", "secondary")
@@ -868,16 +866,16 @@ impl SettingsView {
             );
         }
         match &self.form.message {
-            Some(Ok(message)) => encryption.push(note(message, "ok", OK).into_any_element()),
+            Some(Ok(message)) => encryption.push(note(message, "ok", theme::ok()).into_any_element()),
             Some(Err(message)) => {
-                encryption.push(note(message, "error", theme::DANGER).into_any_element())
+                encryption.push(note(message, "error", theme::danger()).into_any_element())
             }
             None => {}
         }
 
         let devices: Vec<gpui::AnyElement> = match &self.devices {
             None => vec![muted("Loading…", "muted").into_any_element()],
-            Some(Err(err)) => vec![note(err, "error", theme::DANGER).into_any_element()],
+            Some(Err(err)) => vec![note(err, "error", theme::danger()).into_any_element()],
             Some(Ok(list)) => vec![
                 div()
                     .flex()
@@ -949,7 +947,7 @@ fn device_row(device: &Device) -> impl IntoElement {
             div()
                 .font_family(theme::MONO)
                 .text_size(px(0.75 * theme::REM))
-                .text_color(rgb(theme::TEXT_MUTED))
+                .text_color(rgb(theme::text_muted()))
                 .child(device.id.to_string())
                 .e2e("span", "device-id muted")
                 .text(device.id.to_string()),
@@ -957,12 +955,12 @@ fn device_row(device: &Device) -> impl IntoElement {
         .children(device.is_current.then(|| {
             div()
                 .ml_auto()
-                .child(tag("this device", "tag", 0x222736ff))
+                .child(tag("this device", "tag", theme::alpha(theme::bg_elevated(), 0xff)))
         }))
         .child(if device.verified {
-            tag("verified", "tag ok", 0x4fd1a526)
+            tag("verified", "tag ok", theme::alpha(theme::ok(), 0x26))
         } else {
-            tag("unverified", "tag warn", 0xffb02026)
+            tag("unverified", "tag warn", theme::alpha(theme::warn(), 0x26))
         })
         .e2e("li", "device")
 }
@@ -1001,14 +999,14 @@ impl Render for SettingsView {
                     .py(px(8.0))
                     .rounded(px(theme::RADIUS_SM))
                     .cursor_pointer()
-                    .hover(|s| s.bg(rgba(theme::BG_HOVER)))
-                    .child(icon(entry.page.glyph(), 18.0).text_color(rgb(theme::TEXT)))
+                    .hover(|s| s.bg(rgba(theme::bg_hover())))
+                    .child(icon(entry.page.glyph(), 18.0).text_color(rgb(theme::text())))
                     .child(div().child(entry.label).e2e("span", "").text(entry.label))
                     .child(
                         div()
                             .ml_auto()
                             .text_size(px(0.75 * theme::REM))
-                            .text_color(rgb(theme::TEXT_MUTED))
+                            .text_color(rgb(theme::text_muted()))
                             .child(entry.page.label())
                             .e2e("span", "settings-result-page muted")
                             .text(entry.page.label()),
@@ -1030,7 +1028,7 @@ impl Render for SettingsView {
             .h_full()
             .px(px(8.0))
             .py(px(12.0))
-            .bg(rgb(theme::BG_SIDEBAR))
+            .bg(rgb(theme::bg_sidebar()))
             .child(
                 div()
                     .px(px(10.0))
@@ -1038,7 +1036,7 @@ impl Render for SettingsView {
                     .pb(px(10.0))
                     .text_size(px(0.75 * theme::REM))
                     .font_weight(FontWeight::BOLD)
-                    .text_color(rgb(theme::TEXT_MUTED))
+                    .text_color(rgb(theme::text_muted()))
                     .child("SETTINGS")
                     .e2e("h2", "")
                     .text("Settings"),
@@ -1057,10 +1055,10 @@ impl Render for SettingsView {
                     .py(px(6.5))
                     .rounded(px(theme::RADIUS_SM))
                     .cursor_pointer()
-                    .text_color(rgb(if selected { theme::TEXT } else { theme::TEXT_MUTED }))
-                    .when(selected, |d| d.bg(rgba(theme::BG_SELECTED)))
-                    .hover(|s| s.bg(rgba(theme::BG_HOVER)).text_color(rgb(theme::TEXT)))
-                    .child(icon(item.glyph(), 18.0).text_color(rgb(if selected { theme::TEXT } else { theme::TEXT_MUTED })))
+                    .text_color(rgb(if selected { theme::text() } else { theme::text_muted() }))
+                    .when(selected, |d| d.bg(rgba(theme::bg_selected())))
+                    .hover(|s| s.bg(rgba(theme::bg_hover())).text_color(rgb(theme::text())))
+                    .child(icon(item.glyph(), 18.0).text_color(rgb(if selected { theme::text() } else { theme::text_muted() })))
                     .child(item.label())
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.page = item;
@@ -1095,7 +1093,7 @@ impl Render for SettingsView {
             .px(px(20.0))
             .py(px(16.0))
             .border_b_1()
-            .border_color(rgb(theme::BG_ELEVATED))
+            .border_color(rgb(theme::bg_elevated()))
             .child(
                 div()
                     .flex_1()
@@ -1112,8 +1110,8 @@ impl Render for SettingsView {
                     .py(px(4.0))
                     .rounded(px(theme::RADIUS_SM))
                     .cursor_pointer()
-                    .text_color(rgb(theme::TEXT_MUTED))
-                    .hover(|s| s.bg(rgba(theme::BG_HOVER)))
+                    .text_color(rgb(theme::text_muted()))
+                    .hover(|s| s.bg(rgba(theme::bg_hover())))
                     .child("✕")
                     .on_click(cx.listener(|this, _, _, cx| this.close(cx)))
                     .e2e("button", "ghost")
@@ -1157,7 +1155,7 @@ impl Render for SettingsView {
             .max_h(px(760.0))
             .overflow_hidden()
             .rounded(px(theme::RADIUS_XL))
-            .bg(rgb(theme::BG_CHAT))
+            .bg(rgb(theme::bg_chat()))
             .shadow_lg()
             .child(nav)
             .child(content)

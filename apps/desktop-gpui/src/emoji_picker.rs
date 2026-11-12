@@ -104,7 +104,7 @@ impl Render for EmojiPicker {
                 .rounded(px(theme::RADIUS_SM))
                 .text_size(px(1.3 * theme::REM))
                 .cursor_pointer()
-                .hover(|s| s.bg(rgba(theme::BG_HOVER)))
+                .hover(|s| s.bg(rgba(theme::bg_hover())))
                 .child(hand(tone))
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.tones_open = !this.tones_open;
@@ -125,7 +125,7 @@ impl Render for EmojiPicker {
                     .flex_col()
                     .p(px(4.0))
                     .rounded(px(theme::RADIUS_SM))
-                    .bg(rgb(theme::BG_RAIL))
+                    .bg(rgb(theme::bg_rail()))
                     .shadow_lg()
                     .occlude()
                     .children(TONES.into_iter().map(|(stored, name, option)| {
@@ -139,8 +139,8 @@ impl Render for EmojiPicker {
                             .rounded(px(theme::RADIUS_SM))
                             .text_size(px(1.3 * theme::REM))
                             .cursor_pointer()
-                            .when(active, |d| d.bg(rgba(theme::BG_HOVER)))
-                            .hover(|s| s.bg(rgba(theme::BG_HOVER)))
+                            .when(active, |d| d.bg(rgba(theme::bg_hover())))
+                            .hover(|s| s.bg(rgba(theme::bg_hover())))
                             .child(hand(option))
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.remembered.set_tone(stored);
@@ -165,7 +165,7 @@ impl Render for EmojiPicker {
             .gap(px(8.0))
             .p(px(10.0))
             .border_b_1()
-            .border_color(rgba(theme::BG_SELECTED))
+            .border_color(rgba(theme::bg_selected()))
             .child(
                 div()
                     .flex_1()
@@ -174,10 +174,10 @@ impl Render for EmojiPicker {
                     .gap(px(6.0))
                     .px(px(10.0))
                     .rounded(px(theme::RADIUS_SM))
-                    .bg(rgb(theme::BG_RAIL))
-                    .text_color(rgb(theme::TEXT))
+                    .bg(rgb(theme::bg_rail()))
+                    .text_color(rgb(theme::text()))
                     .child(div().flex_1().min_w_0().child(self.search.clone()))
-                    .child(icon("search", 16.0).text_color(rgb(theme::TEXT_MUTED)))
+                    .child(icon("search", 16.0).text_color(rgb(theme::text_muted())))
                     .e2e("label", "emoji-search-box"),
             )
             .child(tones.e2e("div", "skin-tone"));
@@ -193,7 +193,7 @@ impl Render for EmojiPicker {
                 .gap(px(2.0))
                 .w(px(44.0))
                 .py(px(6.0))
-                .bg(rgb(theme::BG_RAIL));
+                .bg(rgb(theme::bg_rail()));
             let mut entries: Vec<(&'static str, &'static str)> = Vec::new();
             if !self.remembered.recent.is_empty() {
                 entries.push(("Recent", "🕘"));
@@ -210,7 +210,7 @@ impl Render for EmojiPicker {
                         .rounded(px(theme::RADIUS_SM))
                         .text_size(px(1.15 * theme::REM))
                         .cursor_pointer()
-                        .hover(|s| s.bg(rgba(theme::BG_HOVER)))
+                        .hover(|s| s.bg(rgba(theme::bg_hover())))
                         .child(glyph)
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.scroll.scroll_to_top_of_item(index);
@@ -242,7 +242,7 @@ impl Render for EmojiPicker {
                     .py(px(24.0))
                     .flex()
                     .justify_center()
-                    .text_color(rgb(theme::TEXT_MUTED))
+                    .text_color(rgb(theme::text_muted()))
                     .child("No emoji found")
                     .e2e("p", "emoji-none muted")
                     .text("No emoji found"),
@@ -263,7 +263,7 @@ impl Render for EmojiPicker {
                         .rounded(px(theme::RADIUS_SM))
                         .text_size(px(1.45 * theme::REM))
                         .cursor_pointer()
-                        .hover(|s| s.bg(rgba(theme::BG_HOVER)))
+                        .hover(|s| s.bg(rgba(theme::bg_hover())))
                         .child(cell.clone())
                         .on_click(cx.listener(move |this, _, _, cx| this.pick(emoji.clone(), cx)))
                         .e2e("button", "emoji-cell")
@@ -279,7 +279,7 @@ impl Render for EmojiPicker {
                         .px(px(2.0))
                         .text_size(px(0.72 * theme::REM))
                         .font_weight(FontWeight::BOLD)
-                        .text_color(rgb(theme::TEXT_MUTED))
+                        .text_color(rgb(theme::text_muted()))
                         .child(section.heading.to_uppercase())
                         .e2e("h3", "")
                         .text(section.heading),
@@ -319,11 +319,11 @@ impl Render for EmojiPicker {
             .flex_col()
             .overflow_hidden()
             .rounded(px(10.0))
-            .bg(rgb(theme::BG_SIDEBAR))
+            .bg(rgb(theme::bg_sidebar()))
             .border_1()
-            .border_color(rgba(0xffffff0f))
+            .border_color(rgba(theme::edge()))
             .shadow_lg()
-            .text_color(rgb(theme::TEXT))
+            .text_color(rgb(theme::text()))
             .line_height(relative(theme::LINE_HEIGHT))
             .child(top)
             .child(body)

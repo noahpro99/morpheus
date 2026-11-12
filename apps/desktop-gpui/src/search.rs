@@ -119,7 +119,7 @@ impl Render for SearchPanel {
             .gap(px(8.0))
             .p(px(12.0))
             .overflow_hidden()
-            .bg(rgb(theme::BG_SIDEBAR))
+            .bg(rgb(theme::bg_sidebar()))
             .line_height(gpui::relative(theme::LINE_HEIGHT))
             .on_key_down(cx.listener(|_, event: &gpui::KeyDownEvent, _, cx| {
                 if event.keystroke.key == "escape" {
@@ -130,7 +130,7 @@ impl Render for SearchPanel {
             .child(
                 div()
                     .text_size(px(0.8 * theme::REM))
-                    .text_color(rgb(theme::TEXT_MUTED))
+                    .text_color(rgb(theme::text_muted()))
                     .child(search::NOTE)
                     .e2e("p", "muted search-note")
                     .text(search::NOTE),
@@ -140,7 +140,7 @@ impl Render for SearchPanel {
             Results::Error(err) => {
                 panel = panel.child(
                     div()
-                        .text_color(rgb(theme::DANGER))
+                        .text_color(rgb(theme::danger()))
                         .child(err.clone())
                         .e2e("p", "error")
                         .text(err),
@@ -149,7 +149,7 @@ impl Render for SearchPanel {
             Results::Empty => {
                 panel = panel.child(
                     div()
-                        .text_color(rgb(theme::TEXT_MUTED))
+                        .text_color(rgb(theme::text_muted()))
                         .child(search::NONE_FOUND)
                         .e2e("p", "muted")
                         .text(search::NONE_FOUND),
@@ -173,9 +173,9 @@ impl Render for SearchPanel {
                             .px(px(10.0))
                             .py(px(8.0))
                             .rounded(px(theme::RADIUS))
-                            .bg(rgb(theme::BG_CHAT))
+                            .bg(rgb(theme::bg_chat()))
                             .cursor_pointer()
-                            .hover(|s| s.bg(gpui::rgba(theme::BG_HOVER)))
+                            .hover(|s| s.bg(gpui::rgba(theme::bg_hover())))
                             .on_click(cx.listener(move |_, _, _, cx| {
                                 cx.emit(SearchEvent::Jump(id.clone()))
                             }))
@@ -194,7 +194,7 @@ impl Render for SearchPanel {
                                     )
                                     .child(
                                         div()
-                                            .text_color(rgb(theme::TEXT_FAINT))
+                                            .text_color(rgb(theme::text_faint()))
                                             .child(row.when.clone())
                                             .e2e("span", "search-time")
                                             .text(row.when.clone()),
@@ -205,7 +205,7 @@ impl Render for SearchPanel {
                                 div()
                                     .mt(px(4.0))
                                     .text_size(px(0.9 * theme::REM))
-                                    .text_color(rgb(theme::TEXT_MUTED))
+                                    .text_color(rgb(theme::text_muted()))
                                     .child(row.body.clone())
                                     .e2e("p", "search-body")
                                     .text(row.body.clone()),

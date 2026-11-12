@@ -170,9 +170,9 @@ fn panel(
         .min_w(px(188.0))
         .p(px(6.0))
         .rounded(px(theme::RADIUS_LG))
-        .bg(rgb(theme::BG_RAIL))
+        .bg(rgb(theme::bg_rail()))
         .border_1()
-        .border_color(rgba(0xffffff0f))
+        .border_color(rgba(theme::edge()))
         .shadow_lg()
         .text_size(px(0.9 * theme::REM))
         .line_height(relative(theme::LINE_HEIGHT));
@@ -186,7 +186,7 @@ fn panel(
                 .pb(px(6.0))
                 .mb(px(4.0))
                 .border_b_1()
-                .border_color(rgb(theme::BG_ELEVATED))
+                .border_color(rgb(theme::bg_elevated()))
                 .children(QUICK_REACTIONS.into_iter().map(|key| {
                     div()
                         .id(gpui::ElementId::from(gpui::SharedString::from(format!("react-{key}"))))
@@ -195,7 +195,7 @@ fn panel(
                         .rounded(px(theme::RADIUS_SM))
                         .text_size(px(1.1 * theme::REM))
                         .cursor_pointer()
-                        .hover(|s| s.bg(rgba(theme::BG_SELECTED)))
+                        .hover(|s| s.bg(rgba(theme::bg_selected())))
                         .child(key)
                         .on_click(cx.listener(move |this, _, _, cx| this.menu_react(key, cx)))
                         .e2e("button", "context-reaction")
@@ -229,16 +229,16 @@ fn item_el(
     let hovered = menu.hover == Some(path);
     let glyph = item.glyph();
     let colour = if item.danger {
-        theme::DANGER
+        theme::danger()
     } else {
-        theme::TEXT_MUTED
+        theme::text_muted()
     };
     let in_grid = sub.is_some() && menu.items.get(row).is_some_and(|parent| parent.grid);
     let lit = hovered || (sub.is_none() && menu.open == Some(row));
     let highlight = if item.danger {
-        theme::DANGER
+        theme::danger()
     } else {
-        theme::ACCENT_STRONG
+        theme::accent_strong()
     };
     let label = item.label.clone();
     let mut classes = String::from("context-item");
@@ -300,7 +300,7 @@ fn item_el(
         el = el.child(icon(glyph, 16.0).text_color(rgb(if lit || hovered {
             0xffffff
         } else {
-            theme::TEXT_FAINT
+            theme::text_faint()
         })));
     }
     let text = div()
@@ -313,13 +313,13 @@ fn item_el(
         el.child(div().flex_1().child(text))
     };
     if item.checked {
-        el = el.child(div().text_color(rgb(theme::ACCENT)).child("✓"));
+        el = el.child(div().text_color(rgb(theme::accent())).child("✓"));
     }
     if item.has_submenu() {
         el = el.child(div().ml(px(12.0)).child("›").text_color(rgb(if lit {
             0xffffff
         } else {
-            theme::TEXT_FAINT
+            theme::text_faint()
         })));
         if menu.open == Some(row) {
             el = el.child(flyout(menu, row, item, width, height, cx));
@@ -351,9 +351,9 @@ fn flyout(
         .max_h(px(0.6 * height))
         .p(px(6.0))
         .rounded(px(theme::RADIUS_LG))
-        .bg(rgb(theme::BG_RAIL))
+        .bg(rgb(theme::bg_rail()))
         .border_1()
-        .border_color(rgba(0xffffff0f))
+        .border_color(rgba(theme::edge()))
         .shadow_lg()
         .overflow_y_scroll()
         .track_scroll(&menu.flyout_scroll)

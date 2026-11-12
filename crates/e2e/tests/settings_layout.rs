@@ -61,8 +61,8 @@ fn visible(selector: &str) -> String {
     )
 }
 
-/// The theme the page has applied (the GPUI app draws the dark one only for
-/// now, so there only the choice is checked: `.theme-option.selected`).
+/// The theme the page has applied: the option is selected, and (on Dioxus) the
+/// document carries it; the GPUI window notes its chat colour (`data-bg`).
 async fn wait_theme(app: &mut App, key: &str) {
     app.wait_for(
         &format!(".theme-option.selected[data-theme={key}]"),
@@ -71,6 +71,20 @@ async fn wait_theme(app: &mut App, key: &str) {
     .await
     .expect("theme chosen");
     if app.is_gpui() {
+        let want = match key {
+            "light" => "ffffff",
+            "midnight" => "0a0a0c",
+            _ => "1a1e29",
+        };
+        let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+        while app.attr(".app", "data-bg").await.expect("bg").as_deref() != Some(want) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the window is drawn in {key} (chat colour {:?})",
+                app.attr(".app", "data-bg").await
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
         return;
     }
     app.wait_for_js(
@@ -83,7 +97,11 @@ async fn wait_theme(app: &mut App, key: &str) {
 
 async fn bg_chat(app: &mut App) -> Option<serde_json::Value> {
     if app.is_gpui() {
-        return None;
+        return app
+            .attr(".app", "data-bg")
+            .await
+            .expect("colour")
+            .map(serde_json::Value::String);
     }
     Some(
         app.eval("return getComputedStyle(document.documentElement).getPropertyValue('--bg-chat').trim();")
@@ -133,6 +151,9 @@ async fn desktop_settings_have_categories_themes_and_notification_defaults() {
 
     // Appearance: picking a theme applies it at once.
     page(&mut app, "Appearance").await;
+    // Whatever an earlier run left: start from Dark.
+    app.click_text(".theme-option", "Dark").await.expect("pick Dark first");
+    wait_theme(&mut app, "dark").await;
     let before = bg_chat(&mut app).await;
     app.click_text(".theme-option", "Light")
         .await
@@ -140,7 +161,7 @@ async fn desktop_settings_have_categories_themes_and_notification_defaults() {
     wait_theme(&mut app, "light").await;
     let after = bg_chat(&mut app).await;
     assert!(
-        app.is_gpui() || before != after,
+        before != after,
         "the chat background changes with the theme"
     );
 

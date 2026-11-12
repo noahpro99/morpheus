@@ -215,14 +215,14 @@ impl FriendsPage {
             .cursor_pointer()
             .child(tab.label());
         button = match (new_message, active) {
-            (true, false) => button.bg(rgb(theme::GREEN)).text_color(rgb(0xffffff)),
-            (true, true) => button.text_color(rgb(theme::GREEN)),
+            (true, false) => button.bg(rgb(theme::green())).text_color(rgb(0xffffff)),
+            (true, true) => button.text_color(rgb(theme::green())),
             (false, true) => button
-                .bg(rgba(theme::BG_SELECTED))
-                .text_color(rgb(theme::TEXT)),
+                .bg(rgba(theme::bg_selected()))
+                .text_color(rgb(theme::text())),
             (false, false) => button
-                .text_color(rgb(theme::TEXT_MUTED))
-                .hover(|s| s.bg(rgba(theme::BG_HOVER)).text_color(rgb(theme::TEXT))),
+                .text_color(rgb(theme::text_muted()))
+                .hover(|s| s.bg(rgba(theme::bg_hover())).text_color(rgb(theme::text()))),
         };
         button
             .on_click(cx.listener(move |this, _, _, cx| {
@@ -251,7 +251,7 @@ impl FriendsPage {
             .py(px(8.0))
             .rounded(px(theme::RADIUS_SM))
             .whitespace_nowrap()
-            .bg(rgb(theme::ACCENT))
+            .bg(rgb(theme::accent()))
             .text_color(rgb(0xffffff))
             .font_weight(FontWeight::SEMIBOLD)
             .child(label);
@@ -277,9 +277,9 @@ impl FriendsPage {
             .pr(px(6.0))
             .py(px(2.0))
             .rounded(px(theme::RADIUS))
-            .bg(rgb(theme::BG_INPUT))
+            .bg(rgb(theme::bg_input()))
             .border_1()
-            .border_color(rgba(theme::BG_SELECTED))
+            .border_color(rgba(theme::bg_selected()))
             .child(div().flex_1().min_w_0().child(self.input.clone()))
             .child(button)
             .e2e("form", "new-message");
@@ -289,7 +289,7 @@ impl FriendsPage {
             .px(px(24.0))
             .py(px(20.0))
             .border_b_1()
-            .border_color(rgba(theme::BG_SELECTED))
+            .border_color(rgba(theme::bg_selected()))
             .child(
                 div()
                     .mb(px(4.0))
@@ -302,7 +302,7 @@ impl FriendsPage {
                 div()
                     .mb(px(16.0))
                     .text_size(px(0.9 * theme::REM))
-                    .text_color(rgb(theme::TEXT_MUTED))
+                    .text_color(rgb(theme::text_muted()))
                     .child(friends::NEW_MESSAGE_HINT)
                     .e2e("p", "muted")
                     .text(friends::NEW_MESSAGE_HINT),
@@ -313,7 +313,7 @@ impl FriendsPage {
                 div()
                     .mt(px(10.0))
                     .text_size(px(0.9 * theme::REM))
-                    .text_color(rgb(theme::DANGER))
+                    .text_color(rgb(theme::danger()))
                     .child(reason.clone())
                     .e2e("p", "new-message-result error")
                     .text(reason.clone()),
@@ -340,7 +340,7 @@ impl FriendsPage {
                 )
                 .child(
                     div()
-                        .text_color(rgb(theme::TEXT_MUTED))
+                        .text_color(rgb(theme::text_muted()))
                         .child(friends::EMPTY_HINT)
                         .e2e("p", "muted")
                         .text(friends::EMPTY_HINT),
@@ -377,10 +377,10 @@ impl FriendsPage {
                 .py(px(10.0))
                 .rounded(px(theme::RADIUS))
                 .cursor_pointer()
-                .hover(|s| s.bg(rgba(theme::BG_HOVER)))
+                .hover(|s| s.bg(rgba(theme::bg_hover())))
                 .on_click(cx.listener(move |this, _, _, cx| this.message(open.clone(), cx)));
             if ix > 0 {
-                item = item.border_t_1().border_color(rgb(theme::BG_ELEVATED));
+                item = item.border_t_1().border_color(rgb(theme::bg_elevated()));
             }
             list = list.child(
                 item.child(avatar(self.picture(&key), &row.name, 40.0, None))
@@ -401,7 +401,7 @@ impl FriendsPage {
                                 div()
                                     .truncate()
                                     .text_size(px(0.85 * theme::REM))
-                                    .text_color(rgb(theme::TEXT_MUTED))
+                                    .text_color(rgb(theme::text_muted()))
                                     .child(row.subtitle.clone())
                                     .e2e("span", "friend-status muted")
                                     .text(row.subtitle.clone()),
@@ -418,7 +418,7 @@ impl FriendsPage {
                                     .px(px(12.0))
                                     .py(px(6.0))
                                     .rounded(px(theme::RADIUS))
-                                    .bg(rgb(theme::BG_ELEVATED))
+                                    .bg(rgb(theme::bg_elevated()))
                                     .cursor_pointer()
                                     .child("Message")
                                     .on_click(cx.listener(move |this, _, _, cx| {
@@ -434,8 +434,8 @@ impl FriendsPage {
                                     .px(px(12.0))
                                     .py(px(6.0))
                                     .rounded(px(theme::RADIUS))
-                                    .text_color(rgb(theme::TEXT_MUTED))
-                                    .hover(|s| s.text_color(rgb(theme::TEXT)))
+                                    .text_color(rgb(theme::text_muted()))
+                                    .hover(|s| s.text_color(rgb(theme::text())))
                                     .child("Remove")
                                     .on_click(cx.listener(move |_, _, _, cx| {
                                         // Not also the row's click.
@@ -462,7 +462,7 @@ impl FriendsPage {
                     .pb(px(4.0))
                     .text_size(px(0.7 * theme::REM))
                     .font_weight(FontWeight::BOLD)
-                    .text_color(rgb(theme::TEXT_FAINT))
+                    .text_color(rgb(theme::text_faint()))
                     .child(heading.to_uppercase())
                     .e2e("h4", "section friends-count")
                     .text(heading),
@@ -486,7 +486,7 @@ impl Render for FriendsPage {
             .px(px(16.0))
             .border_b_1()
             .border_color(rgba(0x0000004d))
-            .child(icon("users", 18.0).text_color(rgb(theme::TEXT)))
+            .child(icon("users", 18.0).text_color(rgb(theme::text())))
             .child(
                 div()
                     .flex_none()
@@ -500,7 +500,7 @@ impl Render for FriendsPage {
                     .flex_none()
                     .w(px(1.0))
                     .h(px(24.0))
-                    .bg(rgba(theme::BG_SELECTED))
+                    .bg(rgba(theme::bg_selected()))
                     .e2e("span", "friends-divider"),
             )
             .child(self.tab_button(Tab::All, tab, "all-friends-tab", cx))
