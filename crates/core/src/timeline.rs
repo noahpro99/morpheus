@@ -736,14 +736,13 @@ impl Session {
                 None => room.timeline().await?,
             });
             let (initial, stream) = timeline.subscribe().await;
+            let initial_entries: Vec<TimelineEntry> = initial
+                .iter()
+                .map(|item| TimelineEntry::from_item(item, own_user.as_ref()))
+                .collect();
 
             let (tx, rx) = mpsc::unbounded_channel();
-            let reset = VectorDiff::Reset {
-                values: initial
-                    .iter()
-                    .map(|item| TimelineEntry::from_item(item, own_user.as_ref()))
-                    .collect(),
-            };
+            let reset = VectorDiff::Reset { values: initial_entries.iter().cloned().collect() };
             let _ = tx.send(vec![reset]);
 
             let forwarder = core.spawn({
@@ -751,28 +750,27 @@ impl Session {
                 async move {
                     pin_mut!(stream);
                     // Replied-to events the SDK has not loaded yet; fetched once each.
-                    let mut requested_replies: HashSet<OwnedEventId> = HashSet::new();
+                    let mut requested_replies = ReplyFetches::default();
+                    let request = |requested: &mut ReplyFetches, entry: &TimelineEntry| {
+                        if let TimelineEntry::Message(message) = entry
+                            && let Some(reply) = &message.in_reply_to
+                            && let Some(event_id) = message.event_id_for_fetch()
+                            && requested.want(&event_id, reply.summary.is_none())
+                        {
+                            let timeline = timeline.clone();
+                            crate::rt::spawn(fetch_reply_details(timeline, event_id));
+                        }
+                    };
+                    for entry in &initial_entries {
+                        request(&mut requested_replies, entry);
+                    }
                     while let Some(diffs) = stream.next().await {
                         let diffs: Vec<_> = diffs
                             .into_iter()
                             .map(|diff| {
                                 diff.map(|item| {
                                     let entry = TimelineEntry::from_item(&item, own_user.as_ref());
-                                    if let TimelineEntry::Message(message) = &entry
-                                        && let Some(reply) = &message.in_reply_to
-                                        && reply.summary.is_none()
-                                        && let Some(event_id) = message.event_id_for_fetch()
-                                        && requested_replies.insert(event_id.clone())
-                                    {
-                                        let timeline = timeline.clone();
-                                        crate::rt::spawn(async move {
-                                            if let Err(err) =
-                                                timeline.fetch_details_for_event(&event_id).await
-                                            {
-                                                debug!(%err, "could not fetch reply details");
-                                            }
-                                        });
-                                    }
+                                    request(&mut requested_replies, &entry);
                                     entry
                                 })
                             })
@@ -871,5 +869,55 @@ impl Session {
                 .ok()
                 .flatten())
         })
+    }
+}
+
+/// Which replies have had their replied-to event requested: a reply whose
+/// quote is still a placeholder is asked for once.
+#[derive(Debug, Default)]
+pub(crate) struct ReplyFetches {
+    requested: HashSet<OwnedEventId>,
+}
+
+impl ReplyFetches {
+    /// Whether to start fetching the quote of the reply `event_id` now.
+    pub(crate) fn want(&mut self, event_id: &OwnedEventId, unresolved: bool) -> bool {
+        unresolved && self.requested.insert(event_id.clone())
+    }
+}
+
+/// Delays before each retry of a failed quote fetch: the SDK says
+/// "not in the timeline" when the reply's own echo is still being swapped in.
+const REPLY_FETCH_RETRIES: [Duration; 5] = [
+    Duration::from_millis(150),
+    Duration::from_millis(400),
+    Duration::from_secs(1),
+    Duration::from_secs(2),
+    Duration::from_secs(4),
+];
+
+/// Ask the SDK for the replied-to event of the reply `event_id`, trying again
+/// after a failure so a quote never stays a placeholder for a transient error.
+async fn fetch_reply_details(timeline: Arc<Timeline>, event_id: OwnedEventId) {
+    for delay in std::iter::once(Duration::ZERO).chain(REPLY_FETCH_RETRIES) {
+        tokio::time::sleep(delay).await;
+        match timeline.fetch_details_for_event(&event_id).await {
+            Ok(()) => return,
+            Err(err) => debug!(%err, "could not fetch reply details"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod reply_fetch_tests {
+    use super::*;
+
+    #[test]
+    fn a_placeholder_quote_is_requested_once() {
+        let id = OwnedEventId::try_from("$reply:example.org").expect("id");
+        let mut fetches = ReplyFetches::default();
+        assert!(!fetches.want(&id, false), "a resolved quote needs nothing");
+        assert!(fetches.want(&id, true), "a placeholder is requested");
+        assert!(!fetches.want(&id, true), "but only once");
     }
 }

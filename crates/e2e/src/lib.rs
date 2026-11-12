@@ -318,8 +318,9 @@ impl App {
                 return Ok(());
             }
             if Instant::now() >= deadline {
+                let seen = self.op("texts", selector, json!({})).await.ok();
                 bail!(
-                    "timed out after {timeout:?} waiting for {what}\n--- app log ---\n{}",
+                    "timed out after {timeout:?} waiting for {what} (matching now: {seen:?})\n--- app log ---\n{}",
                     self.log_tail(30)
                 );
             }
@@ -570,8 +571,12 @@ impl App {
                 return Ok(());
             }
             if Instant::now() >= deadline {
+                let state = self.op("scroll_state", ".timeline", json!({})).await.ok();
+                let rows = self.op("count", ".message", json!({})).await.ok();
+                let start = self.op("count", ".timeline-start", json!({})).await.ok();
+                let error = self.op("texts", ".timeline .error", json!({})).await.ok();
                 bail!(
-                    "timed out after {timeout:?} waiting for {what} after scrolling up\n--- app log ---\n{}",
+                    "timed out after {timeout:?} waiting for {what} after scrolling up (timeline {state:?}, {rows:?} messages in the tree, start marker {start:?}, errors {error:?})\n--- app log ---\n{}",
                     self.log_tail(30)
                 );
             }

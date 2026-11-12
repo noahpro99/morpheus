@@ -588,7 +588,7 @@ async fn scroll_into_view(request: &Request, cx: &mut AsyncApp) -> Result<(), St
                     return Ok(None);
                 }
                 let delta = middle - (view.y + view.h / 2.0);
-                return Ok(Some((probe.clone(), probe.scroll_state().from_bottom - delta)));
+                return Ok(Some((probe.clone(), delta)));
             }
             ancestor = tree.nodes[a].parent;
         }
@@ -598,7 +598,7 @@ async fn scroll_into_view(request: &Request, cx: &mut AsyncApp) -> Result<(), St
         return Ok(());
     };
     let before = with_state(|state| state.frame);
-    probe.scroll_to(to);
+    probe.scroll_by(to);
     let window = cx
         .update(|cx| cx.windows().first().copied())
         .map_err(|err| err.to_string())?
