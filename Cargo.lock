@@ -7252,6 +7252,7 @@ dependencies = [
  "morpheus-call",
  "morpheus-core",
  "morpheus-view-model",
+ "notify-rust",
  "rodio",
  "ruma-html",
  "serde",

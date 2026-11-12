@@ -126,13 +126,36 @@ impl Shell {
             };
             while let Some(update) = updates.next().await {
                 let alive = match update {
-                    Ringing::Incoming(call) => this
-                        .update(cx, |this, cx| {
-                            this.calls.rings.retain(|c| c.room_id != call.room_id);
-                            this.calls.rings.push(call);
-                            cx.notify();
-                        })
-                        .is_ok(),
+                    Ringing::Incoming(call) => {
+                        let caller = call.caller.clone();
+                        let alive = this
+                            .update(cx, |this, cx| {
+                                this.calls.rings.retain(|c| c.room_id != call.room_id);
+                                this.calls.rings.push(call);
+                                cx.notify();
+                            })
+                            .is_ok();
+                        // The window in the background: the system is told too.
+                        let background = cx
+                            .update(|cx| {
+                                cx.windows()
+                                    .first()
+                                    .and_then(|w| w.update(cx, |_, window, _| !window.is_window_active()).ok())
+                                    .unwrap_or(true)
+                            })
+                            .unwrap_or(true);
+                        let wanted = crate::view_model::settings::notifications_enabled(&crate::data_dir());
+                        if alive && background && wanted {
+                            let name = match session.profile(caller.clone()).await {
+                                Ok(profile) => profile.name,
+                                Err(_) => caller.localpart().to_owned(),
+                            };
+                            let hidden = crate::view_model::settings::notification_content(&crate::data_dir())
+                                == crate::view_model::settings::NotificationContent::Hidden;
+                            notify_ring(format!("{} is calling", if hidden { "Someone" } else { &name }));
+                        }
+                        alive
+                    }
                     Ringing::Declined {
                         room_id,
                         by,
@@ -497,12 +520,14 @@ async fn declined(
         Err(_) => by.localpart().to_owned(),
     };
     let me = session.user_id();
+    let room_for_log = room_id.clone();
     let alone = session
         .call_members(room_id)
         .await
         .map(|members| members.iter().all(|m| Some(&m.user_id) == me.as_ref()))
         .unwrap_or(true);
     this.update(cx, |this, cx| {
+        eprintln!("morpheus-gpui: {name} declined the call in {room_for_log} (alone: {alone})");
         this.toast(format!("{name} declined the call"), cx);
         if alone {
             this.hang_up(cx);
@@ -774,4 +799,46 @@ impl Shell {
 
     /// The quick list of microphones (or, with `speakers`, speakers).
     pub fn open_audio_menu(&mut self, _speakers: bool, _at: gpui::Point<gpui::Pixels>, _cx: &mut Context<Self>) {}
+}
+
+/// The system's sound for an incoming call (freedesktop sound theme name).
+const RING_SOUND: &str = "phone-incoming-call";
+
+/// Someone calling while the window is in the background: say who (the
+/// ringtone plays in the app either way). Test runs never notify (they would
+/// pile real pop-ups on the developer's desktop): they log what would show
+/// and write it to `shown-notifications.jsonl`.
+fn notify_ring(title: String) {
+    eprintln!("morpheus-gpui: ring notification: {title}");
+    if std::env::var_os("MORPHEUS_E2E_PORT").is_some() {
+        let line = serde_json::json!({
+            "title": title,
+            "body": "Open Morpheus to answer",
+            "icon": null,
+            "image": null,
+            "sound": RING_SOUND,
+        });
+        let written = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(crate::data_dir().join("shown-notifications.jsonl"))
+            .and_then(|mut file| {
+                std::io::Write::write_all(&mut file, format!("{line}\n").as_bytes())
+            });
+        if let Err(err) = written {
+            eprintln!("morpheus-gpui: test notification log not written: {err}");
+        }
+        return;
+    }
+    std::thread::spawn(move || {
+        let shown = notify_rust::Notification::new()
+            .appname("Morpheus")
+            .summary(&title)
+            .body("Open Morpheus to answer")
+            .sound_name(RING_SOUND)
+            .show();
+        if let Err(err) = shown {
+            eprintln!("morpheus-gpui: desktop notification failed: {err}");
+        }
+    });
 }
