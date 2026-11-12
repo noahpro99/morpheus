@@ -122,12 +122,9 @@ async fn titlebar_title_history_help_and_controls() {
         .await
         .expect("help dialog");
     app.press(".help-dialog", "Escape").await.expect("escape");
-    app.wait_for_js(
-        "return document.querySelector('.help-dialog') === null;",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("help closed");
+    app.wait_for_count(".help-dialog", 0, DEFAULT_WAIT)
+        .await
+        .expect("help closed");
 }
 
 #[tokio::test]
@@ -165,11 +162,9 @@ async fn inbox_lists_unread_rooms_and_opens_them() {
         .expect("random listed");
     // Other rooms may be unread too (the shared test account): the count now.
     let unread_before = alice
-        .eval("return document.querySelectorAll('.inbox-panel .inbox-item').length;")
+        .count(".inbox-panel .inbox-item")
         .await
-        .expect("inbox items")
-        .as_i64()
-        .unwrap_or(0);
+        .expect("inbox items") as i64;
     alice
         .click_text(".inbox-item", "random")
         .await
@@ -179,10 +174,7 @@ async fn inbox_lists_unread_rooms_and_opens_them() {
         .await
         .expect("random opened");
     alice
-        .wait_for_js(
-            "return document.querySelector('.inbox-panel') === null;",
-            DEFAULT_WAIT,
-        )
+        .wait_for_count(".inbox-panel", 0, DEFAULT_WAIT)
         .await
         .expect("inbox closed");
     alice
@@ -190,11 +182,41 @@ async fn inbox_lists_unread_rooms_and_opens_them() {
         .await
         .expect("bob's ping visible");
     // Reading the room takes it off the inbox's count.
-    alice
-        .wait_for_js(
-            &format!("const b = document.querySelector('.inbox-badge'); return !b || parseInt(b.textContent, 10) < {unread_before};"),
-            DEFAULT_WAIT,
-        )
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let badge = alice.text(".inbox-badge").await.expect("badge");
+        let now = badge.and_then(|b| b.trim().parse::<i64>().ok());
+        if now.is_none_or(|n| n < unread_before) {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the badge counts one fewer once the room is read (still {now:?}, was {unread_before})"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+#[tokio::test]
+async fn alt_left_and_right_walk_the_rooms_visited() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch_desktop(&hs).await.expect("launch app");
+    login(&mut app, "alice").await;
+    app.open_room("general").await.expect("general");
+    app.open_room("random").await.expect("random");
+    app.key_combo("body", "ArrowLeft", false, true, false)
         .await
-        .expect("the badge counts one fewer once the room is read");
+        .expect("alt+left");
+    app.wait_for_text(".chat-header h2", "general", DEFAULT_WAIT)
+        .await
+        .expect("back to general");
+    app.key_combo("body", "ArrowRight", false, true, false)
+        .await
+        .expect("alt+right");
+    app.wait_for_text(".chat-header h2", "random", DEFAULT_WAIT)
+        .await
+        .expect("forward to random");
 }

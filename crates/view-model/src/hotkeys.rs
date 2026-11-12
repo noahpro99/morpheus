@@ -28,6 +28,8 @@ pub enum Hotkey {
     Unread { forward: bool },
     /// Ctrl+Alt+Up / Down: the previous / next rail entry.
     Scope { forward: bool },
+    /// Alt+Left / Alt+Right: back and forward through the rooms visited.
+    History { forward: bool },
     /// Ctrl+K, Ctrl+Shift+P: the quick switcher.
     Switcher,
     /// Ctrl+Shift+M: mute, or unmute.
@@ -49,6 +51,11 @@ pub fn classify(key: &str, ctrl: bool, alt: bool, shift: bool) -> Option<Hotkey>
     let direction = match key {
         "ArrowUp" | "up" => Some(false),
         "ArrowDown" | "down" => Some(true),
+        _ => None,
+    };
+    let sideways = match key {
+        "ArrowLeft" | "left" => Some(false),
+        "ArrowRight" | "right" => Some(true),
         _ => None,
     };
     match (ctrl, alt, shift) {
@@ -76,8 +83,14 @@ pub fn classify(key: &str, ctrl: bool, alt: bool, shift: bool) -> Option<Hotkey>
             _ => None,
         },
         (true, true, false) => direction.map(|forward| Hotkey::Scope { forward }),
-        (false, true, false) => direction.map(|forward| Hotkey::Room { forward }),
-        (false, true, true) => direction.map(|forward| Hotkey::Unread { forward }),
+        (false, true, false) => match sideways {
+            Some(forward) => Some(Hotkey::History { forward }),
+            None => direction.map(|forward| Hotkey::Room { forward }),
+        },
+        (false, true, true) => match sideways {
+            Some(forward) => Some(Hotkey::History { forward }),
+            None => direction.map(|forward| Hotkey::Unread { forward }),
+        },
         _ => None,
     }
 }
@@ -122,9 +135,15 @@ pub const GROUPS: &[(&str, &[(&str, &str)])] = &[
     (
         "Navigation",
         &[
+            (
+                "Ctrl+K or Ctrl+Shift+P",
+                "Command palette: rooms, actions and settings",
+            ),
             ("Alt+↑ / Alt+↓", "Previous / next room"),
+            ("Alt+← / Alt+→", "Back / forward through the rooms visited"),
             ("Alt+Shift+↑ / ↓", "Previous / next unread room"),
             ("Ctrl+Alt+↑ / ↓", "Previous / next server (rail)"),
+            ("Ctrl+Shift+Alt+V", "Go to the call you are in"),
         ],
     ),
     (
@@ -146,6 +165,16 @@ pub const GROUPS: &[(&str, &[(&str, &str)])] = &[
             ("Ctrl+,", "Settings"),
             ("Ctrl+/", "This list"),
             ("Ctrl+Shift+N", "Create or join a server"),
+        ],
+    ),
+    (
+        "Voice",
+        &[
+            ("Ctrl+Shift+M", "Mute or unmute"),
+            ("Ctrl+Shift+D", "Deafen or undeafen (deafening mutes too)"),
+            ("Ctrl+Enter", "Answer a call ringing"),
+            ("Esc", "Decline a call ringing"),
+            ("Ctrl+'", "Call the DM open"),
         ],
     ),
 ];
@@ -174,6 +203,14 @@ mod tests {
             classify("ArrowDown", true, true, false),
             Some(Hotkey::Scope { forward: true })
         );
+    }
+
+    #[test]
+    fn alt_arrows_go_back_and_forward() {
+        assert_eq!(classify("ArrowLeft", false, true, false), Some(Hotkey::History { forward: false }));
+        assert_eq!(classify("right", false, true, false), Some(Hotkey::History { forward: true }));
+        assert_eq!(classify("ArrowLeft", false, false, false), None);
+        assert_eq!(classify("ArrowLeft", true, false, false), None);
     }
 
     #[test]

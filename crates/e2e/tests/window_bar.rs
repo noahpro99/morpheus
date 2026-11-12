@@ -21,25 +21,31 @@ async fn the_sign_in_screen_has_a_bar_to_drag_and_close() {
         .await
         .expect("sign-in screen");
     let bar = app
-        .eval(
-            "const bar = document.querySelector('header.titlebar');\
-             if (!bar) return null;\
-             const r = bar.getBoundingClientRect();\
-             return { top: r.top, height: r.height, width: r.width, page: innerWidth,\
-               controls: [...bar.querySelectorAll('.window-controls button')].map(b => b.title) };",
-        )
+        .bounds("header.titlebar")
         .await
-        .expect("read the bar");
-    assert!(!bar.is_null(), "the sign-in screen has a title bar");
-    assert_eq!(bar["top"], 0.0, "at the top: {bar}");
+        .expect("read the bar")
+        .expect("the sign-in screen has a title bar");
+    let page = app
+        .bounds("body")
+        .await
+        .expect("the page")
+        .expect("page bounds");
+    assert_eq!(bar.y, 0.0, "at the top: {bar:?}");
     assert!(
-        bar["height"].as_f64().unwrap_or(0.0) >= 24.0
-            && bar["width"].as_f64() == bar["page"].as_f64(),
-        "across the window, tall enough to grab: {bar}"
+        bar.h >= 24.0 && (bar.w - page.w).abs() < 1.0,
+        "across the window, tall enough to grab: {bar:?} in {page:?}"
     );
+    let controls = app
+        .attrs("header.titlebar .window-controls button", "title")
+        .await
+        .expect("the buttons");
     assert_eq!(
-        bar["controls"],
-        serde_json::json!(["Minimize", "Maximize", "Close"]),
+        controls,
+        vec![
+            Some("Minimize".to_owned()),
+            Some("Maximize".to_owned()),
+            Some("Close".to_owned())
+        ],
         "with the window's buttons"
     );
 }

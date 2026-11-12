@@ -102,13 +102,8 @@ impl Shell {
                 }
             }
             Hotkey::CreateServer => self.open_room_dialog(RoomDialogKind::CreateSpace(None), cx),
-            Hotkey::Shortcuts => {
-                if toggles_help {
-                    self.dialog_close(cx);
-                } else {
-                    self.dialog_open(Dialog::Help, cx);
-                }
-            }
+            Hotkey::Shortcuts => self.toggle_help(cx),
+            Hotkey::History { forward } => self.nav_jump(if forward { 1 } else { -1 }, cx),
             Hotkey::Inbox => self.toggle_inbox(cx),
             Hotkey::Members => self.toggle_members(cx),
             Hotkey::Pins => self.open_pinned(cx),

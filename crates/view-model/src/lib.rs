@@ -20,6 +20,7 @@ pub mod members;
 pub mod profile;
 pub mod menu;
 pub mod mod_view;
+pub mod nav;
 pub mod nicknames;
 pub mod room_dialogs;
 pub mod room_menu;

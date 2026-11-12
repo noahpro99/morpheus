@@ -7,6 +7,7 @@ use std::{borrow::Cow, path::PathBuf};
 mod call;
 mod call_ui;
 mod chat;
+mod chrome;
 mod composer;
 mod dialogs;
 mod e2e;
@@ -73,6 +74,12 @@ impl AssetSource for Assets {
         Ok(match path {
             "logo.svg" => Some(Cow::Borrowed(
                 include_bytes!("../../../crates/ui/assets/logo.svg").as_slice(),
+            )),
+            // The glasses only, as the site's wordmark crops them.
+            "logo-tight.svg" => Some(Cow::Owned(
+                include_str!("../../../crates/ui/assets/logo.svg")
+                    .replacen("viewBox=\"0 0 512 512\"", "viewBox=\"48 182 416 154\"", 1)
+                    .into_bytes(),
             )),
             other => icons::svg_for(other).map(|svg| Cow::Owned(svg.into_bytes())),
         })
@@ -146,9 +153,12 @@ impl Root {
 }
 
 impl Render for Root {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         let base = div()
+            .relative()
             .size_full()
+            .flex()
+            .flex_col()
             .bg(rgb(theme::BG_CHAT))
             .font_family("Inter")
             .text_size(px(theme::REM))
@@ -156,17 +166,22 @@ impl Render for Root {
         e2e::frame(
             match &self.screen {
                 // The logo, no name.
-                Screen::Splash => base.flex().items_center().justify_center().child(
-                    svg()
-                        .path("logo.svg")
-                        .size(px(160.0))
-                        .text_color(rgb(theme::ACCENT))
-                        .e2e("svg", "splash-logo"),
+                Screen::Splash => base.child(chrome::window_bar()).child(
+                    div().flex_1().flex().items_center().justify_center().child(
+                        svg()
+                            .path("logo.svg")
+                            .size(px(160.0))
+                            .text_color(rgb(theme::ACCENT))
+                            .e2e("svg", "splash-logo"),
+                    ),
                 ),
-                Screen::Login(login) => base.child(login.clone()),
-                Screen::Rooms(rooms) => base.child(rooms.clone()),
+                Screen::Login(login) => base
+                    .child(chrome::window_bar())
+                    .child(div().flex_1().min_h_0().child(login.clone())),
+                Screen::Rooms(rooms) => base.child(div().flex_1().min_h_0().child(rooms.clone())),
             }
-            .e2e("div", "app"),
+            .child(chrome::resize_edges(window))
+            .e2e("body", "app"),
         )
     }
 }
@@ -241,6 +256,8 @@ fn main() {
                         ..Default::default()
                     }),
                     app_id: Some("morpheus-gpui".into()),
+                    // The app draws its own bar, buttons and resize edges.
+                    window_decorations: Some(gpui::WindowDecorations::Client),
                     ..Default::default()
                 },
                 |window, cx| {

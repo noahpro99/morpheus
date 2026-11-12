@@ -140,6 +140,8 @@ pub struct Shell {
     pub calls: crate::call::Calls,
     /// The quick switcher (Ctrl+K), when open.
     pub switcher: Option<Entity<crate::switcher::Switcher>>,
+    /// The rooms visited, for the title bar's back and forward.
+    pub nav: crate::view_model::nav::Nav,
 }
 
 impl Shell {
@@ -295,6 +297,7 @@ impl Shell {
             joined_here: HashSet::new(),
             calls: crate::call::Calls::default(),
             switcher: None,
+            nav: Default::default(),
         }
     }
 
@@ -507,6 +510,7 @@ impl Shell {
     }
 
     pub fn open_room(&mut self, id: OwnedRoomId, cx: &mut Context<Self>) {
+        self.nav.record(id.clone());
         // Going to a room leaves the Friends page.
         self.friends_open = false;
         // An invite (or a channel not joined) has no timeline: its card shows.

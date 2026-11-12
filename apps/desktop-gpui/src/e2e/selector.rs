@@ -242,6 +242,12 @@ impl Parser<'_> {
                 Some(':') => {
                     self.chars.next();
                     let pseudo = self.ident()?;
+                    if pseudo == "disabled" {
+                        // A disabled control has a `disabled` attribute.
+                        compound.attrs.push(AttrTest::Exists("disabled".into()));
+                        any = true;
+                        continue;
+                    }
                     if pseudo == "checked" {
                         // A radio or checkbox that is on has a `checked` attribute.
                         compound.attrs.push(AttrTest::Exists("checked".into()));
@@ -249,7 +255,7 @@ impl Parser<'_> {
                         continue;
                     }
                     if pseudo != "not" || self.chars.next() != Some('(') {
-                        return Err("only :not(...) and :checked are supported".into());
+                        return Err("only :not(...), :checked and :disabled are supported".into());
                     }
                     self.skip_space();
                     let excluded = self.compound()?;
@@ -464,6 +470,7 @@ mod tests {
         assert_eq!(count("input:not([name=username]):not([type])"), 0);
         assert_eq!(count("input:not( .nothing )"), 2);
         assert_eq!(count("input:checked"), 0);
+        assert_eq!(count("input:disabled"), count("input[disabled]"));
         assert_eq!(count("[name^=us]"), 1);
         assert_eq!(count("[data-id^='!']"), 2);
         assert_eq!(count("[data-id^=\"!a\"]"), 1);
