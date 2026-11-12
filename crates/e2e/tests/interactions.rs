@@ -204,10 +204,7 @@ async fn typing_indicator_shows_the_other_user() {
         .await
         .expect("bob sends");
     alice
-        .wait_for_js(
-            "return document.querySelector('.typing.empty') !== null;",
-            Duration::from_secs(15),
-        )
+        .wait_for(".typing.empty", Duration::from_secs(15))
         .await
         .expect("typing cleared after send");
 }
@@ -261,12 +258,9 @@ async fn ctrl_k_switches_rooms() {
     app.press(".switcher input", "Escape")
         .await
         .expect("escape");
-    app.wait_for_js(
-        "return document.querySelector('.switcher') === null;",
-        Duration::from_secs(5),
-    )
-    .await
-    .expect("escape closes");
+    app.wait_for_count(".switcher", 0, Duration::from_secs(5))
+        .await
+        .expect("escape closes");
 }
 
 /// Each Ctrl+K row shows its own room's picture after typing: filtering
@@ -288,36 +282,62 @@ async fn ctrl_k_pictures_follow_their_rooms() {
         .await
         .expect("switcher opens");
     // Each row (its room and name) and picture (an image's source, or its letter).
-    let pictures = "return [...document.querySelectorAll('.switcher-item:not(.action)')].filter(r => r.querySelector('.name')).map(r => { \
-         const a = r.querySelector('.avatar'); \
-         return [r.dataset.key + ' ' + r.querySelector('.name').textContent.trim(), a.tagName === 'IMG' ? a.getAttribute('src') : 'letter ' + a.textContent.trim()]; });";
+    async fn pictures(app: &mut App) -> Vec<(String, String)> {
+        let keys = app
+            .attrs(".switcher-item[data-key]", "data-key")
+            .await
+            .expect("keys");
+        let names = app
+            .texts(".switcher-item[data-key] .name")
+            .await
+            .expect("names");
+        let sources = app
+            .attrs(".switcher-item[data-key] .avatar", "src")
+            .await
+            .expect("sources");
+        let letters = app
+            .texts(".switcher-item[data-key] .avatar")
+            .await
+            .expect("letters");
+        assert_eq!(keys.len(), names.len(), "a name for every row");
+        assert_eq!(keys.len(), sources.len(), "a picture for every row");
+        keys.into_iter()
+            .zip(names)
+            .zip(sources.into_iter().zip(letters))
+            .map(|((key, name), (src, letter))| {
+                (
+                    format!("{} {}", key.unwrap_or_default(), name.trim()),
+                    src.unwrap_or_else(|| format!("letter {}", letter.trim())),
+                )
+            })
+            .collect()
+    }
     // Wait for the pictures to load, then note whose is whose.
-    app.wait_for_js(
-        "return document.querySelectorAll('.switcher-item img.avatar').length > 0;",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("pictures load");
+    app.wait_for(".switcher-item .avatar[src]", DEFAULT_WAIT)
+        .await
+        .expect("pictures load");
     tokio::time::sleep(Duration::from_secs(2)).await;
-    let before = app.eval(pictures).await.expect("pictures");
     let before: std::collections::HashMap<String, String> =
-        serde_json::from_value::<Vec<(String, String)>>(before)
-            .expect("rows")
-            .into_iter()
-            .collect();
+        pictures(&mut app).await.into_iter().collect();
     eprintln!("[switcher] before: {before:?}");
 
     // Filter so rooms further down move up to the top rows.
     for query in ["b", "c", "d"] {
-        app.eval("const i = document.querySelector('.switcher input'); i.value = ''; i.dispatchEvent(new Event('input', { bubbles: true }));")
-            .await
-            .expect("clear");
+        if app.is_gpui() {
+            app.key_combo(".switcher input", "a", true, false, false)
+                .await
+                .expect("select all");
+            app.press(".switcher input", "Backspace").await.expect("clear");
+        } else {
+            app.eval("const i = document.querySelector('.switcher input'); i.value = ''; i.dispatchEvent(new Event('input', { bubbles: true }));")
+                .await
+                .expect("clear");
+        }
         app.type_into(".switcher input", query)
             .await
             .expect("filter");
         tokio::time::sleep(Duration::from_secs(1)).await;
-        let after: Vec<(String, String)> =
-            serde_json::from_value(app.eval(pictures).await.expect("pictures")).expect("rows");
+        let after = pictures(&mut app).await;
         eprintln!("[switcher] '{query}': {after:?}");
         for (name, picture) in &after {
             if let Some(own) = before.get(name) {

@@ -277,9 +277,14 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                 && id == &room.id
             {
                 // The line where who is typing shows: room for it, empty here.
-                content = content
-                    .child(div().h(px(8.0)).flex_none().e2e("div", "typing empty"))
-                    .child(composer.clone());
+                if let Some((typing_room, typing)) = &shell.typing
+                    && typing_room == &room.id
+                {
+                    content = content.child(typing.clone());
+                } else {
+                    content = content.child(div().h(px(8.0)).flex_none().e2e("div", "typing empty"));
+                }
+                content = content.child(composer.clone());
             }
             let mut body = div().flex().flex_1().min_h_0().child(content);
             // The side column: an open thread, else the member list.

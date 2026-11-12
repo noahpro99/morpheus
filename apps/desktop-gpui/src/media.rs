@@ -101,9 +101,18 @@ pub fn avatar(
         });
     match picture {
         // gpui clips children to a rectangle: the picture is rounded itself.
-        Some(image) => base
-            .child(img(image).size_full().rounded(px(radius.unwrap_or(size / 2.0))))
-            .e2e("img", "avatar"),
+        Some(image) => {
+            // Tests tell pictures apart by this (the image's identity), as by an <img>'s src.
+            let src = {
+                use std::hash::{Hash, Hasher};
+                let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                image.hash(&mut hasher);
+                format!("picture:{:x}", hasher.finish())
+            };
+            base.child(img(image).size_full().rounded(px(radius.unwrap_or(size / 2.0))))
+                .e2e("img", "avatar")
+                .attr("src", src)
+        }
         None => base
             .bg(rgb(theme::accent_strong()))
             .font_weight(FontWeight::BOLD)

@@ -102,6 +102,7 @@ pub struct Shell {
     pub timeline: Option<(OwnedRoomId, Entity<TimelineView>)>,
     /// The open room's message box.
     pub composer: Option<(OwnedRoomId, Entity<Composer>)>,
+    pub typing: Option<(OwnedRoomId, Entity<crate::typing::TypingView>)>,
     /// The sidebar's room list scrolling.
     pub room_scroll: ScrollHandle,
     /// The settings window, shown or not (absent only in widget tests).
@@ -313,6 +314,7 @@ impl Shell {
             avatars: Avatars::default(),
             timeline: None,
             composer: None,
+            typing: None,
             room_scroll: ScrollHandle::new(),
             settings: None,
             keys: KeyAccess::default(),
@@ -584,6 +586,7 @@ impl Shell {
         if self.rooms.iter().any(|room| room.id == id && room.invited) {
             self.timeline = None;
             self.composer = None;
+            self.typing = None;
             self.timeline_handle = None;
             self.members = None;
             self.thread = None;
@@ -662,6 +665,9 @@ impl Shell {
             // The old one is dropped here: leaving a room reads it.
             self.timeline = Some((id.clone(), timeline));
             self.composer = Some((id.clone(), composer));
+            let session = self.session.clone();
+            let room = id.clone();
+            self.typing = Some((id.clone(), cx.new(|cx| crate::typing::TypingView::new(session, room, cx))));
             self.timeline_handle = None;
             self.pinned.clear();
             // A thread belongs to the room it was opened from.
