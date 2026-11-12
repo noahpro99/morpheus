@@ -609,3 +609,54 @@ async fn share_profile_says_the_link_was_copied() {
         .await
         .expect("a toast saying so");
 }
+
+/// The person's id on the card is a way to the full profile (as the avatar
+/// and the mutual-servers count are).
+#[tokio::test]
+async fn clicking_the_id_on_the_card_opens_the_full_profile() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch_desktop(&hs).await.expect("launch");
+    login_and_open(&mut app, "alice", "general").await;
+    if !app.is_gpui() {
+        eprintln!("skipped: the Dioxus card's id is plain text");
+        return;
+    }
+    open_card_for(&mut app, "bob").await;
+    app.click(".profile-card .profile-id").await.expect("the id");
+    app.wait_for_text(".profile-modal .profile-id", "@bob:localhost", DEFAULT_WAIT)
+        .await
+        .expect("the full profile");
+    app.wait_for_count(".profile-card", 0, DEFAULT_WAIT)
+        .await
+        .expect("instead of the card");
+}
+
+/// On the full profile the id is the profile's link: a click copies it and
+/// says so, as Share profile does.
+#[tokio::test]
+async fn clicking_the_id_on_the_full_profile_copies_the_link() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch_desktop(&hs).await.expect("launch");
+    login_and_open(&mut app, "alice", "general").await;
+    if !app.is_gpui() {
+        eprintln!("skipped: the Dioxus full profile's id is plain text");
+        return;
+    }
+    open_card_for(&mut app, "bob").await;
+    app.click(".profile-card .card-button.more").await.expect("more");
+    app.click_text(".context-item", "View full profile").await.expect("full");
+    app.wait_for(".profile-modal .profile-id", DEFAULT_WAIT).await.expect("modal");
+    assert_eq!(app.count(".toast").await.expect("toasts"), 0, "no toast yet");
+    app.click(".profile-modal .profile-id").await.expect("the id");
+    app.wait_for_text(".toast", "Link copied", DEFAULT_WAIT)
+        .await
+        .expect("a toast saying so");
+    // It stays open: only the link was copied.
+    assert_eq!(app.count(".profile-modal").await.expect("modal"), 1);
+}

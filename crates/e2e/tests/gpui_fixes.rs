@@ -627,3 +627,47 @@ async fn the_side_pane_is_rounded_at_all_four_corners() {
     };
     assert!(square.is_empty(), "the side pane's corners drawn square: {square:?}");
 }
+
+async fn open_full_profile(app: &mut App) {
+    open_bobs_card(app).await;
+    app.click(".profile-card .card-button.more").await.expect("more");
+    app.click_text(".context-item", "View full profile").await.expect("full");
+    app.wait_for(".profile-modal .profile-id", DEFAULT_WAIT).await.expect("full profile");
+    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+}
+
+/// The full profile is a modal with margins, centred across and not run to
+/// the bottom of the window (it was stretched to it); in a short window it
+/// stops short of the bottom and its content scrolls.
+#[tokio::test]
+async fn the_full_profile_is_a_centred_modal_with_a_height_limit() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = alice_in_general(&hs).await;
+    if !app.is_gpui() {
+        eprintln!("skipped: the Dioxus modal has no height limit");
+        return;
+    }
+    open_full_profile(&mut app).await;
+    let window = app.bounds(".shell").await.expect("b").expect("shell");
+    let m = app.bounds(".profile-modal").await.expect("b").expect("modal");
+    eprintln!("modal {m:?} in {window:?}");
+    assert!(m.h < window.h * 0.8, "the modal is {} tall in a window {} tall: stretched", m.h, window.h);
+    assert!(m.y > window.y + 40.0, "no margin above: {m:?}");
+    assert!(m.bottom() < window.bottom() - 24.0, "no margin below: {m:?}");
+    assert!((m.centre_x() - window.centre_x()).abs() < 2.0, "not centred across: {m:?} in {window:?}");
+
+    // A short window: the modal keeps its margin below and scrolls.
+    drop(app);
+    let mut app = App::launch_sized(&hs, 1000, 480).await.expect("launch small");
+    common::login(&mut app, "alice", "alice-password").await;
+    app.open_room("general").await.expect("open room");
+    open_full_profile(&mut app).await;
+    let window = app.bounds(".shell").await.expect("b").expect("shell");
+    let m = app.bounds(".profile-modal").await.expect("b").expect("modal");
+    eprintln!("short window: modal {m:?} in {window:?}");
+    assert!(m.bottom() <= window.bottom() - 16.0, "runs to the bottom of a short window: {m:?} in {window:?}");
+    assert!(m.h > 100.0, "squeezed away: {m:?}");
+}
