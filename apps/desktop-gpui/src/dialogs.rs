@@ -48,6 +48,10 @@ pub enum Dialog {
     ModView(Entity<crate::mod_view::ModView>),
     /// Ctrl+/: the list of shortcuts.
     Help,
+    /// The tray's Acknowledgements.
+    About,
+    /// A room linked to that you are not in.
+    Preview(Entity<crate::room_preview::RoomPreview>),
 }
 
 /// Something done at once that its Undo toast can still take back.
@@ -517,7 +521,7 @@ pub fn render_dialog(shell: &mut Shell, window: &mut Window, cx: &mut Context<Sh
     let focus = shell.dialog_focus(cx);
     if std::mem::take(&mut shell.take_dialog_focus) {
         match &shell.dialog {
-            Some(Dialog::Confirm(..) | Dialog::Reactions(_) | Dialog::Help) => window.focus(&focus),
+            Some(Dialog::Confirm(..) | Dialog::Reactions(_) | Dialog::Help | Dialog::About) => window.focus(&focus),
             _ => {}
         }
     }
@@ -681,6 +685,8 @@ pub fn render_dialog(shell: &mut Shell, window: &mut Window, cx: &mut Context<Sh
                 .focusable(&focus);
             Some(overlay(window, boxed.into_any_element(), close))
         }
+        Dialog::Preview(entity) => Some(entity.clone().into_any_element()),
+        Dialog::About => Some(crate::about::render(&focus, window, cx, close)),
     }
 }
 

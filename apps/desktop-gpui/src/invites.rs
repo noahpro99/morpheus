@@ -517,6 +517,59 @@ pub fn inbox(shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>) ->
             );
         }
     }
+    let mentions: Vec<_> = crate::view_model::notices::recent_mentions(&shell.notices)
+        .into_iter()
+        .cloned()
+        .collect();
+    if !mentions.is_empty() {
+        panel = panel.child(
+            div()
+                .mx(px(8.0))
+                .mt(px(8.0))
+                .mb(px(4.0))
+                .text_size(px(0.7 * theme::REM))
+                .font_weight(FontWeight::BOLD)
+                .text_color(rgb(theme::TEXT_FAINT))
+                .child("MENTIONS")
+                .e2e("h4", "section")
+                .text("Mentions"),
+        );
+        for (index, notice) in mentions.into_iter().enumerate() {
+            let room = shell.rooms.iter().find(|r| r.id == notice.room_id).cloned();
+            let who = format!("{} in {}", notice.sender_name, notice.room_name);
+            let mut item = div()
+                .id(SharedString::from(format!("inbox-mention-{index}")))
+                .flex()
+                .flex_col()
+                .mx(px(6.0))
+                .mb(px(4.0))
+                .px(px(10.0))
+                .py(px(8.0))
+                .rounded(px(theme::RADIUS_SM))
+                .cursor_pointer()
+                .hover(|s| s.bg(rgba(theme::BG_HOVER)))
+                .child(
+                    div()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .child(who.clone())
+                        .e2e("span", "inbox-name")
+                        .text(who),
+                )
+                .child(
+                    div()
+                        .text_size(px(0.85 * theme::REM))
+                        .text_color(rgb(theme::TEXT_MUTED))
+                        .truncate()
+                        .child(notice.body_summary.clone())
+                        .e2e("span", "inbox-body")
+                        .text(notice.body_summary.clone()),
+                );
+            if let Some(room) = room {
+                item = item.on_click(cx.listener(move |this, _, _, cx| this.open_from_inbox(&room, cx)));
+            }
+            panel = panel.child(item.e2e("button", "inbox-item inbox-mention"));
+        }
+    }
     if items.is_empty() {
         panel = panel.child(
             div()

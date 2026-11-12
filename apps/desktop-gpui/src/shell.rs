@@ -142,11 +142,17 @@ pub struct Shell {
     pub switcher: Option<Entity<crate::switcher::Switcher>>,
     /// The rooms visited, for the title bar's back and forward.
     pub nav: crate::view_model::nav::Nav,
+    /// The room this account was last in, until the list has it; and the account.
+    pub pending_place: Option<crate::view_model::last_place::LastPlace>,
+    pub place_user: String,
+    /// Messages announced since launch (the inbox's Mentions, the test log).
+    pub notices: Vec<morpheus_core::Notification>,
 }
 
 impl Shell {
     pub fn new(session: Session, cx: &mut Context<Self>) -> Self {
         let mut shell = Self::bare(Some(session.clone()));
+        shell.wait_for_last_place(cx);
         shell.start_calls(&session, cx);
         let subscribed = session.room_list();
         cx.spawn(async move |this, cx| {
@@ -163,6 +169,7 @@ impl Shell {
                         this.keep_joined_here();
                         this.reopen_closed(cx);
                         this.open_pending_dm(cx);
+                        this.restore_place(cx);
                         this.sync_members(cx);
                         this.refresh_switcher(cx);
                         cx.notify();
@@ -298,6 +305,9 @@ impl Shell {
             calls: crate::call::Calls::default(),
             switcher: None,
             nav: Default::default(),
+            pending_place: None,
+            place_user: String::new(),
+            notices: crate::notify::log(),
         }
     }
 
@@ -437,7 +447,7 @@ impl Shell {
             && listed(self, &id)
         {
             self.pending_dm = None;
-            self.open_room(id, cx);
+            self.open_room_in_scope(id, cx);
             return;
         }
         if let Some(id) = self.selected.clone()
@@ -511,6 +521,7 @@ impl Shell {
 
     pub fn open_room(&mut self, id: OwnedRoomId, cx: &mut Context<Self>) {
         self.nav.record(id.clone());
+        // Remembered below, once the room is set.
         // Going to a room leaves the Friends page.
         self.friends_open = false;
         // An invite (or a channel not joined) has no timeline: its card shows.
@@ -522,6 +533,7 @@ impl Shell {
             self.members = None;
             self.thread = None;
             self.selected = Some(id);
+            self.save_place();
             cx.notify();
             return;
         }
@@ -620,6 +632,7 @@ impl Shell {
             self.members = Some((id.clone(), members));
         }
         self.selected = Some(id.clone());
+        self.save_place();
         // The search stays open across rooms, asking about the new one.
         if self.search.as_ref().is_some_and(|(room, _)| room != &id) {
             self.open_search(cx);
@@ -629,10 +642,11 @@ impl Shell {
         cx.notify();
     }
 
-    /// A link in a message: Matrix links open in the app (not yet ported),
+    /// A link in a message: Matrix links open in the app,
     /// others in the browser; test runs only log the hand-off.
     fn link_clicked(&mut self, url: &str, cx: &mut Context<Self>) {
         if morpheus_core::parse_matrix_link(url).is_some() {
+            self.open_link(url, cx);
             return;
         }
         if std::env::var_os("MORPHEUS_E2E_PORT").is_some() {
@@ -851,6 +865,7 @@ pub fn apply(rooms: &mut Vec<RoomSummary>, diff: VectorDiff<RoomSummary>) {
 
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        crate::notify::set_looking(window.is_window_active(), self.selected.clone());
         self.fetch_avatars(cx);
         self.mark_menu_message(cx);
         self.fetch_people(cx);
@@ -943,6 +958,20 @@ impl Render for Shell {
                             .map(|sound| div().size_0().e2e("li", "").text(*sound)),
                     )
                     .e2e("ul", "sound-log"),
+            )
+            .child(
+                div()
+                    .size_0()
+                    .children(self.notices.iter().map(|notice| {
+                        let line = crate::view_model::notices::log_line(notice);
+                        div()
+                            .size_0()
+                            .e2e("li", "")
+                            .attr("data-room", notice.room_id.to_string())
+                            .attr("data-mention", if notice.is_mention { "true" } else { "false" })
+                            .text(line)
+                    }))
+                    .e2e("ul", "notification-log"),
             )
             .child(crate::titlebar::render(self, cx))
             .child(
