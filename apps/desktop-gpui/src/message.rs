@@ -1424,12 +1424,13 @@ pub fn message_el(
 pub fn other_row(row: &Row) -> AnyElement {
     match row {
         Row::Date(label, _) => div()
+            .w_full()
             .flex()
             .items_center()
             .gap(px(12.0))
             .mt(px(16.0))
             .mb(px(4.0))
-            .mx(px(16.0))
+            .px(px(16.0))
             .text_color(rgb(theme::text_faint()))
             .text_size(rem(0.75))
             .font_weight(FontWeight::SEMIBOLD)
