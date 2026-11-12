@@ -51,28 +51,38 @@ async fn media_rich_text_reactions_and_members() {
 
     // Sanitised HTML bodies render as markup, not escaped text. The seeded
     // rows are old by now, so scroll up until they are revealed.
-    app.reveal_text(".message .rich strong", "fast", DEFAULT_WAIT)
+    // (GPUI draws bold and code as styled runs of the body, not elements:
+    // the text of the rich body is checked there.)
+    let (bold, code) = if app.is_gpui() {
+        ((".message .body.rich", "looks fast"), (".message .body.rich", "fn main"))
+    } else {
+        ((".message .rich strong", "fast"), (".message .rich pre code", "fn main"))
+    };
+    app.reveal_text(bold.0, bold.1, DEFAULT_WAIT)
         .await
         .expect("bold html");
-    app.reveal_text(".message .rich pre code", "fn main", DEFAULT_WAIT)
-        .await
-        .expect("code block");
-
-    // Inline image thumbnail.
+    // Inline image thumbnail (just below the bold line).
     app.reveal_element(".message img.image", DEFAULT_WAIT)
         .await
         .expect("inline image");
+    if app.is_gpui() {
+        // Revealing scrolls to the top (the virtualised list draws only what
+        // is near the view); the code block and the reactions are further
+        // down: scroll down until each is drawn.
+        let mut at = scroll_down_until(&mut app, code.0, code.1, None).await;
+        at = scroll_down_until(&mut app, ".reaction", "👍", Some(at)).await;
+        let _ = at;
+    } else {
+        app.reveal_text(code.0, code.1, DEFAULT_WAIT)
+            .await
+            .expect("code block");
+    }
 
     // Seeded reactions with aggregated counts.
     app.wait_for_text(".reaction", "👍", DEFAULT_WAIT)
         .await
         .expect("thumbs up chip");
-    app.wait_for_js(
-        "return [...document.querySelectorAll('.reaction')].some(el => el.textContent.includes('👍') && el.textContent.includes('2'));",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("two thumbs up");
+    wait_reaction(&mut app, "👍", Some("2"), false, true).await;
 
     // Members panel grouped by role.
     app.wait_for_text(".members-header", "Admins", DEFAULT_WAIT)
@@ -83,43 +93,38 @@ async fn media_rich_text_reactions_and_members() {
             .await
             .unwrap_or_else(|e| panic!("member {name}: {e}"));
     }
-    app.wait_for_text(".chat-header .member-toggle", "3", DEFAULT_WAIT)
+    // The seeded #general has grown past its first three members: the count
+    // on the toggle shows at least those.
+    let counted = app
+        .text(".chat-header .member-toggle")
         .await
-        .expect("member count");
+        .expect("member toggle")
+        .unwrap_or_default();
+    let digits: String = counted.chars().filter(char::is_ascii_digit).collect();
+    assert!(
+        digits.parse::<u32>().is_ok_and(|n| n >= 3),
+        "member count {counted:?}"
+    );
 
     // Earlier runs may have left our ❤️ on the server; start from "off".
-    let heart_mine = "return [...document.querySelectorAll('.reaction.mine')].some(el => el.textContent.includes('❤️'));";
-    if app.eval(heart_mine).await.expect("eval").as_bool() == Some(true) {
-        app.eval("[...document.querySelectorAll('.reaction.mine')].find(b => b.textContent.includes('❤️')).click();")
+    if heart_mine(&mut app).await {
+        app.click_text(".reaction.mine", "❤️")
             .await
             .expect("clear leftover heart");
-        app.wait_for_js(
-            &format!("{{ const on = (() => {{ {heart_mine} }})(); return !on; }}"),
-            DEFAULT_WAIT,
-        )
-        .await
-        .expect("leftover heart cleared");
+        wait_reaction(&mut app, "❤️", None, true, false).await;
     }
 
     // Toggle a reaction on via the hover bar, then off via the chip.
-    app.eval(
-        "const msg = [...document.querySelectorAll('.message')].find(m => m.textContent.includes('react to this one'));
-         [...msg.querySelectorAll('.action')].find(b => b.textContent.includes('❤️')).click();",
-    )
-    .await
-    .expect("click heart action");
+    app.click_in_message("react to this one", ".action[title=\"React with ❤️\"]")
+        .await
+        .expect("click heart action");
     app.wait_for_text(".reaction.mine", "❤️", DEFAULT_WAIT)
         .await
         .expect("own heart reaction");
-    app.eval("[...document.querySelectorAll('.reaction.mine')].find(b => b.textContent.includes('❤️')).click();")
+    app.click_text(".reaction.mine", "❤️")
         .await
         .expect("click heart chip");
-    app.wait_for_js(
-        "return ![...document.querySelectorAll('.reaction.mine')].some(el => el.textContent.includes('❤️'));",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("heart reaction removed");
+    wait_reaction(&mut app, "❤️", None, true, false).await;
 
     // Markdown is rendered on send.
     let body = format!("**bold** from e2e {}", std::process::id());
@@ -129,7 +134,14 @@ async fn media_rich_text_reactions_and_members() {
     app.press(".composer .composer-input", "Enter")
         .await
         .expect("enter");
-    app.wait_for_text(".message:not(.pending) .rich strong", "bold", DEFAULT_WAIT)
+    // (GPUI draws bold as a styled run of the body, not an element: its text
+    // is checked instead.)
+    let (rendered, needle) = if app.is_gpui() {
+        (".message:not(.pending) .body.rich", "bold from e2e")
+    } else {
+        (".message:not(.pending) .rich strong", "bold")
+    };
+    app.wait_for_text(rendered, needle, DEFAULT_WAIT)
         .await
         .expect("markdown rendered");
 
@@ -157,6 +169,43 @@ async fn clicking_image_opens_lightbox() {
     app.wait_for(".lightbox-overlay", DEFAULT_WAIT)
         .await
         .expect("lightbox opens");
+    if app.is_gpui() {
+        // No CSS animation or data URLs here: the full-size picture is a
+        // `.lightbox-image` once it has been fetched.
+        app.wait_for(".lightbox-image", DEFAULT_WAIT)
+            .await
+            .expect("full-size image loaded");
+        // The dimming covers the whole window, the member list too, and the
+        // image is in the window's middle (not the chat's).
+        let window = app.bounds("body").await.expect("body").expect("a window");
+        let overlay = app
+            .bounds(".lightbox-overlay")
+            .await
+            .expect("overlay")
+            .expect("an overlay");
+        let image = app
+            .bounds(".lightbox-image")
+            .await
+            .expect("image")
+            .expect("an image");
+        assert!(
+            overlay.x <= window.x
+                && overlay.y <= window.y
+                && overlay.right() >= window.right()
+                && overlay.bottom() >= window.bottom(),
+            "the dimming does not cover the window: {overlay:?} vs {window:?}"
+        );
+        assert!(
+            (image.centre_x() - (window.x + window.w / 2.0)).abs() < 4.0,
+            "the image is not in the window's middle: {image:?} in {window:?}"
+        );
+        // Esc closes it.
+        app.press("body", "Escape").await.expect("escape");
+        app.wait_for_count(".lightbox-overlay", 0, DEFAULT_WAIT)
+            .await
+            .expect("lightbox closes");
+        return;
+    }
     // It zooms in rather than popping.
     app.wait_for_js(
         "return getComputedStyle(document.querySelector('.lightbox')).animationName === 'lightbox-zoom'",
@@ -242,22 +291,29 @@ async fn scrolling_up_loads_older_history() {
     app.wait_for(".message .body", DEFAULT_WAIT)
         .await
         .expect("newest");
-    app.wait_for_js(
-        "return ![...document.querySelectorAll('.message .body')].some(el => el.textContent.trim() === 'random filler message 1');",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("oldest not loaded initially");
+    let oldest_shown = |bodies: Vec<String>| bodies.iter().any(|b| b.trim() == "random filler message 1");
+    assert!(
+        !oldest_shown(app.texts(".message .body").await.expect("bodies")),
+        "oldest loaded initially"
+    );
 
     // Keep scrolling to the top, like a user would, until the room start is
     // reached (#random grows with every test run: give it time, not tries).
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(240);
     while std::time::Instant::now() < deadline {
-        let at_start = app
-            .eval("const t = document.querySelector('.timeline'); t.scrollTop = -t.scrollHeight; return !!document.querySelector('.timeline-start');")
-            .await
-            .expect("scroll");
-        if at_start.as_bool() == Some(true) {
+        let at_start = if app.is_gpui() {
+            app.scroll_to(".timeline", morpheus_e2e::ScrollTo::Top)
+                .await
+                .expect("scroll");
+            app.count(".timeline-start").await.expect("count") > 0
+        } else {
+            app.eval("const t = document.querySelector('.timeline'); t.scrollTop = -t.scrollHeight; return !!document.querySelector('.timeline-start');")
+                .await
+                .expect("scroll")
+                .as_bool()
+                == Some(true)
+        };
+        if at_start {
             break;
         }
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
@@ -268,4 +324,83 @@ async fn scrolling_up_loads_older_history() {
     app.wait_for_text(".timeline-start", "beginning", DEFAULT_WAIT)
         .await
         .expect("start marker");
+}
+
+/// Whether our own ❤️ is among the reactions shown.
+async fn heart_mine(app: &mut App) -> bool {
+    app.texts(".reaction.mine")
+        .await
+        .expect("reactions")
+        .iter()
+        .any(|text| text.contains("❤️"))
+}
+
+/// Wait until a reaction chip with `key` (and `count`, if given) is shown
+/// (`present`), or until none is. `mine` looks at our own chips only.
+async fn wait_reaction(
+    app: &mut App,
+    key: &str,
+    count: Option<&str>,
+    mine: bool,
+    present: bool,
+) {
+    let selector = if mine { ".reaction.mine" } else { ".reaction" };
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let shown = app
+            .texts(selector)
+            .await
+            .expect("reactions")
+            .iter()
+            .any(|text| text.contains(key) && count.is_none_or(|c| text.contains(c)));
+        if shown == present {
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "reaction {key} {count:?}: wanted shown = {present}"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+}
+
+/// GPUI: from the top of a room, scrolls down a little at a time until an
+/// element matching `selector` with `needle` in its text is drawn. Returns
+/// the scroll position (pixels up from the bottom) it stopped at.
+async fn scroll_down_until(
+    app: &mut App,
+    selector: &str,
+    needle: &str,
+    from: Option<f64>,
+) -> f64 {
+    let mut from_bottom = match from {
+        Some(at) => at,
+        None => app
+            .scroll_state(".timeline")
+            .await
+            .expect("scroll state")
+            .expect("a timeline")
+            .range,
+    };
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        if app
+            .texts(selector)
+            .await
+            .expect("texts")
+            .iter()
+            .any(|t| t.contains(needle))
+        {
+            return from_bottom;
+        }
+        assert!(
+            std::time::Instant::now() < deadline && from_bottom > 0.0,
+            "{selector} with {needle:?} not drawn scrolling down from the top"
+        );
+        from_bottom = (from_bottom - 250.0).max(0.0);
+        app.scroll_to(".timeline", morpheus_e2e::ScrollTo::FromBottom(from_bottom))
+            .await
+            .expect("down a little");
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
 }

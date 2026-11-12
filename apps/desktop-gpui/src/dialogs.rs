@@ -52,6 +52,8 @@ pub enum Dialog {
     About,
     /// A room linked to that you are not in.
     Preview(Entity<crate::room_preview::RoomPreview>),
+    /// A picture of the room, full size.
+    Lightbox(Entity<crate::lightbox::Lightbox>),
 }
 
 /// Something done at once that its Undo toast can still take back.
@@ -641,6 +643,20 @@ pub fn render_dialog(shell: &mut Shell, window: &mut Window, cx: &mut Context<Sh
                 .w(px(560.0))
                 .max_h(px(520.0))
                 .child(heading("Keyboard shortcuts"))
+                .child(actions(vec![
+                    dialog_button("help-report-bug", "Report a bug", false)
+                        .text_color(rgb(theme::text()))
+                        .on_click(|_, _, cx| {
+                            let url = morpheus_core::bug_report_url(
+                                env!("CARGO_PKG_VERSION"),
+                                &crate::data_dir(),
+                            );
+                            crate::shell::open_external(&url, cx);
+                        })
+                        .e2e("a", "button secondary report-bug")
+                        .text("Report a bug")
+                        .into_any_element(),
+                ]))
                 .children(crate::view_model::hotkeys::GROUPS.iter().map(|(group, rows)| {
                     div()
                         .flex()
@@ -686,6 +702,7 @@ pub fn render_dialog(shell: &mut Shell, window: &mut Window, cx: &mut Context<Sh
             Some(overlay(window, boxed.into_any_element(), close))
         }
         Dialog::Preview(entity) => Some(entity.clone().into_any_element()),
+        Dialog::Lightbox(entity) => Some(entity.clone().into_any_element()),
         Dialog::About => Some(crate::about::render(&focus, window, cx, close)),
     }
 }
@@ -695,6 +712,7 @@ impl Shell {
         self.dialog_close(cx);
         match action {
             ConfirmAction::DeleteMessage(message) => self.delete_with_undo(*message, cx),
+            ConfirmAction::SignOut => cx.emit(crate::shell::AccountEvent::SignOut),
         }
     }
 }

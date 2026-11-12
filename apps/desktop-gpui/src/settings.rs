@@ -874,7 +874,23 @@ impl SettingsView {
         }
 
         let devices: Vec<gpui::AnyElement> = match &self.devices {
-            None => vec![muted("Loading…", "muted").into_any_element()],
+            None => vec![
+                // Waiting shows the shape of what is coming, not words.
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(6.0))
+                    .children([60.0, 85.0, 45.0].map(|width| {
+                        div()
+                            .h(px(14.0))
+                            .w(gpui::relative(width / 100.0))
+                            .rounded(px(7.0))
+                            .bg(rgb(theme::bg_elevated()))
+                            .e2e("div", "skeleton skeleton-line")
+                    }))
+                    .e2e("div", "skeleton-block")
+                    .into_any_element(),
+            ],
             Some(Err(err)) => vec![note(err, "error", theme::danger()).into_any_element()],
             Some(Ok(list)) => vec![
                 div()

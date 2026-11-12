@@ -10,6 +10,25 @@ fn homeserver() -> Option<String> {
     std::env::var("MORPHEUS_TEST_HOMESERVER").ok()
 }
 
+/// The last link the app handed to the browser.
+async fn last_link(app: &mut App) -> url::Url {
+    let text = if app.is_gpui() {
+        app.texts(".link-log li")
+            .await
+            .expect("links")
+            .pop()
+            .expect("a link")
+    } else {
+        app.eval("return [...document.querySelectorAll('.link-log li')].pop().textContent;")
+            .await
+            .expect("read the link")
+            .as_str()
+            .expect("text")
+            .to_owned()
+    };
+    url::Url::parse(text.trim()).expect("a URL")
+}
+
 #[tokio::test]
 async fn report_a_bug_opens_a_filled_in_github_issue() {
     let Some(hs) = homeserver() else {
@@ -46,15 +65,19 @@ async fn report_a_bug_opens_a_filled_in_github_issue() {
         .await
         .expect("a link was opened");
 
-    let report = app
-        .eval(
-            "const u = new URL([...document.querySelectorAll('.link-log li')].pop().textContent);\
-             return { at: u.origin + u.pathname, template: u.searchParams.get('template'),\
-               version: u.searchParams.get('version'), device: u.searchParams.get('device'),\
-               logs: u.searchParams.get('logs') };",
-        )
-        .await
-        .expect("read the link");
+    let link = last_link(&mut app).await;
+    let param = |name: &str| {
+        link.query_pairs()
+            .find(|(key, _)| key == name)
+            .map(|(_, value)| value.into_owned())
+    };
+    let report = serde_json::json!({
+        "at": format!("{}{}", link.origin().ascii_serialization(), link.path()),
+        "template": param("template"),
+        "version": param("version"),
+        "device": param("device"),
+        "logs": param("logs"),
+    });
     assert_eq!(
         report["at"], "https://github.com/noahpro99/morpheus/issues/new",
         "a new issue on GitHub: {report}"
@@ -110,10 +133,17 @@ async fn the_help_dialog_reports_a_bug_too() {
     app.wait_for(".link-log li", DEFAULT_WAIT)
         .await
         .expect("a link was opened");
-    let at = app
-        .eval("const u = new URL([...document.querySelectorAll('.link-log li')].pop().textContent); return u.origin + u.pathname + ' ' + u.searchParams.get('template');")
-        .await
-        .expect("read the link");
+    let link = last_link(&mut app).await;
+    let template = link
+        .query_pairs()
+        .find(|(key, _)| key == "template")
+        .map(|(_, value)| value.into_owned())
+        .unwrap_or_default();
+    let at = format!(
+        "{}{} {template}",
+        link.origin().ascii_serialization(),
+        link.path()
+    );
     assert_eq!(
         at, "https://github.com/noahpro99/morpheus/issues/new bug_report.yml",
         "the same filled-in issue"

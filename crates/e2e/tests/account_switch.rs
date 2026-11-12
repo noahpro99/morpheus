@@ -64,6 +64,34 @@ async fn switch_items(app: &mut App) -> Vec<String> {
             .expect("back");
         return serde_json::from_value(items).expect("a Switch account submenu");
     }
+    if app.is_gpui() {
+        // The flyout opens when its row is clicked (or hovered).
+        app.click_text(".context-item.has-submenu", "Switch account")
+            .await
+            .expect("open the submenu");
+        app.wait_for(".context-submenu .context-item", DEFAULT_WAIT)
+            .await
+            .expect("submenu shown");
+        let all = app
+            .texts(".context-submenu .context-item")
+            .await
+            .expect("submenu");
+        let ticked = app
+            .texts(".context-submenu .context-item.checked")
+            .await
+            .expect("ticked");
+        return all
+            .into_iter()
+            .map(|item| {
+                let item = item.trim().to_owned();
+                if ticked.iter().any(|t| t.trim() == item) {
+                    format!("*{item}")
+                } else {
+                    item
+                }
+            })
+            .collect();
+    }
     let items = app
         .eval(
             "const p = [...document.querySelectorAll('.context-item.has-submenu')].find(el => el.querySelector('.menu-label')?.textContent === 'Switch account'); \

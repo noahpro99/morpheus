@@ -299,14 +299,23 @@ fn skeleton(older: bool) -> AnyElement {
     }
 }
 
-fn reactions_el(reactions: &[Reaction]) -> impl IntoElement {
+fn reactions_el(
+    reactions: &[Reaction],
+    unique_id: &str,
+    actions: Option<&ActionHandler>,
+) -> impl IntoElement {
+    let unique_id = unique_id.to_owned();
+    let actions = actions.cloned();
     div()
         .flex()
         .flex_wrap()
         .gap(px(4.0))
         .mt(px(4.0))
         .children(reactions.iter().map(|reaction| {
+            let key = reaction.key.clone();
+            let (actions, unique_id) = (actions.clone(), unique_id.clone());
             let mut chip = div()
+                .id(ElementId::from(SharedString::from(format!("reaction-{unique_id}-{key}"))))
                 .flex()
                 .items_center()
                 .gap(px(4.0))
@@ -315,7 +324,12 @@ fn reactions_el(reactions: &[Reaction]) -> impl IntoElement {
                 .rounded(px(10.0))
                 .border_1()
                 .text_size(rem(0.85))
-                .cursor_pointer();
+                .cursor_pointer()
+                .when_some(actions, |chip, actions| {
+                    chip.on_click(move |_, window, cx| {
+                        actions(RowAction::Toggle(key.clone()), &unique_id, window, cx)
+                    })
+                });
             chip = if reaction.mine {
                 chip.border_color(rgb(theme::accent()))
                     .bg(rgba(theme::accent_tint()))
@@ -558,9 +572,39 @@ fn attachment_card(
         )
 }
 
-fn image_el(body: &str, width: Option<u32>, height: Option<u32>, picture: Option<Arc<Image>>) -> AnyElement {
+/// A blurred stand-in for a picture, drawn from its BlurHash (decoded once
+/// per hash): shown behind the picture, and alone until it has loaded.
+fn blur_image(hash: &str) -> Option<Arc<Image>> {
+    use std::{collections::HashMap, sync::Mutex};
+    static CACHE: Mutex<Option<HashMap<String, Option<Arc<Image>>>>> = Mutex::new(None);
+    let mut cache = CACHE.lock().ok()?;
+    cache
+        .get_or_insert_with(HashMap::new)
+        .entry(hash.to_owned())
+        .or_insert_with(|| {
+            use base64::Engine as _;
+            let url = morpheus_core::blur_placeholder(hash)?;
+            let data = url.strip_prefix("data:image/png;base64,")?;
+            let bytes = base64::engine::general_purpose::STANDARD.decode(data).ok()?;
+            Some(Arc::new(Image::from_bytes(gpui::ImageFormat::Png, bytes)))
+        })
+        .clone()
+}
+
+fn image_el(
+    body: &str,
+    width: Option<u32>,
+    height: Option<u32>,
+    blurhash: Option<&str>,
+    picture: Option<Arc<Image>>,
+    open: Option<(ActionHandler, String)>,
+) -> AnyElement {
     let (w, h) = image_size(width, height);
+    let blur = blurhash.and_then(blur_image);
+    let noted = blur.is_some();
     let base = div()
+        .id(SharedString::from(format!("image-{body}")))
+        .relative()
         .mt(px(4.0))
         .w(px(w))
         .h(px(h))
@@ -568,10 +612,20 @@ fn image_el(body: &str, width: Option<u32>, height: Option<u32>, picture: Option
         .flex_none()
         .rounded(px(theme::RADIUS))
         .overflow_hidden()
-        .bg(rgb(theme::bg_input()));
-    match picture {
+        .bg(rgb(theme::bg_input()))
+        .children(blur.map(|blur| {
+            img(blur)
+                .absolute()
+                .size_full()
+                .rounded(px(theme::RADIUS))
+                .object_fit(ObjectFit::Fill)
+        }));
+    let mut element = match picture {
         Some(image) => base
             .cursor_pointer()
+            .when_some(open, |el, (actions, key)| {
+                el.on_click(move |_, window, cx| actions(RowAction::OpenImage, &key, window, cx))
+            })
             .child(
                 img(image)
                     .size_full()
@@ -580,8 +634,7 @@ fn image_el(body: &str, width: Option<u32>, height: Option<u32>, picture: Option
             )
             .e2e("img", "image")
             .attr("alt", body)
-            .attr("title", body)
-            .into_any_element(),
+            .attr("title", body),
         None => base
             .flex()
             .items_center()
@@ -590,9 +643,13 @@ fn image_el(body: &str, width: Option<u32>, height: Option<u32>, picture: Option
             .text_size(rem(0.85))
             .child(body.to_owned())
             .e2e("div", "image placeholder")
-            .text(body)
-            .into_any_element(),
+            .attr("alt", body)
+            .text(body),
+    };
+    if noted {
+        element = element.attr("data-blur", "1");
     }
+    element.into_any_element()
 }
 
 fn video_el(
@@ -687,6 +744,7 @@ fn body_el(
     pics: &Pictures,
     download: Option<&Download>,
     links: &LinkHandler,
+    actions: Option<&ActionHandler>,
 ) -> AnyElement {
     let (class, base, rich_html) = match &row.message.kind {
         MessageKind::Text { html, .. } => ("body", Base { color: theme::text(), italic: false }, html.is_some()),
@@ -704,8 +762,12 @@ fn body_el(
             body,
             width,
             height,
+            blurhash,
             ..
-        } => return image_el(body, *width, *height, pics.media.clone()),
+        } => {
+            let open = actions.cloned().map(|actions| (actions, key.to_owned()));
+            return image_el(body, *width, *height, blurhash.as_deref(), pics.media.clone(), open);
+        }
         MessageKind::File { body, size, .. } => {
             let meta = size.map(human_size).unwrap_or_default();
             return attachment_card("📎", false, body, &meta, download).into_any_element();
@@ -807,6 +869,10 @@ pub enum RowAction {
     Sender(Point<Pixels>),
     /// Their picture or name right-clicked, where: their member menu.
     SenderMenu(Point<Pixels>),
+    /// A picture clicked: opens it full size.
+    OpenImage,
+    /// A reaction chip clicked: adds our reaction, or takes it back.
+    Toggle(String),
 }
 
 /// What a click on a hover action does: the action, the message's unique ID.
@@ -1068,9 +1134,9 @@ pub fn message_el(
     if let Some(reply) = &m.in_reply_to {
         main = main.child(reply_quote(reply));
     }
-    main = main.child(body_el(row, &m.unique_id, pics, download, links));
+    main = main.child(body_el(row, &m.unique_id, pics, download, links, actions));
     if !m.reactions.is_empty() {
-        main = main.child(reactions_el(&m.reactions));
+        main = main.child(reactions_el(&m.reactions, &m.unique_id, actions));
     }
     if let Some(thread) = &m.thread {
         main = main.child(thread_chip(thread, &m.unique_id, actions));

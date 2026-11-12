@@ -228,13 +228,32 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
 }
 
 impl Shell {
-    /// The footer chip's menu: View profile (your own card).
+    /// The footer chip's menu: your profile and its editors, the accounts on
+    /// this device, sign out.
     pub fn open_account_menu(&mut self, at: gpui::Point<gpui::Pixels>, cx: &mut Context<Self>) {
-        use crate::view_model::menu::{MenuAction, MenuItem, MenuTarget};
+        use crate::view_model::menu::{MenuTarget, account_menu};
         let Some(own) = self.session.as_ref().and_then(|s| s.user_id()) else {
             return;
         };
-        let items = vec![MenuItem::new("View profile", MenuAction::Profile(own))];
+        let items = account_menu(&own, &self.accounts);
         self.open_menu(crate::menu::OpenMenu::new(at, items, false, MenuTarget::Other), cx);
+    }
+
+    /// Reads your own name, picture and status again (they were edited).
+    pub fn reload_own_profile(&mut self, cx: &mut Context<Self>) {
+        let Some(session) = self.session.clone() else {
+            return;
+        };
+        let profile = session.own_profile();
+        cx.spawn(async move |this, cx| {
+            if let Ok(profile) = profile.await {
+                this.update(cx, |this, cx| {
+                    this.profile = Some(profile);
+                    cx.notify();
+                })
+                .ok();
+            }
+        })
+        .detach();
     }
 }

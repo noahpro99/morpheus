@@ -578,7 +578,7 @@ impl SettingsView {
             .child("Report a bug")
             .on_click(cx.listener(|this, _, _, cx| {
                 let url = morpheus_core::bug_report_url(env!("CARGO_PKG_VERSION"), &this.data_dir);
-                cx.open_url(&url);
+                crate::shell::open_external(&url, cx);
             }))
             .e2e("a", "button primary report-bug")
             .text("Report a bug");

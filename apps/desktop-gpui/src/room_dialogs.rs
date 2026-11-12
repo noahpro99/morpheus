@@ -37,6 +37,8 @@ pub enum Done {
     NicknameSaved { user: morpheus_core::OwnedUserId, nickname: String },
     /// Your per-server profile changed: member lists read again.
     ProfileSaved,
+    /// Your own name, picture or status changed (the footer reads them again).
+    OwnProfileChanged,
 }
 
 pub struct RoomDialog {
@@ -108,6 +110,8 @@ impl RoomDialog {
             }
             RoomDialogKind::CreateSpace(_) => name = field(cx, "name", "", ""),
             RoomDialogKind::RoomProfile(_) => name = field(cx, "nickname", "", ""),
+            RoomDialogKind::EditProfile => name = field(cx, "displayname", "", ""),
+            RoomDialogKind::SetStatus => name = field(cx, "status", "In a meeting", ""),
             RoomDialogKind::Nickname(user, current) => {
                 let existing = nicknames.get(user.as_str()).cloned().unwrap_or_default();
                 name = field(cx, "nickname", current, &existing);
@@ -166,6 +170,28 @@ impl RoomDialog {
                             this.public = privacy.public;
                             this.history = privacy.history;
                             cx.notify();
+                        })
+                        .ok();
+                    }
+                })
+                .detach();
+            }
+            RoomDialogKind::EditProfile | RoomDialogKind::SetStatus => {
+                let status = matches!(self.kind, RoomDialogKind::SetStatus);
+                let reading = self.session.own_profile();
+                cx.spawn(async move |this, cx| {
+                    if let Ok(profile) = reading.await {
+                        this.update(cx, |this, cx| {
+                            // Typing wins over a fetch that lands late.
+                            let untouched = this.text(&this.name, cx).is_empty();
+                            if let (Some(name), true) = (&this.name, untouched) {
+                                let shown = if status {
+                                    profile.status.clone().unwrap_or_default()
+                                } else {
+                                    profile.name.clone()
+                                };
+                                name.update(cx, |name, cx| name.set_value(&shown, cx));
+                            }
                         })
                         .ok();
                     }
@@ -308,6 +334,23 @@ impl RoomDialog {
                     });
                 });
             }
+            RoomDialogKind::EditProfile => {
+                let name = self.text(&self.name, cx);
+                let saving = self.session.set_display_name(name);
+                self.run(saving, cx, |this, result, cx| {
+                    this.note = Some(match result {
+                        Ok(()) => {
+                            cx.emit(Done::OwnProfileChanged);
+                            Note::ok("Saved.")
+                        }
+                        Err(err) => Note::error(err),
+                    });
+                });
+            }
+            RoomDialogKind::SetStatus => {
+                let status = Some(self.text(&self.name, cx));
+                self.set_status(status, cx);
+            }
             RoomDialogKind::Nickname(user, _) => {
                 let nickname = self.text(&self.name, cx).trim().to_owned();
                 let saving = self.session.set_nickname(user.clone(), nickname.clone());
@@ -329,6 +372,21 @@ impl RoomDialog {
                 });
             }
         }
+    }
+
+    /// Sets (or, with `None`, clears) the status message, then closes.
+    fn set_status(&mut self, status: Option<String>, cx: &mut Context<Self>) {
+        if self.busy {
+            return;
+        }
+        let saving = self.session.set_status(status);
+        self.run(saving, cx, |this, result, cx| match result {
+            Ok(()) => {
+                cx.emit(Done::OwnProfileChanged);
+                cx.emit(Closed);
+            }
+            Err(err) => this.note = Some(Note::error(err)),
+        });
     }
 
     /// The server and every room under it.
@@ -378,6 +436,18 @@ impl RoomDialog {
                 RoomDialogKind::RoomProfile(_) => {
                     this.avatar = Some(path);
                     cx.notify();
+                }
+                RoomDialogKind::EditProfile => {
+                    let setting = this.session.set_avatar(path);
+                    this.run(setting, cx, |this, result, cx| {
+                        this.note = Some(match result {
+                            Ok(()) => {
+                                cx.emit(Done::OwnProfileChanged);
+                                Note::ok("Avatar updated.")
+                            }
+                            Err(err) => Note::error(err),
+                        });
+                    });
                 }
                 RoomDialogKind::Edit(room) => {
                     let setting = this.session.set_room_avatar(room, path);
@@ -934,6 +1004,57 @@ impl RoomDialog {
                     .into_any_element(),
                 );
                 ("nickname-editor", parts)
+            }
+            RoomDialogKind::EditProfile => {
+                parts.push(heading("Edit profile").into_any_element());
+                parts.push(
+                    actions(vec![button(
+                        "change-avatar",
+                        Some("image"),
+                        "Change avatar…",
+                        "secondary",
+                        false,
+                        self.busy,
+                        cx.listener(|this, _, _, cx| this.pick_picture(cx)),
+                    )])
+                    .into_any_element(),
+                );
+                if let Some(name) = &self.name {
+                    parts.push(field("Display name", name));
+                }
+                parts.extend(note);
+                parts.push(
+                    actions(vec![
+                        self.submit_button(None, "Save", cx),
+                        self.close_button("Close", cx),
+                    ])
+                    .into_any_element(),
+                );
+                ("profile-editor", parts)
+            }
+            RoomDialogKind::SetStatus => {
+                parts.push(heading("Set status").into_any_element());
+                if let Some(name) = &self.name {
+                    parts.push(field("What are you up to?", name));
+                }
+                parts.extend(note);
+                parts.push(
+                    actions(vec![
+                        self.submit_button(None, "Save", cx),
+                        button(
+                            "clear-status",
+                            None,
+                            "Clear status",
+                            "secondary",
+                            false,
+                            self.busy,
+                            cx.listener(|this, _, _, cx| this.set_status(None, cx)),
+                        ),
+                        self.close_button("Close", cx),
+                    ])
+                    .into_any_element(),
+                );
+                ("profile-editor status-editor", parts)
             }
             RoomDialogKind::LeaveSpace(space) => {
                 let name = self.name_of(&space);

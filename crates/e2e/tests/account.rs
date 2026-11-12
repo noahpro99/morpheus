@@ -70,10 +70,7 @@ async fn account_menu_edits_name_sets_status_and_signs_out() {
     app.press(".profile-editor", "Escape")
         .await
         .expect("escape");
-    app.wait_for_js(
-        "return document.querySelector('.profile-editor') === null;",
-        DEFAULT_WAIT,
-    )
+    app.wait_for_count(".profile-editor", 0, DEFAULT_WAIT)
     .await
     .expect("editor closed");
 
@@ -109,10 +106,7 @@ async fn account_menu_edits_name_sets_status_and_signs_out() {
         .await
         .expect("type status");
     app.submit(".status-editor").await.expect("save status");
-    app.wait_for_js(
-        "return document.querySelector('.status-editor') === null;",
-        DEFAULT_WAIT,
-    )
+    app.wait_for_count(".status-editor", 0, DEFAULT_WAIT)
     .await
     .expect("status editor closes on save");
     open_chip_menu(&mut app).await;
@@ -139,10 +133,7 @@ async fn account_menu_edits_name_sets_status_and_signs_out() {
     app.click_text(".status-editor button", "Clear status")
         .await
         .expect("clear");
-    app.wait_for_js(
-        "return document.querySelector('.status-editor') === null;",
-        DEFAULT_WAIT,
-    )
+    app.wait_for_count(".status-editor", 0, DEFAULT_WAIT)
     .await
     .expect("closed after clearing");
 
@@ -157,10 +148,7 @@ async fn account_menu_edits_name_sets_status_and_signs_out() {
     app.click_text(".confirm-dialog button", "Cancel")
         .await
         .expect("cancel");
-    app.wait_for_js(
-        "return !document.querySelector('.confirm-dialog');",
-        DEFAULT_WAIT,
-    )
+    app.wait_for_count(".confirm-dialog", 0, DEFAULT_WAIT)
     .await
     .expect("dialog gone");
     assert_eq!(

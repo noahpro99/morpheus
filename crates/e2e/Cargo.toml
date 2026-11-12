@@ -23,6 +23,7 @@ morpheus-core = { workspace = true }
 # Re-signing LiveKit tokens in a test stand-in for a token service.
 base64 = { workspace = true }
 sha2 = "0.10"
+url = "2"
 
 [lints]
 workspace = true

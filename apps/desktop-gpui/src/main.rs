@@ -32,6 +32,7 @@ mod profile;
 mod profile_actions;
 mod rail;
 mod last_place;
+mod lightbox;
 mod links;
 mod room_preview;
 mod room_dialogs;
@@ -179,12 +180,30 @@ impl Root {
         if let Ok(mut kept) = SESSION.lock() {
             *kept = Some(session.clone());
         }
-        static NOTIFIER: AtomicBool = AtomicBool::new(false);
-        if !NOTIFIER.swap(true, Ordering::Relaxed) {
-            notify::spawn_notifier(session.clone(), || send_command(Command::Redraw));
-            notify::spawn_ring_watcher(session.clone());
-        }
-        self.screen = Screen::Rooms(cx.new(|cx| Shell::new(session, cx)));
+        // Each sign-in (a switch of account too) gets its own announcers; those
+        // of the account left behind go quiet with its stopped sync.
+        notify::spawn_notifier(session.clone(), || send_command(Command::Redraw));
+        notify::spawn_ring_watcher(session.clone());
+        let shell = cx.new(|cx| Shell::new(session, cx));
+        cx.subscribe(&shell, |this: &mut Root, _, event: &shell::AccountEvent, cx| {
+            this.account_event(event.clone(), cx)
+        })
+        .detach();
+        // The accounts on this device, for the account menu.
+        let listing = self.core.accounts();
+        let target = shell.clone();
+        cx.spawn(async move |_, cx| {
+            if let Ok(accounts) = listing.await {
+                target
+                    .update(cx, |shell, cx| {
+                        shell.accounts = accounts;
+                        cx.notify();
+                    })
+                    .ok();
+            }
+        })
+        .detach();
+        self.screen = Screen::Rooms(shell);
         for link in std::mem::take(&mut self.pending_links) {
             self.open_link(link, cx);
         }
@@ -193,8 +212,42 @@ impl Root {
         }
         cx.notify();
     }
-}
 
+    /// The account menu's doings: switch to a stored account, sign another
+    /// in (this one stays signed in; the sign-in screen offers the way
+    /// back), or sign this one out (the next stored account, if any, opens).
+    fn account_event(&mut self, event: shell::AccountEvent, cx: &mut Context<Self>) {
+        let Screen::Rooms(shell) = &self.screen else {
+            return;
+        };
+        let Some(session) = shell.read(cx).session.clone() else {
+            return;
+        };
+        let core = self.core.clone();
+        cx.spawn(async move |this, cx| {
+            let next = match event {
+                shell::AccountEvent::Add => {
+                    let _ = session.suspend().await;
+                    None
+                }
+                shell::AccountEvent::Switch(key) => {
+                    let _ = session.suspend().await;
+                    core.switch_account(key).await.ok().flatten()
+                }
+                shell::AccountEvent::SignOut => {
+                    let _ = session.logout().await;
+                    core.restore_session().await.ok().flatten()
+                }
+            };
+            this.update(cx, |this, cx| match next {
+                Some(session) => this.signed_in(session, cx),
+                None => this.show_login(None, cx),
+            })
+            .ok();
+        })
+        .detach();
+    }
+}
 impl Root {
     /// Run `f` on the shell, when signed in.
     fn with_shell(&mut self, cx: &mut Context<Self>, f: impl FnOnce(&mut Shell, &mut Context<Shell>)) {
@@ -504,6 +557,29 @@ fn run_window(core: Core, commands: Commands, first: Option<Command>, start_hidd
         });
 }
 
+/// The terminal, and a file in the data dir (`morpheus.log`, fresh each
+/// start) to read after something went wrong; Settings' "Report a bug"
+/// sends its end.
+fn init_logging() {
+    use tracing_subscriber::{EnvFilter, Layer as _, layer::SubscriberExt as _, util::SubscriberInitExt as _};
+    let filter = || {
+        EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| "morpheus=debug,livekit=info,warn".into())
+    };
+    let log_file = std::fs::create_dir_all(data_dir())
+        .and_then(|()| std::fs::File::create(data_dir().join("morpheus.log")))
+        .ok();
+    let _ = tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer().with_filter(filter()))
+        .with(log_file.map(|file| {
+            tracing_subscriber::fmt::layer()
+                .with_ansi(false)
+                .with_writer(std::sync::Mutex::new(file))
+                .with_filter(filter())
+        }))
+        .try_init();
+}
+
 fn main() {
     // A later launch hands over to the one running (its window shows, or the
     // Matrix link it was given opens) and ends.
@@ -523,6 +599,7 @@ fn main() {
         eprintln!("morpheus-gpui: already running on this data; showing its window instead");
         return;
     }
+    init_logging();
     let start_hidden = std::env::args().any(|arg| arg == view_model::settings::HIDDEN_FLAG);
     let core = match Core::new(data_dir()) {
         Ok(core) => core,

@@ -21,6 +21,10 @@ pub enum RoomDialogKind {
     LeaveSpace(OwnedRoomId),
     /// Your nickname for someone: who, and the name they show now.
     Nickname(OwnedUserId, String),
+    /// Your own display name and picture (the account menu).
+    EditProfile,
+    /// Your status message (the account menu).
+    SetStatus,
 }
 
 /// The message of a form: a note that it worked, or why it did not.

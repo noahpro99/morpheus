@@ -56,46 +56,54 @@ async fn autofill_shortcut_hints_steady_numbers_and_balanced_headings() {
         .await
         .expect("login form");
 
-    // A password manager knows which field is which.
-    let autocomplete = app
-        .eval("return ['homeserver', 'username', 'password'].map(n => document.querySelector(`form.login input[name=${n}]`)?.getAttribute('autocomplete'));")
-        .await
-        .expect("autocomplete");
-    assert_eq!(
-        autocomplete,
-        serde_json::json!(["url", "username", "current-password"]),
-        "sign-in fields say what they hold"
-    );
-    // The sign-in heading wraps evenly.
-    assert_eq!(
-        style(&mut app, ".login h1", "text-wrap-style").await,
-        "balance",
-        "balanced heading"
-    );
+    // Web-page details (a password manager's autocomplete hints, balanced
+    // text wrapping, tabular digits) have no counterpart in a GPUI window:
+    // they are checked on the Dioxus app only.
+    let web = !app.is_gpui();
+    if web {
+        // A password manager knows which field is which.
+        let autocomplete = app
+            .eval("return ['homeserver', 'username', 'password'].map(n => document.querySelector(`form.login input[name=${n}]`)?.getAttribute('autocomplete'));")
+            .await
+            .expect("autocomplete");
+        assert_eq!(
+            autocomplete,
+            serde_json::json!(["url", "username", "current-password"]),
+            "sign-in fields say what they hold"
+        );
+        // The sign-in heading wraps evenly.
+        assert_eq!(
+            style(&mut app, ".login h1", "text-wrap-style").await,
+            "balance",
+            "balanced heading"
+        );
+    }
 
     login_and_open(&mut app, "general").await;
 
     // Buttons name their shortcut.
-    let titles = app
-        .eval("return Object.fromEntries([['.pin-toggle'], ['.member-toggle'], ['.settings-button'], ['[title^=\"Inbox\"]'], ['[title^=\"Help\"]']].map(([s]) => [s, document.querySelector(s)?.getAttribute('title')]));")
-        .await
-        .expect("titles");
-    assert_eq!(
-        titles,
-        serde_json::json!({
-            ".pin-toggle": "Pinned messages (Ctrl+P)",
-            ".member-toggle": "Member list (Ctrl+U)",
-            ".settings-button": "Settings (Ctrl+,)",
-            "[title^=\"Inbox\"]": "Inbox (Ctrl+I)",
-            "[title^=\"Help\"]": "Help (Ctrl+/)",
-        }),
-        "shortcut hints on the buttons"
-    );
+    let wanted = [
+        (".pin-toggle", "Pinned messages (Ctrl+P)"),
+        (".member-toggle", "Member list (Ctrl+U)"),
+        (".settings-button", "Settings (Ctrl+,)"),
+        ("[title^=\"Inbox\"]", "Inbox (Ctrl+I)"),
+        ("[title^=\"Help\"]", "Help (Ctrl+/)"),
+    ];
+    for (selector, title) in wanted {
+        assert_eq!(
+            app.attr(selector, "title").await.expect("title").as_deref(),
+            Some(title),
+            "shortcut hint on {selector}"
+        );
+    }
 
-    // Counters and times keep their width as digits change.
     app.wait_for(".message .time", DEFAULT_WAIT)
         .await
         .expect("a message's time");
+    if !web {
+        return;
+    }
+    // Counters and times keep their width as digits change.
     for selector in [".message .time", ".pin-toggle", ".member-toggle"] {
         assert_eq!(
             style(&mut app, selector, "font-variant-numeric").await,
@@ -118,6 +126,16 @@ async fn hover_action(app: &mut App, text: &str, kind: &str) {
     app.click_in_message(text, &format!(".action.{kind}"))
         .await
         .expect("hover action");
+}
+
+/// How many messages have exactly this body.
+async fn bodies_equal(app: &mut App, text: &str) -> usize {
+    app.texts(".message .body")
+        .await
+        .expect("bodies")
+        .iter()
+        .filter(|b| b.trim() == text)
+        .count()
 }
 
 /// Whether some message body is exactly `text`.
@@ -247,12 +265,6 @@ async fn a_double_send_sends_once() {
     };
     let mut app = App::launch(&hs).await.expect("launch");
     login_and_open(&mut app, "random").await;
-    let count = |text: &str| {
-        format!(
-            "return [...document.querySelectorAll('.message .body')].filter(b => b.textContent.trim() === {}).length;",
-            serde_json::to_string(text).expect("json")
-        )
-    };
 
     // The send button (phones have one).
     let tapped = format!("tapped twice {}", std::process::id());
@@ -277,10 +289,19 @@ async fn a_double_send_sends_once() {
         app.type_into(".composer .composer-input", &entered)
             .await
             .expect("type");
-        app.eval("const i = document.querySelector('.composer .composer-input'); \
+        if app.is_gpui() {
+            // Two Enters in a row, as fast as the bridge sends them.
+            for _ in 0..2 {
+                app.press(".composer .composer-input", "Enter")
+                    .await
+                    .expect("enter");
+            }
+        } else {
+            app.eval("const i = document.querySelector('.composer .composer-input'); \
                   for (const _ of [1, 2]) i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));")
             .await
             .expect("double enter");
+        }
         app.wait_for_exact_text(".message.own:not(.pending) .body", &entered, DEFAULT_WAIT)
             .await
             .expect("sent");
@@ -289,15 +310,15 @@ async fn a_double_send_sends_once() {
     tokio::time::sleep(Duration::from_secs(3)).await;
     if has_button {
         assert_eq!(
-            app.eval(&count(&tapped)).await.expect("count"),
-            serde_json::json!(1),
+            bodies_equal(&mut app, &tapped).await,
+            1,
             "one message from a double tap"
         );
     }
     if !has_button {
         assert_eq!(
-            app.eval(&count(&entered)).await.expect("count"),
-            serde_json::json!(1),
+            bodies_equal(&mut app, &entered).await,
+            1,
             "one message from a double Enter"
         );
     }
@@ -312,6 +333,12 @@ async fn submenus_stay_open_while_the_mouse_heads_for_them() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
+    if std::env::var("MORPHEUS_E2E_UI").as_deref() == Ok("gpui") {
+        // Needs pointer moves over chosen points and a safe triangle toward
+        // the flyout: neither is built in the GPUI app yet.
+        eprintln!("skipped on GPUI: no safe triangle toward a submenu yet");
+        return;
+    }
     let mut app = App::launch_desktop(&hs).await.expect("launch");
     login_and_open(&mut app, "random").await;
     app.eval(
@@ -381,6 +408,10 @@ async fn phone_tap_targets_are_at_least_44_points() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
+    if std::env::var("MORPHEUS_E2E_UI").as_deref() == Ok("gpui") {
+        eprintln!("skipped: the GPUI app is desktop only (no phone layout)");
+        return;
+    }
     let mut app = App::launch_sized(&hs, 400, 860).await.expect("launch");
     login_and_open(&mut app, "general").await;
     // Back on the room list, then in the chat: the buttons of each.
@@ -437,6 +468,33 @@ async fn phone_tap_targets_are_at_least_44_points() {
     );
 }
 
+/// Any "Loading…" showing right now (on GPUI, where nothing can observe the
+/// tree's changes: sampled while the test waits).
+async fn loading_now(app: &mut App) -> Vec<String> {
+    let mut found = Vec::new();
+    for scope in [".members", ".pinned-dialog", ".settings-page", ".lightbox-overlay", ".side-pane"] {
+        for text in app.texts(scope).await.unwrap_or_default() {
+            if text.contains("Loading…") {
+                found.push(format!("{scope}: {}", text.trim().chars().take(40).collect::<String>()));
+            }
+        }
+    }
+    found
+}
+
+/// Wait `for_how_long`, noting any "Loading…" seen meanwhile (GPUI only).
+async fn watch(app: &mut App, for_how_long: Duration, seen: &mut Vec<String>) {
+    if !app.is_gpui() {
+        tokio::time::sleep(for_how_long).await;
+        return;
+    }
+    let until = std::time::Instant::now() + for_how_long;
+    while std::time::Instant::now() < until {
+        seen.extend(loading_now(app).await);
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
 /// Waiting shows the shape of what is coming, never a "Loading…" line: the
 /// member list, pinned messages, your devices and a picture opening full
 /// size all show skeletons while they load.
@@ -449,13 +507,17 @@ async fn loading_shows_skeletons_not_words() {
     let mut app = App::launch_desktop(&hs).await.expect("launch");
     login_and_open(&mut app, "general").await;
     // Note any "Loading…" that appears anywhere, however briefly.
+    let mut seen: Vec<String> = Vec::new();
+    if !app.is_gpui() {
     app.eval("window.__loadingSeen = []; new MutationObserver(changes => { for (const c of changes) for (const n of [c.target, ...c.addedNodes]) { const t = n.textContent || ''; if (/Loading…/.test(t) && n.nodeType !== 9) window.__loadingSeen.push((n.className || n.nodeName) + ': ' + t.trim().slice(0, 40)); } }).observe(document.body, { subtree: true, childList: true, characterData: true }); return true;")
         .await
         .expect("observer");
+    }
 
     // The member list, shut and opened again.
     app.click(".member-toggle").await.expect("hide members");
     app.click(".member-toggle").await.expect("show members");
+    watch(&mut app, Duration::from_millis(500), &mut seen).await;
     app.wait_for(".members .member", DEFAULT_WAIT)
         .await
         .expect("members");
@@ -464,14 +526,14 @@ async fn loading_shows_skeletons_not_words() {
     app.wait_for(".pinned-dialog", DEFAULT_WAIT)
         .await
         .expect("pinned dialog");
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    watch(&mut app, Duration::from_secs(1), &mut seen).await;
     app.press("body", "Escape").await.expect("close");
     // Your devices.
     app.click(".settings-button").await.expect("settings");
     app.click_text(".settings-nav button", "Security & Privacy")
         .await
         .expect("security");
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    watch(&mut app, Duration::from_secs(2), &mut seen).await;
     app.press("body", "Escape").await.expect("close settings");
     // A picture, full size.
     app.reveal_element(".message img.image", DEFAULT_WAIT)
@@ -481,29 +543,43 @@ async fn loading_shows_skeletons_not_words() {
     app.wait_for(".lightbox-overlay", DEFAULT_WAIT)
         .await
         .expect("lightbox");
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    watch(&mut app, Duration::from_secs(1), &mut seen).await;
 
-    let seen = app
-        .eval("return window.__loadingSeen;")
-        .await
-        .expect("seen");
-    assert_eq!(
-        seen,
-        serde_json::json!([]),
-        "\"Loading…\" shown while waiting"
-    );
+    if !app.is_gpui() {
+        let observed = app
+            .eval("return window.__loadingSeen;")
+            .await
+            .expect("seen");
+        seen = serde_json::from_value(observed).expect("a list");
+    }
+    assert!(seen.is_empty(), "\"Loading…\" shown while waiting: {seen:?}");
 }
 
 const DUSK_PNG: &[u8] = include_bytes!("../fixtures/dusk.png");
 
-/// Whether the image named `body` shows a blurred placeholder (a decoded
-/// blurhash) behind it or in its place.
+/// JavaScript that says whether the image named `body` shows a blurred
+/// placeholder (a decoded blurhash) behind it or in its place.
 fn blurred(body: &str) -> String {
     format!(
         "const el = [...document.querySelectorAll('.message .image')].find(i => i.alt === {0} || i.title === {0} || i.textContent.includes({0})); \
          return !!el && getComputedStyle(el).backgroundImage.startsWith('url(\"data:image/png');",
         serde_json::to_string(body).expect("json")
     )
+}
+
+/// Wait until the picture named `body` shows its blurred placeholder: the
+/// Dioxus page through its style, the GPUI app through the `data-blur`
+/// attribute it notes on the picture (or its placeholder).
+async fn wait_blurred(app: &mut App, body: &str) -> anyhow::Result<()> {
+    if app.is_gpui() {
+        app.wait_for(
+            &format!(".message .image[data-blur][alt=\"{body}\"]"),
+            DEFAULT_WAIT,
+        )
+        .await
+    } else {
+        app.wait_for_js(&blurred(body), DEFAULT_WAIT).await
+    }
 }
 
 /// Pictures show a blurred preview of themselves while they load: from the
@@ -518,12 +594,10 @@ async fn pictures_blur_in_from_a_placeholder() {
     let mut app = App::launch_desktop(&hs).await.expect("launch");
     login_and_open(&mut app, "random").await;
     let room_id: String = app
-        .eval("return document.querySelector('.room.selected').dataset.room;")
+        .attr(".room.selected", "data-room")
         .await
         .expect("room id")
-        .as_str()
-        .expect("string")
-        .to_owned();
+        .expect("a selected room");
 
     // From someone else's app, with a blurhash.
     let theirs = format!("their dusk {}.png", std::process::id());
@@ -536,23 +610,15 @@ async fn pictures_blur_in_from_a_placeholder() {
         Some("LKO2?U%2Tw=w]~RBVZRi};RPxuwH"),
     )
     .expect("bob sends a picture");
-    app.wait_for_js(&blurred(&theirs), DEFAULT_WAIT)
+    wait_blurred(&mut app, &theirs)
         .await
         .expect("a blurred placeholder from their blurhash");
 
     // This app's own: dropped in, sent with a blurhash of its own.
     let ours = format!("our dusk {}.png", std::process::id());
-    let bytes: Vec<String> = DUSK_PNG.iter().map(u8::to_string).collect();
-    app.eval(&format!(
-        "const dt = new DataTransfer(); dt.items.add(new File([new Uint8Array([{}])], {}, {{ type: 'image/png' }})); \
-         const target = document.querySelector('.chat'); \
-         target.dispatchEvent(new DragEvent('dragover', {{ bubbles: true, cancelable: true, dataTransfer: dt }})); \
-         target.dispatchEvent(new DragEvent('drop', {{ bubbles: true, cancelable: true, dataTransfer: dt }}));",
-        bytes.join(","),
-        serde_json::to_string(&ours).expect("json")
-    ))
-    .await
-    .expect("drop a picture");
+    app.attach_file(true, &ours, "image/png", DUSK_PNG)
+        .await
+        .expect("drop a picture");
     // It waits on the message being written, and goes with it.
     app.wait_for(".composer .composer-attachment", DEFAULT_WAIT)
         .await
@@ -560,7 +626,7 @@ async fn pictures_blur_in_from_a_placeholder() {
     app.press(".composer .composer-input", "Enter")
         .await
         .expect("send");
-    app.wait_for_js(&blurred(&ours), DEFAULT_WAIT)
+    wait_blurred(&mut app, &ours)
         .await
         .expect("sent with a blurhash of its own");
 }

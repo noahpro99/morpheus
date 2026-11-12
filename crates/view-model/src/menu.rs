@@ -68,6 +68,14 @@ pub enum MenuAction {
     MoveOutOfFolders(OwnedRoomId),
     Profile(OwnedUserId),
 
+    // On the footer chip's account menu (`account_menu`).
+    /// Makes the stored account with this key the active one.
+    SwitchAccount(String),
+    /// Signs in another account without signing out of this one.
+    AddAccount,
+    /// Asks, then signs this account out.
+    SignOut,
+
     // On a profile card (`profile`).
     /// Swaps the card for the full profile.
     FullProfile(OwnedUserId),
@@ -388,6 +396,7 @@ pub fn default_icon(label: &str) -> Option<&'static str> {
         ("Mention", "at-sign"),
         ("Set nickname…", "pencil"),
         ("Add friend", "user-plus"),
+        ("Add an account", "user-plus"),
         ("Remove friend", "user-x"),
         ("Message", "message-circle"),
         ("Invite to room", "user-plus"),
@@ -430,6 +439,7 @@ pub struct Confirm {
 #[derive(Clone, Debug, PartialEq)]
 pub enum ConfirmAction {
     DeleteMessage(Box<Message>),
+    SignOut,
 }
 
 /// "Are you sure?" before deleting a message.
@@ -438,6 +448,38 @@ pub fn confirm_delete() -> Confirm {
         title: "Delete message".into(),
         body: "Are you sure you want to delete this message? Tip: hold Shift when you click the bin to skip this.".into(),
         confirm: "Delete".into(),
+    }
+}
+
+/// What the footer chip's menu offers: your profile, its editors, the
+/// accounts stored on this device (the signed-in one ticked) and adding
+/// another, and signing out.
+pub fn account_menu(own: &OwnedUserId, accounts: &[morpheus_core::SavedAccount]) -> Vec<MenuItem> {
+    let mut switch: Vec<MenuItem> = accounts
+        .iter()
+        .map(|account| {
+            let label = account.user_id.to_string();
+            MenuItem::new(label.clone(), MenuAction::SwitchAccount(account.key.clone()))
+                .avatar(label.trim_start_matches('@').to_owned())
+                .checked(&account.user_id == own)
+        })
+        .collect();
+    switch.push(MenuItem::new("Add an account", MenuAction::AddAccount).icon("user-plus"));
+    vec![
+        MenuItem::new("View profile", MenuAction::Profile(own.clone())),
+        MenuItem::new("Edit profile", MenuAction::RoomDialog(super::room_dialogs::RoomDialogKind::EditProfile)),
+        MenuItem::new("Set status", MenuAction::RoomDialog(super::room_dialogs::RoomDialogKind::SetStatus)),
+        MenuItem::submenu("Switch account", switch),
+        MenuItem::new("Sign out", MenuAction::SignOut).danger(),
+    ]
+}
+
+/// "Are you sure?" before signing out.
+pub fn confirm_sign_out() -> Confirm {
+    Confirm {
+        title: "Sign out".into(),
+        body: "Are you sure you want to sign out? You will need your password (or single sign-on) to sign back in here.".into(),
+        confirm: "Sign out".into(),
     }
 }
 
@@ -621,5 +663,25 @@ mod tests {
         assert_eq!(default_icon("Reply in thread"), Some("messages-square"));
         assert_eq!(default_icon("Reply"), Some("reply"));
         assert_eq!(default_icon("🎉"), None);
+    }
+
+    #[test]
+    fn the_account_menu_ticks_the_signed_in_account_and_ends_with_adding_one() {
+        let alice = OwnedUserId::try_from("@alice:x").expect("user id");
+        let bob = OwnedUserId::try_from("@bob:x").expect("user id");
+        let saved = |user: &OwnedUserId, active| morpheus_core::SavedAccount {
+            key: user.localpart().to_owned(),
+            user_id: user.clone(),
+            homeserver: "x".into(),
+            active,
+        };
+        let items = account_menu(&bob, &[saved(&alice, false), saved(&bob, true)]);
+        let labels: Vec<_> = items.iter().map(|i| i.label.as_str()).collect();
+        assert_eq!(labels, ["View profile", "Edit profile", "Set status", "Switch account", "Sign out"]);
+        let switch = &items[3].children;
+        assert_eq!(switch.len(), 3);
+        assert!(!switch[0].checked && switch[1].checked);
+        assert_eq!(switch[2].label, "Add an account");
+        assert!(items[4].danger);
     }
 }
