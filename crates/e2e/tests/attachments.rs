@@ -83,18 +83,18 @@ async fn renders_and_downloads_attachments() {
 
     // Download the file attachment and verify it actually landed on disk,
     // in the test's disposable Downloads stand-in.
-    app.eval(
-        "const card = [...document.querySelectorAll('.attachment-card')]
-            .find(el => el.textContent.includes('release-notes.txt'));
-         card.querySelector('.attachment-download').click();",
+    app.click_within(
+        ".attachment-card",
+        "release-notes.txt",
+        ".attachment-download",
     )
     .await
     .expect("click download");
-    app.wait_for_js(
-        "const card = [...document.querySelectorAll('.attachment-card')]
-            .find(el => el.textContent.includes('release-notes.txt'));
-         return card.querySelector('.attachment-status') &&
-            card.querySelector('.attachment-status').textContent.includes('Saved to');",
+    app.wait_for_within(
+        ".attachment-card",
+        "release-notes.txt",
+        ".attachment-status",
+        Some("Saved to"),
         DEFAULT_WAIT,
     )
     .await
@@ -244,6 +244,12 @@ async fn videos_play_inline() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
+    if std::env::var("MORPHEUS_E2E_UI").as_deref() == Ok("gpui") {
+        // Playing an mp4 in a message needs a video decoder in the GPUI app
+        // (the Dioxus page has the webview's `<video>`): not built.
+        eprintln!("skipped on GPUI: no inline video playback");
+        return;
+    }
     let mut app = App::launch(&hs).await.expect("launch app");
     login_and_open(&mut app, "dev").await;
     app.reveal_element(".video-card .play-button", DEFAULT_WAIT)

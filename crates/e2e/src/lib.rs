@@ -675,6 +675,25 @@ impl App {
             }
             self.scroll_to(".timeline", ScrollTo::Top).await?;
             sleep(POLL).await;
+            // At the very start of the room, what is wanted may sit further
+            // down than the rows drawn at the top: walk down through the room.
+            if self.op("count", ".timeline-start", json!({})).await?.as_u64() > Some(0)
+                && let Some(state) = self.scroll_state(".timeline").await?
+            {
+                let step = (state.viewport * 0.6).max(200.0);
+                let mut at = state.range;
+                while at > 0.0 {
+                    at = (at - step).max(0.0);
+                    self.scroll_to(".timeline", ScrollTo::FromBottom(at)).await?;
+                    sleep(Duration::from_millis(100)).await;
+                    if self.op("count", selector, filter.clone()).await?.as_u64() > Some(0) {
+                        return Ok(());
+                    }
+                    if Instant::now() >= deadline {
+                        break;
+                    }
+                }
+            }
         }
     }
 

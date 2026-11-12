@@ -55,7 +55,6 @@ pub struct Pictures {
 
 /// A file's download, as its card shows it.
 #[derive(Clone, Debug, PartialEq)]
-#[allow(dead_code)] // the card shows them; starting a download is not ported yet
 pub enum Download {
     Downloading,
     Saved(String),
@@ -464,6 +463,11 @@ fn reply_quote(reply: &morpheus_core::ReplyPreview) -> impl IntoElement {
     quote.e2e("div", "reply-quote").attr("title", reply.event_id.to_string())
 }
 
+/// What a card's Download button does: ask the timeline for this message's file.
+fn start_download(actions: Option<&ActionHandler>, key: &str) -> Option<(ActionHandler, String)> {
+    actions.cloned().map(|actions| (actions, key.to_owned()))
+}
+
 /// A file or audio card: icon, name, size, and its Download button.
 fn attachment_card(
     glyph: &str,
@@ -471,6 +475,7 @@ fn attachment_card(
     name: &str,
     meta: &str,
     download: Option<&Download>,
+    start: Option<(ActionHandler, String)>,
 ) -> impl IntoElement {
     let mut info = div()
         .flex_1()
@@ -524,6 +529,7 @@ fn attachment_card(
     };
     let action = match download {
         None => div()
+            .id(SharedString::from(format!("download-{name}")))
             .flex_none()
             .px(px(12.0))
             .py(px(6.0))
@@ -533,6 +539,9 @@ fn attachment_card(
             .text_color(rgb(theme::text_muted()))
             .cursor_pointer()
             .child("Download")
+            .when_some(start, |d, (actions, key)| {
+                d.on_click(move |_, window, cx| actions(RowAction::Download, &key, window, cx))
+            })
             .e2e("button", "ghost attachment-download")
             .text("Download")
             .into_any_element(),
@@ -770,7 +779,7 @@ fn body_el(
         }
         MessageKind::File { body, size, .. } => {
             let meta = size.map(human_size).unwrap_or_default();
-            return attachment_card("📎", false, body, &meta, download).into_any_element();
+            return attachment_card("📎", false, body, &meta, download, start_download(actions, key)).into_any_element();
         }
         MessageKind::Audio {
             body,
@@ -783,7 +792,7 @@ fn body_el(
                 .flatten()
                 .collect::<Vec<_>>()
                 .join(" · ");
-            return attachment_card("🎵", true, body, &meta, download).into_any_element();
+            return attachment_card("🎵", true, body, &meta, download, start_download(actions, key)).into_any_element();
         }
         MessageKind::Video {
             body,
@@ -873,6 +882,8 @@ pub enum RowAction {
     OpenImage,
     /// A reaction chip clicked: adds our reaction, or takes it back.
     Toggle(String),
+    /// A file card's Download button.
+    Download,
 }
 
 /// What a click on a hover action does: the action, the message's unique ID.
