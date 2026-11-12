@@ -11,6 +11,7 @@ use std::{
 };
 
 use livekit::webrtc::{
+    video_frame::native::VideoFrameBufferExt as _,
     desktop_capturer::{
         CaptureError, DesktopCaptureSourceType, DesktopCapturer, DesktopCapturerOptions,
         DesktopFrame,
@@ -57,18 +58,51 @@ pub(crate) fn run(
             let failed = Arc::new(AtomicBool::new(false));
             let every = Duration::from_millis(1000 / video::FPS);
             let mut shown: Option<Instant> = None;
+            let mut kept_at: Option<Instant> = None;
             let (failed_in, stop_in) = (failed.clone(), stop.clone());
+            let (sending_in, source_in) = (sending.clone(), source.clone());
             let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
+            // The last picture, and how many it has been, for the loop: a
+            // portal that sends pictures only when the screen changes leaves a
+            // still screen without any, and a viewer who joins late (or an
+            // encoder that wants a keyframe) would see nothing.
+            let last: Arc<std::sync::Mutex<Option<VideoFrame<I420Buffer>>>> = Arc::default();
+            let last_in = last.clone();
+            let pictures = Arc::new(std::sync::atomic::AtomicU64::new(0));
+            let temporary = Arc::new(std::sync::atomic::AtomicU64::new(0));
+            let (pictures_in, temporary_in) = (pictures.clone(), temporary.clone());
+            let sent_first = Arc::new(AtomicBool::new(false));
+            let sent_first_in = sent_first.clone();
             capturer.start_capture(chosen, move |result: Result<DesktopFrame, CaptureError>| {
                 match result {
                     Ok(frame) => {
                         let Some(buffer) = to_i420(&frame) else {
                             return;
                         };
+                        if pictures_in.fetch_add(1, Ordering::Relaxed) == 0 {
+                            info!(
+                                width = frame.width(),
+                                height = frame.height(),
+                                "screen capture: the first picture"
+                            );
+                        }
                         let _ = tx.send(Ok(()));
                         let frame = VideoFrame::new(VideoRotation::VideoRotation0, buffer);
-                        if sending.load(Ordering::Relaxed) {
-                            source.capture_frame(&frame);
+                        if sending_in.load(Ordering::Relaxed) {
+                            source_in.capture_frame(&frame);
+                            if !sent_first_in.swap(true, Ordering::Relaxed) {
+                                info!("screen capture: the first picture sent to the call");
+                            }
+                        }
+                        // A copy twice a second is plenty for the loop's repeat.
+                        if kept_at.is_none_or(|at| at.elapsed() >= Duration::from_millis(500))
+                            && let Ok(mut kept) = last_in.lock()
+                        {
+                            kept_at = Some(Instant::now());
+                            *kept = Some(VideoFrame::new(
+                                VideoRotation::VideoRotation0,
+                                frame.buffer.to_i420(),
+                            ));
                         }
                         if shown.is_none_or(|at| at.elapsed() >= every) {
                             shown = Some(Instant::now());
@@ -76,7 +110,9 @@ pub(crate) fn run(
                         }
                     }
                     // Nothing new on screen yet, or the portal still asking.
-                    Err(CaptureError::Temporary) => {}
+                    Err(CaptureError::Temporary) => {
+                        temporary_in.fetch_add(1, Ordering::Relaxed);
+                    }
                     Err(CaptureError::Permanent) => {
                         failed_in.store(true, Ordering::Relaxed);
                         stop_in.store(true, Ordering::Relaxed);
@@ -85,8 +121,28 @@ pub(crate) fn run(
                 }
             });
             info!("screen capture started");
+            let began = Instant::now();
+            let mut resent = Instant::now();
+            let mut warned = false;
             while !stop.load(Ordering::Relaxed) {
                 capturer.capture_frame();
+                if !warned && began.elapsed() >= Duration::from_secs(5) && pictures.load(Ordering::Relaxed) == 0 {
+                    warned = true;
+                    info!(
+                        temporary = temporary.load(Ordering::Relaxed),
+                        "screen capture: no picture after 5 s (the screen picker is still open, or the portal sends nothing yet)"
+                    );
+                }
+                // Nothing new for a second while sharing: the last picture again.
+                if sending.load(Ordering::Relaxed) && resent.elapsed() >= Duration::from_secs(1) {
+                    resent = Instant::now();
+                    if pictures.load(Ordering::Relaxed) > 0
+                        && let Ok(kept) = last.lock()
+                        && let Some(frame) = kept.as_ref()
+                    {
+                        source.capture_frame(frame);
+                    }
+                }
                 if let Ok(first) = rx.try_recv()
                     && let Some(started) = started.take()
                 {
