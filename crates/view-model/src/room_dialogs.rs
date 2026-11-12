@@ -25,6 +25,8 @@ pub enum RoomDialogKind {
     EditProfile,
     /// Your status message (the account menu).
     SetStatus,
+    /// A rail folder (its id) and its name now.
+    RenameFolder(String, String),
 }
 
 /// The message of a form: a note that it worked, or why it did not.

@@ -292,7 +292,7 @@ impl Root {
 }
 
 impl Render for Root {
-    fn render(&mut self, window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let base = div()
             .relative()
             .size_full()
@@ -328,7 +328,8 @@ impl Render for Root {
             .child(chrome::resize_edges(window))
             .e2e("body", "app")
             .attr("data-font", "Inter")
-            .attr("data-bg", format!("{:06x}", theme::bg_chat())),
+            .attr("data-bg", format!("{:06x}", theme::bg_chat()))
+            .attr("data-cursor", if cx.has_active_drag() { "grabbing" } else { "auto" }),
         )
     }
 }

@@ -66,6 +66,8 @@ pub enum MenuAction {
     MoveToFolder(OwnedRoomId, String),
     MoveToNewFolder(OwnedRoomId),
     MoveOutOfFolders(OwnedRoomId),
+    /// Breaks a rail folder up: its servers stay, in its place.
+    Ungroup(String),
     Profile(OwnedUserId),
 
     // On the footer chip's account menu (`account_menu`).

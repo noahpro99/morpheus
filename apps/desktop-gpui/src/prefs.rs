@@ -72,6 +72,98 @@ impl Prefs {
         self.rail.push(RailEntry::Space(space.clone()));
     }
 
+
+
+    /// Puts `moved` where it was dropped in the drawn layout `entries`
+    /// (`crate::model::layout`): onto another server (a new folder of the two,
+    /// as in Discord), onto a folder (into it), or before the entry at
+    /// `before`. `now_ms` makes a new folder's id unique.
+    pub fn drop_badge(
+        &mut self,
+        entries: Vec<RailEntry>,
+        moved: &OwnedRoomId,
+        before: usize,
+        onto: bool,
+        now_ms: i64,
+    ) {
+        let target = if onto { entries.get(before).cloned() } else { None };
+        // Taken out first: a server moved down lands one place higher.
+        let was = entries
+            .iter()
+            .position(|e| matches!(e, RailEntry::Space(s) if s == moved));
+        let before = match was {
+            Some(was) if was < before => before - 1,
+            _ => before,
+        };
+        // Work on the drawn layout so unknown spaces have a position.
+        self.rail = entries;
+        self.detach(moved);
+        match target {
+            Some(RailEntry::Folder { id, .. }) => {
+                for entry in &mut self.rail {
+                    if let RailEntry::Folder { id: f, spaces, .. } = entry
+                        && *f == id
+                    {
+                        spaces.push(moved.clone());
+                    }
+                }
+            }
+            Some(RailEntry::Space(target)) if &target != moved => {
+                let n = self
+                    .rail
+                    .iter()
+                    .filter(|entry| matches!(entry, RailEntry::Folder { .. }))
+                    .count();
+                let folder = RailEntry::Folder {
+                    id: format!("folder-{now_ms}-{n}"),
+                    name: "New folder".into(),
+                    spaces: vec![target.clone(), moved.clone()],
+                };
+                let at = self
+                    .rail
+                    .iter()
+                    .position(|e| matches!(e, RailEntry::Space(s) if *s == target))
+                    .unwrap_or(self.rail.len());
+                if at < self.rail.len() {
+                    self.rail.remove(at);
+                }
+                self.rail.insert(at.min(self.rail.len()), folder);
+            }
+            Some(_) => {}
+            None => {
+                let index = before.min(self.rail.len());
+                self.rail.insert(index, RailEntry::Space(moved.clone()));
+            }
+        }
+    }
+
+    /// Gives a folder a new name.
+    pub fn rename_folder(&mut self, folder: &str, new_name: &str) {
+        for entry in &mut self.rail {
+            if let RailEntry::Folder { id, name, .. } = entry
+                && id == folder
+            {
+                *name = new_name.to_owned();
+            }
+        }
+    }
+
+    /// Breaks a folder up: its servers take its place, in order.
+    pub fn ungroup(&mut self, folder: &str) {
+        let Some(at) = self
+            .rail
+            .iter()
+            .position(|e| matches!(e, RailEntry::Folder { id, .. } if id == folder))
+        else {
+            return;
+        };
+        if let RailEntry::Folder { spaces, .. } = self.rail.remove(at) {
+            for (offset, space) in spaces.into_iter().enumerate() {
+                self.rail.insert(at + offset, RailEntry::Space(space));
+            }
+        }
+    }
+
     /// The folders a space can be moved to: id, name and whether it is in it.
     pub fn folder_choices(&self, space: &OwnedRoomId) -> Vec<(String, String, bool)> {
         self.rail
@@ -229,6 +321,59 @@ mod tests {
             prefs.rail,
             [RailEntry::Space(a), RailEntry::Space(b)],
             "the folder left empty is gone"
+        );
+    }
+
+
+
+    #[test]
+    fn dropping_a_badge_reorders_makes_folders_and_ungroups() {
+        let id = |s: &str| OwnedRoomId::try_from(s).expect("room id");
+        let (a, b, c) = (id("!a:x"), id("!b:x"), id("!c:x"));
+        let drawn = vec![
+            RailEntry::Space(a.clone()),
+            RailEntry::Space(b.clone()),
+            RailEntry::Space(c.clone()),
+        ];
+        // c just above a: first.
+        let mut prefs = Prefs::default();
+        prefs.drop_badge(drawn.clone(), &c, 0, false, 1);
+        assert_eq!(
+            prefs.rail,
+            [RailEntry::Space(c.clone()), RailEntry::Space(a.clone()), RailEntry::Space(b.clone())]
+        );
+        // a below b (before the entry after it): a lands one place higher.
+        let mut prefs = Prefs::default();
+        prefs.drop_badge(drawn.clone(), &a, 2, false, 1);
+        assert_eq!(
+            prefs.rail,
+            [RailEntry::Space(b.clone()), RailEntry::Space(a.clone()), RailEntry::Space(c.clone())]
+        );
+        // b onto a: a folder of the two where a was.
+        let mut prefs = Prefs::default();
+        prefs.drop_badge(drawn.clone(), &b, 0, true, 9);
+        let folder = RailEntry::Folder {
+            id: "folder-9-0".into(),
+            name: "New folder".into(),
+            spaces: vec![a.clone(), b.clone()],
+        };
+        assert_eq!(prefs.rail, [folder.clone(), RailEntry::Space(c.clone())]);
+        // c onto the folder: into it.
+        prefs.drop_badge(prefs.rail.clone(), &c, 0, true, 10);
+        assert_eq!(
+            prefs.rail,
+            [RailEntry::Folder {
+                id: "folder-9-0".into(),
+                name: "New folder".into(),
+                spaces: vec![a.clone(), b.clone(), c.clone()],
+            }]
+        );
+        prefs.rename_folder("folder-9-0", "Work");
+        assert!(matches!(&prefs.rail[0], RailEntry::Folder { name, .. } if name == "Work"));
+        prefs.ungroup("folder-9-0");
+        assert_eq!(
+            prefs.rail,
+            [RailEntry::Space(a), RailEntry::Space(b), RailEntry::Space(c)]
         );
     }
 
