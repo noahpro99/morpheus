@@ -123,7 +123,7 @@ impl Render for MembersView {
             .id("members")
             .flex()
             .flex_col()
-            .size_full()
+            .flex_1().min_h_0()
             .overflow_y_scroll()
             .track_scroll(&self.scroll)
             .bg(rgb(theme::bg_sidebar()))
