@@ -138,10 +138,12 @@ instead of JavaScript:
 
 17. **Stabilise before a full-suite milestone.** Root causes of the flakes task 16 left (dm_menu's ignore test, space_channels' lost clicks, details' double send), rail drag on GPUI (rail.rs 4 of 4), and a real Dioxus check of the test files task 16 changed (details, dm_menu, profile_card, bug_report, spaces, hotkeys, settings).
 
-18. Onward in the order of `crates/e2e/tests` files, each task naming the
+18. **Fix what the first full desktop suite found.** After `just hs-seed`, 189 of 199 passed on GPUI: port the two Ctrl+K tests (raw JS), the typing line (who is typing), the voice settings icon count, the two settings tests that failed only in the whole file, the shared-screen frames that came back empty, and look at the ringing-call flake.
+
+19. Onward in the order of `crates/e2e/tests` files, each task naming the
    test file(s) it brings to green.
 
-19. **Later: headless e2e.** Run the app on gpui's test platform
+20. **Later: headless e2e.** Run the app on gpui's test platform
    (`test-support`, `VisualTestContext` in vendor/gpui) with the bridge on
    top, so e2e tests open no windows. Not before the shell and timeline exist.
 

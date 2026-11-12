@@ -55,6 +55,9 @@ pub struct Calls {
     pub rings: Vec<IncomingCall>,
     /// Your call ringing the other person: since when.
     pub ringing_out_since: Option<std::time::Instant>,
+    /// When this account joined the call it is in (ms since the epoch): a decline of a
+    /// ring sent before that is a stale one.
+    pub joined_at_ms: u64,
     /// Ticks of the rings' clock.
     pub tick: u64,
     /// Every sound played, in order (a test build shows them, `.sound-log`).
@@ -168,7 +171,7 @@ impl Shell {
                             })
                             .is_ok();
                         if alive && session.user_id().as_ref() != Some(&by) {
-                            declined(&session, &this, cx, room_id, by).await;
+                            declined(&session, &this, cx, room_id, by, notification).await;
                         }
                         alive
                     }
@@ -294,6 +297,7 @@ impl Shell {
             self.chime(Sound::Leave);
         }
         self.calls.state = Some(CallState::joining(room_id.clone(), room_name));
+        self.calls.joined_at_ms = now_ms();
         self.calls.published = None;
         cx.notify();
         let leaving = previous.1.map(|state| (state.room_id, previous.0));
@@ -508,11 +512,21 @@ async fn declined(
     cx: &mut AsyncApp,
     room_id: OwnedRoomId,
     by: OwnedUserId,
+    notification: morpheus_core::OwnedEventId,
 ) {
     let in_that_call = this
         .read_with(cx, |this, _| this.calls.in_call(&room_id))
         .unwrap_or(false);
     if !in_that_call {
+        return;
+    }
+    // A decline of a ring from before this call (one of an earlier call, still
+    // arriving as the app catches up) is not this call's: the ring this call
+    // sent goes out after it joined.
+    let joined = this.read_with(cx, |this, _| this.calls.joined_at_ms).unwrap_or(0);
+    if let Ok(Some(sent)) = session.event_sent_at(room_id.clone(), notification).await
+        && sent + 5_000 < joined
+    {
         return;
     }
     let name = match session.profile(by.clone()).await {
