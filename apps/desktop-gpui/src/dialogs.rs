@@ -46,6 +46,8 @@ pub enum Dialog {
     Pinned(Entity<PinnedDialog>),
     Room(Entity<crate::room_dialogs::RoomDialog>),
     ModView(Entity<crate::mod_view::ModView>),
+    /// Ctrl+/: the list of shortcuts.
+    Help,
 }
 
 /// Something done at once that its Undo toast can still take back.
@@ -515,7 +517,7 @@ pub fn render_dialog(shell: &mut Shell, window: &mut Window, cx: &mut Context<Sh
     let focus = shell.dialog_focus(cx);
     if std::mem::take(&mut shell.take_dialog_focus) {
         match &shell.dialog {
-            Some(Dialog::Confirm(..) | Dialog::Reactions(_)) => window.focus(&focus),
+            Some(Dialog::Confirm(..) | Dialog::Reactions(_) | Dialog::Help) => window.focus(&focus),
             _ => {}
         }
     }
@@ -623,6 +625,62 @@ pub fn render_dialog(shell: &mut Shell, window: &mut Window, cx: &mut Context<Sh
         Dialog::Pinned(entity) => Some(entity.clone().into_any_element()),
         Dialog::Room(entity) => Some(entity.clone().into_any_element()),
         Dialog::ModView(entity) => Some(entity.clone().into_any_element()),
+        Dialog::Help => {
+            let boxed = dialog_box()
+                .id("help-dialog")
+                .track_focus(&focus)
+                .on_key_down(cx.listener(|this, event: &gpui::KeyDownEvent, _, cx| {
+                    if event.keystroke.key == "escape" {
+                        this.dialog_close(cx);
+                    }
+                }))
+                .w(px(560.0))
+                .max_h(px(520.0))
+                .child(heading("Keyboard shortcuts"))
+                .children(crate::view_model::hotkeys::GROUPS.iter().map(|(group, rows)| {
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(px(4.0))
+                        .child(
+                            div()
+                                .mt(px(8.0))
+                                .text_size(px(0.75 * theme::REM))
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .text_color(rgb(theme::TEXT_FAINT))
+                                .child(group.to_string())
+                                .e2e("h3", "")
+                                .text(group.to_string()),
+                        )
+                        .children(rows.iter().map(|(keys, what)| {
+                            div()
+                                .flex()
+                                .gap(px(12.0))
+                                .child(
+                                    div()
+                                        .w(px(200.0))
+                                        .flex_none()
+                                        .font_weight(FontWeight::SEMIBOLD)
+                                        .child(keys.to_string())
+                                        .e2e("kbd", "")
+                                        .text(keys.to_string()),
+                                )
+                                .child(
+                                    div()
+                                        .text_color(rgb(theme::TEXT_MUTED))
+                                        .child(what.to_string())
+                                        .e2e("span", "")
+                                        .text(what.to_string()),
+                                )
+                                .e2e("div", "help-row")
+                        }))
+                        .e2e("section", "help-group")
+                }))
+                .e2e("div", "message-dialog help-dialog")
+                .text("Keyboard shortcuts")
+                .focusable(&focus);
+            Some(overlay(window, boxed.into_any_element(), close))
+        }
     }
 }
 

@@ -10,6 +10,7 @@ mod dialogs;
 mod e2e;
 mod emoji_picker;
 mod friends;
+mod hotkeys;
 mod icons;
 mod invites;
 mod message;

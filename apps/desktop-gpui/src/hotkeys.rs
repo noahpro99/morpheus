@@ -1,0 +1,132 @@
+//! Keyboard shortcuts (`crates/ui/src/components/hotkeys.rs`). The shell's
+//! root listens in the capture phase, so a combo works whatever has focus
+//! (also in a text box, as in the Dioxus app); which combo is which action
+//! is `view_model::hotkeys`.
+
+use gpui::{Context, KeyDownEvent, Window};
+
+use crate::{
+    dialogs::Dialog,
+    model::{Scope, rail_scopes, rooms_in_scope},
+    shell::Shell,
+    view_model::{
+        hotkeys::{self, Hotkey},
+        room_dialogs::RoomDialogKind,
+    },
+};
+
+impl Shell {
+    /// Whether something modal has the keys: a dialog, a menu, a card, the
+    /// emoji picker or the settings pages.
+    pub(crate) fn modal_open(&self, cx: &gpui::App) -> bool {
+        self.dialog.is_some()
+            || self.menu.is_some()
+            || self.card.is_some()
+            || self.picker.is_some()
+            || self.settings.as_ref().is_some_and(|s| s.read(cx).is_open())
+    }
+
+    /// Whether a message box has something open that Escape closes first
+    /// (an edit or reply banner, suggestions, the emoji panel).
+    fn composer_busy(&self, cx: &gpui::App) -> bool {
+        let room = self.composer.as_ref().is_some_and(|(_, c)| c.read(cx).busy());
+        let thread = self
+            .thread
+            .as_ref()
+            .is_some_and(|(_, panel)| panel.read(cx).composer_busy(cx));
+        room || thread
+    }
+
+    /// The shell's capture-phase key listener. Returns whether it used the
+    /// key (the caller then stops it going on).
+    pub fn handle_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        let keystroke = &event.keystroke;
+        let m = keystroke.modifiers;
+        let key = keystroke.key.as_str();
+        if key == "escape" && !m.shift && !m.control && !m.alt {
+            // Escape closes the thread panel, when nothing nearer has it.
+            if self.thread.is_some() && !self.modal_open(cx) && !self.inbox_open && !self.composer_busy(cx) {
+                self.close_thread(cx);
+                return true;
+            }
+            return false;
+        }
+        let ctrl = m.control || m.platform;
+        // DOM names for the arrows, as `classify` has them.
+        let name = match key {
+            "up" => "ArrowUp",
+            "down" => "ArrowDown",
+            other => other,
+        };
+        let Some(action) = hotkeys::classify(name, ctrl, m.alt, m.shift) else {
+            return false;
+        };
+        // The panels that toggle themselves stay reachable over their own
+        // modal; anything else waits until the modal is closed.
+        let toggles_help = matches!(action, Hotkey::Shortcuts) && matches!(self.dialog, Some(Dialog::Help));
+        if (self.modal_open(cx) && !toggles_help) || (self.inbox_open && !matches!(action, Hotkey::Inbox)) {
+            return false;
+        }
+        match action {
+            Hotkey::Search => {
+                if self.current().is_some() {
+                    self.toggle_search(cx);
+                }
+            }
+            Hotkey::Emoji => {
+                if let Some((_, composer)) = &self.composer {
+                    composer.update(cx, |composer, cx| composer.toggle_emoji(cx));
+                }
+            }
+            Hotkey::CreateServer => self.open_room_dialog(RoomDialogKind::CreateSpace(None), cx),
+            Hotkey::Shortcuts => {
+                if toggles_help {
+                    self.dialog_close(cx);
+                } else {
+                    self.dialog_open(Dialog::Help, cx);
+                }
+            }
+            Hotkey::Inbox => self.toggle_inbox(cx),
+            Hotkey::Members => self.toggle_members(cx),
+            Hotkey::Pins => self.open_pinned(cx),
+            Hotkey::Settings => self.open_settings(crate::view_model::keys::SettingsFocus::None, cx),
+            Hotkey::Room { forward } => self.step_room(forward, false, cx),
+            Hotkey::Unread { forward } => self.step_room(forward, true, cx),
+            Hotkey::Scope { forward } => self.step_scope(forward, cx),
+        }
+        let _ = window;
+        true
+    }
+
+    /// Alt+Up / Alt+Down: the room before or after the open one in the
+    /// sidebar's list (only rooms with something unread, for `unread`).
+    fn step_room(&mut self, forward: bool, unread: bool, cx: &mut Context<Self>) {
+        let list = rooms_in_scope(&self.rooms, &self.scope);
+        let candidates: Vec<bool> = list
+            .iter()
+            .map(|r| !unread || r.unread_messages > 0 || r.highlight_count > 0 || r.marked_unread)
+            .collect();
+        let current = self
+            .selected
+            .as_ref()
+            .and_then(|id| list.iter().position(|r| &r.id == id));
+        if let Some(room) = hotkeys::step_room(&candidates, current, forward).and_then(|i| list.get(i)) {
+            self.open_room(room.id.clone(), cx);
+        }
+    }
+
+    /// Ctrl+Alt+Up / Down: the rail entry before or after the current one,
+    /// with its first room open.
+    fn step_scope(&mut self, forward: bool, cx: &mut Context<Self>) {
+        let all: Vec<Scope> = rail_scopes(&self.prefs, &self.rooms);
+        let current = all.iter().position(|s| *s == self.scope);
+        let Some(next) = hotkeys::step_scope(all.len(), current, forward) else {
+            return;
+        };
+        let scope = all[next].clone();
+        self.set_scope(scope.clone(), cx);
+        if let Some(first) = rooms_in_scope(&self.rooms, &scope).first() {
+            self.open_room(first.id.clone(), cx);
+        }
+    }
+}
