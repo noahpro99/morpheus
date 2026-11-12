@@ -310,6 +310,7 @@ mod tests {
             thread: None,
             kind,
             shield: None,
+            state_kind: None,
         }
     }
 

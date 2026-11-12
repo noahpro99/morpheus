@@ -64,6 +64,7 @@ mod tests {
                 html: None,
             },
             shield: None,
+            state_kind: None,
         }
     }
 

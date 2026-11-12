@@ -3024,3 +3024,11 @@ body.rail-dragging, body.rail-dragging * { cursor: grabbing !important; }
 }
 .room-info-actions button:active { background: var(--bg-selected); }
 .room-info-actions .count { color: var(--text-muted); font-weight: 500; }
+
+/* State lines: an icon in the avatar's column, the text where a message's
+   text starts, the time after it. */
+.message.system { padding-left: 16px; align-items: center; }
+.message.system .state-icon { width: 40px; flex: none; display: flex; justify-content: center; color: var(--text-faint); }
+.message.system .state-icon[data-tone="good"] { color: var(--green, #23a559); }
+.message.system .state-icon[data-tone="bad"] { color: var(--danger); }
+.message.system .time { width: auto; text-align: left; font-size: 0.75rem; color: var(--text-faint); margin-left: 8px; }
