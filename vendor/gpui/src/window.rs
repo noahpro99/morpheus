@@ -847,6 +847,7 @@ pub struct Window {
     pub(crate) next_tooltip_id: TooltipId,
     pub(crate) tooltip_bounds: Option<TooltipBounds>,
     next_frame_callbacks: Rc<RefCell<Vec<FrameCallback>>>,
+    wheel_ease: crate::smooth_scroll::WheelEase,
     pub(crate) dirty_views: FxHashSet<EntityId>,
     focus_listeners: SubscriberSet<(), AnyWindowFocusListener>,
     pub(crate) focus_lost_listeners: SubscriberSet<(), AnyObserver>,
@@ -1045,8 +1046,14 @@ impl Window {
                     measure("frame duration", || {
                         handle
                             .update(&mut cx, |_, window, cx| {
+                                let started = Instant::now();
                                 let arena_clear_needed = window.draw(cx);
+                                let drawn = Instant::now();
                                 window.present();
+                                crate::frame_stats::record(
+                                    (drawn - started).as_secs_f32() * 1000.0,
+                                    drawn.elapsed().as_secs_f32() * 1000.0,
+                                );
                                 // drop the arena elements after present to reduce latency
                                 arena_clear_needed.clear();
                             })
@@ -1227,6 +1234,7 @@ impl Window {
             rendered_frame: Frame::new(DispatchTree::new(cx.keymap.clone(), cx.actions.clone())),
             next_frame: Frame::new(DispatchTree::new(cx.keymap.clone(), cx.actions.clone())),
             next_frame_callbacks,
+            wheel_ease: Default::default(),
             next_hitbox_id: HitboxId(0),
             next_tooltip_id: TooltipId::default(),
             tooltip_bounds: None,
@@ -2014,6 +2022,7 @@ impl Window {
     }
 
     fn draw_roots(&mut self, cx: &mut App) {
+        let started = Instant::now();
         self.invalidator.set_phase(DrawPhase::Prepaint);
         self.tooltip_bounds.take();
 
@@ -2067,6 +2076,8 @@ impl Window {
 
         self.mouse_hit_test = self.next_frame.hit_test(self.mouse_position);
 
+        let prepaint_ms = started.elapsed().as_secs_f32() * 1000.0;
+        let paint_started = Instant::now();
         // Now actually paint the elements.
         self.invalidator.set_phase(DrawPhase::Paint);
         root_element.paint(self, cx);
@@ -2086,6 +2097,7 @@ impl Window {
 
         #[cfg(any(feature = "inspector", debug_assertions))]
         self.paint_inspector_hitbox(cx);
+        crate::frame_stats::phases(prepaint_ms, paint_started.elapsed().as_secs_f32() * 1000.0);
     }
 
     fn prepaint_tooltip(&mut self, cx: &mut App) -> Option<AnyElement> {
@@ -3618,6 +3630,16 @@ impl Window {
             PlatformInput::ScrollWheel(scroll_wheel) => {
                 self.mouse_position = scroll_wheel.position;
                 self.modifiers = scroll_wheel.modifiers;
+                // Wheel notches are eased over the next frames (see smooth_scroll.rs).
+                if let crate::ScrollDelta::Lines(lines) = scroll_wheel.delta {
+                    if self.wheel_ease.add(&scroll_wheel, lines) {
+                        self.on_next_frame(|window, cx| window.ease_wheel(cx));
+                    }
+                    return DispatchEventResult {
+                        propagate: false,
+                        default_prevented: false,
+                    };
+                }
                 PlatformInput::ScrollWheel(scroll_wheel)
             }
             // Translate dragging and dropping of external files from the operating system
@@ -3674,6 +3696,19 @@ impl Window {
         DispatchEventResult {
             propagate: cx.propagate_event,
             default_prevented: self.default_prevented,
+        }
+    }
+
+    /// One frame of the eased wheel scroll: replays this frame's share of the
+    /// notches taken in as a `Lines` event, and goes on next frame until done.
+    fn ease_wheel(&mut self, cx: &mut App) {
+        let (event, done) = self.wheel_ease.tick();
+        if let Some(event) = event {
+            cx.propagate_event = true;
+            self.dispatch_mouse_event(&event, cx);
+        }
+        if !done {
+            self.on_next_frame(|window, cx| window.ease_wheel(cx));
         }
     }
 

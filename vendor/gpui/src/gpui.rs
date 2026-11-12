@@ -44,6 +44,9 @@ pub mod test;
 mod text_system;
 mod util;
 mod view;
+mod frame_stats;
+mod smooth_scroll;
+pub use frame_stats::{FrameTime, take_frame_times};
 mod window;
 
 #[cfg(doc)]

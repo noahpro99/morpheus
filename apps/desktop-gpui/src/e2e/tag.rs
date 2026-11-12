@@ -25,6 +25,14 @@ pub struct State {
     pub scroll: HashMap<usize, Rc<dyn super::Scrollable>>,
 }
 
+/// Whether elements record themselves. A test turns it off to time frames
+/// without the cost of tagging (the tree then stays as it last was).
+pub static TAGGING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+fn tagging() -> bool {
+    TAGGING.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 thread_local! {
     static STATE: RefCell<State> = RefCell::new(State::default());
 }
@@ -53,11 +61,17 @@ pub struct Tagged<E> {
 #[allow(dead_code)]
 impl<E> Tagged<E> {
     pub fn attr(mut self, name: &str, value: impl Into<String>) -> Self {
+        if !tagging() {
+            return self;
+        }
         self.meta.attrs.push((name.to_owned(), value.into()));
         self
     }
 
     pub fn text(mut self, text: impl Into<String>) -> Self {
+        if !tagging() {
+            return self;
+        }
         self.meta.text = text.into();
         self
     }
@@ -78,6 +92,9 @@ pub trait E2eExt: IntoElement + Sized {
     /// Tag this element: `tag` is the element name selectors match
     /// (`button`), `classes` a space-separated class list.
     fn e2e(self, tag: &str, classes: &str) -> Tagged<Self> {
+        if !tagging() {
+            return Tagged { inner: self, meta: Meta::default() };
+        }
         Tagged {
             inner: self,
             meta: Meta {
@@ -166,6 +183,10 @@ impl<E: Element> Element for TaggedElement<E> {
         window: &mut Window,
         cx: &mut App,
     ) {
+        if !tagging() {
+            self.inner.paint(id, inspector_id, bounds, request_layout, prepaint, window, cx);
+            return;
+        }
         if let Some(meta) = self.meta.take() {
             open(meta, bounds);
         }

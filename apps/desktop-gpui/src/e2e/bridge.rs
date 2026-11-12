@@ -27,7 +27,7 @@ use futures::{
 };
 use gpui::{
     App, AppContext as _, AsyncApp, Keystroke, Modifiers, MouseButton, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, PlatformInput, point, px,
+    MouseMoveEvent, MouseUpEvent, PlatformInput, ScrollDelta, ScrollWheelEvent, TouchPhase, point, px,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -73,6 +73,12 @@ struct Request {
     /// For `drag`: how far to move the pressed pointer, in pixels.
     dx: Option<f32>,
     dy: Option<f32>,
+    /// For `wheel`: notches (gpui's sign: negative scrolls on down) as `lines`, or exact `dy` pixels with `pixels`.
+    lines: Option<f32>,
+    /// For `tagging`.
+    enabled: Option<bool>,
+    #[serde(default)]
+    pixels: bool,
     /// For `drag`: keep the button down at the end (`release` lets go).
     #[serde(default)]
     hold: bool,
@@ -230,6 +236,22 @@ async fn handle(request: &Request, cx: &mut AsyncApp) -> Reply {
         "count" | "texts" | "attrs" | "text" | "value" | "bounds" | "all_bounds" => {
             with_state(|state| read(&state.tree, op, request))
         }
+        // How long the frames since the last call took, in ms: draw (build and
+        // paint the scene) and present (hand it to the GPU).
+        "frame_times" => {
+            let frames = gpui::take_frame_times();
+            Ok(json!({
+                "draw": frames.iter().map(|f| f.draw).collect::<Vec<_>>(),
+                "present": frames.iter().map(|f| f.present).collect::<Vec<_>>(),
+                "prepaint": frames.iter().map(|f| f.prepaint).collect::<Vec<_>>(),
+                "paint": frames.iter().map(|f| f.paint).collect::<Vec<_>>(),
+            }))
+        }
+        // Stop (or resume) elements recording themselves, to time frames without it.
+        "tagging" => {
+            super::tag::TAGGING.store(request.enabled.unwrap_or(true), std::sync::atomic::Ordering::Relaxed);
+            Ok(Value::Null)
+        }
         "scroll_state" => {
             let probe = probe(request)?;
             let s = probe.scroll_state();
@@ -271,7 +293,7 @@ async fn handle(request: &Request, cx: &mut AsyncApp) -> Reply {
             Ok(Value::Null)
         }
         "attach_file" => attach_file(request, cx).await,
-        "click" | "right_click" | "type" | "press" | "submit" | "drag" | "release" | "hover" => act(op, request, cx).await,
+        "click" | "right_click" | "type" | "press" | "submit" | "drag" | "release" | "hover" | "wheel" => act(op, request, cx).await,
         _ => Err(format!("unknown op: {op}")),
     }
 }
@@ -838,6 +860,40 @@ async fn act(op: &str, request: &Request, cx: &mut AsyncApp) -> Reply {
             })
             .map_err(|err| err.to_string())?;
             next_frame(cx, before).await;
+        }
+        "wheel" => {
+            // One wheel event over the element's centre: `lines` notches, or
+            // `dy` exact pixels (a touchpad). Returns at once: a notch is
+            // eased over the frames after it (a test samples `scroll_state`).
+            let delta = if request.pixels {
+                ScrollDelta::Pixels(point(px(0.0), px(request.dy.unwrap_or(0.0))))
+            } else {
+                ScrollDelta::Lines(point(0.0, request.lines.unwrap_or(0.0)))
+            };
+            let at = point(px(centre.0), px(centre.1));
+            cx.update_window(window, |_, window, cx| {
+                let _ = window.dispatch_event(
+                    PlatformInput::MouseMove(MouseMoveEvent {
+                        position: at,
+                        pressed_button: None,
+                        modifiers: held,
+                    }),
+                    cx,
+                );
+                let _ = window.dispatch_event(
+                    PlatformInput::ScrollWheel(ScrollWheelEvent {
+                        position: at,
+                        delta,
+                        modifiers: held,
+                        touch_phase: TouchPhase::Moved,
+                    }),
+                    cx,
+                );
+            })
+            .map_err(|err| err.to_string())?;
+            if request.pixels {
+                next_frame(cx, before).await;
+            }
         }
         "release" => {
             // Let go of a held drag where the pointer is.

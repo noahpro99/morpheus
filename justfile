@@ -44,7 +44,7 @@ gpui-e2e-build:
 
 # GPUI e2e tests: `just gpui-e2e timeline` or `just gpui-e2e timeline pictures`
 gpui-e2e file name="": gpui-e2e-build
-    MORPHEUS_E2E_UI=gpui MORPHEUS_E2E_BIN=$PWD/target/debug/morpheus-gpui-e2e MORPHEUS_TEST_HOMESERVER={{hs}} cargo test -p morpheus-e2e --test {{file}} {{name}} -- --test-threads=1
+    MORPHEUS_E2E_UI=gpui MORPHEUS_E2E_BIN=$PWD/target/debug/morpheus-gpui-e2e MORPHEUS_TEST_HOMESERVER={{hs}} cargo test -p morpheus-e2e --test {{file}} {{name}} -- --test-threads=1 ${E2E_TEST_ARGS:-}
 
 # Playwright-style tests through the real window (needs `just hs-up hs-seed`)
 e2e: e2e-build hs-seed

@@ -904,6 +904,50 @@ impl App {
         bail!("hover is only driven in the GPUI app")
     }
 
+    /// One mouse-wheel event over an element's centre (GPUI only): `notches`
+    /// of a wheel (positive scrolls the content on down, as a person
+    /// turning it towards themselves), which the app eases over the next
+    /// ~150 ms; returns at once.
+    pub async fn wheel(&mut self, selector: &str, notches: f32) -> Result<()> {
+        if gpui() {
+            return self.op("wheel", selector, json!({ "lines": -notches })).await.map(drop);
+        }
+        bail!("wheel is only driven in the GPUI app")
+    }
+
+    /// One touchpad-style wheel event of exactly `px` pixels (positive:
+    /// down) over an element's centre; applied at once, no easing (GPUI only).
+    pub async fn wheel_pixels(&mut self, selector: &str, px: f32) -> Result<()> {
+        if gpui() {
+            return self
+                .op("wheel", selector, json!({ "pixels": true, "dy": -px }))
+                .await
+                .map(drop);
+        }
+        bail!("wheel is only driven in the GPUI app")
+    }
+
+    /// The `(draw, present, prepaint, paint)` time in ms of each frame the GPUI
+    /// app drew since the last call (the first call starts the record).
+    pub async fn frame_times(&mut self) -> Result<Vec<[f32; 4]>> {
+        let value = self.op("frame_times", "", json!({})).await?;
+        let list = |key: &str| -> Vec<f32> {
+            value[key]
+                .as_array()
+                .map(|a| a.iter().filter_map(|v| v.as_f64()).map(|v| v as f32).collect())
+                .unwrap_or_default()
+        };
+        let (draw, present, prepaint, paint) = (list("draw"), list("present"), list("prepaint"), list("paint"));
+        Ok((0..draw.len()).map(|i| [draw[i], present[i], prepaint[i], paint[i]]).collect())
+    }
+
+    /// Turns the GPUI app's element tagging off or on: with it off, frames
+    /// cost what a build without the e2e feature would (the tree a test sees
+    /// stops updating).
+    pub async fn set_tagging(&mut self, on: bool) -> Result<()> {
+        self.op("tagging", "", json!({ "enabled": on })).await.map(drop)
+    }
+
     /// Let go of the drag [`Self::drag_hold`] left in progress.
     pub async fn release(&mut self) -> Result<()> {
         if gpui() {
