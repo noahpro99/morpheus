@@ -600,6 +600,81 @@ fn blur_image(hash: &str) -> Option<Arc<Image>> {
         .clone()
 }
 
+/// An empty box `w` x `h` wide and tall when there is room, and that shape,
+/// scaled down, when there is less: a picture's box, whose height follows its
+/// width. (Percentage widths with an aspect ratio are measured differently
+/// for a row's height than for drawing it, which left a gap under a shrunk
+/// picture; a measured box answers both the same.)
+struct Shape {
+    w: f32,
+    h: f32,
+}
+
+impl IntoElement for Shape {
+    type Element = Self;
+
+    fn into_element(self) -> Self {
+        self
+    }
+}
+
+impl gpui::Element for Shape {
+    type RequestLayoutState = ();
+    type PrepaintState = ();
+
+    fn id(&self) -> Option<ElementId> {
+        None
+    }
+
+    fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
+        None
+    }
+
+    fn request_layout(
+        &mut self,
+        _id: Option<&gpui::GlobalElementId>,
+        _inspector_id: Option<&gpui::InspectorElementId>,
+        window: &mut Window,
+        _cx: &mut App,
+    ) -> (gpui::LayoutId, ()) {
+        let (w, h) = (self.w, self.h);
+        let id = window.request_measured_layout(gpui::Style::default(), move |known, available, _, _| {
+            let width = match (known.width, available.width) {
+                (Some(width), _) => width,
+                (None, gpui::AvailableSpace::Definite(room)) => px(w).min(room),
+                (None, gpui::AvailableSpace::MaxContent) => px(w),
+                (None, gpui::AvailableSpace::MinContent) => px(0.0),
+            };
+            let height = known.height.unwrap_or(width * (h / w));
+            gpui::size(width, height)
+        });
+        (id, ())
+    }
+
+    fn prepaint(
+        &mut self,
+        _id: Option<&gpui::GlobalElementId>,
+        _inspector_id: Option<&gpui::InspectorElementId>,
+        _bounds: gpui::Bounds<Pixels>,
+        _state: &mut (),
+        _window: &mut Window,
+        _cx: &mut App,
+    ) {
+    }
+
+    fn paint(
+        &mut self,
+        _id: Option<&gpui::GlobalElementId>,
+        _inspector_id: Option<&gpui::InspectorElementId>,
+        _bounds: gpui::Bounds<Pixels>,
+        _state: &mut (),
+        _prepaint: &mut (),
+        _window: &mut Window,
+        _cx: &mut App,
+    ) {
+    }
+}
+
 fn image_el(
     body: &str,
     width: Option<u32>,
@@ -615,13 +690,11 @@ fn image_el(
         .id(SharedString::from(format!("image-{body}")))
         .relative()
         .mt(px(4.0))
-        .w(px(w))
-        .h(px(h))
-        .max_w_full()
-        .flex_none()
+        .min_w_0()
         .rounded(px(theme::RADIUS))
         .overflow_hidden()
         .bg(rgb(theme::bg_input()))
+        .child(Shape { w, h })
         .children(blur.map(|blur| {
             img(blur)
                 .absolute()
@@ -637,20 +710,29 @@ fn image_el(
             })
             .child(
                 img(image)
+                    .absolute()
+                    .top_0()
+                    .left_0()
                     .size_full()
                     .rounded(px(theme::RADIUS))
                     .object_fit(ObjectFit::Contain),
             )
             .e2e("img", "image")
+            .attr("data-fit", "contain")
             .attr("alt", body)
             .attr("title", body),
         None => base
-            .flex()
-            .items_center()
-            .justify_center()
             .text_color(rgb(theme::text_faint()))
             .text_size(rem(0.85))
-            .child(body.to_owned())
+            .child(
+                div()
+                    .absolute()
+                    .inset_0()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .child(body.to_owned()),
+            )
             .e2e("div", "image placeholder")
             .attr("alt", body)
             .text(body),
@@ -658,7 +740,7 @@ fn image_el(
     if noted {
         element = element.attr("data-blur", "1");
     }
-    element.into_any_element()
+    div().flex().child(element).into_any_element()
 }
 
 fn video_el(
@@ -672,16 +754,17 @@ fn video_el(
     let mut card = div()
         .relative()
         .mt(px(4.0))
-        .w(px(w))
-        .h(px(h))
-        .max_w_full()
-        .flex_none()
+        .min_w_0()
         .rounded(px(theme::RADIUS))
         .overflow_hidden()
-        .bg(rgb(theme::bg_input()));
+        .bg(rgb(theme::bg_input()))
+        .child(Shape { w, h });
     card = match thumbnail {
         Some(image) => card.child(
             img(image)
+                .absolute()
+                .top_0()
+                .left_0()
                 .size_full()
                 .rounded(px(theme::RADIUS))
                 .object_fit(ObjectFit::Cover)
@@ -691,7 +774,8 @@ fn video_el(
         ),
         None => card.child(
             div()
-                .size_full()
+                .absolute()
+                .inset_0()
                 .flex()
                 .items_center()
                 .justify_center()
@@ -741,8 +825,9 @@ fn video_el(
                 .text(label),
         );
     }
-    card.child(overlay.e2e("div", "video-overlay"))
-        .e2e("div", "video-card")
+    div()
+        .flex()
+        .child(card.child(overlay.e2e("div", "video-overlay")).e2e("div", "video-card"))
         .into_any_element()
 }
 

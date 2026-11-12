@@ -6,7 +6,7 @@ use std::{
     sync::Arc,
 };
 
-use gpui::{Div, FontWeight, Image, ImageFormat, div, img, prelude::*, px, rgb};
+use gpui::{Div, FontWeight, Image, ImageFormat, ObjectFit, div, img, prelude::*, px, rgb};
 use morpheus_core::MediaRef;
 
 use crate::{
@@ -109,8 +109,14 @@ pub fn avatar(
                 image.hash(&mut hasher);
                 format!("picture:{:x}", hasher.finish())
             };
-            base.child(img(image).size_full().rounded(px(radius.unwrap_or(size / 2.0))))
+            base.child(
+                img(image)
+                    .size_full()
+                    .rounded(px(radius.unwrap_or(size / 2.0)))
+                    .object_fit(ObjectFit::Cover),
+            )
                 .e2e("img", "avatar")
+                .attr("data-fit", "cover")
                 .attr("src", src)
         }
         None => base
