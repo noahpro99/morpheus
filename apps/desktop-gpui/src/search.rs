@@ -114,7 +114,7 @@ impl Render for SearchPanel {
             .id("search-panel")
             .flex()
             .flex_col()
-            .size_full()
+            .flex_1()
             .min_h_0()
             .gap(px(8.0))
             .p(px(12.0))
