@@ -947,3 +947,60 @@ async fn an_avatars_shadow_sits_evenly_around_the_circle() {
         );
     }
 }
+
+/// Whether the pixel differs from `bg` enough to be a divider line.
+fn is_line(p: (u8, u8, u8), bg: (u8, u8, u8)) -> bool {
+    common::colour_distance(p, bg) >= 6
+}
+
+/// The date divider, as Discord's: the date centred, a line each side
+/// reaching out to the timeline's edges.
+#[tokio::test]
+async fn the_date_divider_has_a_line_either_side_of_a_centred_date() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let (mut app, _) = a_message_from_ben(&hs, "dated").await;
+    app.wait_for(".date-divider", DEFAULT_WAIT).await.expect("a date divider");
+    let d = app.bounds(".date-divider").await.expect("b").expect("divider");
+    let label = app.bounds(".date-divider span").await.expect("b").expect("label");
+    let list = app.bounds(".message").await.expect("b").expect("a message row");
+    eprintln!("divider {d:?} label {label:?} message row {list:?}");
+    // It spans the timeline (as wide as a message row, give or take margins).
+    assert!(d.w >= list.w - 40.0, "the divider is {} wide, a message row {}", d.w, list.w);
+    let mid = |b: &Bounds| b.x + b.w / 2.0;
+    assert!(
+        (mid(&label) - mid(&d)).abs() <= 4.0,
+        "the date is not centred: its middle {} vs the divider's {}",
+        mid(&label),
+        mid(&d)
+    );
+    let Some(shot) = common::capture(&app) else {
+        eprintln!("no grim capture here; skipping the line pixels");
+        return;
+    };
+    let y = d.y + d.h / 2.0;
+    let bg = common::pixel_at(&shot, d.x + 2.0, y - 6.0);
+    // A line from just inside the left edge to the date, and from the date
+    // to the right edge.
+    for (name, from, to) in [
+        ("left", d.x + 24.0, label.x - 8.0),
+        ("right", label.right() + 8.0, d.right() - 24.0),
+    ] {
+        assert!(to - from > 50.0, "{name}: no room for a line ({from}..{to})");
+        let mut lines = 0;
+        let mut total = 0;
+        let mut x = from;
+        while x < to {
+            total += 1;
+            // The 1 px line sits on one of the rows around the middle.
+            if (-2..=1).any(|dy| is_line(common::pixel_at(&shot, x, y + f64::from(dy)), bg)) {
+                lines += 1;
+            }
+            x += 1.0;
+        }
+        eprintln!("{name}: {lines} of {total} pixels are line");
+        assert!(lines * 10 >= total * 9, "{name}: the line is missing or broken: {lines} of {total}");
+    }
+}
