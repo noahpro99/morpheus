@@ -146,11 +146,11 @@ fn round_button(
         .items_center()
         .justify_center()
         .rounded_full()
-        .bg(rgba(theme::BG_HOVER))
-        .text_color(rgb(theme::TEXT_MUTED))
+        .bg(rgba(theme::bg_hover()))
+        .text_color(rgb(theme::text_muted()))
         .cursor_pointer()
         .hover(move |s| {
-            s.bg(rgb(if accept { theme::GREEN } else { theme::DANGER }))
+            s.bg(rgb(if accept { theme::green() } else { theme::danger() }))
                 .text_color(rgb(0xffffff))
         })
         .child(icon(glyph, 14.0))
@@ -172,10 +172,10 @@ pub fn invite_row(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) ->
         .py(px(6.0))
         .rounded(px(theme::RADIUS_SM))
         .cursor_pointer()
-        .text_color(rgb(if selected { theme::TEXT } else { theme::TEXT_MUTED }))
-        .when(selected, |d| d.bg(rgba(theme::BG_SELECTED)))
+        .text_color(rgb(if selected { theme::text() } else { theme::text_muted() }))
+        .when(selected, |d| d.bg(rgba(theme::bg_selected())))
         .when(!selected, |d| {
-            d.hover(|s| s.bg(rgba(theme::BG_HOVER)).text_color(rgb(theme::TEXT)))
+            d.hover(|s| s.bg(rgba(theme::bg_hover())).text_color(rgb(theme::text())))
         })
         .on_click(cx.listener(move |this, _, _, cx| this.open_room(open.clone(), cx)))
         .child(avatar(shell.picture(&room.avatar, 24), &room.name, 24.0, None))
@@ -199,7 +199,7 @@ pub fn invite_row(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) ->
                     div()
                         .w_full().truncate()
                         .text_size(px(0.72 * theme::REM))
-                        .text_color(rgb(theme::TEXT_MUTED))
+                        .text_color(rgb(theme::text_muted()))
                         .child(from.clone())
                         .e2e("span", "invite-from")
                         .text(from),
@@ -245,11 +245,11 @@ fn card_button(id: &'static str, label: &'static str, primary: bool) -> gpui::St
         .cursor_pointer()
         .font_weight(FontWeight::SEMIBOLD)
         .bg(if primary {
-            gpui::Hsla::from(rgb(theme::ACCENT_STRONG))
+            gpui::Hsla::from(rgb(theme::accent_strong()))
         } else {
-            gpui::Hsla::from(rgb(theme::BG_ELEVATED))
+            gpui::Hsla::from(rgb(theme::bg_elevated()))
         })
-        .text_color(rgb(if primary { 0xffffff } else { theme::TEXT }))
+        .text_color(rgb(if primary { 0xffffff } else { theme::text() }))
         .child(label)
 }
 
@@ -282,7 +282,7 @@ fn card_shell(
         )
         .child(
             div()
-                .text_color(rgb(theme::TEXT_MUTED))
+                .text_color(rgb(theme::text_muted()))
                 .child(line.clone())
                 .e2e("p", "muted")
                 .text(line),
@@ -290,7 +290,7 @@ fn card_shell(
     if let Some(topic) = topic {
         card = card.child(
             div()
-                .text_color(rgb(theme::TEXT_MUTED))
+                .text_color(rgb(theme::text_muted()))
                 .child(topic.to_owned())
                 .e2e("p", "topic")
                 .text(topic.to_owned()),
@@ -392,9 +392,9 @@ pub fn inbox(shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>) ->
         .overflow_y_scroll()
         .pb(px(6.0))
         .rounded(px(10.0))
-        .bg(rgb(theme::BG_SIDEBAR))
+        .bg(rgb(theme::bg_sidebar()))
         .border_1()
-        .border_color(rgba(0xffffff0f))
+        .border_color(rgba(theme::edge()))
         .shadow_lg()
         .line_height(gpui::relative(theme::LINE_HEIGHT));
     let mut header = div()
@@ -421,9 +421,9 @@ pub fn inbox(shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>) ->
                 .py(px(4.0))
                 .rounded(px(theme::RADIUS_SM))
                 .text_size(px(0.85 * theme::REM))
-                .text_color(rgb(theme::TEXT_MUTED))
+                .text_color(rgb(theme::text_muted()))
                 .cursor_pointer()
-                .hover(|s| s.text_color(rgb(theme::TEXT)))
+                .hover(|s| s.text_color(rgb(theme::text())))
                 .child(invites::MARK_ALL)
                 .on_click(cx.listener(move |this, _, _, cx| {
                     if let Some(session) = this.session.clone() {
@@ -446,7 +446,7 @@ pub fn inbox(shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>) ->
                 .mb(px(4.0))
                 .text_size(px(0.7 * theme::REM))
                 .font_weight(FontWeight::BOLD)
-                .text_color(rgb(theme::TEXT_FAINT))
+                .text_color(rgb(theme::text_faint()))
                 .child("INVITES")
                 .e2e("h4", "section")
                 .text("Invites"),
@@ -464,7 +464,7 @@ pub fn inbox(shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>) ->
                     .px(px(10.0))
                     .py(px(8.0))
                     .rounded(px(theme::RADIUS_SM))
-                    .hover(|s| s.bg(rgba(theme::BG_HOVER)))
+                    .hover(|s| s.bg(rgba(theme::bg_hover())))
                     .child(
                         div()
                             .id(SharedString::from(format!("inbox-open-{}", room.id)))
@@ -485,7 +485,7 @@ pub fn inbox(shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>) ->
                                     )
                                     .child(
                                         div()
-                                            .text_color(rgb(theme::TEXT_MUTED))
+                                            .text_color(rgb(theme::text_muted()))
                                             .child(format!("from {}", invites::inviter(room)))
                                             .e2e("span", "muted")
                                             .text(format!("from {}", invites::inviter(room))),
@@ -529,7 +529,7 @@ pub fn inbox(shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>) ->
                 .mb(px(4.0))
                 .text_size(px(0.7 * theme::REM))
                 .font_weight(FontWeight::BOLD)
-                .text_color(rgb(theme::TEXT_FAINT))
+                .text_color(rgb(theme::text_faint()))
                 .child("MENTIONS")
                 .e2e("h4", "section")
                 .text("Mentions"),
@@ -547,7 +547,7 @@ pub fn inbox(shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>) ->
                 .py(px(8.0))
                 .rounded(px(theme::RADIUS_SM))
                 .cursor_pointer()
-                .hover(|s| s.bg(rgba(theme::BG_HOVER)))
+                .hover(|s| s.bg(rgba(theme::bg_hover())))
                 .child(
                     div()
                         .font_weight(FontWeight::SEMIBOLD)
@@ -558,7 +558,7 @@ pub fn inbox(shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>) ->
                 .child(
                     div()
                         .text_size(px(0.85 * theme::REM))
-                        .text_color(rgb(theme::TEXT_MUTED))
+                        .text_color(rgb(theme::text_muted()))
                         .truncate()
                         .child(notice.body_summary.clone())
                         .e2e("span", "inbox-body")
@@ -575,7 +575,7 @@ pub fn inbox(shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>) ->
             div()
                 .px(px(16.0))
                 .py(px(12.0))
-                .text_color(rgb(theme::TEXT_MUTED))
+                .text_color(rgb(theme::text_muted()))
                 .child(invites::CAUGHT_UP)
                 .e2e("p", "muted pad")
                 .text(invites::CAUGHT_UP),
@@ -591,7 +591,7 @@ pub fn inbox(shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>) ->
                 .min_w(px(18.0))
                 .px(px(6.0))
                 .rounded(px(9.0))
-                .bg(rgb(theme::DANGER))
+                .bg(rgb(theme::danger()))
                 .text_color(rgb(0xffffff))
                 .text_size(px(0.75 * theme::REM))
                 .font_weight(FontWeight::BOLD)
@@ -599,7 +599,7 @@ pub fn inbox(shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>) ->
                 .e2e("span", "badge")
                 .text(text),
             _ => div()
-                .text_color(rgb(theme::TEXT_MUTED))
+                .text_color(rgb(theme::text_muted()))
                 .child(text.clone())
                 .e2e("span", "muted")
                 .text(text),
@@ -616,7 +616,7 @@ pub fn inbox(shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>) ->
                 .py(px(8.0))
                 .rounded(px(theme::RADIUS_SM))
                 .cursor_pointer()
-                .hover(|s| s.bg(rgba(theme::BG_HOVER)))
+                .hover(|s| s.bg(rgba(theme::bg_hover())))
                 .child(
                     div()
                         .font_weight(FontWeight::SEMIBOLD)

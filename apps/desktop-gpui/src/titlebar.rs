@@ -57,9 +57,9 @@ fn bar_button(id: &'static str) -> gpui::Stateful<gpui::Div> {
             .items_center()
             .justify_center()
             .rounded(px(theme::RADIUS_SM))
-            .text_color(rgb(theme::TEXT_MUTED))
+            .text_color(rgb(theme::text_muted()))
             .cursor_pointer()
-            .hover(|s| s.bg(rgba(theme::BG_HOVER)).text_color(rgb(theme::TEXT))),
+            .hover(|s| s.bg(rgba(theme::bg_hover())).text_color(rgb(theme::text()))),
     )
 }
 
@@ -89,7 +89,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                 .h(px(16.0))
                 .px(px(4.0))
                 .rounded(px(8.0))
-                .bg(rgb(theme::DANGER))
+                .bg(rgb(theme::danger()))
                 .text_color(rgb(0xffffff))
                 .text_size(px(0.65 * theme::REM))
                 .child(unread.to_string())
@@ -110,9 +110,9 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             .flex()
             .items_center()
             .px(px(8.0))
-            .bg(rgb(theme::BG_RAIL))
+            .bg(rgb(theme::bg_rail()))
             .text_size(px(0.8 * theme::REM))
-            .text_color(rgb(theme::TEXT_MUTED))
+            .text_color(rgb(theme::text_muted()))
             .child(
                 div()
                     .flex_1()
@@ -141,13 +141,13 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                     .items_center()
                     .gap(px(8.0))
                     .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(rgb(theme::TEXT))
+                    .text_color(rgb(theme::text()))
                     .child(
                         gpui::svg()
                             .path("logo.svg")
                             .size(px(16.0))
                             .flex_none()
-                            .text_color(rgb(theme::ACCENT)),
+                            .text_color(rgb(theme::accent())),
                     )
                     .child(title.clone())
                     .e2e("div", "titlebar-title")

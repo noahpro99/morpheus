@@ -101,9 +101,9 @@ pub fn runs(para: &Para, base: Base) -> Vec<TextRun> {
                 }
             }
             let color = if style.link.is_some() {
-                theme::LINK
+                theme::link()
             } else if style.faint {
-                theme::TEXT_FAINT
+                theme::text_faint()
             } else {
                 base.color
             };
@@ -118,7 +118,7 @@ pub fn runs(para: &Para, base: Base) -> Vec<TextRun> {
                 len: w[1] - w[0],
                 font: f,
                 color: hsla(color),
-                background_color: style.code.then(|| hsla(theme::BG_INPUT)),
+                background_color: style.code.then(|| hsla(theme::bg_input())),
                 underline: style.underline.then(|| UnderlineStyle {
                     thickness: px(1.0),
                     color: Some(hsla(color)),
@@ -168,7 +168,7 @@ pub fn blocks_el(blocks: &[Block], key: &str, base: Base, links: &LinkHandler) -
                 .py(px(8.0))
                 .my(px(4.0))
                 .rounded(px(theme::RADIUS_SM))
-                .bg(rgb(theme::BG_INPUT))
+                .bg(rgb(theme::bg_input()))
                 .font_family(theme::MONO)
                 .text_size(rem(0.85))
                 .text_color(rgb(base.color))
@@ -178,12 +178,12 @@ pub fn blocks_el(blocks: &[Block], key: &str, base: Base, links: &LinkHandler) -
                 .my(px(4.0))
                 .pl(px(12.0))
                 .border_l(px(3.0))
-                .border_color(rgb(theme::BG_ELEVATED))
+                .border_color(rgb(theme::bg_elevated()))
                 .child(blocks_el(
                     inner,
                     &key,
                     Base {
-                        color: theme::TEXT_MUTED,
+                        color: theme::text_muted(),
                         ..base
                     },
                     links,
@@ -220,7 +220,7 @@ pub fn blocks_el(blocks: &[Block], key: &str, base: Base, links: &LinkHandler) -
             Block::Rule => div()
                 .h(px(1.0))
                 .my(px(6.0))
-                .bg(rgb(theme::BG_ELEVATED))
+                .bg(rgb(theme::bg_elevated()))
                 .into_any_element(),
         });
     }
@@ -246,7 +246,7 @@ fn shimmer_bar(width: f32, key: &str) -> impl IntoElement {
         .my(px(5.0))
         .w(relative(width / 100.0))
         .rounded(px(7.0))
-        .bg(rgb(theme::BG_ELEVATED))
+        .bg(rgb(theme::bg_elevated()))
         .id(ElementId::from(SharedString::from(key.to_owned())))
 }
 
@@ -283,7 +283,7 @@ fn skeleton(older: bool) -> AnyElement {
                             .mt(px(2.0))
                             .flex_none()
                             .rounded_full()
-                            .bg(rgb(theme::BG_ELEVATED))
+                            .bg(rgb(theme::bg_elevated()))
                             .e2e("div", "avatar skeleton"),
                     )
                     .child(lines.e2e("div", "message-main"))
@@ -317,13 +317,13 @@ fn reactions_el(reactions: &[Reaction]) -> impl IntoElement {
                 .text_size(rem(0.85))
                 .cursor_pointer();
             chip = if reaction.mine {
-                chip.border_color(rgb(theme::ACCENT))
-                    .bg(rgba(theme::ACCENT_TINT))
-                    .text_color(rgb(theme::TEXT))
+                chip.border_color(rgb(theme::accent()))
+                    .bg(rgba(theme::accent_tint()))
+                    .text_color(rgb(theme::text()))
             } else {
                 chip.border_color(gpui::transparent_black())
-                    .bg(rgb(theme::BG_ELEVATED))
-                    .text_color(rgb(theme::TEXT_MUTED))
+                    .bg(rgb(theme::bg_elevated()))
+                    .text_color(rgb(theme::text_muted()))
             };
             let count = reaction.count.to_string();
             chip.child(
@@ -365,19 +365,19 @@ fn thread_chip(
         .px(px(10.0))
         .py(px(4.0))
         .rounded(px(10.0))
-        .bg(rgb(theme::BG_ELEVATED))
-        .text_color(rgb(theme::TEXT_MUTED))
+        .bg(rgb(theme::bg_elevated()))
+        .text_color(rgb(theme::text_muted()))
         .text_size(rem(0.82))
         .cursor_pointer()
         .child(
             div()
-                .text_color(rgb(theme::TEXT_MUTED))
+                .text_color(rgb(theme::text_muted()))
                 .child(icon("messages-square", 14.0))
                 .e2e("span", "thread-chip-icon"),
         )
         .child(
             div()
-                .text_color(rgb(theme::ACCENT))
+                .text_color(rgb(theme::accent()))
                 .font_weight(FontWeight::SEMIBOLD)
                 .child(count.clone())
                 .e2e("span", "thread-chip-count")
@@ -395,7 +395,7 @@ fn thread_chip(
     }
     let mut chip = chip
         .id(ElementId::from(SharedString::from(format!("thread-chip-{unique_id}"))))
-        .hover(|s| s.bg(rgba(theme::BG_HOVER)).text_color(rgb(theme::TEXT)));
+        .hover(|s| s.bg(rgba(theme::bg_hover())).text_color(rgb(theme::text())));
     if let Some(actions) = actions {
         let (actions, unique_id) = (actions.clone(), unique_id.to_owned());
         chip = chip.on_click(move |_, window, cx| {
@@ -413,16 +413,16 @@ fn reply_quote(reply: &morpheus_core::ReplyPreview) -> impl IntoElement {
         .mb(px(2.0))
         .pl(px(8.0))
         .border_l(px(2.0))
-        .border_color(rgb(theme::TEXT_FAINT))
+        .border_color(rgb(theme::text_faint()))
         .text_size(rem(0.8))
-        .text_color(rgb(theme::TEXT_MUTED))
+        .text_color(rgb(theme::text_muted()))
         .overflow_hidden()
         .child(div().flex_none().child("↩").e2e("span", "").text("↩"))
         .child(
             div()
                 .flex_none()
                 .font_weight(FontWeight::BOLD)
-                .text_color(rgb(theme::TEXT))
+                .text_color(rgb(theme::text()))
                 .child(name.clone())
                 .e2e("b", "")
                 .text(name),
@@ -443,7 +443,7 @@ fn reply_quote(reply: &morpheus_core::ReplyPreview) -> impl IntoElement {
                 .h(px(10.0))
                 .mt(px(3.0))
                 .rounded(px(5.0))
-                .bg(rgb(theme::BG_ELEVATED))
+                .bg(rgb(theme::bg_elevated()))
                 .e2e("span", "skeleton skeleton-inline"),
         ),
     };
@@ -476,7 +476,7 @@ fn attachment_card(
         info = info.child(
             div()
                 .text_size(rem(0.8))
-                .text_color(rgb(theme::TEXT_MUTED))
+                .text_color(rgb(theme::text_muted()))
                 .child(meta.to_owned())
                 .e2e("span", "attachment-size muted")
                 .text(meta),
@@ -489,9 +489,9 @@ fn attachment_card(
             .truncate()
             .text_size(rem(0.8))
             .text_color(rgb(if error {
-                theme::DANGER
+                theme::danger()
             } else {
-                theme::TEXT_MUTED
+                theme::text_muted()
             }))
             .child(text.clone())
             .e2e(
@@ -514,9 +514,9 @@ fn attachment_card(
             .px(px(12.0))
             .py(px(6.0))
             .rounded(px(theme::RADIUS_SM))
-            .bg(rgb(theme::BG_INPUT))
+            .bg(rgb(theme::bg_input()))
             .text_size(rem(0.85))
-            .text_color(rgb(theme::TEXT_MUTED))
+            .text_color(rgb(theme::text_muted()))
             .cursor_pointer()
             .child("Download")
             .e2e("button", "ghost attachment-download")
@@ -537,7 +537,7 @@ fn attachment_card(
         .py(px(10.0))
         .max_w(px(360.0))
         .rounded(px(theme::RADIUS))
-        .bg(rgb(theme::BG_ELEVATED))
+        .bg(rgb(theme::bg_elevated()))
         .child(
             div()
                 .flex_none()
@@ -568,7 +568,7 @@ fn image_el(body: &str, width: Option<u32>, height: Option<u32>, picture: Option
         .flex_none()
         .rounded(px(theme::RADIUS))
         .overflow_hidden()
-        .bg(rgb(theme::BG_INPUT));
+        .bg(rgb(theme::bg_input()));
     match picture {
         Some(image) => base
             .cursor_pointer()
@@ -586,7 +586,7 @@ fn image_el(body: &str, width: Option<u32>, height: Option<u32>, picture: Option
             .flex()
             .items_center()
             .justify_center()
-            .text_color(rgb(theme::TEXT_FAINT))
+            .text_color(rgb(theme::text_faint()))
             .text_size(rem(0.85))
             .child(body.to_owned())
             .e2e("div", "image placeholder")
@@ -612,7 +612,7 @@ fn video_el(
         .flex_none()
         .rounded(px(theme::RADIUS))
         .overflow_hidden()
-        .bg(rgb(theme::BG_INPUT));
+        .bg(rgb(theme::bg_input()));
     card = match thumbnail {
         Some(image) => card.child(
             img(image)
@@ -629,7 +629,7 @@ fn video_el(
                 .flex()
                 .items_center()
                 .justify_center()
-                .text_color(rgb(theme::TEXT_FAINT))
+                .text_color(rgb(theme::text_faint()))
                 .text_size(rem(0.85))
                 .child(body.to_owned())
                 .e2e("div", "image placeholder")
@@ -650,7 +650,7 @@ fn video_el(
                 .flex()
                 .items_center()
                 .justify_center()
-                .bg(rgba(0x141720bf))
+                .bg(rgba(theme::alpha(theme::bg_sidebar(), 0xbf)))
                 .text_size(rem(1.2))
                 .cursor_pointer()
                 .child("▶")
@@ -689,15 +689,15 @@ fn body_el(
     links: &LinkHandler,
 ) -> AnyElement {
     let (class, base, rich_html) = match &row.message.kind {
-        MessageKind::Text { html, .. } => ("body", Base { color: theme::TEXT, italic: false }, html.is_some()),
+        MessageKind::Text { html, .. } => ("body", Base { color: theme::text(), italic: false }, html.is_some()),
         MessageKind::Notice { html, .. } => (
             "body notice",
-            Base { color: theme::TEXT_MUTED, italic: false },
+            Base { color: theme::text_muted(), italic: false },
             html.is_some(),
         ),
         MessageKind::Emote { html, .. } => (
             "body emote",
-            Base { color: theme::TEXT, italic: true },
+            Base { color: theme::text(), italic: true },
             html.is_some(),
         ),
         MessageKind::Image {
@@ -743,8 +743,8 @@ fn body_el(
                     .items_center()
                     .gap(px(6.0))
                     .italic()
-                    .text_color(rgb(theme::TEXT_MUTED))
-                    .child(icon("lock", 14.0).text_color(rgb(theme::TEXT_MUTED)))
+                    .text_color(rgb(theme::text_muted()))
+                    .child(icon("lock", 14.0).text_color(rgb(theme::text_muted())))
                     .child(LOCKED_TEXT)
                     .e2e("p", "body muted undecrypted locked")
                     .attr("title", LOCKED_HINT)
@@ -759,7 +759,7 @@ fn body_el(
                     .h(px(14.0))
                     .my(px(5.0))
                     .rounded(px(7.0))
-                    .bg(rgb(theme::BG_ELEVATED))
+                    .bg(rgb(theme::bg_elevated()))
                     .e2e("div", "body skeleton skeleton-line undecrypted")
                     .attr("title", WAITING_HINT)
                     .attr("aria-label", "Encrypted message, waiting for keys")
@@ -782,7 +782,7 @@ fn body_el(
 
 fn muted_body(text: &str) -> AnyElement {
     div()
-        .text_color(rgb(theme::TEXT_MUTED))
+        .text_color(rgb(theme::text_muted()))
         .child(text.to_owned())
         .e2e("p", "body muted")
         .text(text)
@@ -833,9 +833,9 @@ fn action_button(
         .p(px(6.0))
         .rounded(px(4.0))
         .text_size(rem(0.95))
-        .text_color(rgb(theme::TEXT_MUTED))
+        .text_color(rgb(theme::text_muted()))
         .cursor_pointer()
-        .hover(|s| s.bg(rgba(theme::BG_HOVER)).text_color(rgb(theme::TEXT)))
+        .hover(|s| s.bg(rgba(theme::bg_hover())).text_color(rgb(theme::text())))
         .child(glyph)
         .on_click(move |event, window, cx| {
             // Where it was clicked (the picker opens there) and whether
@@ -863,7 +863,7 @@ fn actions_bar(m: &Message, group: SharedString, actions: &ActionHandler) -> Any
         .gap(px(2.0))
         .p(px(2.0))
         .rounded(px(theme::RADIUS_SM))
-        .bg(rgb(theme::BG_ELEVATED))
+        .bg(rgb(theme::bg_elevated()))
         .shadow_md()
         .opacity(0.0)
         .group_hover(group, |s| s.opacity(1.0));
@@ -981,12 +981,12 @@ pub fn message_el(
             .w_full()
             .flex()
             .gap(px(12.0))
-            .hover(|s| s.bg(rgba(theme::BG_HOVER)))
+            .hover(|s| s.bg(rgba(theme::bg_hover())))
             .py(px(2.0))
             .pl(px(68.0))
             .pr(px(16.0))
             .text_size(rem(0.85))
-            .text_color(rgb(theme::TEXT_MUTED))
+            .text_color(rgb(theme::text_muted()))
             .child(
                 div()
                     .w(px(40.0))
@@ -994,7 +994,7 @@ pub fn message_el(
                     .flex()
                     .justify_end()
                     .text_size(rem(0.75))
-                    .text_color(rgb(theme::TEXT_FAINT))
+                    .text_color(rgb(theme::text_faint()))
                     .child(row.time.clone())
                     .e2e("span", "time")
                     .text(row.time.clone()),
@@ -1022,7 +1022,7 @@ pub fn message_el(
                     sender_target(
                         div()
                             .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(rgb(if m.is_own { theme::OWN } else { theme::TEXT }))
+                            .text_color(rgb(if m.is_own { theme::own() } else { theme::text() }))
                             .child(name.clone()),
                         format!("sender-{}", m.unique_id),
                         &m.unique_id,
@@ -1035,7 +1035,7 @@ pub fn message_el(
                 .child(
                     div()
                         .text_size(rem(0.75))
-                        .text_color(rgb(theme::TEXT_FAINT))
+                        .text_color(rgb(theme::text_faint()))
                         .child(row.time.clone())
                         .e2e("span", "time")
                         .text(row.time.clone()),
@@ -1048,9 +1048,9 @@ pub fn message_el(
         main = main.child(
             div()
                 .text_color(rgb(if shield.red {
-                    theme::DANGER
+                    theme::danger()
                 } else {
-                    theme::TEXT_FAINT
+                    theme::text_faint()
                 }))
                 .child(icon("shield", 14.0))
                 .e2e(
@@ -1086,7 +1086,7 @@ pub fn message_el(
         .gap(px(12.0))
         .px(px(16.0))
         .py(px(2.0))
-        .hover(|s| s.bg(rgba(theme::BG_HOVER)));
+        .hover(|s| s.bg(rgba(theme::bg_hover())));
     if m.is_local_echo {
         line = line.opacity(0.55);
     }
@@ -1111,7 +1111,7 @@ pub fn message_el(
                 .flex()
                 .justify_end()
                 .text_size(rem(0.75))
-                .text_color(rgb(theme::TEXT_FAINT))
+                .text_color(rgb(theme::text_faint()))
                 .opacity(0.0)
                 .group_hover(group.clone(), |s| s.opacity(1.0))
                 .child(row.time.clone())
@@ -1131,7 +1131,7 @@ pub fn message_el(
     }
     if pics.highlight {
         classes.push_str(" jump-target");
-        line = line.bg(rgba(0x7c8cff2e));
+        line = line.bg(rgba(theme::alpha(theme::accent(), 0x2e)));
     }
     let mut line = line.child(main.e2e("div", "message-main"));
     if let Some(actions) = actions {
@@ -1146,7 +1146,7 @@ pub fn message_el(
     }
     let mut line = line;
     if pics.menu_open {
-        line = line.bg(rgba(theme::BG_HOVER));
+        line = line.bg(rgba(theme::bg_hover()));
     }
     let mut line = line
         .e2e("div", &classes)
@@ -1171,19 +1171,19 @@ pub fn other_row(row: &Row) -> AnyElement {
             .mt(px(16.0))
             .mb(px(4.0))
             .mx(px(16.0))
-            .text_color(rgb(theme::TEXT_FAINT))
+            .text_color(rgb(theme::text_faint()))
             .text_size(rem(0.75))
             .font_weight(FontWeight::SEMIBOLD)
-            .child(div().flex_1().h(px(1.0)).bg(rgb(theme::BG_ELEVATED)))
+            .child(div().flex_1().h(px(1.0)).bg(rgb(theme::bg_elevated())))
             .child(div().child(label.clone()).e2e("span", "").text(label.clone()))
-            .child(div().flex_1().h(px(1.0)).bg(rgb(theme::BG_ELEVATED)))
+            .child(div().flex_1().h(px(1.0)).bg(rgb(theme::bg_elevated())))
             .e2e("div", "date-divider")
             .into_any_element(),
         Row::Start => div()
             .p(px(16.0))
             .flex()
             .justify_center()
-            .text_color(rgb(theme::TEXT_FAINT))
+            .text_color(rgb(theme::text_faint()))
             .text_size(rem(0.85))
             .child("This is the beginning of the room.")
             .e2e("div", "timeline-start")
@@ -1196,21 +1196,21 @@ pub fn other_row(row: &Row) -> AnyElement {
             .mt(px(10.0))
             .mb(px(2.0))
             .mx(px(16.0))
-            .text_color(rgb(theme::DANGER))
+            .text_color(rgb(theme::danger()))
             .text_size(rem(0.7))
             .font_weight(FontWeight::BOLD)
-            .child(div().flex_1().h(px(1.0)).bg(rgb(theme::DANGER)))
+            .child(div().flex_1().h(px(1.0)).bg(rgb(theme::danger())))
             .child(
                 div()
                     .px(px(6.0))
                     .rounded(px(4.0))
-                    .bg(rgb(theme::DANGER))
+                    .bg(rgb(theme::danger()))
                     .text_color(rgb(0xffffff))
                     .child("NEW")
                     .e2e("span", "")
                     .text("NEW"),
             )
-            .child(div().flex_1().h(px(1.0)).bg(rgb(theme::DANGER)))
+            .child(div().flex_1().h(px(1.0)).bg(rgb(theme::danger())))
             .e2e("div", "new-divider")
             .into_any_element(),
         Row::Skeleton { older } => skeleton(*older),
@@ -1225,7 +1225,7 @@ mod tests {
 
     fn base() -> Base {
         Base {
-            color: theme::TEXT,
+            color: theme::text(),
             italic: false,
         }
     }
@@ -1254,8 +1254,8 @@ mod tests {
         assert_eq!(runs.iter().map(|r| r.len).collect::<Vec<_>>(), [2, 4, 1, 4]);
         assert_eq!(runs[0].font.weight, FontWeight::NORMAL);
         assert_eq!(runs[1].font.weight, FontWeight::BOLD);
-        assert_eq!(runs[3].color, hsla(theme::LINK));
-        assert_eq!(runs[0].color, hsla(theme::TEXT));
+        assert_eq!(runs[3].color, hsla(theme::link()));
+        assert_eq!(runs[0].color, hsla(theme::text()));
     }
 
     #[test]

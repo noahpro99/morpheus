@@ -362,9 +362,9 @@ fn tag(text: &str, warn: bool) -> AnyElement {
         .py(px(1.0))
         .rounded(px(10.0))
         .bg(if warn {
-            rgba(0xffb02026)
+            rgba(theme::alpha(theme::warn(), 0x26))
         } else {
-            rgba(theme::BG_ELEVATED << 8 | 0xff)
+            rgba(theme::bg_elevated() << 8 | 0xff)
         })
         .text_size(px(0.7 * theme::REM))
         .font_weight(FontWeight::BOLD)
@@ -404,7 +404,7 @@ impl Render for ProfileCard {
             .flex_none()
             .bg(linear_gradient(
                 135.0,
-                linear_color_stop(rgb(theme::ACCENT_STRONG), 0.0),
+                linear_color_stop(rgb(theme::accent_strong()), 0.0),
                 linear_color_stop(rgb(0x2d3a9e), 1.0),
             ))
             .child(
@@ -466,7 +466,7 @@ impl Render for ProfileCard {
                     .mt(px(-36.0))
                     .rounded_full()
                     .border_4()
-                    .border_color(rgb(theme::BG_SIDEBAR))
+                    .border_color(rgb(theme::bg_sidebar()))
                     .cursor_pointer()
                     .child(avatar(picture, &name, 72.0, None))
                     .on_click(cx.listener(|this, _, _, cx| this.show_full(cx)))
@@ -485,7 +485,7 @@ impl Render for ProfileCard {
             .child(
                 div()
                     .text_size(px(0.85 * theme::REM))
-                    .text_color(rgb(theme::TEXT_MUTED))
+                    .text_color(rgb(theme::text_muted()))
                     .child(self.user.to_string())
                     .e2e("p", "profile-id muted")
                     .text(self.user.to_string()),
@@ -512,7 +512,7 @@ impl Render for ProfileCard {
                     .id("card-mutual")
                     .mt(px(8.0))
                     .text_size(px(0.85 * theme::REM))
-                    .text_color(rgb(theme::ACCENT))
+                    .text_color(rgb(theme::accent()))
                     .cursor_pointer()
                     .hover(|s| s.underline())
                     .child(label.clone())
@@ -527,7 +527,7 @@ impl Render for ProfileCard {
             .mt(px(10.0))
             .pt(px(10.0))
             .border_t_1()
-            .border_color(rgb(theme::BG_ELEVATED))
+            .border_color(rgb(theme::bg_elevated()))
             .flex()
             .flex_col()
             .gap(px(6.0))
@@ -535,7 +535,7 @@ impl Render for ProfileCard {
                 div()
                     .text_size(px(0.7 * theme::REM))
                     .font_weight(FontWeight::BOLD)
-                    .text_color(rgb(theme::TEXT_FAINT))
+                    .text_color(rgb(theme::text_faint()))
                     .child("NOTE")
                     .e2e("h4", "")
                     .text("Note"),
@@ -546,17 +546,17 @@ impl Render for ProfileCard {
                     .px(px(10.0))
                     .rounded(px(theme::RADIUS))
                     .border_1()
-                    .border_color(rgb(theme::BG_ELEVATED))
-                    .bg(rgb(theme::BG_INPUT))
+                    .border_color(rgb(theme::bg_elevated()))
+                    .bg(rgb(theme::bg_input()))
                     .text_size(px(0.9 * theme::REM))
-                    .text_color(rgb(theme::TEXT))
+                    .text_color(rgb(theme::text()))
                     .child(self.note.clone()),
             );
         if self.note_saved {
             note = note.child(
                 div()
                     .text_size(px(0.75 * theme::REM))
-                    .text_color(rgb(theme::TEXT_MUTED))
+                    .text_color(rgb(theme::text_muted()))
                     .child("Saved")
                     .e2e("span", "muted note-saved")
                     .text("Saved"),
@@ -570,8 +570,8 @@ impl Render for ProfileCard {
                     .mt(px(12.0))
                     .px(px(12.0))
                     .rounded(px(theme::RADIUS))
-                    .bg(rgb(theme::BG_ELEVATED))
-                    .text_color(rgb(theme::TEXT))
+                    .bg(rgb(theme::bg_elevated()))
+                    .text_color(rgb(theme::text()))
                     .child(self.message.clone()),
             );
         }
@@ -593,11 +593,11 @@ impl Render for ProfileCard {
             .flex()
             .flex_col()
             .rounded(px(theme::RADIUS_XL))
-            .bg(rgb(theme::BG_SIDEBAR))
+            .bg(rgb(theme::bg_sidebar()))
             .border_1()
-            .border_color(rgba(0xffffff0f))
+            .border_color(rgba(theme::edge()))
             .shadow_lg()
-            .text_color(rgb(theme::TEXT))
+            .text_color(rgb(theme::text()))
             .line_height(relative(theme::LINE_HEIGHT))
             .child(banner)
             .child(body)
@@ -627,8 +627,8 @@ impl ProfileCard {
     /// The inline form under the card: why you report them.
     fn report_form(&self, cx: &mut Context<Self>) -> AnyElement {
         let note = self.report_note.as_ref().map(|note| match note {
-            Note::Ok(text) => div().text_color(rgb(0x4fd1a5)).child(text.clone()).e2e("p", "ok").text(text.clone()).into_any_element(),
-            Note::Error(text) => div().text_color(rgb(theme::DANGER)).child(text.clone()).e2e("p", "error").text(text.clone()).into_any_element(),
+            Note::Ok(text) => div().text_color(rgb(theme::ok())).child(text.clone()).e2e("p", "ok").text(text.clone()).into_any_element(),
+            Note::Error(text) => div().text_color(rgb(theme::danger())).child(text.clone()).e2e("p", "error").text(text.clone()).into_any_element(),
         });
         let button = |id: &'static str, label: &'static str, danger: bool, kind: &'static str, submit: bool, on_click: Box<dyn Fn(&mut Self, &mut Context<Self>)>| {
             div()
@@ -638,7 +638,7 @@ impl ProfileCard {
                 .gap(px(6.0))
                 .cursor_pointer()
                 .rounded(px(6.0))
-                .when(danger, |d| d.bg(rgb(theme::DANGER)).text_color(rgb(0xffffff)).px(px(14.0)).py(px(8.0)))
+                .when(danger, |d| d.bg(rgb(theme::danger())).text_color(rgb(0xffffff)).px(px(14.0)).py(px(8.0)))
                 .when(!danger, |d| d.px(px(6.0)).py(px(1.0)))
                 .when(danger, |d| d.child(icon("flag", 16.0).text_color(rgb(0xffffff))))
                 .child(label)
@@ -660,9 +660,9 @@ impl ProfileCard {
                     .flex_col()
                     .gap(px(6.0))
                     .text_size(px(0.85 * theme::REM))
-                    .text_color(rgb(theme::TEXT_MUTED))
+                    .text_color(rgb(theme::text_muted()))
                     .child("Report this user")
-                    .child(div().text_size(px(theme::REM)).text_color(rgb(theme::TEXT)).child(self.report_reason.clone()))
+                    .child(div().text_size(px(theme::REM)).text_color(rgb(theme::text())).child(self.report_reason.clone()))
                     .e2e("label", "")
                     .text("Report this user"),
             )
@@ -698,7 +698,7 @@ impl ProfileCard {
                 div()
                     .mt(px(-40.0))
                     .rounded_full()
-                    .border_color(rgb(theme::BG_SIDEBAR))
+                    .border_color(rgb(theme::bg_sidebar()))
                     .border_4()
                     .child(avatar(picture, &name, 80.0, None)),
             )
@@ -714,7 +714,7 @@ impl ProfileCard {
             .child(
                 div()
                     .text_size(px(0.85 * theme::REM))
-                    .text_color(rgb(theme::TEXT_MUTED))
+                    .text_color(rgb(theme::text_muted()))
                     .child(self.user.to_string())
                     .e2e("p", "profile-id muted")
                     .text(self.user.to_string()),
@@ -733,7 +733,7 @@ impl ProfileCard {
                 .mt(px(12.0))
                 .pt(px(10.0))
                 .border_t_1()
-                .border_color(rgb(theme::BG_ELEVATED))
+                .border_color(rgb(theme::bg_elevated()))
                 .flex()
                 .flex_col()
                 .gap(px(6.0))
@@ -742,7 +742,7 @@ impl ProfileCard {
                     div()
                         .text_size(px(0.7 * theme::REM))
                         .font_weight(FontWeight::BOLD)
-                        .text_color(rgb(theme::TEXT_FAINT))
+                        .text_color(rgb(theme::text_faint()))
                         .child(heading.to_uppercase())
                         .e2e("h4", "")
                         .text(heading),
@@ -750,7 +750,7 @@ impl ProfileCard {
             if servers.is_empty() {
                 section = section.child(
                     div()
-                        .text_color(rgb(theme::TEXT_MUTED))
+                        .text_color(rgb(theme::text_muted()))
                         .child("None yet.")
                         .e2e("p", "muted")
                         .text("None yet."),
@@ -770,7 +770,7 @@ impl ProfileCard {
                         .py(px(4.0))
                         .rounded(px(theme::RADIUS_SM))
                         .cursor_pointer()
-                        .hover(|s| s.bg(rgba(theme::BG_HOVER)))
+                        .hover(|s| s.bg(rgba(theme::bg_hover())))
                         .child(avatar(picture, &server.name, 28.0, Some(8.0)))
                         .child(server.name.clone())
                         .on_click(cx.listener(move |_, _, _, cx| {
@@ -799,9 +799,9 @@ impl ProfileCard {
             .flex_col()
             .overflow_hidden()
             .rounded(px(theme::RADIUS_LG))
-            .bg(rgb(theme::BG_SIDEBAR))
+            .bg(rgb(theme::bg_sidebar()))
             .shadow_lg()
-            .text_color(rgb(theme::TEXT))
+            .text_color(rgb(theme::text()))
             .line_height(relative(theme::LINE_HEIGHT))
             .child(
                 div()
@@ -810,7 +810,7 @@ impl ProfileCard {
                     .flex_none()
                     .bg(linear_gradient(
                         135.0,
-                        linear_color_stop(rgb(theme::ACCENT_STRONG), 0.0),
+                        linear_color_stop(rgb(theme::accent_strong()), 0.0),
                         linear_color_stop(rgb(0x2d3a9e), 1.0),
                     ))
                     .e2e("div", "profile-banner"),

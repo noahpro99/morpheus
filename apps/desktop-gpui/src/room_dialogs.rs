@@ -409,7 +409,7 @@ pub(crate) fn button(
     on_click: impl Fn(&ClickEvent, &mut Window, &mut gpui::App) + 'static,
 ) -> AnyElement {
     let danger = class.contains("danger");
-    let color = if danger { 0xffffff } else { theme::TEXT };
+    let color = if danger { 0xffffff } else { theme::text() };
     let el = div()
         .id(ElementId::from(SharedString::from(id.to_owned())))
         .flex()
@@ -418,7 +418,7 @@ pub(crate) fn button(
         .gap(px(6.0))
         .cursor_pointer()
         .rounded(px(if danger { 6.0 } else { theme::RADIUS }))
-        .when(danger, |d| d.bg(rgb(theme::DANGER)).px(px(14.0)).py(px(8.0)))
+        .when(danger, |d| d.bg(rgb(theme::danger())).px(px(14.0)).py(px(8.0)))
         .when(!danger, |d| d.px(px(6.0)).py(px(1.0)))
         .when(busy, |d| d.opacity(0.6))
         .text_color(rgb(color))
@@ -440,12 +440,12 @@ fn field(label: &str, input: &Entity<TextInput>) -> AnyElement {
         .flex_col()
         .gap(px(6.0))
         .text_size(px(0.85 * theme::REM))
-        .text_color(rgb(theme::TEXT_MUTED))
+        .text_color(rgb(theme::text_muted()))
         .child(label.to_owned())
         .child(
             div()
                 .text_size(px(theme::REM))
-                .text_color(rgb(theme::TEXT))
+                .text_color(rgb(theme::text()))
                 .child(input.clone()),
         )
         .e2e("label", "")
@@ -456,13 +456,13 @@ fn field(label: &str, input: &Entity<TextInput>) -> AnyElement {
 fn note_el(note: &Note) -> AnyElement {
     match note {
         Note::Ok(text) => div()
-            .text_color(rgb(0x4fd1a5))
+            .text_color(rgb(theme::ok()))
             .child(text.clone())
             .e2e("p", "ok")
             .text(text.clone())
             .into_any_element(),
         Note::Error(text) => div()
-            .text_color(rgb(theme::DANGER))
+            .text_color(rgb(theme::danger()))
             .text_size(px(0.9 * theme::REM))
             .child(text.clone())
             .e2e("p", "error")
@@ -487,9 +487,9 @@ fn choice(
         .justify_center()
         .rounded_full()
         .border_1()
-        .border_color(rgb(if checked { theme::ACCENT } else { theme::TEXT_FAINT }))
+        .border_color(rgb(if checked { theme::accent() } else { theme::text_faint() }))
         .when(checked, |d| {
-            d.child(div().size(px(8.0)).rounded_full().bg(rgb(theme::ACCENT)))
+            d.child(div().size(px(8.0)).rounded_full().bg(rgb(theme::accent())))
         })
         .e2e("input", "")
         .attr("type", "radio")
@@ -502,7 +502,7 @@ fn choice(
         .gap(px(8.0))
         .cursor_pointer()
         .text_size(px(0.95 * theme::REM))
-        .text_color(rgb(theme::TEXT))
+        .text_color(rgb(theme::text()))
         .child(circle)
         .child(div().child(label.to_owned()).e2e("span", "").text(label))
         .on_click(on_click)
@@ -520,7 +520,7 @@ fn choice_group(legend: &str, choices: Vec<AnyElement>) -> AnyElement {
             div()
                 .mb(px(4.0))
                 .text_size(px(0.85 * theme::REM))
-                .text_color(rgb(theme::TEXT_MUTED))
+                .text_color(rgb(theme::text_muted()))
                 .child(legend.to_owned())
                 .e2e("legend", "")
                 .text(legend),
@@ -573,13 +573,13 @@ impl RoomDialog {
             .py(px(10.0))
             .rounded(px(theme::RADIUS))
             .border_1()
-            .border_color(rgb(theme::BG_ELEVATED))
-            .bg(rgb(theme::BG_INPUT))
+            .border_color(rgb(theme::bg_elevated()))
+            .bg(rgb(theme::bg_input()))
             .text_size(px(theme::REM))
-            .text_color(rgb(theme::TEXT))
+            .text_color(rgb(theme::text()))
             .cursor_pointer()
             .child(shown)
-            .child(icon("chevron-down", 14.0).text_color(rgb(theme::TEXT_MUTED)))
+            .child(icon("chevron-down", 14.0).text_color(rgb(theme::text_muted())))
             .on_click(cx.listener(|this, _, _, cx| {
                 this.category_open = !this.category_open;
                 cx.notify();
@@ -590,11 +590,11 @@ impl RoomDialog {
                 .flex_col()
                 .mt(px(2.0))
                 .rounded(px(theme::RADIUS))
-                .bg(rgb(theme::BG_INPUT))
+                .bg(rgb(theme::bg_input()))
                 .border_1()
-                .border_color(rgb(theme::BG_ELEVATED))
+                .border_color(rgb(theme::bg_elevated()))
                 .text_size(px(theme::REM))
-                .text_color(rgb(theme::TEXT))
+                .text_color(rgb(theme::text()))
                 .children(options.iter().enumerate().map(|(i, label)| {
                     let value = self
                         .categories
@@ -606,7 +606,7 @@ impl RoomDialog {
                         .px(px(12.0))
                         .py(px(8.0))
                         .cursor_pointer()
-                        .hover(|s| s.bg(rgba(theme::BG_HOVER)))
+                        .hover(|s| s.bg(rgba(theme::bg_hover())))
                         .child(label.clone())
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.category = i;
@@ -630,7 +630,7 @@ impl RoomDialog {
             .flex_col()
             .gap(px(6.0))
             .text_size(px(0.85 * theme::REM))
-            .text_color(rgb(theme::TEXT_MUTED))
+            .text_color(rgb(theme::text_muted()))
             .child("Category")
             .child(select)
             .e2e("label", "")
@@ -658,20 +658,20 @@ impl RoomDialog {
                 .font_weight(FontWeight::BOLD)
                 .child(
                     icon(if on { "lock" } else { "lock-open" }, 16.0)
-                        .text_color(rgb(theme::TEXT)),
+                        .text_color(rgb(theme::text())),
                 )
                 .child(div().child("Encryption").e2e("span", "").text("Encryption"))
                 .e2e("h3", "")
                 .into_any_element(),
         ];
         match state {
-            Encryption::Checking => parts.push(para("Checking…", "muted", theme::TEXT_MUTED)),
+            Encryption::Checking => parts.push(para("Checking…", "muted", theme::text_muted())),
             Encryption::On => {
-                parts.push(para(ENCRYPTION_ON, "ok", 0x4fd1a5));
-                parts.push(para(ENCRYPTION_PERMANENT, "muted", theme::TEXT_MUTED));
+                parts.push(para(ENCRYPTION_ON, "ok", theme::ok()));
+                parts.push(para(ENCRYPTION_PERMANENT, "muted", theme::text_muted()));
             }
             Encryption::Off => {
-                parts.push(para(ENCRYPTION_OFF, "muted", theme::TEXT_MUTED));
+                parts.push(para(ENCRYPTION_OFF, "muted", theme::text_muted()));
                 parts.push(
                     div()
                         .flex()
@@ -691,7 +691,7 @@ impl RoomDialog {
                 );
             }
             Encryption::Confirming => {
-                parts.push(para(ENCRYPTION_WARNING, "warning", 0xf0b232));
+                parts.push(para(ENCRYPTION_WARNING, "warning", theme::warn()));
                 parts.push(actions(vec![
                     button(
                         "confirm-encryption",
@@ -728,7 +728,7 @@ impl RoomDialog {
             .px(px(14.0))
             .py(px(12.0))
             .rounded(px(theme::RADIUS))
-            .bg(rgb(theme::BG_ELEVATED))
+            .bg(rgb(theme::bg_elevated()))
             .children(parts)
             .e2e("section", "encryption-setting")
             .into_any_element()
@@ -901,7 +901,7 @@ impl RoomDialog {
                     let file = vm::picked_file(path);
                     pick.push(
                         div()
-                            .text_color(rgb(theme::TEXT_MUTED))
+                            .text_color(rgb(theme::text_muted()))
                             .child(file.clone())
                             .e2e("span", "muted")
                             .text(file)

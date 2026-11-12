@@ -57,13 +57,13 @@ pub fn window_controls() -> AnyElement {
             .flex()
             .items_center()
             .justify_center()
-            .text_color(rgb(theme::TEXT_MUTED))
+            .text_color(rgb(theme::text_muted()))
             .cursor_pointer()
             .child(icon(glyph, size));
         b = if title == "Close" {
-            b.hover(|s| s.bg(rgb(theme::DANGER)).text_color(rgb(0xffffff)))
+            b.hover(|s| s.bg(rgb(theme::danger())).text_color(rgb(0xffffff)))
         } else {
-            b.hover(|s| s.bg(rgba(theme::BG_HOVER)).text_color(rgb(theme::TEXT)))
+            b.hover(|s| s.bg(rgba(theme::bg_hover())).text_color(rgb(theme::text())))
         };
         no_drag(b)
             .on_click(move |_, window, cx| match title {
@@ -97,17 +97,17 @@ pub fn brand(size: f32) -> AnyElement {
         .font_weight(FontWeight::BOLD)
         .text_size(px(size))
         .line_height(px(size))
-        .text_color(rgb(theme::TEXT))
+        .text_color(rgb(theme::text()))
         .child(
             gpui::svg()
                 .path("logo-tight.svg")
                 .w(px(width))
                 .h(px(width * 154.0 / 416.0))
                 .flex_none()
-                .text_color(rgb(theme::OWN))
+                .text_color(rgb(theme::own()))
                 .e2e("svg", "mark")
                 .attr("viewBox", "48 182 416 154")
-                .attr("data-color", format!("{:06x}", theme::OWN)),
+                .attr("data-color", format!("{:06x}", theme::own())),
         )
         .child(
             div()
@@ -128,7 +128,7 @@ pub fn brand(size: f32) -> AnyElement {
                         .font_family("Inter")
                         .font_weight(FontWeight::MEDIUM)
                         .text_size(px(0.5 * size))
-                        .text_color(rgb(theme::TEXT_MUTED))
+                        .text_color(rgb(theme::text_muted()))
                         .child("™")
                         .e2e("span", "tm")
                         .attr("data-font", "Inter")
@@ -150,9 +150,9 @@ pub fn window_bar() -> AnyElement {
             .flex()
             .items_center()
             .px(px(8.0))
-            .bg(rgb(theme::BG_RAIL))
+            .bg(rgb(theme::bg_rail()))
             .text_size(px(0.8 * theme::REM))
-            .text_color(rgb(theme::TEXT_MUTED))
+            .text_color(rgb(theme::text_muted()))
             .child(div().flex_1())
             .child(brand(13.0))
             .child(div().flex_1().flex().justify_end().child(window_controls())),

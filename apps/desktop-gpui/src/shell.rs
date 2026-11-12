@@ -198,6 +198,8 @@ impl Shell {
                 this.update(cx, |this, cx| {
                     this.prefs = Prefs::from_json(&value);
                     let theme = this.prefs.theme();
+                    crate::theme::set(theme);
+                    cx.refresh_windows();
                     if let Some(settings) = &this.settings {
                         settings.update(cx, |settings, _| settings.theme = theme);
                     }
@@ -223,6 +225,8 @@ impl Shell {
         cx.subscribe(&settings, |this, _, _: &KeysChanged, cx| this.refresh_keys(cx))
             .detach();
         cx.subscribe(&settings, |this, _, chosen: &ThemeChosen, cx| {
+            crate::theme::set(chosen.0);
+            cx.refresh_windows();
             this.prefs.set_theme(chosen.0);
             this.save_prefs(cx);
         })
@@ -751,11 +755,11 @@ fn backup_prompt(cx: &mut Context<Shell>) -> impl IntoElement {
             .rounded(px(theme::RADIUS))
             .cursor_pointer()
             .bg(if primary {
-                rgb(theme::ACCENT)
+                rgb(theme::accent())
             } else {
-                gpui::rgba(theme::BG_HOVER).into()
+                gpui::rgba(theme::bg_hover()).into()
             })
-            .text_color(if primary { rgb(0xffffff) } else { rgb(theme::TEXT) })
+            .text_color(if primary { rgb(0xffffff) } else { rgb(theme::text()) })
             .child(label)
     };
     div()
@@ -768,14 +772,14 @@ fn backup_prompt(cx: &mut Context<Shell>) -> impl IntoElement {
         .px(px(16.0))
         .py(px(14.0))
         .rounded(px(10.0))
-        .bg(rgb(theme::BG_ELEVATED))
+        .bg(rgb(theme::bg_elevated()))
         .shadow_md()
         .occlude()
         .child(
             div()
                 .mt(px(2.0))
-                .text_color(rgb(theme::ACCENT))
-                .child(crate::icons::icon("key", 18.0).text_color(rgb(theme::ACCENT))),
+                .text_color(rgb(theme::accent()))
+                .child(crate::icons::icon("key", 18.0).text_color(rgb(theme::accent()))),
         )
         .child(
             div()
@@ -794,7 +798,7 @@ fn backup_prompt(cx: &mut Context<Shell>) -> impl IntoElement {
                 )
                 .child(
                     div()
-                        .text_color(rgb(theme::TEXT_MUTED))
+                        .text_color(rgb(theme::text_muted()))
                         .child("Keep your encrypted messages if you lose this device: you'll get a recovery key to save.")
                         .e2e("span", "")
                         .text("Keep your encrypted messages if you lose this device: you'll get a recovery key to save."),
@@ -912,7 +916,7 @@ impl Render for Shell {
             .relative()
             .flex()
             .flex_col()
-            .bg(rgb(theme::BG_CHAT))
+            .bg(rgb(theme::bg_chat()))
             .track_focus(&root_focus)
             // A click on nothing in particular leaves the focus where it is (the
             // root would otherwise take it from a text box).

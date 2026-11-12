@@ -762,7 +762,7 @@ impl Render for TimelineView {
                     .absolute()
                     .top(px(8.0))
                     .left(px(16.0))
-                    .text_color(rgb(theme::DANGER))
+                    .text_color(rgb(theme::danger()))
                     .child(error.clone())
                     .e2e("p", "error")
                     .text(error.clone()),
@@ -782,13 +782,13 @@ impl Render for TimelineView {
                             .px(px(12.0))
                             .py(px(6.0))
                             .rounded_full()
-                            .bg(rgb(theme::ACCENT_STRONG))
+                            .bg(rgb(theme::accent_strong()))
                             .text_color(rgb(0xffffff))
                             .text_size(px(0.8 * theme::REM))
                             .font_weight(FontWeight::SEMIBOLD)
                             .shadow_md()
                             .cursor_pointer()
-                            .hover(|s| s.bg(rgb(theme::ACCENT)))
+                            .hover(|s| s.bg(rgb(theme::accent())))
                             .on_click(cx.listener(|this, _, _, cx| this.jump_to_present(cx)))
                             .child("Jump to present ↓")
                             .e2e("button", "jump-to-bottom")
@@ -826,12 +826,12 @@ fn key_banner(cx: &mut Context<TimelineView>) -> impl IntoElement {
             .rounded(px(theme::RADIUS))
             .cursor_pointer()
             .bg(if primary {
-                rgb(theme::ACCENT)
+                rgb(theme::accent())
             } else {
-                gpui::rgba(theme::BG_HOVER).into()
+                gpui::rgba(theme::bg_hover()).into()
             })
-            .text_color(if primary { rgb(0xffffff) } else { rgb(theme::TEXT) })
-            .child(icon(glyph, 16.0).text_color(if primary { rgb(0xffffff) } else { rgb(theme::TEXT) }))
+            .text_color(if primary { rgb(0xffffff) } else { rgb(theme::text()) })
+            .child(icon(glyph, 16.0).text_color(if primary { rgb(0xffffff) } else { rgb(theme::text()) }))
             .child(label)
             .on_click(cx.listener(move |_, _, _, cx| cx.emit(TimelineEvent::OpenSettings(focus))))
             .e2e("button", if primary { "primary" } else { "secondary" })
@@ -848,13 +848,13 @@ fn key_banner(cx: &mut Context<TimelineView>) -> impl IntoElement {
         .px(px(14.0))
         .py(px(10.0))
         .rounded(px(theme::RADIUS_LG))
-        .bg(rgb(theme::BG_ELEVATED))
+        .bg(rgb(theme::bg_elevated()))
         .border_1()
-        .border_color(gpui::rgba(0x7c8cff59))
+        .border_color(gpui::rgba(theme::alpha(theme::accent(), 0x59)))
         .child(
             div()
-                .text_color(rgb(theme::ACCENT))
-                .child(icon("lock", 18.0).text_color(rgb(theme::ACCENT)))
+                .text_color(rgb(theme::accent()))
+                .child(icon("lock", 18.0).text_color(rgb(theme::accent())))
                 .e2e("span", "key-banner-icon"),
         )
         .child(
@@ -874,7 +874,7 @@ fn key_banner(cx: &mut Context<TimelineView>) -> impl IntoElement {
                 )
                 .child(
                     div()
-                        .text_color(rgb(theme::TEXT_MUTED))
+                        .text_color(rgb(theme::text_muted()))
                         .child(BANNER_TEXT)
                         .e2e("span", "")
                         .text(BANNER_TEXT),

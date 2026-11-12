@@ -35,6 +35,7 @@ pub mod rich;
 pub mod rows;
 pub mod search;
 pub mod text_buffer;
+pub mod theme;
 pub mod threads;
 pub mod toast;
 pub mod verification;

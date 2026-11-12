@@ -127,9 +127,9 @@ impl ModView {
             .rounded(px(theme::RADIUS_SM))
             .cursor_pointer()
             .when(busy, |d| d.opacity(0.6))
-            .when(danger, |d| d.bg(rgb(theme::DANGER)).text_color(rgb(0xffffff)))
-            .when(!danger, |d| d.text_color(rgb(theme::TEXT)))
-            .child(icon(glyph, 16.0).text_color(rgb(if danger { 0xffffff } else { theme::TEXT })))
+            .when(danger, |d| d.bg(rgb(theme::danger())).text_color(rgb(0xffffff)))
+            .when(!danger, |d| d.text_color(rgb(theme::text())))
+            .child(icon(glyph, 16.0).text_color(rgb(if danger { 0xffffff } else { theme::text() })))
             .child(label)
             .on_click(on_click)
             .e2e("button", class)
@@ -153,13 +153,13 @@ impl ModView {
             .py(px(4.0))
             .rounded(px(theme::RADIUS_SM))
             .border_1()
-            .border_color(rgba(theme::BG_SELECTED))
-            .bg(rgb(theme::BG_ELEVATED))
+            .border_color(rgba(theme::bg_selected()))
+            .bg(rgb(theme::bg_elevated()))
             .text_size(px(0.8 * theme::REM))
-            .text_color(rgb(theme::TEXT))
+            .text_color(rgb(theme::text()))
             .cursor_pointer()
             .child(shown)
-            .child(icon("chevron-down", 12.0).text_color(rgb(theme::TEXT_MUTED)))
+            .child(icon("chevron-down", 12.0).text_color(rgb(theme::text_muted())))
             .on_click({
                 let id = id.clone();
                 cx.listener(move |this, _, _, cx| {
@@ -173,9 +173,9 @@ impl ModView {
                 .flex_col()
                 .mt(px(2.0))
                 .rounded(px(theme::RADIUS_SM))
-                .bg(rgb(theme::BG_ELEVATED))
+                .bg(rgb(theme::bg_elevated()))
                 .text_size(px(0.8 * theme::REM))
-                .text_color(rgb(theme::TEXT))
+                .text_color(rgb(theme::text()))
                 .children(roles.iter().map(|(role, label)| {
                     let (role, room_id) = (*role, id.clone());
                     div()
@@ -183,7 +183,7 @@ impl ModView {
                         .px(px(10.0))
                         .py(px(6.0))
                         .cursor_pointer()
-                        .hover(|s| s.bg(rgba(theme::BG_HOVER)))
+                        .hover(|s| s.bg(rgba(theme::bg_hover())))
                         .child(*label)
                         .on_click(cx.listener(move |this, _, _, cx| {
                             let (user, session) = (this.user.clone(), this.session.clone());
@@ -211,7 +211,7 @@ impl ModView {
             Some((roles, current)) => self.role_select(room, roles, *current, cx),
             None => div()
                 .text_size(px(0.8 * theme::REM))
-                .text_color(rgb(if view.state == "Banned" { theme::DANGER } else { theme::TEXT_MUTED }))
+                .text_color(rgb(if view.state == "Banned" { theme::danger() } else { theme::text_muted() }))
                 .child(view.state)
                 .e2e("span", "mod-state")
                 .text(view.state)
@@ -250,7 +250,7 @@ impl ModView {
             .px(px(12.0))
             .py(px(8.0))
             .rounded(px(theme::RADIUS))
-            .bg(rgb(theme::BG_INPUT))
+            .bg(rgb(theme::bg_input()))
             .when(busy, |d| d.opacity(0.6))
             .child(
                 div()
@@ -284,9 +284,9 @@ impl Render for ModView {
             window.focus(&self.focus);
         }
         let rows: Vec<AnyElement> = match &self.rooms {
-            None => vec![div().text_color(rgb(theme::TEXT_MUTED)).child(LOOKING).e2e("p", "muted").text(LOOKING).into_any_element()],
-            Some(Err(err)) => vec![div().text_color(rgb(theme::DANGER)).child(err.clone()).e2e("p", "error").text(err.clone()).into_any_element()],
-            Some(Ok(list)) if list.is_empty() => vec![div().text_color(rgb(theme::TEXT_MUTED)).child(NO_ROOMS).e2e("p", "muted").text(NO_ROOMS).into_any_element()],
+            None => vec![div().text_color(rgb(theme::text_muted())).child(LOOKING).e2e("p", "muted").text(LOOKING).into_any_element()],
+            Some(Err(err)) => vec![div().text_color(rgb(theme::danger())).child(err.clone()).e2e("p", "error").text(err.clone()).into_any_element()],
+            Some(Ok(list)) if list.is_empty() => vec![div().text_color(rgb(theme::text_muted())).child(NO_ROOMS).e2e("p", "muted").text(NO_ROOMS).into_any_element()],
             Some(Ok(list)) => list.iter().map(|room| self.room_row(room, cx)).collect(),
         };
         let header = div()
@@ -310,7 +310,7 @@ impl Render for ModView {
                     .child(
                         div()
                             .text_size(px(0.8 * theme::REM))
-                            .text_color(rgb(theme::TEXT_MUTED))
+                            .text_color(rgb(theme::text_muted()))
                             .child(self.user.to_string())
                             .e2e("span", "mod-view-id")
                             .text(self.user.to_string()),
@@ -322,12 +322,12 @@ impl Render for ModView {
             .flex_col()
             .gap(px(6.0))
             .text_size(px(0.85 * theme::REM))
-            .text_color(rgb(theme::TEXT_MUTED))
+            .text_color(rgb(theme::text_muted()))
             .child("Reason (for kicks and bans)")
             .child(
                 div()
                     .text_size(px(theme::REM))
-                    .text_color(rgb(theme::TEXT))
+                    .text_color(rgb(theme::text()))
                     .child(self.reason.clone()),
             )
             .e2e("label", "mod-view-reason");

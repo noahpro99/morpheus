@@ -11,7 +11,7 @@ use gpui::{
 };
 use morpheus_core::NotifyMode;
 
-use super::{SettingsView, ThemeChosen, button, muted, note, section, section_classed, Kind, OK};
+use super::{SettingsView, ThemeChosen, button, muted, note, section, section_classed, Kind};
 use crate::{
     e2e::E2eExt as _,
     icons::icon,
@@ -37,7 +37,7 @@ fn choice(
     disabled: bool,
     on_click: impl Fn(&ClickEvent, &mut Window, &mut gpui::App) + 'static,
 ) -> AnyElement {
-    let ring = rgb(if checked { theme::ACCENT } else { theme::TEXT_MUTED });
+    let ring = rgb(if checked { theme::accent() } else { theme::text_muted() });
     let mark = div()
         .size(px(18.0))
         .flex_none()
@@ -52,7 +52,7 @@ fn choice(
                 div()
                     .size(px(8.0))
                     .map(|d| if checkbox { d.rounded(px(3.0)) } else { d.rounded_full() })
-                    .bg(rgb(theme::ACCENT)),
+                    .bg(rgb(theme::accent())),
             )
         })
         .e2e("input", "")
@@ -188,11 +188,11 @@ impl SettingsView {
             .collect();
         match &self.notify_notes[slot] {
             Some(Ok(text)) => children.push(
-                div().text_color(rgb(OK)).child(*text).e2e("span", "ok").text(*text).into_any_element(),
+                div().text_color(rgb(theme::ok())).child(*text).e2e("span", "ok").text(*text).into_any_element(),
             ),
             Some(Err(text)) => children.push(
                 div()
-                    .text_color(rgb(theme::DANGER))
+                    .text_color(rgb(theme::danger()))
                     .child(text.clone())
                     .e2e("span", "error")
                     .text(text.clone())
@@ -274,11 +274,7 @@ impl SettingsView {
     pub(super) fn appearance_page(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let options = Theme::ALL.into_iter().map(|theme_choice| {
             let selected = theme_choice == self.theme;
-            let (side, chat) = match theme_choice {
-                Theme::Dark => (0x141720, 0x1a1e29),
-                Theme::Midnight => (0x000000, 0x0a0a0c),
-                Theme::Light => (0xeef0f5, 0xffffff),
-            };
+            let (side, chat) = theme::swatch_of(theme_choice);
             let swatch = div()
                 .flex()
                 .w(px(120.0))
@@ -295,8 +291,8 @@ impl SettingsView {
                 .p(px(8.0))
                 .rounded(px(theme::RADIUS_LG))
                 .border_2()
-                .border_color(if selected { rgb(theme::ACCENT) } else { rgb(theme::BG_ELEVATED) })
-                .bg(rgb(theme::BG_ELEVATED))
+                .border_color(if selected { rgb(theme::accent()) } else { rgb(theme::bg_elevated()) })
+                .bg(rgb(theme::bg_elevated()))
                 .cursor_pointer()
                 .child(swatch)
                 .child(
@@ -406,7 +402,7 @@ impl SettingsView {
             .px(px(12.0))
             .py(px(8.0))
             .rounded(px(theme::RADIUS_SM))
-            .bg(rgb(theme::BG_INPUT))
+            .bg(rgb(theme::bg_input()))
             .cursor_pointer()
             .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(cx.listener(move |this, _, _, cx| {
@@ -414,7 +410,7 @@ impl SettingsView {
                 cx.notify();
             }))
             .child(div().child(shown.clone()).e2e("span", "").text(shown))
-            .child(icon("chevron-down", 16.0).text_color(rgb(theme::TEXT_MUTED)))
+            .child(icon("chevron-down", 16.0).text_color(rgb(theme::text_muted())))
             .e2e("button", if open { "device-current open" } else { "device-current" })
             .attr("data-id", current_id);
         let mut choice = div()
@@ -426,7 +422,7 @@ impl SettingsView {
                     .flex()
                     .items_center()
                     .gap(px(8.0))
-                    .text_color(rgb(theme::TEXT_MUTED))
+                    .text_color(rgb(theme::text_muted()))
                     .child(icon(glyph, 16.0).e2e("svg", "icon"))
                     .child(label)
                     .e2e("span", "device-label")
@@ -443,9 +439,9 @@ impl SettingsView {
                     .py(px(8.0))
                     .rounded(px(theme::RADIUS_SM))
                     .cursor_pointer()
-                    .text_color(rgb(theme::TEXT))
-                    .when(selected, |d| d.bg(rgba(theme::BG_SELECTED)))
-                    .hover(|s| s.bg(rgba(theme::BG_HOVER)))
+                    .text_color(rgb(theme::text()))
+                    .when(selected, |d| d.bg(rgba(theme::bg_selected())))
+                    .hover(|s| s.bg(rgba(theme::bg_hover())))
                     .child(row.name.clone())
                     .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .on_click(cx.listener(move |this, _, _, cx| this.pick_voice(kind, id.clone(), cx)))
@@ -460,7 +456,7 @@ impl SettingsView {
                     .flex_col()
                     .p(px(4.0))
                     .rounded(px(theme::RADIUS_SM))
-                    .bg(rgb(theme::BG_ELEVATED))
+                    .bg(rgb(theme::bg_elevated()))
                     .children(options)
                     .e2e("div", "device-options")
                     .attr("role", "listbox")
@@ -562,7 +558,7 @@ impl SettingsView {
             }
         }
         if let Some(text) = &self.startup_note {
-            children.push(note(text, "error", theme::DANGER).into_any_element());
+            children.push(note(text, "error", theme::danger()).into_any_element());
         }
         vec![
             section(
@@ -578,7 +574,7 @@ impl SettingsView {
     pub(super) fn help_page(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let version = vm::version_line();
         let report = button("report-bug", "Report a bug", Kind::Primary, "report-bug")
-            .child(icon("bug", 16.0).text_color(rgb(theme::TEXT)))
+            .child(icon("bug", 16.0).text_color(rgb(theme::text())))
             .child("Report a bug")
             .on_click(cx.listener(|this, _, _, cx| {
                 let url = morpheus_core::bug_report_url(env!("CARGO_PKG_VERSION"), &this.data_dir);

@@ -197,8 +197,8 @@ impl Render for Switcher {
                 .py(px(8.0))
                 .rounded(px(theme::RADIUS_SM))
                 .cursor_pointer()
-                .when(active, |d| d.bg(rgba(theme::BG_SELECTED)))
-                .hover(|s| s.bg(rgba(theme::BG_SELECTED)))
+                .when(active, |d| d.bg(rgba(theme::bg_selected())))
+                .hover(|s| s.bg(rgba(theme::bg_selected())))
                 .on_click(cx.listener(move |this, _, _, cx| this.choose(index, cx)));
             let row = match entry {
                 Entry::Room(room) => {
@@ -214,14 +214,14 @@ impl Render for Switcher {
                             div()
                                 .ml_auto()
                                 .text_size(px(0.8 * theme::REM))
-                                .text_color(rgb(theme::TEXT_FAINT))
+                                .text_color(rgb(theme::text_faint()))
                                 .child(room.kind.clone())
                                 .e2e("span", "kind")
                                 .text(room.kind.clone()),
                         )
                 }
                 Entry::Action(action) => row
-                    .child(icon(action.glyph(), 16.0).text_color(rgb(theme::TEXT_FAINT)))
+                    .child(icon(action.glyph(), 16.0).text_color(rgb(theme::text_faint())))
                     .child(div().child(action.label())),
             };
             list = list.child(row.e2e("li", &classes).text(text));
@@ -231,7 +231,7 @@ impl Render for Switcher {
                 div()
                     .px(px(10.0))
                     .py(px(8.0))
-                    .text_color(rgb(theme::TEXT_MUTED))
+                    .text_color(rgb(theme::text_muted()))
                     .child("Nothing matches")
                     .e2e("li", "switcher-item muted")
                     .text("Nothing matches"),
@@ -240,7 +240,7 @@ impl Render for Switcher {
         let panel = div()
             .w(px(520.0))
             .rounded(px(theme::RADIUS_LG))
-            .bg(rgb(theme::BG_SIDEBAR))
+            .bg(rgb(theme::bg_sidebar()))
             .shadow_lg()
             .overflow_hidden()
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
@@ -249,7 +249,7 @@ impl Render for Switcher {
                     .px(px(16.0))
                     .py(px(14.0))
                     .border_b_1()
-                    .border_color(rgb(theme::BG_ELEVATED))
+                    .border_color(rgb(theme::bg_elevated()))
                     .font_weight(FontWeight::NORMAL)
                     .child(self.input.clone()),
             )

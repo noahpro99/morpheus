@@ -103,7 +103,7 @@ impl Render for RoomPreview {
                             )
                             .child(
                                 div()
-                                    .text_color(rgb(theme::TEXT_MUTED))
+                                    .text_color(rgb(theme::text_muted()))
                                     .child(members.clone())
                                     .e2e("p", "muted")
                                     .text(members),
@@ -117,7 +117,7 @@ impl Render for RoomPreview {
         if let Some(error) = &self.error {
             boxed = boxed.child(
                 div()
-                    .text_color(rgb(theme::DANGER))
+                    .text_color(rgb(theme::danger()))
                     .child(error.clone())
                     .e2e("p", "error")
                     .text(error.clone()),
