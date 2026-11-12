@@ -23,7 +23,7 @@ use crate::{CoreFuture, MediaRef, OwnedRoomId, OwnedUserId, Session, VectorDiff}
 /// rooms and Element's older Jitsi ones.
 const VOICE_ROOM_TYPES: [&str; 2] = ["org.matrix.msc3417.call", "io.element.video"];
 
-/// How many rooms the room list fetches before the UI asks for more.
+/// How many rooms the room list fetches at a time (more pages follow while it is full).
 const PAGE_SIZE: usize = 200;
 
 /// A UI-friendly snapshot of one room in the list.
@@ -306,7 +306,31 @@ impl Session {
                 controller.set_filter(Box::new(new_filter_non_left()));
                 pin_mut!(stream);
 
+                // The list holds one page of rooms until asked for another:
+                // keep asking while it is full, so every room is listed.
+                let mut len = 0usize;
+                let mut limit = PAGE_SIZE;
+
                 while let Some(diffs) = stream.next().await {
+                    for diff in &diffs {
+                        len = match diff {
+                            VectorDiff::Append { values } => len + values.len(),
+                            VectorDiff::Clear => 0,
+                            VectorDiff::PushFront { .. }
+                            | VectorDiff::PushBack { .. }
+                            | VectorDiff::Insert { .. } => len + 1,
+                            VectorDiff::PopFront | VectorDiff::PopBack | VectorDiff::Remove { .. } => {
+                                len.saturating_sub(1)
+                            }
+                            VectorDiff::Set { .. } => len,
+                            VectorDiff::Truncate { length } => (*length).min(len),
+                            VectorDiff::Reset { values } => values.len(),
+                        };
+                    }
+                    while len >= limit {
+                        controller.add_one_page();
+                        limit += PAGE_SIZE;
+                    }
                     // Push rules can change between batches; read them once per batch.
                     let settings = client.notification_settings().await;
                     let mut mapped = Vec::with_capacity(diffs.len());
