@@ -72,11 +72,17 @@ pub struct Flow {
     incoming: bool,
 }
 
+/// How often and how many times the status is read again while this device is not verified.
+const STATUS_REREAD_SECS: u64 = 2;
+const STATUS_REREADS: u32 = 15;
+
 pub struct SettingsView {
     session: Option<Session>,
     open: bool,
     page: SettingsPage,
     status: Option<Result<EncryptionStatus, String>>,
+    /// Times the status was read again because this device was not verified yet.
+    status_rereads: u32,
     devices: Option<Result<Vec<Device>, String>>,
     form: RecoveryForm,
     key_input: Entity<TextInput>,
@@ -160,6 +166,7 @@ impl SettingsView {
             open: false,
             page: SettingsPage::Account,
             status: None,
+            status_rereads: 0,
             devices: None,
             form: RecoveryForm::default(),
             key_input,
@@ -213,6 +220,7 @@ impl SettingsView {
         self.take_focus = true;
         self.focus_key = focus == SettingsFocus::RecoveryKey;
         self.set_up_when_ready = focus == SettingsFocus::SetUpBackup;
+        self.status_rereads = 0;
         self.refresh(cx);
         cx.notify();
     }
@@ -241,6 +249,25 @@ impl SettingsView {
                 {
                     this.set_up_when_ready = false;
                     this.set_up_recovery(cx);
+                }
+                // A signed-in device is made the account's first verified one in the
+                // background (a new account, or an old sign-in as the app starts): the
+                // page, opened meanwhile, follows instead of staying "not verified".
+                let unverified = matches!(&this.status, Some(Ok(s)) if !s.device_verified);
+                if this.open && unverified && this.status_rereads < STATUS_REREADS {
+                    this.status_rereads += 1;
+                    cx.spawn(async move |this, cx| {
+                        cx.background_executor()
+                            .timer(Duration::from_secs(STATUS_REREAD_SECS))
+                            .await;
+                        this.update(cx, |this, cx| {
+                            if this.open {
+                                this.refresh(cx);
+                            }
+                        })
+                        .ok();
+                    })
+                    .detach();
                 }
                 cx.notify();
             })
