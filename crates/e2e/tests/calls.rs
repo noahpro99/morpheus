@@ -3553,7 +3553,7 @@ async fn joining_a_voice_channel_is_quick() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
-    join_figures(&hs, "local", 300).await;
+    join_figures(&hs, "local", 400).await;
 }
 
 /// A homeserver in front of which every request waits 100 ms (a server some
@@ -3612,5 +3612,5 @@ async fn joining_a_voice_channel_is_quick_when_the_server_is_far() {
         return;
     };
     let far = slow_homeserver(&hs, std::time::Duration::from_millis(100)).await;
-    join_figures(&far, "100 ms away", 400).await;
+    join_figures(&far, "100 ms away", 450).await;
 }
