@@ -112,6 +112,11 @@ impl ThreadPanel {
         (self.timeline.clone(), self.handle.clone())
     }
 
+    /// Whether the reply box has something open that Escape closes first.
+    pub fn composer_busy(&self, cx: &gpui::App) -> bool {
+        self.composer.read(cx).busy()
+    }
+
     /// Your nicknames changed.
     pub fn set_nicknames(&mut self, nicknames: &NickMap, cx: &mut Context<Self>) {
         self.nickname = nicknames.get(self.root.sender.as_str()).cloned();

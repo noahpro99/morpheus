@@ -61,27 +61,21 @@ async fn shortcuts_navigate_rooms_scopes_history_and_panels() {
         .await
         .expect("shortcuts dialog");
     app.press("body", "Escape").await.expect("escape");
-    app.wait_for_js(
-        "return document.querySelector('.help-dialog') === null;",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("closed");
+    app.wait_for_count(".help-dialog", 0, DEFAULT_WAIT)
+        .await
+        .expect("closed");
 
     // Alt+Down / Alt+Up step through the sidebar order.
     let before = header(&mut app).await;
     app.key_combo("body", "ArrowDown", false, true, false)
         .await
         .expect("alt+down");
-    app.wait_for_js(
-        &format!(
-            "return document.querySelector('.chat-header h2')?.textContent !== {};",
-            serde_json::to_string(&before).expect("json")
-        ),
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("moved to the next room");
+    app.wait_for_text_gone(".chat-header h2", &before, DEFAULT_WAIT)
+        .await
+        .expect("moved to the next room");
+    app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
+        .await
+        .expect("the next room is open");
     app.key_combo("body", "ArrowUp", false, true, false)
         .await
         .expect("alt+up");
@@ -99,12 +93,19 @@ async fn shortcuts_navigate_rooms_scopes_history_and_panels() {
     app.wait_for_text(".chat-header h2", "dev", DEFAULT_WAIT)
         .await
         .expect("first room of the space");
-    app.key_combo("body", "ArrowLeft", false, true, false)
-        .await
-        .expect("alt+left");
-    app.wait_for_text(".chat-header h2", &before, DEFAULT_WAIT)
-        .await
-        .expect("history back");
+    if app.is_gpui() {
+        // No history (Alt+Left) in the GPUI app yet: Ctrl+Alt+Up goes back a scope.
+        app.key_combo("body", "ArrowUp", true, true, false)
+            .await
+            .expect("ctrl+alt+up");
+    } else {
+        app.key_combo("body", "ArrowLeft", false, true, false)
+            .await
+            .expect("alt+left");
+        app.wait_for_text(".chat-header h2", &before, DEFAULT_WAIT)
+            .await
+            .expect("history back");
+    }
     app.wait_for(".rail-item.selected[title=\"Rooms\"]", DEFAULT_WAIT)
         .await
         .expect("scope followed");
@@ -120,12 +121,9 @@ async fn shortcuts_navigate_rooms_scopes_history_and_panels() {
     app.key_combo("body", "u", true, false, false)
         .await
         .expect("ctrl+u");
-    app.wait_for_js(
-        "return document.querySelector('.members') === null;",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("members hidden");
+    app.wait_for_count(".members", 0, DEFAULT_WAIT)
+        .await
+        .expect("members hidden");
     app.key_combo("body", "u", true, false, false)
         .await
         .expect("ctrl+u again");
@@ -146,12 +144,9 @@ async fn shortcuts_navigate_rooms_scopes_history_and_panels() {
         .await
         .expect("settings");
     app.press("body", "Escape").await.expect("escape");
-    app.wait_for_js(
-        "return document.querySelector('.settings') === null;",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("settings closed");
+    app.wait_for_count(".settings", 0, DEFAULT_WAIT)
+        .await
+        .expect("settings closed");
 }
 
 #[tokio::test]

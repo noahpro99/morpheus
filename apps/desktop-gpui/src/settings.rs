@@ -166,6 +166,11 @@ impl SettingsView {
         }
     }
 
+    /// Whether the settings window is showing.
+    pub fn is_open(&self) -> bool {
+        self.open
+    }
+
     /// Show the window, on the page `focus` asks for.
     pub fn open(&mut self, focus: SettingsFocus, cx: &mut Context<Self>) {
         self.open = true;

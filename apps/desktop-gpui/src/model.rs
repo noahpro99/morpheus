@@ -134,6 +134,22 @@ pub fn top_spaces(rooms: &[RoomSummary]) -> Vec<RoomSummary> {
         .collect()
 }
 
+/// Every rail entry in order (DMs, Rooms, Favorites if any, then the servers as
+/// drawn, folders opened out): what Ctrl+Alt+Up and Down step through.
+pub fn rail_scopes(prefs: &Prefs, rooms: &[RoomSummary]) -> Vec<Scope> {
+    let mut all = vec![Scope::Dms, Scope::Rooms];
+    if rooms.iter().any(|room| room.favorite && !room.invited) {
+        all.push(Scope::Favorites);
+    }
+    for entry in layout(prefs, &top_spaces(rooms)) {
+        match entry {
+            RailEntry::Space(id) => all.push(Scope::Space(id)),
+            RailEntry::Folder { spaces, .. } => all.extend(spaces.into_iter().map(Scope::Space)),
+        }
+    }
+    all
+}
+
 /// The rail as drawn: the saved layout, then spaces it does not know.
 pub fn layout(prefs: &Prefs, spaces: &[RoomSummary]) -> Vec<RailEntry> {
     let known = |id: &OwnedRoomId| {

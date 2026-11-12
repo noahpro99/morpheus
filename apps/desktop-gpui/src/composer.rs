@@ -141,6 +141,20 @@ impl Composer {
             .update(cx, |input, cx| input.set_placeholder(&text, cx));
     }
 
+    /// Whether the box has something open that Escape closes first: an edit
+    /// or reply banner, suggestions or the emoji panel.
+    pub fn busy(&self) -> bool {
+        self.state.mode.is_some() || !self.suggestions.is_empty() || self.emoji_open
+    }
+
+    /// Ctrl+E: opens or closes the emoji panel (once the box is ready).
+    pub fn toggle_emoji(&mut self, cx: &mut Context<Self>) {
+        if self.handle.is_some() {
+            self.emoji_open = !self.emoji_open;
+            cx.notify();
+        }
+    }
+
     /// The room's timeline is open: messages can go out.
     pub fn opened(&mut self, handle: TimelineHandle, cx: &mut Context<Self>) {
         self.handle = Some(handle);
@@ -793,7 +807,11 @@ impl Render for Composer {
         if std::mem::take(&mut self.pending_focus) {
             self.input.read(cx).focus(window);
         }
-        if std::mem::take(&mut self.open_focus) && window.focused(cx).is_none() {
+        let nothing_held = window.focused(cx).is_none_or(|held| {
+            cx.try_global::<crate::shell::RootFocus>()
+                .is_some_and(|root| root.0 == held)
+        });
+        if std::mem::take(&mut self.open_focus) && nothing_held {
             self.input.read(cx).focus(window);
         }
         let ready = self.handle.is_some();

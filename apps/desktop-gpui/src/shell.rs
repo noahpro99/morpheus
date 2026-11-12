@@ -43,6 +43,11 @@ use crate::{
 /// How often the lock state is re-read.
 const KEYS_RECHECK: std::time::Duration = std::time::Duration::from_secs(30);
 
+/// The shell root's focus handle: holding it is holding nothing in particular.
+pub struct RootFocus(pub FocusHandle);
+
+impl gpui::Global for RootFocus {}
+
 pub struct Shell {
     /// Absent only in widget tests, which feed `rooms` themselves.
     pub session: Option<Session>,
@@ -102,6 +107,12 @@ pub struct Shell {
     /// Whether the message menu, picker or bin in use came from the thread
     /// panel's replies rather than the room's timeline.
     pub acting_in_thread: bool,
+    /// The root's own focus, so the window's shortcuts have somewhere to
+    /// arrive when nothing else is focused.
+    pub root_focus: Option<FocusHandle>,
+    /// Whether something modal was showing at the last frame: when it goes, its
+    /// focus handle is stale and the keys go back to the root.
+    pub overlay_was_open: bool,
     /// The open room's pinned messages.
     pub pinned: Vec<OwnedEventId>,
     /// Your nicknames for people.
@@ -254,6 +265,8 @@ impl Shell {
             members_count: 0,
             timeline_handle: None,
             acting_in_thread: false,
+            root_focus: None,
+            overlay_was_open: false,
             pinned: Vec::new(),
             nicknames: NickMap::new(),
             thread: None,
@@ -818,6 +831,20 @@ impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.fetch_avatars(cx);
         self.mark_menu_message(cx);
+        let root_focus = self
+            .root_focus
+            .get_or_insert_with(|| {
+                let handle = cx.focus_handle();
+                cx.set_global(RootFocus(handle.clone()));
+                handle
+            })
+            .clone();
+        // Nothing else focused: the shortcuts still arrive here.
+        let overlay = self.modal_open(cx) || self.inbox_open;
+        if (self.overlay_was_open && !overlay) || !root_focus.contains_focused(window, cx) {
+            window.focus(&root_focus);
+        }
+        self.overlay_was_open = overlay;
         let menu = menu::render(self, window, cx);
         let dialog = dialogs::render_dialog(self, window, cx);
         let inbox = crate::invites::inbox(self, window, cx);
@@ -845,6 +872,12 @@ impl Render for Shell {
             .flex()
             .flex_col()
             .bg(rgb(theme::BG_CHAT))
+            .track_focus(&root_focus)
+            .capture_key_down(cx.listener(|this, event: &gpui::KeyDownEvent, window, cx| {
+                if this.handle_key(event, window, cx) {
+                    cx.stop_propagation();
+                }
+            }))
             .child(
                 div()
                     .size_0()
