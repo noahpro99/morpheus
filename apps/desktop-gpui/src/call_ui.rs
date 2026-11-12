@@ -583,10 +583,32 @@ enum Fit {
 }
 
 fn sized(base: gpui::Stateful<gpui::Div>, fit: Fit) -> gpui::Stateful<gpui::Div> {
+    sized_for(base, fit, None)
+}
+
+/// A card's size; for a video, the picture's own width over height, so the
+/// card is the picture's shape (no bars) inside the slot the stage planned:
+/// narrower than the slot for a 4:3 camera, shorter for a very wide screen.
+fn sized_for(
+    base: gpui::Stateful<gpui::Div>,
+    fit: Fit,
+    ratio: Option<f32>,
+) -> gpui::Stateful<gpui::Div> {
+    let slot = |w: f32, h: f32| match ratio {
+        Some(r) if r < w / h => (h * r, h),
+        Some(r) => (w, w / r),
+        None => (w, h),
+    };
     match fit {
-        Fit::Grid(w) => base.w(px(w)).h(px(w / CARD_RATIO)),
+        Fit::Grid(w) => {
+            let (w, h) = slot(w, w / CARD_RATIO);
+            base.w(px(w)).h(px(h))
+        }
         Fit::Main => base.flex_1().min_w_0().min_h_0(),
-        Fit::Strip => base.w(px(144.0)).h(px(81.0)),
+        Fit::Strip => {
+            let (w, h) = slot(144.0, 81.0);
+            base.w(px(w)).h(px(h))
+        }
     }
 }
 
@@ -763,9 +785,15 @@ fn video_card(
     if feed.screen {
         classes.push_str(" screen");
     }
-    let mut tile = sized(
+    let ratio = shell
+        .calls
+        .frames
+        .get(&key)
+        .and_then(|frame| frame.read(cx).ratio());
+    let mut tile = sized_for(
         div().id(gpui::SharedString::from(format!("card-{key}"))),
         fit,
+        ratio,
     )
     .group(gpui::SharedString::from(group.clone()))
     .relative()
@@ -1293,6 +1321,8 @@ pub struct VideoFrame {
     stale: Vec<Arc<RenderImage>>,
     /// What the pictures look like, for tests: pixel colours left and right.
     sample: (String, String),
+    /// The latest picture's width and height.
+    size: (u32, u32),
 }
 
 impl VideoFrame {
@@ -1313,7 +1343,13 @@ impl VideoFrame {
             image: None,
             stale: Vec::new(),
             sample: (String::new(), String::new()),
+            size: (0, 0),
         }
+    }
+
+    /// Width over height of the picture shown, once there is one.
+    pub fn ratio(&self) -> Option<f32> {
+        (self.size.1 > 0).then(|| self.size.0 as f32 / self.size.1 as f32)
     }
 
     /// Takes the latest frame, if it is a new one.
@@ -1326,6 +1362,7 @@ impl VideoFrame {
         }
         self.seen = frame.seq;
         let (width, height) = (frame.width, frame.height);
+        self.size = (width, height);
         let sample = |x: u32, y: u32| {
             let at = ((y * width + x) * 4) as usize;
             frame
@@ -1358,11 +1395,10 @@ impl gpui::Render for VideoFrame {
             Some(image) => base.child(
                 img(gpui::ImageSource::Render(image.clone()))
                     .size_full()
-                    .object_fit(if self.screen {
-                        ObjectFit::Contain
-                    } else {
-                        ObjectFit::Cover
-                    }),
+                    // The whole picture, in its own shape; its corners are
+                    // rounded here because the card's clip is a rectangle.
+                    .object_fit(ObjectFit::Contain)
+                    .rounded(px(theme::RADIUS_LG)),
             ),
             None => base,
         }

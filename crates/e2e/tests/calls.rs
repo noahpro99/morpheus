@@ -5,6 +5,8 @@
 
 #![allow(clippy::expect_used)]
 
+mod common;
+
 use morpheus_e2e::{App, DEFAULT_WAIT, api_as};
 
 fn homeserver() -> Option<String> {
@@ -3332,4 +3334,89 @@ async fn the_speaking_ring_follows_the_voice_quickly() {
     assert!(worst(1) <= 420, "alice's ring on after {} ms\n{report}", worst(1));
     assert!(worst(2) <= 650, "own ring off after {} ms\n{report}", worst(2));
     assert!(worst(3) <= 650, "alice's ring off after {} ms\n{report}", worst(3));
+}
+
+/// A camera's card shows the whole picture the camera sends, in its own
+/// shape (the test camera is 4:3, the real one 640x480), with round corners
+/// on the picture itself: gpui clips a card to a rectangle, so a picture
+/// drawn to fill and crop it came out with square corners and its edges cut
+/// off. Pixels are read from a screenshot of the test window.
+#[tokio::test]
+async fn a_cameras_card_shows_the_whole_picture_with_round_corners() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    let channel = fresh_voice_channel(&hs);
+    login_and_open(&mut alice, "alice", "general").await;
+    open_without_joining(&mut alice, &channel).await;
+    alice.click(CALL_BUTTON).await.expect("alice joins");
+    alice
+        .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("alice connected");
+    alice
+        .click(".voice-panel .camera-button")
+        .await
+        .expect("camera on");
+    let tile = ".call-stage .video-tile:not(.screen)";
+    alice
+        .wait_for(&format!("{tile} .video[data-shown=true]"), DEFAULT_WAIT)
+        .await
+        .expect("her camera's picture");
+    wait_test_pattern(&mut alice, "@alice:localhost")
+        .await
+        .expect("the test pattern");
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    let card = alice
+        .bounds(tile)
+        .await
+        .expect("bounds")
+        .expect("the card");
+    let Some((pixels, w, h)) = common::capture(&alice) else {
+        eprintln!("no grim capture here; skipping the pixel check");
+        return;
+    };
+    // The picture, in its own 4:3, as large as fits the card, centred.
+    let ratio = 4.0 / 3.0;
+    let (pw, ph) = if card.w / card.h > ratio {
+        (card.h * ratio, card.h)
+    } else {
+        (card.w, card.w / ratio)
+    };
+    let (px, py) = (card.x + (card.w - pw) / 2.0, card.y + (card.h - ph) / 2.0);
+    let pixel = |x: f64, y: f64| {
+        let (x, y) = (x.round() as usize, y.round() as usize);
+        assert!(x < w && y < h, "({x}, {y}) is outside the {w}x{h} capture");
+        let i = (y * w + x) * 3;
+        (pixels[i], pixels[i + 1], pixels[i + 2])
+    };
+    let red = |p: (u8, u8, u8)| p.0 > 150 && p.1 < 100 && p.2 < 100;
+    let blue = |p: (u8, u8, u8)| p.2 > 150 && p.0 < 100 && p.1 < 100;
+    let (cx, cy) = (px + pw / 2.0, py + ph / 2.0);
+    // The picture reaches the card's shape: nothing of its sides is cut
+    // off (a white bar sweeps across it, so look at two places each).
+    assert!(
+        pw > card.w * 0.9 || ph > card.h * 0.9,
+        "the picture ({pw}x{ph}) does not fill the card ({}x{})",
+        card.w,
+        card.h
+    );
+    let left = [pixel(px + 4.0, cy), pixel(px + 24.0, cy)];
+    let right = [pixel(px + pw - 4.0, cy), pixel(px + pw - 24.0, cy)];
+    assert!(left.iter().any(|p| red(*p)), "the left edge is {left:?}, not the picture's red");
+    assert!(right.iter().any(|p| blue(*p)), "the right edge is {right:?}, not the picture's blue");
+    // The middle of the top and bottom edges show the picture too.
+    for (x, red_side) in [(px + pw * 0.25, true), (px + pw * 0.75, false)] {
+        for y in [py + 3.0, py + ph - 3.0] {
+            let p = pixel(x, y);
+            assert!(if red_side { red(p) } else { blue(p) }, "the edge at ({x}, {y}) is {p:?}");
+        }
+    }
+    // The corners of the picture are the card's background, not picture.
+    for (x, y) in [(px + 1.0, py + 1.0), (px + pw - 2.0, py + 1.0), (px + 1.0, py + ph - 2.0), (px + pw - 2.0, py + ph - 2.0)] {
+        let p = pixel(x, y);
+        assert!(!red(p) && !blue(p), "the picture's corner at ({x}, {y}) is {p:?}: it is not rounded");
+    }
 }
