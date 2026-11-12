@@ -43,6 +43,7 @@ mod shell;
 mod sounds;
 mod switcher;
 mod thread;
+mod update;
 mod instance;
 mod tray;
 mod titlebar;
@@ -490,7 +491,18 @@ fn main() {
     // A later launch hands over to the one running (its window shows, or the
     // Matrix link it was given opens) and ends.
     let link = view_model::instance::link_in_args(std::env::args().skip(1));
-    if !instance::claim(&data_dir(), link.as_deref()) {
+    if std::env::var_os("MORPHEUS_UPDATED_FROM").is_some() {
+        // Started by an update: the old version is quitting; wait for it to let
+        // go of this data rather than hand over to it.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while !instance::claim(&data_dir(), link.as_deref()) {
+            if std::time::Instant::now() > deadline {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+        morpheus_core::clean_up_after_update();
+    } else if !instance::claim(&data_dir(), link.as_deref()) {
         eprintln!("morpheus-gpui: already running on this data; showing its window instead");
         return;
     }

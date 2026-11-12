@@ -34,16 +34,26 @@ pub enum Action {
     Settings,
     Shortcuts,
     Inbox,
+    CheckForUpdates,
+    Acknowledgements,
 }
 
 impl Action {
-    const ALL: [Action; 3] = [Action::Settings, Action::Shortcuts, Action::Inbox];
+    const ALL: [Action; 5] = [
+        Action::Settings,
+        Action::Shortcuts,
+        Action::Inbox,
+        Action::CheckForUpdates,
+        Action::Acknowledgements,
+    ];
 
     fn label(self) -> &'static str {
         match self {
             Action::Settings => "Settings",
             Action::Shortcuts => "Keyboard shortcuts",
             Action::Inbox => "Inbox",
+            Action::CheckForUpdates => "Check for updates",
+            Action::Acknowledgements => "Acknowledgements",
         }
     }
 
@@ -52,6 +62,8 @@ impl Action {
             Action::Settings => "settings",
             Action::Shortcuts => "circle-help",
             Action::Inbox => "inbox",
+            Action::CheckForUpdates => "refresh-cw",
+            Action::Acknowledgements => "heart",
         }
     }
 }
@@ -332,6 +344,8 @@ impl crate::shell::Shell {
                     this.dialog_open(crate::dialogs::Dialog::Help, cx)
                 }
                 SwitcherEvent::Action(Action::Inbox) => this.toggle_inbox(cx),
+                SwitcherEvent::Action(Action::CheckForUpdates) => this.check_for_updates(true, cx),
+                SwitcherEvent::Action(Action::Acknowledgements) => this.open_about(cx),
                 SwitcherEvent::Close => {}
             }
             cx.notify();

@@ -38,6 +38,7 @@ pub mod text_buffer;
 pub mod theme;
 pub mod threads;
 pub mod toast;
+pub mod updates;
 pub mod verification;
 
 #[cfg(test)]
