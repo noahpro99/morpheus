@@ -51,6 +51,9 @@ impl Shell {
                 Ok(map) => {
                     this.update(cx, |this, cx| {
                         *this.marks.map_mut(kind) = map;
+                        if kind == marks::IGNORED {
+                            this.push_nicknames(cx);
+                        }
                         this.reopen_closed(cx);
                         cx.notify();
                     })
@@ -155,6 +158,9 @@ impl Shell {
     /// Sets or clears one mark: here at once, and in the account.
     pub fn set_mark(&mut self, kind: &'static str, key: String, at: Option<i64>, cx: &mut Context<Self>) {
         self.marks.set(kind, &key, at);
+        if kind == marks::IGNORED {
+            self.push_nicknames(cx);
+        }
         cx.notify();
         if let Some(session) = self.session.clone() {
             let saving = session.set_mark(kind, key, at);
@@ -467,6 +473,10 @@ impl Shell {
     /// and profile card) about your nicknames.
     pub fn push_nicknames(&mut self, cx: &mut Context<Self>) {
         let names = self.nicknames.clone();
+        let ignored: std::collections::HashSet<String> = self.marks.ignored.keys().cloned().collect();
+        if let Some((_, timeline)) = &self.timeline {
+            timeline.update(cx, |timeline, cx| timeline.set_ignored(ignored, cx));
+        }
         if let Some((_, timeline)) = &self.timeline {
             let shared = std::sync::Arc::new(names.clone());
             timeline.update(cx, |timeline, cx| timeline.set_nicknames(shared, cx));

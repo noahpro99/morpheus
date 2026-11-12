@@ -212,6 +212,14 @@ async fn favorites_get_their_own_place_in_the_rail() {
         .expect("no Favorites place once empty");
 }
 
+/// The room ID of the DM with `name`.
+async fn dm_room_id(app: &mut App, name: &str) -> String {
+    app.attr_containing(".room.dm", name, "data-room")
+        .await
+        .expect("room id")
+        .expect("a DM row with an ID")
+}
+
 #[tokio::test]
 async fn a_closed_dm_comes_back_with_a_new_message() {
     let Some(hs) = homeserver() else {
@@ -219,31 +227,15 @@ async fn a_closed_dm_comes_back_with_a_new_message() {
         return;
     };
     let mut app = alice_on_dms(&hs).await;
-    let room_id: String = app
-        .eval(&format!("return {}.dataset.room;", row("carol")))
-        .await
-        .expect("room id")
-        .as_str()
-        .expect("string")
-        .to_owned();
+    let room_id = dm_room_id(&mut app, "carol").await;
     dm_menu(&mut app, "carol").await;
     choose(&mut app, "Close DM").await;
-    let by_id = format!("document.querySelector('.room.dm[data-room=\"{room_id}\"]')");
-    if let Err(err) = app
-        .wait_for_js(&format!("return !{by_id};"), DEFAULT_WAIT)
+    let by_id = format!(".room.dm[data-room=\"{room_id}\"]");
+    app.wait_for_count(&by_id, 0, DEFAULT_WAIT)
         .await
-    {
-        let state = app
-            .eval(&format!("const r = {by_id}; return [r?.className, document.querySelector('.chat-header h2')?.textContent, document.querySelector('.friends-page') !== null];"))
-            .await;
-        panic!("closed: gone from the list: {err}\nrow, header, friends page: {state:?}");
-    }
+        .expect("closed: gone from the list");
     tokio::time::sleep(Duration::from_secs(1)).await;
-    assert_eq!(
-        app.eval(&format!("return !!{by_id};")).await.expect("look"),
-        serde_json::json!(false),
-        "stays closed"
-    );
+    assert_eq!(app.count(&by_id).await.expect("look"), 0, "stays closed");
 
     morpheus_e2e::send_as(
         &hs,
@@ -252,12 +244,19 @@ async fn a_closed_dm_comes_back_with_a_new_message() {
         &format!("still there? {}", std::process::id()),
     )
     .expect("carol writes");
-    app.wait_for_js(
-        &format!("return !!{by_id}?.classList.contains('unread');"),
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("back with her message, unread");
+    app.wait_for(&format!("{by_id}.unread"), DEFAULT_WAIT)
+        .await
+        .expect("back with her message, unread");
+}
+
+/// The event IDs of the folds shown (their messages' IDs).
+async fn fold_ids(app: &mut App) -> Vec<String> {
+    app.attrs(".message.ignored", "data-event-id")
+        .await
+        .expect("fold ids")
+        .into_iter()
+        .flatten()
+        .collect()
 }
 
 #[tokio::test]
@@ -267,59 +266,63 @@ async fn an_ignored_persons_messages_fold_away() {
         return;
     };
     let mut app = alice_on_dms(&hs).await;
-    let room_id: String = app
-        .eval(&format!("return {}.dataset.room;", row("carol")))
-        .await
-        .expect("room id")
-        .as_str()
-        .expect("string")
-        .to_owned();
+    let room_id = dm_room_id(&mut app, "carol").await;
+    // A run cut short may have left her ignored (and silent).
+    dm_menu(&mut app, "carol").await;
+    if labels(&mut app).await.contains(&"Unignore".to_owned()) {
+        choose(&mut app, "Unignore").await;
+    } else {
+        app.press("body", "Escape").await.expect("close");
+        app.wait_for_count(".context-menu", 0, DEFAULT_WAIT)
+            .await
+            .expect("closed");
+    }
     let text = format!("ignore me {}", std::process::id());
     morpheus_e2e::send_as(&hs, "carol", &room_id, &text).expect("carol writes");
     app.wait_for_text(".notification-log li", &text, DEFAULT_WAIT)
         .await
         .expect("a notification for her message");
-    app.eval(&format!("{}.click();", row("carol")))
-        .await
-        .expect("open");
+    app.click_text(".room.dm", "carol").await.expect("open");
     app.wait_for_exact_text(".message .body", &text, DEFAULT_WAIT)
         .await
         .expect("her message");
 
     dm_menu(&mut app, "carol").await;
     choose(&mut app, "Ignore").await;
-    app.wait_for_js(
-        &format!("return ![...document.querySelectorAll('.message .body')].some(b => b.textContent.trim() === {});", js(&text)),
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("her message folded away");
     app.wait_for(".message.ignored", DEFAULT_WAIT)
         .await
         .expect("a fold in its place");
+    assert!(
+        !app.texts(".message .body")
+            .await
+            .expect("bodies")
+            .iter()
+            .any(|b| b.trim() == text),
+        "her message folded away"
+    );
 
     // And she makes no sound: nothing new notifies.
-    let folds = app.count(".message.ignored").await.expect("count");
+    let folds = fold_ids(&mut app).await;
     app.click(".friends-row").await.expect("away from the DM");
     let quiet = format!("still ignored {}", std::process::id());
     morpheus_e2e::send_as(&hs, "carol", &room_id, &quiet).expect("carol writes again");
-    app.eval(&format!("{}.click();", row("carol")))
+    app.click_text(".room.dm", "carol")
         .await
         .expect("open again");
-    app.wait_for_js(
-        &format!("return document.querySelectorAll('.message.ignored').length > {folds};"),
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("her new message arrived, folded");
-    assert_eq!(
-        app.eval(&format!(
-            "return [...document.querySelectorAll('.notification-log li')].some(l => l.textContent.includes({}));",
-            js(&quiet)
-        ))
-        .await
-        .expect("log"),
-        serde_json::json!(false),
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    while fold_ids(&mut app).await.iter().all(|id| folds.contains(id)) {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "her new message arrived, folded"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(
+        !app.texts(".notification-log li")
+            .await
+            .expect("log")
+            .iter()
+            .any(|l| l.contains(&quiet)),
         "no notification from someone ignored"
     );
 
@@ -360,6 +363,25 @@ async fn mute_a_dm_for_a_while_then_unmute() {
     tokio::time::sleep(Duration::from_secs(1)).await;
 }
 
+/// The labels of the open menu's top-level items that have no icon (or
+/// picture) in front of them.
+async fn items_without_icons(app: &mut App) -> Vec<String> {
+    if app.is_gpui() {
+        // The app marks an item without a glyph or picture `no-icon`.
+        return app
+            .texts(".context-menu .context-item.no-icon .menu-label")
+            .await
+            .expect("labels")
+            .into_iter()
+            .map(|l| l.trim().to_owned())
+            .collect();
+    }
+    let missing = "return [...document.querySelectorAll('.context-menu:not(.context-submenu) > .context-item')] \
+        .filter(i => !i.querySelector(':scope > .menu-icon, :scope > .menu-avatar')) \
+        .map(i => i.querySelector('.menu-label').textContent.trim());";
+    serde_json::from_value(app.eval(missing).await.expect("labels")).expect("a list")
+}
+
 /// Every item of a DM's menu, and of a room's, has an icon.
 #[tokio::test]
 async fn every_menu_item_has_an_icon() {
@@ -368,79 +390,52 @@ async fn every_menu_item_has_an_icon() {
         return;
     };
     let mut app = alice_on_dms(&hs).await;
-    let missing = "return [...document.querySelectorAll('.context-menu:not(.context-submenu) > .context-item')] \
-        .filter(i => !i.querySelector(':scope > .menu-icon, :scope > .menu-avatar')) \
-        .map(i => i.querySelector('.menu-label').textContent.trim());";
     dm_menu(&mut app, "carol").await;
-    let in_dm = app.eval(missing).await.expect("dm menu");
+    let in_dm = items_without_icons(&mut app).await;
     app.press("body", "Escape").await.expect("close");
-    app.wait_for_js(
-        "return document.querySelector('.context-menu') === null;",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("closed");
+    app.wait_for_count(".context-menu", 0, DEFAULT_WAIT)
+        .await
+        .expect("closed");
 
     app.open_room("general").await.expect("a room");
-    app.eval(
-        "const el = [...document.querySelectorAll('.room')].find(r => r.querySelector('.room-name')?.textContent.trim() === 'general'); \
-         const r = el.getBoundingClientRect(); \
-         el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + 20, clientY: r.top + 10 }));",
-    )
-    .await
-    .expect("room menu");
+    app.right_click_exact(".room .room-name", "general")
+        .await
+        .expect("room menu");
     app.wait_for(".context-menu", DEFAULT_WAIT)
         .await
         .expect("menu");
-    let in_room = app.eval(missing).await.expect("room menu");
+    let in_room = items_without_icons(&mut app).await;
     app.press("body", "Escape").await.expect("close");
 
     // A message's, a member's and a server's menus too.
     let mut others = Vec::new();
     for (what, target) in [
-        ("message", "document.querySelector('.message.with-header')"),
-        ("member", "document.querySelector('.members .member')"),
-        (
-            "server",
-            "document.querySelector('.rail-item[title=\"Engineering\"]')",
-        ),
+        ("message", ".message .body"),
+        ("member", ".members .member"),
+        ("server", ".rail-item[title=\"Engineering\"]"),
     ] {
-        app.wait_for_js(
-            "return document.querySelector('.context-menu') === null;",
-            DEFAULT_WAIT,
-        )
-        .await
-        .expect("closed");
-        app.wait_for_js(&format!("return !!{target};"), DEFAULT_WAIT)
+        app.wait_for_count(".context-menu", 0, DEFAULT_WAIT)
+            .await
+            .expect("closed");
+        app.wait_for(target, DEFAULT_WAIT)
             .await
             .unwrap_or_else(|err| panic!("a {what} to right-click: {err}"));
-        app.eval(&format!(
-            "const el = {target}; const r = el.getBoundingClientRect(); \
-             el.dispatchEvent(new MouseEvent('contextmenu', {{ bubbles: true, cancelable: true, clientX: r.left + 20, clientY: r.top + 10 }}));"
-        ))
-        .await
-        .expect("right-click");
+        app.right_click(target).await.expect("right-click");
         app.wait_for(".context-menu", DEFAULT_WAIT)
             .await
-            .expect("menu");
-        others.push((what, app.eval(missing).await.expect("labels")));
+            .unwrap_or_else(|err| panic!("{what} menu: {err}"));
+        others.push((what, items_without_icons(&mut app).await));
         app.press("body", "Escape").await.expect("close");
     }
-    assert_eq!(
-        in_dm,
-        serde_json::json!([]),
-        "DM menu items without an icon"
-    );
-    assert_eq!(
-        in_room,
-        serde_json::json!([]),
-        "room menu items without an icon"
+    assert!(in_dm.is_empty(), "DM menu items without an icon: {in_dm:?}");
+    assert!(
+        in_room.is_empty(),
+        "room menu items without an icon: {in_room:?}"
     );
     for (what, missing) in others {
-        assert_eq!(
-            missing,
-            serde_json::json!([]),
-            "{what} menu items without an icon"
+        assert!(
+            missing.is_empty(),
+            "{what} menu items without an icon: {missing:?}"
         );
     }
 }

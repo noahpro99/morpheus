@@ -127,6 +127,10 @@ pub struct TimelineView {
     keys: KeyAccess,
     /// Your nicknames for people, shown over their names.
     nicknames: Arc<NickMap>,
+    /// People you ignore: their messages are folded away until shown.
+    ignored: std::collections::HashSet<String>,
+    /// Folded messages shown on request (by unique ID).
+    revealed: std::collections::HashSet<String>,
     /// Some message here cannot be decrypted (kept up to date by `rebuild`).
     undecryptable: bool,
     /// Messages hidden while their deletion can still be undone (unique ids).
@@ -231,6 +235,8 @@ impl TimelineView {
             echoed: None,
             keys: KeyAccess::default(),
             nicknames: Arc::default(),
+            ignored: Default::default(),
+            revealed: Default::default(),
             undecryptable: false,
             hidden: HashSet::new(),
             keep_unread: false,
@@ -363,6 +369,17 @@ impl TimelineView {
             this.update(cx, |_, cx| cx.notify()).ok();
         })
         .detach();
+        cx.notify();
+    }
+
+    /// The people you ignore changed: their messages fold away (or show).
+    pub fn set_ignored(&mut self, ignored: std::collections::HashSet<String>, cx: &mut Context<Self>) {
+        if self.ignored == ignored {
+            return;
+        }
+        self.ignored = ignored;
+        let rows = self.rows.len();
+        self.list.splice(0..rows, rows);
         cx.notify();
     }
 
@@ -618,6 +635,40 @@ impl TimelineView {
         let Row::Message { row, show_header } = row else {
             return message::other_row(&row);
         };
+        // Someone you ignore: folded away, shown on request.
+        if self.ignored.contains(row.message.sender.as_str())
+            && !self.revealed.contains(&row.message.unique_id)
+        {
+            let unique_id = row.message.unique_id.clone();
+            return div()
+                .id(gpui::SharedString::from(format!("ignored-{unique_id}")))
+                .px(px(16.0))
+                .py(px(4.0))
+                .child(
+                    div()
+                        .id(gpui::SharedString::from(format!("ignored-fold-{unique_id}")))
+                        .cursor_pointer()
+                        .text_size(px(0.85 * theme::REM))
+                        .text_color(rgb(theme::text_faint()))
+                        .child("Ignored message · Show")
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.revealed.insert(unique_id.clone());
+                            this.list.splice(ix..ix + 1, 1);
+                            cx.notify();
+                        }))
+                        .e2e("button", "ignored-fold")
+                        .text("Ignored message · Show"),
+                )
+                .e2e("div", "message ignored")
+                .attr(
+                    "data-event-id",
+                    match &row.message.id {
+                        morpheus_core::MessageId::Event(id) => id.to_string(),
+                        morpheus_core::MessageId::Transaction(_) => String::new(),
+                    },
+                )
+                .into_any_element();
+        }
         let mut pictures = Pictures {
             keys: self.keys,
             highlight: self.highlight.as_deref() == Some(row.message.unique_id.as_str()),
