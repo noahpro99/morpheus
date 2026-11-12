@@ -693,6 +693,15 @@ async fn scroll_into_view(request: &Request, cx: &mut AsyncApp) -> Result<(), St
     Ok(())
 }
 
+/// Where a click on the request's target goes now (its centre in the current tree).
+fn click_centre(tree: &Tree, request: &Request, op: &str) -> Option<(f32, f32)> {
+    let mut index = target(tree, request).ok().flatten()?;
+    if op == "submit" {
+        index = submit_control(tree, index)?;
+    }
+    Some(tree.nodes[index].bounds.centre())
+}
+
 async fn act(op: &str, request: &Request, cx: &mut AsyncApp) -> Reply {
     if matches!(op, "click" | "right_click" | "submit") {
         scroll_into_view(request, cx).await?;
@@ -732,18 +741,39 @@ async fn act(op: &str, request: &Request, cx: &mut AsyncApp) -> Reply {
             } else {
                 MouseButton::Left
             };
-            cx.update_window(window, |_, window, cx| press_at(window, cx, centre, button, held))
-                .map_err(|err| err.to_string())?;
-            // Let a frame draw between press and release (up to 40 ms).
-            let drawn = with_state(|state| state.frame);
-            for _ in 0..8 {
-                if with_state(|state| state.frame) != drawn {
+            // The layout can shift between press and release (a list still
+            // filling in: the rail's badges, the sidebar's rows), and a click
+            // needs both on the same element. If the target moved while the
+            // frame drew, let go off the window (no click anywhere) and press
+            // again where it now is.
+            let mut at = centre;
+            for attempt in 0..10 {
+                cx.update_window(window, |_, window, cx| press_at(window, cx, at, button, held))
+                    .map_err(|err| err.to_string())?;
+                // Let a frame draw between press and release (up to 40 ms).
+                let drawn = with_state(|state| state.frame);
+                for _ in 0..8 {
+                    if with_state(|state| state.frame) != drawn {
+                        break;
+                    }
+                    cx.background_executor().timer(Duration::from_millis(5)).await;
+                }
+                let now = with_state(|state| click_centre(&state.tree, request, op));
+                if now == Some(at) || attempt == 9 {
+                    cx.update_window(window, |_, window, cx| release_at(window, cx, at, button, held))
+                        .map_err(|err| err.to_string())?;
                     break;
                 }
-                cx.background_executor().timer(Duration::from_millis(5)).await;
-            }
-            cx.update_window(window, |_, window, cx| release_at(window, cx, centre, button, held))
+                cx.update_window(window, |_, window, cx| {
+                    release_at(window, cx, (-100.0, -100.0), button, held)
+                })
                 .map_err(|err| err.to_string())?;
+                match now {
+                    Some(moved) => at = moved,
+                    None => return Err(format!("{} went away under the pointer", missing(request))),
+                }
+                next_frame(cx, before).await;
+            }
         }
         "drag" => {
             // Press on the element, move the pointer in steps (the button held), let go.
