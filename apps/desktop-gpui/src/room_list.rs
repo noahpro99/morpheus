@@ -128,6 +128,15 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             hidden: &shell.hidden_rooms,
         },
     );
+    // Who may reorder a server's channels can drag them (onto another one).
+    let reorder = match scope {
+        Scope::Space(space) if shell.rooms.iter().any(|r| &r.id == space && r.can_edit_children) => {
+            Some(std::rc::Rc::new(
+                found.channels.iter().map(|r| r.id.clone()).collect::<Vec<_>>(),
+            ))
+        }
+        _ => None,
+    };
     let in_space = matches!(scope, Scope::Space(_));
     // Inside a space (and favorites) both kinds can appear: label the groups.
     let grouped = in_space || *scope == Scope::Favorites;
@@ -239,7 +248,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             list = list.child(section("Direct messages", ""));
         }
         for room in &found.dms {
-            list = list.child(row(shell, cx, room));
+            list = list.child(row(shell, cx, room, None));
         }
     }
     if !found.channels.is_empty() {
@@ -247,7 +256,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             list = list.child(section("Rooms", ""));
         }
         for room in &found.channels {
-            list = list.child(row(shell, cx, room));
+            list = list.child(row(shell, cx, room, reorder.as_ref()));
         }
     }
     for (_, name, members) in &found.categories {
@@ -256,7 +265,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         }
         list = list.child(section(name, "category"));
         for room in members {
-            list = list.child(row(shell, cx, room));
+            list = list.child(row(shell, cx, room, None));
         }
     }
     if !found.unjoined.is_empty() {
@@ -352,16 +361,26 @@ fn section(text: &str, class: &str) -> impl IntoElement {
         .text(text)
 }
 
-fn row(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -> impl IntoElement {
+fn row(
+    shell: &Shell,
+    cx: &mut Context<Shell>,
+    room: &RoomSummary,
+    reorder: Option<&std::rc::Rc<Vec<OwnedRoomId>>>,
+) -> impl IntoElement {
     let call = crate::call_ui::room_call(shell, cx, room);
     div()
         .flex()
         .flex_col()
-        .child(room_button(shell, cx, room))
+        .child(room_button(shell, cx, room, reorder))
         .children(call)
 }
 
-fn room_button(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -> impl IntoElement {
+fn room_button(
+    shell: &Shell,
+    cx: &mut Context<Shell>,
+    room: &RoomSummary,
+    reorder: Option<&std::rc::Rc<Vec<OwnedRoomId>>>,
+) -> impl IntoElement {
     let selected = shell.selected.as_ref() == Some(&room.id) && !shell.friends_open;
     let unread = room.unread_messages > 0 || room.marked_unread;
     let pinned = shell.marks.is_pinned(room);
@@ -423,6 +442,22 @@ fn room_button(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -> im
                 this.open_room_menu(room.clone(), event.position, cx)
             })
         });
+    if let Some(listed) = reorder {
+        let dragged = DraggedRoom {
+            id: room.id.clone(),
+            name: room.name.clone(),
+        };
+        let (target, listed) = (room.id.clone(), listed.clone());
+        button = button
+            .on_drag(dragged, |dragged, _, _, cx| {
+                let name = dragged.name.clone();
+                cx.new(|_| DragGhost(name))
+            })
+            .drag_over::<DraggedRoom>(|s, _, _, _| s.bg(gpui::rgba(theme::bg_hover())))
+            .on_drop::<DraggedRoom>(cx.listener(move |this, dragged: &DraggedRoom, _, cx| {
+                this.drop_channel(dragged.id.clone(), target.clone(), &listed, cx)
+            }));
+    }
     let title = room_title(&shell.nicknames, room);
     button = if room.is_dm {
         button.child(avatar(
@@ -471,9 +506,13 @@ fn room_button(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -> im
                 .text(count),
         );
     }
-    button
+    let mut tagged = button
         .e2e("button", &classes)
-        .attr("data-room", room.id.to_string())
+        .attr("data-room", room.id.to_string());
+    if reorder.is_some() {
+        tagged = tagged.attr("draggable", "true");
+    }
+    tagged
 }
 
 fn unjoined_row(shell: &Shell, cx: &mut Context<Shell>, room: &SpaceRoom) -> impl IntoElement {
@@ -533,6 +572,56 @@ fn unjoined_row(shell: &Shell, cx: &mut Context<Shell>, room: &SpaceRoom) -> imp
         .e2e("button", &classes)
         .attr("data-room", room.id.to_string())
         .attr("title", "Not joined")
+}
+
+/// A channel being dragged to a new place in its server's list.
+#[derive(Clone)]
+pub struct DraggedRoom {
+    id: OwnedRoomId,
+    name: String,
+}
+
+/// What follows the pointer while a channel is dragged.
+struct DragGhost(String);
+
+impl gpui::Render for DragGhost {
+    fn render(&mut self, _: &mut gpui::Window, _: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .px(px(12.0))
+            .py(px(6.0))
+            .rounded(px(theme::RADIUS_SM))
+            .bg(rgb(theme::bg_elevated()))
+            .text_color(rgb(theme::text()))
+            .child(format!("# {}", self.0))
+    }
+}
+
+impl Shell {
+    /// A channel was dropped onto another: it goes before it, for everyone.
+    fn drop_channel(
+        &mut self,
+        from: OwnedRoomId,
+        target: OwnedRoomId,
+        listed: &[OwnedRoomId],
+        cx: &mut Context<Self>,
+    ) {
+        let Scope::Space(space) = self.scope.clone() else {
+            return;
+        };
+        let Some(session) = self.session.clone() else {
+            return;
+        };
+        let order = self
+            .rooms
+            .iter()
+            .find(|r| r.id == space)
+            .map(|r| r.space_children.clone())
+            .unwrap_or_default();
+        if let Some(order) = crate::view_model::reorder::dropped_before(&order, listed, &from, &target) {
+            let ordering = session.set_space_order(space, order);
+            self.run_in_background("reorder channels", ordering, cx);
+        }
+    }
 }
 
 #[cfg(test)]
