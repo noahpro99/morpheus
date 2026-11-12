@@ -815,11 +815,13 @@ async fn a_camera_turned_on_shows_to_everyone_in_the_call_until_turned_off() {
 /// green on the left, yellow on the right.
 async fn wait_screen_pattern(app: &mut App, user: &str) -> anyhow::Result<()> {
     let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    let mut seen = String::new();
     loop {
         let shown = if app.is_gpui() {
             let tile = format!(".call-stage .video-tile.screen[data-user=\"{user}\"] .video");
             let left = app.attr(&tile, "data-left").await?.unwrap_or_default();
             let right = app.attr(&tile, "data-right").await?.unwrap_or_default();
+            seen = format!("left {left:?}, right {right:?}");
             let rgb = |hex: &str| {
                 (hex.len() == 6)
                     .then(|| u32::from_str_radix(hex, 16).ok())
@@ -837,7 +839,7 @@ async fn wait_screen_pattern(app: &mut App, user: &str) -> anyhow::Result<()> {
             return Ok(());
         }
         if std::time::Instant::now() >= deadline {
-            anyhow::bail!("{user}'s screen does not show the screen pattern");
+            anyhow::bail!("{user}'s screen does not show the screen pattern ({seen})");
         }
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
