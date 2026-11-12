@@ -264,7 +264,15 @@ impl Render for Switcher {
                     .child(icon(action.glyph(), 16.0).text_color(rgb(theme::text_faint())))
                     .child(div().child(action.label())),
             };
-            list = list.child(row.e2e("li", &classes).text(text));
+            let key = match entry {
+                Entry::Room(room) => Some(self.rooms[*room].id.to_string()),
+                _ => None,
+            };
+            let item = row.e2e("li", &classes).text(text);
+            list = list.child(match key {
+                Some(key) => item.attr("data-key", key),
+                None => item,
+            });
         }
         if entries.is_empty() {
             list = list.child(

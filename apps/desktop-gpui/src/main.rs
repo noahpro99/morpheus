@@ -48,6 +48,7 @@ mod update;
 mod instance;
 mod tray;
 mod titlebar;
+mod typing;
 mod timeline;
 mod theme;
 mod user_bar;
