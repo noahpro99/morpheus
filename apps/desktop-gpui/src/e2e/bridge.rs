@@ -767,7 +767,12 @@ async fn act(op: &str, request: &Request, cx: &mut AsyncApp) -> Reply {
                     cx.background_executor().timer(Duration::from_millis(5)).await;
                 }
                 let now = with_state(|state| click_centre(&state.tree, request, op));
-                if now == Some(at) || attempt == 9 {
+                // A right-click acts on the press (a context menu opens and
+                // can shift or cover the row), so pressing again would close
+                // that menu: keep the first press. A move under a pixel is no
+                // move.
+                let stayed = now.is_some_and(|(x, y)| (x - at.0).abs() < 1.0 && (y - at.1).abs() < 1.0);
+                if stayed || button == MouseButton::Right || attempt == 9 {
                     cx.update_window(window, |_, window, cx| release_at(window, cx, at, button, held))
                         .map_err(|err| err.to_string())?;
                     break;
