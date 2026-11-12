@@ -1186,15 +1186,25 @@ pub fn message_el(
 
     // A membership or state change: a quiet line.
     if let MessageKind::State(text) = &m.kind {
+        use crate::view_model::state_lines::{self, Tone};
+        let look = state_lines::icon(m.state_kind);
+        let tone = match look.tone {
+            Tone::Good => theme::ok(),
+            Tone::Bad => theme::danger(),
+            Tone::Quiet => theme::text_faint(),
+        };
+        let class = state_lines::StateIcon::class(m.state_kind);
+        // As a message: the icon in the avatar's column, the text where a
+        // message's text starts, the time after it.
         return div()
             .id(ElementId::from(key))
             .w_full()
             .flex()
+            .items_center()
             .gap(px(12.0))
             .hover(|s| s.bg(rgba(theme::bg_hover())))
             .py(px(2.0))
-            .pl(px(68.0))
-            .pr(px(16.0))
+            .px(px(16.0))
             .text_size(rem(0.85))
             .text_color(rgb(theme::text_muted()))
             .child(
@@ -1202,18 +1212,39 @@ pub fn message_el(
                     .w(px(40.0))
                     .flex_none()
                     .flex()
-                    .justify_end()
-                    .text_size(rem(0.75))
-                    .text_color(rgb(theme::text_faint()))
-                    .child(row.time.clone())
-                    .e2e("span", "time")
-                    .text(row.time.clone()),
+                    .justify_center()
+                    .child(icon(look.glyph, 18.0).text_color(rgb(tone)))
+                    .e2e("span", &format!("state-icon {class}"))
+                    .attr("data-icon", look.glyph)
+                    .attr(
+                        "data-tone",
+                        match look.tone {
+                            Tone::Good => "good",
+                            Tone::Bad => "bad",
+                            Tone::Quiet => "quiet",
+                        },
+                    ),
             )
             .child(
                 div()
-                    .child(text.clone())
-                    .e2e("span", "system-text")
-                    .text(text.clone()),
+                    .flex()
+                    .items_baseline()
+                    .gap(px(8.0))
+                    .min_w_0()
+                    .child(
+                        div()
+                            .child(text.clone())
+                            .e2e("span", "system-text")
+                            .text(text.clone()),
+                    )
+                    .child(
+                        div()
+                            .text_size(rem(0.75))
+                            .text_color(rgb(theme::text_faint()))
+                            .child(row.time.clone())
+                            .e2e("span", "time")
+                            .text(row.time.clone()),
+                    ),
             )
             .e2e("div", "message system")
             .attr("data-event-id", event_id)

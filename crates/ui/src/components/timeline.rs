@@ -735,10 +735,22 @@ pub(crate) fn MessageRow(message: Message, show_header: bool) -> Element {
     let can_reply = matches!(message.id, MessageId::Event(_)) && !message.is_local_echo;
 
     if let MessageKind::State(text) = &message.kind {
+        use morpheus_core::StateKind;
+        let (glyph, tone, class) = match message.state_kind {
+            Some(StateKind::CallStarted) => (crate::icons::PHONE, "good", "call-started"),
+            Some(StateKind::CallEnded) => (crate::icons::PHONE, "quiet", "call-ended"),
+            Some(StateKind::Joined) => (crate::icons::LOG_IN, "good", "joined"),
+            Some(StateKind::Left) => (crate::icons::LOG_OUT, "bad", "left"),
+            Some(StateKind::Removed) => (crate::icons::LOG_OUT, "bad", "removed"),
+            Some(StateKind::Other) | None => (crate::icons::INFO, "quiet", "other"),
+        };
         return rsx! {
             div { class: "message system",
-                span { class: "time", "{time}" }
+                span { class: "state-icon {class}", "data-tone": "{tone}",
+                    crate::icons::Icon { glyph: glyph, size: 18 }
+                }
                 span { class: "system-text", "{text}" }
+                span { class: "time", "{time}" }
             }
         };
     }
@@ -1589,6 +1601,7 @@ mod tests {
             thread: None,
             kind,
             shield: None,
+            state_kind: None,
         }))
     }
 

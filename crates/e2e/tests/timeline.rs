@@ -343,3 +343,99 @@ async fn every_message_row_spans_the_timeline_width() {
         }
     }
 }
+
+/// State lines lead with an icon by their kind, in the avatar's column, and
+/// their text starts where a message's does (task 22, item E).
+#[tokio::test]
+async fn state_lines_have_icons_and_line_up_with_messages() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let ann = new_account(&hs, "stlann").expect("account");
+    let (ben, cat, dan) = (
+        new_account(&hs, "stlben").expect("account"),
+        new_account(&hs, "stlcat").expect("account"),
+        new_account(&hs, "stldan").expect("account"),
+    );
+    let made = api_as(
+        &hs,
+        &ann,
+        "POST",
+        "createRoom",
+        Some(json!({ "name": "state lines", "preset": "public_chat" })),
+    )
+    .expect("room");
+    let room = made["room_id"].as_str().expect("room id").to_owned();
+    let join = |user: &str| {
+        api_as(&hs, user, "POST", &format!("join/{}", path_id(&room)), Some(json!({}))).expect("join");
+    };
+    join(&ben);
+    join(&cat);
+    join(&dan);
+    api_as(
+        &hs,
+        &dan,
+        "POST",
+        &format!("rooms/{}/leave", path_id(&room)),
+        Some(json!({})),
+    )
+    .expect("leave");
+    api_as(
+        &hs,
+        &ann,
+        "POST",
+        &format!("rooms/{}/kick", path_id(&room)),
+        Some(json!({ "user_id": format!("@{cat}:localhost") })),
+    )
+    .expect("kick");
+    api_as(
+        &hs,
+        &ann,
+        "PUT",
+        &format!("rooms/{}/state/m.room.topic", path_id(&room)),
+        Some(json!({ "topic": "icons" })),
+    )
+    .expect("topic");
+    send(&hs, &ben, &room, "m.room.message", json!({ "msgtype": "m.text", "body": "a plain message" }));
+
+    let mut app = App::launch_desktop(&hs).await.expect("launch");
+    common::login(&mut app, &ann, &format!("{ann}-password")).await;
+    app.open_room("state lines").await.expect("open");
+    app.wait_for_text(".message .body", "a plain message", DEFAULT_WAIT)
+        .await
+        .expect("the message");
+    for (class, glyph) in [
+        ("joined", "log-in"),
+        ("left", "log-out"),
+        ("removed", "log-out"),
+        ("other", "info"),
+    ] {
+        let sel = format!(".message.system .state-icon.{class}");
+        app.wait_for(&sel, DEFAULT_WAIT)
+            .await
+            .unwrap_or_else(|e| panic!("no {class} icon: {e}"));
+        assert_eq!(
+            app.attr(&sel, "data-icon").await.expect("attr").as_deref(),
+            Some(glyph),
+            "the {class} line's icon"
+        );
+    }
+    // The tones: green in, red out, green phone, the rest grey.
+    for (class, tone) in [("joined", "good"), ("left", "bad"), ("removed", "bad"), ("other", "quiet")] {
+        let sel = format!(".message.system .state-icon.{class}");
+        assert_eq!(app.attr(&sel, "data-tone").await.expect("attr").as_deref(), Some(tone), "{class}'s colour");
+    }
+    // Text where a message's text is, the icon in the avatar's column, the time after the text.
+    let body = app.bounds(".message.with-header .body").await.expect("b").expect("a body");
+    let avatar = app.bounds(".message.with-header .avatar-button, .message.with-header .avatar").await.expect("b").expect("avatar");
+    for text in ["joined the room", "left the room", "was kicked", "changed the topic"] {
+        let line = app.bounds_containing(".message.system .system-text", text).await.expect("b").unwrap_or_else(|| panic!("the {text:?} line"));
+        assert!((line.x - body.x).abs() <= 1.5, "{text:?} starts at {}, a message's text at {}", line.x, body.x);
+    }
+    let icon = app.bounds(".message.system .state-icon.joined").await.expect("b").expect("icon");
+    assert!(icon.x >= avatar.x - 1.0 && icon.right() <= avatar.right() + 1.0, "the icon {icon:?} is not in the avatar's column {avatar:?}");
+    let line = app.bounds_containing(".message.system .system-text", "joined the room").await.expect("b").expect("line");
+    let time = app.bounds(".message.system .time").await.expect("b").expect("a time");
+    assert!(time.x >= line.right() - 1.0, "the time {time:?} is not after the text {line:?}");
+}

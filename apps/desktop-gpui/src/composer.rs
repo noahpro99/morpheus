@@ -1100,6 +1100,7 @@ mod tests {
                 html: None,
             },
             shield: None,
+            state_kind: None,
         };
         let (composer, cx) = open(cx);
         focus(&composer, cx);
@@ -1147,6 +1148,7 @@ mod tests {
                 html: None,
             },
             shield: None,
+            state_kind: None,
         };
         let (composer, cx) = open(cx);
         focus(&composer, cx);

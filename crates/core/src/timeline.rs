@@ -70,6 +70,25 @@ impl From<&MessageId> for TimelineEventItemId {
     }
 }
 
+/// What kind of state line a [`MessageKind::State`] is, so a client can
+/// draw an icon by it (Discord's green arrow in for a join, red out for a
+/// leave, a phone for a call).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StateKind {
+    /// A call was started (rung) in the room.
+    CallStarted,
+    /// A call ended. (Not produced yet: Matrix has no single event for it.)
+    CallEnded,
+    /// Someone joined (or accepted an invite).
+    Joined,
+    /// Someone left (or declined an invite).
+    Left,
+    /// Someone was kicked or banned.
+    Removed,
+    /// Any other state change (a name, topic, permissions, an invite…).
+    Other,
+}
+
 /// A render-ready event. Owned and cheap to compare so UIs can diff it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Message {
@@ -92,6 +111,8 @@ pub struct Message {
     /// Set on a thread's root message, summarising its replies.
     pub thread: Option<ThreadSummary>,
     pub kind: MessageKind,
+    /// For a [`MessageKind::State`]: which kind of line it is.
+    pub state_kind: Option<StateKind>,
     /// A warning about who really sent this (encrypted rooms only).
     pub shield: Option<Shield>,
 }
@@ -310,6 +331,34 @@ impl Message {
             thread,
             kind,
             shield: Shield::of(event),
+            state_kind: StateKind::of(event.content()),
+        }
+    }
+}
+
+impl StateKind {
+    /// The kind of state line this content makes, if it makes one.
+    fn of(content: &TimelineItemContent) -> Option<Self> {
+        match content {
+            TimelineItemContent::MembershipChange(change) => Some(match change.change() {
+                Some(MembershipChange::Joined | MembershipChange::InvitationAccepted) => Self::Joined,
+                Some(MembershipChange::Left | MembershipChange::InvitationRejected) => Self::Left,
+                Some(
+                    MembershipChange::Kicked
+                    | MembershipChange::Banned
+                    | MembershipChange::KickedAndBanned,
+                ) => Self::Removed,
+                _ => Self::Other,
+            }),
+            TimelineItemContent::CallInvite | TimelineItemContent::RtcNotification { .. } => {
+                Some(Self::CallStarted)
+            }
+            TimelineItemContent::OtherState(state)
+                if state.content().event_type().to_string() != CALL_MEMBER_EVENT =>
+            {
+                Some(Self::Other)
+            }
+            _ => None,
         }
     }
 }

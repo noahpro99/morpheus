@@ -508,6 +508,13 @@ async fn a_call_in_a_dm_rings_the_other_person_who_can_answer_or_decline() {
         .wait_for_text(".timeline", "alice started a call", DEFAULT_WAIT)
         .await
         .expect("started a call, in the timeline");
+    if alice.is_gpui() {
+        // The line leads with a green phone.
+        alice
+            .wait_for(".message.system .state-icon.call-started[data-icon=phone][data-tone=good]", DEFAULT_WAIT)
+            .await
+            .expect("the call's line has its icon");
+    }
 
     // Bob answers: he's in the call, and it stops ringing.
     bob.click(".incoming-call .accept-call")
