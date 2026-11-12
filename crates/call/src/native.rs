@@ -605,6 +605,11 @@ impl Outgoing {
                 return Err(Error::Video(err.to_string()));
             }
         };
+        info!(
+            track = %publication.sid(),
+            kind = if screen { "screen" } else { "camera" },
+            "video track published"
+        );
         // Encrypted calls: no frames until the encryptor sits on the track,
         // or the first would leave in the clear.
         if encrypted {

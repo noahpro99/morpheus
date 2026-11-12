@@ -144,10 +144,12 @@ instead of JavaScript:
 
 20. **The speaking ring is slow.** The user: the delay from talking to the green border in a call is very slow compared to Discord. It came only from LiveKit's server-side ActiveSpeakersChanged (interval plus smoothing). Stage 1: measure (`calls::the_speaking_ring_follows_the_voice_quickly`, figures in target/speaking-latency.txt); stage 2: client-side voice detection in crates/call (remote tracks and the microphone), the server list kept as a fallback; stage 3: GPUI ring and the calls file. Extra: the camera view in a call is rounded (corners were square).
 
-21. Onward in the order of `crates/e2e/tests` files, each task naming the
+21. **Calls regression, hang-up, join speed, screen share.** (1) The calls file failing 5-9 of 35 since task 20: bisect and root causes; (2) hanging up leaves the voice channel's list at once; (3) joining as fast as Discord (about 0.5 s) over a distant server; (4) the share-screen button on a real Wayland portal. Tests: `calls` (whole file, twice), `gpui_fixes`, gpui_login, timeline, tray.
+
+22. Onward in the order of `crates/e2e/tests` files, each task naming the
    test file(s) it brings to green.
 
-22. **Later: headless e2e.** Run the app on gpui's test platform
+23. **Later: headless e2e.** Run the app on gpui's test platform
    (`test-support`, `VisualTestContext` in vendor/gpui) with the bridge on
    top, so e2e tests open no windows. Not before the shell and timeline exist.
 
