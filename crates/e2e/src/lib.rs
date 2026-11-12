@@ -895,6 +895,15 @@ impl App {
         self.eval(&js).await.map(drop)
     }
 
+    /// Move the pointer to an element's centre without pressing (GPUI only:
+    /// the web build's `:hover` cannot be driven from script).
+    pub async fn hover(&mut self, selector: &str) -> Result<()> {
+        if gpui() {
+            return self.op("hover", selector, json!({})).await.map(drop);
+        }
+        bail!("hover is only driven in the GPUI app")
+    }
+
     /// Let go of the drag [`Self::drag_hold`] left in progress.
     pub async fn release(&mut self) -> Result<()> {
         if gpui() {

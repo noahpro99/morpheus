@@ -671,3 +671,124 @@ async fn the_full_profile_is_a_centred_modal_with_a_height_limit() {
     assert!(m.bottom() <= window.bottom() - 16.0, "runs to the bottom of a short window: {m:?} in {window:?}");
     assert!(m.h > 100.0, "squeezed away: {m:?}");
 }
+
+/// Ann's window with a message from Ben in a room (task 22, item D).
+async fn a_message_from_ben(hs: &str, name: &str) -> (App, String) {
+    let (ann, ben) = (
+        new_account(hs, "hovann").expect("account"),
+        new_account(hs, "hovben").expect("account"),
+    );
+    let room = room_of(hs, &ann, &ben, name);
+    morpheus_e2e::send_as(hs, &ben, &room, "hello over there").expect("send");
+    let mut app = App::launch_desktop(hs).await.expect("launch app");
+    common::login(&mut app, &ann, &format!("{ann}-password")).await;
+    app.open_room(name).await.expect("open room");
+    app.wait_for_text(".message .body", "hello over there", DEFAULT_WAIT)
+        .await
+        .expect("his message");
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    (app, ben)
+}
+
+fn bright(p: (u8, u8, u8)) -> bool {
+    u32::from(p.0) + u32::from(p.1) + u32::from(p.2) > 450
+}
+
+/// The longest run of bright pixels along any row of `b`.
+fn longest_bright_run(shot: &(Vec<u8>, usize, usize), b: &Bounds) -> usize {
+    let mut best = 0;
+    for y in (b.y.floor() as usize)..(b.bottom().ceil() as usize) {
+        let mut run = 0;
+        for x in (b.x.floor() as usize)..(b.right().ceil() as usize) {
+            if bright(common::pixel_at(shot, x as f64, y as f64)) {
+                run += 1;
+                best = best.max(run);
+            } else {
+                run = 0;
+            }
+        }
+    }
+    best
+}
+
+#[tokio::test]
+async fn hovering_a_sender_name_underlines_it() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let (mut app, _) = a_message_from_ben(&hs, "underlines").await;
+    if !app.is_gpui() {
+        eprintln!("skipped: hover cannot be driven on the web build");
+        return;
+    }
+    let b = app.bounds(".message .sender").await.expect("b").expect("sender");
+    // Away from it: no line under the name (letters alone never run that long).
+    app.hover(".composer-input").await.expect("away");
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    let Some(shot) = common::capture(&app) else {
+        eprintln!("no grim capture here; skipping the pixel check");
+        return;
+    };
+    let before = longest_bright_run(&shot, &b);
+    app.hover(".message .sender").await.expect("over it");
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    let shot = common::capture(&app).expect("capture");
+    let after = longest_bright_run(&shot, &b);
+    eprintln!("longest line in the name: {before} px away, {after} px hovered (name is {} wide)", b.w);
+    assert!(before < (b.w * 0.5) as usize, "a line under the name without hovering: {before}");
+    assert!(after as f64 >= b.w * 0.8, "no underline when hovered: {after} of {}", b.w);
+    // And away again, it goes.
+    app.hover(".composer-input").await.expect("away");
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    let shot = common::capture(&app).expect("capture");
+    assert!(longest_bright_run(&shot, &b) < (b.w * 0.5) as usize, "the underline stayed");
+}
+
+#[tokio::test]
+async fn an_avatar_grows_its_shadow_when_hovered_and_sinks_when_pressed() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let (mut app, _) = a_message_from_ben(&hs, "pressable").await;
+    if !app.is_gpui() {
+        eprintln!("skipped: hover cannot be driven on the web build");
+        return;
+    }
+    let b = app.bounds(".message .avatar-button").await.expect("b").expect("avatar");
+    // The pointer on the name keeps the row's hover colour in both pictures:
+    // only the avatar's own shadow differs.
+    let sample = |shot: &(Vec<u8>, usize, usize)| {
+        let (x, y) = (b.x - 5.0, b.y + b.h / 2.0 + 4.0);
+        let p = common::pixel_at(shot, x, y);
+        u32::from(p.0) + u32::from(p.1) + u32::from(p.2)
+    };
+    app.hover(".message .sender").await.expect("on the name");
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    if let Some(shot) = common::capture(&app) {
+        let rest = sample(&shot);
+        app.hover(".message .avatar-button").await.expect("on the avatar");
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        let over = sample(&common::capture(&app).expect("capture"));
+        eprintln!("beside the avatar: {rest} resting, {over} hovered (sum of r+g+b)");
+        assert!(over + 6 <= rest, "the shadow did not grow: {rest} at rest, {over} hovered");
+    } else {
+        eprintln!("no grim capture here; skipping the shadow pixels");
+    }
+
+    // Pressed: a pixel lower; let go: back.
+    let at = app.bounds(".message .avatar-button").await.expect("b").expect("avatar");
+    app.drag_hold(".message .avatar-button", 0, 0).await.expect("press");
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    let down = app.bounds(".message .avatar-button").await.expect("b").expect("avatar");
+    assert!(
+        (down.y - at.y - 1.0).abs() < 0.3 && (down.x - at.x).abs() < 0.3,
+        "pressed: {down:?}, not one pixel below {at:?}"
+    );
+    app.release().await.expect("let go");
+    app.press("body", "Escape").await.ok();
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    let up = app.bounds(".message .avatar-button").await.expect("b").expect("avatar");
+    assert!((up.y - at.y).abs() < 0.3, "released: {up:?}, not back at {at:?}");
+}

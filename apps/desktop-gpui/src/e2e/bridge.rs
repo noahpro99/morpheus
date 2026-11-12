@@ -271,7 +271,7 @@ async fn handle(request: &Request, cx: &mut AsyncApp) -> Reply {
             Ok(Value::Null)
         }
         "attach_file" => attach_file(request, cx).await,
-        "click" | "right_click" | "type" | "press" | "submit" | "drag" | "release" => act(op, request, cx).await,
+        "click" | "right_click" | "type" | "press" | "submit" | "drag" | "release" | "hover" => act(op, request, cx).await,
         _ => Err(format!("unknown op: {op}")),
     }
 }
@@ -823,6 +823,21 @@ async fn act(op: &str, request: &Request, cx: &mut AsyncApp) -> Reply {
                 })
                 .map_err(|err| err.to_string())?;
             }
+        }
+        "hover" => {
+            // Move the pointer to the element's centre (no button).
+            cx.update_window(window, |_, window, cx| {
+                let _ = window.dispatch_event(
+                    PlatformInput::MouseMove(MouseMoveEvent {
+                        position: point(px(centre.0), px(centre.1)),
+                        pressed_button: None,
+                        modifiers: held,
+                    }),
+                    cx,
+                );
+            })
+            .map_err(|err| err.to_string())?;
+            next_frame(cx, before).await;
         }
         "release" => {
             // Let go of a held drag where the pointer is.

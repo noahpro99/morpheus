@@ -149,6 +149,8 @@ pub struct TimelineView {
     highlight: Option<String>,
     /// The message whose right-click menu is open (unique ID).
     menu_message: Option<String>,
+    /// The message whose avatar is held down (it sits a pixel lower).
+    pressed_avatar: Option<String>,
 }
 
 /// Scroll numbers of a list, in px: what a test and the jump button read.
@@ -248,6 +250,7 @@ impl TimelineView {
             jump: None,
             highlight: None,
             menu_message: None,
+            pressed_avatar: None,
         };
         if let Some(session) = session {
             cx.spawn(async move |this, cx| {
@@ -685,6 +688,7 @@ impl TimelineView {
             keys: self.keys,
             highlight: self.highlight.as_deref() == Some(row.message.unique_id.as_str()),
             menu_open: self.menu_message.as_deref() == Some(row.message.unique_id.as_str()),
+            avatar_pressed: self.pressed_avatar.as_deref() == Some(row.message.unique_id.as_str()),
             ..Pictures::default()
         };
         if show_header {
@@ -777,6 +781,14 @@ impl TimelineView {
 
     /// A click on a message's hover bar, or a right click on it.
     pub fn row_action(&mut self, action: RowAction, unique_id: &str, cx: &mut Context<Self>) {
+        if let RowAction::AvatarPress(down) = action {
+            let now = down.then(|| unique_id.to_owned());
+            if self.pressed_avatar != now {
+                self.pressed_avatar = now;
+                cx.notify();
+            }
+            return;
+        }
         let Some(message) = self.rows.iter().find_map(|row| match row {
             Row::Message { row, .. } if row.message.unique_id == unique_id => {
                 Some(row.message.clone())
@@ -797,6 +809,7 @@ impl TimelineView {
             }
             RowAction::Sender(at) => cx.emit(TimelineEvent::Sender(Box::new(message), at)),
             RowAction::SenderMenu(at) => cx.emit(TimelineEvent::SenderMenu(Box::new(message), at)),
+            RowAction::AvatarPress(_) => {}
             RowAction::Toggle(key) => self.react(message.id, key, cx),
             RowAction::Download => self.download(&message, cx),
             RowAction::OpenImage => {
