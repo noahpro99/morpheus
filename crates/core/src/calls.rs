@@ -851,6 +851,25 @@ impl Session {
         })
     }
 
+    /// When an event was sent (the server's time, in milliseconds since the Unix
+    /// epoch), if it can be found: to tell a ring's decline from a stale one.
+    pub fn event_sent_at(
+        &self,
+        room_id: OwnedRoomId,
+        event_id: OwnedEventId,
+    ) -> CoreFuture<Option<u64>> {
+        let session = self.clone();
+        self.core.run(async move {
+            let room = session.room(&room_id)?;
+            let event = room.load_or_fetch_event(&event_id, None).await?;
+            Ok(event
+                .raw()
+                .get_field::<u64>("origin_server_ts")
+                .ok()
+                .flatten())
+        })
+    }
+
     /// Decline a call ringing this account (the caller hears, and this
     /// account's other devices stop ringing).
     pub fn decline_call(&self, room_id: OwnedRoomId, notification: OwnedEventId) -> CoreFuture<()> {

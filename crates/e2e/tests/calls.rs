@@ -821,7 +821,10 @@ async fn wait_screen_pattern(app: &mut App, user: &str) -> anyhow::Result<()> {
             let tile = format!(".call-stage .video-tile.screen[data-user=\"{user}\"] .video");
             let left = app.attr(&tile, "data-left").await?.unwrap_or_default();
             let right = app.attr(&tile, "data-right").await?.unwrap_or_default();
-            seen = format!("left {left:?}, right {right:?}");
+            let tiles = app.count(&tile).await?;
+            let shown = app.attr(&tile, "data-shown").await?.unwrap_or_default();
+            let seq = app.attr(&tile, "data-seq").await?.unwrap_or_default();
+            seen = format!("tiles {tiles}, shown {shown:?}, seq {seq:?}, left {left:?}, right {right:?}");
             let rgb = |hex: &str| {
                 (hex.len() == 6)
                     .then(|| u32::from_str_radix(hex, 16).ok())
@@ -1041,6 +1044,9 @@ async fn joining_a_ringing_call_from_the_room_stops_the_ring_for_good() {
     } else {
         ".voice-panel .hang-up"
     };
+    if alice.count(hang_up).await.expect("count") == 0 {
+        eprintln!("alice is out of the call; her log:\n{}", alice.log_tail(60));
+    }
     alice.click(hang_up).await.expect("alice hangs up");
     out_of_call(&mut alice).await;
 }
