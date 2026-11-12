@@ -131,6 +131,8 @@ pub struct TimelineView {
     ignored: std::collections::HashSet<String>,
     /// Folded messages shown on request (by unique ID).
     revealed: std::collections::HashSet<String>,
+    /// Files being or done downloading, by the message's unique ID.
+    downloads: std::collections::HashMap<String, crate::message::Download>,
     /// Some message here cannot be decrypted (kept up to date by `rebuild`).
     undecryptable: bool,
     /// Messages hidden while their deletion can still be undone (unique ids).
@@ -237,6 +239,7 @@ impl TimelineView {
             nicknames: Arc::default(),
             ignored: Default::default(),
             revealed: Default::default(),
+            downloads: Default::default(),
             undecryptable: false,
             hidden: HashSet::new(),
             keep_unread: false,
@@ -697,7 +700,7 @@ impl TimelineView {
             &row,
             show_header,
             &pictures,
-            None,
+            self.downloads.get(&row.message.unique_id),
             &self.links,
             Some(&self.actions),
         )
@@ -725,6 +728,44 @@ impl TimelineView {
             .collect()
     }
 
+    /// A file card's Download: saves the file, the card saying where.
+    fn download(&mut self, message: &Message, cx: &mut Context<Self>) {
+        let (media, name) = match &message.kind {
+            MessageKind::File { media, body, .. } | MessageKind::Audio { media, body, .. } => {
+                (media.clone(), body.clone())
+            }
+            _ => return,
+        };
+        let Some(session) = self.session.clone() else {
+            return;
+        };
+        let id = message.unique_id.clone();
+        self.set_download(&id, Some(crate::message::Download::Downloading), cx);
+        let saving = session.download(media, name);
+        cx.spawn(async move |this, cx| {
+            let state = match saving.await {
+                Ok(path) => crate::message::Download::Saved(path.display().to_string()),
+                Err(err) => crate::message::Download::Failed(err.to_string()),
+            };
+            this.update(cx, |this, cx| this.set_download(&id, Some(state), cx)).ok();
+        })
+        .detach();
+    }
+
+    /// Records a card's download state and has the row drawn again.
+    fn set_download(&mut self, unique_id: &str, state: Option<crate::message::Download>, cx: &mut Context<Self>) {
+        match state {
+            Some(state) => self.downloads.insert(unique_id.to_owned(), state),
+            None => self.downloads.remove(unique_id),
+        };
+        if let Some(ix) = self.rows.iter().position(|row| {
+            matches!(row, Row::Message { row, .. } if row.message.unique_id == unique_id)
+        }) {
+            self.list.splice(ix..ix + 1, 1);
+        }
+        cx.notify();
+    }
+
     /// A click on a message's hover bar, or a right click on it.
     pub fn row_action(&mut self, action: RowAction, unique_id: &str, cx: &mut Context<Self>) {
         let Some(message) = self.rows.iter().find_map(|row| match row {
@@ -748,6 +789,7 @@ impl TimelineView {
             RowAction::Sender(at) => cx.emit(TimelineEvent::Sender(Box::new(message), at)),
             RowAction::SenderMenu(at) => cx.emit(TimelineEvent::SenderMenu(Box::new(message), at)),
             RowAction::Toggle(key) => self.react(message.id, key, cx),
+            RowAction::Download => self.download(&message, cx),
             RowAction::OpenImage => {
                 let gallery = self.gallery();
                 if let Some(at) = gallery.iter().position(|(id, _)| id == unique_id) {
