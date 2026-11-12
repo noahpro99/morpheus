@@ -28,6 +28,16 @@ async fn login(app: &mut App, user: &str) {
     app.wait_for(".room", DEFAULT_WAIT).await.expect("rooms");
 }
 
+/// The window's size: the app's root on GPUI, the page's size on Dioxus.
+async fn window_size(app: &mut App) -> (f64, f64) {
+    if app.is_gpui() {
+        let b = app.bounds("body").await.expect("body").expect("a body");
+        (b.w, b.h)
+    } else {
+        app.page_size().await.expect("page size")
+    }
+}
+
 #[tokio::test]
 async fn the_top_bar_spans_to_the_right_over_a_side_card() {
     let Some(hs) = homeserver() else {
@@ -40,35 +50,39 @@ async fn the_top_bar_spans_to_the_right_over_a_side_card() {
     app.wait_for(".side-pane .members", DEFAULT_WAIT)
         .await
         .expect("members shown");
-    let layout = app
-        .eval(
-            "const h = document.querySelector('.chat-header').getBoundingClientRect(); \
-             const p = document.querySelector('.side-pane'); const s = p.getBoundingClientRect(); \
-             const cs = getComputedStyle(p); \
-             return { width: innerWidth, height: innerHeight, header_right: h.right, header_bottom: h.bottom, \
-               side_top: s.top, side_right: s.right, side_bottom: s.bottom, \
-               radii: [cs.borderTopLeftRadius, cs.borderTopRightRadius, cs.borderBottomRightRadius, cs.borderBottomLeftRadius].map(parseFloat) };",
+    let (width, height) = window_size(&mut app).await;
+    let header = app.bounds(".chat-header").await.expect("header").expect("a header");
+    let side = app.bounds(".side-pane").await.expect("side").expect("a side pane");
+    assert!(
+        header.right() >= width - 1.0,
+        "the top bar stops short of the right edge: header {header:?}, window {width}"
+    );
+    assert!(
+        side.y >= header.bottom(),
+        "the side panel is not under the top bar: {side:?} vs {header:?}"
+    );
+    assert!(
+        side.right() < width && side.bottom() < height,
+        "the side panel is not inset like a card: {side:?}, window {width}x{height}"
+    );
+    // Rounded on all four corners (the GPUI app notes the radius it draws).
+    let radius = if app.is_gpui() {
+        app.attr(".side-pane", "data-radius")
+            .await
+            .expect("radius")
+            .and_then(|r| r.parse::<f64>().ok())
+            .unwrap_or(0.0)
+    } else {
+        app.eval(
+            "const cs = getComputedStyle(document.querySelector('.side-pane')); \
+             return Math.min(...[cs.borderTopLeftRadius, cs.borderTopRightRadius, cs.borderBottomRightRadius, cs.borderBottomLeftRadius].map(parseFloat));",
         )
         .await
-        .expect("layout");
-    let num = |key: &str| layout[key].as_f64().expect("number");
-    assert!(
-        num("header_right") >= num("width") - 1.0,
-        "the top bar stops short of the right edge: {layout}"
-    );
-    assert!(
-        num("side_top") >= num("header_bottom"),
-        "the side panel is not under the top bar: {layout}"
-    );
-    assert!(
-        num("side_right") < num("width") && num("side_bottom") < num("height"),
-        "the side panel is not inset like a card: {layout}"
-    );
-    let radii = layout["radii"].as_array().expect("radii");
-    assert!(
-        radii.iter().all(|r| r.as_f64().unwrap_or(0.0) >= 6.0),
-        "the side panel is not rounded on all four corners: {layout}"
-    );
+        .expect("radii")
+        .as_f64()
+        .unwrap_or(0.0)
+    };
+    assert!(radius >= 6.0, "the side panel is not rounded on all four corners: {radius}");
 }
 
 #[tokio::test]
@@ -99,35 +113,22 @@ async fn a_call_button_only_where_calls_belong() {
     app.wait_for(".chat-header .call-button", DEFAULT_WAIT)
         .await
         .expect("a call button in a DM");
-    let order = app
-        .eval(
-            "const header = document.querySelector('.chat-header'); \
-             const kids = [...header.children]; \
-             const at = sel => kids.indexOf(header.querySelector(':scope > ' + sel)); \
-             const search = header.querySelector(':scope > .search-toggle'); \
-             return { call: at('.call-button'), pin: at('.pin-toggle'), search: at('.search-toggle'), last: kids.length - 1, \
-               search_width: search ? search.getBoundingClientRect().width : 0, \
-               search_gap: search ? header.getBoundingClientRect().right - search.getBoundingClientRect().right : 999 };",
-        )
-        .await
-        .expect("order");
-    let at = |key: &str| order[key].as_i64().expect("index");
-    assert_eq!(
-        at("call") + 1,
-        at("pin"),
-        "the call button is not beside the pins: {order}"
-    );
-    assert_eq!(
-        at("search"),
-        at("last"),
-        "the search bar is not at the right end: {order}"
+    let call = app.bounds(".chat-header > .call-button").await.expect("call").expect("call button");
+    let pin = app.bounds(".chat-header > .pin-toggle").await.expect("pin").expect("pin button");
+    let search = app.bounds(".chat-header > .search-toggle").await.expect("search").expect("search");
+    let header = app.bounds(".chat-header").await.expect("header").expect("header");
+    // Buttons across the bar: the call button, then the pins right after it.
+    assert!(
+        call.right() <= pin.x + 1.0 && pin.x - call.right() < 24.0,
+        "the call button is not beside the pins: {call:?} {pin:?}"
     );
     assert!(
-        order["search_width"].as_f64().unwrap_or(0.0) >= 140.0,
-        "search is a button, not a bar: {order}"
+        search.x >= pin.right() - 1.0 && search.x >= call.right() - 1.0,
+        "the search bar is not at the right end: {search:?}"
     );
+    assert!(search.w >= 140.0, "search is a button, not a bar: {search:?}");
     assert!(
-        order["search_gap"].as_f64().unwrap_or(999.0) <= 24.0,
-        "the search bar is not at the top right: {order}"
+        header.right() - search.right() <= 24.0,
+        "the search bar is not at the top right: {search:?} in {header:?}"
     );
 }
