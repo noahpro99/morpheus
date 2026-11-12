@@ -22,7 +22,7 @@ const CORNER: f32 = 12.0;
 pub fn close_window(window: &mut Window, cx: &mut App) {
     if crate::tray::hides_on_close() {
         crate::notify::set_looking(false, None);
-        crate::HIDING.store(true, std::sync::atomic::Ordering::Relaxed);
+        gpui::KEEP_RUNNING_WITHOUT_WINDOWS.store(true, std::sync::atomic::Ordering::Relaxed);
         window.remove_window();
     } else {
         cx.quit();
