@@ -577,14 +577,25 @@ impl Shell {
 
     /// Picking a rail entry (badge, DMs, Rooms, favourites): its list, with
     /// the room last open there open again (as Discord does), if it is still
-    /// in it. With none remembered only the list changes, as in Dioxus.
+    /// in it. A server with none remembered opens its top channel, the first
+    /// the sidebar lists (not a voice channel: a click on that joins its call);
+    /// the other lists only change.
     pub fn pick_scope(&mut self, scope: Scope, cx: &mut Context<Self>) {
         self.set_scope(scope.clone(), cx);
-        if let Some(room) = self.last_room_in.get(&scope).cloned()
-            && self.selected.as_ref() != Some(&room)
-            && crate::model::rooms_in_scope(&self.rooms, &scope)
+        let remembered = self.last_room_in.get(&scope).cloned().filter(|room| {
+            crate::model::rooms_in_scope(&self.rooms, &scope)
                 .iter()
-                .any(|r| r.id == room)
+                .any(|r| &r.id == room)
+        });
+        let target = remembered.or_else(|| match scope {
+            Scope::Space(_) => crate::room_list::sidebar_order(self, &scope)
+                .into_iter()
+                .find(|r| !r.is_voice && !r.is_space && !r.invited)
+                .map(|r| r.id),
+            _ => None,
+        });
+        if let Some(room) = target
+            && self.selected.as_ref() != Some(&room)
         {
             self.open_room(room, cx);
         }
