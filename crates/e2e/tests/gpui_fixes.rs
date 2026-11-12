@@ -215,3 +215,118 @@ async fn a_long_thread_in_a_short_window_stays_inside_the_pane() {
     let pane = app.bounds(".side-pane").await.expect("b").expect("pane");
     assert!(panel.y + panel.h <= pane.y + pane.h + 1.0, "the panel spills out of the pane");
 }
+
+/// The command palette (Ctrl+K): centred, rows of one height with their
+/// picture and text on the row's middle line, the list under the input and
+/// as wide as the panel.
+#[tokio::test]
+async fn the_palette_is_laid_out_evenly() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch_desktop(&hs).await.expect("launch app");
+    common::login(&mut app, "alice", "alice-password").await;
+    app.open_room("general").await.expect("open room");
+    app.shortcut(".shell", "k", true).await.expect("ctrl+k");
+    app.wait_for(".switcher input", DEFAULT_WAIT)
+        .await
+        .expect("palette");
+    app.wait_for(".switcher-item .avatar", DEFAULT_WAIT)
+        .await
+        .expect("a room row");
+    // Mix in the actions and settings rows too.
+    app.type_into(".switcher input", "e").await.expect("type");
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    if let Ok(secs) = std::env::var("FIXES_HOLD") {
+        tokio::time::sleep(std::time::Duration::from_secs(secs.parse().unwrap_or(0))).await;
+    }
+
+    let window = app.bounds(".shell").await.expect("b").expect("shell");
+    let panel = app.bounds(".switcher").await.expect("b").expect("panel");
+    let input = app.bounds(".switcher input").await.expect("b").expect("input");
+    let list = app
+        .bounds(".switcher-results")
+        .await
+        .expect("b")
+        .expect("list");
+    let rows = app.all_bounds(".switcher-item").await.expect("rows");
+    eprintln!("window {window:?}\npanel {panel:?}\ninput {input:?}\nlist {list:?}");
+    assert!(rows.len() >= 4, "rows to compare: {}", rows.len());
+
+    // Centred, and as wide as Dioxus draws it: 520, or 90% of a narrow window.
+    let gap_left = panel.x - window.x;
+    let gap_right = window.x + window.w - (panel.x + panel.w);
+    assert!((gap_left - gap_right).abs() <= 2.0, "not centred: {gap_left} / {gap_right}");
+    assert!((panel.w - 520.0f64.min(window.w * 0.9)).abs() <= 2.0, "width {}", panel.w);
+    // Its top is 15% down the window.
+    assert!(
+        (panel.y - window.y - window.h * 0.15).abs() <= 3.0,
+        "top {} in a window {} tall",
+        panel.y,
+        window.h
+    );
+    // The input sits on top of the list, both as wide as the panel.
+    assert!(input.y >= panel.y - 1.0 && input.y + input.h <= list.y + 1.0, "input above the list");
+    assert!((list.x - panel.x).abs() <= 1.0 && (list.w - panel.w).abs() <= 1.0, "list as wide as the panel");
+    assert!(input.x >= panel.x - 1.0 && input.x + input.w <= panel.x + panel.w + 1.0, "input inside the panel");
+    // The input band is as tall as Dioxus draws it (14 px, one line, 14 px), not a tall box.
+    assert!(list.y - panel.y <= 58.0, "the input band is {} tall", list.y - panel.y);
+    // Rows: one height, one left edge, one width, no gaps beyond a pixel.
+    for (i, row) in rows.iter().enumerate() {
+        assert!((row.h - rows[0].h).abs() <= 1.0, "row {i} is {} tall, row 0 {}", row.h, rows[0].h);
+        assert!((row.x - rows[0].x).abs() <= 1.0 && (row.w - rows[0].w).abs() <= 1.0, "row {i} is out of line");
+        if i > 0 {
+            let gap = row.y - (rows[i - 1].y + rows[i - 1].h);
+            assert!(gap.abs() <= 1.0, "a gap of {gap} before row {i}");
+        }
+    }
+    assert!(rows[0].x > list.x && rows[0].x + rows[0].w < list.x + list.w, "rows are inset in the list");
+    // Pictures, icons and names on the middle line of their row.
+    for sel in [".switcher-item .avatar", ".switcher-item svg.icon", ".switcher-item .name", ".switcher-item .kind"] {
+        let found = app.all_bounds(sel).await.expect("bounds");
+        for b in found {
+            let mid = b.y + b.h / 2.0;
+            let row = rows
+                .iter()
+                .find(|r| mid >= r.y && mid <= r.y + r.h)
+                .unwrap_or_else(|| panic!("{sel} {b:?} is in no row"));
+            assert!(
+                (mid - (row.y + row.h / 2.0)).abs() <= 2.0,
+                "{sel} is off the row's middle line: {b:?} in {row:?}"
+            );
+        }
+    }
+}
+
+/// A row's picture or icon is a gap (8 px, as Dioxus) away from its name.
+#[tokio::test]
+async fn palette_rows_keep_a_gap_between_picture_and_text() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch_desktop(&hs).await.expect("launch app");
+    common::login(&mut app, "alice", "alice-password").await;
+    app.open_room("general").await.expect("open room");
+    app.shortcut(".shell", "k", true).await.expect("ctrl+k");
+    app.wait_for(".switcher-item .avatar", DEFAULT_WAIT)
+        .await
+        .expect("a room row");
+    app.type_into(".switcher input", "e").await.expect("type");
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    for lead in [".switcher-item .avatar", ".switcher-item svg.icon"] {
+        let leads = app.all_bounds(lead).await.expect("leads");
+        assert!(!leads.is_empty(), "no {lead}");
+        let names = app.all_bounds(".switcher-item .name, .switcher-item .action-label").await.expect("names");
+        for l in leads {
+            let mid = l.y + l.h / 2.0;
+            let name = names
+                .iter()
+                .find(|n| mid >= n.y && mid <= n.y + n.h)
+                .unwrap_or_else(|| panic!("no name beside {lead} {l:?}"));
+            let gap = name.x - (l.x + l.w);
+            assert!((gap - 8.0).abs() <= 2.0, "{lead}: {gap} px between it and the name");
+        }
+    }
+}
