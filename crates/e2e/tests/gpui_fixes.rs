@@ -441,3 +441,87 @@ async fn avatars_are_square_and_filled_by_a_non_square_picture() {
         "a wide picture should fill the circle, cropped"
     );
 }
+
+/// A wide picture: a red square in the middle, blue on either side.
+const FRAMED_PNG: &[u8] = include_bytes!("../fixtures/framed.png");
+
+/// The window's pixels (RGB rows) and size, from a `grim` capture of the
+/// test window (found by the app's pid on Hyprland); `None` elsewhere.
+fn capture(app: &App) -> Option<(Vec<u8>, usize, usize)> {
+    let pid = app.pid()?;
+    let out = std::process::Command::new("hyprctl").args(["clients", "-j"]).output().ok()?;
+    let clients: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
+    let window = clients
+        .as_array()?
+        .iter()
+        .find(|c| c["pid"].as_u64() == Some(u64::from(pid)))?
+        .clone();
+    let geometry = format!(
+        "{},{} {}x{}",
+        window["at"][0], window["at"][1], window["size"][0], window["size"][1]
+    );
+    let out = std::process::Command::new("grim")
+        .args(["-t", "ppm", "-g", &geometry, "-"])
+        .output()
+        .ok()?;
+    // P6\n<w> <h>\n255\n, then RGB bytes.
+    let bytes = out.stdout;
+    let mut fields = Vec::new();
+    let mut at = 0;
+    while fields.len() < 4 {
+        let start = at;
+        while !bytes.get(at)?.is_ascii_whitespace() {
+            at += 1;
+        }
+        fields.push(String::from_utf8_lossy(&bytes[start..at]).into_owned());
+        at += 1;
+    }
+    let (w, h) = (fields[1].parse().ok()?, fields[2].parse().ok()?);
+    Some((bytes[at..].to_vec(), w, h))
+}
+
+#[tokio::test]
+async fn a_wide_picture_is_cropped_to_fill_a_round_avatar() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let (ann, ben) = (
+        new_account(&hs, "rndann").expect("account"),
+        new_account(&hs, "rndben").expect("account"),
+    );
+    room_of(&hs, &ann, &ben, "round faces");
+    morpheus_e2e::set_avatar_as(&hs, &ben, FRAMED_PNG).expect("an avatar");
+    let mut app = App::launch_desktop(&hs).await.expect("launch app");
+    common::login(&mut app, &ann, &format!("{ann}-password")).await;
+    app.open_room("round faces").await.expect("open room");
+    let sel = format!(".members .member[title=\"@{ben}:localhost\"] img.avatar");
+    app.wait_for(&sel, DEFAULT_WAIT).await.expect("his picture");
+    // Let the picture load and draw.
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    let b = app.bounds(&sel).await.expect("b").expect("avatar");
+    let Some((pixels, w, h)) = capture(&app) else {
+        eprintln!("no grim capture here; skipping the pixel check");
+        return;
+    };
+    let pixel = |x: f64, y: f64| {
+        let (x, y) = (x.round() as usize, y.round() as usize);
+        assert!(x < w && y < h, "({x}, {y}) is outside the {w}x{h} capture");
+        let i = (y * w + x) * 3;
+        (pixels[i], pixels[i + 1], pixels[i + 2])
+    };
+    let red = |p: (u8, u8, u8)| p.0 > 180 && p.1 < 80 && p.2 < 80;
+    let blue = |p: (u8, u8, u8)| p.2 > 180 && p.0 < 80 && p.1 < 80;
+    // Inside the circle, edge to edge: the middle of the picture (red), its
+    // blue sides cropped away.
+    let (cx, cy) = (b.x + b.w / 2.0, b.y + b.h / 2.0);
+    for (x, y) in [(cx, cy), (b.x + 3.0, cy), (b.right() - 3.0, cy), (cx, b.y + 3.0), (cx, b.y + b.h - 3.0)] {
+        let p = pixel(x, y);
+        assert!(red(p), "inside the circle at ({x}, {y}) is {p:?}, not the picture's red middle");
+    }
+    // The box's corners are outside the circle: neither part of the picture.
+    for (x, y) in [(b.x + 2.0, b.y + 2.0), (b.right() - 2.0, b.y + 2.0), (b.x + 2.0, b.y + b.h - 2.0), (b.right() - 2.0, b.y + b.h - 2.0)] {
+        let p = pixel(x, y);
+        assert!(!red(p) && !blue(p), "the avatar's corner at ({x}, {y}) is {p:?}: the picture is not cut to a circle");
+    }
+}
