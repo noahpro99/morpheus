@@ -75,15 +75,99 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         )
         .e2e("button", "profile-chip")
         .attr("title", user_id);
-    let pill = div()
+    // The mic and its arrow are one thing: red together when muted.
+    let voice = shell.calls.voice;
+    let pair = |id: &'static str,
+                glyph: &'static str,
+                title: &'static str,
+                classes: &'static str,
+                active: bool,
+                toggle: fn(&mut Shell, &mut Context<Shell>),
+                speakers: bool,
+                arrow_title: &'static str,
+                cx: &mut Context<Shell>| {
+        let colour = if active { theme::DANGER } else { theme::TEXT_MUTED };
+        let tint = |alpha: u32| gpui::rgba((theme::DANGER << 8) | alpha);
+        let main = div()
+            .id(id)
+            .size(px(32.0))
+            .flex_none()
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded_l(px(theme::RADIUS_SM))
+            .cursor_pointer()
+            .when(active, |d| d.bg(tint(0x2e)))
+            .hover(|s| if active { s.bg(tint(0x47)) } else { s.bg(gpui::rgba(theme::BG_HOVER)) })
+            .child(icon(glyph, 18.0).text_color(rgb(colour)))
+            .on_click(cx.listener(move |this, _, _, cx| toggle(this, cx)))
+            .on_mouse_down(
+                gpui::MouseButton::Right,
+                cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+                    cx.stop_propagation();
+                    this.open_audio_menu(speakers, event.position, cx)
+                }),
+            )
+            .e2e("button", classes)
+            .attr("data-color", if active { "#ff6b6b" } else { "#8a90a2" })
+            .attr("data-bg", if active { "#ff6b6b2e" } else { "" })
+            .attr("title", title);
+        let arrow = div()
+            .id(gpui::SharedString::from(format!("{id}-menu")))
+            .w(px(16.0))
+            .h(px(32.0))
+            .flex_none()
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded_r(px(theme::RADIUS_SM))
+            .cursor_pointer()
+            .when(active, |d| d.bg(tint(0x2e)))
+            .hover(|s| if active { s.bg(tint(0x47)) } else { s.bg(gpui::rgba(theme::BG_HOVER)) })
+            .child(icon("chevron-down", 12.0).text_color(rgb(colour)))
+            .on_click(cx.listener(move |this, event: &gpui::ClickEvent, _, cx| {
+                this.open_audio_menu(speakers, event.position(), cx)
+            }))
+            .e2e("button", "ghost device-menu-button")
+            .attr("data-color", if active { "#ff6b6b" } else { "#8a90a2" })
+            .attr("data-bg", if active { "#ff6b6b2e" } else { "" })
+            .attr("title", arrow_title);
+        div()
+            .flex()
+            .gap(px(1.0))
+            .child(main)
+            .child(arrow)
+            .e2e("div", if active { "device-pair active" } else { "device-pair" })
+    };
+    let mute = pair(
+        "mute",
+        if voice.mic_off() { "mic-off" } else { "mic" },
+        voice.mute_title(),
+        if voice.mic_off() { "ghost mute-button active" } else { "ghost mute-button" },
+        voice.mic_off(),
+        Shell::toggle_mute,
+        false,
+        "Microphone",
+        cx,
+    );
+    let deafen = pair(
+        "deafen",
+        if voice.deafened { "headphone-off" } else { "headphones" },
+        voice.deafen_title(),
+        if voice.deafened { "ghost deafen-button active" } else { "ghost deafen-button" },
+        voice.deafened,
+        Shell::toggle_deafen,
+        true,
+        "Speaker",
+        cx,
+    );
+    let row = div()
         .flex()
         .items_center()
         .gap(px(8.0))
         .h(px(theme::BOTTOM_H))
         .pl(px(4.0))
         .pr(px(6.0))
-        .rounded(px(theme::RADIUS_LG))
-        .bg(rgb(theme::BG_ELEVATED))
         .child(
             div()
                 .flex()
@@ -93,20 +177,8 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                 .gap(px(8.0))
                 .child(chip),
         )
-        .child(ghost(
-            "mute",
-            "mic",
-            "Mute (Ctrl+Shift+M)",
-            "ghost mute-button",
-            None,
-        ))
-        .child(ghost(
-            "deafen",
-            "headphones",
-            "Deafen (Ctrl+Shift+D)",
-            "ghost deafen-button",
-            None,
-        ))
+        .child(mute)
+        .child(deafen)
         .child(ghost(
             "settings",
             "settings",
@@ -116,6 +188,15 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                 this.open_settings(SettingsFocus::None, cx)
             }))),
         ))
+        .e2e("div", "user-row");
+    // In a call, its controls sit at the top of this card.
+    let pill = div()
+        .flex()
+        .flex_col()
+        .rounded(px(theme::RADIUS_LG))
+        .bg(rgb(theme::BG_ELEVATED))
+        .children(crate::call_ui::voice_panel(shell, cx))
+        .child(row)
         .e2e("div", "user-pill");
     // The band keeps the rail's and the sidebar's colours; the pill floats on it.
     div()

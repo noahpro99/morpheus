@@ -44,9 +44,23 @@ const MAX_WIDTH: u32 = 640;
 pub struct Frame {
     /// Goes up with each new picture under the same key.
     pub seq: u64,
+    /// The picture as a JPEG (empty after [`skip_jpeg_frames`]).
     pub jpeg: Arc<Vec<u8>>,
+    /// The same picture as raw pixels, 4 bytes each (B, G, R, A in memory;
+    /// A is 255), `width * height` of them: what a native renderer draws
+    /// without decoding anything.
+    pub bgra: Arc<Vec<u8>>,
     pub width: u32,
     pub height: u32,
+}
+
+/// Whether pictures are JPEG-encoded (a web view needs them).
+static JPEG: AtomicBool = AtomicBool::new(true);
+
+/// A renderer that draws [`Frame::bgra`] itself calls this once, so the
+/// frames are not also encoded as JPEGs nobody reads.
+pub fn skip_jpeg_frames() {
+    JPEG.store(false, Ordering::Relaxed);
 }
 
 static FRAMES: Mutex<Option<HashMap<String, Frame>>> = Mutex::new(None);
@@ -82,26 +96,32 @@ pub(crate) fn keep_turned(key: &str, buffer: &dyn VideoBuffer, degrees: u32) {
         width = MAX_WIDTH;
         i420 = i420.scale(width as i32, height as i32);
     }
-    // libyuv's "ABGR" is R, G, B, A in memory.
-    let mut rgba = vec![0u8; (width * height * 4) as usize];
+    // libyuv's "ARGB" is B, G, R, A in memory.
+    let mut bgra = vec![0u8; (width * height * 4) as usize];
     (&i420 as &dyn VideoBuffer).to_argb(
-        VideoFormatType::ABGR,
-        &mut rgba,
+        VideoFormatType::ARGB,
+        &mut bgra,
         width * 4,
         width as i32,
         height as i32,
     );
-    let (rgba, width, height) = turn(rgba, width, height, degrees);
+    let (bgra, width, height) = turn(bgra, width, height, degrees);
     let mut jpeg = Vec::new();
-    let encoder = jpeg_encoder::Encoder::new(&mut jpeg, 75);
-    if let Err(err) = encoder.encode(
-        &rgba,
-        width as u16,
-        height as u16,
-        jpeg_encoder::ColorType::Rgba,
-    ) {
-        warn!(%err, "video frame not encoded");
-        return;
+    if JPEG.load(Ordering::Relaxed) {
+        let mut rgba = bgra.clone();
+        for pixel in rgba.chunks_exact_mut(4) {
+            pixel.swap(0, 2);
+        }
+        let encoder = jpeg_encoder::Encoder::new(&mut jpeg, 75);
+        if let Err(err) = encoder.encode(
+            &rgba,
+            width as u16,
+            height as u16,
+            jpeg_encoder::ColorType::Rgba,
+        ) {
+            warn!(%err, "video frame not encoded");
+            return;
+        }
     }
     if let Ok(mut frames) = FRAMES.lock() {
         let frames = frames.get_or_insert_with(HashMap::new);
@@ -111,6 +131,7 @@ pub(crate) fn keep_turned(key: &str, buffer: &dyn VideoBuffer, degrees: u32) {
             Frame {
                 seq,
                 jpeg: Arc::new(jpeg),
+                bgra: Arc::new(bgra),
                 width,
                 height,
             },

@@ -57,6 +57,7 @@ pub use platform_camera::{PlatformCamera, camera_frame, set_platform_camera};
 mod video;
 pub use video::{
     CAMERA_PATTERN, Frame, LOCAL_CAMERA, LOCAL_SCREEN, SCREEN_PATTERN, TestPattern, latest_frame,
+    skip_jpeg_frames,
 };
 
 /// Where the call's audio comes from and goes to.
@@ -345,6 +346,7 @@ impl Call {
 
     /// Switch to the devices last chosen ([`choose_audio_devices`]).
     pub fn use_chosen_devices(&self) -> Result<()> {
+        let _enter = runtime().enter();
         match &self.platform {
             Some(platform) => devices::apply(platform, true),
             None => Ok(()),
@@ -353,6 +355,9 @@ impl Call {
 
     /// Stop (or resume) sending this device's audio.
     pub fn set_muted(&self, muted: bool) {
+        // LiveKit starts tasks here: from an interface thread outside the
+        // call's runtime, they need it entered.
+        let _enter = runtime().enter();
         if muted {
             self.mic.mute();
         } else {
@@ -362,6 +367,7 @@ impl Call {
 
     /// Stop (or resume) playing everyone else's audio.
     pub fn set_deafened(&self, deafened: bool) {
+        let _enter = runtime().enter();
         if let Ok(mut flag) = self.deafened.lock() {
             *flag = deafened;
         }

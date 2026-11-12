@@ -11,7 +11,7 @@ path = "src/main.rs"
 
 [features]
 # The test bridge (`MORPHEUS_E2E_PORT`) and element tags; never in a release.
-e2e = ["dep:futures", "dep:serde", "dep:base64"]
+e2e = ["dep:serde", "dep:base64"]
 
 [dependencies]
 gpui = "0.2"
@@ -19,7 +19,10 @@ anyhow = { workspace = true }
 morpheus-core = { workspace = true }
 morpheus-view-model = { workspace = true }
 directories = { workspace = true }
-futures = { version = "0.3", optional = true }
+futures = "0.3"
+morpheus-call = { workspace = true }
+rodio = { version = "0.23", default-features = false, features = ["playback"] }
+image = { version = "0.25", default-features = false }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true }
 ruma-html = { workspace = true }

@@ -351,6 +351,15 @@ fn section(text: &str, class: &str) -> impl IntoElement {
 }
 
 fn row(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -> impl IntoElement {
+    let call = crate::call_ui::room_call(shell, cx, room);
+    div()
+        .flex()
+        .flex_col()
+        .child(room_button(shell, cx, room))
+        .children(call)
+}
+
+fn room_button(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -> impl IntoElement {
     let selected = shell.selected.as_ref() == Some(&room.id) && !shell.friends_open;
     let unread = room.unread_messages > 0 || room.marked_unread;
     let pinned = shell.marks.is_pinned(room);
@@ -358,6 +367,7 @@ fn row(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -> impl IntoE
     for (on, class) in [
         (room.is_dm, "dm"),
         (room.is_voice, "voice"),
+        (shell.calls.in_call(&room.id), "in-call"),
         (pinned, "pinned"),
         (shell.marks.is_muted(room), "muted"),
         (selected, "selected"),
@@ -390,7 +400,21 @@ fn row(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -> impl IntoE
                     .text_color(rgb(theme::TEXT))
             })
         })
-        .on_click(move |_, _, cx| view.update(cx, |s, cx| s.open_room(id.clone(), cx)))
+        .on_click({
+            let (voice, name) = (room.is_voice, room.name.clone());
+            move |_, _, cx| {
+                view.update(cx, |s, cx| {
+                    // A server's voice channel, as in Discord: a click joins its
+                    // call and leaves you where you are; in the call already, it
+                    // opens (as a call page).
+                    if voice && !s.calls.in_call(&id) {
+                        s.join_call(id.clone(), name.clone(), cx)
+                    } else {
+                        s.open_room(id.clone(), cx)
+                    }
+                })
+            }
+        })
         .on_mouse_down(MouseButton::Right, {
             let room = room.clone();
             cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
@@ -406,7 +430,7 @@ fn row(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -> impl IntoE
             None,
         ))
     } else if room.is_voice {
-        button.child(icon("volume-2", 18.0).text_color(rgb(theme::TEXT_FAINT)))
+        button.child(icon("volume-2", 18.0).text_color(rgb(theme::TEXT_FAINT)).e2e("svg", "voice-icon"))
     } else {
         button.child(
             div()

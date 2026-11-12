@@ -78,6 +78,14 @@ pub const MOVE: &str = r#"<path d="M12 2v20" /> <path d="m15 19-3 3-3-3" /> <pat
 
 pub const SHARE_2: &str = r#"<circle cx="18" cy="5" r="3" /> <circle cx="6" cy="12" r="3" /> <circle cx="18" cy="19" r="3" /> <line x1="8.59" x2="15.42" y1="13.51" y2="17.49" /> <line x1="15.41" x2="8.59" y1="6.51" y2="10.49" />"#;
 
+pub const PHONE: &str = r#"<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />"#;
+pub const PHONE_OFF: &str = r#"<path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91" /> <line x1="22" x2="2" y1="2" y2="22" />"#;
+pub const VIDEO_OFF: &str = r#"<path d="M10.66 6H14a2 2 0 0 1 2 2v2.5l5.248-3.062A.5.5 0 0 1 22 7.87v8.196" /> <path d="M16 16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h2" /> <path d="m2 2 20 20" />"#;
+pub const SCREEN_SHARE: &str = r#"<path d="M13 3H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-3" /> <path d="M8 21h8" /> <path d="M12 17v4" /> <path d="m17 8 5-5" /> <path d="M17 3h5v5" />"#;
+pub const SCREEN_SHARE_OFF: &str = r#"<path d="M13 3H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-3" /> <path d="M8 21h8" /> <path d="M12 17v4" /> <path d="m22 3-5 5" /> <path d="m17 3 5 5" />"#;
+pub const MAXIMIZE_2: &str = r#"<polyline points="15 3 21 3 21 9" /> <polyline points="9 21 3 21 3 15" /> <line x1="21" x2="14" y1="3" y2="10" /> <line x1="3" x2="10" y1="21" y2="14" />"#;
+pub const MINIMIZE_2: &str = r#"<polyline points="4 14 10 14 10 20" /> <polyline points="20 10 14 10 14 4" /> <line x1="14" x2="21" y1="10" y2="3" /> <line x1="3" x2="10" y1="21" y2="14" />"#;
+
 /// The glyph named by an asset path `icons/<name>.svg`.
 fn glyph(name: &str) -> Option<&'static str> {
     Some(match name {
@@ -145,6 +153,13 @@ fn glyph(name: &str) -> Option<&'static str> {
         "gavel" => GAVEL,
         "message-circle" => MESSAGE_CIRCLE,
         "eye-off" => EYE_OFF,
+        "phone" => PHONE,
+        "phone-off" => PHONE_OFF,
+        "video-off" => VIDEO_OFF,
+        "screen-share" => SCREEN_SHARE,
+        "screen-share-off" => SCREEN_SHARE_OFF,
+        "maximize-2" => MAXIMIZE_2,
+        "minimize-2" => MINIMIZE_2,
         _ => return None,
     })
 }

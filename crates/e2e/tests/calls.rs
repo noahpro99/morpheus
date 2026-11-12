@@ -97,6 +97,69 @@ fn chimes_are(expected: &[&str]) -> String {
     )
 }
 
+/// Wait until `name` is listed in `room`'s call in the sidebar.
+async fn wait_in_call(app: &mut App, room: &str, name: &str) -> anyhow::Result<()> {
+    app.wait_for_text(
+        &format!(".room-call[data-room=\"{room}\"] .call-participant"),
+        name,
+        DEFAULT_WAIT,
+    )
+    .await
+}
+
+/// Wait until `name` is no longer listed in `room`'s call.
+async fn wait_not_in_call(app: &mut App, room: &str, name: &str) -> anyhow::Result<()> {
+    app.wait_for_text_gone(
+        &format!(".room-call[data-room=\"{room}\"] .call-participant"),
+        name,
+        DEFAULT_WAIT,
+    )
+    .await
+}
+
+/// Wait until the chimes played so far are exactly `expected`, in order.
+async fn wait_chimes(app: &mut App, expected: &[&str]) -> anyhow::Result<()> {
+    let expected = expected.join(",");
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let heard = if app.is_gpui() {
+            app.texts(".sound-log li").await?.join(",")
+        } else {
+            app.eval("return (window.morpheusSounds ?? []).join(',');")
+                .await?
+                .as_str()
+                .unwrap_or_default()
+                .to_owned()
+        };
+        if heard == expected {
+            return Ok(());
+        }
+        if std::time::Instant::now() >= deadline {
+            anyhow::bail!("chimes {heard:?}, wanted {expected:?}");
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+}
+
+/// Wait until whose audio the voice panel hears (decrypted) includes `who`.
+async fn wait_hears(app: &mut App, who: &str) -> anyhow::Result<()> {
+    let user = format!("@{who}:localhost");
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let heard = app
+            .attr(".voice-panel", "data-heard")
+            .await?
+            .unwrap_or_default();
+        if heard.split(' ').any(|u| u == user) {
+            return Ok(());
+        }
+        if std::time::Instant::now() >= deadline {
+            anyhow::bail!("{who} not heard; the panel hears {heard:?}");
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+}
+
 #[tokio::test]
 async fn join_a_call_see_who_is_in_it_mute_and_hang_up() {
     let Some(hs) = homeserver() else {
@@ -110,12 +173,10 @@ async fn join_a_call_see_who_is_in_it_mute_and_hang_up() {
     login_and_open(&mut alice, "alice", "general").await;
     open_without_joining(&mut alice, &channel).await;
     let hangout_id: String = alice
-        .eval("return document.querySelector('.room.selected').dataset.room;")
+        .attr(".room.selected", "data-room")
         .await
         .expect("room id")
-        .as_str()
-        .expect("string")
-        .to_owned();
+        .expect("a selected room");
 
     // Alice starts a call from the header.
     alice.click(CALL_BUTTON).await.expect("call");
@@ -127,12 +188,10 @@ async fn join_a_call_see_who_is_in_it_mute_and_hang_up() {
         .wait_for_text(".voice-panel", &channel, DEFAULT_WAIT)
         .await
         .expect("names the room");
-    alice
-        .wait_for_js(&in_call(&hangout_id, "alice"), DEFAULT_WAIT)
+    wait_in_call(&mut alice, &hangout_id, "alice")
         .await
         .expect("alice listed under the room");
-    alice
-        .wait_for_js(&chimes_are(&["join"]), DEFAULT_WAIT)
+    wait_chimes(&mut alice, &["join"])
         .await
         .expect("a chime as she joins");
 
@@ -140,36 +199,29 @@ async fn join_a_call_see_who_is_in_it_mute_and_hang_up() {
     let mut bob = App::launch(&hs).await.expect("launch bob");
     login_and_open(&mut bob, "bob", "general").await;
     open_without_joining(&mut bob, &channel).await;
-    bob.wait_for_js(&in_call(&hangout_id, "alice"), DEFAULT_WAIT)
+    wait_in_call(&mut bob, &hangout_id, "alice")
         .await
         .expect("bob sees alice in the call");
     bob.click(CALL_BUTTON).await.expect("join");
     bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
         .await
         .expect("bob connected");
-    alice
-        .wait_for_js(&in_call(&hangout_id, "bob"), DEFAULT_WAIT)
+    wait_in_call(&mut alice, &hangout_id, "bob")
         .await
         .expect("alice sees bob join");
-    if let Err(err) = alice
-        .wait_for_js(&chimes_are(&["join", "join"]), DEFAULT_WAIT)
+    wait_chimes(&mut alice, &["join", "join"])
         .await
-    {
-        let heard = alice
-            .eval("return (window.morpheusSounds ?? []).join(',');")
-            .await;
-        panic!("a chime as bob joins: {err}; alice heard {heard:?}");
-    }
-    bob.wait_for_js(&chimes_are(&["join"]), DEFAULT_WAIT)
+        .expect("a chime as bob joins");
+    wait_chimes(&mut bob, &["join"])
         .await
         .expect("bob's own join chime");
 
     // Both send a tone, so both are speaking.
-    bob.wait_for_js(&speaking("alice"), DEFAULT_WAIT)
+    bob.wait_for_text(".call-participant.speaking", "alice", DEFAULT_WAIT)
         .await
         .expect("alice ringed as speaking");
     alice
-        .wait_for_js(&speaking("bob"), DEFAULT_WAIT)
+        .wait_for_text(".call-participant.speaking", "bob", DEFAULT_WAIT)
         .await
         .expect("bob speaking");
     // Joins and leaves stay out of the timeline.
@@ -182,12 +234,13 @@ async fn join_a_call_see_who_is_in_it_mute_and_hang_up() {
         .wait_for(".voice-chat .timeline", DEFAULT_WAIT)
         .await
         .expect("the chat");
-    assert_eq!(
-        alice
-            .eval("return document.querySelector('.timeline').textContent.includes('call.member');")
+    assert!(
+        !alice
+            .texts(".timeline")
             .await
-            .expect("timeline text"),
-        serde_json::Value::Bool(false),
+            .expect("timeline text")
+            .iter()
+            .any(|t| t.contains("call.member")),
         "call membership rows in the timeline"
     );
 
@@ -197,40 +250,26 @@ async fn join_a_call_see_who_is_in_it_mute_and_hang_up() {
         .wait_for(".user-bar .mute-button.active", DEFAULT_WAIT)
         .await
         .expect("mute shows");
-    alice
-        .wait_for_js(&chimes_are(&["join", "join", "mute"]), DEFAULT_WAIT)
+    wait_chimes(&mut alice, &["join", "join", "mute"])
         .await
         .expect("a mute chime");
-    bob.wait_for_js(
-        &format!("return !(() => {{ {} }})();", speaking("alice")),
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("alice no longer speaking");
+    bob.wait_for_text_gone(".call-participant.speaking", "alice", DEFAULT_WAIT)
+        .await
+        .expect("alice no longer speaking");
 
     // Hanging up takes her out of the list for everyone.
     alice.click(".voice-panel .hang-up").await.expect("hang up");
     alice
-        .wait_for_js(
-            "return !document.querySelector('.voice-panel');",
-            DEFAULT_WAIT,
-        )
+        .wait_for_count(".voice-panel", 0, DEFAULT_WAIT)
         .await
         .expect("panel gone");
-    bob.wait_for_js(
-        &format!("return !(() => {{ {} }})();", in_call(&hangout_id, "alice")),
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("alice gone from the call");
-    alice
-        .wait_for_js(
-            &chimes_are(&["join", "join", "mute", "leave"]),
-            DEFAULT_WAIT,
-        )
+    wait_not_in_call(&mut bob, &hangout_id, "alice")
+        .await
+        .expect("alice gone from the call");
+    wait_chimes(&mut alice, &["join", "join", "mute", "leave"])
         .await
         .expect("a chime as she hangs up");
-    bob.wait_for_js(&chimes_are(&["join", "leave"]), DEFAULT_WAIT)
+    wait_chimes(&mut bob, &["join", "leave"])
         .await
         .expect("a chime for bob as she leaves");
     bob.click(".voice-panel .hang-up")
@@ -264,19 +303,18 @@ async fn encrypted_rooms_encrypt_the_call_and_both_sides_still_hear() {
         .await
         .expect("bob connected");
 
-    let hears = |who: &str| {
-        format!(
-            "return (document.querySelector('.voice-panel')?.dataset.heard || '').split(' ').includes('@{who}:localhost');"
-        )
-    };
-    bob.wait_for_js(&hears("alice"), DEFAULT_WAIT)
+    wait_hears(&mut bob, "alice")
         .await
         .expect("bob hears alice (decrypted)");
-    alice
-        .wait_for_js(&hears("bob"), DEFAULT_WAIT)
+    wait_hears(&mut alice, "bob")
         .await
         .expect("alice hears bob (decrypted)");
 
+    let vault_id = bob
+        .attr(".room.selected", "data-room")
+        .await
+        .expect("room id")
+        .expect("a selected room");
     if alice.is_phone() {
         alice
             .click(".chat-header .pane-back")
@@ -291,8 +329,9 @@ async fn encrypted_rooms_encrypt_the_call_and_both_sides_still_hear() {
         .await
         .expect("bob hangs up");
     // Nobody left behind in the call.
-    bob.wait_for_js(
-        "return !document.querySelector('.room.selected + .room-call');",
+    bob.wait_for_count(
+        &format!(".room-call[data-room=\"{vault_id}\"]"),
+        0,
         DEFAULT_WAIT,
     )
     .await
@@ -554,6 +593,65 @@ async fn a_call_in_a_dm_rings_the_other_person_who_can_answer_or_decline() {
         serde_json::Value::Bool(false),
         "rings or declines shown as unsupported"
     );
+}
+
+/// Wait until `user` has a screen tile and a camera tile in the call view,
+/// each showing a picture.
+async fn wait_pictures(app: &mut App, user: &str) -> anyhow::Result<()> {
+    if app.is_gpui() {
+        let tile = format!(".call-stage .video-tile[data-user=\"{user}\"]");
+        app.wait_for(&format!("{tile}.screen .video[data-shown=true]"), DEFAULT_WAIT)
+            .await?;
+        return app
+            .wait_for(
+                &format!("{tile}:not(.screen) .video[data-shown=true]"),
+                DEFAULT_WAIT,
+            )
+            .await;
+    }
+    app.wait_for_js(
+        &format!(
+            "const tiles = [...document.querySelectorAll('.call-stage .video-tile')].filter(t => t.dataset.user === '{user}'); \
+             const shown = t => {{ const i = t.querySelector('img.video'); return !!i && i.complete && i.naturalWidth > 0; }}; \
+             return tiles.some(t => t.classList.contains('screen') && shown(t)) && tiles.some(t => !t.classList.contains('screen') && shown(t));"
+        ),
+        DEFAULT_WAIT,
+    )
+    .await
+}
+
+/// Wait until `user`'s video tile shows the test pattern: red on the left,
+/// blue on the right (what a test run's camera sends).
+async fn wait_test_pattern(app: &mut App, user: &str) -> anyhow::Result<()> {
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let shown = if app.is_gpui() {
+            // The tile's picture notes the colours at a quarter and
+            // three quarters across, as hex.
+            let tile = format!(".video-tile:not(.screen)[data-user=\"{user}\"] .video");
+            let left = app.attr(&tile, "data-left").await?.unwrap_or_default();
+            let right = app.attr(&tile, "data-right").await?.unwrap_or_default();
+            let rgb = |hex: &str| {
+                (hex.len() == 6)
+                    .then(|| u32::from_str_radix(hex, 16).ok())
+                    .flatten()
+                    .map(|v| ((v >> 16) & 255, (v >> 8) & 255, v & 255))
+            };
+            matches!((rgb(&left), rgb(&right)), (Some(l), Some(r)) if l.0 > 150 && l.2 < 100 && r.2 > 150 && r.0 < 100)
+        } else {
+            app.eval(&shows_test_pattern(user))
+                .await?
+                .as_bool()
+                .unwrap_or(false)
+        };
+        if shown {
+            return Ok(());
+        }
+        if std::time::Instant::now() >= deadline {
+            anyhow::bail!("{user}'s tile does not show the test pattern");
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
 }
 
 /// Whether `user`'s video tile shows the test pattern: red on the left,
@@ -1107,31 +1205,24 @@ async fn encrypted_calls_work_whatever_the_token_service_names_people() {
         .await
         .expect("bob connected");
 
-    let hears = |who: &str| {
-        format!(
-            "return (document.querySelector('.voice-panel')?.dataset.heard || '').split(' ').includes('@{who}:localhost');"
-        )
-    };
-    bob.wait_for_js(&speaking("alice"), DEFAULT_WAIT)
+    bob.wait_for_text(".call-participant.speaking", "alice", DEFAULT_WAIT)
         .await
         .expect("bob sees alice speak");
     alice
-        .wait_for_js(&speaking("bob"), DEFAULT_WAIT)
+        .wait_for_text(".call-participant.speaking", "bob", DEFAULT_WAIT)
         .await
         .expect("alice sees bob speak");
-    bob.wait_for_js(&hears("alice"), DEFAULT_WAIT)
+    wait_hears(&mut bob, "alice")
         .await
         .expect("bob hears alice (decrypted)");
-    alice
-        .wait_for_js(&hears("bob"), DEFAULT_WAIT)
+    wait_hears(&mut alice, "bob")
         .await
         .expect("alice hears bob (decrypted)");
     // And a camera turned on reaches the other side, decrypted.
     bob.click(".voice-panel .camera-button")
         .await
         .expect("bob's camera on");
-    alice
-        .wait_for_js(&shows_test_pattern("@bob:localhost"), DEFAULT_WAIT)
+    wait_test_pattern(&mut alice, "@bob:localhost")
         .await
         .expect("alice sees bob's camera");
 
@@ -1364,10 +1455,7 @@ async fn a_camera_shows_in_its_persons_card_among_equal_cards() {
 /// "leave" in whichever test comes next.
 async fn out_of_call(app: &mut App) {
     let _ = app
-        .wait_for_js(
-            "return !document.querySelector('.voice-panel') && !document.querySelector('.call-screen');",
-            DEFAULT_WAIT,
-        )
+        .wait_for_count(".voice-panel, .call-screen", 0, DEFAULT_WAIT)
         .await;
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 }
@@ -1545,29 +1633,31 @@ async fn clicking_a_voice_channel_joins_its_call() {
     };
     let mut alice = App::launch(&hs).await.expect("launch alice");
     login_and_open(&mut alice, "alice", "general").await;
-    let lounge = "[...document.querySelectorAll('.room')].find(r => r.querySelector('.room-name')?.textContent.trim() === 'lounge')";
     alice
-        .wait_for_js(&format!("return !!{lounge};"), DEFAULT_WAIT)
+        .wait_for_text(".room .room-name", "lounge", DEFAULT_WAIT)
         .await
         .expect("the voice channel listed");
-    assert_eq!(
+    assert!(
         alice
-            .eval(&format!("const r = {lounge}; return [r.classList.contains('voice'), !!r.querySelector('.voice-icon'), r.querySelector('.hash') === null];"))
+            .count(".room.voice .voice-icon")
             .await
-            .expect("row"),
-        serde_json::json!([true, true, true]),
+            .expect("count")
+            > 0,
+        "listed with a speaker"
+    );
+    assert_eq!(
+        alice.count(".room.voice .hash").await.expect("count"),
+        0,
         "listed with a speaker, not a #"
     );
-    let room_id: String = alice
-        .eval(&format!("return {lounge}.dataset.room;"))
+    let room_id = alice
+        .attr_containing(".room.voice", "lounge", "data-room")
         .await
         .expect("room id")
-        .as_str()
-        .expect("string")
-        .to_owned();
+        .expect("the lounge's id");
 
     alice
-        .eval(&format!("{lounge}.click();"))
+        .click_text(".room.voice", "lounge")
         .await
         .expect("click it");
     alice
@@ -1578,13 +1668,12 @@ async fn clicking_a_voice_channel_joins_its_call() {
         .wait_for_text(".voice-panel", "lounge", DEFAULT_WAIT)
         .await
         .expect("in the lounge");
-    alice
-        .wait_for_js(&in_call(&room_id, "alice"), DEFAULT_WAIT)
+    wait_in_call(&mut alice, &room_id, "alice")
         .await
         .expect("listed under it");
     // Clicking it again does not leave.
     alice
-        .eval(&format!("{lounge}.click();"))
+        .click_text(".room.voice", "lounge")
         .await
         .expect("click again");
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
@@ -1600,17 +1689,16 @@ async fn clicking_a_voice_channel_joins_its_call() {
     // Bob sees her in it, and joins the same way.
     let mut bob = App::launch(&hs).await.expect("launch bob");
     login_and_open(&mut bob, "bob", "general").await;
-    bob.wait_for_js(&in_call(&room_id, "alice"), DEFAULT_WAIT)
+    wait_in_call(&mut bob, &room_id, "alice")
         .await
         .expect("bob sees alice in the voice channel");
-    bob.eval(&format!("{lounge}.click();"))
+    bob.click_text(".room.voice", "lounge")
         .await
         .expect("bob clicks it");
     bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
         .await
         .expect("bob joined");
-    alice
-        .wait_for_js(&in_call(&room_id, "bob"), DEFAULT_WAIT)
+    wait_in_call(&mut alice, &room_id, "bob")
         .await
         .expect("alice sees bob join");
 
@@ -1631,56 +1719,49 @@ async fn call_controls_live_in_the_profile_card_with_a_red_hang_up() {
     let mut alice = App::launch(&hs).await.expect("launch alice");
     login_and_open(&mut alice, "alice", "general").await;
     let card_before = alice
-        .eval("return document.querySelector('.user-pill').getBoundingClientRect().height;")
+        .bounds(".user-pill")
         .await
         .expect("card")
-        .as_f64()
-        .expect("height");
-    let lounge = "[...document.querySelectorAll('.room')].find(r => r.querySelector('.room-name')?.textContent.trim() === 'lounge')";
+        .expect("a profile card")
+        .h;
     alice
-        .wait_for_js(&format!("return !!{lounge};"), DEFAULT_WAIT)
+        .wait_for_text(".room .room-name", "lounge", DEFAULT_WAIT)
         .await
         .expect("the voice channel listed");
     alice
-        .eval(&format!("{lounge}.click();"))
+        .click_text(".room.voice", "lounge")
         .await
         .expect("join the lounge");
     alice
         .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
         .await
         .expect("in the call");
-    let card = alice
-        .eval(
-            "const panel = document.querySelector('.voice-panel'); \
-             const pill = panel.closest('.user-pill'); \
-             const probe = document.createElement('div'); probe.style.background = 'var(--danger)'; document.body.append(probe); \
-             const danger = getComputedStyle(probe).backgroundColor; probe.remove(); \
-             const hangUps = [...document.querySelectorAll('.hang-up')].filter(b => b.offsetParent !== null); \
-             return { in_card: !!pill, height: pill ? pill.getBoundingClientRect().height : 0, danger, \
-               hang_ups: hangUps.map(b => getComputedStyle(b).backgroundColor) };",
-        )
+    assert!(
+        alice.count(".user-pill .voice-panel").await.expect("count") > 0,
+        "call controls outside the profile card"
+    );
+    let height = alice
+        .bounds(".user-pill")
         .await
-        .expect("card");
-    assert_eq!(
-        card["in_card"], true,
-        "call controls outside the profile card: {card}"
-    );
+        .expect("card")
+        .expect("a profile card")
+        .h;
     assert!(
-        card["height"].as_f64().unwrap_or(0.0) > card_before + 20.0,
-        "the profile card did not grow to hold them ({card_before}px before): {card}"
+        height > card_before + 20.0,
+        "the profile card did not grow to hold them ({card_before}px before, {height}px now)"
     );
-    let hang_ups = card["hang_ups"].as_array().expect("hang-ups");
-    assert!(!hang_ups.is_empty(), "no hang-up shown: {card}");
+    let hang_ups = alice
+        .colours_of(".hang-up", "background")
+        .await
+        .expect("colours");
+    assert!(!hang_ups.is_empty(), "no hang-up shown");
     assert!(
-        hang_ups.iter().all(|c| c == &card["danger"]),
-        "a hang-up that is not red: {card}"
+        hang_ups.iter().all(|c| c == "#ff6b6b"),
+        "a hang-up that is not red: {hang_ups:?}"
     );
     alice.click(".voice-panel .hang-up").await.expect("hang up");
     alice
-        .wait_for_js(
-            "return !document.querySelector('.voice-panel');",
-            DEFAULT_WAIT,
-        )
+        .wait_for_count(".voice-panel", 0, DEFAULT_WAIT)
         .await
         .expect("left the call");
 }
@@ -1757,10 +1838,7 @@ async fn the_call_view_shows_in_any_call_with_its_controls() {
         .await
         .expect("unmute");
     alice
-        .wait_for_js(
-            &format!("return !document.querySelector('{card} .voice-state');"),
-            DEFAULT_WAIT,
-        )
+        .wait_for_count(&format!("{card} .voice-state"), 0, DEFAULT_WAIT)
         .await
         .expect("no mark when talking");
     alice
@@ -1768,10 +1846,7 @@ async fn the_call_view_shows_in_any_call_with_its_controls() {
         .await
         .expect("leave");
     alice
-        .wait_for_js(
-            "return !document.querySelector('.call-stage');",
-            DEFAULT_WAIT,
-        )
+        .wait_for_count(".call-stage", 0, DEFAULT_WAIT)
         .await
         .expect("left");
 }
@@ -1793,7 +1868,7 @@ async fn others_see_who_is_muted_deafened_on_camera_or_live() {
     let mut bob = App::launch(&hs).await.expect("launch bob");
     join_hangout(&mut bob, "bob").await;
 
-    let listed = "[...document.querySelectorAll('.room-call .call-participant')].find(p => p.textContent.includes('bob'))";
+    let listed = ".room-call .call-participant[data-user=\"@bob:localhost\"]";
     let card = ".call-stage [data-user=\"@bob:localhost\"]";
 
     bob.click(".call-stage .call-controls .mute-button")
@@ -1804,24 +1879,16 @@ async fn others_see_who_is_muted_deafened_on_camera_or_live() {
         .await
         .expect("alice sees bob muted on his card");
     for app in [&mut alice, &mut carol] {
-        app.wait_for_js(
-            &format!("const p = {listed}; return !!p && !!p.querySelector('.voice-state.muted');"),
-            DEFAULT_WAIT,
-        )
-        .await
-        .expect("bob listed as muted");
+        app.wait_for(&format!("{listed} .voice-state.muted"), DEFAULT_WAIT)
+            .await
+            .expect("bob listed as muted");
     }
 
     bob.click(".call-stage .call-controls .deafen-button")
         .await
         .expect("bob deafens");
     carol
-        .wait_for_js(
-            &format!(
-                "const p = {listed}; return !!p && !!p.querySelector('.voice-state.deafened');"
-            ),
-            DEFAULT_WAIT,
-        )
+        .wait_for(&format!("{listed} .voice-state.deafened"), DEFAULT_WAIT)
         .await
         .expect("bob listed as deafened");
 
@@ -1832,12 +1899,12 @@ async fn others_see_who_is_muted_deafened_on_camera_or_live() {
         .await
         .expect("share the screen");
     for app in [&mut alice, &mut carol] {
-        app.wait_for_js(
-            &format!("const p = {listed}; return !!p && !!p.querySelector('.media-camera') && !!p.querySelector('.media-live');"),
-            DEFAULT_WAIT,
-        )
-        .await
-        .expect("bob listed with his camera and LIVE");
+        app.wait_for(&format!("{listed} .media-camera"), DEFAULT_WAIT)
+            .await
+            .expect("bob listed with his camera");
+        app.wait_for(&format!("{listed} .media-live"), DEFAULT_WAIT)
+            .await
+            .expect("bob listed as LIVE");
     }
     carol
         .wait_for_text(
@@ -1881,21 +1948,14 @@ async fn joining_and_rejoining_picks_up_cameras_and_screens() {
         .expect("sharing");
 
     let mut alice = App::launch(&hs).await.expect("launch alice");
-    let both = "const tiles = [...document.querySelectorAll('.call-stage .video-tile')].filter(t => t.dataset.user === '@bob:localhost'); \
-        const shown = t => { const i = t.querySelector('img.video'); return !!i && i.complete && i.naturalWidth > 0; }; \
-        return tiles.some(t => t.classList.contains('screen') && shown(t)) && tiles.some(t => !t.classList.contains('screen') && shown(t));";
     join_hangout(&mut alice, "alice").await;
-    alice
-        .wait_for_js(both, DEFAULT_WAIT)
+    wait_pictures(&mut alice, "@bob:localhost")
         .await
         .expect("bob's camera and screen on joining");
     for round in 1..=2 {
         alice.click(".voice-panel .hang-up").await.expect("leave");
         alice
-            .wait_for_js(
-                "return !document.querySelector('.voice-panel');",
-                DEFAULT_WAIT,
-            )
+            .wait_for_count(".voice-panel", 0, DEFAULT_WAIT)
             .await
             .expect("left");
         alice.click(CALL_BUTTON).await.expect("rejoin");
@@ -1903,8 +1963,7 @@ async fn joining_and_rejoining_picks_up_cameras_and_screens() {
             .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
             .await
             .expect("back in");
-        alice
-            .wait_for_js(both, DEFAULT_WAIT)
+        wait_pictures(&mut alice, "@bob:localhost")
             .await
             .unwrap_or_else(|e| panic!("bob's camera and screen after rejoining ({round}): {e}"));
     }
@@ -2153,25 +2212,23 @@ async fn muted_marks_the_mic_and_its_arrow_red_together() {
         .wait_for(".user-pill .device-pair.active .mute-button", DEFAULT_WAIT)
         .await
         .expect("the pair marked");
-    let look = alice
-        .eval(
-            "const pair = document.querySelector('.user-pill .device-pair.active'); \
-             const probe = document.createElement('div'); probe.style.color = 'var(--danger)'; document.body.append(probe); \
-             const danger = getComputedStyle(probe).color; probe.remove(); \
-             const mic = getComputedStyle(pair.querySelector('.mute-button')).color; \
-             const arrow = getComputedStyle(pair.querySelector('.device-menu-button')).color; \
-             const tint = b => { const c = getComputedStyle(b).backgroundColor; return c !== 'rgba(0, 0, 0, 0)' && c !== danger; }; \
-             const bg = tint(pair.querySelector('.mute-button')) && tint(pair.querySelector('.device-menu-button')); \
-             const gap = pair.querySelector('.mute-button').getBoundingClientRect().right < pair.querySelector('.device-menu-button').getBoundingClientRect().left; \
-             return { red: mic === danger && arrow === danger, bg, gap };",
-        )
-        .await
-        .expect("look");
-    assert_eq!(
-        look,
-        serde_json::json!({ "red": true, "bg": true, "gap": true }),
-        "muted look"
-    );
+    let mic = ".user-pill .device-pair.active .mute-button";
+    let arrow = ".user-pill .device-pair.active .device-menu-button";
+    for part in [mic, arrow] {
+        assert_eq!(
+            alice.colours_of(part, "color").await.expect("colour"),
+            ["#ff6b6b"],
+            "{part} is not red"
+        );
+        let background = alice.colours_of(part, "background").await.expect("bg");
+        assert!(
+            matches!(background.as_slice(), [bg] if !bg.is_empty() && bg != "#ff6b6b"),
+            "{part} has no tint: {background:?}"
+        );
+    }
+    let mic = alice.bounds(mic).await.expect("mic").expect("a mic");
+    let arrow = alice.bounds(arrow).await.expect("arrow").expect("an arrow");
+    assert!(mic.right() < arrow.x, "no gap between the mic and its arrow");
 }
 
 /// Clicking a voice channel lists you under it at once, greyed until the
@@ -2189,31 +2246,30 @@ async fn joining_lists_you_at_once_greyed_until_connected() {
         .wait_for_text(".room .room-name", &channel, DEFAULT_WAIT)
         .await
         .expect("the channel listed");
-    // Click, then look straight away (before the call can connect).
-    let first = alice
-        .eval(&format!(
-            "const row = [...document.querySelectorAll('.room')].find(r => r.querySelector('.room-name')?.textContent.trim() === {name}); \
-             const id = row.dataset.room; row.click(); \
-             for (let i = 0; i < 60; i++) {{ \
-               const me = [...document.querySelectorAll('.room-call .call-participant')].find(p => p.dataset.user === '@alice:localhost' && p.closest('.room-call').dataset.room === id); \
-               if (me) return me.classList.contains('connecting') ? 'greyed' : 'listed'; \
-               await new Promise(r => requestAnimationFrame(r)); \
-             }} \
-             return 'missing';",
-            name = serde_json::to_string(&channel).expect("json")
-        ))
+    let id = alice
+        .attr_containing(".room.voice", &channel, "data-room")
         .await
-        .expect("look");
-    assert_eq!(first.as_str(), Some("greyed"), "on clicking");
+        .expect("room id")
+        .expect("the channel's id");
+    // Click, then look straight away (before the call can connect).
+    alice
+        .click_text(".room.voice", &channel)
+        .await
+        .expect("click");
+    let me = format!(".room-call[data-room=\"{id}\"] .call-participant[data-user=\"@alice:localhost\"]");
+    alice
+        .wait_for(
+            &format!("{me}.connecting"),
+            std::time::Duration::from_secs(5),
+        )
+        .await
+        .expect("listed at once, greyed");
     alice
         .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
         .await
         .expect("connected");
     alice
-        .wait_for_js(
-            "const me = [...document.querySelectorAll('.room-call .call-participant')].find(p => p.dataset.user === '@alice:localhost'); return !!me && !me.classList.contains('connecting');",
-            DEFAULT_WAIT,
-        )
+        .wait_for(&format!("{me}:not(.connecting)"), DEFAULT_WAIT)
         .await
         .expect("not greyed once connected");
     alice.click(".voice-panel .hang-up").await.expect("leave");
@@ -2232,16 +2288,17 @@ async fn a_voice_channel_joins_in_place_and_opens_as_a_call_page() {
     let mut alice = App::launch(&hs).await.expect("launch alice");
     login_and_open(&mut alice, "alice", "general").await;
     let channel = fresh_voice_channel(&hs);
-    let row = format!(
-        "[...document.querySelectorAll('.room')].find(r => r.querySelector('.room-name')?.textContent.trim() === {})",
-        serde_json::to_string(&channel).expect("json")
-    );
     alice
-        .wait_for_js(&format!("return !!{row};"), DEFAULT_WAIT)
+        .wait_for_text(".room .room-name", &channel, DEFAULT_WAIT)
         .await
         .expect("listed");
+    let room_id = alice
+        .attr_containing(".room.voice", &channel, "data-room")
+        .await
+        .expect("room id")
+        .expect("the channel's id");
     alice
-        .eval(&format!("{row}.click(); return true;"))
+        .click_text(".room.voice", &channel)
         .await
         .expect("click");
     alice
@@ -2260,7 +2317,7 @@ async fn a_voice_channel_joins_in_place_and_opens_as_a_call_page() {
     );
 
     alice
-        .eval(&format!("{row}.click(); return true;"))
+        .click_text(".room.voice", &channel)
         .await
         .expect("click again");
     alice
@@ -2280,14 +2337,19 @@ async fn a_voice_channel_joins_in_place_and_opens_as_a_call_page() {
         0,
         "no top bar over the call"
     );
-    let corner = alice
-        .eval("const b = document.querySelector('.voice-chat-toggle'), p = document.querySelector('.voice-channel'); if (!b || !p) return false; const r = b.getBoundingClientRect(), q = p.getBoundingClientRect(); return r.right > q.right - 64 && r.top < q.top + 64;")
+    let toggle = alice
+        .bounds(".voice-chat-toggle")
         .await
-        .expect("toggle");
-    assert_eq!(
-        corner,
-        serde_json::json!(true),
-        "the chat button in the top right corner"
+        .expect("toggle")
+        .expect("a chat button");
+    let page = alice
+        .bounds(".voice-channel")
+        .await
+        .expect("page")
+        .expect("the voice channel");
+    assert!(
+        toggle.right() > page.right() - 64.0 && toggle.y < page.y + 64.0,
+        "the chat button in the top right corner: {toggle:?} in {page:?}"
     );
     // A voice channel has no member list: the call shows who is there.
     assert_eq!(
@@ -2319,15 +2381,7 @@ async fn a_voice_channel_joins_in_place_and_opens_as_a_call_page() {
 
     // Scrolled up in the chat, Jump to present sits in the chat's middle,
     // above its message box (not placed against the whole window).
-    let room_id = alice
-        .eval(&format!("return {row}.dataset.room;"))
-        .await
-        .expect("room id");
-    let path = room_id
-        .as_str()
-        .expect("id")
-        .replace('!', "%21")
-        .replace(':', "%3A");
+    let path = room_id.replace('!', "%21").replace(':', "%3A");
     for n in 0..80 {
         api_as(
             &hs,
@@ -2345,18 +2399,42 @@ async fn a_voice_channel_joins_in_place_and_opens_as_a_call_page() {
         .wait_for_text(".voice-chat .message .body", "filler 79", DEFAULT_WAIT)
         .await
         .expect("the messages");
-    alice
-        .wait_for_js("const t = document.querySelector('.voice-chat .timeline'); t.scrollTop = -2000; return !!document.querySelector('.voice-chat .jump-to-bottom');", DEFAULT_WAIT)
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        alice
+            .scroll_to(".voice-chat .timeline", morpheus_e2e::ScrollTo::FromBottom(2000.0))
+            .await
+            .expect("scroll up");
+        if alice.count(".voice-chat .jump-to-bottom").await.expect("count") > 0 {
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline, "no Jump to present");
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    let jump = alice
+        .bounds(".voice-chat .jump-to-bottom")
         .await
-        .expect("Jump to present");
-    let placed = alice
-        .eval("const b = document.querySelector('.voice-chat .jump-to-bottom').getBoundingClientRect(), c = document.querySelector('.voice-chat').getBoundingClientRect(), m = document.querySelector('.voice-chat .composer').getBoundingClientRect(); return [Math.abs((b.left + b.right) / 2 - (c.left + c.right) / 2) < 4, b.left >= c.left && b.right <= c.right, b.bottom <= m.top];")
+        .expect("jump")
+        .expect("a jump button");
+    let chat = alice
+        .bounds(".voice-chat")
         .await
-        .expect("placed");
+        .expect("chat")
+        .expect("the chat");
+    let box_ = alice
+        .bounds(".voice-chat .composer")
+        .await
+        .expect("composer")
+        .expect("the message box");
+    let placed = [
+        ((jump.x + jump.right()) / 2.0 - (chat.x + chat.right()) / 2.0).abs() < 4.0,
+        jump.x >= chat.x && jump.right() <= chat.right(),
+        jump.bottom() <= box_.y,
+    ];
     assert_eq!(
         placed,
-        serde_json::json!([true, true, true]),
-        "centred in the chat, inside it, above the message box"
+        [true, true, true],
+        "centred in the chat, inside it, above the message box: {jump:?} {chat:?} {box_:?}"
     );
     alice.click(".voice-panel .hang-up").await.expect("leave");
 }

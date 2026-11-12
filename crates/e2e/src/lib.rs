@@ -386,6 +386,81 @@ impl App {
         Ok(self.eval(&js).await?.as_str().map(ToOwned::to_owned))
     }
 
+    /// The attribute `name` of every match, in document order (`None` where
+    /// an element has none).
+    pub async fn attrs(&mut self, selector: &str, name: &str) -> Result<Vec<Option<String>>> {
+        let list = if gpui() {
+            self.op("attrs", selector, json!({ "name": name })).await?
+        } else {
+            let js = format!(
+                "return [...document.querySelectorAll({})].map(el => el.getAttribute({}));",
+                js_str(selector),
+                js_str(name)
+            );
+            self.eval(&js).await?
+        };
+        Ok(serde_json::from_value(list).unwrap_or_default())
+    }
+
+    /// The attribute `name` of the first match, if it has one.
+    pub async fn attr(&mut self, selector: &str, name: &str) -> Result<Option<String>> {
+        Ok(self.attrs(selector, name).await?.into_iter().next().flatten())
+    }
+
+    /// A colour of every shown match: its `background` or its text `color`,
+    /// as `#rrggbb` (`#rrggbbaa` when see-through, empty when nothing).
+    /// The page's computed style; the GPUI app notes the colours it draws in
+    /// `data-bg` and `data-color` on the elements tests look at.
+    pub async fn colours_of(&mut self, selector: &str, property: &str) -> Result<Vec<String>> {
+        let attr = if property == "background" { "data-bg" } else { "data-color" };
+        if gpui() {
+            let list = self.attrs(selector, attr).await?;
+            return Ok(list.into_iter().map(Option::unwrap_or_default).collect());
+        }
+        let style = if property == "background" { "backgroundColor" } else { "color" };
+        let js = format!(
+            "const hex = c => {{ const m = c.match(/^rgba?\\((\\d+), (\\d+), (\\d+)(?:, ([\\d.]+))?\\)$/); \
+               if (!m) return c; const a = m[4] === undefined ? 1 : parseFloat(m[4]); \
+               if (a === 0) return ''; \
+               const h = n => Number(n).toString(16).padStart(2, '0'); \
+               return '#' + h(m[1]) + h(m[2]) + h(m[3]) + (a < 1 ? h(Math.round(a * 255)) : ''); }}; \
+             return [...document.querySelectorAll({})].filter(el => el.offsetParent !== null) \
+               .map(el => hex(getComputedStyle(el).{style}));",
+            js_str(selector)
+        );
+        Ok(serde_json::from_value(self.eval(&js).await?).unwrap_or_default())
+    }
+
+    /// The attribute `name` of the first match whose text contains `needle`.
+    pub async fn attr_containing(
+        &mut self,
+        selector: &str,
+        needle: &str,
+        name: &str,
+    ) -> Result<Option<String>> {
+        let value = if gpui() {
+            self.op(
+                "attrs",
+                selector,
+                json!({ "name": name, "contains": needle }),
+            )
+            .await?
+            .as_array()
+            .and_then(|list| list.first().cloned())
+            .unwrap_or(Value::Null)
+        } else {
+            let js = format!(
+                "const el = [...document.querySelectorAll({})].find(el => el.textContent.includes({})); \
+                 return el ? el.getAttribute({}) : null;",
+                js_str(selector),
+                js_str(needle),
+                js_str(name)
+            );
+            self.eval(&js).await?
+        };
+        Ok(value.as_str().map(ToOwned::to_owned))
+    }
+
     /// Wait until at least one element matches.
     pub async fn wait_for(&mut self, selector: &str, timeout: Duration) -> Result<()> {
         if gpui() {
