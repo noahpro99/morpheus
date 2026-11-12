@@ -575,8 +575,26 @@ impl Shell {
         cx.notify();
     }
 
+    /// Picking a rail entry (badge, DMs, Rooms, favourites): its list, with
+    /// the room last open there open again (as Discord does), if it is still
+    /// in it. With none remembered only the list changes, as in Dioxus.
+    pub fn pick_scope(&mut self, scope: Scope, cx: &mut Context<Self>) {
+        self.set_scope(scope.clone(), cx);
+        if let Some(room) = self.last_room_in.get(&scope).cloned()
+            && self.selected.as_ref() != Some(&room)
+            && crate::model::rooms_in_scope(&self.rooms, &scope)
+                .iter()
+                .any(|r| r.id == room)
+        {
+            self.open_room(room, cx);
+        }
+    }
+
     pub fn open_room(&mut self, id: OwnedRoomId, cx: &mut Context<Self>) {
-        self.last_room_in.insert(self.scope.clone(), id.clone());
+        if self.last_room_in.get(&self.scope) != Some(&id) {
+            self.last_room_in.insert(self.scope.clone(), id.clone());
+            self.save_last_rooms();
+        }
         self.nav.record(id.clone());
         // A voice channel (or a DM) is where a call is likely next: have its
         // token ready.

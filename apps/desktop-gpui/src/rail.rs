@@ -225,7 +225,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
     }
     rail = rail.child(dms.build(dms_content, false, {
         let view = cx.entity();
-        move |_, cx| view.update(cx, |s, cx| s.set_scope(Scope::Dms, cx))
+        move |_, cx| view.update(cx, |s, cx| s.pick_scope(Scope::Dms, cx))
     }));
 
     let rooms_selected = *current == Scope::Rooms;
@@ -240,7 +240,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         )
         .build(div().child("#").e2e("span", "").text("#"), false, {
             let view = cx.entity();
-            move |_, cx| view.update(cx, |s, cx| s.set_scope(Scope::Rooms, cx))
+            move |_, cx| view.update(cx, |s, cx| s.pick_scope(Scope::Rooms, cx))
         }),
     );
 
@@ -257,7 +257,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             )
             .build(icon("star", 20.0), false, {
                 let view = cx.entity();
-                move |_, cx| view.update(cx, |s, cx| s.set_scope(Scope::Favorites, cx))
+                move |_, cx| view.update(cx, |s, cx| s.pick_scope(Scope::Favorites, cx))
             }),
         );
     }
@@ -520,7 +520,7 @@ fn space_badge(
     badge.build(
         avatar(picture, &space.name, size, Some(theme::RADIUS_XL)),
         false,
-        move |_, cx| view.update(cx, |s, cx| s.set_scope(Scope::Space(id.clone()), cx)),
+        move |_, cx| view.update(cx, |s, cx| s.pick_scope(Scope::Space(id.clone()), cx)),
     )
     .into_any_element()
 }

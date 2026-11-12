@@ -47,6 +47,40 @@ pub fn write(data_dir: &Path, user: &str, place: &LastPlace) -> std::io::Result<
     )
 }
 
+/// The file of the room last open in each rail entry: `{user: {entry: room}}`.
+pub const LAST_ROOMS: &str = "last_rooms.json";
+
+fn all_rooms(data_dir: &Path) -> serde_json::Map<String, serde_json::Value> {
+    std::fs::read(data_dir.join(LAST_ROOMS))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default()
+}
+
+/// The room last open in each rail entry (keys such as `dms`, `rooms`,
+/// `favorites`, `space:!id:server`) of this account.
+pub fn read_rooms(data_dir: &Path, user: &str) -> std::collections::HashMap<String, String> {
+    all_rooms(data_dir)
+        .get(user)
+        .and_then(|v| v.as_object())
+        .map(|m| {
+            m.iter()
+                .filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_owned())))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+pub fn write_rooms(
+    data_dir: &Path,
+    user: &str,
+    rooms: &std::collections::HashMap<String, String>,
+) -> std::io::Result<()> {
+    let mut all = all_rooms(data_dir);
+    all.insert(user.to_owned(), serde_json::json!(rooms));
+    std::fs::write(data_dir.join(LAST_ROOMS), serde_json::Value::Object(all).to_string())
+}
+
 /// Whether the room of `place` can be reopened now: it is in the list (and
 /// joined), and so are its servers (a channel can reach the list before its
 /// server, and would be filed under Rooms and moved off again).
@@ -81,6 +115,20 @@ mod tests {
         write(&dir, "@b:x", &place("!two:x")).expect("write");
         assert_eq!(read(&dir, "@a:x"), Some(place("!one:x")));
         assert_eq!(read(&dir, "@b:x"), Some(place("!two:x")));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn the_room_in_each_entry_is_kept_per_account() {
+        let dir = std::env::temp_dir().join(format!("morpheus-last-rooms-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("dir");
+        assert!(read_rooms(&dir, "@a:x").is_empty());
+        let mut rooms = std::collections::HashMap::new();
+        rooms.insert("space:!s:x".to_owned(), "!c:x".to_owned());
+        write_rooms(&dir, "@a:x", &rooms).expect("write");
+        write_rooms(&dir, "@b:x", &Default::default()).expect("write");
+        assert_eq!(read_rooms(&dir, "@a:x"), rooms);
+        assert!(read_rooms(&dir, "@b:x").is_empty());
         std::fs::remove_dir_all(&dir).ok();
     }
 

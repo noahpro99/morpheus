@@ -19,6 +19,28 @@ pub enum Scope {
 }
 
 impl Scope {
+    /// The name of this entry in `last_rooms.json`.
+    pub fn key(&self) -> String {
+        match self {
+            Self::Dms => "dms".into(),
+            Self::Rooms => "rooms".into(),
+            Self::Favorites => "favorites".into(),
+            Self::Space(id) => format!("space:{id}"),
+        }
+    }
+
+    pub fn from_key(key: &str) -> Option<Self> {
+        if let Some(id) = key.strip_prefix("space:") {
+            return OwnedRoomId::try_from(id).ok().map(Self::Space);
+        }
+        match key {
+            "dms" => Some(Self::Dms),
+            "rooms" => Some(Self::Rooms),
+            "favorites" => Some(Self::Favorites),
+            _ => None,
+        }
+    }
+
     pub fn space_id(&self) -> Option<&OwnedRoomId> {
         match self {
             Self::Space(id) => Some(id),
