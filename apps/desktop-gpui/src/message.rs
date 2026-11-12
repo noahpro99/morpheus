@@ -1125,7 +1125,9 @@ fn sender_target(
     el
 }
 
-/// A sender's picture as a button: a small shadow that grows under the
+/// A sender's picture as a button (as tall as the picture, not the row: a
+/// stretched button made the shadow a tall pill hanging below the circle): a
+/// small even shadow, no y offset, that grows under the
 /// pointer, and a pixel lower while held down (the timeline keeps the held
 /// state, `pressed`, as layout is not restyled by the pointer in gpui).
 fn avatar_button(
@@ -1146,8 +1148,9 @@ fn avatar_button(
         .relative()
         .top(if pressed { px(1.0) } else { px(0.0) })
         .rounded_full()
-        .shadow(shadow(0.3, 1.0, 2.0))
-        .hover(move |s| s.shadow(shadow(0.6, 3.0, 8.0)));
+        .flex_none()
+        .shadow(shadow(0.35, 0.0, 4.0))
+        .hover(move |s| s.shadow(shadow(0.6, 0.0, 10.0)));
     if let Some(actions) = actions {
         for press in [true, false] {
             let (handler, uid) = (actions.clone(), unique_id.to_owned());
@@ -1333,6 +1336,7 @@ pub fn message_el(
         .relative()
         .w_full()
         .flex()
+        .items_start()
         .gap(px(12.0))
         .px(px(16.0))
         .py(px(2.0))

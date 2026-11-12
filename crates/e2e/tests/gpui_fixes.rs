@@ -686,16 +686,20 @@ async fn the_full_profile_is_a_centred_modal_with_a_height_limit() {
 
 /// Ann's window with a message from Ben in a room (task 22, item D).
 async fn a_message_from_ben(hs: &str, name: &str) -> (App, String) {
+    a_message_from_ben_saying(hs, name, "hello over there").await
+}
+
+async fn a_message_from_ben_saying(hs: &str, name: &str, body: &str) -> (App, String) {
     let (ann, ben) = (
         new_account(hs, "hovann").expect("account"),
         new_account(hs, "hovben").expect("account"),
     );
     let room = room_of(hs, &ann, &ben, name);
-    morpheus_e2e::send_as(hs, &ben, &room, "hello over there").expect("send");
+    morpheus_e2e::send_as(hs, &ben, &room, body).expect("send");
     let mut app = App::launch_desktop(hs).await.expect("launch app");
     common::login(&mut app, &ann, &format!("{ann}-password")).await;
     app.open_room(name).await.expect("open room");
-    app.wait_for_text(".message .body", "hello over there", DEFAULT_WAIT)
+    app.wait_for_text(".message .body", body.lines().next().unwrap_or(body), DEFAULT_WAIT)
         .await
         .expect("his message");
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
@@ -878,4 +882,68 @@ async fn hovering_ids_and_link_labels_underlines_them() {
     let run = longest_changed_run(&rest, &over, &b);
     eprintln!("{selector}: {run} px of line when hovered (label is {} wide)", b.w);
     assert!(run as f64 >= b.w * 0.8, "{selector}: no underline when hovered: {run} of {}", b.w);
+}
+
+/// How much darker than `reference` (r+g+b) the pixel is.
+fn darkness(shot: &(Vec<u8>, usize, usize), x: f64, y: f64, reference: u32) -> i32 {
+    let p = common::pixel_at(shot, x, y);
+    reference as i32 - (u32::from(p.0) + u32::from(p.1) + u32::from(p.2)) as i32
+}
+
+/// A timeline avatar's shadow sits evenly around the circle, not hanging
+/// below it (a button as tall as the message made it a tall pill).
+#[tokio::test]
+async fn an_avatars_shadow_sits_evenly_around_the_circle() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    // A message of several lines: the row is much taller than the picture.
+    let (mut app, _) = a_message_from_ben_saying(
+        &hs,
+        "shadowed",
+        "first line of three\nsecond line of three\nthird line of three",
+    )
+    .await;
+    if !app.is_gpui() {
+        eprintln!("skipped: the avatar shadow is GPUI's");
+        return;
+    }
+    let b = app.bounds(".message .avatar-button").await.expect("b").expect("avatar");
+    eprintln!("avatar button: {b:?}");
+    assert!(b.h <= b.w + 1.0, "the avatar button is {} tall for a picture {} wide", b.h, b.w);
+    let r = b.w / 2.0;
+    let (cx, cy) = (b.x + r, b.y + r);
+    for hovered in [false, true] {
+        app.hover(if hovered { ".message .avatar-button" } else { ".composer-input" })
+            .await
+            .expect("hover");
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        let Some(shot) = common::capture(&app) else {
+            eprintln!("no grim capture here; skipping the shadow pixels");
+            return;
+        };
+        let reference = {
+            let p = common::pixel_at(&shot, b.x - 14.0, cy);
+            u32::from(p.0) + u32::from(p.1) + u32::from(p.2)
+        };
+        let away = r + 2.5;
+        let sides = [
+            ("above", cx, cy - away),
+            ("below", cx, cy + away),
+            ("left", cx - away, cy),
+            ("right", cx + away, cy),
+        ]
+        .map(|(name, x, y)| (name, darkness(&shot, x, y, reference)));
+        eprintln!("hovered {hovered}: darkness {sides:?} (reference sum {reference})");
+        let most = sides.iter().map(|s| s.1).max().expect("sides");
+        let least = sides.iter().map(|s| s.1).min().expect("sides");
+        assert!(most >= 4, "hovered {hovered}: no shadow at all: {sides:?}");
+        // Even: the darkest side is within a factor of two (and a few
+        // levels) of the lightest.
+        assert!(
+            most <= least * 2 + 8,
+            "hovered {hovered}: the shadow is uneven around the circle: {sides:?}"
+        );
+    }
 }
