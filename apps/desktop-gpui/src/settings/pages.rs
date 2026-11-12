@@ -438,7 +438,7 @@ impl SettingsView {
                     .items_center()
                     .gap(px(8.0))
                     .text_color(rgb(theme::text_muted()))
-                    .child(icon(glyph, 16.0).e2e("svg", "icon"))
+                    .child(icon(glyph, 16.0))
                     .child(label)
                     .e2e("span", "device-label")
                     .text(label),
