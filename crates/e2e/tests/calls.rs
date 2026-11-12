@@ -3417,6 +3417,6 @@ async fn a_cameras_card_shows_the_whole_picture_with_round_corners() {
     // The corners of the picture are the card's background, not picture.
     for (x, y) in [(px + 1.0, py + 1.0), (px + pw - 2.0, py + 1.0), (px + 1.0, py + ph - 2.0), (px + pw - 2.0, py + ph - 2.0)] {
         let p = pixel(x, y);
-        assert!(!red(p) && !blue(p), "the picture's corner at ({x}, {y}) is {p:?}: it is not rounded");
+        assert!(!red(p) && !blue(p), "the picture's corner at ({x}, {y}) is {p:?}: it is not rounded (card {card:?}, picture {px},{py} {pw}x{ph})");
     }
 }

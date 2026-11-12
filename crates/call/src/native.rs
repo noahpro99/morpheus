@@ -970,6 +970,7 @@ async fn aggregate(
                 server.retain(|s| *s != who);
             }
         }
+        debug!(?measured, ?server, ?muted, "speech inputs");
         let mut now: Vec<(String, f32)> = measured
             .iter()
             .filter(|(_, (on, _))| *on)
