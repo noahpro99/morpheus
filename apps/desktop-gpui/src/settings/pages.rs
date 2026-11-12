@@ -7,11 +7,11 @@ use std::time::Duration;
 
 use gpui::{
     AnyElement, ClickEvent, Context, ElementId, FontWeight, IntoElement, SharedString, Window,
-    div, prelude::*, px, rgb,
+    div, prelude::*, px, rgb, rgba,
 };
 use morpheus_core::NotifyMode;
 
-use super::{SettingsView, ThemeChosen, button, muted, note, section, Kind, OK};
+use super::{SettingsView, ThemeChosen, button, muted, note, section, section_classed, Kind, OK};
 use crate::{
     e2e::E2eExt as _,
     icons::icon,
@@ -321,16 +321,202 @@ impl SettingsView {
         vec![section("Theme", "theme", vec![row.into_any_element()], self.hl("theme")).into_any_element()]
     }
 
-    pub(super) fn voice_page(&self) -> Vec<AnyElement> {
+    pub(super) fn voice_page(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        use crate::view_model::menu::DeviceKind;
+        let mut children: Vec<AnyElement> = Vec::new();
+        match &self.voice {
+            None => children.push(muted("Looking for devices…", "muted").into_any_element()),
+            Some(found) if found.microphones.is_empty() && found.speakers.is_empty() => {
+                children.push(muted(vm::VOICE_NO_DEVICES, "muted").into_any_element())
+            }
+            Some(found) => {
+                children.push(self.device_picker(
+                    DeviceKind::Microphone,
+                    "microphone",
+                    "mic",
+                    "Microphone",
+                    &found.microphones,
+                    self.voice_prefs.microphone.as_deref(),
+                    cx,
+                ));
+                children.push(self.device_picker(
+                    DeviceKind::Speaker,
+                    "speaker",
+                    "volume-2",
+                    "Speaker",
+                    &found.speakers,
+                    self.voice_prefs.speaker.as_deref(),
+                    cx,
+                ));
+                if !found.cameras.is_empty() {
+                    children.push(self.device_picker(
+                        DeviceKind::Camera,
+                        "camera",
+                        "video",
+                        "Camera",
+                        &found.cameras,
+                        self.voice_prefs.camera.as_deref(),
+                        cx,
+                    ));
+                }
+                children.push(
+                    muted(
+                        "Used for calls on this device; a call going now switches over.",
+                        "muted",
+                    )
+                    .into_any_element(),
+                );
+            }
+        }
         vec![
-            section(
-                "Devices",
-                "audio-devices",
-                vec![muted(vm::VOICE_NO_DEVICES, "muted").into_any_element()],
-                self.hl("audio-devices"),
-            )
-            .into_any_element(),
+            section_classed("Devices", "audio-devices", children, self.hl("audio-devices"), "voice-devices")
+                .into_any_element(),
         ]
+    }
+
+    /// One device list: the current choice, and the others below it when
+    /// opened. Drawn by the app rather than the system.
+    #[allow(clippy::too_many_arguments)]
+    fn device_picker(
+        &self,
+        kind: crate::view_model::menu::DeviceKind,
+        name: &'static str,
+        glyph: &'static str,
+        label: &'static str,
+        devices: &[(String, String)],
+        current: Option<&str>,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let rows = crate::view_model::calls::device_rows(
+            devices,
+            current.filter(|id| devices.iter().any(|(d, _)| d == id)),
+        );
+        let shown = rows
+            .iter()
+            .find(|row| row.checked)
+            .map_or_else(|| "System default".to_owned(), |row| row.name.clone());
+        let open = self.picker_open == Some(name);
+        let current_id = current.unwrap_or_default().to_owned();
+        let head = div()
+            .id(SharedString::from(format!("device-current-{name}")))
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap(px(8.0))
+            .px(px(12.0))
+            .py(px(8.0))
+            .rounded(px(theme::RADIUS_SM))
+            .bg(rgb(theme::BG_INPUT))
+            .cursor_pointer()
+            .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .on_click(cx.listener(move |this, _, _, cx| {
+                this.picker_open = if this.picker_open == Some(name) { None } else { Some(name) };
+                cx.notify();
+            }))
+            .child(div().child(shown.clone()).e2e("span", "").text(shown))
+            .child(icon("chevron-down", 16.0).text_color(rgb(theme::TEXT_MUTED)))
+            .e2e("button", if open { "device-current open" } else { "device-current" })
+            .attr("data-id", current_id);
+        let mut choice = div()
+            .flex()
+            .flex_col()
+            .gap(px(6.0))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.0))
+                    .text_color(rgb(theme::TEXT_MUTED))
+                    .child(icon(glyph, 16.0).e2e("svg", "icon"))
+                    .child(label)
+                    .e2e("span", "device-label")
+                    .text(label),
+            )
+            .child(head);
+        if open {
+            let options = rows.iter().map(|row| {
+                let id = row.id.clone();
+                let selected = row.checked;
+                div()
+                    .id(SharedString::from(format!("device-option-{name}-{}", row.id.clone().unwrap_or_default())))
+                    .px(px(12.0))
+                    .py(px(8.0))
+                    .rounded(px(theme::RADIUS_SM))
+                    .cursor_pointer()
+                    .text_color(rgb(theme::TEXT))
+                    .when(selected, |d| d.bg(rgba(theme::BG_SELECTED)))
+                    .hover(|s| s.bg(rgba(theme::BG_HOVER)))
+                    .child(row.name.clone())
+                    .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                    .on_click(cx.listener(move |this, _, _, cx| this.pick_voice(kind, id.clone(), cx)))
+                    .e2e("button", if selected { "device-option selected" } else { "device-option" })
+                    .attr("data-id", row.id.clone().unwrap_or_default())
+                    .attr("data-color", "#e6e8ee")
+                    .text(row.name.clone())
+            });
+            choice = choice.child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .p(px(4.0))
+                    .rounded(px(theme::RADIUS_SM))
+                    .bg(rgb(theme::BG_ELEVATED))
+                    .children(options)
+                    .e2e("div", "device-options")
+                    .attr("role", "listbox")
+                    .attr("data-bg", "#222736"),
+            );
+        }
+        choice.e2e("div", "device-choice").attr("data-kind", name).into_any_element()
+    }
+
+    /// A device picked in Settings: kept, used by the next call (a call
+    /// going now switches too, as the shell hears).
+    fn pick_voice(
+        &mut self,
+        kind: crate::view_model::menu::DeviceKind,
+        id: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
+        use crate::view_model::menu::DeviceKind;
+        self.picker_open = None;
+        match kind {
+            DeviceKind::Microphone => self.voice_prefs.microphone = id.clone(),
+            DeviceKind::Speaker => self.voice_prefs.speaker = id.clone(),
+            DeviceKind::Camera => {
+                self.voice_prefs.camera = id.clone();
+                morpheus_call::choose_camera(id);
+            }
+        }
+        if let Err(err) = crate::view_model::calls::write_device_prefs(&self.data_dir, &self.voice_prefs) {
+            eprintln!("morpheus-gpui: saving the audio devices: {err}");
+        }
+        cx.emit(super::DevicesChosen(kind));
+        cx.notify();
+    }
+
+    /// Looks for the microphones, speakers and cameras the page lists.
+    pub(super) fn load_voice(&mut self, cx: &mut Context<Self>) {
+        self.voice = None;
+        self.picker_open = None;
+        self.voice_prefs = crate::view_model::calls::read_device_prefs(&self.data_dir);
+        let mode = morpheus_call::AudioMode::from_env();
+        let cameras: Vec<(String, String)> =
+            morpheus_call::cameras(mode).into_iter().map(|c| (c.id, c.name)).collect();
+        let finding = morpheus_call::audio_devices(mode);
+        cx.spawn(async move |this, cx| {
+            let found = finding.await;
+            this.update(cx, |this, cx| {
+                this.voice = Some(super::VoiceLists {
+                    microphones: found.microphones.into_iter().map(|d| (d.id, d.name)).collect(),
+                    speakers: found.speakers.into_iter().map(|d| (d.id, d.name)).collect(),
+                    cameras,
+                });
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
     }
 
     fn set_autostart(&mut self, wanted: Autostart, cx: &mut Context<Self>) {

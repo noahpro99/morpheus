@@ -31,7 +31,7 @@ use crate::{
     view_model::{marks::Marks, nicknames::NickMap, toast::ToastList},
     prefs::Prefs,
     rail, room_list,
-    settings::{KeysChanged, SettingsView, ThemeChosen},
+    settings::{DevicesChosen, KeysChanged, SettingsView, ThemeChosen},
     theme,
     search::{SearchEvent, SearchPanel},
     thread::{ThreadEvent, ThreadPanel},
@@ -216,6 +216,13 @@ impl Shell {
         cx.subscribe(&settings, |this, _, chosen: &ThemeChosen, cx| {
             this.prefs.set_theme(chosen.0);
             this.save_prefs(cx);
+        })
+        .detach();
+        cx.subscribe(&settings, |this, _, chosen: &DevicesChosen, cx| {
+            this.calls.devices = crate::view_model::calls::read_device_prefs(&crate::data_dir());
+            if chosen.0 != crate::view_model::menu::DeviceKind::Camera {
+                this.use_devices(cx);
+            }
         })
         .detach();
         shell.settings = Some(settings);

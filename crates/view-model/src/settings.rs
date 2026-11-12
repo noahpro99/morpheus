@@ -61,6 +61,7 @@ impl SettingsPage {
     pub fn for_focus(focus: SettingsFocus) -> Option<SettingsPage> {
         match focus {
             SettingsFocus::None => None,
+            SettingsFocus::VoiceVideo => Some(SettingsPage::VoiceVideo),
             _ => Some(SettingsPage::Security),
         }
     }

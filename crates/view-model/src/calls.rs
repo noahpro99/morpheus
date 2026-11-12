@@ -598,6 +598,29 @@ pub fn write_device_prefs(data_dir: &std::path::Path, prefs: &DevicePrefs) -> st
     std::fs::write(data_dir.join(AUDIO_DEVICES), json.to_string())
 }
 
+/// The quick list of microphones, speakers or cameras behind the profile
+/// card's arrows and right-clicks, and the camera button's: the one in use
+/// ticked, a pick switches to it, and the full settings below. A camera list
+/// with no cameras says so.
+pub fn device_menu(kind: crate::menu::DeviceKind, rows: &[DeviceRow]) -> Vec<crate::menu::MenuItem> {
+    use crate::menu::{MenuAction, MenuItem};
+    let mut items: Vec<MenuItem> = rows
+        .iter()
+        .map(|row| {
+            MenuItem::new(row.name.clone(), MenuAction::Device(kind, row.id.clone()))
+                .checked(row.checked)
+        })
+        .collect();
+    if items.is_empty() {
+        items.push(MenuItem {
+            action: None,
+            ..MenuItem::new("No camera found", MenuAction::VoiceSettings)
+        });
+    }
+    items.push(MenuItem::new("Voice & Video settings", MenuAction::VoiceSettings));
+    items
+}
+
 #[cfg(test)]
 #[allow(clippy::expect_used)]
 mod tests {
@@ -829,6 +852,24 @@ mod tests {
         }];
         assert!(!ringing_out(Some(&c), &joined, Some(&me)));
         assert!(!ringing_out(None, &rooms, Some(&me)));
+    }
+
+    #[test]
+    fn the_quick_device_list_ticks_the_one_in_use_and_ends_with_the_settings() {
+        use crate::menu::{DeviceKind, MenuAction};
+        let list = vec![("a".to_owned(), "Mic A".to_owned())];
+        let items = device_menu(DeviceKind::Microphone, &device_rows(&list, Some("a")));
+        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+        assert_eq!(labels, ["System default", "Mic A", "Voice & Video settings"]);
+        assert!(!items[0].checked && items[1].checked);
+        assert_eq!(
+            items[1].action,
+            Some(MenuAction::Device(DeviceKind::Microphone, Some("a".into())))
+        );
+        assert_eq!(items[2].action, Some(MenuAction::VoiceSettings));
+        let none = device_menu(DeviceKind::Camera, &camera_rows(&[], None));
+        assert_eq!(none[0].label, "No camera found");
+        assert!(none[0].action.is_none());
     }
 
     #[test]

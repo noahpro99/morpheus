@@ -75,6 +75,8 @@ pub enum SettingsFocus {
     SetUpBackup,
     /// The Security & Privacy page (verifying this device).
     Security,
+    /// The Voice & Video page (the devices calls use).
+    VoiceVideo,
 }
 
 #[cfg(test)]

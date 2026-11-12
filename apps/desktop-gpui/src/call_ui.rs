@@ -1379,3 +1379,164 @@ pub type Frames = std::collections::HashMap<String, Entity<VideoFrame>>;
 
 /// The measured stage size, shared with the canvas that measures it.
 pub type StageMeasure = Rc<std::cell::Cell<(f32, f32)>>;
+
+/// Widget tests: the shell drawn on gpui's test platform with a call fed in
+/// by hand (no session, so nothing reaches LiveKit or the server).
+#[cfg(all(test, feature = "e2e"))]
+mod widget_tests {
+    use super::*;
+    use crate::e2e::{self, query};
+    use crate::model::tests::room;
+    use crate::view_model::calls::CallState;
+    use gpui::{Entity, Modifiers, TestAppContext, VisualTestContext, point};
+
+    struct Harness(Entity<Shell>);
+
+    impl gpui::Render for Harness {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            e2e::frame(div().size_full().child(self.0.clone()))
+        }
+    }
+
+    fn open(
+        cx: &mut TestAppContext,
+        rooms: Vec<RoomSummary>,
+    ) -> (Entity<Shell>, &mut VisualTestContext) {
+        morpheus_call::use_test_tone();
+        let (harness, cx) = cx.add_window_view(|_, cx| Harness(cx.new(|_| Shell::bare(None))));
+        let shell = harness.read_with(cx, |h, _| h.0.clone());
+        shell.update(cx, |s, cx| {
+            s.rooms = rooms;
+            cx.notify();
+        });
+        redraw(cx);
+        (shell, cx)
+    }
+
+    fn redraw(cx: &mut VisualTestContext) {
+        cx.run_until_parked();
+        cx.draw(
+            point(px(0.0), px(0.0)),
+            gpui::size(px(1100.0), px(720.0)),
+            |_, _| div(),
+        );
+        cx.run_until_parked();
+    }
+
+    fn click(cx: &mut VisualTestContext, selector: &str) {
+        let (_, (x, y)) = query(selector)
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| panic!("no {selector}"));
+        cx.simulate_click(point(px(x), px(y)), Modifiers::none());
+        redraw(cx);
+    }
+
+    fn texts(selector: &str) -> Vec<String> {
+        query(selector).into_iter().map(|(t, _)| t).collect()
+    }
+
+    fn user(name: &str) -> OwnedUserId {
+        OwnedUserId::try_from(format!("@{name}:x")).expect("user id")
+    }
+
+    /// A voice channel with bob in its call, muted.
+    fn channel() -> RoomSummary {
+        let mut lounge = room("!lounge:x", "lounge");
+        lounge.is_voice = true;
+        lounge.call_participants = vec![user("bob")];
+        lounge.call_media = vec![(
+            user("bob"),
+            morpheus_core::CallMedia {
+                muted: true,
+                ..Default::default()
+            },
+        )];
+        lounge
+    }
+
+    #[gpui::test]
+    fn the_people_in_a_call_are_listed_under_their_room_with_their_marks(cx: &mut TestAppContext) {
+        let (_shell, _cx) = open(cx, vec![room("!g:x", "general"), channel()]);
+        assert_eq!(query(".room.voice .voice-icon").len(), 1);
+        assert_eq!(query(".room.voice .hash").len(), 0);
+        assert_eq!(query(".room-call[data-room=\"!lounge:x\"] .call-participant").len(), 1);
+        assert_eq!(query(".call-participant[data-user=\"@bob:x\"] .voice-state.muted").len(), 1);
+        // A room with nobody in its call lists no one.
+        assert_eq!(query(".room-call[data-room=\"!g:x\"]").len(), 0);
+    }
+
+    #[gpui::test]
+    fn the_voice_panel_follows_the_call(cx: &mut TestAppContext) {
+        let (shell, cx) = open(cx, vec![room("!g:x", "general"), channel()]);
+        assert!(query(".voice-panel").is_empty());
+        shell.update(cx, |s, cx| {
+            s.calls.state = Some(CallState::joining(
+                OwnedRoomId::try_from("!lounge:x").expect("room id"),
+                "lounge".into(),
+            ));
+            cx.notify();
+        });
+        redraw(cx);
+        assert_eq!(texts(".voice-panel .voice-state"), ["Connecting…"]);
+        assert_eq!(query(".room.voice.in-call").len(), 1);
+        shell.update(cx, |s, cx| {
+            if let Some(state) = s.calls.state.as_mut() {
+                state.connected = true;
+            }
+            cx.notify();
+        });
+        redraw(cx);
+        assert_eq!(texts(".voice-panel .voice-state.connected"), ["Voice connected"]);
+        assert_eq!(texts(".voice-panel .voice-room"), ["lounge"]);
+        // Hanging up ends it.
+        click(cx, ".voice-panel .hang-up");
+        assert!(query(".voice-panel").is_empty());
+        shell.read_with(cx, |s, _| assert_eq!(s.calls.sounds, ["leave"]));
+    }
+
+    #[gpui::test]
+    fn mute_marks_the_pair_and_notes_its_chime(cx: &mut TestAppContext) {
+        let (shell, cx) = open(cx, vec![room("!g:x", "general")]);
+        assert!(query(".user-pill .device-pair.active").is_empty());
+        click(cx, ".user-pill .mute-button");
+        assert_eq!(query(".user-pill .device-pair.active .mute-button.active").len(), 1);
+        shell.read_with(cx, |s, _| assert_eq!(s.calls.sounds, ["mute"]));
+        // Deafening marks the other pair; unmuting undeafens too.
+        click(cx, ".user-pill .deafen-button");
+        assert_eq!(query(".user-pill .device-pair.active").len(), 2);
+        click(cx, ".user-pill .mute-button");
+        assert!(query(".user-pill .device-pair.active").is_empty());
+        shell.read_with(cx, |s, _| assert_eq!(s.calls.sounds, ["mute", "deafen", "undeafen"]));
+    }
+
+    #[gpui::test]
+    fn the_stage_shows_a_card_each_and_a_click_focuses_one(cx: &mut TestAppContext) {
+        let mut dm = room("!dm:x", "bob");
+        dm.is_dm = true;
+        dm.dm_user = Some(user("bob"));
+        dm.call_participants = vec![user("bob"), user("carol")];
+        let (shell, cx) = open(cx, vec![dm.clone()]);
+        shell.update(cx, |s, cx| {
+            s.selected = Some(dm.id.clone());
+            let mut call = CallState::joining(dm.id.clone(), "bob".into());
+            call.connected = true;
+            s.calls.state = Some(call);
+            cx.notify();
+        });
+        redraw(cx);
+        assert_eq!(query(".call-stage[data-cards=\"2\"]").len(), 1);
+        assert_eq!(query(".call-stage .call-tile").len(), 2);
+        for control in [".mute-button", ".deafen-button", ".hang-up"] {
+            assert_eq!(query(&format!(".call-stage .call-controls {control}")).len(), 1, "{control}");
+        }
+        assert!(query(".call-cards.focused").is_empty());
+        click(cx, ".call-stage .call-tile[data-user=\"@carol:x\"]");
+        assert_eq!(query(".call-cards.focused").len(), 1);
+        assert_eq!(query(".call-focus-main > .call-tile[data-user=\"@carol:x\"]").len(), 1);
+        assert_eq!(query(".call-strip > .call-tile[data-user=\"@bob:x\"]").len(), 1);
+        // Clicking it again goes back to the grid.
+        click(cx, ".call-focus-main > .call-tile");
+        assert!(query(".call-cards.focused").is_empty());
+    }
+}
