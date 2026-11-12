@@ -1071,6 +1071,8 @@ impl Render for SettingsView {
             .h_full()
             .px(px(8.0))
             .py(px(12.0))
+            .rounded_tl(px(theme::RADIUS_XL))
+            .rounded_bl(px(theme::RADIUS_XL))
             .bg(rgb(theme::bg_sidebar()))
             .child(
                 div()

@@ -126,7 +126,6 @@ impl Render for MembersView {
             .flex_1().min_h_0()
             .overflow_y_scroll()
             .track_scroll(&self.scroll)
-            .bg(rgb(theme::bg_sidebar()))
             .line_height(gpui::relative(theme::LINE_HEIGHT));
         match self.members.clone() {
             None => {}
