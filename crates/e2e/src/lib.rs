@@ -169,6 +169,12 @@ impl App {
             });
         }
 
+        // Never a window on the developer's own screens: only a test build
+        // (titled "Morpheus (test)", which the window rule sends to the hidden
+        // test monitor), and only once that monitor is set up.
+        ensure_test_build(&bin)?;
+        test_windows_placed()?;
+
         let mut command = Command::new(&bin);
         if let Some((width, height)) = size {
             command.env("MORPHEUS_E2E_SIZE", format!("{width}x{height}"));
@@ -1642,10 +1648,9 @@ async fn connect(port: u16, log_path: &Path) -> Result<TcpStream> {
 /// many of them and keystrokes meant for the terminal otherwise land in the
 /// app (breaking logins). Applied once per process; a no-op elsewhere.
 fn keep_test_windows_unfocused() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
+    TEST_WINDOWS_PLACED.get_or_init(|| {
         if std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_none() {
-            return;
+            return Ok(());
         }
         for rule in [
             "noinitialfocus, title:^(Morpheus \\(test\\))$",
@@ -1660,9 +1665,15 @@ fn keep_test_windows_unfocused() {
         // Hyprland 0.55+ with a Lua config refuses `keyword` ("can't work with
         // non-legacy parsers"): the same rule through `eval`, which also
         // opens the windows on a monitor of their own (below).
-        let place = test_workspace()
-            .map(|id| format!(", workspace = \"{id} silent\""))
-            .unwrap_or_default();
+        // Without the hidden monitor the windows would open wherever the
+        // developer is working: no launches at all then (see
+        // `test_windows_placed`).
+        let Some(id) = test_workspace() else {
+            return Err(format!(
+                "could not set up the hidden {TEST_MONITOR} monitor for test windows"
+            ));
+        };
+        let place = format!(", workspace = \"{id} silent\"");
         let _ = std::process::Command::new("hyprctl")
             .args([
                 "eval",
@@ -1684,7 +1695,51 @@ fn keep_test_windows_unfocused() {
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .status();
+        Ok(())
     });
+}
+
+/// Whether test windows have their rule and the hidden monitor (set up once
+/// per process by `keep_test_windows_unfocused`).
+static TEST_WINDOWS_PLACED: std::sync::OnceLock<Result<(), String>> = std::sync::OnceLock::new();
+
+/// Refuse to launch when test windows cannot be kept off the developer's
+/// screens.
+fn test_windows_placed() -> Result<()> {
+    keep_test_windows_unfocused();
+    match TEST_WINDOWS_PLACED.get() {
+        Some(Err(why)) => bail!("{why}; not opening a test window on your screen"),
+        _ => Ok(()),
+    }
+}
+
+/// Refuse a binary that is not a test build. A plain build of the GPUI app
+/// writes the same `target/debug/morpheus-gpui`; it has no e2e bridge and is
+/// titled "Morpheus", so the window rule misses it and it opens on the
+/// developer's focused monitor. Test builds carry the "Morpheus (test)"
+/// title. Checked once per binary and modification time.
+fn ensure_test_build(bin: &Path) -> Result<()> {
+    static CHECKED: std::sync::Mutex<Vec<(PathBuf, std::time::SystemTime)>> =
+        std::sync::Mutex::new(Vec::new());
+    let modified = std::fs::metadata(bin)
+        .and_then(|m| m.modified())
+        .with_context(|| format!("app binary {}", bin.display()))?;
+    let key = (bin.to_owned(), modified);
+    if CHECKED.lock().unwrap().contains(&key) {
+        return Ok(());
+    }
+    let bytes = std::fs::read(bin).with_context(|| format!("reading {}", bin.display()))?;
+    let needle = b"Morpheus (test)";
+    if !bytes.windows(needle.len()).any(|w| w == needle) {
+        bail!(
+            "{} is not a test build (no \"Morpheus (test)\" title), so its window would open on \
+             your screen; build it with the e2e feature (`cargo build -p morpheus-desktop-gpui \
+             --features e2e`, or `just e2e-build` for Dioxus)",
+            bin.display()
+        );
+    }
+    CHECKED.lock().unwrap().push(key);
+    Ok(())
 }
 
 /// Hyprland's name for the monitor test windows open on.
