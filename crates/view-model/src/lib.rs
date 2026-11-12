@@ -31,6 +31,7 @@ pub mod ringing;
 pub mod room_dialogs;
 pub mod room_menu;
 pub mod settings;
+pub mod reorder;
 pub mod rich;
 pub mod rows;
 pub mod search;

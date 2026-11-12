@@ -50,16 +50,33 @@ async fn channels(app: &mut App) -> (Vec<String>, Vec<String>) {
     (joined, unjoined)
 }
 
+/// Click `click` until `wait` shows `text`: a click can land on a list that
+/// is still settling and be lost, so it is made again if nothing happened.
+async fn click_until_text(app: &mut App, click: &str, wait: &str, text: &str) {
+    for _ in 0..5 {
+        app.wait_for(click, DEFAULT_WAIT).await.expect("something to click");
+        app.click(click).await.expect("click");
+        if app
+            .wait_for_text(wait, text, std::time::Duration::from_secs(6))
+            .await
+            .is_ok()
+        {
+            return;
+        }
+    }
+    app.wait_for_text(wait, text, DEFAULT_WAIT)
+        .await
+        .unwrap_or_else(|err| panic!("{click} did not show {text:?} in {wait}: {err}"));
+}
+
 async fn open_projects(app: &mut App) {
-    app.wait_for(".rail-item[title=\"Projects\"]", DEFAULT_WAIT)
-        .await
-        .expect("the Projects badge");
-    app.click(".rail-item[title=\"Projects\"]")
-        .await
-        .expect("open Projects");
-    app.wait_for_text(".sidebar-header h2", "Projects", DEFAULT_WAIT)
-        .await
-        .expect("Projects header");
+    click_until_text(
+        app,
+        ".rail-item[title=\"Projects\"]",
+        ".sidebar-header h2",
+        "Projects",
+    )
+    .await;
 }
 
 fn room_id(hs: &str, alias: &str) -> String {
@@ -176,10 +193,7 @@ async fn an_unjoined_channel_opens_a_join_card() {
     app.wait_for(".room.unjoined", DEFAULT_WAIT)
         .await
         .expect("unjoined row");
-    app.click(".room.unjoined").await.expect("open it");
-    app.wait_for_text(".join-card h2", "projects-archive", DEFAULT_WAIT)
-        .await
-        .expect("a join card");
+    click_until_text(&mut app, ".room.unjoined", ".join-card h2", "projects-archive").await;
     assert_eq!(app.count(".chat .composer").await.expect("count"), 0);
     app.wait_for_text(".join-card", "The projects-archive room", DEFAULT_WAIT)
         .await
@@ -210,8 +224,20 @@ async fn an_unjoined_channel_opens_a_join_card() {
     reset(&hs);
 }
 
-/// Synthetic HTML5 drag: dragstart on the source, drop on the target.
+/// Drag the row `from` onto the row `to`: a synthetic HTML5 drag on the
+/// Dioxus page, a real pointer drag (press, move, release) in the GPUI app.
 async fn drag(app: &mut App, from: &str, to: &str) {
+    if app.is_gpui() {
+        let a = app.bounds(from).await.expect("from").expect("a source row");
+        let b = app.bounds(to).await.expect("to").expect("a target row");
+        // Onto the target's upper half, as the pointer arrives from below.
+        let (dx, dy) = (
+            (b.centre_x() - a.centre_x()).round() as i32,
+            (b.y + b.h / 4.0 - (a.y + a.h / 2.0)).round() as i32,
+        );
+        app.drag(from, dx, dy).await.expect("drag");
+        return;
+    }
     let js = format!(
         "const from = document.querySelector({}); const to = document.querySelector({}); \
          if (!from || !to) throw new Error('drag endpoints missing'); \
@@ -270,19 +296,35 @@ async fn a_server_admin_reorders_channels_for_everyone() {
         &format!(".room[data-room=\"{news}\"]"),
     )
     .await;
-    let order = "return [...document.querySelectorAll('.room-list .room:not(.unjoined) .room-name')]\
-                 .map(e => e.textContent).join() === 'projects-general,projects-news,projects-archive';";
-    carol
-        .wait_for_js(order, DEFAULT_WAIT)
-        .await
-        .expect("carol's list in the new order");
-    alice
-        .wait_for_js(
-            "return [...document.querySelectorAll('.room-list .room:not(.unjoined) .room-name')]\
-             .map(e => e.textContent).join() === 'projects-general,projects-news';",
-            DEFAULT_WAIT,
-        )
+    wait_joined_order(
+        &mut carol,
+        &["projects-general", "projects-news", "projects-archive"],
+    )
+    .await
+    .expect("carol's list in the new order");
+    wait_joined_order(&mut alice, &["projects-general", "projects-news"])
         .await
         .expect("alice sees it too");
     reset(&hs);
+}
+
+/// Wait until the joined channels of the open server are listed in `want`'s order.
+async fn wait_joined_order(app: &mut App, want: &[&str]) -> anyhow::Result<()> {
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let names: Vec<String> = app
+            .texts(".room-list .room:not(.unjoined) .room-name")
+            .await?
+            .into_iter()
+            .map(|n| n.trim().to_owned())
+            .collect();
+        if names == want {
+            return Ok(());
+        }
+        anyhow::ensure!(
+            std::time::Instant::now() < deadline,
+            "joined channels are {names:?}, wanted {want:?}"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
 }
