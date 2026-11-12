@@ -42,6 +42,8 @@ struct CosmicTextSystemState {
     /// Caches the `FontId`s associated with a specific family to avoid iterating the font database
     /// for every font face in a family.
     font_ids_by_family_cache: HashMap<FontKey, SmallVec<[FontId; 4]>>,
+    /// Whether a face of `EMOJI_FAMILY` is loaded; `None` until looked up.
+    has_emoji_family: Option<bool>,
 }
 
 struct LoadedFont {
@@ -61,6 +63,7 @@ impl CosmicTextSystem {
             scratch: ShapeBuffer::default(),
             loaded_fonts: Vec::new(),
             font_ids_by_family_cache: HashMap::default(),
+            has_emoji_family: None,
         }))
     }
 }
@@ -192,8 +195,23 @@ impl CosmicTextSystemState {
 
     #[profiling::function]
     fn add_fonts(&mut self, fonts: Vec<Cow<'static, [u8]>>) -> Result<()> {
+        self.has_emoji_family = None;
         let db = self.font_system.db_mut();
         for bytes in fonts {
+            // Morpheus: a bundled emoji font replaces the system's of the same
+            // family, so emoji look the same whatever the user has installed.
+            let bundled_emoji = ttf_family_is_emoji(&bytes);
+            let older: Vec<_> = if bundled_emoji {
+                db.faces()
+                    .filter(|face| face.families.iter().any(|family| family.0 == EMOJI_FAMILY))
+                    .map(|face| face.id)
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            for id in older {
+                db.remove_face(id);
+            }
             match bytes {
                 Cow::Borrowed(embedded_font) => {
                     db.load_font_data(embedded_font.to_vec());
@@ -372,6 +390,19 @@ impl CosmicTextSystemState {
     }
 
     #[profiling::function]
+    /// Whether the emoji family is in the font database (cached).
+    fn has_emoji_family(&mut self) -> bool {
+        if self.has_emoji_family.is_none() {
+            let present = self
+                .font_system
+                .db()
+                .faces()
+                .any(|face| face.families.iter().any(|family| family.0 == EMOJI_FAMILY));
+            self.has_emoji_family = Some(present);
+        }
+        self.has_emoji_family == Some(true)
+    }
+
     fn layout_line(&mut self, text: &str, font_size: Pixels, font_runs: &[FontRun]) -> LineLayout {
         let mut attrs_list = AttrsList::new(&Attrs::new());
         let mut offs = 0;
@@ -390,6 +421,19 @@ impl CosmicTextSystemState {
                     .font_features(loaded_font.features.clone()),
             );
             offs += run.len;
+        }
+
+        // Morpheus: emoji sequences are shaped by the emoji family (see the end of this file).
+        if self.has_emoji_family() {
+            let default_font_id = font_runs.first().map(|run| run.font_id.0).unwrap_or(0);
+            for span in emoji_spans(text) {
+                attrs_list.add_span(
+                    span,
+                    &Attrs::new()
+                        .metadata(default_font_id)
+                        .family(Family::Name(EMOJI_FAMILY)),
+                );
+            }
         }
 
         let line = ShapeLine::new(
@@ -578,4 +622,90 @@ fn face_info_into_properties(
 fn check_is_known_emoji_font(postscript_name: &str) -> bool {
     // TODO: Include other common emoji fonts
     postscript_name == "NotoColorEmoji"
+}
+
+// ---- Emoji sequences (Morpheus addition) -------------------------------------
+//
+// cosmic-text falls back per glyph, in the order of its common list, which
+// puts DejaVu Sans before Noto Color Emoji: a plain emoji such as a red heart
+// or a face then comes out as a flat DejaVu glyph, and a sequence (a family,
+// a keycap) breaks into several glyphs from different fonts. So the spans of
+// the text that are emoji sequences name the emoji family as their font and
+// the whole sequence is shaped by it (its GSUB joins ZWJ sequences, flags and
+// keycaps into one glyph).
+
+/// The family the app bundles for emoji.
+const EMOJI_FAMILY: &str = "Noto Color Emoji";
+
+fn is_emoji_presentation(c: char) -> bool {
+    matches!(c as u32,
+        0x231A..=0x231B | 0x23E9..=0x23EC | 0x23F0 | 0x23F3 | 0x25FD..=0x25FE
+        | 0x2614..=0x2615 | 0x2648..=0x2653 | 0x267F | 0x2693 | 0x26A1
+        | 0x26AA..=0x26AB | 0x26BD..=0x26BE | 0x26C4..=0x26C5 | 0x26CE | 0x26D4
+        | 0x26EA | 0x26F2..=0x26F3 | 0x26F5 | 0x26FA | 0x26FD | 0x2705
+        | 0x270A..=0x270B | 0x2728 | 0x274C | 0x274E | 0x2753..=0x2755 | 0x2757
+        | 0x2795..=0x2797 | 0x27B0 | 0x27BF | 0x2B1B..=0x2B1C | 0x2B50 | 0x2B55
+        | 0x1F004 | 0x1F0CF | 0x1F18E | 0x1F191..=0x1F19A | 0x1F300..=0x1FAFF)
+}
+
+/// A character that can follow a ZWJ in an emoji sequence.
+fn is_zwj_operand(c: char) -> bool {
+    matches!(c as u32, 0x2190..=0x2BFF | 0x1F000..=0x1FAFF)
+}
+
+/// Byte ranges of `text` that are emoji sequences: emoji-presentation
+/// characters, any pictograph with U+FE0F, keycaps, flags (pairs of regional
+/// indicators), skin tones, tag sequences and ZWJ-joined sequences.
+fn emoji_spans(text: &str) -> Vec<std::ops::Range<usize>> {
+    let chars: Vec<(usize, char)> = text.char_indices().collect();
+    let mut spans = Vec::new();
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i].1;
+        let next = chars.get(i + 1).map(|n| n.1);
+        let start = chars[i].0;
+        let mut j = i + 1;
+        if ('\u{1F1E6}'..='\u{1F1FF}').contains(&c) {
+            // A flag: two regional indicators.
+            if next.is_some_and(|n| ('\u{1F1E6}'..='\u{1F1FF}').contains(&n)) {
+                j = i + 2;
+            } else {
+                i += 1;
+                continue;
+            }
+        } else if (c.is_ascii_digit() || c == '#' || c == '*') && next == Some('\u{FE0F}') {
+            // A keycap, 1 + U+FE0F + U+20E3.
+            if chars.get(i + 2).map(|n| n.1) == Some('\u{20E3}') {
+                j = i + 3;
+            } else {
+                i += 1;
+                continue;
+            }
+        } else if is_emoji_presentation(c) || (next == Some('\u{FE0F}') && c as u32 >= 0xA9) {
+            // Keep going below.
+        } else {
+            i += 1;
+            continue;
+        }
+        // Modifiers, variation selector, tags, then ZWJ and another operand.
+        loop {
+            match chars.get(j).map(|n| n.1) {
+                Some('\u{FE0F}') | Some('\u{1F3FB}'..='\u{1F3FF}') | Some('\u{E0020}'..='\u{E007F}') => j += 1,
+                Some('\u{200D}') if chars.get(j + 1).is_some_and(|n| is_zwj_operand(n.1)) => j += 2,
+                _ => break,
+            }
+        }
+        let end = chars.get(j).map_or(text.len(), |n| n.0);
+        spans.push(start..end);
+        i = j;
+    }
+    spans
+}
+
+/// Whether the font data is a face of the emoji family.
+fn ttf_family_is_emoji(data: &[u8]) -> bool {
+    let mut db = cosmic_text::fontdb::Database::new();
+    db.load_font_data(data.to_vec());
+    db.faces()
+        .any(|face| face.families.iter().any(|family| family.0 == EMOJI_FAMILY))
 }

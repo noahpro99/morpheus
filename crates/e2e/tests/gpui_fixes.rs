@@ -1004,3 +1004,113 @@ async fn the_date_divider_has_a_line_either_side_of_a_centred_date() {
         assert!(lines * 10 >= total * 9, "{name}: the line is missing or broken: {lines} of {total}");
     }
 }
+
+/// Emoji in messages, one per message: simple, with variation selector,
+/// skin tone, ZWJ sequences, flags, keycaps and newer Unicode (14-15).
+const EMOJIS: &[(&str, &str)] = &[
+    ("grinning", "\u{1F600}"),
+    ("red heart", "\u{2764}\u{FE0F}"),
+    ("thumbs up", "\u{1F44D}"),
+    ("smiling face vs16", "\u{263A}\u{FE0F}"),
+    ("check mark vs16", "\u{2714}\u{FE0F}"),
+    ("thumbs up medium skin", "\u{1F44D}\u{1F3FD}"),
+    ("family zwj", "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}"),
+    ("rainbow flag zwj", "\u{1F3F3}\u{FE0F}\u{200D}\u{1F308}"),
+    ("technologist zwj", "\u{1F9D1}\u{200D}\u{1F4BB}"),
+    ("flag us", "\u{1F1FA}\u{1F1F8}"),
+    ("flag jp", "\u{1F1EF}\u{1F1F5}"),
+    ("keycap 1", "1\u{FE0F}\u{20E3}"),
+    ("melting face", "\u{1FAE0}"),
+    ("heart hands", "\u{1FAF6}"),
+    ("pink heart", "\u{1FA77}"),
+    ("goose", "\u{1FABF}"),
+];
+
+/// Each emoji alone in a message draws as one colour glyph about as wide as
+/// a plain emoji: saturated pixels inside its area, no tofu box, a sequence
+/// (ZWJ, flag, skin tone, keycap) one glyph wide rather than several.
+#[tokio::test]
+async fn emojis_draw_as_one_colour_glyph_each() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let (ann, ben) = (
+        new_account(&hs, "emoann").expect("account"),
+        new_account(&hs, "emoben").expect("account"),
+    );
+    let room = room_of(&hs, &ann, &ben, "emojis");
+    for (_, emoji) in EMOJIS {
+        morpheus_e2e::send_as(&hs, &ben, &room, emoji).expect("send");
+    }
+    let mut app = App::launch_sized(&hs, 1200, 1000).await.expect("launch app");
+    common::login(&mut app, &ann, &format!("{ann}-password")).await;
+    app.open_room("emojis").await.expect("open room");
+    app.wait_for_text(".message .body", EMOJIS[EMOJIS.len() - 1].1, DEFAULT_WAIT)
+        .await
+        .expect("the last emoji");
+    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+    if !app.is_gpui() {
+        eprintln!("skipped: the web view has its own emoji");
+        return;
+    }
+    let Some(shot) = common::capture(&app) else {
+        eprintln!("no grim capture here; skipping the emoji pixels");
+        return;
+    };
+    let rows = app.all_bounds(".message .body").await.expect("bodies");
+    if let (Ok(path), Some(pid)) = (std::env::var("EMOJI_SHOT"), app.pid()) {
+        // Debug aid: the emoji column of the test window only.
+        let clients = std::process::Command::new("hyprctl").args(["clients", "-j"]).output().expect("hyprctl").stdout;
+        let clients: serde_json::Value = serde_json::from_slice(&clients).expect("json");
+        let at = clients.as_array().expect("clients").iter().find(|c| c["pid"].as_u64() == Some(u64::from(pid))).expect("window")["at"].clone();
+        let (x, y) = (at[0].as_f64().unwrap_or(0.0) + rows[0].x - 4.0, at[1].as_f64().unwrap_or(0.0) + rows[0].y - 4.0);
+        let geometry = format!("{},{} 60x{}", x as i64, y as i64, (rows[rows.len() - 1].bottom() - rows[0].y) as i64 + 8);
+        let _ = std::process::Command::new("grim").args(["-s", "8", "-g", &geometry, &path]).status();
+    }
+    assert_eq!(rows.len(), EMOJIS.len(), "{} bodies for {} emoji", rows.len(), EMOJIS.len());
+    let mut failed = Vec::new();
+    let mut widths: Vec<f64> = Vec::new();
+    for ((name, _), b) in EMOJIS.iter().zip(&rows) {
+        let bg = common::pixel_at(&shot, b.x + 300.0, b.y + 2.0);
+        let (mut ink, mut colour) = (0usize, 0usize);
+        let (mut left, mut right, mut top, mut bottom) = (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
+        for y in (b.y.floor() as usize)..(b.bottom().ceil() as usize) {
+            for x in (b.x.floor() as usize - 2)..(b.x.floor() as usize + 90) {
+                let p = common::pixel_at(&shot, x as f64, y as f64);
+                if common::colour_distance(p, bg) > 60 {
+                    ink += 1;
+                    left = left.min(x as f64);
+                    right = right.max(x as f64);
+                    top = top.min(y as f64);
+                    bottom = bottom.max(y as f64);
+                    let hi = p.0.max(p.1).max(p.2);
+                    let lo = p.0.min(p.1).min(p.2);
+                    if hi - lo > 50 {
+                        colour += 1;
+                    }
+                }
+            }
+        }
+        let width = if ink == 0 { 0.0 } else { right - left + 1.0 };
+        eprintln!("{name:24} ink {ink:4} colour {colour:4} width {width:5.1} (row {}x{})", b.w, b.h);
+        widths.push(width);
+        // Noto draws these in greys and white: no saturated colour to count.
+        let grey = ["check mark vs16", "family zwj", "goose"].contains(name);
+        if !grey && colour < 40 {
+            failed.push(format!("{name}: only {colour} colour pixels (ink {ink})"));
+        }
+        // A glyph of its own size (not a box outline or a sliver).
+        let height = bottom - top + 1.0;
+        if ink < 80 || width < 12.0 || height < 10.0 {
+            failed.push(format!("{name}: a {width} x {height} glyph with {ink} ink pixels"));
+        }
+    }
+    // One glyph: a sequence is as wide as one emoji (about 16-18 px at this size), not several.
+    for ((name, _), w) in EMOJIS.iter().zip(&widths) {
+        if *w > 22.0 {
+            failed.push(format!("{name}: {w} px wide, more than one emoji"));
+        }
+    }
+    assert!(failed.is_empty(), "emoji not drawn as one colour glyph:\n{}", failed.join("\n"));
+}
