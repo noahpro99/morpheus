@@ -147,12 +147,17 @@ pub struct Shell {
     pub place_user: String,
     /// Messages announced since launch (the inbox's Mentions, the test log).
     pub notices: Vec<morpheus_core::Notification>,
+    /// A newer release the app found, and what was done about its card.
+    pub update: Option<crate::view_model::updates::Offer>,
+    pub update_later: bool,
+    pub update_busy: bool,
 }
 
 impl Shell {
     pub fn new(session: Session, cx: &mut Context<Self>) -> Self {
         let mut shell = Self::bare(Some(session.clone()));
         shell.wait_for_last_place(cx);
+        shell.start_update_checks(cx);
         shell.start_calls(&session, cx);
         let subscribed = session.room_list();
         cx.spawn(async move |this, cx| {
@@ -312,6 +317,9 @@ impl Shell {
             pending_place: None,
             place_user: String::new(),
             notices: crate::notify::log(),
+            update: None,
+            update_later: false,
+            update_busy: false,
         }
     }
 
@@ -648,7 +656,7 @@ impl Shell {
 
     /// A link in a message: Matrix links open in the app,
     /// others in the browser; test runs only log the hand-off.
-    fn link_clicked(&mut self, url: &str, cx: &mut Context<Self>) {
+    pub(crate) fn link_clicked(&mut self, url: &str, cx: &mut Context<Self>) {
         if morpheus_core::parse_matrix_link(url).is_some() {
             self.open_link(url, cx);
             return;
@@ -990,6 +998,7 @@ impl Render for Shell {
             .when(show_backup_prompt(self.keys, self.backup_later), |d| {
                 d.child(backup_prompt(cx))
             })
+            .children(crate::update::card(self, cx))
             .children(self.settings.clone())
             .children(inbox)
             .children(incoming)

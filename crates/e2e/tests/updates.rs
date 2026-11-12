@@ -74,6 +74,16 @@ fn release_zip(work: &Path, name: &str, exe: &str, marker: &Path) -> Vec<u8> {
     std::fs::read(zip).expect("zip bytes")
 }
 
+/// The build's `target` folder (same disk as the build, for the hard link).
+fn target_dir() -> PathBuf {
+    app_binary()
+        .expect("build")
+        .ancestors()
+        .find(|dir| dir.file_name().is_some_and(|name| name == "target"))
+        .expect("target")
+        .to_owned()
+}
+
 /// The app's folder as a release unpacks: its program and assets, linked
 /// from the test build (same disk, so nothing big is copied).
 fn install_copy(dir: &Path) -> PathBuf {
@@ -82,13 +92,17 @@ fn install_copy(dir: &Path) -> PathBuf {
     std::fs::create_dir_all(dir).expect("install dir");
     let exe = dir.join(built.file_name().expect("name"));
     std::fs::hard_link(&built, &exe).expect("link the app");
-    let status = std::process::Command::new("cp")
-        .arg("-r")
-        .arg(built_dir.join("assets"))
-        .arg(dir.join("assets"))
-        .status()
-        .expect("cp");
-    assert!(status.success());
+    // The Dioxus bundle has an assets folder beside the program; the GPUI binary
+    // carries its fonts and icons inside it.
+    if built_dir.join("assets").is_dir() {
+        let status = std::process::Command::new("cp")
+            .arg("-r")
+            .arg(built_dir.join("assets"))
+            .arg(dir.join("assets"))
+            .status()
+            .expect("cp");
+        assert!(status.success());
+    }
     exe
 }
 
@@ -99,12 +113,7 @@ async fn the_app_updates_itself_from_a_newer_release() {
         return;
     };
     // Beside the test build, on the same disk (for the link).
-    let root = app_binary()
-        .expect("build")
-        .ancestors()
-        .nth(6)
-        .expect("target")
-        .join(format!("e2e-update-{}", std::process::id()));
+    let root = target_dir().join(format!("e2e-update-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     let install = root.join("install");
     let exe = install_copy(&install);
@@ -166,9 +175,8 @@ async fn the_app_updates_itself_from_a_newer_release() {
     app.wait_for_text(".update-card", "99.0.0", DEFAULT_WAIT)
         .await
         .expect("the app says a newer version is out");
-    app.click(".update-card .update-button")
-        .await
-        .expect("Update");
+    // The old version may be gone before the click is answered.
+    let _ = app.click(".update-card .update-button").await;
 
     // The new build is started (after this one), in this one's place.
     let deadline = Instant::now() + Duration::from_secs(60);
@@ -211,12 +219,7 @@ async fn a_read_only_install_links_to_the_release_instead() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
-    let root = app_binary()
-        .expect("build")
-        .ancestors()
-        .nth(6)
-        .expect("target")
-        .join(format!("e2e-update-ro-{}", std::process::id()));
+    let root = target_dir().join(format!("e2e-update-ro-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     let install = root.join("install");
     let exe = install_copy(&install);

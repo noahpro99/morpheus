@@ -250,7 +250,7 @@ async fn acknowledgements_and_update_check_from_the_palette() {
     app.key_combo("body", "Escape", false, false, false)
         .await
         .expect("escape");
-    app.wait_for_js("return !document.querySelector('.about')", DEFAULT_WAIT)
+    app.wait_for_count(".about", 0, DEFAULT_WAIT)
         .await
         .expect("escape closes it");
 

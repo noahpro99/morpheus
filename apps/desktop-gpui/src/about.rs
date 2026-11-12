@@ -48,15 +48,22 @@ pub fn render(
                     "Morpheus stands on a great deal of open-source work. Thank you to everyone behind it.",
                     "muted",
                 ))
-                .children(HEADLINERS.iter().map(|(name, what)| {
+                .child(
                     div()
                         .flex()
                         .flex_col()
-                        .child(div().font_weight(FontWeight::SEMIBOLD).child(*name))
-                        .child(div().text_color(rgb(theme::text_muted())).child(*what))
-                        .e2e("li", "")
-                        .text(format!("{name} {what}"))
-                }))
+                        .gap(px(6.0))
+                        .children(HEADLINERS.iter().map(|(name, what)| {
+                            div()
+                                .flex()
+                                .flex_col()
+                                .child(div().font_weight(FontWeight::SEMIBOLD).child(*name))
+                                .child(div().text_color(rgb(theme::text_muted())).child(*what))
+                                .e2e("li", "")
+                                .text(format!("{name} {what}"))
+                        }))
+                        .e2e("ul", "about-headliners"),
+                )
                 .child(
                     div()
                         .mt(px(8.0))
@@ -65,15 +72,21 @@ pub fn render(
                         .e2e("h3", "")
                         .text(header),
                 )
-                .children(list.into_iter().map(|(name, version)| {
+                .child(
                     div()
                         .flex()
-                        .gap(px(8.0))
-                        .child(div().child(name))
-                        .child(div().text_color(rgb(theme::text_muted())).child(SharedString::from(version)))
-                        .e2e("li", "")
-                        .text(format!("{name} {version}"))
-                }))
+                        .flex_col()
+                        .children(list.into_iter().map(|(name, version)| {
+                            div()
+                                .flex()
+                                .gap(px(8.0))
+                                .child(div().child(name))
+                                .child(div().text_color(rgb(theme::text_muted())).child(SharedString::from(version)))
+                                .e2e("li", "")
+                                .text(format!("{name} {version}"))
+                        }))
+                        .e2e("ul", "about-crates"),
+                )
                 .e2e("div", "about-body"),
         )
         .e2e("div", "message-dialog settings about")
