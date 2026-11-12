@@ -48,6 +48,34 @@ pub struct RootFocus(pub FocusHandle);
 
 impl gpui::Global for RootFocus {}
 
+/// What the shell asks of the app's root about accounts (the root owns the
+/// session and the screens): switch to a stored one, sign another in, or
+/// sign this one out.
+#[derive(Clone, Debug)]
+pub enum AccountEvent {
+    Switch(String),
+    Add,
+    SignOut,
+}
+
+impl gpui::EventEmitter<AccountEvent> for Shell {}
+
+/// Links handed to the browser during a test run (shown as `.link-log`),
+/// from the shell or a page of Settings.
+static OPENED: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+/// Hands `url` to the browser; test runs only log the hand-off.
+pub(crate) fn open_external(url: &str, cx: &mut gpui::App) {
+    if std::env::var_os("MORPHEUS_E2E_PORT").is_some() {
+        if let Ok(mut opened) = OPENED.lock() {
+            opened.push(url.to_owned());
+        }
+        cx.refresh_windows();
+    } else {
+        cx.open_url(url);
+    }
+}
+
 pub struct Shell {
     /// Absent only in widget tests, which feed `rooms` themselves.
     pub session: Option<Session>,
@@ -57,6 +85,8 @@ pub struct Shell {
     pub prefs: Prefs,
     pub open_folders: Vec<String>,
     pub profile: Option<Profile>,
+    /// The accounts stored on this device (the account menu lists them).
+    pub accounts: Vec<morpheus_core::SavedAccount>,
     /// The rooms the selected server lists, joined or not.
     pub directory: Vec<SpaceRoom>,
     pub avatars: Avatars,
@@ -66,8 +96,6 @@ pub struct Shell {
     pub composer: Option<(OwnedRoomId, Entity<Composer>)>,
     /// The sidebar's room list scrolling.
     pub room_scroll: ScrollHandle,
-    /// Links handed to the browser (the test bridge's `.link-log`).
-    pub opened_links: Vec<String>,
     /// The settings window, shown or not (absent only in widget tests).
     pub settings: Option<Entity<SettingsView>>,
     /// Whether this device can read encrypted history.
@@ -269,12 +297,12 @@ impl Shell {
             prefs: Prefs::default(),
             open_folders: Vec::new(),
             profile: None,
+            accounts: Vec::new(),
             directory: Vec::new(),
             avatars: Avatars::default(),
             timeline: None,
             composer: None,
             room_scroll: ScrollHandle::new(),
-            opened_links: Vec::new(),
             settings: None,
             keys: KeyAccess::default(),
             backup_later: false,
@@ -578,6 +606,7 @@ impl Shell {
                     | TimelineEvent::Sender(..)
                     | TimelineEvent::SenderMenu(..)
                     | TimelineEvent::Thread(..)
+                    | TimelineEvent::OpenImage(..)
                     | TimelineEvent::Failed(..) => {}
                 })
             })
@@ -598,6 +627,7 @@ impl Shell {
                 }
                 TimelineEvent::Failed(what, err) => this.fail(what, err, cx),
                 TimelineEvent::Thread(message) => this.open_thread((**message).clone(), cx),
+                TimelineEvent::OpenImage(images, index) => this.open_lightbox(images.clone(), *index, cx),
                 TimelineEvent::SenderMenu(message, at) => this.open_sender_menu(message, *at, cx),
                 TimelineEvent::Sender(message, at) => {
                     let seen = Some((message.sender_name.clone(), message.sender_avatar.clone()));
@@ -661,12 +691,7 @@ impl Shell {
             self.open_link(url, cx);
             return;
         }
-        if std::env::var_os("MORPHEUS_E2E_PORT").is_some() {
-            self.opened_links.push(url.to_owned());
-            cx.notify();
-        } else {
-            cx.open_url(url);
-        }
+        open_external(url, cx);
     }
 
     /// Tells the timelines which message has its right-click menu open, so it
@@ -954,9 +979,12 @@ impl Render for Shell {
                 div()
                     .size_0()
                     .children(
-                        self.opened_links
-                            .iter()
-                            .map(|url| div().size_0().e2e("li", "").text(url.clone())),
+                        OPENED
+                            .lock()
+                            .map(|opened| opened.clone())
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(|url| div().size_0().e2e("li", "").text(url)),
                     )
                     .e2e("ul", "link-log"),
             )

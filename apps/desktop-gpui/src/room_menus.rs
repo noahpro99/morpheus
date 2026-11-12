@@ -357,6 +357,15 @@ impl Shell {
                 let at = Some(self.menu_at);
                 self.open_profile(user, at, None, cx);
             }
+            MenuAction::SwitchAccount(key) => cx.emit(crate::shell::AccountEvent::Switch(key)),
+            MenuAction::AddAccount => cx.emit(crate::shell::AccountEvent::Add),
+            MenuAction::SignOut => self.dialog_open(
+                crate::dialogs::Dialog::Confirm(
+                    crate::view_model::menu::confirm_sign_out(),
+                    crate::view_model::menu::ConfirmAction::SignOut,
+                ),
+                cx,
+            ),
             MenuAction::FullProfile(_) => self.show_full_profile(cx),
             MenuAction::ShareProfile(link) => {
                 cx.write_to_clipboard(ClipboardItem::new_string(link));
@@ -442,6 +451,7 @@ impl Shell {
                 self.set_scope(Scope::Rooms, cx);
             }
             Done::ProfileSaved => self.refresh_members(cx),
+            Done::OwnProfileChanged => self.reload_own_profile(cx),
             Done::NicknameSaved { user, nickname } => {
                 self.dialog_close(cx);
                 let names = std::mem::take(&mut self.nicknames);

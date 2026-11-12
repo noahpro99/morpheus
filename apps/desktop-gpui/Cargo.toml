@@ -11,7 +11,7 @@ path = "src/main.rs"
 
 [features]
 # The test bridge (`MORPHEUS_E2E_PORT`) and element tags; never in a release.
-e2e = ["dep:serde", "dep:base64"]
+e2e = ["dep:serde"]
 
 [dependencies]
 gpui = "0.2"
@@ -27,11 +27,12 @@ notify-rust = { workspace = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true }
 ruma-html = { workspace = true }
-base64 = { workspace = true, optional = true }
+base64 = { workspace = true }
 jiff = "0.2"
 emojis = "0.9.1"
 png = { workspace = true }
 tokio = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 [dev-dependencies]
 gpui = { version = "0.2", features = ["test-support"] }

@@ -94,6 +94,8 @@ pub enum TimelineEvent {
     Failed(&'static str, String),
     /// "Reply in thread" or a thread chip: open this message's thread.
     Thread(Box<Message>),
+    /// A picture clicked: the room's pictures and which one.
+    OpenImage(Vec<crate::lightbox::GalleryImage>, usize),
 }
 
 impl EventEmitter<TimelineEvent> for TimelineView {}
@@ -650,6 +652,28 @@ impl TimelineView {
         )
     }
 
+    /// The room's pictures in timeline order, with their messages' unique IDs.
+    fn gallery(&self) -> Vec<(String, crate::lightbox::GalleryImage)> {
+        self.rows
+            .iter()
+            .filter_map(|row| match row {
+                Row::Message { row, .. } => match &row.message.kind {
+                    MessageKind::Image { media, body, width, height, .. } => Some((
+                        row.message.unique_id.clone(),
+                        crate::lightbox::GalleryImage {
+                            media: media.clone(),
+                            body: body.clone(),
+                            width: *width,
+                            height: *height,
+                        },
+                    )),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .collect()
+    }
+
     /// A click on a message's hover bar, or a right click on it.
     pub fn row_action(&mut self, action: RowAction, unique_id: &str, cx: &mut Context<Self>) {
         let Some(message) = self.rows.iter().find_map(|row| match row {
@@ -672,6 +696,13 @@ impl TimelineView {
             }
             RowAction::Sender(at) => cx.emit(TimelineEvent::Sender(Box::new(message), at)),
             RowAction::SenderMenu(at) => cx.emit(TimelineEvent::SenderMenu(Box::new(message), at)),
+            RowAction::Toggle(key) => self.react(message.id, key, cx),
+            RowAction::OpenImage => {
+                let gallery = self.gallery();
+                if let Some(at) = gallery.iter().position(|(id, _)| id == unique_id) {
+                    cx.emit(TimelineEvent::OpenImage(gallery.into_iter().map(|(_, image)| image).collect(), at));
+                }
+            }
         }
     }
 
