@@ -184,6 +184,19 @@ impl Root {
         // of the account left behind go quiet with its stopped sync.
         notify::spawn_notifier(session.clone(), || send_command(Command::Redraw));
         notify::spawn_ring_watcher(session.clone());
+        self.show_shell(session, cx);
+        for link in std::mem::take(&mut self.pending_links) {
+            self.open_link(link, cx);
+        }
+        for action in std::mem::take(&mut self.pending_tray) {
+            self.tray_action(action, cx);
+        }
+        cx.notify();
+    }
+
+    /// Builds the interface (the shell) for a signed-in account; also what Ctrl+R
+    /// does, for the same account.
+    fn show_shell(&mut self, session: morpheus_core::Session, cx: &mut Context<Self>) {
         let shell = cx.new(|cx| Shell::new(session, cx));
         cx.subscribe(&shell, |this: &mut Root, _, event: &shell::AccountEvent, cx| {
             this.account_event(event.clone(), cx)
@@ -204,12 +217,6 @@ impl Root {
         })
         .detach();
         self.screen = Screen::Rooms(shell);
-        for link in std::mem::take(&mut self.pending_links) {
-            self.open_link(link, cx);
-        }
-        for action in std::mem::take(&mut self.pending_tray) {
-            self.tray_action(action, cx);
-        }
         cx.notify();
     }
 
@@ -223,9 +230,14 @@ impl Root {
         let Some(session) = shell.read(cx).session.clone() else {
             return;
         };
+        if matches!(event, shell::AccountEvent::Reload) {
+            self.show_shell(session, cx);
+            return;
+        }
         let core = self.core.clone();
         cx.spawn(async move |this, cx| {
             let next = match event {
+                shell::AccountEvent::Reload => None,
                 shell::AccountEvent::Add => {
                     let _ = session.suspend().await;
                     None

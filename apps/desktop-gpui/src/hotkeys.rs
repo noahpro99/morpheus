@@ -62,6 +62,14 @@ impl Shell {
                 self.close_thread(cx);
                 return true;
             }
+            // Escape with nothing open, scrolled up the chat: back to the newest message.
+            if !self.modal_open(cx) && !self.inbox_open && !self.composer_busy(cx) {
+                let away = self.timeline.as_ref().is_some_and(|(_, t)| t.read(cx).away_from_present());
+                if away && let Some((_, timeline)) = &self.timeline {
+                    timeline.update(cx, |timeline, cx| timeline.jump_to_present(cx));
+                    return true;
+                }
+            }
             return false;
         }
         let ctrl = m.control || m.platform;
@@ -126,6 +134,15 @@ impl Shell {
             Hotkey::Unread { forward } => self.step_room(forward, true, cx),
             Hotkey::Scope { forward } => self.step_scope(forward, cx),
             Hotkey::Switcher => self.toggle_switcher(cx),
+            Hotkey::LastPlace => self.toggle_last_place(cx),
+            Hotkey::Mention { forward } => self.step_mention(forward, cx),
+            Hotkey::Reload => cx.emit(crate::shell::AccountEvent::Reload),
+            Hotkey::CopyLink => self.copy_room_link(cx),
+            Hotkey::Page { down } => {
+                if let Some((_, timeline)) = &self.timeline {
+                    timeline.update(cx, |timeline, cx| timeline.scroll_page(down, cx));
+                }
+            }
             Hotkey::ToggleMute => self.toggle_mute(cx),
             Hotkey::ToggleDeafen => self.toggle_deafen(cx),
             Hotkey::CurrentCall => {
@@ -146,24 +163,38 @@ impl Shell {
     }
 
     /// Alt+Up / Alt+Down: the room before or after the open one in the
-    /// sidebar's list (only rooms with something unread, for `unread`).
+    /// sidebar's list (only rooms with something unread, for `unread`). In
+    /// the DMs the Friends page is the first entry of that list.
     fn step_room(&mut self, forward: bool, unread: bool, cx: &mut Context<Self>) {
-        let list = rooms_in_scope(&self.rooms, &self.scope);
-        let candidates: Vec<bool> = list
-            .iter()
-            .map(|r| !unread || r.unread_messages > 0 || r.highlight_count > 0 || r.marked_unread)
-            .collect();
-        let current = self
-            .selected
-            .as_ref()
-            .and_then(|id| list.iter().position(|r| &r.id == id));
-        if let Some(room) = hotkeys::step_room(&candidates, current, forward).and_then(|i| list.get(i)) {
-            self.open_room(room.id.clone(), cx);
+        let list = crate::room_list::sidebar_order(self, &self.scope);
+        let friends = self.scope == Scope::Dms && !unread;
+        let offset = usize::from(friends);
+        let mut candidates: Vec<bool> = if friends { vec![true] } else { Vec::new() };
+        candidates.extend(
+            list.iter()
+                .map(|r| !unread || r.unread_messages > 0 || r.highlight_count > 0 || r.marked_unread),
+        );
+        let current = if friends && self.friends_open {
+            Some(0)
+        } else {
+            self.selected
+                .as_ref()
+                .and_then(|id| list.iter().position(|r| &r.id == id))
+                .map(|i| i + offset)
+        };
+        match hotkeys::step_room(&candidates, current, forward) {
+            Some(0) if friends => self.open_friends(cx),
+            Some(i) => {
+                if let Some(room) = list.get(i - offset) {
+                    self.open_room(room.id.clone(), cx);
+                }
+            }
+            None => {}
         }
     }
 
     /// Ctrl+Alt+Up / Down: the rail entry before or after the current one,
-    /// with its first room open.
+    /// with its first room (as the sidebar lists them) open.
     fn step_scope(&mut self, forward: bool, cx: &mut Context<Self>) {
         let all: Vec<Scope> = rail_scopes(&self.prefs, &self.rooms);
         let current = all.iter().position(|s| *s == self.scope);
@@ -172,8 +203,58 @@ impl Shell {
         };
         let scope = all[next].clone();
         self.set_scope(scope.clone(), cx);
-        if let Some(first) = rooms_in_scope(&self.rooms, &scope).first() {
+        if let Some(first) = crate::room_list::sidebar_order(self, &scope).first() {
             self.open_room(first.id.clone(), cx);
+        }
+    }
+
+    /// Ctrl+Alt+Right: between the DMs and the server (or Rooms) you were
+    /// last in, each in the very room you were last in there.
+    fn toggle_last_place(&mut self, cx: &mut Context<Self>) {
+        let target = if self.scope == Scope::Dms {
+            let back = self.last_server.clone();
+            // A server since left: Rooms instead.
+            let gone = matches!(&back, Scope::Space(id) if !self.rooms.iter().any(|r| &r.id == id));
+            if gone { Scope::Rooms } else { back }
+        } else {
+            self.last_server = self.scope.clone();
+            Scope::Dms
+        };
+        self.set_scope(target.clone(), cx);
+        if let Some(room) = self.last_room_in.get(&target).cloned()
+            && rooms_in_scope(&self.rooms, &target).iter().any(|r| r.id == room)
+        {
+            self.open_room(room, cx);
+        }
+    }
+
+    /// Ctrl+Shift+Alt+Up / Down: the next room that mentions you, in any scope.
+    fn step_mention(&mut self, forward: bool, cx: &mut Context<Self>) {
+        let all: Vec<morpheus_core::RoomSummary> = rail_scopes(&self.prefs, &self.rooms)
+            .iter()
+            .flat_map(|scope| rooms_in_scope(&self.rooms, scope))
+            .collect();
+        let candidates: Vec<bool> = all.iter().map(|r| r.highlight_count > 0).collect();
+        let current = self
+            .selected
+            .as_ref()
+            .and_then(|id| all.iter().position(|r| &r.id == id));
+        if let Some(room) = hotkeys::step_room(&candidates, current, forward).and_then(|i| all.get(i)) {
+            let scope = crate::model::scope_for(&self.rooms, room);
+            if scope != self.scope {
+                self.set_scope(scope, cx);
+            }
+            self.open_room(room.id.clone(), cx);
+        }
+    }
+
+    /// Ctrl+Shift+L: the open room's link, copied.
+    fn copy_room_link(&mut self, cx: &mut Context<Self>) {
+        if let Some(room) = self.selected.clone() {
+            cx.write_to_clipboard(gpui::ClipboardItem::new_string(format!(
+                "https://matrix.to/#/{room}"
+            )));
+            self.toast("Link copied", cx);
         }
     }
 }

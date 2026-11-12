@@ -90,22 +90,24 @@ async fn shortcuts_navigate_rooms_scopes_history_and_panels() {
     app.wait_for(".rail-item.selected[title=\"Engineering\"]", DEFAULT_WAIT)
         .await
         .expect("next scope");
-    app.wait_for_text(".chat-header h2", "dev", DEFAULT_WAIT)
+    // The space's first room, as its sidebar lists it (rooms other tests made
+    // there come and go, so the name is read, not assumed).
+    let first_listed = app
+        .texts(".room-list .room .room-name")
+        .await
+        .expect("sidebar")
+        .first()
+        .map(|n| n.trim().to_owned())
+        .expect("a room in the space");
+    app.wait_for_text(".chat-header h2", &first_listed, DEFAULT_WAIT)
         .await
         .expect("first room of the space");
-    if app.is_gpui() {
-        // No history (Alt+Left) in the GPUI app yet: Ctrl+Alt+Up goes back a scope.
-        app.key_combo("body", "ArrowUp", true, true, false)
-            .await
-            .expect("ctrl+alt+up");
-    } else {
-        app.key_combo("body", "ArrowLeft", false, true, false)
-            .await
-            .expect("alt+left");
-        app.wait_for_text(".chat-header h2", &before, DEFAULT_WAIT)
-            .await
-            .expect("history back");
-    }
+    app.key_combo("body", "ArrowLeft", false, true, false)
+        .await
+        .expect("alt+left");
+    app.wait_for_text(".chat-header h2", &before, DEFAULT_WAIT)
+        .await
+        .expect("history back");
     app.wait_for(".rail-item.selected[title=\"Rooms\"]", DEFAULT_WAIT)
         .await
         .expect("scope followed");
@@ -176,25 +178,39 @@ async fn up_edits_last_message_and_escape_jumps_to_bottom() {
     app.wait_for_text(".composer-banner", "Editing message", DEFAULT_WAIT)
         .await
         .expect("edit mode");
-    app.wait_for_js(
-        &format!(
-            "return document.querySelector('.composer .composer-input').value === {};",
-            serde_json::to_string(&text).expect("json")
-        ),
-        Duration::from_secs(5),
-    )
-    .await
-    .expect("draft holds the message");
+    app.wait_for_value(".composer .composer-input", &text, Duration::from_secs(5))
+        .await
+        .expect("draft holds the message");
     app.press(".composer .composer-input", "Escape")
         .await
         .expect("cancel edit");
 
     // Scroll up, then Esc with nothing open jumps back to the newest message.
     // A tall window can show the whole first page; load enough history to scroll.
-    app.reveal("a scrollable timeline", SCROLLABLE, DEFAULT_WAIT)
-        .await
-        .expect("history");
-    app.eval("document.querySelector('.timeline').scrollTop = -2000;")
+    if app.is_gpui() {
+        // Page up to the start until the chat is longer than the window.
+        let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+        loop {
+            app.scroll_to(".timeline", morpheus_e2e::ScrollTo::Top)
+                .await
+                .expect("to the top");
+            let long = app
+                .scroll_state(".timeline")
+                .await
+                .expect("state")
+                .is_some_and(|s| s.range > 2600.0);
+            if long {
+                break;
+            }
+            assert!(std::time::Instant::now() < deadline, "history");
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+    } else {
+        app.reveal("a scrollable timeline", SCROLLABLE, DEFAULT_WAIT)
+            .await
+            .expect("history");
+    }
+    app.scroll_to(".timeline", morpheus_e2e::ScrollTo::FromBottom(2000.0))
         .await
         .expect("scroll up");
     app.wait_for(".jump-to-bottom", DEFAULT_WAIT)
@@ -202,18 +218,18 @@ async fn up_edits_last_message_and_escape_jumps_to_bottom() {
         .expect("scrolled away");
     app.press("body", "Escape").await.expect("escape");
     // On a phone Escape is the back key: it returns to the room list instead.
-    let phone = app
-        .eval("return !!document.querySelector('.shell.narrow');")
-        .await
-        .expect("layout");
-    let expected = if phone == true {
-        "return document.querySelector('.shell').dataset.pane === 'rooms';"
+    if app.is_gpui() || app.count(".shell.narrow").await.expect("layout") == 0 {
+        app.wait_for_count(".jump-to-bottom", 0, DEFAULT_WAIT)
+            .await
+            .expect("back at the bottom");
     } else {
-        "return document.querySelector('.jump-to-bottom') === null;"
-    };
-    app.wait_for_js(expected, DEFAULT_WAIT)
+        app.wait_for_js(
+            "return document.querySelector('.shell').dataset.pane === 'rooms';",
+            DEFAULT_WAIT,
+        )
         .await
-        .expect("back at the bottom (desktop) or the room list (phone)");
+        .expect("back at the room list (phone)");
+    }
 }
 
 /// Ctrl+R reloads the app, as in Discord: the interface is built afresh
@@ -226,16 +242,31 @@ async fn ctrl_r_reloads_the_app() {
     };
     let mut app = App::launch(&hs).await.expect("launch app");
     login_and_open(&mut app, "random").await;
-    // A mark on the current interface, gone once it is rebuilt.
-    app.eval("document.querySelector('.shell').dataset.beforeReload = 'yes'; return true;")
-        .await
-        .expect("mark");
+    // A mark on the current interface, gone once it is rebuilt: a page flag
+    // on Dioxus, the DMs being the open scope on GPUI (a new shell starts
+    // in Rooms).
+    if app.is_gpui() {
+        app.click(".rail-dms").await.expect("the DMs");
+        app.wait_for(".rail-item.selected[title=\"Direct messages\"]", DEFAULT_WAIT)
+            .await
+            .expect("in the DMs");
+    } else {
+        app.eval("document.querySelector('.shell').dataset.beforeReload = 'yes'; return true;")
+            .await
+            .expect("mark");
+    }
     app.key_combo("body", "r", true, false, false)
         .await
         .expect("ctrl+r");
-    app.wait_for(".shell:not([data-before-reload])", DEFAULT_WAIT)
-        .await
-        .expect("rebuilt");
+    if app.is_gpui() {
+        app.wait_for(".rail-item.selected[title=\"Rooms\"]", DEFAULT_WAIT)
+            .await
+            .expect("rebuilt");
+    } else {
+        app.wait_for(".shell:not([data-before-reload])", DEFAULT_WAIT)
+            .await
+            .expect("rebuilt");
+    }
     assert_eq!(
         app.count("form.login").await.expect("count"),
         0,
@@ -259,8 +290,19 @@ async fn ctrl_shift_m_mutes_and_ctrl_shift_d_deafens() {
     };
     let mut app = App::launch_desktop(&hs).await.expect("launch");
     login_and_open(&mut app, "general").await;
-    let state = "return [document.querySelector('.user-bar .mute-button').classList.contains('active'), \
-                         document.querySelector('.user-bar .deafen-button').classList.contains('active')];";
+    // [muted, deafened], as the buttons in the footer show it.
+    async fn state(app: &mut App) -> serde_json::Value {
+        if app.is_gpui() {
+            let on = |n: usize| n > 0;
+            let muted = on(app.count(".user-bar .mute-button.active").await.expect("mute"));
+            let deafened = on(app.count(".user-bar .deafen-button.active").await.expect("deafen"));
+            return serde_json::json!([muted, deafened]);
+        }
+        app.eval("return [document.querySelector('.user-bar .mute-button').classList.contains('active'), \
+                         document.querySelector('.user-bar .deafen-button').classList.contains('active')];")
+            .await
+            .expect("state")
+    }
     async fn press(app: &mut App, key: &str) {
         // Shift makes the letter a capital, as a real keyboard does.
         app.key_combo("body", key, true, false, true)
@@ -270,7 +312,7 @@ async fn ctrl_shift_m_mutes_and_ctrl_shift_d_deafens() {
     }
     let expect = async |app: &mut App, muted: bool, deafened: bool, why: &str| {
         assert_eq!(
-            app.eval(state).await.expect("state"),
+            state(app).await,
             serde_json::json!([muted, deafened]),
             "{why}"
         );
@@ -335,6 +377,12 @@ async fn ctrl_alt_down_goes_server_by_server_in_rail_order() {
         set_rail(&hs, &order);
         let mut app = App::launch_desktop(&hs).await.expect("launch app");
         login_and_open(&mut app, "general").await;
+        // Servers arrive with the first sync: stepping needs the whole rail.
+        for name in order {
+            app.wait_for(&format!(".rail-item[title=\"{name}\"]"), DEFAULT_WAIT)
+                .await
+                .unwrap_or_else(|e| panic!("{name} in the rail: {e}"));
+        }
         app.click(".rail-rooms").await.expect("Rooms");
         for name in order {
             app.key_combo("body", "ArrowDown", true, true, false)
@@ -345,7 +393,7 @@ async fn ctrl_alt_down_goes_server_by_server_in_rail_order() {
                 DEFAULT_WAIT,
             )
             .await
-            .unwrap_or_else(|_| panic!("{name} next, as the rail has {order:?}"));
+            .unwrap_or_else(|e| panic!("{name} next, as the rail has {order:?}: {e}"));
         }
         app.key_combo("body", "ArrowUp", true, true, false)
             .await
@@ -377,14 +425,18 @@ async fn ctrl_alt_right_toggles_the_last_dm_and_server_channel() {
     app.click(".rail-item[title=\"Direct messages\"]")
         .await
         .expect("dms");
-    app.wait_for(".room:not(.friends-row) + .room", DEFAULT_WAIT)
-        .await
-        .expect("two DMs");
-    let dm = app
-        .eval("const r = document.querySelectorAll('.room:not(.friends-row)')[1]; r.click(); return r.querySelector('.room-name').textContent.trim();")
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    let dm = loop {
+        let names = app.texts(".room.dm .room-name").await.expect("DMs");
+        if names.len() >= 2 {
+            break names[1].trim().to_owned();
+        }
+        assert!(std::time::Instant::now() < deadline, "two DMs: {names:?}");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    };
+    app.click_text(".room.dm", &dm)
         .await
         .expect("open the second DM");
-    let dm = dm.as_str().expect("name").to_owned();
     app.wait_for_text(".chat-header h2", &dm, DEFAULT_WAIT)
         .await
         .expect("in that DM");
@@ -496,11 +548,13 @@ async fn alt_up_from_the_top_dm_reaches_friends() {
         .await
         .expect("dms listed");
     let top = app
-        .eval("return document.querySelector('.room:not(.friends-row) .room-name').textContent.trim();")
+        .texts(".room:not(.friends-row) .room-name")
         .await
-        .expect("top dm");
-    let top = top.as_str().expect("name").to_owned();
-    app.eval("document.querySelector('.room:not(.friends-row)').click(); return true;")
+        .expect("top dm")
+        .first()
+        .map(|n| n.trim().to_owned())
+        .expect("a DM");
+    app.click_text(".room:not(.friends-row)", &top)
         .await
         .expect("open the top dm");
     app.wait_for_text(".chat-header h2", &top, DEFAULT_WAIT)
@@ -540,6 +594,30 @@ async fn the_shortcuts_dialog_is_wide_with_one_line_rows() {
     app.wait_for(".help-dialog", DEFAULT_WAIT)
         .await
         .expect("shortcuts dialog");
+    if app.is_gpui() {
+        // Measured through the tree: row count, width, fit, one-line rows and
+        // key caps (the page-only checks of text overflow and rounded clips
+        // have no counterpart here).
+        let window = app.bounds("body").await.expect("body").expect("a window");
+        let dialog = app
+            .bounds(".help-dialog")
+            .await
+            .expect("dialog")
+            .expect("a dialog");
+        let rows = app.all_bounds(".help-dialog .help-row").await.expect("rows");
+        let caps = app.count(".help-dialog .help-row kbd").await.expect("caps");
+        assert!(rows.len() >= 10, "shortcut rows: {}", rows.len());
+        assert!(dialog.w >= 640.0, "the dialog is too narrow: {dialog:?}");
+        assert!(
+            dialog.y >= 0.0 && dialog.bottom() <= window.h,
+            "the dialog does not fit the window: {dialog:?} in {window:?}"
+        );
+        // A row of one line is about 20 px; a wrapped one is twice that.
+        let tall: Vec<_> = rows.iter().filter(|r| r.h > 38.0).collect();
+        assert!(tall.is_empty(), "rows that wrap: {tall:?}");
+        assert!(caps >= rows.len(), "rows without key caps");
+        return;
+    }
     let report = app
         .eval(
             "const d = document.querySelector('.help-dialog'); const r = d.getBoundingClientRect(); \
@@ -611,6 +689,10 @@ async fn nothing_animates_forever_once_loaded() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
+    if std::env::var("MORPHEUS_E2E_UI").as_deref() == Ok("gpui") {
+        eprintln!("skipped on GPUI: CSS animations (a page-only concept; the GPUI app draws only when something changes)");
+        return;
+    }
     let mut app = App::launch(&hs).await.expect("launch app");
     login_and_open(&mut app, "general").await;
     tokio::time::sleep(Duration::from_secs(2)).await;
@@ -641,12 +723,18 @@ async fn the_palette_names_servers_and_the_card_has_your_picture() {
     };
     let mut app = App::launch(&hs).await.expect("launch app");
     login_and_open(&mut app, "general").await;
-    app.wait_for_js(
-        "const a = document.querySelector('.user-pill .profile-chip .avatar'); return !!a && a.tagName === 'IMG' && a.src.startsWith('data:');",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("alice's picture in the profile card");
+    if app.is_gpui() {
+        app.wait_for(".user-bar .profile-chip img.avatar", DEFAULT_WAIT)
+            .await
+            .expect("alice's picture in the profile card");
+    } else {
+        app.wait_for_js(
+            "const a = document.querySelector('.user-pill .profile-chip .avatar'); return !!a && a.tagName === 'IMG' && a.src.startsWith('data:');",
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("alice's picture in the profile card");
+    }
     app.key_combo("body", "k", true, false, false)
         .await
         .expect("ctrl+k");
@@ -656,8 +744,11 @@ async fn the_palette_names_servers_and_the_card_has_your_picture() {
     app.type_into(".switcher input", "dev")
         .await
         .expect("filter");
-    app.wait_for_js(
-        "return [...document.querySelectorAll('.switcher-item:not(.action)')].some(r => r.querySelector('.name')?.textContent.trim() === 'dev' && r.querySelector('.kind')?.textContent.trim() === 'Engineering');",
+    app.wait_for_within(
+        ".switcher-item:not(.action)",
+        "dev",
+        ".kind",
+        Some("Engineering"),
         DEFAULT_WAIT,
     )
     .await
@@ -683,14 +774,41 @@ async fn the_palette_shows_a_channels_server_picture() {
         .await
         .expect("filter");
     // Engineering's picture: its letter badge when it has none.
-    app.wait_for_js(
-        "const row = [...document.querySelectorAll('.switcher-item:not(.action)')].find(r => r.querySelector('.name')?.textContent.trim() === 'dev'); \
-         const pic = row && row.querySelector('.avatar'); \
-         return !!pic && (pic.getAttribute('alt') === 'Engineering' || pic.textContent.trim() === 'E');",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("#dev with Engineering's picture");
+    // (`#dev` is the room; the picture is the server's: its letter badge when it has none.)
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let found = if app.is_gpui() {
+            // The row has a picture or a letter, and the letter is the server's.
+            let pics = app
+                .texts_within(".switcher-item:not(.action)", "dev", ".avatar")
+                .await
+                .expect("avatars");
+            let kinds = app
+                .texts_within(".switcher-item:not(.action)", "dev", ".kind")
+                .await
+                .expect("kinds");
+            kinds.iter().any(|k| k.trim() == "Engineering")
+                && pics.iter().any(|p| p.trim() == "E" || p.trim().is_empty())
+        } else {
+            app.eval(
+                "const row = [...document.querySelectorAll('.switcher-item:not(.action)')].find(r => r.querySelector('.name')?.textContent.trim() === 'dev'); \
+                 const pic = row && row.querySelector('.avatar'); \
+                 return !!pic && (pic.getAttribute('alt') === 'Engineering' || pic.textContent.trim() === 'E');",
+            )
+            .await
+            .expect("row")
+            .as_bool()
+            == Some(true)
+        };
+        if found {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "#dev with Engineering's picture"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
 }
 
 /// What scrolls inside an overlay (the shortcuts, Settings) sits on a layer
@@ -701,6 +819,10 @@ async fn overlays_scroll_on_their_own_layer() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
+    if std::env::var("MORPHEUS_E2E_UI").as_deref() == Ok("gpui") {
+        eprintln!("skipped on GPUI: CSS will-change layers (a page-only concept)");
+        return;
+    }
     let mut app = App::launch(&hs).await.expect("launch app");
     login_and_open(&mut app, "general").await;
     let layered = "const out = []; \
@@ -801,26 +923,40 @@ async fn page_keys_scroll_and_ctrl_shift_l_copies_the_link() {
     .expect("password");
     app.submit("form.login").await.expect("submit");
     app.open_room("pages").await.expect("open the room");
-    app.wait_for_js(
-        "const t = document.querySelector('.timeline'); return !!t && t.scrollHeight > t.clientHeight + 400;",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("a long chat");
-    let at = "return Math.round(document.querySelector('.timeline').scrollTop);";
-    let before = app.eval(at).await.expect("scroll").as_f64().expect("n");
+    // Pixels up from the bottom of the chat (Dioxus: scrollTop is negative up there).
+    async fn up_by(app: &mut App) -> f64 {
+        app.scroll_state(".timeline")
+            .await
+            .expect("scroll")
+            .expect("a timeline")
+            .from_bottom
+    }
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let long = app
+            .scroll_state(".timeline")
+            .await
+            .expect("scroll")
+            .is_some_and(|s| s.range > 400.0);
+        if long {
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline, "a long chat");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let before = up_by(&mut app).await;
     app.press(".composer .composer-input", "PageUp")
         .await
         .expect("page up");
     tokio::time::sleep(Duration::from_millis(600)).await;
-    let up = app.eval(at).await.expect("scroll").as_f64().expect("n");
-    assert!(up < before - 100.0, "page up scrolls up: {before} → {up}");
+    let up = up_by(&mut app).await;
+    assert!(up > before + 100.0, "page up scrolls up: {before} → {up}");
     app.press(".composer .composer-input", "PageDown")
         .await
         .expect("page down");
     tokio::time::sleep(Duration::from_millis(600)).await;
-    let down = app.eval(at).await.expect("scroll").as_f64().expect("n");
-    assert!(down > up + 100.0, "page down scrolls down: {up} → {down}");
+    let down = up_by(&mut app).await;
+    assert!(down < up - 100.0, "page down scrolls down: {up} → {down}");
 
     app.key_combo("body", "L", true, false, true)
         .await
@@ -838,6 +974,9 @@ async fn ctrl_shift_alt_down_goes_to_rooms_that_mention_you() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
+    // Rooms an earlier (failed) run left in alice's list would be stepped to first.
+    let _clean_ping = morpheus_e2e::reset_rooms_named(&hs, &["alice"], "ping ");
+    let _clean_quiet = morpheus_e2e::reset_rooms_named(&hs, &["alice"], "quiet ");
     let mut app = App::launch(&hs).await.expect("launch app");
     login_and_open(&mut app, "general").await;
     // Nothing unread to start from, then two rooms from bob: one merely
@@ -889,15 +1028,16 @@ async fn ctrl_shift_alt_down_goes_to_rooms_that_mention_you() {
         })),
     )
     .expect("mention");
-    app.wait_for_js(
-        &format!(
-            "return [...document.querySelectorAll('.room')].some(r => r.querySelector('.room-name')?.textContent.trim() === {} && r.querySelector('.badge'));",
-            serde_json::to_string(&ping).expect("json")
-        ),
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("the mention shows");
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    while app
+        .texts_within(".room", &ping, ".badge")
+        .await
+        .expect("badges")
+        .is_empty()
+    {
+        assert!(std::time::Instant::now() < deadline, "the mention shows");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
     app.key_combo("body", "ArrowDown", true, true, true)
         .await
         .expect("ctrl+shift+alt+down");

@@ -375,6 +375,15 @@ impl TimelineView {
         cx.notify();
     }
 
+    /// Page Up / Page Down: the chat scrolls by (nearly) a page.
+    pub fn scroll_page(&mut self, down: bool, cx: &mut Context<Self>) {
+        let now = metrics(&self.list);
+        let page = now.viewport * 0.9;
+        let from_bottom = (now.from_bottom + if down { -page } else { page }).clamp(0.0, now.range);
+        ListProbe(self.list.clone()).scroll_to(from_bottom);
+        cx.notify();
+    }
+
     /// The people you ignore changed: their messages fold away (or show).
     pub fn set_ignored(&mut self, ignored: std::collections::HashSet<String>, cx: &mut Context<Self>) {
         if self.ignored == ignored {
@@ -830,6 +839,11 @@ impl TimelineView {
     /// The room was marked unread: leaving it must not read it again.
     pub fn keep_unread(&mut self) {
         self.keep_unread = true;
+    }
+
+    /// Whether the view is far enough from the newest message for the jump button.
+    pub fn away_from_present(&self) -> bool {
+        metrics(&self.list).from_bottom > JUMP_THRESHOLD_PX
     }
 
     /// Scrolls to the newest message.

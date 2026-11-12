@@ -12,6 +12,7 @@ use gpui::{
 };
 use morpheus_core::{OwnedRoomId, RoomSummary};
 
+use crate::view_model::settings::find_settings;
 use crate::{
     e2e::E2eExt as _,
     icons::icon,
@@ -22,6 +23,8 @@ use crate::{
 
 /// What the switcher asks of the shell.
 pub enum SwitcherEvent {
+    /// One setting, opened on its page.
+    Setting(&'static crate::view_model::settings::SettingEntry),
     Room(OwnedRoomId),
     Action(Action),
     Close,
@@ -74,11 +77,14 @@ pub struct SwitchRoom {
     pub name: String,
     /// Its server, "Direct message", or "Rooms".
     pub kind: String,
+    /// What its picture's letter comes from: the server's name for a channel.
+    pub letter_of: String,
     pub picture: Option<Arc<gpui::Image>>,
 }
 
 #[derive(Clone)]
 enum Entry {
+    Setting(&'static crate::view_model::settings::SettingEntry),
     Room(usize),
     Action(Action),
 }
@@ -140,6 +146,8 @@ impl Switcher {
                 .filter(|action| needle.is_empty() || action.label().to_lowercase().contains(&needle))
                 .map(Entry::Action),
         );
+        // Settings, found by their name or the words they answer to.
+        list.extend(find_settings(&needle, true).into_iter().map(Entry::Setting));
         list
     }
 
@@ -155,6 +163,7 @@ impl Switcher {
                 cx.emit(SwitcherEvent::Room(id));
             }
             Some(Entry::Action(action)) => cx.emit(SwitcherEvent::Action(*action)),
+            Some(Entry::Setting(setting)) => cx.emit(SwitcherEvent::Setting(setting)),
             None => cx.emit(SwitcherEvent::Close),
         }
     }
@@ -164,18 +173,19 @@ impl Switcher {
 /// place. (`scope_name` says where a room lives.)
 pub fn rooms_for(
     rooms: &[RoomSummary],
-    scope_name: impl Fn(&RoomSummary) -> (String, Option<Arc<gpui::Image>>),
+    scope_name: impl Fn(&RoomSummary) -> (String, Option<Arc<gpui::Image>>, Option<String>),
 ) -> Vec<SwitchRoom> {
     rooms
         .iter()
         .filter(|room| !room.is_space && !room.invited)
         .map(|room| {
-            let (kind, picture) = scope_name(room);
+            let (kind, picture, letter_of) = scope_name(room);
             SwitchRoom {
                 id: room.id.clone(),
                 name: room.name.clone(),
                 kind,
                 picture,
+                letter_of: letter_of.unwrap_or_else(|| room.name.clone()),
             }
         })
         .collect()
@@ -194,6 +204,7 @@ impl Render for Switcher {
             let (classes, text) = match entry {
                 Entry::Room(room) => ("switcher-item", self.rooms[*room].name.clone()),
                 Entry::Action(action) => ("switcher-item action", action.label().to_owned()),
+                Entry::Setting(setting) => ("switcher-item", setting.label.to_owned()),
             };
             let classes = if active {
                 format!("{classes} active")
@@ -215,7 +226,7 @@ impl Render for Switcher {
             let row = match entry {
                 Entry::Room(room) => {
                     let room = &self.rooms[*room];
-                    row.child(avatar(room.picture.clone(), &room.name, 24.0, None))
+                    row.child(avatar(room.picture.clone(), &room.letter_of, 24.0, None))
                         .child(
                             div()
                                 .child(room.name.clone())
@@ -232,6 +243,23 @@ impl Render for Switcher {
                                 .text(room.kind.clone()),
                         )
                 }
+                Entry::Setting(setting) => row
+                    .child(icon(setting.page.glyph(), 16.0).text_color(rgb(theme::text_faint())))
+                    .child(
+                        div()
+                            .child(setting.label)
+                            .e2e("span", "name")
+                            .text(setting.label),
+                    )
+                    .child(
+                        div()
+                            .ml_auto()
+                            .text_size(px(0.8 * theme::REM))
+                            .text_color(rgb(theme::text_faint()))
+                            .child(format!("Settings · {}", setting.page.label()))
+                            .e2e("span", "kind")
+                            .text(format!("Settings · {}", setting.page.label())),
+                    ),
                 Entry::Action(action) => row
                     .child(icon(action.glyph(), 16.0).text_color(rgb(theme::text_faint())))
                     .child(div().child(action.label())),
@@ -297,10 +325,11 @@ impl crate::shell::Shell {
                     (
                         space.map(|s| s.name.clone()).unwrap_or_default(),
                         space.and_then(|s| self.picture(&s.avatar, 32)),
+                        space.map(|s| s.name.clone()),
                     )
                 }
-                Scope::Dms => ("Direct message".to_owned(), self.picture(&room.avatar, 32)),
-                _ => ("Rooms".to_owned(), self.picture(&room.avatar, 32)),
+                Scope::Dms => ("Direct message".to_owned(), self.picture(&room.avatar, 32), None),
+                _ => ("Rooms".to_owned(), self.picture(&room.avatar, 32), None),
             }
         })
     }
@@ -346,6 +375,7 @@ impl crate::shell::Shell {
                 SwitcherEvent::Action(Action::Inbox) => this.toggle_inbox(cx),
                 SwitcherEvent::Action(Action::CheckForUpdates) => this.check_for_updates(true, cx),
                 SwitcherEvent::Action(Action::Acknowledgements) => this.open_about(cx),
+                SwitcherEvent::Setting(entry) => this.open_setting_entry(entry, cx),
                 SwitcherEvent::Close => {}
             }
             cx.notify();
@@ -353,5 +383,19 @@ impl crate::shell::Shell {
         .detach();
         self.switcher = Some(switcher);
         cx.notify();
+    }
+}
+
+impl crate::shell::Shell {
+    /// Opens Settings on the page of one setting, flashing it.
+    fn open_setting_entry(
+        &mut self,
+        entry: &'static crate::view_model::settings::SettingEntry,
+        cx: &mut Context<Self>,
+    ) {
+        self.open_settings(crate::view_model::keys::SettingsFocus::None, cx);
+        if let Some(settings) = self.settings.clone() {
+            settings.update(cx, |settings, cx| settings.show_setting(entry, cx));
+        }
     }
 }

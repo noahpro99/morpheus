@@ -40,6 +40,16 @@ pub enum Hotkey {
     CurrentCall,
     /// Ctrl+': start (or join) the call of the open room.
     StartCall,
+    /// Ctrl+Alt+Right: between the DM and the server channel you were last in.
+    LastPlace,
+    /// Ctrl+Shift+Alt+Up / Down: the previous / next room that mentions you.
+    Mention { forward: bool },
+    /// Ctrl+R: the interface is built afresh (same account).
+    Reload,
+    /// Ctrl+Shift+L: copy the open room's link.
+    CopyLink,
+    /// Page Up / Page Down: scroll the chat by a page.
+    Page { down: bool },
 }
 
 /// The action for a key (a DOM key name, `a`, `ArrowUp`, `,`) pressed with
@@ -69,6 +79,7 @@ pub fn classify(key: &str, ctrl: bool, alt: bool, shift: bool) -> Option<Hotkey>
             "," => Some(Hotkey::Settings),
             "k" => Some(Hotkey::Switcher),
             "'" => Some(Hotkey::StartCall),
+            "r" => Some(Hotkey::Reload),
             _ => None,
         },
         (true, false, true) => match key {
@@ -76,10 +87,20 @@ pub fn classify(key: &str, ctrl: bool, alt: bool, shift: bool) -> Option<Hotkey>
             "p" => Some(Hotkey::Switcher),
             "m" => Some(Hotkey::ToggleMute),
             "d" => Some(Hotkey::ToggleDeafen),
+            "l" => Some(Hotkey::CopyLink),
             _ => None,
         },
         (true, true, true) => match key {
             "v" => Some(Hotkey::CurrentCall),
+            _ => direction.map(|forward| Hotkey::Mention { forward }),
+        },
+        (true, true, false) => match sideways {
+            Some(true) => Some(Hotkey::LastPlace),
+            _ => direction.map(|forward| Hotkey::Scope { forward }),
+        },
+        (false, false, false) => match key {
+            "PageUp" | "pageup" => Some(Hotkey::Page { down: false }),
+            "PageDown" | "pagedown" => Some(Hotkey::Page { down: true }),
             _ => None,
         },
         (true, true, false) => direction.map(|forward| Hotkey::Scope { forward }),
@@ -143,6 +164,8 @@ pub const GROUPS: &[(&str, &[(&str, &str)])] = &[
             ("Alt+← / Alt+→", "Back / forward through the rooms visited"),
             ("Alt+Shift+↑ / ↓", "Previous / next unread room"),
             ("Ctrl+Alt+↑ / ↓", "Previous / next server (rail)"),
+            ("Ctrl+Alt+→", "Switch between the DM and the server channel you were last in"),
+            ("Ctrl+Shift+Alt+↑ / ↓", "Previous / next room that mentions you"),
             ("Ctrl+Shift+Alt+V", "Go to the call you are in"),
         ],
     ),
@@ -165,6 +188,9 @@ pub const GROUPS: &[(&str, &[(&str, &str)])] = &[
             ("Ctrl+,", "Settings"),
             ("Ctrl+/", "This list"),
             ("Ctrl+Shift+N", "Create or join a server"),
+            ("Ctrl+Shift+L", "Copy the open room's link"),
+            ("Page Up / Page Down", "Scroll the chat"),
+            ("Ctrl+R", "Reload the app"),
         ],
     ),
     (
@@ -185,6 +211,11 @@ mod tests {
 
     #[test]
     fn combos_name_their_actions() {
+        assert_eq!(classify("ArrowRight", true, true, false), Some(Hotkey::LastPlace));
+        assert_eq!(classify("ArrowDown", true, true, true), Some(Hotkey::Mention { forward: true }));
+        assert_eq!(classify("r", true, false, false), Some(Hotkey::Reload));
+        assert_eq!(classify("L", true, false, true), Some(Hotkey::CopyLink));
+        assert_eq!(classify("PageUp", false, false, false), Some(Hotkey::Page { down: false }));
         assert_eq!(classify("f", true, false, false), Some(Hotkey::Search));
         assert_eq!(classify("F", true, false, false), Some(Hotkey::Search));
         assert_eq!(classify("i", true, false, false), Some(Hotkey::Inbox));
