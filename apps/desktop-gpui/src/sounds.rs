@@ -69,11 +69,15 @@ pub fn play(sound: Sound, log: Option<&PathBuf>) {
         return;
     }
     if let Some(player) = player() {
-        let samples = sound
+        let mut samples: Vec<f32> = sound
             .samples()
             .iter()
             .map(|s| f32::from(*s) / f32::from(i16::MAX))
             .collect();
+        // A second of silence after it: the output stream stays awake for
+        // the next sound (a stream that goes idle between sounds clips the
+        // start of the next), and a test can see it running.
+        samples.extend(std::iter::repeat_n(0.0, SOUND_RATE as usize));
         let _ = player.send(samples);
     }
 }

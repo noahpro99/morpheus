@@ -483,12 +483,7 @@ async fn a_call_in_a_dm_rings_the_other_person_who_can_answer_or_decline() {
     bob.wait_for_text(".incoming-call", "alice", DEFAULT_WAIT)
         .await
         .expect("bob sees alice calling");
-    bob.wait_for_js(
-        "return (window.morpheusSounds ?? []).includes('ring');",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("a ringtone");
+    wait_sound(&mut bob, "ring").await.expect("a ringtone");
     // Bob's window is in the background: the system is told too (test runs
     // log the notification instead of showing it).
     if !bob.is_phone() {
@@ -524,14 +519,11 @@ async fn a_call_in_a_dm_rings_the_other_person_who_can_answer_or_decline() {
     bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
         .await
         .expect("bob connected");
-    bob.wait_for_js(
-        "return !document.querySelector('.incoming-call');",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("ringing stops");
+    bob.wait_for_count(".incoming-call", 0, DEFAULT_WAIT)
+        .await
+        .expect("ringing stops");
     alice
-        .wait_for_js(&speaking("bob"), DEFAULT_WAIT)
+        .wait_for_text(".call-participant.speaking", "bob", DEFAULT_WAIT)
         .await
         .expect("alice hears bob");
     bob.click(".voice-panel .hang-up")
@@ -542,10 +534,7 @@ async fn a_call_in_a_dm_rings_the_other_person_who_can_answer_or_decline() {
         .await
         .expect("alice hangs up");
     alice
-        .wait_for_js(
-            "return !document.querySelector('.voice-panel');",
-            DEFAULT_WAIT,
-        )
+        .wait_for_count(".voice-panel", 0, DEFAULT_WAIT)
         .await
         .expect("alice out");
     // Once the room shows nobody in the call (the header redraws as it changes).
@@ -569,28 +558,23 @@ async fn a_call_in_a_dm_rings_the_other_person_who_can_answer_or_decline() {
     bob.click(".incoming-call .decline-call")
         .await
         .expect("decline");
-    bob.wait_for_js(
-        "return !document.querySelector('.incoming-call');",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("ringing stops");
+    bob.wait_for_count(".incoming-call", 0, DEFAULT_WAIT)
+        .await
+        .expect("ringing stops");
     alice
         .wait_for_text(".toast", "bob declined the call", DEFAULT_WAIT)
         .await
         .expect("alice told");
     alice
-        .wait_for_js(
-            "return !document.querySelector('.voice-panel');",
-            DEFAULT_WAIT,
-        )
+        .wait_for_count(".voice-panel", 0, DEFAULT_WAIT)
         .await
         .expect("alice's call ends");
-    assert_eq!(
-        bob.eval("return document.body.textContent.includes('Unsupported');")
+    assert!(
+        !bob.texts("body")
             .await
-            .expect("text"),
-        serde_json::Value::Bool(false),
+            .expect("text")
+            .iter()
+            .any(|t| t.contains("Unsupported")),
         "rings or declines shown as unsupported"
     );
 }
@@ -944,13 +928,43 @@ async fn a_shared_screen_shows_to_everyone_in_the_call_until_stopped() {
         .expect("bob hangs up");
 }
 
+/// The sounds `app` has played so far, in order (test runs only note them).
+async fn sounds_played(app: &mut App) -> Vec<String> {
+    if app.is_gpui() {
+        return app.texts(".sound-log li").await.expect("sounds");
+    }
+    serde_json::from_value(
+        app.eval("return window.morpheusSounds ?? [];")
+            .await
+            .expect("sounds"),
+    )
+    .unwrap_or_default()
+}
+
+/// How many times `sound` has played in `app`.
+async fn count_sound(app: &mut App, sound: &str) -> usize {
+    sounds_played(app)
+        .await
+        .iter()
+        .filter(|s| *s == sound)
+        .count()
+}
+
+/// Wait until `sound` has played in `app`.
+async fn wait_sound(app: &mut App, sound: &str) -> anyhow::Result<()> {
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    while count_sound(app, sound).await == 0 {
+        if std::time::Instant::now() >= deadline {
+            anyhow::bail!("{sound} never played; played {:?}", sounds_played(app).await);
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    Ok(())
+}
+
 /// How many times the ringtone has played in `app`.
 async fn rings(app: &mut App) -> u64 {
-    app.eval("return (window.morpheusSounds ?? []).filter(s => s === 'ring').length;")
-        .await
-        .expect("sounds")
-        .as_u64()
-        .unwrap_or_default()
+    count_sound(app, "ring").await as u64
 }
 
 /// Answering a ring by joining the call some other way (the room's call
@@ -986,12 +1000,9 @@ async fn joining_a_ringing_call_from_the_room_stops_the_ring_for_good() {
     bob.click(".voice-panel .hang-up")
         .await
         .expect("bob hangs up");
-    bob.wait_for_js(
-        "return !document.querySelector('.voice-panel');",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("bob out");
+    bob.wait_for_count(".voice-panel", 0, DEFAULT_WAIT)
+        .await
+        .expect("bob out");
     tokio::time::sleep(std::time::Duration::from_secs(4)).await;
     assert_eq!(
         (
@@ -1463,6 +1474,9 @@ async fn out_of_call(app: &mut App) {
 /// What the app's sounds did: "ring: played", or the reason one did not
 /// play (a page may only play sound after a tap or click).
 async fn sound_plays(app: &mut App) -> Vec<String> {
+    if app.is_gpui() {
+        return sounds_played(app).await;
+    }
     serde_json::from_value(
         app.eval("return window.morpheusSoundPlays ?? [];")
             .await
@@ -1508,7 +1522,11 @@ async fn a_ring_is_heard_on_the_desktop() {
         // ringtone goes through PipeWire's ALSA layer, which names it after
         // the program but records no process (bob is the one with sound on).
         streams = playing_streams(pid);
-        streams.extend(alsa_streams_of("morpheus-desktop"));
+        streams.extend(alsa_streams_of(if bob.is_gpui() {
+            "morpheus-gpui-e2e"
+        } else {
+            "morpheus-desktop"
+        }));
         if rang && !streams.is_empty() {
             break;
         }
@@ -1596,7 +1614,13 @@ async fn a_chime_comes_out_of_the_speakers() {
     app.click(".user-bar .mute-button").await.expect("mute");
     let mut seen = Vec::new();
     for _ in 0..100 {
-        seen = playing_streams(pid)
+        let mut streams = playing_streams(pid);
+        // The GPUI app plays through PipeWire's ALSA layer (named after the
+        // program, no process recorded), as the ringtone does.
+        if app.is_gpui() {
+            streams.extend(alsa_streams_of("morpheus-gpui-e2e"));
+        }
+        seen = streams
             .into_iter()
             .filter(|s| s.ends_with("(\"running\")"))
             .collect();
@@ -2455,12 +2479,7 @@ async fn a_dm_call_rings_back_for_the_caller_and_the_notification_rings() {
     login_and_open(&mut alice, "alice", "general").await;
     open_dm(&mut alice, "bob").await;
     alice.click(CALL_BUTTON).await.expect("call bob");
-    let ringbacks = "return (window.morpheusSounds ?? []).filter(s => s === 'ringback').length;";
-    alice
-        .wait_for_js(
-            &format!("return (() => {{ {ringbacks} }})() > 0;"),
-            DEFAULT_WAIT,
-        )
+    wait_sound(&mut alice, "ringback")
         .await
         .expect("alice hears it ring");
 
@@ -2488,10 +2507,10 @@ async fn a_dm_call_rings_back_for_the_caller_and_the_notification_rings() {
         .await
         .expect("bob in");
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-    let then = alice.eval(ringbacks).await.expect("count");
+    let then = count_sound(&mut alice, "ringback").await;
     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     assert_eq!(
-        alice.eval(ringbacks).await.expect("count"),
+        count_sound(&mut alice, "ringback").await,
         then,
         "still ringing back"
     );
@@ -2501,10 +2520,7 @@ async fn a_dm_call_rings_back_for_the_caller_and_the_notification_rings() {
     out_of_call(&mut bob).await;
     // Both gone from the DM's call before the next test calls in it.
     alice
-        .wait_for_js(
-            "return !document.querySelector('.room-call .call-participant');",
-            DEFAULT_WAIT,
-        )
+        .wait_for_count(".room-call .call-participant", 0, DEFAULT_WAIT)
         .await
         .expect("the DM's call empty");
 }
@@ -2548,16 +2564,12 @@ async fn go_to_the_call_start_a_dm_call_and_decline_by_keyboard() {
     let mut alice = App::launch(&hs).await.expect("launch alice");
     login_and_open(&mut alice, "alice", "general").await;
     let channel = fresh_voice_channel(&hs);
-    let row = format!(
-        "[...document.querySelectorAll('.room')].find(r => r.querySelector('.room-name')?.textContent.trim() === {})",
-        serde_json::to_string(&channel).expect("json")
-    );
     alice
-        .wait_for_js(&format!("return !!{row};"), DEFAULT_WAIT)
+        .wait_for_text(".room .room-name", &channel, DEFAULT_WAIT)
         .await
         .expect("listed");
     alice
-        .eval(&format!("{row}.click(); return true;"))
+        .click_text(".room.voice", &channel)
         .await
         .expect("join");
     alice
@@ -2569,7 +2581,7 @@ async fn go_to_the_call_start_a_dm_call_and_decline_by_keyboard() {
         .await
         .expect("still in #general");
     alice
-        .eval("document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'V', code: 'KeyV', ctrlKey: true, shiftKey: true, altKey: true, bubbles: true })); return true;")
+        .key_combo("body", "V", true, true, true)
         .await
         .expect("ctrl+shift+alt+v");
     alice
@@ -2583,19 +2595,16 @@ async fn go_to_the_call_start_a_dm_call_and_decline_by_keyboard() {
     login_and_open(&mut bob, "bob", "general").await;
     open_dm(&mut alice, "bob").await;
     alice
-        .eval("document.body.dispatchEvent(new KeyboardEvent('keydown', { key: \"'\", code: 'Quote', ctrlKey: true, bubbles: true })); return true;")
+        .key_combo("body", "'", true, false, false)
         .await
         .expect("ctrl+'");
     bob.wait_for_text(".incoming-call", "alice", DEFAULT_WAIT)
         .await
         .expect("bob is rung");
     bob.press("body", "Escape").await.expect("escape");
-    bob.wait_for_js(
-        "return !document.querySelector('.incoming-call');",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("declined");
+    bob.wait_for_count(".incoming-call", 0, DEFAULT_WAIT)
+        .await
+        .expect("declined");
     assert_eq!(
         bob.count(".voice-panel").await.expect("count"),
         0,
@@ -2720,6 +2729,10 @@ async fn on_a_phone_a_card_is_enlarged_from_its_button() {
         eprintln!("needs a desktop beside the phone; skipping");
         return;
     }
+    if bob.is_gpui() {
+        eprintln!("the GPUI app has no phone layout; skipping");
+        return;
+    }
     join_hangout(&mut bob, "bob").await;
     let mut alice = App::launch_sized(&hs, 400, 800)
         .await
@@ -2815,6 +2828,10 @@ async fn a_desktop_in_the_tray_still_rings() {
         return;
     };
     let mut bob = App::launch_desktop(&hs).await.expect("launch bob");
+    if bob.is_gpui() {
+        eprintln!("the tray is the Dioxus app's (the GPUI one has none yet); skipping");
+        return;
+    }
     login_and_open(&mut bob, "bob", "general").await;
     // To the tray: the window hides, the app runs on.
     bob.eval("setTimeout(() => document.querySelector('.titlebar button.close').click(), 50); return true;")
