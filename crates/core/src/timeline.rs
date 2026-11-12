@@ -77,7 +77,7 @@ impl From<&MessageId> for TimelineEventItemId {
 pub enum StateKind {
     /// A call was started (rung) in the room.
     CallStarted,
-    /// A call ended. (Not produced yet: Matrix has no single event for it.)
+    /// A call ended: the last device left it, or a hangup (see [`CallEnds`]).
     CallEnded,
     /// Someone joined (or accepted an invite).
     Joined,
@@ -206,7 +206,11 @@ pub enum MessageKind {
 }
 
 impl TimelineEntry {
-    fn from_item(item: &TimelineItem, own_user: Option<&OwnedUserId>) -> Self {
+    fn from_item(
+        item: &TimelineItem,
+        own_user: Option<&OwnedUserId>,
+        call_ends: &HashSet<String>,
+    ) -> Self {
         match item.kind() {
             TimelineItemKind::Virtual(VirtualTimelineItem::DateDivider(ts)) => Self::DateDivider {
                 timestamp_ms: ts.0.into(),
@@ -217,8 +221,130 @@ impl TimelineEntry {
                 item.unique_id().0.clone(),
                 event,
                 own_user,
+                call_ends.contains(&item.unique_id().0),
             ))),
         }
+    }
+}
+
+/// Whether a call membership event (one device's `call.member` state) says
+/// the device is in the call, with the state key it is for. A device that
+/// leaves sends empty content; one in the call has an `application` (the
+/// MatrixRTC form) or a non-empty `m.calls` (the older form).
+fn call_membership(event: &EventTimelineItem) -> Option<(String, bool)> {
+    let TimelineItemContent::OtherState(state) = event.content() else {
+        return None;
+    };
+    if state.content().event_type().to_string() != CALL_MEMBER_EVENT {
+        return None;
+    }
+    let json: serde_json::Value = serde_json::from_str(event.latest_json()?.json().get()).ok()?;
+    let content = &json["content"];
+    let active = content["application"].is_string()
+        || content["m.calls"].as_array().is_some_and(|calls| !calls.is_empty());
+    Some((state.state_key().to_owned(), active))
+}
+
+/// The call a legacy hangup (`m.call.hangup`) ends, when this is one.
+fn hangup_call_id(event: &EventTimelineItem) -> Option<String> {
+    let TimelineItemContent::MsgLike(msg) = event.content() else {
+        return None;
+    };
+    let MsgLikeKind::Other(other) = &msg.kind else {
+        return None;
+    };
+    if other.event_type().to_string() != "m.call.hangup" {
+        return None;
+    }
+    let json: serde_json::Value = serde_json::from_str(event.latest_json()?.json().get()).ok()?;
+    Some(json["content"]["call_id"].as_str().unwrap_or_default().to_owned())
+}
+
+/// Which events of a timeline end a call, for the "ended a call" line.
+///
+/// Matrix has no event for a call ending. In MatrixRTC every device in the
+/// call keeps a `call.member` state event, and sends empty content to leave:
+/// the call is over when the last device that was in it leaves, so that
+/// event (and only that one: not each person leaving) is the end. For the
+/// older calls it is the first `m.call.hangup` of a call id. Worked out
+/// over the events the timeline holds, in order, so the same events always
+/// give the same lines.
+#[derive(Default)]
+pub struct CallEnds {
+    items: imbl::Vector<Arc<TimelineItem>>,
+    ended: HashSet<String>,
+}
+
+impl CallEnds {
+    fn ends_of(items: &imbl::Vector<Arc<TimelineItem>>) -> HashSet<String> {
+        let mut in_call: HashSet<String> = HashSet::new();
+        let mut hung_up: HashSet<String> = HashSet::new();
+        let mut ended = HashSet::new();
+        for item in items {
+            let Some(event) = item.as_event() else {
+                continue;
+            };
+            if let Some((device, active)) = call_membership(event) {
+                let was = !in_call.is_empty();
+                if active {
+                    in_call.insert(device);
+                } else {
+                    in_call.remove(&device);
+                }
+                if was && in_call.is_empty() {
+                    ended.insert(item.unique_id().0.clone());
+                }
+            } else if let Some(call_id) = hangup_call_id(event)
+                && hung_up.insert(call_id)
+            {
+                ended.insert(item.unique_id().0.clone());
+            }
+        }
+        ended
+    }
+
+    /// Starts from `items`; the entries of them.
+    pub fn reset(&mut self, items: impl IntoIterator<Item = Arc<TimelineItem>>, own_user: Option<&OwnedUserId>) -> Vec<TimelineEntry> {
+        self.items = items.into_iter().collect();
+        self.ended = Self::ends_of(&self.items);
+        self.items
+            .iter()
+            .map(|item| TimelineEntry::from_item(item, own_user, &self.ended))
+            .collect()
+    }
+
+    /// Applies a batch of changes: the same changes as entries, then a
+    /// `Set` for each event whose line changed because of the others (the
+    /// last one leaving a call, a hangup now seen before another).
+    pub fn apply(
+        &mut self,
+        diffs: Vec<VectorDiff<Arc<TimelineItem>>>,
+        own_user: Option<&OwnedUserId>,
+    ) -> Vec<VectorDiff<TimelineEntry>> {
+        for diff in &diffs {
+            diff.clone().apply(&mut self.items);
+        }
+        let before = std::mem::take(&mut self.ended);
+        self.ended = Self::ends_of(&self.items);
+        let ended = &self.ended;
+        let mut out: Vec<VectorDiff<TimelineEntry>> = diffs
+            .into_iter()
+            .map(|diff| diff.map(|item| TimelineEntry::from_item(&item, own_user, ended)))
+            .collect();
+        for id in before.symmetric_difference(&self.ended) {
+            if let Some((index, item)) = self
+                .items
+                .iter()
+                .enumerate()
+                .find(|(_, item)| &item.unique_id().0 == id)
+            {
+                out.push(VectorDiff::Set {
+                    index,
+                    value: TimelineEntry::from_item(item, own_user, &self.ended),
+                });
+            }
+        }
+        out
     }
 }
 
@@ -235,6 +361,7 @@ impl Message {
         unique_id: String,
         event: &EventTimelineItem,
         own_user: Option<&OwnedUserId>,
+        call_ended: bool,
     ) -> Self {
         let profile = match event.sender_profile() {
             TimelineDetails::Ready(profile) => Some(profile),
@@ -312,7 +439,20 @@ impl Message {
             })
         });
 
-        let kind = MessageKind::from_content(event.content(), &sender_name);
+        let (kind, state_kind) = if call_ended {
+            (
+                MessageKind::State(format!("{sender_name} ended a call")),
+                Some(StateKind::CallEnded),
+            )
+        } else if call_membership(event).is_none() && hangup_call_id(event).is_some() {
+            // A second hangup of a call already ended: no line of its own.
+            (MessageKind::CallPlumbing, None)
+        } else {
+            (
+                MessageKind::from_content(event.content(), &sender_name),
+                StateKind::of(event.content()),
+            )
+        };
 
         Self {
             unique_id,
@@ -331,7 +471,7 @@ impl Message {
             thread,
             kind,
             shield: Shield::of(event),
-            state_kind: StateKind::of(event.content()),
+            state_kind,
         }
     }
 }
@@ -785,10 +925,8 @@ impl Session {
                 None => room.timeline().await?,
             });
             let (initial, stream) = timeline.subscribe().await;
-            let initial_entries: Vec<TimelineEntry> = initial
-                .iter()
-                .map(|item| TimelineEntry::from_item(item, own_user.as_ref()))
-                .collect();
+            let mut call_ends = CallEnds::default();
+            let initial_entries: Vec<TimelineEntry> = call_ends.reset(initial.iter().cloned(), own_user.as_ref());
 
             let (tx, rx) = mpsc::unbounded_channel();
             let reset = VectorDiff::Reset { values: initial_entries.iter().cloned().collect() };
@@ -814,16 +952,22 @@ impl Session {
                         request(&mut requested_replies, entry);
                     }
                     while let Some(diffs) = stream.next().await {
-                        let diffs: Vec<_> = diffs
-                            .into_iter()
-                            .map(|diff| {
-                                diff.map(|item| {
-                                    let entry = TimelineEntry::from_item(&item, own_user.as_ref());
-                                    request(&mut requested_replies, &entry);
-                                    entry
-                                })
-                            })
-                            .collect();
+                        let diffs = call_ends.apply(diffs, own_user.as_ref());
+                        for diff in &diffs {
+                            match diff {
+                                VectorDiff::Append { values } => {
+                                    values.iter().for_each(|e| request(&mut requested_replies, e));
+                                }
+                                VectorDiff::Insert { value, .. }
+                                | VectorDiff::PushBack { value }
+                                | VectorDiff::PushFront { value }
+                                | VectorDiff::Set { value, .. } => request(&mut requested_replies, value),
+                                VectorDiff::Reset { values } => {
+                                    values.iter().for_each(|e| request(&mut requested_replies, e));
+                                }
+                                _ => {}
+                            }
+                        }
                         if tx.send(diffs).is_err() {
                             debug!(%room_id, "timeline consumer dropped, stopping");
                             break;
