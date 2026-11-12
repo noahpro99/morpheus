@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use gpui::{
-    Context, Entity, EventEmitter, FontWeight, IntoElement, MouseButton, Render, Window, div,
+    BoxShadow, Context, Entity, EventEmitter, FontWeight, IntoElement, MouseButton, Render, Window, div, point,
     prelude::*, px, rgb, rgba,
 };
 use morpheus_core::{OwnedRoomId, RoomSummary};
@@ -99,7 +99,7 @@ pub struct Switcher {
 impl Switcher {
     pub fn new(rooms: Vec<SwitchRoom>, cx: &mut Context<Self>) -> Self {
         let input = cx.new(|cx| {
-            TextInput::new("switcher", "Jump to a room or an action…", false, "", cx)
+            TextInput::new("switcher", "Jump to a room, an action or a setting…", false, "", cx)
                 .bare("input", "")
         });
         input.update(cx, |input, _| input.set_capture_nav(true));
@@ -196,6 +196,7 @@ impl Render for Switcher {
         if std::mem::take(&mut self.focus_next) {
             self.input.read(cx).focus(window);
         }
+        let viewport = window.viewport_size();
         let entries = self.entries(cx);
         let cursor = self.cursor.min(entries.len().saturating_sub(1));
         let mut list = div().flex().flex_col().p(px(6.0)).gap(px(0.0));
@@ -215,7 +216,6 @@ impl Render for Switcher {
                 .id(("switch", index))
                 .flex()
                 .items_center()
-                .gap(px(8.0))
                 .px(px(10.0))
                 .py(px(8.0))
                 .rounded(px(theme::RADIUS_SM))
@@ -228,7 +228,7 @@ impl Render for Switcher {
                     let room = &self.rooms[*room];
                     row.child(avatar(room.picture.clone(), &room.letter_of, 24.0, None))
                         .child(
-                            div()
+                            div().ml(px(8.0))
                                 .child(room.name.clone())
                                 .e2e("span", "name")
                                 .text(room.name.clone()),
@@ -246,7 +246,7 @@ impl Render for Switcher {
                 Entry::Setting(setting) => row
                     .child(icon(setting.page.glyph(), 16.0).text_color(rgb(theme::text_faint())))
                     .child(
-                        div()
+                        div().ml(px(8.0))
                             .child(setting.label)
                             .e2e("span", "name")
                             .text(setting.label),
@@ -262,7 +262,7 @@ impl Render for Switcher {
                     ),
                 Entry::Action(action) => row
                     .child(icon(action.glyph(), 16.0).text_color(rgb(theme::text_faint())))
-                    .child(div().child(action.label())),
+                    .child(div().ml(px(8.0)).child(action.label()).e2e("span", "action-label").text(action.label())),
             };
             let key = match entry {
                 Entry::Room(room) => Some(self.rooms[*room].id.to_string()),
@@ -286,16 +286,21 @@ impl Render for Switcher {
             );
         }
         let panel = div()
-            .w(px(520.0))
-            .rounded(px(theme::RADIUS_LG))
+            .w(px(520.0).min(viewport.width * 0.9))
+            .rounded(px(theme::RADIUS_XL))
             .bg(rgb(theme::bg_sidebar()))
-            .shadow_lg()
+            .shadow(vec![BoxShadow {
+                color: gpui::hsla(0.0, 0.0, 0.0, 0.6),
+                offset: point(px(0.0), px(24.0)),
+                blur_radius: px(64.0),
+                spread_radius: px(0.0),
+            }])
             .overflow_hidden()
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .child(
                 div()
                     .px(px(16.0))
-                    .py(px(14.0))
+                    .py(px(0.0))
                     .border_b_1()
                     .border_color(rgb(theme::bg_elevated()))
                     .font_weight(FontWeight::NORMAL)
@@ -310,7 +315,7 @@ impl Render for Switcher {
             .size_full()
             .flex()
             .justify_center()
-            .pt(px(110.0))
+            .pt(viewport.height * 0.15)
             .bg(rgba(0x0000008c))
             .on_mouse_down(
                 MouseButton::Left,
