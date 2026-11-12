@@ -1772,6 +1772,76 @@ async fn clicking_a_voice_channel_joins_its_call() {
     }
 }
 
+/// Joining is quick: from the click on a voice channel to "Voice connected"
+/// (task 21). A first join after a quiet moment (what the app can prepare
+/// by then is ready) and a second one, each timed to the poll; figures go to
+/// target/join-latency.txt.
+async fn join_figures(hs: &str, label: &str, bound_ms: u128) {
+    let mut alice = App::launch(hs).await.expect("launch alice");
+    login_and_open(&mut alice, "alice", "general").await;
+    alice
+        .wait_for_text(".room .room-name", "lounge", DEFAULT_WAIT)
+        .await
+        .expect("listed");
+    // A user takes a moment before clicking.
+    tokio::time::sleep(std::time::Duration::from_secs(4)).await;
+    let mut figures = Vec::new();
+    for round in 0..3 {
+        let started = std::time::Instant::now();
+        alice.click_text(".room.voice", "lounge").await.expect("join");
+        let joining = loop {
+            let panel = alice.texts(".voice-panel").await.unwrap_or_default();
+            if panel.iter().any(|t| t.contains("Connecting")) {
+                break started.elapsed();
+            }
+            assert!(started.elapsed().as_secs() < 30, "never joining");
+        };
+        let connected = loop {
+            let panel = alice.texts(".voice-panel").await.unwrap_or_default();
+            if panel.iter().any(|t| t.contains("Voice connected")) {
+                break started.elapsed();
+            }
+            assert!(started.elapsed().as_secs() < 30, "never connected");
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        };
+        figures.push((round, joining, connected));
+        alice.click(".voice-panel .hang-up").await.expect("hang up");
+        alice
+            .wait_for_count(".voice-panel", 0, DEFAULT_WAIT)
+            .await
+            .expect("out");
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    }
+    let text: String = figures
+        .iter()
+        .map(|(round, joining, connected)| {
+            format!(
+                "{label} round {round}: joining shown {} ms, connected {} ms\n",
+                joining.as_millis(),
+                connected.as_millis()
+            )
+        })
+        .collect();
+    let _ = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/join-latency.txt"))
+        .and_then(|mut f| std::io::Write::write_all(&mut f, text.as_bytes()));
+    eprintln!("{text}");
+    for (round, joining, connected) in figures {
+        assert!(
+            joining.as_millis() < 300,
+            "round {round}: the joining state took {} ms\n{text}",
+            joining.as_millis()
+        );
+        assert!(
+            connected.as_millis() < bound_ms,
+            "{label} round {round}: click to connected took {} ms (bound {bound_ms})\n{text}",
+            connected.as_millis()
+        );
+    }
+}
+
 /// Hanging up takes you off the voice channel's list at once, not after the
 /// server has answered (task 21).
 #[tokio::test]
@@ -3474,4 +3544,73 @@ async fn a_cameras_card_shows_the_whole_picture_with_round_corners() {
         let p = pixel(x, y);
         assert!(!red(p) && !blue(p), "the picture's corner at ({x}, {y}) is {p:?}: it is not rounded (card {card:?}, picture {px},{py} {pw}x{ph})");
     }
+}
+
+/// Joining a voice channel on a local server: no network between.
+#[tokio::test]
+async fn joining_a_voice_channel_is_quick() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    join_figures(&hs, "local", 300).await;
+}
+
+/// A homeserver in front of which every request waits 100 ms (a server some
+/// distance away; matrix.org's answers took longer): returns the proxy's URL.
+async fn slow_homeserver(hs: &str, delay: std::time::Duration) -> String {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let target = hs.trim_start_matches("http://").trim_end_matches('/').to_owned();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let url = format!("http://{}", listener.local_addr().expect("addr"));
+    tokio::spawn(async move {
+        while let Ok((client, _)) = listener.accept().await {
+            let target = target.clone();
+            tokio::spawn(async move {
+                let Ok(server) = tokio::net::TcpStream::connect(&target).await else {
+                    return;
+                };
+                let (mut client_read, mut client_write) = client.into_split();
+                let (mut server_read, mut server_write) = server.into_split();
+                let up = async move {
+                    let mut buf = [0u8; 16384];
+                    while let Ok(n) = client_read.read(&mut buf).await {
+                        if n == 0 {
+                            break;
+                        }
+                        tokio::time::sleep(delay).await;
+                        if server_write.write_all(&buf[..n]).await.is_err() {
+                            break;
+                        }
+                    }
+                };
+                let down = async move {
+                    let mut buf = [0u8; 16384];
+                    while let Ok(n) = server_read.read(&mut buf).await {
+                        if n == 0 || client_write.write_all(&buf[..n]).await.is_err() {
+                            break;
+                        }
+                    }
+                };
+                tokio::join!(up, down);
+            });
+        }
+    });
+    url
+}
+
+/// The same with every homeserver request 100 ms away: the steps that ran
+/// one after another (the call service lookup, the OpenID token, the
+/// delayed-leave request the server refuses, the membership) each cost a
+/// round trip, and joining took about as many of them as it had steps.
+#[tokio::test]
+async fn joining_a_voice_channel_is_quick_when_the_server_is_far() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let far = slow_homeserver(&hs, std::time::Duration::from_millis(100)).await;
+    join_figures(&far, "100 ms away", 400).await;
 }

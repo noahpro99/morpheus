@@ -578,6 +578,9 @@ impl Shell {
     pub fn open_room(&mut self, id: OwnedRoomId, cx: &mut Context<Self>) {
         self.last_room_in.insert(self.scope.clone(), id.clone());
         self.nav.record(id.clone());
+        // A voice channel (or a DM) is where a call is likely next: have its
+        // token ready.
+        self.prepare_call(Some(id.clone()), cx);
         // Remembered below, once the room is set.
         // Going to a room leaves the Friends page.
         self.friends_open = false;
