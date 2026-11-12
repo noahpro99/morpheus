@@ -186,3 +186,54 @@ async fn clicking_a_server_returns_to_the_channel_last_open_in_it() {
     app.click(x).await.expect("X after restart");
     header_is(&mut app, "x-two", "X reopens its channel after a restart").await;
 }
+
+/// As Discord: a server never visited opens its top channel, the first one
+/// listed in its sidebar (not a voice channel, which a click would join).
+#[tokio::test]
+async fn a_server_never_visited_opens_its_first_listed_channel() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let user = new_account(&hs, "topchan").expect("account");
+    let enc = |id: &str| id.replace('!', "%21").replace(':', "%3A");
+    api_as(&hs, &user, "POST", "createRoom", Some(serde_json::json!({ "name": "lobby" }))).expect("lobby");
+    let space = api_as(
+        &hs,
+        &user,
+        "POST",
+        "createRoom",
+        Some(serde_json::json!({ "name": "Zserver", "creation_content": { "type": "m.space" } })),
+    )
+    .expect("space");
+    let space = space["room_id"].as_str().expect("id").to_owned();
+    // Listed in this order: a voice channel, then z-first, then z-second.
+    for (name, voice, order) in [("z-call", true, "a"), ("z-first", false, "b"), ("z-second", false, "c")] {
+        let content = if voice {
+            serde_json::json!({ "name": name, "creation_content": { "type": "org.matrix.msc3417.call" } })
+        } else {
+            serde_json::json!({ "name": name })
+        };
+        let room = api_as(&hs, &user, "POST", "createRoom", Some(content)).expect("channel");
+        let room = room["room_id"].as_str().expect("id").to_owned();
+        api_as(
+            &hs,
+            &user,
+            "PUT",
+            &format!("rooms/{}/state/m.space.child/{room}", enc(&space)),
+            Some(serde_json::json!({ "via": ["localhost"], "order": order })),
+        )
+        .expect("child");
+    }
+    let mut app = App::launch(&hs).await.expect("launch");
+    login(&mut app, &user).await;
+    if !app.is_gpui() {
+        eprintln!("skipped: the Dioxus rail badges do not open a server's channel");
+        return;
+    }
+    let z =".rail-item[title=\"Zserver\"]";
+    app.wait_for(z, DEFAULT_WAIT).await.expect("Z badge");
+    app.click(z).await.expect("Z");
+    app.wait_for_text(".room", "z-second", DEFAULT_WAIT).await.expect("Z listed");
+    header_is(&mut app, "z-first", "a server never visited opens its top channel").await;
+}
