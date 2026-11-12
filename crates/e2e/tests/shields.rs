@@ -54,26 +54,25 @@ async fn unverified_sessions_get_a_shield() {
         .await
         .expect("send");
 
-    let message = format!(
-        "[...document.querySelectorAll('.message')].find(m => m.textContent.includes({}))",
-        serde_json::to_string(&text).expect("json")
-    );
-    bob.wait_for_js(
-        &format!("const m = {message}; return !!m && !!m.querySelector('.msg-shield');"),
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("a shield on alice's message");
-    let title = bob
-        .eval(&format!(
-            "return {message}.querySelector('.msg-shield').getAttribute('title');"
-        ))
-        .await
-        .expect("tooltip");
+    // The shield on the message that has her text, once it arrives.
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    let titles = loop {
+        let found = bob
+            .attrs_within(".message", &text, ".msg-shield", "title")
+            .await
+            .expect("shields");
+        if !found.is_empty() {
+            break found;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "a shield on alice's message"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    };
+    let title = titles[0].clone().unwrap_or_default();
     assert!(
-        title
-            .as_str()
-            .is_some_and(|t| t.contains("device") || t.contains("verified")),
+        title.contains("device") || title.contains("verified"),
         "the shield explains itself: {title:?}"
     );
 }

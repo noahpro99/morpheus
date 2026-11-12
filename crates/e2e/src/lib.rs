@@ -962,6 +962,32 @@ impl App {
         Ok(serde_json::from_value(list).unwrap_or_default())
     }
 
+    /// The attribute `name` of every `selector` match inside the `within`
+    /// elements whose text contains `contains` (a message row's shield).
+    pub async fn attrs_within(
+        &mut self,
+        within: &str,
+        contains: &str,
+        selector: &str,
+        name: &str,
+    ) -> Result<Vec<Option<String>>> {
+        let list = if gpui() {
+            let extra = json!({ "within": within, "within_contains": contains, "name": name });
+            self.op("attrs", selector, extra).await?
+        } else {
+            let js = format!(
+                "return [...document.querySelectorAll({})].filter(el => el.textContent.includes({})) \
+                 .flatMap(scope => [...scope.querySelectorAll({})].map(el => el.getAttribute({})));",
+                js_str(within),
+                js_str(contains),
+                js_str(selector),
+                js_str(name)
+            );
+            self.eval(&js).await?
+        };
+        Ok(serde_json::from_value(list).unwrap_or_default())
+    }
+
     /// Wait until a `selector` match inside the `within` element containing
     /// `contains` has text containing `needle`; `None` waits for there to be
     /// no match at all.

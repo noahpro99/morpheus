@@ -191,12 +191,25 @@ async fn dms_button_lists_direct_messages() {
         "rooms stay out of DMs"
     );
     // Bob's profile photo stands in for the room avatar, at sidebar size.
-    app.wait_for_js(
-        "const a = document.querySelector('.room.dm img.avatar'); return a && a.clientHeight <= 24;",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("small DM avatar");
+    if app.is_gpui() {
+        // Bob's picture, drawn at sidebar size (not the full-size photo).
+        app.wait_for(".room.dm img.avatar", DEFAULT_WAIT)
+            .await
+            .expect("a DM avatar picture");
+        let b = app
+            .bounds(".room.dm img.avatar")
+            .await
+            .expect("avatar")
+            .expect("an avatar");
+        assert!(b.h <= 40.0, "small DM avatar: {b:?}");
+    } else {
+        app.wait_for_js(
+            "const a = document.querySelector('.room.dm img.avatar'); return a && a.clientHeight <= 24;",
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("small DM avatar");
+    }
 
     app.open_room("bob").await.expect("open the DM");
 
