@@ -338,8 +338,6 @@ fn kept_session() -> Option<morpheus_core::Session> {
     SESSION.lock().ok()?.clone()
 }
 
-/// Set when the window is closed to the tray: the app runs on without one.
-pub(crate) static HIDING: AtomicBool = AtomicBool::new(false);
 
 /// Whether no window is open (closed to the tray): what a window does is done
 /// by threads meanwhile.
@@ -378,8 +376,14 @@ fn open_main_window(cx: &mut App) {
         window.set_window_title(TITLE);
         root
     });
-    if let Err(e) = opened {
+    if let Err(e) = &opened {
         eprintln!("morpheus-gpui: opening the window failed: {e}");
+    }
+    HEADLESS.store(false, Ordering::Relaxed);
+    gpui::KEEP_RUNNING_WITHOUT_WINDOWS.store(tray::hides_on_close(), Ordering::Relaxed);
+    #[cfg(feature = "e2e")]
+    if opened.is_ok() {
+        e2e::start(cx);
     }
 }
 
@@ -447,10 +451,12 @@ fn next_command(commands: &Commands) -> Option<Command> {
     commands.lock().ok()?.try_recv().ok()
 }
 
-/// One run of the window system, until its last window closes. GPUI's
-/// Wayland backend ends its event loop then, so the app lives on between
-/// runs (see `main`).
-fn run_window(core: Core, commands: Commands, first: Option<Command>) {
+/// The window system's run: one for the whole life of the app. Closing the
+/// last window does not end it (vendor/gpui's `KEEP_RUNNING_WITHOUT_WINDOWS`,
+/// set while there is a tray to bring the window back): the shell, a call's
+/// media and the sync all live in this run's entities, so they go on, and
+/// what needs a window opens a new one on the same root.
+fn run_window(core: Core, commands: Commands, first: Option<Command>, start_hidden: bool) {
     Application::new()
         .with_assets(Assets)
         .run(move |cx: &mut App| {
@@ -462,9 +468,16 @@ fn run_window(core: Core, commands: Commands, first: Option<Command>) {
             }
             let root = cx.new(|cx| Root::new(core, default_homeserver(), cx));
             cx.set_global(MainRoot(root));
+            cx.on_window_closed(|cx| {
+                if cx.windows().is_empty() {
+                    eprintln!("morpheus-gpui: window closed, app runs on");
+                    HEADLESS.store(true, Ordering::Relaxed);
+                    #[cfg(feature = "e2e")]
+                    e2e::run_ended();
+                }
+            })
+            .detach();
             cx.spawn(async move |cx| {
-                // Polled (not awaited): the next run of the window system reads
-                // the same queue, and this task of a finished run never lets go.
                 loop {
                     match next_command(&commands) {
                         Some(command) => {
@@ -478,12 +491,16 @@ fn run_window(core: Core, commands: Commands, first: Option<Command>) {
                 }
             })
             .detach();
-            open_main_window(cx);
+            if start_hidden {
+                // Started hidden in the tray (autostart): no window until asked.
+                gpui::KEEP_RUNNING_WITHOUT_WINDOWS.store(true, Ordering::Relaxed);
+                HEADLESS.store(true, Ordering::Relaxed);
+            } else {
+                open_main_window(cx);
+            }
             if let Some(command) = first {
                 run_command(command, cx);
             }
-            #[cfg(feature = "e2e")]
-            e2e::start(cx);
         });
 }
 
@@ -530,34 +547,8 @@ fn main() {
         send_command(Command::Open(link));
     }
     // Started hidden in the tray (autostart's "start hidden"): no window until asked.
-    let mut waiting = start_hidden && tray::hides_on_close();
-    HEADLESS.store(waiting, Ordering::Relaxed);
-    loop {
-        let mut first = None;
-        while waiting {
-            // Closed to the tray: no window, but the app (its tray icon, its
-            // notifier) goes on. What needs a window brings one back.
-            match next_command(&commands) {
-                None => std::thread::sleep(std::time::Duration::from_millis(30)),
-                Some(Command::Tray(tray::TrayAction::Quit)) => std::process::exit(0),
-                Some(Command::Redraw) => {}
-                Some(command) => {
-                    first = Some(command);
-                    waiting = false;
-                }
-            }
-        }
-        eprintln!("morpheus-gpui: window system starting");
-        HEADLESS.store(false, Ordering::Relaxed);
-        run_window(core.clone(), commands.clone(), first);
-        eprintln!("morpheus-gpui: window system ended");
-        HEADLESS.store(true, Ordering::Relaxed);
-        #[cfg(feature = "e2e")]
-        e2e::run_ended();
-        // The window system ended: closed to the tray, or the app is done.
-        if !HIDING.swap(false, Ordering::Relaxed) {
-            return;
-        }
-        waiting = true;
-    }
+    let hidden = start_hidden && tray::hides_on_close();
+    eprintln!("morpheus-gpui: window system starting");
+    run_window(core, commands, None, hidden);
+    eprintln!("morpheus-gpui: window system ended");
 }

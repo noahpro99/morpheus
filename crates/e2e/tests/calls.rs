@@ -2858,6 +2858,76 @@ async fn on_a_phone_a_card_is_enlarged_from_its_button() {
         .expect("bob leaves");
 }
 
+/// Closing the window to the tray does not end a call: the other side still
+/// sees you in it, and the reopened window shows the call you are in.
+#[tokio::test]
+async fn a_call_goes_on_with_the_window_closed() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let channel = fresh_voice_channel(&hs);
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    login_and_open(&mut alice, "alice", "general").await;
+    open_without_joining(&mut alice, &channel).await;
+    let room_id: String = alice
+        .attr(".room.selected", "data-room")
+        .await
+        .expect("room id")
+        .expect("a selected room");
+
+    let mut bob = App::launch_desktop(&hs).await.expect("launch bob");
+    login_and_open(&mut bob, "bob", "general").await;
+    open_without_joining(&mut bob, &channel).await;
+    bob.click(CALL_BUTTON).await.expect("bob joins");
+    bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("bob connected");
+    wait_in_call(&mut alice, &room_id, "bob")
+        .await
+        .expect("alice sees bob");
+    // Alice joins too, so there is audio to hear from bob's side.
+    alice.click(CALL_BUTTON).await.expect("alice joins");
+    alice
+        .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("alice connected");
+    wait_hears(&mut alice, "bob").await.expect("alice hears bob");
+
+    // Bob closes the window to the tray: the call must not end.
+    bob.close_to_tray().await.expect("close");
+    tokio::time::sleep(std::time::Duration::from_secs(8)).await;
+    assert!(bob.is_running(), "closing the window keeps the app");
+    assert!(
+        alice
+            .texts(&format!(
+                ".room-call[data-room=\"{room_id}\"] .call-participant"
+            ))
+            .await
+            .expect("alice's list")
+            .iter()
+            .any(|t| t.contains("bob")),
+        "bob left the call when his window closed"
+    );
+    // His audio is still there for alice, not just his listing.
+    wait_hears(&mut alice, "bob")
+        .await
+        .expect("alice still hears bob with his window closed");
+
+    // Reopened (what the tray does), bob's window shows the call he is in.
+    bob.show_window().await.expect("show window");
+    bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("the reopened window shows the call");
+    wait_in_call(&mut bob, &room_id, "bob")
+        .await
+        .expect("bob listed in the call");
+    bob.click(".voice-panel .hang-up").await.expect("bob leaves");
+    wait_not_in_call(&mut alice, &room_id, "bob")
+        .await
+        .expect("bob hung up");
+}
+
 /// Closed to the tray, a desktop still rings for a DM call, again and again
 /// until the call stops: the ringtone plays outside the window (a hidden
 /// window's page is suspended, and notification daemons often ignore a

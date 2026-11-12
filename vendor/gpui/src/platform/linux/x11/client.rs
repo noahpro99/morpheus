@@ -247,7 +247,9 @@ impl X11ClientStatePtr {
         }
         state.cursor_styles.remove(&x_window);
 
-        if state.windows.is_empty() {
+        if state.windows.is_empty()
+            && !crate::KEEP_RUNNING_WITHOUT_WINDOWS.load(std::sync::atomic::Ordering::Relaxed)
+        {
             state.common.signal.stop();
         }
     }

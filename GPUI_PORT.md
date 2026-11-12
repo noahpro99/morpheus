@@ -134,10 +134,12 @@ instead of JavaScript:
 
 15. **Desktop integration and polish.** Stage 1 window chrome (the title bar's back/forward and Alt+Left/Right, help, minimise/maximise/close, drag, resize edges, the sign-in window bar), stage 2 tray and background, stage 3 startup and memory of place, stage 4 themes and polish, stage 5 updates. Tests: titlebar, window_bar, window_resize, tray, notifications, last_place, startup, links, branding, polish, icons, focus, rail, layout, updates.
 
-16. Onward in the order of `crates/e2e/tests` files, each task naming the
+16. **A call survives the window, and the remaining desktop tests.** Stage 1: a call (and its audio) goes on with the window closed to the tray, and the reopened window shows it (`calls::a_call_goes_on_with_the_window_closed`). Stage 2: the desktop test files that used raw JS or never ran on GPUI are ported to selector/bridge calls and brought to green (details, dm_menu, profile_card, chat_header, chat, features, bug_report, account_switch, account, room_menu, context_menu, message_menu, moderation, nicknames, new_messages_marker, space_channels, space_menu, spaces, share, shields, toasts, attachments, autocomplete, settings, hotkeys), building what they need (the account menu's Edit profile, Set status and switching accounts, the room preview's picture, the profile card placed against the clicked row's edge). Out of scope: android, mobile_layout, web, perf, screenshots/shots, the phone settings test.
+
+17. Onward in the order of `crates/e2e/tests` files, each task naming the
    test file(s) it brings to green.
 
-17. **Later: headless e2e.** Run the app on gpui's test platform
+18. **Later: headless e2e.** Run the app on gpui's test platform
    (`test-support`, `VisualTestContext` in vendor/gpui) with the bridge on
    top, so e2e tests open no windows. Not before the shell and timeline exist.
 
