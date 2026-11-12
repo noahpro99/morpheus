@@ -391,23 +391,23 @@ async fn the_card_counts_mutual_servers_and_the_full_profile_lists_them() {
     );
     // The count fills in as the card finds the servers you share.
     let deadline = std::time::Instant::now() + DEFAULT_WAIT;
-    let counted: usize = loop {
-        let n = app
+    let (counted, said): (usize, String) = loop {
+        let said = app
             .text(".profile-card .mutual-servers")
             .await
             .expect("count")
-            .unwrap_or_default()
-            .trim()
-            .split(' ')
+            .unwrap_or_default();
+        let n = said
+            .split_whitespace()
             .next()
             .and_then(|n| n.parse().ok())
             .unwrap_or(0);
         if n >= 1 || std::time::Instant::now() > deadline {
-            break n;
+            break (n, said);
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     };
-    assert!(counted >= 1, "alice and bob share Engineering");
+    assert!(counted >= 1, "alice and bob share Engineering (the card says {said:?})");
     app.click(".profile-card .mutual-servers")
         .await
         .expect("the count");
