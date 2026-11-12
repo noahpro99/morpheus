@@ -1772,6 +1772,53 @@ async fn clicking_a_voice_channel_joins_its_call() {
     }
 }
 
+/// Hanging up takes you off the voice channel's list at once, not after the
+/// server has answered (task 21).
+#[tokio::test]
+async fn hanging_up_leaves_the_voice_channels_list_at_once() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    login_and_open(&mut alice, "alice", "general").await;
+    alice
+        .wait_for_text(".room .room-name", "lounge", DEFAULT_WAIT)
+        .await
+        .expect("listed");
+    let room_id = alice
+        .attr_containing(".room.voice", "lounge", "data-room")
+        .await
+        .expect("room id")
+        .expect("the lounge's id");
+    alice.click_text(".room.voice", "lounge").await.expect("join");
+    alice
+        .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("in");
+    wait_in_call(&mut alice, &room_id, "alice").await.expect("listed under it");
+    // Let the membership settle on the server, so the removal below is the
+    // only thing in flight.
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    alice.click(".voice-panel .hang-up").await.expect("hang up");
+    // No waiting: the very next look.
+    let listed = alice
+        .texts(&format!(".room-call[data-room=\"{room_id}\"] .call-participant"))
+        .await
+        .expect("texts");
+    assert!(
+        listed.iter().all(|n| !n.contains("alice")),
+        "still listed right after hanging up: {listed:?}"
+    );
+    // And it stays gone once the server has answered.
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    let listed = alice
+        .texts(&format!(".room-call[data-room=\"{room_id}\"] .call-participant"))
+        .await
+        .expect("texts");
+    assert!(listed.is_empty(), "listed again: {listed:?}");
+}
+
 /// In a call, its controls are part of the profile card at the bottom left
 /// (which grows to hold them), and hanging up is red wherever it shows.
 #[tokio::test]
