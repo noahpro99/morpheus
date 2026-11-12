@@ -314,7 +314,8 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                                 .overflow_hidden()
                                 .bg(rgb(theme::bg_sidebar()))
                                 .child(side)
-                                .e2e("div", "side-pane"),
+                                .e2e("div", "side-pane")
+                                .attr("data-radius", theme::RADIUS_LG.to_string()),
                         ),
                 );
             }
