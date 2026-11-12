@@ -839,7 +839,8 @@ impl Render for Shell {
                 handle
             })
             .clone();
-        // Nothing else focused: the shortcuts still arrive here.
+        // Nothing else focused (or a closed dialog's handle left over): the
+        // shortcuts still arrive here.
         let overlay = self.modal_open(cx) || self.inbox_open;
         if (self.overlay_was_open && !overlay) || !root_focus.contains_focused(window, cx) {
             window.focus(&root_focus);
@@ -873,6 +874,9 @@ impl Render for Shell {
             .flex_col()
             .bg(rgb(theme::BG_CHAT))
             .track_focus(&root_focus)
+            // A click on nothing in particular leaves the focus where it is (the
+            // root would otherwise take it from a text box).
+            .on_mouse_down(gpui::MouseButton::Left, |_, window, _| window.prevent_default())
             .capture_key_down(cx.listener(|this, event: &gpui::KeyDownEvent, window, cx| {
                 if this.handle_key(event, window, cx) {
                     cx.stop_propagation();
