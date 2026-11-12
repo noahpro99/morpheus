@@ -340,18 +340,20 @@ async fn mute_a_dm_for_a_while_then_unmute() {
         return;
     };
     let mut app = alice_on_dms(&hs).await;
+    let room_id = dm_room_id(&mut app, "carol").await;
     // A run cut short may have left her muted.
     if has_class(&mut app, "carol", "muted").await {
         dm_menu(&mut app, "carol").await;
         choose(&mut app, "Unmute @carol").await;
         wait_class(&mut app, "carol", "muted", false).await;
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        wait_notifies(&hs, &room_id, true).await;
     }
     dm_menu(&mut app, "carol").await;
     app.click_submenu("Mute @carol", "For 15 minutes")
         .await
         .expect("mute for 15 minutes");
     wait_class(&mut app, "carol", "muted", true).await;
+    wait_notifies(&hs, &room_id, false).await;
     dm_menu(&mut app, "carol").await;
     assert!(
         labels(&mut app).await.contains(&"Unmute @carol".to_owned()),
@@ -359,8 +361,10 @@ async fn mute_a_dm_for_a_while_then_unmute() {
     );
     choose(&mut app, "Unmute @carol").await;
     wait_class(&mut app, "carol", "muted", false).await;
-    // The change is saved in the account in the background: let it land.
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    // The change is sent to the server in the background; ending the app
+    // before it lands left her DM muted for the next test (notifications
+    // from her never came).
+    wait_notifies(&hs, &room_id, true).await;
 }
 
 /// The labels of the open menu's top-level items that have no icon (or
@@ -437,5 +441,19 @@ async fn every_menu_item_has_an_icon() {
             missing.is_empty(),
             "{what} menu items without an icon: {missing:?}"
         );
+    }
+}
+
+/// Wait until the server's push rules agree that the room does (or does not)
+/// notify alice.
+async fn wait_notifies(hs: &str, room_id: &str, notifies: bool) {
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    while morpheus_e2e::room_notifies(hs, "alice", room_id).expect("push rules") != notifies {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the server never {} {room_id}",
+            if notifies { "unmuted" } else { "muted" }
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
     }
 }

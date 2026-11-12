@@ -2788,6 +2788,48 @@ pub fn send_as(homeserver: &str, user: &str, room_id: &str, body: &str) -> Resul
     Ok(())
 }
 
+/// Whether `user`'s account on the server would notify for `room_id`: no
+/// room push rule that swallows it (the room is not muted there). Tests that
+/// mute a room use this to see the change reach the server before they end
+/// (the app's request is in flight in the background, and ending the app
+/// early leaves the room muted for the next test).
+pub fn room_notifies(homeserver: &str, user: &str, room_id: &str) -> Result<bool> {
+    let login = curl(&[
+        "-X",
+        "POST",
+        &format!("{homeserver}/_matrix/client/v3/login"),
+        "-d",
+        &json!({ "type": "m.login.password", "identifier": { "type": "m.id.user", "user": user }, "password": format!("{user}-password") }).to_string(),
+    ])?;
+    let login: Value = serde_json::from_str(&login)?;
+    let token = login["access_token"]
+        .as_str()
+        .ok_or_else(|| anyhow!("no token for {user}"))?;
+    let rules = curl(&[
+        "-H",
+        &format!("Authorization: Bearer {token}"),
+        &format!("{homeserver}/_matrix/client/v3/pushrules/"),
+    ]);
+    let _ = curl(&[
+        "-X",
+        "POST",
+        "-H",
+        &format!("Authorization: Bearer {token}"),
+        &format!("{homeserver}/_matrix/client/v3/logout"),
+    ]);
+    let rules: Value = serde_json::from_str(&rules?)?;
+    // The core mutes a room with an override rule on its ID (no actions).
+    let muted = ["override", "room"]
+        .iter()
+        .flat_map(|kind| rules["global"][kind].as_array().into_iter().flatten())
+        .any(|rule| {
+            rule["rule_id"] == room_id
+                && rule["enabled"] == true
+                && rule["actions"].as_array().is_some_and(|a| a.is_empty())
+        });
+    Ok(!muted)
+}
+
 /// Send each of `bodies` into `room_id` as `user`, in order, on one login
 /// (quicker than [`send_as`] for filling a room with history).
 pub fn send_many_as(homeserver: &str, user: &str, room_id: &str, bodies: &[String]) -> Result<()> {
