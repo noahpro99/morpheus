@@ -51,6 +51,8 @@ pub struct Pictures {
     pub highlight: bool,
     /// Its right-click menu is open: stays highlighted (`data-menu-open`).
     pub menu_open: bool,
+    /// Its sender's picture is held down: a pixel lower.
+    pub avatar_pressed: bool,
 }
 
 /// A file's download, as its card shows it.
@@ -963,6 +965,8 @@ pub enum RowAction {
     Sender(Point<Pixels>),
     /// Their picture or name right-clicked, where: their member menu.
     SenderMenu(Point<Pixels>),
+    /// Their picture held down (true) or let go (false).
+    AvatarPress(bool),
     /// A picture clicked: opens it full size.
     OpenImage,
     /// A reaction chip clicked: adds our reaction, or takes it back.
@@ -1120,6 +1124,50 @@ fn sender_target(
     el
 }
 
+/// A sender's picture as a button: a small shadow that grows under the
+/// pointer, and a pixel lower while held down (the timeline keeps the held
+/// state, `pressed`, as layout is not restyled by the pointer in gpui).
+fn avatar_button(
+    el: Stateful<Div>,
+    pressed: bool,
+    unique_id: &str,
+    actions: Option<&ActionHandler>,
+) -> Stateful<Div> {
+    let shadow = |alpha: f32, y: f32, blur: f32| {
+        vec![gpui::BoxShadow {
+            color: gpui::hsla(0.0, 0.0, 0.0, alpha),
+            offset: gpui::point(px(0.0), px(y)),
+            blur_radius: px(blur),
+            spread_radius: px(0.0),
+        }]
+    };
+    let mut el = el
+        .relative()
+        .top(if pressed { px(1.0) } else { px(0.0) })
+        .rounded_full()
+        .shadow(shadow(0.3, 1.0, 2.0))
+        .hover(move |s| s.shadow(shadow(0.6, 3.0, 8.0)));
+    if let Some(actions) = actions {
+        for press in [true, false] {
+            let (handler, uid) = (actions.clone(), unique_id.to_owned());
+            el = if press {
+                el.on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                    handler(RowAction::AvatarPress(true), &uid, window, cx)
+                })
+            } else {
+                el.on_mouse_up(MouseButton::Left, move |_, window, cx| {
+                    handler(RowAction::AvatarPress(false), &uid, window, cx)
+                })
+            };
+        }
+        let (handler, uid) = (actions.clone(), unique_id.to_owned());
+        el = el.on_mouse_up_out(MouseButton::Left, move |_, window, cx| {
+            handler(RowAction::AvatarPress(false), &uid, window, cx)
+        });
+    }
+    el
+}
+
 /// A message's row. `show_header`: its sender's avatar, name and time lead it.
 pub fn message_el(
     row: &MessageRow,
@@ -1182,10 +1230,27 @@ pub fn message_el(
                 .gap(px(8.0))
                 .child(
                     sender_target(
+                        // gpui shapes text before the pointer is known, so a
+                        // hover underline is a 1 px line drawn under the name
+                        // (Dioxus: `button.sender:hover { underline }`).
                         div()
+                            .group(SharedString::from(format!("sender-{}", m.unique_id)))
+                            .relative()
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(rgb(if m.is_own { theme::own() } else { theme::text() }))
-                            .child(name.clone()),
+                            .child(name.clone())
+                            .child(
+                                div()
+                                    .absolute()
+                                    .left_0()
+                                    .right_0()
+                                    .bottom(px(3.0))
+                                    .h(px(1.0))
+                                    .group_hover(
+                                        SharedString::from(format!("sender-{}", m.unique_id)),
+                                        |s| s.bg(rgb(if m.is_own { theme::own() } else { theme::text() })),
+                                    ),
+                            ),
                         format!("sender-{}", m.unique_id),
                         &m.unique_id,
                         actions,
@@ -1254,11 +1319,16 @@ pub fn message_el(
     }
     line = if show_header {
         line.child(
-            sender_target(
-                div()
-                    .mt(px(2.0))
-                    .child(avatar(pics.avatar.clone(), &m.sender_name, 40.0, None)),
-                format!("avatar-{}", m.unique_id),
+            avatar_button(
+                sender_target(
+                    div()
+                        .mt(px(2.0))
+                        .child(avatar(pics.avatar.clone(), &m.sender_name, 40.0, None)),
+                    format!("avatar-{}", m.unique_id),
+                    &m.unique_id,
+                    actions,
+                ),
+                pics.avatar_pressed,
                 &m.unique_id,
                 actions,
             )
