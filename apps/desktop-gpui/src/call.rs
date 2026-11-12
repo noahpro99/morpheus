@@ -58,6 +58,9 @@ pub struct Calls {
     /// When this account joined the call it is in (ms since the epoch): a decline of a
     /// ring sent before that is a stale one.
     pub joined_at_ms: u64,
+    /// Calls just hung up: the room and when (ms), so its list stops showing
+    /// this account at once rather than when the server has answered.
+    pub left: Vec<(OwnedRoomId, u64)>,
     /// Ticks of the rings' clock.
     pub tick: u64,
     /// Every sound played, in order (a test build shows them, `.sound-log`).
@@ -79,6 +82,14 @@ pub struct Calls {
 }
 
 impl Calls {
+    /// Whether this account just hung up in `room`: its list should not show
+    /// it yet, whatever the server has said so far.
+    pub fn just_left(&self, room: &OwnedRoomId) -> bool {
+        self.left
+            .iter()
+            .any(|(left, at)| left == room && now_ms().saturating_sub(*at) < LEFT_FOR_MS)
+    }
+
     /// Whether this account is in `room`'s call.
     pub fn in_call(&self, room: &OwnedRoomId) -> bool {
         self.state.as_ref().is_some_and(|c| &c.room_id == room)
@@ -298,6 +309,7 @@ impl Shell {
         }
         self.calls.state = Some(CallState::joining(room_id.clone(), room_name));
         self.calls.joined_at_ms = now_ms();
+        self.calls.left.retain(|(left, _)| *left != room_id);
         self.calls.published = None;
         cx.notify();
         let leaving = previous.1.map(|state| (state.room_id, previous.0));
@@ -316,6 +328,12 @@ impl Shell {
         let call = self.calls.media.take();
         let room = self.calls.state.take().map(|state| state.room_id);
         self.calls.published = None;
+        if let Some(room) = &room {
+            self.calls
+                .left
+                .retain(|(_, at)| now_ms().saturating_sub(*at) < LEFT_FOR_MS);
+            self.calls.left.push((room.clone(), now_ms()));
+        }
         if room.is_some() {
             self.chime(Sound::Leave);
         }
@@ -497,6 +515,9 @@ async fn leave_media(session: &Session, room: OwnedRoomId, call: Option<Call>) {
         call.leave().await;
     }
 }
+
+/// How long a hung-up room's list hides this account while the server catches up.
+const LEFT_FOR_MS: u64 = 10_000;
 
 pub fn now_ms() -> u64 {
     std::time::SystemTime::now()

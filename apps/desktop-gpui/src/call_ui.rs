@@ -107,10 +107,15 @@ pub fn room_call(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -> 
         .as_ref()
         .is_some_and(|c| c.room_id == room.id && !c.connected);
     let in_this = shell.calls.in_call(&room.id);
-    if room.call_participants.is_empty() && !in_this {
+    let me = shell.session.as_ref().and_then(|s| s.user_id());
+    // Just hung up: the server has not said so yet, the list already does.
+    let mut participants = room.call_participants.clone();
+    if !in_this && shell.calls.just_left(&room.id) {
+        participants.retain(|user| Some(user) != me.as_ref());
+    }
+    if participants.is_empty() && !in_this {
         return None;
     }
-    let me = shell.session.as_ref().and_then(|s| s.user_id());
     let speaking = shell
         .calls
         .state
@@ -119,7 +124,7 @@ pub fn room_call(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -> 
         .map(|c| c.speaking.clone())
         .unwrap_or_default();
     let (id, name) = (room.id.clone(), room.name.clone());
-    let rows = listed(&room.call_participants, joining, me.as_ref())
+    let rows = listed(&participants, joining, me.as_ref())
         .into_iter()
         .map(|(user, connecting)| {
             let name = shown(shell, &user);
