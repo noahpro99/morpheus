@@ -900,6 +900,16 @@ impl App {
         self.eval(&js).await.map(drop)
     }
 
+    /// Nothing focused, as after clicking on bare ground: keys have no field to go to.
+    pub async fn unfocus(&mut self) -> Result<()> {
+        if gpui() {
+            return self.op("unfocus", "", json!({})).await.map(drop);
+        }
+        self.eval("document.activeElement.blur(); document.body.focus(); return true;")
+            .await
+            .map(drop)
+    }
+
     /// Leave `selector`'s field, as clicking elsewhere does (the webview
     /// gets a `blur` event). The GPUI app has no such event: fields that
     /// save on leaving (the profile card's note) save as the writing

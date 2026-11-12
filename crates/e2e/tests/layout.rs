@@ -77,12 +77,9 @@ async fn escape_closes_open_modals() {
         .await
         .expect("settings modal");
     app.press(".settings", "Escape").await.expect("escape");
-    app.wait_for_js(
-        "return document.querySelector('.settings') === null;",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("settings closed by Escape");
+    app.wait_for_count(".settings", 0, DEFAULT_WAIT)
+        .await
+        .expect("settings closed by Escape");
 
     // Quick switcher.
     app.shortcut(".shell", "k", true).await.expect("ctrl+k");
@@ -92,12 +89,9 @@ async fn escape_closes_open_modals() {
     app.press(".switcher input", "Escape")
         .await
         .expect("escape");
-    app.wait_for_js(
-        "return document.querySelector('.switcher') === null;",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("switcher closed by Escape");
+    app.wait_for_count(".switcher", 0, DEFAULT_WAIT)
+        .await
+        .expect("switcher closed by Escape");
 }
 
 /// The profile modal opens from a message's sender name, a member row, and
@@ -130,12 +124,9 @@ async fn profile_modal_opens_from_sender_member_and_footer() {
         .await
         .expect("profile shows the Matrix ID");
     app.press("body", "Escape").await.expect("escape");
-    app.wait_for_js(
-        "return document.querySelector('.profile-card') === null && document.querySelector('.profile-modal') === null;",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("profile closed by Escape");
+    app.wait_for_count(".profile-card, .profile-modal", 0, DEFAULT_WAIT)
+        .await
+        .expect("profile closed by Escape");
 
     // From the member list.
     app.click_text(".members .member", "carol")
@@ -149,12 +140,9 @@ async fn profile_modal_opens_from_sender_member_and_footer() {
     .await
     .expect("carol's profile");
     app.click(".card-overlay").await.expect("click outside");
-    app.wait_for_js(
-        "return document.querySelector('.profile-card') === null && document.querySelector('.profile-modal') === null;",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("profile closed by the button");
+    app.wait_for_count(".profile-card, .profile-modal", 0, DEFAULT_WAIT)
+        .await
+        .expect("profile closed by the button");
 
     // From the footer chip: its menu, then our own profile.
     app.click(".profile-chip").await.expect("click footer");
@@ -185,13 +173,12 @@ async fn composer_is_focused_after_navigating() {
     };
     let mut app = App::launch_desktop(&hs).await.expect("launch app");
     login_and_open(&mut app, "general").await;
-    let focused =
-        "return document.activeElement === document.querySelector('.composer .composer-input');";
-    app.wait_for_js(focused, DEFAULT_WAIT)
+    let focused = ".composer .composer-input";
+    app.wait_for_focus(focused, DEFAULT_WAIT)
         .await
         .expect("composer focused after opening general");
     app.open_room("random").await.expect("switch");
-    app.wait_for_js(focused, DEFAULT_WAIT)
+    app.wait_for_focus(focused, DEFAULT_WAIT)
         .await
         .expect("composer focused after switching to random");
 }
@@ -217,12 +204,12 @@ async fn member_list_is_windowed_for_big_rooms() {
         .await
         .expect("show more button");
     app.click(".show-more-members").await.expect("show more");
-    app.wait_for_js(
-        "return document.querySelectorAll('.members .member').length === 153 && document.querySelector('.show-more-members') === null;",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("everyone listed after one click");
+    app.wait_for_count(".members .member", 153, DEFAULT_WAIT)
+        .await
+        .expect("everyone listed after one click");
+    app.wait_for_count(".show-more-members", 0, DEFAULT_WAIT)
+        .await
+        .expect("nothing more to show");
 }
 
 /// The member list groups people by role with a count, shows everyone with

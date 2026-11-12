@@ -61,6 +61,17 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         .rounded(px(theme::RADIUS_SM))
         .cursor_pointer()
         .hover(|s| s.bg(gpui::rgba(theme::bg_hover())))
+        // Click (or right-click) on your own chip: account actions.
+        .on_click(cx.listener(|this, event: &gpui::ClickEvent, _, cx| {
+            this.open_account_menu(event.position(), cx)
+        }))
+        .on_mouse_down(
+            gpui::MouseButton::Right,
+            cx.listener(|this, event: &gpui::MouseDownEvent, _, cx| {
+                cx.stop_propagation();
+                this.open_account_menu(event.position, cx)
+            }),
+        )
         .child(avatar(shell.picture(&media, 34), &name, 34.0, None))
         .child(
             div()
@@ -214,4 +225,16 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         ))
         .child(pill)
         .e2e("footer", "sidebar-footer user-bar")
+}
+
+impl Shell {
+    /// The footer chip's menu: View profile (your own card).
+    pub fn open_account_menu(&mut self, at: gpui::Point<gpui::Pixels>, cx: &mut Context<Self>) {
+        use crate::view_model::menu::{MenuAction, MenuItem, MenuTarget};
+        let Some(own) = self.session.as_ref().and_then(|s| s.user_id()) else {
+            return;
+        };
+        let items = vec![MenuItem::new("View profile", MenuAction::Profile(own))];
+        self.open_menu(crate::menu::OpenMenu::new(at, items, false, MenuTarget::Other), cx);
+    }
 }

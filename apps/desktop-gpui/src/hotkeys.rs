@@ -72,6 +72,20 @@ impl Shell {
             }
             return true;
         }
+        // Typing with nothing focused goes to the message box, as in Discord.
+        if !ctrl
+            && !m.alt
+            && let Some(text) = keystroke.key_char.clone()
+            && text.chars().count() == 1
+            && !text.chars().all(char::is_control)
+            && !self.modal_open(cx)
+            && !self.inbox_open
+            && self.root_focus.as_ref().is_some_and(|focus| focus.is_focused(window))
+            && let Some((_, composer)) = &self.composer
+        {
+            composer.update(cx, |composer, cx| composer.type_in(&text, cx));
+            return true;
+        }
         // DOM names for the arrows, as `classify` has them.
         let name = match key {
             "up" => "ArrowUp",

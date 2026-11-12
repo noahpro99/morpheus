@@ -114,12 +114,14 @@ impl Badge {
                     .h(px(pill_height))
                     .rounded_r(px(4.0))
                     .bg(rgb(0xffffff))
-                    .e2e("span", "rail-pill"),
+                    .e2e("span", "rail-pill")
+                    .attr("data-bg", "#ffffff"),
             )
             .child(content);
         let mut tagged = button
             .e2e("button", &self.classes)
             .attr("title", &self.title);
+        tagged = tagged.attr("data-radius", theme::RADIUS_XL.to_string());
         for (name, value) in self.extra {
             tagged = tagged.attr(name, value);
         }

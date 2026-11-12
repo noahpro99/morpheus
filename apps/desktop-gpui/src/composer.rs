@@ -187,6 +187,16 @@ impl Composer {
         cx.notify();
     }
 
+    /// Typing with nothing focused: the text goes at the end of the draft and
+    /// the box takes the caret.
+    pub fn type_in(&mut self, text: &str, cx: &mut Context<Self>) {
+        let draft = format!("{}{text}", self.draft(cx));
+        self.set_draft(&draft, cx);
+        self.pending_focus = true;
+        self.edited(cx);
+        cx.notify();
+    }
+
     /// "Mention" on a member: `@name ` goes at the end of the draft.
     pub fn mention(&mut self, name: &str, cx: &mut Context<Self>) {
         let text = composer::with_mention(&self.draft(cx), name);

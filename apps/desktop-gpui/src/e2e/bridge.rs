@@ -247,6 +247,21 @@ async fn handle(request: &Request, cx: &mut AsyncApp) -> Reply {
             next_frame(cx, before).await;
             Ok(Value::Null)
         }
+        // Nothing focused, as after clicking on bare ground in a page.
+        "unfocus" => {
+            let window = cx
+                .update(|cx| cx.windows().first().copied())
+                .map_err(|err| err.to_string())?
+                .ok_or("the app has no window")?;
+            cx.update_window(window, |_, window, _| window.blur())
+                .map_err(|err| err.to_string())?;
+            // Drawn once, so the root takes the focus back and keys have a place to go.
+            let before = with_state(|state| state.frame);
+            cx.update_window(window, |_, window, _| window.refresh())
+                .map_err(|err| err.to_string())?;
+            next_frame(cx, before).await;
+            Ok(Value::Null)
+        }
         "attach_file" => attach_file(request, cx).await,
         "click" | "right_click" | "type" | "press" | "submit" | "drag" => act(op, request, cx).await,
         _ => Err(format!("unknown op: {op}")),

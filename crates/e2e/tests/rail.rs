@@ -243,6 +243,11 @@ async fn servers_drag_into_folders_and_reorder() {
 /// The rail marks where you are and what is waiting, as Discord's does: a
 /// white bar beside the scope you are in, and a white dot beside any other
 /// with unread messages.
+/// The mark (a bar or a dot) beside a badge: where it is.
+async fn pill_of(app: &mut App, badge: &str) -> Option<morpheus_e2e::Bounds> {
+    app.bounds(&format!("{badge} .rail-pill")).await.ok().flatten()
+}
+
 #[tokio::test]
 async fn the_rail_marks_the_current_scope_and_unread_ones() {
     let Some(hs) = homeserver() else {
@@ -278,43 +283,32 @@ async fn the_rail_marks_the_current_scope_and_unread_ones() {
     )
     .expect("bob writes");
 
-    // Each mark: [height, colour, right edge of the mark, left edge of its badge].
-    let mark = |selector: &str| {
-        format!(
-            "const item = document.querySelector({}); const pill = item && item.querySelector('.rail-pill'); \
-             if (!pill) return null; const p = pill.getBoundingClientRect(), i = item.getBoundingClientRect(); \
-             return [p.height, getComputedStyle(pill).backgroundColor, p.right, i.left];",
-            serde_json::to_string(selector).expect("json")
-        )
-    };
-    app.wait_for_js(
-        &format!(
-            "const m = (() => {{ {} }})(); return !!m && m[0] >= 32;",
-            mark(".rail-item.selected")
-        ),
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("a tall bar beside the scope you are in");
-    app.wait_for_js(
-        &format!(
-            "const m = (() => {{ {} }})(); return !!m && m[0] > 0 && m[0] <= 10;",
-            mark(".rail-item[title=\"Rooms\"]")
-        ),
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("a dot beside Rooms, which has an unread message");
-    for selector in [".rail-item.selected", ".rail-item[title=\"Rooms\"]"] {
-        let shown = app.eval(&mark(selector)).await.expect("mark");
-        assert_eq!(
-            shown[1].as_str(),
-            Some("rgb(255, 255, 255)"),
-            "{selector}: not white: {shown}"
-        );
+    let selected = ".rail-item.selected";
+    let rooms = ".rail-item[title=\"Rooms\"]";
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let tall = pill_of(&mut app, selected).await.is_some_and(|m| m.h >= 32.0);
+        let dot = pill_of(&mut app, rooms).await.is_some_and(|m| m.h > 0.0 && m.h <= 10.0);
+        if tall && dot {
+            break;
+        }
         assert!(
-            shown[2].as_f64() <= shown[3].as_f64(),
-            "{selector}: not to the left of its badge: {shown}"
+            std::time::Instant::now() < deadline,
+            "a tall bar beside the scope you are in and a dot beside Rooms, which has an unread message"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+    for selector in [selected, rooms] {
+        let pill = pill_of(&mut app, selector).await.expect("mark");
+        let item = app.bounds(selector).await.expect("badge").expect("its badge");
+        let colours = app
+            .colours_of(&format!("{selector} .rail-pill"), "background")
+            .await
+            .expect("colour");
+        assert_eq!(colours, vec!["#ffffff".to_owned()], "{selector}: not white");
+        assert!(
+            pill.right() <= item.x,
+            "{selector}: not to the left of its badge: {pill:?} {item:?}"
         );
     }
 }
@@ -332,15 +326,29 @@ async fn rail_badges_are_rounded_squares() {
         .await
         .expect("a server");
     // Each badge, and the picture inside it: [title, corner radius, width].
-    let round = app
-        .eval(
+    let round = if app.is_gpui() {
+        // The badges note the corner radius they are drawn with.
+        let badges = ".rail > .rail-item, .rail-folder .rail-item";
+        let radii = app.attrs(badges, "data-radius").await.expect("radii");
+        let boxes = app.all_bounds(badges).await.expect("boxes");
+        radii
+            .into_iter()
+            .zip(boxes)
+            .filter_map(|(r, b)| Some((r?.parse::<f64>().ok()?, b.w)))
+            .filter(|(r, w)| *r >= w * 0.45 || *r < w * 0.2)
+            .map(|(r, w)| serde_json::json!([r, w]))
+            .collect::<Vec<_>>()
+            .into()
+    } else {
+        app.eval(
             "return [...document.querySelectorAll('.rail > .rail-item, .rail-folder .rail-item, .rail-item .avatar')] \
                .filter(el => !el.matches('.rail-add')) \
                .map(el => [el.title || el.className, parseFloat(getComputedStyle(el).borderTopLeftRadius), el.getBoundingClientRect().width]) \
                .filter(([, r, w]) => r >= w * 0.45 || r < w * 0.2);",
         )
         .await
-        .expect("badges");
+        .expect("badges")
+    };
     assert_eq!(
         round,
         serde_json::json!([]),
