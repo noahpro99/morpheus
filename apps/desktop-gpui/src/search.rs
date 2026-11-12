@@ -119,7 +119,6 @@ impl Render for SearchPanel {
             .gap(px(8.0))
             .p(px(12.0))
             .overflow_hidden()
-            .bg(rgb(theme::bg_sidebar()))
             .line_height(gpui::relative(theme::LINE_HEIGHT))
             .on_key_down(cx.listener(|_, event: &gpui::KeyDownEvent, _, cx| {
                 if event.keystroke.key == "escape" {

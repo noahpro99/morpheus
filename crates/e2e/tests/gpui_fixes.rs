@@ -532,3 +532,98 @@ async fn an_account_with_hundreds_of_rooms_lists_them_all() {
         tokio::time::sleep(std::time::Duration::from_millis(250)).await;
     }
 }
+
+async fn alice_in_general(hs: &str) -> App {
+    let mut app = App::launch_desktop(hs).await.expect("launch app");
+    common::login(&mut app, "alice", "alice-password").await;
+    app.open_room("general").await.expect("open room");
+    app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
+        .await
+        .expect("composer ready");
+    app
+}
+
+async fn open_bobs_card(app: &mut App) {
+    app.click_text(".members .member", "bob").await.expect("click member");
+    app.wait_for_text(".profile-card .profile-id", "@bob:localhost", DEFAULT_WAIT)
+        .await
+        .expect("card for bob");
+    // Drawn, and the pointer's glide done.
+    tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+}
+
+/// Rounded panels are rounded at every corner (task 22): a child that paints
+/// its own background at an edge (the settings sidebar, a profile's banner)
+/// must not show square corners over the panel's rounded ones.
+#[tokio::test]
+async fn the_settings_modal_is_rounded_at_all_four_corners() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = alice_in_general(&hs).await;
+    app.click(".settings-button").await.expect("gear");
+    app.wait_for(".settings .settings-nav", DEFAULT_WAIT).await.expect("settings");
+    tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+    let b = app.bounds(".settings").await.expect("b").expect("modal");
+    let Some(square) = common::square_corners(&app, &b, [true; 4]) else {
+        eprintln!("no grim capture here; skipping the pixel check");
+        return;
+    };
+    assert!(square.is_empty(), "the settings modal's corners drawn square: {square:?}");
+}
+
+#[tokio::test]
+async fn the_profile_popup_is_rounded_at_its_top_corners() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = alice_in_general(&hs).await;
+    open_bobs_card(&mut app).await;
+    let b = app.bounds(".profile-card").await.expect("b").expect("card");
+    let Some(square) = common::square_corners(&app, &b, [true, true, false, false]) else {
+        eprintln!("no grim capture here; skipping the pixel check");
+        return;
+    };
+    assert!(square.is_empty(), "the popup's top corners drawn square: {square:?}");
+}
+
+#[tokio::test]
+async fn the_full_profile_is_rounded_at_all_four_corners() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = alice_in_general(&hs).await;
+    open_bobs_card(&mut app).await;
+    app.click(".profile-card .card-button.more").await.expect("more");
+    app.click_text(".context-item", "View full profile").await.expect("full");
+    app.wait_for(".profile-modal .profile-id", DEFAULT_WAIT).await.expect("full profile");
+    tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+    let b = app.bounds(".profile-modal").await.expect("b").expect("modal");
+    let Some(square) = common::square_corners(&app, &b, [true; 4]) else {
+        eprintln!("no grim capture here; skipping the pixel check");
+        return;
+    };
+    assert!(square.is_empty(), "the full profile's corners drawn square: {square:?}");
+}
+
+/// The side pane's own views (members, search, a thread) fill it with the
+/// pane's colour: at its rounded corners that must not show as a square.
+#[tokio::test]
+async fn the_side_pane_is_rounded_at_all_four_corners() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = alice_in_general(&hs).await;
+    app.wait_for(".side-pane .members", DEFAULT_WAIT).await.expect("members");
+    tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+    let b = app.bounds(".side-pane").await.expect("b").expect("pane");
+    let Some(square) = common::square_corners(&app, &b, [true; 4]) else {
+        eprintln!("no grim capture here; skipping the pixel check");
+        return;
+    };
+    assert!(square.is_empty(), "the side pane's corners drawn square: {square:?}");
+}

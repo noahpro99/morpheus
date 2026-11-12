@@ -402,6 +402,8 @@ impl Render for ProfileCard {
         let banner = div()
             .relative()
             .h(px(64.0))
+            .rounded_tl(px(theme::RADIUS_XL - 1.0))
+            .rounded_tr(px(theme::RADIUS_XL - 1.0))
             .w_full()
             .flex_none()
             .bg(linear_gradient(
@@ -797,27 +799,40 @@ impl ProfileCard {
             .relative()
             .w(px(360.0))
             .max_w(relative(0.9))
+            .max_h(px((f32::from(window.viewport_size().height) - top - 24.0).max(120.0)))
             .flex()
             .flex_col()
             .overflow_hidden()
-            .rounded(px(theme::RADIUS_LG))
+            .rounded(px(theme::RADIUS_XL))
             .bg(rgb(theme::bg_sidebar()))
             .shadow_lg()
             .text_color(rgb(theme::text()))
             .line_height(relative(theme::LINE_HEIGHT))
+            // The banner and the body scroll together under the modal's
+            // height limit (the avatar overlaps the banner).
             .child(
                 div()
-                    .h(px(72.0))
-                    .w_full()
-                    .flex_none()
-                    .bg(linear_gradient(
-                        135.0,
-                        linear_color_stop(rgb(theme::accent_strong()), 0.0),
-                        linear_color_stop(rgb(0x2d3a9e), 1.0),
-                    ))
-                    .e2e("div", "profile-banner"),
+                    .id("profile-scroll")
+                    .flex()
+                    .flex_col()
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .child(
+                        div()
+                            .h(px(72.0))
+                            .w_full()
+                            .flex_none()
+                            .rounded_tl(px(theme::RADIUS_XL))
+                            .rounded_tr(px(theme::RADIUS_XL))
+                            .bg(linear_gradient(
+                                135.0,
+                                linear_color_stop(rgb(theme::accent_strong()), 0.0),
+                                linear_color_stop(rgb(0x2d3a9e), 1.0),
+                            ))
+                            .e2e("div", "profile-banner"),
+                    )
+                    .child(body.e2e("div", "profile-body")),
             )
-            .child(body.e2e("div", "profile-body"))
             .child(
                 div()
                     .id("profile-close")
@@ -840,6 +855,7 @@ impl ProfileCard {
             .size_full()
             .flex()
             .justify_center()
+            .items_start()
             .pt(px(top))
             .bg(rgba(0x0000008c))
             .occlude()

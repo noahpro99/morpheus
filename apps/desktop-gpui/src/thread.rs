@@ -171,7 +171,6 @@ impl Render for ThreadPanel {
             .flex_col()
             .flex_1()
             .min_h_0()
-            .bg(rgb(theme::bg_sidebar()))
             .line_height(gpui::relative(theme::LINE_HEIGHT))
             .child(
                 div()

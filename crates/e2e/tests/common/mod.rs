@@ -56,3 +56,45 @@ pub fn capture(app: &App) -> Option<(Vec<u8>, usize, usize)> {
     let (w, h) = (fields[1].parse().ok()?, fields[2].parse().ok()?);
     Some((bytes[at..].to_vec(), w, h))
 }
+
+/// A pixel of a capture: `(r, g, b)`.
+pub fn pixel_at(capture: &(Vec<u8>, usize, usize), x: f64, y: f64) -> (u8, u8, u8) {
+    let (pixels, w, h) = capture;
+    let (x, y) = (x.round() as usize, y.round() as usize);
+    assert!(x < *w && y < *h, "({x}, {y}) is outside the {w}x{h} capture");
+    let i = (y * w + x) * 3;
+    (pixels[i], pixels[i + 1], pixels[i + 2])
+}
+
+pub fn colour_distance(a: (u8, u8, u8), b: (u8, u8, u8)) -> u32 {
+    u32::from(a.0.abs_diff(b.0)) + u32::from(a.1.abs_diff(b.1)) + u32::from(a.2.abs_diff(b.2))
+}
+
+/// Whether each of the four corners of `b` is rounded: the pixel just inside
+/// the corner shows what is behind the panel, not the panel's own colour
+/// there (sampled 30 px along the same edge). `which` is a mask of the
+/// corners to check (top-left, top-right, bottom-left, bottom-right).
+/// Returns the names of corners drawn square; `None` where there is no capture.
+pub fn square_corners(app: &App, b: &morpheus_e2e::Bounds, which: [bool; 4]) -> Option<Vec<&'static str>> {
+    let shot = capture(app)?;
+    let inset = 2.5;
+    let mut square = Vec::new();
+    let corners = [
+        ("top-left", b.x + inset, b.y + inset, 30.0),
+        ("top-right", b.right() - inset, b.y + inset, -30.0),
+        ("bottom-left", b.x + inset, b.bottom() - inset, 30.0),
+        ("bottom-right", b.right() - inset, b.bottom() - inset, -30.0),
+    ];
+    for ((name, x, y, along), check) in corners.into_iter().zip(which) {
+        if !check {
+            continue;
+        }
+        let corner = pixel_at(&shot, x, y);
+        let panel = pixel_at(&shot, x + along, y);
+        eprintln!("{name}: corner {corner:?}, panel edge {panel:?}");
+        if colour_distance(corner, panel) < 10 {
+            square.push(name);
+        }
+    }
+    Some(square)
+}
