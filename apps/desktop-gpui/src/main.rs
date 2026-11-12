@@ -81,6 +81,9 @@ const FONTS: &[&[u8]] = &[
     include_bytes!("../assets/fonts/Unbounded-400.ttf"),
     include_bytes!("../assets/fonts/Unbounded-600.ttf"),
     include_bytes!("../assets/fonts/Unbounded-700.ttf"),
+    // Noto Color Emoji 2.051 (OFL, bitmap strikes, 10.7 MB): gpui shapes emoji sequences with it
+    // (vendor/gpui text_system.rs), whatever the system has installed.
+    include_bytes!("../assets/fonts/NotoColorEmoji.ttf"),
 ];
 
 /// Files `svg().path(..)` loads: the logo.
