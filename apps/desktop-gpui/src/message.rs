@@ -13,6 +13,7 @@ use gpui::{
 };
 use morpheus_core::{Message, MessageKind, Reaction, ThreadSummary};
 
+use crate::hover_underline::underline_on_hover;
 use crate::{
     e2e::{self, E2eExt as _},
     view_model::format::{human_duration, human_size},
@@ -1264,24 +1265,15 @@ pub fn message_el(
                         // gpui shapes text before the pointer is known, so a
                         // hover underline is a 1 px line drawn under the name
                         // (Dioxus: `button.sender:hover { underline }`).
-                        div()
-                            .group(SharedString::from(format!("sender-{}", m.unique_id)))
-                            .relative()
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(rgb(if m.is_own { theme::own() } else { theme::text() }))
-                            .child(name.clone())
-                            .child(
-                                div()
-                                    .absolute()
-                                    .left_0()
-                                    .right_0()
-                                    .bottom(px(3.0))
-                                    .h(px(1.0))
-                                    .group_hover(
-                                        SharedString::from(format!("sender-{}", m.unique_id)),
-                                        |s| s.bg(rgb(if m.is_own { theme::own() } else { theme::text() })),
-                                    ),
-                            ),
+                        underline_on_hover(
+                            div()
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .text_color(rgb(if m.is_own { theme::own() } else { theme::text() }))
+                                .child(name.clone()),
+                            SharedString::from(format!("sender-{}", m.unique_id)),
+                            if m.is_own { theme::own() } else { theme::text() },
+                            3.0,
+                        ),
                         format!("sender-{}", m.unique_id),
                         &m.unique_id,
                         actions,

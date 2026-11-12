@@ -804,3 +804,78 @@ async fn an_avatar_grows_its_shadow_when_hovered_and_sinks_when_pressed() {
     let up = app.bounds(".message .avatar-button").await.expect("b").expect("avatar");
     assert!((up.y - at.y).abs() < 0.3, "released: {up:?}, not back at {at:?}");
 }
+
+/// The longest run of pixels along a row of `b` that differ between two
+/// captures (the text itself is the same in both: what differs is the line).
+fn longest_changed_run(a: &(Vec<u8>, usize, usize), c: &(Vec<u8>, usize, usize), b: &Bounds) -> usize {
+    let mut best = 0;
+    for y in (b.y.floor() as usize)..(b.bottom().ceil() as usize) {
+        let mut run = 0;
+        for x in (b.x.floor() as usize)..(b.right().ceil() as usize) {
+            let (p, q) = (common::pixel_at(a, x as f64, y as f64), common::pixel_at(c, x as f64, y as f64));
+            if common::colour_distance(p, q) > 60 {
+                run += 1;
+                best = best.max(run);
+            } else {
+                run = 0;
+            }
+        }
+    }
+    best
+}
+
+/// Link-like labels underline under the pointer (task 23): the id on the
+/// profile card, its "mutual servers" label, the id on the full profile. A
+/// hover underline set as a gpui style does nothing; these draw a line.
+#[tokio::test]
+async fn hovering_ids_and_link_labels_underlines_them() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = alice_in_general(&hs).await;
+    if !app.is_gpui() {
+        eprintln!("skipped: hover cannot be driven on the web build");
+        return;
+    }
+    open_bobs_card(&mut app).await;
+    tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+    for (selector, away) in [
+        (".profile-card .profile-id", ".profile-card .profile-name"),
+        (".profile-card .mutual-servers", ".profile-card .profile-name"),
+    ] {
+        let b = app.bounds(selector).await.expect("b").unwrap_or_else(|| panic!("no {selector}"));
+        app.hover(away).await.expect("away");
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        let Some(rest) = common::capture(&app) else {
+            eprintln!("no grim capture here; skipping the pixel check");
+            return;
+        };
+        app.hover(selector).await.expect("over it");
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        let over = common::capture(&app).expect("capture");
+        let run = longest_changed_run(&rest, &over, &b);
+        eprintln!("{selector}: {run} px of line when hovered (label is {} wide)", b.w);
+        assert!(run as f64 >= b.w * 0.8, "{selector}: no underline when hovered: {run} of {}", b.w);
+        app.hover(away).await.expect("away again");
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        let gone = common::capture(&app).expect("capture");
+        assert!(longest_changed_run(&rest, &gone, &b) < (b.w * 0.5) as usize, "{selector}: the line stayed");
+    }
+    // The full profile's id.
+    app.click(".profile-card .card-button.more").await.expect("more");
+    app.click_text(".context-item", "View full profile").await.expect("full");
+    app.wait_for(".profile-modal .profile-id", DEFAULT_WAIT).await.expect("full profile");
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    let selector = ".profile-modal .profile-id";
+    let b = app.bounds(selector).await.expect("b").expect("id");
+    app.hover(".profile-modal .profile-name").await.expect("away");
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    let rest = common::capture(&app).expect("capture");
+    app.hover(selector).await.expect("over it");
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    let over = common::capture(&app).expect("capture");
+    let run = longest_changed_run(&rest, &over, &b);
+    eprintln!("{selector}: {run} px of line when hovered (label is {} wide)", b.w);
+    assert!(run as f64 >= b.w * 0.8, "{selector}: no underline when hovered: {run} of {}", b.w);
+}
