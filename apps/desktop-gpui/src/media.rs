@@ -73,6 +73,38 @@ pub fn decode(media: &morpheus_core::Media) -> Option<Arc<Image>> {
     Some(Arc::new(Image::from_bytes(format, media.bytes.clone())))
 }
 
+/// Square copies of non-square pictures, by the original's id.
+static SQUARED: std::sync::LazyLock<std::sync::Mutex<HashMap<u64, Arc<Image>>>> =
+    std::sync::LazyLock::new(Default::default);
+
+/// `image` cut to its middle square, for an avatar to fill its circle or
+/// rounded square. gpui's `ObjectFit::Cover` rounds the enlarged picture's
+/// corners, not the frame's, so a wide picture showed as a square: the crop
+/// happens here and the square is drawn edge to edge. A square picture (an
+/// animated one too) is drawn as it is; one that cannot be read, too.
+pub fn squared(image: &Arc<Image>) -> Arc<Image> {
+    if let Some(done) = SQUARED.lock().ok().and_then(|cache| cache.get(&image.id()).cloned()) {
+        return done;
+    }
+    let squared = (|| {
+        let decoded = image::load_from_memory(image.bytes()).ok()?;
+        let (w, h) = (decoded.width(), decoded.height());
+        if w == h {
+            return None;
+        }
+        let side = w.min(h);
+        let cropped = decoded.crop_imm((w - side) / 2, (h - side) / 2, side, side);
+        let mut png = std::io::Cursor::new(Vec::new());
+        cropped.write_to(&mut png, image::ImageFormat::Png).ok()?;
+        Some(Arc::new(Image::from_bytes(ImageFormat::Png, png.into_inner())))
+    })()
+    .unwrap_or_else(|| image.clone());
+    if let Ok(mut cache) = SQUARED.lock() {
+        cache.insert(image.id(), squared.clone());
+    }
+    squared
+}
+
 /// The first letter or digit of `name`, upper-cased (`?` when none).
 pub fn letter(name: &str) -> String {
     name.chars()
@@ -110,10 +142,10 @@ pub fn avatar(
                 format!("picture:{:x}", hasher.finish())
             };
             base.child(
-                img(image)
+                img(squared(&image))
                     .size_full()
                     .rounded(px(radius.unwrap_or(size / 2.0)))
-                    .object_fit(ObjectFit::Cover),
+                    .object_fit(ObjectFit::Fill),
             )
                 .e2e("img", "avatar")
                 .attr("data-fit", "cover")
