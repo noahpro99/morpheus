@@ -70,6 +70,9 @@ struct Request {
     /// For `scroll`: `top` or `bottom`, or `from_bottom` pixels.
     to: Option<String>,
     from_bottom: Option<f32>,
+    /// For `drag`: how far to move the pressed pointer, in pixels.
+    dx: Option<f32>,
+    dy: Option<f32>,
     /// For `attach_file`: the file (`data` is base64), and `via` `paste` or `drop`.
     name: Option<String>,
     mime: Option<String>,
@@ -158,7 +161,7 @@ async fn handle(request: &Request, cx: &mut AsyncApp) -> Reply {
         return Err(no_op(request));
     };
     match op {
-        "count" | "texts" | "attrs" | "text" | "value" | "bounds" => {
+        "count" | "texts" | "attrs" | "text" | "value" | "bounds" | "all_bounds" => {
             with_state(|state| read(&state.tree, op, request))
         }
         "scroll_state" => {
@@ -187,7 +190,7 @@ async fn handle(request: &Request, cx: &mut AsyncApp) -> Reply {
             Ok(Value::Null)
         }
         "attach_file" => attach_file(request, cx).await,
-        "click" | "right_click" | "type" | "press" | "submit" => act(op, request, cx).await,
+        "click" | "right_click" | "type" | "press" | "submit" | "drag" => act(op, request, cx).await,
         _ => Err(format!("unknown op: {op}")),
     }
 }
@@ -305,6 +308,14 @@ fn read(tree: &Tree, op: &str, request: &Request) -> Reply {
             matches(tree, request)?
                 .into_iter()
                 .map(|i| tree.text(i))
+                .collect::<Vec<_>>()
+        ));
+    }
+    if op == "all_bounds" {
+        return Ok(json!(
+            matches(tree, request)?
+                .into_iter()
+                .map(|i| rect_json(tree.nodes[i].bounds))
                 .collect::<Vec<_>>()
         ));
     }
@@ -660,6 +671,36 @@ async fn act(op: &str, request: &Request, cx: &mut AsyncApp) -> Reply {
             }
             cx.update_window(window, |_, window, cx| release_at(window, cx, centre, button, held))
                 .map_err(|err| err.to_string())?;
+        }
+        "drag" => {
+            // Press on the element, move the pointer in steps (the button held), let go.
+            let (dx, dy) = (request.dx.unwrap_or(0.0), request.dy.unwrap_or(0.0));
+            cx.update_window(window, |_, window, cx| {
+                press_at(window, cx, centre, MouseButton::Left, held)
+            })
+            .map_err(|err| err.to_string())?;
+            next_frame(cx, before).await;
+            let steps = ((dx.abs().max(dy.abs()) / 20.0).ceil() as u32).max(1);
+            for step in 1..=steps {
+                let f = step as f32 / steps as f32;
+                let at = point(px(centre.0 + dx * f), px(centre.1 + dy * f));
+                cx.update_window(window, |_, window, cx| {
+                    let _ = window.dispatch_event(
+                        PlatformInput::MouseMove(MouseMoveEvent {
+                            position: at,
+                            pressed_button: Some(MouseButton::Left),
+                            modifiers: held,
+                        }),
+                        cx,
+                    );
+                })
+                .map_err(|err| err.to_string())?;
+                next_frame(cx, before).await;
+            }
+            cx.update_window(window, |_, window, cx| {
+                release_at(window, cx, (centre.0 + dx, centre.1 + dy), MouseButton::Left, held)
+            })
+            .map_err(|err| err.to_string())?;
         }
         "type" => {
             let text = request.text.clone().ok_or("missing text")?;

@@ -770,6 +770,31 @@ impl App {
         }))
     }
 
+    /// Where every element matching `selector` is, in window pixels, in
+    /// document order.
+    pub async fn all_bounds(&mut self, selector: &str) -> Result<Vec<Bounds>> {
+        let value = if gpui() {
+            self.op("all_bounds", selector, json!({})).await?
+        } else {
+            let js = format!(
+                "return [...document.querySelectorAll({})].map(e => {{ const r = e.getBoundingClientRect(); \
+                 return {{ x: r.left, y: r.top, w: r.width, h: r.height }}; }});",
+                js_str(selector)
+            );
+            self.eval(&js).await?
+        };
+        let list = value.as_array().cloned().unwrap_or_default();
+        Ok(list
+            .iter()
+            .map(|v| Bounds {
+                x: v["x"].as_f64().unwrap_or(0.0),
+                y: v["y"].as_f64().unwrap_or(0.0),
+                w: v["w"].as_f64().unwrap_or(0.0),
+                h: v["h"].as_f64().unwrap_or(0.0),
+            })
+            .collect())
+    }
+
     /// [`Self::bounds`] of the first `selector` inside the first `within`
     /// whose text contains `contains`; GPUI only (None on the web page).
     pub async fn bounds_within(
@@ -793,6 +818,28 @@ impl App {
             w: number("w"),
             h: number("h"),
         }))
+    }
+
+    /// Press on an element, move the pointer `dx` and `dy` pixels (in steps
+    /// of 20, the button held), and let go.
+    pub async fn drag(&mut self, selector: &str, dx: i32, dy: i32) -> Result<()> {
+        if gpui() {
+            return self
+                .op("drag", selector, json!({ "dx": dx, "dy": dy }))
+                .await
+                .map(drop);
+        }
+        let js = format!(
+            "const el = {}; const h = el.getBoundingClientRect(); \
+             const x = h.left + h.width / 2, y = h.top + h.height / 2; \
+             const at = (type, ox, oy, target) => target.dispatchEvent(new MouseEvent(type, {{ bubbles: true, cancelable: true, clientX: x + ox, clientY: y + oy, buttons: 1 }})); \
+             at('mousedown', 0, 0, el); \
+             const steps = Math.max(1, Math.ceil(Math.max(Math.abs({dx}), Math.abs({dy})) / 20)); \
+             for (let i = 1; i <= steps; i++) at('mousemove', {dx} * i / steps, {dy} * i / steps, window); \
+             at('mouseup', {dx}, {dy}, window); return true;",
+            query(selector)
+        );
+        self.eval(&js).await.map(drop)
     }
 
     /// Right-click an element: a bubbling `contextmenu` event at its centre.

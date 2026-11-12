@@ -72,31 +72,6 @@ async fn login_and_open(app: &mut App, user: &str, room: &str) {
         .expect("composer");
 }
 
-/// The people listed in a room's call, in the sidebar.
-fn in_call(room: &str, name: &str) -> String {
-    format!(
-        "return [...document.querySelectorAll('.room-call')].some(c => c.dataset.room === {room} \
-           && [...c.querySelectorAll('.call-participant')].some(p => p.textContent.includes({name})));",
-        room = serde_json::to_string(room).expect("json"),
-        name = serde_json::to_string(name).expect("json"),
-    )
-}
-
-fn speaking(name: &str) -> String {
-    format!(
-        "return [...document.querySelectorAll('.call-participant.speaking')].some(p => p.textContent.includes({}));",
-        serde_json::to_string(name).expect("json"),
-    )
-}
-
-/// The chimes played so far, in order (test runs only note them).
-fn chimes_are(expected: &[&str]) -> String {
-    format!(
-        "return (window.morpheusSounds ?? []).join(',') === {};",
-        serde_json::to_string(&expected.join(",")).expect("json"),
-    )
-}
-
 /// Wait until `name` is listed in `room`'s call in the sidebar.
 async fn wait_in_call(app: &mut App, room: &str, name: &str) -> anyhow::Result<()> {
     app.wait_for_text(
@@ -705,11 +680,10 @@ async fn a_camera_turned_on_shows_to_everyone_in_the_call_until_turned_off() {
             .expect("the call screen");
     }
     // She sees herself, and bob sees her: the picture arrived, decrypted.
-    alice
-        .wait_for_js(&shows_test_pattern("@alice:localhost"), DEFAULT_WAIT)
+    wait_test_pattern(&mut alice, "@alice:localhost")
         .await
         .expect("alice's self view");
-    bob.wait_for_js(&shows_test_pattern("@alice:localhost"), DEFAULT_WAIT)
+    wait_test_pattern(&mut bob, "@alice:localhost")
         .await
         .expect("bob sees alice's camera");
     bob.wait_for_text(".video-tile .video-name", "alice", DEFAULT_WAIT)
@@ -760,8 +734,7 @@ async fn a_camera_turned_on_shows_to_everyone_in_the_call_until_turned_off() {
     bob.click(".voice-panel .camera-button")
         .await
         .expect("bob's camera on");
-    alice
-        .wait_for_js(&shows_test_pattern("@bob:localhost"), DEFAULT_WAIT)
+    wait_test_pattern(&mut alice, "@bob:localhost")
         .await
         .expect("alice sees bob's camera");
     if let Some(path) = alice
@@ -776,7 +749,7 @@ async fn a_camera_turned_on_shows_to_everyone_in_the_call_until_turned_off() {
         .expect("bob's camera off");
 
     // Off again: her tile goes, and with no cameras on, the stage.
-    let no_tile_for_alice = "return ![...document.querySelectorAll('.video-tile')].some(t => t.dataset.user === '@alice:localhost');";
+    let alice_tile = ".video-tile[data-user=\"@alice:localhost\"]";
     if alice.is_phone() {
         alice
             .click(".call-screen .camera-button")
@@ -788,14 +761,11 @@ async fn a_camera_turned_on_shows_to_everyone_in_the_call_until_turned_off() {
             .await
             .expect("camera off");
     }
-    bob.wait_for_js(
-        "return !document.querySelector('.call-stage .video-tile');",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("her video goes when the camera does");
+    bob.wait_for_count(".call-stage .video-tile", 0, DEFAULT_WAIT)
+        .await
+        .expect("her video goes when the camera does");
     alice
-        .wait_for_js(no_tile_for_alice, DEFAULT_WAIT)
+        .wait_for_count(alice_tile, 0, DEFAULT_WAIT)
         .await
         .expect("alice's self view goes too");
     if alice.is_phone() {
@@ -819,6 +789,38 @@ async fn a_camera_turned_on_shows_to_everyone_in_the_call_until_turned_off() {
     bob.click(".voice-panel .hang-up")
         .await
         .expect("bob hangs up");
+}
+
+/// Wait until `user`'s shared screen shows the test run's screen pattern:
+/// green on the left, yellow on the right.
+async fn wait_screen_pattern(app: &mut App, user: &str) -> anyhow::Result<()> {
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let shown = if app.is_gpui() {
+            let tile = format!(".call-stage .video-tile.screen[data-user=\"{user}\"] .video");
+            let left = app.attr(&tile, "data-left").await?.unwrap_or_default();
+            let right = app.attr(&tile, "data-right").await?.unwrap_or_default();
+            let rgb = |hex: &str| {
+                (hex.len() == 6)
+                    .then(|| u32::from_str_radix(hex, 16).ok())
+                    .flatten()
+                    .map(|v| ((v >> 16) & 255, (v >> 8) & 255, v & 255))
+            };
+            matches!((rgb(&left), rgb(&right)), (Some(l), Some(r)) if l.1 > 150 && l.0 < 100 && r.0 > 150 && r.1 > 150 && r.2 < 100)
+        } else {
+            app.eval(&shows_screen_pattern(user))
+                .await?
+                .as_bool()
+                .unwrap_or(false)
+        };
+        if shown {
+            return Ok(());
+        }
+        if std::time::Instant::now() >= deadline {
+            anyhow::bail!("{user}'s screen does not show the screen pattern");
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
 }
 
 /// Whether `user`'s shared screen shows the test run's screen pattern:
@@ -869,7 +871,7 @@ async fn a_shared_screen_shows_to_everyone_in_the_call_until_stopped() {
         .wait_for(".voice-panel .screen-button.active", DEFAULT_WAIT)
         .await
         .expect("the button shows it shared");
-    bob.wait_for_js(&shows_screen_pattern("@alice:localhost"), DEFAULT_WAIT)
+    wait_screen_pattern(&mut bob, "@alice:localhost")
         .await
         .expect("bob sees alice's screen");
     bob.wait_for_text(
@@ -879,8 +881,7 @@ async fn a_shared_screen_shows_to_everyone_in_the_call_until_stopped() {
     )
     .await
     .expect("named as her screen");
-    alice
-        .wait_for_js(&shows_screen_pattern("@alice:localhost"), DEFAULT_WAIT)
+    wait_screen_pattern(&mut alice, "@alice:localhost")
         .await
         .expect("alice sees what she shares");
     // Her camera too: the screen stays first.
@@ -888,14 +889,17 @@ async fn a_shared_screen_shows_to_everyone_in_the_call_until_stopped() {
         .click(".voice-panel .camera-button")
         .await
         .expect("camera on");
-    bob.wait_for_js(&shows_test_pattern("@alice:localhost"), DEFAULT_WAIT)
+    wait_test_pattern(&mut bob, "@alice:localhost")
         .await
         .expect("and her camera");
-    let order = bob
-        .eval("return [...document.querySelectorAll('.call-stage .video-tile')].map(t => t.classList.contains('screen'));")
+    let order: Vec<bool> = bob
+        .texts(".call-stage .video-tile .video-name")
         .await
-        .expect("order");
-    assert_eq!(order, serde_json::json!([true, false]), "screen first");
+        .expect("order")
+        .iter()
+        .map(|name| name.contains("'s screen"))
+        .collect();
+    assert_eq!(order, [true, false], "screen first");
     if let Some(path) = bob
         .screenshot("call-screen-share")
         .await
@@ -908,12 +912,9 @@ async fn a_shared_screen_shows_to_everyone_in_the_call_until_stopped() {
         .click(".voice-panel .screen-button")
         .await
         .expect("stop sharing");
-    bob.wait_for_js(
-        "return !document.querySelector('.video-tile.screen');",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("her screen goes");
+    bob.wait_for_count(".video-tile.screen", 0, DEFAULT_WAIT)
+        .await
+        .expect("her screen goes");
     assert_eq!(
         bob.count(".call-stage .video-tile").await.expect("count"),
         1,
@@ -1249,11 +1250,11 @@ async fn encrypted_calls_work_whatever_the_token_service_names_people() {
 
 /// The stage's height on screen.
 async fn stage_height(app: &mut App) -> f64 {
-    app.eval("return document.querySelector('.call-stage').getBoundingClientRect().height;")
+    app.bounds(".call-stage")
         .await
         .expect("height")
-        .as_f64()
-        .expect("number")
+        .expect("a stage")
+        .h
 }
 
 /// The stage (everyone's video above the chat) is resized by dragging its
@@ -1278,20 +1279,17 @@ async fn the_call_stage_is_resized_by_dragging_its_edge() {
         .await
         .expect("camera on");
     alice
-        .wait_for(".call-stage + .call-stage-resize", DEFAULT_WAIT)
+        .wait_for(".call-stage", DEFAULT_WAIT)
         .await
-        .expect("the stage, with an edge to drag");
+        .expect("the stage");
+    alice
+        .wait_for(".call-stage-resize", DEFAULT_WAIT)
+        .await
+        .expect("an edge to drag");
     let before = stage_height(&mut alice).await;
     // Press on the edge, move the mouse 200 px down, let go.
     alice
-        .eval(
-            "const h = document.querySelector('.call-stage-resize').getBoundingClientRect(); \
-             const x = h.left + h.width / 2, y = h.top + h.height / 2; \
-             const at = (type, dy, target) => target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y + dy, buttons: 1 })); \
-             at('mousedown', 0, document.querySelector('.call-stage-resize')); \
-             for (let dy = 20; dy <= 200; dy += 20) at('mousemove', dy, window); \
-             at('mouseup', 200, window); return true;",
-        )
+        .drag(".call-stage-resize", 0, 200)
         .await
         .expect("drag");
     let after = stage_height(&mut alice).await;
@@ -1306,10 +1304,7 @@ async fn the_call_stage_is_resized_by_dragging_its_edge() {
         .await
         .expect("camera off");
     alice
-        .wait_for_js(
-            "return !document.querySelector('.call-stage .video-tile');",
-            DEFAULT_WAIT,
-        )
+        .wait_for_count(".call-stage .video-tile", 0, DEFAULT_WAIT)
         .await
         .expect("her video gone");
     alice
@@ -1336,30 +1331,54 @@ async fn the_call_stage_is_resized_by_dragging_its_edge() {
     out_of_call(&mut alice).await;
 }
 
-/// How the stage's cards sit: each card's box, its picture's box, whose it
-/// is, and the stage's box. Fails (returns why) unless every card is the same
-/// size, wholly inside the stage, and a camera fills its card.
-const STAGE_CARDS: &str = "
-    const stage = document.querySelector('.call-stage');
-    if (!stage) return 'no stage';
-    const s = stage.getBoundingClientRect();
-    const cards = [...stage.querySelectorAll('.video-tile, .call-tile')];
-    if (cards.length < 2) return 'cards: ' + cards.length;
-    const boxes = cards.map(c => c.getBoundingClientRect());
-    const w = boxes[0].width, h = boxes[0].height;
-    if (w < 80 || h < 45) return 'tiny cards ' + w + 'x' + h;
-    for (const [i, b] of boxes.entries()) {
-        if (Math.abs(b.width - w) > 1.5 || Math.abs(b.height - h) > 1.5)
-            return 'card ' + i + ' is ' + b.width + 'x' + b.height + ', not ' + w + 'x' + h;
-        if (b.left < s.left - 1 || b.right > s.right + 1 || b.top < s.top - 1 || b.bottom > s.bottom + 1)
-            return 'card ' + i + ' ' + JSON.stringify(b) + ' outside the stage ' + JSON.stringify(s);
+/// How the stage's cards sit. Fails (says why) unless every card is the same
+/// size, wholly inside the stage, and a camera fills its card; else
+/// `ok <width>x<height>` of a card.
+async fn stage_cards(app: &mut App) -> String {
+    let Some(stage) = app.bounds(".call-stage").await.expect("stage") else {
+        return "no stage".into();
+    };
+    let boxes = app
+        .all_bounds(".call-stage .video-tile, .call-stage .call-tile")
+        .await
+        .expect("cards");
+    if boxes.len() < 2 {
+        return format!("cards: {}", boxes.len());
     }
-    for (const t of stage.querySelectorAll('.video-tile')) {
-        const b = t.getBoundingClientRect(), v = t.querySelector('img.video').getBoundingClientRect();
-        if (Math.abs(v.width - b.width) > 1.5 || Math.abs(v.height - b.height) > 1.5)
-            return 'a camera ' + v.width + 'x' + v.height + ' in a card ' + b.width + 'x' + b.height;
+    let (w, h) = (boxes[0].w, boxes[0].h);
+    if w < 80.0 || h < 45.0 {
+        return format!("tiny cards {w}x{h}");
     }
-    return 'ok ' + w + 'x' + h;";
+    for (i, b) in boxes.iter().enumerate() {
+        if (b.w - w).abs() > 1.5 || (b.h - h).abs() > 1.5 {
+            return format!("card {i} is {}x{}, not {w}x{h}", b.w, b.h);
+        }
+        if b.x < stage.x - 1.0
+            || b.right() > stage.right() + 1.0
+            || b.y < stage.y - 1.0
+            || b.bottom() > stage.bottom() + 1.0
+        {
+            return format!("card {i} {b:?} outside the stage {stage:?}");
+        }
+    }
+    let videos = app
+        .all_bounds(".call-stage .video-tile")
+        .await
+        .expect("video tiles");
+    let pictures = app
+        .all_bounds(".call-stage .video-tile .video")
+        .await
+        .expect("pictures");
+    for (b, v) in videos.iter().zip(&pictures) {
+        if (v.w - b.w).abs() > 1.5 || (v.h - b.h).abs() > 1.5 {
+            return format!("a camera {}x{} in a card {}x{}", v.w, v.h, b.w, b.h);
+        }
+    }
+    if videos.len() != pictures.len() {
+        return format!("{} cameras with {} pictures", videos.len(), pictures.len());
+    }
+    format!("ok {w}x{h}")
+}
 
 /// With a camera on, everyone in the call is a card of the same size, as in
 /// Discord: the camera shows inside its person's card, the cards fit the
@@ -1389,8 +1408,7 @@ async fn a_camera_shows_in_its_persons_card_among_equal_cards() {
     bob.click(".voice-panel .camera-button")
         .await
         .expect("bob's camera");
-    alice
-        .wait_for_js(&shows_test_pattern("@bob:localhost"), DEFAULT_WAIT)
+    wait_test_pattern(&mut alice, "@bob:localhost")
         .await
         .expect("alice sees bob's camera");
     alice
@@ -1404,7 +1422,7 @@ async fn a_camera_shows_in_its_persons_card_among_equal_cards() {
     // cards' size.
     drag_stage(&mut alice, -400).await;
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-    let at_first = alice.eval(STAGE_CARDS).await.expect("cards");
+    let at_first = serde_json::json!(stage_cards(&mut alice).await);
     if let Some(path) = alice.screenshot("call-cards").await.expect("screenshot") {
         eprintln!("screenshot: {}", path.display());
     }
@@ -1416,19 +1434,9 @@ async fn a_camera_shows_in_its_persons_card_among_equal_cards() {
         .unwrap_or_else(|| panic!("the cards: {at_first}"));
 
     // Drag the stage 200 px taller: the cards grow and still fit.
-    alice
-        .eval(
-            "const h = document.querySelector('.call-stage-resize').getBoundingClientRect(); \
-             const x = h.left + h.width / 2, y = h.top + h.height / 2; \
-             const at = (type, dy, target) => target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y + dy, buttons: 1 })); \
-             at('mousedown', 0, document.querySelector('.call-stage-resize')); \
-             for (let dy = 20; dy <= 200; dy += 20) at('mousemove', dy, window); \
-             at('mouseup', 200, window); return true;",
-        )
-        .await
-        .expect("drag");
+    drag_stage(&mut alice, 200).await;
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-    let resized = alice.eval(STAGE_CARDS).await.expect("cards");
+    let resized = serde_json::json!(stage_cards(&mut alice).await);
     if let Some(path) = alice
         .screenshot("call-cards-resized")
         .await
@@ -1447,10 +1455,12 @@ async fn a_camera_shows_in_its_persons_card_among_equal_cards() {
         "bigger cards in a taller stage: {first} → {later}"
     );
     // Put the stage's size back for other tests.
-    alice
-        .eval("localStorage.removeItem('morpheus.callStageHeight'); return true;")
-        .await
-        .expect("forget the size");
+    if !alice.is_gpui() {
+        alice
+            .eval("localStorage.removeItem('morpheus.callStageHeight'); return true;")
+            .await
+            .expect("forget the size");
+    }
 
     bob.click(".voice-panel .hang-up")
         .await
@@ -2039,17 +2049,9 @@ static NEXT_CHANNEL: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32
 
 /// Drag the call stage's bottom edge by `dy` pixels (down is taller).
 async fn drag_stage(app: &mut App, dy: i32) {
-    let step = if dy < 0 { -20 } else { 20 };
-    app.eval(&format!(
-        "const h = document.querySelector('.call-stage-resize').getBoundingClientRect(); \
-         const x = h.left + h.width / 2, y = h.top + h.height / 2; \
-         const at = (type, d, target) => target.dispatchEvent(new MouseEvent(type, {{ bubbles: true, cancelable: true, clientX: x, clientY: y + d, buttons: 1 }})); \
-         at('mousedown', 0, document.querySelector('.call-stage-resize')); \
-         for (let d = {step}; Math.abs(d) <= Math.abs({dy}); d += {step}) at('mousemove', d, window); \
-         at('mouseup', {dy}, window); return true;"
-    ))
-    .await
-    .expect("drag the stage");
+    app.drag(".call-stage-resize", 0, dy)
+        .await
+        .expect("drag the stage");
 }
 
 /// Settings → Voice & Video: each device list has its icon, and the camera
@@ -2615,14 +2617,53 @@ async fn go_to_the_call_start_a_dm_call_and_decline_by_keyboard() {
 }
 
 /// The card focused in the call's view, the cards in the strip beside it,
-/// and whether the focused one is much bigger: `[main, strip, bigger]`.
-const FOCUS_STATE: &str = "const c = document.querySelector('.call-cards.focused, .call-tiles.focused'); \
-     if (!c) return null; \
-     const main = c.querySelector('.call-focus-main > *'), strip = [...c.querySelectorAll('.call-strip > *')]; \
-     const w = el => el.getBoundingClientRect().width; \
-     return [main ? (main.classList.contains('screen') ? 'screen:' : '') + main.dataset.user : null, \
-       strip.map(s => s.dataset.user), \
-       !!main && strip.every(s => w(main) > 2 * w(s))];";
+/// and whether the focused one is much bigger: `(main, strip, bigger)`, or
+/// `None` with nothing focused. A shared screen's card is `screen:<user>`.
+async fn focus_state(app: &mut App) -> Option<(Option<String>, Vec<String>, bool)> {
+    if app
+        .count(".call-cards.focused, .call-tiles.focused")
+        .await
+        .expect("count")
+        == 0
+    {
+        return None;
+    }
+    let user = app
+        .attr(".call-focus-main > *", "data-user")
+        .await
+        .expect("main");
+    let screen = app.count(".call-focus-main > .screen").await.expect("count") > 0;
+    let main = user.map(|u| if screen { format!("screen:{u}") } else { u });
+    let strip: Vec<String> = app
+        .attrs(".call-strip > *", "data-user")
+        .await
+        .expect("strip")
+        .into_iter()
+        .flatten()
+        .collect();
+    let main_width = app
+        .bounds(".call-focus-main > *")
+        .await
+        .expect("bounds")
+        .map(|b| b.w);
+    let strip_widths = app.all_bounds(".call-strip > *").await.expect("bounds");
+    let bigger = main_width.is_some_and(|w| strip_widths.iter().all(|s| w > 2.0 * s.w));
+    Some((main, strip, bigger))
+}
+
+/// Wait until the focused card is `main` (see [`focus_state`]).
+async fn wait_focused(app: &mut App, main: &str) -> anyhow::Result<()> {
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        if focus_state(app).await.and_then(|state| state.0).as_deref() == Some(main) {
+            return Ok(());
+        }
+        if std::time::Instant::now() >= deadline {
+            anyhow::bail!("{main} never focused; {:?}", focus_state(app).await);
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+}
 
 /// Clicking a card in a call focuses it, as in Discord: large, with the
 /// others in a strip. Clicking it again, or Escape, goes back to the grid.
@@ -2656,8 +2697,12 @@ async fn clicking_a_card_in_a_call_focuses_it() {
         .expect("focused");
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     assert_eq!(
-        alice.eval(FOCUS_STATE).await.expect("state"),
-        serde_json::json!(["@bob:localhost", ["@alice:localhost"], true]),
+        focus_state(&mut alice).await,
+        Some((
+            Some("@bob:localhost".to_owned()),
+            vec!["@alice:localhost".to_owned()],
+            true
+        )),
         "bob large, alice in the strip"
     );
     alice
@@ -2665,10 +2710,7 @@ async fn clicking_a_card_in_a_call_focuses_it() {
         .await
         .expect("click bob again");
     alice
-        .wait_for_js(
-            "return !document.querySelector('.call-cards.focused');",
-            DEFAULT_WAIT,
-        )
+        .wait_for_count(".call-cards.focused", 0, DEFAULT_WAIT)
         .await
         .expect("back to the grid");
 
@@ -2683,25 +2725,19 @@ async fn clicking_a_card_in_a_call_focuses_it() {
     bob.click(".call-stage .video-tile.screen")
         .await
         .expect("click the screen");
-    bob.wait_for_js(
-        &format!("return (() => {{ {FOCUS_STATE} }})()?.[0] === 'screen:@alice:localhost';"),
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("the screen focused");
+    wait_focused(&mut bob, "screen:@alice:localhost")
+        .await
+        .expect("the screen focused");
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     assert_eq!(
-        bob.eval(FOCUS_STATE).await.expect("state")[2],
-        serde_json::json!(true),
+        focus_state(&mut bob).await.map(|state| state.2),
+        Some(true),
         "the screen much bigger than the cards in the strip"
     );
     bob.press("body", "Escape").await.expect("escape");
-    bob.wait_for_js(
-        "return !document.querySelector('.call-cards.focused');",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("Escape: back to the grid");
+    bob.wait_for_count(".call-cards.focused", 0, DEFAULT_WAIT)
+        .await
+        .expect("Escape: back to the grid");
 
     alice
         .click(".voice-panel .screen-button")
@@ -2790,11 +2826,7 @@ async fn on_a_phone_a_card_is_enlarged_from_its_button() {
         .click(&format!("{card} .card-enlarge"))
         .await
         .expect("enlarge");
-    alice
-        .wait_for_js(
-            &format!("return (() => {{ {FOCUS_STATE} }})()?.[0] === '@bob:localhost';"),
-            DEFAULT_WAIT,
-        )
+    wait_focused(&mut alice, "@bob:localhost")
         .await
         .expect("bob focused");
     alice
@@ -2802,10 +2834,7 @@ async fn on_a_phone_a_card_is_enlarged_from_its_button() {
         .await
         .expect("shrink");
     alice
-        .wait_for_js(
-            "return !document.querySelector('.call-tiles.focused');",
-            DEFAULT_WAIT,
-        )
+        .wait_for_count(".call-tiles.focused", 0, DEFAULT_WAIT)
         .await
         .expect("back to the grid");
     alice
