@@ -41,6 +41,8 @@ pub enum ProfileEvent {
     More(Point<Pixels>),
     /// The shield button: this person's mod view.
     ModView(OwnedUserId),
+    /// The full profile's id was clicked: this link is to be copied.
+    Copied(String),
 }
 
 impl EventEmitter<ProfileEvent> for ProfileCard {}
@@ -491,7 +493,12 @@ impl Render for ProfileCard {
                     .text_size(px(0.85 * theme::REM))
                     .text_color(rgb(theme::text_muted()))
                     .child(self.user.to_string())
+                    .id("profile-id")
+                    .cursor_pointer()
+                    .hover(|s| s.underline())
+                    .on_click(cx.listener(|this, _, _, cx| this.show_full(cx)))
                     .e2e("p", "profile-id muted")
+                    .attr("title", "View full profile")
                     .text(self.user.to_string()),
             );
         if let Some(status) = self.profile.as_ref().and_then(|p| p.status.clone()) {
@@ -720,7 +727,14 @@ impl ProfileCard {
                     .text_size(px(0.85 * theme::REM))
                     .text_color(rgb(theme::text_muted()))
                     .child(self.user.to_string())
+                    .id("profile-id")
+                    .cursor_pointer()
+                    .hover(|s| s.underline())
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        cx.emit(ProfileEvent::Copied(format!("https://matrix.to/#/{}", this.user)))
+                    }))
                     .e2e("p", "profile-id muted")
+                    .attr("title", "Copy the link to this profile")
                     .text(self.user.to_string()),
             );
         if let Some(status) = self.profile.as_ref().and_then(|p| p.status.clone()) {

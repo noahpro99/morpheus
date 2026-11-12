@@ -46,6 +46,10 @@ impl Shell {
                 this.set_scope(Scope::Dms, cx);
                 this.open_room(room.clone(), cx);
             }
+            ProfileEvent::Copied(link) => {
+                cx.write_to_clipboard(gpui::ClipboardItem::new_string(link.clone()));
+                this.toast("Link copied", cx);
+            }
             ProfileEvent::ModView(user) => {
                 let shown = this.card.as_ref().map(|card| card.read(cx).name());
                 this.card = None;
