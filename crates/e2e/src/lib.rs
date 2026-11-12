@@ -1465,7 +1465,7 @@ impl App {
     /// exactly `name` (else one containing it), looking through the spaces.
     async fn open_room_gpui(&mut self, name: &str) -> Result<()> {
         let deadline = Instant::now() + DEFAULT_WAIT;
-        loop {
+        'rows: loop {
             for filter in [json!({ "exact": name }), json!({ "contains": name })] {
                 if self
                     .op("count", ".room .room-name", filter.clone())
@@ -1474,9 +1474,17 @@ impl App {
                     > Some(0)
                 {
                     self.op("click", ".room .room-name", filter).await?;
-                    return self
-                        .wait_for_text(".chat-header h2", name, DEFAULT_WAIT)
-                        .await;
+                    // The list can shift between the press and the release
+                    // (rooms arriving above the row), which drops the click:
+                    // click again, as a user would, until the deadline.
+                    match self
+                        .wait_for_text(".chat-header h2", name, Duration::from_secs(4))
+                        .await
+                    {
+                        Ok(()) => return Ok(()),
+                        Err(err) if Instant::now() >= deadline => return Err(err),
+                        Err(_) => continue 'rows,
+                    }
                 }
             }
             let badges = self.count(".rail-item").await?;
@@ -1492,9 +1500,17 @@ impl App {
                     > Some(0)
                 {
                     self.op("click", ".room .room-name", filter).await?;
-                    return self
-                        .wait_for_text(".chat-header h2", name, DEFAULT_WAIT)
-                        .await;
+                    // The list can shift between the press and the release
+                    // (rooms arriving above the row), which drops the click:
+                    // click again, as a user would, until the deadline.
+                    match self
+                        .wait_for_text(".chat-header h2", name, Duration::from_secs(4))
+                        .await
+                    {
+                        Ok(()) => return Ok(()),
+                        Err(err) if Instant::now() >= deadline => return Err(err),
+                        Err(_) => continue 'rows,
+                    }
                 }
             }
             if Instant::now() >= deadline {
