@@ -207,6 +207,36 @@ pub fn changed_range(old: &[Row], new: &[Row]) -> (usize, usize, usize) {
     (start, old.len() - start - tail, new.len() - start - tail)
 }
 
+impl Row {
+    /// What identifies this row across rebuilds (`None` for a placeholder).
+    fn key(&self) -> Option<String> {
+        match self {
+            Self::Message { row, .. } => Some(format!("m{}", row.message.unique_id)),
+            Self::Date(_, at) => Some(format!("d{at}")),
+            Self::Start => Some("s".into()),
+            Self::New => Some("n".into()),
+            Self::Skeleton { .. } => None,
+        }
+    }
+}
+
+/// Where the view stays put when the rows change: the first row at or after
+/// `from` in `old` that is still in `new`, as (its index in `old`, its index
+/// in `new`). A list scrolled to the top shows a placeholder row first, so
+/// rows added after it would push what was on screen away; anchoring on a
+/// real row keeps the view on it.
+pub fn anchor_row(old: &[Row], from: usize, new: &[Row]) -> Option<(usize, usize)> {
+    let keys: HashMap<String, usize> = new
+        .iter()
+        .enumerate()
+        .filter_map(|(ix, row)| Some((row.key()?, ix)))
+        .collect();
+    old.iter()
+        .enumerate()
+        .skip(from)
+        .find_map(|(ix, row)| Some((ix, *keys.get(&row.key()?)?)))
+}
+
 #[cfg(test)]
 #[allow(clippy::expect_used)]
 mod tests {
@@ -366,6 +396,31 @@ mod tests {
         assert_eq!(first[0], second[0], "same message, same row");
         assert_ne!(first[1], second[1], "an edited one is a new row");
         assert_eq!(changed_range(&first, &second), (1, 1, 1));
+    }
+
+    #[test]
+    fn the_view_anchors_on_a_real_row_when_older_ones_arrive() {
+        let rows = |ids: &[&str]| -> Vec<Row> {
+            let entries: Vector<TimelineEntry> = ids
+                .iter()
+                .map(|id| message_by(id, "@bob:localhost", 0, text(id)))
+                .collect();
+            group_rows(&entries, None, &HashMap::new())
+        };
+        let skeleton = || Row::Skeleton { older: true };
+        let mut old = rows(&["c", "d"]);
+        old.insert(0, skeleton());
+        // A page of older messages arrives after the placeholder.
+        let mut new = rows(&["a", "b", "c", "d"]);
+        new.insert(0, skeleton());
+        // The view was at the top, on the placeholder: it stays on "c".
+        let (from, to) = anchor_row(&old, 0, &new).expect("an anchor");
+        assert_eq!((from, to), (1, 3));
+        // A row that is gone passes the anchor on to the next one still there.
+        let gone = rows(&["d"]);
+        assert_eq!(anchor_row(&old, 1, &gone), Some((2, 0)));
+        // Nothing left in common: no anchor.
+        assert_eq!(anchor_row(&old, 0, &rows(&["x"])), None);
     }
 
     #[test]

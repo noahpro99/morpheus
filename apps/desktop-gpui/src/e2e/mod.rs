@@ -44,6 +44,11 @@ pub trait Scrollable {
     fn scroll_state(&self) -> ScrollState;
     /// Scrolls to `from_bottom` pixels from the bottom (clamped to the range).
     fn scroll_to(&self, from_bottom: f32);
+    /// Scrolls the content up by `down` px (the view moves down; negative: up),
+    /// relative to what is on screen now rather than to an estimated range.
+    fn scroll_by(&self, down: f32) {
+        self.scroll_to(self.scroll_state().from_bottom - down);
+    }
 }
 
 /// A scroll container's own handle as a probe (offset 0 at the top).

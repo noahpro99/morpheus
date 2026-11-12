@@ -40,7 +40,7 @@ use crate::{
     },
     view_model::nicknames::NickMap,
     view_model::rows::{
-        MessageRow, Row, changed_range, first_unread_after_marker, first_unread_since, group_rows,
+        MessageRow, Row, anchor_row, changed_range, first_unread_after_marker, first_unread_since, group_rows,
     },
 };
 
@@ -166,6 +166,10 @@ impl Scrollable for ListProbe {
         let max = metrics(&self.0).range;
         let top = (max - from_bottom.clamp(0.0, max)).max(0.0);
         self.0.set_offset_from_scrollbar(point(px(0.0), px(-top)));
+    }
+
+    fn scroll_by(&self, down: f32) {
+        self.0.scroll_by(px(down));
     }
 }
 
@@ -438,8 +442,19 @@ impl TimelineView {
             rows.insert(0, Row::Skeleton { older: true });
         }
         let (start, removed, added) = changed_range(&self.rows, &rows);
+        // A view scrolled up stays on the row it was on: the list keeps its
+        // place by row number, which older rows (or a replaced run of rows)
+        // arriving above or around it would otherwise move.
+        let top = self.list.logical_scroll_top();
+        let anchor = (top.item_ix < self.rows.len())
+            .then(|| anchor_row(&self.rows, top.item_ix, &rows))
+            .flatten();
         if removed > 0 || added > 0 {
             self.list.splice(start..start + removed, added);
+            if let Some((was, now)) = anchor {
+                let offset_in_item = if was == top.item_ix { top.offset_in_item } else { px(0.0) };
+                self.list.scroll_to(ListOffset { item_ix: now, offset_in_item });
+            }
         }
         self.rows = rows;
     }
