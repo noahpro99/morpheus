@@ -73,9 +73,14 @@ async fn shortcuts_navigate_rooms_scopes_history_and_panels() {
     app.wait_for_text_gone(".chat-header h2", &before, DEFAULT_WAIT)
         .await
         .expect("moved to the next room");
-    app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
-        .await
-        .expect("the next room is open");
+    if app.is_gpui() {
+        // The GPUI room opens its timeline a moment after its header; Alt+Up
+        // before then would step from the room still opening. (On Dioxus the
+        // next room can be one with no message box, so this is not asked there.)
+        app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
+            .await
+            .expect("the next room is open");
+    }
     app.key_combo("body", "ArrowUp", false, true, false)
         .await
         .expect("alt+up");
@@ -90,18 +95,29 @@ async fn shortcuts_navigate_rooms_scopes_history_and_panels() {
     app.wait_for(".rail-item.selected[title=\"Engineering\"]", DEFAULT_WAIT)
         .await
         .expect("next scope");
-    // The space's first room, as its sidebar lists it (rooms other tests made
-    // there come and go, so the name is read, not assumed).
-    let first_listed = app
+    // A room of the space opens. Which one is the app's choice (GPUI: the
+    // first its sidebar lists; Dioxus: the most recent), and rooms other
+    // tests made there come and go, so the header is checked against the list.
+    let listed: Vec<String> = app
         .texts(".room-list .room .room-name")
         .await
         .expect("sidebar")
-        .first()
+        .into_iter()
         .map(|n| n.trim().to_owned())
-        .expect("a room in the space");
-    app.wait_for_text(".chat-header h2", &first_listed, DEFAULT_WAIT)
-        .await
-        .expect("first room of the space");
+        .collect();
+    assert!(!listed.is_empty(), "a room in the space");
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let shown = header(&mut app).await;
+        if listed.contains(&shown) {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "a room of the space opens: the header says {shown:?}, the space lists {listed:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
     app.key_combo("body", "ArrowLeft", false, true, false)
         .await
         .expect("alt+left");
@@ -434,9 +450,14 @@ async fn ctrl_alt_right_toggles_the_last_dm_and_server_channel() {
         assert!(std::time::Instant::now() < deadline, "two DMs: {names:?}");
         tokio::time::sleep(Duration::from_millis(100)).await;
     };
-    app.click_text(".room.dm", &dm)
-        .await
-        .expect("open the second DM");
+    // The second row itself (two DMs can carry the same name; the GPUI
+    // selectors have no `+`, and there the first row of the name is taken).
+    if app.is_gpui() {
+        app.click_text(".room.dm", &dm).await
+    } else {
+        app.click(".room:not(.friends-row) + .room").await
+    }
+    .expect("open the second DM");
     app.wait_for_text(".chat-header h2", &dm, DEFAULT_WAIT)
         .await
         .expect("in that DM");

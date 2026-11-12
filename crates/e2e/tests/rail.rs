@@ -406,13 +406,7 @@ async fn dragging_a_server_shows_a_line_where_it_lands() {
         line.h > 0.0 && line.h <= 4.0 && line.w >= 24.0,
         "a thin line: {line:?}"
     );
-    assert_eq!(
-        app.colours_of(".rail-drop-line", "background")
-            .await
-            .expect("colour"),
-        ["#ffffff"],
-        "a white line"
-    );
+    assert_eq!(line_colour(&mut app).await, "#ffffff", "a white line");
     assert!(
         line.y >= two.y + two.h - 2.0 && line.y + line.h <= one.y + 2.0,
         "between two and one: {line:?}, {two:?}, {one:?}"
@@ -440,6 +434,29 @@ async fn dragging_a_server_shows_a_line_where_it_lands() {
         "the line goes"
     );
     assert_eq!(cursor(&mut app).await, "auto", "the pointer is back");
+}
+
+/// The drop line's colour as `#rrggbb` (the page's computed style, or what the
+/// GPUI app notes on the line; the line is fixed in the page, which
+/// `colours_of` skips).
+async fn line_colour(app: &mut App) -> String {
+    if app.is_gpui() {
+        return app
+            .colours_of(".rail-drop-line", "background")
+            .await
+            .expect("colour")
+            .into_iter()
+            .next()
+            .unwrap_or_default();
+    }
+    let rgb = app
+        .eval("const line = document.querySelector('.rail-drop-line'); return line ? getComputedStyle(line).backgroundColor : null;")
+        .await
+        .expect("colour");
+    match rgb.as_str() {
+        Some("rgb(255, 255, 255)") => "#ffffff".into(),
+        other => format!("{other:?}"),
+    }
 }
 
 /// The pointer's look: the page's `cursor` (Dioxus), or what the GPUI app
