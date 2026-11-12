@@ -8,7 +8,7 @@
 use std::{
     collections::HashMap,
     sync::{Mutex, OnceLock},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use matrix_sdk::ruma::{
@@ -65,7 +65,11 @@ pub struct CallCredentials {
 
 impl Session {
     /// Join the call in `room_id` (starting one if nobody is in it): get
-    /// LiveKit credentials, then tell the room this device is in the call.
+    /// LiveKit credentials, and tell the room this device is in the call.
+    /// The two go on together (the membership names the service, not the
+    /// token), and what the homeserver does not change between calls (the
+    /// call service, the OpenID token, whether it takes delayed events, a
+    /// LiveKit token's lifetime) is remembered, see [`Session::prepare_calls`].
     pub fn join_call(&self, room_id: OwnedRoomId) -> CoreFuture<CallCredentials> {
         let session = self.clone();
         self.core.run(async move {
@@ -74,104 +78,107 @@ impl Session {
             let user_id = client.user_id().ok_or(Error::NoSession)?.to_owned();
             let device_id = client.device_id().ok_or(Error::NoSession)?.to_owned();
 
-            let services = livekit_services(&client).await;
-            if services.is_empty() {
+            let services = livekit_services_cached(&client).await;
+            let Some(first_service) = services.first().cloned() else {
                 return Err(Error::Other(
                     "this homeserver has no call service (LiveKit) set up".into(),
                 ));
-            }
-            let mut last_err = None;
-            let mut credentials = None;
-            for service in services {
-                match livekit_token(&client, &room_id, &user_id, device_id.as_str(), &service).await
-                {
-                    Ok(found) => {
-                        credentials = Some(found);
-                        break;
-                    }
-                    Err(err) => {
-                        debug!(%service, %err, "call service refused a token");
-                        last_err = Some(err);
-                    }
-                }
-            }
-            let credentials = match (credentials, last_err) {
-                (Some(credentials), _) => credentials,
-                (None, Some(err)) => return Err(err),
-                (None, None) => return Err(Error::Other("no call service answered".into())),
             };
-            ensure_calls_allowed(&room, &user_id).await?;
-            let mut credentials = credentials;
             let encrypted = room
                 .latest_encryption_state()
                 .await
                 .map(|state| state.is_encrypted())
                 .unwrap_or(false);
+            let state_key = member_state_key(user_id.clone(), device_id.as_str());
+
+            // The token, and the membership (with its scheduled leave), at once.
+            let token = async {
+                let mut last_err = None;
+                for service in &services {
+                    match livekit_token_cached(
+                        &client,
+                        &room_id,
+                        &user_id,
+                        device_id.as_str(),
+                        service,
+                    )
+                    .await
+                    {
+                        Ok(found) => return Ok(found),
+                        Err(err) => {
+                            debug!(%service, %err, "call service refused a token");
+                            last_err = Some(err);
+                        }
+                    }
+                }
+                Err(last_err.unwrap_or_else(|| Error::Other("no call service answered".into())))
+            };
+            let membership = async {
+                ensure_calls_allowed(&room, &user_id).await?;
+                // If this device vanishes (crash, battery, network), the
+                // homeserver hangs up for it: a leave is scheduled now and
+                // postponed for as long as the app keeps checking in.
+                stop_heartbeat(&user_id, &room_id);
+                let content = member_content(&room_id, &device_id, &first_service);
+                // Kept, so the media state can be added to it later.
+                if let (Ok(value), Ok(mut kept)) =
+                    (serde_json::to_value(&content), memberships().lock())
+                {
+                    kept.insert(
+                        (user_id.clone(), room_id.clone()),
+                        (state_key.as_ref().to_owned(), value),
+                    );
+                }
+                let others_in_call = call_participants(&room).iter().any(|u| *u != user_id);
+                let (_, sent) = futures_util::future::join(
+                    schedule_leave(&client, &room_id, &user_id, &state_key),
+                    room.send_state_event_for_key(&state_key, content),
+                )
+                .await;
+                Ok::<_, Error>((sent?.event_id, others_in_call))
+            };
+            let (credentials, membership) = futures_util::future::join(token, membership).await;
+            let (event_id, others_in_call) = match (credentials.as_ref(), membership) {
+                (Ok(_), Ok(done)) => done,
+                (credentials, membership) => {
+                    // One half failed: the other must not stay behind.
+                    if membership.is_ok() {
+                        let _ = leave_now(&session, &room, &client, &user_id, &device_id).await;
+                    }
+                    return match credentials {
+                        Err(err) => Err(Error::Other(err.to_string())),
+                        Ok(_) => Err(membership.err().unwrap_or(Error::NoSession)),
+                    };
+                }
+            };
+            let mut credentials = credentials?;
+            if credentials.service_url != first_service {
+                // The first service refused: the membership names the one that answered.
+                let content = member_content(&room_id, &device_id, &credentials.service_url);
+                if let (Ok(value), Ok(mut kept)) =
+                    (serde_json::to_value(&content), memberships().lock())
+                {
+                    kept.insert(
+                        (user_id.clone(), room_id.clone()),
+                        (state_key.as_ref().to_owned(), value),
+                    );
+                }
+                room.send_state_event_for_key(&state_key, content).await?;
+            }
             if encrypted {
                 use rand::RngCore as _;
                 let mut key = vec![0u8; 16];
                 rand::rng().fill_bytes(&mut key);
                 credentials.media_key = Some(key);
             }
-            let state_key = member_state_key(user_id.clone(), device_id.as_str());
-
-            // If this device vanishes (crash, battery, network), the
-            // homeserver hangs up for it: a leave is scheduled now and
-            // postponed for as long as the app keeps checking in.
-            stop_heartbeat(&user_id, &room_id);
-            match client
-                .send(delayed_state_event::unstable::Request::new(
-                    room_id.clone(),
-                    state_key.as_ref().to_owned(),
-                    DelayParameters::Timeout {
-                        timeout: LEAVE_DELAY,
-                    },
-                    &CallMemberEventContent::new_empty(None),
-                )?)
-                .await
-            {
-                Ok(response) => {
-                    let heartbeat =
-                        crate::rt::spawn(heartbeat(client.clone(), response.delay_id.clone()));
-                    if let Ok(mut beats) = heartbeats().lock() {
-                        beats.insert(
-                            (user_id.clone(), room_id.clone()),
-                            (heartbeat, response.delay_id),
-                        );
-                    }
+            // The ring goes out on its own: nothing waits for it.
+            let ring_room = room.clone();
+            let ring_user = user_id.clone();
+            crate::rt::spawn(async move {
+                if let Err(err) = ring_if_direct(&ring_room, &ring_user, others_in_call, event_id).await {
+                    debug!(%err, "could not ring");
                 }
-                // Without delayed events (older homeservers) the membership
-                // simply expires, as it does for everyone after a few hours.
-                Err(err) => debug!(%err, "no delayed leave for the call"),
-            }
-
-            let content = CallMemberEventContent::new(
-                Application::Call(CallApplicationContent::new(String::new(), CallScope::Room)),
-                device_id.clone(),
-                ActiveFocus::Livekit(ActiveLivekitFocus::new()),
-                vec![Focus::Livekit(LivekitFocus::new(
-                    room_id.to_string(),
-                    credentials.service_url.clone(),
-                ))],
-                None,
-                None,
-            );
-            // Kept, so the media state can be added to it later.
-            if let (Ok(value), Ok(mut kept)) =
-                (serde_json::to_value(&content), memberships().lock())
-            {
-                kept.insert(
-                    (user_id.clone(), room_id.clone()),
-                    (state_key.as_ref().to_owned(), value),
-                );
-            }
-            let others_in_call = call_participants(&room).iter().any(|u| *u != user_id);
-            let membership = room.send_state_event_for_key(&state_key, content).await?;
-            if let Err(err) =
-                ring_if_direct(&room, &user_id, others_in_call, membership.event_id).await
-            {
-                debug!(%err, "could not ring");
-            }
+            });
             Ok(credentials)
         })
     }
@@ -975,5 +982,268 @@ impl Session {
                 .await?;
             Ok(())
         })
+    }
+}
+
+// ---- What joining remembers, and does together --------------------------
+
+/// The membership event's content for this device, naming `service`.
+fn member_content(
+    room_id: &OwnedRoomId,
+    device_id: &matrix_sdk::ruma::OwnedDeviceId,
+    service: &str,
+) -> CallMemberEventContent {
+    CallMemberEventContent::new(
+        Application::Call(CallApplicationContent::new(String::new(), CallScope::Room)),
+        device_id.clone(),
+        ActiveFocus::Livekit(ActiveLivekitFocus::new()),
+        vec![Focus::Livekit(LivekitFocus::new(
+            room_id.to_string(),
+            service.to_owned(),
+        ))],
+        None,
+        None,
+    )
+}
+
+/// How long a homeserver that refused delayed events is left alone.
+const DELAYED_RETRY: Duration = Duration::from_secs(30 * 60);
+/// How long a homeserver's call services are trusted.
+const SERVICES_FOR: Duration = Duration::from_secs(30 * 60);
+
+fn delayed_refused() -> &'static Mutex<HashMap<String, Instant>> {
+    static REFUSED: OnceLock<Mutex<HashMap<String, Instant>>> = OnceLock::new();
+    REFUSED.get_or_init(Default::default)
+}
+
+fn cached_services() -> &'static Mutex<HashMap<String, (Instant, Vec<String>)>> {
+    static SERVICES: OnceLock<Mutex<HashMap<String, (Instant, Vec<String>)>>> = OnceLock::new();
+    SERVICES.get_or_init(Default::default)
+}
+
+/// A usable OpenID token, and the moment to stop reusing it.
+type OpenIdKept = (Instant, Value);
+
+fn cached_openid() -> &'static Mutex<HashMap<OwnedUserId, OpenIdKept>> {
+    static OPENID: OnceLock<Mutex<HashMap<OwnedUserId, OpenIdKept>>> = OnceLock::new();
+    OPENID.get_or_init(Default::default)
+}
+
+type TokenKey = (OwnedRoomId, OwnedUserId, String, String);
+
+fn cached_tokens() -> &'static Mutex<HashMap<TokenKey, (Instant, CallCredentials)>> {
+    static TOKENS: OnceLock<Mutex<HashMap<TokenKey, (Instant, CallCredentials)>>> =
+        OnceLock::new();
+    TOKENS.get_or_init(Default::default)
+}
+
+fn homeserver_key(client: &matrix_sdk::Client) -> String {
+    client.homeserver().to_string()
+}
+
+/// The call services, from memory when this homeserver was asked lately.
+async fn livekit_services_cached(client: &matrix_sdk::Client) -> Vec<String> {
+    let key = homeserver_key(client);
+    if let Ok(kept) = cached_services().lock()
+        && let Some((at, found)) = kept.get(&key)
+        && at.elapsed() < SERVICES_FOR
+    {
+        return found.clone();
+    }
+    let found = livekit_services(client).await;
+    if !found.is_empty()
+        && let Ok(mut kept) = cached_services().lock()
+    {
+        kept.insert(key, (Instant::now(), found.clone()));
+    }
+    found
+}
+
+/// The OpenID token for `user_id`, a fresh one only when the last is about
+/// to expire.
+async fn openid_cached(
+    client: &matrix_sdk::Client,
+    user_id: &OwnedUserId,
+) -> crate::Result<Value> {
+    if let Ok(kept) = cached_openid().lock()
+        && let Some((until, token)) = kept.get(user_id)
+        && Instant::now() < *until
+    {
+        return Ok(token.clone());
+    }
+    let openid = client
+        .send(request_openid_token::v3::Request::new(user_id.clone()))
+        .await?;
+    let lifetime = openid.expires_in;
+    let token = json!({
+        "access_token": openid.access_token,
+        "token_type": openid.token_type.to_string(),
+        "matrix_server_name": openid.matrix_server_name.to_string(),
+        "expires_in": lifetime.as_secs(),
+    });
+    // Reused for most of its life; the services check it against the
+    // homeserver when swapping it, so it must still be valid then.
+    let keep = lifetime.saturating_sub(Duration::from_secs(120)) / 2;
+    if let Ok(mut kept) = cached_openid().lock() {
+        kept.insert(user_id.clone(), (Instant::now() + keep, token.clone()));
+    }
+    Ok(token)
+}
+
+/// When a LiveKit token (a JWT) stops being good: its `exp` claim.
+fn jwt_expiry(jwt: &str) -> Option<std::time::SystemTime> {
+    use base64::Engine as _;
+    let payload = jwt.split('.').nth(1)?;
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload.trim_end_matches('='))
+        .ok()?;
+    let claims: Value = serde_json::from_slice(&bytes).ok()?;
+    let exp = claims.get("exp")?.as_u64()?;
+    Some(std::time::UNIX_EPOCH + Duration::from_secs(exp))
+}
+
+/// A LiveKit token for the room's call: the last one while it has well over
+/// a minute left, else a new one.
+async fn livekit_token_cached(
+    client: &matrix_sdk::Client,
+    room_id: &OwnedRoomId,
+    user_id: &OwnedUserId,
+    device_id: &str,
+    service: &str,
+) -> crate::Result<CallCredentials> {
+    let key: TokenKey = (
+        room_id.clone(),
+        user_id.clone(),
+        device_id.to_owned(),
+        service.to_owned(),
+    );
+    if let Ok(kept) = cached_tokens().lock()
+        && let Some((until, credentials)) = kept.get(&key)
+        && Instant::now() < *until
+    {
+        return Ok(credentials.clone());
+    }
+    let found = livekit_token(client, room_id, user_id, device_id, service).await?;
+    let left = jwt_expiry(&found.jwt)
+        .and_then(|exp| exp.duration_since(std::time::SystemTime::now()).ok())
+        .unwrap_or_default();
+    if left > Duration::from_secs(300)
+        && let Ok(mut kept) = cached_tokens().lock()
+    {
+        kept.insert(key, (Instant::now() + left - Duration::from_secs(120), found.clone()));
+    }
+    Ok(found)
+}
+
+/// Schedule the homeserver's leave for this device and keep postponing it
+/// ([`heartbeat`]), unless the homeserver has refused delayed events (then
+/// the membership simply expires, as it does for everyone after a few
+/// hours, and nobody asks again for half an hour).
+async fn schedule_leave(
+    client: &matrix_sdk::Client,
+    room_id: &OwnedRoomId,
+    user_id: &OwnedUserId,
+    state_key: &CallMemberStateKey,
+) {
+    let key = homeserver_key(client);
+    if let Ok(refused) = delayed_refused().lock()
+        && let Some(at) = refused.get(&key)
+        && at.elapsed() < DELAYED_RETRY
+    {
+        return;
+    }
+    let Ok(request) = delayed_state_event::unstable::Request::new(
+            room_id.clone(),
+            state_key.as_ref().to_owned(),
+            DelayParameters::Timeout {
+                timeout: LEAVE_DELAY,
+            },
+            &CallMemberEventContent::new_empty(None),
+    ) else {
+        return;
+    };
+    match client.send(request).await {
+        Ok(response) => {
+            let heartbeat = crate::rt::spawn(heartbeat(client.clone(), response.delay_id.clone()));
+            if let Ok(mut beats) = heartbeats().lock() {
+                beats.insert(
+                    (user_id.clone(), room_id.clone()),
+                    (heartbeat, response.delay_id),
+                );
+            }
+        }
+        Err(err) => {
+            debug!(%err, "no delayed leave for the call");
+            if let Ok(mut refused) = delayed_refused().lock() {
+                refused.insert(key, Instant::now());
+            }
+        }
+    }
+}
+
+/// Clear this device's membership now (a join that did not come off).
+async fn leave_now(
+    _session: &Session,
+    room: &matrix_sdk::Room,
+    client: &matrix_sdk::Client,
+    user_id: &OwnedUserId,
+    device_id: &matrix_sdk::ruma::OwnedDeviceId,
+) -> crate::Result<()> {
+    if let Ok(mut kept) = memberships().lock() {
+        kept.remove(&(user_id.clone(), room.room_id().to_owned()));
+    }
+    if let Some(delay_id) = stop_heartbeat(user_id, &room.room_id().to_owned())
+        && update_delay(client, delay_id, UpdateAction::Send).await.is_ok()
+    {
+        return Ok(());
+    }
+    room.send_state_event_for_key(
+        &member_state_key(user_id.clone(), device_id.as_str()),
+        CallMemberEventContent::new_empty(None),
+    )
+    .await?;
+    Ok(())
+}
+
+impl Session {
+    /// Get ready for a call: find the homeserver's call service and take an
+    /// OpenID token, so joining does not wait for them. With a room, its
+    /// LiveKit token too. Quiet and cheap to repeat; the app calls it when
+    /// it starts and when a voice channel comes into view.
+    pub fn prepare_calls(&self, room_id: Option<OwnedRoomId>) -> CoreFuture<()> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            let Some(user_id) = client.user_id().map(ToOwned::to_owned) else {
+                return Ok(());
+            };
+            let services = livekit_services_cached(&client).await;
+            if let Err(err) = openid_cached(&client, &user_id).await {
+                debug!(%err, "no OpenID token ahead of a call");
+                return Ok(());
+            }
+            if let (Some(room_id), Some(service), Some(device_id)) =
+                (room_id, services.first(), client.device_id())
+                && let Err(err) =
+                    livekit_token_cached(&client, &room_id, &user_id, device_id.as_str(), service)
+                        .await
+            {
+                debug!(%err, "no call token ahead of a call");
+            }
+            Ok(())
+        })
+    }
+}
+
+impl CallCredentials {
+    /// This device's name in the call (the token's subject), known before
+    /// connecting: the media key can go out while LiveKit is being reached.
+    pub fn identity(&self) -> Option<String> {
+        use base64::Engine as _;
+        let payload = self.jwt.split('.').nth(1)?;
+        let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(payload.trim_end_matches('='))
+            .ok()?;
+        let claims: Value = serde_json::from_slice(&bytes).ok()?;
+        claims.get("sub")?.as_str().map(str::to_owned)
     }
 }

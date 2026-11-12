@@ -111,9 +111,47 @@ impl Shell {
         sounds::play(sound, self.calls.sound_log.as_ref());
     }
 
+    /// Have what joining waits for ready: the call service and an OpenID
+    /// token, and for a voice channel or a DM its LiveKit token.
+    pub fn prepare_call(&mut self, room: Option<OwnedRoomId>, cx: &mut Context<Self>) {
+        let Some(session) = self.session.clone() else {
+            return;
+        };
+        let wanted = room.filter(|id| {
+            self.rooms
+                .iter()
+                .any(|r| &r.id == id && (r.is_voice || r.is_dm))
+        });
+        let preparing = session.prepare_calls(wanted);
+        cx.spawn(async move |_, _| {
+            let _ = preparing.await;
+        })
+        .detach();
+    }
+
     /// Set up what calls need once the account is known: the chosen devices
     /// and the rings.
     pub fn start_calls(&mut self, session: &Session, cx: &mut Context<Self>) {
+        // Ready before anyone clicks, and kept ready (a token lasts about an hour).
+        let preparing = session.prepare_calls(None);
+        cx.spawn(async move |_, _| {
+            let _ = preparing.await;
+        })
+        .detach();
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(Duration::from_secs(10 * 60))
+                    .await;
+                if this
+                    .update(cx, |this, cx| this.prepare_call(None, cx))
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })
+        .detach();
         let dir = crate::data_dir();
         let prefs = crate::view_model::calls::read_device_prefs(&dir);
         morpheus_call::choose_audio_devices(morpheus_call::DeviceChoice {
@@ -632,6 +670,14 @@ async fn run_call(
         },
         None => None,
     };
+    // Our media key goes out while LiveKit is being reached, under the name
+    // the token gives us (checked against LiveKit's own once connected).
+    let early_key = match (credentials.media_key.clone(), credentials.identity()) {
+        (Some(key), Some(identity)) => {
+            Some((identity.clone(), session.send_call_key(room_id.clone(), key, identity)))
+        }
+        _ => None,
+    };
     let connected = match credentials.media_key.clone() {
         Some(key) => {
             Call::connect_encrypted(
@@ -700,7 +746,15 @@ async fn run_call(
             }
         }
     };
-    share_key().await;
+    match early_key {
+        Some((identity, sending)) if identity == own_identity => {
+            if let Err(err) = sending.await {
+                eprintln!("morpheus-gpui: sharing the call's media key: {err}");
+            }
+        }
+        // Not the name LiveKit gave us: say it again under the right one.
+        _ => share_key().await,
+    }
 
     loop {
         let next = {
