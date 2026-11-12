@@ -90,6 +90,8 @@ pub struct Shell {
     pub selected: Option<OwnedRoomId>,
     pub prefs: Prefs,
     pub open_folders: Vec<String>,
+    /// Where a server dragged on the rail would land now.
+    pub rail_drop: Option<crate::view_model::rail_drag::Drop>,
     pub profile: Option<Profile>,
     /// The accounts stored on this device (the account menu lists them).
     pub accounts: Vec<morpheus_core::SavedAccount>,
@@ -304,6 +306,7 @@ impl Shell {
             selected: None,
             prefs: Prefs::default(),
             open_folders: Vec::new(),
+            rail_drop: None,
             profile: None,
             accounts: Vec::new(),
             directory: Vec::new(),

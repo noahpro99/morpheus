@@ -873,6 +873,42 @@ impl App {
         self.eval(&js).await.map(drop)
     }
 
+    /// [`Self::drag`] that leaves the button down at the end (GPUI: the drag
+    /// stays in progress until [`Self::release`]; Dioxus: a drag by mouse events).
+    pub async fn drag_hold(&mut self, selector: &str, dx: i32, dy: i32) -> Result<()> {
+        if gpui() {
+            return self
+                .op("drag", selector, json!({ "dx": dx, "dy": dy, "hold": true }))
+                .await
+                .map(drop);
+        }
+        let js = format!(
+            "const el = {}; const h = el.getBoundingClientRect(); \
+             const x = h.left + h.width / 2, y = h.top + h.height / 2; \
+             const at = (type, ox, oy, target) => target.dispatchEvent(new MouseEvent(type, {{ bubbles: true, cancelable: true, clientX: x + ox, clientY: y + oy, buttons: 1 }})); \
+             at('mousedown', 0, 0, el); \
+             const steps = Math.max(1, Math.ceil(Math.max(Math.abs({dx}), Math.abs({dy})) / 20)); \
+             for (let i = 1; i <= steps; i++) at('mousemove', {dx} * i / steps, {dy} * i / steps, document); \
+             window.__heldDrag = {{ x: x + {dx}, y: y + {dy} }}; return true;",
+            query(selector)
+        );
+        self.eval(&js).await.map(drop)
+    }
+
+    /// Let go of the drag [`Self::drag_hold`] left in progress.
+    pub async fn release(&mut self) -> Result<()> {
+        if gpui() {
+            return self.op("release", "", json!({})).await.map(drop);
+        }
+        self.eval(
+            "const h = window.__heldDrag; if (!h) throw new Error('nothing held'); \
+             document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, clientX: h.x, clientY: h.y })); \
+             window.__heldDrag = null; return true;",
+        )
+        .await
+        .map(drop)
+    }
+
     /// Right-click an element: a bubbling `contextmenu` event at its centre.
     pub async fn right_click(&mut self, selector: &str) -> Result<()> {
         if gpui() {

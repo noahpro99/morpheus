@@ -12,6 +12,18 @@ use super::{
     room_dialogs::RoomDialogKind,
 };
 
+/// The menu of a rail folder: rename it, or break it up.
+pub fn folder_menu(id: &str, name: &str) -> Vec<MenuItem> {
+    vec![
+        MenuItem::new(
+            "Rename folder",
+            MenuAction::RoomDialog(RoomDialogKind::RenameFolder(id.to_owned(), name.to_owned())),
+        )
+        .icon("pencil"),
+        MenuItem::new("Ungroup", MenuAction::Ungroup(id.to_owned())).icon("folder"),
+    ]
+}
+
 /// The three notification modes, as a submenu with the current one checked.
 fn modes(rooms: &[OwnedRoomId], current: Option<NotifyMode>) -> Vec<MenuItem> {
     [
@@ -461,6 +473,14 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn a_folder_menu_renames_or_ungroups() {
+        let items = folder_menu("f1", "Work");
+        assert_eq!(labels(&items), ["Rename folder", "Ungroup"]);
+        assert_eq!(items[1].action, Some(MenuAction::Ungroup("f1".into())));
+        assert!(items.iter().all(|i| i.glyph().is_some()));
     }
 
     #[test]

@@ -35,6 +35,8 @@ pub enum Done {
     LeftServer,
     /// A nickname was saved (empty: cleared).
     NicknameSaved { user: morpheus_core::OwnedUserId, nickname: String },
+    /// A rail folder was renamed.
+    FolderRenamed { folder: String, name: String },
     /// Your per-server profile changed: member lists read again.
     ProfileSaved,
     /// Your own name, picture or status changed (the footer reads them again).
@@ -116,6 +118,7 @@ impl RoomDialog {
                 let existing = nicknames.get(user.as_str()).cloned().unwrap_or_default();
                 name = field(cx, "nickname", current, &existing);
             }
+            RoomDialogKind::RenameFolder(_, current) => name = field(cx, "name", "", current),
             RoomDialogKind::Privacy(_) | RoomDialogKind::LeaveSpace(_) => {}
         }
         let categories = match &kind {
@@ -358,6 +361,10 @@ impl RoomDialog {
                     Ok(()) => cx.emit(Done::NicknameSaved { user, nickname }),
                     Err(err) => this.note = Some(Note::error(err)),
                 });
+            }
+            RoomDialogKind::RenameFolder(folder, _) => {
+                let name = self.text(&self.name, cx);
+                cx.emit(Done::FolderRenamed { folder, name });
             }
             RoomDialogKind::LeaveSpace(space) => {
                 let children: Vec<OwnedRoomId> = self
@@ -988,6 +995,20 @@ impl RoomDialog {
                     .into_any_element(),
                 );
                 ("room-profile-dialog", parts)
+            }
+            RoomDialogKind::RenameFolder(..) => {
+                parts.push(heading("Rename folder").into_any_element());
+                if let Some(name) = &self.name {
+                    parts.push(field("Name", name));
+                }
+                parts.push(
+                    actions(vec![
+                        self.submit_button(None, "Save", cx),
+                        self.close_button("Cancel", cx),
+                    ])
+                    .into_any_element(),
+                );
+                ("rename-folder-dialog", parts)
             }
             RoomDialogKind::Nickname(_, current) => {
                 parts.push(heading("Nickname").into_any_element());

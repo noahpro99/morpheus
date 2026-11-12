@@ -1,18 +1,19 @@
 //! The rail (`crates/ui/src/components/rail.rs`): direct messages, rooms,
 //! favorites, then a badge per server (or folder of servers). A bar beside
 //! the scope you are in, a dot beside one with something unread.
-//! Not ported yet: dragging badges, the server and folder menus, the
-//! create-a-server dialog.
+//! Badges drag: a server dropped between two entries moves there, onto
+//! another makes a folder of the two, onto a folder goes into it
+//! (`view_model::rail_drag`, `Prefs::drop_badge`).
 
-use std::rc::Rc;
+use std::{rc::Rc, sync::Arc};
 
 use gpui::{
     Context, Div, IntoElement, MouseButton, Pixels, Point, Stateful, div, prelude::*, px, rgb, rgba, svg,
 };
-use morpheus_core::RoomSummary;
+use morpheus_core::{OwnedRoomId, RoomSummary};
 
 use crate::{
-    view_model::room_dialogs::RoomDialogKind,
+    view_model::{rail_drag, room_dialogs::RoomDialogKind},
     e2e::E2eExt as _,
     icons::icon,
     media::avatar,
@@ -33,6 +34,29 @@ struct Badge {
     extra: Vec<(&'static str, String)>,
     /// A right click, where.
     context: Option<Rc<dyn Fn(Point<Pixels>, &mut gpui::Window, &mut gpui::App)>>,
+    /// A server badge can be dragged to a new place.
+    drag: Option<DraggedBadge>,
+}
+
+/// A server being dragged on the rail.
+#[derive(Clone)]
+pub struct DraggedBadge {
+    id: OwnedRoomId,
+    name: String,
+    picture: Option<Arc<gpui::Image>>,
+    size: f32,
+}
+
+/// The picture of the badge that follows the pointer.
+struct BadgeGhost(DraggedBadge);
+
+impl gpui::Render for BadgeGhost {
+    fn render(&mut self, _: &mut gpui::Window, _: &mut Context<Self>) -> impl IntoElement {
+        let badge = &self.0;
+        div()
+            .opacity(0.85)
+            .child(avatar(badge.picture.clone(), &badge.name, badge.size, Some(theme::RADIUS_XL)))
+    }
 }
 
 impl Badge {
@@ -52,6 +76,7 @@ impl Badge {
             unread: unread && !selected,
             extra: Vec::new(),
             context: None,
+            drag: None,
         }
     }
 
@@ -74,6 +99,7 @@ impl Badge {
             (true, false) => (theme::alpha(theme::accent(), 0x1f), theme::accent()),
             (false, false) => (theme::bg_elevated(), theme::text_muted()),
         };
+        let drag = self.drag.clone();
         let mut button: Stateful<Div> = div()
             .id(gpui::SharedString::from(self.id.clone()))
             .relative()
@@ -99,6 +125,9 @@ impl Badge {
                 }
             })
             .on_click(move |_, window, cx| on_click(window, cx));
+        if let Some(dragged) = drag {
+            button = button.on_drag(dragged, |dragged, _, _, cx| cx.new(|_| BadgeGhost(dragged.clone())));
+        }
         if let Some(context) = self.context.clone() {
             button = button.on_mouse_down(MouseButton::Right, move |event, window, cx| {
                 context(event.position, window, cx)
@@ -242,19 +271,23 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             .e2e("div", "rail-divider"),
     );
 
-    for entry in layout(&shell.prefs, &spaces) {
+    let entries = layout(&shell.prefs, &spaces);
+    let count = entries.len();
+    for (index, entry) in entries.into_iter().enumerate() {
         match entry {
             RailEntry::Space(id) => {
                 if let Some(space) = by_id(&id) {
                     let selected = current.space_id() == Some(&id);
-                    rail = rail.child(space_badge(
+                    let badge = space_badge(
                         shell,
                         cx,
                         &space,
                         48.0,
                         selected,
-                        unread_in(&Scope::Space(id)),
-                    ));
+                        unread_in(&Scope::Space(id.clone())),
+                        Some(index),
+                    );
+                    rail = rail.child(entry_slot(shell, cx, index, count, vec![id], badge));
                 }
             }
             RailEntry::Folder {
@@ -285,7 +318,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                     }
                     grid.e2e("div", "folder-grid").into_any_element()
                 };
-                let badge = Badge::new(
+                let mut badge = Badge::new(
                     format!("folder-{id}"),
                     &name,
                     "folder-badge",
@@ -293,7 +326,12 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                     contains_current && !open,
                     !contains_current && folder_unread,
                 )
-                .build(content, true, {
+                ;
+                badge.context = Some({
+                    let (view, id) = (cx.entity(), id.clone());
+                    Rc::new(move |at, _, cx| view.update(cx, |s, cx| s.open_folder_menu(&id, at, cx)))
+                });
+                let badge = badge.build(content, true, {
                     let (view, id) = (cx.entity(), id.clone());
                     move |_, cx| {
                         view.update(cx, |s, cx| {
@@ -325,11 +363,17 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                             40.0,
                             selected,
                             unread_in(&Scope::Space(space.id.clone())),
+                            None,
                         ));
                     }
                     folder = folder.child(items.e2e("div", "folder-items"));
                 }
-                rail = rail.child(folder.e2e("div", &classes).attr("data-folder", id));
+                let member_ids: Vec<OwnedRoomId> = members.iter().map(|s| s.id.clone()).collect();
+                let folder = folder
+                    .e2e("div", &classes)
+                    .attr("data-folder", id)
+                    .attr("data-index", index.to_string());
+                rail = rail.child(entry_slot(shell, cx, index, count, member_ids, folder));
             }
         }
     }
@@ -359,7 +403,83 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             .e2e("button", "rail-item rail-add")
             .attr("title", "Create a server"),
     )
+    .on_drag_move::<DraggedBadge>(cx.listener(|this, event: &gpui::DragMoveEvent<DraggedBadge>, _, cx| {
+        // Out of the rail: nothing to drop on.
+        if !event.bounds.contains(&event.event.position) && this.rail_drop.take().is_some() {
+            cx.notify();
+        }
+    }))
     .e2e("nav", "rail")
+}
+
+/// One top-level entry of the rail, as a slot a badge can be dropped on: the
+/// gaps above and below belong to it (taken out of the layout again by the
+/// negative margin), the top and bottom quarters mean before and after, the
+/// middle onto. The white line shows where a drop lands.
+fn entry_slot(
+    shell: &Shell,
+    cx: &mut Context<Shell>,
+    index: usize,
+    count: usize,
+    members: Vec<OwnedRoomId>,
+    entry: impl IntoElement,
+) -> impl IntoElement {
+    const GAP: f32 = 4.0;
+    let dragging = cx.has_active_drag();
+    let drop = shell.rail_drop.filter(|_| dragging);
+    let view = cx.entity();
+    let line = |at_top: bool| {
+        let base = div()
+            .absolute()
+            .left(px(12.0))
+            .w(px(theme::RAIL_W - 24.0))
+            .h(px(2.0))
+            .rounded(px(1.0))
+            .bg(rgb(0xffffff));
+        (if at_top { base.top(px(-1.0)) } else { base.bottom(px(-1.0)) })
+            .e2e("div", "rail-drop-line")
+            .attr("data-bg", "#ffffff")
+    };
+    div()
+        .relative()
+        .w_full()
+        .flex()
+        .flex_col()
+        .items_center()
+        .py(px(GAP))
+        .my(px(-GAP))
+        .when(drop == Some(rail_drag::Drop { index, onto: true }), |d| {
+            d.rounded(px(theme::RADIUS_XL)).bg(rgba(theme::alpha(theme::accent(), 0x33)))
+        })
+        .when(drop == Some(rail_drag::Drop { index, onto: false }), |d| {
+            d.child(line(true))
+        })
+        .when(
+            index + 1 == count && drop == Some(rail_drag::Drop { index: count, onto: false }),
+            |d| d.child(line(false)),
+        )
+        .child(entry)
+        .on_drag_move::<DraggedBadge>(move |event, _, cx| {
+            if !event.bounds.contains(&event.event.position) {
+                return;
+            }
+            let (top, bottom) = (
+                f32::from(event.bounds.origin.y) + GAP,
+                f32::from(event.bounds.bottom()) - GAP,
+            );
+            let zone = rail_drag::zone(f32::from(event.event.position.y), top, bottom);
+            let own = members.contains(&event.drag(cx).id);
+            let target = rail_drag::target(index, zone, own);
+            view.update(cx, |shell, cx| {
+                if shell.rail_drop != target {
+                    shell.rail_drop = target;
+                    cx.notify();
+                }
+            });
+        })
+        .on_drop::<DraggedBadge>(cx.listener(|this, dragged: &DraggedBadge, _, cx| {
+            this.drop_badge(dragged.id.clone(), cx)
+        }))
 }
 
 fn space_badge(
@@ -369,7 +489,8 @@ fn space_badge(
     size: f32,
     selected: bool,
     unread: bool,
-) -> impl IntoElement {
+    index: Option<usize>,
+) -> gpui::AnyElement {
     let picture = shell.picture(&space.avatar, if size > 40.0 { 48 } else { 40 });
     let mut badge = Badge::new(
         format!("space-{}", space.id),
@@ -380,6 +501,15 @@ fn space_badge(
         unread,
     );
     badge.extra.push(("data-space", space.id.to_string()));
+    if let Some(index) = index {
+        badge.extra.push(("data-index", index.to_string()));
+    }
+    badge.drag = Some(DraggedBadge {
+        id: space.id.clone(),
+        name: space.name.clone(),
+        picture: picture.clone(),
+        size,
+    });
     let id = space.id.clone();
     let view = cx.entity();
     // Right click: the server's menu.
@@ -392,4 +522,5 @@ fn space_badge(
         false,
         move |_, cx| view.update(cx, |s, cx| s.set_scope(Scope::Space(id.clone()), cx)),
     )
+    .into_any_element()
 }

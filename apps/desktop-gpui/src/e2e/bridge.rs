@@ -73,6 +73,9 @@ struct Request {
     /// For `drag`: how far to move the pressed pointer, in pixels.
     dx: Option<f32>,
     dy: Option<f32>,
+    /// For `drag`: keep the button down at the end (`release` lets go).
+    #[serde(default)]
+    hold: bool,
     /// For `attach_file`: the file (`data` is base64), and `via` `paste` or `drop`.
     name: Option<String>,
     mime: Option<String>,
@@ -81,6 +84,11 @@ struct Request {
 }
 
 type Reply = Result<Value, String>;
+
+thread_local! {
+    /// Where a held drag's pointer is (a `drag` with `hold`), until `release`.
+    static HELD: std::cell::Cell<Option<(f32, f32)>> = const { std::cell::Cell::new(None) };
+}
 
 /// Listen on `MORPHEUS_E2E_PORT` (if set) and serve requests on the main thread.
 pub fn start(cx: &mut App) {
@@ -263,7 +271,7 @@ async fn handle(request: &Request, cx: &mut AsyncApp) -> Reply {
             Ok(Value::Null)
         }
         "attach_file" => attach_file(request, cx).await,
-        "click" | "right_click" | "type" | "press" | "submit" | "drag" => act(op, request, cx).await,
+        "click" | "right_click" | "type" | "press" | "submit" | "drag" | "release" => act(op, request, cx).await,
         _ => Err(format!("unknown op: {op}")),
     }
 }
@@ -707,7 +715,7 @@ async fn act(op: &str, request: &Request, cx: &mut AsyncApp) -> Reply {
         scroll_into_view(request, cx).await?;
     }
     // Where to act: the element's centre, and its focus handle if it has one.
-    let (centre, focus) = if request.selector.is_none() && op == "press" {
+    let (centre, focus) = if op == "release" || (request.selector.is_none() && op == "press") {
         ((0.0, 0.0), None)
     } else {
         with_state(|state| -> Result<_, String> {
@@ -800,8 +808,23 @@ async fn act(op: &str, request: &Request, cx: &mut AsyncApp) -> Reply {
                 .map_err(|err| err.to_string())?;
                 next_frame(cx, before).await;
             }
+            let end = (centre.0 + dx, centre.1 + dy);
+            if request.hold {
+                HELD.with(|held| held.set(Some(end)));
+            } else {
+                cx.update_window(window, |_, window, cx| {
+                    release_at(window, cx, end, MouseButton::Left, held)
+                })
+                .map_err(|err| err.to_string())?;
+            }
+        }
+        "release" => {
+            // Let go of a held drag where the pointer is.
+            let at = HELD
+                .with(|held| held.take())
+                .ok_or("nothing is held (drag with hold first)")?;
             cx.update_window(window, |_, window, cx| {
-                release_at(window, cx, (centre.0 + dx, centre.1 + dy), MouseButton::Left, held)
+                release_at(window, cx, at, MouseButton::Left, held)
             })
             .map_err(|err| err.to_string())?;
         }

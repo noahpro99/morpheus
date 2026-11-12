@@ -354,6 +354,11 @@ impl Shell {
                 self.save_prefs(cx);
                 cx.notify();
             }
+            MenuAction::Ungroup(folder) => {
+                self.prefs.ungroup(&folder);
+                self.save_prefs(cx);
+                cx.notify();
+            }
             MenuAction::MoveOutOfFolders(space) => {
                 self.prefs.move_out_of_folders(&space);
                 self.save_prefs(cx);
@@ -456,6 +461,12 @@ impl Shell {
                 self.dialog_close(cx);
                 self.set_scope(Scope::Rooms, cx);
             }
+            Done::FolderRenamed { folder, name } => {
+                self.dialog_close(cx);
+                self.prefs.rename_folder(folder, name);
+                self.save_prefs(cx);
+                cx.notify();
+            }
             Done::ProfileSaved => self.refresh_members(cx),
             Done::OwnProfileChanged => self.reload_own_profile(cx),
             Done::NicknameSaved { user, nickname } => {
@@ -527,5 +538,34 @@ impl Shell {
         })
         .detach();
         self.dialog_open(Dialog::ModView(view), cx);
+    }
+}
+
+impl Shell {
+    /// A server was let go on the rail: where `rail_drop` says.
+    pub fn drop_badge(&mut self, moved: OwnedRoomId, cx: &mut Context<Self>) {
+        let Some(drop) = self.rail_drop.take() else {
+            return;
+        };
+        let spaces = crate::model::top_spaces(&self.rooms);
+        let entries = crate::model::layout(&self.prefs, &spaces);
+        self.prefs.drop_badge(entries, &moved, drop.index, drop.onto, now_ms());
+        self.save_prefs(cx);
+        cx.notify();
+    }
+
+    /// The menu of a rail folder (right click on its badge).
+    pub fn open_folder_menu(&mut self, folder: &str, at: Point<Pixels>, cx: &mut Context<Self>) {
+        let name = self
+            .prefs
+            .rail
+            .iter()
+            .find_map(|entry| match entry {
+                crate::prefs::RailEntry::Folder { id, name, .. } if id == folder => Some(name.clone()),
+                _ => None,
+            })
+            .unwrap_or_default();
+        let items = crate::view_model::room_menu::folder_menu(folder, &name);
+        self.open_menu(OpenMenu::new(at, items, false, MenuTarget::Other), cx);
     }
 }

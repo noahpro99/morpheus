@@ -26,9 +26,9 @@ async fn login(app: &mut App, user: &str) {
     .await
     .expect("password");
     app.submit("form.login").await.expect("submit");
-    app.wait_for(".room", DEFAULT_WAIT)
+    app.wait_for(".shell", DEFAULT_WAIT)
         .await
-        .expect("room listed");
+        .expect("signed in");
 }
 
 async fn create_server(app: &mut App, name: &str) {
@@ -45,61 +45,66 @@ async fn create_server(app: &mut App, name: &str) {
         .expect("badge");
 }
 
-/// A pointer drag from `from` onto the middle of `to` (or, with `before`,
-/// just inside its top edge), let go there unless `hold`.
-fn drag_js(from: &str, to: &str, before: bool, hold: bool) -> String {
-    format!(
-        "const from = document.querySelector({from}); const to = document.querySelector({to}); \
-         if (!from || !to) throw new Error('drag endpoints missing'); \
-         const f = from.getBoundingClientRect(), t = to.getBoundingClientRect(); \
-         const fire = (type, x, y, target) => target.dispatchEvent(new MouseEvent(type, {{ bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, buttons: 1 }})); \
-         const x0 = f.left + f.width / 2, y0 = f.top + f.height / 2; \
-         const x1 = t.left + t.width / 2, y1 = {before} ? t.top + 3 : t.top + t.height / 2; \
-         fire('mousedown', x0, y0, from); \
-         for (let i = 1; i <= 10; i++) fire('mousemove', x0 + (x1 - x0) * i / 10, y0 + (y1 - y0) * i / 10, document); \
-         if (!{hold}) fire('mouseup', x1, y1, document); return true;",
-        from = serde_json::to_string(from).expect("json"),
-        to = serde_json::to_string(to).expect("json"),
-    )
+/// Press `from`, move the pointer onto `to` (its middle, or just inside its
+/// top edge with `before`) and, unless `hold`, let go (a drag the app sees
+/// as real pointer input, in either UI).
+async fn drag_to(app: &mut App, from: &str, to: &str, before: bool, hold: bool) {
+    let a = app.bounds(from).await.expect("from").expect("a source badge");
+    let b = app.bounds(to).await.expect("to").expect("a target badge");
+    let y = if before { b.y + 3.0 } else { b.y + b.h / 2.0 };
+    let (dx, dy) = (
+        (b.centre_x() - a.centre_x()).round() as i32,
+        (y - (a.y + a.h / 2.0)).round() as i32,
+    );
+    app.drag_hold(from, dx, dy).await.expect("drag");
+    if !hold {
+        app.release().await.expect("let go");
+    }
 }
 
 async fn drag(app: &mut App, from: &str, to: &str) {
-    app.eval(&drag_js(from, to, false, false))
-        .await
-        .expect("drag");
+    drag_to(app, from, to, false, false).await;
 }
 
 async fn drag_before(app: &mut App, from: &str, to: &str) {
-    app.eval(&drag_js(from, to, true, false))
-        .await
-        .expect("drag");
+    drag_to(app, from, to, true, false).await;
 }
 
-async fn leave_server(app: &mut App, name: &str) {
-    app.right_click(&format!(".rail-item[title=\"{name}\"]"))
+/// The titles of the rail's servers and folders, top-level, in order (a
+/// folder has none).
+async fn top_level(app: &mut App) -> Vec<String> {
+    app.attrs(".rail > .rail-item.space-badge, .rail > .rail-folder", "title")
         .await
-        .expect("badge menu");
-    app.wait_for(".context-menu", DEFAULT_WAIT)
+        .expect("titles")
+        .into_iter()
+        .map(Option::unwrap_or_default)
+        .collect()
+}
+
+/// The titles of the rail's server badges (not in folders), in order.
+async fn badge_titles(app: &mut App) -> Vec<String> {
+    app.attrs(".rail > .rail-item.space-badge", "title")
         .await
-        .expect("menu");
-    app.click_text(".context-item.danger", "Leave server")
-        .await
-        .expect("leave");
-    app.wait_for(".leave-space-dialog", DEFAULT_WAIT)
-        .await
-        .expect("confirm");
-    app.click_text(".leave-space-dialog button", "Leave server")
-        .await
-        .expect("confirm");
-    app.wait_for_js(
-        &format!(
-            "return document.querySelector('.rail-item[title={}]') === null;",
-            serde_json::to_string(name).expect("json")
-        ),
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("badge gone");
+        .expect("titles")
+        .into_iter()
+        .map(Option::unwrap_or_default)
+        .collect()
+}
+
+/// Wait until `want` holds of the top-level entries' titles.
+async fn wait_top_level(app: &mut App, what: &str, want: impl Fn(&[String]) -> bool) {
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let titles = top_level(app).await;
+        if want(&titles) {
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "{what}: the rail's top level is {titles:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
 }
 
 #[tokio::test]
@@ -108,8 +113,11 @@ async fn servers_drag_into_folders_and_reorder() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
+    // A new account: no folders left behind by earlier runs, and nothing to
+    // clean up afterwards.
+    let user = new_account(&hs, "rail").expect("account");
     let mut app = App::launch(&hs).await.expect("launch app");
-    login(&mut app, "alice").await;
+    login(&mut app, &user).await;
     let pid = std::process::id();
     let (a, b) = (format!("srv a {pid}"), format!("srv b {pid}"));
     create_server(&mut app, &a).await;
@@ -122,26 +130,20 @@ async fn servers_drag_into_folders_and_reorder() {
         &format!(".rail-item[title=\"{a}\"]"),
     )
     .await;
-    // Earlier runs may have left folders behind: work with the newest one and
-    // give it a unique name right away.
     // Both left the top level (into the new folder).
-    app.wait_for_js(
-        &format!(
-            "return ![...document.querySelectorAll('.rail > .rail-item')].some(b => b.title === {} || b.title === {});",
-            serde_json::to_string(&a).expect("json"),
-            serde_json::to_string(&b).expect("json")
-        ),
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("a folder of the two");
+    wait_top_level(&mut app, "a folder of the two", |titles| {
+        !titles.contains(&a) && !titles.contains(&b)
+    })
+    .await;
     // The new layout is saved to the account and comes back: let it settle.
     tokio::time::sleep(Duration::from_secs(1)).await;
     app.wait_for(".rail-folder .folder-badge", DEFAULT_WAIT)
         .await
         .expect("folder created");
     let folder_name = format!("Work {pid}");
-    app.eval("[...document.querySelectorAll('.rail-folder .folder-badge')].at(-1).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 30, clientY: 300 }));").await.expect("folder menu");
+    app.right_click(".rail-folder .folder-badge")
+        .await
+        .expect("folder menu");
     app.click_text(".context-item", "Rename folder")
         .await
         .expect("rename");
@@ -178,15 +180,9 @@ async fn servers_drag_into_folders_and_reorder() {
     app.click_submenu("Move to", "No folder")
         .await
         .expect("move out");
-    app.wait_for_js(
-        &format!(
-            "return document.querySelector('.rail > .rail-item[title={}]') !== null;",
-            serde_json::to_string(&b).expect("json")
-        ),
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("b is a top-level badge again");
+    app.wait_for(&format!(".rail > .rail-item[title=\"{b}\"]"), DEFAULT_WAIT)
+        .await
+        .expect("b is a top-level badge again");
 
     // Reorder: let go of b just above the first server, so it comes first.
     drag_before(
@@ -195,12 +191,7 @@ async fn servers_drag_into_folders_and_reorder() {
         ".rail > [data-index=\"0\"]",
     )
     .await;
-    app.wait_for_js(
-        &format!("const items = [...document.querySelectorAll('.rail > .rail-item.space-badge, .rail > .rail-folder')]; return items[0]?.getAttribute('title') === {};", serde_json::to_string(&b).expect("json")),
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("b first");
+    wait_top_level(&mut app, "b first", |titles| titles.first() == Some(&b)).await;
 
     // The layout survives a relaunch (it lives in account data).
     let mut app = app.relaunch().await.expect("relaunch");
@@ -210,34 +201,19 @@ async fn servers_drag_into_folders_and_reorder() {
     app.wait_for(&badge, DEFAULT_WAIT)
         .await
         .expect("folder remembered");
-    app.wait_for_js(
-        &format!("const items = [...document.querySelectorAll('.rail > .rail-item.space-badge, .rail > .rail-folder')]; return items[0]?.getAttribute('title') === {};", serde_json::to_string(&b).expect("json")),
-        Duration::from_secs(10),
-    )
-    .await
-    .expect("order remembered");
+    wait_top_level(&mut app, "order remembered", |titles| titles.first() == Some(&b)).await;
 
-    // Ungroup, then clean up both servers. Wait for the room to settle first:
-    // the shell closes menus whenever the open room changes, and right after
-    // a relaunch the list is still re-picking.
-    app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
-        .await
-        .expect("room settled");
+    // Ungroup: the folder goes, its servers stay.
     app.right_click(&badge).await.expect("folder menu");
     app.click_text(".context-item", "Ungroup")
         .await
         .expect("ungroup");
-    app.wait_for_js(
-        &format!(
-            "return document.querySelector({}) === null;",
-            serde_json::to_string(&badge).expect("json")
-        ),
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("folder gone");
-    leave_server(&mut app, &a).await;
-    leave_server(&mut app, &b).await;
+    app.wait_for_count(&badge, 0, DEFAULT_WAIT)
+        .await
+        .expect("folder gone");
+    app.wait_for(&format!(".rail > .rail-item[title=\"{a}\"]"), DEFAULT_WAIT)
+        .await
+        .expect("a is a badge again");
 }
 
 /// The rail marks where you are and what is waiting, as Discord's does: a
@@ -386,76 +362,100 @@ async fn dragging_a_server_shows_a_line_where_it_lands() {
     for name in ["one", "two", "three"] {
         create_server(&mut app, name).await;
     }
-    let order = "return [...document.querySelectorAll('.rail > .rail-item.space-badge')].map(b => b.title);";
     assert_eq!(
-        app.eval(order).await.expect("order"),
-        serde_json::json!(["three", "two", "one"])
+        badge_titles(&mut app).await,
+        ["three", "two", "one"],
+        "new servers go on top"
     );
     assert_eq!(
         app.count(".rail [draggable=true]").await.expect("count"),
         0,
         "badges use the browser's drag (which drags a picture of them)"
     );
-    let tops = "return [...document.querySelectorAll('.rail > .rail-item')].map(b => Math.round(b.getBoundingClientRect().top));";
-    let before = app.eval(tops).await.expect("tops");
+    let tops = |bounds: Vec<morpheus_e2e::Bounds>| -> Vec<i64> {
+        bounds.iter().map(|b| b.y.round() as i64).collect()
+    };
+    let before = tops(app.all_bounds(".rail > .rail-item").await.expect("tops"));
 
     // New servers go on top: hold "three" just above "one".
-    app.eval(&drag_js(
+    drag_to(
+        &mut app,
         ".rail-item[title=\"three\"]",
         ".rail-item[title=\"one\"]",
         true,
         true,
-    ))
-    .await
-    .expect("drag");
-    let during = app
-        .eval(
-            "const line = document.querySelector('.rail-drop-line'); \
-             const r = line && line.getBoundingClientRect(); \
-             const two = document.querySelector('.rail-item[title=\"two\"]').getBoundingClientRect(); \
-             const one = document.querySelector('.rail-item[title=\"one\"]').getBoundingClientRect(); \
-             return { cursor: getComputedStyle(document.body).cursor, \
-               line: !!r && r.height > 0 && r.height <= 4 && r.width >= 24, \
-               colour: line ? getComputedStyle(line).backgroundColor : null, \
-               between: !!r && r.top >= two.bottom - 2 && r.bottom <= one.top + 2 };",
-        )
+    )
+    .await;
+    let line = app
+        .bounds(".rail-drop-line")
         .await
-        .expect("during");
-    assert_eq!(during["cursor"], "grabbing", "{during}");
-    assert_eq!(during["line"], true, "a thin line: {during}");
-    assert_eq!(during["colour"], "rgb(255, 255, 255)", "{during}");
-    assert_eq!(during["between"], true, "between two and one: {during}");
+        .expect("line")
+        .expect("a line shows where it lands");
+    let two = app
+        .bounds(".rail-item[title=\"two\"]")
+        .await
+        .expect("two")
+        .expect("two");
+    let one = app
+        .bounds(".rail-item[title=\"one\"]")
+        .await
+        .expect("one")
+        .expect("one");
+    assert_eq!(cursor(&mut app).await, "grabbing", "the pointer grabs");
+    assert!(
+        line.h > 0.0 && line.h <= 4.0 && line.w >= 24.0,
+        "a thin line: {line:?}"
+    );
     assert_eq!(
-        app.eval(tops).await.expect("tops"),
+        app.colours_of(".rail-drop-line", "background")
+            .await
+            .expect("colour"),
+        ["#ffffff"],
+        "a white line"
+    );
+    assert!(
+        line.y >= two.y + two.h - 2.0 && line.y + line.h <= one.y + 2.0,
+        "between two and one: {line:?}, {two:?}, {one:?}"
+    );
+    assert_eq!(
+        tops(app.all_bounds(".rail > .rail-item").await.expect("tops")),
         before,
         "the badges moved while dragging"
     );
 
     // Let go: "three" lands between two and one.
-    app.eval(
-        "const t = document.querySelector('.rail-item[title=\"one\"]').getBoundingClientRect(); \
-         document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: t.left + t.width / 2, clientY: t.top + 3 })); return true;",
-    )
-    .await
-    .expect("let go");
-    app.wait_for_js(
-        &format!(
-            "return JSON.stringify((() => {{ {order} }})()) === '[\"two\",\"three\",\"one\"]';"
-        ),
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("moved");
+    app.release().await.expect("let go");
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    while badge_titles(&mut app).await != ["two", "three", "one"] {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "moved: {:?}",
+            badge_titles(&mut app).await
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
     assert_eq!(
         app.count(".rail-drop-line").await.expect("count"),
         0,
         "the line goes"
     );
-    assert_eq!(
-        app.eval("return getComputedStyle(document.body).cursor;")
+    assert_eq!(cursor(&mut app).await, "auto", "the pointer is back");
+}
+
+/// The pointer's look: the page's `cursor` (Dioxus), or what the GPUI app
+/// notes on its body (`data-cursor`: grabbing while something is dragged).
+async fn cursor(app: &mut App) -> String {
+    if app.is_gpui() {
+        return app
+            .attr("body.app", "data-cursor")
             .await
-            .expect("cursor"),
-        serde_json::json!("auto"),
-        "the pointer is back"
-    );
+            .expect("cursor")
+            .unwrap_or_default();
+    }
+    app.eval("return getComputedStyle(document.body).cursor;")
+        .await
+        .expect("cursor")
+        .as_str()
+        .unwrap_or_default()
+        .to_owned()
 }
