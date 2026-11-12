@@ -102,20 +102,20 @@ async fn session_survives_relaunch() {
     let mut saw_splash = false;
     let deadline = std::time::Instant::now() + DEFAULT_WAIT;
     loop {
-        let state = app
-            .eval(
-                "const s = document.querySelector('.splash'); \
-                 return [!!s, !!(s && s.querySelector('svg.splash-logo')), s ? s.textContent.trim() : '', !!document.querySelector('.shell')];",
-            )
+        let splash = app.count(".splash").await.expect("splash") > 0;
+        let logo = app.count(".splash svg.splash-logo").await.expect("logo") > 0;
+        let text = app
+            .text(".splash")
             .await
-            .expect("splash state");
-        let [splash, logo, text, shell] = [&state[0], &state[1], &state[2], &state[3]];
-        if splash == true {
+            .expect("splash text")
+            .unwrap_or_default();
+        let shell = app.count(".shell").await.expect("shell") > 0;
+        if splash {
             saw_splash = true;
-            assert_eq!(logo, true, "the splash shows the logo");
-            assert_eq!(text, "", "the splash shows no name");
+            assert!(logo, "the splash shows the logo");
+            assert_eq!(text.trim(), "", "the splash shows no name");
         }
-        if shell == true {
+        if shell {
             break;
         }
         assert!(
@@ -233,11 +233,11 @@ async fn messages_show_up_live_for_whoever_is_looking() {
     bob.click(".rail-dms").await.expect("DMs");
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     let invited = bob
-        .eval("return [...document.querySelectorAll('.invite-row')].some(r => r.textContent.includes('carol'));")
+        .texts(".invite-row")
         .await
         .expect("invites")
-        .as_bool()
-        .unwrap_or(false);
+        .iter()
+        .any(|row| row.contains("carol"));
     if invited {
         bob.click_text(".invite-row", "carol")
             .await

@@ -294,13 +294,19 @@ impl Render for Root {
             match &self.screen {
                 // The logo, no name.
                 Screen::Splash => base.child(chrome::window_bar()).child(
-                    div().flex_1().flex().items_center().justify_center().child(
-                        svg()
-                            .path("logo.svg")
-                            .size(px(160.0))
-                            .text_color(rgb(theme::accent()))
-                            .e2e("svg", "splash-logo"),
-                    ),
+                    div()
+                        .flex_1()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .child(
+                            svg()
+                                .path("logo.svg")
+                                .size(px(160.0))
+                                .text_color(rgb(theme::accent()))
+                                .e2e("svg", "splash-logo"),
+                        )
+                        .e2e("div", "splash"),
                 ),
                 Screen::Login(login) => base
                     .child(chrome::window_bar())
