@@ -3621,3 +3621,72 @@ async fn joining_a_voice_channel_is_quick_when_the_server_is_far() {
     let far = slow_homeserver(&hs, std::time::Duration::from_millis(100)).await;
     join_figures(&far, "100 ms away", 450).await;
 }
+
+/// A call ending puts one line in the room's chat, "<last to leave> ended a
+/// call" with the grey phone: not one for each person leaving, only the one
+/// that leaves it empty (task 23). Matrix has no event for it: it is worked
+/// out from the call.member events.
+#[tokio::test]
+async fn a_call_ending_leaves_one_ended_a_call_line_when_the_last_person_leaves() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let channel = fresh_voice_channel(&hs);
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    login_and_open(&mut alice, "alice", "general").await;
+    open_without_joining(&mut alice, &channel).await;
+    let room: String = alice
+        .attr(".room.selected", "data-room")
+        .await
+        .expect("room id")
+        .expect("a selected room");
+    alice.click(CALL_BUTTON).await.expect("call");
+    alice
+        .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("alice connected");
+    let mut bob = App::launch(&hs).await.expect("launch bob");
+    login_and_open(&mut bob, "bob", "general").await;
+    open_without_joining(&mut bob, &channel).await;
+    bob.click(CALL_BUTTON).await.expect("join");
+    bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("bob connected");
+    wait_in_call(&mut alice, &room, "bob").await.expect("alice sees bob");
+    alice.click(".voice-chat-toggle").await.expect("open the chat");
+    alice
+        .wait_for(".voice-chat .timeline", DEFAULT_WAIT)
+        .await
+        .expect("the chat");
+
+    // Alice leaves, bob is still in: no ended line.
+    alice.click(".voice-panel .hang-up").await.expect("alice hangs up");
+    wait_not_in_call(&mut bob, &room, "alice").await.expect("alice gone");
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    assert_eq!(
+        alice.count(".voice-chat .message.system .state-icon.call-ended").await.expect("count"),
+        0,
+        "an ended line while bob is still in the call"
+    );
+
+    // Bob leaves, the call is empty: one line.
+    bob.click(".voice-panel .hang-up").await.expect("bob hangs up");
+    alice
+        .wait_for(
+            ".voice-chat .message.system .state-icon.call-ended[data-icon=phone][data-tone=quiet]",
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("an ended line with the grey phone");
+    alice
+        .wait_for_text(".voice-chat .timeline", "bob ended a call", DEFAULT_WAIT)
+        .await
+        .expect("it names who left last");
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    assert_eq!(
+        alice.count(".voice-chat .message.system .state-icon.call-ended").await.expect("count"),
+        1,
+        "one ended line for the call"
+    );
+}
