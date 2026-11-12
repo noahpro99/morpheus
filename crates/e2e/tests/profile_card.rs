@@ -311,6 +311,21 @@ async fn the_card_shows_the_picture_already_loaded_at_once() {
     };
     let mut app = App::launch(&hs).await.expect("launch");
     login_and_open(&mut app, "alice", "general").await;
+    if app.is_gpui() {
+        // A member's picture is an `img` once fetched; the card, opened from
+        // that row, has a picture (not a letter) in its very first frame.
+        app.wait_for(".members .member img.avatar", DEFAULT_WAIT)
+            .await
+            .expect("member pictures loaded");
+        app.click(".members .member img.avatar")
+            .await
+            .expect("open a card from a member with a picture");
+        assert!(
+            app.count(".profile-card img.avatar").await.expect("count") > 0,
+            "the card showed a letter first"
+        );
+        return;
+    }
     app.wait_for_js(
         "return [...document.querySelectorAll('.members .member img.avatar')].some(i => i.src.startsWith('data:'));",
         DEFAULT_WAIT,
@@ -350,16 +365,15 @@ async fn the_card_counts_mutual_servers_and_the_full_profile_lists_them() {
     let mut app = App::launch(&hs).await.expect("launch");
     login_and_open(&mut app, "alice", "general").await;
     open_card_for(&mut app, "bob").await;
-    let buttons = app
-        .eval(
-            "return [...document.querySelectorAll('.profile-card .card-actions button')] \
-               .map(b => { const r = b.getBoundingClientRect(); return [b.title, Math.round(r.width), Math.round(r.height)]; });",
-        )
+    for b in app
+        .all_bounds(".profile-card .card-actions button")
         .await
-        .expect("buttons");
-    for b in buttons.as_array().expect("list") {
-        let (w, h) = (b[1].as_f64().unwrap_or(0.0), b[2].as_f64().unwrap_or(0.0));
-        assert!(w <= 40.0 && (w - h).abs() <= 4.0, "not a small square: {b}");
+        .expect("buttons")
+    {
+        assert!(
+            b.w <= 40.0 && (b.w - b.h).abs() <= 4.0,
+            "not a small square: {b:?}"
+        );
     }
     app.wait_for_text(
         ".profile-card .mutual-servers",
@@ -375,12 +389,24 @@ async fn the_card_counts_mutual_servers_and_the_full_profile_lists_them() {
         0,
         "no list on the card"
     );
-    let counted: usize = app
-        .eval("return parseInt(document.querySelector('.profile-card .mutual-servers').textContent, 10);")
-        .await
-        .expect("count")
-        .as_u64()
-        .expect("a number") as usize;
+    // The count fills in as the card finds the servers you share.
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    let counted: usize = loop {
+        let n = app
+            .text(".profile-card .mutual-servers")
+            .await
+            .expect("count")
+            .unwrap_or_default()
+            .trim()
+            .split(' ')
+            .next()
+            .and_then(|n| n.parse().ok())
+            .unwrap_or(0);
+        if n >= 1 || std::time::Instant::now() > deadline {
+            break n;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    };
     assert!(counted >= 1, "alice and bob share Engineering");
     app.click(".profile-card .mutual-servers")
         .await
@@ -388,27 +414,28 @@ async fn the_card_counts_mutual_servers_and_the_full_profile_lists_them() {
     app.wait_for(".profile-modal", DEFAULT_WAIT)
         .await
         .expect("the full profile");
-    app.wait_for_js(
-        &format!(
-            "const s = [...document.querySelectorAll('.profile-modal .mutual-server')]; \
-             return s.length === {counted} && s.every(x => x.querySelector('.avatar')) && s.some(x => x.textContent.includes('Engineering'));"
-        ),
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("every mutual server, with its icon");
+    app.wait_for_count(".profile-modal .mutual-server", counted, DEFAULT_WAIT)
+        .await
+        .expect("every mutual server");
+    assert_eq!(
+        app.count(".profile-modal .mutual-server .avatar")
+            .await
+            .expect("count"),
+        counted,
+        "each with its icon"
+    );
+    app.wait_for_text(".profile-modal .mutual-server", "Engineering", DEFAULT_WAIT)
+        .await
+        .expect("Engineering among them");
     app.click_text(".profile-modal .mutual-server", "Engineering")
         .await
         .expect("open Engineering");
     app.wait_for(".rail-item.selected[title=\"Engineering\"]", DEFAULT_WAIT)
         .await
         .expect("in Engineering");
-    app.wait_for_js(
-        "return !document.querySelector('.profile-modal');",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("closed");
+    app.wait_for_count(".profile-modal", 0, DEFAULT_WAIT)
+        .await
+        .expect("closed");
 
     // The card's picture opens the full profile too.
     app.open_room("general").await.expect("general");
@@ -431,30 +458,38 @@ async fn the_card_stays_on_screen_as_it_fills_in() {
     };
     let mut app = App::launch_sized(&hs, 1280, 720).await.expect("launch");
     login_and_open(&mut app, "bob", "general").await;
-    app.wait_for(".message .avatar-button", DEFAULT_WAIT)
+    // Someone else writes last, so their picture is the lowest in the timeline.
+    let room_id = app
+        .attr(".room.selected", "data-room")
         .await
-        .expect("messages");
-    // The lowest picture in the timeline, someone else's.
-    app.eval(
-        "const b = [...document.querySelectorAll('.message:not(.own) .avatar-button')].sort((x, y) => y.getBoundingClientRect().top - x.getBoundingClientRect().top)[0]; \
-         const r = b.getBoundingClientRect(); \
-         b.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: r.left + 10, clientY: r.top + 10 })); return true;",
-    )
-    .await
-    .expect("open a card low down");
+        .expect("room id")
+        .expect("a selected room");
+    let text = format!("lowest picture {}", std::process::id());
+    morpheus_e2e::send_as(&hs, "carol", &room_id, &text).expect("carol writes");
+    app.wait_for_text(".message .body", &text, DEFAULT_WAIT)
+        .await
+        .expect("her message");
+    app.click_in_message(&text, ".avatar-button")
+        .await
+        .expect("open a card low down");
     app.wait_for(".profile-card .mutual-servers", DEFAULT_WAIT)
         .await
         .expect("filled in");
     tokio::time::sleep(std::time::Duration::from_millis(800)).await;
-    let inside = app
-        .eval(
-            "const c = document.querySelector('.profile-card').getBoundingClientRect(); \
-             const s = document.querySelector('.shell').getBoundingClientRect(); \
-             return [c.top >= s.top - 1 && c.bottom <= Math.min(s.bottom, innerHeight) + 1, Math.round(c.top), Math.round(c.bottom), Math.round(s.bottom)];",
-        )
+    let card = app
+        .bounds(".profile-card")
         .await
-        .expect("bounds");
-    assert_eq!(inside[0], true, "the card ran off the app: {inside}");
+        .expect("card")
+        .expect("a card");
+    let shell = app
+        .bounds(".shell")
+        .await
+        .expect("shell")
+        .expect("a shell");
+    assert!(
+        card.y >= shell.y - 1.0 && card.bottom() <= shell.bottom() + 1.0,
+        "the card ran off the app: {card:?} in {shell:?}"
+    );
 }
 
 /// Mutual servers are counted in a server with many members too (whose
