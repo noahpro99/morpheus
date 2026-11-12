@@ -2916,6 +2916,19 @@ pub fn send_image_as(
     body: &str,
     blurhash: Option<&str>,
 ) -> Result<()> {
+    send_image_sized_as(homeserver, user, room_id, png, body, blurhash, (64, 48))
+}
+
+/// [`send_image_as`] declaring the picture `size` (width, height) in its info.
+pub fn send_image_sized_as(
+    homeserver: &str,
+    user: &str,
+    room_id: &str,
+    png: &[u8],
+    body: &str,
+    blurhash: Option<&str>,
+    (width, height): (u32, u32),
+) -> Result<()> {
     let login = curl(&[
         "-X",
         "POST",
@@ -2942,7 +2955,7 @@ pub fn send_image_as(
     ])?;
     let _ = std::fs::remove_file(&file);
     let uploaded: Value = serde_json::from_str(&uploaded)?;
-    let mut info = json!({ "mimetype": "image/png", "w": 64, "h": 48, "size": png.len() });
+    let mut info = json!({ "mimetype": "image/png", "w": width, "h": height, "size": png.len() });
     if let Some(hash) = blurhash {
         info["xyz.amorgan.blurhash"] = json!(hash);
     }
@@ -2963,6 +2976,46 @@ pub fn send_image_as(
         &format!("Authorization: Bearer {token}"),
         &format!("{homeserver}/_matrix/client/v3/logout"),
     ]);
+    Ok(())
+}
+
+/// Make `png` the profile picture of `user`.
+pub fn set_avatar_as(homeserver: &str, user: &str, png: &[u8]) -> Result<()> {
+    let login = curl(&[
+        "-X",
+        "POST",
+        &format!("{homeserver}/_matrix/client/v3/login"),
+        "-d",
+        &json!({ "type": "m.login.password", "identifier": { "type": "m.id.user", "user": user }, "password": format!("{user}-password") }).to_string(),
+    ])?;
+    let login: Value = serde_json::from_str(&login)?;
+    let token = login["access_token"]
+        .as_str()
+        .ok_or_else(|| anyhow!("no token for {user}"))?;
+    let file = std::env::temp_dir().join(format!("morpheus-e2e-{}.png", unique()));
+    std::fs::write(&file, png)?;
+    let uploaded = curl(&[
+        "-X",
+        "POST",
+        "-H",
+        &format!("Authorization: Bearer {token}"),
+        "-H",
+        "Content-Type: image/png",
+        "--data-binary",
+        &format!("@{}", file.display()),
+        &format!("{homeserver}/_matrix/media/v3/upload?filename=avatar.png"),
+    ])?;
+    let _ = std::fs::remove_file(&file);
+    let uploaded: Value = serde_json::from_str(&uploaded)?;
+    curl(&[
+        "-X",
+        "PUT",
+        "-H",
+        &format!("Authorization: Bearer {token}"),
+        &format!("{homeserver}/_matrix/client/v3/profile/%40{user}%3Alocalhost/avatar_url"),
+        "-d",
+        &json!({ "avatar_url": uploaded["content_uri"] }).to_string(),
+    ])?;
     Ok(())
 }
 

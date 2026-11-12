@@ -330,3 +330,114 @@ async fn palette_rows_keep_a_gap_between_picture_and_text() {
         }
     }
 }
+
+const WIDE_PNG: &[u8] = include_bytes!("../fixtures/wide.png");
+const TALL_PNG: &[u8] = include_bytes!("../fixtures/tall.png");
+
+fn room_of(hs: &str, owner: &str, guest: &str, name: &str) -> String {
+    let made = api_as(
+        hs,
+        owner,
+        "POST",
+        "createRoom",
+        Some(serde_json::json!({ "name": name, "preset": "public_chat" })),
+    )
+    .expect("a room");
+    let room = made["room_id"].as_str().expect("room id").to_owned();
+    api_as(
+        hs,
+        guest,
+        "POST",
+        &format!("join/{}", room.replace('!', "%21").replace(':', "%3A")),
+        Some(serde_json::json!({})),
+    )
+    .expect("join");
+    room
+}
+
+/// Pictures in the timeline keep their shape: the drawn box has the
+/// picture's own proportions however wide the timeline is (a narrow one
+/// shrinks it), and the picture fills it without being stretched.
+#[tokio::test]
+async fn pictures_keep_their_proportions_in_a_narrow_and_a_wide_window() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let (ann, ben) = (
+        new_account(&hs, "shpann").expect("account"),
+        new_account(&hs, "shpben").expect("account"),
+    );
+    room_of(&hs, &ann, &ben, "shapes");
+    let rooms = api_as(&hs, &ben, "GET", "joined_rooms", None).expect("rooms");
+    let room = rooms["joined_rooms"][0].as_str().expect("room").to_owned();
+    morpheus_e2e::send_image_sized_as(&hs, &ben, &room, WIDE_PNG, "wide.png", None, (800, 400))
+        .expect("a wide picture");
+    morpheus_e2e::send_image_sized_as(&hs, &ben, &room, TALL_PNG, "tall.png", None, (300, 600))
+        .expect("a tall picture");
+
+    for (w, h) in [(1500, 900), (760, 800)] {
+        let mut app = App::launch_sized(&hs, w, h).await.expect("launch app");
+        common::login(&mut app, &ann, &format!("{ann}-password")).await;
+        app.open_room("shapes").await.expect("open room");
+        for (name, ratio) in [("wide.png", 2.0), ("tall.png", 0.5)] {
+            let sel = format!(".message img.image[alt=\"{name}\"]");
+            app.wait_for(&sel, DEFAULT_WAIT).await.expect("the picture");
+            if let Ok(secs) = std::env::var("FIXES_HOLD") {
+                tokio::time::sleep(std::time::Duration::from_secs(secs.parse().unwrap_or(0))).await;
+            }
+            let b = app.bounds(&sel).await.expect("b").expect("picture");
+            let timeline = app.bounds(".timeline").await.expect("b").expect("timeline");
+            eprintln!("{w}x{h} {name}: {b:?} in a timeline {} wide", timeline.w);
+            assert!(
+                (b.w / b.h - ratio).abs() <= ratio * 0.04,
+                "{name} at {w}x{h} is drawn {}x{}: not {ratio}:1",
+                b.w,
+                b.h
+            );
+            assert!(b.x + b.w <= timeline.x + timeline.w + 1.0, "{name} sticks out of the timeline");
+            let fit = app.attrs(&sel, "data-fit").await.expect("fit");
+            assert!(
+                fit.iter().all(|f| matches!(f.as_deref(), Some("contain" | "cover"))),
+                "{name} is drawn with fit {fit:?}"
+            );
+        }
+        // A shrunk picture leaves no empty band under it: the next one starts
+        // right below (the row's height is the box's, as it is drawn).
+        let wide = app.bounds(".message img.image[alt=\"wide.png\"]").await.expect("b").expect("wide");
+        let tall = app.bounds(".message img.image[alt=\"tall.png\"]").await.expect("b").expect("tall");
+        assert!(
+            tall.y - (wide.y + wide.h) <= 60.0,
+            "{} px of empty space between the pictures at {w}x{h}",
+            tall.y - (wide.y + wide.h)
+        );
+    }
+}
+
+/// Avatars are square and filled by the picture (cropped, not squeezed or
+/// letterboxed), whatever the picture's proportions.
+#[tokio::test]
+async fn avatars_are_square_and_filled_by_a_non_square_picture() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let (ann, ben) = (
+        new_account(&hs, "avtann").expect("account"),
+        new_account(&hs, "avtben").expect("account"),
+    );
+    room_of(&hs, &ann, &ben, "faces");
+    morpheus_e2e::set_avatar_as(&hs, &ben, WIDE_PNG).expect("an avatar");
+    let mut app = App::launch_desktop(&hs).await.expect("launch app");
+    common::login(&mut app, &ann, &format!("{ann}-password")).await;
+    app.open_room("faces").await.expect("open room");
+    let sel = format!(".members .member[title=\"@{ben}:localhost\"] img.avatar");
+    app.wait_for(&sel, DEFAULT_WAIT).await.expect("his picture");
+    let b = app.bounds(&sel).await.expect("b").expect("avatar");
+    assert!((b.w - b.h).abs() <= 1.0, "the avatar is {}x{}", b.w, b.h);
+    assert_eq!(
+        app.attrs(&sel, "data-fit").await.expect("fit"),
+        vec![Some("cover".to_owned())],
+        "a wide picture should fill the circle, cropped"
+    );
+}
