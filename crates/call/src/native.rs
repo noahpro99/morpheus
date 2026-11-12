@@ -180,6 +180,10 @@ pub struct Call {
     keys: Option<KeyProvider>,
     mic: LocalAudioTrack,
     deafened: Arc<Mutex<bool>>,
+    /// Into the merge of who is speaking.
+    speech: UnboundedSender<Speech>,
+    /// This device's identity in the room.
+    me: String,
     /// The platform devices, open for the call's lifetime.
     platform: Option<PlatformAudio>,
     mode: AudioMode,
@@ -296,9 +300,14 @@ impl Call {
         }
 
         let deafened = Arc::new(Mutex::new(false));
+        let (speech, speech_rx) = unbounded_channel();
+        let me = room.local_participant().identity().to_string();
+        tasks.push(tokio::spawn(aggregate(speech_rx, tx.clone())));
+        tasks.push(tokio::spawn(watch_mic(mic.clone(), me.clone(), speech.clone())));
         tasks.push(tokio::spawn(forward_events(
             room_events,
             tx,
+            speech.clone(),
             mode,
             deafened.clone(),
         )));
@@ -308,6 +317,8 @@ impl Call {
                 keys,
                 mic,
                 deafened,
+                speech,
+                me,
                 platform,
                 mode,
                 camera: Arc::default(),
@@ -360,8 +371,10 @@ impl Call {
         let _enter = runtime().enter();
         if muted {
             self.mic.mute();
+            let _ = self.speech.send(Speech::Muted(self.me.clone(), true));
         } else {
             self.mic.unmute();
+            let _ = self.speech.send(Speech::Muted(self.me.clone(), false));
         }
     }
 
@@ -682,6 +695,7 @@ async fn play_tone(source: NativeAudioSource) {
 async fn forward_events(
     mut events: UnboundedReceiver<RoomEvent>,
     tx: UnboundedSender<CallEvent>,
+    speech: UnboundedSender<Speech>,
     mode: AudioMode,
     deafened: Arc<Mutex<bool>>,
 ) {
@@ -696,6 +710,7 @@ async fn forward_events(
             }
             RoomEvent::ParticipantDisconnected(p) => {
                 info!(who = %p.identity(), "left the call");
+                let _ = speech.send(Speech::Gone(p.identity().to_string()));
                 CallEvent::Left(p.identity().to_string())
             }
             RoomEvent::E2eeStateChanged { participant, state } => {
@@ -703,7 +718,22 @@ async fn forward_events(
                 continue;
             }
             RoomEvent::ActiveSpeakersChanged { speakers } => {
-                CallEvent::Speaking(speakers.iter().map(|p| p.identity().to_string()).collect())
+                let _ = speech.send(Speech::Server(
+                    speakers.iter().map(|p| p.identity().to_string()).collect(),
+                ));
+                continue;
+            }
+            RoomEvent::TrackMuted { participant: Participant::Remote(p), publication }
+                if publication.kind() == TrackKind::Audio =>
+            {
+                let _ = speech.send(Speech::Muted(p.identity().to_string(), true));
+                continue;
+            }
+            RoomEvent::TrackUnmuted { participant: Participant::Remote(p), publication }
+                if publication.kind() == TrackKind::Audio =>
+            {
+                let _ = speech.send(Speech::Muted(p.identity().to_string(), false));
+                continue;
             }
             RoomEvent::TrackSubscribed {
                 track: RemoteTrack::Audio(track),
@@ -714,6 +744,11 @@ async fn forward_events(
                 if deafened.lock().is_ok_and(|d| *d) {
                     track.disable();
                 }
+                tokio::spawn(watch_voice(
+                    track.clone(),
+                    participant.identity().to_string(),
+                    speech.clone(),
+                ));
                 if mode == AudioMode::Tone {
                     tokio::spawn(measure(
                         track,
@@ -814,4 +849,288 @@ fn rms(samples: &[i16]) -> f32 {
     }
     let sum: f64 = samples.iter().map(|&s| f64::from(s) * f64::from(s)).sum();
     (sum / samples.len() as f64).sqrt() as f32
+}
+
+// Who is speaking, worked out here instead of waiting for the server.
+//
+// LiveKit's `ActiveSpeakersChanged` is computed by the SFU on an interval
+// with smoothing, so the ring lagged by up to a second. Like Discord, the
+// client measures: each subscribed remote audio track's decoded level (a
+// `NativeAudioStream`, one 10 ms frame at a time: RMS over 480 samples, no
+// allocation of ours) and this device's microphone (the send stream's own
+// audio level, which libwebrtc reports after echo cancellation and noise
+// suppression, polled every 50 ms). Each goes through a [`Gate`]: a few
+// loud frames to switch on, and a hold after the last loud one before it
+// switches off, so it neither flickers between words nor trips on a click.
+// Only changes of the set leave this module. The server's list stays as
+// the fallback for anyone not measured (no frames arriving, or a deafened
+// track that carries none).
+
+/// Level (0 to 1, full scale) at which speech starts, and the lower one it
+/// has to fall under before the hold runs (so a trailing syllable keeps it).
+const ATTACK: f32 = 0.02;
+const RELEASE: f32 = 0.01;
+/// How long the level stays under [`RELEASE`] before the ring goes off.
+const HOLD: Duration = Duration::from_millis(350);
+
+/// Speaking or not from a stream of levels.
+struct Gate {
+    on: bool,
+    /// Loud readings in a row.
+    run: u32,
+    /// Loud readings in a row needed to switch on.
+    need: u32,
+    /// Since when the level has been under [`RELEASE`], while on.
+    quiet_since: Option<std::time::Instant>,
+}
+
+impl Gate {
+    fn new(need: u32) -> Self {
+        Self {
+            on: false,
+            run: 0,
+            need,
+            quiet_since: None,
+        }
+    }
+
+    fn reset(&mut self) {
+        self.on = false;
+        self.run = 0;
+        self.quiet_since = None;
+    }
+
+    /// Take a reading; whether speaking now.
+    fn feed(&mut self, level: f32, now: std::time::Instant) -> bool {
+        if level >= ATTACK {
+            self.run += 1;
+            self.quiet_since = None;
+            if self.run >= self.need {
+                self.on = true;
+            }
+        } else if level >= RELEASE && self.on {
+            self.quiet_since = None;
+        } else {
+            self.run = 0;
+            if self.on {
+                let since = *self.quiet_since.get_or_insert(now);
+                if now.duration_since(since) >= HOLD {
+                    self.on = false;
+                    self.quiet_since = None;
+                }
+            }
+        }
+        self.on
+    }
+}
+
+/// What the measuring tasks and the server tell the aggregator.
+enum Speech {
+    /// The server's list (the fallback).
+    Server(Vec<String>),
+    /// A measured state (and level, to order by) for `who`.
+    Measured { who: String, speaking: bool, level: f32 },
+    /// `who` is no longer measured (no frames): the server decides again.
+    Unmeasured(String),
+    /// `who` muted their microphone (or not): muted is never speaking.
+    Muted(String, bool),
+    /// `who` left.
+    Gone(String),
+}
+
+/// Merge everything into [`CallEvent::Speaking`], sent only when the set
+/// changes.
+async fn aggregate(
+    mut input: UnboundedReceiver<Speech>,
+    out: UnboundedSender<CallEvent>,
+) {
+    use std::collections::{HashMap, HashSet};
+    let mut measured: HashMap<String, (bool, f32)> = HashMap::new();
+    let mut server: Vec<String> = Vec::new();
+    let mut muted: HashSet<String> = HashSet::new();
+    let mut last: Vec<String> = Vec::new();
+    while let Some(item) = input.recv().await {
+        match item {
+            Speech::Server(list) => server = list,
+            Speech::Measured { who, speaking, level } => {
+                measured.insert(who, (speaking, level));
+            }
+            Speech::Unmeasured(who) => {
+                measured.remove(&who);
+            }
+            Speech::Muted(who, true) => {
+                muted.insert(who);
+            }
+            Speech::Muted(who, false) => {
+                muted.remove(&who);
+            }
+            Speech::Gone(who) => {
+                measured.remove(&who);
+                muted.remove(&who);
+                server.retain(|s| *s != who);
+            }
+        }
+        let mut now: Vec<(String, f32)> = measured
+            .iter()
+            .filter(|(_, (on, _))| *on)
+            .map(|(who, (_, level))| (who.clone(), *level))
+            .collect();
+        now.extend(
+            server
+                .iter()
+                .filter(|who| !measured.contains_key(*who))
+                .map(|who| (who.clone(), 0.0)),
+        );
+        now.retain(|(who, _)| !muted.contains(who));
+        now.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        let now: Vec<String> = now.into_iter().map(|(who, _)| who).collect();
+        let same = {
+            let mut a = now.clone();
+            let mut b = last.clone();
+            a.sort();
+            b.sort();
+            a == b
+        };
+        if !same {
+            last = now.clone();
+            if out.send(CallEvent::Speaking(now)).is_err() {
+                return;
+            }
+        }
+    }
+}
+
+/// Measure what `who` sounds like (a subscribed remote track) and report
+/// when they start and stop speaking.
+async fn watch_voice(track: RemoteAudioTrack, who: String, speech: UnboundedSender<Speech>) {
+    let mut stream = NativeAudioStream::new(track.rtc_track(), SAMPLE_RATE as i32, 1);
+    // 20 ms over the attack level to start.
+    let mut gate = Gate::new(2);
+    let mut reported: Option<bool> = None;
+    let mut last_frame = std::time::Instant::now();
+    // Frames have arrived (and not stopped for a second).
+    let mut got = false;
+    loop {
+        let level = match tokio::time::timeout(Duration::from_millis(50), stream.next()).await {
+            Ok(Some(frame)) => {
+                last_frame = std::time::Instant::now();
+                got = true;
+                rms(&frame.data) / 32_768.0
+            }
+            Ok(None) => break,
+            // Nothing arriving: silence, and the clock for the hold goes on.
+            Err(_) => {
+                if got && last_frame.elapsed() > Duration::from_secs(1) {
+                    got = false;
+                    gate.reset();
+                    if reported.take().is_some()
+                        && speech.send(Speech::Unmeasured(who.clone())).is_err()
+                    {
+                        return;
+                    }
+                }
+                0.0
+            }
+        };
+        if !got {
+            continue;
+        }
+        let now = gate.feed(level, std::time::Instant::now());
+        if reported != Some(now) {
+            reported = Some(now);
+            let sent = speech.send(Speech::Measured {
+                who: who.clone(),
+                speaking: now,
+                level,
+            });
+            if sent.is_err() {
+                return;
+            }
+        }
+    }
+    let _ = speech.send(Speech::Unmeasured(who));
+}
+
+/// Measure this device's microphone while it is not muted.
+async fn watch_mic(mic: LocalAudioTrack, me: String, speech: UnboundedSender<Speech>) {
+    use livekit::webrtc::stats::RtcStats;
+    let mut gate = Gate::new(1);
+    let mut reported: Option<bool> = None;
+    let mut failures = 0u32;
+    let mut tick = tokio::time::interval(Duration::from_millis(50));
+    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    loop {
+        tick.tick().await;
+        if mic.is_muted() {
+            gate.reset();
+            if reported != Some(false) {
+                reported = Some(false);
+                let _ = speech.send(Speech::Measured {
+                    who: me.clone(),
+                    speaking: false,
+                    level: 0.0,
+                });
+            }
+            continue;
+        }
+        let Ok(stats) = mic.get_stats().await else {
+            failures += 1;
+            if failures == 20 && reported.take().is_some() {
+                let _ = speech.send(Speech::Unmeasured(me.clone()));
+            }
+            continue;
+        };
+        // Muted while the question was out: its answer is stale.
+        if mic.is_muted() {
+            continue;
+        }
+        let Some(level) = stats.iter().find_map(|s| match s {
+            RtcStats::MediaSource(m) if m.source.kind == "audio" => Some(m.audio.audio_level as f32),
+            _ => None,
+        }) else {
+            continue;
+        };
+        failures = 0;
+        let now = gate.feed(level, std::time::Instant::now());
+        if reported != Some(now) {
+            reported = Some(now);
+            if speech
+                .send(Speech::Measured {
+                    who: me.clone(),
+                    speaking: now,
+                    level,
+                })
+                .is_err()
+            {
+                return;
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod speech_tests {
+    use super::*;
+    use std::time::Instant;
+
+    #[test]
+    fn a_gate_switches_on_fast_and_off_after_the_hold() {
+        let t = Instant::now();
+        let ms = |n| t + Duration::from_millis(n);
+        let mut gate = Gate::new(2);
+        assert!(!gate.feed(0.1, ms(0)), "one loud frame is a click");
+        assert!(gate.feed(0.1, ms(10)));
+        // Between words: quiet for less than the hold.
+        assert!(gate.feed(0.0, ms(20)));
+        assert!(gate.feed(0.0, ms(300)));
+        assert!(gate.feed(0.1, ms(310)), "speech again resets the hold");
+        assert!(gate.feed(0.0, ms(320)));
+        assert!(gate.feed(0.015, ms(500)), "above the release level holds");
+        assert!(gate.feed(0.0, ms(510)));
+        assert!(!gate.feed(0.0, ms(870)), "off after the hold");
+        // A click in silence is not speech.
+        assert!(!gate.feed(0.5, ms(900)));
+        assert!(!gate.feed(0.0, ms(910)));
+        assert!(!gate.feed(0.5, ms(920)));
+    }
 }
