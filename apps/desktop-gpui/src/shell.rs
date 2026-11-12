@@ -136,11 +136,16 @@ pub struct Shell {
     pub joining: bool,
     /// Invites accepted here whose join the room list has not shown yet.
     pub joined_here: HashSet<OwnedRoomId>,
+    /// Calls: the one this account is in, who is ringing, the voice flags.
+    pub calls: crate::call::Calls,
+    /// The quick switcher (Ctrl+K), when open.
+    pub switcher: Option<Entity<crate::switcher::Switcher>>,
 }
 
 impl Shell {
     pub fn new(session: Session, cx: &mut Context<Self>) -> Self {
         let mut shell = Self::bare(Some(session.clone()));
+        shell.start_calls(&session, cx);
         let subscribed = session.room_list();
         cx.spawn(async move |this, cx| {
             let Ok(mut updates) = subscribed.await else {
@@ -157,6 +162,7 @@ impl Shell {
                         this.reopen_closed(cx);
                         this.open_pending_dm(cx);
                         this.sync_members(cx);
+                        this.refresh_switcher(cx);
                         cx.notify();
                     })
                     .is_ok();
@@ -280,6 +286,8 @@ impl Shell {
             preview: None,
             joining: false,
             joined_here: HashSet::new(),
+            calls: crate::call::Calls::default(),
+            switcher: None,
         }
     }
 
@@ -677,6 +685,9 @@ impl Shell {
                 .and_then(|r| r.avatar.clone())
                 .map(|m| (m, 24)),
         );
+        for person in self.calls.people.values() {
+            wanted.extend(person.avatar.clone().into_iter().flat_map(|m| [(m.clone(), 20), (m, 72)]));
+        }
         for (media, size) in wanted {
             if !self.avatars.begin(&media, size) {
                 continue;
@@ -831,6 +842,8 @@ impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.fetch_avatars(cx);
         self.mark_menu_message(cx);
+        self.fetch_people(cx);
+        self.sync_video_frames(cx);
         let root_focus = self
             .root_focus
             .get_or_insert_with(|| {
@@ -850,6 +863,7 @@ impl Render for Shell {
         let dialog = dialogs::render_dialog(self, window, cx);
         let inbox = crate::invites::inbox(self, window, cx);
         let toasts = dialogs::render_toasts(self, cx);
+        let incoming = crate::call_ui::incoming_calls(self, cx);
         // The Rooms scope is empty of rooms at first; nothing else to wait for.
         let _ = rooms_in_scope;
         let left = div()
@@ -877,6 +891,22 @@ impl Render for Shell {
             // A click on nothing in particular leaves the focus where it is (the
             // root would otherwise take it from a text box).
             .on_mouse_down(gpui::MouseButton::Left, |_, window, _| window.prevent_default())
+            .on_mouse_move(cx.listener(|this, event: &gpui::MouseMoveEvent, window, cx| {
+                if let Some((y0, start)) = this.calls.stage_drag {
+                    let chat = f32::from(window.viewport_size().height) - 32.0 - 48.0;
+                    let moved = f32::from(event.position.y) - y0;
+                    this.calls.stage_height = Some(crate::view_model::calls::dragged_stage_height(start, moved, chat));
+                    cx.notify();
+                }
+            }))
+            .on_mouse_up(
+                gpui::MouseButton::Left,
+                cx.listener(|this, _, _, cx| {
+                    if this.calls.stage_drag.take().is_some() {
+                        cx.notify();
+                    }
+                }),
+            )
             .capture_key_down(cx.listener(|this, event: &gpui::KeyDownEvent, window, cx| {
                 if this.handle_key(event, window, cx) {
                     cx.stop_propagation();
@@ -892,6 +922,17 @@ impl Render for Shell {
                     )
                     .e2e("ul", "link-log"),
             )
+            .child(
+                div()
+                    .size_0()
+                    .children(
+                        self.calls
+                            .sounds
+                            .iter()
+                            .map(|sound| div().size_0().e2e("li", "").text(*sound)),
+                    )
+                    .e2e("ul", "sound-log"),
+            )
             .child(crate::titlebar::render(self, cx))
             .child(
                 div()
@@ -899,7 +940,7 @@ impl Render for Shell {
                     .flex_1()
                     .min_h_0()
                     .child(left)
-                    .child(chat::render(self, cx))
+                    .child(chat::render(self, window, cx))
                     .e2e("div", "shell-body"),
             )
             .when(show_backup_prompt(self.keys, self.backup_later), |d| {
@@ -907,6 +948,8 @@ impl Render for Shell {
             })
             .children(self.settings.clone())
             .children(inbox)
+            .children(incoming)
+            .children(self.switcher.clone())
             .children(dialog)
             .children(self.card.clone())
             .children(self.picker.as_ref().map(|(picker, _)| picker.clone()))

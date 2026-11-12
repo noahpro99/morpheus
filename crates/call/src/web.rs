@@ -214,9 +214,12 @@ pub const LOCAL_SCREEN: &str = "local/screen";
 pub struct Frame {
     pub seq: u64,
     pub jpeg: Arc<Vec<u8>>,
+    pub bgra: Arc<Vec<u8>>,
     pub width: u32,
     pub height: u32,
 }
+
+pub fn skip_jpeg_frames() {}
 
 pub fn latest_frame(_key: &str) -> Option<Frame> {
     None

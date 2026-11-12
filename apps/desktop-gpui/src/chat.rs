@@ -10,7 +10,7 @@ use crate::{
     view_model::{nicknames::room_title, room_dialogs::RoomDialogKind},
 };
 
-pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
+pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> impl IntoElement {
     let friends = shell
         .friends_page
         .clone()
@@ -26,6 +26,34 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                 Some(room) => crate::invites::join_card(shell, cx, room),
                 None => div().into_any_element(),
             }
+        }
+        // A server's voice channel is all call: no top bar, only its chat
+        // button in the corner.
+        Some(room) if room.is_voice && !room.is_dm => {
+            let mut chat = div().flex().flex_col().flex_1().min_h_0();
+            if let Some((id, timeline)) = &shell.timeline
+                && id == &room.id
+            {
+                chat = chat.child(timeline.clone());
+            }
+            if let Some((id, composer)) = &shell.composer
+                && id == &room.id
+            {
+                chat = chat.child(composer.clone());
+            }
+            div()
+                .flex()
+                .flex_col()
+                .flex_1()
+                .min_h_0()
+                .child(crate::call_ui::voice_channel(
+                    shell,
+                    cx,
+                    room,
+                    Some(chat.into_any_element()),
+                    window,
+                ))
+                .into_any_element()
         }
         Some(room) => {
             let mut header = div()
@@ -171,6 +199,10 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                     .attr("title", "Member list (Ctrl+U)")
                     .text(count),
             );
+            // Calls belong to DMs and voice channels, as in Discord.
+            if room.is_dm {
+                header = header.child(crate::call_ui::header_call_button(shell, cx, room));
+            }
             let pins = shell.pinned.len();
             header = header.child(
                 div()
@@ -235,6 +267,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             // The messages and the message box; the member list beside them,
             // under the header, which runs over both.
             let mut content = div().flex().flex_col().flex_1().min_w_0().min_h_0();
+            content = content.children(crate::call_ui::call_stage(shell, cx, &room.id, window));
             if let Some((id, timeline)) = &shell.timeline
                 && id == &room.id
             {

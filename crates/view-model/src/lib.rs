@@ -5,6 +5,7 @@
 //! these to elements. Kept apart so it can move to a crate shared with other
 //! front ends.
 
+pub mod calls;
 pub mod composer;
 pub mod emoji;
 pub mod emoji_picker;

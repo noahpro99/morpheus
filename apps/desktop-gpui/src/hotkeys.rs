@@ -23,6 +23,7 @@ impl Shell {
             || self.menu.is_some()
             || self.card.is_some()
             || self.picker.is_some()
+            || self.switcher.is_some()
             || self.settings.as_ref().is_some_and(|s| s.read(cx).is_open())
     }
 
@@ -43,7 +44,19 @@ impl Shell {
         let keystroke = &event.keystroke;
         let m = keystroke.modifiers;
         let key = keystroke.key.as_str();
+        let ringing = !self.ringing(crate::call::now_ms()).is_empty();
         if key == "escape" && !m.shift && !m.control && !m.alt {
+            // Esc declines a call ringing (unless a dialog or menu is open to close).
+            if ringing && !self.modal_open(cx) && !self.inbox_open {
+                if let Some(call) = self.ringing(crate::call::now_ms()).first().cloned() {
+                    self.decline_ring(&call, cx);
+                }
+                return true;
+            }
+            // Escape in a call with a card focused: back to the grid.
+            if self.calls.focus.is_some() && !self.modal_open(cx) && !self.inbox_open && !self.composer_busy(cx) {
+                return self.clear_call_focus(cx);
+            }
             // Escape closes the thread panel, when nothing nearer has it.
             if self.thread.is_some() && !self.modal_open(cx) && !self.inbox_open && !self.composer_busy(cx) {
                 self.close_thread(cx);
@@ -52,6 +65,13 @@ impl Shell {
             return false;
         }
         let ctrl = m.control || m.platform;
+        // Ctrl+Enter answers a ringing call.
+        if key == "enter" && ctrl && !m.alt && !m.shift && ringing && !self.modal_open(cx) {
+            if let Some(call) = self.ringing(crate::call::now_ms()).first().cloned() {
+                self.answer_call(&call, cx);
+            }
+            return true;
+        }
         // DOM names for the arrows, as `classify` has them.
         let name = match key {
             "up" => "ArrowUp",
@@ -64,7 +84,10 @@ impl Shell {
         // The panels that toggle themselves stay reachable over their own
         // modal; anything else waits until the modal is closed.
         let toggles_help = matches!(action, Hotkey::Shortcuts) && matches!(self.dialog, Some(Dialog::Help));
-        if (self.modal_open(cx) && !toggles_help) || (self.inbox_open && !matches!(action, Hotkey::Inbox)) {
+        let toggles_switcher = matches!(action, Hotkey::Switcher) && self.switcher.is_some();
+        if (self.modal_open(cx) && !toggles_help && !toggles_switcher)
+            || (self.inbox_open && !matches!(action, Hotkey::Inbox))
+        {
             return false;
         }
         match action {
@@ -93,6 +116,21 @@ impl Shell {
             Hotkey::Room { forward } => self.step_room(forward, false, cx),
             Hotkey::Unread { forward } => self.step_room(forward, true, cx),
             Hotkey::Scope { forward } => self.step_scope(forward, cx),
+            Hotkey::Switcher => self.toggle_switcher(cx),
+            Hotkey::ToggleMute => self.toggle_mute(cx),
+            Hotkey::ToggleDeafen => self.toggle_deafen(cx),
+            Hotkey::CurrentCall => {
+                if let Some(room) = self.calls.state.as_ref().map(|c| c.room_id.clone()) {
+                    self.open_room(room, cx);
+                }
+            }
+            Hotkey::StartCall => {
+                if let Some(room) = self.current().filter(|r| r.is_dm || r.is_voice).cloned()
+                    && !self.calls.in_call(&room.id)
+                {
+                    self.join_call(room.id, room.name, cx);
+                }
+            }
         }
         let _ = window;
         true

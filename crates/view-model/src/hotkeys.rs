@@ -28,6 +28,16 @@ pub enum Hotkey {
     Unread { forward: bool },
     /// Ctrl+Alt+Up / Down: the previous / next rail entry.
     Scope { forward: bool },
+    /// Ctrl+K, Ctrl+Shift+P: the quick switcher.
+    Switcher,
+    /// Ctrl+Shift+M: mute, or unmute.
+    ToggleMute,
+    /// Ctrl+Shift+D: deafen, or undeafen.
+    ToggleDeafen,
+    /// Ctrl+Alt+Shift+V: the room of the call you are in.
+    CurrentCall,
+    /// Ctrl+': start (or join) the call of the open room.
+    StartCall,
 }
 
 /// The action for a key (a DOM key name, `a`, `ArrowUp`, `,`) pressed with
@@ -50,10 +60,19 @@ pub fn classify(key: &str, ctrl: bool, alt: bool, shift: bool) -> Option<Hotkey>
             "u" => Some(Hotkey::Members),
             "p" => Some(Hotkey::Pins),
             "," => Some(Hotkey::Settings),
+            "k" => Some(Hotkey::Switcher),
+            "'" => Some(Hotkey::StartCall),
             _ => None,
         },
         (true, false, true) => match key {
             "n" => Some(Hotkey::CreateServer),
+            "p" => Some(Hotkey::Switcher),
+            "m" => Some(Hotkey::ToggleMute),
+            "d" => Some(Hotkey::ToggleDeafen),
+            _ => None,
+        },
+        (true, true, true) => match key {
+            "v" => Some(Hotkey::CurrentCall),
             _ => None,
         },
         (true, true, false) => direction.map(|forward| Hotkey::Scope { forward }),

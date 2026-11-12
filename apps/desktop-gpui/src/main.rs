@@ -4,6 +4,8 @@
 
 use std::{borrow::Cow, path::PathBuf};
 
+mod call;
+mod call_ui;
 mod chat;
 mod composer;
 mod dialogs;
@@ -32,6 +34,8 @@ mod room_menus;
 mod search;
 mod settings;
 mod shell;
+mod sounds;
+mod switcher;
 mod thread;
 mod titlebar;
 mod timeline;
