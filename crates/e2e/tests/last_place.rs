@@ -91,3 +91,98 @@ async fn reopening_the_app_returns_to_the_last_room() {
         .unwrap_or_default();
     assert_eq!(shown.trim(), target, "moved off the last room");
 }
+
+/// A fresh account in two servers: "Xserver" (x-one, x-two) and "Yserver"
+/// (y-one).
+fn account_with_two_servers(hs: &str) -> String {
+    let user = new_account(hs, "scopes").expect("account");
+    let enc = |id: &str| id.replace('!', "%21").replace(':', "%3A");
+    // One room outside the servers, so Rooms has a row for `login` to wait for.
+    api_as(hs, &user, "POST", "createRoom", Some(serde_json::json!({ "name": "lobby" }))).expect("lobby");
+    for (server, channels) in [("Xserver", &["x-one", "x-two"][..]), ("Yserver", &["y-one"][..])] {
+        let space = api_as(
+            hs,
+            &user,
+            "POST",
+            "createRoom",
+            Some(serde_json::json!({ "name": server, "creation_content": { "type": "m.space" } })),
+        )
+        .expect("space");
+        let space = space["room_id"].as_str().expect("id").to_owned();
+        for name in channels {
+            let room = api_as(
+                hs,
+                &user,
+                "POST",
+                "createRoom",
+                Some(serde_json::json!({ "name": name })),
+            )
+            .expect("channel");
+            let room = room["room_id"].as_str().expect("id").to_owned();
+            api_as(
+                hs,
+                &user,
+                "PUT",
+                &format!("rooms/{}/state/m.space.child/{room}", enc(&space)),
+                Some(serde_json::json!({ "via": ["localhost"] })),
+            )
+            .expect("child");
+        }
+    }
+    user
+}
+
+async fn header_is(app: &mut App, name: &str, why: &str) {
+    app.wait_for_text(".chat-header h2", name, DEFAULT_WAIT)
+        .await
+        .unwrap_or_else(|e| panic!("{why}: {e}"));
+}
+
+/// As Discord: a server's badge opens the channel that was open when you
+/// left it, also after the DMs and after quitting the app.
+#[tokio::test]
+async fn clicking_a_server_returns_to_the_channel_last_open_in_it() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let user = account_with_two_servers(&hs);
+    let mut app = App::launch(&hs).await.expect("launch");
+    login(&mut app, &user).await;
+    if !app.is_gpui() {
+        // The Dioxus rail only lists the server; its Ctrl+Alt+Right does the jump.
+        eprintln!("skipped: the Dioxus rail badges do not reopen a server's channel");
+        return;
+    }
+    let x = ".rail-item[title=\"Xserver\"]";
+    let y = ".rail-item[title=\"Yserver\"]";
+    let dms = ".rail-item[title=\"Direct messages\"]";
+    app.wait_for(x, DEFAULT_WAIT).await.expect("X badge");
+    app.wait_for(y, DEFAULT_WAIT).await.expect("Y badge");
+
+    app.click(x).await.expect("X");
+    app.open_room("x-two").await.expect("x-two");
+    app.click(y).await.expect("Y");
+    app.open_room("y-one").await.expect("y-one");
+    app.click(dms).await.expect("DMs");
+    app.wait_for_text(".sidebar-header h2", "Direct messages", DEFAULT_WAIT)
+        .await
+        .expect("DMs listed");
+
+    app.click(x).await.expect("X again");
+    header_is(&mut app, "x-two", "X reopens the channel left open in it").await;
+    app.click(y).await.expect("Y again");
+    header_is(&mut app, "y-one", "Y reopens its own channel").await;
+    // Clicking the server you are in leaves the channel as it is.
+    app.click(y).await.expect("Y once more");
+    header_is(&mut app, "y-one", "still there").await;
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+    // After quitting the app: it opens in Y (where it was), and X still
+    // knows its channel.
+    let mut app = app.relaunch().await.expect("relaunch");
+    app.wait_for(x, DEFAULT_WAIT).await.expect("X badge again");
+    header_is(&mut app, "y-one", "the last room reopened").await;
+    app.click(x).await.expect("X after restart");
+    header_is(&mut app, "x-two", "X reopens its channel after a restart").await;
+}
