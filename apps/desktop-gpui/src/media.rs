@@ -14,6 +14,12 @@ use crate::{
     theme,
 };
 
+/// The biggest copy fetched of each picture, shared by every list and card:
+/// it stands in while the size wanted loads, so a card opens with the member
+/// row's picture instead of a letter.
+static ANY_SIZE: std::sync::LazyLock<std::sync::Mutex<HashMap<String, (u32, Arc<Image>)>>> =
+    std::sync::LazyLock::new(Default::default);
+
 /// Thumbnails fetched so far, by media and size. `None` remembers a failed
 /// fetch so dead media is not retried on every frame.
 #[derive(Default)]
@@ -30,6 +36,13 @@ impl Avatars {
             .flatten()
     }
 
+    /// The copy of the size wanted, else the biggest one fetched anywhere
+    /// (a stand-in while the size loads), else nothing.
+    pub fn get_or_stand_in(&self, media: &MediaRef, size: u32) -> Option<Arc<Image>> {
+        self.get(media, size)
+            .or_else(|| ANY_SIZE.lock().ok()?.get(media.key()).map(|(_, image)| image.clone()))
+    }
+
     /// Marks `media` as being fetched; false when it already was or is here.
     pub fn begin(&mut self, media: &MediaRef, size: u32) -> bool {
         let key = (media.key().to_owned(), size);
@@ -39,6 +52,11 @@ impl Avatars {
     pub fn finish(&mut self, media: &MediaRef, size: u32, image: Option<Arc<Image>>) {
         let key = (media.key().to_owned(), size);
         self.pending.remove(&key);
+        if let (Some(image), Ok(mut any)) = (&image, ANY_SIZE.lock()) {
+            if any.get(media.key()).is_none_or(|(had, _)| *had < size) {
+                any.insert(media.key().to_owned(), (size, image.clone()));
+            }
+        }
         self.images.insert(key, image);
     }
 }

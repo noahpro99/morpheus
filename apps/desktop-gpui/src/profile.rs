@@ -275,17 +275,19 @@ impl ProfileCard {
         let session = self.session.clone()?;
         if self.images.begin(&media, size) {
             let fetching = session.thumbnail(media.clone(), size, size);
+            let fetched_media = media.clone();
             cx.spawn(async move |this, cx| {
                 let image = fetching.await.ok().flatten().and_then(|bytes| media::decode(&bytes));
                 this.update(cx, |this, cx| {
-                    this.images.finish(&media, size, image);
+                    this.images.finish(&fetched_media, size, image);
                     cx.notify();
                 })
                 .ok();
             })
             .detach();
         }
-        None
+        // The copy already on screen (the member row's) stands in meanwhile.
+        self.images.get_or_stand_in(&media, size)
     }
 
     /// The note changed: saved once the writing pauses.
