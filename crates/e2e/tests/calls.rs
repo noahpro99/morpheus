@@ -2039,6 +2039,14 @@ async fn joining_and_rejoining_picks_up_cameras_and_screens() {
 
 /// A new voice channel for alice and bob, named uniquely; its name.
 fn fresh_voice_channel(hs: &str) -> String {
+    // The channels earlier runs left behind pile up in the accounts (hundreds
+    // of rooms); leave them before this run adds its own.
+    static CLEANED: std::sync::Once = std::sync::Once::new();
+    CLEANED.call_once(|| {
+        for user in ["alice", "bob"] {
+            morpheus_e2e::remove_rooms_named(hs, user, "voice ");
+        }
+    });
     let name = format!(
         "voice {} {}",
         std::process::id(),

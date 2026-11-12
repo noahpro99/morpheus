@@ -490,3 +490,45 @@ async fn a_wide_picture_is_cropped_to_fill_a_round_avatar() {
         assert!(!red(p) && !blue(p), "the avatar's corner at ({x}, {y}) is {p:?}: the picture is not cut to a circle");
     }
 }
+
+/// An account with more rooms than the first page of the room list (200)
+/// sees all of them, the oldest too (task 21: the list stopped at the 200
+/// most recent, so a voice channel's row vanished once a test account had
+/// collected enough rooms, and with it its participants).
+#[tokio::test]
+async fn an_account_with_hundreds_of_rooms_lists_them_all() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let user = new_account(&hs, "manyrooms").expect("account");
+    let make = |name: String| {
+        api_as(
+            &hs,
+            &user,
+            "POST",
+            "createRoom",
+            Some(serde_json::json!({ "name": name })),
+        )
+        .expect("a room");
+    };
+    make("the oldest".to_owned());
+    for n in 0..215 {
+        make(format!("filler {n}"));
+    }
+    let mut app = App::launch(&hs).await.expect("launch");
+    common::login(&mut app, &user, &format!("{user}-password")).await;
+    let started = std::time::Instant::now();
+    loop {
+        let names = app.texts(".room .room-name").await.unwrap_or_default();
+        if names.iter().any(|n| n == "the oldest") {
+            break;
+        }
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(20),
+            "the oldest room never listed ({} rooms shown)",
+            names.len()
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    }
+}
