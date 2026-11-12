@@ -25,6 +25,34 @@ use tracing::{info, warn};
 
 use crate::imp::video::{self, LOCAL_SCREEN};
 
+
+/// libwebrtc's Linux portal capturer (xdg-desktop-portal ScreenCast over
+/// GDBus) gets its replies through callbacks on GLib's default main context.
+/// GTK hosts (the Dioxus app) iterate it already; a host with no GLib loop
+/// (the GPUI app) never completes the portal request, so the picker does not
+/// show. Once per process: a thread that runs a main loop on that context, or
+/// ends at once when GTK owns it.
+#[cfg(target_os = "linux")]
+fn ensure_glib_loop() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let spawned = std::thread::Builder::new()
+            .name("morpheus-glib".into())
+            .spawn(|| {
+                let ctx = glib::MainContext::default();
+                match ctx.acquire() {
+                    Ok(_owner) => {
+                        tracing::info!("screen capture: running a GLib main loop for the portal");
+                        glib::MainLoop::new(Some(&ctx), false).run();
+                    }
+                    Err(_) => tracing::info!("screen capture: GTK already owns GLib's main context"),
+                }
+            });
+        if let Err(err) = spawned {
+            tracing::warn!("screen capture: no GLib main loop thread: {err}");
+        }
+    });
+}
 /// Capture the screen into `source` on a thread of its own until `stop` is
 /// set. `started` hears once: the first picture arrived, or capture could
 /// not start (no capturer, or the picker was cancelled). Frames go out only
@@ -35,6 +63,8 @@ pub(crate) fn run(
     sending: Arc<AtomicBool>,
     started: oneshot::Sender<Result<(), String>>,
 ) {
+    #[cfg(target_os = "linux")]
+    ensure_glib_loop();
     let spawned = std::thread::Builder::new()
         .name("morpheus-screen".into())
         .spawn(move || {

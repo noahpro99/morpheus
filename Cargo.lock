@@ -7165,6 +7165,7 @@ name = "morpheus-call"
 version = "0.1.4"
 dependencies = [
  "futures-util",
+ "glib",
  "jpeg-encoder",
  "linuxvideo",
  "livekit",
