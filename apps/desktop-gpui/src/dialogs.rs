@@ -15,6 +15,7 @@ use morpheus_core::{
     Message, MessageId, OwnedEventId, OwnedRoomId, PinnedMessage, Session, TimelineHandle,
 };
 
+use crate::hover_underline::underline_on_hover;
 use crate::{
     e2e::E2eExt as _,
     input::{Submit, TextInput},
@@ -766,16 +767,20 @@ pub fn render_toasts(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElemen
                 .child(div().flex_1().child(toast.text.clone()).e2e("span", "toast-text").text(toast.text.clone()))
                 .when(toast.undo, |d| {
                     d.child(
-                        div()
-                            .id(ElementId::from(SharedString::from(format!("undo-{id}"))))
-                            .px(px(4.0))
-                            .py(px(6.0))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(rgb(theme::accent()))
-                            .cursor_pointer()
-                            .hover(|s| s.underline())
-                            .child("Undo")
-                            .on_click(cx.listener(move |this, _, _, cx| this.undo_toast(id, cx)))
+                        underline_on_hover(
+                            div()
+                                .id(ElementId::from(SharedString::from(format!("undo-{id}"))))
+                                .px(px(4.0))
+                                .py(px(6.0))
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .text_color(rgb(theme::accent()))
+                                .cursor_pointer()
+                                .child("Undo")
+                                .on_click(cx.listener(move |this, _, _, cx| this.undo_toast(id, cx))),
+                            SharedString::from(format!("undo-hover-{id}")),
+                            theme::accent(),
+                            7.0,
+                        )
                             .e2e("button", "toast-undo")
                             .text("Undo"),
                     )

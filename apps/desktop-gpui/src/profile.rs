@@ -17,6 +17,7 @@ use morpheus_core::{
     MediaRef, MemberRole, OwnedRoomId, OwnedUserId, Profile, RoomSummary, Session,
 };
 
+use crate::hover_underline::{as_wide_as_its_text, underline_on_hover};
 use crate::{
     e2e::E2eExt as _,
     icons::icon,
@@ -489,14 +490,19 @@ impl Render for ProfileCard {
                     .text(name.clone()),
             )
             .child(
-                div()
-                    .text_size(px(0.85 * theme::REM))
-                    .text_color(rgb(theme::text_muted()))
-                    .child(self.user.to_string())
-                    .id("profile-id")
-                    .cursor_pointer()
-                    .hover(|s| s.underline())
-                    .on_click(cx.listener(|this, _, _, cx| this.show_full(cx)))
+                underline_on_hover(
+                    as_wide_as_its_text(div()
+                        .text_size(px(0.85 * theme::REM))
+                        .text_color(rgb(theme::text_muted()))
+                        .child(self.user.to_string())
+                        .id("profile-id")
+                        .cursor_pointer()
+                        .on_click(cx.listener(|this, _, _, cx| this.show_full(cx))),
+                    ),
+                    "card-profile-id",
+                    theme::text_muted(),
+                    2.0,
+                )
                     .e2e("p", "profile-id muted")
                     .attr("title", "View full profile")
                     .text(self.user.to_string()),
@@ -519,15 +525,19 @@ impl Render for ProfileCard {
             let count = shared_servers(&self.servers, &self.mutual).len();
             let label = mutual_servers_label(count);
             body = body.child(
-                div()
-                    .id("card-mutual")
-                    .mt(px(8.0))
-                    .text_size(px(0.85 * theme::REM))
-                    .text_color(rgb(theme::accent()))
-                    .cursor_pointer()
-                    .hover(|s| s.underline())
-                    .child(label.clone())
-                    .on_click(cx.listener(|this, _, _, cx| this.show_full(cx)))
+                underline_on_hover(
+                    div()
+                        .id("card-mutual")
+                        .mt(px(8.0))
+                        .text_size(px(0.85 * theme::REM))
+                        .text_color(rgb(theme::accent()))
+                        .cursor_pointer()
+                        .child(label.clone())
+                        .on_click(cx.listener(|this, _, _, cx| this.show_full(cx))),
+                    "card-mutual-servers",
+                    theme::accent(),
+                    2.0,
+                )
                     .e2e("button", "mutual-servers")
                     .attr("title", "View full profile")
                     .text(label),
@@ -723,16 +733,20 @@ impl ProfileCard {
                     .text(name.clone()),
             )
             .child(
-                div()
-                    .text_size(px(0.85 * theme::REM))
-                    .text_color(rgb(theme::text_muted()))
-                    .child(self.user.to_string())
-                    .id("profile-id")
-                    .cursor_pointer()
-                    .hover(|s| s.underline())
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        cx.emit(ProfileEvent::Copied(format!("https://matrix.to/#/{}", this.user)))
-                    }))
+                underline_on_hover(
+                    div()
+                        .text_size(px(0.85 * theme::REM))
+                        .text_color(rgb(theme::text_muted()))
+                        .child(self.user.to_string())
+                        .id("profile-id")
+                        .cursor_pointer()
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            cx.emit(ProfileEvent::Copied(format!("https://matrix.to/#/{}", this.user)))
+                        })),
+                    "full-profile-id",
+                    theme::text_muted(),
+                    2.0,
+                )
                     .e2e("p", "profile-id muted")
                     .attr("title", "Copy the link to this profile")
                     .text(self.user.to_string()),

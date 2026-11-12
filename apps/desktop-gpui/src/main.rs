@@ -15,6 +15,7 @@ mod e2e;
 mod emoji_picker;
 mod friends;
 mod hotkeys;
+mod hover_underline;
 mod icons;
 mod invites;
 mod message;
