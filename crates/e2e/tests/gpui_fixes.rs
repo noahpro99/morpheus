@@ -661,10 +661,22 @@ async fn the_full_profile_is_a_centred_modal_with_a_height_limit() {
 
     // A short window: the modal keeps its margin below and scrolls.
     drop(app);
+    let (ann, ben) = (
+        new_account(&hs, "shortann").expect("account"),
+        new_account(&hs, "shortben").expect("account"),
+    );
+    room_of(&hs, &ann, &ben, "short room");
     let mut app = App::launch_sized(&hs, 1000, 480).await.expect("launch small");
-    common::login(&mut app, "alice", "alice-password").await;
-    app.open_room("general").await.expect("open room");
-    open_full_profile(&mut app).await;
+    common::login(&mut app, &ann, &format!("{ann}-password")).await;
+    app.open_room("short room").await.expect("open room");
+    app.wait_for(&format!(".members .member[title=\"@{ben}:localhost\"]"), DEFAULT_WAIT).await.expect("ben listed");
+    app.click(&format!(".members .member[title=\"@{ben}:localhost\"]")).await.expect("his row");
+    app.wait_for(".profile-card .card-button.more", DEFAULT_WAIT).await.expect("card");
+    tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+    app.click(".profile-card .card-button.more").await.expect("more");
+    app.click_text(".context-item", "View full profile").await.expect("full");
+    app.wait_for(".profile-modal .profile-id", DEFAULT_WAIT).await.expect("full profile");
+    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
     let window = app.bounds(".shell").await.expect("b").expect("shell");
     let m = app.bounds(".profile-modal").await.expect("b").expect("modal");
     eprintln!("short window: modal {m:?} in {window:?}");
