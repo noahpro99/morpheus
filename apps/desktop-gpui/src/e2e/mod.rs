@@ -74,7 +74,7 @@ impl Scrollable for HandleProbe {
 }
 
 #[cfg(feature = "e2e")]
-pub use bridge::start;
+pub use bridge::{run_ended, start};
 #[cfg(feature = "e2e")]
 #[allow(unused_imports)]
 pub use tag::{E2eExt, Tagged, frame, text_links};

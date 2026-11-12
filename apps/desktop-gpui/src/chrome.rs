@@ -17,11 +17,16 @@ pub const BAR_HEIGHT: f32 = 32.0;
 const EDGE: f32 = 5.0;
 const CORNER: f32 = 12.0;
 
-/// Closing the window. The tray (when there is one) keeps the app running;
-/// without it the app ends.
+/// Closing the window hides it when there is a tray to bring it back (the
+/// app goes on syncing and notifying); without one the app ends.
 pub fn close_window(window: &mut Window, cx: &mut App) {
-    let _ = window;
-    cx.quit();
+    if crate::tray::hides_on_close() {
+        crate::notify::set_looking(false, None);
+        crate::HIDING.store(true, std::sync::atomic::Ordering::Relaxed);
+        window.remove_window();
+    } else {
+        cx.quit();
+    }
 }
 
 /// A bar's mouse handling: a press anywhere that is not a button drags the

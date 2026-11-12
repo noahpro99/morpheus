@@ -2867,15 +2867,9 @@ async fn a_desktop_in_the_tray_still_rings() {
         return;
     };
     let mut bob = App::launch_desktop(&hs).await.expect("launch bob");
-    if bob.is_gpui() {
-        eprintln!("the tray is the Dioxus app's (the GPUI one has none yet); skipping");
-        return;
-    }
     login_and_open(&mut bob, "bob", "general").await;
     // To the tray: the window hides, the app runs on.
-    bob.eval("setTimeout(() => document.querySelector('.titlebar button.close').click(), 50); return true;")
-        .await
-        .expect("close");
+    bob.close_to_tray().await.expect("close");
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     assert!(bob.is_running(), "closing the window keeps the app");
     let played = bob.data_dir().join("played-sounds.log");

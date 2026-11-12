@@ -90,15 +90,24 @@ pub fn start(cx: &mut App) {
     else {
         return;
     };
-    let listener = match TcpListener::bind(("127.0.0.1", port)) {
-        Ok(listener) => listener,
-        Err(err) => {
-            eprintln!("morpheus-gpui: e2e bridge could not bind {port}: {err}");
-            return;
-        }
-    };
+    // The listener lives as long as the process: the window can be closed to
+    // the tray and opened again (a new run of the window system), and the
+    // test's connection must go on.
     let (requests, mut incoming) = mpsc::unbounded::<(Request, oneshot::Sender<Reply>)>();
-    std::thread::spawn(move || serve(&listener, &requests));
+    if let Ok(mut current) = CURRENT.lock() {
+        *current = Some(requests);
+    }
+    static STARTED: std::sync::Once = std::sync::Once::new();
+    STARTED.call_once(|| {
+        let listener = match TcpListener::bind(("127.0.0.1", port)) {
+            Ok(listener) => listener,
+            Err(err) => {
+                eprintln!("morpheus-gpui: e2e bridge could not bind {port}: {err}");
+                return;
+            }
+        };
+        std::thread::spawn(move || serve(&listener));
+    });
     cx.spawn(async move |cx| {
         while let Some((request, reply)) = incoming.next().await {
             let _ = reply.send(handle(&request, cx).await);
@@ -109,10 +118,22 @@ pub fn start(cx: &mut App) {
 
 /// Accept clients one at a time (tests are sequential), pass each request to
 /// the main thread and write its reply.
-fn serve(
-    listener: &TcpListener,
-    requests: &mpsc::UnboundedSender<(Request, oneshot::Sender<Reply>)>,
-) {
+/// Where requests go: the current run of the window system, if there is one.
+type Requests = mpsc::UnboundedSender<(Request, oneshot::Sender<Reply>)>;
+static CURRENT: std::sync::Mutex<Option<Requests>> = std::sync::Mutex::new(None);
+/// Counts the runs of the window system that have ended.
+static RUNS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// The window system's run is over (the window closed to the tray): requests
+/// in flight are answered, and new ones wait for the next window.
+pub fn run_ended() {
+    if let Ok(mut current) = CURRENT.lock() {
+        *current = None;
+    }
+    RUNS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
+fn serve(listener: &TcpListener) {
     for stream in listener.incoming().flatten() {
         let Ok(read) = stream.try_clone() else {
             continue;
@@ -126,11 +147,48 @@ fn serve(
                 Ok(request) => {
                     let id = request.id;
                     let (reply, wait) = oneshot::channel();
-                    if requests.unbounded_send((request, reply)).is_err() {
-                        return;
+                    // With the window closed to the tray a request waits for the next one.
+                    let mut pending = Some((request, reply));
+                    let waiting_since = std::time::Instant::now();
+                    let (mut sent, mut run) = (false, 0);
+                    while let Some(message) = pending.take() {
+                        let mut message = Some(message);
+                        if let Ok(current) = CURRENT.lock()
+                            && let Some(requests) = current.as_ref()
+                        {
+                            run = RUNS.load(std::sync::atomic::Ordering::Relaxed);
+                            if let Some(m) = message.take() {
+                                match requests.unbounded_send(m) {
+                                    Ok(()) => sent = true,
+                                    Err(failed) => message = Some(failed.into_inner()),
+                                }
+                            }
+                        }
+                        if sent || waiting_since.elapsed() > std::time::Duration::from_secs(20) {
+                            break;
+                        }
+                        pending = message;
+                        std::thread::sleep(std::time::Duration::from_millis(50));
                     }
-                    let reply = futures::executor::block_on(wait)
-                        .unwrap_or_else(|_| Err("the app closed".into()));
+                    let reply = if sent {
+                        let mut wait = wait;
+                        loop {
+                            match wait.try_recv() {
+                                Ok(Some(reply)) => break reply,
+                                Ok(None) => {}
+                                Err(_) => break Err("the window closed".into()),
+                            }
+                            // The request closed the window to the tray: the
+                            // run that held it is over and answers no more.
+                            if RUNS.load(std::sync::atomic::Ordering::Relaxed) != run {
+                                std::thread::sleep(std::time::Duration::from_millis(300));
+                                break Ok(Value::Null);
+                            }
+                            std::thread::sleep(std::time::Duration::from_millis(1));
+                        }
+                    } else {
+                        Err("the window is closed (in the tray)".into())
+                    };
                     (id, reply)
                 }
                 Err(err) => (0, Err(format!("bad request: {err}"))),

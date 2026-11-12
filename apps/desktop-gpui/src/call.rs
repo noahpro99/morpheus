@@ -869,44 +869,16 @@ impl Shell {
     }
 }
 
-/// The system's sound for an incoming call (freedesktop sound theme name).
-const RING_SOUND: &str = "phone-incoming-call";
-
 /// Someone calling while the window is in the background: say who (the
 /// ringtone plays in the app either way). Test runs never notify (they would
 /// pile real pop-ups on the developer's desktop): they log what would show
 /// and write it to `shown-notifications.jsonl`.
 fn notify_ring(title: String) {
-    eprintln!("morpheus-gpui: ring notification: {title}");
-    if std::env::var_os("MORPHEUS_E2E_PORT").is_some() {
-        let line = serde_json::json!({
-            "title": title,
-            "body": "Open Morpheus to answer",
-            "icon": null,
-            "image": null,
-            "sound": RING_SOUND,
-        });
-        let written = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(crate::data_dir().join("shown-notifications.jsonl"))
-            .and_then(|mut file| {
-                std::io::Write::write_all(&mut file, format!("{line}\n").as_bytes())
-            });
-        if let Err(err) = written {
-            eprintln!("morpheus-gpui: test notification log not written: {err}");
-        }
-        return;
-    }
-    std::thread::spawn(move || {
-        let shown = notify_rust::Notification::new()
-            .appname("Morpheus")
-            .summary(&title)
-            .body("Open Morpheus to answer")
-            .sound_name(RING_SOUND)
-            .show();
-        if let Err(err) = shown {
-            eprintln!("morpheus-gpui: desktop notification failed: {err}");
-        }
-    });
+    crate::notify::show(
+        title,
+        "Open Morpheus to answer".into(),
+        None,
+        None,
+        Some(crate::notify::RING_SOUND),
+    );
 }

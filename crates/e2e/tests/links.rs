@@ -129,24 +129,26 @@ async fn matrix_to_links_open_in_the_app() {
     // A message in #random to link to.
     let target = format!("link target {id}");
     send(&mut app, &target).await;
-    let find = format!(
-        "const m = [...document.querySelectorAll('.message[data-event-id^=\"$\"]')].find(m => m.querySelector('.body')?.textContent.trim() === {}); return m ? m.dataset.eventId : null;",
-        serde_json::to_string(&target).expect("json")
-    );
-    app.wait_for_js(
-        &find.replace("return m ? m.dataset.eventId : null;", "return !!m;"),
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("sent");
-    let event = app.eval(&find).await.expect("its event id");
-    let random_id: String = app
-        .eval("return [...document.querySelectorAll('.room')].find(r => r.querySelector('.room-name')?.textContent.trim() === 'random').dataset.room;")
-        .await
-        .expect("room id")
-        .as_str()
-        .expect("string")
-        .to_owned();
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    let event = loop {
+        let found = app
+            .attr_containing(".message[data-event-id^=\"$\"]", &target, "data-event-id")
+            .await
+            .expect("its event id");
+        if let Some(found) = found {
+            break serde_json::Value::String(found);
+        }
+        assert!(std::time::Instant::now() < deadline, "sent");
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    };
+    let rooms = app.texts(".room .room-name").await.expect("rooms");
+    let ids = app.attrs(".room", "data-room").await.expect("room ids");
+    let random_id: String = rooms
+        .iter()
+        .zip(ids)
+        .find(|(text, _)| text.trim() == "random")
+        .and_then(|(_, id)| id)
+        .expect("room id");
 
     app.open_room("general").await.expect("open general");
     app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
@@ -214,24 +216,24 @@ async fn matrix_to_links_open_in_the_app() {
 
     // None of them went to the browser.
     let handed = app
-        .eval("return [...document.querySelectorAll('.link-log li')].map(li => li.textContent).filter(t => t.includes('matrix.to')).length;")
+        .texts(".link-log li")
         .await
-        .expect("log");
+        .expect("log")
+        .iter()
+        .filter(|t| t.contains("matrix.to"))
+        .count();
     assert_eq!(handed, 0, "matrix.to links stay in the app");
 }
 
 /// Click the newest link to `link` in the room, waiting for it to arrive.
 async fn click_link(app: &mut App, link: &str) {
-    let find = format!(
-        "const a = [...document.querySelectorAll('.message .body a')].reverse().find(a => a.href === {});",
-        serde_json::to_string(link).expect("json")
-    );
-    app.wait_for_js(&format!("{find} return !!a;"), DEFAULT_WAIT)
+    let selector = format!(".message .body a[href=\"{link}\"]");
+    app.wait_for(&selector, DEFAULT_WAIT)
         .await
         .unwrap_or_else(|err| panic!("{link} is in the room: {err}"));
-    app.eval(&format!("{find} a.click(); return true;"))
-        .await
-        .expect("click");
+    // The echo of a message just sent settles into its place first.
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    app.click(&selector).await.expect("click");
 }
 
 /// Links from outside the app (a `matrix:` link the desktop hands over, or a

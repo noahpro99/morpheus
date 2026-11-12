@@ -43,7 +43,7 @@ async fn closing_the_window_keeps_syncing_and_announcing() {
     // Close through the title bar: the window hides, the process stays.
     // Deferred: the webview stops answering the moment it hides, so the
     // eval must return before the click lands.
-    bob.eval("setTimeout(() => document.querySelector('.titlebar button.close').click(), 50); return true;").await.expect("close");
+    bob.close_to_tray().await.expect("close");
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     assert!(bob.is_running(), "closing the window must not quit the app");
 
@@ -163,7 +163,7 @@ async fn tray_click_opens_and_the_menu_reaches_the_app() {
     );
 
     // Hide, then left-click the icon.
-    app.eval("setTimeout(() => document.querySelector('.titlebar button.close').click(), 50); return true;").await.expect("close");
+    app.close_to_tray().await.expect("close");
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     bus_call(&[
         &name,
@@ -181,7 +181,7 @@ async fn tray_click_opens_and_the_menu_reaches_the_app() {
         .expect("window back after a tray click");
 
     // Hide again; "Acknowledgements" from the menu opens the window on it.
-    app.eval("setTimeout(() => document.querySelector('.titlebar button.close').click(), 50); return true;").await.expect("close");
+    app.close_to_tray().await.expect("close");
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     let id = items
         .iter()
@@ -218,9 +218,7 @@ async fn second_launch_shows_the_running_window() {
     };
     let mut app = App::launch_desktop(&hs).await.expect("launch app");
     login(&mut app, "carol").await;
-    app.eval("setTimeout(() => document.querySelector('.titlebar button.close').click(), 50); return true;")
-        .await
-        .expect("hide");
+    app.close_to_tray().await.expect("hide");
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
     let second = app

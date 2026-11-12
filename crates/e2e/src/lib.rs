@@ -246,6 +246,18 @@ impl App {
         Ok(())
     }
 
+    /// Close the window with the title bar's button: the app hides it and runs
+    /// on in the tray. (Dioxus: the click is deferred, since the webview stops
+    /// answering the moment it hides, so the eval must return first.)
+    pub async fn close_to_tray(&mut self) -> Result<()> {
+        if gpui() {
+            return self.click(".titlebar .window-controls button[title=Close]").await;
+        }
+        self.eval("setTimeout(() => document.querySelector('.titlebar button.close').click(), 50); return true;")
+            .await
+            .map(drop)
+    }
+
     /// Evaluate JavaScript in the webview. Use `return` to get a value back.
     /// The GPUI app (`MORPHEUS_E2E_UI=gpui`) runs none: the test needs porting.
     pub async fn eval(&mut self, js: &str) -> Result<Value> {

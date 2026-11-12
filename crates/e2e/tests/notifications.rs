@@ -66,14 +66,11 @@ async fn messages_from_others_are_announced_and_mentions_flagged() {
         .await
         .expect("announced");
     let flagged = bob
-        .eval(&format!(
-            "return [...document.querySelectorAll('.notification-log li')].find(li => li.textContent.includes({})).dataset.mention",
-            serde_json::to_string(&plain).expect("json")
-        ))
+        .attr_containing(".notification-log li", &plain, "data-mention")
         .await
         .expect("flag");
     assert_eq!(
-        flagged.as_str(),
+        flagged.as_deref(),
         Some("false"),
         "a plain message is not a mention"
     );
@@ -83,15 +80,21 @@ async fn messages_from_others_are_announced_and_mentions_flagged() {
 
     let mention = format!("@bob look here {pid}");
     send(&mut alice, &mention).await;
-    bob.wait_for_js(
-        &format!(
-            "return [...document.querySelectorAll('.notification-log li')].some(li => li.textContent.includes({}) && li.dataset.mention === 'true')",
-            serde_json::to_string(&mention).expect("json")
-        ),
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("mention flagged");
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let flag = bob
+            .attr_containing(".notification-log li", &mention, "data-mention")
+            .await
+            .expect("flag");
+        if flag.as_deref() == Some("true") {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "mention flagged (saw {flag:?})"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
 
     // The inbox lists the mention and opens the room.
     bob.click(".titlebar .inbox-button")
@@ -263,16 +266,8 @@ async fn notifications_show_the_senders_picture_and_the_photo() {
 
     // A photo: the picture itself in the notification.
     let photo = format!("photo-{pid}.png");
-    let bytes: Vec<String> = TINY_PNG.iter().map(|b| b.to_string()).collect();
     alice
-        .eval(&format!(
-            "const dt = new DataTransfer(); dt.items.add(new File([new Uint8Array([{}])], {}, {{ type: 'image/png' }})); \
-             const target = document.querySelector('.chat'); \
-             target.dispatchEvent(new DragEvent('dragover', {{ bubbles: true, cancelable: true, dataTransfer: dt }})); \
-             target.dispatchEvent(new DragEvent('drop', {{ bubbles: true, cancelable: true, dataTransfer: dt }}));",
-            bytes.join(","),
-            serde_json::to_string(&photo).expect("json")
-        ))
+        .attach_file(true, &photo, "image/png", TINY_PNG)
         .await
         .expect("drop a photo");
     // It waits on the message being written, and goes with it.

@@ -399,7 +399,7 @@ impl RoomDialog {
 // ---- drawing --------------------------------------------------------------------
 
 /// A button of these dialogs: danger a red block, others plain text; with a glyph.
-fn button(
+pub(crate) fn button(
     id: &str,
     glyph: Option<&'static str>,
     label: &str,

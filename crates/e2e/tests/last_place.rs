@@ -59,10 +59,11 @@ async fn reopening_the_app_returns_to_the_last_room() {
         .expect("all rooms listed");
     // Whichever room the app opened first, go to a different one.
     let first = app
-        .eval("return document.querySelector('.chat-header h2')?.textContent.trim() ?? '';")
+        .text(".chat-header h2")
         .await
-        .expect("first room");
-    let target = if first.as_str() == Some("middle") {
+        .expect("first room")
+        .unwrap_or_default();
+    let target = if first.trim() == "middle" {
         "zebra"
     } else {
         "middle"
@@ -84,8 +85,9 @@ async fn reopening_the_app_returns_to_the_last_room() {
     // And it stays there once the list has settled.
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     let shown = app
-        .eval("return document.querySelector('.chat-header h2')?.textContent.trim() ?? '';")
+        .text(".chat-header h2")
         .await
-        .expect("room");
-    assert_eq!(shown.as_str(), Some(target), "moved off the last room");
+        .expect("room")
+        .unwrap_or_default();
+    assert_eq!(shown.trim(), target, "moved off the last room");
 }

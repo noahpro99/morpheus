@@ -5,6 +5,7 @@
 //! these to elements. Kept apart so it can move to a crate shared with other
 //! front ends.
 
+pub mod about;
 pub mod calls;
 pub mod composer;
 pub mod emoji;
@@ -12,8 +13,11 @@ pub mod emoji_picker;
 pub mod format;
 pub mod friends;
 pub mod hotkeys;
+pub mod instance;
 pub mod invites;
 pub mod keys;
+pub mod last_place;
+pub mod links;
 pub mod linkify;
 pub mod marks;
 pub mod members;
@@ -21,7 +25,9 @@ pub mod profile;
 pub mod menu;
 pub mod mod_view;
 pub mod nav;
+pub mod notices;
 pub mod nicknames;
+pub mod ringing;
 pub mod room_dialogs;
 pub mod room_menu;
 pub mod settings;

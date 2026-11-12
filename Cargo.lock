@@ -7249,14 +7249,17 @@ dependencies = [
  "gpui",
  "image",
  "jiff",
+ "ksni",
  "morpheus-call",
  "morpheus-core",
  "morpheus-view-model",
  "notify-rust",
+ "png 0.17.16",
  "rodio",
  "ruma-html",
  "serde",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]
