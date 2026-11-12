@@ -51,6 +51,19 @@ pub struct ThemeChosen(pub Theme);
 
 impl EventEmitter<ThemeChosen> for SettingsView {}
 
+/// A call device was picked on the Voice & Video page (kept already): the
+/// shell makes a call going now switch over.
+pub struct DevicesChosen(pub crate::view_model::menu::DeviceKind);
+
+impl EventEmitter<DevicesChosen> for SettingsView {}
+
+/// The devices the Voice & Video page lists: (id, name).
+pub struct VoiceLists {
+    pub microphones: Vec<(String, String)>,
+    pub speakers: Vec<(String, String)>,
+    pub cameras: Vec<(String, String)>,
+}
+
 /// A verification flow as the window shows it: the core's steps, mirrored
 /// as they come, and the actions that drive it.
 pub struct Flow {
@@ -94,6 +107,11 @@ pub struct SettingsView {
     /// The theme in the account's prefs (the shell tells us).
     pub theme: Theme,
     data_dir: std::path::PathBuf,
+    /// The devices to pick from (None while looking), what is chosen, and
+    /// which list is open.
+    voice: Option<VoiceLists>,
+    voice_prefs: crate::view_model::calls::DevicePrefs,
+    picker_open: Option<&'static str>,
 }
 
 impl SettingsView {
@@ -163,6 +181,9 @@ impl SettingsView {
             startup_note: None,
             theme: Theme::Dark,
             data_dir,
+            voice: None,
+            voice_prefs: Default::default(),
+            picker_open: None,
         }
     }
 
@@ -188,6 +209,7 @@ impl SettingsView {
         self.autostart = read_autostart();
         self.startup_note = None;
         self.load_notify_defaults(cx);
+        self.load_voice(cx);
         self.take_focus = true;
         self.focus_key = focus == SettingsFocus::RecoveryKey;
         self.set_up_when_ready = focus == SettingsFocus::SetUpBackup;
@@ -489,6 +511,23 @@ fn section(
     children: Vec<gpui::AnyElement>,
     highlighted: bool,
 ) -> impl IntoElement {
+    section_classed(title, anchor, children, highlighted, "")
+}
+
+/// [`section`] with more classes for the test bridge (`voice-devices`).
+fn section_classed(
+    title: &str,
+    anchor: &'static str,
+    children: Vec<gpui::AnyElement>,
+    highlighted: bool,
+    extra: &str,
+) -> impl IntoElement {
+    let classes = match (highlighted, extra.is_empty()) {
+        (true, true) => "settings-section setting-highlight".to_owned(),
+        (true, false) => format!("settings-section setting-highlight {extra}"),
+        (false, true) => "settings-section".to_owned(),
+        (false, false) => format!("settings-section {extra}"),
+    };
     div()
         .flex()
         .flex_col()
@@ -509,14 +548,7 @@ fn section(
                 .text(title),
         )
         .children(children)
-        .e2e(
-            "section",
-            if highlighted {
-                "settings-section setting-highlight"
-            } else {
-                "settings-section"
-            },
-        )
+        .e2e("section", &classes)
         .attr("data-setting", anchor)
 }
 
@@ -1051,7 +1083,7 @@ impl Render for SettingsView {
             SettingsPage::Security => self.security_page(cx),
             SettingsPage::Notifications => self.notifications_page(cx),
             SettingsPage::Appearance => self.appearance_page(cx),
-            SettingsPage::VoiceVideo => self.voice_page(),
+            SettingsPage::VoiceVideo => self.voice_page(cx),
             SettingsPage::Startup => self.startup_page(cx),
             SettingsPage::Help => self.help_page(cx),
         };
@@ -1098,6 +1130,15 @@ impl Render for SettingsView {
             .flex_col()
             .overflow_y_scroll()
             .track_scroll(&self.scroll)
+            // A click elsewhere on the page closes an open device list.
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, _, _, cx| {
+                    if this.picker_open.take().is_some() {
+                        cx.notify();
+                    }
+                }),
+            )
             .child(header)
             .children(body)
             .e2e("section", "settings-page");

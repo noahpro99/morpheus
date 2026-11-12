@@ -795,10 +795,78 @@ async fn run_call(
 
 impl Shell {
     /// The camera button's right-click: the cameras, to pick from.
-    pub fn open_camera_menu(&mut self, _at: gpui::Point<gpui::Pixels>, _cx: &mut Context<Self>) {}
+    pub fn open_camera_menu(&mut self, at: gpui::Point<gpui::Pixels>, cx: &mut Context<Self>) {
+        use crate::view_model::{calls::{camera_rows, device_menu}, menu::DeviceKind};
+        let cameras: Vec<(String, String)> =
+            morpheus_call::cameras(AudioMode::from_env())
+                .into_iter()
+                .map(|c| (c.id, c.name))
+                .collect();
+        let rows = camera_rows(&cameras, self.calls.devices.camera.as_deref());
+        let items = device_menu(DeviceKind::Camera, &rows);
+        self.open_menu(crate::menu::OpenMenu::new(at, items, false, crate::view_model::menu::MenuTarget::Other), cx);
+    }
 
     /// The quick list of microphones (or, with `speakers`, speakers).
-    pub fn open_audio_menu(&mut self, _speakers: bool, _at: gpui::Point<gpui::Pixels>, _cx: &mut Context<Self>) {}
+    pub fn open_audio_menu(
+        &mut self,
+        speakers: bool,
+        at: gpui::Point<gpui::Pixels>,
+        cx: &mut Context<Self>,
+    ) {
+        use crate::view_model::{calls::{device_menu, device_rows}, menu::DeviceKind};
+        let found = morpheus_call::audio_devices(AudioMode::from_env());
+        cx.spawn(async move |this, cx| {
+            let found = found.await;
+            this.update(cx, |this, cx| {
+                let (list, current, kind) = if speakers {
+                    (found.speakers, this.calls.devices.speaker.clone(), DeviceKind::Speaker)
+                } else {
+                    (found.microphones, this.calls.devices.microphone.clone(), DeviceKind::Microphone)
+                };
+                let list: Vec<(String, String)> = list.into_iter().map(|d| (d.id, d.name)).collect();
+                let items = device_menu(kind, &device_rows(&list, current.as_deref()));
+                this.open_menu(
+                    crate::menu::OpenMenu::new(at, items, false, crate::view_model::menu::MenuTarget::Other),
+                    cx,
+                );
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// A device chosen from a quick list: used from now on, a call going
+    /// now switches over, and kept for the next start.
+    pub fn pick_device(
+        &mut self,
+        kind: crate::view_model::menu::DeviceKind,
+        id: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
+        use crate::view_model::menu::DeviceKind;
+        match kind {
+            DeviceKind::Microphone => self.calls.devices.microphone = id,
+            DeviceKind::Speaker => self.calls.devices.speaker = id,
+            DeviceKind::Camera => {
+                self.calls.devices.camera = id.clone();
+                morpheus_call::choose_camera(id);
+                self.save_devices(cx);
+                // On now: turned off and on again with the new one.
+                if self.calls.state.as_ref().is_some_and(|c| c.camera) {
+                    self.set_camera(false, cx);
+                    cx.spawn(async move |this, cx| {
+                        cx.background_executor().timer(Duration::from_millis(400)).await;
+                        this.update(cx, |this, cx| this.set_camera(true, cx)).ok();
+                    })
+                    .detach();
+                }
+                return;
+            }
+        }
+        self.save_devices(cx);
+        self.use_devices(cx);
+    }
 }
 
 /// The system's sound for an incoming call (freedesktop sound theme name).

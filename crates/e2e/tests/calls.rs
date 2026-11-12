@@ -325,19 +325,34 @@ async fn choose(app: &mut App, picker: &str, id: &str) {
         .await
         .expect("device listed");
     // Readable: the text is not the colour of the list behind it.
-    let readable = app
-        .eval(&format!(
-            "const o = document.querySelector('{option}'), l = o.closest('.device-options'); \
-             return getComputedStyle(o).color !== getComputedStyle(l).backgroundColor;"
-        ))
+    let text = app.colours_of(&option, "color").await.expect("colours");
+    let list = app
+        .colours_of(&format!(".device-choice[data-kind={picker}] .device-options"), "background")
         .await
         .expect("colours");
-    assert_eq!(
-        readable,
-        serde_json::Value::Bool(true),
-        "option text the colour of the list"
+    assert!(
+        !text.is_empty() && !list.is_empty() && text[0] != list[0],
+        "option text the colour of the list: {text:?} on {list:?}"
     );
     app.click(&option).await.expect("pick");
+}
+
+/// Wait until the open menu lists each of `items` (by what its labels contain).
+async fn wait_menu_has(app: &mut App, items: &[&str]) -> anyhow::Result<()> {
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let labels = app.texts(".context-menu .context-item").await?;
+        if items
+            .iter()
+            .all(|wanted| labels.iter().any(|label| label.contains(wanted)))
+        {
+            return Ok(());
+        }
+        if std::time::Instant::now() >= deadline {
+            anyhow::bail!("the menu lists {labels:?}, not {items:?}");
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
 }
 
 async fn open_voice_settings(app: &mut App) {
@@ -402,12 +417,17 @@ async fn choose_the_microphone_and_speaker_for_calls() {
     alice.wait_for(".room", DEFAULT_WAIT).await.expect("rooms");
     open_voice_settings(&mut alice).await;
     let shown = alice
-        .eval(
-            "return [...document.querySelectorAll('.voice-devices .device-choice:not([data-kind=camera]) .device-current')].map(s => s.dataset.id).join(',');",
+        .attrs(
+            ".voice-devices .device-choice:not([data-kind=camera]) .device-current",
+            "data-id",
         )
         .await
-        .expect("read pickers");
-    assert_eq!(shown.as_str(), Some("test-microphone-2,test-speaker-1"));
+        .expect("read pickers")
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join(",");
+    assert_eq!(shown, "test-microphone-2,test-speaker-1");
 
     // Back to the system default.
     choose(&mut alice, "speaker", "").await;
@@ -2072,11 +2092,15 @@ async fn voice_settings_have_icons_and_a_camera_choice() {
         )
         .await
         .expect("a camera choice");
-    let bare = alice
-        .eval("return [...document.querySelectorAll('.voice-devices .device-choice')].filter(c => !c.querySelector('.device-label svg.icon')).map(c => c.dataset.kind);")
+    let lists = alice
+        .count(".voice-devices .device-choice")
+        .await
+        .expect("lists");
+    let icons = alice
+        .count(".voice-devices .device-choice .device-label svg.icon")
         .await
         .expect("icons");
-    assert_eq!(bare, serde_json::json!([]), "device lists without an icon");
+    assert!(lists > 0 && icons == lists, "device lists without an icon: {lists} lists, {icons} icons");
     choose(&mut alice, "camera", "test-camera-2").await;
     alice
         .wait_for(
@@ -2107,23 +2131,11 @@ async fn quick_device_menus_on_the_mic_headphones_and_camera() {
     };
     let mut alice = App::launch(&hs).await.expect("launch alice");
     login_and_open(&mut alice, "alice", "general").await;
-    let menu_has = |items: &[&str]| {
-        format!(
-            "const labels = [...document.querySelectorAll('.context-menu .context-item')].map(i => i.textContent.trim()); \
-             return {}.every(w => labels.some(l => l.includes(w)));",
-            serde_json::to_string(items).expect("json")
-        )
-    };
-
     alice
-        .click(".user-pill .mute-button + .device-menu-button")
+        .click(".user-pill .device-menu-button[title=Microphone]")
         .await
         .expect("the arrow beside the mic");
-    alice
-        .wait_for_js(
-            &menu_has(&["Test microphone 1", "Test microphone 2"]),
-            DEFAULT_WAIT,
-        )
+    wait_menu_has(&mut alice, &["Test microphone 1", "Test microphone 2"])
         .await
         .expect("microphones listed");
     alice
@@ -2131,10 +2143,7 @@ async fn quick_device_menus_on_the_mic_headphones_and_camera() {
         .await
         .expect("pick");
     alice
-        .wait_for_js(
-            "return !document.querySelector('.context-menu');",
-            DEFAULT_WAIT,
-        )
+        .wait_for_count(".context-menu", 0, DEFAULT_WAIT)
         .await
         .expect("menu closes");
     // Right-click works as the arrow does, and shows the pick.
@@ -2143,8 +2152,9 @@ async fn quick_device_menus_on_the_mic_headphones_and_camera() {
         .await
         .expect("right-click the mic");
     alice
-        .wait_for_js(
-            "return [...document.querySelectorAll('.context-menu .context-item.checked')].some(i => i.textContent.includes('Test microphone 2'));",
+        .wait_for_text(
+            ".context-menu .context-item.checked",
+            "Test microphone 2",
             DEFAULT_WAIT,
         )
         .await
@@ -2155,21 +2165,25 @@ async fn quick_device_menus_on_the_mic_headphones_and_camera() {
         .right_click(".user-pill .deafen-button")
         .await
         .expect("right-click the headphones");
-    alice
-        .wait_for_js(
-            &menu_has(&["Test speaker 1", "Test speaker 2"]),
-            DEFAULT_WAIT,
-        )
+    wait_menu_has(&mut alice, &["Test speaker 1", "Test speaker 2"])
         .await
         .expect("speakers listed");
     alice.press("body", "Escape").await.expect("close");
     assert_eq!(
         alice
-            .count(".user-pill .deafen-button + .device-menu-button")
+            .count(".user-pill .device-pair .deafen-button")
             .await
             .expect("count"),
         1,
-        "an arrow beside the headphones"
+        "the headphones"
+    );
+    assert_eq!(
+        alice
+            .count(".user-pill .device-pair .device-menu-button")
+            .await
+            .expect("count"),
+        2,
+        "an arrow beside the mic and one beside the headphones"
     );
 
     // In a call: the camera button's right-click lists cameras.
@@ -2183,8 +2197,7 @@ async fn quick_device_menus_on_the_mic_headphones_and_camera() {
         .right_click(".voice-panel .camera-button")
         .await
         .expect("right-click the camera");
-    alice
-        .wait_for_js(&menu_has(&["Test camera 1", "Test camera 2"]), DEFAULT_WAIT)
+    wait_menu_has(&mut alice, &["Test camera 1", "Test camera 2"])
         .await
         .expect("cameras listed");
     alice.press("body", "Escape").await.expect("close");
@@ -2214,10 +2227,7 @@ async fn a_device_list_closes_on_a_click_elsewhere() {
         .await
         .expect("click elsewhere");
     alice
-        .wait_for_js(
-            "return !document.querySelector('.device-options');",
-            DEFAULT_WAIT,
-        )
+        .wait_for_count(".device-options", 0, DEFAULT_WAIT)
         .await
         .expect("the list closes");
 }

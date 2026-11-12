@@ -376,6 +376,10 @@ impl Shell {
                 cx.write_to_clipboard(ClipboardItem::new_string(text));
             }
             // The rest is for messages.
+            MenuAction::Device(kind, id) => self.pick_device(kind, id, cx),
+            MenuAction::VoiceSettings => {
+                self.open_settings(crate::view_model::keys::SettingsFocus::VoiceVideo, cx)
+            }
             _ => {}
         }
     }

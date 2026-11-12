@@ -87,6 +87,20 @@ pub enum MenuAction {
     RoomDialog(super::room_dialogs::RoomDialogKind),
     /// "Create channel" on a server: lists that server, then asks for the room.
     CreateChannel(OwnedRoomId),
+
+    // On the call devices' quick lists (`calls::device_menu`).
+    /// Use this device (`None`: the system default) for calls.
+    Device(DeviceKind, Option<String>),
+    /// Opens Settings on Voice & Video.
+    VoiceSettings,
+}
+
+/// Which device a call's quick list picks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DeviceKind {
+    Microphone,
+    Speaker,
+    Camera,
 }
 
 /// One row of a menu.
@@ -366,6 +380,7 @@ pub fn default_icon(label: &str) -> Option<&'static str> {
         ("Unignore", "eye"),
         ("Ignore", "eye-off"),
         ("Unmute", "bell"),
+        ("Voice & Video settings", "settings"),
         ("Report message", "flag"),
         ("Delete message", "trash-2"),
         ("View profile", "user"),
