@@ -3218,3 +3218,118 @@ async fn declining_with_the_app_closed_tells_the_caller() {
         "told before the ring ran out by itself"
     );
 }
+
+/// Poll both apps until `.call-participant.speaking` lists `who` (`on`) or
+/// stops listing them on each: the milliseconds since `since` for `first`
+/// and for `second` (None at the deadline), polled in turns so neither
+/// waits for the other.
+async fn speaking_flips(
+    first: &mut App,
+    second: &mut App,
+    who: &str,
+    on: bool,
+    since: std::time::Instant,
+) -> (Option<u128>, Option<u128>) {
+    let deadline = since + std::time::Duration::from_secs(8);
+    let (mut a, mut b) = (None, None);
+    while (a.is_none() || b.is_none()) && std::time::Instant::now() < deadline {
+        for (app, seen) in [(&mut *first, &mut a), (&mut *second, &mut b)] {
+            if seen.is_none() {
+                let texts = app
+                    .texts(".call-participant.speaking")
+                    .await
+                    .unwrap_or_default();
+                if texts.iter().any(|t| t.contains(who)) == on {
+                    *seen = Some(since.elapsed().as_millis());
+                }
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+    }
+    (a, b)
+}
+
+/// How soon the green ring follows someone starting and stopping to talk
+/// (Discord: from the client's own voice detection, so a fraction of a
+/// second). Test runs send a tone while unmuted, so unmuting is starting to
+/// speak and muting is stopping. Timed from just before the click on bob's
+/// mute button, on bob's own card and on alice's view of bob; the click
+/// itself (reported as `click`) is part of each figure.
+///
+/// Targets: own ring within ~150 ms of speaking, others' within ~300 ms of
+/// the audio arriving, the ring off within ~500 ms of silence (a short hold
+/// so it does not flicker between words). The bounds below are generous
+/// multiples of those, with the bridge's own latency (tens of ms) in them.
+#[tokio::test]
+async fn the_speaking_ring_follows_the_voice_quickly() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    let channel = fresh_voice_channel(&hs);
+    login_and_open(&mut alice, "alice", "general").await;
+    open_without_joining(&mut alice, &channel).await;
+    alice.click(CALL_BUTTON).await.expect("alice joins");
+    alice
+        .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("alice connected");
+    let mut bob = App::launch(&hs).await.expect("launch bob");
+    login_and_open(&mut bob, "bob", "general").await;
+    open_without_joining(&mut bob, &channel).await;
+    bob.click(CALL_BUTTON).await.expect("bob joins");
+    bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("bob connected");
+    bob.wait_for_text(".call-participant.speaking", "bob", DEFAULT_WAIT)
+        .await
+        .expect("bob sees himself speak");
+    alice
+        .wait_for_text(".call-participant.speaking", "bob", DEFAULT_WAIT)
+        .await
+        .expect("alice sees bob speak");
+
+    // (own on, other on, own off, other off, click) per round.
+    let mut rounds: Vec<[u128; 5]> = Vec::new();
+    for _ in 0..4 {
+        // Stop: bob mutes.
+        let t0 = std::time::Instant::now();
+        bob.click(".user-bar .mute-button").await.expect("mute");
+        let click = t0.elapsed().as_millis();
+        let (own_off, other_off) = speaking_flips(&mut bob, &mut alice, "bob", false, t0).await;
+        // Let the ring settle, then start: bob unmutes.
+        tokio::time::sleep(std::time::Duration::from_millis(2_500)).await;
+        let t0 = std::time::Instant::now();
+        bob.click(".user-bar .mute-button").await.expect("unmute");
+        let (own_on, other_on) = speaking_flips(&mut bob, &mut alice, "bob", true, t0).await;
+        tokio::time::sleep(std::time::Duration::from_millis(1_500)).await;
+        rounds.push([
+            own_on.unwrap_or(99_999),
+            other_on.unwrap_or(99_999),
+            own_off.unwrap_or(99_999),
+            other_off.unwrap_or(99_999),
+            click,
+        ]);
+    }
+    let report = format!(
+        "[own on, other on, own off, other off, click] ms per round: {rounds:?}\n"
+    );
+    eprintln!("{report}");
+    {
+        use std::io::Write;
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/speaking-latency.txt"))
+        {
+            let _ = write!(file, "{report}");
+        }
+    }
+    // Generous bounds from the targets (the slowest of the rounds).
+    let worst = |i: usize| rounds.iter().map(|r| r[i]).max().unwrap_or(0);
+    assert!(worst(0) <= 220, "own ring on after {} ms\n{report}", worst(0));
+    assert!(worst(1) <= 420, "alice's ring on after {} ms\n{report}", worst(1));
+    assert!(worst(2) <= 650, "own ring off after {} ms\n{report}", worst(2));
+    assert!(worst(3) <= 650, "alice's ring off after {} ms\n{report}", worst(3));
+}

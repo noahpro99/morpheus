@@ -142,10 +142,12 @@ instead of JavaScript:
 
 19. **Three visual bugs the user reported.** (1) The right panel sometimes not reaching the bottom; (2) the command palette's layout against the Dioxus one; (3) pictures stretched (avatars, message pictures, the blurhash placeholder). Each: a check of the rule first, then the fix. Tests: `gpui_fixes` (new file).
 
-20. Onward in the order of `crates/e2e/tests` files, each task naming the
+20. **The speaking ring is slow.** The user: the delay from talking to the green border in a call is very slow compared to Discord. It came only from LiveKit's server-side ActiveSpeakersChanged (interval plus smoothing). Stage 1: measure (`calls::the_speaking_ring_follows_the_voice_quickly`, figures in target/speaking-latency.txt); stage 2: client-side voice detection in crates/call (remote tracks and the microphone), the server list kept as a fallback; stage 3: GPUI ring and the calls file. Extra: the camera view in a call is rounded (corners were square).
+
+21. Onward in the order of `crates/e2e/tests` files, each task naming the
    test file(s) it brings to green.
 
-21. **Later: headless e2e.** Run the app on gpui's test platform
+22. **Later: headless e2e.** Run the app on gpui's test platform
    (`test-support`, `VisualTestContext` in vendor/gpui) with the bridge on
    top, so e2e tests open no windows. Not before the shell and timeline exist.
 
