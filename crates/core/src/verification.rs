@@ -600,6 +600,21 @@ impl Session {
             let own_user_id = client.user_id().ok_or(Error::NoSession)?.to_owned();
             let current_device_id = client.device_id().map(ToOwned::to_owned);
 
+            // The names the server has: the crypto store learns a device's name
+            // from a key query, and a query that ran before this device's keys
+            // were uploaded (right after signing in) leaves this device without one.
+            let server_names: HashMap<OwnedDeviceId, String> = client
+                .devices()
+                .await
+                .map(|response| {
+                    response
+                        .devices
+                        .into_iter()
+                        .filter_map(|device| Some((device.device_id, device.display_name?)))
+                        .collect()
+                })
+                .unwrap_or_default();
+
             let devices = client.encryption().get_user_devices(&own_user_id).await?;
             let mut list: Vec<Device> = devices
                 .devices()
@@ -609,8 +624,9 @@ impl Session {
                         id: device.device_id().to_owned(),
                         name: device
                             .display_name()
-                            .filter(|name| !name.is_empty())
                             .map(ToOwned::to_owned)
+                            .or_else(|| server_names.get(device.device_id()).cloned())
+                            .filter(|name| !name.is_empty())
                             .unwrap_or_else(|| device.device_id().to_string()),
                         verified: device.is_verified(),
                         is_current,
