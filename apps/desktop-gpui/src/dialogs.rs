@@ -640,7 +640,7 @@ pub fn render_dialog(shell: &mut Shell, window: &mut Window, cx: &mut Context<Sh
                         this.dialog_close(cx);
                     }
                 }))
-                .w(px(560.0))
+                .w(px(680.0))
                 .max_h(px(520.0))
                 .child(heading("Keyboard shortcuts"))
                 .child(actions(vec![
@@ -657,7 +657,15 @@ pub fn render_dialog(shell: &mut Shell, window: &mut Window, cx: &mut Context<Sh
                         .text("Report a bug")
                         .into_any_element(),
                 ]))
-                .children(crate::view_model::hotkeys::GROUPS.iter().map(|(group, rows)| {
+                .child(
+                    div()
+                        .id("help-body")
+                        .flex()
+                        .flex_col()
+                        .flex_1()
+                        .min_h_0()
+                        .overflow_y_scroll()
+                        .children(crate::view_model::hotkeys::GROUPS.iter().map(|(group, rows)| {
                     div()
                         .flex()
                         .flex_col()
@@ -695,7 +703,9 @@ pub fn render_dialog(shell: &mut Shell, window: &mut Window, cx: &mut Context<Sh
                                 .e2e("div", "help-row")
                         }))
                         .e2e("section", "help-group")
-                }))
+                        }))
+                        .e2e("div", "help-body"),
+                )
                 .e2e("div", "message-dialog help-dialog")
                 .text("Keyboard shortcuts")
                 .focusable(&focus);

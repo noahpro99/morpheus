@@ -294,6 +294,28 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         .e2e("aside", "sidebar")
 }
 
+/// The rooms of `scope` in the order the sidebar draws them (the Friends
+/// page, which sits above the DMs, is not among them).
+pub fn sidebar_order(shell: &Shell, scope: &Scope) -> Vec<RoomSummary> {
+    let found = sections(
+        &shell.rooms,
+        scope,
+        &[],
+        &Filters {
+            hide_muted: shell.prefs.hide_muted,
+            open: shell.selected.as_ref(),
+            marks: &shell.marks,
+            hidden: &shell.hidden_rooms,
+        },
+    );
+    let mut order = found.dms;
+    order.extend(found.channels);
+    for (_, _, members) in found.categories {
+        order.extend(members);
+    }
+    order
+}
+
 /// The row that opens the Friends page.
 fn friends_row(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
     let selected = shell.friends_open;

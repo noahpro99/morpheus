@@ -53,6 +53,8 @@ impl gpui::Global for RootFocus {}
 /// sign this one out.
 #[derive(Clone, Debug)]
 pub enum AccountEvent {
+    /// Ctrl+R: the interface is built afresh for the same account.
+    Reload,
     Switch(String),
     Add,
     SignOut,
@@ -81,6 +83,10 @@ pub struct Shell {
     pub session: Option<Session>,
     pub rooms: Vec<RoomSummary>,
     pub scope: Scope,
+    /// The last scope other than the DMs, for Ctrl+Alt+Right to go back to.
+    pub last_server: Scope,
+    /// The room last open in each scope, for Ctrl+Alt+Right to land in.
+    pub last_room_in: std::collections::HashMap<Scope, OwnedRoomId>,
     pub selected: Option<OwnedRoomId>,
     pub prefs: Prefs,
     pub open_folders: Vec<String>,
@@ -293,6 +299,8 @@ impl Shell {
             session,
             rooms: Vec::new(),
             scope: Scope::default(),
+            last_server: Scope::Rooms,
+            last_room_in: Default::default(),
             selected: None,
             prefs: Prefs::default(),
             open_folders: Vec::new(),
@@ -540,6 +548,9 @@ impl Shell {
 
     /// What a rail badge does: list another scope.
     pub fn set_scope(&mut self, scope: Scope, cx: &mut Context<Self>) {
+        if scope != Scope::Dms {
+            self.last_server = scope.clone();
+        }
         self.scope = scope.clone();
         self.directory.clear();
         if let (Some(session), Scope::Space(id)) = (&self.session, &scope) {
@@ -560,6 +571,7 @@ impl Shell {
     }
 
     pub fn open_room(&mut self, id: OwnedRoomId, cx: &mut Context<Self>) {
+        self.last_room_in.insert(self.scope.clone(), id.clone());
         self.nav.record(id.clone());
         // Remembered below, once the room is set.
         // Going to a room leaves the Friends page.

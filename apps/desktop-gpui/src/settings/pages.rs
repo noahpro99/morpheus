@@ -75,7 +75,13 @@ fn choice(
 }
 
 /// A group of choices under a legend (`fieldset.notify-default`).
-fn group(legend: &str, kind: &str, anchor: Option<&'static str>, children: Vec<AnyElement>) -> AnyElement {
+fn group(
+    legend: &str,
+    kind: &str,
+    anchor: Option<&'static str>,
+    highlighted: bool,
+    children: Vec<AnyElement>,
+) -> AnyElement {
     let el = div()
         .flex()
         .flex_wrap()
@@ -93,7 +99,15 @@ fn group(legend: &str, kind: &str, anchor: Option<&'static str>, children: Vec<A
                 .text(legend),
         )
         .children(children)
-        .e2e("fieldset", if anchor.is_some() { "notify-default notification-content" } else { "notify-default" });
+        .when(highlighted, |d| d.bg(gpui::rgba(theme::accent_tint())))
+        .e2e(
+            "fieldset",
+            match (anchor.is_some(), highlighted) {
+                (true, true) => "notify-default notification-content setting-highlight",
+                (true, false) => "notify-default notification-content",
+                _ => "notify-default",
+            },
+        );
     let el = if kind.is_empty() { el } else { el.attr("data-kind", kind) };
     match anchor {
         Some(anchor) => el.attr("data-setting", anchor).into_any_element(),
@@ -108,7 +122,7 @@ impl SettingsView {
     }
 
     /// Opens a page on the setting a search found, flashing it a moment.
-    pub(super) fn show_setting(&mut self, entry: &'static SettingEntry, cx: &mut Context<Self>) {
+    pub(crate) fn show_setting(&mut self, entry: &'static SettingEntry, cx: &mut Context<Self>) {
         self.page = entry.page;
         self.highlight = Some(entry.anchor);
         self.search.update(cx, |input, cx| input.set_value("", cx));
@@ -200,7 +214,7 @@ impl SettingsView {
             ),
             None => {}
         }
-        group(title, kind, None, children)
+        group(title, kind, None, false, children)
     }
 
     pub(super) fn notifications_page(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
@@ -260,6 +274,7 @@ impl SettingsView {
             "What notifications show",
             "",
             Some("notification-content"),
+            self.hl("notification-content"),
             shows,
         ));
         let device = section(
