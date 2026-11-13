@@ -96,8 +96,9 @@ impl RoomDialog {
         };
         let (mut name, mut topic, mut user) = (None, None, None);
         let mut chooser = None;
+        let mut roster = None;
         match &kind {
-            RoomDialogKind::Invite(_) => {
+            RoomDialogKind::Invite(room) => {
                 let picker = cx.new(|cx| {
                     FriendPicker::new(
                         Some(session.clone()),
@@ -116,6 +117,7 @@ impl RoomDialog {
                     .detach();
                 user = Some(input);
                 chooser = Some(picker);
+                roster = Some((session.members(room.clone()), session.invited_members(room.clone())));
             }
             RoomDialogKind::Edit(id) => {
                 let room = current(id);
@@ -176,6 +178,19 @@ impl RoomDialog {
             avatar: None,
         };
         this.load(cx);
+        if let (Some((joined, invited)), Some(picker)) = (roster, this.picker.clone()) {
+            cx.spawn(async move |_, cx| {
+                let joined: Vec<_> = joined
+                    .await
+                    .map(|members| members.into_iter().map(|m| m.user_id).collect())
+                    .unwrap_or_default();
+                let invited = invited.await.unwrap_or_default();
+                picker
+                    .update(cx, |picker, cx| picker.set_roster(joined, invited, cx))
+                    .ok();
+            })
+            .detach();
+        }
         this
     }
 
@@ -286,6 +301,11 @@ impl RoomDialog {
             if let Some(picker) = &self.picker {
                 picker.update(cx, |picker, cx| picker.set_state(&user, None, cx));
             }
+            return;
+        }
+        if self.picker.as_ref().is_some_and(|p| p.read(cx).is_member(&user)) {
+            self.note = Some(Note::error(format!("{user} is already in.")));
+            cx.notify();
             return;
         }
         let inviting = self.session.invite(room, user.clone());

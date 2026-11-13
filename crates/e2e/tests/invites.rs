@@ -296,3 +296,124 @@ async fn invite_dialogs_list_friends_and_invite_from_the_list() {
         .expect("invite to server");
     use_the_friend_list(&mut alice, &mut bob, &server, "server").await;
 }
+
+/// The server's invite list leaves out people already in it, shows those
+/// already invited as "Invited" (not clickable), and a typed ID of a member
+/// says they are in.
+#[tokio::test]
+async fn invite_list_leaves_out_members_and_marks_the_invited() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let _clean = reset_rooms_named(&hs, &["alice", "bob", "carol"], "e2e room invite");
+    let _friends = befriend(&hs, &["@bob:localhost", "@carol:localhost"]);
+    let server = format!("e2e room invite members {}", std::process::id());
+    let made = morpheus_e2e::api_as(
+        &hs,
+        "alice",
+        "POST",
+        "createRoom",
+        Some(serde_json::json!({
+            "name": server,
+            "preset": "private_chat",
+            "creation_content": { "type": "m.space" },
+        })),
+    )
+    .expect("space made");
+    let space = made["room_id"].as_str().expect("room id").to_owned();
+    morpheus_e2e::admin_join(&hs, "bob", &space).expect("bob joins");
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    if !alice.is_gpui() {
+        eprintln!("GPUI only");
+        return;
+    }
+    login(&mut alice, "alice").await;
+    let open = async |alice: &mut App| {
+        alice
+            .click(&format!(".rail-item[title=\"{server}\"]"))
+            .await
+            .expect("open the server");
+        alice
+            .wait_for_text(".sidebar-header h2", &server, DEFAULT_WAIT)
+            .await
+            .expect("server scoped");
+        alice
+            .click(".sidebar-header h2.server-name")
+            .await
+            .expect("server menu");
+        alice
+            .click_text(".context-item", "Invite to server")
+            .await
+            .expect("invite to server");
+        alice
+            .wait_for(".invite-dialog .friend-picker", DEFAULT_WAIT)
+            .await
+            .expect("friend list");
+    };
+    alice
+        .wait_for(&format!(".rail-item[title=\"{server}\"]"), DEFAULT_WAIT)
+        .await
+        .expect("server on the rail");
+    open(&mut alice).await;
+    alice
+        .wait_for("[data-user=\"@carol:localhost\"]", DEFAULT_WAIT)
+        .await
+        .expect("carol (not in) is listed");
+    // Give the member list time to arrive, then bob must not be there.
+    alice
+        .wait_for_count("[data-user=\"@bob:localhost\"]", 0, DEFAULT_WAIT)
+        .await
+        .expect("bob (a member) is not listed");
+    // A typed ID of a member.
+    alice
+        .type_into(".invite-dialog input[name=user]", "@bob:localhost")
+        .await
+        .expect("typed");
+    alice
+        .wait_for_text(".invite-dialog .friend-pick-state", "Already in", DEFAULT_WAIT)
+        .await
+        .expect("the typed member's row says already in");
+    alice.submit(".invite-dialog").await.expect("submit");
+    alice
+        .wait_for_text(".invite-dialog .error", "already in", DEFAULT_WAIT)
+        .await
+        .expect("Enter says they are in");
+    // Invite carol; reopened, she shows as Invited and cannot be picked again.
+    alice
+        .type_into(".invite-dialog input[name=user]", "")
+        .await
+        .expect("clear");
+    alice
+        .click("[data-user=\"@carol:localhost\"]")
+        .await
+        .expect("click carol");
+    alice
+        .wait_for("[data-user=\"@carol:localhost\"][data-state=sent]", DEFAULT_WAIT)
+        .await
+        .expect("invited");
+    alice.press(".invite-dialog", "Escape").await.expect("escape");
+    alice
+        .click(".sidebar-header h2.server-name")
+        .await
+        .expect("server menu");
+    alice
+        .click_text(".context-item", "Invite to server")
+        .await
+        .expect("invite to server");
+    alice
+        .wait_for(
+            "[data-user=\"@carol:localhost\"][data-state=sent] .friend-pick-state",
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("carol still listed, marked Invited");
+    alice
+        .wait_for_text("[data-user=\"@carol:localhost\"] .friend-pick-state", "Invited", DEFAULT_WAIT)
+        .await
+        .expect("says Invited");
+    assert_eq!(
+        alice.count("[data-user=\"@bob:localhost\"]").await.expect("count"),
+        0
+    );
+}
