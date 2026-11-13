@@ -160,6 +160,10 @@ pub struct TimelineView {
     menu_message: Option<String>,
     /// The message whose avatar is held down (it sits a pixel lower).
     pressed_avatar: Option<String>,
+    /// Set while the room is kept in the background: the newest message it
+    /// had when left (what came after is new on return) and whether the view
+    /// sat at the newest end.
+    left_at: Option<(Option<String>, bool)>,
 }
 
 /// Scroll numbers of a list, in px: what a test and the jump button read.
@@ -263,6 +267,7 @@ impl TimelineView {
             highlight: None,
             menu_message: None,
             pressed_avatar: None,
+            left_at: None,
         };
         if let Some(session) = session {
             cx.spawn(async move |this, cx| {
@@ -553,6 +558,12 @@ impl TimelineView {
         let loading = handle.paginate_backwards(PAGE_SIZE);
         cx.spawn(async move |this, cx| {
             let result = loading.await;
+            // Test builds can hold a page back, to look at the placeholders.
+            if std::env::var_os("MORPHEUS_E2E_PORT").is_some()
+                && let Some(ms) = std::env::var("MORPHEUS_E2E_HISTORY_DELAY_MS").ok().and_then(|v| v.parse().ok())
+            {
+                cx.background_executor().timer(Duration::from_millis(ms)).await;
+            }
             this.update(cx, |this, cx| {
                 this.paginating = false;
                 match result {
@@ -925,6 +936,69 @@ impl TimelineView {
         }
     }
 
+    /// The newest message listed (its unique ID).
+    fn newest_message(&self) -> Option<String> {
+        self.entries.iter().rev().find_map(|entry| match entry {
+            TimelineEntry::Message(m) => Some(m.unique_id.clone()),
+            _ => None,
+        })
+    }
+
+    /// The room is left but kept (see `TimelineCache`): leaving reads it up
+    /// to its newest message, as dropping it would, and from here on it
+    /// reads nothing, though it goes on taking in what arrives.
+    pub fn leave(&mut self) {
+        if self.thread_root.is_some() || self.left_at.is_some() {
+            return;
+        }
+        if let Some(handle) = self.handle.as_ref()
+            && !self.keep_unread
+            && !self.covered
+        {
+            drop(handle.mark_as_fully_read());
+        }
+        self.covered = true;
+        let at_end = metrics(&self.list).from_bottom < 2.0;
+        self.left_at = Some((self.newest_message(), at_end));
+    }
+
+    /// A room kept by [`Self::leave`] is shown again: what came after the
+    /// newest message it had is new (the NEW divider goes above it), the view
+    /// is where it was, and the room is read again.
+    pub fn resume(&mut self, cx: &mut Context<Self>) {
+        let Some((newest, at_end)) = self.left_at.take() else {
+            return;
+        };
+        self.keep_unread = false;
+        self.paging = None;
+        let first_new = newest.and_then(|newest| {
+            let at = self.entries.iter().position(
+                |e| matches!(e, TimelineEntry::Message(m) if m.unique_id == newest),
+            )?;
+            self.entries.iter().skip(at + 1).find_map(|entry| match entry {
+                TimelineEntry::Message(m) if !m.is_own => Some(m.unique_id.clone()),
+                _ => None,
+            })
+        });
+        self.caught_up = first_new.is_none();
+        self.new_marker = first_new;
+        self.rebuild();
+        if at_end {
+            self.jump_to_present(cx);
+        }
+        if let Some(handle) = &self.handle {
+            cx.emit(TimelineEvent::Opened(handle.clone()));
+        }
+        cx.emit(TimelineEvent::LastOwn(self.last_own.clone()));
+        self.set_covered(false, cx);
+        cx.notify();
+    }
+
+    /// What keeping this room costs, in entries (a picture counts as one).
+    pub fn weight(&self) -> usize {
+        self.entries.len() + self.images.len()
+    }
+
     /// The room was marked unread: leaving it must not read it again.
     pub fn keep_unread(&mut self) {
         self.keep_unread = true;
@@ -1035,6 +1109,7 @@ impl Render for TimelineView {
         }
         let timeline = timeline
             .e2e("section", "timeline")
+            .attr("data-history-requests", morpheus_core::history_requests().to_string())
             .scrollable(Rc::new(ListProbe(self.list.clone())));
         let banner = self.thread_root.is_none()
             && show_banner(true, self.keys, self.has_undecryptable());

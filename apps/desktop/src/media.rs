@@ -43,6 +43,11 @@ impl Avatars {
             .or_else(|| ANY_SIZE.lock().ok()?.get(media.key()).map(|(_, image)| image.clone()))
     }
 
+    /// How many pictures are held (a weight for what keeps them).
+    pub fn len(&self) -> usize {
+        self.images.len()
+    }
+
     /// Marks `media` as being fetched; false when it already was or is here.
     pub fn begin(&mut self, media: &MediaRef, size: u32) -> bool {
         let key = (media.key().to_owned(), size);

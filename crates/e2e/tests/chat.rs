@@ -327,7 +327,9 @@ async fn the_open_room_shows_history_and_live_messages() {
         .expect("timeline loaded");
     let text = format!("live in general {}", std::process::id());
     morpheus_e2e::send_as(&hs, "bob", &general, &text).expect("bob posts");
-    app.wait_for_text(".message .body", &text, DEFAULT_WAIT)
+    // The room is as she left it (scrolled up, to the seeded message), so the
+    // new one is below the view: scroll down to it.
+    app.reveal_message(&text, DEFAULT_WAIT)
         .await
         .expect("alice sees it arrive");
 }

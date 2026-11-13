@@ -43,6 +43,12 @@ use crate::{
 
 /// How often the lock state is re-read.
 const KEYS_RECHECK: std::time::Duration = std::time::Duration::from_secs(30);
+/// What is kept of rooms just left: the last 20, and at most 6000 entries (plus
+/// pictures) between them. A timeline costs about 2-4 KB an entry (message,
+/// rows, measured heights), so the budget is some 25 MB at most; a usual room is
+/// 40-150 entries, so 20 rooms are around 5 MB.
+const TIMELINE_CACHE: crate::view_model::lru::Budget =
+    crate::view_model::lru::Budget { max_items: 20, max_weight: 6000 };
 
 /// The shell root's focus handle: holding it is holding nothing in particular.
 pub struct RootFocus(pub FocusHandle);
@@ -107,6 +113,12 @@ pub struct Shell {
     pub avatars: Avatars,
     /// The open room's messages.
     pub timeline: Option<(OwnedRoomId, Entity<TimelineView>)>,
+    /// Timelines of rooms just left, kept as they were (rows, measured
+    /// heights, place, pictures) and fed what arrives, so going back is
+    /// instant: the most recent ones, within a budget.
+    pub timeline_cache: crate::view_model::lru::Lru<OwnedRoomId, Entity<TimelineView>>,
+    /// What the open room's message box hears from its timeline.
+    composer_link: Option<gpui::Subscription>,
     /// The open room's message box.
     pub composer: Option<(OwnedRoomId, Entity<Composer>)>,
     pub typing: Option<(OwnedRoomId, Entity<crate::typing::TypingView>)>,
@@ -332,6 +344,8 @@ impl Shell {
             directory: Vec::new(),
             avatars: Avatars::default(),
             timeline: None,
+            timeline_cache: crate::view_model::lru::Lru::new(TIMELINE_CACHE),
+            composer_link: None,
             composer: None,
             typing: None,
             room_scroll: ScrollHandle::new(),
@@ -703,7 +717,7 @@ impl Shell {
         // An invite (or a channel not joined) has no timeline: its card shows.
         self.preview = None;
         if self.rooms.iter().any(|room| room.id == id && room.invited) {
-            self.timeline = None;
+            self.stash_timeline(cx);
             self.composer = None;
             self.typing = None;
             self.timeline_handle = None;
@@ -715,13 +729,21 @@ impl Shell {
             return;
         }
         if self.session.is_some() && self.timeline.as_ref().is_none_or(|(room, _)| room != &id) {
+            self.stash_timeline(cx);
+            // A room left, or one this account is not in any more, is not reused.
+            let rooms: Vec<OwnedRoomId> = self.rooms.iter().map(|r| r.id.clone()).collect();
+            drop(self.timeline_cache.retain(|kept| rooms.contains(kept)));
+            let kept = self.timeline_cache.take(&id);
+            let fresh = kept.is_none();
             let session = self.session.clone();
             let room = id.clone();
-            let timeline = cx.new(|cx| TimelineView::new(session, room.clone(), cx));
+            let timeline = kept.unwrap_or_else(|| cx.new(|cx| TimelineView::new(session, room.clone(), cx)));
+            if fresh {
             cx.subscribe(&timeline, |this: &mut Self, _, event: &LinkClicked, cx| {
                 this.link_clicked(&event.0, cx)
             })
             .detach();
+            }
             let (name, is_dm) = self
                 .rooms
                 .iter()
@@ -730,7 +752,7 @@ impl Shell {
                 .unwrap_or_default();
             let composer = cx.new(|cx| Composer::new(self.session.clone(), room.clone(), name, is_dm, cx));
             let target = composer.clone();
-            cx.subscribe(&timeline, move |_, _, event: &TimelineEvent, cx| {
+            self.composer_link = Some(cx.subscribe(&timeline, move |_, _, event: &TimelineEvent, cx| {
                 target.update(cx, |composer, cx| match event {
                     TimelineEvent::Opened(handle) => composer.opened(handle.clone(), cx),
                     TimelineEvent::Reply(message) => composer.reply_to(message, cx),
@@ -746,9 +768,11 @@ impl Shell {
                     | TimelineEvent::OpenImage(..)
                     | TimelineEvent::Failed(..) => {}
                 })
-            })
-            .detach();
-            cx.subscribe(&timeline, |this: &mut Self, _, event: &TimelineEvent, cx| match event {
+            }));
+            if fresh {
+            cx.subscribe(&timeline, |this: &mut Self, from, event: &TimelineEvent, cx| match event {
+                // A timeline kept in the background says nothing to the shell.
+                _ if this.timeline.as_ref().is_none_or(|(_, open)| *open != from) => {}
                 TimelineEvent::Opened(handle) => this.timeline_handle = Some(handle.clone()),
                 TimelineEvent::Menu(message, at) => {
                     this.acting_in_thread = false;
@@ -779,9 +803,10 @@ impl Shell {
                 }
             })
             .detach();
+            }
             let keys = self.keys;
             timeline.update(cx, |timeline, cx| timeline.set_keys(keys, cx));
-            // The old one is dropped here: leaving a room reads it.
+            let resumed = (!fresh).then(|| timeline.clone());
             self.timeline = Some((id.clone(), timeline));
             self.composer = Some((id.clone(), composer));
             let session = self.session.clone();
@@ -789,6 +814,11 @@ impl Shell {
             self.typing = Some((id.clone(), cx.new(|cx| crate::typing::TypingView::new(session, room, cx))));
             self.timeline_handle = None;
             self.pinned.clear();
+            // A room kept in the background: its composer hears of the open timeline
+            // now, and the room is read again.
+            if let Some(timeline) = resumed {
+                timeline.update(cx, |timeline, cx| timeline.resume(cx));
+            }
             // A thread belongs to the room it was opened from.
             self.thread = None;
         }
@@ -822,6 +852,20 @@ impl Shell {
         self.push_nicknames(cx);
         self.refresh_pinned(cx);
         cx.notify();
+    }
+
+    /// Puts the open room's timeline away in the cache of rooms just left
+    /// (it is read up to its newest message, then reads nothing); what has to
+    /// go for the budget is dropped.
+    pub(crate) fn stash_timeline(&mut self, cx: &mut Context<Self>) {
+        let Some((room, timeline)) = self.timeline.take() else {
+            return;
+        };
+        let weight = timeline.update(cx, |timeline, _| {
+            timeline.leave();
+            timeline.weight()
+        });
+        drop(self.timeline_cache.insert(room, timeline, weight));
     }
 
     /// A link in a message: Matrix links open in the app,

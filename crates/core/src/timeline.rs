@@ -40,6 +40,20 @@ const CALL_PLUMBING_EVENTS: [&str; 3] = [
 
 /// Messages fetched when a room is opened for the first time.
 const INITIAL_BACKFILL: u16 = 40;
+/// How long a room's first fill of history is waited for before it is shown.
+const FIRST_FILL_WAIT: Duration = Duration::from_millis(250);
+/// How long the timeline must say nothing for the first fill to be over.
+const FIRST_FILL_QUIET: Duration = Duration::from_millis(40);
+
+/// How many times older history was asked for (a page back, or a room's
+/// first fill), since the app started: tests read it to see that returning to
+/// a room asks for nothing.
+static HISTORY_REQUESTS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// See [`HISTORY_REQUESTS`].
+pub fn history_requests() -> usize {
+    HISTORY_REQUESTS.load(std::sync::atomic::Ordering::Relaxed)
+}
 
 /// One row of a room timeline.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -842,6 +856,7 @@ impl TimelineHandle {
     /// Load older history. Resolves to `true` once the start of the room is reached.
     pub fn paginate_backwards(&self, count: u16) -> CoreFuture<bool> {
         let timeline = self.timeline.clone();
+        HISTORY_REQUESTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.core
             .run(async move { Ok(timeline.paginate_backwards(count).await?) })
     }
@@ -930,7 +945,18 @@ impl Session {
 
             let (tx, rx) = mpsc::unbounded_channel();
             let reset = VectorDiff::Reset { values: initial_entries.iter().cloned().collect() };
-            let _ = tx.send(vec![reset]);
+
+            // The first fill of history starts at once; the room is handed over
+            // when it is in (what is on disk comes in a few ms) or after
+            // `FIRST_FILL_WAIT`, so a screen's worth shows together rather than
+            // the newest few rows with the rest popping in above.
+            let backfill = timeline.clone();
+            HISTORY_REQUESTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let first_fill = core.spawn(async move {
+                if let Err(err) = backfill.paginate_backwards(INITIAL_BACKFILL).await {
+                    warn!(%err, "initial back-pagination failed");
+                }
+            });
 
             let forwarder = core.spawn({
                 let timeline = timeline.clone();
@@ -948,8 +974,33 @@ impl Session {
                             crate::rt::spawn(fetch_reply_details(timeline, event_id));
                         }
                     };
+                    let _ = crate::rt::timeout(FIRST_FILL_WAIT, first_fill).await;
+                    let mut first = vec![reset];
+                    // The timeline hears of what the fill added a moment after it
+                    // ends: take in what follows until it goes quiet.
+                    for _ in 0..20 {
+                        match crate::rt::timeout(FIRST_FILL_QUIET, stream.next()).await {
+                            Ok(Some(diffs)) => first.extend(call_ends.apply(diffs, own_user.as_ref())),
+                            _ => break,
+                        }
+                    }
                     for entry in &initial_entries {
                         request(&mut requested_replies, entry);
+                    }
+                    for diff in &first[1..] {
+                        match diff {
+                            VectorDiff::Append { values } | VectorDiff::Reset { values } => {
+                                values.iter().for_each(|e| request(&mut requested_replies, e));
+                            }
+                            VectorDiff::Insert { value, .. }
+                            | VectorDiff::PushBack { value }
+                            | VectorDiff::PushFront { value }
+                            | VectorDiff::Set { value, .. } => request(&mut requested_replies, value),
+                            _ => {}
+                        }
+                    }
+                    if tx.send(first).is_err() {
+                        return;
                     }
                     while let Some(diffs) = stream.next().await {
                         let diffs = call_ends.apply(diffs, own_user.as_ref());
@@ -973,13 +1024,6 @@ impl Session {
                             break;
                         }
                     }
-                }
-            });
-
-            let backfill = timeline.clone();
-            core.spawn(async move {
-                if let Err(err) = backfill.paginate_backwards(INITIAL_BACKFILL).await {
-                    warn!(%err, "initial back-pagination failed");
                 }
             });
 

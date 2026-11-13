@@ -230,7 +230,9 @@ async fn scrolling_up_reaches_the_start_of_a_long_room() {
     bodies.extend((1..=500).map(|n| format!("history message {n}")));
     send_many_as(&hs, &user, &room, &bodies).expect("history");
 
-    let mut app = App::launch(&hs).await.expect("launch");
+    let mut app = App::launch_with_env(&hs, &[("MORPHEUS_E2E_HISTORY_DELAY_MS", "300")])
+        .await
+        .expect("launch");
     app.wait_for("form.login", DEFAULT_WAIT)
         .await
         .expect("login form");
@@ -325,7 +327,9 @@ async fn reaching_the_top_stays_there_while_older_messages_load() {
     let room = room["room_id"].as_str().expect("room id").to_owned();
     let bodies: Vec<String> = (1..=80).map(|n| format!("line {n}")).collect();
     morpheus_e2e::send_many_as(&hs, &user, &room, &bodies).expect("history");
-    let mut app = morpheus_e2e::App::launch(&hs).await.expect("launch app");
+    let mut app = morpheus_e2e::App::launch_with_env(&hs, &[("MORPHEUS_E2E_HISTORY_DELAY_MS", "800")])
+        .await
+        .expect("launch app");
     app.wait_for("form.login", morpheus_e2e::DEFAULT_WAIT)
         .await
         .expect("login form");
@@ -344,10 +348,14 @@ async fn reaching_the_top_stays_there_while_older_messages_load() {
         .await
         .expect("the newest");
     tokio::time::sleep(Duration::from_secs(2)).await;
-    // Once to the top, as a scroll wheel would, then watch.
-    app.scroll_to(".timeline", ScrollTo::Top)
-        .await
-        .expect("scroll up");
+    // Up to the top (the placeholder above the oldest loaded message in view,
+    // the next page held back for a moment), as a scroll wheel would, then watch.
+    let until = Instant::now() + Duration::from_secs(10);
+    while app.count(".timeline .older-skeleton").await.expect("count") == 0 {
+        assert!(Instant::now() < until, "never reached the top");
+        app.scroll_to(".timeline", ScrollTo::Top).await.expect("scroll up");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
     let mut lowest = f64::MAX;
     let mut previous = f64::MAX;
     let mut range = 0.0;
@@ -680,6 +688,13 @@ async fn page_up_and_down_scroll_smoothly_by_a_page() {
     if !app.is_gpui() {
         eprintln!("skipped: GPUI's own easing");
         return;
+    }
+    // The list only counts the rows it has measured: look through the room first.
+    let until = Instant::now() + Duration::from_secs(10);
+    while app.scroll_state(".timeline").await.expect("s").is_some_and(|s| s.range <= s.viewport * 1.5) {
+        assert!(Instant::now() < until, "the room never got long enough");
+        app.scroll_to(".timeline", ScrollTo::Top).await.expect("scroll");
+        tokio::time::sleep(Duration::from_millis(100)).await;
     }
     app.scroll_to(".timeline", ScrollTo::Bottom).await.expect("scroll");
     tokio::time::sleep(Duration::from_millis(300)).await;
