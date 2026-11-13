@@ -623,7 +623,9 @@ fn init_logging() {
     use tracing_subscriber::{EnvFilter, Layer as _, layer::SubscriberExt as _, util::SubscriberInitExt as _};
     let filter = || {
         EnvFilter::try_from_default_env()
-            .unwrap_or_else(|_| "morpheus=debug,livekit=info,warn".into())
+            // PulseAudio's client (cpal's, for the microphone) reports its
+            // own closing as an error each time a stream stops.
+            .unwrap_or_else(|_| "morpheus=debug,livekit=info,pulseaudio::client::reactor=off,warn".into())
     };
     let log_file = std::fs::create_dir_all(data_dir())
         .and_then(|()| std::fs::File::create(data_dir().join("morpheus.log")))
