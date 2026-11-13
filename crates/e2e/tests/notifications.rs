@@ -609,3 +609,54 @@ async fn message_sounds_can_be_turned_off() {
     say(&hs, &writer, &room, "audible one");
     wait_message_sounds(&mut app, 1, "back on").await;
 }
+
+/// Seeing a room clears it from the inbox and its badges at once, not after
+/// the server has answered the read receipt.
+#[tokio::test]
+async fn viewing_a_room_clears_its_inbox_entries_at_once() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let (mut app, reader, writer, room) = pair(&hs, "seen").await;
+    say(&hs, &writer, &room, &format!("@{reader} are you there"));
+    app.wait_for(".inbox-badge", DEFAULT_WAIT)
+        .await
+        .expect("inbox badge");
+    app.wait_for(".room .badge", DEFAULT_WAIT)
+        .await
+        .expect("the room's mention badge");
+    app.click(".titlebar .inbox-button").await.expect("open inbox");
+    app.wait_for(".inbox-mention", DEFAULT_WAIT)
+        .await
+        .expect("a mention listed");
+    app.press("body", "Escape").await.expect("close inbox");
+    app.wait_for_count(".inbox-panel", 0, DEFAULT_WAIT)
+        .await
+        .expect("inbox closed");
+
+    app.open_room("seen chat").await.expect("open the room");
+    let opened = std::time::Instant::now();
+    let mut gone = None;
+    while opened.elapsed() < std::time::Duration::from_millis(1500) {
+        if app.count(".inbox-badge").await.expect("badge") == 0
+            && app.count(".room .badge").await.expect("room badge") == 0
+        {
+            gone = Some(opened.elapsed());
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    let gone = gone.expect("the badges never went");
+    assert!(
+        gone < std::time::Duration::from_millis(300),
+        "the badges went after {gone:?}, not at once"
+    );
+    app.click(".titlebar .inbox-button").await.expect("open inbox");
+    app.wait_for(".inbox-panel", DEFAULT_WAIT).await.expect("inbox");
+    assert_eq!(
+        app.count(".inbox-panel .inbox-item").await.expect("items"),
+        0,
+        "nothing left in the inbox"
+    );
+}
