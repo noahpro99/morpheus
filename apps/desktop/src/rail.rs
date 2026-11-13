@@ -241,7 +241,6 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         .w(px(theme::RAIL_W))
         .flex_none()
         .h_full()
-        .pt(px(12.0))
         .pb(px(8.0))
         .bg(rgb(theme::bg_rail()));
 

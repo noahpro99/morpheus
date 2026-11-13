@@ -304,6 +304,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         .flex_none()
         .min_h_0()
         .h_full()
+        .rounded_tl(px(theme::RADIUS_LG))
         .bg(rgb(theme::bg_sidebar()))
         .child(header.e2e("header", "sidebar-header"))
         .child(
@@ -313,6 +314,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                 ))),
         )
         .e2e("aside", "sidebar")
+        .attr("data-radius-tl", theme::RADIUS_LG.to_string())
 }
 
 /// The rooms of `scope` in the order the sidebar draws them (the Friends

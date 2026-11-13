@@ -1133,6 +1133,7 @@ impl Render for Shell {
                     .flex()
                     .flex_1()
                     .min_h_0()
+                    .bg(rgb(theme::bg_rail()))
                     .child(rail::render(self, cx))
                     .child(room_list::render(self, cx)),
             )
