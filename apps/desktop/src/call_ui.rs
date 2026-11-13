@@ -1368,7 +1368,7 @@ pub fn header_call_button(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSum
     div()
         .id("call-button")
         .px(px(8.0))
-        .h_full().flex().items_center()
+        .h(px(28.0)).flex().items_center()
         .rounded(px(theme::RADIUS_SM))
         .cursor_pointer()
         .when(in_this, |d| d.bg(rgba(theme::bg_selected())))

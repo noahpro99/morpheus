@@ -143,11 +143,11 @@ async fn menu_opens_and_closes(app: &mut App, what: &str) {
 }
 
 /// The icon (a channel's #, a DM's picture) and the name are one button, as
-/// tall as the bar: the whole of it opens the room's menu, its edges too.
+/// a natural box (not the bar's height): the whole of it opens the room's menu, its edges too.
 async fn head_button_is_one_big_target(app: &mut App, icon: &str) {
     let bar = app.bounds(".chat-header").await.expect("b").expect("bar");
     let head = app.bounds(".chat-header .room-head").await.expect("b").expect("the head button");
-    assert!(head.h >= bar.h - 2.0, "as tall as the bar: {head:?} in {bar:?}");
+    assert!((24.0..=36.0).contains(&head.h) && head.h < bar.h - 6.0, "a natural size, not the bar's height: {head:?} in {bar:?}");
     assert!(head.x <= bar.x + 12.0, "at the bar's left: {head:?}");
     let icon_b = app.bounds(&format!(".chat-header .room-head {icon}")).await.expect("b").expect("icon");
     assert!(icon_b.right() <= head.right() && icon_b.x >= head.x, "the icon is inside it");
