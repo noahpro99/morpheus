@@ -9,7 +9,7 @@
 
 use serde::Deserialize;
 
-use crate::{CoreFuture, Error, Session};
+use crate::{Core, CoreFuture, Error, Session};
 
 /// Where releases are published.
 const RELEASES: &str = "https://api.github.com/repos/noahpro99/morpheus/releases/latest";
@@ -117,42 +117,75 @@ fn is_newer(candidate: &str, current: &str) -> bool {
         .is_some_and(|order| order.is_gt())
 }
 
+/// Ask the release feed whether something newer than `current` exists.
+async fn check(
+    http: matrix_sdk::reqwest::Client,
+    current: &'static str,
+) -> Result<UpdateStatus, Error> {
+    let Some(url) = feed_url() else {
+        return Ok(UpdateStatus::NoFeed);
+    };
+    let failed = |err: &dyn std::fmt::Display| Error::Other(format!("update feed: {err}"));
+    let response = http
+        .get(&url)
+        // GitHub turns away requests that don't say who they are.
+        .header("User-Agent", "Morpheus")
+        .header("Accept", "application/vnd.github+json")
+        .timeout(std::time::Duration::from_secs(15))
+        .send()
+        .await
+        .and_then(|response| response.error_for_status())
+        .map_err(|err| failed(&err))?;
+    let body = response.text().await.map_err(|err| failed(&err))?;
+    let feed: Feed = serde_json::from_str(&body).map_err(|err| failed(&err))?;
+    if !is_newer(&feed.version, current) {
+        return Ok(UpdateStatus::UpToDate);
+    }
+    let download = platform().and_then(|platform| {
+        feed.assets
+            .iter()
+            .find(|asset| asset.name.contains(platform))
+            .map(|asset| asset.browser_download_url.clone())
+    });
+    Ok(UpdateStatus::Available {
+        version: feed.version.trim_start_matches('v').to_owned(),
+        url: feed.url,
+        download,
+    })
+}
+
+/// Download the release at `download` and put it in place of the running app.
+async fn install(http: matrix_sdk::reqwest::Client, download: String) -> Result<(), Error> {
+    let failed = |err: &dyn std::fmt::Display| Error::Other(format!("update: {err}"));
+    let bytes = http
+        .get(&download)
+        .header("User-Agent", "Morpheus")
+        .send()
+        .await
+        .and_then(|response| response.error_for_status())
+        .map_err(|err| failed(&err))?
+        .bytes()
+        .await
+        .map_err(|err| failed(&err))?;
+    #[cfg(not(any(target_os = "android", target_os = "ios", target_arch = "wasm32")))]
+    let installed = tokio::task::spawn_blocking(move || swap::install(&bytes))
+        .await
+        .map_err(|err| failed(&err))?
+        .map_err(|err| failed(&err));
+    // Phones install through the system, never in place.
+    #[cfg(any(target_os = "android", target_os = "ios", target_arch = "wasm32"))]
+    let installed = {
+        drop(bytes);
+        Err(failed(&"this device installs updates itself"))
+    };
+    installed
+}
+
 impl Session {
     /// Ask the release feed whether something newer than `current` exists.
     pub fn check_for_update(&self, current: &'static str) -> CoreFuture<UpdateStatus> {
         let http = self.client.http_client().clone();
-        self.core.run(async move {
-            let Some(url) = feed_url() else {
-                return Ok(UpdateStatus::NoFeed);
-            };
-            let failed = |err: &dyn std::fmt::Display| Error::Other(format!("update feed: {err}"));
-            let response = http
-                .get(&url)
-                // GitHub turns away requests that don't say who they are.
-                .header("User-Agent", "Morpheus")
-                .header("Accept", "application/vnd.github+json")
-                .timeout(std::time::Duration::from_secs(15))
-                .send()
-                .await
-                .and_then(|response| response.error_for_status())
-                .map_err(|err| failed(&err))?;
-            let body = response.text().await.map_err(|err| failed(&err))?;
-            let feed: Feed = serde_json::from_str(&body).map_err(|err| failed(&err))?;
-            if !is_newer(&feed.version, current) {
-                return Ok(UpdateStatus::UpToDate);
-            }
-            let download = platform().and_then(|platform| {
-                feed.assets
-                    .iter()
-                    .find(|asset| asset.name.contains(platform))
-                    .map(|asset| asset.browser_download_url.clone())
-            });
-            Ok(UpdateStatus::Available {
-                version: feed.version.trim_start_matches('v').to_owned(),
-                url: feed.url,
-                download,
-            })
-        })
+        self.core.run(check(http, current))
     }
 
     /// Download the release at `download` (this platform's zip) and put it
@@ -160,31 +193,19 @@ impl Session {
     /// quit). The caller quits once this returns. Desktops only.
     pub fn install_update(&self, download: String) -> CoreFuture<()> {
         let http = self.client.http_client().clone();
-        self.core.run(async move {
-            let failed = |err: &dyn std::fmt::Display| Error::Other(format!("update: {err}"));
-            let bytes = http
-                .get(&download)
-                .header("User-Agent", "Morpheus")
-                .send()
-                .await
-                .and_then(|response| response.error_for_status())
-                .map_err(|err| failed(&err))?
-                .bytes()
-                .await
-                .map_err(|err| failed(&err))?;
-            #[cfg(not(any(target_os = "android", target_os = "ios", target_arch = "wasm32")))]
-            let installed = tokio::task::spawn_blocking(move || swap::install(&bytes))
-                .await
-                .map_err(|err| failed(&err))?
-                .map_err(|err| failed(&err));
-            // Phones install through the system, never in place.
-            #[cfg(any(target_os = "android", target_os = "ios", target_arch = "wasm32"))]
-            let installed = {
-                drop(bytes);
-                Err(failed(&"this device installs updates itself"))
-            };
-            installed
-        })
+        self.core.run(install(http, download))
+    }
+}
+
+/// The same two steps with no signed-in session (the updater's self-test
+/// runs them with no account and no window).
+impl Core {
+    pub fn check_for_update(&self, current: &'static str) -> CoreFuture<UpdateStatus> {
+        self.run(check(matrix_sdk::reqwest::Client::new(), current))
+    }
+
+    pub fn install_update(&self, download: String) -> CoreFuture<()> {
+        self.run(install(matrix_sdk::reqwest::Client::new(), download))
     }
 }
 

@@ -50,6 +50,7 @@ mod sounds;
 mod switcher;
 mod thread;
 mod update;
+mod update_self_test;
 mod instance;
 mod tray;
 mod titlebar;
@@ -642,6 +643,10 @@ fn main() {
             .env("PULSE_PROP", "state.restore-props=false")
             .exec();
         eprintln!("morpheus-desktop: could not restart with PULSE_PROP: {err}");
+    }
+    // CI's check that an update installs and the new version starts: no window.
+    if update_self_test::requested() {
+        update_self_test::run(data_dir());
     }
     // A later launch hands over to the one running (its window shows, or the
     // Matrix link it was given opens) and ends.
