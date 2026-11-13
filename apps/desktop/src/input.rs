@@ -10,7 +10,11 @@
 //! by gpui's `StyledText`, whose layout answers where the caret goes and
 //! which index a click is at.
 
-use std::{cell::RefCell, ops::Range, rc::Rc};
+use std::{
+    cell::{Cell, RefCell},
+    ops::Range,
+    rc::Rc,
+};
 
 use gpui::{
     App, Bounds, ClipboardEntry, ClipboardItem, Context, CursorStyle, DispatchPhase, Element,
@@ -93,6 +97,9 @@ pub struct TextInput {
     /// The wanted x of Up and Down, kept while moving by lines.
     goal_x: Option<Pixels>,
     layout: Rc<RefCell<Option<TextLayout>>>,
+    /// The colour the text was last laid out in (inherited from the
+    /// parents), as `rrggbb`, for the test bridge.
+    drawn_colour: Rc<Cell<Option<u32>>>,
     scroll: ScrollHandle,
     /// The caret when the view last followed it, to follow only a moved one.
     followed: Rc<RefCell<Option<(usize, usize)>>>,
@@ -124,6 +131,7 @@ impl TextInput {
             selecting: false,
             goal_x: None,
             layout: Rc::default(),
+            drawn_colour: Rc::default(),
             scroll: ScrollHandle::new(),
             followed: Rc::default(),
         }
@@ -539,6 +547,7 @@ struct EditorText {
     /// Where each selected character of the real text is, as drawn offsets.
     selected_chars: Vec<(usize, usize, bool)>,
     layout: Rc<RefCell<Option<TextLayout>>>,
+    drawn_colour: Rc<Cell<Option<u32>>>,
 }
 
 impl IntoElement for EditorText {
@@ -568,7 +577,19 @@ impl Element for EditorText {
         window: &mut Window,
         cx: &mut App,
     ) -> (LayoutId, ()) {
-        self.text.request_layout(id, inspector_id, window, cx)
+        let colour = gpui::Rgba::from(window.text_style().color);
+        let byte = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u32;
+        self.drawn_colour
+            .set(Some(byte(colour.r) << 16 | byte(colour.g) << 8 | byte(colour.b)));
+        // The text in a node that grows to the input's width (the body is a
+        // flex row): sized by percentages, the body and the text came out 0 px
+        // wide in an input stretched by a flex column (the login form's), and
+        // the input clipped all of the text away.
+        let (text, ()) = self.text.request_layout(id, inspector_id, window, cx);
+        let mut style = gpui::Style::default();
+        style.flex_grow = 1.0;
+        style.min_size.width = px(0.0).into();
+        (window.request_layout(style, [text], cx), ())
     }
 
     fn prepaint(
@@ -710,12 +731,14 @@ impl Render for TextInput {
             selection,
             selected_chars,
             layout: self.layout.clone(),
+            drawn_colour: self.drawn_colour.clone(),
         };
         let entity = cx.entity();
         let multiline = self.max_lines > 1;
         let mut body = div()
             .id(ElementId::Name(format!("{}-text", self.name).into()))
-            .w_full()
+            .flex()
+            .flex_1()
             .min_w_0();
         body = if multiline {
             body.max_h(px(self.max_lines as f32 * LINE_HEIGHT))
@@ -748,6 +771,7 @@ impl Render for TextInput {
             .on_key_down(move |event, _, cx| {
                 entity.update(cx, |input, cx| input.key_down(event, cx));
             })
+            .flex()
             .min_w_0()
             .child(body);
         if self.bare {
@@ -779,6 +803,12 @@ impl Render for TextInput {
             .attr("value", self.buf.text().to_owned())
             .attr("placeholder", self.placeholder.to_string())
             .focusable(&self.focus);
+        if let Some(colour) = self.drawn_colour.get() {
+            tagged = tagged.attr("data-color", format!("{colour:06x}"));
+        }
+        if !self.bare {
+            tagged = tagged.attr("data-bg", format!("{:06x}", theme::bg_input()));
+        }
         if multiline {
             tagged = tagged.attr(
                 "rows",
