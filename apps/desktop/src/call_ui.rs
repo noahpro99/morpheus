@@ -547,6 +547,7 @@ pub fn voice_panel(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElement>
         .border_b_1()
         .border_color(rgba(theme::bg_hover()))
         .child(status);
+    panel = panel.child(crate::noise::button(shell, cx));
     if morpheus_call::can_send_video() {
         let on = !call.camera;
         panel = panel.child(ghost_button(
@@ -604,6 +605,12 @@ pub fn voice_panel(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElement>
         panel
             .e2e("div", "voice-panel")
             .attr("data-heard", heard)
+            // What the call's microphone is processed with now.
+            .attr(
+                "data-noise",
+                morpheus_call::applied_noise_suppression()
+                    .map_or("", morpheus_call::NoiseSuppression::key),
+            )
             .into_any_element(),
     )
 }

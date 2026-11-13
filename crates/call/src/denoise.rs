@@ -2,6 +2,7 @@
 //! 48 kHz in 10 ms frames, on this device's microphone before it is sent.
 
 /// How late the cleaned voice comes out, in samples (30 ms).
+#[cfg_attr(not(test), allow(dead_code))]
 pub const DELAY: usize = 1440;
 
 /// 10 ms at 48 kHz.

@@ -57,6 +57,17 @@ pub struct DevicesChosen(pub crate::view_model::menu::DeviceKind);
 
 impl EventEmitter<DevicesChosen> for SettingsView {}
 
+/// A noise suppression mode was picked on the Voice & Video page.
+pub struct NoiseChosen(pub morpheus_call::NoiseSuppression);
+
+impl EventEmitter<NoiseChosen> for SettingsView {}
+
+/// The Voice & Video page's Mic Test was started (true) or stopped; it
+/// also stops when the settings close.
+pub struct MicTest(pub bool);
+
+impl EventEmitter<MicTest> for SettingsView {}
+
 /// The devices the Voice & Video page lists: (id, name).
 pub struct VoiceLists {
     pub microphones: Vec<(String, String)>,
@@ -228,6 +239,9 @@ impl SettingsView {
     pub fn close(&mut self, cx: &mut Context<Self>) {
         if self.open {
             self.open = false;
+            if morpheus_call::mic_test_running() {
+                cx.emit(MicTest(false));
+            }
             self.set_up_when_ready = false;
             cx.notify();
         }

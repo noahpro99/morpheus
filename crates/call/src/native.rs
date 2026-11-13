@@ -58,6 +58,29 @@ pub use platform_camera::{PlatformCamera, camera_frame, set_platform_camera};
 #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 #[path = "denoise.rs"]
 mod denoise;
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+#[path = "mic.rs"]
+mod mic;
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+pub use mic::{mic_level, mic_loopback, mic_test_running, start_mic_test, stop_mic_test};
+
+/// Phones: no mic test (their microphone is WebRTC's own).
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+mod no_mic_test {
+    pub fn start_mic_test() {}
+    pub fn stop_mic_test() {}
+    pub fn mic_test_running() -> bool {
+        false
+    }
+    pub fn mic_level() -> f32 {
+        0.0
+    }
+    pub fn mic_loopback() -> bool {
+        false
+    }
+}
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+pub use no_mic_test::*;
 #[cfg(test)]
 #[path = "speech_fixture.rs"]
 mod speech_fixture;
@@ -161,6 +184,10 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 const SAMPLE_RATE: u32 = 48_000;
 /// 10 ms, the frame size WebRTC works in.
+#[cfg_attr(
+    any(target_os = "linux", target_os = "windows", target_os = "macos"),
+    allow(dead_code)
+)]
 const FRAME: usize = (SAMPLE_RATE / 100) as usize;
 
 fn runtime() -> &'static tokio::runtime::Runtime {
@@ -194,6 +221,8 @@ pub struct Call {
     me: String,
     /// The platform devices, open for the call's lifetime.
     platform: Option<PlatformAudio>,
+    /// This call's place in the microphone capture (desktops).
+    _mic: MicGuard,
     mode: AudioMode,
     /// The camera, while it is on.
     camera: Arc<tokio::sync::Mutex<Option<Outgoing>>>,
@@ -257,19 +286,44 @@ impl Call {
         let (tx, rx) = unbounded_channel();
         let mut tasks = Vec::new();
 
-        let (source, platform) = match mode {
+        // Desktops capture the microphone themselves and clean it first
+        // (`mic`); WebRTC's device module only plays the call there.
+        #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+        let (source, platform, captured) = {
+            let platform = match mode {
+                AudioMode::Platform => {
+                    let platform =
+                        PlatformAudio::new().map_err(|err| Error::Audio(err.to_string()))?;
+                    if let Err(err) = devices::apply(&platform, false) {
+                        warn!(%err, "chosen device unavailable, using the default");
+                    }
+                    use livekit::webrtc::peer_connection_factory::native::PeerConnectionFactoryExt as _;
+                    livekit::rtc_engine::lk_runtime::LkRuntime::instance()
+                        .pc_factory()
+                        .set_adm_recording_enabled(false);
+                    Some(platform)
+                }
+                AudioMode::Tone => None,
+            };
+            // No queue: the capture's own clock paces the frames.
+            let source = NativeAudioSource::new(AudioSourceOptions::default(), SAMPLE_RATE, 1, 0);
+            let captured = MicGuard(mic::attach_call(source.clone(), mode));
+            (RtcAudioSource::Native(source), platform, captured)
+        };
+        #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+        let (source, platform, captured) = match mode {
             AudioMode::Platform => {
                 let platform = PlatformAudio::new().map_err(|err| Error::Audio(err.to_string()))?;
                 if let Err(err) = devices::apply(&platform, false) {
                     warn!(%err, "chosen device unavailable, using the default");
                 }
-                (platform.rtc_source(), Some(platform))
+                (platform.rtc_source(), Some(platform), MicGuard(None))
             }
             AudioMode::Tone => {
                 let source =
                     NativeAudioSource::new(AudioSourceOptions::default(), SAMPLE_RATE, 1, 100);
                 tasks.push(tokio::spawn(play_tone(source.clone())));
-                (RtcAudioSource::Native(source), None)
+                (RtcAudioSource::Native(source), None, MicGuard(None))
             }
         };
         let mic = LocalAudioTrack::create_audio_track("microphone", source);
@@ -328,6 +382,7 @@ impl Call {
                 speech,
                 me,
                 platform,
+                _mic: captured,
                 mode,
                 camera: Arc::default(),
                 screen: Arc::default(),
@@ -366,6 +421,8 @@ impl Call {
     /// Switch to the devices last chosen ([`choose_audio_devices`]).
     pub fn use_chosen_devices(&self) -> Result<()> {
         let _enter = runtime().enter();
+        #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+        mic::reopen_devices();
         match &self.platform {
             Some(platform) => devices::apply(platform, true),
             None => Ok(()),
@@ -505,6 +562,18 @@ impl Drop for Call {
         }
         video::forget(LOCAL_CAMERA);
         video::forget(LOCAL_SCREEN);
+    }
+}
+
+/// A call's hold on the microphone capture: let go when dropped.
+struct MicGuard(Option<u64>);
+
+impl Drop for MicGuard {
+    fn drop(&mut self) {
+        #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+        if let Some(id) = self.0.take() {
+            mic::detach_call(id);
+        }
     }
 }
 
@@ -769,6 +838,10 @@ impl Outgoing {
 }
 
 /// A 440 Hz tone at a speaking level, in real time.
+#[cfg_attr(
+    any(target_os = "linux", target_os = "windows", target_os = "macos"),
+    allow(dead_code)
+)]
 async fn play_tone(source: NativeAudioSource) {
     let mut phase = 0f32;
     let step = 440.0 * std::f32::consts::TAU / SAMPLE_RATE as f32;
@@ -849,6 +922,7 @@ async fn forward_events(
                     track.clone(),
                     participant.identity().to_string(),
                     speech.clone(),
+                    mode == AudioMode::Platform,
                 ));
                 if mode == AudioMode::Tone {
                     tokio::spawn(measure(
@@ -1111,7 +1185,15 @@ async fn aggregate(
 
 /// Measure what `who` sounds like (a subscribed remote track) and report
 /// when they start and stop speaking.
-async fn watch_voice(track: RemoteAudioTrack, who: String, speech: UnboundedSender<Speech>) {
+///
+/// `echo`: what they say also goes to the echo canceller, as the speakers
+/// play it (a deafened track carries no frames, so nothing then).
+async fn watch_voice(
+    track: RemoteAudioTrack,
+    who: String,
+    speech: UnboundedSender<Speech>,
+    echo: bool,
+) {
     let mut stream = NativeAudioStream::new(track.rtc_track(), SAMPLE_RATE as i32, 1);
     // 20 ms over the attack level to start.
     let mut gate = Gate::new(2);
@@ -1124,6 +1206,10 @@ async fn watch_voice(track: RemoteAudioTrack, who: String, speech: UnboundedSend
             Ok(Some(frame)) => {
                 last_frame = std::time::Instant::now();
                 got = true;
+                #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+                if echo {
+                    mic::far_end(&who, &frame.data);
+                }
                 rms(&frame.data) / 32_768.0
             }
             Ok(None) => break,
@@ -1157,6 +1243,9 @@ async fn watch_voice(track: RemoteAudioTrack, who: String, speech: UnboundedSend
             }
         }
     }
+    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+    mic::far_end_gone(&who);
+    let _ = echo;
     let _ = speech.send(Speech::Unmeasured(who));
 }
 

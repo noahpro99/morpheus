@@ -31,7 +31,7 @@ use crate::{
     view_model::{marks::Marks, nicknames::NickMap, toast::ToastList},
     prefs::Prefs,
     rail, room_list,
-    settings::{DevicesChosen, KeysChanged, SettingsView, ThemeChosen},
+    settings::{DevicesChosen, KeysChanged, MicTest, NoiseChosen, SettingsView, ThemeChosen},
     theme,
     input::{Submit, TextInput},
     search::{SearchEvent, SearchPanel},
@@ -292,6 +292,10 @@ impl Shell {
             }
         })
         .detach();
+        cx.subscribe(&settings, |this, _, chosen: &NoiseChosen, cx| this.choose_noise(chosen.0, cx))
+            .detach();
+        cx.subscribe(&settings, |this, _, test: &MicTest, cx| this.set_mic_test(test.0, cx))
+            .detach();
         shell.settings = Some(settings);
         shell.refresh_keys(cx);
         shell.load_marks(cx);
@@ -1064,6 +1068,8 @@ impl Render for Shell {
         self.overlay_was_open = overlay;
         let menu = menu::render(self, window, cx);
         let screen_quality = crate::screen_quality::render(self, cx);
+        let noise_card = crate::noise::render(self, cx);
+        self.keep_mic_fresh(cx);
         let dialog = dialogs::render_dialog(self, window, cx);
         let inbox = crate::invites::inbox(self, window, cx);
         let toasts = dialogs::render_toasts(self, cx);
@@ -1191,6 +1197,7 @@ impl Render for Shell {
             .children(self.picker.as_ref().map(|(picker, _)| picker.clone()))
             .children(menu)
             .children(screen_quality)
+            .children(noise_card)
             .children(toasts)
             .e2e("div", if self.members_open { "shell" } else { "shell no-side" })
     }
