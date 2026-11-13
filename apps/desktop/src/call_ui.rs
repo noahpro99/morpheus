@@ -11,6 +11,7 @@ use gpui::{
     RenderImage, Styled as _, StyledImage as _, Window, canvas, div, img, prelude::*, px, rgb, rgba,
 };
 use morpheus_core::{OwnedRoomId, OwnedUserId, RoomSummary};
+use crate::zoom::{MAX_ZOOM, ZoomPan};
 
 use crate::{
     e2e::E2eExt as _,
@@ -693,6 +694,36 @@ fn focus_button(shell: &Shell, cx: &mut Context<Shell>, key: &str, group: &str) 
         .into_any_element()
 }
 
+/// A zoomed screen's size at the tile's bottom right; a click puts it back to fit.
+fn zoom_indicator(shell: &Shell, key: &str, zoom: f32) -> AnyElement {
+    let frame = shell.calls.frames.get(key).cloned();
+    let text = format!("{:.0}%", zoom * 100.0);
+    div()
+        .id("screen-zoom-indicator")
+        .absolute()
+        .right(px(8.0))
+        .bottom(px(8.0))
+        .px(px(8.0))
+        .py(px(2.0))
+        .rounded(px(theme::RADIUS_SM))
+        .bg(black(0.6))
+        .text_size(px(0.8 * theme::REM))
+        .text_color(rgb(0xffffff))
+        .cursor_pointer()
+        .child(text.clone())
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        .on_click(move |_, _, cx| {
+            cx.stop_propagation();
+            if let Some(frame) = &frame {
+                frame.update(cx, |f, cx| f.reset_zoom(cx));
+            }
+        })
+        .e2e("button", "screen-zoom-indicator")
+        .attr("title", "Fit to the tile")
+        .text(text)
+        .into_any_element()
+}
+
 /// The name label at a card's bottom left.
 fn name_label(text: String) -> AnyElement {
     div()
@@ -847,6 +878,10 @@ fn video_card(
     } else {
         CARD_RATIO
     };
+    // A shared screen, focused, zooms and pans (as the picture viewer does).
+    let zoomable = feed.screen && matches!(fit, Fit::Main(..));
+    let frame = shell.calls.frames.get(&key).cloned();
+    let view = frame.as_ref().map(|f| f.read(cx).view).unwrap_or_default();
     let mut tile = sized(
         div().id(gpui::SharedString::from(format!("card-{key}"))),
         fit,
@@ -861,10 +896,62 @@ fn video_card(
     } else {
         rgb(theme::bg_elevated())
     })
-    .cursor_pointer()
-    .on_click(cx.listener(move |this, _, _, cx| this.toggle_focus(&click_key, cx)));
-    if let Some(frame) = shell.calls.frames.get(&key) {
-        tile = tile.child(frame.clone());
+    .cursor_pointer();
+    tile = match frame.clone() {
+        Some(frame) if zoomable => {
+            let (down, wheel, up, up_out, click) = (
+                frame.clone(),
+                frame.clone(),
+                frame.clone(),
+                frame.clone(),
+                frame.clone(),
+            );
+            tile.when(view.zoomed(), |d| d.cursor_grab())
+                .on_scroll_wheel(move |event, _, cx| {
+                    wheel.update(cx, |f, cx| f.wheel(event, cx));
+                    cx.stop_propagation();
+                })
+                .on_mouse_down(MouseButton::Left, move |event, _, cx| {
+                    down.update(cx, |f, cx| f.press(event, cx));
+                })
+                .on_mouse_up(MouseButton::Left, move |_, _, cx| {
+                    up.update(cx, |f, cx| f.release(cx));
+                })
+                .on_mouse_up_out(MouseButton::Left, move |_, _, cx| {
+                    up_out.update(cx, |f, cx| f.release(cx));
+                })
+                .on_click(cx.listener(move |_, _, _, cx| {
+                    // Not a click: the end of a drag or of a double click.
+                    // A single click on the focused screen waits a moment, in
+                    // case it is the first of a double click.
+                    let Some(wait) = click.update(cx, |f, _| f.clicked()) else {
+                        return;
+                    };
+                    let key = click_key.clone();
+                    cx.spawn(async move |this, cx| {
+                        cx.background_executor().timer(Duration::from_millis(280)).await;
+                        this.update(cx, |this, cx| {
+                            let still = this
+                                .calls
+                                .frames
+                                .get(&key)
+                                .is_some_and(|f| f.read(cx).still_waiting(wait));
+                            if still {
+                                this.toggle_focus(&key, cx);
+                            }
+                        })
+                        .ok();
+                    })
+                    .detach();
+                }))
+        }
+        _ => tile.on_click(cx.listener(move |this, _, _, cx| this.toggle_focus(&click_key, cx))),
+    };
+    if let Some(frame) = frame {
+        tile = tile.child(frame);
+    }
+    if zoomable && view.zoomed() {
+        tile = tile.child(zoom_indicator(shell, &key, view.zoom));
     }
     tile = tile
         .child(focus_button(shell, cx, &key, &group))
@@ -875,6 +962,9 @@ fn video_card(
         tile = tile.child(marks);
     }
     tile.e2e("div", &classes)
+        .attr("data-zoom", format!("{:.4}", view.zoom))
+        .attr("data-x", format!("{:.1}", view.offset.0))
+        .attr("data-y", format!("{:.1}", view.offset.1))
         .attr("data-video-size", format!("{pw}x{ph}"))
         .attr(
             "data-mirrored",
@@ -1466,6 +1556,10 @@ impl Shell {
     /// Focus a card, or, focused already, go back to the grid.
     pub fn toggle_focus(&mut self, card: &str, cx: &mut Context<Self>) {
         self.calls.focus = toggled_focus(&self.calls.focus, card);
+        // Another tile in front: a zoomed screen goes back to fit.
+        for frame in self.calls.frames.values() {
+            frame.update(cx, |f, cx| f.reset_zoom(cx));
+        }
         cx.notify();
     }
 
@@ -1514,6 +1608,18 @@ pub struct VideoFrame {
     pub dim: (u32, u32),
     /// The shell, told when the picture's shape changes (its card follows it).
     shell: gpui::WeakEntity<Shell>,
+    /// Zoom and pan of the picture in its tile (a focused screen).
+    pub view: ZoomPan,
+    /// Where the tile was painted (window coordinates).
+    area: Rc<std::cell::Cell<gpui::Bounds<gpui::Pixels>>>,
+    /// A pan going: where the pointer went down and the pan then.
+    panning: Option<((f32, f32), (f32, f32))>,
+    /// The press became a drag: its click is not a click.
+    dragged: bool,
+    /// The press was a double click's second: it zoomed.
+    doubled: bool,
+    /// Counts the clicks waiting to see whether they are single ones.
+    waiting: u64,
 }
 
 impl VideoFrame {
@@ -1541,7 +1647,101 @@ impl VideoFrame {
             sample: (String::new(), String::new()),
             dim: (0, 0),
             shell,
+            view: ZoomPan::default(),
+            area: Rc::new(std::cell::Cell::new(gpui::Bounds::default())),
+            panning: None,
+            dragged: false,
+            doubled: false,
+            waiting: 0,
         }
+    }
+
+    fn tile(&self) -> ((f32, f32), (f32, f32)) {
+        let b = self.area.get();
+        (
+            (f32::from(b.origin.x), f32::from(b.origin.y)),
+            (f32::from(b.size.width), f32::from(b.size.height)),
+        )
+    }
+
+    pub fn reset_zoom(&mut self, cx: &mut Context<Self>) {
+        self.waiting += 1;
+        if self.view != ZoomPan::default() || self.panning.is_some() {
+            self.view.reset();
+            self.panning = None;
+            cx.notify();
+        }
+    }
+
+    pub fn wheel(&mut self, event: &gpui::ScrollWheelEvent, cx: &mut Context<Self>) {
+        let Some(factor) = ZoomPan::wheel_factor(event.delta) else {
+            return;
+        };
+        let (origin, size) = self.tile();
+        let at = (f32::from(event.position.x) - origin.0, f32::from(event.position.y) - origin.1);
+        self.view.zoom_at(self.view.zoom * factor, at, size, size);
+        cx.notify();
+    }
+
+    /// A press on the tile: a second one toggles fit and actual size, a press
+    /// starts a pan when it is zoomed.
+    pub fn press(&mut self, event: &gpui::MouseDownEvent, cx: &mut Context<Self>) {
+        self.dragged = false;
+        self.doubled = event.click_count >= 2;
+        let (origin, size) = self.tile();
+        let at = (f32::from(event.position.x), f32::from(event.position.y));
+        if self.doubled {
+            self.waiting += 1;
+            self.panning = None;
+            let to = if self.view.zoomed() {
+                1.0
+            } else {
+                let actual = if size.0 > 0.0 { self.dim.0 as f32 / size.0 } else { 0.0 };
+                if actual > 1.05 { actual.min(MAX_ZOOM) } else { 2.0 }
+            };
+            self.view.zoom_at(to, (at.0 - origin.0, at.1 - origin.1), size, size);
+            cx.notify();
+        } else if self.view.zoomed() {
+            self.panning = Some((at, self.view.offset));
+        }
+    }
+
+    pub fn drag(&mut self, event: &gpui::MouseMoveEvent, cx: &mut Context<Self>) {
+        let Some((start, offset)) = self.panning else {
+            return;
+        };
+        if event.pressed_button != Some(MouseButton::Left) {
+            self.panning = None;
+            return;
+        }
+        let (dx, dy) = (f32::from(event.position.x) - start.0, f32::from(event.position.y) - start.1);
+        if dx.abs() + dy.abs() > 3.0 {
+            self.dragged = true;
+        }
+        let (_, size) = self.tile();
+        self.view.offset = (offset.0 + dx, offset.1 + dy);
+        self.view.clamp(size, size);
+        cx.notify();
+    }
+
+    pub fn release(&mut self, _cx: &mut Context<Self>) {
+        self.panning = None;
+    }
+
+    /// The tile was clicked: `None` if that was no click (a drag's end, a
+    /// double click's second); else a number to hand back to
+    /// [`Self::still_waiting`] after a moment.
+    pub fn clicked(&mut self) -> Option<u64> {
+        if std::mem::take(&mut self.dragged) || std::mem::take(&mut self.doubled) {
+            return None;
+        }
+        self.waiting += 1;
+        Some(self.waiting)
+    }
+
+    /// Whether nothing happened since click `wait` (so it was a single one).
+    pub fn still_waiting(&self, wait: u64) -> bool {
+        self.waiting == wait
     }
 
     /// Takes the latest frame, if it is a new one.
@@ -1594,11 +1794,15 @@ impl VideoFrame {
 }
 
 impl gpui::Render for VideoFrame {
-    fn render(&mut self, window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let me = cx.entity();
+        let panning = self.panning.is_some();
         for old in self.stale.drain(..) {
             let _ = window.drop_image(old);
         }
         let shown = self.image.is_some();
+        let view = self.view;
+        let area = self.area.clone();
         // Pinned to the card by its edges: a percentage height under a
         // flex-sized card is indefinite, and the image then took its own
         // shape from the width, taller than the card and cut off by it.
@@ -1610,12 +1814,28 @@ impl gpui::Render for VideoFrame {
                     gpui::canvas(
                         |_, _, _| (),
                         move |bounds, (), window, _| {
+                            area.set(bounds);
+                            // A pan follows the pointer wherever it goes.
+                            if panning {
+                                let me = me.clone();
+                                window.on_mouse_event(move |event: &gpui::MouseMoveEvent, phase, _, cx| {
+                                    if phase == gpui::DispatchPhase::Capture {
+                                        me.update(cx, |f, cx| f.drag(event, cx));
+                                    }
+                                });
+                            }
                             // The whole picture, in its own shape, centred; its
                             // corners are rounded here because the card's clip is
                             // a rectangle and a percentage size under a flex-sized
                             // card is not definite (the image then took its shape
                             // from the width and ran past the card's bottom).
-                            let fitted = ObjectFit::Contain.get_bounds(bounds, image.size(0));
+                            let mut fitted = ObjectFit::Contain.get_bounds(bounds, image.size(0));
+                            if view.zoom != 1.0 {
+                                let size = fitted.size.map(|s| s * view.zoom);
+                                let middle = fitted.center()
+                                    + gpui::point(px(view.offset.0), px(view.offset.1));
+                                fitted = gpui::Bounds::centered_at(middle, size);
+                            }
                             let radius = px(theme::RADIUS_LG)
                                 .min(fitted.size.width / 2.0)
                                 .min(fitted.size.height / 2.0);

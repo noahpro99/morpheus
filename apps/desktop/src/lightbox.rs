@@ -9,13 +9,18 @@ use std::sync::Arc;
 
 use gpui::{
     AnyElement, ClickEvent, Context, EventEmitter, FocusHandle, FontWeight, Image, IntoElement,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ScrollDelta, ScrollWheelEvent,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ScrollWheelEvent,
     MouseButton, ObjectFit, Render, StyledImage as _, Window, deferred, div, img, prelude::*, px,
     rgb, rgba,
 };
 use morpheus_core::{MediaRef, Session};
 
-use crate::{dialogs::Closed, e2e::E2eExt as _, media, theme};
+use crate::{
+    dialogs::Closed,
+    e2e::E2eExt as _,
+    media, theme,
+    zoom::{MAX_ZOOM, ZoomPan},
+};
 
 /// One picture of the room's gallery.
 #[derive(Clone)]
@@ -35,10 +40,8 @@ pub struct Lightbox {
     asked: std::collections::HashSet<String>,
     focus: FocusHandle,
     take_focus: bool,
-    /// 1 is the picture fitted to the window; up to `MAX_ZOOM`.
-    zoom: f32,
-    /// Where the picture's middle is from the window's middle.
-    offset: (f32, f32),
+    /// The zoom (1 is the picture fitted to the window) and the pan.
+    view: ZoomPan,
     /// A pan in progress: where the pointer went down and the offset then.
     panning: Option<((f32, f32), (f32, f32))>,
     /// The fitted size and window size of the last frame.
@@ -46,7 +49,6 @@ pub struct Lightbox {
     viewport: (f32, f32),
 }
 
-const MAX_ZOOM: f32 = 8.0;
 const STEP: f32 = 1.25;
 
 impl EventEmitter<Closed> for Lightbox {}
@@ -61,8 +63,7 @@ impl Lightbox {
             asked: Default::default(),
             focus: cx.focus_handle(),
             take_focus: true,
-            zoom: 1.0,
-            offset: (0.0, 0.0),
+            view: ZoomPan::default(),
             panning: None,
             fit: (0.0, 0.0),
             viewport: (0.0, 0.0),
@@ -99,38 +100,15 @@ impl Lightbox {
         let next = (self.index as isize + delta).clamp(0, last) as usize;
         if next != self.index {
             self.index = next;
-            self.zoom = 1.0;
-            self.offset = (0.0, 0.0);
+            self.view.reset();
             self.panning = None;
             self.fetch(cx);
             cx.notify();
         }
     }
 
-    /// Keeps the picture from being dragged off the window: along an axis
-    /// where it is bigger than the window its edges stay at or past the
-    /// window's; where it is smaller it stays in the middle.
-    fn clamp_offset(&mut self) {
-        let max_x = ((self.fit.0 * self.zoom - self.viewport.0) / 2.0).max(0.0);
-        let max_y = ((self.fit.1 * self.zoom - self.viewport.1) / 2.0).max(0.0);
-        self.offset.0 = self.offset.0.clamp(-max_x, max_x);
-        self.offset.1 = self.offset.1.clamp(-max_y, max_y);
-    }
-
-    /// Zooms to `to` (1 to 8) keeping the point of the picture under `at`
-    /// (window coordinates) where it is.
     fn zoom_at(&mut self, to: f32, at: (f32, f32), cx: &mut Context<Self>) {
-        let to = to.clamp(1.0, MAX_ZOOM);
-        let to = if to < 1.001 { 1.0 } else { to };
-        let from = self.zoom;
-        let (mx, my) = (self.viewport.0 / 2.0, self.viewport.1 / 2.0);
-        let (rx, ry) = (at.0 - mx - self.offset.0, at.1 - my - self.offset.1);
-        self.offset = (at.0 - mx - rx * to / from, at.1 - my - ry * to / from);
-        self.zoom = to;
-        if to == 1.0 {
-            self.offset = (0.0, 0.0);
-        }
-        self.clamp_offset();
+        self.view.zoom_at(to, at, self.fit, self.viewport);
         cx.notify();
     }
 
@@ -148,15 +126,11 @@ impl Lightbox {
     }
 
     fn wheel(&mut self, event: &ScrollWheelEvent, cx: &mut Context<Self>) {
-        let amount = match event.delta {
-            ScrollDelta::Lines(lines) => lines.y * 0.15,
-            ScrollDelta::Pixels(pixels) => f32::from(pixels.y) * 0.002,
-        };
-        if amount == 0.0 {
+        let Some(factor) = ZoomPan::wheel_factor(event.delta) else {
             return;
-        }
+        };
         let at = (f32::from(event.position.x), f32::from(event.position.y));
-        self.zoom_at(self.zoom * amount.exp(), at, cx);
+        self.zoom_at(self.view.zoom * factor, at, cx);
         cx.stop_propagation();
     }
 
@@ -167,10 +141,10 @@ impl Lightbox {
         let at = (f32::from(event.position.x), f32::from(event.position.y));
         if event.click_count >= 2 {
             self.panning = None;
-            let to = if self.zoom > 1.001 { 1.0 } else { self.actual_zoom() };
+            let to = if self.view.zoomed() { 1.0 } else { self.actual_zoom() };
             self.zoom_at(to, at, cx);
-        } else if self.zoom > 1.001 {
-            self.panning = Some((at, self.offset));
+        } else if self.view.zoomed() {
+            self.panning = Some((at, self.view.offset));
             cx.notify();
         }
     }
@@ -184,11 +158,11 @@ impl Lightbox {
             cx.notify();
             return;
         }
-        self.offset = (
+        self.view.offset = (
             offset.0 + f32::from(event.position.x) - start.0,
             offset.1 + f32::from(event.position.y) - start.1,
         );
-        self.clamp_offset();
+        self.view.clamp(self.fit, self.viewport);
         cx.notify();
     }
 
@@ -275,9 +249,8 @@ impl Render for Lightbox {
         let (w, h) = (w * scale, h * scale);
         self.fit = (w, h);
         self.viewport = (f32::from(viewport.width), f32::from(viewport.height));
-        self.clamp_offset();
-        let zoom = self.zoom;
-        let offset = self.offset;
+        self.view.clamp(self.fit, self.viewport);
+        let ZoomPan { zoom, offset } = self.view;
         let panning = self.panning.is_some();
         let picture = match self.full.get(image.media.key()) {
             Some(full) => div()
@@ -383,9 +356,9 @@ impl Render for Lightbox {
                     .rounded_full()
                     .bg(rgba(0x000000a6))
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                    .child(self.zoom_button("zoom-out", "Zoom out", "−".to_owned(), cx, |this, cx| this.zoom_middle(this.zoom / STEP, cx)))
+                    .child(self.zoom_button("zoom-out", "Zoom out", "−".to_owned(), cx, |this, cx| this.zoom_middle(this.view.zoom / STEP, cx)))
                     .child(self.zoom_button("zoom-reset", "Fit to window", percent, cx, |this, cx| this.zoom_middle(1.0, cx)))
-                    .child(self.zoom_button("zoom-in", "Zoom in", "+".to_owned(), cx, |this, cx| this.zoom_middle(this.zoom * STEP, cx)))
+                    .child(self.zoom_button("zoom-in", "Zoom in", "+".to_owned(), cx, |this, cx| this.zoom_middle(this.view.zoom * STEP, cx)))
                     .e2e("div", "lightbox-zoombar"),
             );
         let layer = div()
@@ -396,8 +369,8 @@ impl Render for Lightbox {
                     "escape" => cx.emit(Closed),
                     "left" => this.go(-1, cx),
                     "right" => this.go(1, cx),
-                    "+" | "=" => this.zoom_middle(this.zoom * STEP, cx),
-                    "-" | "_" => this.zoom_middle(this.zoom / STEP, cx),
+                    "+" | "=" => this.zoom_middle(this.view.zoom * STEP, cx),
+                    "-" | "_" => this.zoom_middle(this.view.zoom / STEP, cx),
                     "0" => this.zoom_middle(1.0, cx),
                     _ => {}
                 }
