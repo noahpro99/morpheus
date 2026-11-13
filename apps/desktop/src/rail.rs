@@ -17,7 +17,7 @@ use crate::{
     e2e::E2eExt as _,
     icons::icon,
     media::avatar,
-    model::{Scope, layout, scope_has_unread, top_spaces},
+    model::{Scope, layout, scope_has_call, scope_has_unread, top_spaces},
     prefs::RailEntry,
     shell::Shell,
     theme,
@@ -31,6 +31,8 @@ struct Badge {
     size: f32,
     selected: bool,
     unread: bool,
+    /// Someone is in a call here: a green speaker badge at the top right.
+    call: bool,
     extra: Vec<(&'static str, String)>,
     /// A right click, where.
     context: Option<Rc<dyn Fn(Point<Pixels>, &mut gpui::Window, &mut gpui::App)>>,
@@ -77,6 +79,7 @@ impl Badge {
             size,
             selected,
             unread: unread && !selected,
+            call: false,
             extra: Vec::new(),
             context: None,
             drag: None,
@@ -188,6 +191,25 @@ impl Badge {
                     ),
             )
             .child(content);
+        if self.call {
+            button = button.child(
+                div()
+                    .absolute()
+                    .top(px(-5.0))
+                    .right(px(-5.0))
+                    .size(px(22.0))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded_full()
+                    .border_3()
+                    .border_color(rgb(theme::bg_rail()))
+                    .bg(rgb(theme::green()))
+                    .child(icon("volume-2", 10.0).text_color(rgb(0xffffff)))
+                    .e2e("span", "rail-call-badge")
+                    .attr("title", "In a call"),
+            );
+        }
         let mut tagged = button
             .e2e("button", &self.classes)
             .attr("title", &self.title);
@@ -233,7 +255,8 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         48.0,
         dms_selected,
         !dms_selected && (unread_dms > 0 || unread_in(&Scope::Dms)),
-    ).track(shell, cx);
+).track(shell, cx);
+    let dms = Badge { call: scope_has_call(rooms, &Scope::Dms), ..dms };
     let mut dms_content = div()
         .size_full()
         .flex()
@@ -367,6 +390,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                     contains_current && !open,
                     !contains_current && folder_unread,
                 ).track(shell, cx);
+                badge.call = members.iter().any(|s| scope_has_call(rooms, &Scope::Space(s.id.clone())));
                 badge.context = Some({
                     let (view, id) = (cx.entity(), id.clone());
                     Rc::new(move |at, _, cx| view.update(cx, |s, cx| s.open_folder_menu(&id, at, cx)))
@@ -539,7 +563,8 @@ fn space_badge(
         size,
         selected,
         unread,
-    ).track(shell, cx);
+).track(shell, cx);
+    badge.call = scope_has_call(&shell.rooms, &Scope::Space(space.id.clone()));
     badge.extra.push(("data-space", space.id.to_string()));
     if let Some(index) = index {
         badge.extra.push(("data-index", index.to_string()));

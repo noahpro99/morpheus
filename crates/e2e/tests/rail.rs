@@ -6,6 +6,8 @@
 
 use std::time::Duration;
 
+mod common;
+
 use morpheus_e2e::{App, DEFAULT_WAIT, api_as, new_account};
 
 fn homeserver() -> Option<String> {
@@ -583,4 +585,147 @@ async fn the_rail_pill_grows_on_hover_and_is_tall_when_selected() {
     assert!(height(pill_of(&mut app, read).await) >= 32.0, "the selected one is the server");
     let h = height(pill_of(&mut app, unread).await);
     assert!(h > 0.0 && h <= 10.0, "an unread server is a dot again (now {h})");
+}
+
+// ---- Calls on the rail (task 39) ------------------------------------------
+
+/// Bob joins `channel`'s call: through the switcher to its page, then Join.
+async fn bob_joins_voice(bob: &mut App, channel: &str) {
+    bob.key_combo("body", "k", true, false, false).await.expect("ctrl+k");
+    bob.wait_for(".switcher input", DEFAULT_WAIT).await.expect("switcher");
+    bob.type_into(".switcher input", channel).await.expect("filter");
+    bob.wait_for_text(".switcher-item.active", channel, DEFAULT_WAIT).await.expect("offered");
+    bob.press(".switcher input", "Enter").await.expect("pick");
+    bob.wait_for(".voice-page-join .join-voice", DEFAULT_WAIT).await.expect("join page");
+    bob.click(".voice-page-join .join-voice").await.expect("join");
+    bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT).await.expect("connected");
+}
+
+/// A badge with a green circle and a speaker at the icon's top right, ringed
+/// in the rail's colour; a pixel check where the session can be captured.
+async fn check_call_badge(app: &mut App, icon: &str) {
+    let sel = format!("{icon} .rail-call-badge");
+    app.wait_for(&sel, DEFAULT_WAIT).await.unwrap_or_else(|e| panic!("no call badge on {icon}: {e}"));
+    let badge = app.bounds(&sel).await.expect("b").expect("the call badge");
+    let owner = app.bounds(icon).await.expect("b").expect("the icon");
+    assert!((16.0..=24.0).contains(&badge.w) && (badge.w - badge.h).abs() < 0.5, "a small circle: {badge:?}");
+    assert!(
+        badge.centre_x() > owner.x + owner.w * 0.6 && badge.y + badge.h / 2.0 < owner.y + owner.h * 0.4,
+        "at the icon's top right: {badge:?} on {owner:?}"
+    );
+    assert_eq!(app.count(&format!("{sel} svg")).await.expect("count"), 1, "a speaker icon in it");
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    let Some(shot) = capture_of(app) else { return };
+    let cx = badge.centre_x();
+    let green = pixel(&shot, cx, badge.y + 5.0);
+    assert!(
+        green.1 > green.0 + 50 && green.1 > green.2 + 20,
+        "the circle is not green at its top: {green:?}"
+    );
+    let ring = pixel(&shot, cx, badge.y + 1.0);
+    let rail = app.bounds(".rail").await.expect("b").expect("rail");
+    let behind = pixel(&shot, rail.x + 8.0, badge.y + badge.h + 3.0);
+    assert!(
+        (i32::from(ring.0) - i32::from(behind.0)).abs() + (i32::from(ring.1) - i32::from(behind.1)).abs()
+            + (i32::from(ring.2) - i32::from(behind.2)).abs() < 16,
+        "the ring is not the rail's colour: ring {ring:?}, rail {behind:?}"
+    );
+}
+
+fn capture_of(app: &App) -> Option<(Vec<u8>, usize, usize)> {
+    common::capture(app)
+}
+
+fn pixel(shot: &(Vec<u8>, usize, usize), x: f64, y: f64) -> (u8, u8, u8) {
+    common::pixel_at(shot, x, y)
+}
+
+/// A server (or a folder holding it) with someone in a voice channel's call
+/// shows a green speaker badge at its icon's top right; it goes when the call
+/// ends.
+#[tokio::test]
+async fn a_server_with_a_call_going_shows_a_green_speaker_badge() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let ann = new_account(&hs, "railcall").expect("account");
+    let pid = std::process::id();
+    let (a, b, channel) = (format!("rc a {pid}"), format!("rc b {pid}"), format!("rc voice {pid}"));
+    let space = |name: &str| {
+        api_as(&hs, &ann, "POST", "createRoom", Some(serde_json::json!({
+            "name": name, "preset": "public_chat", "creation_content": { "type": "m.space" },
+        })))
+        .expect("a space")["room_id"].as_str().expect("id").to_owned()
+    };
+    let (sa, _sb) = (space(&a), space(&b));
+    let voice = api_as(&hs, &ann, "POST", "createRoom", Some(serde_json::json!({
+        "name": channel, "preset": "public_chat",
+        "creation_content": { "type": "org.matrix.msc3417.call" },
+        "power_level_content_override": { "events": { "org.matrix.msc3401.call.member": 0 } },
+        "initial_state": [{ "type": "m.space.parent", "state_key": sa, "content": { "via": ["localhost"], "canonical": true } }],
+        "invite": ["@bob:localhost"],
+    })))
+    .expect("a voice channel")["room_id"].as_str().expect("id").to_owned();
+    let enc = |id: &str| id.replace('!', "%21").replace(':', "%3A");
+    api_as(&hs, &ann, "PUT", &format!("rooms/{}/state/m.space.child/{}", enc(&sa), enc(&voice)),
+        Some(serde_json::json!({ "via": ["localhost"] }))).expect("a child");
+    api_as(&hs, "bob", "POST", &format!("rooms/{}/join", enc(&voice)), Some(serde_json::json!({}))).expect("bob joins");
+
+    // Bob first: the later window is on top, and the pixel check sees ann's.
+    let mut bob = App::launch_desktop(&hs).await.expect("launch bob");
+    let mut app = App::launch(&hs).await.expect("launch ann");
+    if !app.is_gpui() {
+        return;
+    }
+    login(&mut app, &ann).await;
+    let (badge_a, badge_b) = (format!(".rail-item[title=\"{a}\"]"), format!(".rail-item[title=\"{b}\"]"));
+    app.wait_for(&badge_a, DEFAULT_WAIT).await.expect("server a");
+    app.wait_for(&badge_b, DEFAULT_WAIT).await.expect("server b");
+    assert_eq!(app.count(".rail-call-badge").await.expect("count"), 0, "a badge with no call");
+
+    // Bob starts a call in the channel: the badge is on its server only.
+    login(&mut bob, "bob").await;
+    bob_joins_voice(&mut bob, &channel).await;
+    check_call_badge(&mut app, &badge_a).await;
+    assert_eq!(app.count(&format!("{badge_b} .rail-call-badge")).await.expect("count"), 0, "the other server has one");
+    assert_eq!(app.count(".rail-call-badge").await.expect("count"), 1, "one badge");
+    // Hung up: gone.
+    bob.click(".voice-panel .hang-up").await.expect("hang up");
+    app.wait_for_count(".rail-call-badge", 0, DEFAULT_WAIT).await.expect("the badge goes with the call");
+
+    // The two servers in a folder: the folder carries it.
+    drag(&mut app, &badge_b, &badge_a).await;
+    wait_top_level(&mut app, "a folder of the two", |t| !t.contains(&a) && !t.contains(&b)).await;
+    app.wait_for(".rail-folder", DEFAULT_WAIT).await.expect("folder");
+    bob.click(".voice-page-join .join-voice").await.expect("join again");
+    bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT).await.expect("connected");
+    check_call_badge(&mut app, ".rail-folder .folder-badge").await;
+    bob.click(".voice-panel .hang-up").await.expect("hang up");
+    app.wait_for_count(".rail-call-badge", 0, DEFAULT_WAIT).await.expect("gone from the folder too");
+}
+
+/// A call in a direct message marks the DMs button.
+#[tokio::test]
+async fn a_dm_call_marks_the_dms_button() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut bob = App::launch_desktop(&hs).await.expect("launch bob");
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    if !alice.is_gpui() {
+        return;
+    }
+    login(&mut alice, "alice").await;
+    login(&mut bob, "bob").await;
+    bob.click(".rail-item[title=\"Direct messages\"]").await.expect("dms");
+    bob.open_room("alice").await.expect("the dm");
+    assert_eq!(alice.count(".rail-dms .rail-call-badge").await.expect("count"), 0, "no call yet");
+    bob.wait_for(".chat-header .call-button", DEFAULT_WAIT).await.expect("call button");
+    bob.click(".chat-header .call-button").await.expect("call");
+    bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT).await.expect("connected");
+    check_call_badge(&mut alice, ".rail-dms").await;
+    bob.click(".voice-panel .hang-up").await.expect("hang up");
+    alice.wait_for_count(".rail-call-badge", 0, DEFAULT_WAIT).await.expect("gone");
 }
