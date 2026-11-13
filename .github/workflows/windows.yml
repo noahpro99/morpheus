@@ -1,0 +1,69 @@
+# The desktop app for Windows (x86-64), built natively here so a release does
+# not depend on one person's machine (scripts/release-windows.sh cross-builds
+# the same zip on Linux): morpheus-<version>-windows-x86_64.zip, one folder
+# holding Morpheus.exe. The update is tried on the built zip
+# (scripts/update-self-test.sh). On a release tag it is attached to that
+# release; run by hand, to the release named in `tag` (if any).
+name: Windows
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release to attach the build to (e.g. v0.2.0); empty to only keep it as a run artifact
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    env:
+      # LiveKit's WebRTC is built with the static C runtime; so is the rest
+      # (and then the app needs no Visual C++ redistributable).
+      RUSTFLAGS: -C target-feature=+crt-static
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Rust
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          rustup target add x86_64-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: windows-x86_64
+
+      # GPUI compiles its shaders with fxc.exe from the Windows SDK, which
+      # the runner has; the build script finds it through where.exe or its
+      # default path.
+      - name: Build
+        run: cargo build --release -p morpheus-desktop --locked --target x86_64-pc-windows-msvc
+
+      - name: Package
+        run: echo "ZIP=$(scripts/package-windows.sh)" >> "$GITHUB_ENV"
+
+      # Update on this platform: the installed zip finds a newer release on a
+      # local feed and swaps its running Morpheus.exe for it (Windows lets a
+      # running program be renamed, not deleted), and the new one starts.
+      - name: Update works
+        run: scripts/update-self-test.sh "$ZIP"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x86_64
+          path: ${{ env.ZIP }}
+
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/') || inputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: gh release upload "$TAG" "$ZIP" --clobber

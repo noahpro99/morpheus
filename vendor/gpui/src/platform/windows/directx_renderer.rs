@@ -1391,7 +1391,7 @@ const BUFFER_COUNT: usize = 3;
 pub(crate) mod shader_resources {
     use anyhow::Result;
 
-    #[cfg(debug_assertions)]
+    #[cfg(all(debug_assertions, not(gpui_runtime_shaders)))]
     use windows::{
         Win32::Graphics::Direct3D::{
             Fxc::{D3DCOMPILE_DEBUG, D3DCOMPILE_SKIP_OPTIMIZATION, D3DCompileFromFile},
@@ -1421,17 +1421,17 @@ pub(crate) mod shader_resources {
     pub(crate) struct RawShaderBytes<'t> {
         inner: &'t [u8],
 
-        #[cfg(debug_assertions)]
-        _blob: ID3DBlob,
+        #[cfg(any(debug_assertions, gpui_runtime_shaders))]
+        _blob: windows::Win32::Graphics::Direct3D::ID3DBlob,
     }
 
     impl<'t> RawShaderBytes<'t> {
         pub(crate) fn new(module: ShaderModule, target: ShaderTarget) -> Result<Self> {
-            #[cfg(not(debug_assertions))]
+            #[cfg(not(any(debug_assertions, gpui_runtime_shaders)))]
             {
                 Ok(Self::from_bytes(module, target))
             }
-            #[cfg(debug_assertions)]
+            #[cfg(any(debug_assertions, gpui_runtime_shaders))]
             {
                 let blob = build_shader_blob(module, target)?;
                 let inner = unsafe {
@@ -1448,7 +1448,7 @@ pub(crate) mod shader_resources {
             self.inner
         }
 
-        #[cfg(not(debug_assertions))]
+        #[cfg(not(any(debug_assertions, gpui_runtime_shaders)))]
         fn from_bytes(module: ShaderModule, target: ShaderTarget) -> Self {
             let bytes = match module {
                 ShaderModule::Quad => match target {
@@ -1488,7 +1488,77 @@ pub(crate) mod shader_resources {
         }
     }
 
-    #[cfg(debug_assertions)]
+    /// Compiled when the app starts, from the sources inside the program: a
+    /// build that cannot run fxc.exe (cross-compiled from Linux, where build.rs
+    /// sets `gpui_runtime_shaders`) has no precompiled shaders. d3dcompiler_47.dll
+    /// comes with Windows.
+    #[cfg(gpui_runtime_shaders)]
+    pub(super) fn build_shader_blob(
+        entry: ShaderModule,
+        target: ShaderTarget,
+    ) -> Result<windows::Win32::Graphics::Direct3D::ID3DBlob> {
+        use windows::{
+            Win32::Graphics::Direct3D::{Fxc::D3DCompile, ID3DBlob, ID3DInclude},
+            core::PCSTR,
+        };
+        // D3DCOMPILE_OPTIMIZATION_LEVEL3
+        const OPTIMIZE: u32 = 1 << 15;
+
+        let (source, name) = if matches!(entry, ShaderModule::EmojiRasterization) {
+            (include_str!("color_text_raster.hlsl"), "color_text_raster.hlsl\0")
+        } else {
+            (include_str!("shaders.hlsl"), "shaders.hlsl\0")
+        };
+        // Both files start with this include; there is no file to find it in.
+        let source = source.replace(
+            "#include \"alpha_correction.hlsl\"",
+            include_str!("alpha_correction.hlsl"),
+        );
+        let entry = format!(
+            "{}_{}\0",
+            entry.as_str(),
+            match target {
+                ShaderTarget::Vertex => "vertex",
+                ShaderTarget::Fragment => "fragment",
+            }
+        );
+        let target = match target {
+            ShaderTarget::Vertex => "vs_4_1\0",
+            ShaderTarget::Fragment => "ps_4_1\0",
+        };
+        let mut compile_blob: Option<ID3DBlob> = None;
+        let mut error_blob: Option<ID3DBlob> = None;
+        let ret = unsafe {
+            D3DCompile(
+                source.as_ptr() as *const _,
+                source.len(),
+                PCSTR::from_raw(name.as_ptr()),
+                None,
+                None::<&ID3DInclude>,
+                PCSTR::from_raw(entry.as_ptr()),
+                PCSTR::from_raw(target.as_ptr()),
+                OPTIMIZE,
+                0,
+                &mut compile_blob,
+                Some(&mut error_blob),
+            )
+        };
+        if let Err(err) = ret {
+            let Some(error_blob) = error_blob else {
+                return Err(anyhow::anyhow!("{err:?}"));
+            };
+            let error_string = unsafe {
+                std::ffi::CStr::from_ptr(error_blob.GetBufferPointer() as *const i8)
+                    .to_string_lossy()
+                    .into_owned()
+            };
+            log::error!("Shader compile error: {}", error_string);
+            return Err(anyhow::anyhow!("Compile error: {}", error_string));
+        }
+        compile_blob.ok_or_else(|| anyhow::anyhow!("the shader compiler gave nothing"))
+    }
+
+    #[cfg(all(debug_assertions, not(gpui_runtime_shaders)))]
     pub(super) fn build_shader_blob(entry: ShaderModule, target: ShaderTarget) -> Result<ID3DBlob> {
         unsafe {
             use windows::Win32::Graphics::{
@@ -1554,10 +1624,10 @@ pub(crate) mod shader_resources {
         }
     }
 
-    #[cfg(not(debug_assertions))]
+    #[cfg(not(any(debug_assertions, gpui_runtime_shaders)))]
     include!(concat!(env!("OUT_DIR"), "/shaders_bytes.rs"));
 
-    #[cfg(debug_assertions)]
+    #[cfg(any(debug_assertions, gpui_runtime_shaders))]
     impl ShaderModule {
         pub fn as_str(&self) -> &str {
             match self {
