@@ -171,7 +171,35 @@ pub fn room_call(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -> 
             for mark in mark_elements(flags, true, 14.0) {
                 row = row.child(mark);
             }
-            row.e2e("div", &classes).attr("data-user", user.to_string())
+            // Beside the row: the card opens to the right of the sidebar.
+            let beside = |at: gpui::Point<gpui::Pixels>| {
+                gpui::point(px(theme::RAIL_W + theme::SIDEBAR_W - 8.0), at.y)
+            };
+            let (opened, menu_user, menu_room) = (user.clone(), user.clone(), room.id.clone());
+            let (seen_name, menu_name) = (name.clone(), name.clone());
+            row.id(gpui::SharedString::from(format!("call-participant-{}-{user}", room.id)))
+                .cursor_pointer()
+                .hover(|s| s.bg(rgba(theme::bg_hover())))
+                .on_click(cx.listener(move |this, event: &gpui::ClickEvent, _, cx| {
+                    cx.stop_propagation();
+                    let seen = Some((seen_name.clone(), None));
+                    this.open_profile(opened.clone(), Some(beside(event.position())), seen, cx)
+                }))
+                .on_mouse_down(
+                    MouseButton::Right,
+                    cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+                        cx.stop_propagation();
+                        this.open_user_menu(
+                            menu_room.clone(),
+                            menu_user.clone(),
+                            menu_name.clone(),
+                            beside(event.position),
+                            cx,
+                        )
+                    }),
+                )
+                .e2e("div", &classes)
+                .attr("data-user", user.to_string())
         })
         .collect::<Vec<_>>();
     let join = cx.listener(move |this, _, _, cx| this.join_call(id.clone(), name.clone(), cx));

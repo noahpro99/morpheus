@@ -53,6 +53,18 @@ impl Shell {
         let Some(room) = self.selected.clone() else {
             return;
         };
+        self.open_member_menu_in(room, member, permissions, at, cx)
+    }
+
+    /// The same, for a member of any room.
+    pub fn open_member_menu_in(
+        &mut self,
+        room: morpheus_core::OwnedRoomId,
+        member: &Member,
+        permissions: MemberPermissions,
+        at: Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
         let own = self
             .session
             .as_ref()
@@ -74,12 +86,27 @@ impl Shell {
     /// powers are looked up first, so the menu opens where the pointer was
     /// once they arrive.
     pub fn open_sender_menu(&mut self, message: &Message, at: Point<Pixels>, cx: &mut Context<Self>) {
-        let (Some(session), Some(room)) = (self.session.clone(), self.selected.clone()) else {
+        let Some(room) = self.selected.clone() else {
             return;
         };
         let (user, name) = (message.sender.clone(), message.sender_name.clone());
+        self.open_user_menu(room, user, name, at, cx)
+    }
+
+    /// The member menu for a user of `room` (a call's, under its channel).
+    pub fn open_user_menu(
+        &mut self,
+        room: morpheus_core::OwnedRoomId,
+        user: morpheus_core::OwnedUserId,
+        name: String,
+        at: Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(session) = self.session.clone() else {
+            return;
+        };
         let members = session.members(room.clone());
-        let permissions = session.my_permissions(room);
+        let permissions = session.my_permissions(room.clone());
         cx.spawn(async move |this, cx| {
             let members = members.await.unwrap_or_default();
             let permissions = permissions.await.unwrap_or_default();
@@ -95,7 +122,7 @@ impl Shell {
                     power_level: 0,
                     is_ignored: false,
                 });
-            this.update(cx, |this, cx| this.open_member_menu(&member, permissions, at, cx))
+            this.update(cx, |this, cx| this.open_member_menu_in(room, &member, permissions, at, cx))
                 .ok();
         })
         .detach();

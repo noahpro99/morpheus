@@ -4083,3 +4083,38 @@ async fn camera_and_screen_share_play_sounds() {
     assert_eq!(count_sound(&mut bob, "camera-on").await, 0);
     assert_eq!(count_sound(&mut bob, "screen-off").await, 0);
 }
+
+/// Clicking someone under a voice channel in the sidebar opens their profile
+/// beside that row, as clicking a member does (a click in the call grid
+/// still focuses a card).
+#[tokio::test]
+async fn a_person_under_a_voice_channel_opens_their_profile_beside_the_row() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let (mut alice, _bob) = two_in_a_call(&hs, &[]).await;
+    if !alice.is_gpui() {
+        eprintln!("GPUI only");
+        return;
+    }
+    let row = ".room-call .call-participant[data-user=\"@bob:localhost\"]";
+    alice.wait_for(row, DEFAULT_WAIT).await.expect("bob listed");
+    alice.click(row).await.expect("click bob's row");
+    alice
+        .wait_for_text(".profile-card .profile-id", "@bob:localhost", DEFAULT_WAIT)
+        .await
+        .expect("bob's profile opens");
+    let card = alice.bounds(".profile-card").await.expect("bounds").expect("card");
+    let row_box = alice.bounds(row).await.expect("bounds").expect("row");
+    assert!(
+        card.x >= row_box.x + row_box.w - 1.0,
+        "the card is beside the row: card {card:?}, row {row_box:?}"
+    );
+    assert!(
+        card.y <= row_box.y + row_box.h && card.y + card.h >= row_box.y,
+        "the card is level with the row: card {card:?}, row {row_box:?}"
+    );
+    // Still in the call: the click did not leave or re-join anything.
+    assert_eq!(alice.count(".call-stage").await.expect("count"), 1);
+}
