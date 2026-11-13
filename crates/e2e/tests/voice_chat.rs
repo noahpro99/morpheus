@@ -452,3 +452,40 @@ async fn turning_the_camera_on_opens_the_call() {
     assert_eq!(alice.count(".call-stage.voice-page").await.expect("count"), 0, "turning it off moved the view");
     alice.click(".voice-panel .hang-up").await.expect("leave");
 }
+
+/// Sharing the screen while looking at another room brings you to the call's
+/// view (the channel's page), as the camera does; stopping does not move you.
+#[tokio::test]
+async fn sharing_the_screen_opens_the_call() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    if !alice.is_gpui() {
+        return;
+    }
+    login(&mut alice, "alice").await;
+    let channel = fresh_voice_channel(&hs);
+    alice.wait_for_text(".room .room-name", &channel, DEFAULT_WAIT).await.expect("listed");
+    alice.open_room("general").await.expect("general");
+    alice.click_text(".room.voice", &channel).await.expect("join in place");
+    alice.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT).await.expect("joined");
+    alice.wait_for_text(".chat-header h2", "general", DEFAULT_WAIT).await.expect("still in general");
+    assert_eq!(alice.count(".call-stage.voice-page").await.expect("count"), 0, "no call view yet");
+    alice.click(".voice-panel .screen-button").await.expect("share");
+    alice.wait_for(".screen-quality .screen-go", DEFAULT_WAIT).await.expect("the quality popover");
+    alice.click(".screen-quality .screen-go").await.expect("go live");
+    alice
+        .wait_for(".call-stage.voice-page", DEFAULT_WAIT)
+        .await
+        .expect("sharing brought the call's view up");
+    alice.wait_for(".voice-chat-toggle", DEFAULT_WAIT).await.expect("the channel's page");
+    // Stopping from another room does not move you.
+    alice.open_room("general").await.expect("general");
+    alice.wait_for(".voice-panel .screen-button.active", DEFAULT_WAIT).await.expect("sharing");
+    alice.click(".voice-panel .screen-button").await.expect("stop");
+    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+    assert_eq!(alice.count(".call-stage.voice-page").await.expect("count"), 0, "stopping moved the view");
+    alice.click(".voice-panel .hang-up").await.expect("leave");
+}
