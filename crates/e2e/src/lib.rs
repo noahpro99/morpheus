@@ -1,7 +1,8 @@
 //! Drive the real Morpheus desktop binary the way Playwright drives a browser.
 //!
 //! The app is built with the `e2e` feature (`just e2e-build`), which opens a
-//! loopback control socket that evaluates JavaScript inside the webview.
+//! loopback control socket (selector requests for the GPUI desktop app, JavaScript
+//! inside the page for the phone and web apps).
 //! [`App`] launches the binary with its own data directory, talks to that
 //! socket, and offers selector-based helpers. Tests live in `tests/`.
 
@@ -1894,10 +1895,15 @@ impl Drop for App {
     }
 }
 
-/// Whether the app under test is the GPUI one (`MORPHEUS_E2E_UI=gpui`): its
-/// bridge takes structured requests, not JavaScript.
-fn gpui() -> bool {
-    std::env::var("MORPHEUS_E2E_UI").as_deref() == Ok("gpui")
+/// Whether the app under test is the desktop (GPUI) app, whose bridge takes
+/// structured requests, not JavaScript. It is, unless the run is against the
+/// web app or a phone (`MORPHEUS_E2E_WEB`, `MORPHEUS_E2E_ANDROID`: Dioxus,
+/// driven by JavaScript); `MORPHEUS_E2E_UI=gpui` forces it.
+pub fn gpui() -> bool {
+    match std::env::var("MORPHEUS_E2E_UI").as_deref() {
+        Ok("gpui") => true,
+        _ => !web::enabled() && std::env::var_os("MORPHEUS_E2E_ANDROID").is_none(),
+    }
 }
 
 const NEEDS_PORTING: &str =
@@ -1935,8 +1941,7 @@ fn workspace_root() -> Result<PathBuf> {
         .canonicalize()?)
 }
 
-/// `MORPHEUS_E2E_BIN`, or the output of `dx build --package morpheus-desktop --features e2e`.
-/// The app the tests run (`just e2e-build`'s).
+/// The app the tests run: `MORPHEUS_E2E_BIN`, else `just e2e-build`'s copy.
 pub fn app_binary() -> Result<PathBuf> {
     binary_path()
 }
@@ -1945,7 +1950,7 @@ fn binary_path() -> Result<PathBuf> {
     if let Some(bin) = std::env::var_os("MORPHEUS_E2E_BIN") {
         return Ok(PathBuf::from(bin));
     }
-    let bin = workspace_root()?.join("target/dx/morpheus-desktop/debug/linux/app/morpheus-desktop");
+    let bin = workspace_root()?.join("target/debug/morpheus-desktop-e2e");
     if !bin.exists() {
         bail!(
             "app binary not found at {}; run `just e2e-build` first",
@@ -2017,7 +2022,7 @@ fn keep_test_windows_unfocused() {
         let _ = std::process::Command::new("hyprctl")
             .args([
                 "eval",
-                "hl.window_rule({ name = \"morpheus-test-gpui\", match = { class = \"^morpheus-gpui$\", title = \"^(Morpheus \\\\(test\\\\))$\" }, float = true })",
+                "hl.window_rule({ name = \"morpheus-test-gpui\", match = { class = \"^morpheus-desktop$\", title = \"^(Morpheus \\\\(test\\\\))$\" }, float = true })",
             ])
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
@@ -2041,7 +2046,7 @@ fn test_windows_placed() -> Result<()> {
 }
 
 /// Refuse a binary that is not a test build. A plain build of the GPUI app
-/// writes the same `target/debug/morpheus-gpui`; it has no e2e bridge and is
+/// writes the same `target/debug/morpheus-desktop`; it has no e2e bridge and is
 /// titled "Morpheus", so the window rule misses it and it opens on the
 /// developer's focused monitor. Test builds carry the "Morpheus (test)"
 /// title. Checked once per binary and modification time.
@@ -2060,8 +2065,7 @@ fn ensure_test_build(bin: &Path) -> Result<()> {
     if !bytes.windows(needle.len()).any(|w| w == needle) {
         bail!(
             "{} is not a test build (no \"Morpheus (test)\" title), so its window would open on \
-             your screen; build it with the e2e feature (`cargo build -p morpheus-desktop-gpui \
-             --features e2e`, or `just e2e-build` for Dioxus)",
+             your screen; build it with `just e2e-build`",
             bin.display()
         );
     }

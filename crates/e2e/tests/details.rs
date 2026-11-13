@@ -333,7 +333,7 @@ async fn submenus_stay_open_while_the_mouse_heads_for_them() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
-    if std::env::var("MORPHEUS_E2E_UI").as_deref() == Ok("gpui") {
+    if morpheus_e2e::gpui() {
         // Needs pointer moves over chosen points and a safe triangle toward
         // the flyout: neither is built in the GPUI app yet.
         eprintln!("skipped on GPUI: no safe triangle toward a submenu yet");
@@ -408,7 +408,7 @@ async fn phone_tap_targets_are_at_least_44_points() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
-    if std::env::var("MORPHEUS_E2E_UI").as_deref() == Ok("gpui") {
+    if morpheus_e2e::gpui() {
         eprintln!("skipped: the GPUI app is desktop only (no phone layout)");
         return;
     }

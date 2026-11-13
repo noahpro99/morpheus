@@ -1,7 +1,6 @@
 //! The GPUI app's bridge answers selector requests: the sign-in heading
 //! is found, and its text and count come back. Runs only with
-//! `MORPHEUS_E2E_UI=gpui` and `MORPHEUS_E2E_BIN` set to a `morpheus-gpui`
-//! built with `--features e2e`; needs no homeserver.
+//! `just e2e` (the desktop app built with the e2e feature); needs no homeserver.
 
 #![allow(clippy::expect_used)]
 
@@ -9,8 +8,8 @@ use morpheus_e2e::{App, DEFAULT_WAIT};
 
 #[tokio::test]
 async fn the_gpui_app_serves_tagged_elements() {
-    if std::env::var("MORPHEUS_E2E_UI").as_deref() != Ok("gpui") {
-        eprintln!("MORPHEUS_E2E_UI is not gpui; skipping");
+    if !morpheus_e2e::gpui() {
+        eprintln!("run against the web or a phone; skipping");
         return;
     }
     // No homeserver: the app does not talk to one yet.

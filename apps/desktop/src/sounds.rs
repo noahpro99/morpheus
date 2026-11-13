@@ -30,7 +30,7 @@ fn player() -> Option<&'static mpsc::Sender<Vec<f32>>> {
                             match rodio::DeviceSinkBuilder::open_default_sink() {
                                 Ok(opened) => sink = Some(opened),
                                 Err(err) => {
-                                    eprintln!("morpheus-gpui: no sound output: {err}");
+                                    eprintln!("morpheus-desktop: no sound output: {err}");
                                     continue;
                                 }
                             }
@@ -62,7 +62,7 @@ pub fn play(sound: Sound, log: Option<&PathBuf>) {
                 std::io::Write::write_all(&mut file, format!("{}\n", sound.key()).as_bytes())
             });
         if let Err(err) = written {
-            eprintln!("morpheus-gpui: test sound log not written: {err}");
+            eprintln!("morpheus-desktop: test sound log not written: {err}");
         }
     }
     if !audible() {

@@ -475,7 +475,7 @@ impl SettingsView {
         };
         cx.spawn(async move |_, _| {
             if let Err(err) = running.await {
-                eprintln!("morpheus-gpui: verification action: {err}");
+                eprintln!("morpheus-desktop: verification action: {err}");
             }
         })
         .detach();

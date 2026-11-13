@@ -244,7 +244,7 @@ async fn videos_play_inline() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
-    if std::env::var("MORPHEUS_E2E_UI").as_deref() == Ok("gpui") {
+    if morpheus_e2e::gpui() {
         // Playing an mp4 in a message needs a video decoder in the GPUI app
         // (the Dioxus page has the webview's `<video>`): not built.
         eprintln!("skipped on GPUI: no inline video playback");

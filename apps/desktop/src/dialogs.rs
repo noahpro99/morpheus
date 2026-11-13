@@ -90,7 +90,7 @@ impl Shell {
 
     /// A failed action: a note in the log and a toast.
     pub fn fail(&mut self, what: &str, err: &str, cx: &mut Context<Self>) {
-        eprintln!("morpheus-gpui: {what}: {err}");
+        eprintln!("morpheus-desktop: {what}: {err}");
         self.toast(failure_text(what, err), cx);
     }
 
@@ -987,7 +987,7 @@ impl PinnedDialog {
         let unpinning = self.session.pin(self.room.clone(), event_id, false);
         cx.spawn(async move |this, cx| {
             if let Err(err) = unpinning.await {
-                eprintln!("morpheus-gpui: unpin: {err}");
+                eprintln!("morpheus-desktop: unpin: {err}");
             }
             this.update(cx, |this, cx| {
                 this.load(cx);

@@ -710,7 +710,7 @@ async fn nothing_animates_forever_once_loaded() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
-    if std::env::var("MORPHEUS_E2E_UI").as_deref() == Ok("gpui") {
+    if morpheus_e2e::gpui() {
         eprintln!("skipped on GPUI: CSS animations (a page-only concept; the GPUI app draws only when something changes)");
         return;
     }
@@ -840,7 +840,7 @@ async fn overlays_scroll_on_their_own_layer() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
-    if std::env::var("MORPHEUS_E2E_UI").as_deref() == Ok("gpui") {
+    if morpheus_e2e::gpui() {
         eprintln!("skipped on GPUI: CSS will-change layers (a page-only concept)");
         return;
     }

@@ -242,7 +242,7 @@ impl SettingsView {
                     let want = !this.on_here;
                     match vm::set_notifications_enabled(&this.data_dir, want) {
                         Ok(()) => this.on_here = want,
-                        Err(err) => eprintln!("morpheus-gpui: saving the notification setting: {err}"),
+                        Err(err) => eprintln!("morpheus-desktop: saving the notification setting: {err}"),
                     }
                     cx.notify();
                 }),
@@ -263,7 +263,7 @@ impl SettingsView {
                     cx.listener(move |this, _, _, cx| {
                         match vm::set_notification_content(&this.data_dir, content) {
                             Ok(()) => this.content = content,
-                            Err(err) => eprintln!("morpheus-gpui: saving what notifications show: {err}"),
+                            Err(err) => eprintln!("morpheus-desktop: saving what notifications show: {err}"),
                         }
                         cx.notify();
                     }),
@@ -500,7 +500,7 @@ impl SettingsView {
             }
         }
         if let Err(err) = crate::view_model::calls::write_device_prefs(&self.data_dir, &self.voice_prefs) {
-            eprintln!("morpheus-gpui: saving the audio devices: {err}");
+            eprintln!("morpheus-desktop: saving the audio devices: {err}");
         }
         cx.emit(super::DevicesChosen(kind));
         cx.notify();

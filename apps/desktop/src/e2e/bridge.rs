@@ -123,7 +123,7 @@ pub fn start(cx: &mut App) {
         let listener = match TcpListener::bind(("127.0.0.1", port)) {
             Ok(listener) => listener,
             Err(err) => {
-                eprintln!("morpheus-gpui: e2e bridge could not bind {port}: {err}");
+                eprintln!("morpheus-desktop: e2e bridge could not bind {port}: {err}");
                 return;
             }
         };

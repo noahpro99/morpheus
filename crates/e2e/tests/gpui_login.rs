@@ -8,8 +8,8 @@ mod common;
 use morpheus_e2e::{App, DEFAULT_WAIT};
 
 fn gpui_homeserver() -> Option<String> {
-    if std::env::var("MORPHEUS_E2E_UI").as_deref() != Ok("gpui") {
-        eprintln!("MORPHEUS_E2E_UI is not gpui; skipping");
+    if !morpheus_e2e::gpui() {
+        eprintln!("run against the web or a phone; skipping");
         return None;
     }
     let hs = std::env::var("MORPHEUS_TEST_HOMESERVER").ok();

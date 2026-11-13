@@ -1586,7 +1586,7 @@ async fn a_ring_is_heard_on_the_desktop() {
         // the program but records no process (bob is the one with sound on).
         streams = playing_streams(pid);
         streams.extend(alsa_streams_of(if bob.is_gpui() {
-            "morpheus-gpui-e2e"
+            "morpheus-desktop-e2e"
         } else {
             "morpheus-desktop"
         }));
@@ -1681,7 +1681,7 @@ async fn a_chime_comes_out_of_the_speakers() {
         // The GPUI app plays through PipeWire's ALSA layer (named after the
         // program, no process recorded), as the ringtone does.
         if app.is_gpui() {
-            streams.extend(alsa_streams_of("morpheus-gpui-e2e"));
+            streams.extend(alsa_streams_of("morpheus-desktop-e2e"));
         }
         seen = streams
             .into_iter()

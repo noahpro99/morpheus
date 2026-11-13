@@ -77,7 +77,7 @@ impl EmojiPicker {
     fn pick(&mut self, emoji: String, cx: &mut Context<Self>) {
         self.remembered.note_used(&emoji);
         if let Err(err) = self.remembered.save(&crate::data_dir()) {
-            eprintln!("morpheus-gpui: could not save the recent emoji: {err}");
+            eprintln!("morpheus-desktop: could not save the recent emoji: {err}");
         }
         cx.emit(PickerEvent::Picked(emoji));
     }
@@ -146,7 +146,7 @@ impl Render for EmojiPicker {
                                 this.remembered.set_tone(stored);
                                 this.tones_open = false;
                                 if let Err(err) = this.remembered.save(&crate::data_dir()) {
-                                    eprintln!("morpheus-gpui: could not save the skin tone: {err}");
+                                    eprintln!("morpheus-desktop: could not save the skin tone: {err}");
                                 }
                                 cx.notify();
                             }))

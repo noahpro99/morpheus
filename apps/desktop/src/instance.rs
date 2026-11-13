@@ -47,7 +47,7 @@ mod imp {
             Ok(listener) => {
                 let _ = LISTENER.set(listener);
             }
-            Err(err) => eprintln!("morpheus-gpui: single-instance socket not bound: {err}"),
+            Err(err) => eprintln!("morpheus-desktop: single-instance socket not bound: {err}"),
         }
         true
     }

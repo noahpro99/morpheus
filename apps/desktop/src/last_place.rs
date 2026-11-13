@@ -54,7 +54,7 @@ impl Shell {
         if self.selected.is_some() {
             return;
         }
-        eprintln!("morpheus-gpui: reopening the last room {}", room.id);
+        eprintln!("morpheus-desktop: reopening the last room {}", room.id);
         let scope = scope_for(&self.rooms, &room);
         if scope != self.scope {
             self.set_scope(scope, cx);
@@ -73,7 +73,7 @@ impl Shell {
             .map(|(scope, room)| (scope.key(), room.to_string()))
             .collect();
         if let Err(err) = last_place::write_rooms(&crate::data_dir(), &self.place_user, &rooms) {
-            eprintln!("morpheus-gpui: last rooms not kept: {err}");
+            eprintln!("morpheus-desktop: last rooms not kept: {err}");
         }
     }
 
@@ -92,7 +92,7 @@ impl Shell {
             chat: false,
         };
         if let Err(err) = last_place::write(&crate::data_dir(), &self.place_user, &place) {
-            eprintln!("morpheus-gpui: last place not kept: {err}");
+            eprintln!("morpheus-desktop: last place not kept: {err}");
         }
     }
 }
