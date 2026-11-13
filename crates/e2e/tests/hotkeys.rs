@@ -89,6 +89,13 @@ async fn shortcuts_navigate_rooms_scopes_history_and_panels() {
         .expect("back to the first room");
 
     // Ctrl+Alt+Down moves the rail scope; Alt+Left goes back in history.
+    // The rail takes its order from account data that arrives with the first
+    // sync: both servers must be in it before stepping through them.
+    for server in ["Engineering", "Projects"] {
+        app.wait_for(&format!(".rail-item[title=\"{server}\"]"), DEFAULT_WAIT)
+            .await
+            .expect("server in the rail");
+    }
     app.key_combo("body", "ArrowDown", true, true, false)
         .await
         .expect("ctrl+alt+down");
