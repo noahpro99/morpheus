@@ -4492,3 +4492,162 @@ async fn alone_in_a_voice_channel_you_can_invite_friends_to_it() {
     alice.click(".voice-panel .hang-up").await.expect("leave");
     bob.click(".voice-panel .hang-up").await.expect("leave");
 }
+
+const SCREEN_TILE: &str = ".call-stage .video-tile.screen";
+
+async fn tile_num(app: &mut App, name: &str) -> f64 {
+    app.attr(SCREEN_TILE, name)
+        .await
+        .expect("attr")
+        .unwrap_or_else(|| panic!("no {name} on the screen tile"))
+        .parse()
+        .expect("a number")
+}
+
+/// A shared screen zooms like the picture viewer (GPUI only): the wheel
+/// around the pointer, a drag pans, a double click toggles fit and actual
+/// size, a plain click still focuses; the zoom is `data-zoom`/`data-x`/`data-y`
+/// on the tile and resets when another tile is focused or the share stops.
+#[tokio::test]
+async fn a_shared_screen_zooms_pans_and_resets() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    if !alice.is_gpui() {
+        eprintln!("the zoom is built in the GPUI app only; skipping");
+        return;
+    }
+    login_and_open(&mut alice, "alice", "hangout").await;
+    alice.click(CALL_BUTTON).await.expect("call");
+    alice
+        .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("connected");
+    start_share(&mut alice, ".voice-panel .screen-button").await;
+    wait_screen_pattern(&mut alice, "@alice:localhost")
+        .await
+        .expect("her screen shows");
+    assert_eq!(alice.count(".call-cards.focused").await.expect("count"), 0);
+    // A click focuses the tile.
+    alice.click(SCREEN_TILE).await.expect("focus");
+    alice
+        .wait_for(".call-cards.focused", DEFAULT_WAIT)
+        .await
+        .unwrap_or_else(|e| panic!("a click did not focus the screen: {e}"));
+    assert!((tile_num(&mut alice, "data-zoom").await - 1.0).abs() < 1e-6, "fit at first");
+
+    // The wheel zooms around the pointer.
+    alice
+        .wheel_pixels_at(SCREEN_TILE, 60.0, -30.0, -600.0)
+        .await
+        .expect("wheel up");
+    let z = tile_num(&mut alice, "data-zoom").await;
+    assert!(z > 2.0 && z < 8.0, "wheel up zooms in: {z}");
+    let (x, y) = (tile_num(&mut alice, "data-x").await, tile_num(&mut alice, "data-y").await);
+    assert!(
+        (x + 60.0 * (z - 1.0)).abs() < 2.0 && (y - 30.0 * (z - 1.0)).abs() < 2.0,
+        "zoomed around the pointer: zoom {z}, offset ({x}, {y})"
+    );
+    alice
+        .wait_for(".screen-zoom-indicator", DEFAULT_WAIT)
+        .await
+        .expect("an indicator while zoomed");
+    alice
+        .wheel_pixels_at(SCREEN_TILE, 0.0, 0.0, -5000.0)
+        .await
+        .expect("wheel up lots");
+    assert!((tile_num(&mut alice, "data-zoom").await - 8.0).abs() < 1e-6, "8x at most");
+
+    // A drag pans, and does not unfocus.
+    let (x0, y0) = (tile_num(&mut alice, "data-x").await, tile_num(&mut alice, "data-y").await);
+    alice.drag_at(SCREEN_TILE, 0.0, 0.0, -80, -40).await.expect("drag");
+    let (x1, y1) = (tile_num(&mut alice, "data-x").await, tile_num(&mut alice, "data-y").await);
+    assert!(
+        (x1 - x0 + 80.0).abs() < 3.0 && (y1 - y0 + 40.0).abs() < 3.0,
+        "dragged by (-80, -40): ({x0}, {y0}) -> ({x1}, {y1})"
+    );
+    tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+    assert_eq!(alice.count(".call-cards.focused").await.expect("count"), 1, "a drag is not a click");
+    // Far past the edge it stays clamped to the tile.
+    let tile = alice.bounds(SCREEN_TILE).await.expect("bounds").expect("tile");
+    alice.drag_at(SCREEN_TILE, 0.0, 0.0, 9000, 9000).await.expect("drag far");
+    let (fx, fy) = (tile_num(&mut alice, "data-x").await, tile_num(&mut alice, "data-y").await);
+    assert!(
+        (fx - tile.w * 7.0 / 2.0).abs() < 2.0 && (fy - tile.h * 7.0 / 2.0).abs() < 2.0,
+        "clamped at the edge: ({fx}, {fy}) in {tile:?}"
+    );
+
+    // A double click toggles fit and 100%.
+    alice.click_at(SCREEN_TILE, 0.0, 0.0, 2).await.expect("double click");
+    assert!((tile_num(&mut alice, "data-zoom").await - 1.0).abs() < 1e-6, "fit again");
+    alice.click_at(SCREEN_TILE, 0.0, 0.0, 2).await.expect("double click");
+    let actual = tile_num(&mut alice, "data-zoom").await;
+    assert!(actual > 1.2, "actual size is bigger than the fitted tile: {actual}");
+    assert_eq!(alice.count(".call-cards.focused").await.expect("count"), 1, "still focused");
+    // The indicator resets.
+    alice.click(".screen-zoom-indicator").await.expect("reset");
+    assert!((tile_num(&mut alice, "data-zoom").await - 1.0).abs() < 1e-6, "reset to fit");
+
+    // Another tile focused: the zoom is back to fit.
+    alice
+        .wheel_pixels_at(SCREEN_TILE, 0.0, 0.0, -600.0)
+        .await
+        .expect("zoom");
+    assert!(tile_num(&mut alice, "data-zoom").await > 2.0);
+    alice.click(".voice-panel .camera-button").await.expect("camera on");
+    alice
+        .wait_for(".call-strip .video-tile:not(.screen), .call-strip .call-tile", DEFAULT_WAIT)
+        .await
+        .expect("her own tile in the strip");
+    alice
+        .click(".call-strip .video-tile:not(.screen), .call-strip .call-tile")
+        .await
+        .expect("focus the other tile");
+    alice
+        .wait_for(".call-focus-main .video-tile:not(.screen)", DEFAULT_WAIT)
+        .await
+        .expect("the camera is focused");
+    assert!(
+        (tile_num(&mut alice, "data-zoom").await - 1.0).abs() < 1e-6,
+        "the screen's zoom resets when another tile is focused"
+    );
+
+    // A plain click on the focused screen unfocuses it; focused again it is at fit.
+    alice.click(".call-strip .video-tile.screen").await.expect("focus the screen");
+    alice
+        .wait_for(".call-focus-main .video-tile.screen", DEFAULT_WAIT)
+        .await
+        .expect("the screen is focused");
+    alice
+        .wheel_pixels_at(SCREEN_TILE, 0.0, 0.0, -600.0)
+        .await
+        .expect("zoom");
+    alice.click(SCREEN_TILE).await.expect("unfocus");
+    alice
+        .wait_for_count(".call-cards.focused", 0, DEFAULT_WAIT)
+        .await
+        .expect("a click unfocuses");
+    alice.click(SCREEN_TILE).await.expect("focus");
+    alice
+        .wait_for(".call-cards.focused", DEFAULT_WAIT)
+        .await
+        .expect("focused");
+    assert!((tile_num(&mut alice, "data-zoom").await - 1.0).abs() < 1e-6, "back at fit");
+
+    // The share stops: the tile goes; sharing again starts at fit.
+    alice
+        .wheel_pixels_at(SCREEN_TILE, 0.0, 0.0, -600.0)
+        .await
+        .expect("zoom");
+    alice.click(".voice-panel .screen-button").await.expect("stop");
+    alice
+        .wait_for_count(SCREEN_TILE, 0, DEFAULT_WAIT)
+        .await
+        .expect("tile gone");
+    start_share(&mut alice, ".voice-panel .screen-button").await;
+    alice.wait_for(SCREEN_TILE, DEFAULT_WAIT).await.expect("tile back");
+    assert!((tile_num(&mut alice, "data-zoom").await - 1.0).abs() < 1e-6, "new share at fit");
+    alice.click(".voice-panel .hang-up").await.expect("hang up");
+}
