@@ -80,6 +80,10 @@ pub struct SwitchRoom {
     /// What its picture's letter comes from: the server's name for a channel.
     pub letter_of: String,
     pub picture: Option<Arc<gpui::Image>>,
+    /// A server's picture is a rounded square, a person's or room's a circle.
+    pub squircle: bool,
+    /// The name it has without your nickname (a DM's person), also matched.
+    pub real_name: String,
 }
 
 #[derive(Clone)]
@@ -136,7 +140,7 @@ impl Switcher {
             .rooms
             .iter()
             .enumerate()
-            .filter(|(_, room)| needle.is_empty() || room.name.to_lowercase().contains(&needle))
+            .filter(|(_, room)| needle.is_empty() || room.name.to_lowercase().contains(&needle) || room.real_name.to_lowercase().contains(&needle))
             .take(8)
             .map(|(index, _)| Entry::Room(index))
             .collect();
@@ -173,6 +177,7 @@ impl Switcher {
 /// place. (`scope_name` says where a room lives.)
 pub fn rooms_for(
     rooms: &[RoomSummary],
+    nicknames: &crate::view_model::nicknames::NickMap,
     scope_name: impl Fn(&RoomSummary) -> (String, Option<Arc<gpui::Image>>, Option<String>),
 ) -> Vec<SwitchRoom> {
     rooms
@@ -182,7 +187,9 @@ pub fn rooms_for(
             let (kind, picture, letter_of) = scope_name(room);
             SwitchRoom {
                 id: room.id.clone(),
-                name: room.name.clone(),
+                name: crate::view_model::nicknames::room_title(nicknames, room),
+                real_name: room.name.clone(),
+                squircle: letter_of.is_some(),
                 kind,
                 picture,
                 letter_of: letter_of.unwrap_or_else(|| room.name.clone()),
@@ -226,7 +233,7 @@ impl Render for Switcher {
             let row = match entry {
                 Entry::Room(room) => {
                     let room = &self.rooms[*room];
-                    row.child(avatar(room.picture.clone(), &room.letter_of, 24.0, None))
+                    row.child(avatar(room.picture.clone(), &room.letter_of, 24.0, room.squircle.then_some(8.0)))
                         .child(
                             div().ml(px(8.0))
                                 .child(room.name.clone())
@@ -329,7 +336,7 @@ impl Render for Switcher {
 impl crate::shell::Shell {
     /// The rooms the switcher offers, with where each lives.
     fn switch_rooms(&self) -> Vec<SwitchRoom> {
-        rooms_for(&self.rooms, |room| {
+        rooms_for(&self.rooms, &self.nicknames, |room| {
             use crate::model::Scope;
             match crate::model::scope_for(&self.rooms, room) {
                 // A server's channel shows the server's picture.
@@ -337,7 +344,7 @@ impl crate::shell::Shell {
                     let space = self.rooms.iter().find(|r| r.id == id);
                     (
                         space.map(|s| s.name.clone()).unwrap_or_default(),
-                        space.and_then(|s| self.picture(&s.avatar, 32)),
+                        space.and_then(|s| self.picture(&s.avatar, 40)),
                         space.map(|s| s.name.clone()),
                     )
                 }

@@ -764,13 +764,13 @@ fn video_el(
         .child(Shape { w, h });
     card = match thumbnail {
         Some(image) => card.child(
-            img(image)
+            img(crate::media::covering(&image, w, h))
                 .absolute()
                 .top_0()
                 .left_0()
                 .size_full()
                 .rounded(px(theme::RADIUS))
-                .object_fit(ObjectFit::Cover)
+                .object_fit(ObjectFit::Fill)
                 .e2e("img", "video-thumb")
                 .attr("alt", body)
                 .attr("title", body),

@@ -483,6 +483,7 @@ impl Shell {
     /// Tells what shows names (the open timeline, member list, message box
     /// and profile card) about your nicknames.
     pub fn push_nicknames(&mut self, cx: &mut Context<Self>) {
+        self.refresh_switcher(cx);
         let names = self.nicknames.clone();
         let ignored: std::collections::HashSet<String> = self.marks.ignored.keys().cloned().collect();
         if let Some((_, timeline)) = &self.timeline {
