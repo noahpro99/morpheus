@@ -36,6 +36,9 @@ struct Badge {
     context: Option<Rc<dyn Fn(Point<Pixels>, &mut gpui::Window, &mut gpui::App)>>,
     /// A server badge can be dragged to a new place.
     drag: Option<DraggedBadge>,
+    /// The pointer is over it, and how it tells the rail it moved on or off.
+    hovered: bool,
+    on_hover: Option<Rc<dyn Fn(bool, &mut gpui::App)>>,
 }
 
 /// A server being dragged on the rail.
@@ -77,7 +80,31 @@ impl Badge {
             extra: Vec::new(),
             context: None,
             drag: None,
+            hovered: false,
+            on_hover: None,
         }
+    }
+
+    /// Follows the pointer: the rail remembers which badge it is over.
+    fn track(mut self, shell: &Shell, cx: &mut Context<Shell>) -> Self {
+        self.hovered = shell.rail_hover.as_deref() == Some(self.id.as_str());
+        let (view, id) = (cx.entity(), self.id.clone());
+        self.on_hover = Some(Rc::new(move |over, cx| {
+            view.update(cx, |s, cx| {
+                let now = if over {
+                    Some(id.clone())
+                } else if s.rail_hover.as_deref() == Some(id.as_str()) {
+                    None
+                } else {
+                    return;
+                };
+                if s.rail_hover != now {
+                    s.rail_hover = now;
+                    cx.notify();
+                }
+            })
+        }));
+        self
     }
 
     /// The badge as a button holding `content`, which runs `on_click`.
@@ -89,6 +116,8 @@ impl Badge {
     ) -> impl IntoElement {
         let pill_height = if self.selected {
             40.0
+        } else if self.hovered {
+            20.0
         } else if self.unread {
             8.0
         } else {
@@ -128,6 +157,9 @@ impl Badge {
         if let Some(dragged) = drag {
             button = button.on_drag(dragged, |dragged, _, _, cx| cx.new(|_| BadgeGhost(dragged.clone())));
         }
+        if let Some(on_hover) = self.on_hover.clone() {
+            button = button.on_hover(move |over, _, cx| on_hover(*over, cx));
+        }
         if let Some(context) = self.context.clone() {
             button = button.on_mouse_down(MouseButton::Right, move |event, window, cx| {
                 context(event.position, window, cx)
@@ -135,16 +167,25 @@ impl Badge {
         }
         button = button
             .child(
+                // The bar is centred in a full-height lane so it can grow
+                // (dot 8, hover 20, selected 40) without moving its top.
                 div()
                     .absolute()
                     .left(px(-12.0))
-                    .top(px((self.size - pill_height) / 2.0))
+                    .top_0()
+                    .h(px(self.size))
                     .w(px(4.0))
-                    .h(px(pill_height))
-                    .rounded_r(px(4.0))
-                    .bg(rgb(0xffffff))
-                    .e2e("span", "rail-pill")
-                    .attr("data-bg", "#ffffff"),
+                    .flex()
+                    .items_center()
+                    .child(
+                        div()
+                            .w(px(4.0))
+                            .h(px(pill_height))
+                            .rounded_r(px(4.0))
+                            .bg(rgb(0xffffff))
+                            .e2e("span", "rail-pill")
+                            .attr("data-bg", "#ffffff"),
+                    ),
             )
             .child(content);
         let mut tagged = button
@@ -192,7 +233,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         48.0,
         dms_selected,
         !dms_selected && (unread_dms > 0 || unread_in(&Scope::Dms)),
-    );
+    ).track(shell, cx);
     let mut dms_content = div()
         .size_full()
         .flex()
@@ -237,7 +278,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             48.0,
             rooms_selected,
             !rooms_selected && unread_in(&Scope::Rooms),
-        )
+        ).track(shell, cx)
         .build(div().child("#").e2e("span", "").text("#"), false, {
             let view = cx.entity();
             move |_, cx| view.update(cx, |s, cx| s.pick_scope(Scope::Rooms, cx))
@@ -254,7 +295,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                 48.0,
                 selected,
                 !selected && unread_in(&Scope::Favorites),
-            )
+            ).track(shell, cx)
             .build(icon("star", 20.0), false, {
                 let view = cx.entity();
                 move |_, cx| view.update(cx, |s, cx| s.pick_scope(Scope::Favorites, cx))
@@ -325,8 +366,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                     48.0,
                     contains_current && !open,
                     !contains_current && folder_unread,
-                )
-                ;
+                ).track(shell, cx);
                 badge.context = Some({
                     let (view, id) = (cx.entity(), id.clone());
                     Rc::new(move |at, _, cx| view.update(cx, |s, cx| s.open_folder_menu(&id, at, cx)))
@@ -499,7 +539,7 @@ fn space_badge(
         size,
         selected,
         unread,
-    );
+    ).track(shell, cx);
     badge.extra.push(("data-space", space.id.to_string()));
     if let Some(index) = index {
         badge.extra.push(("data-index", index.to_string()));

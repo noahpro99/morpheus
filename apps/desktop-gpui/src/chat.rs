@@ -83,11 +83,38 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                         .text("#"),
                 )
             };
+            // The name is the room's menu button, as in Discord: it opens the
+            // menu under itself.
+            let anchor = shell.title_bounds.clone();
+            let menu_room = room.clone();
             header = header.child(
                 div()
+                    .id("room-title")
+                    .relative()
+                    .px(px(6.0))
+                    .py(px(4.0))
+                    .rounded(px(theme::RADIUS_SM))
                     .font_weight(FontWeight::BOLD)
+                    .cursor_pointer()
+                    .hover(|s| s.bg(gpui::rgba(theme::bg_hover())))
                     .child(title.clone())
-                    .e2e("h2", "")
+                    .child(
+                        gpui::canvas(
+                            {
+                                let anchor = anchor.clone();
+                                move |bounds, _, _| anchor.set(bounds)
+                            },
+                            |_, _, _, _| {},
+                        )
+                        .absolute()
+                        .size_full(),
+                    )
+                    .on_click(cx.listener(move |this, _: &gpui::ClickEvent, _, cx| {
+                        let b = anchor.get();
+                        let at = gpui::point(b.origin.x, b.origin.y + b.size.height + px(2.0));
+                        this.open_room_menu(menu_room.clone(), at, cx)
+                    }))
+                    .e2e("h2", "room-title")
                     .text(title.clone()),
             );
             header = header.child(
@@ -149,23 +176,6 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
             // The rest of the header sits at the right: the room's menu, the
             // member list's toggle, the pinned messages.
             header = header.child(div().flex_1());
-            let menu_room = room.clone();
-            header = header.child(
-                div()
-                    .id("room-menu-button")
-                    .px(px(8.0))
-                    .py(px(6.0))
-                    .rounded(px(theme::RADIUS_SM))
-                    .text_color(rgb(theme::text_muted()))
-                    .cursor_pointer()
-                    .hover(|s| s.text_color(rgb(theme::text())))
-                    .child(icon("ellipsis", 16.0).text_color(rgb(theme::text_muted())))
-                    .on_click(cx.listener(move |this, event: &gpui::ClickEvent, _, cx| {
-                        this.open_room_menu(menu_room.clone(), event.position(), cx)
-                    }))
-                    .e2e("button", "ghost room-menu-button")
-                    .attr("title", "Room options"),
-            );
             let count = room.member_count.to_string();
             let open = shell.members_open;
             header = header.child(
