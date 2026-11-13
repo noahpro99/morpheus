@@ -1025,6 +1025,22 @@ impl App {
         self.eval(&js).await.map(drop)
     }
 
+    /// Click, with Shift held, the first `selector` element whose text
+    /// contains `needle`.
+    pub async fn shift_click_text(&mut self, selector: &str, needle: &str) -> Result<()> {
+        if gpui() {
+            let extra = json!({ "contains": needle, "modifiers": ["shift"] });
+            return self.op("click", selector, extra).await.map(drop);
+        }
+        let (sel, text) = (js_str(selector), js_str(needle));
+        let js = format!(
+            "const el = [...document.querySelectorAll({sel})].find(el => el.textContent.includes({text}));
+             if (!el) throw new Error('no element matching ' + {sel} + ' with text ' + {text});
+             el.dispatchEvent(new MouseEvent('click', {{ bubbles: true, cancelable: true, button: 0, shiftKey: true }}));"
+        );
+        self.eval(&js).await.map(drop)
+    }
+
     /// Right-click the first `selector` element whose text contains `needle`.
     pub async fn right_click_text(&mut self, selector: &str, needle: &str) -> Result<()> {
         if gpui() {

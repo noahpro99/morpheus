@@ -536,3 +536,24 @@ async fn wait_cells(app: &mut App, ok: impl Fn(&[String]) -> bool) {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
 }
+
+/// Shift held while picking "Delete message" in the right-click menu skips
+/// the question, as Shift on the hover bar's bin does (Discord).
+#[tokio::test]
+async fn shift_picking_delete_in_the_menu_deletes_without_asking() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch(&hs).await.expect("launch app");
+    login_and_open(&mut app, "alice", "general").await;
+    let text = send_fresh(&mut app, "menu shift delete").await;
+    open_menu_on(&mut app, &text).await;
+    app.shift_click_text(".context-menu .context-item", "Delete message")
+        .await
+        .expect("shift-pick delete");
+    app.wait_for_text_gone(".message .body", &text, DEFAULT_WAIT)
+        .await
+        .expect("deleted at once");
+    assert_eq!(app.count(".confirm-dialog").await.expect("count"), 0, "asked anyway");
+}
