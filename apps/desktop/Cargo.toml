@@ -12,6 +12,9 @@ path = "src/main.rs"
 [features]
 # The test bridge (`MORPHEUS_E2E_PORT`) and element tags; never in a release.
 e2e = ["dep:serde"]
+# macOS: GPUI compiles its Metal shaders when the app starts, not while building
+# (for a runner whose Xcode has no Metal compiler; apple.yml).
+runtime-shaders = ["gpui/runtime_shaders"]
 
 [dependencies]
 gpui = "0.2"
@@ -38,6 +41,9 @@ tracing-subscriber = { workspace = true }
 
 [dev-dependencies]
 gpui = { version = "0.2", features = ["test-support"] }
+
+[build-dependencies]
+embed-resource = "3"
 
 [lints]
 workspace = true

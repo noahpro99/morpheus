@@ -9,6 +9,7 @@ use std::env;
 fn main() {
     let target = env::var("CARGO_CFG_TARGET_OS");
     println!("cargo::rustc-check-cfg=cfg(gles)");
+    println!("cargo::rustc-check-cfg=cfg(gpui_runtime_shaders)");
 
     #[cfg(any(
         not(any(target_os = "macos", target_os = "windows")),
@@ -24,6 +25,11 @@ fn main() {
         Ok("windows") => {
             #[cfg(target_os = "windows")]
             windows::build();
+            // Cross-compiled (this script runs on the host): no fxc.exe and no
+            // precompiled shaders; the program compiles them from its own copy
+            // of the sources when it starts (directx_renderer.rs).
+            #[cfg(not(target_os = "windows"))]
+            println!("cargo::rustc-cfg=gpui_runtime_shaders");
         }
         _ => (),
     };
