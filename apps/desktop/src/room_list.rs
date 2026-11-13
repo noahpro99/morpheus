@@ -262,6 +262,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
     }
     // The Friends page, at the top of the DMs (as in Discord).
     if *scope == Scope::Dms {
+        list = list.child(palette_button(cx));
         list = list.child(friends_row(shell, cx));
     }
     if !found.dms.is_empty() {
@@ -777,4 +778,41 @@ fn dimmed(colour: u32) -> u32 {
         (c * 7 + m * 3) / 10
     };
     (mix(16) << 16) | (mix(8) << 8) | mix(0)
+}
+
+/// The shortcut that opens the palette, as the platform writes it.
+fn palette_shortcut() -> &'static str {
+    if cfg!(target_os = "macos") { "⌘K" } else { "Ctrl+K" }
+}
+
+/// Above Friends: an inset, lighter button that opens the command palette.
+fn palette_button(cx: &mut Context<Shell>) -> impl IntoElement {
+    let label = format!("Command palette {}", palette_shortcut());
+    div()
+        .id("palette-button")
+        .flex()
+        .items_center()
+        .justify_between()
+        .mx(px(4.0))
+        .mb(px(8.0))
+        .px(px(10.0))
+        .h(px(30.0))
+        .flex_none()
+        .rounded(px(theme::RADIUS_SM))
+        .bg(rgb(theme::bg_elevated()))
+        .text_size(px(0.85 * theme::REM))
+        .text_color(rgb(theme::text_muted()))
+        .cursor_pointer()
+        .hover(|s| s.text_color(rgb(theme::text())))
+        .on_click(cx.listener(|this, _, _, cx| this.toggle_switcher(cx)))
+        .child("Command palette")
+        .child(
+            div()
+                .text_size(px(0.75 * theme::REM))
+                .text_color(rgb(theme::text_faint()))
+                .child(palette_shortcut()),
+        )
+        .e2e("button", "palette-button")
+        .attr("data-bg", format!("#{:06x}", theme::bg_elevated()))
+        .text(label)
 }
