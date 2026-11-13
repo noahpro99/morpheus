@@ -63,6 +63,8 @@ pub struct RoomDialog {
     categories: Vec<(OwnedRoomId, String)>,
     category: usize,
     category_open: bool,
+    /// Create room: a voice channel rather than a text one.
+    voice: bool,
     /// Privacy.
     encrypted: Option<bool>,
     confirming: bool,
@@ -165,6 +167,7 @@ impl RoomDialog {
             categories,
             category: 0,
             category_open: false,
+            voice: false,
             encrypted: None,
             confirming: false,
             encryption_error: None,
@@ -339,7 +342,7 @@ impl RoomDialog {
                 let space = self.scope.space_id().cloned();
                 let category = self.category.checked_sub(1).and_then(|i| self.categories.get(i));
                 let parent = vm::room_parent(category.map(|(id, _)| id), space.as_ref());
-                let creating = self.session.create_room(name, topic, parent);
+                let creating = self.session.create_channel(name, topic, parent, self.voice);
                 self.run(creating, cx, move |this, result, cx| match result {
                     Ok(room) => cx.emit(Done::RoomCreated { room, space }),
                     Err(err) => this.note = Some(Note::error(err)),
@@ -682,6 +685,76 @@ impl RoomDialog {
         vm::room_name(&self.rooms, id)
     }
 
+    /// Create room: Text or Voice, each a card with its icon (Discord's two
+    /// options). The chosen one is a tinted card with the text unchanged
+    /// (readable) and a filled radio.
+    fn channel_types(&self, cx: &mut Context<Self>) -> AnyElement {
+        let option = |voice: bool, key: &'static str, glyph: &'static str, title: &'static str, about: &'static str| {
+            let selected = self.voice == voice;
+            div()
+                .id(ElementId::from(SharedString::from(format!("channel-type-{key}"))))
+                .flex()
+                .items_center()
+                .gap(px(12.0))
+                .px(px(12.0))
+                .py(px(10.0))
+                .rounded(px(theme::RADIUS))
+                .border_1()
+                .border_color(rgb(if selected { theme::accent() } else { theme::bg_elevated() }))
+                .bg(rgb(theme::bg_input()))
+                .when(selected, |d| d.bg(rgba(theme::bg_selected())))
+                .text_color(rgb(theme::text()))
+                .cursor_pointer()
+                .child(icon(glyph, 22.0).text_color(rgb(theme::text_muted())))
+                .child(
+                    div()
+                        .flex_1()
+                        .flex()
+                        .flex_col()
+                        .child(div().font_weight(gpui::FontWeight::SEMIBOLD).child(title))
+                        .child(
+                            div()
+                                .text_size(px(0.8 * theme::REM))
+                                .text_color(rgb(theme::text_muted()))
+                                .child(about),
+                        ),
+                )
+                .child(
+                    div()
+                        .size(px(16.0))
+                        .flex_none()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded_full()
+                        .border_1()
+                        .border_color(rgb(if selected { theme::accent() } else { theme::text_faint() }))
+                        .when(selected, |d| d.child(div().size(px(8.0)).rounded_full().bg(rgb(theme::accent())))),
+                )
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.voice = voice;
+                    cx.notify();
+                }))
+                .e2e("button", if selected { "channel-type selected" } else { "channel-type" })
+                .attr("data-value", key)
+                .text(title)
+        };
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(6.0))
+            .child(
+                div()
+                    .text_size(px(0.75 * theme::REM))
+                    .font_weight(gpui::FontWeight::BOLD)
+                    .text_color(rgb(theme::text_muted()))
+                    .child("CHANNEL TYPE"),
+            )
+            .child(option(false, "text", "hash", "Text", "Send messages, pictures and files"))
+            .child(option(true, "voice", "volume-2", "Voice", "Hang out with voice, video and screen share"))
+            .into_any_element()
+    }
+
     fn category_select(&self, cx: &mut Context<Self>) -> AnyElement {
         let mut options = vec!["None".to_owned()];
         options.extend(self.categories.iter().map(|(_, name)| name.clone()));
@@ -911,6 +984,7 @@ impl RoomDialog {
                 parts.push(heading("Create room").into_any_element());
                 let space_name = self.scope.space_id().and_then(|id| self.name_of(id));
                 parts.push(muted(&vm::create_room_scope(space_name.as_deref()), "muted").into_any_element());
+                parts.push(self.channel_types(cx));
                 if let Some(name) = &self.name {
                     parts.push(field("Name", name));
                 }
