@@ -172,15 +172,15 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                     .items_center()
                     .gap(px(2.0))
                     .child(
-                        help.e2e("button", "ghost titlebar-button help-button")
-                            .attr("title", "Help (Ctrl+/)")
-                            .attr("data-color", colour_of("help-button"))
-                            .attr("data-bg", ""),
-                    )
-                    .child(
                         inbox.e2e("button", "ghost titlebar-button inbox-button")
                             .attr("title", "Inbox (Ctrl+I)")
                             .attr("data-color", colour_of("inbox-button"))
+                            .attr("data-bg", ""),
+                    )
+                    .child(
+                        help.e2e("button", "ghost titlebar-button help-button")
+                            .attr("title", "Help (Ctrl+/)")
+                            .attr("data-color", colour_of("help-button"))
                             .attr("data-bg", ""),
                     )
                     .child(chrome::window_controls())
