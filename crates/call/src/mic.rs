@@ -39,11 +39,18 @@ use crate::{
     NoiseSuppression,
     imp::{
         AudioMode, SAMPLE_RATE,
-        denoise::{Denoiser, FRAME},
+        denoise::{DELAY, Denoiser, FRAME},
     },
     noise::note_applied,
     noise_suppression,
 };
+
+/// What WebRTC's processing delays the microphone by with its echo canceller
+/// on (measured: 9 ms at 48 kHz, its band split and blocks). A fixed cost of
+/// echo cancellation.
+const APM_DELAY: usize = 432;
+/// What its noise suppression (Standard) adds to that (measured: 6 ms).
+const APM_NS_DELAY: usize = 288;
 
 /// WebRTC's processing and, in Strong, the neural suppressor, on 10 ms
 /// frames of 48 kHz mono.
@@ -91,6 +98,18 @@ impl Processor {
         match self.mode {
             NoiseSuppression::Strong if self.denoiser.is_none() => NoiseSuppression::Off,
             mode => mode,
+        }
+    }
+
+    /// How late the processed microphone comes out, in samples: WebRTC's
+    /// echo canceller ([`APM_DELAY`]), its noise suppression in Standard
+    /// ([`APM_NS_DELAY`]), DeepFilterNet in Strong ([`DELAY`]).
+    pub fn delay(&self) -> usize {
+        let apm = if self.live { APM_DELAY } else { 0 };
+        match self.applied() {
+            NoiseSuppression::Strong => apm + DELAY,
+            NoiseSuppression::Standard => apm + APM_NS_DELAY,
+            NoiseSuppression::Off => apm,
         }
     }
 
@@ -185,6 +204,28 @@ struct Counters {
     underruns: AtomicU64,
     /// Samples of it thrown away for being too far behind.
     dropped: AtomicU64,
+    /// Samples of it cut for never being needed (see [`FLOOR`]).
+    trimmed: AtomicU64,
+    /// How long the microphone's samples waited in the system before their
+    /// callback (as the host reports it), summed in µs, and how many.
+    input_latency: AtomicU64,
+    input_latencies: AtomicU64,
+    /// From the callback that completed a frame to the frame being sent
+    /// (cut, cleaned, handed over), summed and the most, in µs.
+    wait: AtomicU64,
+    max_wait: AtomicU64,
+    waits: AtomicU64,
+    /// The mic test's queue when the speaker reads it, summed in samples.
+    loop_queue: AtomicU64,
+    loop_pulls: AtomicU64,
+    /// How long the speaker's samples wait in the system before they are
+    /// heard (as the host reports it), summed in µs, and how many.
+    output_latency: AtomicU64,
+    output_latencies: AtomicU64,
+    /// Microphone samples thrown away for being late (after a stall).
+    stale: AtomicU64,
+    /// The suppressor's own delay now, in samples.
+    algorithmic: AtomicU64,
 }
 
 /// Microseconds since the first call, a clock for [`Counters`].
@@ -215,6 +256,20 @@ impl Counters {
             played: get(&self.played),
             underruns: get(&self.underruns),
             dropped: get(&self.dropped),
+            trimmed: get(&self.trimmed),
+            input_latency: Duration::from_micros(
+                get(&self.input_latency) / get(&self.input_latencies).max(1),
+            ),
+            wait: Duration::from_micros(get(&self.wait) / get(&self.waits).max(1)),
+            max_wait: Duration::from_micros(get(&self.max_wait)),
+            algorithmic: Duration::from_micros(get(&self.algorithmic) * 1000 / 48),
+            loop_queue: Duration::from_micros(
+                get(&self.loop_queue) * 1000 / 48 / get(&self.loop_pulls).max(1),
+            ),
+            output_latency: Duration::from_micros(
+                get(&self.output_latency) / get(&self.output_latencies).max(1),
+            ),
+            stale: get(&self.stale),
         }
     }
 
@@ -231,6 +286,17 @@ impl Counters {
             &self.played,
             &self.underruns,
             &self.dropped,
+            &self.trimmed,
+            &self.input_latency,
+            &self.input_latencies,
+            &self.wait,
+            &self.max_wait,
+            &self.waits,
+            &self.loop_queue,
+            &self.loop_pulls,
+            &self.output_latency,
+            &self.output_latencies,
+            &self.stale,
         ] {
             a.store(0, Ordering::Relaxed);
         }
@@ -251,6 +317,31 @@ pub struct AudioStats {
     pub played: u64,
     pub underruns: u64,
     pub dropped: u64,
+    pub trimmed: u64,
+    /// The microphone's own latency (the host's figure), on average.
+    pub input_latency: Duration,
+    /// From a frame's last callback to it being sent, on average and the most.
+    pub wait: Duration,
+    pub max_wait: Duration,
+    /// The noise suppressor's delay (DeepFilterNet's in Strong).
+    pub algorithmic: Duration,
+    /// What waits in the mic test's queue for the speaker, on average.
+    pub loop_queue: Duration,
+    /// The speaker's own latency (the host's figure), on average.
+    pub output_latency: Duration,
+    pub stale: u64,
+}
+
+impl AudioStats {
+    /// From the voice reaching the microphone to it leaving for the call.
+    pub fn sent_latency(&self) -> Duration {
+        self.input_latency + self.wait + self.algorithmic
+    }
+
+    /// From the voice reaching the microphone to the mic test playing it.
+    pub fn loopback_latency(&self) -> Duration {
+        self.sent_latency() + self.loop_queue + self.output_latency
+    }
 }
 
 /// [`AudioStats`] of the running capture (all zero when none runs).
@@ -421,6 +512,12 @@ fn capture(shared: &Shared, mode: AudioMode) {
     let counters = shared.counters.clone();
     let live = mode == AudioMode::Platform;
     let mut processor = Processor::new(noise_suppression(), live);
+    // The model first (~0.2 s, on this thread: it cannot move between
+    // threads), or the microphone's first 0.2 s would queue behind it and
+    // the call start that late.
+    if processor.needs_model() {
+        processor.load_model();
+    }
     let mut input = Input::open(mode, &counters);
     let mut output: Option<Output> = None;
     let mut tone = 0f32;
@@ -433,12 +530,16 @@ fn capture(shared: &Shared, mode: AudioMode) {
         }
         processor.set_mode(noise_suppression());
         if processor.needs_model() {
-            // ~0.2 s on this thread (the model cannot move between
-            // threads); what the microphone said meanwhile waits for it.
+            // Strong chosen during the capture: ~0.2 s on this thread; the
+            // microphone's backlog meanwhile is dropped (`Device::next`)
+            // rather than sent late.
             processor.load_model();
         }
         note_applied(Some(processor.applied()));
-        let Some(mut frame) = input.next() else {
+        counters
+            .algorithmic
+            .store(processor.delay() as u64, Ordering::Relaxed);
+        let Some((mut frame, arrived)) = input.next() else {
             continue;
         };
         if live {
@@ -467,6 +568,10 @@ fn capture(shared: &Shared, mode: AudioMode) {
             match sent {
                 Some(Ok(())) => {
                     counters.sent.fetch_add(1, Ordering::Relaxed);
+                    let waited = arrived.elapsed().as_micros() as u64;
+                    counters.wait.fetch_add(waited, Ordering::Relaxed);
+                    counters.max_wait.fetch_max(waited, Ordering::Relaxed);
+                    counters.waits.fetch_add(1, Ordering::Relaxed);
                     Counters::tick(&counters.last_sent, &counters.max_send_gap);
                 }
                 Some(Err(err)) => warn!(%err, "microphone frame refused"),
@@ -539,8 +644,9 @@ impl Input {
         }
     }
 
-    /// The next 10 ms, or `None` if it has not come yet (try again).
-    fn next(&mut self) -> Option<Vec<i16>> {
+    /// The next 10 ms and when its last samples came, or `None` if it has
+    /// not come yet (try again).
+    fn next(&mut self) -> Option<(Vec<i16>, Instant)> {
         match self {
             Self::Room { next, seed } => {
                 let now = Instant::now();
@@ -554,7 +660,7 @@ impl Input {
                 } else {
                     *next
                 } + Duration::from_millis(10);
-                Some(
+                Some((
                     (0..FRAME)
                         .map(|_| {
                             *seed ^= *seed << 13;
@@ -564,7 +670,8 @@ impl Input {
                             ((*seed as i32) >> 21) as i16
                         })
                         .collect(),
-                )
+                    Instant::now(),
+                ))
             }
             Self::Device(device) => device.next(),
             Self::None => {
@@ -576,7 +683,13 @@ impl Input {
 }
 
 /// A microphone callback with `samples` (all channels) came.
-fn counted(counters: &Counters, samples: usize) {
+fn counted(counters: &Counters, samples: usize, info: &cpal::InputCallbackInfo) {
+    let at = info.timestamp();
+    counters.input_latency.fetch_add(
+        at.callback.duration_since(at.capture).as_micros() as u64,
+        Ordering::Relaxed,
+    );
+    counters.input_latencies.fetch_add(1, Ordering::Relaxed);
     counters.callbacks.fetch_add(1, Ordering::Relaxed);
     counters
         .callback_samples
@@ -599,7 +712,10 @@ fn gain() -> f32 {
 /// A microphone through cpal, turned into 10 ms frames of 48 kHz mono.
 struct Device {
     _stream: cpal::Stream,
-    samples: mpsc::Receiver<Vec<i16>>,
+    samples: mpsc::Receiver<(Vec<i16>, Instant)>,
+    /// When the samples waiting in `chunker` last came.
+    arrived: Instant,
+    counters: Arc<Counters>,
     rate: u32,
     channels: usize,
     chunker: Chunker,
@@ -693,7 +809,7 @@ fn input_stream(
     device: &cpal::Device,
     config: cpal::StreamConfig,
     format: cpal::SampleFormat,
-    tx: mpsc::Sender<Vec<i16>>,
+    tx: mpsc::Sender<(Vec<i16>, Instant)>,
     counters: Arc<Counters>,
 ) -> Result<cpal::Stream, String> {
     use cpal::traits::DeviceTrait as _;
@@ -701,22 +817,23 @@ fn input_stream(
     match format {
         cpal::SampleFormat::F32 => device.build_input_stream(
             config,
-            move |data: &[f32], _: &_| {
-                counted(&counters, data.len());
-                let _ = tx.send(
+            move |data: &[f32], info: &cpal::InputCallbackInfo| {
+                counted(&counters, data.len(), info);
+                let _ = tx.send((
                     data.iter()
                         .map(|s| (s.clamp(-1.0, 1.0) * 32767.0) as i16)
                         .collect(),
-                );
+                    Instant::now(),
+                ));
             },
             failed,
             None,
         ),
         cpal::SampleFormat::I16 => device.build_input_stream(
             config,
-            move |data: &[i16], _: &_| {
-                counted(&counters, data.len());
-                let _ = tx.send(data.to_vec());
+            move |data: &[i16], info: &cpal::InputCallbackInfo| {
+                counted(&counters, data.len(), info);
+                let _ = tx.send((data.to_vec(), Instant::now()));
             },
             failed,
             None,
@@ -728,6 +845,7 @@ fn input_stream(
 
 impl Device {
     fn open(counters: Arc<Counters>) -> Result<Self, String> {
+        let counters_kept = counters.clone();
         use cpal::traits::{DeviceTrait as _, HostTrait as _, StreamTrait as _};
         let started = Instant::now();
         let host = host();
@@ -774,22 +892,40 @@ impl Device {
             rate,
             channels,
             chunker: Chunker::new((rate / 100) as usize * channels),
+            arrived: Instant::now(),
+            counters: counters_kept,
             resampler: AudioResampler::default(),
         })
     }
 
-    fn next(&mut self) -> Option<Vec<i16>> {
+    fn next(&mut self) -> Option<(Vec<i16>, Instant)> {
+        // Whatever has come, at once.
+        while let Ok((more, at)) = self.samples.try_recv() {
+            self.chunker.push(&more);
+            self.arrived = at;
+        }
+        // More than 30 ms waiting (the thread stalled: a model loading):
+        // the oldest is dropped, so the call does not stay that much late.
+        let chunk = self.chunker.chunk;
+        if self.chunker.pending.len() > 3 * chunk {
+            let late = self.chunker.pending.len() - chunk;
+            self.chunker.pending.drain(..late);
+            self.counters.stale.fetch_add(late as u64, Ordering::Relaxed);
+        }
         let raw = loop {
             if let Some(raw) = self.chunker.next() {
                 break raw;
             }
             match self.samples.recv_timeout(Duration::from_millis(20)) {
-                Ok(more) => self.chunker.push(&more),
+                Ok((more, at)) => {
+                    self.chunker.push(&more);
+                    self.arrived = at;
+                }
                 Err(_) => return None,
             }
         };
         if self.rate == SAMPLE_RATE && self.channels == 1 {
-            return Some(raw);
+            return Some((raw, self.arrived));
         }
         let frame = self.resampler.remix_and_resample(
             &raw,
@@ -799,7 +935,7 @@ impl Device {
             1,
             SAMPLE_RATE,
         );
-        (frame.len() == FRAME).then(|| frame.to_vec())
+        (frame.len() == FRAME).then(|| (frame.to_vec(), self.arrived))
     }
 }
 
@@ -849,16 +985,17 @@ impl Output {
         let rate = supported.sample_rate();
         let queue: Arc<Mutex<VecDeque<f32>>> = Arc::default();
         let playback = || Playback::new(queue.clone(), rate).counting(counters.clone());
-        // Asked for 20 ms at a time (left to PulseAudio, it kept 2 s queued).
+        // Asked for 10 ms at a time (left to PulseAudio, it kept 2 s queued;
+        // 20 ms kept 41 ms, 10 ms keeps about 20).
         let stream = match output_stream(
             &device,
-            sized(&supported, rate / 50),
+            sized(&supported, rate / 100),
             &supported,
             playback(),
         ) {
             Ok(stream) => stream,
             Err(err) => {
-                warn!(%err, "mic test: no 20 ms callbacks, using the speaker's own");
+                warn!(%err, "mic test: no 10 ms callbacks, using the speaker's own");
                 output_stream(&device, supported.config(), &supported, playback())?
             }
         };
@@ -905,7 +1042,8 @@ fn output_stream(
     match supported.sample_format() {
         cpal::SampleFormat::F32 => device.build_output_stream(
             config,
-            move |data: &mut [f32], _: &_| {
+            move |data: &mut [f32], info: &cpal::OutputCallbackInfo| {
+                playback.note_latency(info);
                 let mono = playback.pull(data.len() / channels);
                 for (out, v) in data.chunks_exact_mut(channels).zip(mono) {
                     out.fill(*v * gain());
@@ -916,7 +1054,8 @@ fn output_stream(
         ),
         cpal::SampleFormat::I16 => device.build_output_stream(
             config,
-            move |data: &mut [i16], _: &_| {
+            move |data: &mut [i16], info: &cpal::OutputCallbackInfo| {
+                playback.note_latency(info);
                 let mono = playback.pull(data.len() / channels);
                 for (out, v) in data.chunks_exact_mut(channels).zip(mono) {
                     out.fill((v * gain() * 32767.0) as i16);
@@ -933,9 +1072,16 @@ fn output_stream(
 /// What the mic test's playback waits for before it plays (and again after
 /// running out), on top of one speaker callback's worth: the microphone's
 /// callbacks and the speaker's do not take turns evenly.
-const PREFILL: usize = 3 * FRAME;
-/// The most it lets queue up (200 ms).
-const MAX_BEHIND: usize = 20 * FRAME;
+const PREFILL: usize = 2 * FRAME;
+/// The most it lets queue up (80 ms): steadily it holds [`PREFILL`] to
+/// about that plus a speaker callback and a microphone frame; above, it
+/// fell behind and would stay that late.
+const MAX_BEHIND: usize = 8 * FRAME;
+/// What the mic test's queue keeps at its lowest, against the microphone's
+/// frames and the speaker's callbacks not taking turns evenly (15 ms).
+const FLOOR: usize = 720;
+/// Callbacks over which the lowest is taken (about half a second).
+const WINDOW: usize = 50;
 
 /// The mic test's sound, 48 kHz mono, read out at a speaker's rate.
 struct Playback {
@@ -948,6 +1094,10 @@ struct Playback {
     counters: Arc<Counters>,
     /// Playing (else waiting for [`PREFILL`]).
     playing: bool,
+    /// The least left in the queue after a callback, over the last [`WINDOW`]
+    /// callbacks: what it holds beyond [`FLOOR`] is only lateness.
+    low: usize,
+    pulls: usize,
 }
 
 impl Playback {
@@ -959,12 +1109,23 @@ impl Playback {
             out: Vec::new(),
             counters: Arc::default(),
             playing: false,
+            low: usize::MAX,
+            pulls: 0,
         }
     }
 
     fn counting(mut self, counters: Arc<Counters>) -> Self {
         self.counters = counters;
         self
+    }
+
+    fn note_latency(&self, info: &cpal::OutputCallbackInfo) {
+        let at = info.timestamp();
+        self.counters.output_latency.fetch_add(
+            at.playback.duration_since(at.callback).as_micros() as u64,
+            Ordering::Relaxed,
+        );
+        self.counters.output_latencies.fetch_add(1, Ordering::Relaxed);
     }
 
     /// The next `frames` samples (silence while waiting for enough).
@@ -974,6 +1135,10 @@ impl Playback {
         let Ok(mut queue) = self.queue.lock() else {
             return &self.out;
         };
+        if self.playing {
+            self.counters.loop_queue.fetch_add(queue.len() as u64, Ordering::Relaxed);
+            self.counters.loop_pulls.fetch_add(1, Ordering::Relaxed);
+        }
         // What this callback reads, and the sample after it.
         let needed = (self.pos + frames as f64 * self.step).ceil() as usize + 1;
         if !self.playing {
@@ -997,6 +1162,22 @@ impl Playback {
         let used = (self.pos as usize).min(queue.len());
         queue.drain(..used);
         self.pos -= used as f64;
+        // The queue stays at whatever it held when it started (the two
+        // clocks run alike): what it never needed is cut, at most once per
+        // window.
+        if self.playing {
+            self.low = self.low.min(queue.len());
+            self.pulls += 1;
+            if self.pulls >= WINDOW {
+                if self.low > FLOOR + FRAME / 2 {
+                    let late = self.low - FLOOR;
+                    queue.drain(..late);
+                    self.counters.trimmed.fetch_add(late as u64, Ordering::Relaxed);
+                }
+                self.low = usize::MAX;
+                self.pulls = 0;
+            }
+        }
         self.counters
             .played
             .fetch_add(used as u64, Ordering::Relaxed);
@@ -1061,6 +1242,59 @@ mod tests {
         let db = 10.0 * (echo_out / echo_in).log10();
         eprintln!("echo after the canceller: {db:.1} dB");
         assert!(db <= -15.0, "the echo only went down {db:.1} dB");
+    }
+
+    /// How late each mode's output is (the lag that best matches it to the
+    /// input) is what [`Processor::delay`] says, which the latency figures
+    /// count: WebRTC's echo canceller's 9 ms, 6 more for its noise
+    /// suppression in Standard, DeepFilterNet's 30 more in Strong.
+    #[test]
+    fn each_mode_delays_the_voice_only_by_its_suppressor() {
+        // Chirps (300 Hz to 6 kHz in 0.3 s, then 0.2 s of quiet): unlike a
+        // voice, nothing in them repeats, so only the true lag matches.
+        let input: Vec<f32> = (0..4 * 48_000)
+            .map(|n| {
+                let t = (n % 24_000) as f32 / 48_000.0;
+                if t >= 0.3 {
+                    return 0.0;
+                }
+                let (f0, f1, len) = (300.0f32, 6_000.0f32, 0.3f32);
+                let k = (f1 / f0).ln() / len;
+                let phase = std::f32::consts::TAU * f0 * ((k * t).exp() - 1.0) / k;
+                0.3 * phase.sin()
+            })
+            .collect();
+        for mode in [
+            NoiseSuppression::Off,
+            NoiseSuppression::Standard,
+            NoiseSuppression::Strong,
+        ] {
+            let out = run(mode, &input);
+            let max_lag = 100 * 48;
+            let span = 48_000..input.len() - max_lag;
+            let lag = (0..max_lag)
+                .max_by(|&a, &b| {
+                    let score = |lag: usize| -> f64 {
+                        span.clone()
+                            .map(|n| f64::from(input[n]) * f64::from(out[n + lag]))
+                            .sum()
+                    };
+                    score(a).total_cmp(&score(b))
+                })
+                .unwrap_or(0);
+            let ms = lag as f64 / 48.0;
+            let mut processor = Processor::new(mode, true);
+            if processor.needs_model() {
+                processor.load_model();
+            }
+            let expected = processor.delay();
+            eprintln!("{mode:?}: output {ms:.1} ms behind");
+            assert!(
+                lag.abs_diff(expected) <= 48,
+                "{mode:?} is {ms:.1} ms behind, not {:.1} ms",
+                expected as f64 / 48.0
+            );
+        }
     }
 
     #[test]
@@ -1176,6 +1410,9 @@ mod timing {
         )
         .unwrap();
         eprintln!("host {:?} input config {:?}", host.id(), supported);
+        let latency_in: Arc<Mutex<Vec<Duration>>> = Arc::default();
+        let latency_out: Arc<Mutex<Vec<Duration>>> = Arc::default();
+        let (lat_in, lat_out) = (latency_in.clone(), latency_out.clone());
         let events = Arc::new(Mutex::new(Vec::new()));
         let theirs = events.clone();
         let mut in_config = supported.config();
@@ -1184,7 +1421,9 @@ mod timing {
             .build_input_stream_raw(
                 in_config,
                 supported.sample_format(),
-                move |data: &cpal::Data, _: &_| {
+                move |data: &cpal::Data, info: &cpal::InputCallbackInfo| {
+                    let t = info.timestamp();
+                    lat_in.lock().unwrap().push(t.callback.duration_since(t.capture));
                     theirs.lock().unwrap().push((Instant::now(), data.len()));
                 },
                 |err| eprintln!("input error {err}"),
@@ -1207,7 +1446,9 @@ mod timing {
             .build_output_stream_raw(
                 out_config,
                 out_supported.sample_format(),
-                move |data: &mut cpal::Data, _: &_| {
+                move |data: &mut cpal::Data, info: &cpal::OutputCallbackInfo| {
+                    let t = info.timestamp();
+                    lat_out.lock().unwrap().push(t.playback.duration_since(t.callback));
                     theirs.lock().unwrap().push((Instant::now(), data.len()));
                 },
                 |err| eprintln!("output error {err}"),
@@ -1220,6 +1461,16 @@ mod timing {
         drop(out);
         summary("input", &events.lock().unwrap());
         summary("output", &out_events.lock().unwrap());
+        for (name, all) in [("input", latency_in), ("output", latency_out)] {
+            let all = all.lock().unwrap();
+            // After the first second (the server settles).
+            let settled: Vec<f64> = all.iter().skip(all.len() / 4).map(|d| d.as_secs_f64() * 1000.0).collect();
+            eprintln!(
+                "{name} device latency ms: avg {:.1} max {:.1}",
+                settled.iter().sum::<f64>() / settled.len().max(1) as f64,
+                settled.iter().copied().fold(0.0, f64::max)
+            );
+        }
     }
 
     #[test]
@@ -1319,10 +1570,15 @@ mod flow {
             .iter()
             .position(|v| *v != 0.0)
             .expect("something played");
+        // How far behind the microphone the speaker is at the end.
+        let last = (heard[heard.len() - 1] * 32768.0).round() as i64;
+        let behind = (i64::from(value % 20_000) + 1 - last).rem_euclid(20_000);
         let heard = &heard[first..heard.len() - 1024];
         let silent = heard.iter().filter(|v| **v == 0.0).count();
         let mut skips = 0;
-        for w in heard.windows(2) {
+        // After the first second and a half (the queue cut down to what it
+        // needs, once: a jump).
+        for w in heard[72_000..].windows(2) {
             let (a, b) = (
                 (w[0] * 32768.0).round() as i32,
                 (w[1] * 32768.0).round() as i32,
@@ -1332,7 +1588,9 @@ mod flow {
             }
         }
         let stats = counters.snapshot();
-        eprintln!("{stats:?}, silent after start {silent}, skips {skips}, latency start {first}");
+        eprintln!(
+            "{stats:?}, silent after start {silent}, skips {skips}, latency start {first}, behind at the end {behind}"
+        );
         assert_eq!(silent, 0, "silence after the playback started");
         assert_eq!(skips, 0, "samples skipped or repeated");
         assert_eq!(stats.underruns, 0);
@@ -1340,6 +1598,11 @@ mod flow {
         assert!(
             first <= 4 * FRAME + 2048,
             "starts within ~60 ms ({first} samples)"
+        );
+        assert!(
+            behind <= 40 * 48,
+            "the speaker is {:.1} ms behind the microphone",
+            behind as f64 / 48.0
         );
     }
 
@@ -1395,46 +1658,82 @@ mod flow {
             assert!(Instant::now() < deadline, "no frame from the microphone");
             thread::sleep(Duration::from_millis(1));
         }
-        eprintln!(
-            "first frame {} ms after opening",
-            opened.elapsed().as_millis()
-        );
-        // Settled (the model loaded, the playback started).
-        thread::sleep(Duration::from_secs(1));
-        reset_audio_stats();
-        let start = Instant::now();
-        thread::sleep(Duration::from_secs(10));
-        let stats = audio_stats();
-        let wall = start.elapsed();
+        eprintln!("first frame {} ms after opening", opened.elapsed().as_millis());
+        let mut failures = Vec::new();
+        for mode in [
+            NoiseSuppression::Strong,
+            NoiseSuppression::Standard,
+            NoiseSuppression::Off,
+        ] {
+            crate::set_noise_suppression(mode);
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while crate::applied_noise_suppression() != Some(mode) {
+                assert!(Instant::now() < deadline, "{mode:?} not applied");
+                thread::sleep(Duration::from_millis(10));
+            }
+            // Settled (the playback started).
+            thread::sleep(Duration::from_secs(1));
+            reset_audio_stats();
+            let start = Instant::now();
+            thread::sleep(Duration::from_secs(10));
+            let stats = audio_stats();
+            let wall = start.elapsed();
+            let expected = wall.as_secs_f64() * 100.0;
+            let ms = |d: Duration| d.as_secs_f64() * 1000.0;
+            eprintln!(
+                "{mode:?}: {stats:?} over {wall:?}; callbacks of {} samples on average",
+                stats.callback_samples / stats.callbacks.max(1)
+            );
+            eprintln!(
+                "{mode:?} latency ms: mic {:.1} + wait {:.1} (max {:.1}) + suppressor {:.1} = sent {:.1}; + loop queue {:.1} + speaker {:.1} = mic test {:.1}",
+                ms(stats.input_latency),
+                ms(stats.wait),
+                ms(stats.max_wait),
+                ms(stats.algorithmic),
+                ms(stats.sent_latency()),
+                ms(stats.loop_queue),
+                ms(stats.output_latency),
+                ms(stats.loopback_latency()),
+            );
+            let mut check = |ok: bool, what: String| {
+                if !ok {
+                    failures.push(format!("{mode:?}: {what}"));
+                }
+            };
+            check(
+                stats.max_send_gap <= Duration::from_millis(20),
+                format!("a gap of {:?} between frames to the call", stats.max_send_gap),
+            );
+            check(
+                (stats.sent as f64 - expected).abs() <= expected * 0.02,
+                format!("{} frames sent in {wall:?}", stats.sent),
+            );
+            check(
+                (stats.looped as f64 - expected).abs() <= expected * 0.02,
+                format!("{} frames looped in {wall:?}", stats.looped),
+            );
+            check(stats.underruns == 0, format!("{} underruns", stats.underruns));
+            check(stats.dropped == 0, format!("{} samples skipped", stats.dropped));
+            check(stats.stale == 0, format!("{} samples dropped as late", stats.stale));
+            let played = stats.played as f64 / f64::from(SAMPLE_RATE);
+            check(
+                (played - wall.as_secs_f64()).abs() < 0.1,
+                format!("{played:.2} s played in {wall:?}"),
+            );
+            // The processing's delay plus at most 40 ms; the mic test's
+            // round trip within 60 ms more.
+            check(
+                stats.sent_latency() <= stats.algorithmic + Duration::from_millis(40),
+                format!("sent {:.1} ms after it was said", ms(stats.sent_latency())),
+            );
+            check(
+                stats.loopback_latency() <= stats.sent_latency() + Duration::from_millis(60),
+                format!("the mic test plays {:.1} ms late", ms(stats.loopback_latency())),
+            );
+        }
         stop_mic_test();
         detach_call(id);
         QUIET.store(false, Ordering::Relaxed);
-        let expected = wall.as_secs_f64() * 100.0;
-        eprintln!(
-            "{stats:?} over {wall:?}; callbacks of {} samples on average",
-            stats.callback_samples / stats.callbacks.max(1)
-        );
-        assert!(
-            stats.max_send_gap <= Duration::from_millis(20),
-            "a gap of {:?} between frames to the call",
-            stats.max_send_gap
-        );
-        assert!(
-            (stats.sent as f64 - expected).abs() <= expected * 0.02,
-            "{} frames sent in {wall:?}",
-            stats.sent
-        );
-        assert!(
-            (stats.looped as f64 - expected).abs() <= expected * 0.02,
-            "{} frames looped in {wall:?}",
-            stats.looped
-        );
-        assert_eq!(stats.underruns, 0, "the mic test's playback ran dry");
-        assert_eq!(stats.dropped, 0, "the mic test's playback skipped");
-        let played = stats.played as f64 / f64::from(SAMPLE_RATE);
-        assert!(
-            (played - wall.as_secs_f64()).abs() < 0.1,
-            "{played:.2} s played in {wall:?}"
-        );
+        assert!(failures.is_empty(), "{failures:#?}");
     }
 }
