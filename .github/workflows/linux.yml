@@ -57,21 +57,21 @@ jobs:
         run: cargo build --release -p morpheus-desktop --locked
 
       - name: Package
-        run: echo "ZIP=$(scripts/package-linux.sh)" >> "$GITHUB_ENV"
+        run: echo "RELEASE_ZIP=$(scripts/package-linux.sh | tail -1)" >> "$GITHUB_ENV"
 
       # Update on this platform: the installed zip finds a newer release on a
       # local feed, swaps itself for it, and the new one starts and cleans up.
       - name: Update works
-        run: scripts/update-self-test.sh "$ZIP"
+        run: scripts/update-self-test.sh "$RELEASE_ZIP"
 
       - uses: actions/upload-artifact@v4
         with:
           name: linux-x86_64
-          path: ${{ env.ZIP }}
+          path: ${{ env.RELEASE_ZIP }}
 
       - name: Attach to the release
         if: startsWith(github.ref, 'refs/tags/') || inputs.tag != ''
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag || github.ref_name }}
-        run: gh release upload "$TAG" "$ZIP" --clobber
+        run: gh release upload "$TAG" "$RELEASE_ZIP" --clobber

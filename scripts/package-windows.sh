@@ -5,6 +5,8 @@
 # inside it). Prints the zip's path. Used by release-windows.sh (cross-built
 # on Linux, into target/dist) and by CI (windows.yml, into dist; Git Bash).
 set -euo pipefail
+# Info-ZIP reads options from $ZIP and $ZIPOPT.
+unset ZIP ZIPOPT
 cd "$(dirname "$0")/.."
 version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
 name="morpheus-$version-windows-x86_64"

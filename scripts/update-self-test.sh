@@ -11,6 +11,8 @@
 #   scripts/update-self-test.sh path/to/morpheus-0.2.0-linux-x86_64.zip
 # Runs on Linux, macOS and Windows (Git Bash); needs python for the feed.
 set -euo pipefail
+# Info-ZIP reads options from $ZIP and $ZIPOPT.
+unset ZIP ZIPOPT
 
 zip=$(cd "$(dirname "$1")" && pwd)/$(basename "$1")
 work=$(mktemp -d)
@@ -27,7 +29,8 @@ unpack() { # zip dir
 pack() { # dir (its contents become the zip's top level) zip
     if command -v ditto >/dev/null; then (cd "$1" && ditto -c -k . "$2")
     elif command -v zip >/dev/null; then (cd "$1" && zip -qr "$2" .)
-    else tar -a -c -f "$2" -C "$1" .; fi
+    elif command -v 7z >/dev/null; then (cd "$1" && 7z a -tzip -bso0 "$(native "$2")" .)
+    else echo "no zip, ditto or 7z to make the release zip" >&2; exit 1; fi
 }
 native() { cygpath -w "$1" 2>/dev/null || echo "$1"; }
 
