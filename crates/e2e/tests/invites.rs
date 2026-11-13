@@ -154,3 +154,145 @@ async fn invites_are_listed_declined_and_accepted() {
         .await
         .expect("composer for the joined room");
 }
+
+/// Alice's friends list: exactly `users`, until the guard drops.
+fn befriend(hs: &str, users: &[&str]) -> morpheus_e2e::Cleanup {
+    let guard = morpheus_e2e::reset_friends(hs, "alice");
+    morpheus_e2e::api_as(
+        hs,
+        "alice",
+        "PUT",
+        "user/@alice:localhost/account_data/dev.morpheus.friends",
+        Some(serde_json::json!({ "users": users })),
+    )
+    .expect("friends set");
+    guard
+}
+
+/// The invite dialog just opened lists the friends; the filter narrows them;
+/// clicking bob's row invites him (the row says so); a typed full ID works
+/// for someone who is not a friend.
+async fn use_the_friend_list(alice: &mut App, bob: &mut App, name: &str, what: &str) {
+    alice
+        .wait_for(".invite-dialog .friend-picker", DEFAULT_WAIT)
+        .await
+        .unwrap_or_else(|e| panic!("{what}: no friends list in the dialog: {e}"));
+    alice
+        .wait_for_count(".invite-dialog .friend-pick", 1, DEFAULT_WAIT)
+        .await
+        .unwrap_or_else(|e| panic!("{what}: bob (the one friend) not listed: {e}"));
+    alice
+        .wait_for_text(".invite-dialog .friend-pick", "bob", DEFAULT_WAIT)
+        .await
+        .unwrap_or_else(|e| panic!("{what}: {e}"));
+    // The filter.
+    alice
+        .type_into(".invite-dialog input[name=user]", "zzz")
+        .await
+        .expect("filter");
+    alice
+        .wait_for_count(".invite-dialog .friend-pick", 0, DEFAULT_WAIT)
+        .await
+        .unwrap_or_else(|e| panic!("{what}: the filter did not narrow the list: {e}"));
+    alice
+        .type_into(".invite-dialog input[name=user]", "BO")
+        .await
+        .expect("filter");
+    alice
+        .wait_for_count(".invite-dialog .friend-pick", 1, DEFAULT_WAIT)
+        .await
+        .unwrap_or_else(|e| panic!("{what}: the filter hides bob for \"BO\": {e}"));
+    // Invite from the list.
+    alice
+        .click(".invite-dialog .friend-pick")
+        .await
+        .expect("click bob");
+    alice
+        .wait_for(".invite-dialog .friend-pick[data-state=sent]", DEFAULT_WAIT)
+        .await
+        .unwrap_or_else(|e| panic!("{what}: the row is not marked invited: {e}"));
+    bob.wait_for_text(".invite-row", name, DEFAULT_WAIT)
+        .await
+        .unwrap_or_else(|e| panic!("{what}: bob got no invite: {e}"));
+    // A typed ID of a non-friend still works.
+    alice
+        .type_into(".invite-dialog input[name=user]", "@carol:localhost")
+        .await
+        .expect("a full id");
+    alice.submit(".invite-dialog").await.expect("submit");
+    alice
+        .wait_for_text(".invite-dialog .ok", "Invited @carol:localhost", DEFAULT_WAIT)
+        .await
+        .unwrap_or_else(|e| panic!("{what}: a typed ID did not invite: {e}"));
+    alice.press(".invite-dialog", "Escape").await.expect("escape");
+}
+
+/// Every invite dialog has the searchable list of friends: the room's and
+/// the server's.
+#[tokio::test]
+async fn invite_dialogs_list_friends_and_invite_from_the_list() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let _clean = reset_rooms_named(&hs, &["alice", "bob", "carol"], "e2e room invite");
+    let _friends = befriend(&hs, &["@bob:localhost"]);
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    let mut bob = App::launch(&hs).await.expect("launch bob");
+    if !alice.is_gpui() {
+        eprintln!("GPUI only");
+        return;
+    }
+    login(&mut alice, "alice").await;
+    login(&mut bob, "bob").await;
+    alice.open_room("general").await.expect("open general");
+
+    // A room.
+    let room = format!("e2e room invite {}", std::process::id());
+    alice.click(".create-room-button").await.expect("plus");
+    alice
+        .wait_for(".create-room-dialog input[name=name]", DEFAULT_WAIT)
+        .await
+        .expect("dialog");
+    alice
+        .type_into(".create-room-dialog input[name=name]", &room)
+        .await
+        .expect("name");
+    alice.submit(".create-room-dialog").await.expect("create");
+    alice
+        .wait_for_text(".chat-header h2", &room, DEFAULT_WAIT)
+        .await
+        .expect("new room opened");
+    room_menu(&mut alice, &room).await;
+    alice
+        .click_text(".context-item", "Invite people")
+        .await
+        .expect("invite");
+    use_the_friend_list(&mut alice, &mut bob, &room, "room").await;
+
+    // A server.
+    let server = format!("e2e room invite srv {}", std::process::id());
+    alice.click(".rail-add").await.expect("rail plus");
+    alice
+        .wait_for(".create-space-dialog input[name=name]", DEFAULT_WAIT)
+        .await
+        .expect("dialog");
+    alice
+        .type_into(".create-space-dialog input[name=name]", &server)
+        .await
+        .expect("name");
+    alice.submit(".create-space-dialog").await.expect("create");
+    alice
+        .wait_for_text(".sidebar-header h2", &server, DEFAULT_WAIT)
+        .await
+        .expect("new server scoped");
+    alice
+        .click(".sidebar-header h2.server-name")
+        .await
+        .expect("server menu");
+    alice
+        .click_text(".context-item", "Invite to server")
+        .await
+        .expect("invite to server");
+    use_the_friend_list(&mut alice, &mut bob, &server, "server").await;
+}

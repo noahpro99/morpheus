@@ -193,3 +193,28 @@ mod tests {
         assert!(check_target(None, "@b:x").is_ok());
     }
 }
+
+/// Whether a friend's row shows under what is typed in an invite list's
+/// filter: their name, nickname or Matrix ID has it (any case); an empty
+/// filter shows everyone.
+pub fn matches_filter(row: &FriendRow, user_id: &str, filter: &str) -> bool {
+    let filter = filter.trim().to_lowercase();
+    filter.is_empty()
+        || row.name.to_lowercase().contains(&filter)
+        || user_id.to_lowercase().contains(&filter)
+}
+
+#[cfg(test)]
+mod filter_tests {
+    use super::*;
+
+    #[test]
+    fn the_filter_matches_name_or_id_in_any_case() {
+        let row = FriendRow { name: "Bobby".into(), subtitle: String::new() };
+        assert!(matches_filter(&row, "@bob:localhost", ""));
+        assert!(matches_filter(&row, "@bob:localhost", " BOB"));
+        assert!(matches_filter(&row, "@robert:localhost", "bobb"));
+        assert!(matches_filter(&row, "@bob:localhost", "localhost"));
+        assert!(!matches_filter(&row, "@bob:localhost", "carol"));
+    }
+}

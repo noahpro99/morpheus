@@ -4322,3 +4322,172 @@ async fn a_focused_card_fills_the_stage_in_its_pictures_shape() {
         .await
         .expect("stop sharing");
 }
+
+/// Alice's friends list: exactly `users` (full ids), until the guard drops.
+fn alice_befriends(hs: &str, users: &[&str]) -> morpheus_e2e::Cleanup {
+    let guard = morpheus_e2e::reset_friends(hs, "alice");
+    api_as(
+        hs,
+        "alice",
+        "PUT",
+        "user/@alice:localhost/account_data/dev.morpheus.friends",
+        Some(serde_json::json!({ "users": users })),
+    )
+    .expect("friends set");
+    guard
+}
+
+/// Alone in a voice channel, the call view has one more card, the size of a
+/// person's, with an "Invite to voice channel" button; it opens a modal with
+/// your friends (a filter, a row each); clicking one sends them a DM with a
+/// link to the channel and the row says "Sent"; the link opens the channel
+/// for them, and the card goes when they join.
+#[tokio::test]
+async fn alone_in_a_voice_channel_you_can_invite_friends_to_it() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let _friends = alice_befriends(&hs, &["@bob:localhost", "@carol:localhost"]);
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    let mut bob = App::launch(&hs).await.expect("launch bob");
+    if !alice.is_gpui() {
+        eprintln!("GPUI only");
+        return;
+    }
+    let channel = fresh_voice_channel(&hs);
+    login_and_open(&mut alice, "alice", "general").await;
+    login_and_open(&mut bob, "bob", "general").await;
+    open_without_joining(&mut alice, &channel).await;
+    alice.click(CALL_BUTTON).await.expect("alice joins");
+    alice
+        .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("connected");
+
+    // The card, beside alice's own, of the same size.
+    alice
+        .wait_for(".call-stage .call-invite", DEFAULT_WAIT)
+        .await
+        .expect("the invite card while alone");
+    alice
+        .wait_for_text(".call-invite button", "Invite to voice channel", DEFAULT_WAIT)
+        .await
+        .expect("its button");
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    let mine = alice
+        .bounds(".call-stage .call-tile[data-user=\"@alice:localhost\"]")
+        .await
+        .expect("bounds")
+        .expect("alice's card");
+    let invite = alice
+        .bounds(".call-stage .call-invite")
+        .await
+        .expect("bounds")
+        .expect("the invite card");
+    assert!(
+        (mine.w - invite.w).abs() <= 2.0 && (mine.h - invite.h).abs() <= 2.0,
+        "the invite card is {}x{}, a person's {}x{}",
+        invite.w,
+        invite.h,
+        mine.w,
+        mine.h
+    );
+
+    // The modal: friends, filtered.
+    alice
+        .click(".call-invite button")
+        .await
+        .expect("open the invite");
+    alice
+        .wait_for(".call-invite-dialog .friend-picker", DEFAULT_WAIT)
+        .await
+        .expect("the modal");
+    alice
+        .wait_for_count(".call-invite-dialog .friend-pick", 2, DEFAULT_WAIT)
+        .await
+        .expect("both friends listed");
+    alice
+        .type_into(".call-invite-dialog input[name=friend-filter]", "bo")
+        .await
+        .expect("filter");
+    alice
+        .wait_for_count(".call-invite-dialog .friend-pick", 1, DEFAULT_WAIT)
+        .await
+        .expect("the filter narrows the list");
+    alice
+        .wait_for_text(".call-invite-dialog .friend-pick", "bob", DEFAULT_WAIT)
+        .await
+        .expect("to bob");
+
+    // Send.
+    alice
+        .click(".call-invite-dialog .friend-pick")
+        .await
+        .expect("invite bob");
+    alice
+        .wait_for(
+            ".call-invite-dialog .friend-pick[data-state=sent]",
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("the row is marked sent");
+    alice
+        .wait_for_text(".call-invite-dialog .friend-pick", "Sent", DEFAULT_WAIT)
+        .await
+        .expect("it says Sent");
+    alice
+        .press(".call-invite-dialog", "Escape")
+        .await
+        .expect("close");
+
+    // Bob gets a DM with the link.
+    bob.click(".rail-dms").await.expect("DMs");
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let invited = bob
+            .texts(".invite-row")
+            .await
+            .expect("invites")
+            .iter()
+            .any(|row| row.contains("alice"));
+        if invited {
+            bob.click_text(".invite-row", "alice").await.expect("open");
+            bob.click(".invite-card .invite-accept").await.expect("accept");
+            break;
+        }
+        if bob.open_room("alice").await.is_ok() {
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline, "no DM from alice");
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+    bob.wait_for(".message .body a", DEFAULT_WAIT)
+        .await
+        .expect("bob sees a link in the DM");
+    let href = bob
+        .attrs(".message .body a", "href")
+        .await
+        .expect("hrefs")
+        .into_iter()
+        .flatten()
+        .filter(|h| h.starts_with("https://matrix.to/#/!"))
+        .next_back()
+        .expect("a matrix.to link to a room");
+    bob.click(&format!(".message .body a[href=\"{href}\"]"))
+        .await
+        .expect("click the link");
+    bob.wait_for_text(".chat-header h2, .voice-page-join h2", &channel, DEFAULT_WAIT)
+        .await
+        .expect("the link opens the channel");
+    bob.click(CALL_BUTTON).await.expect("bob joins");
+    bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("bob connected");
+    alice
+        .wait_for_count(".call-stage .call-invite", 0, DEFAULT_WAIT)
+        .await
+        .expect("the card goes when bob joins");
+    alice.click(".voice-panel .hang-up").await.expect("leave");
+    bob.click(".voice-panel .hang-up").await.expect("leave");
+}
