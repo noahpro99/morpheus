@@ -51,8 +51,7 @@ fn bar_button(id: &'static str) -> gpui::Stateful<gpui::Div> {
         div()
             .id(id)
             .relative()
-            .px(px(8.0))
-            .py(px(2.0))
+            .h_full().px(px(10.0))
             .flex()
             .items_center()
             .justify_center()
@@ -83,8 +82,8 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         inbox = inbox.child(
             div()
                 .absolute()
-                .right(px(-2.0))
-                .bottom(px(-4.0))
+                .right(px(2.0))
+                .bottom(px(2.0))
                 .min_w(px(16.0))
                 .h(px(16.0))
                 .px(px(4.0))
@@ -116,6 +115,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             .child(
                 div()
                     .flex_1()
+                    .h_full()
                     .flex()
                     .gap(px(2.0))
                     .child(nav_button(
@@ -156,6 +156,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             .child(
                 div()
                     .flex_1()
+                    .h_full()
                     .flex()
                     .justify_end()
                     .items_center()
