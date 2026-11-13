@@ -37,7 +37,7 @@ cp -r apps/mobile/android/kotlin/. "$app/app/src/main/kotlin/"
 manifest="$app/app/src/main/AndroidManifest.xml"
 sed -i '/<!-- morpheus:begin -->/,/<!-- morpheus:end -->/d' "$manifest"
 sed -i '/<\/application>/e cat apps/mobile/android/manifest-application.xml' "$manifest"
-cp "$(find target -name libwebrtc.jar -path '*android*' -print -quit)" "$app/app/libs/libwebrtc.jar"
+cp "$(find target/ -name libwebrtc.jar -path '*android-arm64*' -not -path '*/dx/*' -print -quit)" "$app/app/libs/libwebrtc.jar"
 # Keep the Java and Kotlin whole (see the file).
 cp apps/mobile/android/morpheus.pro "$app/app/morpheus.pro"
 grep -q 'libs/libwebrtc.jar' "$app/app/build.gradle.kts" ||
