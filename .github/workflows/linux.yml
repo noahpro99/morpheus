@@ -1,9 +1,11 @@
 # The desktop app for Linux (x86-64), zipped as the updater expects:
 # morpheus-<version>-linux-x86_64.zip, one folder holding morpheus-desktop
-# and its assets. Built on an older Ubuntu, against the system's own
-# WebKitGTK, so it runs on most distributions from that one on (a build in
-# `nix develop` would only run where Nix is). On a release tag it is attached
-# to that release; run by hand, to the release named in `tag` (if any).
+# (its fonts and images are inside it). Built on an older Ubuntu so it runs on
+# most distributions from that one on (a build in `nix develop` would only
+# run where Nix is): it loads the window system's, Vulkan's and the sound
+# server's libraries at run time. The update is tried on the built zip
+# (scripts/update-self-test.sh). On a release tag it is attached to that
+# release; run by hand, to the release named in `tag` (if any).
 name: Linux
 
 on:
@@ -12,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Release to attach the build to (e.g. v0.1.1); empty to only keep it as a run artifact
+        description: Release to attach the build to (e.g. v0.2.0); empty to only keep it as a run artifact
         required: false
 
 permissions:
@@ -29,11 +31,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libxdo-dev \
-            libayatana-appindicator3-dev librsvg2-dev libssl-dev libasound2-dev \
-            libpulse-dev libpipewire-0.3-dev libxkbcommon-dev libgl-dev libdrm-dev libgbm-dev \
+            libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev libxcb1-dev libx11-xcb-dev \
             libx11-dev libxext-dev libxfixes-dev libxdamage-dev libxrandr-dev libxcomposite-dev libxtst-dev \
-            pkg-config cmake zip
+            libfontconfig-dev libfreetype-dev libvulkan-dev libgl-dev libdrm-dev libgbm-dev \
+            libssl-dev libasound2-dev libpulse-dev libpipewire-0.3-dev libdbus-1-dev \
+            pkg-config cmake zip python3
           # libwebrtc (calls) is built against Chromium's libc++ and needs a
           # recent clang, as in the dev shell.
           wget -qO llvm.sh https://apt.llvm.org/llvm.sh
@@ -50,27 +52,16 @@ jobs:
         with:
           shared-key: linux-x86_64
 
-      # Built here: the prebuilt one needs a newer glibc than this Ubuntu.
-      - name: Dioxus CLI
-        run: cargo install --locked dioxus-cli@0.7.10
-
       - name: Build
-        run: dx build --release --package morpheus-desktop --platform linux
+        run: cargo build --release -p morpheus-desktop --locked
 
       - name: Package
-        run: |
-          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
-          app=target/dx/morpheus-desktop/release/linux/app
-          ls -la "$app"
-          name="morpheus-$version-linux-x86_64"
-          mkdir -p "dist/$name"
-          cp "$app/morpheus-desktop" "dist/$name/"
-          cp -r "$app/assets" "dist/$name/"
-          # Every library it links is one a distribution has.
-          if ldd "dist/$name/morpheus-desktop" | grep "not found"; then exit 1; fi
-          (cd dist && zip -qr "$name.zip" "$name")
-          ls -la "dist/$name.zip"
-          echo "ZIP=dist/$name.zip" >> "$GITHUB_ENV"
+        run: echo "ZIP=$(scripts/package-linux.sh)" >> "$GITHUB_ENV"
+
+      # Update on this platform: the installed zip finds a newer release on a
+      # local feed, swaps itself for it, and the new one starts and cleans up.
+      - name: Update works
+        run: scripts/update-self-test.sh "$ZIP"
 
       - uses: actions/upload-artifact@v4
         with:
