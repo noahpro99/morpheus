@@ -73,8 +73,8 @@ pub fn decode(media: &morpheus_core::Media) -> Option<Arc<Image>> {
     Some(Arc::new(Image::from_bytes(format, media.bytes.clone())))
 }
 
-/// Square copies of non-square pictures, by the original's id.
-static SQUARED: std::sync::LazyLock<std::sync::Mutex<HashMap<u64, Arc<Image>>>> =
+/// Copies of pictures cut to a shape, by the original's id and the shape.
+static SQUARED: std::sync::LazyLock<std::sync::Mutex<HashMap<(u64, u32), Arc<Image>>>> =
     std::sync::LazyLock::new(Default::default);
 
 /// `image` cut to its middle square, for an avatar to fill its circle or
@@ -83,26 +83,40 @@ static SQUARED: std::sync::LazyLock<std::sync::Mutex<HashMap<u64, Arc<Image>>>> 
 /// happens here and the square is drawn edge to edge. A square picture (an
 /// animated one too) is drawn as it is; one that cannot be read, too.
 pub fn squared(image: &Arc<Image>) -> Arc<Image> {
-    if let Some(done) = SQUARED.lock().ok().and_then(|cache| cache.get(&image.id()).cloned()) {
+    covering(image, 1.0, 1.0)
+}
+
+/// `image` cut to the middle part with the proportions `w`:`h`, to be drawn
+/// edge to edge in a rounded box of that shape (`ObjectFit::Fill`; see
+/// `squared` for why not `Cover`). One already of that shape, or that cannot
+/// be read, is returned as it is.
+pub fn covering(image: &Arc<Image>, w: f32, h: f32) -> Arc<Image> {
+    let key = (image.id(), ((w / h) * 1000.0).round() as u32);
+    if let Some(done) = SQUARED.lock().ok().and_then(|cache| cache.get(&key).cloned()) {
         return done;
     }
-    let squared = (|| {
+    let cut = (|| {
         let decoded = image::load_from_memory(image.bytes()).ok()?;
-        let (w, h) = (decoded.width(), decoded.height());
-        if w == h {
+        let (iw, ih) = (decoded.width() as f32, decoded.height() as f32);
+        let (tw, th) = if iw * h > ih * w {
+            ((ih * w / h).round().max(1.0), ih)
+        } else {
+            (iw, (iw * h / w).round().max(1.0))
+        };
+        if (tw - iw).abs() < 1.0 && (th - ih).abs() < 1.0 {
             return None;
         }
-        let side = w.min(h);
-        let cropped = decoded.crop_imm((w - side) / 2, (h - side) / 2, side, side);
+        let (tw, th) = (tw as u32, th as u32);
+        let cropped = decoded.crop_imm((decoded.width() - tw) / 2, (decoded.height() - th) / 2, tw, th);
         let mut png = std::io::Cursor::new(Vec::new());
         cropped.write_to(&mut png, image::ImageFormat::Png).ok()?;
         Some(Arc::new(Image::from_bytes(ImageFormat::Png, png.into_inner())))
     })()
     .unwrap_or_else(|| image.clone());
     if let Ok(mut cache) = SQUARED.lock() {
-        cache.insert(image.id(), squared.clone());
+        cache.insert(key, cut.clone());
     }
-    squared
+    cut
 }
 
 /// The first letter or digit of `name`, upper-cased (`?` when none).

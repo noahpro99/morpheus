@@ -1114,3 +1114,195 @@ async fn emojis_draw_as_one_colour_glyph_each() {
     }
     assert!(failed.is_empty(), "emoji not drawn as one colour glyph:\n{}", failed.join("\n"));
 }
+
+/// A direct message between `owner` and `guest`, marked as one in the
+/// owner's account data (as a client does).
+fn dm_of(hs: &str, owner: &str, guest: &str) -> String {
+    let made = api_as(
+        hs,
+        owner,
+        "POST",
+        "createRoom",
+        Some(serde_json::json!({ "invite": [format!("@{guest}:localhost")], "is_direct": true, "preset": "trusted_private_chat" })),
+    )
+    .expect("a DM");
+    let room = made["room_id"].as_str().expect("room id").to_owned();
+    api_as(
+        hs,
+        guest,
+        "POST",
+        &format!("join/{}", room.replace('!', "%21").replace(':', "%3A")),
+        Some(serde_json::json!({})),
+    )
+    .expect("join");
+    api_as(
+        hs,
+        owner,
+        "PUT",
+        &format!("user/%40{owner}%3Alocalhost/account_data/m.direct"),
+        Some(serde_json::json!({ format!("@{guest}:localhost"): [room.clone()] })),
+    )
+    .expect("m.direct");
+    room
+}
+
+/// The command palette finds a person by the nickname you gave them: their
+/// DM comes up (listed under the nickname), and so does nothing for a name
+/// nobody has.
+#[tokio::test]
+async fn the_palette_finds_a_person_by_nickname() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let (ann, ben) = (
+        new_account(&hs, "palnann").expect("account"),
+        new_account(&hs, "palnben").expect("account"),
+    );
+    room_of(&hs, &ann, &ben, "lobby");
+    let dm = dm_of(&hs, &ann, &ben);
+    let nick = "Zorblax the Wise";
+    api_as(
+        &hs,
+        &ann,
+        "PUT",
+        &format!("user/%40{ann}%3Alocalhost/account_data/dev.morpheus.nicknames"),
+        Some(serde_json::json!({ format!("@{ben}:localhost"): nick })),
+    )
+    .expect("a nickname");
+    let mut app = App::launch_desktop(&hs).await.expect("launch app");
+    common::login(&mut app, &ann, &format!("{ann}-password")).await;
+    app.shortcut(".shell", "k", true).await.expect("ctrl+k");
+    app.wait_for(".switcher input", DEFAULT_WAIT).await.expect("palette");
+    // Wait for the nickname to arrive: the DM is listed under it.
+    let row = format!(".switcher-item[data-key=\"{dm}\"]");
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    for part in ["zorb", "WISE", "the wi"] {
+        app.type_into(".switcher input", part).await.expect("type");
+        loop {
+            if app.count(&row).await.unwrap_or(0) == 1 {
+                break;
+            }
+            assert!(std::time::Instant::now() < deadline, "typing {part:?} did not find the DM");
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            app.type_into(".switcher input", part).await.expect("type");
+        }
+        app.wait_for_text(&row, nick, DEFAULT_WAIT).await.expect("listed under the nickname");
+    }
+    // A name nobody has finds nothing.
+    app.type_into(".switcher input", "qqqxyzzy").await.expect("type");
+    app.wait_for(".switcher-item.muted", DEFAULT_WAIT).await.expect("nothing matches");
+    assert_eq!(app.count(&row).await.expect("count"), 0);
+    // Enter on the nickname opens the DM.
+    app.type_into(".switcher input", "zorblax").await.expect("type");
+    app.wait_for(&row, DEFAULT_WAIT).await.expect("row");
+    app.press(".switcher input", "Enter").await.expect("enter");
+    app.wait_for_text(".chat-header h2", nick, DEFAULT_WAIT).await.expect("the DM opens");
+}
+
+/// The palette's pictures are cut like every other avatar: a wide picture
+/// fills a true circle with its middle (red), the blue sides cropped away.
+#[tokio::test]
+async fn a_wide_picture_fills_the_palettes_round_avatar() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let (ann, ben) = (
+        new_account(&hs, "palrann").expect("account"),
+        new_account(&hs, "palrben").expect("account"),
+    );
+    room_of(&hs, &ann, &ben, "lobby");
+    let dm = dm_of(&hs, &ann, &ben);
+    morpheus_e2e::set_avatar_as(&hs, &ben, FRAMED_PNG).expect("an avatar");
+    let mut app = App::launch_desktop(&hs).await.expect("launch app");
+    common::login(&mut app, &ann, &format!("{ann}-password")).await;
+    app.shortcut(".shell", "k", true).await.expect("ctrl+k");
+    let sel = format!(".switcher-item[data-key=\"{dm}\"] img.avatar");
+    app.wait_for(&sel, DEFAULT_WAIT).await.expect("his picture in the palette");
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    let b = app.bounds(&sel).await.expect("b").expect("avatar");
+    assert!((b.w - b.h).abs() <= 1.0, "the avatar is not square: {b:?}");
+    let Some((pixels, w, h)) = common::capture(&app) else {
+        eprintln!("no grim capture here; skipping the pixel check");
+        return;
+    };
+    let pixel = |x: f64, y: f64| {
+        let (x, y) = (x.round() as usize, y.round() as usize);
+        assert!(x < w && y < h, "({x}, {y}) is outside the {w}x{h} capture");
+        let i = (y * w + x) * 3;
+        (pixels[i], pixels[i + 1], pixels[i + 2])
+    };
+    let red = |p: (u8, u8, u8)| p.0 > 180 && p.1 < 80 && p.2 < 80;
+    let blue = |p: (u8, u8, u8)| p.2 > 180 && p.0 < 80 && p.1 < 80;
+    let (cx, cy) = (b.x + b.w / 2.0, b.y + b.h / 2.0);
+    let inset = 2.5;
+    for (x, y) in [(cx, cy), (b.x + inset, cy), (b.right() - inset, cy), (cx, b.y + inset), (cx, b.y + b.h - inset)] {
+        let p = pixel(x, y);
+        assert!(red(p), "inside the circle at ({x}, {y}) is {p:?}, not the picture's red middle ({b:?})");
+    }
+    for (x, y) in [(b.x + 1.5, b.y + 1.5), (b.right() - 1.5, b.y + 1.5), (b.x + 1.5, b.y + b.h - 1.5), (b.right() - 1.5, b.y + b.h - 1.5)] {
+        let p = pixel(x, y);
+        assert!(!red(p) && !blue(p), "the corner at ({x}, {y}) is {p:?}: not cut to a circle");
+    }
+}
+
+/// A channel's row in the palette shows its server's picture, cut to fill
+/// its (rounded) box like every avatar: the red middle of a wide picture,
+/// its blue sides gone, the box's corners empty.
+#[tokio::test]
+async fn a_servers_wide_icon_fills_the_palettes_avatar() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let ann = new_account(&hs, "palsann").expect("account");
+    let made = |body: serde_json::Value| {
+        api_as(&hs, &ann, "POST", "createRoom", Some(body)).expect("a room")["room_id"]
+            .as_str()
+            .expect("room id")
+            .to_owned()
+    };
+    let space = made(serde_json::json!({ "name": "Wide Server", "creation_content": { "type": "m.space" } }));
+    made(serde_json::json!({ "name": "lobby" }));
+    let chan = made(serde_json::json!({ "name": "wide-chan" }));
+    api_as(
+        &hs,
+        &ann,
+        "PUT",
+        &format!("rooms/{space}/state/m.space.child/{chan}"),
+        Some(serde_json::json!({ "via": ["localhost"] })),
+    )
+    .expect("child");
+    morpheus_e2e::set_room_avatar_as(&hs, &ann, &space, FRAMED_PNG).expect("an icon");
+    let mut app = App::launch_desktop(&hs).await.expect("launch app");
+    common::login(&mut app, &ann, &format!("{ann}-password")).await;
+    app.shortcut(".shell", "k", true).await.expect("ctrl+k");
+    app.wait_for(".switcher input", DEFAULT_WAIT).await.expect("palette");
+    app.type_into(".switcher input", "wide-chan").await.expect("type");
+    let sel = format!(".switcher-item[data-key=\"{chan}\"] img.avatar");
+    app.wait_for(&sel, DEFAULT_WAIT).await.expect("the server's picture in the palette");
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    let b = app.bounds(&sel).await.expect("b").expect("avatar");
+    let Some((pixels, w, h)) = common::capture(&app) else {
+        eprintln!("no grim capture here; skipping the pixel check");
+        return;
+    };
+    let pixel = |x: f64, y: f64| {
+        let (x, y) = (x.round() as usize, y.round() as usize);
+        assert!(x < w && y < h, "({x}, {y}) is outside the {w}x{h} capture");
+        let i = (y * w + x) * 3;
+        (pixels[i], pixels[i + 1], pixels[i + 2])
+    };
+    let red = |p: (u8, u8, u8)| p.0 > 180 && p.1 < 80 && p.2 < 80;
+    let blue = |p: (u8, u8, u8)| p.2 > 180 && p.0 < 80 && p.1 < 80;
+    let (cx, cy) = (b.x + b.w / 2.0, b.y + b.h / 2.0);
+    for (x, y) in [(cx, cy), (b.x + 2.5, cy), (b.right() - 2.5, cy), (cx, b.y + 2.5), (cx, b.y + b.h - 2.5)] {
+        let p = pixel(x, y);
+        assert!(red(p), "inside the icon at ({x}, {y}) is {p:?}, not the picture's red middle ({b:?})");
+    }
+    for (x, y) in [(b.x + 1.0, b.y + 1.0), (b.right() - 1.0, b.y + 1.0), (b.x + 1.0, b.y + b.h - 1.0), (b.right() - 1.0, b.y + b.h - 1.0)] {
+        let p = pixel(x, y);
+        assert!(!red(p) && !blue(p), "the corner at ({x}, {y}) is {p:?}: not cut to a rounded shape");
+    }
+}

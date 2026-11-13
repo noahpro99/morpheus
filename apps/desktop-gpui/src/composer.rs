@@ -544,11 +544,11 @@ impl Composer {
         for tile in &self.tiles {
             let id = tile.id;
             let picture = match &tile.image {
-                Some(image) => img(image.clone())
+                Some(image) => img(crate::media::covering(image, 138.0, 110.0))
                     .w_full()
                     .h(px(110.0))
                     .rounded(px(theme::RADIUS - 2.0))
-                    .object_fit(ObjectFit::Cover)
+                    .object_fit(ObjectFit::Fill)
                     .e2e("img", "")
                     .attr("src", tile.src.clone())
                     .attr("alt", tile.name.clone())

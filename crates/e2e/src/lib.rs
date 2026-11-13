@@ -3072,6 +3072,47 @@ pub fn set_avatar_as(homeserver: &str, user: &str, png: &[u8]) -> Result<()> {
     Ok(())
 }
 
+/// Make `png` the picture of `room`, as `user`.
+pub fn set_room_avatar_as(homeserver: &str, user: &str, room: &str, png: &[u8]) -> Result<()> {
+    let login = curl(&[
+        "-X",
+        "POST",
+        &format!("{homeserver}/_matrix/client/v3/login"),
+        "-d",
+        &json!({ "type": "m.login.password", "identifier": { "type": "m.id.user", "user": user }, "password": format!("{user}-password") }).to_string(),
+    ])?;
+    let login: Value = serde_json::from_str(&login)?;
+    let token = login["access_token"]
+        .as_str()
+        .ok_or_else(|| anyhow!("no token for {user}"))?;
+    let file = std::env::temp_dir().join(format!("morpheus-e2e-{}.png", unique()));
+    std::fs::write(&file, png)?;
+    let uploaded = curl(&[
+        "-X",
+        "POST",
+        "-H",
+        &format!("Authorization: Bearer {token}"),
+        "-H",
+        "Content-Type: image/png",
+        "--data-binary",
+        &format!("@{}", file.display()),
+        &format!("{homeserver}/_matrix/media/v3/upload?filename=room.png"),
+    ])?;
+    let _ = std::fs::remove_file(&file);
+    let uploaded: Value = serde_json::from_str(&uploaded)?;
+    let room = room.replace('!', "%21").replace(':', "%3A");
+    curl(&[
+        "-X",
+        "PUT",
+        "-H",
+        &format!("Authorization: Bearer {token}"),
+        &format!("{homeserver}/_matrix/client/v3/rooms/{room}/state/m.room.avatar"),
+        "-d",
+        &json!({ "url": uploaded["content_uri"] }).to_string(),
+    ])?;
+    Ok(())
+}
+
 /// How far a scrolling element is scrolled, in pixels: `from_bottom` (0 at
 /// its newest end), the `range` it can scroll, and its `viewport` height.
 /// (The GPUI timeline only knows the rows it has measured, so its range
