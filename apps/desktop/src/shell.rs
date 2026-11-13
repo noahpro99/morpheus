@@ -1094,7 +1094,21 @@ impl Render for Shell {
             .track_focus(&root_focus)
             // A click on nothing in particular leaves the focus where it is (the
             // root would otherwise take it from a text box).
-            .on_mouse_down(gpui::MouseButton::Left, |_, window, _| window.prevent_default())
+            .on_mouse_down(
+                gpui::MouseButton::Left,
+                cx.listener(|this, _, window, cx| {
+                    window.prevent_default();
+                    // A click that got here landed on nothing that takes the
+                    // caret (a text box would have, first): the search box lets go.
+                    if let Some(input) = &this.search_input
+                        && input.read(cx).is_focused(window)
+                        && let Some(root) = &this.root_focus
+                    {
+                        window.focus(root);
+                        cx.notify();
+                    }
+                }),
+            )
             .on_mouse_move(cx.listener(|this, event: &gpui::MouseMoveEvent, window, cx| {
                 if let Some((y0, start)) = this.calls.stage_drag {
                     let chat = f32::from(window.viewport_size().height) - 32.0 - 48.0;

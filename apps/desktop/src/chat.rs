@@ -279,6 +279,7 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                     .cursor_text()
                     .on_mouse_down(gpui::MouseButton::Left, move |_, window, cx| {
                         target_input.read(cx).focus(window);
+                        cx.stop_propagation();
                     })
                     .child(div().flex_1().min_w_0().child(input.clone()))
                     .child(if text.is_empty() {

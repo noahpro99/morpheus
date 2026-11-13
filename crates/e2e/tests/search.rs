@@ -373,3 +373,48 @@ async fn escape_elsewhere_closes_the_results() {
     app.wait_for_count(".search-panel", 0, DEFAULT_WAIT).await.expect("panel closed");
     app.wait_for(".side-pane .members", DEFAULT_WAIT).await.expect("members back");
 }
+
+/// Clicking anywhere away from the box takes the caret out of it (not only
+/// into another text box): an empty box shrinks back, and a results panel
+/// stays open while the box holds its text. (GPUI only.)
+#[tokio::test]
+async fn clicking_away_from_the_search_box_unfocuses_it() {
+    let Some(mut app) = in_random().await else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    if !app.is_gpui() {
+        return;
+    }
+    let focused = ".chat-header input[name=search][data-focused]";
+    app.wait_for(".members-header", DEFAULT_WAIT).await.expect("the member list");
+    // Empty box: a click on the messages, then one on the member list's heading.
+    for away in [".timeline", ".members-header", ".chat-header .room-head h2"] {
+        app.click(SEARCH_INPUT).await.expect("focus the box");
+        app.wait_for(focused, DEFAULT_WAIT).await.expect("focused");
+        if away.contains("room-head") {
+            // That opens the room menu: close it again, the box must have lost the caret.
+            app.click(away).await.expect("click away");
+            app.press("body", "Escape").await.expect("close the menu");
+        } else {
+            app.click(away).await.expect("click away");
+        }
+        app.wait_for_count(focused, 0, DEFAULT_WAIT)
+            .await
+            .unwrap_or_else(|e| panic!("clicking {away} left the caret in the box: {e}"));
+        bar_settles_narrow(&mut app).await;
+    }
+    // Clicking in the box keeps it.
+    app.click(SEARCH_INPUT).await.expect("focus the box");
+    app.click(SEARCH_INPUT).await.expect("click inside");
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert_eq!(app.count(focused).await.expect("count"), 1, "a click in the box dropped the caret");
+    // With results open: the panel and the text stay, the caret goes.
+    app.type_into(SEARCH_INPUT, "okapi").await.expect("query");
+    app.press(SEARCH_INPUT, "Enter").await.expect("search");
+    app.wait_for(".search-panel", DEFAULT_WAIT).await.expect("panel");
+    app.click(".timeline").await.expect("click away");
+    app.wait_for_count(focused, 0, DEFAULT_WAIT).await.expect("the caret left the box");
+    assert_eq!(app.count(".search-panel").await.expect("count"), 1, "the results closed");
+    assert_eq!(app.value(SEARCH_INPUT).await.expect("value").unwrap_or_default(), "okapi", "the text stays");
+}
