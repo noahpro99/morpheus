@@ -437,7 +437,8 @@ impl Shell {
         let rooms = self.rooms.clone();
         let scope = self.scope.clone();
         let nicknames = self.nicknames.clone();
-        let dialog = cx.new(|cx| RoomDialog::new(kind, session, rooms, scope, &nicknames, cx));
+        let friends = self.friends.clone();
+        let dialog = cx.new(|cx| RoomDialog::new(kind, session, rooms, scope, &nicknames, friends, cx));
         cx.subscribe(&dialog, |this, _, _: &Closed, cx| this.dialog_close(cx))
             .detach();
         cx.subscribe(&dialog, |this, _, done: &Done, cx| this.room_dialog_done(done, cx))

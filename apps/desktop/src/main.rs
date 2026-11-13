@@ -16,6 +16,7 @@ mod composer;
 mod dialogs;
 mod e2e;
 mod emoji_picker;
+mod friend_picker;
 mod friends;
 mod hotkeys;
 mod hover_underline;

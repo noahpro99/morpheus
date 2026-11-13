@@ -15,6 +15,7 @@ use morpheus_core::{History, OwnedRoomId, Privacy, RoomSummary, Session};
 
 use crate::{
     dialogs::{Closed, actions, dialog_box, heading, muted, overlay},
+    friend_picker::{FriendPicker, Picked, RowState},
     e2e::E2eExt as _,
     icons::icon,
     input::{Submit, TextInput},
@@ -53,6 +54,8 @@ pub struct RoomDialog {
     name: Option<Entity<TextInput>>,
     topic: Option<Entity<TextInput>>,
     user: Option<Entity<TextInput>>,
+    /// Invite: the friends to pick from (its box is `user`).
+    picker: Option<Entity<FriendPicker>>,
     busy: bool,
     note: Option<Note>,
     /// Create room: the categories of the server, and which one is chosen
@@ -80,6 +83,7 @@ impl RoomDialog {
         rooms: Vec<RoomSummary>,
         scope: Scope,
         nicknames: &crate::view_model::nicknames::NickMap,
+        friends: Vec<morpheus_core::OwnedUserId>,
         cx: &mut Context<Self>,
     ) -> Self {
         let current = |id: &OwnedRoomId| rooms.iter().find(|room| &room.id == id).cloned();
@@ -89,8 +93,28 @@ impl RoomDialog {
             Some(input)
         };
         let (mut name, mut topic, mut user) = (None, None, None);
+        let mut chooser = None;
         match &kind {
-            RoomDialogKind::Invite(_) => user = field(cx, "user", "@friend:matrix.org", ""),
+            RoomDialogKind::Invite(_) => {
+                let picker = cx.new(|cx| {
+                    FriendPicker::new(
+                        Some(session.clone()),
+                        friends,
+                        nicknames.clone(),
+                        "user",
+                        "Search friends or enter @friend:matrix.org",
+                        "Invite",
+                        "Invited",
+                        cx,
+                    )
+                });
+                let input = picker.read(cx).input().clone();
+                cx.subscribe(&input, |this, _, _: &Submit, cx| this.submit(cx)).detach();
+                cx.subscribe(&picker, |this, _, picked: &Picked, cx| this.invite(picked.0.clone(), cx))
+                    .detach();
+                user = Some(input);
+                chooser = Some(picker);
+            }
             RoomDialogKind::Edit(id) => {
                 let room = current(id);
                 name = field(
@@ -135,6 +159,7 @@ impl RoomDialog {
             name,
             topic,
             user,
+            picker: chooser,
             busy: false,
             note: None,
             categories,
@@ -247,32 +272,53 @@ impl RoomDialog {
         cx.notify();
     }
 
+    /// Invite `user` to the room or server of an Invite dialog (from the
+    /// list of friends or a typed ID); the friends' row and a note say how
+    /// it went.
+    fn invite(&mut self, user: morpheus_core::OwnedUserId, cx: &mut Context<Self>) {
+        let RoomDialogKind::Invite(room) = self.kind.clone() else {
+            return;
+        };
+        if self.busy {
+            if let Some(picker) = &self.picker {
+                picker.update(cx, |picker, cx| picker.set_state(&user, None, cx));
+            }
+            return;
+        }
+        let inviting = self.session.invite(room, user.clone());
+        self.run(inviting, cx, move |this, result, cx| {
+            let state = match &result {
+                Ok(()) => RowState::Done,
+                Err(err) => RowState::Failed(err.clone()),
+            };
+            if let Some(picker) = &this.picker {
+                picker.update(cx, |picker, cx| picker.set_state(&user, Some(state), cx));
+            }
+            this.note = Some(match result {
+                Ok(()) => {
+                    if let Some(input) = &this.user {
+                        input.update(cx, |input, cx| input.set_value("", cx));
+                    }
+                    vm::invited_note(&user)
+                }
+                Err(err) => Note::error(err),
+            });
+        });
+    }
+
     fn submit(&mut self, cx: &mut Context<Self>) {
         if self.busy {
             return;
         }
         match self.kind.clone() {
-            RoomDialogKind::Invite(room) => {
-                let user = match vm::parse_invitee(&self.text(&self.user, cx)) {
-                    Ok(user) => user,
+            RoomDialogKind::Invite(_) => {
+                match vm::parse_invitee(&self.text(&self.user, cx)) {
+                    Ok(user) => self.invite(user, cx),
                     Err(note) => {
                         self.note = Some(note);
                         cx.notify();
-                        return;
                     }
-                };
-                let inviting = self.session.invite(room, user.clone());
-                self.run(inviting, cx, move |this, result, cx| {
-                    this.note = Some(match result {
-                        Ok(()) => {
-                            if let Some(input) = &this.user {
-                                input.update(cx, |input, cx| input.set_value("", cx));
-                            }
-                            vm::invited_note(&user)
-                        }
-                        Err(err) => Note::error(err),
-                    });
-                });
+                }
             }
             RoomDialogKind::Edit(room) => {
                 let (name, topic) = (self.text(&self.name, cx), self.text(&self.topic, cx));
@@ -818,8 +864,8 @@ impl RoomDialog {
         match self.kind.clone() {
             RoomDialogKind::Invite(_) => {
                 parts.push(heading("Invite people").into_any_element());
-                if let Some(user) = &self.user {
-                    parts.push(field("Matrix ID", user));
+                if let Some(picker) = &self.picker {
+                    parts.push(picker.clone().into_any_element());
                 }
                 parts.extend(note);
                 parts.push(
