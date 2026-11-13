@@ -1591,28 +1591,36 @@ pub fn other_row(row: &Row) -> AnyElement {
             .e2e("div", "timeline-start")
             .text("This is the beginning of the room.")
             .into_any_element(),
+        // Discord's: a red line from edge to edge, the NEW pill at its right
+        // end, centred on it (one flex row, items centred).
         Row::New => div()
+            .w_full()
             .flex()
             .items_center()
-            .gap(px(8.0))
             .mt(px(10.0))
             .mb(px(2.0))
-            .mx(px(16.0))
-            .text_color(rgb(theme::danger()))
-            .text_size(rem(0.7))
-            .font_weight(FontWeight::BOLD)
-            .child(div().flex_1().h(px(1.0)).bg(rgb(theme::danger())))
+            .pr(px(8.0))
+            .child(
+                div()
+                    .flex_1()
+                    .h(px(1.0))
+                    .bg(rgb(theme::danger()))
+                    .e2e("div", "new-line")
+                    .attr("data-bg", format!("#{:06x}", theme::danger())),
+            )
             .child(
                 div()
                     .px(px(6.0))
+                    .py(px(1.0))
                     .rounded(px(4.0))
                     .bg(rgb(theme::danger()))
                     .text_color(rgb(0xffffff))
+                    .text_size(rem(0.7))
+                    .font_weight(FontWeight::BOLD)
                     .child("NEW")
-                    .e2e("span", "")
+                    .e2e("span", "new-pill")
                     .text("NEW"),
             )
-            .child(div().flex_1().h(px(1.0)).bg(rgb(theme::danger())))
             .e2e("div", "new-divider")
             .into_any_element(),
         Row::Skeleton { older } => skeleton(*older),
