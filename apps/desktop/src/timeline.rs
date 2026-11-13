@@ -147,6 +147,8 @@ pub struct TimelineView {
     /// The room was marked unread from here: no read receipts (any of them
     /// would clear the flag) until the room is opened again.
     keep_unread: bool,
+    /// Not on screen (a voice channel's chat while closed): nothing is read.
+    covered: bool,
     /// Set for a thread's replies: the root they belong to.
     thread_root: Option<OwnedEventId>,
     /// A message being jumped to (a search result): its event ID and the
@@ -254,6 +256,7 @@ impl TimelineView {
             undecryptable: false,
             hidden: HashSet::new(),
             keep_unread: false,
+            covered: false,
             // A thread is never read or marked: the room's own timeline does.
             thread_root: thread_root.clone(),
             jump: None,
@@ -356,7 +359,7 @@ impl TimelineView {
         if let Some(handle) = self
             .handle
             .as_ref()
-            .filter(|_| !self.keep_unread && self.thread_root.is_none())
+            .filter(|_| !self.keep_unread && !self.covered && self.thread_root.is_none())
         {
             let receipt = handle.send_read_receipt();
             cx.spawn(async move |_, _| {
@@ -905,6 +908,23 @@ impl TimelineView {
         }
     }
 
+    /// Whether the timeline is out of sight (then it reads nothing); shown
+    /// again, it reads the room up to its newest message.
+    pub fn set_covered(&mut self, covered: bool, cx: &mut Context<Self>) {
+        if self.covered == covered {
+            return;
+        }
+        self.covered = covered;
+        if !covered
+            && !self.keep_unread
+            && self.thread_root.is_none()
+            && let Some(handle) = self.handle.as_ref()
+        {
+            let receipt = handle.send_read_receipt();
+            cx.spawn(async move |_, _| drop(receipt.await)).detach();
+        }
+    }
+
     /// The room was marked unread: leaving it must not read it again.
     pub fn keep_unread(&mut self) {
         self.keep_unread = true;
@@ -937,6 +957,7 @@ impl Drop for TimelineView {
         // marked unread from here).
         if let Some(handle) = self.handle.take()
             && !self.keep_unread
+            && !self.covered
             && self.thread_root.is_none()
         {
             drop(handle.mark_as_fully_read());

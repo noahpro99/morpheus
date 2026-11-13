@@ -984,7 +984,7 @@ fn stage_body(
         .bg(rgb(theme::bg_rail()))
         .min_h(px(200.0));
     stage = if voice_page {
-        stage.flex_1().min_h_0()
+        stage.flex_1().min_w_0().min_h_0()
     } else {
         stage
             .h(px(height))
@@ -1128,8 +1128,8 @@ pub fn voice_page(
     }
 }
 
-/// A voice channel's page: the call, the chat button in its corner, and the
-/// channel's text chat beside it when opened.
+/// A voice channel's page: the call, with the chat button in a strip above
+/// it, and the channel's text chat beside it, as a rounded panel, when opened.
 pub fn voice_channel(
     shell: &Shell,
     cx: &mut Context<Shell>,
@@ -1138,12 +1138,11 @@ pub fn voice_channel(
     window: &Window,
 ) -> AnyElement {
     let open = shell.calls.voice_chat;
+    let unread = room.unread_messages > 0 || room.highlight_count > 0 || room.marked_unread;
     let toggle = div()
         .id("voice-chat-toggle")
-        .absolute()
-        .top(px(12.0))
-        .right(px(12.0))
-        .size(px(36.0))
+        .relative()
+        .size(px(32.0))
         .flex()
         .items_center()
         .justify_center()
@@ -1155,6 +1154,20 @@ pub fn voice_channel(
         })
         .cursor_pointer()
         .child(icon("messages-square", 18.0).text_color(rgb(theme::text())))
+        .when(unread && !open, |d| {
+            d.child(
+                div()
+                    .absolute()
+                    .top(px(-3.0))
+                    .right(px(-3.0))
+                    .size(px(12.0))
+                    .rounded_full()
+                    .bg(rgb(theme::danger()))
+                    .border_2()
+                    .border_color(rgb(theme::bg_rail()))
+                    .e2e("span", "unread-dot"),
+            )
+        })
         .on_click(cx.listener(|this, _, _, cx| {
             this.calls.voice_chat = !this.calls.voice_chat;
             cx.notify();
@@ -1168,27 +1181,68 @@ pub fn voice_channel(
             },
         )
         .attr("title", if open { "Hide the chat" } else { "Show the chat" });
-    let mut row = div()
+    // The call's column: the button's strip, then the page (min width 0, so
+    // a narrow window shrinks the call instead of pushing the chat out).
+    let call = div()
         .flex_1()
+        .min_w_0()
         .min_h_0()
         .flex()
-        .relative()
-        .child(voice_page(shell, cx, room, window))
-        .child(toggle);
-    if open && let Some(chat) = chat {
-        row = row.child(
+        .flex_col()
+        .bg(rgb(theme::bg_rail()))
+        .child(
             div()
-                .w(px(380.0))
                 .flex_none()
+                .h(px(48.0))
+                .px(px(12.0))
+                .flex()
+                .items_center()
+                .justify_end()
+                .child(toggle),
+        )
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
                 .min_h_0()
                 .flex()
                 .flex_col()
-                .relative()
-                .border_l_1()
-                .border_color(rgba(theme::bg_selected()))
-                .bg(rgb(theme::bg_chat()))
-                .child(chat)
-                .e2e("div", "voice-chat"),
+                .child(voice_page(shell, cx, room, window)),
+        );
+    let mut row = div()
+        .flex_1()
+        .min_w_0()
+        .min_h_0()
+        .flex()
+        .relative()
+        .bg(rgb(theme::bg_rail()))
+        .child(call);
+    if open && let Some(chat) = chat {
+        // A card floating beside the call: 40% of the page, 240-380 wide.
+        row = row.child(
+            div()
+                .flex_none()
+                .w(gpui::relative(0.4))
+                .min_w(px(248.0))
+                .max_w(px(388.0))
+                .flex()
+                .py(px(8.0))
+                .pr(px(8.0))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .min_h_0()
+                        .flex()
+                        .flex_col()
+                        .rounded(px(12.0))
+                        .overflow_hidden()
+                        .border_1()
+                        .border_color(rgba(theme::bg_selected()))
+                        .bg(rgb(theme::bg_chat()))
+                        .child(chat)
+                        .e2e("div", "voice-chat"),
+                ),
         );
     }
     row.e2e("div", "voice-channel").into_any_element()
