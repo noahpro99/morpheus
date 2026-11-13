@@ -222,6 +222,12 @@ pub fn scope_has_unread(rooms: &[RoomSummary], scope: &Scope) -> bool {
     })
 }
 
+/// Whether someone is in a call in a scope's voice channels (or DMs): the
+/// speaker badge on its rail icon.
+pub fn scope_has_call(rooms: &[RoomSummary], scope: &Scope) -> bool {
+    rooms_in_scope(rooms, scope).iter().any(|room| !room.call_participants.is_empty())
+}
+
 /// The sidebar header: what the rail selected.
 pub fn header_title(rooms: &[RoomSummary], scope: &Scope) -> String {
     match scope {
