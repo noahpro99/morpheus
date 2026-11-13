@@ -25,6 +25,11 @@ pub async fn login(app: &mut App, user: &str, password: &str) {
 /// The window's pixels (RGB rows) and size, from a `grim` capture of the
 /// test window (found by the app's pid on Hyprland); `None` elsewhere.
 pub fn capture(app: &App) -> Option<(Vec<u8>, usize, usize)> {
+    // A locked session (hyprlock) is what grim sees: no pixels of the app.
+    if std::process::Command::new("pgrep").args(["-x", "hyprlock"]).output().is_ok_and(|o| o.status.success()) {
+        eprintln!("SKIPPED pixel check: the session is locked (hyprlock)");
+        return None;
+    }
     let pid = app.pid()?;
     let out = std::process::Command::new("hyprctl").args(["clients", "-j"]).output().ok()?;
     let clients: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;

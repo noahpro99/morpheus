@@ -1305,3 +1305,53 @@ async fn a_servers_wide_icon_fills_the_palettes_avatar() {
         assert!(!red(p) && !blue(p), "the corner at ({x}, {y}) is {p:?}: not cut to a rounded shape");
     }
 }
+
+/// A link in a message underlines under the pointer, that link only, and the
+/// line goes when the pointer leaves (task 31). Links inside a text run need
+/// their own hover tracking: gpui's hover underline does nothing there.
+#[tokio::test]
+async fn hovering_a_link_in_a_message_underlines_that_link_only() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let (mut app, _) = a_message_from_ben_saying(
+        &hs,
+        "linkhover",
+        "see https://example.org/first and also https://example.org/second here",
+    )
+    .await;
+    if !app.is_gpui() {
+        eprintln!("skipped: hover cannot be driven on the web build");
+        return;
+    }
+    let first = ".message .body a[href=\"https://example.org/first\"]";
+    let second = ".message .body a[href=\"https://example.org/second\"]";
+    app.wait_for(first, DEFAULT_WAIT).await.expect("first link");
+    let b1 = app.bounds(first).await.expect("b").expect("first bounds");
+    let b2 = app.bounds(second).await.expect("b").expect("second bounds");
+    app.hover(".composer .composer-input").await.expect("away");
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert_eq!(app.attr(first, "data-hovered").await.expect("attr"), None);
+    let rest = common::capture(&app);
+
+    app.hover(first).await.expect("over the first");
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert_eq!(app.attr(first, "data-hovered").await.expect("attr").as_deref(), Some("true"));
+    assert_eq!(app.attr(second, "data-hovered").await.expect("attr"), None);
+    if let Some(rest) = &rest {
+        let over = common::capture(&app).expect("capture");
+        let (run1, run2) = (longest_changed_run(rest, &over, &b1), longest_changed_run(rest, &over, &b2));
+        eprintln!("hovering the first: {run1} px of line under it (it is {} wide), {run2} under the second", b1.w);
+        assert!(run1 as f64 >= b1.w * 0.8, "no underline under the hovered link: {run1} of {}", b1.w);
+        assert!(run2 < (b2.w * 0.3) as usize, "the other link is underlined too: {run2} of {}", b2.w);
+    }
+
+    app.hover(".composer .composer-input").await.expect("away again");
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert_eq!(app.attr(first, "data-hovered").await.expect("attr"), None, "still hovered after leaving");
+    if let Some(rest) = &rest {
+        let gone = common::capture(&app).expect("capture");
+        assert!(longest_changed_run(rest, &gone, &b1) < (b1.w * 0.3) as usize, "the line stayed");
+    }
+}

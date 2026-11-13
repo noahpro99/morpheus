@@ -111,6 +111,7 @@ mod off {
         inner: E,
         _layout: &gpui::TextLayout,
         _links: Vec<(std::ops::Range<usize>, String)>,
+        _hovered: Option<usize>,
     ) -> E {
         inner
     }

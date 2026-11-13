@@ -246,11 +246,13 @@ pub fn text_links<E: IntoElement>(
     inner: E,
     layout: &TextLayout,
     links: Vec<(Range<usize>, String)>,
+    hovered: Option<usize>,
 ) -> TextLinks<E::Element> {
     TextLinks {
         inner: inner.into_element(),
         layout: layout.clone(),
         links,
+        hovered,
     }
 }
 
@@ -258,6 +260,7 @@ pub struct TextLinks<E> {
     inner: E,
     layout: TextLayout,
     links: Vec<(Range<usize>, String)>,
+    hovered: Option<usize>,
 }
 
 impl<E: Element> IntoElement for TextLinks<E> {
@@ -327,7 +330,7 @@ impl<E: Element> Element for TextLinks<E> {
         let text = self.layout.text();
         with_state(|state| {
             let parent = state.stack.last().copied();
-            for (range, href) in &self.links {
+            for (n, (range, href)) in self.links.iter().enumerate() {
                 let Some(start) = self.layout.position_for_index(range.start) else {
                     continue;
                 };
@@ -341,7 +344,13 @@ impl<E: Element> Element for TextLinks<E> {
                 };
                 let node = Node {
                     tag: "a".into(),
-                    attrs: vec![("href".into(), href.clone())],
+                    attrs: {
+                        let mut attrs = vec![("href".into(), href.clone())];
+                        if self.hovered == Some(n) {
+                            attrs.push(("data-hovered".into(), "true".into()));
+                        }
+                        attrs
+                    },
                     text: text.get(range.clone()).unwrap_or_default().to_owned(),
                     bounds: Rect { x, y, w, h: line },
                     detached: true,

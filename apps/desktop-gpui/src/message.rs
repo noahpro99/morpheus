@@ -3,10 +3,11 @@
 //! start of the room and placeholders. Classes and attributes are the
 //! Dioxus app's (`crates/ui/src/components/timeline.rs`) so tests find them.
 
-use std::{ops::Range, rc::Rc, sync::Arc};
+use std::{cell::Cell, ops::Range, rc::Rc, sync::Arc};
 
 use gpui::{
-    AnyElement, App, Div, ElementId, FontStyle, FontWeight, Hsla, InteractiveText, Image,
+    AnyElement, App, Bounds, DispatchPhase, Div, Element, ElementId, GlobalElementId,
+    InspectorElementId, LayoutId, MouseMoveEvent, FontStyle, FontWeight, Hsla, InteractiveText, Image,
     ObjectFit, SharedString, Stateful, StrikethroughStyle, StyledImage as _, StyledText, TextRun,
     UnderlineStyle, MouseButton, Pixels, Point, Window, div, font, img, prelude::*, px, relative, rgb,
     rgba,
@@ -74,6 +75,11 @@ fn hsla(color: u32) -> Hsla {
 
 /// The text runs of a paragraph: its spans over `base`.
 pub fn runs(para: &Para, base: Base) -> Vec<TextRun> {
+    runs_hovering(para, base, None)
+}
+
+/// `runs`, with the text in `hover` (a link under the pointer) underlined.
+fn runs_hovering(para: &Para, base: Base, hover: Option<&Range<usize>>) -> Vec<TextRun> {
     let len = para.text.len();
     let mut edges = vec![0, len];
     for span in &para.spans {
@@ -121,7 +127,7 @@ pub fn runs(para: &Para, base: Base) -> Vec<TextRun> {
                 font: f,
                 color: hsla(color),
                 background_color: style.code.then(|| hsla(theme::bg_input())),
-                underline: style.underline.then(|| UnderlineStyle {
+                underline: (style.underline || hover.is_some_and(|h| h.start <= w[0] && w[1] <= h.end)).then(|| UnderlineStyle {
                     thickness: px(1.0),
                     color: Some(hsla(color)),
                     wavy: false,
@@ -135,27 +141,134 @@ pub fn runs(para: &Para, base: Base) -> Vec<TextRun> {
         .collect()
 }
 
-/// One paragraph as text; with links, clickable ones.
+/// One paragraph as text; with links, clickable ones, the one under the
+/// pointer underlined (gpui shapes text before it knows where the pointer
+/// is, so the hover is tracked here and the runs restyled).
 fn para_el(para: &Para, key: &str, base: Base, links: &LinkHandler) -> AnyElement {
-    let styled = StyledText::new(SharedString::from(para.text.clone())).with_runs(runs(para, base));
     let found = para.links();
     if found.is_empty() {
-        return styled.into_any_element();
+        return StyledText::new(SharedString::from(para.text.clone()))
+            .with_runs(runs(para, base))
+            .into_any_element();
     }
-    let layout = styled.layout().clone();
-    let ranges: Vec<Range<usize>> = found.iter().map(|(r, _)| r.clone()).collect();
-    let urls: Vec<Arc<str>> = found.iter().map(|(_, u)| u.clone()).collect();
-    let tags = found
-        .iter()
-        .map(|(r, u)| (r.clone(), u.to_string()))
-        .collect();
-    let on_link = links.clone();
-    let interactive = InteractiveText::new(
-        ElementId::NamedInteger(SharedString::from(key.to_owned()), 0),
-        styled,
-    )
-    .on_click(ranges, move |ix, _, cx| on_link(&urls[ix], cx));
-    e2e::text_links(interactive, &layout, tags).into_any_element()
+    let para = para.clone();
+    let links = links.clone();
+    let key = key.to_owned();
+    LinkText {
+        id: ElementId::NamedInteger(SharedString::from(key.clone()), 1),
+        build: Box::new(move |hovered, cell| {
+            let found = para.links();
+            let styled = StyledText::new(SharedString::from(para.text.clone())).with_runs(
+                runs_hovering(&para, base, hovered.and_then(|n| found.get(n)).map(|(r, _)| r)),
+            );
+            let layout = styled.layout().clone();
+            let ranges: Vec<Range<usize>> = found.iter().map(|(r, _)| r.clone()).collect();
+            let urls: Vec<Arc<str>> = found.iter().map(|(_, u)| u.clone()).collect();
+            let tags = found
+                .iter()
+                .map(|(r, u)| (r.clone(), u.to_string()))
+                .collect();
+            let on_link = links.clone();
+            let under = ranges.clone();
+            let interactive = InteractiveText::new(
+                ElementId::NamedInteger(SharedString::from(key.clone()), 0),
+                styled,
+            )
+            .on_click(ranges, move |ix, _, cx| on_link(&urls[ix], cx))
+            .on_hover(move |at, _, _, _| {
+                cell.set(at.and_then(|at| under.iter().position(|r| r.contains(&at))));
+            });
+            e2e::text_links(interactive, &layout, tags, hovered).into_any_element()
+        }),
+    }
+    .into_any_element()
+}
+
+/// The paragraph's text and links, rebuilt every frame from the link under
+/// the pointer (kept here, in the element's state).
+struct LinkText {
+    id: ElementId,
+    build: Box<dyn Fn(Option<usize>, Rc<Cell<Option<usize>>>) -> AnyElement>,
+}
+
+impl IntoElement for LinkText {
+    type Element = Self;
+    fn into_element(self) -> Self {
+        self
+    }
+}
+
+type Hovered = Rc<Cell<Option<usize>>>;
+
+fn hovered_state(id: Option<&GlobalElementId>, window: &mut Window) -> Hovered {
+    window.with_optional_element_state::<Hovered, _>(id, |state, _| {
+        let cell = state.flatten().unwrap_or_default();
+        (cell.clone(), Some(cell))
+    })
+}
+
+impl Element for LinkText {
+    type RequestLayoutState = AnyElement;
+    type PrepaintState = Hovered;
+
+    fn id(&self) -> Option<ElementId> {
+        Some(self.id.clone())
+    }
+
+    fn source_location(&self) -> Option<&'static std::panic::Location<'static>> {
+        None
+    }
+
+    fn request_layout(
+        &mut self,
+        id: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (LayoutId, AnyElement) {
+        let cell = hovered_state(id, window);
+        let mut inner = (self.build)(cell.get(), cell);
+        let layout = inner.request_layout(window, cx);
+        (layout, inner)
+    }
+
+    fn prepaint(
+        &mut self,
+        id: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        _: Bounds<Pixels>,
+        inner: &mut AnyElement,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Hovered {
+        inner.prepaint(window, cx);
+        hovered_state(id, window)
+    }
+
+    fn paint(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        bounds: Bounds<Pixels>,
+        inner: &mut AnyElement,
+        cell: &mut Hovered,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        inner.paint(window, cx);
+        // The inner text sees only moves over itself: leaving it clears the link.
+        let cell = cell.clone();
+        let view = window.current_view();
+        window.on_mouse_event(move |event: &MouseMoveEvent, phase, _, cx| {
+            if phase == DispatchPhase::Bubble
+                && cell.get().is_some()
+                && !bounds.contains(&event.position)
+            {
+                cell.set(None);
+                cx.notify(view);
+            }
+        });
+    }
 }
 
 /// Blocks of formatted text: paragraphs, code blocks, quotes, lists, rules.
