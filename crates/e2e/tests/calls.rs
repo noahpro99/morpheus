@@ -820,6 +820,20 @@ async fn a_camera_turned_on_shows_to_everyone_in_the_call_until_turned_off() {
         .expect("bob hangs up");
 }
 
+/// Starts sharing this device's screen from the Share screen button `button`:
+/// the GPUI app asks for the quality first (Go Live starts it).
+async fn start_share(app: &mut App, button: &str) {
+    app.click(button).await.expect("share");
+    if app.is_gpui() {
+        app.wait_for(".screen-quality .screen-go", DEFAULT_WAIT)
+            .await
+            .expect("the quality popover");
+        app.click(".screen-quality .screen-go")
+            .await
+            .expect("go live");
+    }
+}
+
 /// Wait until `user`'s shared screen shows the test run's screen pattern:
 /// green on the left, yellow on the right.
 async fn wait_screen_pattern(app: &mut App, user: &str) -> anyhow::Result<()> {
@@ -897,10 +911,7 @@ async fn a_shared_screen_shows_to_everyone_in_the_call_until_stopped() {
         .await
         .expect("bob connected");
 
-    alice
-        .click(".voice-panel .screen-button")
-        .await
-        .expect("share");
+    start_share(&mut alice, ".voice-panel .screen-button").await;
     alice
         .wait_for(".voice-panel .screen-button.active", DEFAULT_WAIT)
         .await
@@ -2083,9 +2094,7 @@ async fn others_see_who_is_muted_deafened_on_camera_or_live() {
     bob.click(".call-stage .call-controls .camera-button")
         .await
         .expect("camera on");
-    bob.click(".call-stage .call-controls .screen-button")
-        .await
-        .expect("share the screen");
+    start_share(&mut bob, ".call-stage .call-controls .screen-button").await;
     for app in [&mut alice, &mut carol] {
         app.wait_for(&format!("{listed} .media-camera"), DEFAULT_WAIT)
             .await
@@ -2128,9 +2137,7 @@ async fn joining_and_rejoining_picks_up_cameras_and_screens() {
     bob.wait_for(".voice-panel .camera-button.active", DEFAULT_WAIT)
         .await
         .expect("camera on");
-    bob.click(".voice-panel .screen-button")
-        .await
-        .expect("share");
+    start_share(&mut bob, ".voice-panel .screen-button").await;
     bob.wait_for(".voice-panel .screen-button.active", DEFAULT_WAIT)
         .await
         .expect("sharing");
@@ -2867,10 +2874,7 @@ async fn clicking_a_card_in_a_call_focuses_it() {
         .expect("back to the grid");
 
     // A shared screen.
-    alice
-        .click(".voice-panel .screen-button")
-        .await
-        .expect("share");
+    start_share(&mut alice, ".voice-panel .screen-button").await;
     bob.wait_for(".call-stage .video-tile.screen", DEFAULT_WAIT)
         .await
         .expect("bob sees the screen");
@@ -3510,8 +3514,10 @@ async fn a_cameras_card_shows_the_whole_picture_with_round_corners() {
         eprintln!("no grim capture here; skipping the pixel check");
         return;
     };
-    // The picture, in its own 4:3, as large as fits the card, centred.
-    let ratio = 4.0 / 3.0;
+    // The picture, in its own shape (the card has it too), as large as fits
+    // the card, centred.
+    let (shown_w, shown_h) = picture_size(&mut alice, tile).await;
+    let ratio = shown_w / shown_h;
     let (pw, ph) = if card.w / card.h > ratio {
         (card.h * ratio, card.h)
     } else {
@@ -3689,4 +3695,325 @@ async fn a_call_ending_leaves_one_ended_a_call_line_when_the_last_person_leaves(
         1,
         "one ended line for the call"
     );
+}
+
+/// The size (width, height) of the picture a tile shows, as the tile notes it.
+async fn picture_size(app: &mut App, tile: &str) -> (f64, f64) {
+    let size = app
+        .attr(&format!("{tile} .video"), "data-size")
+        .await
+        .expect("attr")
+        .unwrap_or_default();
+    let (w, h) = size.split_once('x').unwrap_or(("0", "0"));
+    (w.parse().unwrap_or(0.0), h.parse().unwrap_or(0.0))
+}
+
+/// Alice and bob in a fresh voice channel, alice's camera on and showing on
+/// both: alice launched with `env`.
+async fn two_in_a_call_with_alices_camera(
+    hs: &str,
+    env: &[(&str, &str)],
+) -> (App, App) {
+    let mut alice = App::launch_with_env(hs, env).await.expect("launch alice");
+    let mut bob = App::launch(hs).await.expect("launch bob");
+    let channel = fresh_voice_channel(hs);
+    login_and_open(&mut alice, "alice", "general").await;
+    login_and_open(&mut bob, "bob", "general").await;
+    for app in [&mut alice, &mut bob] {
+        open_without_joining(app, &channel).await;
+        app.click(CALL_BUTTON).await.expect("joins");
+        app.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+            .await
+            .expect("connected");
+    }
+    alice
+        .click(".voice-panel .camera-button")
+        .await
+        .expect("camera on");
+    wait_test_pattern(&mut alice, "@alice:localhost")
+        .await
+        .expect("alice's self view");
+    wait_test_pattern(&mut bob, "@alice:localhost")
+        .await
+        .expect("bob sees alice's camera");
+    // Let the pictures settle: the tile follows the first picture's shape.
+    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+    (alice, bob)
+}
+
+/// A video tile takes its picture's shape, whatever it is (a 4:3 camera
+/// here): no bars, nothing cropped, in the self view and for others.
+#[tokio::test]
+async fn a_video_tile_takes_the_shape_of_its_picture() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let (mut alice, mut bob) =
+        two_in_a_call_with_alices_camera(&hs, &[("MORPHEUS_CALL_CAMERA_SIZE", "640x480")]).await;
+    if !alice.is_gpui() {
+        eprintln!("GPUI only (the Dioxus tile is a 16:9 box)");
+        return;
+    }
+    let tile = ".call-stage .video-tile:not(.screen)[data-user=\"@alice:localhost\"]";
+    for (who, app) in [("alice", &mut alice), ("bob", &mut bob)] {
+        let (pw, ph) = picture_size(app, tile).await;
+        assert!(pw > 0.0 && ph > 0.0, "{who}: no picture size");
+        let card = app.bounds(tile).await.expect("bounds").expect("the card");
+        let (picture, card_ratio) = (pw / ph, card.w / card.h);
+        assert!(
+            (card_ratio / picture - 1.0).abs() < 0.02,
+            "{who}: the tile is {}x{} ({card_ratio:.3}) for a {pw}x{ph} picture ({picture:.3})",
+            card.w,
+            card.h
+        );
+        assert!(
+            (picture / (4.0 / 3.0) - 1.0).abs() < 0.02,
+            "{who}: the test camera should be 4:3, is {pw}x{ph}"
+        );
+    }
+}
+
+/// The camera is sent at 720p, 16:9 (the test camera's widest mode), with a
+/// bitrate for it: what is published, and what the others get.
+#[tokio::test]
+async fn a_camera_is_sent_at_720p_widescreen_with_a_matching_bitrate() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let (mut alice, mut bob) = two_in_a_call_with_alices_camera(&hs, &[]).await;
+    if !alice.is_gpui() {
+        eprintln!("GPUI only (the published settings are noted by its tiles)");
+        return;
+    }
+    let tile = ".call-stage .video-tile:not(.screen)[data-user=\"@alice:localhost\"]";
+    let published = alice
+        .attr(&format!("{tile} .video"), "data-publish")
+        .await
+        .expect("attr")
+        .unwrap_or_default();
+    eprintln!("published: {published}");
+    // "1280x720@30 bitrate=1700000 layers=3 ..."
+    assert!(published.starts_with("1280x720@"), "published {published:?}");
+    let bitrate: u64 = published
+        .split_whitespace()
+        .find_map(|part| part.strip_prefix("bitrate="))
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    assert!(
+        (1_200_000..=3_500_000).contains(&bitrate),
+        "a 720p camera's bitrate is {bitrate}: {published}"
+    );
+    for (who, app) in [("alice", &mut alice), ("bob", &mut bob)] {
+        let (pw, ph) = picture_size(app, tile).await;
+        assert!(
+            pw >= 1280.0 && (pw / ph / (16.0 / 9.0) - 1.0).abs() < 0.02,
+            "{who} sees a {pw}x{ph} picture, not 1280x720"
+        );
+        let card = app.bounds(tile).await.expect("bounds").expect("the card");
+        assert!(
+            (card.w / card.h / (16.0 / 9.0) - 1.0).abs() < 0.02,
+            "{who}: a 16:9 picture in a {}x{} tile",
+            card.w,
+            card.h
+        );
+    }
+}
+
+/// Alice and bob in a fresh voice channel, both connected.
+async fn two_in_a_call(hs: &str, env: &[(&str, &str)]) -> (App, App) {
+    let mut alice = App::launch_with_env(hs, env).await.expect("launch alice");
+    let mut bob = App::launch(hs).await.expect("launch bob");
+    let channel = fresh_voice_channel(hs);
+    login_and_open(&mut alice, "alice", "general").await;
+    login_and_open(&mut bob, "bob", "general").await;
+    for app in [&mut alice, &mut bob] {
+        open_without_joining(app, &channel).await;
+        app.click(CALL_BUTTON).await.expect("joins");
+        app.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+            .await
+            .expect("connected");
+    }
+    (alice, bob)
+}
+
+/// Wait until the picture of `tile` in `app` is `w` x `h`.
+async fn wait_picture_size(app: &mut App, tile: &str, w: f64, h: f64) {
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let seen = picture_size(app, tile).await;
+        if seen == (w, h) {
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "{tile} still shows {seen:?}, not {w}x{h}"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    }
+}
+
+/// What a tile's track was published with: "1280x720@30 bitrate=… …".
+async fn published(app: &mut App, tile: &str) -> String {
+    app.attr(&format!("{tile} .video"), "data-publish")
+        .await
+        .expect("attr")
+        .unwrap_or_default()
+}
+
+fn published_bitrate(published: &str) -> u64 {
+    published
+        .split_whitespace()
+        .find_map(|part| part.strip_prefix("bitrate="))
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0)
+}
+
+/// Pressing Share screen asks how first (resolution 720p / 1080p / Source,
+/// 15 / 30 / 60 frames a second; Go Live starts it), remembers the choice,
+/// and publishes the screen the way it says: no simulcast, a bitrate for
+/// the size and speed, text-friendly below 60 fps. The test screen is 1440p.
+#[tokio::test]
+async fn sharing_the_screen_asks_for_its_quality_and_sends_that() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let (mut alice, mut bob) = two_in_a_call(&hs, &[]).await;
+    if !alice.is_gpui() {
+        eprintln!("GPUI only (Dioxus shares at once)");
+        return;
+    }
+    let button = ".voice-panel .screen-button";
+    let mine = ".call-stage .video-tile.screen.self";
+    let theirs = ".call-stage .video-tile.screen[data-user=\"@alice:localhost\"]";
+    alice.click(button).await.expect("share");
+    alice
+        .wait_for(".screen-quality", DEFAULT_WAIT)
+        .await
+        .expect("the quality popover");
+    assert_eq!(alice.count(".screen-quality .screen-res").await.expect("count"), 3);
+    assert_eq!(alice.count(".screen-quality .screen-fps").await.expect("count"), 3);
+    let labels = alice.texts(".screen-quality .screen-res").await.expect("texts");
+    assert_eq!(labels, ["720p", "1080p", "Source"]);
+    let labels = alice.texts(".screen-quality .screen-fps").await.expect("texts");
+    assert_eq!(labels, ["15", "30", "60"]);
+    // The usual choice first: 1080p at 30.
+    alice
+        .wait_for(".screen-res.active[data-value=\"1080\"]", DEFAULT_WAIT)
+        .await
+        .expect("1080p chosen");
+    alice
+        .wait_for(".screen-fps.active[data-value=\"30\"]", DEFAULT_WAIT)
+        .await
+        .expect("30 fps chosen");
+    assert_eq!(alice.count(".screen-quality .screen-go").await.expect("count"), 1);
+    // Nothing is shared until Go Live; Escape closes the popover.
+    assert_eq!(alice.count(".video-tile.screen").await.expect("count"), 0);
+    alice.press("body", "Escape").await.expect("escape");
+    alice
+        .wait_for_count(".screen-quality", 0, DEFAULT_WAIT)
+        .await
+        .expect("closed");
+    assert_eq!(alice.count(&format!("{button}.active")).await.expect("count"), 0);
+
+    // 720p at 15.
+    alice.click(button).await.expect("share again");
+    alice
+        .click(".screen-quality .screen-res[data-value=\"720\"]")
+        .await
+        .expect("720p");
+    alice
+        .click(".screen-quality .screen-fps[data-value=\"15\"]")
+        .await
+        .expect("15 fps");
+    alice.click(".screen-quality .screen-go").await.expect("go live");
+    alice
+        .wait_for_count(".screen-quality", 0, DEFAULT_WAIT)
+        .await
+        .expect("closed by Go Live");
+    alice
+        .wait_for(&format!("{mine} .video[data-shown=true]"), DEFAULT_WAIT)
+        .await
+        .expect("her own screen");
+    let p = published(&mut alice, mine).await;
+    eprintln!("720p15: {p}");
+    assert!(p.starts_with("1280x720@15 "), "{p}");
+    assert!(p.contains("simulcast=false"), "one full layer for a screen: {p}");
+    assert!(p.contains("hint=detail"), "{p}");
+    assert!(p.contains("degradation=maintain-resolution"), "{p}");
+    let bitrate = published_bitrate(&p);
+    assert!((800_000..=2_000_000).contains(&bitrate), "720p15 bitrate {bitrate}");
+    wait_picture_size(&mut alice, mine, 1280.0, 720.0).await;
+    wait_picture_size(&mut bob, theirs, 1280.0, 720.0).await;
+    // Stopping needs no question.
+    alice.click(button).await.expect("stop");
+    alice
+        .wait_for_count(".video-tile.screen", 0, DEFAULT_WAIT)
+        .await
+        .expect("stopped");
+    assert_eq!(alice.count(".screen-quality").await.expect("count"), 0);
+
+    // It remembers: 720p and 15 are chosen now, and kept for the next run.
+    alice.click(button).await.expect("share");
+    alice
+        .wait_for(".screen-res.active[data-value=\"720\"]", DEFAULT_WAIT)
+        .await
+        .expect("720p remembered");
+    alice
+        .wait_for(".screen-fps.active[data-value=\"15\"]", DEFAULT_WAIT)
+        .await
+        .expect("15 remembered");
+    let kept = std::fs::read_to_string(alice.data_dir().join("screen-quality.json"))
+        .unwrap_or_default();
+    assert!(kept.contains("720") && kept.contains("15"), "kept in {kept:?}");
+
+    // 1080p at 60: more bits, and motion over text.
+    alice
+        .click(".screen-quality .screen-res[data-value=\"1080\"]")
+        .await
+        .expect("1080p");
+    alice
+        .click(".screen-quality .screen-fps[data-value=\"60\"]")
+        .await
+        .expect("60 fps");
+    alice.click(".screen-quality .screen-go").await.expect("go live");
+    alice
+        .wait_for(&format!("{mine} .video[data-shown=true]"), DEFAULT_WAIT)
+        .await
+        .expect("her own screen");
+    let p = published(&mut alice, mine).await;
+    eprintln!("1080p60: {p}");
+    assert!(p.starts_with("1920x1080@60 "), "{p}");
+    assert!(p.contains("hint=motion"), "{p}");
+    let bitrate = published_bitrate(&p);
+    assert!((6_000_000..=12_000_000).contains(&bitrate), "1080p60 bitrate {bitrate}");
+    wait_picture_size(&mut bob, theirs, 1920.0, 1080.0).await;
+    alice.click(button).await.expect("stop");
+    alice
+        .wait_for_count(".video-tile.screen", 0, DEFAULT_WAIT)
+        .await
+        .expect("stopped");
+
+    // Source: the screen's own size (1440p), no scaling down.
+    alice.click(button).await.expect("share");
+    alice
+        .click(".screen-quality .screen-res[data-value=\"source\"]")
+        .await
+        .expect("source");
+    alice
+        .click(".screen-quality .screen-fps[data-value=\"15\"]")
+        .await
+        .expect("15 fps");
+    alice.click(".screen-quality .screen-go").await.expect("go live");
+    alice
+        .wait_for(&format!("{mine} .video[data-shown=true]"), DEFAULT_WAIT)
+        .await
+        .expect("her own screen");
+    let p = published(&mut alice, mine).await;
+    eprintln!("source15: {p}");
+    assert!(p.starts_with("2560x1440@15 "), "{p}");
+    wait_picture_size(&mut bob, theirs, 2560.0, 1440.0).await;
+    alice.click(button).await.expect("stop");
 }

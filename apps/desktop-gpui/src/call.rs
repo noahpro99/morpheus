@@ -79,6 +79,10 @@ pub struct Calls {
     pub frames: crate::call_ui::Frames,
     /// The audio devices chosen, as kept in the data directory.
     pub devices: crate::view_model::calls::DevicePrefs,
+    /// How the screen is shared, as last chosen (kept in the data directory).
+    pub screen_quality: morpheus_call::ScreenQuality,
+    /// Share screen's question is open, over this point.
+    pub screen_popover: Option<gpui::Point<gpui::Pixels>>,
 }
 
 impl Calls {
@@ -160,6 +164,7 @@ impl Shell {
         });
         morpheus_call::choose_camera(prefs.camera.clone());
         self.calls.devices = prefs;
+        self.calls.screen_quality = crate::screen_quality::read();
         // The frames are drawn here as raw pixels: no JPEGs for nobody.
         morpheus_call::skip_jpeg_frames();
         if std::env::var_os("MORPHEUS_E2E_PORT").is_some() {
@@ -437,6 +442,16 @@ impl Shell {
         self.set_video(false, on, cx);
     }
 
+    /// The Share screen button, pressed at `at`: sharing stops at once; where
+    /// it is off, asks how to share first (Go Live starts it).
+    pub fn press_screen(&mut self, on: bool, at: gpui::Point<gpui::Pixels>, cx: &mut Context<Self>) {
+        if on {
+            self.ask_screen_quality(at, cx);
+        } else {
+            self.set_screen_share(false, cx);
+        }
+    }
+
     /// Share this device's screen in the call going, or stop.
     pub fn set_screen_share(&mut self, on: bool, cx: &mut Context<Self>) {
         self.set_video(true, on, cx);
@@ -444,9 +459,10 @@ impl Shell {
 
     fn set_video(&mut self, screen: bool, on: bool, cx: &mut Context<Self>) {
         type Switch = Pin<Box<dyn std::future::Future<Output = morpheus_call::Result<()>>>>;
+        let quality = self.calls.screen_quality;
         let Some(switch) = self.calls.media.as_ref().map(|call| -> Switch {
             if screen {
-                Box::pin(call.set_screen_share(on))
+                Box::pin(call.set_screen_share_with(on, quality))
             } else {
                 Box::pin(call.set_camera(on))
             }

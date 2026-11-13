@@ -1,6 +1,6 @@
 //! The camera on Linux, through Video4Linux: the first device that captures
 //! YUYV (webcams do; the infrared cameras next to them only give grey), at
-//! 640×480, converted to the I420 that WebRTC sends.
+//! the widest 16:9 mode it has up to 1280×720 (see [`pick_mode`]), converted to the I420 that WebRTC sends.
 
 use std::{
     io,
@@ -8,7 +8,7 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use linuxvideo::{
@@ -24,7 +24,73 @@ use tracing::{info, warn};
 
 use crate::imp::video::{self, LOCAL_CAMERA};
 
-const WANT: (u32, u32) = (640, 480);
+/// A mode a camera offers: width, height, and the most frames a second.
+type Mode = (u32, u32, f32);
+
+fn is_wide((w, h, _): Mode) -> bool {
+    (w as f32 / h as f32 - 16.0 / 9.0).abs() < 0.03
+}
+
+/// Which of the modes to capture in. Not the 640x480 every webcam has (a 4:3
+/// crop of what Discord shows): the widest picture, 16:9, as large as 1280x720
+/// (what is sent: the camera's whole view, nothing cropped by us), one that
+/// goes at 15 frames a second or more (some cameras give 720p of YUYV at 10).
+/// Failing that a 16:9 above 720p, then the widest shape of at most 1280x720,
+/// then whatever is largest.
+pub(crate) fn pick_mode(modes: &[Mode]) -> Option<(u32, u32)> {
+    let fast: Vec<Mode> = modes.iter().copied().filter(|m| m.2 >= 14.0).collect();
+    let pool = if fast.is_empty() { modes } else { &fast };
+    let area = |m: &Mode| m.0 * m.1;
+    let small = |m: &&Mode| m.0 <= 1280 && m.1 <= 720;
+    let best = pool
+        .iter()
+        .filter(small)
+        .filter(|m| is_wide(**m))
+        .max_by_key(|m| area(m))
+        .or_else(|| {
+            pool.iter()
+                .filter(|m| is_wide(**m) && m.0 <= 1920)
+                .min_by_key(|m| area(m))
+        })
+        .or_else(|| {
+            pool.iter().filter(small).max_by(|a, b| {
+                let shape = |m: &Mode| m.0 as f32 / m.1 as f32;
+                shape(a).total_cmp(&shape(b)).then(area(a).cmp(&area(b)))
+            })
+        })
+        .or_else(|| pool.iter().max_by_key(|m| area(m)))?;
+    Some((best.0, best.1))
+}
+
+/// What the device does in YUYV.
+fn modes_of(device: &linuxvideo::Device) -> Vec<Mode> {
+    use linuxvideo::format::FrameSizes;
+    let speed = |w: u32, h: u32| {
+        device
+            .frame_intervals(PixelFormat::YUYV, w, h)
+            .ok()
+            .map(|i| i.min())
+            .filter(|f| f.numerator() > 0)
+            .map_or(30.0, |f| f.denominator() as f32 / f.numerator() as f32)
+    };
+    match device.frame_sizes(PixelFormat::YUYV) {
+        Ok(FrameSizes::Discrete(sizes)) => sizes
+            .iter()
+            .map(|s| (s.width(), s.height(), speed(s.width(), s.height())))
+            .collect(),
+        Ok(FrameSizes::Stepwise(range) | FrameSizes::Continuous(range)) => {
+            [(1280, 720), (960, 540), (640, 360), (640, 480)]
+                .into_iter()
+                .filter(|&(w, h)| {
+                    (range.min_width()..=range.max_width()).contains(&w)
+                        && (range.min_height()..=range.max_height()).contains(&h)
+                })
+                .map(|(w, h)| (w, h, 30.0))
+                .collect()
+        }
+        Err(_) => vec![(640, 480, 30.0)],
+    }
+}
 
 /// A camera, open and streaming.
 pub(crate) struct Camera {
@@ -54,8 +120,11 @@ impl Camera {
                 .capabilities()
                 .map(|caps| caps.card().to_owned())
                 .unwrap_or_default();
+            let (want_w, want_h) = pick_mode(&modes_of(&device)).unwrap_or((640, 480));
             let capture =
-                device.video_capture(PixFormat::new(WANT.0, WANT.1, PixelFormat::YUYV))?;
+                device.video_capture(PixFormat::new(want_w, want_h, PixelFormat::YUYV))?;
+            // As fast as it goes up to 30 (the driver picks the nearest it has).
+            let _ = capture.set_frame_interval(linuxvideo::Fract::new(1, 30));
             let format = capture.format();
             let (width, height, stride) =
                 (format.width(), format.height(), format.bytes_per_line());
@@ -86,7 +155,7 @@ impl Camera {
         let spawned = std::thread::Builder::new()
             .name("morpheus-camera".into())
             .spawn(move || {
-                let every = Duration::from_millis(1000 / video::FPS);
+                let every = video::show_every();
                 let mut shown: Option<Instant> = None;
                 while !stop.load(Ordering::Relaxed) {
                     let frame = self.stream.dequeue(|buf| {
@@ -148,7 +217,31 @@ pub(crate) fn yuyv_to_i420(yuyv: &[u8], width: u32, height: u32, stride: u32) ->
 
 #[cfg(test)]
 mod tests {
-    use super::yuyv_to_i420;
+    use super::{pick_mode, yuyv_to_i420};
+
+    #[test]
+    fn the_widest_16_9_mode_up_to_720p_is_chosen() {
+        // A typical webcam: 4:3 and 16:9 modes at 30, 1080p only slower.
+        let modes = [
+            (640, 480, 30.0),
+            (320, 240, 30.0),
+            (640, 360, 30.0),
+            (1280, 720, 30.0),
+            (1920, 1080, 5.0),
+            (1600, 1200, 5.0),
+        ];
+        assert_eq!(pick_mode(&modes), Some((1280, 720)));
+        // 720p of YUYV at 10: the best that goes at 15 or more.
+        let slow = [(640, 480, 30.0), (640, 360, 30.0), (1280, 720, 10.0)];
+        assert_eq!(pick_mode(&slow), Some((640, 360)));
+        // Only 4:3 modes: the biggest of them up to 1280x720.
+        let square = [(640, 480, 30.0), (320, 240, 30.0), (800, 600, 15.0)];
+        assert_eq!(pick_mode(&square), Some((800, 600)));
+        // 16:9 above 720p only (a 1080p camera with no 720p): that.
+        let big = [(1920, 1080, 30.0), (3840, 2160, 15.0)];
+        assert_eq!(pick_mode(&big), Some((1920, 1080)));
+        assert_eq!(pick_mode(&[]), None);
+    }
 
     #[test]
     fn yuyv_becomes_i420_with_chroma_averaged_over_two_rows() {

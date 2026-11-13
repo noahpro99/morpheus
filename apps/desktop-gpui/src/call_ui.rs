@@ -352,7 +352,9 @@ fn stage_controls(shell: &Shell, cx: &mut Context<Shell>, call: &CallState) -> A
                 enabled: call.connected && !call.choosing_screen,
                 pending: call.choosing_screen,
             },
-            cx.listener(move |this, _, _, cx| this.set_screen_share(on, cx)),
+            cx.listener(move |this, event: &gpui::ClickEvent, _, cx| {
+                this.press_screen(on, event.position(), cx)
+            }),
             None,
         ));
     }
@@ -553,7 +555,9 @@ pub fn voice_panel(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElement>
             call.screen,
             call.choosing_screen,
             call.connected && !call.choosing_screen,
-            cx.listener(move |this, _, _, cx| this.set_screen_share(on, cx)),
+            cx.listener(move |this, event: &gpui::ClickEvent, _, cx| {
+                this.press_screen(on, event.position(), cx)
+            }),
             None,
         ));
     }
@@ -581,17 +585,41 @@ pub fn voice_panel(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElement>
 enum Fit {
     /// One of a grid, this wide (16:9).
     Grid(f32),
-    /// The focused card, filling its place.
-    Main,
+    /// The focused card, filling its place: the room (width, height) it has.
+    Main(f32, f32),
     /// One of the strip under the focused card.
     Strip,
 }
 
-fn sized(base: gpui::Stateful<gpui::Div>, fit: Fit) -> gpui::Stateful<gpui::Div> {
-    match fit {
-        Fit::Grid(w) => base.w(px(w)).h(px(w / CARD_RATIO)),
-        Fit::Main => base.flex_1().min_w_0().min_h_0(),
-        Fit::Strip => base.w(px(144.0)).h(px(81.0)),
+/// The largest `ratio` (width over height) box inside `room`.
+pub fn fit_ratio(room: (f32, f32), ratio: f32) -> (f32, f32) {
+    if room.0 / room.1 > ratio {
+        ((room.1 * ratio).floor(), room.1)
+    } else {
+        (room.0, (room.0 / ratio).floor())
+    }
+}
+
+/// A card in its place. A picture's card (`ratio`) takes the picture's shape,
+/// as large as the place lets it, so none of it is cropped and there are no
+/// bars; a person's fills the place (16:9 in a grid).
+fn sized(
+    base: gpui::Stateful<gpui::Div>,
+    fit: Fit,
+    ratio: Option<f32>,
+) -> gpui::Stateful<gpui::Div> {
+    let room = match fit {
+        Fit::Grid(w) => (w, w / CARD_RATIO),
+        Fit::Main(w, h) => (w, h),
+        Fit::Strip => (144.0, 81.0),
+    };
+    match (fit, ratio) {
+        (Fit::Main(..), None) => base.flex_1().min_w_0().min_h_0(),
+        (_, None) => base.w(px(room.0)).h(px(room.1)),
+        (_, Some(ratio)) => {
+            let (w, h) = fit_ratio(room, ratio);
+            base.w(px(w)).h(px(h)).flex_none()
+        }
     }
 }
 
@@ -699,6 +727,7 @@ fn person_card(
     let mut tile = sized(
         div().id(gpui::SharedString::from(format!("card-{key}"))),
         fit,
+        None,
     )
     .group(gpui::SharedString::from(group.clone()))
     .relative()
@@ -768,9 +797,21 @@ fn video_card(
     if feed.screen {
         classes.push_str(" screen");
     }
+    // The picture's own shape, once there is a picture.
+    let (pw, ph) = shell
+        .calls
+        .frames
+        .get(&key)
+        .map_or((0, 0), |frame| frame.read(cx).dim);
+    let ratio = if pw > 0 && ph > 0 {
+        pw as f32 / ph as f32
+    } else {
+        CARD_RATIO
+    };
     let mut tile = sized(
         div().id(gpui::SharedString::from(format!("card-{key}"))),
         fit,
+        Some(ratio),
     )
     .group(gpui::SharedString::from(group.clone()))
     .relative()
@@ -795,6 +836,7 @@ fn video_card(
         tile = tile.child(marks);
     }
     tile.e2e("div", &classes)
+        .attr("data-video-size", format!("{pw}x{ph}"))
         .attr("data-feed", key)
         .attr("data-user", feed.user.to_string())
         .into_any_element()
@@ -809,6 +851,7 @@ fn cards(
     all: Vec<Card>,
     speaking: &[OwnedUserId],
     card_w: f32,
+    stage: (f32, f32),
 ) -> (Vec<AnyElement>, bool) {
     let focused = focused_card(&shell.calls.focus, &all);
     let mut draw = |card: &Card, fit: Fit, cx: &mut Context<Shell>| match card {
@@ -822,12 +865,23 @@ fn cards(
         );
     };
     let (main, strip): (Vec<&Card>, Vec<&Card>) = all.iter().partition(|c| c.key() == focused);
+    // The focused card's room: the stage less the strip under it (81 high,
+    // 8 apart) and a little for rounding.
+    let main_room = (
+        (stage.0 - 1.0).max(40.0),
+        (stage.1 - if strip.is_empty() { 0.0 } else { 89.0 } - 1.0).max(40.0),
+    );
     let mut out = vec![
         div()
             .flex_1()
             .min_h_0()
             .flex()
-            .children(main.into_iter().map(|c| draw(c, Fit::Main, cx)))
+            .justify_center()
+            .items_center()
+            .children(
+                main.into_iter()
+                    .map(|c| draw(c, Fit::Main(main_room.0, main_room.1), cx)),
+            )
             .e2e("div", "call-focus-main")
             .into_any_element(),
     ];
@@ -866,7 +920,7 @@ fn stage_body(
     // The stage's inner size as last painted: cards are as big as lets all fit.
     let measured = shell.calls.stage_measure.get();
     let card_w = card_width(count, measured.0, measured.1);
-    let (children, focused) = cards(shell, cx, &call.room_id, all, &call.speaking, card_w);
+    let (children, focused) = cards(shell, cx, &call.room_id, all, &call.speaking, card_w, measured);
     let view = cx.entity();
     let measure = shell.calls.stage_measure.clone();
     let probe = canvas(
@@ -1279,7 +1333,8 @@ impl Shell {
         for feed in self.calls.state.iter().flat_map(|s| s.video.iter()) {
             if !self.calls.frames.contains_key(&feed.key) {
                 let (key, screen) = (feed.key.clone(), feed.screen);
-                let frame = cx.new(|cx| VideoFrame::new(key.clone(), screen, cx));
+                let shell = cx.weak_entity();
+                let frame = cx.new(|cx| VideoFrame::new(key.clone(), screen, shell, cx));
                 self.calls.frames.insert(key, frame);
             }
         }
@@ -1298,11 +1353,18 @@ pub struct VideoFrame {
     stale: Vec<Arc<RenderImage>>,
     /// What the pictures look like, for tests: pixel colours left and right.
     sample: (String, String),
-    dim: (u32, u32),
+    pub dim: (u32, u32),
+    /// The shell, told when the picture's shape changes (its card follows it).
+    shell: gpui::WeakEntity<Shell>,
 }
 
 impl VideoFrame {
-    pub fn new(key: String, screen: bool, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        key: String,
+        screen: bool,
+        shell: gpui::WeakEntity<Shell>,
+        cx: &mut Context<Self>,
+    ) -> Self {
         cx.spawn(async move |this, cx| {
             loop {
                 cx.background_executor().timer(Duration::from_millis(16)).await;
@@ -1320,6 +1382,7 @@ impl VideoFrame {
             stale: Vec::new(),
             sample: (String::new(), String::new()),
             dim: (0, 0),
+            shell,
         }
     }
 
@@ -1333,7 +1396,11 @@ impl VideoFrame {
         }
         self.seen = frame.seq;
         let (width, height) = (frame.width, frame.height);
-        self.dim = (width, height);
+        if self.dim != (width, height) {
+            self.dim = (width, height);
+            // The card is the picture's shape: the shell lays it out again.
+            let _ = self.shell.update(cx, |_, cx| cx.notify());
+        }
         let sample = |x: u32, y: u32| {
             let at = ((y * width + x) * 4) as usize;
             frame
@@ -1400,6 +1467,12 @@ impl gpui::Render for VideoFrame {
         .attr("data-shown", if shown { "true" } else { "false" })
         .attr("data-seq", self.seen.to_string())
         .attr("data-size", format!("{}x{}", self.dim.0, self.dim.1))
+        .attr(
+            "data-publish",
+            morpheus_call::published_video(&self.key)
+                .map(|p| p.to_string())
+                .unwrap_or_default(),
+        )
         .attr("data-left", self.sample.0.clone())
         .attr("data-right", self.sample.1.clone())
     }

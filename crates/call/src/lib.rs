@@ -22,3 +22,10 @@ mod imp;
 mod imp;
 
 pub use imp::*;
+
+#[path = "quality.rs"]
+mod quality;
+pub use quality::{
+    PublishedVideo, SCREEN_FPS, ScreenQuality, ScreenResolution, bitrate_for, camera_bitrate,
+    published_video,
+};
