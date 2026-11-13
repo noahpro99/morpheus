@@ -3090,6 +3090,83 @@ pub fn send_image_sized_as(
     Ok(())
 }
 
+/// A video message from `user` (see [`send_as`]): `bytes` uploaded as
+/// `mime`, with the size, length and thumbnail in its info when given (as
+/// Element sends them).
+pub struct VideoMessage<'a> {
+    pub bytes: &'a [u8],
+    pub mime: &'a str,
+    pub body: &'a str,
+    pub size: Option<(u32, u32)>,
+    pub duration_ms: Option<u64>,
+    pub thumbnail_png: Option<&'a [u8]>,
+}
+
+/// Send `video` into `room_id` as `user`.
+pub fn send_video_as(homeserver: &str, user: &str, room_id: &str, video: &VideoMessage<'_>) -> Result<()> {
+    let login = curl(&[
+        "-X",
+        "POST",
+        &format!("{homeserver}/_matrix/client/v3/login"),
+        "-d",
+        &json!({ "type": "m.login.password", "identifier": { "type": "m.id.user", "user": user }, "password": format!("{user}-password") }).to_string(),
+    ])?;
+    let login: Value = serde_json::from_str(&login)?;
+    let token = login["access_token"]
+        .as_str()
+        .ok_or_else(|| anyhow!("no token for {user}"))?
+        .to_owned();
+    let auth = format!("Authorization: Bearer {token}");
+    let upload = |bytes: &[u8], mime: &str, name: &str| -> Result<Value> {
+        let file = std::env::temp_dir().join(format!("morpheus-e2e-{}", unique()));
+        std::fs::write(&file, bytes)?;
+        let uploaded = curl(&[
+            "-X",
+            "POST",
+            "-H",
+            &auth,
+            "-H",
+            &format!("Content-Type: {mime}"),
+            "--data-binary",
+            &format!("@{}", file.display()),
+            &format!("{homeserver}/_matrix/media/v3/upload?filename={name}"),
+        ]);
+        let _ = std::fs::remove_file(&file);
+        Ok(serde_json::from_str::<Value>(&uploaded?)?["content_uri"].clone())
+    };
+    let url = upload(video.bytes, video.mime, video.body)?;
+    let mut info = json!({ "mimetype": video.mime, "size": video.bytes.len() });
+    if let Some((w, h)) = video.size {
+        info["w"] = json!(w);
+        info["h"] = json!(h);
+    }
+    if let Some(ms) = video.duration_ms {
+        info["duration"] = json!(ms);
+    }
+    if let Some(png) = video.thumbnail_png {
+        info["thumbnail_url"] = upload(png, "image/png", "thumbnail.png")?;
+        info["thumbnail_info"] = json!({ "mimetype": "image/png", "size": png.len() });
+    }
+    let room = room_id.replace('!', "%21").replace(':', "%3A");
+    curl(&[
+        "-X",
+        "PUT",
+        "-H",
+        &auth,
+        &format!("{homeserver}/_matrix/client/v3/rooms/{room}/send/m.room.message/e2e-{}", unique()),
+        "-d",
+        &json!({ "msgtype": "m.video", "body": video.body, "url": url, "info": info }).to_string(),
+    ])?;
+    let _ = curl(&[
+        "-X",
+        "POST",
+        "-H",
+        &auth,
+        &format!("{homeserver}/_matrix/client/v3/logout"),
+    ]);
+    Ok(())
+}
+
 /// Make `png` the profile picture of `user`.
 pub fn set_avatar_as(homeserver: &str, user: &str, png: &[u8]) -> Result<()> {
     let login = curl(&[

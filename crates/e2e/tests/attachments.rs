@@ -59,14 +59,23 @@ async fn renders_and_downloads_attachments() {
 
     // (The three cards are consecutive but each wait below reveals its own, so
     // the test does not depend on where the scroll stopped.)
-    // Video card: thumbnail (or placeholder) plus a play button.
-    app.reveal_text(".video-card .video-duration", "0:01", DEFAULT_WAIT).await.expect("reveal video");
-    app.wait_for(".video-card .play-button", DEFAULT_WAIT)
-        .await
-        .expect("video play button");
-    app.wait_for_text(".video-card .video-duration", "0:01", DEFAULT_WAIT)
-        .await
-        .expect("video duration");
+    if morpheus_e2e::gpui() {
+        // The seeded clip is 1 s with no sound: it plays by itself, looping,
+        // like a GIF (video_player.rs tests the player).
+        app.reveal_element(".video-card[data-body=\"clip.mp4\"]", DEFAULT_WAIT).await.expect("reveal video");
+        app.wait_for(".video-card .video-player[data-autoplay=\"1\"][data-loop=\"1\"]", DEFAULT_WAIT)
+            .await
+            .expect("the clip plays by itself");
+    } else {
+        // Video card: thumbnail (or placeholder) plus a play button.
+        app.reveal_text(".video-card .video-duration", "0:01", DEFAULT_WAIT).await.expect("reveal video");
+        app.wait_for(".video-card .play-button", DEFAULT_WAIT)
+            .await
+            .expect("video play button");
+        app.wait_for_text(".video-card .video-duration", "0:01", DEFAULT_WAIT)
+            .await
+            .expect("video duration");
+    }
 
     // Audio row: name, duration and a download button.
     app.reveal_text(".attachment-card.audio .attachment-name", "voice-note.m4a", DEFAULT_WAIT)
@@ -254,9 +263,9 @@ async fn videos_play_inline() {
         return;
     };
     if morpheus_e2e::gpui() {
-        // Playing an mp4 in a message needs a video decoder in the GPUI app
-        // (the Dioxus page has the webview's `<video>`): not built.
-        eprintln!("skipped on GPUI: no inline video playback");
+        // The GPUI app draws its own player: video_player.rs tests it (this
+        // test reads the web view's `<video>`).
+        eprintln!("skipped on GPUI: see video_player.rs");
         return;
     }
     let mut app = App::launch(&hs).await.expect("launch app");
