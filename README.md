@@ -3,8 +3,8 @@
 A Discord-shaped Matrix client, native in Rust.
 
 - **Core** (`crates/core`): matrix-rust-sdk, sessions, room list, timelines. No UI.
-- **UI** (`crates/ui`): shared Dioxus components and theme.
-- **Apps** (`apps/desktop`, `apps/mobile`): thin binaries that pick a renderer.
+- **UI** (`crates/ui`): shared Dioxus components and theme (phone and web apps). The desktop app draws its own UI with GPUI (`apps/desktop`, logic in `crates/view-model`).
+- **Apps** (`apps/desktop` GPUI, `apps/mobile` and `apps/web` Dioxus): thin binaries.
 
 See [PLAN.md](PLAN.md) for the roadmap and architecture notes.
 
@@ -14,7 +14,7 @@ See [PLAN.md](PLAN.md) for the roadmap and architecture notes.
 direnv allow            # or: nix develop
 just hs-up              # local Synapse on http://localhost:8008
 just hs-seed            # users alice/bob/carol + rooms with history
-just desktop            # dx serve with hot reload
+just desktop            # cargo run -p morpheus-desktop
 ```
 
 Log in with `alice` / `alice-password`. Open a second window as another user
@@ -38,9 +38,9 @@ The live test is the fastest way to verify core changes without a GUI.
 
 ### End-to-end UI tests
 
-`just e2e` builds the desktop app with the `e2e` feature, which opens a
-loopback control socket inside the app that evaluates JavaScript in the
-webview. The `morpheus-e2e` crate wraps it in a small driver:
+`just e2e [file [test]]` builds the desktop (GPUI) app with the `e2e` feature, which opens a
+loopback control socket inside the app answering selector requests (the phone and web apps
+evaluate JavaScript in their page instead). The `morpheus-e2e` crate wraps it in a small driver:
 
 ```rust
 let mut app = App::launch(&homeserver).await?;
@@ -84,7 +84,7 @@ Builds and runs on a connected device or a running emulator. iOS requires a Mac.
 `just android-check` type-checks the mobile crate for `aarch64-linux-android` without a
 device. The mobile app is the same shell as the desktop one: on a phone-width window it
 shows one pane at a time (rooms, chat, members or thread) with back buttons, which
-`just e2e-one mobile_layout` drives on the desktop build inside a phone-sized box.
+`just e2e-one mobile_layout` used to drive the Dioxus desktop build inside a phone-sized box (that app is gone; the test needs the phone or web app).
 
 ## Storage
 
