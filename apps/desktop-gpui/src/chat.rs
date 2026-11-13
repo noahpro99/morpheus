@@ -62,60 +62,64 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                 .flex()
                 .items_center()
                 .gap(px(8.0))
-                .px(px(16.0))
+                .pl(px(6.0)).pr(px(16.0))
                 .border_b_1()
                 .border_color(gpui::rgba(0x0000004d));
             let title = room_title(&shell.nicknames, room);
-            header = if room.is_dm {
-                header.child(avatar(
-                    shell.picture(&room.avatar, 24),
-                    &title,
-                    24.0,
-                    None,
-                ))
+            // The icon (a DM's picture, a channel's #) and the name are one
+            // button, as tall as the bar and with a hover background, as in
+            // Discord: any of it opens the room's menu, under the name.
+            let icon_el = if room.is_dm {
+                avatar(shell.picture(&room.avatar, 24), &title, 24.0, None).into_any_element()
             } else {
-                header.child(
-                    div()
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(rgb(theme::text_faint()))
-                        .child("#")
-                        .e2e("span", "hash")
-                        .text("#"),
-                )
+                div()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(rgb(theme::text_faint()))
+                    .child("#")
+                    .e2e("span", "hash")
+                    .text("#")
+                    .into_any_element()
             };
-            // The name is the room's menu button, as in Discord: it opens the
-            // menu under itself.
             let anchor = shell.title_bounds.clone();
             let menu_room = room.clone();
             header = header.child(
                 div()
-                    .id("room-title")
-                    .relative()
-                    .px(px(6.0))
-                    .py(px(4.0))
+                    .id("room-head")
+                    .h_full()
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .gap(px(8.0))
+                    .px(px(10.0))
                     .rounded(px(theme::RADIUS_SM))
-                    .font_weight(FontWeight::BOLD)
                     .cursor_pointer()
                     .hover(|s| s.bg(gpui::rgba(theme::bg_hover())))
-                    .child(title.clone())
+                    .child(icon_el)
                     .child(
-                        gpui::canvas(
-                            {
-                                let anchor = anchor.clone();
-                                move |bounds, _, _| anchor.set(bounds)
-                            },
-                            |_, _, _, _| {},
-                        )
-                        .absolute()
-                        .size_full(),
+                        div()
+                            .relative()
+                            .font_weight(FontWeight::BOLD)
+                            .child(title.clone())
+                            .child(
+                                gpui::canvas(
+                                    {
+                                        let anchor = anchor.clone();
+                                        move |bounds, _, _| anchor.set(bounds)
+                                    },
+                                    |_, _, _, _| {},
+                                )
+                                .absolute()
+                                .size_full(),
+                            )
+                            .e2e("h2", "room-title")
+                            .text(title.clone()),
                     )
                     .on_click(cx.listener(move |this, _: &gpui::ClickEvent, _, cx| {
                         let b = anchor.get();
                         let at = gpui::point(b.origin.x, b.origin.y + b.size.height + px(2.0));
                         this.open_room_menu(menu_room.clone(), at, cx)
                     }))
-                    .e2e("h2", "room-title")
-                    .text(title.clone()),
+                    .e2e("button", "ghost room-head"),
             );
             header = header.child(
                 div()

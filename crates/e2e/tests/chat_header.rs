@@ -132,3 +132,71 @@ async fn a_call_button_only_where_calls_belong() {
         "the search bar is not at the top right: {search:?} in {header:?}"
     );
 }
+
+async fn menu_opens_and_closes(app: &mut App, what: &str) {
+    let label = if app.count(".chat-header .room-head .avatar").await.expect("count") > 0 { "Close DM" } else { "Edit room" };
+    app.wait_for_text(".context-menu .context-item", label, DEFAULT_WAIT)
+        .await
+        .unwrap_or_else(|e| panic!("{what} should open the room menu: {e}"));
+    app.press(".context-menu", "Escape").await.expect("escape");
+    app.wait_for_count(".context-menu", 0, DEFAULT_WAIT).await.expect("menu closed");
+}
+
+/// The icon (a channel's #, a DM's picture) and the name are one button, as
+/// tall as the bar: the whole of it opens the room's menu, its edges too.
+async fn head_button_is_one_big_target(app: &mut App, icon: &str) {
+    let bar = app.bounds(".chat-header").await.expect("b").expect("bar");
+    let head = app.bounds(".chat-header .room-head").await.expect("b").expect("the head button");
+    assert!(head.h >= bar.h - 2.0, "as tall as the bar: {head:?} in {bar:?}");
+    assert!(head.x <= bar.x + 12.0, "at the bar's left: {head:?}");
+    let icon_b = app.bounds(&format!(".chat-header .room-head {icon}")).await.expect("b").expect("icon");
+    assert!(icon_b.right() <= head.right() && icon_b.x >= head.x, "the icon is inside it");
+    let name = app.bounds(".chat-header .room-head .room-title").await.expect("b").expect("name");
+    assert!(name.x >= icon_b.right(), "the name is right of the icon: {name:?} {icon_b:?}");
+    app.click(&format!(".chat-header .room-head {icon}")).await.expect("click the icon");
+    menu_opens_and_closes(app, "the icon").await;
+    app.click(".chat-header .room-head .room-title").await.expect("click the name");
+    menu_opens_and_closes(app, "the name").await;
+    // The corners of the box, well off the glyphs.
+    let (dx, dy) = (head.w / 2.0 - 2.0, head.h / 2.0 - 2.0);
+    for (ox, oy) in [(-dx, -dy), (dx, -dy), (-dx, dy), (dx, dy)] {
+        app.click_at(".chat-header .room-head", ox as f32, oy as f32, 1).await.expect("click the edge");
+        menu_opens_and_closes(app, &format!("the button's edge ({ox}, {oy})")).await;
+    }
+}
+
+#[tokio::test]
+async fn a_channels_hash_and_name_are_one_big_menu_button() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch(&hs).await.expect("launch");
+    if !app.is_gpui() {
+        return;
+    }
+    login(&mut app, "alice").await;
+    app.open_room("general").await.expect("general");
+    app.wait_for(".chat-header .room-title", DEFAULT_WAIT).await.expect("title");
+    head_button_is_one_big_target(&mut app, ".hash").await;
+}
+
+#[tokio::test]
+async fn a_dms_picture_and_name_are_one_big_menu_button() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch(&hs).await.expect("launch");
+    if !app.is_gpui() {
+        return;
+    }
+    login(&mut app, "alice").await;
+    app.click(".rail-dms").await.expect("DMs");
+    app.wait_for(".room.dm .room-name", DEFAULT_WAIT).await.expect("a DM");
+    app.click(".room.dm").await.expect("open it");
+    app.wait_for(".chat-header .room-title", DEFAULT_WAIT).await.expect("title");
+    let avatar = app.bounds(".chat-header .avatar").await.expect("b").expect("the DM's avatar");
+    assert!((avatar.w - 24.0).abs() < 1.0, "a 24 px picture: {avatar:?}");
+    head_button_is_one_big_target(&mut app, ".avatar").await;
+}
