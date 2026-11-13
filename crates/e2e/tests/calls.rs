@@ -4718,3 +4718,142 @@ async fn a_screen_share_shows_a_skeleton_until_its_first_frame() {
     alice.click(".voice-panel .hang-up").await.expect("hang up");
     bob.click(".voice-panel .hang-up").await.expect("hang up");
 }
+
+/// The screen can be captured: Hyprland, the session not locked.
+fn can_capture() -> bool {
+    std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_some()
+        && !std::process::Command::new("pgrep")
+            .args(["-x", "hyprlock"])
+            .status()
+            .is_ok_and(|s| s.success())
+}
+
+/// The pixels (RGB) of `area` (window coordinates) of the app's window.
+fn capture_window_area(pid: u32, area: (f64, f64, f64, f64)) -> Option<Vec<[u8; 3]>> {
+    let out = std::process::Command::new("hyprctl").args(["clients", "-j"]).output().ok()?;
+    let clients: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
+    let window = clients
+        .as_array()?
+        .iter()
+        .find(|c| c["pid"].as_u64() == Some(u64::from(pid)))?
+        .clone();
+    let (x, y) = (window["at"][0].as_f64()? + area.0, window["at"][1].as_f64()? + area.1);
+    let geometry = format!("{},{} {}x{}", x.round(), y.round(), area.2.round().max(1.0), area.3.round().max(1.0));
+    let out = std::process::Command::new("grim")
+        .args(["-s", "1", "-t", "ppm", "-g", &geometry, "-"])
+        .output()
+        .ok()?;
+    let bytes = out.stdout;
+    let (mut fields, mut start) = (0, 0);
+    for (i, b) in bytes.iter().enumerate() {
+        if b.is_ascii_whitespace() {
+            fields += 1;
+            if fields == 4 {
+                start = i + 1;
+                break;
+            }
+        }
+    }
+    Some(bytes.get(start..)?.as_chunks::<3>().0.to_vec())
+}
+
+/// Green pixels in the two rows just inside a card's top edge and the two
+/// columns inside its left edge (clear of the rounded corners).
+fn green_on_edge(app: &App, card: &morpheus_e2e::Bounds) -> Option<usize> {
+    let pid = app.pid()?;
+    let corner = 14.0;
+    let green = |p: &[u8; 3]| i32::from(p[1]) > i32::from(p[0]) + 50 && i32::from(p[1]) > i32::from(p[2]) + 30;
+    let top = capture_window_area(pid, (card.x + corner, card.y, card.w - 2.0 * corner, 3.0))?;
+    let left = capture_window_area(pid, (card.x, card.y + corner, 3.0, card.h - 2.0 * corner))?;
+    Some(top.iter().chain(left.iter()).filter(|p| green(p)).count())
+}
+
+/// A person's video card rings green while they speak, like their avatar
+/// card does: over the picture, round its corners. Bob's camera is on and
+/// his test tone is the speech; stopping it (mute) takes the ring away.
+/// A shared screen's tile does not ring (not a person's face).
+#[tokio::test]
+async fn a_video_card_rings_green_while_its_person_speaks() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    if !alice.is_gpui() {
+        return;
+    }
+    let channel = fresh_voice_channel(&hs);
+    login_and_open(&mut alice, "alice", "general").await;
+    open_without_joining(&mut alice, &channel).await;
+    alice.click(CALL_BUTTON).await.expect("alice joins");
+    alice
+        .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("alice connected");
+    let mut bob = App::launch(&hs).await.expect("launch bob");
+    login_and_open(&mut bob, "bob", "general").await;
+    open_without_joining(&mut bob, &channel).await;
+    bob.click(CALL_BUTTON).await.expect("bob joins");
+    bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("bob connected");
+    bob.click(".voice-panel .camera-button").await.expect("camera on");
+    wait_test_pattern(&mut alice, "@bob:localhost")
+        .await
+        .expect("alice sees bob's camera");
+    wait_test_pattern(&mut bob, "@bob:localhost")
+        .await
+        .expect("bob sees himself");
+
+    let theirs = ".call-stage .video-tile:not(.screen)[data-user=\"@bob:localhost\"]";
+    let own = ".call-stage .video-tile.self";
+    alice
+        .wait_for(&format!("{theirs}.speaking"), DEFAULT_WAIT)
+        .await
+        .expect("alice's view of bob's video card rings while he speaks");
+    bob.wait_for(&format!("{own}.speaking"), DEFAULT_WAIT)
+        .await
+        .expect("bob's own video card rings while he speaks");
+    // Alice's camera is off: her avatar card is not ringed by bob's speech.
+    if can_capture() {
+        // Wait for a steady ring (it can flicker off between tone bursts).
+        let card = alice.bounds(theirs).await.expect("bounds").expect("card");
+        let mut seen = 0;
+        for _ in 0..10 {
+            seen = green_on_edge(&alice, &card).unwrap_or(0);
+            if seen > 40 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+        }
+        assert!(seen > 40, "green along bob's video card edge for alice ({seen} pixels)");
+        let card = bob.bounds(own).await.expect("bounds").expect("card");
+        let mut seen = 0;
+        for _ in 0..10 {
+            seen = green_on_edge(&bob, &card).unwrap_or(0);
+            if seen > 40 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+        }
+        assert!(seen > 40, "green along bob's own video card edge ({seen} pixels)");
+    } else {
+        eprintln!("session locked or no Hyprland: no pixel check");
+    }
+
+    // Bob mutes: the rings go.
+    bob.click(".user-bar .mute-button").await.expect("mute");
+    alice
+        .wait_for_count(&format!("{theirs}.speaking"), 0, DEFAULT_WAIT)
+        .await
+        .expect("the ring goes for alice");
+    bob.wait_for_count(&format!("{own}.speaking"), 0, DEFAULT_WAIT)
+        .await
+        .expect("the ring goes for bob");
+    if can_capture() {
+        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+        let card = alice.bounds(theirs).await.expect("bounds").expect("card");
+        let seen = green_on_edge(&alice, &card).unwrap_or(0);
+        assert!(seen < 10, "no green left on the edge ({seen} pixels)");
+    }
+}
