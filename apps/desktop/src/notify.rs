@@ -32,7 +32,7 @@ pub fn show(
     image: Option<PathBuf>,
     sound: Option<&'static str>,
 ) {
-    eprintln!("morpheus-gpui: notification: {title}");
+    eprintln!("morpheus-desktop: notification: {title}");
     if std::env::var_os("MORPHEUS_E2E_PORT").is_some() {
         let line = serde_json::json!({
             "title": title,
@@ -49,7 +49,7 @@ pub fn show(
                 std::io::Write::write_all(&mut file, format!("{line}\n").as_bytes())
             });
         if let Err(err) = written {
-            eprintln!("morpheus-gpui: test notification log not written: {err}");
+            eprintln!("morpheus-desktop: test notification log not written: {err}");
         }
         return;
     }
@@ -66,7 +66,7 @@ pub fn show(
             notification.image_path(&image.to_string_lossy());
         }
         if let Err(err) = notification.show() {
-            eprintln!("morpheus-gpui: desktop notification failed: {err}");
+            eprintln!("morpheus-desktop: desktop notification failed: {err}");
         }
     });
 }
@@ -77,7 +77,7 @@ fn block_on<F: std::future::Future>(future: F) -> Option<F::Output> {
     match tokio::runtime::Builder::new_current_thread().enable_all().build() {
         Ok(runtime) => Some(runtime.block_on(future)),
         Err(err) => {
-            eprintln!("morpheus-gpui: notifier runtime failed: {err}");
+            eprintln!("morpheus-desktop: notifier runtime failed: {err}");
             None
         }
     }
@@ -114,7 +114,7 @@ pub fn spawn_notifier(session: Session, redraw: impl Fn() + Send + 'static) {
         .spawn(move || {
             block_on(async move {
                 let Ok(mut updates) = session.notifications().await else {
-                    eprintln!("morpheus-gpui: notification subscription failed");
+                    eprintln!("morpheus-desktop: notification subscription failed");
                     return;
                 };
                 while let Some(notice) = updates.next().await {
@@ -132,7 +132,7 @@ pub fn spawn_notifier(session: Session, redraw: impl Fn() + Send + 'static) {
                     }
                     let dir = crate::data_dir();
                     if !settings::notifications_enabled(&dir) {
-                        eprintln!("morpheus-gpui: notifications are off on this device; not shown");
+                        eprintln!("morpheus-desktop: notifications are off on this device; not shown");
                         continue;
                     }
                     let ready = notices::ready(&session, notice, &dir).await;
@@ -141,7 +141,7 @@ pub fn spawn_notifier(session: Session, redraw: impl Fn() + Send + 'static) {
             });
         })
         .map(drop)
-        .unwrap_or_else(|err| eprintln!("morpheus-gpui: notifier thread failed: {err}"));
+        .unwrap_or_else(|err| eprintln!("morpheus-desktop: notifier thread failed: {err}"));
 }
 
 impl Shell {
@@ -165,7 +165,7 @@ pub fn spawn_ring_watcher(session: Session) {
         .spawn(move || {
             block_on(async move {
                 let Ok(mut rings) = session.ring_updates().await else {
-                    eprintln!("morpheus-gpui: ring subscription failed");
+                    eprintln!("morpheus-desktop: ring subscription failed");
                     return;
                 };
                 let declined = crate::view_model::ringing::Declined::default();
@@ -216,5 +216,5 @@ pub fn spawn_ring_watcher(session: Session) {
             });
         })
         .map(drop)
-        .unwrap_or_else(|err| eprintln!("morpheus-gpui: ring thread failed: {err}"));
+        .unwrap_or_else(|err| eprintln!("morpheus-desktop: ring thread failed: {err}"));
 }

@@ -19,7 +19,7 @@ impl TypingView {
                 let mut updates = match subscription.await {
                     Ok(updates) => updates,
                     Err(err) => {
-                        eprintln!("morpheus-gpui: typing subscription: {err}");
+                        eprintln!("morpheus-desktop: typing subscription: {err}");
                         return;
                     }
                 };

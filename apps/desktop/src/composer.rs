@@ -228,7 +228,7 @@ impl Composer {
             let notice = handle.renew_typing();
             cx.spawn(async move |_, _| {
                 if let Err(err) = notice.await {
-                    eprintln!("morpheus-gpui: typing notice: {err}");
+                    eprintln!("morpheus-desktop: typing notice: {err}");
                 }
             })
             .detach();
@@ -255,7 +255,7 @@ impl Composer {
                             this.members = Some(list);
                             this.recompute(cx);
                         }
-                        Err(err) => eprintln!("morpheus-gpui: members for mentions: {err}"),
+                        Err(err) => eprintln!("morpheus-desktop: members for mentions: {err}"),
                     }
                 })
                 .ok();
@@ -359,7 +359,7 @@ impl Composer {
             if let Some(sending) = sending
                 && let Err(err) = sending.await
             {
-                eprintln!("morpheus-gpui: sending: {err}");
+                eprintln!("morpheus-desktop: sending: {err}");
             }
             // The files after the text, so they read below it.
             for file in files {
@@ -367,7 +367,7 @@ impl Composer {
                     .send_attachment_bytes(file.name, file.mime, file.bytes)
                     .await
                 {
-                    eprintln!("morpheus-gpui: upload: {err}");
+                    eprintln!("morpheus-desktop: upload: {err}");
                 }
             }
         })
@@ -415,7 +415,7 @@ impl Composer {
                         })
                         .ok();
                     }
-                    Err(err) => eprintln!("morpheus-gpui: reading {}: {err}", path.display()),
+                    Err(err) => eprintln!("morpheus-desktop: reading {}: {err}", path.display()),
                 }
             })
             .detach();
@@ -426,7 +426,7 @@ impl Composer {
     #[cfg(feature = "e2e")]
     pub fn attach_from_bridge(&mut self, file: crate::input::PastedFile, dropped: bool, cx: &mut Context<Self>) {
         if dropped {
-            let dir = std::env::temp_dir().join(format!("morpheus-gpui-drop-{}", std::process::id()));
+            let dir = std::env::temp_dir().join(format!("morpheus-desktop-drop-{}", std::process::id()));
             let path = dir.join(&file.name);
             if std::fs::create_dir_all(&dir)
                 .and_then(|()| std::fs::write(&path, &file.bytes))
@@ -457,7 +457,7 @@ impl Composer {
             };
             for path in paths {
                 if let Err(err) = handle.send_attachment(path).await {
-                    eprintln!("morpheus-gpui: attaching: {err}");
+                    eprintln!("morpheus-desktop: attaching: {err}");
                 }
             }
         })

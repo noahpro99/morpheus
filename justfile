@@ -33,27 +33,25 @@ test: sweep
 test-live:
     MORPHEUS_TEST_HOMESERVER={{hs}} cargo test -p morpheus-core --test live -- --nocapture
 
-# Build the desktop app with the in-app test bridge
-e2e-build: sweep
-    dx build --package morpheus-desktop --features e2e
+# The desktop app with the in-app test bridge, copied to morpheus-desktop-e2e: a plain
+# `cargo build` overwrites target/debug/morpheus-desktop, which has no bridge and
+# opens on your screen, so the tests only ever run the copy.
+e2e-build:
+    cargo build -p morpheus-desktop --features e2e
+    cp target/debug/morpheus-desktop target/debug/morpheus-desktop-e2e
 
-# GPUI test build, copied to morpheus-gpui-e2e (a plain build overwrites morpheus-gpui)
-gpui-e2e-build:
-    cargo build -p morpheus-desktop-gpui --features e2e
-    cp target/debug/morpheus-gpui target/debug/morpheus-gpui-e2e
+# Desktop e2e tests: `just e2e` (all), `just e2e timeline` or `just e2e timeline pictures`.
+# Needs `just hs-up hs-seed`; the window opens on the hidden test monitor.
+e2e file="" name="": e2e-build hs-seed
+    MORPHEUS_E2E_BIN=$PWD/target/debug/morpheus-desktop-e2e MORPHEUS_TEST_HOMESERVER={{hs}} cargo test -p morpheus-e2e {{ if file == "" { "" } else { "--test " + file } }} {{name}} -- --nocapture --test-threads=1 ${E2E_TEST_ARGS:-}
 
-# GPUI e2e tests: `just gpui-e2e timeline` or `just gpui-e2e timeline pictures`
-gpui-e2e file name="": gpui-e2e-build
-    MORPHEUS_E2E_UI=gpui MORPHEUS_E2E_BIN=$PWD/target/debug/morpheus-gpui-e2e MORPHEUS_TEST_HOMESERVER={{hs}} cargo test -p morpheus-e2e --test {{file}} {{name}} -- --test-threads=1 ${E2E_TEST_ARGS:-}
+# The old name of `just e2e`
+gpui-e2e file="" name="": (e2e file name)
 
-# Playwright-style tests through the real window (needs `just hs-up hs-seed`)
-e2e: e2e-build hs-seed
-    MORPHEUS_TEST_HOMESERVER={{hs}} cargo test -p morpheus-e2e -- --nocapture --test-threads=1
-
-# One e2e test file with per-step timings, e.g. `just e2e-one perf` (no rebuild; run `just e2e-build` after UI changes).
+# One e2e test file with per-step timings, e.g. `just e2e-one perf` (rebuilds the test copy first).
 # Reseeds first: the moderation tests kick and ban users and the seed puts them back.
-e2e-one file: hs-seed
-    MORPHEUS_TEST_HOMESERVER={{hs}} MORPHEUS_E2E_TIMINGS=1 cargo test -p morpheus-e2e --test {{file}} -- --nocapture --test-threads=1
+e2e-one file: e2e-build hs-seed
+    MORPHEUS_E2E_BIN=$PWD/target/debug/morpheus-desktop-e2e MORPHEUS_TEST_HOMESERVER={{hs}} MORPHEUS_E2E_TIMINGS=1 cargo test -p morpheus-e2e --test {{file}} -- --nocapture --test-threads=1
 
 # The web app (app.morpheuschat.org) at http://localhost:8080, rebuilt on save
 web:
@@ -75,17 +73,17 @@ e2e-web file="": e2e-web-build hs-seed
 # Everything CI would run
 ci: fmt lint test
 
-# Run the desktop app with hot reload
+# Run the desktop app
 desktop: sweep
-    dx serve --package morpheus-desktop
+    cargo run -p morpheus-desktop
 
 # Run the desktop app as a named profile (separate data dir), e.g. `just desktop-as bob`
 desktop-as profile: sweep
-    MORPHEUS_DATA_DIR="$PWD/.dev-data/{{profile}}" dx serve --package morpheus-desktop
+    MORPHEUS_DATA_DIR="$PWD/.dev-data/{{profile}}" cargo run -p morpheus-desktop
 
 # Release build of the desktop app
 desktop-release: sweep
-    dx build --package morpheus-desktop --release
+    cargo build --release -p morpheus-desktop
 
 # Run on a plugged-in Android phone (USB debugging on; check with `adb devices`)
 android: sweep

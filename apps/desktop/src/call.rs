@@ -431,7 +431,7 @@ impl Shell {
         let sending = session.set_call_media(now.0, now.1);
         cx.spawn(async move |_, _| {
             if let Err(err) = sending.await {
-                eprintln!("morpheus-gpui: call media state not published: {err}");
+                eprintln!("morpheus-desktop: call media state not published: {err}");
             }
         })
         .detach();
@@ -570,7 +570,7 @@ impl Shell {
 /// Matrix first (that is what everyone else sees), then the media.
 async fn leave_media(session: &Session, room: OwnedRoomId, call: Option<Call>) {
     if let Err(err) = session.leave_call(room).await {
-        eprintln!("morpheus-gpui: leaving the call: {err}");
+        eprintln!("morpheus-desktop: leaving the call: {err}");
     }
     if let Some(call) = call {
         call.leave().await;
@@ -623,7 +623,7 @@ async fn declined(
         .map(|members| members.iter().all(|m| Some(&m.user_id) == me.as_ref()))
         .unwrap_or(true);
     this.update(cx, |this, cx| {
-        eprintln!("morpheus-gpui: {name} declined the call in {room_for_log} (alone: {alone})");
+        eprintln!("morpheus-desktop: {name} declined the call in {room_for_log} (alone: {alone})");
         this.toast(format!("{name} declined the call"), cx);
         if alone {
             this.hang_up(cx);
@@ -765,14 +765,14 @@ async fn run_call(
             if let Some(sending) = sending
                 && let Err(err) = sending.await
             {
-                eprintln!("morpheus-gpui: sharing the call's media key: {err}");
+                eprintln!("morpheus-desktop: sharing the call's media key: {err}");
             }
         }
     };
     match early_key {
         Some((identity, sending)) if identity == own_identity => {
             if let Err(err) = sending.await {
-                eprintln!("morpheus-gpui: sharing the call's media key: {err}");
+                eprintln!("morpheus-desktop: sharing the call's media key: {err}");
             }
         }
         // Not the name LiveKit gave us: say it again under the right one.

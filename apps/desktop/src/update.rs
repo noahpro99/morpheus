@@ -44,7 +44,7 @@ impl Shell {
                         }
                     }
                     Ok(_) => {}
-                    Err(err) => eprintln!("morpheus-gpui: update check failed: {err}"),
+                    Err(err) => eprintln!("morpheus-desktop: update check failed: {err}"),
                 }
                 cx.background_executor()
                     .timer(Duration::from_secs(CHECK_EVERY_SECS))

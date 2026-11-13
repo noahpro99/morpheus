@@ -85,7 +85,7 @@ impl ModView {
             let result = action.await;
             this.update(cx, |this, cx| {
                 if let Err(err) = result {
-                    eprintln!("morpheus-gpui: {what}: {err}");
+                    eprintln!("morpheus-desktop: {what}: {err}");
                 }
                 this.busy = None;
                 this.load(cx);

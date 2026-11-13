@@ -357,7 +357,7 @@ impl TimelineView {
             let receipt = handle.send_read_receipt();
             cx.spawn(async move |_, _| {
                 if let Err(err) = receipt.await {
-                    eprintln!("morpheus-gpui: read receipt: {err}");
+                    eprintln!("morpheus-desktop: read receipt: {err}");
                 }
             })
             .detach();

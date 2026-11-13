@@ -1,12 +1,14 @@
-//! The system tray icon: left click opens Morpheus, right click offers
-//! Discord's menu (open, check for updates, acknowledgements, quit).
+//! The system tray icon (`apps/desktop/src/tray.rs`): left click opens
+//! Morpheus, right click offers Discord's menu (open, check for updates,
+//! acknowledgements, quit). StatusNotifierItem through `ksni`.
 //!
-//! On Linux this speaks StatusNotifierItem directly (`ksni`): the
-//! appindicator route Dioxus's built-in tray takes there can only show a
-//! menu and never reports a plain click. Other platforms use the built-in
-//! tray, which does (see `main.rs`).
+//! Closing the window hides it: the app (sync, notifications, rings) keeps
+//! running, and the tray brings it back.
 
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 /// What the user asked for from the tray.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,24 +41,40 @@ impl TrayAction {
 /// Runs on whatever thread the tray reports on.
 pub type Handler = Arc<dyn Fn(TrayAction) + Send + Sync>;
 
-/// The white logo as 64x64 RGBA (`assets/tray.png`, rendered with
-/// `rsvg-convert` from `crates/ui/assets/logo.svg` with a white fill).
-pub fn logo_rgba() -> Result<(Vec<u8>, u32, u32), String> {
+/// Whether closing the window may hide it: there is a tray to bring it back
+/// (or this is a test run, which closes windows to see what keeps running).
+static HIDES_ON_CLOSE: AtomicBool = AtomicBool::new(false);
+
+pub fn hides_on_close() -> bool {
+    HIDES_ON_CLOSE.load(Ordering::Relaxed)
+}
+
+/// Whether this run puts up a tray icon: always, except that test runs (which
+/// open many windows) ask for it with `MORPHEUS_E2E_TRAY`.
+pub fn wanted() -> bool {
+    std::env::var_os("MORPHEUS_E2E_PORT").is_none() || std::env::var_os("MORPHEUS_E2E_TRAY").is_some()
+}
+
+/// The white logo as 64x64 RGBA (`apps/desktop/assets/tray.png`).
+fn logo_rgba() -> Result<(Vec<u8>, u32, u32), String> {
     let decoder = png::Decoder::new(std::io::Cursor::new(
         include_bytes!("../assets/tray.png").as_slice(),
     ));
     let mut reader = decoder.read_info().map_err(|e| e.to_string())?;
     let mut buf = vec![0; reader.output_buffer_size()];
     let info = reader.next_frame(&mut buf).map_err(|e| e.to_string())?;
-    let rgba = match info.color_type {
-        png::ColorType::Rgba => buf[..info.buffer_size()].to_vec(),
-        png::ColorType::Rgb => buf[..info.buffer_size()]
-            .chunks(3)
-            .flat_map(|p| [p[0], p[1], p[2], 255])
-            .collect(),
-        other => return Err(format!("unsupported tray png colour type {other:?}")),
-    };
-    Ok((rgba, info.width, info.height))
+    match info.color_type {
+        png::ColorType::Rgba => Ok((buf[..info.buffer_size()].to_vec(), info.width, info.height)),
+        png::ColorType::Rgb => Ok((
+            buf[..info.buffer_size()]
+                .chunks(3)
+                .flat_map(|p| [p[0], p[1], p[2], 255])
+                .collect(),
+            info.width,
+            info.height,
+        )),
+        other => Err(format!("unsupported tray png colour type {other:?}")),
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -114,10 +132,9 @@ mod linux {
         }
     }
 
-    /// Register with the desktop's tray host. Without one (no
-    /// StatusNotifierWatcher on the session bus) the app runs without a
-    /// tray and says so in the log.
-    pub fn install(handler: Handler) {
+    /// Register with the desktop's tray host; `false` without one (no
+    /// StatusNotifierWatcher on the session bus).
+    pub fn install(handler: Handler) -> bool {
         let icon = match logo_rgba() {
             Ok((rgba, width, height)) => vec![ksni::Icon {
                 width: width as i32,
@@ -131,17 +148,37 @@ mod linux {
                     .collect(),
             }],
             Err(err) => {
-                tracing::warn!(%err, "tray icon image failed, using none");
+                eprintln!("morpheus-desktop: tray icon image failed, using none: {err}");
                 Vec::new()
             }
         };
         match (MorpheusTray { handler, icon }).spawn() {
             // The service stops when its last handle goes; keep it for good.
-            Ok(handle) => std::mem::forget(handle),
-            Err(err) => tracing::warn!(%err, "no tray icon"),
+            Ok(handle) => {
+                std::mem::forget(handle);
+                true
+            }
+            Err(err) => {
+                eprintln!("morpheus-desktop: no tray icon: {err}");
+                false
+            }
         }
     }
 }
 
-#[cfg(target_os = "linux")]
-pub use linux::install;
+/// Put up the tray icon, if this run wants one. Without a tray host the
+/// window's close button ends the app instead of hiding it for good.
+pub fn install(handler: Handler) {
+    if !wanted() {
+        // A test run closes the window to see what keeps running.
+        HIDES_ON_CLOSE.store(std::env::var_os("MORPHEUS_E2E_PORT").is_some(), Ordering::Relaxed);
+        return;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let up = linux::install(handler);
+        HIDES_ON_CLOSE.store(up || std::env::var_os("MORPHEUS_E2E_PORT").is_some(), Ordering::Relaxed);
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = handler;
+}
