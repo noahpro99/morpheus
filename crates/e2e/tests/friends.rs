@@ -269,10 +269,11 @@ async fn dm_rows_are_tall() {
     assert!(sizes[2] >= 42.0, "and so is Friends: {sizes:?}");
 }
 
-/// Above Friends in the DMs: an inset, lighter "Command palette" button with
-/// the shortcut (Ctrl+K here) that opens the palette.
+/// The top of the DMs sidebar is an inset, lighter "Command palette" button with
+/// the shortcut (Ctrl+K here) that opens the palette, in place of a "Direct
+/// messages" heading.
 #[tokio::test]
-async fn the_dms_have_a_command_palette_button_above_friends() {
+async fn the_dms_sidebar_starts_with_the_command_palette_button() {
     let Some(hs) = homeserver() else {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
@@ -287,12 +288,28 @@ async fn the_dms_have_a_command_palette_button_above_friends() {
     app.submit("form.login").await.expect("submit");
     app.wait_for(".rail-dms", DEFAULT_WAIT).await.expect("rail");
     app.click(".rail-dms").await.expect("DMs");
-    app.wait_for(".sidebar .palette-button", DEFAULT_WAIT).await.expect("the palette button");
+    app.wait_for(".sidebar-header .palette-button", DEFAULT_WAIT)
+        .await
+        .expect("the palette button is in the sidebar's top bar");
+    assert_eq!(
+        app.count(".sidebar-header h2").await.expect("count"),
+        0,
+        "no heading text in the top bar of the DMs"
+    );
+    assert!(
+        app.texts(".sidebar-header").await.expect("texts").iter().all(|t| !t.contains("Direct messages")),
+        "the old heading text is gone"
+    );
+    let header = app.bounds(".sidebar-header").await.expect("bounds").expect("header");
     let text = app.text(".sidebar .palette-button").await.expect("text").unwrap_or_default();
     assert!(text.contains("Command palette") && text.contains("Ctrl+K"), "button text {text:?}");
     let button = app.bounds(".sidebar .palette-button").await.expect("bounds").expect("button");
     let friends = app.bounds(".sidebar .friends-row").await.expect("bounds").expect("friends");
     let sidebar = app.bounds(".sidebar").await.expect("bounds").expect("sidebar");
+    assert!(
+        button.y >= header.y && button.bottom() <= header.bottom() + 0.5,
+        "the button {button:?} is not inside the top bar {header:?}"
+    );
     assert!(button.bottom() <= friends.y + 0.5, "the button {button:?} is not above Friends {friends:?}");
     assert!(
         button.x > sidebar.x + 4.0 && button.right() < sidebar.right() - 4.0,

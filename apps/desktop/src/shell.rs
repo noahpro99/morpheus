@@ -1387,7 +1387,8 @@ mod widget_tests {
         assert_eq!(query(".rail-item.selected[title=\"Engineering\"]").len(), 1);
 
         click(cx, ".rail-item[title=\"Direct messages\"]");
-        assert_eq!(texts(".sidebar-header h2"), ["Direct messages"]);
+        assert!(texts(".sidebar-header h2").is_empty());
+        assert_eq!(query(".sidebar-header .palette-button").len(), 1);
         assert_eq!(texts(".room.dm .room-name"), ["bob"]);
         assert!(
             query(".create-room-button").is_empty(),

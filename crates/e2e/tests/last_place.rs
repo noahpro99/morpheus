@@ -165,7 +165,7 @@ async fn clicking_a_server_returns_to_the_channel_last_open_in_it() {
     app.click(y).await.expect("Y");
     app.open_room("y-one").await.expect("y-one");
     app.click(dms).await.expect("DMs");
-    app.wait_for_text(".sidebar-header h2", "Direct messages", DEFAULT_WAIT)
+    app.wait_for(".sidebar-header .palette-button", DEFAULT_WAIT)
         .await
         .expect("DMs listed");
 

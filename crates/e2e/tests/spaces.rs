@@ -180,7 +180,7 @@ async fn dms_button_lists_direct_messages() {
     app.click(".rail-item[title=\"Direct messages\"]")
         .await
         .expect("DMs button");
-    app.wait_for_text(".sidebar-header h2", "Direct messages", DEFAULT_WAIT)
+    app.wait_for(".sidebar-header .palette-button", DEFAULT_WAIT)
         .await
         .expect("header follows the rail");
     app.wait_for_text(".room.dm", "bob", DEFAULT_WAIT)

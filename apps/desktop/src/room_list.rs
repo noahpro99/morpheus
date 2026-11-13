@@ -192,12 +192,17 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         .justify_between()
         .border_b_1()
         .border_color(gpui::rgba(0x0000004d))
-        .child(
+        // The DMs have no heading: the command palette button is there (as
+        // Discord's "Find or start a conversation").
+        .child(if *scope == Scope::Dms {
+            palette_button(cx).into_any_element()
+        } else {
             name.e2e("h2", if in_space { "server-name" } else { "" })
                 .attr("data-color", format!("{name_colour:06x}"))
                 .attr("data-bg", "")
-                .text(title),
-        );
+                .text(title)
+                .into_any_element()
+        });
     let plus_colour = crate::chat::bar_colour(shell, "create-room", theme::text_muted());
     if *scope != Scope::Dms {
         header = header.child(
@@ -262,7 +267,6 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
     }
     // The Friends page, at the top of the DMs (as in Discord).
     if *scope == Scope::Dms {
-        list = list.child(palette_button(cx));
         list = list.child(friends_row(shell, cx));
     }
     if !found.dms.is_empty() {
@@ -785,7 +789,7 @@ fn palette_shortcut() -> &'static str {
     if cfg!(target_os = "macos") { "⌘K" } else { "Ctrl+K" }
 }
 
-/// Above Friends: an inset, lighter button that opens the command palette.
+/// The top of the DMs: an inset, lighter button that opens the command palette.
 fn palette_button(cx: &mut Context<Shell>) -> impl IntoElement {
     let label = format!("Command palette {}", palette_shortcut());
     div()
@@ -793,8 +797,9 @@ fn palette_button(cx: &mut Context<Shell>) -> impl IntoElement {
         .flex()
         .items_center()
         .justify_between()
-        .mx(px(4.0))
-        .mb(px(8.0))
+        .flex_1()
+        .min_w_0()
+        .mx(px(10.0))
         .px(px(10.0))
         .h(px(30.0))
         .flex_none()
