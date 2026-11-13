@@ -11,7 +11,7 @@ use std::{
 };
 
 use livekit::webrtc::{
-    video_frame::native::VideoFrameBufferExt as _,
+    video_frame::{VideoBuffer as _, native::VideoFrameBufferExt as _},
     desktop_capturer::{
         CaptureError, DesktopCaptureSourceType, DesktopCapturer, DesktopCapturerOptions,
         DesktopFrame,
@@ -23,7 +23,10 @@ use livekit::webrtc::{
 use tokio::sync::oneshot;
 use tracing::{info, warn};
 
-use crate::imp::video::{self, LOCAL_SCREEN};
+use crate::{
+    imp::video::{self, LOCAL_SCREEN},
+    quality::ScreenQuality,
+};
 
 
 /// libwebrtc's Linux portal capturer (xdg-desktop-portal ScreenCast over
@@ -53,15 +56,16 @@ fn ensure_glib_loop() {
         }
     });
 }
-/// Capture the screen into `source` on a thread of its own until `stop` is
-/// set. `started` hears once: the first picture arrived, or capture could
-/// not start (no capturer, or the picker was cancelled). Frames go out only
-/// while `sending` is set.
+/// Capture the screen on a thread of its own until `stop` is set, scaled to
+/// `quality` and no faster than its frame rate. `started` hears once: the
+/// size the pictures are sent at (the first one arrived), or that capture
+/// could not start (no capturer, or the picker was cancelled). Frames go out
+/// once `sink` holds the source to send them to.
 pub(crate) fn run(
-    source: NativeVideoSource,
+    sink: Arc<std::sync::OnceLock<NativeVideoSource>>,
+    quality: ScreenQuality,
     stop: Arc<AtomicBool>,
-    sending: Arc<AtomicBool>,
-    started: oneshot::Sender<Result<(), String>>,
+    started: oneshot::Sender<Result<(u32, u32), String>>,
 ) {
     #[cfg(target_os = "linux")]
     ensure_glib_loop();
@@ -86,12 +90,14 @@ pub(crate) fn run(
             };
             let mut started = Some(started);
             let failed = Arc::new(AtomicBool::new(false));
-            let every = Duration::from_millis(1000 / video::FPS);
+            let every = video::show_every();
+            let send_every = Duration::from_millis(1000 / u64::from(quality.fps.max(1)));
             let mut shown: Option<Instant> = None;
+            let mut sent_at: Option<Instant> = None;
             let mut kept_at: Option<Instant> = None;
             let (failed_in, stop_in) = (failed.clone(), stop.clone());
-            let (sending_in, source_in) = (sending.clone(), source.clone());
-            let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
+            let sink_in = sink.clone();
+            let (tx, rx) = std::sync::mpsc::channel::<Result<(u32, u32), String>>();
             // The last picture, and how many it has been, for the loop: a
             // portal that sends pictures only when the screen changes leaves a
             // still screen without any, and a viewer who joins late (or an
@@ -106,9 +112,10 @@ pub(crate) fn run(
             capturer.start_capture(chosen, move |result: Result<DesktopFrame, CaptureError>| {
                 match result {
                     Ok(frame) => {
-                        let Some(buffer) = to_i420(&frame) else {
+                        let Some(buffer) = to_i420(&frame, quality) else {
                             return;
                         };
+                        let size = (buffer.width(), buffer.height());
                         if pictures_in.fetch_add(1, Ordering::Relaxed) == 0 {
                             info!(
                                 width = frame.width(),
@@ -116,10 +123,16 @@ pub(crate) fn run(
                                 "screen capture: the first picture"
                             );
                         }
-                        let _ = tx.send(Ok(()));
+                        let _ = tx.send(Ok(size));
                         let frame = VideoFrame::new(VideoRotation::VideoRotation0, buffer);
-                        if sending_in.load(Ordering::Relaxed) {
-                            source_in.capture_frame(&frame);
+                        // No faster than the frame rate chosen (a portal may
+                        // give more); a little under, so a clock a hair fast
+                        // does not drop every other one.
+                        if let Some(source) = sink_in.get()
+                            && sent_at.is_none_or(|at| at.elapsed() >= send_every * 9 / 10)
+                        {
+                            sent_at = Some(Instant::now());
+                            source.capture_frame(&frame);
                             if !sent_first_in.swap(true, Ordering::Relaxed) {
                                 info!("screen capture: the first picture sent to the call");
                             }
@@ -164,7 +177,9 @@ pub(crate) fn run(
                     );
                 }
                 // Nothing new for a second while sharing: the last picture again.
-                if sending.load(Ordering::Relaxed) && resent.elapsed() >= Duration::from_secs(1) {
+                if let Some(source) = sink.get()
+                    && resent.elapsed() >= Duration::from_secs(1)
+                {
                     resent = Instant::now();
                     if pictures.load(Ordering::Relaxed) > 0
                         && let Ok(kept) = last.lock()
@@ -178,7 +193,7 @@ pub(crate) fn run(
                 {
                     let _ = started.send(first);
                 }
-                std::thread::sleep(Duration::from_millis(1000 / video::FPS));
+                std::thread::sleep((send_every / 2).max(Duration::from_millis(4)));
             }
             if let Some(started) = started.take() {
                 let _ = started.send(Err(if failed.load(Ordering::Relaxed) {
@@ -195,7 +210,7 @@ pub(crate) fn run(
 }
 
 /// A desktop frame (BGRA, which libyuv calls ARGB) as I420.
-fn to_i420(frame: &DesktopFrame) -> Option<I420Buffer> {
+fn to_i420(frame: &DesktopFrame, quality: ScreenQuality) -> Option<I420Buffer> {
     let (width, height) = (frame.width() & !1, frame.height() & !1);
     if width <= 0 || height <= 0 {
         return None;
@@ -215,5 +230,11 @@ fn to_i420(frame: &DesktopFrame) -> Option<I420Buffer> {
         width,
         height,
     );
+    // Smaller, if the choice is: scaled here, once, for the call and the
+    // preview alike.
+    let (fit_w, fit_h) = quality.fit(width as u32, height as u32);
+    if (fit_w, fit_h) != (width as u32, height as u32) {
+        return Some(buffer.scale(fit_w as i32, fit_h as i32));
+    }
     Some(buffer)
 }

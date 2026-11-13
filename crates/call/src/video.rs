@@ -36,8 +36,37 @@ pub const LOCAL_SCREEN: &str = "local/screen";
 /// Frames per second shown (and sent, for the test pattern).
 pub(crate) const FPS: u64 = 15;
 
-/// Remote video is shown no larger than this across.
+/// A web view gets small JPEGs: no wider than this across.
 const MAX_WIDTH: u32 = 640;
+
+/// A renderer that draws the raw pixels itself (no JPEGs) shows a camera up to
+/// this wide, and a screen up to the next (text needs its pixels).
+const CAMERA_WIDTH: u32 = 1280;
+const SCREEN_WIDTH: u32 = 2560;
+
+/// Keys of the screens shown (the other side's, whose key says nothing).
+static SCREENS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+fn is_screen(key: &str) -> bool {
+    key == LOCAL_SCREEN || SCREENS.lock().is_ok_and(|keys| keys.iter().any(|k| k == key))
+}
+
+/// How wide `key`'s pictures are kept.
+fn max_width(key: &str) -> u32 {
+    if JPEG.load(Ordering::Relaxed) {
+        MAX_WIDTH
+    } else if is_screen(key) {
+        SCREEN_WIDTH
+    } else {
+        CAMERA_WIDTH
+    }
+}
+
+/// How often a picture is renewed for the interface: [`FPS`] for a web view,
+/// 30 when drawn natively.
+pub(crate) fn show_every() -> Duration {
+    Duration::from_millis(1000 / if JPEG.load(Ordering::Relaxed) { FPS } else { 30 })
+}
 
 /// One picture, ready to show.
 #[derive(Debug, Clone)]
@@ -91,9 +120,10 @@ pub(crate) fn keep_turned(key: &str, buffer: &dyn VideoBuffer, degrees: u32) {
         return;
     }
     let mut i420 = buffer.to_i420();
-    if width > MAX_WIDTH {
-        height = (height * MAX_WIDTH / width).max(2) & !1;
-        width = MAX_WIDTH;
+    let cap = max_width(key);
+    if width > cap {
+        height = (height * cap / width).max(2) & !1;
+        width = cap;
         i420 = i420.scale(width as i32, height as i32);
     }
     // libyuv's "ARGB" is B, G, R, A in memory.
@@ -140,9 +170,12 @@ pub(crate) fn keep_turned(key: &str, buffer: &dyn VideoBuffer, degrees: u32) {
 }
 
 /// Show a remote video track under `key` until it ends.
-pub(crate) async fn show_remote(track: RemoteVideoTrack, key: String) {
+pub(crate) async fn show_remote(track: RemoteVideoTrack, key: String, screen: bool) {
+    if screen && let Ok(mut keys) = SCREENS.lock() {
+        keys.push(key.clone());
+    }
     let mut stream = NativeVideoStream::new(track.rtc_track());
-    let every = Duration::from_millis(1000 / FPS);
+    let every = show_every();
     let mut last: Option<Instant> = None;
     while let Some(frame) = stream.next().await {
         // The interface needs no more than FPS; the rest are dropped here.
@@ -153,6 +186,9 @@ pub(crate) async fn show_remote(track: RemoteVideoTrack, key: String) {
         keep(&key, frame.buffer.as_ref());
     }
     debug!(key, "video track ended");
+    if let Ok(mut keys) = SCREENS.lock() {
+        keys.retain(|k| *k != key);
+    }
     forget(&key);
 }
 
@@ -172,8 +208,8 @@ pub struct TestPattern {
 
 /// The camera in test runs: red on the left, blue on the right.
 pub const CAMERA_PATTERN: TestPattern = TestPattern {
-    width: 320,
-    height: 240,
+    width: 1280,
+    height: 720,
     key: LOCAL_CAMERA,
     left: (81, 90, 240),
     right: (41, 240, 110),
@@ -181,52 +217,92 @@ pub const CAMERA_PATTERN: TestPattern = TestPattern {
 
 /// The shared screen in test runs: green on the left, yellow on the right.
 pub const SCREEN_PATTERN: TestPattern = TestPattern {
-    width: 480,
-    height: 270,
+    width: 2560,
+    height: 1440,
     key: LOCAL_SCREEN,
     left: (145, 54, 34),
     right: (210, 16, 146),
 };
 
-/// Send `pattern` to `source` (and show it under its key) until `stop` is set.
+/// The size a test run's camera or screen has: `var` ("640x480") if set,
+/// else the pattern's own.
+pub(crate) fn test_size(var: &str, pattern: TestPattern) -> (u32, u32) {
+    std::env::var(var)
+        .ok()
+        .and_then(|v| {
+            let (w, h) = v.split_once('x')?;
+            Some((w.parse::<u32>().ok()? & !1, h.parse::<u32>().ok()? & !1))
+        })
+        .filter(|(w, h)| *w >= 2 && *h >= 2)
+        .unwrap_or((pattern.width, pattern.height))
+}
+
+/// Send `pattern`, `size` = (width, height, frames a second), to `source`
+/// (and show it under its key) until `stop` is set.
 pub(crate) async fn play_test_pattern(
     pattern: TestPattern,
+    (width, height, fps): (u32, u32, u32),
     source: NativeVideoSource,
     stop: Arc<AtomicBool>,
 ) {
-    let TestPattern { width, height, .. } = pattern;
-    let mut tick = tokio::time::interval(Duration::from_millis(1000 / FPS));
-    let mut n = 0u32;
-    while !stop.load(Ordering::Relaxed) {
-        tick.tick().await;
-        let mut buffer = I420Buffer::new(width, height);
-        let (stride_y, stride_u, stride_v) = buffer.strides();
-        let bar = (n * 4) % width;
-        let colour = |col: u32| {
-            if col.abs_diff(bar) < 6 {
-                (235, 128, 128)
-            } else if col < width / 2 {
-                pattern.left
-            } else {
-                pattern.right
-            }
-        };
-        let (y, u, v) = buffer.data_mut();
+    let colour = |col: u32, bar: u32| {
+        if col.abs_diff(bar) < 6 {
+            (235, 128, 128)
+        } else if col < width / 2 {
+            pattern.left
+        } else {
+            pattern.right
+        }
+    };
+    // The picture without its bar, drawn once; every frame copies it and
+    // draws the bar (a big screen costs a copy, not a pixel loop).
+    let mut base = I420Buffer::new(width, height);
+    let (stride_y, stride_u, stride_v) = base.strides();
+    {
+        let (y, u, v) = base.data_mut();
         for row in 0..height {
             for col in 0..width {
-                y[(row * stride_y + col) as usize] = colour(col).0;
+                y[(row * stride_y + col) as usize] = colour(col, u32::MAX).0;
             }
         }
         for row in 0..height / 2 {
             for col in 0..width / 2 {
-                let (_, cu, cv) = colour(col * 2);
+                let (_, cu, cv) = colour(col * 2, u32::MAX);
                 u[(row * stride_u + col) as usize] = cu;
                 v[(row * stride_v + col) as usize] = cv;
             }
         }
+    }
+    let mut tick = tokio::time::interval(Duration::from_millis(1000 / u64::from(fps.max(1))));
+    let mut n = 0u32;
+    while !stop.load(Ordering::Relaxed) {
+        tick.tick().await;
+        let mut buffer = I420Buffer::new(width, height);
+        let bar = (n * 4) % width;
+        {
+            let (y, u, v) = buffer.data_mut();
+            let (base_y, base_u, base_v) = base.data();
+            y.copy_from_slice(base_y);
+            u.copy_from_slice(base_u);
+            v.copy_from_slice(base_v);
+            let from = bar.saturating_sub(5);
+            let to = (bar + 6).min(width);
+            for row in 0..height {
+                let at = (row * stride_y) as usize;
+                y[at + from as usize..at + to as usize].fill(235);
+            }
+            for row in 0..height / 2 {
+                let at = (row * stride_u) as usize;
+                u[at + (from / 2) as usize..at + (to / 2) as usize].fill(128);
+                v[at + (from / 2) as usize..at + (to / 2) as usize].fill(128);
+            }
+        }
         let frame = VideoFrame::new(VideoRotation::VideoRotation0, buffer);
         source.capture_frame(&frame);
-        keep(pattern.key, &frame.buffer);
+        // The interface is shown fewer pictures than are sent.
+        if n % (fps / 15).max(1) == 0 {
+            keep(pattern.key, &frame.buffer);
+        }
         n = n.wrapping_add(1);
     }
     forget(pattern.key);

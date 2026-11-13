@@ -21,6 +21,7 @@ impl Shell {
     pub(crate) fn modal_open(&self, cx: &gpui::App) -> bool {
         self.dialog.is_some()
             || self.menu.is_some()
+            || self.calls.screen_popover.is_some()
             || self.card.is_some()
             || self.picker.is_some()
             || self.switcher.is_some()
@@ -46,6 +47,11 @@ impl Shell {
         let key = keystroke.key.as_str();
         let ringing = !self.ringing(crate::call::now_ms()).is_empty();
         if key == "escape" && !m.shift && !m.control && !m.alt {
+            // Escape closes Share screen's question.
+            if self.calls.screen_popover.is_some() {
+                self.close_screen_quality(cx);
+                return true;
+            }
             // Esc declines a call ringing (unless a dialog or menu is open to close).
             if ringing && !self.modal_open(cx) && !self.inbox_open {
                 if let Some(call) = self.ringing(crate::call::now_ms()).first().cloned() {

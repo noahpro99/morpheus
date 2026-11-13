@@ -118,6 +118,14 @@ impl Call {
         async { Err(Error::Video(NOT_YET.into())) }
     }
 
+    pub fn set_screen_share_with(
+        &self,
+        _on: bool,
+        _quality: crate::ScreenQuality,
+    ) -> impl Future<Output = Result<()>> + 'static {
+        async { Err(Error::Video(NOT_YET.into())) }
+    }
+
     pub fn set_screen_share(&self, _on: bool) -> impl Future<Output = Result<()>> + 'static {
         async { Err(Error::Video(NOT_YET.into())) }
     }
@@ -234,13 +242,13 @@ pub struct TestPattern {
 }
 
 pub const CAMERA_PATTERN: TestPattern = TestPattern {
-    width: 320,
-    height: 240,
+    width: 1280,
+    height: 720,
     key: LOCAL_CAMERA,
 };
 
 pub const SCREEN_PATTERN: TestPattern = TestPattern {
-    width: 480,
-    height: 270,
+    width: 2560,
+    height: 1440,
     key: LOCAL_SCREEN,
 };

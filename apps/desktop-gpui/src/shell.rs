@@ -1031,6 +1031,7 @@ impl Render for Shell {
         }
         self.overlay_was_open = overlay;
         let menu = menu::render(self, window, cx);
+        let screen_quality = crate::screen_quality::render(self, cx);
         let dialog = dialogs::render_dialog(self, window, cx);
         let inbox = crate::invites::inbox(self, window, cx);
         let toasts = dialogs::render_toasts(self, cx);
@@ -1143,6 +1144,7 @@ impl Render for Shell {
             .children(self.card.clone())
             .children(self.picker.as_ref().map(|(picker, _)| picker.clone()))
             .children(menu)
+            .children(screen_quality)
             .children(toasts)
             .e2e("div", if self.members_open { "shell" } else { "shell no-side" })
     }

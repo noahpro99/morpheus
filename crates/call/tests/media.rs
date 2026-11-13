@@ -276,7 +276,15 @@ async fn a_camera_turned_on_is_seen_by_the_other_side_until_turned_off() {
     .await
     .expect("the test pattern, decrypted, on the far side");
     let pattern = morpheus_call::CAMERA_PATTERN;
-    assert_eq!((frame.width, frame.height), (pattern.width, pattern.height));
+    // Shown no wider than a web view gets (640), in the camera's own shape.
+    assert!(frame.width <= pattern.width);
+    assert!(
+        (frame.width * pattern.height).abs_diff(frame.height * pattern.width)
+            <= pattern.width,
+        "{}x{} is not the camera's shape",
+        frame.width,
+        frame.height
+    );
 
     // Off, it goes away on both sides.
     camera.set_camera(false).await.expect("camera off");

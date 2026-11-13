@@ -26,7 +26,7 @@ use livekit::{
         E2eeOptions, EncryptionType,
         key_provider::{KeyProvider, KeyProviderOptions},
     },
-    options::TrackPublishOptions,
+    options::{DegradationPreference, TrackPublishOptions, VideoEncoding, compute_video_encodings},
     prelude::*,
     webrtc::{
         audio_frame::AudioFrame,
@@ -37,6 +37,8 @@ use livekit::{
 };
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tracing::{debug, info, warn};
+
+use crate::quality::ScreenQuality;
 
 #[path = "devices.rs"]
 mod devices;
@@ -423,17 +425,32 @@ impl Call {
     /// Turn the camera on (or off). What it sends shows under
     /// [`LOCAL_CAMERA`] too.
     pub fn set_camera(&self, on: bool) -> impl Future<Output = Result<()>> + 'static {
-        self.set_video(VideoKind::Camera, on)
+        self.set_video(VideoKind::Camera, on, ScreenQuality::default())
     }
 
     /// Share this device's screen (or stop). Where the desktop asks which
     /// screen or window (Wayland), this waits for the answer; cancelling is
     /// an error. What it sends shows under [`LOCAL_SCREEN`] too.
     pub fn set_screen_share(&self, on: bool) -> impl Future<Output = Result<()>> + 'static {
-        self.set_video(VideoKind::Screen, on)
+        self.set_screen_share_with(on, ScreenQuality::default())
     }
 
-    fn set_video(&self, kind: VideoKind, on: bool) -> impl Future<Output = Result<()>> + 'static {
+    /// [`Self::set_screen_share`] at `quality`: the size and frame rate it is
+    /// sent at, and the encoding that goes with them.
+    pub fn set_screen_share_with(
+        &self,
+        on: bool,
+        quality: ScreenQuality,
+    ) -> impl Future<Output = Result<()>> + 'static {
+        self.set_video(VideoKind::Screen, on, quality)
+    }
+
+    fn set_video(
+        &self,
+        kind: VideoKind,
+        on: bool,
+        quality: ScreenQuality,
+    ) -> impl Future<Output = Result<()>> + 'static {
         let (room, video, mode) = (self.room.clone(), self.outgoing(kind).clone(), self.mode);
         let encrypted = self.keys.is_some();
         async move {
@@ -443,7 +460,7 @@ impl Call {
                     match (on, video.take()) {
                         (true, Some(running)) => *video = Some(running),
                         (true, None) => {
-                            *video = Some(Outgoing::start(&room, kind, mode, encrypted).await?)
+                            *video = Some(Outgoing::start(&room, kind, mode, encrypted, quality).await?)
                         }
                         (false, Some(running)) => running.stop(&room).await,
                         (false, None) => {}
@@ -501,14 +518,15 @@ struct Outgoing {
 
 /// Where outgoing frames come from.
 enum Feed {
-    TestPattern(video::TestPattern),
+    /// A test run's picture: its colours, size and frames a second.
+    TestPattern(video::TestPattern, u32, u32, u32),
     /// The app's own camera ([`set_platform_camera`]).
     Platform,
     #[cfg(target_os = "linux")]
     Camera(camera::Camera),
-    /// Already capturing; frames go out once `sending` is set.
+    /// Already capturing; frames go out once the source is put in the slot.
     #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
-    Screen(Arc<AtomicBool>),
+    Screen(Arc<OnceLock<NativeVideoSource>>),
 }
 
 /// How long the desktop's screen picker may take.
@@ -516,23 +534,35 @@ enum Feed {
 const PICKER_TIMEOUT: Duration = Duration::from_secs(180);
 
 impl Outgoing {
-    async fn start(room: &Room, kind: VideoKind, mode: AudioMode, encrypted: bool) -> Result<Self> {
+    async fn start(
+        room: &Room,
+        kind: VideoKind,
+        mode: AudioMode,
+        encrypted: bool,
+        quality: ScreenQuality,
+    ) -> Result<Self> {
         let stop = Arc::new(AtomicBool::new(false));
         let screen = kind == VideoKind::Screen;
         let (feed, source) = match (mode, kind) {
-            (AudioMode::Tone, _) => {
-                let pattern = if screen {
-                    video::SCREEN_PATTERN
-                } else {
-                    video::CAMERA_PATTERN
-                };
-                let resolution = VideoResolution {
-                    width: pattern.width,
-                    height: pattern.height,
-                };
+            (AudioMode::Tone, VideoKind::Camera) => {
+                let (width, height) =
+                    video::test_size("MORPHEUS_CALL_CAMERA_SIZE", video::CAMERA_PATTERN);
                 (
-                    Feed::TestPattern(pattern),
-                    NativeVideoSource::new(resolution, screen),
+                    Feed::TestPattern(video::CAMERA_PATTERN, width, height, video::FPS as u32),
+                    NativeVideoSource::new(VideoResolution { width, height }, false),
+                )
+            }
+            (AudioMode::Tone, VideoKind::Screen) => {
+                // A screen of its own size, sent at what the choice allows.
+                let (native_w, native_h) =
+                    video::test_size("MORPHEUS_CALL_SCREEN_SIZE", video::SCREEN_PATTERN);
+                let (width, height) = quality.fit(native_w, native_h);
+                (
+                    Feed::TestPattern(video::SCREEN_PATTERN, width, height, quality.fps),
+                    NativeVideoSource::new(
+                        VideoResolution { width, height },
+                        quality.is_screencast(),
+                    ),
                 )
             }
             (AudioMode::Platform, VideoKind::Camera) if platform_camera::available() => {
@@ -555,26 +585,26 @@ impl Outgoing {
             }
             #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
             (AudioMode::Platform, VideoKind::Screen) => {
-                let source = NativeVideoSource::new(
-                    VideoResolution {
-                        width: 1920,
-                        height: 1080,
-                    },
-                    true,
-                );
-                let sending = Arc::new(AtomicBool::new(false));
+                // The screen's size is known with its first picture; the
+                // source (whose size the call is told) is made then, and the
+                // capture sends to it once the track is up.
+                let sink: Arc<OnceLock<NativeVideoSource>> = Arc::default();
                 let (started, first) = tokio::sync::oneshot::channel();
-                screen::run(source.clone(), stop.clone(), sending.clone(), started);
+                screen::run(sink.clone(), quality, stop.clone(), started);
                 let first = tokio::time::timeout(PICKER_TIMEOUT, first).await;
-                match first {
-                    Ok(Ok(Ok(()))) => {}
+                let (width, height) = match first {
+                    Ok(Ok(Ok(size))) => size,
                     Ok(Ok(Err(why))) => return Err(Error::Video(why)),
                     _ => {
                         stop.store(true, Ordering::Relaxed);
                         return Err(Error::Video("no picture from the screen".into()));
                     }
-                }
-                (Feed::Screen(sending), source)
+                };
+                let source = NativeVideoSource::new(
+                    VideoResolution { width, height },
+                    quality.is_screencast(),
+                );
+                (Feed::Screen(sink), source)
             }
             #[allow(unreachable_patterns)]
             (AudioMode::Platform, _) => {
@@ -586,17 +616,63 @@ impl Outgoing {
         } else {
             ("camera", TrackSource::Camera)
         };
+        let resolution = source.video_resolution();
+        let options = if screen {
+            // One full-size layer (a downscaled copy of a screen is what
+            // made it blurry), the bitrate for its size and speed, and
+            // sharpness before smoothness.
+            TrackPublishOptions {
+                source: track_source,
+                simulcast: false,
+                video_encoding: Some(VideoEncoding {
+                    max_bitrate: quality.max_bitrate(resolution.width, resolution.height),
+                    max_framerate: f64::from(quality.fps),
+                }),
+                degradation_preference: Some(DegradationPreference::MaintainResolution),
+                ..Default::default()
+            }
+        } else {
+            TrackPublishOptions {
+                source: track_source,
+                // A camera of 720p or more has a bitrate of its own (the
+                // default for a 16:9 picture is read off the next preset up).
+                video_encoding: (resolution.width * resolution.height >= 1280 * 720).then(|| {
+                    VideoEncoding {
+                        max_bitrate: crate::camera_bitrate(resolution.width, resolution.height),
+                        max_framerate: 30.0,
+                    }
+                }),
+                ..Default::default()
+            }
+        };
+        let encodings = compute_video_encodings(resolution.width, resolution.height, &options);
+        let top = encodings
+            .iter()
+            .filter_map(|e| e.max_bitrate)
+            .max()
+            .unwrap_or(0);
+        let fps = encodings
+            .iter()
+            .filter_map(|e| e.max_framerate)
+            .fold(0.0, f64::max);
+        let published_as = crate::PublishedVideo {
+            width: resolution.width,
+            height: resolution.height,
+            fps: fps.round() as u32,
+            max_bitrate: top,
+            layers: encodings.len(),
+            hint: if screen { quality.content_hint() } else { "motion" },
+            degradation: if screen {
+                "maintain-resolution"
+            } else {
+                "maintain-framerate"
+            },
+        };
         let track =
             LocalVideoTrack::create_video_track(name, RtcVideoSource::Native(source.clone()));
         let published = room
             .local_participant()
-            .publish_track(
-                LocalTrack::Video(track.clone()),
-                TrackPublishOptions {
-                    source: track_source,
-                    ..Default::default()
-                },
-            )
+            .publish_track(LocalTrack::Video(track.clone()), options)
             .await;
         let publication = match published {
             Ok(publication) => publication,
@@ -608,7 +684,12 @@ impl Outgoing {
         info!(
             track = %publication.sid(),
             kind = if screen { "screen" } else { "camera" },
+            published = %published_as,
             "video track published"
+        );
+        crate::quality::note_published(
+            if screen { LOCAL_SCREEN } else { LOCAL_CAMERA },
+            published_as,
         );
         // Encrypted calls: no frames until the encryptor sits on the track,
         // or the first would leave in the clear.
@@ -625,8 +706,13 @@ impl Outgoing {
             }
         }
         match feed {
-            Feed::TestPattern(pattern) => {
-                tokio::spawn(video::play_test_pattern(pattern, source, stop.clone()));
+            Feed::TestPattern(pattern, width, height, fps) => {
+                tokio::spawn(video::play_test_pattern(
+                    pattern,
+                    (width, height, fps),
+                    source,
+                    stop.clone(),
+                ));
             }
             Feed::Platform => {
                 let (source, running) = (source.clone(), stop.clone());
@@ -646,7 +732,9 @@ impl Outgoing {
             #[cfg(target_os = "linux")]
             Feed::Camera(device) => device.run(source, stop.clone()),
             #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
-            Feed::Screen(sending) => sending.store(true, Ordering::Relaxed),
+            Feed::Screen(sink) => {
+                let _ = sink.set(source.clone());
+            }
         }
         Ok(Self { track, kind, stop })
     }
@@ -660,10 +748,12 @@ impl Outgoing {
         {
             debug!(%err, "unpublishing video");
         }
-        video::forget(match self.kind {
+        let key = match self.kind {
             VideoKind::Camera => LOCAL_CAMERA,
             VideoKind::Screen => LOCAL_SCREEN,
-        });
+        };
+        crate::quality::forget_published(key);
+        video::forget(key);
     }
 
     /// Stop sending frames.
@@ -771,7 +861,14 @@ async fn forward_events(
                 let identity = participant.identity().to_string();
                 let key = format!("{identity}/{}", track.sid());
                 info!(who = %identity, track = %track.sid(), "video arriving");
-                tokio::spawn(video::show_remote(track, key.clone()));
+                tokio::spawn(video::show_remote(
+                    track,
+                    key.clone(),
+                    publication.source() == TrackSource::Screenshare,
+                ));
+                // The top layer, if it is the sort of track that has layers: the
+                // pictures are drawn large.
+                publication.set_video_quality(livekit::track::VideoQuality::High);
                 CallEvent::Video {
                     identity,
                     key,
