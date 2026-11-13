@@ -233,12 +233,15 @@ async fn the_member_list_groups_by_role_and_offers_what_you_may_do() {
             .await
             .unwrap_or_else(|e| panic!("member {name}: {e}"));
     }
-    app.wait_for_text(".chat-header .member-toggle", "3", DEFAULT_WAIT)
+    // Other tests add people to #general, so the count is whatever the list holds.
+    let listed = app.count(".members .member").await.expect("count");
+    assert!(listed >= 3, "alice, bob and carol at least, got {listed}");
+    app.wait_for_text(".chat-header .member-toggle", &listed.to_string(), DEFAULT_WAIT)
         .await
         .expect("member count");
     assert_eq!(
         app.count(".members .member .avatar").await.expect("count"),
-        3,
+        listed,
         "a picture (or letter) each"
     );
 
