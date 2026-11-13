@@ -477,6 +477,13 @@ impl Shell {
 
     /// Share this device's screen in the call going, or stop.
     pub fn set_screen_share(&mut self, on: bool, cx: &mut Context<Self>) {
+        // The picture shows in the call's view: go there from another room.
+        if on
+            && let Some(room) = self.calls.state.as_ref().map(|c| c.room_id.clone())
+            && self.selected.as_ref() != Some(&room)
+        {
+            self.open_room(room, cx);
+        }
         self.set_video(true, on, cx);
     }
 
