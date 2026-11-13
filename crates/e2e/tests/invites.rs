@@ -143,7 +143,7 @@ async fn invites_are_listed_declined_and_accepted() {
     bob.wait_for_text(".invite-row", &name, DEFAULT_WAIT)
         .await
         .expect("invited again");
-    bob.click(".invite-row .invite-accept")
+    bob.click_within(".invite-row", &name, ".invite-accept")
         .await
         .expect("accept");
     bob.wait_for_text_gone(".invite-row", &name, DEFAULT_WAIT)
