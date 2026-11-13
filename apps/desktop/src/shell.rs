@@ -207,6 +207,8 @@ pub struct Shell {
     pub place_user: String,
     /// Messages announced since launch (the inbox's Mentions, the test log).
     pub notices: Vec<morpheus_core::Notification>,
+    /// Mentions already seen (their room was open): the inbox leaves them out.
+    pub seen_mentions: std::collections::HashSet<String>,
     /// A newer release the app found, and what was done about its card.
     pub update: Option<crate::view_model::updates::Offer>,
     pub update_later: bool,
@@ -393,6 +395,7 @@ impl Shell {
             pending_place: None,
             place_user: String::new(),
             notices: crate::notify::log(),
+            seen_mentions: Default::default(),
             update: None,
             update_later: false,
             update_busy: false,
@@ -644,6 +647,31 @@ impl Shell {
     /// with its chat closed. Nothing is read, and notices still come, then.
     pub fn chat_covered(&self) -> bool {
         !self.calls.voice_chat && self.current().is_some_and(|r| r.is_voice && !r.is_dm)
+    }
+
+    /// The open room is being read (its timeline sends the read receipt):
+    /// its counts and mentions go from the lists at once, not when the
+    /// server's answer comes round.
+    fn see_open_room(&mut self, cx: &mut Context<Self>) {
+        let Some(room) = self.selected.clone() else {
+            return;
+        };
+        let reads = self
+            .timeline
+            .as_ref()
+            .is_some_and(|(id, timeline)| *id == room && timeline.read(cx).reads());
+        if !reads {
+            return;
+        }
+        if let Some(summary) = self.rooms.iter_mut().find(|r| r.id == room)
+            && (summary.unread_messages > 0 || summary.highlight_count > 0)
+        {
+            summary.unread_messages = 0;
+            summary.highlight_count = 0;
+        }
+        for notice in self.notices.iter().filter(|n| n.room_id == room && n.is_mention) {
+            self.seen_mentions.insert(notice.event_id.clone());
+        }
     }
 
     /// The open room, if it is one we have joined.
@@ -1090,6 +1118,7 @@ impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let covered = self.chat_covered();
         crate::notify::set_looking(window.is_window_active(), self.selected.clone().filter(|_| !covered));
+        self.see_open_room(cx);
         if let Some((_, timeline)) = &self.timeline {
             timeline.update(cx, |timeline, cx| timeline.set_covered(covered, cx));
         }

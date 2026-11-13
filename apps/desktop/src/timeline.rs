@@ -953,6 +953,12 @@ impl TimelineView {
         }
     }
 
+    /// Whether this timeline sends read receipts (it is in sight, not kept
+    /// unread, and not a thread).
+    pub fn reads(&self) -> bool {
+        !self.keep_unread && !self.covered && self.thread_root.is_none()
+    }
+
     /// Whether the timeline is out of sight (then it reads nothing); shown
     /// again, it reads the room up to its newest message.
     pub fn set_covered(&mut self, covered: bool, cx: &mut Context<Self>) {

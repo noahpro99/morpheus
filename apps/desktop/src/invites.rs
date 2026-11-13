@@ -517,7 +517,9 @@ pub fn inbox(shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>) ->
             );
         }
     }
-    let mentions: Vec<_> = crate::view_model::notices::recent_mentions(&shell.notices)
+    let mentions: Vec<_> = crate::view_model::notices::recent_mentions(
+        &shell.notices.iter().filter(|n| !shell.seen_mentions.contains(&n.event_id)).cloned().collect::<Vec<_>>(),
+    )
         .into_iter()
         .cloned()
         .collect();
