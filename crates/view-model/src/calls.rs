@@ -467,6 +467,13 @@ pub enum Sound {
     Unmute,
     Deafen,
     Undeafen,
+    /// Your camera went on (rising), or off (falling).
+    CameraOn,
+    CameraOff,
+    /// A screen share started (yours, or someone else's in the call), or
+    /// yours stopped.
+    ScreenOn,
+    ScreenOff,
     /// Someone is calling (repeats while it rings).
     Ring,
     /// Your call ringing the other person (repeats until they answer).
@@ -485,6 +492,10 @@ impl Sound {
             Self::Unmute => "unmute",
             Self::Deafen => "deafen",
             Self::Undeafen => "undeafen",
+            Self::CameraOn => "camera-on",
+            Self::CameraOff => "camera-off",
+            Self::ScreenOn => "screen-on",
+            Self::ScreenOff => "screen-off",
             Self::Ring => "ring",
             Self::Ringback => "ringback",
         }
@@ -499,6 +510,10 @@ impl Sound {
             Self::Unmute => &[(659.25, 140)],
             Self::Deafen => &[(523.25, 90), (392.0, 160)],
             Self::Undeafen => &[(392.0, 90), (523.25, 160)],
+            Self::CameraOn => &[(783.99, 90), (1174.66, 220)],
+            Self::CameraOff => &[(1174.66, 90), (783.99, 220)],
+            Self::ScreenOn => &[(523.25, 80), (659.25, 80), (1046.5, 240)],
+            Self::ScreenOff => &[(1046.5, 80), (659.25, 80), (523.25, 240)],
             Self::Ring => &[(659.25, 120), (830.61, 120), (987.77, 120), (1318.51, 320)],
             Self::Ringback => &[(440.0, 380), (440.0, 380)],
         }

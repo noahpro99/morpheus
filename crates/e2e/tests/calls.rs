@@ -4017,3 +4017,69 @@ async fn sharing_the_screen_asks_for_its_quality_and_sends_that() {
     wait_picture_size(&mut bob, theirs, 2560.0, 1440.0).await;
     alice.click(button).await.expect("stop");
 }
+
+/// Turning the camera or the screen share on or off plays its sound (Discord's
+/// pairs), once, for you; the others in the call hear a share start. Nothing
+/// plays where the share was not started (Escape on the quality popover).
+#[tokio::test]
+async fn camera_and_screen_share_play_sounds() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let (mut alice, mut bob) = two_in_a_call(&hs, &[]).await;
+    if alice.is_phone() {
+        eprintln!("phones do not share their screen yet; skipping");
+        return;
+    }
+    let camera = ".voice-panel .camera-button";
+    let screen = ".voice-panel .screen-button";
+    for sound in ["camera-on", "camera-off", "screen-on", "screen-off"] {
+        assert_eq!(count_sound(&mut alice, sound).await, 0, "{sound} before");
+    }
+
+    alice.click(camera).await.expect("camera on");
+    wait_sound(&mut alice, "camera-on").await.expect("camera on sound");
+    alice
+        .wait_for(&format!("{camera}.active"), DEFAULT_WAIT)
+        .await
+        .expect("camera on");
+    assert_eq!(count_sound(&mut alice, "camera-off").await, 0);
+    alice.click(camera).await.expect("camera off");
+    wait_sound(&mut alice, "camera-off").await.expect("camera off sound");
+    assert_eq!(count_sound(&mut alice, "camera-on").await, 1);
+    assert_eq!(count_sound(&mut alice, "camera-off").await, 1);
+
+    // Cancelled: no sound.
+    if alice.is_gpui() {
+        alice.click(screen).await.expect("share");
+        alice
+            .wait_for(".screen-quality", DEFAULT_WAIT)
+            .await
+            .expect("the quality popover");
+        alice.press("body", "Escape").await.expect("escape");
+        alice
+            .wait_for_count(".screen-quality", 0, DEFAULT_WAIT)
+            .await
+            .expect("closed");
+        tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+        assert_eq!(count_sound(&mut alice, "screen-on").await, 0);
+        assert_eq!(count_sound(&mut alice, "screen-off").await, 0);
+    }
+
+    start_share(&mut alice, screen).await;
+    wait_sound(&mut alice, "screen-on").await.expect("share sound");
+    wait_sound(&mut bob, "screen-on").await.expect("bob hears the share start");
+    assert_eq!(count_sound(&mut alice, "screen-off").await, 0);
+    alice.click(screen).await.expect("stop");
+    wait_sound(&mut alice, "screen-off").await.expect("stop sound");
+    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+    assert_eq!(count_sound(&mut alice, "screen-on").await, 1);
+    assert_eq!(count_sound(&mut alice, "screen-off").await, 1);
+    assert_eq!(count_sound(&mut alice, "camera-on").await, 1);
+    assert_eq!(count_sound(&mut alice, "camera-off").await, 1);
+    assert_eq!(count_sound(&mut bob, "screen-on").await, 1);
+    // Bob did nothing himself: no camera sounds, no stop sound.
+    assert_eq!(count_sound(&mut bob, "camera-on").await, 0);
+    assert_eq!(count_sound(&mut bob, "screen-off").await, 0);
+}
