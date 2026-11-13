@@ -116,6 +116,9 @@ pub struct Message {
     pub is_own: bool,
     pub is_local_echo: bool,
     pub is_edited: bool,
+    /// It mentions you (your ID in `m.mentions` or a pill, or @room), from
+    /// someone else: the row is lit.
+    pub mentions_me: bool,
     /// Own, already-sent text messages can be edited.
     pub can_edit: bool,
     pub reactions: Vec<Reaction>,
@@ -478,6 +481,7 @@ impl Message {
             is_own: event.is_own(),
             is_local_echo: event.is_local_echo(),
             is_edited: event.content().as_message().is_some_and(|m| m.is_edited()),
+            mentions_me: !event.is_own() && mentions_user(event.content(), own_user),
             can_edit: event.is_editable() && event.content().as_message().is_some(),
             reactions,
             in_reply_to,
@@ -488,6 +492,35 @@ impl Message {
             state_kind,
         }
     }
+}
+
+/// Whether a message mentions `me`: in `m.mentions` (their ID, or the room),
+/// or as a pill in the formatted body, or `@room` written out.
+fn mentions_user(content: &TimelineItemContent, me: Option<&OwnedUserId>) -> bool {
+    use matrix_sdk::ruma::events::room::message::MessageType;
+    let Some(message) = content.as_message() else {
+        return false;
+    };
+    if let Some(mentions) = message.mentions()
+        && (mentions.room || me.is_some_and(|me| mentions.user_ids.contains(me)))
+    {
+        return true;
+    }
+    let html = match message.msgtype() {
+        MessageType::Text(t) => t.formatted.as_ref().map(|f| f.body.as_str()),
+        MessageType::Notice(t) => t.formatted.as_ref().map(|f| f.body.as_str()),
+        MessageType::Emote(t) => t.formatted.as_ref().map(|f| f.body.as_str()),
+        _ => None,
+    };
+    if let (Some(me), Some(html)) = (me, html) {
+        let id = me.as_str();
+        if html.contains(&format!("matrix.to/#/{id}"))
+            || html.contains(&format!("matrix.to/#/{}", id.replace('@', "%40")))
+        {
+            return true;
+        }
+    }
+    message.body().split_whitespace().any(|word| word == "@room")
 }
 
 impl StateKind {

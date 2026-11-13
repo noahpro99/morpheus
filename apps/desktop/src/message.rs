@@ -69,12 +69,20 @@ pub enum Download {
     Failed(String),
 }
 
+/// The gold of a mention's bar and tint (Discord's).
+const MENTION_GOLD: u32 = 0xfaa81a;
+
 fn rem(n: f32) -> gpui::Pixels {
     px(n * theme::REM)
 }
 
 fn hsla(color: u32) -> Hsla {
     rgb(color).into()
+}
+
+/// `0xRRGGBBAA` as a colour.
+fn hsla_alpha(color: u32) -> Hsla {
+    rgba(color).into()
 }
 
 /// The text runs of a paragraph: its spans over `base`.
@@ -108,11 +116,14 @@ fn runs_hovering(para: &Para, base: Base, hover: Option<&Range<usize>>) -> Vec<T
                 style.strike |= s.strike;
                 style.code |= s.code;
                 style.faint |= s.faint;
+                style.mention |= s.mention;
                 if s.link.is_some() {
                     style.link = s.link.clone();
                 }
             }
-            let color = if style.link.is_some() {
+            let color = if style.mention {
+                theme::accent()
+            } else if style.link.is_some() {
                 theme::link()
             } else if style.faint {
                 theme::text_faint()
@@ -162,6 +173,12 @@ fn para_el(para: &Para, key: &str, base: Base, links: &LinkHandler) -> AnyElemen
         id: ElementId::NamedInteger(SharedString::from(key.clone()), 1),
         build: Box::new(move |hovered, cell| {
             let found = para.links();
+            let pills: Vec<(Range<usize>, bool)> = found
+                .iter()
+                .enumerate()
+                .filter(|(_, (_, url))| rich::is_pill(url))
+                .map(|(n, (r, _))| (r.clone(), hovered == Some(n)))
+                .collect();
             let styled = StyledText::new(SharedString::from(para.text.clone())).with_runs(
                 runs_hovering(&para, base, hovered.and_then(|n| found.get(n)).map(|(r, _)| r)),
             );
@@ -170,7 +187,13 @@ fn para_el(para: &Para, key: &str, base: Base, links: &LinkHandler) -> AnyElemen
             let urls: Vec<Arc<str>> = found.iter().map(|(_, u)| u.clone()).collect();
             let tags = found
                 .iter()
-                .map(|(r, u)| (r.clone(), u.to_string()))
+                .map(|(r, u)| {
+                    let pill = rich::is_pill(u).then(|| {
+                        let on = hovered == found.iter().position(|(rr, _)| rr == r);
+                        (pill_tint(on), theme::accent())
+                    });
+                    (r.clone(), u.to_string(), pill)
+                })
                 .collect();
             let on_link = links.clone();
             let under = ranges.clone();
@@ -182,7 +205,11 @@ fn para_el(para: &Para, key: &str, base: Base, links: &LinkHandler) -> AnyElemen
             .on_hover(move |at, _, _, _| {
                 cell.set(at.and_then(|at| under.iter().position(|r| r.contains(&at))));
             });
-            e2e::text_links(interactive, &layout, tags, hovered).into_any_element()
+            Built {
+                el: e2e::text_links(interactive, &layout, tags, hovered).into_any_element(),
+                layout,
+                pills,
+            }
         }),
     }
     .into_any_element()
@@ -192,7 +219,20 @@ fn para_el(para: &Para, key: &str, base: Base, links: &LinkHandler) -> AnyElemen
 /// the pointer (kept here, in the element's state).
 struct LinkText {
     id: ElementId,
-    build: Box<dyn Fn(Option<usize>, Rc<Cell<Option<usize>>>) -> AnyElement>,
+    build: Box<dyn Fn(Option<usize>, Rc<Cell<Option<usize>>>) -> Built>,
+}
+
+/// A paragraph built for a frame: the element, and where its pills go.
+struct Built {
+    el: AnyElement,
+    layout: gpui::TextLayout,
+    /// Each pill's byte range, and whether the pointer is on it.
+    pills: Vec<(Range<usize>, bool)>,
+}
+
+/// A pill's background: the accent at about 30%, stronger under the pointer.
+fn pill_tint(hovered: bool) -> u32 {
+    theme::alpha(theme::accent(), if hovered { 0x73 } else { 0x4d })
 }
 
 impl IntoElement for LinkText {
@@ -212,7 +252,7 @@ fn hovered_state(id: Option<&GlobalElementId>, window: &mut Window) -> Hovered {
 }
 
 impl Element for LinkText {
-    type RequestLayoutState = AnyElement;
+    type RequestLayoutState = Built;
     type PrepaintState = Hovered;
 
     fn id(&self) -> Option<ElementId> {
@@ -229,11 +269,11 @@ impl Element for LinkText {
         _: Option<&InspectorElementId>,
         window: &mut Window,
         cx: &mut App,
-    ) -> (LayoutId, AnyElement) {
+    ) -> (LayoutId, Built) {
         let cell = hovered_state(id, window);
-        let mut inner = (self.build)(cell.get(), cell);
-        let layout = inner.request_layout(window, cx);
-        (layout, inner)
+        let mut built = (self.build)(cell.get(), cell);
+        let layout = built.el.request_layout(window, cx);
+        (layout, built)
     }
 
     fn prepaint(
@@ -241,11 +281,11 @@ impl Element for LinkText {
         id: Option<&GlobalElementId>,
         _: Option<&InspectorElementId>,
         _: Bounds<Pixels>,
-        inner: &mut AnyElement,
+        inner: &mut Built,
         window: &mut Window,
         cx: &mut App,
     ) -> Hovered {
-        inner.prepaint(window, cx);
+        inner.el.prepaint(window, cx);
         hovered_state(id, window)
     }
 
@@ -254,12 +294,38 @@ impl Element for LinkText {
         _: Option<&GlobalElementId>,
         _: Option<&InspectorElementId>,
         bounds: Bounds<Pixels>,
-        inner: &mut AnyElement,
+        inner: &mut Built,
         cell: &mut Hovered,
         window: &mut Window,
         cx: &mut App,
     ) {
-        inner.paint(window, cx);
+        // The pills' rounded tints go under the text.
+        let line = inner.layout.line_height();
+        for (range, hovered) in &inner.pills {
+            let (Some(start), Some(end)) = (
+                inner.layout.position_for_index(range.start),
+                inner.layout.position_for_index(range.end),
+            ) else {
+                continue;
+            };
+            let pad = px(2.0);
+            let mut quad = |left: Pixels, right: Pixels, top: Pixels| {
+                window.paint_quad(
+                    gpui::fill(
+                        Bounds::new(gpui::point(left - pad, top), gpui::size(right - left + pad * 2.0, line)),
+                        hsla_alpha(pill_tint(*hovered)),
+                    )
+                    .corner_radii(px(4.0)),
+                );
+            };
+            if (end.y - start.y).abs() < px(1.0) {
+                quad(start.x, end.x, start.y);
+            } else {
+                quad(start.x, bounds.right(), start.y);
+                quad(bounds.left(), end.x, end.y);
+            }
+        }
+        inner.el.paint(window, cx);
         // The inner text sees only moves over itself: leaving it clears the link.
         let cell = cell.clone();
         let view = window.current_view();
@@ -1467,8 +1533,16 @@ pub fn message_el(
         .items_start()
         .gap(px(12.0))
         .px(px(16.0))
-        .py(px(2.0))
-        .hover(|s| s.bg(rgba(theme::bg_hover())));
+        .py(px(2.0));
+    // A message that mentions you: a warm tint and a gold bar at the left
+    // edge (Discord's), the tint stronger under the pointer.
+    let lit = m.mentions_me && !m.is_own;
+    line = if lit {
+        line.bg(rgba(theme::alpha(MENTION_GOLD, 0x1a)))
+            .hover(|s| s.bg(rgba(theme::alpha(MENTION_GOLD, 0x26))))
+    } else {
+        line.hover(|s| s.bg(rgba(theme::bg_hover())))
+    };
     if m.is_local_echo {
         line = line.opacity(0.55);
     }
@@ -1522,6 +1596,19 @@ pub fn message_el(
         classes.push_str(" jump-target");
         line = line.bg(rgba(theme::alpha(theme::accent(), 0x2e)));
     }
+    if lit {
+        classes.push_str(" mentioned");
+        line = line.child(
+            div()
+                .absolute()
+                .left_0()
+                .top_0()
+                .bottom_0()
+                .w(px(2.0))
+                .bg(rgb(MENTION_GOLD))
+                .e2e("div", "mention-bar"),
+        );
+    }
     let mut line = line.child(main.e2e("div", "message-main"));
     if let Some(shield) = shield_el {
         line = line.child(shield);
@@ -1545,6 +1632,11 @@ pub fn message_el(
         .attr("data-event-id", event_id);
     if pics.menu_open {
         line = line.attr("data-menu-open", "");
+    }
+    if lit {
+        line = line
+            .attr("data-mentioned", "true")
+            .attr("data-bg", format!("{:08x}", theme::alpha(MENTION_GOLD, 0x1a)));
     }
     if show_header {
         div()

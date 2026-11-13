@@ -303,6 +303,7 @@ mod tests {
             is_own: true,
             is_local_echo: echo,
             is_edited: false,
+            mentions_me: false,
             can_edit: true,
             reactions: Vec::new(),
             in_reply_to: None,

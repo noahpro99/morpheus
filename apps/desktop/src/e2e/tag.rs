@@ -245,7 +245,7 @@ fn open(meta: Meta, bounds: Bounds<Pixels>) {
 pub fn text_links<E: IntoElement>(
     inner: E,
     layout: &TextLayout,
-    links: Vec<(Range<usize>, String)>,
+    links: Vec<(Range<usize>, String, Option<(u32, u32)>)>,
     hovered: Option<usize>,
 ) -> TextLinks<E::Element> {
     TextLinks {
@@ -259,7 +259,7 @@ pub fn text_links<E: IntoElement>(
 pub struct TextLinks<E> {
     inner: E,
     layout: TextLayout,
-    links: Vec<(Range<usize>, String)>,
+    links: Vec<(Range<usize>, String, Option<(u32, u32)>)>,
     hovered: Option<usize>,
 }
 
@@ -330,7 +330,7 @@ impl<E: Element> Element for TextLinks<E> {
         let text = self.layout.text();
         with_state(|state| {
             let parent = state.stack.last().copied();
-            for (n, (range, href)) in self.links.iter().enumerate() {
+            for (n, (range, href, pill)) in self.links.iter().enumerate() {
                 let Some(start) = self.layout.position_for_index(range.start) else {
                     continue;
                 };
@@ -348,6 +348,11 @@ impl<E: Element> Element for TextLinks<E> {
                         let mut attrs = vec![("href".into(), href.clone())];
                         if self.hovered == Some(n) {
                             attrs.push(("data-hovered".into(), "true".into()));
+                        }
+                        if let Some((bg, colour)) = pill {
+                            attrs.push(("data-pill".into(), "true".into()));
+                            attrs.push(("data-bg".into(), format!("{bg:08x}")));
+                            attrs.push(("data-color".into(), format!("{colour:06x}")));
                         }
                         attrs
                     },

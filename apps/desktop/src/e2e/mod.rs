@@ -110,7 +110,7 @@ mod off {
     pub fn text_links<E: IntoElement>(
         inner: E,
         _layout: &gpui::TextLayout,
-        _links: Vec<(std::ops::Range<usize>, String)>,
+        _links: Vec<(std::ops::Range<usize>, String, Option<(u32, u32)>)>,
         _hovered: Option<usize>,
     ) -> E {
         inner
