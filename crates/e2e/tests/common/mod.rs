@@ -83,8 +83,13 @@ pub fn colour_distance(a: (u8, u8, u8), b: (u8, u8, u8)) -> u32 {
 /// corners to check (top-left, top-right, bottom-left, bottom-right).
 /// Returns the names of corners drawn square; `None` where there is no capture.
 pub fn square_corners(app: &App, b: &morpheus_e2e::Bounds, which: [bool; 4]) -> Option<Vec<&'static str>> {
+    square_corners_at(app, b, which, 2.5)
+}
+
+/// [`square_corners`] with the sampled pixel `inset` px in from the corner
+/// (small for large radii: the pixel must lie outside the arc).
+pub fn square_corners_at(app: &App, b: &morpheus_e2e::Bounds, which: [bool; 4], inset: f64) -> Option<Vec<&'static str>> {
     let shot = capture(app)?;
-    let inset = 2.5;
     let mut square = Vec::new();
     let corners = [
         ("top-left", b.x + inset, b.y + inset, 30.0),

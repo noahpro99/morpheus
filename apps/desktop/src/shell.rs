@@ -622,6 +622,12 @@ impl Shell {
         .detach();
     }
 
+    /// Whether the open room's chat is out of sight: a voice channel's page
+    /// with its chat closed. Nothing is read, and notices still come, then.
+    pub fn chat_covered(&self) -> bool {
+        !self.calls.voice_chat && self.current().is_some_and(|r| r.is_voice && !r.is_dm)
+    }
+
     /// The open room, if it is one we have joined.
     pub fn current(&self) -> Option<&RoomSummary> {
         let id = self.selected.as_ref()?;
@@ -1032,7 +1038,11 @@ pub fn apply(rooms: &mut Vec<RoomSummary>, diff: VectorDiff<RoomSummary>) {
 
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        crate::notify::set_looking(window.is_window_active(), self.selected.clone());
+        let covered = self.chat_covered();
+        crate::notify::set_looking(window.is_window_active(), self.selected.clone().filter(|_| !covered));
+        if let Some((_, timeline)) = &self.timeline {
+            timeline.update(cx, |timeline, cx| timeline.set_covered(covered, cx));
+        }
         self.fetch_avatars(cx);
         self.mark_menu_message(cx);
         self.fetch_people(cx);

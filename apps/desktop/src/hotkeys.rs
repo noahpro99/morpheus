@@ -101,6 +101,7 @@ impl Shell {
             && !text.chars().all(char::is_control)
             && !self.modal_open(cx)
             && !self.inbox_open
+            && !self.chat_covered()
             && self.root_focus.as_ref().is_some_and(|focus| focus.is_focused(window))
             && let Some((_, composer)) = &self.composer
         {
