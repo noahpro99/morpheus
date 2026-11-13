@@ -1,12 +1,15 @@
 //! The full-size picture viewer (`crates/ui/src/components/lightbox.rs`): a
 //! picture of the room opened from its message, dimming the whole window,
 //! with the room's other pictures a Left or Right away; Escape, a click
-//! outside and the ✕ close it.
+//! outside and the ✕ close it. The wheel zooms around the pointer (fit to the
+//! window up to 8x), a drag pans a zoomed picture, a double click toggles
+//! fit and actual size, and the buttons and + - 0 zoom too.
 
 use std::sync::Arc;
 
 use gpui::{
     AnyElement, ClickEvent, Context, EventEmitter, FocusHandle, FontWeight, Image, IntoElement,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ScrollDelta, ScrollWheelEvent,
     MouseButton, ObjectFit, Render, StyledImage as _, Window, deferred, div, img, prelude::*, px,
     rgb, rgba,
 };
@@ -32,7 +35,19 @@ pub struct Lightbox {
     asked: std::collections::HashSet<String>,
     focus: FocusHandle,
     take_focus: bool,
+    /// 1 is the picture fitted to the window; up to `MAX_ZOOM`.
+    zoom: f32,
+    /// Where the picture's middle is from the window's middle.
+    offset: (f32, f32),
+    /// A pan in progress: where the pointer went down and the offset then.
+    panning: Option<((f32, f32), (f32, f32))>,
+    /// The fitted size and window size of the last frame.
+    fit: (f32, f32),
+    viewport: (f32, f32),
 }
+
+const MAX_ZOOM: f32 = 8.0;
+const STEP: f32 = 1.25;
 
 impl EventEmitter<Closed> for Lightbox {}
 
@@ -46,6 +61,11 @@ impl Lightbox {
             asked: Default::default(),
             focus: cx.focus_handle(),
             take_focus: true,
+            zoom: 1.0,
+            offset: (0.0, 0.0),
+            panning: None,
+            fit: (0.0, 0.0),
+            viewport: (0.0, 0.0),
         };
         this.fetch(cx);
         this
@@ -79,9 +99,126 @@ impl Lightbox {
         let next = (self.index as isize + delta).clamp(0, last) as usize;
         if next != self.index {
             self.index = next;
+            self.zoom = 1.0;
+            self.offset = (0.0, 0.0);
+            self.panning = None;
             self.fetch(cx);
             cx.notify();
         }
+    }
+
+    /// Keeps the picture from being dragged off the window: along an axis
+    /// where it is bigger than the window its edges stay at or past the
+    /// window's; where it is smaller it stays in the middle.
+    fn clamp_offset(&mut self) {
+        let max_x = ((self.fit.0 * self.zoom - self.viewport.0) / 2.0).max(0.0);
+        let max_y = ((self.fit.1 * self.zoom - self.viewport.1) / 2.0).max(0.0);
+        self.offset.0 = self.offset.0.clamp(-max_x, max_x);
+        self.offset.1 = self.offset.1.clamp(-max_y, max_y);
+    }
+
+    /// Zooms to `to` (1 to 8) keeping the point of the picture under `at`
+    /// (window coordinates) where it is.
+    fn zoom_at(&mut self, to: f32, at: (f32, f32), cx: &mut Context<Self>) {
+        let to = to.clamp(1.0, MAX_ZOOM);
+        let to = if to < 1.001 { 1.0 } else { to };
+        let from = self.zoom;
+        let (mx, my) = (self.viewport.0 / 2.0, self.viewport.1 / 2.0);
+        let (rx, ry) = (at.0 - mx - self.offset.0, at.1 - my - self.offset.1);
+        self.offset = (at.0 - mx - rx * to / from, at.1 - my - ry * to / from);
+        self.zoom = to;
+        if to == 1.0 {
+            self.offset = (0.0, 0.0);
+        }
+        self.clamp_offset();
+        cx.notify();
+    }
+
+    fn zoom_middle(&mut self, to: f32, cx: &mut Context<Self>) {
+        let middle = (self.viewport.0 / 2.0, self.viewport.1 / 2.0);
+        self.zoom_at(to, middle, cx);
+    }
+
+    /// The zoom that shows the picture at its own pixels (2 if that is no
+    /// more than fit: a small picture).
+    fn actual_zoom(&self) -> f32 {
+        let natural = self.images.get(self.index).and_then(|image| image.width).unwrap_or(0) as f32;
+        let actual = if self.fit.0 > 0.0 { natural / self.fit.0 } else { 0.0 };
+        if actual > 1.05 { actual.min(MAX_ZOOM) } else { 2.0 }
+    }
+
+    fn wheel(&mut self, event: &ScrollWheelEvent, cx: &mut Context<Self>) {
+        let amount = match event.delta {
+            ScrollDelta::Lines(lines) => lines.y * 0.15,
+            ScrollDelta::Pixels(pixels) => f32::from(pixels.y) * 0.002,
+        };
+        if amount == 0.0 {
+            return;
+        }
+        let at = (f32::from(event.position.x), f32::from(event.position.y));
+        self.zoom_at(self.zoom * amount.exp(), at, cx);
+        cx.stop_propagation();
+    }
+
+    /// A press on the picture: a double click toggles fit and actual size,
+    /// a press starts a pan when it is zoomed.
+    fn press_picture(&mut self, event: &MouseDownEvent, cx: &mut Context<Self>) {
+        cx.stop_propagation();
+        let at = (f32::from(event.position.x), f32::from(event.position.y));
+        if event.click_count >= 2 {
+            self.panning = None;
+            let to = if self.zoom > 1.001 { 1.0 } else { self.actual_zoom() };
+            self.zoom_at(to, at, cx);
+        } else if self.zoom > 1.001 {
+            self.panning = Some((at, self.offset));
+            cx.notify();
+        }
+    }
+
+    fn drag(&mut self, event: &MouseMoveEvent, cx: &mut Context<Self>) {
+        let Some((start, offset)) = self.panning else {
+            return;
+        };
+        if event.pressed_button != Some(MouseButton::Left) {
+            self.panning = None;
+            cx.notify();
+            return;
+        }
+        self.offset = (
+            offset.0 + f32::from(event.position.x) - start.0,
+            offset.1 + f32::from(event.position.y) - start.1,
+        );
+        self.clamp_offset();
+        cx.notify();
+    }
+
+    fn zoom_button(
+        &self,
+        class: &'static str,
+        title: &'static str,
+        label: String,
+        cx: &mut Context<Self>,
+        act: impl Fn(&mut Self, &mut Context<Self>) + 'static,
+    ) -> AnyElement {
+        div()
+            .id(class)
+            .min_w(px(32.0))
+            .h(px(32.0))
+            .px(px(8.0))
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded_full()
+            .text_size(px(1.0 * theme::REM))
+            .text_color(rgb(0xffffff))
+            .cursor_pointer()
+            .hover(|d| d.bg(rgba(0xffffff26)))
+            .child(label.clone())
+            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| act(this, cx)))
+            .e2e("button", &format!("lightbox-zoom-button lightbox-{class}"))
+            .attr("title", title)
+            .text(label)
+            .into_any_element()
     }
 
     fn nav_button(
@@ -136,14 +273,33 @@ impl Render for Lightbox {
         };
         let scale = (avail_w / w).min(avail_h / h).min(1.0);
         let (w, h) = (w * scale, h * scale);
+        self.fit = (w, h);
+        self.viewport = (f32::from(viewport.width), f32::from(viewport.height));
+        self.clamp_offset();
+        let zoom = self.zoom;
+        let offset = self.offset;
+        let panning = self.panning.is_some();
         let picture = match self.full.get(image.media.key()) {
             Some(full) => div()
-                .size_full()
-                .child(img(full.clone()).size_full().object_fit(ObjectFit::Contain))
+                .absolute()
+                .left(px((w - w * zoom) / 2.0 + offset.0))
+                .top(px((h - h * zoom) / 2.0 + offset.1))
+                .w(px(w * zoom))
+                .h(px(h * zoom))
+                .when(zoom > 1.001, |d| if panning { d.cursor_grabbing() } else { d.cursor_grab() })
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|this, event: &MouseDownEvent, _, cx| this.press_picture(event, cx)),
+                )
+                .child(img(full.clone()).size_full().rounded(px(6.0)).object_fit(ObjectFit::Contain))
                 .e2e("img", "lightbox-image")
-                .attr("alt", image.body.clone()),
+                .attr("alt", image.body.clone())
+                .attr("data-zoom", format!("{zoom:.4}"))
+                .attr("data-x", format!("{:.1}", offset.0))
+                .attr("data-y", format!("{:.1}", offset.1)),
             // Not here yet: the picture's shape.
             None => div()
+                .absolute()
                 .size_full()
                 .rounded(px(theme::RADIUS))
                 .bg(rgb(theme::bg_elevated()))
@@ -153,7 +309,7 @@ impl Render for Lightbox {
         if count > 1 && self.index > 0 {
             row = row.child(self.nav_button("prev", "Previous image", "‹", -1, h / 2.0 - 20.0, cx));
         }
-        row = row.child(div().w(px(w)).h(px(h)).flex_none().child(picture).e2e("div", "lightbox-image-wrap"));
+        row = row.child(div().relative().w(px(w)).h(px(h)).flex_none().child(picture).e2e("div", "lightbox-image-wrap"));
         if count > 1 && self.index + 1 < count {
             row = row.child(self.nav_button("next", "Next image", "›", 1, h / 2.0 - 20.0, cx));
         }
@@ -179,10 +335,6 @@ impl Render for Lightbox {
             caption = caption.child(div().child(place.clone()).e2e("span", "lightbox-count").text(place));
         }
         let boxed = div()
-            .flex()
-            .flex_col()
-            .items_center()
-            .gap(px(10.0))
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .child(
                 div()
@@ -200,9 +352,42 @@ impl Render for Lightbox {
                     .text("✕"),
             )
             .child(row)
-            .child(caption.e2e("div", "lightbox-caption"))
+            .when(zoom <= 1.001, |d| {
+                d.child(
+                    div()
+                        .absolute()
+                        .top(px(h + 10.0))
+                        .left_0()
+                        .w_full()
+                        .flex()
+                        .justify_center()
+                        .child(caption.e2e("div", "lightbox-caption")),
+                )
+            })
             .relative()
             .e2e("div", "lightbox");
+        let percent = if zoom > 1.001 { format!("{:.0}%", zoom * 100.0) } else { "Fit".to_owned() };
+        let toolbar = div()
+            .absolute()
+            .bottom(px(20.0))
+            .left_0()
+            .w_full()
+            .flex()
+            .justify_center()
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(2.0))
+                    .p(px(4.0))
+                    .rounded_full()
+                    .bg(rgba(0x000000a6))
+                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                    .child(self.zoom_button("zoom-out", "Zoom out", "−".to_owned(), cx, |this, cx| this.zoom_middle(this.zoom / STEP, cx)))
+                    .child(self.zoom_button("zoom-reset", "Fit to window", percent, cx, |this, cx| this.zoom_middle(1.0, cx)))
+                    .child(self.zoom_button("zoom-in", "Zoom in", "+".to_owned(), cx, |this, cx| this.zoom_middle(this.zoom * STEP, cx)))
+                    .e2e("div", "lightbox-zoombar"),
+            );
         let layer = div()
             .id("lightbox")
             .track_focus(&self.focus)
@@ -211,6 +396,9 @@ impl Render for Lightbox {
                     "escape" => cx.emit(Closed),
                     "left" => this.go(-1, cx),
                     "right" => this.go(1, cx),
+                    "+" | "=" => this.zoom_middle(this.zoom * STEP, cx),
+                    "-" | "_" => this.zoom_middle(this.zoom / STEP, cx),
+                    "0" => this.zoom_middle(1.0, cx),
                     _ => {}
                 }
             }))
@@ -223,11 +411,30 @@ impl Render for Lightbox {
             .justify_center()
             .bg(rgba(0x000000d9))
             .occlude()
+            .on_scroll_wheel(cx.listener(|this, event: &ScrollWheelEvent, _, cx| this.wheel(event, cx)))
+            .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, cx| this.drag(event, cx)))
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|this, _: &MouseUpEvent, _, cx| {
+                    if this.panning.take().is_some() {
+                        cx.notify();
+                    }
+                }),
+            )
+            .on_mouse_up_out(
+                MouseButton::Left,
+                cx.listener(|this, _: &MouseUpEvent, _, cx| {
+                    if this.panning.take().is_some() {
+                        cx.notify();
+                    }
+                }),
+            )
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|_, _, _, cx| cx.emit(Closed)),
             )
             .child(boxed)
+            .child(toolbar)
             .e2e("div", "overlay lightbox-overlay")
             .focusable(&self.focus);
         deferred(layer).with_priority(30).into_any_element()
