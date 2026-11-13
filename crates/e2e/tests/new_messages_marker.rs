@@ -292,6 +292,42 @@ async fn new_message_marker_appears_above_unread_messages() {
         divider.bottom() <= message.y + 1.0 && message.y - divider.bottom() < 60.0,
         "the divider is not just above bob's message: divider {divider:?}, message {message:?}"
     );
+
+    // Discord's shape: a red line across the whole timeline, the red NEW pill
+    // at its right end, centred on the line.
+    let timeline = alice.bounds(".timeline").await.expect("bounds").expect("timeline");
+    let line = alice
+        .bounds(".new-divider .new-line")
+        .await
+        .expect("line")
+        .expect("the line");
+    let pill = alice
+        .bounds(".new-divider .new-pill")
+        .await
+        .expect("pill")
+        .expect("the NEW pill");
+    assert!(
+        line.x - timeline.x <= 24.0,
+        "the line starts at {} but the timeline at {}",
+        line.x,
+        timeline.x
+    );
+    assert!(
+        timeline.right() - pill.right() <= 24.0,
+        "the pill ends at {} but the timeline at {}",
+        pill.right(),
+        timeline.right()
+    );
+    assert!(
+        (line.right() - pill.x).abs() <= 2.0,
+        "the line {line:?} does not run to the pill {pill:?}"
+    );
+    let line_mid = line.y + line.h / 2.0;
+    let pill_mid = pill.y + pill.h / 2.0;
+    assert!(
+        (line_mid - pill_mid).abs() <= 1.0,
+        "the pill is centred at {pill_mid} but the line at {line_mid}"
+    );
 }
 
 async fn login(app: &mut App) {
