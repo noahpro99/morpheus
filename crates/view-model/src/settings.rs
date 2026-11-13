@@ -132,6 +132,12 @@ pub const SETTINGS_INDEX: &[SettingEntry] = &[
         "device-notifications",
     ),
     entry(
+        "Message sounds",
+        "notifications sound chime message ping",
+        SettingsPage::Notifications,
+        "device-notifications",
+    ),
+    entry(
         "What notifications show",
         "notifications privacy hide message name someone content",
         SettingsPage::Notifications,
@@ -284,6 +290,8 @@ pub const DESKTOP_NOTIFICATION_NOTE: &str = "Morpheus shows a system notificatio
 
 /// Present when notifications are off on this device.
 const NOTIFICATIONS_OFF: &str = "notifications_off";
+/// Present when new messages make no sound on this device.
+const MESSAGE_SOUNDS_OFF: &str = "message_sounds_off";
 /// Holds `sender` or `hidden`; absent means everything.
 const NOTIFICATION_CONTENT: &str = "notification_content";
 
@@ -294,6 +302,20 @@ pub fn notifications_enabled(data_dir: &Path) -> bool {
 
 pub fn set_notifications_enabled(data_dir: &Path, enabled: bool) -> std::io::Result<()> {
     let marker = data_dir.join(NOTIFICATIONS_OFF);
+    if enabled {
+        remove_if_there(&marker)
+    } else {
+        std::fs::write(marker, "")
+    }
+}
+
+/// Whether a new message that notifies you makes a sound (on unless turned off).
+pub fn message_sounds_enabled(data_dir: &Path) -> bool {
+    !data_dir.join(MESSAGE_SOUNDS_OFF).exists()
+}
+
+pub fn set_message_sounds_enabled(data_dir: &Path, enabled: bool) -> std::io::Result<()> {
+    let marker = data_dir.join(MESSAGE_SOUNDS_OFF);
     if enabled {
         remove_if_there(&marker)
     } else {
