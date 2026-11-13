@@ -83,6 +83,8 @@ pub struct TextInput {
     framed: bool,
     /// The settings search box: smaller, no ring.
     compact: bool,
+    /// A bare box in a bar (the header's search): little padding.
+    slim: bool,
     disabled: bool,
     buf: TextBuffer,
     /// Navigation keys go to the owner (suggestions are open).
@@ -115,6 +117,7 @@ impl TextInput {
             bare: false,
             framed: false,
             compact: false,
+            slim: false,
             disabled: false,
             buf: TextBuffer::new(value),
             capture_nav: false,
@@ -156,6 +159,16 @@ impl TextInput {
         self.tag = tag;
         self.class = class;
         self
+    }
+
+    /// A bare box that is one bar line high.
+    pub fn slim(mut self) -> Self {
+        self.slim = true;
+        self
+    }
+
+    pub fn is_focused(&self, window: &Window) -> bool {
+        self.focus.is_focused(window) && !self.disabled
     }
 
     pub fn value(&self) -> &str {
@@ -710,7 +723,11 @@ impl Render for TextInput {
             .min_w_0()
             .child(body);
         if self.bare {
-            outer = outer.flex_1().py(px(12.0)).pl(px(4.0)).pr(px(8.0));
+            outer = if self.slim {
+                outer.flex_1().py(px(4.0))
+            } else {
+                outer.flex_1().py(px(12.0)).pl(px(4.0)).pr(px(8.0))
+            };
         } else {
             outer = outer
                 .px(px(if self.compact { 10.0 } else { 12.0 }))

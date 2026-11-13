@@ -69,6 +69,8 @@ pub const MONO: &str = "JetBrains Mono";
 /// What body text is: Inter at `html { font-size: 15px; line-height: 1.4 }`.
 pub const LINE_HEIGHT: f32 = 1.4;
 pub const MEMBERS_W: f32 = 232.0;
+/// The search results, over the member list: wider than it, as Discord's.
+pub const SEARCH_W: f32 = 440.0;
 
 #[cfg(test)]
 mod tests {

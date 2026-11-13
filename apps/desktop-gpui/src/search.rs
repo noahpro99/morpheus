@@ -1,19 +1,17 @@
-//! The room search panel (`crates/ui/src/components/search.rs`), in the side
-//! column from the header's search bar: finds messages this device has
-//! loaded, and picking one jumps to it in the chat. What it shows for each
-//! outcome is in `view_model::search`.
-
-use std::time::Duration;
+//! The room search's results panel (`crates/ui/src/components/search.rs`), in
+//! the side column over the member list, opened by Enter in the header's
+//! search box (`Shell::search_input`) and closed when the box is cleared.
+//! Finds messages this device has loaded; picking one jumps to it in the
+//! chat. What it shows for each outcome is in `view_model::search`.
 
 use gpui::{
-    Context, Entity, EventEmitter, FontWeight, IntoElement, Render, ScrollHandle, Window, div,
+    Context, EventEmitter, FontWeight, IntoElement, Render, ScrollHandle, Window, div,
     prelude::*, px, rgb,
 };
 use morpheus_core::{OwnedRoomId, SearchHit, Session};
 
 use crate::{
     e2e::E2eExt as _,
-    input::{Changed, TextInput},
     theme,
     view_model::search::{self, Results},
 };
@@ -22,8 +20,6 @@ use crate::{
 pub enum SearchEvent {
     /// A result was picked: show this event in the chat.
     Jump(String),
-    /// Escape.
-    Close,
 }
 
 impl EventEmitter<SearchEvent> for SearchPanel {}
@@ -31,53 +27,25 @@ impl EventEmitter<SearchEvent> for SearchPanel {}
 pub struct SearchPanel {
     session: Option<Session>,
     room_id: OwnedRoomId,
-    input: Entity<TextInput>,
     /// The query last searched, and what came back (`None` while waiting).
     settled: String,
     outcome: Option<Result<Vec<SearchHit>, String>>,
-    /// Counts keystrokes, so only the last one in a burst searches.
-    typed: u64,
-    focus_next: bool,
     scroll: ScrollHandle,
 }
 
 impl SearchPanel {
-    pub fn new(session: Option<Session>, room_id: OwnedRoomId, cx: &mut Context<Self>) -> Self {
-        let input = cx.new(|cx| TextInput::new("search", search::PLACEHOLDER, false, "", cx));
-        cx.subscribe(&input, |this, _, _: &Changed, cx| this.typed(cx))
-            .detach();
+    pub fn new(session: Option<Session>, room_id: OwnedRoomId) -> Self {
         Self {
             session,
             room_id,
-            input,
             settled: String::new(),
             outcome: None,
-            typed: 0,
-            focus_next: true,
             scroll: ScrollHandle::new(),
         }
     }
 
-
-    fn typed(&mut self, cx: &mut Context<Self>) {
-        self.typed += 1;
-        let stamp = self.typed;
-        cx.spawn(async move |this, cx| {
-            cx.background_executor()
-                .timer(Duration::from_millis(search::DEBOUNCE_MS))
-                .await;
-            this.update(cx, |this, cx| {
-                if this.typed == stamp {
-                    this.run(cx);
-                }
-            })
-            .ok();
-        })
-        .detach();
-    }
-
-    fn run(&mut self, cx: &mut Context<Self>) {
-        let text = self.input.read(cx).value().to_owned();
+    /// Searches the room for `text` (the box's, after Enter).
+    pub fn run(&mut self, text: String, cx: &mut Context<Self>) {
         self.settled = text.clone();
         self.outcome = None;
         if !search::is_query(&text) {
@@ -106,10 +74,7 @@ impl SearchPanel {
 }
 
 impl Render for SearchPanel {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        if std::mem::take(&mut self.focus_next) {
-            self.input.read(cx).focus(window);
-        }
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let mut panel = div()
             .id("search-panel")
             .flex()
@@ -120,12 +85,6 @@ impl Render for SearchPanel {
             .p(px(12.0))
             .overflow_hidden()
             .line_height(gpui::relative(theme::LINE_HEIGHT))
-            .on_key_down(cx.listener(|_, event: &gpui::KeyDownEvent, _, cx| {
-                if event.keystroke.key == "escape" {
-                    cx.emit(SearchEvent::Close);
-                }
-            }))
-            .child(self.input.clone())
             .child(
                 div()
                     .text_size(px(0.8 * theme::REM))
