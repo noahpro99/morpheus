@@ -32,6 +32,14 @@ pub enum MemberEvent {
 
 impl EventEmitter<MemberEvent> for MembersView {}
 
+/// Lists already read, so a room opened again shows its members at once
+/// (the skeleton is for the first read only); newest rooms kept.
+fn cache() -> &'static std::sync::Mutex<std::collections::HashMap<(String, OwnedRoomId), Vec<Member>>> {
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<(String, OwnedRoomId), Vec<Member>>>> =
+        std::sync::OnceLock::new();
+    CACHE.get_or_init(Default::default)
+}
+
 pub struct MembersView {
     session: Option<Session>,
     room: OwnedRoomId,
@@ -47,10 +55,14 @@ pub struct MembersView {
 
 impl MembersView {
     pub fn new(session: Option<Session>, room: OwnedRoomId, cx: &mut Context<Self>) -> Self {
+        let known = session
+            .as_ref()
+            .and_then(|s| s.user_id())
+            .and_then(|user| cache().lock().ok()?.get(&(user.to_string(), room.clone())).cloned());
         let mut this = Self {
             session,
             room,
-            members: None,
+            members: known.map(Ok),
             nicknames: NickMap::new(),
             permissions: MemberPermissions::default(),
             shown: PAGE,
@@ -76,8 +88,25 @@ impl MembersView {
         };
         let members = session.members(self.room.clone());
         let permissions = session.my_permissions(self.room.clone());
+        let first = self.members.is_none();
+        let (user, room) = (session.user_id().map(|u| u.to_string()), self.room.clone());
         cx.spawn(async move |this, cx| {
+            // Test builds can hold the first read back, to look at the skeleton.
+            if first
+                && std::env::var_os("MORPHEUS_E2E_PORT").is_some()
+                && let Some(ms) = std::env::var("MORPHEUS_E2E_MEMBERS_DELAY_MS").ok().and_then(|v| v.parse().ok())
+            {
+                cx.background_executor().timer(std::time::Duration::from_millis(ms)).await;
+            }
             let list = members.await.map_err(|err| err.to_string());
+            if let (Some(user), Ok(list)) = (user, &list)
+                && let Ok(mut cache) = cache().lock()
+            {
+                if cache.len() >= 40 {
+                    cache.clear();
+                }
+                cache.insert((user, room), list.clone());
+            }
             let permissions = permissions.await.unwrap_or_default();
             this.update(cx, |this, cx| {
                 this.members = Some(list);
@@ -128,7 +157,13 @@ impl Render for MembersView {
             .track_scroll(&self.scroll)
             .line_height(gpui::relative(theme::LINE_HEIGHT));
         match self.members.clone() {
-            None => {}
+            None => {
+                // Waiting shows the shape of what is coming (the timeline's
+                // grey picture and bars), not words.
+                for (index, width) in [62.0, 48.0, 75.0, 40.0, 56.0, 68.0, 45.0, 58.0].into_iter().enumerate() {
+                    panel = panel.child(skeleton_row(index, width));
+                }
+            }
             Some(Err(err)) => {
                 panel = panel.child(
                     div()
@@ -257,4 +292,33 @@ fn member_row(
     };
     row.e2e("button", classes)
         .attr("title", member.user_id.to_string())
+}
+
+/// A member's row, greyed: a round picture and a name's worth of bar.
+fn skeleton_row(index: usize, width: f32) -> impl IntoElement {
+    div()
+        .flex()
+        .items_center()
+        .gap(px(10.0))
+        .mx(px(8.0))
+        .px(px(8.0))
+        .py(px(4.0))
+        .child(
+            div()
+                .size(px(32.0))
+                .flex_none()
+                .rounded_full()
+                .bg(rgb(theme::bg_elevated()))
+                .e2e("div", "avatar skeleton"),
+        )
+        .child(
+            div()
+                .h(px(14.0))
+                .w(gpui::relative(width / 100.0))
+                .rounded(px(7.0))
+                .bg(rgb(theme::bg_elevated()))
+                .id(gpui::SharedString::from(format!("member-sk{index}")))
+                .e2e("div", "skeleton skeleton-line"),
+        )
+        .e2e("div", "skeleton-row")
 }
