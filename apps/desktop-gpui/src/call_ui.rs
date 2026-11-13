@@ -865,6 +865,10 @@ fn video_card(
     }
     tile.e2e("div", &classes)
         .attr("data-video-size", format!("{pw}x{ph}"))
+        .attr(
+            "data-mirrored",
+            if key == morpheus_call::LOCAL_CAMERA { "true" } else { "false" },
+        )
         .attr("data-feed", key)
         .attr("data-user", feed.user.to_string())
         .into_any_element()
@@ -1429,17 +1433,30 @@ impl VideoFrame {
             // The card is the picture's shape: the shell lays it out again.
             let _ = self.shell.update(cx, |_, cx| cx.notify());
         }
+        // Your own camera is drawn mirrored, like a mirror (what is sent is not).
+        let mut pixels = frame.bgra.to_vec();
+        if self.key == morpheus_call::LOCAL_CAMERA && width > 0 {
+            for row in pixels.chunks_exact_mut(width as usize * 4) {
+                let (mut left, mut right) = (0, width as usize - 1);
+                while left < right {
+                    for byte in 0..4 {
+                        row.swap(left * 4 + byte, right * 4 + byte);
+                    }
+                    left += 1;
+                    right -= 1;
+                }
+            }
+        }
         let sample = |x: u32, y: u32| {
             let at = ((y * width + x) * 4) as usize;
-            frame
-                .bgra
+            pixels
                 .get(at..at + 3)
                 .map(|p| format!("{:02x}{:02x}{:02x}", p[2], p[1], p[0]))
                 .unwrap_or_default()
         };
         self.sample = (sample(width / 4, height / 2), sample(3 * width / 4, height / 2));
         // The pixels are B, G, R, A: what GPUI's images are made of.
-        let Some(buffer) = image::RgbaImage::from_raw(width, height, frame.bgra.to_vec()) else {
+        let Some(buffer) = image::RgbaImage::from_raw(width, height, pixels) else {
             return;
         };
         let image = Arc::new(RenderImage::new(vec![image::Frame::new(buffer)]));

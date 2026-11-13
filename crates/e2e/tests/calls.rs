@@ -616,9 +616,14 @@ async fn wait_test_pattern(app: &mut App, user: &str) -> anyhow::Result<()> {
         let shown = if app.is_gpui() {
             // The tile's picture notes the colours at a quarter and
             // three quarters across, as hex.
-            let tile = format!(".video-tile:not(.screen)[data-user=\"{user}\"] .video");
-            let left = app.attr(&tile, "data-left").await?.unwrap_or_default();
-            let right = app.attr(&tile, "data-right").await?.unwrap_or_default();
+            let card = format!(".video-tile:not(.screen)[data-user=\"{user}\"]");
+            let tile = format!("{card} .video");
+            let mut left = app.attr(&tile, "data-left").await?.unwrap_or_default();
+            let mut right = app.attr(&tile, "data-right").await?.unwrap_or_default();
+            // Your own camera is drawn mirrored: the pattern is then reversed.
+            if app.attr(&card, "data-mirrored").await?.as_deref() == Some("true") {
+                std::mem::swap(&mut left, &mut right);
+            }
             let rgb = |hex: &str| {
                 (hex.len() == 6)
                     .then(|| u32::from_str_radix(hex, 16).ok())
@@ -4117,4 +4122,77 @@ async fn a_person_under_a_voice_channel_opens_their_profile_beside_the_row() {
     );
     // Still in the call: the click did not leave or re-join anything.
     assert_eq!(alice.count(".call-stage").await.expect("count"), 1);
+}
+
+/// What a tile's picture drew at a quarter and three quarters across.
+async fn drawn(app: &mut App, tile: &str) -> (String, String) {
+    let tile = format!("{tile} .video");
+    let left = app.attr(&tile, "data-left").await.expect("attr").unwrap_or_default();
+    let right = app.attr(&tile, "data-right").await.expect("attr").unwrap_or_default();
+    (left, right)
+}
+
+/// Your own camera is drawn mirrored (as in Discord); nobody else sees it
+/// that way, you see theirs as it is, and screens are never mirrored.
+#[tokio::test]
+async fn your_own_camera_is_mirrored_in_your_view_only() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let (mut alice, mut bob) = two_in_a_call_with_alices_camera(&hs, &[]).await;
+    if !alice.is_gpui() {
+        eprintln!("GPUI only (the Dioxus self view is not mirrored)");
+        return;
+    }
+    let mine = ".call-stage .video-tile:not(.screen).self";
+    let theirs = ".call-stage .video-tile:not(.screen)[data-user=\"@alice:localhost\"]";
+    assert_eq!(
+        alice.attr(mine, "data-mirrored").await.expect("attr").as_deref(),
+        Some("true"),
+        "alice's self view is flagged mirrored"
+    );
+    assert_ne!(
+        bob.attr(theirs, "data-mirrored").await.expect("attr").as_deref(),
+        Some("true"),
+        "bob sees alice's camera unmirrored"
+    );
+    // The test camera is red on the left and blue on the right as sent;
+    // alice's own view has them the other way round.
+    let red = |hex: &str| u32::from_str_radix(hex, 16).map_or(0, |v| (v >> 16) & 255);
+    let blue = |hex: &str| u32::from_str_radix(hex, 16).map_or(0, |v| v & 255);
+    let (l, r) = drawn(&mut alice, mine).await;
+    assert!(
+        blue(&l) > 150 && red(&r) > 150,
+        "alice's own picture is drawn flipped: left {l}, right {r}"
+    );
+    let (l, r) = drawn(&mut bob, theirs).await;
+    assert!(
+        red(&l) > 150 && blue(&r) > 150,
+        "bob gets the unflipped picture: left {l}, right {r}"
+    );
+
+    // Bob's own camera: alice sees it as sent.
+    bob.click(".voice-panel .camera-button").await.expect("bob's camera");
+    let bobs = ".call-stage .video-tile:not(.screen)[data-user=\"@bob:localhost\"]";
+    alice
+        .wait_for(&format!("{bobs} .video[data-shown=true]"), DEFAULT_WAIT)
+        .await
+        .expect("bob's camera shows");
+    assert_ne!(
+        alice.attr(bobs, "data-mirrored").await.expect("attr").as_deref(),
+        Some("true"),
+        "others' cameras are not mirrored"
+    );
+    // A shared screen is never mirrored.
+    start_share(&mut alice, ".voice-panel .screen-button").await;
+    wait_screen_pattern(&mut alice, "@alice:localhost")
+        .await
+        .expect("her own screen as it is");
+    let screen = ".call-stage .video-tile.screen.self";
+    assert_ne!(
+        alice.attr(screen, "data-mirrored").await.expect("attr").as_deref(),
+        Some("true"),
+        "a screen is never mirrored"
+    );
 }
