@@ -380,6 +380,17 @@ impl TextInput {
         self.goal_x = None;
     }
 
+    /// A menu item or shortcut of the macOS Edit menu (`mac_menu`): the same
+    /// as pressing the shortcut key, Ctrl or Cmd with `key`.
+    fn shortcut(&mut self, key: &str, cx: &mut Context<Self>) {
+        let keystroke = gpui::Keystroke {
+            modifiers: gpui::Modifiers::secondary_key(),
+            key: key.to_owned(),
+            key_char: None,
+        };
+        self.key_down(&KeyDownEvent { keystroke, is_held: false }, cx);
+    }
+
     fn key_down(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
         if self.disabled {
             return;
@@ -717,6 +728,23 @@ impl Render for TextInput {
         let mut outer = div()
             .id(self.name)
             .track_focus(&self.focus)
+            .key_context(crate::mac_menu::TEXT_INPUT)
+            .on_action({
+                let entity = entity.clone();
+                move |_: &crate::mac_menu::Cut, _, cx| entity.update(cx, |input, cx| input.shortcut("x", cx))
+            })
+            .on_action({
+                let entity = entity.clone();
+                move |_: &crate::mac_menu::Copy, _, cx| entity.update(cx, |input, cx| input.shortcut("c", cx))
+            })
+            .on_action({
+                let entity = entity.clone();
+                move |_: &crate::mac_menu::Paste, _, cx| entity.update(cx, |input, cx| input.shortcut("v", cx))
+            })
+            .on_action({
+                let entity = entity.clone();
+                move |_: &crate::mac_menu::SelectAll, _, cx| entity.update(cx, |input, cx| input.shortcut("a", cx))
+            })
             .on_key_down(move |event, _, cx| {
                 entity.update(cx, |input, cx| input.key_down(event, cx));
             })
@@ -895,6 +923,22 @@ mod tests {
         input.read_with(cx, |i, _| assert_eq!(i.buf.selected_text(), "hello there"));
         cx.simulate_keystrokes("backspace");
         assert_eq!(value(&input, cx), "");
+    }
+
+    /// The macOS Edit menu (and its shortcuts) send actions to the box that has the focus.
+    #[gpui::test]
+    fn the_edit_menus_actions_act_on_the_focused_box(cx: &mut TestAppContext) {
+        use crate::mac_menu::{Copy, Cut, Paste, SelectAll};
+        let (input, cx) = open(cx);
+        cx.simulate_input("alpha beta");
+        cx.dispatch_action(SelectAll);
+        cx.dispatch_action(Copy);
+        assert_eq!(cx.read_from_clipboard().and_then(|c| c.text()).as_deref(), Some("alpha beta"));
+        cx.dispatch_action(Cut);
+        assert_eq!(value(&input, cx), "");
+        cx.dispatch_action(Paste);
+        cx.dispatch_action(Paste);
+        assert_eq!(value(&input, cx), "alpha betaalpha beta");
     }
 
     #[gpui::test]
