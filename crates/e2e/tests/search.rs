@@ -264,3 +264,112 @@ async fn the_search_box_widens_and_its_results_replace_the_member_list() {
         .await
         .expect("members back");
 }
+
+/// Logs in as alice, opens #random and returns the app (GPUI only: the
+/// Escape steps below are Discord's, the Dioxus app is not being changed).
+async fn in_random() -> Option<App> {
+    let hs = homeserver()?;
+    let mut app = App::launch(&hs).await.expect("launch app");
+    app.wait_for("form.login", DEFAULT_WAIT).await.expect("login form");
+    app.type_into("form.login input[name=username]", "alice").await.expect("username");
+    app.type_into("form.login input[name=password]", "alice-password").await.expect("password");
+    app.submit("form.login").await.expect("submit");
+    app.wait_for(".room", DEFAULT_WAIT).await.expect("rooms");
+    app.open_room("random").await.expect("open random");
+    app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
+        .await
+        .expect("composer");
+    Some(app)
+}
+
+const SEARCH_INPUT: &str = ".chat-header input[name=search]";
+
+async fn search_open(app: &mut App) {
+    app.click(SEARCH_INPUT).await.expect("focus the box");
+    app.type_into(SEARCH_INPUT, "okapi").await.expect("query");
+    app.press(SEARCH_INPUT, "Enter").await.expect("search");
+    app.wait_for(".search-panel", DEFAULT_WAIT).await.expect("panel");
+}
+
+async fn bar_settles_narrow(app: &mut App) {
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let w = app.bounds(".chat-header .search-bar").await.expect("bounds").map_or(0.0, |b| b.w);
+        if w < 160.0 {
+            return;
+        }
+        assert!(std::time::Instant::now() < deadline, "the box never shrank back (at {w})");
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+}
+
+/// First Escape in the box closes the results (the text stays and the box
+/// keeps the caret); the second leaves search: box emptied, the caret back
+/// in the message box, the box narrow again.
+#[tokio::test]
+async fn escape_twice_leaves_the_search() {
+    let Some(mut app) = in_random().await else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    if !app.is_gpui() {
+        return;
+    }
+    search_open(&mut app).await;
+    app.press(SEARCH_INPUT, "Escape").await.expect("first escape");
+    app.wait_for_count(".search-panel", 0, DEFAULT_WAIT).await.expect("panel closed");
+    app.wait_for(".side-pane .members", DEFAULT_WAIT).await.expect("members back");
+    assert_eq!(app.value(SEARCH_INPUT).await.expect("value").unwrap_or_default(), "okapi", "text stays");
+    app.wait_for_focus(SEARCH_INPUT, DEFAULT_WAIT).await.expect("box keeps the caret");
+
+    app.press(SEARCH_INPUT, "Escape").await.expect("second escape");
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    while !app.value(SEARCH_INPUT).await.expect("value").unwrap_or_default().is_empty() {
+        assert!(std::time::Instant::now() < deadline, "box never emptied");
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    app.wait_for_focus(".composer .composer-input", DEFAULT_WAIT).await.expect("composer has the caret");
+    assert_eq!(app.count(".chat-header input[name=search][data-focused]").await.expect("count"), 0);
+    bar_settles_narrow(&mut app).await;
+}
+
+/// Escape in the box with no results open leaves search at once.
+#[tokio::test]
+async fn escape_with_no_results_leaves_the_search_at_once() {
+    let Some(mut app) = in_random().await else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    if !app.is_gpui() {
+        return;
+    }
+    app.click(SEARCH_INPUT).await.expect("focus the box");
+    app.type_into(SEARCH_INPUT, "okapi").await.expect("query");
+    app.press(SEARCH_INPUT, "Escape").await.expect("escape");
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    while !app.value(SEARCH_INPUT).await.expect("value").unwrap_or_default().is_empty() {
+        assert!(std::time::Instant::now() < deadline, "box never emptied");
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    app.wait_for_focus(".composer .composer-input", DEFAULT_WAIT).await.expect("composer has the caret");
+    bar_settles_narrow(&mut app).await;
+}
+
+/// Escape with the caret elsewhere closes an open results panel.
+#[tokio::test]
+async fn escape_elsewhere_closes_the_results() {
+    let Some(mut app) = in_random().await else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    if !app.is_gpui() {
+        return;
+    }
+    search_open(&mut app).await;
+    app.click(".composer .composer-input").await.expect("click away");
+    app.wait_for_focus(".composer .composer-input", DEFAULT_WAIT).await.expect("composer focused");
+    assert_eq!(app.count(".search-panel").await.expect("count"), 1, "still open");
+    app.press(".composer .composer-input", "Escape").await.expect("escape");
+    app.wait_for_count(".search-panel", 0, DEFAULT_WAIT).await.expect("panel closed");
+    app.wait_for(".side-pane .members", DEFAULT_WAIT).await.expect("members back");
+}

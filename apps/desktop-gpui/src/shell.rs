@@ -33,7 +33,7 @@ use crate::{
     rail, room_list,
     settings::{DevicesChosen, KeysChanged, SettingsView, ThemeChosen},
     theme,
-    input::{Nav, NavKey, Submit, TextInput},
+    input::{Submit, TextInput},
     search::{SearchEvent, SearchPanel},
     thread::{ThreadEvent, ThreadPanel},
     timeline::{LinkClicked, TimelineEvent, TimelineView},
@@ -388,12 +388,6 @@ impl Shell {
         });
         cx.subscribe(&input, |this: &mut Self, _, _: &Submit, cx| this.run_search(cx))
             .detach();
-        cx.subscribe(&input, |this: &mut Self, _, nav: &Nav, cx| {
-            if nav.0 == NavKey::Escape {
-                this.clear_search(cx);
-            }
-        })
-        .detach();
         cx.subscribe(&input, |this: &mut Self, input, _: &crate::input::Changed, cx| {
             // Emptied by hand: nothing left to show results for.
             if input.read(cx).value().is_empty() && this.search.is_some() {
@@ -442,6 +436,31 @@ impl Shell {
         }
         self.search = None;
         cx.notify();
+    }
+
+    /// Escape's part in searching; whether it used the key.
+    pub fn escape_search(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        let Some(input) = self.search_input.clone() else {
+            return false;
+        };
+        if input.read(cx).is_focused(window) {
+            if self.search.is_some() {
+                self.search = None;
+            } else {
+                self.clear_search(cx);
+                if let Some((_, composer)) = &self.composer {
+                    composer.update(cx, |composer, cx| composer.focus_input(window, cx));
+                }
+            }
+            cx.notify();
+            return true;
+        }
+        if self.search.is_some() && !self.composer_busy(cx) {
+            self.search = None;
+            cx.notify();
+            return true;
+        }
+        false
     }
 
     /// Ctrl+F: the caret goes to the search box.

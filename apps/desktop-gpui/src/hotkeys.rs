@@ -30,7 +30,7 @@ impl Shell {
 
     /// Whether a message box has something open that Escape closes first
     /// (an edit or reply banner, suggestions, the emoji panel).
-    fn composer_busy(&self, cx: &gpui::App) -> bool {
+    pub(crate) fn composer_busy(&self, cx: &gpui::App) -> bool {
         let room = self.composer.as_ref().is_some_and(|(_, c)| c.read(cx).busy());
         let thread = self
             .thread
@@ -57,6 +57,13 @@ impl Shell {
                 if let Some(call) = self.ringing(crate::call::now_ms()).first().cloned() {
                     self.decline_ring(&call, cx);
                 }
+                return true;
+            }
+            // Escape and the search, as in Discord: with results open it
+            // closes them (the box keeps its text and caret); again, or with
+            // none open, it leaves search: box emptied, caret to the message
+            // box. Anywhere else it closes an open results panel.
+            if !self.modal_open(cx) && !self.inbox_open && self.escape_search(window, cx) {
                 return true;
             }
             // Escape in a call with a card focused: back to the grid.

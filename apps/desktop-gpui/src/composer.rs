@@ -169,6 +169,11 @@ impl Composer {
         self.last_own = message;
     }
 
+    /// The caret goes to the box.
+    pub fn focus_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.input.read(cx).focus(window);
+    }
+
     /// "Reply" on a message.
     pub fn reply_to(&mut self, message: &Message, cx: &mut Context<Self>) {
         if self.state.start_reply(message) {
