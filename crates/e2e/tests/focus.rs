@@ -162,6 +162,10 @@ async fn profile_card_opens_beside_the_avatar_towards_the_middle() {
         .expect("card closed");
 
     // A sender avatar in the timeline sits at the left: the card opens to its right.
+    // (Join and settings rows left by other tests can fill the view: scroll to one.)
+    app.reveal_element(".message:not(.system) .avatar-button", DEFAULT_WAIT)
+        .await
+        .expect("an avatar in view");
     app.click(".message:not(.system) .avatar-button")
         .await
         .expect("open card from a message");
