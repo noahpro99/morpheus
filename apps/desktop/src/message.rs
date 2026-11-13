@@ -55,6 +55,8 @@ pub struct Pictures {
     pub menu_open: bool,
     /// Its sender's picture is held down: a pixel lower.
     pub avatar_pressed: bool,
+    /// A date divider sits right above: it keeps the space, the header adds none.
+    pub after_divider: bool,
 }
 
 /// A file's download, as its card shows it.
@@ -1468,7 +1470,9 @@ pub fn message_el(
             avatar_button(
                 sender_target(
                     div()
-                        .mt(px(2.0))
+                        // A one-line message is 42 px of text (name line and text line): the
+                        // picture is 40, so 1 px above it makes the gaps equal.
+                        .mt(px(1.0))
                         .child(avatar(pics.avatar.clone(), &m.sender_name, 40.0, None)),
                     format!("avatar-{}", m.unique_id),
                     &m.unique_id,
@@ -1536,7 +1540,11 @@ pub fn message_el(
         line = line.attr("data-menu-open", "");
     }
     if show_header {
-        div().w_full().pt(px(12.0)).child(line).into_any_element()
+        div()
+            .w_full()
+            .pt(px(if pics.after_divider { 0.0 } else { 12.0 }))
+            .child(line)
+            .into_any_element()
     } else {
         line.into_any_element()
     }
@@ -1545,21 +1553,26 @@ pub fn message_el(
 /// A row that is not a message.
 pub fn other_row(row: &Row) -> AnyElement {
     match row {
+        // The same space above and below (to the rows' highlights): padding of
+        // a wrapper, as a list item's own margins are not part of its row.
         Row::Date(label, _) => div()
             .w_full()
-            .flex()
-            .items_center()
-            .gap(px(12.0))
-            .mt(px(16.0))
-            .mb(px(4.0))
-            .px(px(16.0))
-            .text_color(rgb(theme::text_faint()))
-            .text_size(rem(0.75))
-            .font_weight(FontWeight::SEMIBOLD)
-            .child(div().flex_1().h(px(1.0)).bg(rgb(theme::bg_elevated())))
-            .child(div().child(label.clone()).e2e("span", "").text(label.clone()))
-            .child(div().flex_1().h(px(1.0)).bg(rgb(theme::bg_elevated())))
-            .e2e("div", "date-divider")
+            .py(px(16.0))
+            .child(
+                div()
+                    .w_full()
+                    .flex()
+                    .items_center()
+                    .gap(px(12.0))
+                    .px(px(16.0))
+                    .text_color(rgb(theme::text_faint()))
+                    .text_size(rem(0.75))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .child(div().flex_1().h(px(1.0)).bg(rgb(theme::bg_elevated())))
+                    .child(div().child(label.clone()).e2e("span", "").text(label.clone()))
+                    .child(div().flex_1().h(px(1.0)).bg(rgb(theme::bg_elevated())))
+                    .e2e("div", "date-divider"),
+            )
             .into_any_element(),
         Row::Start => div()
             .p(px(16.0))

@@ -1375,3 +1375,28 @@ async fn a_toast_is_rounded_at_all_four_corners() {
     };
     assert!(square.is_empty(), "the toast's corners drawn square: {square:?}");
 }
+
+/// Task 36: a one-line message's avatar sits in the middle of the row's
+/// hover-highlight area (the same gap above and below); a taller message
+/// keeps it at the top. The button stays the picture's size.
+#[tokio::test]
+async fn a_one_line_messages_avatar_is_centred_in_its_row() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let (mut app, _) = a_message_from_ben(&hs, "centred").await;
+    let row = app.bounds(".message.with-header").await.expect("b").expect("row");
+    let av = app.bounds(".message.with-header .avatar-button").await.expect("b").expect("avatar");
+    let (top, bottom) = (av.y - row.y, row.bottom() - av.bottom());
+    eprintln!("one line: row {row:?} avatar {av:?} gaps {top} / {bottom}");
+    assert!((top - bottom).abs() <= 1.0, "{top} px above the avatar, {bottom} px below");
+    assert!((av.h - av.w).abs() <= 0.5 && av.h <= 48.0, "the button is the picture's size: {av:?}");
+
+    let (mut app, _) = a_message_from_ben_saying(&hs, "centred-tall", "one\ntwo\nthree\nfour").await;
+    let row = app.bounds(".message.with-header").await.expect("b").expect("row");
+    let av = app.bounds(".message.with-header .avatar-button").await.expect("b").expect("avatar");
+    let (top, bottom) = (av.y - row.y, row.bottom() - av.bottom());
+    eprintln!("four lines: row {row:?} avatar {av:?} gaps {top} / {bottom}");
+    assert!(top <= 6.0 && bottom > top + 10.0, "the avatar stays at the top: {top} / {bottom}");
+}
