@@ -111,6 +111,9 @@ pub struct TimelineView {
     reached_start: bool,
     paginating: bool,
     auto_pages: u32,
+    /// Whether the jump button was showing last frame (kept through the frame in
+    /// which a list that was just changed has not measured its rows yet).
+    was_away: bool,
     last_update: std::time::Instant,
     /// A Page Up/Down in flight: where it is going (px from the bottom) and
     /// where the last step left the list (if the list is elsewhere, the
@@ -231,6 +234,7 @@ impl TimelineView {
             reached_start: false,
             paginating: false,
             auto_pages: 0,
+            was_away: false,
             last_update: std::time::Instant::now(),
             paging: None,
             load_error: None,
@@ -556,6 +560,15 @@ impl TimelineView {
                 this.rebuild();
                 this.continue_jump(cx);
                 cx.notify();
+                // A page of hidden events (joins, say) leaves the column short: look
+                // again once it has settled, nothing else will draw it.
+                if !this.reached_start {
+                    cx.spawn(async move |this, cx| {
+                        cx.background_executor().timer(AUTO_FILL_SETTLE).await;
+                        this.update(cx, |_, cx| cx.notify()).ok();
+                    })
+                    .detach();
+                }
             })
             .ok();
         })
@@ -624,7 +637,7 @@ impl TimelineView {
     /// Older history when the view is near the top of what is loaded, or
     /// what is loaded does not fill it.
     fn check_history(&mut self, cx: &mut Context<Self>) {
-        if self.handle.is_none() || self.paginating || self.entries.is_empty() || self.at_start() {
+        if self.handle.is_none() || self.paginating || self.at_start() {
             return;
         }
         let top = self.list.logical_scroll_top().item_ix;
@@ -934,7 +947,15 @@ impl Drop for TimelineView {
 impl Render for TimelineView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.check_history(cx);
-        let away = metrics(&self.list).from_bottom > JUMP_THRESHOLD_PX;
+        let now = metrics(&self.list);
+        // Rows just spliced in are unmeasured until painted and read as no
+        // range at all: that is not a jump to the newest message.
+        let away = if now.range == 0.0 && self.rows.len() > 1 {
+            self.was_away
+        } else {
+            now.from_bottom > JUMP_THRESHOLD_PX
+        };
+        self.was_away = away;
         let rows = list(
             self.list.clone(),
             cx.processor(|this, ix, _window, cx| this.render_row(ix, cx)),

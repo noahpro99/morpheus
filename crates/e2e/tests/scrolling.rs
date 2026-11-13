@@ -82,9 +82,12 @@ async fn rooms_open_at_the_newest_message_and_jump_back_after_scrolling() {
     login(&mut app).await;
 
     app.open_room("firehose").await.expect("open firehose");
-    app.wait_for_exact_text(".message .body", "firehose message 600", DEFAULT_WAIT)
+    // The room ends with the joins of the memory test's accounts (every run adds
+    // one), so its newest message is not necessarily the last row: what opens
+    // is the newest end with rows showing, which `at_bottom` checks.
+    app.wait_for(".timeline .message", DEFAULT_WAIT)
         .await
-        .expect("newest message loaded");
+        .expect("newest rows loaded");
     until!(
         "opened at the newest message",
         DEFAULT_WAIT,
@@ -156,7 +159,9 @@ async fn locked_messages_say_how_to_unlock_them() {
     app.open_room("encrypted")
         .await
         .expect("open encrypted room");
-    app.wait_for(".message .undecrypted.locked", DEFAULT_WAIT)
+    // The seeded event is the oldest: every calls run since piles permission
+    // changes (rows of their own) on top of it, so scroll up to it.
+    app.reveal_text(".message .undecrypted.locked", "", DEFAULT_WAIT)
         .await
         .expect("a locked row for the message without keys");
     app.wait_for_text(".message .undecrypted.locked", "Encrypted", DEFAULT_WAIT)
@@ -344,6 +349,7 @@ async fn reaching_the_top_stays_there_while_older_messages_load() {
         .await
         .expect("scroll up");
     let mut lowest = f64::MAX;
+    let mut previous = f64::MAX;
     let mut range = 0.0;
     for _ in 0..30 {
         tokio::time::sleep(Duration::from_millis(50)).await;
@@ -352,7 +358,14 @@ async fn reaching_the_top_stays_there_while_older_messages_load() {
             .await
             .expect("scroll state")
             .expect("timeline");
-        lowest = lowest.min(state.from_bottom);
+        // A frame between changing the rows and measuring them reads as no range.
+        if state.range == 0.0 {
+            continue;
+        }
+        // Two readings in a row: one frame of rows still being measured can read
+        // anywhere.
+        lowest = lowest.min(state.from_bottom.max(previous));
+        previous = state.from_bottom;
         range = state.range;
     }
     assert!(
