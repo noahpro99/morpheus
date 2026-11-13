@@ -729,3 +729,62 @@ async fn a_dm_call_marks_the_dms_button() {
     bob.click(".voice-panel .hang-up").await.expect("hang up");
     alice.wait_for_count(".rail-call-badge", 0, DEFAULT_WAIT).await.expect("gone");
 }
+
+/// The pixel (RGB) at `x`, `y` of the screen, if it can be captured.
+fn screen_pixel(x: f64, y: f64) -> Option<[u8; 3]> {
+    let out = std::process::Command::new("grim")
+        .args(["-s", "1", "-t", "ppm", "-g", &format!("{},{} 1x1", x.round(), y.round()), "-"])
+        .output()
+        .ok()?;
+    let n = out.stdout.len();
+    out.stdout.get(n.checked_sub(3)?..).map(|p| [p[0], p[1], p[2]])
+}
+
+/// The DMs badge starts where the top bar does, and the panel above the
+/// room list is really rounded at its top left corner (the rail shows in it).
+#[tokio::test]
+async fn the_dms_icon_lines_up_with_the_top_bar_and_the_panel_is_rounded() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch(&hs).await.expect("launch alice");
+    if !app.is_gpui() {
+        return;
+    }
+    login(&mut app, "alice").await;
+    app.open_room("general").await.expect("general");
+    app.wait_for(".chat-header", DEFAULT_WAIT).await.expect("a room open");
+    let dms = app.bounds(".rail-dms").await.expect("bounds").expect("the DMs badge");
+    let bar = app.bounds(".chat-header").await.expect("bounds").expect("the top bar");
+    let head = app.bounds(".sidebar-header").await.expect("bounds").expect("the panel");
+    assert!((dms.y - bar.y).abs() <= 1.0, "the DMs badge {dms:?} does not start where the top bar {bar:?} does");
+    assert!((head.y - bar.y).abs() <= 1.0, "the panel {head:?} and the top bar {bar:?} differ");
+    let radius: f64 = app
+        .attr(".sidebar", "data-radius-tl")
+        .await
+        .expect("attr")
+        .and_then(|r| r.parse().ok())
+        .unwrap_or(0.0);
+    assert!(radius >= 8.0, "the panel's top left corner has a radius of {radius}");
+    let can_capture = std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_some()
+        && !std::process::Command::new("pgrep").args(["-x", "hyprlock"]).status().is_ok_and(|s| s.success());
+    let at = app.pid().and_then(|pid| {
+        let out = std::process::Command::new("hyprctl").args(["clients", "-j"]).output().ok()?;
+        let clients: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
+        let w = clients.as_array()?.iter().find(|c| c["pid"].as_u64() == Some(u64::from(pid)))?.clone();
+        Some((w["at"][0].as_f64()?, w["at"][1].as_f64()?))
+    });
+    if let (true, Some((wx, wy))) = (can_capture, at) {
+        let (corner, rail, panel) = (
+            screen_pixel(wx + head.x + 1.0, wy + head.y + 1.0),
+            screen_pixel(wx + head.x - 4.0, wy + head.y + 1.0),
+            screen_pixel(wx + head.x + 3.0, wy + head.y + 30.0),
+        );
+        eprintln!("corner {corner:?}, rail {rail:?}, panel {panel:?}");
+        assert!(corner.is_some() && corner == rail, "the corner {corner:?} is not the rail's {rail:?}");
+        assert!(corner != panel, "the corner {corner:?} is drawn as the panel {panel:?}");
+    } else {
+        eprintln!("screen locked or not Hyprland: no pixel check");
+    }
+}
