@@ -888,9 +888,9 @@ async fn ctrl_f_ctrl_e_and_ctrl_shift_n() {
     app.key_combo("body", "f", true, false, false)
         .await
         .expect("ctrl+f");
-    app.wait_for(".search-toggle.active", DEFAULT_WAIT)
+    app.wait_for(".search-bar input[name=search][data-focused]", DEFAULT_WAIT)
         .await
-        .expect("search opens");
+        .expect("the search box has the caret");
     app.press("body", "Escape").await.expect("close");
     app.key_combo("body", "e", true, false, false)
         .await

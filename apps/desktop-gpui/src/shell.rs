@@ -33,6 +33,7 @@ use crate::{
     rail, room_list,
     settings::{DevicesChosen, KeysChanged, SettingsView, ThemeChosen},
     theme,
+    input::{Nav, NavKey, Submit, TextInput},
     search::{SearchEvent, SearchPanel},
     thread::{ThreadEvent, ThreadPanel},
     timeline::{LinkClicked, TimelineEvent, TimelineView},
@@ -162,6 +163,10 @@ pub struct Shell {
     pub thread: Option<(OwnedRoomId, Entity<ThreadPanel>)>,
     /// The room search panel, in the side column when no thread is open.
     pub search: Option<(OwnedRoomId, Entity<SearchPanel>)>,
+    /// The header's search box (none in widget tests without an account).
+    pub search_input: Option<Entity<TextInput>>,
+    /// Whether the box has been wide, so a first render does not animate.
+    pub search_was_wide: std::cell::Cell<bool>,
     /// Whether the Friends page fills the chat area, and the page itself.
     pub friends_open: bool,
     pub friends_page: Option<Entity<FriendsPage>>,
@@ -200,6 +205,7 @@ impl Shell {
         shell.wait_for_last_place(cx);
         shell.start_update_checks(cx);
         shell.start_calls(&session, cx);
+        shell.make_search_box(cx);
         let subscribed = session.room_list();
         cx.spawn(async move |this, cx| {
             let Ok(mut updates) = subscribed.await else {
@@ -349,6 +355,8 @@ impl Shell {
             nicknames: NickMap::new(),
             thread: None,
             search: None,
+            search_input: None,
+            search_was_wide: std::cell::Cell::new(false),
             friends_open: false,
             friends_page: None,
             pending_dm: None,
@@ -370,37 +378,78 @@ impl Shell {
         }
     }
 
-    /// The header's search bar: opens the search panel, or closes it.
-    pub fn toggle_search(&mut self, cx: &mut Context<Self>) {
-        if self.search.take().is_some() {
-            cx.notify();
-        } else {
-            self.open_search(cx);
-        }
-    }
-
-    /// Opens the search panel for the open room, with the caret in its box.
-    pub fn open_search(&mut self, cx: &mut Context<Self>) {
-        let Some(room) = self.selected.clone() else {
-            return;
-        };
-        let session = self.session.clone();
-        let id = room.clone();
-        let panel = cx.new(|cx| SearchPanel::new(session, id, cx));
-        cx.subscribe(&panel, |this: &mut Self, _, event: &SearchEvent, cx| match event {
-            SearchEvent::Jump(event_id) => {
-                if let Some((_, timeline)) = &this.timeline {
-                    timeline.update(cx, |timeline, cx| timeline.jump_to(event_id.clone(), cx));
-                }
+    /// Makes the header's search box: Enter searches, Escape or an emptied
+    /// box closes the results.
+    fn make_search_box(&mut self, cx: &mut Context<Self>) {
+        let input = cx.new(|cx| {
+            TextInput::new("search", crate::view_model::search::PLACEHOLDER, false, "", cx)
+                .bare("input", "search-input")
+                .slim()
+        });
+        cx.subscribe(&input, |this: &mut Self, _, _: &Submit, cx| this.run_search(cx))
+            .detach();
+        cx.subscribe(&input, |this: &mut Self, _, nav: &Nav, cx| {
+            if nav.0 == NavKey::Escape {
+                this.clear_search(cx);
             }
-            SearchEvent::Close => {
+        })
+        .detach();
+        cx.subscribe(&input, |this: &mut Self, input, _: &crate::input::Changed, cx| {
+            // Emptied by hand: nothing left to show results for.
+            if input.read(cx).value().is_empty() && this.search.is_some() {
                 this.search = None;
                 cx.notify();
             }
         })
         .detach();
-        self.search = Some((room, panel));
+        self.search_input = Some(input);
+    }
+
+    /// Enter in the search box: searches the open room and shows the results
+    /// in the side column.
+    pub fn run_search(&mut self, cx: &mut Context<Self>) {
+        let (Some(room), Some(input)) = (self.selected.clone(), self.search_input.clone()) else {
+            return;
+        };
+        let text = input.read(cx).value().to_owned();
+        if text.trim().is_empty() {
+            return;
+        }
+        let panel = match &self.search {
+            Some((id, panel)) if id == &room => panel.clone(),
+            _ => {
+                let panel = cx.new(|_| SearchPanel::new(self.session.clone(), room.clone()));
+                cx.subscribe(&panel, |this: &mut Self, _, event: &SearchEvent, cx| match event {
+                    SearchEvent::Jump(event_id) => {
+                        if let Some((_, timeline)) = &this.timeline {
+                            timeline.update(cx, |timeline, cx| timeline.jump_to(event_id.clone(), cx));
+                        }
+                    }
+                })
+                .detach();
+                self.search = Some((room, panel.clone()));
+                panel
+            }
+        };
+        panel.update(cx, |panel, cx| panel.run(text, cx));
         cx.notify();
+    }
+
+    /// Clears the box and closes the results: the member list is back.
+    pub fn clear_search(&mut self, cx: &mut Context<Self>) {
+        if let Some(input) = &self.search_input {
+            input.update(cx, |input, cx| input.set_value("", cx));
+        }
+        self.search = None;
+        cx.notify();
+    }
+
+    /// Ctrl+F: the caret goes to the search box.
+    pub fn focus_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(input) = &self.search_input {
+            input.read(cx).focus(window);
+            cx.notify();
+        }
     }
 
     /// Opens a message's thread in the side column.
@@ -734,9 +783,9 @@ impl Shell {
         }
         self.selected = Some(id.clone());
         self.save_place();
-        // The search stays open across rooms, asking about the new one.
+        // A search is of one room: another room starts with an empty box.
         if self.search.as_ref().is_some_and(|(room, _)| room != &id) {
-            self.open_search(cx);
+            self.clear_search(cx);
         }
         self.push_nicknames(cx);
         self.refresh_pinned(cx);

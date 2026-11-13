@@ -234,46 +234,75 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                     .attr("title", "Pinned messages (Ctrl+P)")
                     .text(pins.to_string()),
             );
-            // A search bar at the right end; opens the search panel.
-            let searching = shell.search.is_some();
-            header = header.child(
-                div()
-                    .id("search-toggle")
+            // The search box at the right end: it widens in place while it
+            // has the caret or text; Enter shows the results in the side
+            // column.
+            if let Some(input) = &shell.search_input {
+                const REST_W: f32 = 144.0;
+                const WIDE_W: f32 = 240.0;
+                let (focused, text) = {
+                    let input = input.read(cx);
+                    (input.is_focused(window), input.value().to_owned())
+                };
+                let wide = focused || !text.is_empty();
+                let was_wide = shell.search_was_wide.replace(wide);
+                let target = if wide { WIDE_W } else { REST_W };
+                let from = if wide { REST_W } else { WIDE_W };
+                let target_input = input.clone();
+                let mut bar = div()
+                    .id(if wide { "search-bar-wide" } else { "search-bar" })
                     .flex()
+                    .flex_none()
                     .items_center()
-                    .justify_between()
-                    .gap(px(8.0))
-                    .w(px(180.0))
+                    .gap(px(6.0))
                     .h(px(28.0))
                     .px(px(8.0))
                     .rounded(px(theme::RADIUS_SM))
-                    .bg(if searching {
-                        gpui::Hsla::from(gpui::rgba(theme::bg_selected()))
-                    } else {
-                        gpui::Hsla::from(rgb(theme::bg_input()))
-                    })
+                    .bg(rgb(theme::bg_input()))
                     .text_size(px(0.85 * theme::REM))
-                    .text_color(rgb(if searching { theme::text() } else { theme::text_muted() }))
-                    .cursor_pointer()
-                    .hover(|s| s.text_color(rgb(theme::text())))
-                    .child("Search")
-                    .child(icon("search", 16.0).text_color(rgb(if searching {
-                        theme::text()
+                    .text_color(rgb(theme::text()))
+                    .overflow_hidden()
+                    .cursor_text()
+                    .on_mouse_down(gpui::MouseButton::Left, move |_, window, cx| {
+                        target_input.read(cx).focus(window);
+                    })
+                    .child(div().flex_1().min_w_0().child(input.clone()))
+                    .child(if text.is_empty() {
+                        icon("search", 16.0).text_color(rgb(theme::text_muted())).into_any_element()
                     } else {
-                        theme::text_muted()
-                    })))
-                    .on_click(cx.listener(|this, _, _, cx| this.toggle_search(cx)))
-                    .e2e(
-                        "button",
-                        if searching {
-                            "ghost search-toggle active"
-                        } else {
-                            "ghost search-toggle"
-                        },
+                        div()
+                            .id("search-clear")
+                            .flex()
+                            .items_center()
+                            .cursor_pointer()
+                            .text_color(rgb(theme::text_muted()))
+                            .hover(|s| s.text_color(rgb(theme::text())))
+                            .child(icon("x", 16.0).text_color(rgb(theme::text_muted())))
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.clear_search(cx);
+                                this.focus_search(window, cx);
+                            }))
+                            .e2e("button", "ghost search-clear")
+                            .attr("title", "Clear search")
+                            .into_any_element()
+                    });
+                header = header.child(if was_wide == wide && !wide {
+                    bar.w(px(REST_W)).e2e("div", "search-bar").into_any_element()
+                } else if was_wide == wide {
+                    bar.w(px(WIDE_W)).e2e("div", "search-bar").into_any_element()
+                } else {
+                    use gpui::{Animation, AnimationExt as _};
+                    bar = bar.w(px(from));
+                    bar.with_animation(
+                        if wide { "widen" } else { "narrow" },
+                        Animation::new(std::time::Duration::from_millis(150))
+                            .with_easing(gpui::ease_out_quint()),
+                        move |el, delta| el.w(px(from + (target - from) * delta)),
                     )
-                    .attr("title", "Search this room")
-                    .text("Search"),
-            );
+                    .e2e("div", "search-bar")
+                    .into_any_element()
+                });
+            }
             // The messages and the message box; the member list beside them,
             // under the header, which runs over both.
             let mut content = div().flex().flex_col().flex_1().min_w_0().min_h_0();
@@ -298,6 +327,7 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
             }
             let mut body = div().flex().flex_1().min_h_0().child(content);
             // The side column: an open thread, else the member list.
+            let searching = shell.thread.is_none() && shell.search.as_ref().is_some_and(|(id, _)| id == &room.id);
             let side = if let Some((id, thread)) = &shell.thread
                 && id == &room.id
             {
@@ -317,7 +347,7 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
             if let Some(side) = side {
                 body = body.child(
                     div()
-                        .w(px(theme::MEMBERS_W))
+                        .w(px(if searching { theme::SEARCH_W } else { theme::MEMBERS_W }))
                         .flex_none()
                         .flex()
                         .flex_col()

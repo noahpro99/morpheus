@@ -205,11 +205,11 @@ async fn search_panel() {
     app.type_into(".composer .composer-input", &format!("an {word} in the forest")).await.expect("type");
     app.press(".composer .composer-input", "Enter").await.expect("send");
     app.wait_for_text(".message.own:not(.pending) .body", &word, DEFAULT_WAIT).await.expect("sent");
-    app.click(".chat-header .search-toggle").await.expect("search");
-    app.wait_for(".search-panel input[name=search]", DEFAULT_WAIT).await.expect("panel");
+    app.click(".chat-header input[name=search]").await.expect("search");
     shot(&mut app, "s0-search-empty").await;
     for _ in 0..10 {
-        app.type_into(".search-panel input[name=search]", &word).await.expect("query");
+        app.type_into(".chat-header input[name=search]", &word).await.expect("query");
+        app.press(".chat-header input[name=search]", "Enter").await.expect("search");
         if app.wait_for(".search-hit", Duration::from_secs(2)).await.is_ok() {
             break;
         }

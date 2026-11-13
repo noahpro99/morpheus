@@ -115,7 +115,7 @@ impl Shell {
         match action {
             Hotkey::Search => {
                 if self.current().is_some() {
-                    self.toggle_search(cx);
+                    self.focus_search(window, cx);
                 }
             }
             Hotkey::Emoji => {

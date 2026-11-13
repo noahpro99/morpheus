@@ -115,7 +115,7 @@ async fn a_call_button_only_where_calls_belong() {
         .expect("a call button in a DM");
     let call = app.bounds(".chat-header > .call-button").await.expect("call").expect("call button");
     let pin = app.bounds(".chat-header > .pin-toggle").await.expect("pin").expect("pin button");
-    let search = app.bounds(".chat-header > .search-toggle").await.expect("search").expect("search");
+    let search = app.bounds(".chat-header > .search-bar").await.expect("search").expect("search");
     let header = app.bounds(".chat-header").await.expect("header").expect("header");
     // Buttons across the bar: the call button, then the pins right after it.
     assert!(

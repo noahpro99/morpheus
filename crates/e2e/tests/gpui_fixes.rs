@@ -93,21 +93,20 @@ async fn the_side_panel_runs_to_the_bottom_of_the_chat() {
     assert_pane_reaches_bottom(&mut app, "a room with one member").await;
 
     // Search.
-    app.click(".chat-header .search-toggle").await.expect("search");
-    app.wait_for(".search-panel input[name=search]", DEFAULT_WAIT)
-        .await
-        .expect("search panel");
-    assert_pane_reaches_bottom(&mut app, "search, nothing typed").await;
-    app.type_into(".search-panel input[name=search]", "pangolin")
+    app.click(".chat-header input[name=search]").await.expect("search");
+    app.type_into(".chat-header input[name=search]", "pangolin")
         .await
         .expect("type");
+    app.press(".chat-header input[name=search]", "Enter")
+        .await
+        .expect("search");
     app.wait_for(".search-panel .search-hit", DEFAULT_WAIT)
         .await
         .expect("a hit");
     assert_pane_reaches_bottom(&mut app, "search with a hit").await;
 
     // A thread.
-    app.click(".chat-header .search-toggle").await.ok();
+    app.press(".chat-header input[name=search]", "Escape").await.ok();
     app.wait_for(".thread-chip", DEFAULT_WAIT).await.expect("chip");
     app.click_text(".thread-chip", "repl").await.expect("thread");
     app.wait_for(".thread-panel .message", DEFAULT_WAIT)
