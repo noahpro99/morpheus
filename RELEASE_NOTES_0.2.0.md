@@ -37,8 +37,20 @@ Phones (Android, iPhone) and the web app are unchanged apart from the version.
   acknowledgements, quit); the app and any call go on in the tray when the
   window is closed; start hidden at login.
 - Clicking a person listed under a voice channel opens their profile.
-- Bigger click targets, and the top bar brightens under the pointer instead of
-  drawing a box.
+- Noise suppression for your microphone: Off, Standard (WebRTC's) or Strong
+  (DeepFilterNet 3, the default), from a button beside the camera in a call
+  or in Settings > Voice & Video, with a mic test that plays you back to
+  yourself and shows your level. Echo cancellation stays on.
+- Calls: create voice channels; a server with a call going shows a green
+  speaker badge; alone in a call, invite friends from a card; a focused
+  person fills the stage; a voice channel's chat is a panel beside the call;
+  turning on the camera or sharing your screen takes you to the call.
+- Every invite screen has a searchable list of your friends.
+- Rooms you just left reopen instantly where you were.
+- Mentions show as pills, and messages that mention you are highlighted.
+- A sound for new messages that would notify you (Settings > Notifications).
+- Holding Shift while deleting (bin or menu) skips the question.
+- The top bar brightens under the pointer instead of drawing a box.
 - On a Mac: an app menu (About, Hide, Quit), an Edit menu (Cut, Copy, Paste,
   Select All), a Window menu (Minimize, Close), Cmd+W closes the window,
   Cmd+Q quits, a click on the Dock icon brings the window back, and
@@ -63,3 +75,6 @@ Phones (Android, iPhone) and the web app are unchanged apart from the version.
   program's shaders when it starts (a moment longer to open the first
   window); GitHub's build has them compiled ahead.
 - Tray: no unread count on the Linux tray icon.
+- The microphone is now captured by the app itself (for noise suppression);
+  on Windows and macOS a chosen microphone or speaker the app can't match
+  falls back to the system default.
