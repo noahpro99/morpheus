@@ -32,6 +32,8 @@ jiff = "0.2"
 emojis = "0.9.1"
 png = { workspace = true }
 tokio = { workspace = true }
+# Returns freed memory to the system (glibc's malloc kept ~130 MB freed after scrolling a big room).
+mimalloc = { version = "0.1", default-features = false }
 tracing-subscriber = { workspace = true }
 
 [dev-dependencies]
