@@ -167,6 +167,19 @@ pub fn query_bounds(selector: &str) -> Option<tree::Rect> {
     })
 }
 
+/// The bounds of every match in the last frame, for widget tests.
+#[cfg(all(feature = "e2e", test))]
+pub fn query_all_bounds(selector: &str) -> Vec<tree::Rect> {
+    let selector = selector::Selector::parse(selector).expect("selector");
+    tag::with_state(|state| {
+        selector
+            .select(&state.tree)
+            .into_iter()
+            .map(|i| state.tree.nodes[i].bounds)
+            .collect()
+    })
+}
+
 /// An attribute of the first match in the last frame, for widget tests.
 #[cfg(all(feature = "e2e", test))]
 pub fn query_attr(selector: &str, name: &str) -> Option<String> {

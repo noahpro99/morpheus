@@ -731,6 +731,7 @@ impl TimelineView {
             highlight: self.highlight.as_deref() == Some(row.message.unique_id.as_str()),
             menu_open: self.menu_message.as_deref() == Some(row.message.unique_id.as_str()),
             avatar_pressed: self.pressed_avatar.as_deref() == Some(row.message.unique_id.as_str()),
+            after_divider: ix > 0 && matches!(self.rows.get(ix - 1), Some(Row::Date(..))),
             ..Pictures::default()
         };
         if show_header {
@@ -1345,6 +1346,46 @@ mod widget_tests {
         assert_eq!(texts(".timeline-start"), ["This is the beginning of the room."]);
         assert_eq!(query(".date-divider").len(), 1);
         assert_eq!(texts(".message.system .system-text"), ["bob joined the room"]);
+    }
+
+    /// The space above the date divider equals the space below it, measured to
+    /// the neighbouring rows' hover-highlight areas (the `.message` boxes),
+    /// whichever rows they are.
+    #[gpui::test]
+    fn the_date_divider_has_equal_space_above_and_below(cx: &mut TestAppContext) {
+        let day = 86_400_000;
+        let state = |id, at| entry(id, "@bob:x", at, MessageKind::State("bob joined the room".into()));
+        let divider = || TimelineEntry::DateDivider { timestamp_ms: day * 3 };
+        let cases: [(&str, Vec<TimelineEntry>); 4] = [
+            (
+                "message, message",
+                vec![entry(1, "@bob:x", 0, text("before")), divider(), entry(2, "@carol:x", day * 3, text("after"))],
+            ),
+            (
+                "message, state line",
+                vec![entry(1, "@bob:x", 0, text("before")), divider(), state(2, day * 3)],
+            ),
+            (
+                "state line, message",
+                vec![state(1, 0), divider(), entry(2, "@carol:x", day * 3, text("after"))],
+            ),
+            ("state line, state line", vec![state(1, 0), divider(), state(2, day * 3)]),
+        ];
+        for (what, entries) in cases {
+            let (view, cx) = open(cx);
+            feed(&view, cx, entries);
+            let divider = e2e::query_bounds(".date-divider").expect("divider");
+            let rows = e2e::query_all_bounds(".message");
+            assert_eq!(rows.len(), 2, "{what}: two rows");
+            let (above, below) = (rows[0], rows[1]);
+            let gap_above = divider.y - (above.y + above.h);
+            let gap_below = below.y - (divider.y + divider.h);
+            eprintln!("{what}: above {gap_above} below {gap_below} divider {divider:?} rows {rows:?}");
+            assert!(
+                (gap_above - gap_below).abs() <= 1.0,
+                "{what}: {gap_above} px above the divider, {gap_below} px below"
+            );
+        }
     }
 
     #[gpui::test]
