@@ -21,6 +21,8 @@ pub struct Palette {
     pub text_faint: u32,
     pub accent: u32,
     pub accent_strong: u32,
+    /// A chosen option's fill, dark enough for white text (a contrast of 4.5 or more).
+    pub accent_solid: u32,
     pub danger: u32,
     /// `--own`: the colour of your own name.
     pub own: u32,
@@ -54,6 +56,7 @@ pub const DARK: Palette = Palette {
     text_faint: 0x5c6274,
     accent: 0x7c8cff,
     accent_strong: 0x5f72ff,
+    accent_solid: 0x4b5ce6,
     danger: 0xff6b6b,
     own: 0xb8c0ff,
     moon: 0xb8c0ff,
@@ -92,6 +95,7 @@ pub const LIGHT: Palette = Palette {
     text_faint: 0x8d93a3,
     accent: 0x4f5fe6,
     accent_strong: 0x3d4fe0,
+    accent_solid: 0x4f5fe6,
     own: 0x3d4fe0,
     ..DARK
 };
