@@ -212,7 +212,7 @@ fn button(label: impl Into<SharedString>, primary: bool, busy: bool) -> gpui::St
         .when(busy, |d| d.opacity(0.6))
         .when(!busy, |d| d.cursor_pointer())
         .bg(rgb(if primary {
-            theme::accent_strong()
+            theme::accent_solid()
         } else {
             theme::bg_input()
         }))

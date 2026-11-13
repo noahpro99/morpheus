@@ -93,7 +93,7 @@ pub fn card(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElement> {
             .py(px(8.0))
             .rounded(px(theme::RADIUS))
             .cursor_pointer()
-            .bg(if primary { rgb(theme::accent()) } else { rgba(theme::bg_hover()) })
+            .bg(if primary { rgb(theme::accent_solid()) } else { rgba(theme::bg_hover()) })
             .text_color(if primary { rgb(0xffffff) } else { rgb(theme::text()) })
             .child(label)
     };

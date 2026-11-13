@@ -252,7 +252,7 @@ pub fn controls<V: 'static>(
         .bg(if testing {
             rgb(theme::danger())
         } else {
-            rgb(theme::accent())
+            rgb(theme::accent_solid())
         })
         .text_color(rgb(0xffffff))
         .font_weight(gpui::FontWeight::SEMIBOLD)
@@ -267,6 +267,11 @@ pub fn controls<V: 'static>(
             } else {
                 "mic-test"
             },
+        )
+        .attr("data-color", "ffffff")
+        .attr(
+            "data-bg",
+            format!("{:06x}", if testing { theme::danger() } else { theme::accent_solid() }),
         )
         .text(label);
     let meter = div()
