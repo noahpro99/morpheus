@@ -2,6 +2,9 @@
 //! root view: a splash while the saved session restores, then the sign-in
 //! screen or the room list.
 
+// A window, not a console: release builds on Windows open no terminal.
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 use std::{borrow::Cow, path::PathBuf};
 
 mod about;
@@ -58,6 +61,12 @@ mod user_bar;
 use morpheus_view_model as view_model;
 
 use e2e::E2eExt as _;
+
+/// Rust's allocations through mimalloc, which hands freed memory back to
+/// the system; glibc's malloc held on to most of what a big room freed.
+#[global_allocator]
+static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 use gpui::{
     App, Application, AssetSource, Bounds, Context, Entity, IntoElement, Render, SharedString,
     TitlebarOptions, Window, WindowBounds, WindowOptions, div, prelude::*, px, rgb, size, svg,
@@ -613,6 +622,22 @@ fn init_logging() {
 }
 
 fn main() {
+    // Sounds at the volume the app plays them: WirePlumber otherwise saves a
+    // volume per app name and puts it back on every stream (across restarts),
+    // and one saved at 0 silenced every chime and ring for good. PulseAudio's
+    // client properties come from this variable (what the system mixer shows
+    // too); setting it means starting over with it.
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("PULSE_PROP").is_none()
+        && let Ok(exe) = std::env::current_exe()
+    {
+        use std::os::unix::process::CommandExt as _;
+        let err = std::process::Command::new(exe)
+            .args(std::env::args_os().skip(1))
+            .env("PULSE_PROP", "state.restore-props=false")
+            .exec();
+        eprintln!("morpheus-desktop: could not restart with PULSE_PROP: {err}");
+    }
     // A later launch hands over to the one running (its window shows, or the
     // Matrix link it was given opens) and ends.
     let link = view_model::instance::link_in_args(std::env::args().skip(1));
