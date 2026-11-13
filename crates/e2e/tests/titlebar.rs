@@ -220,3 +220,21 @@ async fn alt_left_and_right_walk_the_rooms_visited() {
         .await
         .expect("forward to random");
 }
+
+/// The inbox sits where help used to, help right of it, next to the window
+/// controls.
+#[tokio::test]
+async fn the_inbox_button_comes_before_help() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch_desktop(&hs).await.expect("launch app");
+    login(&mut app, "alice").await;
+    app.wait_for(".titlebar .help-button", DEFAULT_WAIT).await.expect("help");
+    let inbox = app.bounds(".titlebar .inbox-button").await.expect("bounds").expect("inbox");
+    let help = app.bounds(".titlebar .help-button").await.expect("bounds").expect("help");
+    let controls = app.bounds(".titlebar .window-controls").await.expect("bounds").expect("controls");
+    assert!(inbox.right() <= help.x + 0.5, "inbox {inbox:?} is not left of help {help:?}");
+    assert!(help.right() <= controls.x + 4.0, "help {help:?} is not next to the controls {controls:?}");
+}
