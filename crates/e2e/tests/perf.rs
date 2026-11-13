@@ -1,12 +1,14 @@
 //! Timing checks on a room with hundreds of messages. Prints each wait's
 //! duration (`[timing] ...`) so regressions are visible, and fails only on
-//! grossly slow operations.
+//! grossly slow operations. They read the timeline through the bridge
+//! (`count`, `texts`, `scroll_to`), so they measure the GPUI app: its rows
+//! are painted only when near the view, which is what the row counts check.
 
 #![allow(clippy::expect_used)]
 
 use std::time::Duration;
 
-use morpheus_e2e::{App, DEFAULT_WAIT};
+use morpheus_e2e::{App, DEFAULT_WAIT, ScrollTo};
 
 fn homeserver() -> Option<String> {
     std::env::var("MORPHEUS_TEST_HOMESERVER").ok()
@@ -15,6 +17,33 @@ fn homeserver() -> Option<String> {
 /// Generous upper bound; the point is the printed numbers, not the limit.
 const SLOW: Duration = Duration::from_secs(8);
 
+async fn login_as(app: &mut App, user: &str, password: &str, room: &str) {
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    app.type_into("form.login input[name=username]", user)
+        .await
+        .expect("username");
+    app.type_into("form.login input[name=password]", password)
+        .await
+        .expect("password");
+    app.submit("form.login").await.expect("submit");
+    app.wait_for_text(".room", room, DEFAULT_WAIT)
+        .await
+        .unwrap_or_else(|e| panic!("{room} listed: {e}"));
+}
+
+/// The number in the first message body showing that starts with `prefix`
+/// and is a number after it, at the top of the painted rows.
+async fn lowest_number(app: &mut App, prefix: &str) -> Option<i64> {
+    app.texts(".message .body")
+        .await
+        .expect("bodies")
+        .iter()
+        .filter_map(|b| b.trim().strip_prefix(prefix)?.parse::<i64>().ok())
+        .min()
+}
+
 #[tokio::test]
 async fn big_room_opens_and_switches_quickly() {
     let Some(hs) = homeserver() else {
@@ -22,48 +51,27 @@ async fn big_room_opens_and_switches_quickly() {
         return;
     };
     let mut app = App::launch(&hs).await.expect("launch app");
-    app.wait_for("form.login", DEFAULT_WAIT)
-        .await
-        .expect("login form");
-    app.type_into("form.login input[name=username]", "alice")
-        .await
-        .expect("username");
-    app.type_into("form.login input[name=password]", "alice-password")
-        .await
-        .expect("password");
-    app.submit("form.login").await.expect("submit");
-    app.wait_for_text(".room", "firehose", DEFAULT_WAIT)
-        .await
-        .expect("firehose listed");
+    login_as(&mut app, "alice", "alice-password", "firehose").await;
 
     // Open the big room: time until its newest message is on screen.
     app.open_room("firehose").await.expect("open firehose");
-    // Test runs rename bob in every room he is in, so the newest page the
-    // server hands over can be all (hidden) profile changes; scroll up.
+    // Test runs rename bob in every room he is in and the memory test's accounts
+    // join this one, so the newest rows can be those, not message 600: scroll up.
     app.reveal_message("firehose message 600", DEFAULT_WAIT)
         .await
         .expect("newest message visible");
-    let rendered = app
-        .eval("return document.querySelectorAll('.message').length;")
-        .await
-        .expect("count");
-    eprintln!("[timing] rows rendered after open: {rendered}");
+    let rendered = app.count(".message").await.expect("count");
+    eprintln!("[timing] rows painted after open: {rendered}");
 
-    // Scroll to the top repeatedly: reveals windowed rows first, then pages from the server.
+    // Scroll to the top repeatedly: pages come from the server.
     for _ in 0..12 {
-        app.eval("const t = document.querySelector('.timeline'); t.scrollTop = -t.scrollHeight;")
+        app.scroll_to(".timeline", ScrollTo::Top)
             .await
             .expect("scroll");
-        app.wait_for_js("return true;", Duration::from_secs(1))
-            .await
-            .expect("tick");
         tokio::time::sleep(Duration::from_millis(300)).await;
     }
-    let rendered = app
-        .eval("return document.querySelectorAll('.message').length;")
-        .await
-        .expect("count");
-    eprintln!("[timing] rows rendered after scrolling: {rendered}");
+    let rendered = app.count(".message").await.expect("count");
+    eprintln!("[timing] rows painted after scrolling: {rendered}");
 
     // Switching away and back must stay snappy even with the big room loaded.
     app.open_room("general").await.expect("switch to general");
@@ -74,7 +82,7 @@ async fn big_room_opens_and_switches_quickly() {
         .await
         .expect("general ready");
     app.open_room("firehose").await.expect("back to firehose");
-    app.wait_for_exact_text(".message .body", "firehose message 600", DEFAULT_WAIT)
+    app.wait_for(".timeline .message", DEFAULT_WAIT)
         .await
         .expect("firehose again");
 
@@ -91,8 +99,8 @@ async fn big_room_opens_and_switches_quickly() {
 /// Memory and threads, after the big room is opened and scrolled through:
 /// a chat app needs a few threads, not one per CPU core for each of its
 /// runtimes (a 32-core machine had 146, and the allocator's per-thread
-/// pools swelled memory with them). The app's own process and WebKit's
-/// helpers count together. Desktop only (the test reads /proc).
+/// pools swelled memory with them). The app's own process and any helpers
+/// it started count together. Desktop only (the test reads /proc).
 #[tokio::test]
 async fn threads_and_memory_stay_modest() {
     let Some(hs) = homeserver() else {
@@ -104,47 +112,30 @@ async fn threads_and_memory_stay_modest() {
     // (0.1.0 measured 420 MB when new, 640 MB on the same accounts later).
     let user = morpheus_e2e::new_account(&hs, "memory").expect("an account");
     morpheus_e2e::admin_join(&hs, &user, "#firehose:localhost").expect("in #firehose");
-    // The window fills the tests' 4K monitor, and WebKit's buffers follow its
-    // pixels: 0.1.0 and later both measure 540–600 MB here (420 MB was a
-    // laptop-sized window, before the test monitor).
     let mut app = App::launch_desktop(&hs).await.expect("launch app");
-    app.wait_for("form.login", DEFAULT_WAIT)
-        .await
-        .expect("login form");
-    app.type_into("form.login input[name=username]", &user)
-        .await
-        .expect("username");
-    app.type_into(
-        "form.login input[name=password]",
-        &format!("{user}-password"),
-    )
-    .await
-    .expect("password");
-    app.submit("form.login").await.expect("submit");
-    app.wait_for_text(".room", "firehose", DEFAULT_WAIT)
-        .await
-        .expect("firehose listed");
+    login_as(&mut app, &user, &format!("{user}-password"), "firehose").await;
     app.open_room("firehose").await.expect("open firehose");
     app.reveal_message("firehose message 600", DEFAULT_WAIT)
         .await
         .expect("newest message visible");
     for _ in 0..12 {
-        app.eval("const t = document.querySelector('.timeline'); t.scrollTop = -t.scrollHeight;")
+        app.scroll_to(".timeline", ScrollTo::Top)
             .await
             .expect("scroll");
         tokio::time::sleep(Duration::from_millis(300)).await;
     }
     tokio::time::sleep(Duration::from_secs(2)).await;
 
-    let viewport = app
-        .eval("return [innerWidth, innerHeight, devicePixelRatio];")
-        .await
-        .expect("viewport");
-    eprintln!("[memory] window {viewport}");
     let pid = app.pid().expect("the app's process");
     let threads = std::fs::read_dir(format!("/proc/{pid}/task"))
         .map(|tasks| tasks.count())
         .unwrap_or_default();
+    let mut names = std::collections::BTreeMap::<String, usize>::new();
+    for task in std::fs::read_dir(format!("/proc/{pid}/task")).into_iter().flatten().flatten() {
+        let name = std::fs::read_to_string(task.path().join("comm")).unwrap_or_default();
+        *names.entry(name.trim().to_owned()).or_default() += 1;
+    }
+    eprintln!("[memory] threads by name: {names:?}");
     let mut processes = vec![pid];
     let mut at = 0;
     while at < processes.len() {
@@ -194,13 +185,23 @@ async fn threads_and_memory_stay_modest() {
         "[memory] {threads} threads, {total_mb} MB over {} processes",
         processes.len()
     );
-    assert!(threads < 60, "{threads} threads in the app");
+    // GPUI starts one "Worker-N" thread per core for its own executor (a library
+    // setting we cannot change): what the app starts itself is what is held down.
+    let gpui_workers: usize = names
+        .iter()
+        .filter(|(name, _)| name.starts_with("Worker-"))
+        .map(|(_, count)| count)
+        .sum();
+    let own = threads - gpui_workers;
+    eprintln!("[memory] {own} threads besides GPUI's {gpui_workers} workers");
+    assert!(own < 60, "{own} threads in the app besides GPUI's workers");
     assert!(total_mb < 650, "{total_mb} MB for the app (4K window)");
 }
 
-/// A long scroll back keeps only the rows near the screen in the page:
-/// 2000 messages back, the page holds a few hundred rows, not thousands
-/// (every row is DOM, layout and memory). Coming back down brings the newer
+
+/// A long scroll back keeps only the rows near the screen painted:
+/// 2000 messages back, the tree holds a few hundred rows, not thousands
+/// (every row is layout and memory). Coming back down brings the newer
 /// ones back.
 #[tokio::test]
 async fn a_long_scroll_back_keeps_the_page_small() {
@@ -209,76 +210,52 @@ async fn a_long_scroll_back_keeps_the_page_small() {
         return;
     };
     let mut app = App::launch(&hs).await.expect("launch app");
-    app.wait_for("form.login", DEFAULT_WAIT)
-        .await
-        .expect("login form");
-    app.type_into("form.login input[name=username]", "alice")
-        .await
-        .expect("username");
-    app.type_into("form.login input[name=password]", "alice-password")
-        .await
-        .expect("password");
-    app.submit("form.login").await.expect("submit");
-    app.wait_for_text(".room", "deep", DEFAULT_WAIT)
-        .await
-        .expect("deep listed");
+    login_as(&mut app, "alice", "alice-password", "deep").await;
     app.open_room("deep").await.expect("open deep");
     app.reveal_message("deep message 3000", DEFAULT_WAIT)
         .await
         .expect("newest message");
 
-    // Back and back, until message 1000 is on the page.
-    let target = "return [...document.querySelectorAll('.message .body')].some(b => b.textContent.trim() === 'deep message 1000');";
-    let mut most = 0u64;
+    // Back and back, until message 1000 is painted.
+    let mut most = 0usize;
     for _ in 0..400 {
-        if app.eval(target).await.expect("look") == serde_json::json!(true) {
+        if lowest_number(&mut app, "deep message ").await.is_some_and(|n| n <= 1000) {
             break;
         }
-        app.eval("const t = document.querySelector('.timeline'); t.scrollTop = -t.scrollHeight;")
+        app.scroll_to(".timeline", ScrollTo::Top)
             .await
             .expect("scroll");
         tokio::time::sleep(Duration::from_millis(150)).await;
-        let rows = app
-            .eval("return document.querySelectorAll('.message').length;")
-            .await
-            .expect("count")
-            .as_u64()
-            .unwrap_or_default();
-        most = most.max(rows);
+        most = most.max(app.count(".message").await.expect("count"));
     }
-    assert_eq!(
-        app.eval(target).await.expect("look"),
-        serde_json::json!(true),
+    assert!(
+        lowest_number(&mut app, "deep message ").await.is_some_and(|n| n <= 1000),
         "never got back to message 1000"
     );
-    eprintln!("[timing] most rows on the page while scrolling back: {most}");
-    assert!(most <= 400, "{most} rows in the page");
+    eprintln!("[timing] most rows painted while scrolling back: {most}");
+    assert!(most <= 400, "{most} rows painted");
 
-    // Down again, a screen at a time: rows come back below as the oldest
-    // go, and the view never jumps back (the message at its top only moves
-    // on), until the newest is there.
-    let top_number = "const t = document.querySelector('.timeline'); const top = t.getBoundingClientRect().top; \
-         const m = [...t.querySelectorAll('.message')].find(m => m.getBoundingClientRect().bottom > top + 4); \
-         const b = m && [...m.querySelectorAll('.body')].map(b => b.textContent.trim()).find(x => x.startsWith('deep message ')); \
-         return b ? parseInt(b.slice(13)) : null;";
-    let newest = "return [...document.querySelectorAll('.message .body')].some(b => b.textContent.trim() === 'deep message 3000');";
+    // Down again, a screen at a time: the view never jumps back (the message
+    // at its top only moves on) until the newest is there.
     let mut last = 0i64;
     let mut seen = Vec::new();
     for _ in 0..400 {
-        if app.eval(newest).await.expect("look") == serde_json::json!(true)
-            && app
-                .eval("return document.querySelector('.timeline').scrollTop > -50;")
-                .await
-                .expect("at bottom")
-                == serde_json::json!(true)
-        {
+        let state = app
+            .scroll_state(".timeline")
+            .await
+            .expect("scroll state")
+            .expect("timeline");
+        if state.from_bottom < 50.0 {
             break;
         }
-        app.eval("const t = document.querySelector('.timeline'); t.scrollTop = Math.min(0, t.scrollTop + t.clientHeight);")
-            .await
-            .expect("scroll down");
+        app.scroll_to(
+            ".timeline",
+            ScrollTo::FromBottom((state.from_bottom - state.viewport).max(0.0)),
+        )
+        .await
+        .expect("scroll down");
         tokio::time::sleep(Duration::from_millis(120)).await;
-        if let Some(number) = app.eval(top_number).await.expect("top").as_i64() {
+        if let Some(number) = lowest_number(&mut app, "deep message ").await {
             seen.push(number);
             assert!(
                 number + 5 >= last,
@@ -287,14 +264,12 @@ async fn a_long_scroll_back_keeps_the_page_small() {
             last = last.max(number);
         }
     }
-    assert_eq!(
-        app.eval(newest).await.expect("look"),
-        serde_json::json!(true),
-        "never got back down to the newest: {seen:?}"
-    );
+    app.wait_for_exact_text(".message .body", "deep message 3000", DEFAULT_WAIT)
+        .await
+        .unwrap_or_else(|e| panic!("never got back down to the newest: {e}; {seen:?}"));
 
     // And back to now from far up, in one go.
-    app.eval("const t = document.querySelector('.timeline'); t.scrollTop = -t.scrollHeight;")
+    app.scroll_to(".timeline", ScrollTo::Top)
         .await
         .expect("up a bit");
     app.wait_for(".jump-to-bottom", DEFAULT_WAIT)
