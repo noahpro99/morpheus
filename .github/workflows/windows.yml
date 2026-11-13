@@ -41,6 +41,13 @@ jobs:
         with:
           shared-key: windows-x86_64
 
+      # OpenH264 (videos) uses its x86 assembly when nasm is on the PATH and
+      # plain C otherwise; the runner does not have it.
+      - name: NASM
+        run: |
+          choco install nasm -y --no-progress || true
+          echo "C:\\Program Files\\NASM" >> "$GITHUB_PATH"
+
       # GPUI compiles its shaders with fxc.exe from the Windows SDK, which
       # the runner has; the build script finds it through where.exe or its
       # default path.

@@ -149,6 +149,10 @@ pub(crate) fn sniff(bytes: &[u8]) -> Result<(), Unsupported> {
 impl Demux {
     pub fn open(bytes: Arc<[u8]>) -> Result<Self, Unsupported> {
         sniff(&bytes)?;
+        let bytes = match quicktime_audio_fixed(&bytes) {
+            Some(fixed) => Arc::from(fixed),
+            None => bytes,
+        };
         let size = bytes.len() as u64;
         // The mp4 crate trusts box sizes; a broken file must not take the app down.
         let reader = std::panic::catch_unwind(move || Mp4Reader::read_header(Cursor::new(bytes), size))
@@ -281,4 +285,67 @@ impl Demux {
         let sample = self.reader.read_sample(id, index + 1).ok().flatten()?;
         Some(sample.bytes.to_vec())
     }
+}
+
+/// QuickTime files (.mov) describe AAC with a version 1 or 2 sound entry:
+/// 16 or 36 more bytes before the children, and the `esds` inside a `wave`
+/// box. The mp4 crate reads only the MP4 form, so such an entry is rewritten
+/// in place (no size changes): its `esds` moved to where MP4 has it and the
+/// rest covered by a `free` box. `None` when nothing needed it.
+pub(crate) fn quicktime_audio_fixed(bytes: &[u8]) -> Option<Vec<u8>> {
+    let u32_at = |at: usize| -> Option<usize> {
+        let b = bytes.get(at..at + 4)?;
+        Some(u32::from_be_bytes([b[0], b[1], b[2], b[3]]) as usize)
+    };
+    // The top-level `moov` box.
+    let mut at = 0;
+    let moov = loop {
+        let size = u32_at(at)?;
+        let kind = bytes.get(at + 4..at + 8)?;
+        if size < 8 {
+            return None;
+        }
+        if kind == b"moov" {
+            break at..(at + size).min(bytes.len());
+        }
+        at += size;
+    };
+    let mut fixed: Option<Vec<u8>> = None;
+    let region = &bytes[moov.clone()];
+    let mut search = 0;
+    while let Some(found) = region[search..].windows(4).position(|w| w == b"mp4a") {
+        let kind_at = moov.start + search + found;
+        search += found + 4;
+        let Some(entry) = kind_at.checked_sub(4) else { continue };
+        let Some(size) = u32_at(entry) else { continue };
+        // A sample entry: six reserved zero bytes, then the data reference.
+        if !(36..=4096).contains(&size) || bytes.get(entry + 8..entry + 14) != Some(&[0u8; 6][..]) {
+            continue;
+        }
+        let version = bytes.get(entry + 16..entry + 18).map_or(0, |v| u16::from_be_bytes([v[0], v[1]]));
+        let extra = match version {
+            1 => 16,
+            2 => 36,
+            _ => continue,
+        };
+        let end = entry + size;
+        let children = entry + 36;
+        let Some(within) = bytes.get(children + extra..end) else { continue };
+        let Some(esds_kind) = within.windows(4).position(|w| w == b"esds") else { continue };
+        let esds = children + extra + esds_kind - 4;
+        let Some(esds_size) = u32_at(esds) else { continue };
+        let free = end.saturating_sub(children + esds_size);
+        if esds_size < 8 || esds + esds_size > end || free < 8 {
+            continue;
+        }
+        let out = fixed.get_or_insert_with(|| bytes.to_vec());
+        let copy = bytes[esds..esds + esds_size].to_vec();
+        out[children..children + esds_size].copy_from_slice(&copy);
+        let free_at = children + esds_size;
+        out[free_at..free_at + 4].copy_from_slice(&u32::try_from(free).unwrap_or(8).to_be_bytes());
+        out[free_at + 4..free_at + 8].copy_from_slice(b"free");
+        // Version 0, as the crate reads it.
+        out[entry + 16..entry + 18].copy_from_slice(&[0, 0]);
+    }
+    fixed
 }

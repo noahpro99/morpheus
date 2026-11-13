@@ -30,12 +30,13 @@ jobs:
       - name: Libraries
         run: |
           sudo apt-get update
+          # nasm: OpenH264's x86 assembly (videos; plain C without it).
           sudo apt-get install -y --no-install-recommends \
             libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev libxcb1-dev libx11-xcb-dev \
             libx11-dev libxext-dev libxfixes-dev libxdamage-dev libxrandr-dev libxcomposite-dev libxtst-dev \
             libfontconfig-dev libfreetype-dev libvulkan-dev libgl-dev libdrm-dev libgbm-dev \
             libssl-dev libasound2-dev libpulse-dev libpipewire-0.3-dev libdbus-1-dev \
-            pkg-config cmake zip python3
+            pkg-config cmake zip python3 nasm
           # libwebrtc (calls) is built against Chromium's libc++ and needs a
           # recent clang, as in the dev shell.
           wget -qO llvm.sh https://apt.llvm.org/llvm.sh

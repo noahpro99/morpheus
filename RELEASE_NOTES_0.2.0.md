@@ -24,6 +24,13 @@ Phones (Android, iPhone) and the web app are unchanged apart from the version.
 - Search as in Discord: a box in the top bar that widens in place, Escape
   steps out; Ctrl+K switcher that also matches the nicknames you gave people.
 - Picture viewer with zoom around the pointer (wheel or touchpad, up to 8x).
+- Videos play in the message, as in Discord: play/pause, a seek bar, time,
+  mute and volume, download and a full-window player (Space, arrow keys to
+  skip 5 s, Escape). Short silent clips play by themselves on a loop, like
+  GIFs; one video plays with sound at a time and one scrolled away pauses.
+  Encrypted videos are decrypted in memory. Formats: MP4 and QuickTime
+  (.mov) with H.264 video and AAC sound (or no sound), which is what phones
+  and most Matrix apps send.
 - Colour emoji drawn as one glyph (faces, flags, keycaps, families).
 - Camera in the shape your webcam makes; your own self-view is mirrored.
 - Tray icon on Linux, Windows and macOS (open, check for updates,
@@ -45,7 +52,10 @@ Phones (Android, iPhone) and the web app are unchanged apart from the version.
 
 - Text boxes have no undo/redo yet (so the Mac Edit menu has no Undo/Redo),
   and no input-method (IME) composition for Chinese, Japanese, Korean.
-- No video player yet: a video shows its thumbnail in the timeline.
+- Videos in WebM (VP8/VP9 with Opus, as some clients record), HEVC (H.265,
+  what iPhones record unless set to "Most Compatible"), fragmented MP4 and
+  AAC with SBR (HE-AAC) do not play yet: the card says so and offers the
+  download.
 - The Mac and Windows builds of the new app were checked by the release
   workflows (build, start, update); they have had far less daily use than the
   Linux one. Please report anything odd (Settings, Report a bug).
