@@ -142,20 +142,33 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
     let grouped = in_space || *scope == Scope::Favorites;
     let title = header_title(&shell.rooms, scope);
 
+    // The name is a button of its own size (not the header's), brightening on hover.
+    let name_colour = if shell.bar_hover == Some("server-name") {
+        theme::text()
+    } else {
+        dimmed(theme::text())
+    };
     let mut name = div()
         .id("sidebar-title")
         .flex()
-        .flex_1()
-        .h_full()
-        .pl(px(16.0))
+        .flex_none()
+        .min_w_0()
+        .h(px(28.0))
+        .ml(px(8.0))
+        .px(px(8.0))
         .items_center()
         .gap(px(4.0))
+        .rounded(px(theme::RADIUS_SM))
         .font_weight(FontWeight::BOLD)
-        .child(title.clone());
+        .text_color(rgb(name_colour))
+        .child(div().min_w_0().truncate().child(title.clone()));
     // Clicking the server's name (or right-clicking it) opens the server menu.
     if let Scope::Space(space_id) = scope {
         let space_id = space_id.clone();
-        name = name.cursor_pointer().on_click(cx.listener({
+        name = name
+            .cursor_pointer()
+            .on_hover(crate::chat::bar_hover(cx, "server-name"))
+            .on_click(cx.listener({
             let space_id = space_id.clone();
             move |this, event: &gpui::ClickEvent, _, cx| {
                 this.open_space_menu(&space_id, event.position(), cx)
@@ -169,7 +182,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         );
     }
     if in_space {
-        name = name.child(icon("chevron-down", 14.0).text_color(rgb(theme::text_faint())));
+        name = name.child(icon("chevron-down", 14.0).text_color(rgb(name_colour)));
     }
     let mut header = div()
         .h(px(48.0))
@@ -181,26 +194,30 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         .border_color(gpui::rgba(0x0000004d))
         .child(
             name.e2e("h2", if in_space { "server-name" } else { "" })
+                .attr("data-color", format!("{name_colour:06x}"))
+                .attr("data-bg", "")
                 .text(title),
         );
+    let plus_colour = crate::chat::bar_colour(shell, "create-room", theme::text_muted());
     if *scope != Scope::Dms {
         header = header.child(
             div()
                 .id("create-room")
-                .h_full()
+                .size(px(28.0))
+                .flex_none()
+                .mr(px(10.0))
                 .flex()
                 .items_center()
-                .px(px(12.0))
+                .justify_center()
                 .rounded(px(theme::RADIUS_SM))
-                .text_color(rgb(theme::text_muted()))
-                .hover(|s| {
-                    s.bg(gpui::rgba(theme::bg_hover()))
-                        .text_color(rgb(theme::text()))
-                })
+                .text_color(rgb(plus_colour))
+                .on_hover(crate::chat::bar_hover(cx, "create-room"))
                 .cursor_pointer()
-                .child(icon("plus", 18.0).text_color(rgb(theme::text_muted())))
+                .child(icon("plus", 18.0).text_color(rgb(plus_colour)))
                 .on_click(cx.listener(|this, _, _, cx| this.open_room_dialog(RoomDialogKind::Create, cx)))
                 .e2e("button", "ghost create-room-button")
+                .attr("data-color", format!("{plus_colour:06x}"))
+                .attr("data-bg", "")
                 .attr("title", "Create room"),
         );
     }
@@ -747,4 +764,15 @@ mod tests {
         let found = sections(&all, &Scope::Dms, &[], &filters);
         assert_eq!(names(&found.dms), ["d2"]);
     }
+}
+
+/// The text colour a little below full brightness: what a button rests in
+/// before hover brightens it to `colour`.
+fn dimmed(colour: u32) -> u32 {
+    let mix = |shift: u32| {
+        let c = (colour >> shift) & 0xff;
+        let m = (theme::text_muted() >> shift) & 0xff;
+        (c * 7 + m * 3) / 10
+    };
+    (mix(16) << 16) | (mix(8) << 8) | mix(0)
 }

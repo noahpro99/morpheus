@@ -45,37 +45,45 @@ impl Shell {
     }
 }
 
-/// A ghost button of the bar: no drag from it, a hover wash.
-fn bar_button(id: &'static str) -> gpui::Stateful<gpui::Div> {
+/// A ghost button of the bar, a 28 px square: no drag from it, no hover
+/// background (the glyph brightens, through `Shell::bar_hover`).
+fn bar_button(shell: &Shell, cx: &mut Context<Shell>, id: &'static str) -> gpui::Stateful<gpui::Div> {
+    let colour = crate::chat::bar_colour(shell, id, theme::text_muted());
     chrome::no_drag(
         div()
             .id(id)
             .relative()
-            .h_full().px(px(10.0))
+            .size(px(28.0))
+            .flex_none()
             .flex()
             .items_center()
             .justify_center()
             .rounded(px(theme::RADIUS_SM))
-            .text_color(rgb(theme::text_muted()))
+            .text_color(rgb(colour))
             .cursor_pointer()
-            .hover(|s| s.bg(rgba(theme::bg_hover())).text_color(rgb(theme::text()))),
+            .on_hover(crate::chat::bar_hover(cx, id)),
     )
 }
 
 pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
     let unread = unread_count(&shell.rooms);
     let title = header_title(&shell.rooms, &shell.scope);
-    let nav_button = |id: &'static str, glyph: &'static str, label: &'static str, enabled: bool, step: isize| {
-        let mut b = bar_button(id).child(icon(glyph, 18.0));
+    let colour_of = |id: &'static str| format!("{:06x}", crate::chat::bar_colour(shell, id, theme::text_muted()));
+    let nav_button = |cx: &mut Context<Shell>, id: &'static str, glyph: &'static str, label: &'static str, enabled: bool, step: isize| {
+        let mut b = bar_button(shell, cx, id).child(icon(glyph, 18.0));
         if enabled {
             b = b.on_click(cx.listener(move |this, _, _, cx| this.nav_jump(step, cx)));
         } else {
             b = b.opacity(0.35).cursor_default();
         }
-        let tagged = b.e2e("button", "ghost nav-button").attr("title", label);
+        let tagged = b
+            .e2e("button", "ghost nav-button")
+            .attr("title", label)
+            .attr("data-color", colour_of(id))
+            .attr("data-bg", "");
         if enabled { tagged } else { tagged.attr("disabled", "") }
     };
-    let mut inbox = bar_button("inbox-button")
+    let mut inbox = bar_button(shell, cx, "inbox-button")
         .child(icon("inbox", 16.0))
         .on_click(cx.listener(|this, _, _, cx| this.toggle_inbox(cx)));
     if unread > 0 {
@@ -96,7 +104,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                 .text(unread.to_string()),
         );
     }
-    let help = bar_button("help-button")
+    let help = bar_button(shell, cx, "help-button")
         .child(icon("circle-help", 16.0))
         .on_click(cx.listener(|this, _, _, cx| this.toggle_help(cx)));
     let at = shell.nav.index;
@@ -119,6 +127,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                     .flex()
                     .gap(px(2.0))
                     .child(nav_button(
+                        cx,
                         "nav-back",
                         "chevron-left",
                         "Back (Alt+←)",
@@ -126,6 +135,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                         -1,
                     ))
                     .child(nav_button(
+                        cx,
                         "nav-forward",
                         "chevron-right",
                         "Forward (Alt+→)",
@@ -161,8 +171,18 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                     .justify_end()
                     .items_center()
                     .gap(px(2.0))
-                    .child(help.e2e("button", "ghost titlebar-button help-button").attr("title", "Help (Ctrl+/)"))
-                    .child(inbox.e2e("button", "ghost titlebar-button inbox-button").attr("title", "Inbox (Ctrl+I)"))
+                    .child(
+                        help.e2e("button", "ghost titlebar-button help-button")
+                            .attr("title", "Help (Ctrl+/)")
+                            .attr("data-color", colour_of("help-button"))
+                            .attr("data-bg", ""),
+                    )
+                    .child(
+                        inbox.e2e("button", "ghost titlebar-button inbox-button")
+                            .attr("title", "Inbox (Ctrl+I)")
+                            .attr("data-color", colour_of("inbox-button"))
+                            .attr("data-bg", ""),
+                    )
                     .child(chrome::window_controls())
                     .e2e("div", "titlebar-actions"),
             ),
