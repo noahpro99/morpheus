@@ -62,7 +62,10 @@ mod denoise;
 #[path = "mic.rs"]
 mod mic;
 #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
-pub use mic::{mic_level, mic_loopback, mic_test_running, start_mic_test, stop_mic_test};
+pub use mic::{
+    AudioStats, audio_stats, mic_level, mic_loopback, mic_test_running, reset_audio_stats,
+    start_mic_test, stop_mic_test,
+};
 
 /// Phones: no mic test (their microphone is WebRTC's own).
 #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
