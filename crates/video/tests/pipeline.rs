@@ -218,3 +218,19 @@ fn bench_decoding() {
         started.elapsed().as_secs_f64() * 1000.0
     );
 }
+
+/// QuickTime (.mov, as iPhones save with "Most Compatible") with H.264 and AAC.
+#[test]
+fn a_quicktime_movie_plays_too() {
+    const MOV: &[u8] = include_bytes!("../fixtures/clip.mov");
+    let info = probe(MOV).expect("clip.mov plays");
+    assert_eq!((info.width, info.height), (160, 120));
+    assert!(info.has_audio);
+    let mut decoder = Decoder::open(Arc::from(MOV)).expect("open");
+    let mut frames = 0;
+    while decoder.next_video().is_some() {
+        frames += 1;
+    }
+    assert_eq!(frames, 15, "1 s at 15 fps");
+    assert!(decoder.next_audio().is_some(), "and its sound");
+}

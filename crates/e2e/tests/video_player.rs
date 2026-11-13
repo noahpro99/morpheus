@@ -372,3 +372,45 @@ async fn one_video_plays_with_sound_and_one_scrolled_away_pauses() {
     let t = num(&mut app, &second, "data-time").await;
     assert!(t - started < 1200.0, "it stopped when it left the view: {started} -> {t} ms");
 }
+
+/// CPU of the whole app while a video of your own plays in a message (not
+/// run by default: `MORPHEUS_VIDEO_BENCH=path.mp4 just e2e video_player
+/// cpu -- --ignored`): the app's CPU time over 5 s paused, then 5 s playing,
+/// as a share of one core.
+#[tokio::test]
+#[ignore = "needs MORPHEUS_VIDEO_BENCH"]
+async fn cpu_while_a_video_plays() {
+    let (Some(hs), Ok(path)) = (homeserver(), std::env::var("MORPHEUS_VIDEO_BENCH")) else { return };
+    let bytes = std::fs::read(&path).expect("the video");
+    let video = VideoMessage {
+        bytes: &bytes,
+        mime: "video/mp4",
+        body: "bench.mp4",
+        size: None,
+        duration_ms: None,
+        thumbnail_png: None,
+    };
+    let Some((mut app, _, _)) = room_with(&hs, &[video], 0, false).await else { return };
+    let pid = app.pid().expect("pid");
+    let ticks = || -> f64 {
+        let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).expect("stat");
+        let fields: Vec<&str> = stat.rsplit_once(')').expect("stat").1.split_whitespace().collect();
+        fields[11].parse::<f64>().expect("utime") + fields[12].parse::<f64>().expect("stime")
+    };
+    let hz = 100.0;
+    app.reveal_element(".video-card .play-button", DEFAULT_WAIT).await.expect("the video");
+    let measure = |from: f64, to: f64, secs: f64| (to - from) / hz / secs * 100.0;
+    let t0 = ticks();
+    tokio::time::sleep(Duration::from_secs(5)).await;
+    let idle = measure(t0, ticks(), 5.0);
+    play(&mut app).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let (f0, t0) = (num(&mut app, PLAYER, "data-frame").await, ticks());
+    tokio::time::sleep(Duration::from_secs(5)).await;
+    let (f1, t1) = (num(&mut app, PLAYER, "data-frame").await, ticks());
+    eprintln!(
+        "CPU: {idle:.1}% of a core idle, {:.1}% playing; {:.1} pictures/s shown",
+        measure(t0, t1, 5.0),
+        (f1 - f0) / 5.0
+    );
+}

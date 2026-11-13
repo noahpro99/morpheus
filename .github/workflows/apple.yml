@@ -58,6 +58,12 @@ jobs:
         with:
           shared-key: macos-${{ matrix.target }}
 
+      # OpenH264 (videos): x86 assembly for the Intel build when nasm is
+      # there (plain C otherwise); the Arm build uses its NEON code as is.
+      - name: NASM
+        if: matrix.arch == 'x86_64'
+        run: brew install nasm || true
+
       - name: Build
         run: cargo build --release -p morpheus-desktop --locked --target ${{ matrix.target }} $FEATURES
 
