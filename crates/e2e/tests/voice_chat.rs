@@ -489,3 +489,48 @@ async fn sharing_the_screen_opens_the_call() {
     assert_eq!(alice.count(".call-stage.voice-page").await.expect("count"), 0, "stopping moved the view");
     alice.click(".voice-panel .hang-up").await.expect("leave");
 }
+
+/// Create Channel offers Text or Voice (each with its icon). A voice channel
+/// is listed with the speaker icon, and clicking it joins its call.
+#[tokio::test]
+async fn a_voice_channel_is_created_from_the_create_dialog_and_joins_its_call() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let _clean = morpheus_e2e::reset_rooms_named(&hs, &["alice", "bob"], "e2e new voice");
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    if !alice.is_gpui() {
+        return;
+    }
+    login(&mut alice, "alice").await;
+    alice.click(".rail-item[title=\"Engineering\"]").await.expect("the server");
+    alice.wait_for(".create-room-button", DEFAULT_WAIT).await.expect("plus");
+    alice.click(".create-room-button").await.expect("plus");
+    alice.wait_for(".create-room-dialog input[name=name]", DEFAULT_WAIT).await.expect("dialog");
+    // Two options with icons; Text is chosen to begin with.
+    let kinds = alice.attrs(".create-room-dialog .channel-type", "data-value").await.expect("types");
+    assert_eq!(kinds, vec![Some("text".to_owned()), Some("voice".to_owned())], "the channel types");
+    assert_eq!(
+        alice.count(".create-room-dialog .channel-type svg.icon").await.expect("icons"),
+        2,
+        "each type has an icon"
+    );
+    alice.wait_for(".create-room-dialog .channel-type.selected[data-value=text]", DEFAULT_WAIT).await.expect("text first");
+    alice.click(".create-room-dialog .channel-type[data-value=voice]").await.expect("voice");
+    alice
+        .wait_for(".create-room-dialog .channel-type.selected[data-value=voice]", DEFAULT_WAIT)
+        .await
+        .expect("voice chosen");
+    let name = format!("e2e new voice {}", std::process::id());
+    alice.type_into(".create-room-dialog input[name=name]", &name).await.expect("name");
+    alice.submit(".create-room-dialog").await.expect("create");
+    alice.wait_for_text(".room.voice", &name, DEFAULT_WAIT).await.expect("listed as a voice channel");
+    let icons = alice.count(".room.voice .voice-icon").await.expect("icons");
+    assert!(icons >= 1, "the speaker icon");
+    // Anyone may join: clicking the row joins its call.
+    alice.open_room("dev").await.expect("another channel of the server");
+    alice.click_text(".room.voice", &name).await.expect("join");
+    alice.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT).await.expect("joined its call");
+    alice.click(".voice-panel .hang-up").await.expect("leave");
+}

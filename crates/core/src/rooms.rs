@@ -7,6 +7,8 @@ use matrix_sdk::{
     room::ParentSpace,
     ruma::{
         api::client::room::create_room::{self, v3::RoomPreset},
+        room::RoomType,
+        serde::Raw,
         events::{
             InitialStateEvent,
             space::{child::SpaceChildEventContent, parent::SpaceParentEventContent},
@@ -530,6 +532,19 @@ impl Session {
         topic: String,
         space: Option<OwnedRoomId>,
     ) -> CoreFuture<OwnedRoomId> {
+        self.create_channel(name, topic, space, false)
+    }
+
+    /// [`Self::create_room`], as a voice channel when `voice`: a room of the
+    /// type clients list with a speaker and join the call of
+    /// (`org.matrix.msc3417.call`), where anyone may join the call.
+    pub fn create_channel(
+        &self,
+        name: String,
+        topic: String,
+        space: Option<OwnedRoomId>,
+        voice: bool,
+    ) -> CoreFuture<OwnedRoomId> {
         let client = self.client.clone();
         self.core.run(async move {
             let server = client
@@ -542,6 +557,11 @@ impl Session {
             let topic = topic.trim();
             request.topic = (!topic.is_empty()).then(|| topic.to_owned());
             request.preset = Some(RoomPreset::PublicChat);
+            if voice {
+                let mut creation = create_room::v3::CreationContent::new();
+                creation.room_type = Some(RoomType::from(VOICE_ROOM_TYPES[0]));
+                request.creation_content = Some(Raw::new(&creation)?);
+            }
             if let Some(space_id) = &space {
                 let parent = InitialStateEvent::new(
                     space_id.clone(),
