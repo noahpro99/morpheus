@@ -4651,3 +4651,70 @@ async fn a_shared_screen_zooms_pans_and_resets() {
     assert!((tile_num(&mut alice, "data-zoom").await - 1.0).abs() < 1e-6, "new share at fit");
     alice.click(".voice-panel .hang-up").await.expect("hang up");
 }
+
+/// Starting a screen share puts a grey skeleton tile (a screen icon in the
+/// middle) in the call at once, for the sharer and for the others, until the
+/// first frame arrives; the real picture then replaces it. The first frame
+/// is held back for a few seconds in this run to look at it.
+#[tokio::test]
+async fn a_screen_share_shows_a_skeleton_until_its_first_frame() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let hold = [("MORPHEUS_E2E_FRAME_DELAY_MS", "6000")];
+    let mut alice = App::launch_with_env(&hs, &hold).await.expect("launch alice");
+    if !alice.is_gpui() {
+        eprintln!("the skeleton is built in the GPUI app only; skipping");
+        return;
+    }
+    login_and_open(&mut alice, "alice", "hangout").await;
+    let mut bob = App::launch_with_env(&hs, &hold).await.expect("launch bob");
+    login_and_open(&mut bob, "bob", "hangout").await;
+    alice.click(CALL_BUTTON).await.expect("call");
+    alice
+        .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("alice connected");
+    bob.click(CALL_BUTTON).await.expect("join");
+    bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("bob connected");
+    assert_eq!(alice.count(".video-tile.screen").await.expect("count"), 0);
+
+    start_share(&mut alice, ".voice-panel .screen-button").await;
+    for (who, app) in [("alice", &mut alice), ("bob", &mut bob)] {
+        app.wait_for(".call-stage .video-tile.screen.skeleton", DEFAULT_WAIT)
+            .await
+            .unwrap_or_else(|e| panic!("{who}: no skeleton tile before the first frame: {e}"));
+        app.wait_for(".video-tile.screen.skeleton .skeleton-icon", DEFAULT_WAIT)
+            .await
+            .unwrap_or_else(|e| panic!("{who}: no screen icon in the skeleton: {e}"));
+        let tile = app
+            .bounds(".video-tile.screen.skeleton")
+            .await
+            .expect("bounds")
+            .expect("the skeleton");
+        assert!(
+            (tile.w / tile.h - 16.0 / 9.0).abs() < 0.05,
+            "{who}: a 16:9 tile: {tile:?}"
+        );
+    }
+    // The picture replaces it.
+    for (who, app) in [("alice", &mut alice), ("bob", &mut bob)] {
+        app.wait_for(
+            ".call-stage .video-tile.screen:not(.skeleton) .video[data-shown=true]",
+            DEFAULT_WAIT,
+        )
+        .await
+        .unwrap_or_else(|e| panic!("{who}: the picture did not replace the skeleton: {e}"));
+        assert_eq!(
+            app.count(".video-tile.screen.skeleton").await.expect("count"),
+            0,
+            "{who}: the skeleton is gone"
+        );
+        assert_eq!(app.count(".video-tile.screen").await.expect("count"), 1, "{who}: one screen tile");
+    }
+    alice.click(".voice-panel .hang-up").await.expect("hang up");
+    bob.click(".voice-panel .hang-up").await.expect("hang up");
+}

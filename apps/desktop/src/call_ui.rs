@@ -694,6 +694,32 @@ fn focus_button(shell: &Shell, cx: &mut Context<Shell>, key: &str, group: &str) 
         .into_any_element()
 }
 
+/// What a shared screen's tile shows until its first picture comes: a screen
+/// in the middle, pulsing a little.
+fn screen_skeleton() -> AnyElement {
+    use gpui::{Animation, AnimationExt as _};
+    div()
+        .absolute()
+        .inset_0()
+        .flex()
+        .items_center()
+        .justify_center()
+        .child(
+            div()
+                .child(icon("screen-share", 48.0))
+                .with_animation(
+                    "skeleton-pulse",
+                    Animation::new(Duration::from_millis(1400))
+                        .repeat()
+                        .with_easing(gpui::pulsating_between(0.35, 0.9)),
+                    |el, delta| el.opacity(delta),
+                )
+                .e2e("span", "skeleton-icon"),
+        )
+        .e2e("div", "screen-skeleton")
+        .into_any_element()
+}
+
 /// A zoomed screen's size at the tile's bottom right; a click puts it back to fit.
 fn zoom_indicator(shell: &Shell, key: &str, zoom: f32) -> AnyElement {
     let frame = shell.calls.frames.get(key).cloned();
@@ -873,12 +899,16 @@ fn video_card(
         .frames
         .get(&key)
         .map_or((0, 0), |frame| frame.read(cx).dim);
+    if feed.screen && pw == 0 {
+        classes.push_str(" skeleton");
+    }
     let ratio = if pw > 0 && ph > 0 {
         pw as f32 / ph as f32
     } else {
         CARD_RATIO
     };
     // A shared screen, focused, zooms and pans (as the picture viewer does).
+    let waiting = feed.screen && pw == 0;
     let zoomable = feed.screen && matches!(fit, Fit::Main(..));
     let frame = shell.calls.frames.get(&key).cloned();
     let view = frame.as_ref().map(|f| f.read(cx).view).unwrap_or_default();
@@ -891,7 +921,9 @@ fn video_card(
     .relative()
     .overflow_hidden()
     .rounded(px(theme::RADIUS_LG))
-    .bg(if feed.screen {
+    .bg(if waiting {
+        rgb(theme::bg_elevated())
+    } else if feed.screen {
         rgb(0x000000)
     } else {
         rgb(theme::bg_elevated())
@@ -949,6 +981,9 @@ fn video_card(
     };
     if let Some(frame) = frame {
         tile = tile.child(frame);
+    }
+    if waiting {
+        tile = tile.child(screen_skeleton());
     }
     if zoomable && view.zoomed() {
         tile = tile.child(zoom_indicator(shell, &key, view.zoom));
@@ -1086,7 +1121,18 @@ fn stage_body(
         .find(|r| r.id == call.room_id)
         .map(|r| r.call_participants.clone())
         .unwrap_or_default();
-    let all = tiles(call, &participants, me.clone());
+    let mut all = tiles(call, &participants, me.clone());
+    // Your screen is being started (the picker, the connection): its tile is
+    // here already, a skeleton, until the first picture.
+    if call.choosing_screen
+        && let Some(me) = me.clone()
+        && !all.iter().any(|c| c.key() == morpheus_call::LOCAL_SCREEN)
+    {
+        all.insert(
+            0,
+            Card::Video(VideoFeed { user: me, key: morpheus_call::LOCAL_SCREEN.to_owned(), screen: true }),
+        );
+    }
     let count = all.len();
     // Alone in the call: one more card, to invite someone with.
     let alone = me.as_ref().is_some_and(|me| {
@@ -1620,6 +1666,7 @@ pub struct VideoFrame {
     doubled: bool,
     /// Counts the clicks waiting to see whether they are single ones.
     waiting: u64,
+    born: std::time::Instant,
 }
 
 impl VideoFrame {
@@ -1653,6 +1700,7 @@ impl VideoFrame {
             dragged: false,
             doubled: false,
             waiting: 0,
+            born: std::time::Instant::now(),
         }
     }
 
@@ -1746,6 +1794,14 @@ impl VideoFrame {
 
     /// Takes the latest frame, if it is a new one.
     fn poll(&mut self, cx: &mut Context<Self>) {
+        // Test builds can hold the first picture back, to look at the skeleton.
+        if self.seen == 0
+            && std::env::var_os("MORPHEUS_E2E_PORT").is_some()
+            && let Some(ms) = std::env::var("MORPHEUS_E2E_FRAME_DELAY_MS").ok().and_then(|v| v.parse::<u64>().ok())
+            && self.born.elapsed() < Duration::from_millis(ms)
+        {
+            return;
+        }
         let Some(frame) = morpheus_call::latest_frame(&self.key) else {
             return;
         };
