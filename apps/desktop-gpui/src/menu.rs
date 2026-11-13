@@ -6,7 +6,7 @@
 //! shell (`Shell::run_menu_action`).
 
 use gpui::{
-    AnyElement, Context, FocusHandle, FontWeight, IntoElement, MouseButton, Pixels, Point,
+    AnyElement, ClickEvent, Context, FocusHandle, FontWeight, IntoElement, MouseButton, Pixels, Point,
     ScrollHandle, Window, anchored, deferred, div, prelude::*, px, relative, rgb, rgba,
 };
 
@@ -73,7 +73,7 @@ impl Shell {
 
     /// A row was chosen: an item with an action runs it and closes the menu;
     /// a row with a flyout opens it.
-    fn menu_pick(&mut self, path: (usize, Option<usize>), cx: &mut Context<Self>) {
+    fn menu_pick(&mut self, path: (usize, Option<usize>), shift: bool, cx: &mut Context<Self>) {
         let Some(menu) = &mut self.menu else { return };
         let Some(item) = menu.item(path) else { return };
         match item.action.clone() {
@@ -81,7 +81,13 @@ impl Shell {
                 let menu = self.menu.take().expect("open");
                 self.menu_at = menu.at;
                 cx.notify();
-                self.run_menu_action(action, menu.target, cx);
+                match (action, menu.target) {
+                    // Shift held: delete without asking, as the bin does.
+                    (MenuAction::Delete, MenuTarget::Message { message, .. }) if shift => {
+                        self.delete_message(*message, true, cx)
+                    }
+                    (action, target) => self.run_menu_action(action, target, cx),
+                }
             }
             _ => {
                 menu.open = Some(path.0);
@@ -277,7 +283,9 @@ fn item_el(
                 this.menu_hover(path, cx);
             }
         }))
-        .on_click(cx.listener(move |this, _, _, cx| this.menu_pick(path, cx)));
+        .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
+            this.menu_pick(path, event.modifiers().shift, cx)
+        }));
     el = if in_grid {
         // Emoji in a grid: a square cell, centred.
         el.w(px(36.0)).px(px(0.0)).py(px(6.0)).justify_center().text_size(px(1.1 * theme::REM))
