@@ -873,6 +873,7 @@ fn video_card(
     cx: &mut Context<Shell>,
     room: &OwnedRoomId,
     feed: &VideoFeed,
+    speaking: bool,
     fit: Fit,
 ) -> AnyElement {
     let key = feed.key.clone();
@@ -892,6 +893,12 @@ fn video_card(
     }
     if feed.screen {
         classes.push_str(" screen");
+    }
+    // A person's face rings green while they speak, as their avatar card
+    // does; a shared screen is not a face.
+    let speaking = speaking && !feed.screen;
+    if speaking {
+        classes.push_str(" speaking");
     }
     // The picture's own shape, once there is a picture.
     let (pw, ph) = shell
@@ -991,6 +998,19 @@ fn video_card(
     tile = tile
         .child(focus_button(shell, cx, &key, &group))
         .child(name_label(label));
+    if speaking {
+        // Over the picture, following the card's corners.
+        tile = tile.child(
+            div()
+                .absolute()
+                .top_0()
+                .left_0()
+                .size_full()
+                .rounded(px(theme::RADIUS_LG))
+                .border_2()
+                .border_color(gpui::Hsla::from(rgb(theme::green()))),
+        );
+    }
     if !feed.screen
         && let Some(marks) = card_marks(flags)
     {
@@ -1059,7 +1079,7 @@ fn cards(
 ) -> (Vec<AnyElement>, bool) {
     let focused = focused_card(&shell.calls.focus, &all);
     let mut draw = |card: &Card, fit: Fit, cx: &mut Context<Shell>| match card {
-        Card::Video(feed) => video_card(shell, cx, room, feed, fit),
+        Card::Video(feed) => video_card(shell, cx, room, feed, speaking.contains(&feed.user), fit),
         Card::Person(user) => person_card(shell, cx, room, user, speaking.contains(user), fit),
     };
     let Some(focused) = focused else {
