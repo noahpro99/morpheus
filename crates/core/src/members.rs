@@ -248,6 +248,22 @@ impl Session {
         })
     }
 
+    /// Send a (markdown) message to a room (a DM just made too), without its
+    /// timeline being open: a link to a voice channel for someone to join.
+    pub fn say(&self, room_id: OwnedRoomId, body: String) -> CoreFuture<()> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            let room = client
+                .get_room(&room_id)
+                .ok_or_else(|| Error::UnknownRoom(room_id.clone()))?;
+            room.send(matrix_sdk::ruma::events::room::message::RoomMessageEventContent::text_markdown(
+                body,
+            ))
+            .await?;
+            Ok(())
+        })
+    }
+
     /// Give a member a role by setting the matching power level.
     pub fn set_role(
         &self,

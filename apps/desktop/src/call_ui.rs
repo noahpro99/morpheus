@@ -885,6 +885,41 @@ fn video_card(
         .into_any_element()
 }
 
+/// The card shown while you are the only one in the call, a person's size:
+/// the way to ask someone in (Discord's "Invite to voice channel").
+fn invite_card(cx: &mut Context<Shell>, room: &OwnedRoomId, direct: bool, fit: Fit) -> AnyElement {
+    let room = room.clone();
+    let label = if direct { "Invite to call" } else { "Invite to voice channel" };
+    sized(div().id("call-invite-card"), fit, None)
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(px(theme::RADIUS_LG))
+        .border_2()
+        .border_color(rgba(theme::bg_selected()))
+        .child(
+            div()
+                .id("call-invite-button")
+                .flex()
+                .items_center()
+                .gap(px(8.0))
+                .px(px(14.0))
+                .py(px(8.0))
+                .rounded(px(theme::RADIUS))
+                .bg(rgb(theme::accent()))
+                .text_color(rgb(0xffffff))
+                .font_weight(gpui::FontWeight::SEMIBOLD)
+                .cursor_pointer()
+                .child(icon("user-plus", 16.0).text_color(rgb(0xffffff)))
+                .child(label)
+                .on_click(cx.listener(move |this, _, _, cx| this.open_call_invite(room.clone(), cx)))
+                .e2e("button", "primary invite-to-call")
+                .text(label),
+        )
+        .e2e("div", "call-invite")
+        .into_any_element()
+}
+
 /// The cards: in a grid, each its own size (the stage fits them to it), or
 /// one focused, large, with the rest in a strip under it.
 fn cards(
@@ -895,6 +930,7 @@ fn cards(
     speaking: &[OwnedUserId],
     card_w: f32,
     stage: (f32, f32),
+    invite: Option<(&OwnedRoomId, bool)>,
 ) -> (Vec<AnyElement>, bool) {
     let focused = focused_card(&shell.calls.focus, &all);
     let mut draw = |card: &Card, fit: Fit, cx: &mut Context<Shell>| match card {
@@ -902,17 +938,18 @@ fn cards(
         Card::Person(user) => person_card(shell, cx, room, user, speaking.contains(user), fit),
     };
     let Some(focused) = focused else {
-        return (
-            all.iter().map(|c| draw(c, Fit::Grid(card_w), cx)).collect(),
-            false,
-        );
+        let mut out: Vec<AnyElement> = all.iter().map(|c| draw(c, Fit::Grid(card_w), cx)).collect();
+        if let Some((room, direct)) = invite {
+            out.push(invite_card(cx, room, direct, Fit::Grid(card_w)));
+        }
+        return (out, false);
     };
     let (main, strip): (Vec<&Card>, Vec<&Card>) = all.iter().partition(|c| c.key() == focused);
     // The focused card's room: the stage less the strip under it (81 high,
     // 8 apart) and a little for rounding.
     let main_room = (
         (stage.0 - 1.0).max(40.0),
-        (stage.1 - if strip.is_empty() { 0.0 } else { 89.0 } - 1.0).max(40.0),
+        (stage.1 - if strip.is_empty() && invite.is_none() { 0.0 } else { 89.0 } - 1.0).max(40.0),
     );
     let mut out = vec![
         div()
@@ -928,7 +965,7 @@ fn cards(
             .e2e("div", "call-focus-main")
             .into_any_element(),
     ];
-    if !strip.is_empty() {
+    if !strip.is_empty() || invite.is_some() {
         out.push(
             div()
                 .flex_none()
@@ -936,6 +973,7 @@ fn cards(
                 .justify_center()
                 .gap(px(8.0))
                 .children(strip.into_iter().map(|c| draw(c, Fit::Strip, cx)))
+                .children(invite.map(|(room, direct)| invite_card(cx, room, direct, Fit::Strip)))
                 .e2e("div", "call-strip")
                 .into_any_element(),
         );
@@ -958,12 +996,30 @@ fn stage_body(
         .find(|r| r.id == call.room_id)
         .map(|r| r.call_participants.clone())
         .unwrap_or_default();
-    let all = tiles(call, &participants, me);
+    let all = tiles(call, &participants, me.clone());
     let count = all.len();
+    // Alone in the call: one more card, to invite someone with.
+    let alone = me.as_ref().is_some_and(|me| {
+        all.iter().all(|card| match card {
+            Card::Video(feed) => &feed.user == me,
+            Card::Person(user) => user == me,
+        })
+    });
+    let direct = shell.rooms.iter().any(|r| r.id == call.room_id && r.is_dm);
+    let invite = alone.then_some((&call.room_id, direct));
     // The stage's inner size as last painted: cards are as big as lets all fit.
     let measured = shell.calls.stage_measure.get();
-    let card_w = card_width(count, measured.0, measured.1);
-    let (children, focused) = cards(shell, cx, &call.room_id, all, &call.speaking, card_w, measured);
+    let card_w = card_width(count + usize::from(alone), measured.0, measured.1);
+    let (children, focused) = cards(
+        shell,
+        cx,
+        &call.room_id,
+        all,
+        &call.speaking,
+        card_w,
+        measured,
+        invite,
+    );
     let view = cx.entity();
     let measure = shell.calls.stage_measure.clone();
     let probe = canvas(
