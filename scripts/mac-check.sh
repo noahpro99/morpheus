@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # What a Mac user expects of the app, checked on GitHub's Macs against the
-# built Morpheus.app: an icon of its own; a menu bar whose Edit menu pastes
-# (macOS only routes ⌘V to a web view through one); ⌘W closing the window;
-# and clicking the app again (as the Dock does) bringing it back.
+# built Morpheus.app: an icon of its own; a menu bar with an Edit menu that
+# pastes (GPUI's menu, mac_menu.rs; the Dioxus app needed it for ⌘V in its
+# web view); ⌘W closing the window; and clicking the app again (as the Dock
+# does) bringing it back. All of it applies to the GPUI app as it did before.
 #
 #   scripts/mac-check.sh path/to/Morpheus.app
 set -uo pipefail

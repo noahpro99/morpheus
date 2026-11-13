@@ -1,8 +1,10 @@
 # The Apple builds (Apple's SDKs are only licensed for Apple hardware, so
 # they are built on GitHub's Macs rather than cross-built like Windows):
-# Morpheus.app for macOS, ad-hoc signed and zipped, for Apple silicon and
-# Intel; and an unsigned .ipa for iPhone. On a release tag they are attached
-# to that release; run by hand, to the release named in `tag` (if any).
+# Morpheus.app for macOS (the GPUI desktop app, built with cargo and bundled
+# by scripts/package-macos.sh), ad-hoc signed and zipped, for Apple silicon
+# and Intel; and an unsigned .ipa for iPhone (the Dioxus phone app). On a
+# release tag they are attached to that release; run by hand, to the release
+# named in `tag` (if any).
 name: Apple
 
 on:
@@ -11,7 +13,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Release to attach the builds to (e.g. v0.1.0); empty to only keep them as run artifacts
+        description: Release to attach the builds to (e.g. v0.2.0); empty to only keep them as run artifacts
         required: false
 
 permissions:
@@ -36,55 +38,31 @@ jobs:
         run: |
           rustup show active-toolchain || rustup toolchain install
           rustup target add ${{ matrix.target }}
-          # dx strips with rustup's rust-objcopy, which looks for libLLVM
-          # beside itself; the toolchain has it one level up.
-          sysroot=$(rustc --print sysroot)
-          host=$(rustc -vV | sed -n 's/^host: //p')
-          rustup component add llvm-tools
-          mkdir -p "$sysroot/lib/rustlib/$host/lib"
-          for lib in "$sysroot"/lib/libLLVM*.dylib; do ln -sf "$lib" "$sysroot/lib/rustlib/$host/lib/libLLVM.dylib"; done
-          ls -la "$sysroot/lib/rustlib/$host/lib/" | grep -i llvm || true
+
+      # GPUI compiles its Metal shaders while building (xcrun metal). Newer
+      # Xcodes ship the Metal compiler as a separate download; if it still is
+      # not there, GPUI compiles the shaders when the app starts instead.
+      - name: Metal compiler
+        run: |
+          if ! xcrun -sdk macosx metal --version >/dev/null 2>&1; then
+            xcodebuild -downloadComponent MetalToolchain || true
+          fi
+          if xcrun -sdk macosx metal --version >/dev/null 2>&1; then
+            echo "FEATURES=" >> "$GITHUB_ENV"
+          else
+            echo "No Metal compiler: using GPUI's runtime shaders"
+            echo "FEATURES=--features runtime-shaders" >> "$GITHUB_ENV"
+          fi
 
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: macos-${{ matrix.target }}
 
-      - uses: cargo-bins/cargo-binstall@main
-      - name: Dioxus CLI
-        run: cargo binstall -y dioxus-cli@0.7.10
-
       - name: Build
-        run: dx build --release --package morpheus-desktop --platform macos --target ${{ matrix.target }}
+        run: cargo build --release -p morpheus-desktop --locked --target ${{ matrix.target }} $FEATURES
 
       - name: Package
-        run: |
-          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
-          app=$(find target/dx/morpheus-desktop/release/macos -maxdepth 2 -name '*.app' | head -1)
-          echo "app: $app"; ls -la "$app/Contents" "$app/Contents/MacOS"
-          mkdir -p dist
-          cp -R "$app" dist/Morpheus.app
-          plist=dist/Morpheus.app/Contents/Info.plist
-          # macOS ends an app that opens the microphone or camera without saying why.
-          set_key() { /usr/libexec/PlistBuddy -c "Set :$1 $2" "$plist" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :$1 string $2" "$plist"; }
-          set_key NSMicrophoneUsageDescription "Morpheus uses the microphone in calls."
-          set_key NSCameraUsageDescription "Morpheus uses the camera in video calls."
-          set_key CFBundleDisplayName Morpheus
-          # The icon (apps/desktop/icons/icon.png, 1024 px) at every size macOS asks for.
-          set=$(mktemp -d)/Morpheus.iconset; mkdir -p "$set"
-          for size in 16 32 128 256 512; do
-            sips -z $size $size apps/desktop/icons/icon.png --out "$set/icon_${size}x${size}.png" >/dev/null
-            sips -z $((size * 2)) $((size * 2)) apps/desktop/icons/icon.png --out "$set/icon_${size}x${size}@2x.png" >/dev/null
-          done
-          mkdir -p dist/Morpheus.app/Contents/Resources
-          iconutil -c icns "$set" -o dist/Morpheus.app/Contents/Resources/Morpheus.icns
-          set_key CFBundleIconFile Morpheus
-          # Not notarised: ad-hoc signed so Apple silicon runs it at all.
-          codesign --force --deep --sign - dist/Morpheus.app
-          codesign --verify --deep dist/Morpheus.app
-          zip="dist/morpheus-$version-macos-${{ matrix.arch }}.zip"
-          ditto -c -k --keepParent dist/Morpheus.app "$zip"
-          ls -la "$zip"
-          echo "ZIP=$zip" >> "$GITHUB_ENV"
+        run: echo "ZIP=$(scripts/package-macos.sh ${{ matrix.target }} ${{ matrix.arch }})" >> "$GITHUB_ENV"
 
       # The app has to get past loading: a link that drops libwebrtc's
       # Objective-C aborts it before main. (The Intel build runs under
@@ -116,6 +94,12 @@ jobs:
         run: |
           sleep 2
           bash scripts/mac-check.sh smoke/Morpheus.app
+
+      # Update on this platform: the installed bundle finds a newer release
+      # on a local feed, swaps itself for it, and the new one starts.
+      - name: Update works
+        if: matrix.arch == 'arm64'
+        run: scripts/update-self-test.sh "$ZIP"
 
       - uses: actions/upload-artifact@v4
         with:

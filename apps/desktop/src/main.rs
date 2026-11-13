@@ -49,6 +49,7 @@ mod shell;
 mod sounds;
 mod switcher;
 mod thread;
+mod mac_menu;
 mod update;
 mod update_self_test;
 mod instance;
@@ -557,6 +558,13 @@ fn run_window(core: Core, commands: Commands, first: Option<Command>, start_hidd
     // closed window back, as Discord's does.
     #[cfg(target_os = "macos")]
     application.on_reopen(show_window);
+    // matrix: links (the bundle registers the scheme) arrive as events, not arguments.
+    #[cfg(target_os = "macos")]
+    application.on_open_urls(|urls| {
+        for url in urls {
+            send_command(Command::Open(url));
+        }
+    });
     application.run(move |cx: &mut App| {
             if let Err(e) = cx
                 .text_system()
@@ -564,6 +572,8 @@ fn run_window(core: Core, commands: Commands, first: Option<Command>, start_hidd
             {
                 eprintln!("morpheus-desktop: loading fonts failed: {e}");
             }
+            // macOS: the menu bar and its shortcuts.
+            mac_menu::install(cx);
             // Windows and macOS: the tray icon, now that the event loop runs.
             tray::install_native(Arc::new(|action| send_command(Command::Tray(action))));
             let root = cx.new(|cx| Root::new(core, default_homeserver(), cx));
