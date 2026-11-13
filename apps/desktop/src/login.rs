@@ -221,6 +221,7 @@ fn button(label: impl Into<SharedString>, primary: bool, busy: bool) -> gpui::St
 
 fn label(text: &str, field: Entity<TextInput>) -> impl IntoElement {
     div()
+        .w_full()
         .flex()
         .flex_col()
         .gap(px(6.0))
@@ -230,6 +231,9 @@ fn label(text: &str, field: Entity<TextInput>) -> impl IntoElement {
         .child(text.to_uppercase())
         .child(
             div()
+                .w_full()
+                .flex()
+                .flex_col()
                 .text_size(px(theme::REM))
                 .text_color(rgb(theme::text()))
                 .child(field),
