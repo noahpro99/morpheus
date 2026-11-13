@@ -46,7 +46,7 @@ macro_rules! colours {
 
 colours!(
     bg_rail, bg_sidebar, bg_chat, bg_input, bg_elevated, bg_hover, bg_selected, edge, ok, warn, text, text_muted,
-    text_faint, accent, accent_strong, danger, own, link, green, accent_tint,
+    text_faint, accent, accent_strong, accent_solid, danger, own, link, green, accent_tint,
 );
 
 /// `color` (0xRRGGBB) with alpha `a`, as 0xRRGGBBAA: a tint of a token.

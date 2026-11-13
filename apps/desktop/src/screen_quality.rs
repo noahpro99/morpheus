@@ -73,21 +73,15 @@ fn row<T: Copy + 'static>(
             .justify_center()
             .rounded(px(theme::RADIUS_SM))
             .cursor_pointer()
-            .bg(if active {
-                rgb(theme::accent())
-            } else {
-                rgb(theme::bg_elevated())
-            })
-            .text_color(if active {
-                rgb(0xffffff)
-            } else {
-                rgb(theme::text())
-            })
-            .when(!active, |d| d.hover(|s| s.bg(rgba(theme::bg_selected()))))
+            .when(active, |d| d.bg(rgb(theme::accent_solid())))
+            .text_color(if active { rgb(0xffffff) } else { rgb(theme::text_muted()) })
+            .when(!active, |d| d.hover(|s| s.bg(rgba(theme::bg_selected())).text_color(rgb(theme::text()))))
             .child(text.clone())
             .on_click(cx.listener(move |this, _, _, cx| pick(this, value, cx)))
             .e2e("button", &if active { format!("{class} active") } else { class.to_owned() })
             .attr("data-value", value_key)
+            .attr("data-color", if active { "#ffffff".to_owned() } else { format!("#{:06x}", theme::text_muted()) })
+            .attr("data-bg", if active { format!("#{:06x}", theme::accent_solid()) } else { String::new() })
             .text(text)
             .into_any_element()
     });
