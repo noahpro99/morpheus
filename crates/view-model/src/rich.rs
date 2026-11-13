@@ -12,6 +12,16 @@ use std::{ops::Range, sync::Arc};
 
 use ruma_html::{Html, NodeData, NodeRef};
 
+/// Whether a link is a pill: a matrix.to link to a person or a room (not to
+/// one message of it).
+pub fn is_pill(href: &str) -> bool {
+    let Some(rest) = href.strip_prefix("https://matrix.to/#/") else {
+        return false;
+    };
+    let person_or_room = ["@", "%40", "#", "%23", "!", "%21"].iter().any(|p| rest.starts_with(p));
+    person_or_room && !rest.contains("/$") && !rest.contains("/%24")
+}
+
 /// What a run of text looks like.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Style {
@@ -22,7 +32,7 @@ pub struct Style {
     pub code: bool,
     /// Quiet text (the "(edited)" tag).
     pub faint: bool,
-    /// A link to a person (matrix.to/#/@user): a mention.
+    /// A link to a person or a room (matrix.to): a mention, drawn as a pill.
     pub mention: bool,
     /// Where a click goes.
     pub link: Option<Arc<str>>,
@@ -309,8 +319,7 @@ fn walk(node: &NodeRef, style: &Style, inline: &mut Inline, out: &mut Vec<Block>
         "code" => walk_children(node, &styled(&|s| s.code = true), inline, out),
         "a" => match attr(node, "href") {
             Some(href) => {
-                let mention = href.starts_with("https://matrix.to/#/@")
-                    || href.starts_with("https://matrix.to/#/%40");
+                let mention = is_pill(&href);
                 let next = styled(&|s| {
                     s.link = Some(href.as_str().into());
                     s.mention = mention;
@@ -481,5 +490,20 @@ mod tests {
     fn images_read_as_their_description() {
         let blocks = html("<img src=\"mxc://x/y\" alt=\"a cat\">");
         assert_eq!(para(&blocks, 0).text, "[a cat]");
+    }
+}
+
+#[cfg(test)]
+mod pill_tests {
+    use super::is_pill;
+
+    #[test]
+    fn people_and_rooms_are_pills_but_messages_and_sites_are_not() {
+        assert!(is_pill("https://matrix.to/#/@bob:localhost"));
+        assert!(is_pill("https://matrix.to/#/%40bob:localhost"));
+        assert!(is_pill("https://matrix.to/#/#random:localhost"));
+        assert!(is_pill("https://matrix.to/#/!abc:localhost?via=localhost"));
+        assert!(!is_pill("https://matrix.to/#/!abc:localhost/$event"));
+        assert!(!is_pill("https://example.org/#/@bob:localhost"));
     }
 }

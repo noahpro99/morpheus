@@ -501,6 +501,7 @@ mod tests {
             is_own: own,
             is_local_echo: false,
             is_edited: false,
+            mentions_me: false,
             can_edit: own,
             reactions: Vec::new(),
             in_reply_to: None,

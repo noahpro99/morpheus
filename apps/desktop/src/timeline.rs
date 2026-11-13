@@ -1293,6 +1293,7 @@ mod widget_tests {
             is_own: false,
             is_local_echo: false,
             is_edited: false,
+            mentions_me: false,
             can_edit: false,
             reactions: Vec::new(),
             in_reply_to: None,
