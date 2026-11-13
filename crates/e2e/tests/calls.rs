@@ -4462,18 +4462,19 @@ async fn alone_in_a_voice_channel_you_can_invite_friends_to_it() {
         assert!(std::time::Instant::now() < deadline, "no DM from alice");
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     }
-    bob.wait_for(".message .body a", DEFAULT_WAIT)
+    // The link reads as the channel's name (earlier runs left theirs in the DM).
+    bob.wait_for_text(".message .body a", &channel, DEFAULT_WAIT)
         .await
-        .expect("bob sees a link in the DM");
-    let href = bob
-        .attrs(".message .body a", "href")
-        .await
-        .expect("hrefs")
-        .into_iter()
-        .flatten()
-        .filter(|h| h.starts_with("https://matrix.to/#/!"))
-        .next_back()
-        .expect("a matrix.to link to a room");
+        .expect("bob sees the channel's link in the DM");
+    let names = bob.texts(".message .body a").await.expect("link texts");
+    let hrefs = bob.attrs(".message .body a", "href").await.expect("hrefs");
+    let href = names
+        .iter()
+        .zip(hrefs)
+        .find(|(name, _)| name.contains(&channel))
+        .and_then(|(_, href)| href)
+        .expect("a link named for the channel");
+    assert!(href.starts_with("https://matrix.to/#/!"), "a matrix.to link to a room: {href}");
     bob.click(&format!(".message .body a[href=\"{href}\"]"))
         .await
         .expect("click the link");

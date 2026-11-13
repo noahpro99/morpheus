@@ -46,6 +46,8 @@ pub enum Dialog {
     Report(Entity<ReportDialog>),
     Pinned(Entity<PinnedDialog>),
     Room(Entity<crate::room_dialogs::RoomDialog>),
+    /// Invite a friend to the call you are alone in.
+    CallInvite(Entity<crate::call_invite::CallInvite>),
     ModView(Entity<crate::mod_view::ModView>),
     /// Ctrl+/: the list of shortcuts.
     Help,
@@ -633,6 +635,7 @@ pub fn render_dialog(shell: &mut Shell, window: &mut Window, cx: &mut Context<Sh
         Dialog::Report(entity) => Some(entity.clone().into_any_element()),
         Dialog::Pinned(entity) => Some(entity.clone().into_any_element()),
         Dialog::Room(entity) => Some(entity.clone().into_any_element()),
+        Dialog::CallInvite(entity) => Some(entity.clone().into_any_element()),
         Dialog::ModView(entity) => Some(entity.clone().into_any_element()),
         Dialog::Help => {
             let boxed = dialog_box()

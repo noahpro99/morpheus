@@ -9,6 +9,7 @@ use std::{borrow::Cow, path::PathBuf};
 
 mod about;
 mod call;
+mod call_invite;
 mod call_ui;
 mod chat;
 mod chrome;
