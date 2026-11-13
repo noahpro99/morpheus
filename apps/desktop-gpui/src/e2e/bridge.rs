@@ -73,6 +73,11 @@ struct Request {
     /// For `drag`: how far to move the pressed pointer, in pixels.
     dx: Option<f32>,
     dy: Option<f32>,
+    /// For `click`, `drag`, `wheel`, `hover`: act this far from the element's centre, in pixels.
+    ox: Option<f32>,
+    oy: Option<f32>,
+    /// For `click`: a double click when 2.
+    clicks: Option<u32>,
     /// For `wheel`: notches (gpui's sign: negative scrolls on down) as `lines`, or exact `dy` pixels with `pixels`.
     lines: Option<f32>,
     /// For `tagging`.
@@ -94,6 +99,8 @@ type Reply = Result<Value, String>;
 thread_local! {
     /// Where a held drag's pointer is (a `drag` with `hold`), until `release`.
     static HELD: std::cell::Cell<Option<(f32, f32)>> = const { std::cell::Cell::new(None) };
+    /// The click count the next press and release carry (2 for the second click of a double click).
+    static CLICKS: std::cell::Cell<usize> = const { std::cell::Cell::new(1) };
 }
 
 /// Listen on `MORPHEUS_E2E_PORT` (if set) and serve requests on the main thread.
@@ -597,7 +604,7 @@ fn press_at(
             button,
             position,
             modifiers,
-            click_count: 1,
+            click_count: CLICKS.with(|c| c.get()),
             first_mouse: false,
         }),
         cx,
@@ -616,7 +623,7 @@ fn release_at(
             button,
             position: point(px(x), px(y)),
             modifiers,
-            click_count: 1,
+            click_count: CLICKS.with(|c| c.get()),
         }),
         cx,
     );
@@ -729,7 +736,8 @@ fn click_centre(tree: &Tree, request: &Request, op: &str) -> Option<(f32, f32)> 
     if op == "submit" {
         index = submit_control(tree, index)?;
     }
-    Some(tree.nodes[index].bounds.centre())
+    let (x, y) = tree.nodes[index].bounds.centre();
+    Some((x + request.ox.unwrap_or(0.0), y + request.oy.unwrap_or(0.0)))
 }
 
 async fn act(op: &str, request: &Request, cx: &mut AsyncApp) -> Reply {
@@ -751,8 +759,9 @@ async fn act(op: &str, request: &Request, cx: &mut AsyncApp) -> Reply {
                     )
                 })?;
             }
+            let (x, y) = tree.nodes[index].bounds.centre();
             Ok((
-                tree.nodes[index].bounds.centre(),
+                (x + request.ox.unwrap_or(0.0), y + request.oy.unwrap_or(0.0)),
                 state.focus.get(&index).cloned(),
             ))
         })?
@@ -799,6 +808,16 @@ async fn act(op: &str, request: &Request, cx: &mut AsyncApp) -> Reply {
                 if stayed || now.is_none() || button == MouseButton::Right || attempt == 9 {
                     cx.update_window(window, |_, window, cx| release_at(window, cx, at, button, held))
                         .map_err(|err| err.to_string())?;
+                    if request.clicks == Some(2) && stayed {
+                        // The second click of a double click, at once.
+                        CLICKS.with(|c| c.set(2));
+                        let second = cx.update_window(window, |_, window, cx| {
+                            press_at(window, cx, at, button, held);
+                            release_at(window, cx, at, button, held);
+                        });
+                        CLICKS.with(|c| c.set(1));
+                        second.map_err(|err| err.to_string())?;
+                    }
                     break;
                 }
                 cx.update_window(window, |_, window, cx| {

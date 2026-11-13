@@ -927,6 +927,39 @@ impl App {
         bail!("wheel is only driven in the GPUI app")
     }
 
+    /// [`Self::wheel_pixels`] with the pointer `ox`, `oy` pixels from the element's centre.
+    pub async fn wheel_pixels_at(&mut self, selector: &str, ox: f32, oy: f32, px: f32) -> Result<()> {
+        if gpui() {
+            return self
+                .op("wheel", selector, json!({ "pixels": true, "dy": -px, "ox": ox, "oy": oy }))
+                .await
+                .map(drop);
+        }
+        bail!("wheel is only driven in the GPUI app")
+    }
+
+    /// [`Self::drag`] pressing `ox`, `oy` pixels from the element's centre (GPUI only).
+    pub async fn drag_at(&mut self, selector: &str, ox: f32, oy: f32, dx: i32, dy: i32) -> Result<()> {
+        if gpui() {
+            return self
+                .op("drag", selector, json!({ "dx": dx, "dy": dy, "ox": ox, "oy": oy }))
+                .await
+                .map(drop);
+        }
+        bail!("drag_at is only driven in the GPUI app")
+    }
+
+    /// A click (`clicks` 1) or double click (2) `ox`, `oy` pixels from the element's centre (GPUI only).
+    pub async fn click_at(&mut self, selector: &str, ox: f32, oy: f32, clicks: u32) -> Result<()> {
+        if gpui() {
+            return self
+                .op("click", selector, json!({ "ox": ox, "oy": oy, "clicks": clicks }))
+                .await
+                .map(drop);
+        }
+        bail!("click_at is only driven in the GPUI app")
+    }
+
     /// The `(draw, present, prepaint, paint)` time in ms of each frame the GPUI
     /// app drew since the last call (the first call starts the record).
     pub async fn frame_times(&mut self) -> Result<Vec<[f32; 4]>> {
