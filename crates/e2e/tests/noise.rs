@@ -503,3 +503,27 @@ async fn the_chosen_option_of_a_segmented_chooser_can_be_read() {
     open_voice_settings(&mut alice).await;
     check_segments(&mut alice, ".voice-noise .noise-mode", "Settings").await;
 }
+
+/// The mic test button (white text) is readable on its fill: a contrast of
+/// 4.5 or more, in the dark themes too.
+#[tokio::test]
+async fn the_mic_test_button_is_readable() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    if !alice.is_gpui() {
+        return;
+    }
+    common::login(&mut alice, "alice", "alice-password").await;
+    open_voice_settings(&mut alice).await;
+    alice.wait_for(".voice-noise .mic-test", DEFAULT_WAIT).await.expect("the button");
+    let fg = alice.attr(".voice-noise .mic-test", "data-color").await.expect("fg").expect("fg");
+    let bg = alice.attr(".voice-noise .mic-test", "data-bg").await.expect("bg").expect("bg");
+    let (Some(f), Some(b)) = (rgb_of(&fg), rgb_of(&bg)) else {
+        panic!("colours {fg:?} on {bg:?}");
+    };
+    let ratio = contrast_of(f, b);
+    assert!(ratio >= 4.5, "the mic test is {fg} on {bg}, a contrast of {ratio:.1}");
+}

@@ -503,7 +503,7 @@ impl SettingsView {
 fn button(id: impl Into<SharedString>, _label: &str, kind: Kind, _classes: &str) -> Stateful<gpui::Div> {
     let id: SharedString = id.into();
     let (bg, fg) = match kind {
-        Kind::Primary => (rgb(theme::accent_strong()), rgb(theme::text())),
+        Kind::Primary => (rgb(theme::accent_solid()), rgb(0xffffff)),
         Kind::Secondary => (rgb(theme::bg_elevated()), rgb(theme::text())),
         Kind::Danger => (rgba(theme::alpha(theme::danger(), 0x26)), rgb(theme::danger())),
     };

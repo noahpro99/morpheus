@@ -245,7 +245,7 @@ fn card_button(id: &'static str, label: &'static str, primary: bool) -> gpui::St
         .cursor_pointer()
         .font_weight(FontWeight::SEMIBOLD)
         .bg(if primary {
-            gpui::Hsla::from(rgb(theme::accent_strong()))
+            gpui::Hsla::from(rgb(theme::accent_solid()))
         } else {
             gpui::Hsla::from(rgb(theme::bg_elevated()))
         })
