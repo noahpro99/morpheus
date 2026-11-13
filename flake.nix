@@ -164,6 +164,7 @@
             nativeBuildInputs = [
               pkgs.pkg-config
               pkgs.cmake # aws-lc-sys
+              pkgs.nasm # OpenH264 (videos)
               clang # webrtc-sys runs clang++ itself
               pkgs.makeWrapper
               pkgs.copyDesktopItems
@@ -229,6 +230,7 @@
             just
             pkg-config
             cmake # aws-lc-sys (rustls backend used by matrix-sdk)
+            nasm # OpenH264's x86 assembly (videos; plain C without it)
             jq
             curl
             docker-compose
