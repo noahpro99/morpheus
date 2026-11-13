@@ -413,3 +413,42 @@ async fn the_chat_beside_a_focused_tile_and_a_resized_window() {
     assert!(widths[0] > widths[1], "the chat does not narrow with the window: {widths:?}");
     alice.click(".voice-panel .hang-up").await.expect("leave");
 }
+
+/// Turning the camera on while looking at another room brings you to the
+/// call's view (the channel's page), where the picture shows.
+#[tokio::test]
+async fn turning_the_camera_on_opens_the_call() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    if !alice.is_gpui() {
+        return;
+    }
+    login(&mut alice, "alice").await;
+    let channel = fresh_voice_channel(&hs);
+    alice.wait_for_text(".room .room-name", &channel, DEFAULT_WAIT).await.expect("listed");
+    alice.open_room("general").await.expect("general");
+    alice.click_text(".room.voice", &channel).await.expect("join in place");
+    alice.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT).await.expect("joined");
+    alice.wait_for_text(".chat-header h2", "general", DEFAULT_WAIT).await.expect("still in general");
+    assert_eq!(alice.count(".call-stage.voice-page").await.expect("count"), 0, "no call view yet");
+    alice.click(".voice-panel .camera-button").await.expect("camera on");
+    alice
+        .wait_for(".call-stage.voice-page", DEFAULT_WAIT)
+        .await
+        .expect("the camera brought the call's view up");
+    alice.wait_for(".voice-chat-toggle", DEFAULT_WAIT).await.expect("the channel's page");
+    // Off again, and back to #general by hand: turning it off does not move you.
+    alice.click(".voice-panel .camera-button").await.expect("camera off");
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    alice.open_room("general").await.expect("general");
+    alice.click(".voice-panel .camera-button").await.expect("camera on");
+    alice.wait_for(".call-stage.voice-page", DEFAULT_WAIT).await.expect("again");
+    alice.click(".voice-panel .camera-button").await.expect("camera off");
+    alice.open_room("general").await.expect("general");
+    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+    assert_eq!(alice.count(".call-stage.voice-page").await.expect("count"), 0, "turning it off moved the view");
+    alice.click(".voice-panel .hang-up").await.expect("leave");
+}
