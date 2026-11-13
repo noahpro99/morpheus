@@ -80,6 +80,13 @@ debug = false
 # made a 1 GB APK that no longer fits an emulator's data partition, and even
 # line tables were 170 MB of the 470 MB library every build packs into the
 # APK. Function names stay, so backtraces still name the functions.
+# tract (DeepFilterNet's runtime, crates/call) checks graphs only with debug
+# assertions on, and refuses DeepFilterNet 3's optimized graph there (a
+# repeated node name; release builds never check). Dependencies are optimized
+# in dev builds anyway.
+[profile.dev.package.tract-core]
+debug-assertions = false
+
 [profile.android-dev]
 inherits = "dev"
 debug = false

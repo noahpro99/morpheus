@@ -55,6 +55,12 @@ mod platform_camera;
 #[path = "screen.rs"]
 mod screen;
 pub use platform_camera::{PlatformCamera, camera_frame, set_platform_camera};
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+#[path = "denoise.rs"]
+mod denoise;
+#[cfg(test)]
+#[path = "speech_fixture.rs"]
+mod speech_fixture;
 #[path = "video.rs"]
 mod video;
 pub use video::{

@@ -155,7 +155,11 @@
                 ./vendor # the patched gpui and xattr
               ];
             };
-            cargoLock.lockFile = ./Cargo.lock;
+            cargoLock = {
+              lockFile = ./Cargo.lock;
+              # DeepFilterNet (crates/call), from its repository at the pinned commit.
+              outputHashes."deep_filter-0.5.7-pre" = "sha256-27iMSscu9QLrWbhjJfI5+xVWBekFg9UY2SVkmWTzqIQ=";
+            };
 
             nativeBuildInputs = [
               pkgs.pkg-config

@@ -20,12 +20,30 @@ rustls = { version = "0.23", default-features = false, features = ["ring"] }
 # Video frames for the interface (a web view shows JPEGs as they are).
 jpeg-encoder = "0.6"
 
+# Desktops capture the microphone themselves (cpal) and clean it before it is
+# sent: WebRTC's audio processing (echo, gain, its noise suppression) and,
+# for Strong noise suppression, DeepFilterNet 3 (a neural suppressor run with
+# tract; its model, 8 MB, is built in). Only on the libDF repository, not
+# crates.io; tract pinned to the version it is written against (0.21.5 on
+# changed its API).
+[target.'cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))'.dependencies]
+cpal = "0.18"
+deep_filter = { git = "https://github.com/Rikorose/DeepFilterNet", rev = "7b14b895fe7fc42cab72b4a4c1e49c982bd6404b", default-features = false, features = ["tract", "default-model"] }
+ndarray = "0.15"
+tract-core = "=0.21.4"
+tract-onnx = "=0.21.4"
+tract-pulse = "=0.21.4"
+tract-hir = "=0.21.4"
+
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 tokio = { version = "1", default-features = false, features = ["sync"] }
 
 # The camera (Video4Linux, without C bindings to build).
 [target.'cfg(target_os = "linux")'.dependencies]
 linuxvideo = "0.3"
+# PulseAudio (PipeWire's too) for the microphone, by the same names WebRTC's
+# device module lists.
+cpal = { version = "0.18", features = ["pulseaudio"] }
 # Iterates GLib's default main context for the screen-share portal when no GTK does (src/screen.rs). Same version as the GTK stack's, so nothing new builds.
 glib = "0.18"
 

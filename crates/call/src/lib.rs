@@ -23,6 +23,16 @@ mod imp;
 
 pub use imp::*;
 
+#[path = "noise.rs"]
+#[cfg_attr(
+    not(any(target_os = "linux", target_os = "windows", target_os = "macos")),
+    allow(dead_code)
+)]
+mod noise;
+pub use noise::{
+    NoiseSuppression, applied_noise_suppression, noise_suppression, set_noise_suppression,
+};
+
 #[path = "quality.rs"]
 mod quality;
 pub use quality::{
