@@ -630,6 +630,20 @@ async fn check_call_badge(app: &mut App, icon: &str) {
             + (i32::from(ring.2) - i32::from(behind.2)).abs() < 16,
         "the ring is not the rail's colour: ring {ring:?}, rail {behind:?}"
     );
+    // Nothing green beyond the ring (no bleed of the circle under it), where
+    // the badge sticks out of the icon: up, up right and right of it.
+    let radius = badge.w / 2.0;
+    for degrees in [-90.0_f64, -70.0, -45.0, -20.0, 0.0] {
+        let angle = degrees.to_radians();
+        for beyond in [0.6, 1.0, 1.6] {
+            let (x, y) = (cx + (radius + beyond) * angle.cos(), (badge.y + badge.h / 2.0) + (radius + beyond) * angle.sin());
+            let p = pixel(&shot, x, y);
+            assert!(
+                (i32::from(p.0) - i32::from(behind.0)).abs().max((i32::from(p.1) - i32::from(behind.1)).abs()).max((i32::from(p.2) - i32::from(behind.2)).abs()) <= 6,
+                "not the rail's colour (green bleeding?) {beyond} px outside the ring at {degrees} degrees ({x:.1}, {y:.1}): {p:?} (rail {behind:?})"
+            );
+        }
+    }
 }
 
 fn capture_of(app: &App) -> Option<(Vec<u8>, usize, usize)> {

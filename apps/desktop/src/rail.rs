@@ -201,11 +201,21 @@ impl Badge {
                     .flex()
                     .items_center()
                     .justify_center()
+                    // The ring is a circle of the rail's colour with the green
+                    // one on top (a border round a green fill let the fill's
+                    // edge show beyond it).
                     .rounded_full()
-                    .border_3()
-                    .border_color(rgb(theme::bg_rail()))
-                    .bg(rgb(theme::green()))
-                    .child(icon("volume-2", 10.0).text_color(rgb(0xffffff)))
+                    .bg(rgb(theme::bg_rail()))
+                    .child(
+                        div()
+                            .size(px(16.0))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded_full()
+                            .bg(rgb(theme::green()))
+                            .child(icon("volume-2", 10.0).text_color(rgb(0xffffff))),
+                    )
                     .e2e("span", "rail-call-badge")
                     .attr("title", "In a call"),
             );
