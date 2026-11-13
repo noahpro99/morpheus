@@ -379,8 +379,15 @@ impl SettingsView {
                 );
             }
         }
+        let noise = crate::noise::controls(
+            cx,
+            |_: &mut Self, mode, cx| cx.emit(super::NoiseChosen(mode)),
+            |_: &mut Self, on, cx| cx.emit(super::MicTest(on)),
+        );
         vec![
             section_classed("Devices", "audio-devices", children, self.hl("audio-devices"), "voice-devices")
+                .into_any_element(),
+            section_classed("Noise suppression", "noise-suppression", noise, self.hl("noise-suppression"), "voice-noise")
                 .into_any_element(),
         ]
     }

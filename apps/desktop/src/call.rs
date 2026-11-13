@@ -83,6 +83,15 @@ pub struct Calls {
     pub screen_quality: morpheus_call::ScreenQuality,
     /// Share screen's question is open, over this point.
     pub screen_popover: Option<gpui::Point<gpui::Pixels>>,
+    /// The noise suppression card is open, above this point (the button's
+    /// top left, [`Self::noise_button_at`]).
+    pub noise_card: Option<gpui::Point<gpui::Pixels>>,
+    /// Where the noise button was last drawn.
+    pub noise_button_at: std::rc::Rc<std::cell::Cell<gpui::Point<gpui::Pixels>>>,
+    /// Mute and deafen as they were before the mic test deafened you.
+    pub mic_test_before: Option<VoiceFlags>,
+    /// A redraw for the mic's meter or processing is on its way.
+    pub mic_refresh: std::cell::Cell<bool>,
 }
 
 impl Calls {
@@ -163,6 +172,7 @@ impl Shell {
             speaker: prefs.speaker.clone(),
         });
         morpheus_call::choose_camera(prefs.camera.clone());
+        morpheus_call::set_noise_suppression(crate::noise::read());
         self.calls.devices = prefs;
         self.calls.screen_quality = crate::screen_quality::read();
         // The frames are drawn here as raw pixels: no JPEGs for nobody.
@@ -367,6 +377,12 @@ impl Shell {
 
     /// Hang up.
     pub fn hang_up(&mut self, cx: &mut Context<Self>) {
+        // The mic test deafened you for this call: as you were.
+        self.calls.noise_card = None;
+        if let Some(before) = self.calls.mic_test_before.take() {
+            morpheus_call::stop_mic_test();
+            self.calls.voice = before;
+        }
         GENERATION.fetch_add(1, Ordering::SeqCst);
         let call = self.calls.media.take();
         let room = self.calls.state.take().map(|state| state.room_id);

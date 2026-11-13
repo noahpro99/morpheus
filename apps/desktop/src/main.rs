@@ -29,6 +29,7 @@ mod media;
 mod member_actions;
 mod menu;
 mod mod_view;
+mod noise;
 mod model;
 mod notify;
 mod prefs;

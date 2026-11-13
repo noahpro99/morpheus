@@ -4,6 +4,10 @@
 
 use gpui::{Styled as _, Svg, px, svg};
 
+/// Noise suppression: Strong (clean bars), Standard (a wave), Off (the wave struck through).
+pub const AUDIO_LINES: &str = r#"<path d="M2 10v3" /> <path d="M6 6v11" /> <path d="M10 3v18" /> <path d="M14 8v7" /> <path d="M18 5v13" /> <path d="M22 10v3" />"#;
+pub const AUDIO_WAVEFORM: &str = r#"<path d="M2 13a2 2 0 0 0 2-2V7a2 2 0 0 1 4 0v13a2 2 0 0 0 4 0V4a2 2 0 0 1 4 0v13a2 2 0 0 0 4 0v-4a2 2 0 0 1 2-2" />"#;
+pub const AUDIO_WAVEFORM_OFF: &str = r#"<path d="M2 13a2 2 0 0 0 2-2V7a2 2 0 0 1 4 0v13a2 2 0 0 0 4 0V4a2 2 0 0 1 4 0v13a2 2 0 0 0 4 0v-4a2 2 0 0 1 2-2" /> <path d="m2 2 20 20" />"#;
 pub const PLUS: &str = r#"<path d="M5 12h14" /> <path d="M12 5v14" />"#;
 pub const CHEVRON_DOWN: &str = r#"<path d="m6 9 6 6 6-6" />"#;
 pub const CHEVRON_RIGHT: &str = r#"<path d="m9 18 6-6-6-6" />"#;
@@ -165,6 +169,9 @@ fn glyph(name: &str) -> Option<&'static str> {
         "screen-share" => SCREEN_SHARE,
         "screen-share-off" => SCREEN_SHARE_OFF,
         "maximize-2" => MAXIMIZE_2,
+        "audio-lines" => AUDIO_LINES,
+        "audio-waveform" => AUDIO_WAVEFORM,
+        "audio-waveform-off" => AUDIO_WAVEFORM_OFF,
         "minimize-2" => MINIMIZE_2,
         _ => return None,
     })
