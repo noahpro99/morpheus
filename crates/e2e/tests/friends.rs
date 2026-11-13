@@ -268,3 +268,42 @@ async fn dm_rows_are_tall() {
     assert!(sizes[1] >= 32.0, "with a 32px picture: {sizes:?}");
     assert!(sizes[2] >= 42.0, "and so is Friends: {sizes:?}");
 }
+
+/// Above Friends in the DMs: an inset, lighter "Command palette" button with
+/// the shortcut (Ctrl+K here) that opens the palette.
+#[tokio::test]
+async fn the_dms_have_a_command_palette_button_above_friends() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch(&hs).await.expect("launch alice");
+    if !app.is_gpui() {
+        return;
+    }
+    app.wait_for("form.login", DEFAULT_WAIT).await.expect("login form");
+    app.type_into("form.login input[name=username]", "alice").await.expect("username");
+    app.type_into("form.login input[name=password]", "alice-password").await.expect("password");
+    app.submit("form.login").await.expect("submit");
+    app.wait_for(".rail-dms", DEFAULT_WAIT).await.expect("rail");
+    app.click(".rail-dms").await.expect("DMs");
+    app.wait_for(".sidebar .palette-button", DEFAULT_WAIT).await.expect("the palette button");
+    let text = app.text(".sidebar .palette-button").await.expect("text").unwrap_or_default();
+    assert!(text.contains("Command palette") && text.contains("Ctrl+K"), "button text {text:?}");
+    let button = app.bounds(".sidebar .palette-button").await.expect("bounds").expect("button");
+    let friends = app.bounds(".sidebar .friends-row").await.expect("bounds").expect("friends");
+    let sidebar = app.bounds(".sidebar").await.expect("bounds").expect("sidebar");
+    assert!(button.bottom() <= friends.y + 0.5, "the button {button:?} is not above Friends {friends:?}");
+    assert!(
+        button.x > sidebar.x + 4.0 && button.right() < sidebar.right() - 4.0,
+        "the button {button:?} is not inset in the sidebar {sidebar:?}"
+    );
+    let bg = app.colours_of(".sidebar .palette-button", "background").await.expect("bg");
+    let side = app.colours_of(".sidebar", "background").await.expect("bg");
+    assert!(
+        bg.first().is_some_and(|c| !c.is_empty()) && bg.first() != side.first(),
+        "the button's background {bg:?} does not stand out from the sidebar's {side:?}"
+    );
+    app.click(".sidebar .palette-button").await.expect("click");
+    app.wait_for(".switcher input", DEFAULT_WAIT).await.expect("the palette opened");
+}
