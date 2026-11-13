@@ -4,6 +4,8 @@
 # program. Everything else (fonts, icons, sounds) is inside the program.
 # Prints the zip's path. Used by CI (linux.yml) and by hand.
 set -euo pipefail
+# Info-ZIP reads options from $ZIP and $ZIPOPT.
+unset ZIP ZIPOPT
 cd "$(dirname "$0")/.."
 version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
 name="morpheus-$version-linux-x86_64"

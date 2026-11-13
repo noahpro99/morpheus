@@ -7,6 +7,8 @@
 #   scripts/package-macos.sh x86_64-apple-darwin x86_64
 # Prints the zip's path. Used by CI (apple.yml); needs macOS (sips, iconutil, codesign).
 set -euo pipefail
+# Info-ZIP reads options from $ZIP and $ZIPOPT.
+unset ZIP ZIPOPT
 cd "$(dirname "$0")/.."
 triple=$1
 arch=$2

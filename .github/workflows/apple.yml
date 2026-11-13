@@ -68,7 +68,7 @@ jobs:
         run: cargo build --release -p morpheus-desktop --locked --target ${{ matrix.target }} $FEATURES
 
       - name: Package
-        run: echo "ZIP=$(scripts/package-macos.sh ${{ matrix.target }} ${{ matrix.arch }})" >> "$GITHUB_ENV"
+        run: echo "RELEASE_ZIP=$(scripts/package-macos.sh ${{ matrix.target }} ${{ matrix.arch }} | tail -1)" >> "$GITHUB_ENV"
 
       # The app has to get past loading: a link that drops libwebrtc's
       # Objective-C aborts it before main. (The Intel build runs under
@@ -78,7 +78,7 @@ jobs:
           if [ "${{ matrix.arch }}" = x86_64 ] && ! arch -x86_64 /usr/bin/true 2>/dev/null; then
             echo "No Rosetta on this runner; not started"; exit 0
           fi
-          rm -rf smoke && mkdir smoke && ditto -x -k "$ZIP" smoke
+          rm -rf smoke && mkdir smoke && ditto -x -k "$RELEASE_ZIP" smoke
           exe=smoke/Morpheus.app/Contents/MacOS/morpheus-desktop
           MORPHEUS_DATA_DIR="$PWD/smoke/data" "$exe" > smoke/log.txt 2>&1 &
           pid=$!
@@ -105,19 +105,19 @@ jobs:
       # on a local feed, swaps itself for it, and the new one starts.
       - name: Update works
         if: matrix.arch == 'arm64'
-        run: scripts/update-self-test.sh "$ZIP"
+        run: scripts/update-self-test.sh "$RELEASE_ZIP"
 
       - uses: actions/upload-artifact@v4
         with:
           name: macos-${{ matrix.arch }}
-          path: ${{ env.ZIP }}
+          path: ${{ env.RELEASE_ZIP }}
 
       - name: Attach to the release
         if: startsWith(github.ref, 'refs/tags/') || inputs.tag != ''
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag || github.ref_name }}
-        run: gh release upload "$TAG" "$ZIP" --clobber
+        run: gh release upload "$TAG" "$RELEASE_ZIP" --clobber
 
   # The phone app for iPhone: an unsigned .ipa (Apple only installs apps
   # signed for the device; AltStore or SideStore sign it with the
