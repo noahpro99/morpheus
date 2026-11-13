@@ -57,7 +57,10 @@ async fn renders_and_downloads_attachments() {
         .await
         .expect("human-readable file size");
 
+    // (The three cards are consecutive but each wait below reveals its own, so
+    // the test does not depend on where the scroll stopped.)
     // Video card: thumbnail (or placeholder) plus a play button.
+    app.reveal_text(".video-card .video-duration", "0:01", DEFAULT_WAIT).await.expect("reveal video");
     app.wait_for(".video-card .play-button", DEFAULT_WAIT)
         .await
         .expect("video play button");
@@ -66,6 +69,9 @@ async fn renders_and_downloads_attachments() {
         .expect("video duration");
 
     // Audio row: name, duration and a download button.
+    app.reveal_text(".attachment-card.audio .attachment-name", "voice-note.m4a", DEFAULT_WAIT)
+        .await
+        .expect("reveal audio");
     app.wait_for_text(
         ".attachment-card.audio .attachment-name",
         "voice-note.m4a",
@@ -83,6 +89,9 @@ async fn renders_and_downloads_attachments() {
 
     // Download the file attachment and verify it actually landed on disk,
     // in the test's disposable Downloads stand-in.
+    app.reveal_text(".attachment-card .attachment-name", "release-notes.txt", DEFAULT_WAIT)
+        .await
+        .expect("file card in view");
     app.click_within(
         ".attachment-card",
         "release-notes.txt",
