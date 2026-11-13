@@ -231,6 +231,12 @@ was
 
 #[tokio::test]
 async fn phone_settings_are_full_screen_list_then_page() {
+    // The phone's settings (Dioxus: web and Android). The GPUI desktop app has no
+    // phone layout and this reads the page's DOM, so it does not run there.
+    if morpheus_e2e::gpui() {
+        eprintln!("phone layout: not for the GPUI desktop app; skipping");
+        return;
+    }
     let Some(hs) = homeserver() else {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
