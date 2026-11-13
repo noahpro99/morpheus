@@ -139,6 +139,22 @@ impl Session {
         })
     }
 
+    /// Who has been invited to a room and not yet answered.
+    pub fn invited_members(&self, room_id: OwnedRoomId) -> CoreFuture<Vec<OwnedUserId>> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            let room = client
+                .get_room(&room_id)
+                .ok_or_else(|| Error::UnknownRoom(room_id.clone()))?;
+            Ok(room
+                .members(RoomMemberships::INVITE)
+                .await?
+                .into_iter()
+                .map(|member| member.user_id().to_owned())
+                .collect())
+        })
+    }
+
     /// The signed-in user's moderation powers in a room.
     pub fn my_permissions(&self, room_id: OwnedRoomId) -> CoreFuture<MemberPermissions> {
         let client = self.client.clone();

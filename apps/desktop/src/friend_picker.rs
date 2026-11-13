@@ -6,7 +6,7 @@
 //! (a Matrix invite, a message with a link) and reports back with
 //! `set_state`. What matches the filter is `view_model::friends`.
 
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::{HashMap, HashSet}, sync::Arc};
 
 use gpui::{
     AnyElement, Context, ElementId, Entity, EventEmitter, FontWeight, Image, IntoElement, Render,
@@ -45,6 +45,8 @@ pub struct FriendPicker {
     profiles: HashMap<String, Option<Profile>>,
     avatars: Avatars,
     states: HashMap<String, RowState>,
+    /// Already in what the picker invites to: not listed.
+    members: HashSet<String>,
     /// What clicking a row does ("Invite"), and what its row says when done
     /// ("Invited", "Sent").
     action: &'static str,
@@ -81,6 +83,7 @@ impl FriendPicker {
             profiles: HashMap::new(),
             avatars: Avatars::default(),
             states: HashMap::new(),
+            members: HashSet::new(),
             action,
             done,
         };
@@ -103,7 +106,33 @@ impl FriendPicker {
         cx.notify();
     }
 
+    /// Who is already in (not listed) and who is already invited (listed as
+    /// done), once known.
+    pub fn set_roster(
+        &mut self,
+        joined: Vec<OwnedUserId>,
+        invited: Vec<OwnedUserId>,
+        cx: &mut Context<Self>,
+    ) {
+        self.members = joined.iter().map(|u| u.to_string()).collect();
+        for user in invited {
+            let key = user.to_string();
+            if !matches!(self.states.get(&key), Some(RowState::Working)) {
+                self.states.insert(key, RowState::Done);
+            }
+        }
+        cx.notify();
+    }
+
+    /// Whether `user` is already in.
+    pub fn is_member(&self, user: &OwnedUserId) -> bool {
+        self.members.contains(user.as_str())
+    }
+
     fn pick(&mut self, user: OwnedUserId, cx: &mut Context<Self>) {
+        if self.members.contains(user.as_str()) {
+            return;
+        }
         if matches!(
             self.states.get(user.as_str()),
             Some(RowState::Working | RowState::Done)
@@ -170,7 +199,9 @@ impl FriendPicker {
             Some(RowState::Done) => (self.done.to_owned(), "sent"),
             Some(RowState::Failed(_)) => ("Failed, retry".to_owned(), "failed"),
         };
-        let clickable = !matches!(state, Some(RowState::Working | RowState::Done));
+        let member = self.members.contains(&key);
+        let (label, tag) = if member { ("Already in".to_owned(), "member") } else { (label, tag) };
+        let clickable = !member && !matches!(state, Some(RowState::Working | RowState::Done));
         let target = user.clone();
         let mut el = div()
             .id(ElementId::Name(format!("friend-pick-{key}").into()))
@@ -247,14 +278,14 @@ impl Render for FriendPicker {
                 &key,
                 profile.map(|p| (p.name.as_str(), p.status.as_deref())),
             );
-            if friends::matches_filter(&row, &key, &self.filter) {
+            if !self.members.contains(&key) && friends::matches_filter(&row, &key, &self.filter) {
                 rows.push(self.row_el(&user, row, cx));
                 listed.push(user);
             }
         }
         // A full Matrix ID typed that is not a friend: one more row.
         if let Ok(typed) = self.filter.trim().parse::<OwnedUserId>()
-            && !self.friends.contains(&typed)
+            && (!self.friends.contains(&typed) || self.members.contains(typed.as_str()))
         {
             let row = FriendRow { name: typed.to_string(), subtitle: String::new() };
             rows.push(self.row_el(&typed, row, cx));
