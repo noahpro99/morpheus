@@ -551,15 +551,20 @@ fn next_command(commands: &Commands) -> Option<Command> {
 /// media and the sync all live in this run's entities, so they go on, and
 /// what needs a window opens a new one on the same root.
 fn run_window(core: Core, commands: Commands, first: Option<Command>, start_hidden: bool) {
-    Application::new()
-        .with_assets(Assets)
-        .run(move |cx: &mut App| {
+    let application = Application::new().with_assets(Assets);
+    // Clicking the app in the Dock (or opening it again) on a Mac brings the
+    // closed window back, as Discord's does.
+    #[cfg(target_os = "macos")]
+    application.on_reopen(show_window);
+    application.run(move |cx: &mut App| {
             if let Err(e) = cx
                 .text_system()
                 .add_fonts(FONTS.iter().map(|f| Cow::Borrowed(*f)).collect())
             {
                 eprintln!("morpheus-desktop: loading fonts failed: {e}");
             }
+            // Windows and macOS: the tray icon, now that the event loop runs.
+            tray::install_native(Arc::new(|action| send_command(Command::Tray(action))));
             let root = cx.new(|cx| Root::new(core, default_homeserver(), cx));
             cx.set_global(MainRoot(root));
             cx.on_window_closed(|cx| {

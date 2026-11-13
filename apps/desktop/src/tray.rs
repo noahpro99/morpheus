@@ -166,6 +166,109 @@ mod linux {
     }
 }
 
+/// Windows (the notification area) and macOS (the menu bar), through the
+/// `tray-icon` crate. It needs an event loop on the thread that creates the
+/// icon: GPUI's main thread has one (the Win32 message pump, or the
+/// NSApplication run loop), so it is created from inside `Application::run`,
+/// where the loop is already going (macOS wants that), and its events come
+/// back on that thread through handlers, not a polled channel.
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+mod native {
+    use tray_icon::{
+        Icon, MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent,
+        menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem},
+    };
+
+    use super::{Handler, TrayAction, logo_rgba};
+
+    /// The menu item id of an action: its place in the menu order.
+    fn id_of(action: TrayAction) -> String {
+        TrayAction::MENU
+            .iter()
+            .position(|a| *a == action)
+            .map_or_else(String::new, |i| i.to_string())
+    }
+
+    fn action_of(id: &str) -> Option<TrayAction> {
+        TrayAction::MENU.get(id.parse::<usize>().ok()?).copied()
+    }
+
+    /// Whether this click on the icon opens the window: the left button,
+    /// released (the right one opens the menu on its own).
+    pub(super) fn is_open_click(event: &TrayIconEvent) -> bool {
+        matches!(
+            event,
+            TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            }
+        )
+    }
+
+    /// Must run on the main thread with the event loop going. `false` if the
+    /// system would not give an icon.
+    pub fn install(handler: Handler) -> bool {
+        let menu = Menu::new();
+        for action in TrayAction::MENU {
+            if action == TrayAction::Quit {
+                let _ = menu.append(&PredefinedMenuItem::separator());
+            }
+            let item = MenuItem::with_id(id_of(action), action.label(), true, None);
+            if let Err(err) = menu.append(&item) {
+                eprintln!("morpheus-desktop: tray menu failed: {err}");
+                return false;
+            }
+        }
+        let mut builder = TrayIconBuilder::new()
+            .with_menu(Box::new(menu))
+            // Left click opens Morpheus (as Discord's does), right click the menu.
+            .with_menu_on_left_click(false)
+            .with_tooltip("Morpheus");
+        match logo_rgba().and_then(|(rgba, w, h)| Icon::from_rgba(rgba, w, h).map_err(|e| e.to_string())) {
+            // macOS tints a template (the white logo's shape) for a light or dark menu bar.
+            Ok(icon) => builder = builder.with_icon(icon).with_icon_as_template(true),
+            Err(err) => eprintln!("morpheus-desktop: tray icon image failed, using none: {err}"),
+        }
+        let open = handler.clone();
+        TrayIconEvent::set_event_handler(Some(move |event: TrayIconEvent| {
+            if is_open_click(&event) {
+                open(TrayAction::Open);
+            }
+        }));
+        MenuEvent::set_event_handler(Some(move |event: tray_icon::menu::MenuEvent| {
+            if let Some(action) = action_of(&event.id().0) {
+                handler(action);
+            }
+        }));
+        match builder.build() {
+            // Dropping the icon removes it: it stays for the life of the app.
+            Ok(icon) => {
+                std::mem::forget(icon);
+                true
+            }
+            Err(err) => {
+                eprintln!("morpheus-desktop: no tray icon: {err}");
+                false
+            }
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn menu_ids_map_back_to_their_actions() {
+            for action in TrayAction::MENU {
+                assert_eq!(action_of(&id_of(action)), Some(action));
+            }
+            assert_eq!(action_of("9"), None);
+            assert_eq!(action_of("x"), None);
+        }
+    }
+}
+
 /// Put up the tray icon, if this run wants one. Without a tray host the
 /// window's close button ends the app instead of hiding it for good.
 pub fn install(handler: Handler) {
@@ -179,6 +282,23 @@ pub fn install(handler: Handler) {
         let up = linux::install(handler);
         HIDES_ON_CLOSE.store(up || std::env::var_os("MORPHEUS_E2E_PORT").is_some(), Ordering::Relaxed);
     }
+    // Windows and macOS: the icon is made by `install_native` once the event
+    // loop runs; until then it is expected to work.
     #[cfg(not(target_os = "linux"))]
+    {
+        let _ = handler;
+        HIDES_ON_CLOSE.store(true, Ordering::Relaxed);
+    }
+}
+
+/// Windows and macOS: create the icon, from inside `Application::run` (on the
+/// main thread, with the event loop going). Without one the close button ends
+/// the app again. Elsewhere does nothing.
+pub fn install_native(handler: Handler) {
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    if wanted() && !native::install(handler) {
+        HIDES_ON_CLOSE.store(std::env::var_os("MORPHEUS_E2E_PORT").is_some(), Ordering::Relaxed);
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     let _ = handler;
 }
