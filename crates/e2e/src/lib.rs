@@ -203,10 +203,9 @@ impl App {
 
         let stream = connect(port, &log_path).await?;
         let (reader, writer) = stream.into_split();
-        if gpui() {
-            if let Some(pid) = child.id() {
-                fit_window(pid, size.unwrap_or((1280, 800))).await;
-            }
+        // A launched binary is the desktop (GPUI) app, in a phone run too.
+        if let Some(pid) = child.id() {
+            fit_window(pid, size.unwrap_or((1280, 800))).await;
         }
         Ok(Self {
             child: Some(child),
@@ -251,7 +250,7 @@ impl App {
     /// on in the tray. (Dioxus: the click is deferred, since the webview stops
     /// answering the moment it hides, so the eval must return first.)
     pub async fn close_to_tray(&mut self) -> Result<()> {
-        if gpui() {
+        if self.is_gpui() {
             return self.click(".titlebar .window-controls button[title=Close]").await;
         }
         self.eval("setTimeout(() => document.querySelector('.titlebar button.close').click(), 50); return true;")
@@ -262,7 +261,7 @@ impl App {
     /// Evaluate JavaScript in the webview. Use `return` to get a value back.
     /// The GPUI app (`MORPHEUS_E2E_UI=gpui`) runs none: the test needs porting.
     pub async fn eval(&mut self, js: &str) -> Result<Value> {
-        if gpui() {
+        if self.is_gpui() {
             bail!("{NEEDS_PORTING}\n  js: {js}");
         }
         self.send(|id| json!({ "id": id, "js": js }), &format!("js: {js}"))
@@ -348,7 +347,7 @@ impl App {
     }
 
     pub async fn count(&mut self, selector: &str) -> Result<usize> {
-        if gpui() {
+        if self.is_gpui() {
             let count = self.op("count", selector, json!({})).await?;
             return Ok(count.as_u64().unwrap_or(0) as usize);
         }
@@ -361,7 +360,7 @@ impl App {
 
     /// `textContent` of the first match, if any.
     pub async fn text(&mut self, selector: &str) -> Result<Option<String>> {
-        if gpui() {
+        if self.is_gpui() {
             let text = self.op("text", selector, json!({})).await?;
             return Ok(text.as_str().map(ToOwned::to_owned));
         }
@@ -374,7 +373,7 @@ impl App {
 
     /// `textContent` of every match, in document order.
     pub async fn texts(&mut self, selector: &str) -> Result<Vec<String>> {
-        let list = if gpui() {
+        let list = if self.is_gpui() {
             self.op("texts", selector, json!({})).await?
         } else {
             let js = format!(
@@ -388,7 +387,7 @@ impl App {
 
     /// Current `value` of the first matching input.
     pub async fn value(&mut self, selector: &str) -> Result<Option<String>> {
-        if gpui() {
+        if self.is_gpui() {
             let value = self.op("value", selector, json!({})).await?;
             return Ok(value.as_str().map(ToOwned::to_owned));
         }
@@ -402,7 +401,7 @@ impl App {
     /// The attribute `name` of every match, in document order (`None` where
     /// an element has none).
     pub async fn attrs(&mut self, selector: &str, name: &str) -> Result<Vec<Option<String>>> {
-        let list = if gpui() {
+        let list = if self.is_gpui() {
             self.op("attrs", selector, json!({ "name": name })).await?
         } else {
             let js = format!(
@@ -426,7 +425,7 @@ impl App {
     /// `data-bg` and `data-color` on the elements tests look at.
     pub async fn colours_of(&mut self, selector: &str, property: &str) -> Result<Vec<String>> {
         let attr = if property == "background" { "data-bg" } else { "data-color" };
-        if gpui() {
+        if self.is_gpui() {
             let list = self.attrs(selector, attr).await?;
             return Ok(list.into_iter().map(Option::unwrap_or_default).collect());
         }
@@ -451,7 +450,7 @@ impl App {
         needle: &str,
         name: &str,
     ) -> Result<Option<String>> {
-        let value = if gpui() {
+        let value = if self.is_gpui() {
             self.op(
                 "attrs",
                 selector,
@@ -476,7 +475,7 @@ impl App {
 
     /// Wait until at least one element matches.
     pub async fn wait_for(&mut self, selector: &str, timeout: Duration) -> Result<()> {
-        if gpui() {
+        if self.is_gpui() {
             let what = format!("element matching {selector}");
             return self.wait_gpui(timeout, &what, selector, json!({})).await;
         }
@@ -495,7 +494,7 @@ impl App {
         needle: &str,
         timeout: Duration,
     ) -> Result<()> {
-        if gpui() {
+        if self.is_gpui() {
             let what = format!("{selector} containing {needle:?}");
             return self
                 .wait_gpui(timeout, &what, selector, json!({ "contains": needle }))
@@ -513,7 +512,7 @@ impl App {
     /// Open a room by name. Rooms inside a space are hidden in Home, so if
     /// the row is not visible this clicks through the space badges to find it.
     pub async fn open_room(&mut self, name: &str) -> Result<()> {
-        if gpui() {
+        if self.is_gpui() {
             return self.open_room_gpui(name).await;
         }
         // An exact name first: "bob" is not "Empty Room (was bob)".
@@ -561,7 +560,7 @@ impl App {
     /// Click an element with a real-looking pointer position (its centre), so
     /// handlers that anchor popups to the click behave as they do for a mouse.
     pub async fn click(&mut self, selector: &str) -> Result<()> {
-        if gpui() {
+        if self.is_gpui() {
             return self.op("click", selector, json!({})).await.map(drop);
         }
         let js = format!(
@@ -592,7 +591,7 @@ impl App {
 
     /// [`Self::reveal`] for an element matching `selector`.
     pub async fn reveal_element(&mut self, selector: &str, timeout: Duration) -> Result<()> {
-        if gpui() {
+        if self.is_gpui() {
             return self
                 .reveal_gpui(&format!("element matching {selector}"), selector, None, timeout)
                 .await;
@@ -612,7 +611,7 @@ impl App {
         text: &str,
         timeout: Duration,
     ) -> Result<()> {
-        if gpui() {
+        if self.is_gpui() {
             return self
                 .reveal_gpui(&format!("{selector} containing {text:?}"), selector, Some(text), timeout)
                 .await;
@@ -632,7 +631,7 @@ impl App {
 
     /// [`Self::reveal`] for a message whose body contains `text`.
     pub async fn reveal_message(&mut self, text: &str, timeout: Duration) -> Result<()> {
-        if gpui() {
+        if self.is_gpui() {
             return self
                 .reveal_gpui(&format!("message {text:?}"), ".message .body", Some(text), timeout)
                 .await;
@@ -703,7 +702,7 @@ impl App {
     /// `column-reverse` container (the timeline) reads as scrolled from its
     /// bottom edge too.
     pub async fn scroll_state(&mut self, selector: &str) -> Result<Option<ScrollState>> {
-        let value = if gpui() {
+        let value = if self.is_gpui() {
             self.op("scroll_state", selector, json!({})).await.or_else(|err| {
                 // Nothing there is not an error.
                 if err.to_string().contains("no element matching") {
@@ -736,7 +735,7 @@ impl App {
     /// Scroll the element `selector` to its top or bottom, or to a distance
     /// from the bottom (clamped to what it can scroll).
     pub async fn scroll_to(&mut self, selector: &str, to: ScrollTo) -> Result<()> {
-        if gpui() {
+        if self.is_gpui() {
             let extra = match to {
                 ScrollTo::Top => json!({ "to": "top" }),
                 ScrollTo::Bottom => json!({ "to": "bottom" }),
@@ -775,7 +774,7 @@ impl App {
     }
 
     async fn bounds_of(&mut self, selector: &str, text: Option<&str>) -> Result<Option<Bounds>> {
-        let value = if gpui() {
+        let value = if self.is_gpui() {
             let filter = text.map_or(json!({}), |t| json!({ "contains": t }));
             self.op("bounds", selector, filter).await?
         } else {
@@ -805,7 +804,7 @@ impl App {
     /// Where every element matching `selector` is, in window pixels, in
     /// document order.
     pub async fn all_bounds(&mut self, selector: &str) -> Result<Vec<Bounds>> {
-        let value = if gpui() {
+        let value = if self.is_gpui() {
             self.op("all_bounds", selector, json!({})).await?
         } else {
             let js = format!(
@@ -835,7 +834,7 @@ impl App {
         contains: &str,
         selector: &str,
     ) -> Result<Option<Bounds>> {
-        if !gpui() {
+        if !self.is_gpui() {
             return Ok(None);
         }
         let extra = json!({ "within": within, "within_contains": contains });
@@ -855,7 +854,7 @@ impl App {
     /// Press on an element, move the pointer `dx` and `dy` pixels (in steps
     /// of 20, the button held), and let go.
     pub async fn drag(&mut self, selector: &str, dx: i32, dy: i32) -> Result<()> {
-        if gpui() {
+        if self.is_gpui() {
             return self
                 .op("drag", selector, json!({ "dx": dx, "dy": dy }))
                 .await
@@ -877,7 +876,7 @@ impl App {
     /// [`Self::drag`] that leaves the button down at the end (GPUI: the drag
     /// stays in progress until [`Self::release`]; Dioxus: a drag by mouse events).
     pub async fn drag_hold(&mut self, selector: &str, dx: i32, dy: i32) -> Result<()> {
-        if gpui() {
+        if self.is_gpui() {
             return self
                 .op("drag", selector, json!({ "dx": dx, "dy": dy, "hold": true }))
                 .await
@@ -899,7 +898,7 @@ impl App {
     /// Move the pointer to an element's centre without pressing (GPUI only:
     /// the web build's `:hover` cannot be driven from script).
     pub async fn hover(&mut self, selector: &str) -> Result<()> {
-        if gpui() {
+        if self.is_gpui() {
             return self.op("hover", selector, json!({})).await.map(drop);
         }
         bail!("hover is only driven in the GPUI app")
@@ -910,7 +909,7 @@ impl App {
     /// turning it towards themselves), which the app eases over the next
     /// ~150 ms; returns at once.
     pub async fn wheel(&mut self, selector: &str, notches: f32) -> Result<()> {
-        if gpui() {
+        if self.is_gpui() {
             return self.op("wheel", selector, json!({ "lines": -notches })).await.map(drop);
         }
         bail!("wheel is only driven in the GPUI app")
@@ -919,7 +918,7 @@ impl App {
     /// One touchpad-style wheel event of exactly `px` pixels (positive:
     /// down) over an element's centre; applied at once, no easing (GPUI only).
     pub async fn wheel_pixels(&mut self, selector: &str, px: f32) -> Result<()> {
-        if gpui() {
+        if self.is_gpui() {
             return self
                 .op("wheel", selector, json!({ "pixels": true, "dy": -px }))
                 .await
@@ -930,7 +929,7 @@ impl App {
 
     /// [`Self::wheel_pixels`] with the pointer `ox`, `oy` pixels from the element's centre.
     pub async fn wheel_pixels_at(&mut self, selector: &str, ox: f32, oy: f32, px: f32) -> Result<()> {
-        if gpui() {
+        if self.is_gpui() {
             return self
                 .op("wheel", selector, json!({ "pixels": true, "dy": -px, "ox": ox, "oy": oy }))
                 .await
@@ -941,7 +940,7 @@ impl App {
 
     /// [`Self::drag`] pressing `ox`, `oy` pixels from the element's centre (GPUI only).
     pub async fn drag_at(&mut self, selector: &str, ox: f32, oy: f32, dx: i32, dy: i32) -> Result<()> {
-        if gpui() {
+        if self.is_gpui() {
             return self
                 .op("drag", selector, json!({ "dx": dx, "dy": dy, "ox": ox, "oy": oy }))
                 .await
@@ -952,7 +951,7 @@ impl App {
 
     /// A click (`clicks` 1) or double click (2) `ox`, `oy` pixels from the element's centre (GPUI only).
     pub async fn click_at(&mut self, selector: &str, ox: f32, oy: f32, clicks: u32) -> Result<()> {
-        if gpui() {
+        if self.is_gpui() {
             return self
                 .op("click", selector, json!({ "ox": ox, "oy": oy, "clicks": clicks }))
                 .await
@@ -984,7 +983,7 @@ impl App {
 
     /// Let go of the drag [`Self::drag_hold`] left in progress.
     pub async fn release(&mut self) -> Result<()> {
-        if gpui() {
+        if self.is_gpui() {
             return self.op("release", "", json!({})).await.map(drop);
         }
         self.eval(
@@ -998,7 +997,7 @@ impl App {
 
     /// Right-click an element: a bubbling `contextmenu` event at its centre.
     pub async fn right_click(&mut self, selector: &str) -> Result<()> {
-        if gpui() {
+        if self.is_gpui() {
             return self.op("right_click", selector, json!({})).await.map(drop);
         }
         let js = format!(
@@ -1012,7 +1011,7 @@ impl App {
 
     /// Click the first `selector` element whose text contains `needle`.
     pub async fn click_text(&mut self, selector: &str, needle: &str) -> Result<()> {
-        if gpui() {
+        if self.is_gpui() {
             let extra = json!({ "contains": needle });
             return self.op("click", selector, extra).await.map(drop);
         }
@@ -1029,7 +1028,7 @@ impl App {
     /// Click, with Shift held, the first `selector` element whose text
     /// contains `needle`.
     pub async fn shift_click_text(&mut self, selector: &str, needle: &str) -> Result<()> {
-        if gpui() {
+        if self.is_gpui() {
             let extra = json!({ "contains": needle, "modifiers": ["shift"] });
             return self.op("click", selector, extra).await.map(drop);
         }
@@ -1044,7 +1043,7 @@ impl App {
 
     /// Right-click the first `selector` element whose text contains `needle`.
     pub async fn right_click_text(&mut self, selector: &str, needle: &str) -> Result<()> {
-        if gpui() {
+        if self.is_gpui() {
             let extra = json!({ "contains": needle });
             return self.op("right_click", selector, extra).await.map(drop);
         }
@@ -1060,7 +1059,7 @@ impl App {
 
     /// Nothing focused, as after clicking on bare ground: keys have no field to go to.
     pub async fn unfocus(&mut self) -> Result<()> {
-        if gpui() {
+        if self.is_gpui() {
             return self.op("unfocus", "", json!({})).await.map(drop);
         }
         self.eval("document.activeElement.blur(); document.body.focus(); return true;")
@@ -1073,7 +1072,7 @@ impl App {
     /// save on leaving (the profile card's note) save as the writing
     /// pauses there instead, so this does nothing for it.
     pub async fn blur(&mut self, selector: &str) -> Result<()> {
-        if gpui() {
+        if self.is_gpui() {
             return Ok(());
         }
         let js = format!("{}.dispatchEvent(new Event('blur'));", query(selector));
@@ -1082,7 +1081,7 @@ impl App {
 
     /// Right-click the first `selector` element whose trimmed text is exactly `text`.
     pub async fn right_click_exact(&mut self, selector: &str, text: &str) -> Result<()> {
-        if gpui() {
+        if self.is_gpui() {
             let extra = json!({ "exact": text });
             return self.op("right_click", selector, extra).await.map(drop);
         }
@@ -1104,7 +1103,7 @@ impl App {
         contains: &str,
         selector: &str,
     ) -> Result<Vec<String>> {
-        let list = if gpui() {
+        let list = if self.is_gpui() {
             let extra = json!({ "within": within, "within_contains": contains });
             self.op("texts", selector, extra).await?
         } else {
@@ -1129,7 +1128,7 @@ impl App {
         selector: &str,
         name: &str,
     ) -> Result<Vec<Option<String>>> {
-        let list = if gpui() {
+        let list = if self.is_gpui() {
             let extra = json!({ "within": within, "within_contains": contains, "name": name });
             self.op("attrs", selector, extra).await?
         } else {
@@ -1182,7 +1181,7 @@ impl App {
     /// place when the row is tapped. The child matches by its whole text or
     /// label, else by containing `child`.
     pub async fn click_submenu(&mut self, parent: &str, child: &str) -> Result<()> {
-        if gpui() {
+        if self.is_gpui() {
             // A click moves the pointer onto the row first, which opens the
             // flyout (as hovering does), and keeps it open.
             self.op(
@@ -1252,7 +1251,7 @@ impl App {
 
     /// Replace an input's value and fire `input` so the UI sees it.
     pub async fn type_into(&mut self, selector: &str, text: &str) -> Result<()> {
-        if gpui() {
+        if self.is_gpui() {
             let extra = json!({ "text": text });
             return self.op("type", selector, extra).await.map(drop);
         }
@@ -1266,7 +1265,7 @@ impl App {
 
     /// Dispatch a `keydown` for `key` (e.g. "Enter") on the element.
     pub async fn press(&mut self, selector: &str, key: &str) -> Result<()> {
-        if gpui() {
+        if self.is_gpui() {
             let extra = json!({ "key": key });
             return self.op("press", selector, extra).await.map(drop);
         }
@@ -1300,7 +1299,7 @@ impl App {
         alt: bool,
         shift: bool,
     ) -> Result<()> {
-        if gpui() {
+        if self.is_gpui() {
             let modifiers: Vec<&str> = [(ctrl, "ctrl"), (alt, "alt"), (shift, "shift")]
                 .into_iter()
                 .filter_map(|(held, name)| held.then_some(name))
@@ -1318,7 +1317,7 @@ impl App {
 
     /// Dispatch a keyboard shortcut (e.g. Ctrl+K) on an element.
     pub async fn shortcut(&mut self, selector: &str, key: &str, ctrl: bool) -> Result<()> {
-        if gpui() {
+        if self.is_gpui() {
             return self.key_combo(selector, key, ctrl, false, false).await;
         }
         let js = format!(
@@ -1330,7 +1329,7 @@ impl App {
     }
 
     pub async fn submit(&mut self, form_selector: &str) -> Result<()> {
-        if gpui() {
+        if self.is_gpui() {
             return self.op("submit", form_selector, json!({})).await.map(drop);
         }
         self.eval(&format!("{}.requestSubmit();", query(form_selector)))
@@ -1489,7 +1488,7 @@ impl App {
         text: &str,
         timeout: Duration,
     ) -> Result<()> {
-        if gpui() {
+        if self.is_gpui() {
             let what = format!("{selector} with text {text:?}");
             return self
                 .wait_gpui(timeout, &what, selector, json!({ "exact": text }))
@@ -1504,14 +1503,20 @@ impl App {
             .await
     }
 
-    /// Whether the app under test is the GPUI one.
+    /// Whether this app is the GPUI one, whose bridge takes structured
+    /// requests, not JavaScript. A desktop app is, also in a phone run (where
+    /// the other users are desktop apps next to the phone, which is not);
+    /// the web page is not; `MORPHEUS_E2E_UI=gpui` forces it.
     pub fn is_gpui(&self) -> bool {
-        gpui()
+        if std::env::var("MORPHEUS_E2E_UI").as_deref() == Ok("gpui") {
+            return true;
+        }
+        !self.android && !web::enabled()
     }
 
     /// Whether each radio button or checkbox matching `selector` is checked.
     pub async fn checked(&mut self, selector: &str) -> Result<Vec<bool>> {
-        if gpui() {
+        if self.is_gpui() {
             let list = self
                 .op("attrs", selector, json!({ "name": "checked" }))
                 .await?;
@@ -1528,7 +1533,7 @@ impl App {
 
     /// Wait until the first element matching `selector` has the keyboard.
     pub async fn wait_for_focus(&mut self, selector: &str, timeout: Duration) -> Result<()> {
-        if gpui() {
+        if self.is_gpui() {
             return self.wait_for(&format!("{selector}[data-focused]"), timeout).await;
         }
         let js = format!(
@@ -1564,7 +1569,7 @@ impl App {
 
     /// Choose the `index`th option of the `<select>` matching `selector`.
     pub async fn choose_option(&mut self, selector: &str, index: usize) -> Result<()> {
-        if gpui() {
+        if self.is_gpui() {
             // The GPUI select opens its list when clicked.
             let options = format!("{selector} option");
             self.click(selector).await?;
@@ -1663,7 +1668,7 @@ impl App {
         contains: &str,
         selector: &str,
     ) -> Result<()> {
-        if gpui() {
+        if self.is_gpui() {
             let extra = json!({ "within": within, "within_contains": contains });
             return self.op("click", selector, extra).await.map(drop);
         }
@@ -1687,7 +1692,7 @@ impl App {
     /// `body`: unlike [`Self::click_within`], not inside a reply that only
     /// quotes it. Hovers first.
     pub async fn click_in_message(&mut self, body: &str, selector: &str) -> Result<()> {
-        if gpui() {
+        if self.is_gpui() {
             let extra = json!({ "within": ".message", "within_contains": body, "within_in": ".body" });
             return self.op("click", selector, extra).await.map(drop);
         }
@@ -1708,7 +1713,7 @@ impl App {
     /// [`Self::click_in_message`] with Shift held down (Shift-click on the
     /// bin deletes without asking).
     pub async fn shift_click_in_message(&mut self, body: &str, selector: &str) -> Result<()> {
-        if gpui() {
+        if self.is_gpui() {
             let extra = json!({ "within": ".message", "within_contains": body, "within_in": ".body", "modifiers": ["shift"] });
             return self.op("click", selector, extra).await.map(drop);
         }
@@ -1736,7 +1741,7 @@ impl App {
         bytes: &[u8],
     ) -> Result<()> {
         use base64::Engine as _;
-        if gpui() {
+        if self.is_gpui() {
             let extra = json!({
                 "name": name,
                 "mime": mime,
@@ -1778,7 +1783,7 @@ impl App {
         what: &str,
         predicate_js: &str,
     ) -> Result<()> {
-        if gpui() {
+        if self.is_gpui() {
             bail!("{NEEDS_PORTING}\n  waiting for: {what}");
         }
         let started = Instant::now();
@@ -1895,7 +1900,7 @@ impl Drop for App {
     }
 }
 
-/// Whether the app under test is the desktop (GPUI) app, whose bridge takes
+/// Whether this run's first app is the desktop (GPUI) app (`App::is_gpui` says it of one app: in a phone run the peers are GPUI, the phone is not), whose bridge takes
 /// structured requests, not JavaScript. It is, unless the run is against the
 /// web app or a phone (`MORPHEUS_E2E_WEB`, `MORPHEUS_E2E_ANDROID`: Dioxus,
 /// driven by JavaScript); `MORPHEUS_E2E_UI=gpui` forces it.
@@ -2556,7 +2561,7 @@ fn screen_metrics() -> (f64, f64) {
 impl App {
     /// [`Self::tap`] on the first `selector` match whose text contains `needle`.
     pub async fn tap_text(&mut self, selector: &str, needle: &str) -> Result<()> {
-        if gpui() {
+        if self.is_gpui() {
             return self.click_text(selector, needle).await;
         }
         self.eval(&format!(

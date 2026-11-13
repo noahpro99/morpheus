@@ -1,12 +1,24 @@
 //! Phone-width layout: one pane at a time (rooms, chat, side), with back
-//! buttons and Escape acting as back. Driven on the desktop build with a
-//! phone-sized window, which the mobile app shares.
+//! buttons and Escape acting as back. Driven on the web app in a phone-sized
+//! browser, which the mobile app shares (and on the phone itself); see
+//! `homeserver` for when they run.
 
 #![allow(clippy::expect_used)]
 
 use morpheus_e2e::{App, DEFAULT_WAIT};
 
+/// These tests read the page (the Dioxus layout of `crates/ui`: panes, sheets,
+/// `.shell.narrow`) through JavaScript, so they run where that layout is: the
+/// web app in a phone-sized browser (`MORPHEUS_E2E_WEB=1`, `just e2e-web
+/// mobile_layout`) and the phone (`MORPHEUS_E2E_ANDROID=1`). The desktop app is
+/// GPUI and has no such page; they skip there.
 fn homeserver() -> Option<String> {
+    if std::env::var_os("MORPHEUS_E2E_WEB").is_none()
+        && std::env::var_os("MORPHEUS_E2E_ANDROID").is_none()
+    {
+        eprintln!("mobile_layout drives the Dioxus layout: run with MORPHEUS_E2E_WEB or MORPHEUS_E2E_ANDROID; skipping");
+        return None;
+    }
     std::env::var("MORPHEUS_TEST_HOMESERVER").ok()
 }
 
