@@ -4,8 +4,8 @@
 
 The desktop app (Linux, Windows, macOS) is rebuilt on GPUI, the GPU-drawn UI
 toolkit behind the Zed editor, instead of a web view. It is a native program
-of its own: it starts faster, scrolls smoothly, uses much less memory, and
-needs no WebKit/WebView2 on your system. Your account, keys, settings and
+of its own: it draws on the GPU, scrolls smoothly, and needs no
+WebKit/WebView2 on your system. Your account, keys, settings and
 last-open rooms carry over: it uses the same data folder as 0.1.x, and the
 built-in updater takes you from 0.1.x to this one in place.
 
@@ -45,7 +45,7 @@ Phones (Android, iPhone) and the web app are unchanged apart from the version.
 
 - Text boxes have no undo/redo yet (so the Mac Edit menu has no Undo/Redo),
   and no input-method (IME) composition for Chinese, Japanese, Korean.
-- Inline video playback in the timeline: videos open in your player.
+- No video player yet: a video shows its thumbnail in the timeline.
 - The Mac and Windows builds of the new app were checked by the release
   workflows (build, start, update); they have had far less daily use than the
   Linux one. Please report anything odd (Settings, Report a bug).
