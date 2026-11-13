@@ -640,18 +640,95 @@ async fn declined(
 }
 
 /// Match LiveKit identities to people, from the room's call memberships.
+/// Returns the names newly matched.
 async fn refresh_people(
     session: &Session,
     room_id: &OwnedRoomId,
     people: &mut HashMap<String, OwnedUserId>,
-) {
+) -> Vec<String> {
+    let mut learned = Vec::new();
     if let Ok(members) = session.call_members(room_id.clone()).await {
         for member in members {
             for identity in member.livekit_identities {
-                people.insert(identity, member.user_id.clone());
+                if people.get(&identity) != Some(&member.user_id) {
+                    people.insert(identity.clone(), member.user_id.clone());
+                    learned.push(identity);
+                }
             }
         }
     }
+    learned
+}
+
+/// What the call said under each LiveKit name, kept as it said it. A name
+/// is not always known when its voice or picture arrives: when the token
+/// service's names cannot be worked out from user and device (matrix.org),
+/// the name comes with the person's media key, which can land after their
+/// voice; what was said under it must show once it is known.
+#[derive(Default)]
+struct ByIdentity {
+    /// Who is speaking, the last the call said.
+    speaking: Vec<String>,
+    /// Whose test tone is heard (true) or quiet.
+    heard: HashMap<String, bool>,
+    /// Feeds whose sender is not known yet: feed key -> (name, screen).
+    unplaced: HashMap<String, (String, bool)>,
+}
+
+/// Names just matched to people: what the call said under them shows now.
+fn show_learned(
+    this: &WeakEntity<Shell>,
+    cx: &mut AsyncApp,
+    people: &HashMap<String, OwnedUserId>,
+    said: &mut ByIdentity,
+    learned: &[String],
+) {
+    if learned.is_empty() {
+        return;
+    }
+    let speaking: Vec<OwnedUserId> = said
+        .speaking
+        .iter()
+        .filter_map(|id| people.get(id).cloned())
+        .collect();
+    let heard: Vec<(OwnedUserId, bool)> = learned
+        .iter()
+        .filter_map(|id| Some((people.get(id)?.clone(), *said.heard.get(id)?)))
+        .collect();
+    let placed: Vec<String> = said
+        .unplaced
+        .iter()
+        .filter(|(_, (id, _))| people.contains_key(id))
+        .map(|(key, _)| key.clone())
+        .collect();
+    let feeds: Vec<(OwnedUserId, String, bool)> = placed
+        .into_iter()
+        .filter_map(|key| {
+            let (id, screen) = said.unplaced.remove(&key)?;
+            Some((people.get(&id)?.clone(), key, screen))
+        })
+        .collect();
+    if learned.iter().any(|id| said.speaking.contains(id)) || !heard.is_empty() || !feeds.is_empty() {
+        eprintln!(
+            "morpheus-desktop: call names learned after their media: {learned:?} (speaking {}, heard {}, feeds {})",
+            speaking.len(),
+            heard.len(),
+            feeds.len()
+        );
+    }
+    this.update(cx, |this, cx| {
+        if let Some(state) = this.calls.state.as_mut() {
+            state.speaking = speaking;
+            for (user, heard) in heard {
+                state.heard_event(user, heard);
+            }
+            for (user, key, screen) in feeds {
+                state.video_event(Some(user), key, screen, true);
+            }
+            cx.notify();
+        }
+    })
+    .ok();
 }
 
 /// What the call's loop waits on.
@@ -745,6 +822,7 @@ async fn run_call(
     // so the others learn it from us.
     let own_identity = call.identity();
     let mut people: HashMap<String, OwnedUserId> = HashMap::new();
+    let mut said = ByIdentity::default();
     if let Some(me) = session.user_id() {
         people.insert(own_identity.clone(), me);
     }
@@ -786,11 +864,9 @@ async fn run_call(
         _ => share_key().await,
     }
 
-    // A key that reached someone before the room key it is encrypted with (the
-    // two travel separately) is lost to them for good, with nothing said: so it
-    // is sent again every few seconds for the first half minute of the call.
-    let started = std::time::Instant::now();
-    let mut resent = 0u32;
+    // A key that reaches someone before the room key it is encrypted with is
+    // read once the event cache decrypts it (core's `call_keys`); ours goes
+    // out again whenever someone joins, as in Element Call.
     loop {
         let next = {
             let event = events.recv().fuse();
@@ -813,16 +889,7 @@ async fn run_call(
             return;
         }
         let event = match next {
-            Next::Tick => {
-                if credentials.media_key.is_some()
-                    && resent < 6
-                    && started.elapsed() >= Duration::from_secs(4 * u64::from(resent + 1))
-                {
-                    resent += 1;
-                    share_key().await;
-                }
-                continue;
-            }
+            Next::Tick => continue,
             Next::Event(None) => return,
             Next::Event(Some(event)) => event,
             Next::Key(None) => {
@@ -832,8 +899,12 @@ async fn run_call(
             Next::Key(Some(key)) => {
                 // Its sender's name in the call, when it says: who is
                 // speaking under that name.
-                if let Some(identity) = &key.livekit_identity {
+                let mut learned = Vec::new();
+                if let Some(identity) = &key.livekit_identity
+                    && people.get(identity) != Some(&key.user_id)
+                {
                     people.insert(identity.clone(), key.user_id.clone());
+                    learned.push(identity.clone());
                 }
                 let applied = this.read_with(cx, |this, _| {
                     if let Some(call) = &this.calls.media {
@@ -845,18 +916,22 @@ async fn run_call(
                 if applied.is_err() {
                     return;
                 }
+                show_learned(&this, cx, &people, &mut said, &learned);
                 continue;
             }
         };
         match event {
             CallEvent::Joined(_) => {
                 this.update(cx, |this, _| this.chime(Sound::Join)).ok();
-                refresh_people(&session, &room_id, &mut people).await;
+                let learned = refresh_people(&session, &room_id, &mut people).await;
+                show_learned(&this, cx, &people, &mut said, &learned);
                 share_key().await;
             }
             CallEvent::Speaking(identities) => {
+                said.speaking = identities.clone();
                 if identities.iter().any(|id| !people.contains_key(id)) {
-                    refresh_people(&session, &room_id, &mut people).await;
+                    let learned = refresh_people(&session, &room_id, &mut people).await;
+                    show_learned(&this, cx, &people, &mut said, &learned);
                 }
                 let speaking: Vec<OwnedUserId> = identities
                     .iter()
@@ -874,10 +949,12 @@ async fn run_call(
             }
             // Test tones only: whose audio actually arrives (decrypted).
             CallEvent::Heard(ref identity) | CallEvent::Quiet(ref identity) => {
-                if !people.contains_key(identity) {
-                    refresh_people(&session, &room_id, &mut people).await;
-                }
                 let heard = matches!(event, CallEvent::Heard(_));
+                said.heard.insert(identity.clone(), heard);
+                if !people.contains_key(identity) {
+                    let learned = refresh_people(&session, &room_id, &mut people).await;
+                    show_learned(&this, cx, &people, &mut said, &learned);
+                }
                 if let Some(user) = people.get(identity).cloned() {
                     this.update(cx, |this, cx| {
                         if let Some(state) = this.calls.state.as_mut() {
@@ -895,9 +972,16 @@ async fn run_call(
                 on,
             } => {
                 if !people.contains_key(&identity) {
-                    refresh_people(&session, &room_id, &mut people).await;
+                    let learned = refresh_people(&session, &room_id, &mut people).await;
+                    show_learned(&this, cx, &people, &mut said, &learned);
                 }
                 let user = people.get(&identity).cloned();
+                // Its sender not known yet: shown once their name is.
+                if on && user.is_none() {
+                    said.unplaced.insert(key.clone(), (identity.clone(), screen));
+                } else {
+                    said.unplaced.remove(&key);
+                }
                 this.update(cx, |this, cx| {
                     // Someone starts sharing their screen: heard, as in Discord.
                     if screen

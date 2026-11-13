@@ -7,7 +7,7 @@
 
 use std::{
     collections::HashMap,
-    sync::{Mutex, OnceLock},
+    sync::{Arc, Mutex, OnceLock},
     time::{Duration, Instant},
 };
 
@@ -445,9 +445,36 @@ async fn ensure_calls_allowed(room: &matrix_sdk::Room, user_id: &OwnedUserId) ->
     if levels.user_can_send_state(user_id, StateEventType::CallMember) {
         return Ok(());
     }
+    // What this device knows may be behind: an admin may have just turned
+    // calls on by joining (the change not synced here yet). The server says.
+    if server_allows_calls(room, user_id).await.unwrap_or(false) {
+        return Ok(());
+    }
     Err(Error::Other(
         "calls aren't allowed in this room; an admin can turn them on by joining one".into(),
     ))
+}
+
+/// Whether `user_id` may post its call membership in `room`, by the power
+/// levels the server has now.
+async fn server_allows_calls(room: &matrix_sdk::Room, user_id: &OwnedUserId) -> crate::Result<bool> {
+    let current = room
+        .client()
+        .send(get_state_event_for_key::v3::Request::new(
+            room.room_id().to_owned(),
+            StateEventType::RoomPowerLevels,
+            String::new(),
+        ))
+        .await?;
+    let content: Value = serde_json::from_str(current.event_or_content.get())?;
+    let level = |v: &Value| v.as_i64();
+    let needed = level(&content["events"][StateEventType::CallMember.to_string()])
+        .or_else(|| level(&content["state_default"]))
+        .unwrap_or(50);
+    let mine = level(&content["users"][user_id.as_str()])
+        .or_else(|| level(&content["users_default"]))
+        .unwrap_or(0);
+    Ok(mine >= needed)
 }
 
 /// Let every member join calls in `room` (power level 0 for the membership).
@@ -619,10 +646,7 @@ impl Session {
                 .device_id()
                 .ok_or(Error::NoSession)?
                 .to_string();
-            let sent_ts = crate::rt::SystemTime::now()
-                .duration_since(crate::rt::UNIX_EPOCH)
-                .map(|d| d.as_millis() as u64)
-                .unwrap_or_default();
+            let sent_ts = now_ms();
             let content = json!({
                 "keys": [{
                     "index": 0,
@@ -644,22 +668,81 @@ impl Session {
         let client = self.client.clone();
         self.core.run(async move {
             let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-            let handle = client.add_room_event_handler(
-                &room_id,
+            // Each device's newest key event so far (its `sent_ts`): a key
+            // decrypted late must not replace a newer one.
+            let newest: Arc<Mutex<HashMap<(OwnedUserId, String), u64>>> = Arc::default();
+            let handle = client.add_room_event_handler(&room_id, {
+                let (tx, newest) = (tx.clone(), newest.clone());
                 move |event: AnySyncTimelineEvent,
                       encryption: Option<EncryptionInfo>,
                       raw: RawEvent| {
-                    let tx = tx.clone();
+                    let (tx, newest) = (tx.clone(), newest.clone());
                     async move {
                         if event.event_type().to_string() != KEYS_EVENT || encryption.is_none() {
                             return;
                         }
-                        for key in keys_in(event.sender(), &raw) {
+                        for key in keys_in(raw.0.get(), &newest, 0) {
                             let _ = tx.send(key);
                         }
                     }
-                },
-            );
+                }
+            });
+            // A key event that arrived before the room key it is encrypted
+            // with (they travel separately: the room key to-device) is
+            // undecryptable at first, and the handler above never sees it
+            // again. The event cache decrypts it once the room key is here
+            // and says so: read it then, as Element Call does
+            // (matrix-js-sdk waits for such an event's `Decrypted`).
+            {
+                use futures_util::StreamExt as _;
+                use matrix_sdk::event_cache::RedecryptorReport;
+                let client = client.clone();
+                // Keys from earlier calls, decrypted now, are no use.
+                let since = now_ms().saturating_sub(5 * 60_000);
+                crate::rt::spawn(async move {
+                    let cache = client.event_cache();
+                    let mut reports = Box::pin(cache.subscribe_to_decryption_reports());
+                    loop {
+                        let next = reports.next();
+                        let closed = Box::pin(tx.closed());
+                        let report = match futures_util::future::select(next, closed).await {
+                            futures_util::future::Either::Left((Some(report), _)) => report,
+                            _ => break,
+                        };
+                        let Ok(RedecryptorReport::ResolvedUtds { room_id: in_room, events }) =
+                            report
+                        else {
+                            continue;
+                        };
+                        if in_room != room_id {
+                            continue;
+                        }
+                        let Some(room) = client.get_room(&room_id) else {
+                            continue;
+                        };
+                        let Ok((cache, _drop)) = room.event_cache().await else {
+                            continue;
+                        };
+                        for event_id in events {
+                            let Ok(Some(event)) = cache.find_event(&event_id).await else {
+                                continue;
+                            };
+                            if event.encryption_info().is_none() {
+                                continue;
+                            }
+                            let json = event.raw().json().get();
+                            for key in keys_in(json, &newest, since) {
+                                tracing::info!(
+                                    user = %key.user_id,
+                                    device = %key.device_id,
+                                    "call key decrypted late"
+                                );
+                                let _ = tx.send(key);
+                            }
+                        }
+                    }
+                });
+            }
             Ok(CallKeyUpdates {
                 rx,
                 _handle: client.event_handler_drop_guard(handle),
@@ -668,12 +751,44 @@ impl Session {
     }
 }
 
-fn keys_in(sender: &matrix_sdk::ruma::UserId, raw: &RawEvent) -> Vec<CallKey> {
+/// The keys in a decrypted key event (its JSON), unless its sender's device
+/// already gave a newer one or it was sent before `since` (ms).
+fn keys_in(
+    json: &str,
+    newest: &Mutex<HashMap<(OwnedUserId, String), u64>>,
+    since: u64,
+) -> Vec<CallKey> {
     use base64::Engine as _;
-    let Ok(event) = serde_json::from_str::<Value>(raw.0.get()) else {
+    let Ok(event) = serde_json::from_str::<Value>(json) else {
+        return Vec::new();
+    };
+    if event["type"].as_str() != Some(KEYS_EVENT) {
+        return Vec::new();
+    }
+    let Some(sender) = event["sender"]
+        .as_str()
+        .and_then(|s| OwnedUserId::try_from(s).ok())
+    else {
         return Vec::new();
     };
     let content = &event["content"];
+    let sent = content["sent_ts"]
+        .as_u64()
+        .or_else(|| event["origin_server_ts"].as_u64())
+        .unwrap_or_default();
+    if sent < since {
+        return Vec::new();
+    }
+    if let Some(device_id) = content["device_id"].as_str()
+        && let Ok(mut newest) = newest.lock()
+    {
+        let at = newest.entry((sender.clone(), device_id.to_owned())).or_default();
+        if sent < *at {
+            return Vec::new();
+        }
+        *at = sent;
+    }
+    let sender: &matrix_sdk::ruma::UserId = &sender;
     let Some(device_id) = content["device_id"].as_str() else {
         return Vec::new();
     };
