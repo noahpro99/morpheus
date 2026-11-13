@@ -18,6 +18,7 @@ pub mod invites;
 pub mod keys;
 pub mod last_place;
 pub mod links;
+pub mod lru;
 pub mod linkify;
 pub mod marks;
 pub mod members;

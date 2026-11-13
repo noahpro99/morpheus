@@ -72,7 +72,7 @@ impl Shell {
     /// A channel of the server that you are not in: its join card.
     pub fn open_unjoined(&mut self, room: SpaceRoom, cx: &mut Context<Self>) {
         self.friends_open = false;
-        self.timeline = None;
+        self.stash_timeline(cx);
         self.composer = None;
         self.timeline_handle = None;
         self.members = None;
