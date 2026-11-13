@@ -169,6 +169,8 @@ pub struct TimelineView {
     /// Video messages' players, by the message's unique ID (kept while the
     /// view lives, so a video scrolled away and back is where it was).
     videos: HashMap<String, gpui::Entity<crate::video::VideoPlayer>>,
+    /// The room's members, to turn a typed "" into a mention pill.
+    people: Vec<crate::view_model::rich::Person>,
 }
 
 /// Scroll numbers of a list, in px: what a test and the jump button read.
@@ -274,7 +276,26 @@ impl TimelineView {
             pressed_avatar: None,
             left_at: None,
             videos: HashMap::new(),
+            people: Vec::new(),
         };
+        if let Some(session) = session.clone()
+            && thread_root.is_none()
+        {
+            let asking = session.members(room_id.clone());
+            cx.spawn(async move |this, cx| {
+                if let Ok(members) = asking.await {
+                    this.update(cx, |this, cx| {
+                        this.people = members
+                            .into_iter()
+                            .map(|m| crate::view_model::rich::Person { id: m.user_id.to_string(), name: m.name })
+                            .collect();
+                        cx.notify();
+                    })
+                    .ok();
+                }
+            })
+            .detach();
+        }
         if let Some(session) = session {
             cx.spawn(async move |this, cx| {
                 let opened = match thread_root.clone() {
@@ -718,6 +739,23 @@ impl TimelineView {
         }
     }
 
+    /// A typed "" of a member is a mention pill, and lights the row of
+    /// the one it names (you).
+    fn with_name_mentions(&self, row: Arc<MessageRow>) -> Arc<MessageRow> {
+        if self.people.is_empty() || row.blocks.is_empty() {
+            return row;
+        }
+        let Some((blocks, ids)) = crate::view_model::rich::name_mentions(&row.blocks, &self.people) else {
+            return row;
+        };
+        let mut message = row.message.clone();
+        let me = self.session.as_ref().and_then(|s| s.user_id());
+        if me.is_some_and(|me| ids.iter().any(|id| id == me.as_str())) && !message.is_own {
+            message.mentions_me = true;
+        }
+        Arc::new(MessageRow { message, blocks, time: row.time.clone() })
+    }
+
     fn render_row(&mut self, ix: usize, cx: &mut Context<Self>) -> AnyElement {
         let Some(row) = self.rows.get(ix).cloned() else {
             return div().into_any_element();
@@ -759,6 +797,7 @@ impl TimelineView {
                 )
                 .into_any_element();
         }
+        let row = self.with_name_mentions(row);
         let mut pictures = Pictures {
             keys: self.keys,
             highlight: self.highlight.as_deref() == Some(row.message.unique_id.as_str()),
