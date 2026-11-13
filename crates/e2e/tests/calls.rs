@@ -3546,12 +3546,21 @@ async fn a_cameras_card_shows_the_whole_picture_with_round_corners() {
         card.w,
         card.h
     );
+    // Her own camera is drawn mirrored: the pattern runs the other way round.
+    let mirrored = alice
+        .attr(".call-stage .video-tile:not(.screen)", "data-mirrored")
+        .await
+        .expect("attr")
+        .as_deref()
+        == Some("true");
+    let (left_is, right_is): (&dyn Fn((u8, u8, u8)) -> bool, &dyn Fn((u8, u8, u8)) -> bool) =
+        if mirrored { (&blue, &red) } else { (&red, &blue) };
     let left = [pixel(px + 4.0, cy), pixel(px + 24.0, cy)];
     let right = [pixel(px + pw - 4.0, cy), pixel(px + pw - 24.0, cy)];
-    assert!(left.iter().any(|p| red(*p)), "the left edge is {left:?}, not the picture's red");
-    assert!(right.iter().any(|p| blue(*p)), "the right edge is {right:?}, not the picture's blue");
+    assert!(left.iter().any(|p| left_is(*p)), "the left edge is {left:?}, not the picture's red");
+    assert!(right.iter().any(|p| right_is(*p)), "the right edge is {right:?}, not the picture's blue");
     // The middle of the top and bottom edges show the picture too.
-    for (x, red_side) in [(px + pw * 0.25, true), (px + pw * 0.75, false)] {
+    for (x, red_side) in [(px + pw * 0.25, !mirrored), (px + pw * 0.75, mirrored)] {
         for y in [py + 3.0, py + ph - 3.0] {
             let p = pixel(x, y);
             assert!(if red_side { red(p) } else { blue(p) }, "the edge at ({x}, {y}) is {p:?}");
