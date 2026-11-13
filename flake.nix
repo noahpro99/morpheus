@@ -1,5 +1,5 @@
 {
-  description = "Morpheus - a Discord-style Matrix client in Rust (Dioxus)";
+  description = "Morpheus - a Discord-style Matrix client in Rust (GPUI desktop, Dioxus phone and web)";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -68,13 +68,41 @@
           libdrm
           libgbm
         ];
+
+      # Native libraries the GPUI desktop app links and loads at run time
+      # (Wayland, X11 and Vulkan for the window, fontconfig and freetype for
+      # text, sound, and what libwebrtc loads for calls and screen capture).
+      desktopLibsFor =
+        pkgs: with pkgs; [
+          wayland
+          libxkbcommon # also libxkbcommon-x11
+          libxcb
+          libx11
+          libxext
+          libxfixes
+          libxdamage
+          libxrandr
+          libxcomposite
+          libxtst
+          libdrm
+          libgbm
+          libGL
+          vulkan-loader
+          fontconfig
+          freetype
+          openssl
+          sqlite
+          alsa-lib # call audio and sounds (cpal, rodio)
+          libpulseaudio
+          pipewire
+        ];
     in
     {
       formatter = forEachSystem (pkgs: pkgs.nixfmt-rfc-style);
 
       # `nix build` / `nix run`: the desktop app, for installing on NixOS
-      # (github:noahpro99/morpheus). Built as CI builds it, with dx, so its
-      # assets sit beside the binary as the app expects.
+      # (github:noahpro99/morpheus). The GPUI app, built with cargo: its fonts and
+      # icons are inside the binary.
       packages = nixpkgs.lib.genAttrs [ "x86_64-linux" ] (
         system:
         let
@@ -89,13 +117,7 @@
             rustc = toolchain;
           };
           clang = pkgs.llvmPackages_21.clang;
-          guiLibs = guiLibsFor pkgs;
-          gstPlugins = with pkgs.gst_all_1; [
-            gstreamer
-            gst-plugins-base
-            gst-plugins-good
-            gst-libav # H.264 and H.265 (videos in messages)
-          ];
+          desktopLibs = desktopLibsFor pkgs;
           # LiveKit's prebuilt libwebrtc (calls), which webrtc-sys would
           # download while building: the tag is webrtc-sys-build's WEBRTC_TAG.
           webrtc = pkgs.fetchzip {
@@ -114,6 +136,8 @@
               "InstantMessaging"
               "Chat"
             ];
+            # The window's app id, so a launcher or dock matches the window to this entry.
+            startupWMClass = "morpheus-desktop";
             # matrix: links open in Morpheus (passed to the running one).
             mimeTypes = [ "x-scheme-handler/matrix" ];
           };
@@ -128,20 +152,23 @@
                 ./rust-toolchain.toml
                 ./apps
                 ./crates
+                ./vendor # the patched gpui and xattr
               ];
             };
             cargoLock.lockFile = ./Cargo.lock;
 
             nativeBuildInputs = [
-              pkgs.dioxus-cli
               pkgs.pkg-config
               pkgs.cmake # aws-lc-sys
               clang # webrtc-sys runs clang++ itself
               pkgs.makeWrapper
-              pkgs.wrapGAppsHook3
               pkgs.copyDesktopItems
             ];
-            buildInputs = guiLibs ++ gstPlugins ++ [ pkgs.glib-networking ];
+            buildInputs = desktopLibs;
+            cargoBuildFlags = [
+              "--package"
+              "morpheus-desktop"
+            ];
 
             LK_CUSTOM_WEBRTC = webrtc;
             # As in the dev shell: libwebrtc is built against Chromium's libc++.
@@ -149,35 +176,22 @@
             CXX_x86_64_unknown_linux_gnu = "${clang}/bin/clang++";
             dontUseCmakeConfigure = true;
 
-            buildPhase = ''
-              runHook preBuild
-              export HOME=$TMPDIR
-              dx build --release --package morpheus-desktop --platform linux
-              runHook postBuild
-            '';
             doCheck = false;
-            installPhase = ''
-              runHook preInstall
-              app=target/dx/morpheus-desktop/release/linux/app
-              mkdir -p $out/lib/morpheus $out/bin
-              cp -r $app/morpheus-desktop $app/assets $out/lib/morpheus/
+            # cargo's install hook puts the binary in bin/; it moves to lib/ and
+            # bin/morpheus becomes the wrapper (postFixup).
+            postInstall = ''
+              mkdir -p $out/lib/morpheus
+              mv $out/bin/morpheus-desktop $out/lib/morpheus/
               install -Dm644 apps/desktop/icons/icon.png $out/share/icons/hicolor/1024x1024/apps/morpheus.png
               install -Dm644 apps/desktop/icons/icon.svg $out/share/icons/hicolor/scalable/apps/morpheus.svg
-              runHook postInstall
             '';
 
             desktopItems = [ desktopItem ];
-            # One wrapper, with webkitgtk's schemas and GIO modules, and what is
-            # loaded at run time: the tray, sound, screen capture, GL.
-            dontWrapGApps = true;
+            # One wrapper, with what is loaded at run time: the window system
+            # (Wayland, X11, Vulkan, GL), sound, screen capture.
             postFixup = ''
               makeWrapper $out/lib/morpheus/morpheus-desktop $out/bin/morpheus \
-                "''${gappsWrapperArgs[@]}" \
-                --set WEBKIT_DISABLE_DMABUF_RENDERER 1 \
-                --prefix GST_PLUGIN_SYSTEM_PATH_1_0 : "${
-                  lib.makeSearchPathOutput "lib" "lib/gstreamer-1.0" gstPlugins
-                }" \
-                --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath guiLibs}"
+                --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath desktopLibs}"
             '';
 
             meta = {
