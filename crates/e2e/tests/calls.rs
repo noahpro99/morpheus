@@ -4205,3 +4205,120 @@ async fn your_own_camera_is_mirrored_in_your_view_only() {
         "a screen is never mirrored"
     );
 }
+
+/// A focused card (`card` selector, clicked in `app`'s call view) fills the
+/// stage as large as fits, in its picture's shape (`ratio`: 16:9 for a card
+/// without one), the others in a strip under it; a second click goes back to
+/// the grid.
+async fn check_focus_fills_stage(app: &mut App, who: &str, card: &str, ratio: Option<f64>) {
+    app.click(&format!(".call-stage {card}"))
+        .await
+        .unwrap_or_else(|e| panic!("{who}: click {card}: {e}"));
+    app.wait_for(".call-stage .call-cards.focused", DEFAULT_WAIT)
+        .await
+        .unwrap_or_else(|e| panic!("{who}: {card} not focused: {e}"));
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    let main = app
+        .bounds(".call-focus-main")
+        .await
+        .expect("bounds")
+        .expect("the stage of the focused card");
+    let big = app
+        .bounds(".call-focus-main > *")
+        .await
+        .expect("bounds")
+        .expect("the focused card");
+    let want = ratio.unwrap_or(16.0 / 9.0);
+    assert!(
+        main.h > 150.0,
+        "{who}: the focused card's stage is {}x{}",
+        main.w,
+        main.h
+    );
+    assert!(
+        big.w >= 0.9 * main.w || big.h >= 0.9 * main.h,
+        "{who}: the focused {card} is {}x{} in a {}x{} stage: not as large as fits",
+        big.w,
+        big.h,
+        main.w,
+        main.h
+    );
+    assert!(
+        (big.w / big.h / want - 1.0).abs() < 0.02,
+        "{who}: the focused {card} is {}x{} ({:.3}), not {want:.3}",
+        big.w,
+        big.h,
+        big.w / big.h
+    );
+    assert!(
+        big.w <= main.w + 1.0 && big.h <= main.h + 1.0,
+        "{who}: the focused card spills out of its stage"
+    );
+    let strip = app.all_bounds(".call-strip > *").await.expect("bounds");
+    assert!(!strip.is_empty(), "{who}: the others are not in a strip");
+    for s in &strip {
+        assert!(
+            s.y >= big.y + big.h - 1.0,
+            "{who}: the strip is not under the focused card"
+        );
+        assert!(s.w < big.w, "{who}: a strip card is as big as the focused");
+    }
+    // Click the focused card: back to the grid.
+    app.click(".call-focus-main > *").await.expect("click again");
+    app.wait_for_count(".call-cards.focused", 0, DEFAULT_WAIT)
+        .await
+        .unwrap_or_else(|e| panic!("{who}: a second click did not unfocus: {e}"));
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert_eq!(
+        app.count(".call-strip").await.expect("count"),
+        0,
+        "{who}: no strip in the grid"
+    );
+}
+
+/// Focusing a card makes it fill the stage in its picture's shape (a camera,
+/// a shared screen) or 16:9 (a card with only a picture of the person), with
+/// the others in a strip under it; clicking it again returns to the grid.
+#[tokio::test]
+async fn a_focused_card_fills_the_stage_in_its_pictures_shape() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let (mut alice, mut bob) =
+        two_in_a_call_with_alices_camera(&hs, &[("MORPHEUS_CALL_CAMERA_SIZE", "640x480")]).await;
+    if !alice.is_gpui() {
+        eprintln!("GPUI only");
+        return;
+    }
+    // A camera (4:3), in bob's view.
+    let cam = ".video-tile:not(.screen)[data-user=\"@alice:localhost\"]";
+    let (pw, ph) = picture_size(&mut bob, &format!(".call-stage {cam}")).await;
+    assert!(pw > 0.0 && ph > 0.0, "no picture size");
+    check_focus_fills_stage(&mut bob, "bob (camera)", cam, Some(pw / ph)).await;
+    // Avatar only: bob has no camera, in alice's view.
+    check_focus_fills_stage(
+        &mut alice,
+        "alice (avatar)",
+        ".call-tile[data-user=\"@bob:localhost\"]",
+        None,
+    )
+    .await;
+    // A shared screen, in bob's view.
+    start_share(&mut alice, ".voice-panel .screen-button").await;
+    bob.wait_for(".call-stage .video-tile.screen", DEFAULT_WAIT)
+        .await
+        .expect("bob sees the screen");
+    wait_screen_pattern(&mut bob, "@alice:localhost")
+        .await
+        .expect("the screen's picture");
+    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+    let screen = ".video-tile.screen[data-user=\"@alice:localhost\"]";
+    let (sw, sh) = picture_size(&mut bob, &format!(".call-stage {screen}")).await;
+    assert!(sw > 0.0 && sh > 0.0, "no screen size");
+    check_focus_fills_stage(&mut bob, "bob (screen)", screen, Some(sw / sh)).await;
+    alice
+        .click(".voice-panel .screen-button")
+        .await
+        .expect("stop sharing");
+}

@@ -649,7 +649,11 @@ fn sized(
         Fit::Strip => (144.0, 81.0),
     };
     match (fit, ratio) {
-        (Fit::Main(..), None) => base.flex_1().min_w_0().min_h_0(),
+        // A person's card focused: 16:9, as large as the stage lets it.
+        (Fit::Main(..), None) => {
+            let (w, h) = fit_ratio(room, CARD_RATIO);
+            base.w(px(w)).h(px(h)).flex_none()
+        }
         (_, None) => base.w(px(room.0)).h(px(room.1)),
         (_, Some(ratio)) => {
             let (w, h) = fit_ratio(room, ratio);
