@@ -779,6 +779,11 @@ async fn run_call(
         _ => share_key().await,
     }
 
+    // A key that reached someone before the room key it is encrypted with (the
+    // two travel separately) is lost to them for good, with nothing said: so it
+    // is sent again every few seconds for the first half minute of the call.
+    let started = std::time::Instant::now();
+    let mut resent = 0u32;
     loop {
         let next = {
             let event = events.recv().fuse();
@@ -801,7 +806,16 @@ async fn run_call(
             return;
         }
         let event = match next {
-            Next::Tick => continue,
+            Next::Tick => {
+                if credentials.media_key.is_some()
+                    && resent < 6
+                    && started.elapsed() >= Duration::from_secs(4 * u64::from(resent + 1))
+                {
+                    resent += 1;
+                    share_key().await;
+                }
+                continue;
+            }
             Next::Event(None) => return,
             Next::Event(Some(event)) => event,
             Next::Key(None) => {
