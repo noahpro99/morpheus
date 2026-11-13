@@ -1,0 +1,20 @@
+[package]
+name = "morpheus-video"
+description = "Video playback for the desktop app: MP4 (H.264 + AAC) demuxed, decoded and paced by the audio clock."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+# MP4 demuxing (pure Rust, MIT).
+mp4 = "0.14"
+# H.264 decoding: Cisco's OpenH264 compiled from source by the crate (C++,
+# BSD-2-Clause); x86 assembly when `nasm` is on the PATH, plain C otherwise.
+openh264 = { version = "0.9", default-features = false, features = ["source"] }
+# AAC-LC decoding (pure Rust, MPL-2.0).
+symphonia-core = "0.5"
+symphonia-codec-aac = "0.5"
+rodio = { version = "0.23", default-features = false, features = ["playback"] }
+
+[lints]
+workspace = true
