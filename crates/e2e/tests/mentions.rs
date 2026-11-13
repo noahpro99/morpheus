@@ -165,3 +165,83 @@ async fn a_message_that_mentions_you_is_lit() {
     assert_eq!(c.count(".message[data-mentioned=true]").await.expect("count"), 0);
     assert_eq!(c.count(".mention-bar").await.expect("count"), 0);
 }
+
+/// A plain "@name" typed in a message (no link) is a pill too when it names
+/// a member by user-ID localpart or by display name; one that names no one
+/// is left as text. It lights the row of the person it names and opens their
+/// profile on a click.
+#[tokio::test]
+async fn a_typed_at_name_is_a_pill() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let alice = new_account(&hs, "typa").expect("alice");
+    let carol = new_account(&hs, "typc").expect("carol");
+    let dave = new_account(&hs, "typd").expect("dave");
+    let writer = new_account(&hs, "typw").expect("writer");
+    api_as(
+        &hs,
+        &carol,
+        "PUT",
+        &format!("profile/@{carol}:localhost/displayname"),
+        Some(serde_json::json!({ "displayname": "Carrie Typed" })),
+    )
+    .expect("display name");
+    let room = room_of(&hs, &writer, &[&alice, &carol, &dave], "typed");
+    let mut a = App::launch_desktop(&hs).await.expect("launch alice");
+    if !a.is_gpui() {
+        eprintln!("GPUI only");
+        return;
+    }
+    login(&mut a, &alice).await;
+    let mut d = App::launch_desktop(&hs).await.expect("launch dave");
+    login(&mut d, &dave).await;
+    a.open_room("typed room").await.expect("open");
+    d.open_room("typed room").await.expect("open");
+    api_as(
+        &hs,
+        &writer,
+        "PUT",
+        &format!("rooms/{}/send/m.room.message/{}-typed", enc(&room), std::process::id()),
+        Some(serde_json::json!({
+            "msgtype": "m.text",
+            "body": format!("hi @{alice} and @Carrie Typed, but not @nobody typedword"),
+        })),
+    )
+    .expect("send");
+    for app in [&mut a, &mut d] {
+        app.wait_for_text(".message .body", "typedword", DEFAULT_WAIT)
+            .await
+            .expect("the message");
+    }
+    let pill = r##".message a[href^="https://matrix.to/#/@"]"##;
+    for (who, app) in [("alice", &mut a), ("dave", &mut d)] {
+        app.wait_for_count(pill, 2, DEFAULT_WAIT)
+            .await
+            .unwrap_or_else(|e| panic!("{who}: the two named members are not pills: {e}"));
+        let hrefs = app.attrs(pill, "href").await.expect("hrefs");
+        let hrefs: Vec<String> = hrefs.into_iter().flatten().collect();
+        assert!(
+            hrefs.contains(&format!("https://matrix.to/#/@{alice}:localhost"))
+                && hrefs.contains(&format!("https://matrix.to/#/@{carol}:localhost")),
+            "{who}: pills point at the two people: {hrefs:?}"
+        );
+        let bg = app.attr(pill, "data-bg").await.expect("bg").expect("a tint");
+        assert!(bg.ends_with("4d"), "{who}: the pill look: {bg}");
+    }
+    // The text is as typed, @nobody is not a pill.
+    a.wait_for_text(".message .body", "@nobody typedword", DEFAULT_WAIT)
+        .await
+        .expect("the text as typed");
+    // It lights alice's row, not dave's.
+    a.wait_for(".message[data-mentioned=true]", DEFAULT_WAIT)
+        .await
+        .expect("alice's row is lit");
+    assert_eq!(d.count(".message[data-mentioned=true]").await.expect("count"), 0);
+    // A click opens the profile.
+    a.click_text(pill, &format!("@{alice}")).await.expect("click");
+    a.wait_for_text(".profile-modal .profile-id", &format!("@{alice}:localhost"), DEFAULT_WAIT)
+        .await
+        .expect("the profile");
+}

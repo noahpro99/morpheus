@@ -507,3 +507,157 @@ mod pill_tests {
         assert!(!is_pill("https://example.org/#/@bob:localhost"));
     }
 }
+
+/// A member of a room, to match a typed "@name" against.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Person {
+    /// `@name:server`.
+    pub id: String,
+    /// Their display name in the room.
+    pub name: String,
+}
+
+/// Plain "@name" in `blocks` (no link, not code) where `name` is a member's
+/// display name or the localpart of their ID (or the whole ID), as the
+/// longest of them there, and nobody else's: those ranges made mention pills
+/// (links to matrix.to, as a client's would have sent). Returns the new
+/// blocks and the IDs found, or `None` if there is nothing to change.
+pub fn name_mentions(blocks: &[Block], people: &[Person]) -> Option<(Vec<Block>, Vec<String>)> {
+    // Every way to write each person, lower-cased; one that fits two people
+    // names neither.
+    let mut keys: Vec<(String, usize)> = Vec::new();
+    for (n, person) in people.iter().enumerate() {
+        let id = person.id.trim_start_matches('@');
+        let local = id.split(':').next().unwrap_or(id);
+        for key in [person.name.as_str(), local, id] {
+            let key = key.trim().to_lowercase();
+            if !key.is_empty() && !keys.contains(&(key.clone(), n)) {
+                keys.push((key, n));
+            }
+        }
+    }
+    let unique: Vec<(String, usize)> = keys
+        .iter()
+        .filter(|(key, n)| keys.iter().all(|(other, m)| other != key || m == n))
+        .cloned()
+        .collect();
+    let mut unique = unique;
+    unique.sort_by_key(|(key, _)| std::cmp::Reverse(key.len()));
+    if unique.is_empty() {
+        return None;
+    }
+    let mut found = Vec::new();
+    let out = mention_blocks(blocks, people, &unique, &mut found);
+    (!found.is_empty()).then_some((out, found))
+}
+
+fn mention_blocks(
+    blocks: &[Block],
+    people: &[Person],
+    keys: &[(String, usize)],
+    found: &mut Vec<String>,
+) -> Vec<Block> {
+    blocks
+        .iter()
+        .map(|block| match block {
+            Block::Para(para) => Block::Para(mention_para(para, people, keys, found)),
+            Block::Quote(inner) => Block::Quote(mention_blocks(inner, people, keys, found)),
+            Block::List { ordered, start, items } => Block::List {
+                ordered: *ordered,
+                start: *start,
+                items: items
+                    .iter()
+                    .map(|item| mention_blocks(item, people, keys, found))
+                    .collect(),
+            },
+            other => other.clone(),
+        })
+        .collect()
+}
+
+fn mention_para(
+    para: &Para,
+    people: &[Person],
+    keys: &[(String, usize)],
+    found: &mut Vec<String>,
+) -> Para {
+    let text = &para.text;
+    let covered = |at: usize| {
+        para.spans
+            .iter()
+            .any(|s| (s.style.link.is_some() || s.style.code) && s.range.contains(&at))
+    };
+    let mut out = para.clone();
+    let mut at = 0;
+    while let Some(found_at) = text[at..].find('@').map(|i| i + at) {
+        at = found_at + 1;
+        let before = text[..found_at].chars().next_back();
+        if before.is_some_and(|c| c.is_alphanumeric() || c == '_') || covered(found_at) {
+            continue;
+        }
+        let rest = &text[found_at + 1..];
+        for (key, n) in keys {
+            let Some(head) = rest.get(..key.len()) else {
+                continue;
+            };
+            if !head.to_lowercase().eq(key) {
+                continue;
+            }
+            let after = rest[key.len()..].chars().next();
+            if after.is_some_and(|c| c.is_alphanumeric() || c == '_') {
+                continue;
+            }
+            let range = found_at..found_at + 1 + key.len();
+            let id = &people[*n].id;
+            found.push(id.clone());
+            out.spans.push(Span {
+                range: range.clone(),
+                style: Style {
+                    mention: true,
+                    link: Some(format!("https://matrix.to/#/{id}").into()),
+                    ..Style::default()
+                },
+            });
+            at = range.end;
+            break;
+        }
+    }
+    out.spans.sort_by_key(|s| s.range.start);
+    out
+}
+
+#[cfg(test)]
+mod name_mention_tests {
+    use super::*;
+
+    fn people() -> Vec<Person> {
+        vec![
+            Person { id: "@bob:x".into(), name: "Bob Smith".into() },
+            Person { id: "@bobby:x".into(), name: "Bobby".into() },
+            Person { id: "@amy:x".into(), name: "Same".into() },
+            Person { id: "@ann:x".into(), name: "Same".into() },
+        ]
+    }
+
+    fn pills(text: &str) -> Vec<String> {
+        match name_mentions(&plain(text), &people()) {
+            Some((_, ids)) => ids,
+            None => Vec::new(),
+        }
+    }
+
+    #[test]
+    fn names_localparts_and_ids_match_the_longest() {
+        assert_eq!(pills("hi @bob."), ["@bob:x"]);
+        assert_eq!(pills("hi @Bob Smith!"), ["@bob:x"]);
+        assert_eq!(pills("hi @bobby and @bob:x"), ["@bobby:x", "@bob:x"]);
+    }
+
+    #[test]
+    fn unknown_ambiguous_and_embedded_are_left_alone() {
+        assert!(pills("@nobody").is_empty());
+        assert!(pills("@same").is_empty());
+        assert!(pills("mail me@bob now").is_empty());
+        assert!(pills("@bobcat").is_empty());
+    }
+}
