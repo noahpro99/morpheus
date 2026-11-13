@@ -1306,6 +1306,11 @@ pub fn header_call_button(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSum
         !room.call_participants.is_empty(),
     );
     let (id, name) = (room.id.clone(), room.name.clone());
+    let colour = if in_this {
+        theme::green()
+    } else {
+        crate::chat::bar_colour(shell, "call-button", theme::text_muted())
+    };
     div()
         .id("call-button")
         .px(px(8.0))
@@ -1313,10 +1318,8 @@ pub fn header_call_button(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSum
         .rounded(px(theme::RADIUS_SM))
         .cursor_pointer()
         .when(in_this, |d| d.bg(rgba(theme::bg_selected())))
-        .hover(|s| s.bg(rgba(theme::bg_hover())))
-        .child(icon(if in_this { "phone-off" } else { "phone" }, 16.0).text_color(rgb(
-            if in_this { theme::green() } else { theme::text_muted() },
-        )))
+        .on_hover(crate::chat::bar_hover(cx, "call-button"))
+        .child(icon(if in_this { "phone-off" } else { "phone" }, 16.0).text_color(rgb(colour)))
         .on_click(cx.listener(move |this, _, _, cx| {
             if this.calls.in_call(&id) {
                 this.hang_up(cx);
@@ -1333,6 +1336,8 @@ pub fn header_call_button(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSum
             },
         )
         .attr("title", title)
+        .attr("data-color", format!("{colour:06x}"))
+        .attr("data-bg", if in_this { format!("{:08x}", theme::bg_selected()) } else { String::new() })
         .into_any_element()
 }
 

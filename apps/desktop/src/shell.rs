@@ -95,6 +95,8 @@ pub struct Shell {
     pub rail_drop: Option<crate::view_model::rail_drag::Drop>,
     /// The rail badge the pointer is over (its pill grows).
     pub rail_hover: Option<String>,
+    /// The top-bar button the pointer is over (its glyph brightens; no background).
+    pub bar_hover: Option<&'static str>,
     /// Where the open room's name sits in the top bar (its menu opens under it).
     pub title_bounds: std::rc::Rc<std::cell::Cell<gpui::Bounds<gpui::Pixels>>>,
     pub profile: Option<Profile>,
@@ -319,6 +321,7 @@ impl Shell {
             open_folders: Vec::new(),
             rail_drop: None,
             rail_hover: None,
+            bar_hover: None,
             title_bounds: Default::default(),
             profile: None,
             accounts: Vec::new(),

@@ -74,12 +74,12 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
             } else {
                 div()
                     .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(rgb(theme::text_faint()))
                     .child("#")
                     .e2e("span", "hash")
                     .text("#")
                     .into_any_element()
             };
+            let head_colour = bar_colour(shell, "room-head", theme::text_muted());
             let anchor = shell.title_bounds.clone();
             let menu_room = room.clone();
             header = header.child(
@@ -93,7 +93,8 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                     .px(px(10.0))
                     .rounded(px(theme::RADIUS_SM))
                     .cursor_pointer()
-                    .hover(|s| s.bg(gpui::rgba(theme::bg_hover())))
+                    .text_color(rgb(head_colour))
+                    .on_hover(bar_hover(cx, "room-head"))
                     .child(icon_el)
                     .child(
                         div()
@@ -119,16 +120,19 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                         let at = gpui::point(b.origin.x, b.origin.y + b.size.height + px(2.0));
                         this.open_room_menu(menu_room.clone(), at, cx)
                     }))
-                    .e2e("button", "ghost room-head"),
+                    .e2e("button", "ghost room-head")
+                    .attr("data-color", format!("{head_colour:06x}"))
+                    .attr("data-bg", ""),
             );
+            let lock_colour = bar_colour(shell, "e2e-badge", theme::text_muted());
             header = header.child(
                 div()
                     .id("e2e-badge")
                     .px(px(8.0))
                     .h_full().flex().items_center()
                     .rounded(px(theme::RADIUS_SM))
-                    .text_color(rgb(theme::text_muted()))
                     .cursor_pointer()
+                    .on_hover(bar_hover(cx, "e2e-badge"))
                     .on_click({
                         let id = room.id.clone();
                         cx.listener(move |this, _, _, cx| {
@@ -143,7 +147,7 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                         },
                         14.0,
                     )
-                    .text_color(rgb(theme::text_muted())))
+                    .text_color(rgb(lock_colour)))
                     .e2e(
                         "button",
                         if room.is_encrypted {
@@ -159,7 +163,9 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                         } else {
                             "Not encrypted"
                         },
-                    ),
+                    )
+                    .attr("data-color", format!("{lock_colour:06x}"))
+                    .attr("data-bg", ""),
             );
             if let Some(topic) = room.topic.clone() {
                 header = header.child(
@@ -182,6 +188,7 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
             header = header.child(div().flex_1());
             let count = room.member_count.to_string();
             let open = shell.members_open;
+            let members_colour = if open { theme::text() } else { bar_colour(shell, "member-toggle", theme::text_muted()) };
             header = header.child(
                 div()
                     .id("member-toggle")
@@ -192,14 +199,10 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                     .h_full()
                     .rounded(px(theme::RADIUS_SM))
                     .text_size(px(0.85 * theme::REM))
-                    .text_color(rgb(if open { theme::text() } else { theme::text_muted() }))
+                    .text_color(rgb(members_colour))
                     .cursor_pointer()
-                    .hover(|s| s.text_color(rgb(theme::text())))
-                    .child(icon("users", 16.0).text_color(rgb(if open {
-                        theme::text()
-                    } else {
-                        theme::text_muted()
-                    })))
+                    .on_hover(bar_hover(cx, "member-toggle"))
+                    .child(icon("users", 16.0).text_color(rgb(members_colour)))
                     .child(count.clone())
                     .on_click(cx.listener(|this, _, _, cx| this.toggle_members(cx)))
                     .e2e(
@@ -211,6 +214,8 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                         },
                     )
                     .attr("title", "Member list (Ctrl+U)")
+                    .attr("data-color", format!("{members_colour:06x}"))
+                    .attr("data-bg", "")
                     .text(count),
             );
             // Calls belong to DMs and voice channels, as in Discord.
@@ -218,6 +223,7 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                 header = header.child(crate::call_ui::header_call_button(shell, cx, room));
             }
             let pins = shell.pinned.len();
+            let pins_colour = bar_colour(shell, "pin-toggle", theme::text_muted());
             header = header.child(
                 div()
                     .id("pin-toggle")
@@ -228,14 +234,16 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                     .h_full()
                     .rounded(px(theme::RADIUS_SM))
                     .text_size(px(0.85 * theme::REM))
-                    .text_color(rgb(theme::text_muted()))
+                    .text_color(rgb(pins_colour))
                     .cursor_pointer()
-                    .hover(|s| s.text_color(rgb(theme::text())))
-                    .child(icon("pin", 16.0).text_color(rgb(theme::text_muted())))
+                    .on_hover(bar_hover(cx, "pin-toggle"))
+                    .child(icon("pin", 16.0).text_color(rgb(pins_colour)))
                     .child(pins.to_string())
                     .on_click(cx.listener(|this, _, _, cx| this.open_pinned(cx)))
                     .e2e("button", "ghost pin-toggle")
                     .attr("title", "Pinned messages (Ctrl+P)")
+                    .attr("data-color", format!("{pins_colour:06x}"))
+                    .attr("data-bg", "")
                     .text(pins.to_string()),
             );
             // The search box at the right end: it widens in place while it
@@ -253,6 +261,7 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                 let target = if wide { WIDE_W } else { REST_W };
                 let from = if wide { REST_W } else { WIDE_W };
                 let target_input = input.clone();
+                let clear_colour = bar_colour(shell, "search-clear", theme::text_muted());
                 let mut bar = div()
                     .id(if wide { "search-bar-wide" } else { "search-bar" })
                     .flex()
@@ -282,15 +291,17 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                             .h_full()
                             .px(px(8.0))
                             .cursor_pointer()
-                            .text_color(rgb(theme::text_muted()))
-                            .hover(|s| s.text_color(rgb(theme::text())))
-                            .child(icon("x", 16.0).text_color(rgb(theme::text_muted())))
+                            .text_color(rgb(clear_colour))
+                            .on_hover(bar_hover(cx, "search-clear"))
+                            .child(icon("x", 16.0).text_color(rgb(clear_colour)))
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.clear_search(cx);
                                 this.focus_search(window, cx);
                             }))
                             .e2e("button", "ghost search-clear")
                             .attr("title", "Clear search")
+                            .attr("data-color", format!("{clear_colour:06x}"))
+                            .attr("data-bg", "")
                             .into_any_element()
                     });
                 header = header.child(if was_wide == wide && !wide {
@@ -425,4 +436,33 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
         })
         .child(body)
         .e2e("main", "chat")
+}
+
+/// A top-bar button's colour: the normal text colour while the pointer is
+/// over it, else `rest`. Top-bar buttons never paint a background.
+pub fn bar_colour(shell: &Shell, key: &'static str, rest: u32) -> u32 {
+    if shell.bar_hover == Some(key) { theme::text() } else { rest }
+}
+
+/// An `on_hover` handler that remembers which top-bar button the pointer is over.
+pub fn bar_hover(
+    cx: &mut Context<Shell>,
+    key: &'static str,
+) -> impl Fn(&bool, &mut gpui::Window, &mut gpui::App) + 'static {
+    let view = cx.entity();
+    move |over, _, cx| {
+        view.update(cx, |s, cx| {
+            let now = if *over {
+                Some(key)
+            } else if s.bar_hover == Some(key) {
+                None
+            } else {
+                return;
+            };
+            if s.bar_hover != now {
+                s.bar_hover = now;
+                cx.notify();
+            }
+        })
+    }
 }
