@@ -1296,10 +1296,16 @@ pub fn message_el(
                 .e2e("div", "message-meta"),
         );
     }
+    // The shield sits at the right of the row (Dioxus floats it right), out of
+    // the flow so a message with one is no taller; the text keeps clear of it.
+    let mut shield_el = None;
     if let Some(shield) = &m.shield {
-        // Dioxus floats it right of the message; here it leads the body.
-        main = main.child(
+        main = main.pr(px(26.0));
+        shield_el = Some(
             div()
+                .absolute()
+                .top(px(6.0))
+                .right(px(16.0))
                 .text_color(rgb(if shield.red {
                     theme::danger()
                 } else {
@@ -1393,6 +1399,9 @@ pub fn message_el(
         line = line.bg(rgba(theme::alpha(theme::accent(), 0x2e)));
     }
     let mut line = line.child(main.e2e("div", "message-main"));
+    if let Some(shield) = shield_el {
+        line = line.child(shield);
+    }
     if let Some(actions) = actions {
         // Right click: the message menu.
         let (menu, unique_id) = (actions.clone(), m.unique_id.clone());

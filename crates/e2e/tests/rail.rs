@@ -476,3 +476,111 @@ async fn cursor(app: &mut App) -> String {
         .unwrap_or_default()
         .to_owned()
 }
+
+/// Discord's rail pill: none beside a read server, a small dot beside one
+/// with unread messages, a medium bar while the pointer is over a server,
+/// the full-height bar beside the server you are in.
+#[tokio::test]
+async fn the_rail_pill_grows_on_hover_and_is_tall_when_selected() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let user = new_account(&hs, "pill").expect("account");
+    let enc = |id: &str| id.replace('!', "%21").replace(':', "%3A");
+    api_as(&hs, &user, "POST", "createRoom", Some(serde_json::json!({ "name": "lobby" }))).expect("lobby");
+    let mut last_channel = String::new();
+    for (server, channel) in [("Pread", "p-read"), ("Punread", "p-unread")] {
+        let space = api_as(
+            &hs,
+            &user,
+            "POST",
+            "createRoom",
+            Some(serde_json::json!({ "name": server, "creation_content": { "type": "m.space" } })),
+        )
+        .expect("space");
+        let space = space["room_id"].as_str().expect("id").to_owned();
+        let room = api_as(&hs, &user, "POST", "createRoom", Some(serde_json::json!({ "name": channel })))
+            .expect("channel");
+        let room = room["room_id"].as_str().expect("id").to_owned();
+        api_as(
+            &hs,
+            &user,
+            "PUT",
+            &format!("rooms/{}/state/m.space.child/{room}", enc(&space)),
+            Some(serde_json::json!({ "via": ["localhost"] })),
+        )
+        .expect("child");
+        last_channel = room;
+    }
+    let mut app = App::launch(&hs).await.expect("launch app");
+    if !app.is_gpui() {
+        eprintln!("the pill's hover is only driven in the GPUI app; skipping");
+        return;
+    }
+    login(&mut app, &user).await;
+    let read = ".rail-item.space-badge[title=\"Pread\"]";
+    let unread = ".rail-item.space-badge[title=\"Punread\"]";
+    app.wait_for(read, DEFAULT_WAIT).await.expect("server");
+    app.wait_for(unread, DEFAULT_WAIT).await.expect("server");
+    // Someone else writes in the second server's channel.
+    let room = enc(&last_channel);
+    api_as(
+        &hs,
+        &user,
+        "POST",
+        &format!("rooms/{room}/invite"),
+        Some(serde_json::json!({ "user_id": "@bob:localhost" })),
+    )
+    .expect("invite bob");
+    api_as(&hs, "bob", "POST", &format!("rooms/{room}/join"), Some(serde_json::json!({}))).expect("bob joins");
+    morpheus_e2e::send_as(&hs, "bob", &last_channel, "pill unread").expect("bob writes");
+
+    let height = |m: Option<morpheus_e2e::Bounds>| m.map_or(0.0, |m| m.h);
+    // Wait for the small dot beside the unread server.
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let h = height(pill_of(&mut app, unread).await);
+        if h > 0.0 && h <= 10.0 {
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline, "a small dot beside the unread server (now {h})");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    // Read, not selected, not hovered: nothing. (Pointer parked on the logo.)
+    app.hover(".rail-item[title=\"Rooms\"]").await.expect("park");
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(height(pill_of(&mut app, read).await) < 1.0, "no pill beside a read server");
+
+    // Hover: a medium bar, between the dot and the full bar.
+    app.hover(read).await.expect("hover");
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let h = height(pill_of(&mut app, read).await);
+        if (14.0..=28.0).contains(&h) {
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline, "a medium bar while hovered (now {h})");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    // An unread server grows too.
+    app.hover(unread).await.expect("hover unread");
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(
+        (14.0..=28.0).contains(&height(pill_of(&mut app, unread).await)),
+        "a hovered unread server has the medium bar"
+    );
+
+    // Selected: the tall bar, and it stays tall under the pointer.
+    app.click(read).await.expect("open the server");
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    let tall = height(pill_of(&mut app, ".rail-item.selected").await);
+    assert!(tall >= 32.0, "the server you are in has a tall bar (now {tall})");
+    // Not hovered any more, still tall; the other server is back to a dot.
+    app.hover(".rail-item[title=\"Rooms\"]").await.expect("away");
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(height(pill_of(&mut app, ".rail-item.selected").await) >= 32.0, "still tall");
+    assert!(height(pill_of(&mut app, read).await) >= 32.0, "the selected one is the server");
+    let h = height(pill_of(&mut app, unread).await);
+    assert!(h > 0.0 && h <= 10.0, "an unread server is a dot again (now {h})");
+}

@@ -323,10 +323,10 @@ async fn create_edit_invite_and_leave_rooms() {
         .expect("room gone after leaving");
 }
 
-/// The chat header's room button opens the same menu as right-clicking the
-/// room, so its settings are one click away.
+/// The chat header has no room button: the room's name is the button, and
+/// clicking it opens the same menu as right-clicking the room, under the name.
 #[tokio::test]
-async fn header_button_opens_the_room_menu() {
+async fn header_name_opens_the_room_menu() {
     let Some(hs) = homeserver() else {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
@@ -334,12 +334,42 @@ async fn header_button_opens_the_room_menu() {
     let mut app = App::launch_desktop(&hs).await.expect("launch app");
     login(&mut app, "alice").await;
     app.open_room("random").await.expect("open random");
-    app.click(".chat-header .room-menu-button")
-        .await
-        .expect("header room button");
+    if app.is_gpui() {
+        assert_eq!(
+            app.count(".chat-header .room-menu-button").await.expect("count"),
+            0,
+            "no three-dots button in the bar"
+        );
+        app.click(".chat-header .room-title").await.expect("the name");
+    } else {
+        app.click(".chat-header .room-menu-button")
+            .await
+            .expect("header room button");
+    }
     app.wait_for_text(".context-menu .context-item", "Edit room", DEFAULT_WAIT)
         .await
         .expect("room menu");
+    let items = menu_labels(&mut app).await;
+    app.press(".context-menu", "Escape").await.expect("escape");
+    menu_closed(&mut app).await;
+    room_menu(&mut app, "random").await;
+    assert_eq!(menu_labels(&mut app).await, items, "the same items as the room's own menu");
+    app.press(".context-menu", "Escape").await.expect("escape");
+    menu_closed(&mut app).await;
+    app.click(if app.is_gpui() { ".chat-header .room-title" } else { ".chat-header .room-menu-button" })
+        .await
+        .expect("the name again");
+    app.wait_for(".context-menu", DEFAULT_WAIT).await.expect("menu again");
+    if app.is_gpui() {
+        let name = app.bounds(".chat-header .room-title").await.expect("b").expect("name");
+        let menu = app.bounds(".context-menu").await.expect("b").expect("menu");
+        assert!(menu.y >= name.bottom() - 1.0, "the menu is under the name: {menu:?} {name:?}");
+        assert!(
+            menu.x >= name.x - 8.0 && menu.x <= name.right(),
+            "the menu starts at the name: {menu:?} {name:?}"
+        );
+    }
+    assert!(items.iter().any(|l| l == "Edit room"), "{items:?}");
     app.click_text(".context-menu .context-item", "Edit room")
         .await
         .expect("edit room");

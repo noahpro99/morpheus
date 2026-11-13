@@ -92,6 +92,10 @@ pub struct Shell {
     pub open_folders: Vec<String>,
     /// Where a server dragged on the rail would land now.
     pub rail_drop: Option<crate::view_model::rail_drag::Drop>,
+    /// The rail badge the pointer is over (its pill grows).
+    pub rail_hover: Option<String>,
+    /// Where the open room's name sits in the top bar (its menu opens under it).
+    pub title_bounds: std::rc::Rc<std::cell::Cell<gpui::Bounds<gpui::Pixels>>>,
     pub profile: Option<Profile>,
     /// The accounts stored on this device (the account menu lists them).
     pub accounts: Vec<morpheus_core::SavedAccount>,
@@ -308,6 +312,8 @@ impl Shell {
             prefs: Prefs::default(),
             open_folders: Vec::new(),
             rail_drop: None,
+            rail_hover: None,
+            title_bounds: Default::default(),
             profile: None,
             accounts: Vec::new(),
             directory: Vec::new(),
