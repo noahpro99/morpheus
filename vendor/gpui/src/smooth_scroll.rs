@@ -93,6 +93,14 @@ pub(crate) fn step(remaining: Point<f32>, dt: f32) -> (Point<f32>, bool) {
     }
 }
 
+/// One frame of the wheel's ease-out for a single distance (any unit): how much of
+/// `remaining` to move after `dt` seconds, and whether that finishes it.
+/// For scrolls that are not wheel events (Page Up/Down).
+pub fn ease_step(remaining: f32, dt: f32) -> (f32, bool) {
+    let (step, done) = step(point(0.0, remaining), dt);
+    (step.y, done)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

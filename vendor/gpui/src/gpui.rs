@@ -46,6 +46,7 @@ mod util;
 mod view;
 mod frame_stats;
 mod smooth_scroll;
+pub use smooth_scroll::ease_step;
 pub use frame_stats::{FrameTime, take_frame_times};
 mod window;
 

@@ -653,3 +653,39 @@ async fn frames_stay_short_while_scrolling_a_long_timeline_and_the_room_list() {
     assert!(p95(column(&timeline, 0)) < 16.0, "the timeline's frames are too long to scroll at 60 fps");
     assert!(p95(column(&list, 0)) < 16.0, "the room list's frames are too long to scroll at 60 fps");
 }
+
+/// Page Up / Page Down ease like the wheel does (task 31): the position
+/// passes through several values over 80 ms or more and ends one page
+/// (nine tenths of the view) further, where the jump used to land.
+#[tokio::test]
+async fn page_up_and_down_scroll_smoothly_by_a_page() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = long_room_open(&hs, "paged room", 120).await;
+    if !app.is_gpui() {
+        eprintln!("skipped: GPUI's own easing");
+        return;
+    }
+    app.scroll_to(".timeline", ScrollTo::Bottom).await.expect("scroll");
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let s = app.scroll_state(".timeline").await.expect("s").expect("t");
+    assert!(s.range > s.viewport * 1.5, "a long enough chat: {s:?}");
+    let (start, page) = (s.from_bottom, s.viewport * 0.9);
+
+    for (key, sign) in [("PageUp", 1.0), ("PageDown", -1.0)] {
+        let from = app.scroll_state(".timeline").await.expect("s").expect("t").from_bottom;
+        let t0 = Instant::now();
+        app.press(".composer .composer-input", key).await.expect("press");
+        let seen = watch(&mut app, ".timeline", t0, 600).await;
+        let (steps, end, reached) = eased(&seen, from);
+        let first = seen.iter().find(|&&(_, p)| (p - from).abs() > 0.5).map_or(0, |&(t, _)| t);
+        eprintln!("{key}: from {from} to {end}, {steps} steps, moving {first}..{reached} ms");
+        assert!((end - from - sign * page).abs() < 3.0, "{key} moved {} px, not {page}", end - from);
+        assert!(steps >= 3, "{key}: {steps} intermediate positions: it jumped");
+        assert!(reached.saturating_sub(first) >= 80, "{key}: took {} ms", reached.saturating_sub(first));
+    }
+    let back = app.scroll_state(".timeline").await.expect("s").expect("t").from_bottom;
+    assert!((back - start).abs() < 3.0, "up then down returns to {start}, not {back}");
+}

@@ -112,6 +112,10 @@ pub struct TimelineView {
     paginating: bool,
     auto_pages: u32,
     last_update: std::time::Instant,
+    /// A Page Up/Down in flight: where it is going (px from the bottom) and
+    /// where the last step left the list (if the list is elsewhere, the
+    /// reader scrolled and it stops).
+    paging: Option<(f32, f32)>,
     load_error: Option<String>,
     /// The message the NEW divider sits above, fixed once found.
     new_marker: Option<String>,
@@ -228,6 +232,7 @@ impl TimelineView {
             paginating: false,
             auto_pages: 0,
             last_update: std::time::Instant::now(),
+            paging: None,
             load_error: None,
             new_marker: None,
             caught_up: false,
@@ -382,9 +387,46 @@ impl TimelineView {
     pub fn scroll_page(&mut self, down: bool, cx: &mut Context<Self>) {
         let now = metrics(&self.list);
         let page = now.viewport * 0.9;
-        let from_bottom = (now.from_bottom + if down { -page } else { page }).clamp(0.0, now.range);
-        ListProbe(self.list.clone()).scroll_to(from_bottom);
+        // A page asked for while one goes adds to it.
+        let base = self.paging.map_or(now.from_bottom, |(target, _)| target);
+        let target = (base + if down { -page } else { page }).clamp(0.0, now.range);
+        let running = self.paging.is_some();
+        self.paging = Some((target, now.from_bottom));
+        if running {
+            return;
+        }
+        // Eased like the wheel (gpui::ease_step), a step a frame.
+        cx.spawn(async move |this, cx| {
+            let mut last = std::time::Instant::now();
+            loop {
+                cx.background_executor().timer(Duration::from_millis(8)).await;
+                let dt = last.elapsed();
+                last = std::time::Instant::now();
+                if !this.update(cx, |this, cx| this.page_step(dt, cx)).unwrap_or(false) {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
+    /// One step of a Page Up/Down; false when it is over.
+    fn page_step(&mut self, dt: Duration, cx: &mut Context<Self>) -> bool {
+        let Some((target, left_at)) = self.paging else {
+            return false;
+        };
+        let now = metrics(&self.list).from_bottom;
+        if (now - left_at).abs() > 40.0 {
+            self.paging = None;
+            return false;
+        }
+        let dt = dt.clamp(Duration::from_millis(1), Duration::from_millis(50));
+        let (step, done) = gpui::ease_step(target - now, dt.as_secs_f32());
+        let to = now + step;
+        ListProbe(self.list.clone()).scroll_to(to);
+        self.paging = (!done).then_some((target, to));
         cx.notify();
+        !done
     }
 
     /// The people you ignore changed: their messages fold away (or show).
