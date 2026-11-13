@@ -1355,3 +1355,23 @@ async fn hovering_a_link_in_a_message_underlines_that_link_only() {
         assert!(longest_changed_run(rest, &gone, &b1) < (b1.w * 0.3) as usize, "the line stayed");
     }
 }
+
+/// A toast is a rounded box at all four corners (task 31): its coloured
+/// left edge and background must not show square corners.
+#[tokio::test]
+async fn a_toast_is_rounded_at_all_four_corners() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = alice_in_general(&hs).await;
+    app.key_combo("body", "L", true, false, true).await.expect("ctrl+shift+l");
+    app.wait_for_text(".toast", "Link copied", DEFAULT_WAIT).await.expect("toast");
+    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+    let b = app.bounds(".toast").await.expect("b").expect("toast");
+    let Some(square) = common::square_corners(&app, &b, [true; 4]) else {
+        eprintln!("no grim capture here; skipping the pixel check");
+        return;
+    };
+    assert!(square.is_empty(), "the toast's corners drawn square: {square:?}");
+}
