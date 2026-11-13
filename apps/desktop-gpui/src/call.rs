@@ -494,7 +494,14 @@ impl Shell {
                     Err(err) if err.to_string().contains("cancelled") => {}
                     Err(err) if screen => this.fail("sharing the screen", &err.to_string(), cx),
                     Err(err) => this.fail("turning the camera on", &err.to_string(), cx),
-                    Ok(()) => {}
+                    Ok(()) => {
+                        this.chime(match (screen, on) {
+                            (false, true) => Sound::CameraOn,
+                            (false, false) => Sound::CameraOff,
+                            (true, true) => Sound::ScreenOn,
+                            (true, false) => Sound::ScreenOff,
+                        })
+                    }
                 }
                 this.sync_published(cx);
                 cx.notify();
@@ -871,6 +878,17 @@ async fn run_call(
                 }
                 let user = people.get(&identity).cloned();
                 this.update(cx, |this, cx| {
+                    // Someone starts sharing their screen: heard, as in Discord.
+                    if screen
+                        && on
+                        && this
+                            .calls
+                            .state
+                            .as_ref()
+                            .is_some_and(|c| !c.video.iter().any(|f| f.key == key))
+                    {
+                        this.chime(Sound::ScreenOn);
+                    }
                     if let Some(state) = this.calls.state.as_mut() {
                         state.video_event(user, key, screen, on);
                         cx.notify();

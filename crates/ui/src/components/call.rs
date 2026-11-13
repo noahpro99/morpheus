@@ -506,6 +506,17 @@ pub fn join_call(session: Session, room_id: OwnedRoomId, room_name: String) {
                         refresh_people(&session, &room_id, &mut people).await;
                     }
                     let user = people.get(&identity).cloned();
+                    // Someone starts sharing their screen: heard, as in Discord.
+                    if screen
+                        && on
+                        && active
+                            .peek()
+                            .0
+                            .as_ref()
+                            .is_some_and(|c| !c.video.iter().any(|f| f.key == key))
+                    {
+                        play(Sound::ScreenOn);
+                    }
                     active.with_mut(|slot| {
                         if let Some(state) = slot.0.as_mut() {
                             state.video.retain(|feed| feed.key != key);
@@ -712,7 +723,12 @@ fn set_video(session: Session, screen: bool, on: bool) {
             Err(err) if err.to_string().contains("cancelled") => {}
             Err(err) if screen => report("sharing the screen", &err),
             Err(err) => report("turning the camera on", &err),
-            Ok(()) => {}
+            Ok(()) => play(match (screen, on) {
+                (false, true) => Sound::CameraOn,
+                (false, false) => Sound::CameraOff,
+                (true, true) => Sound::ScreenOn,
+                (true, false) => Sound::ScreenOff,
+            }),
         }
     });
 }
