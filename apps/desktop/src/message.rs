@@ -57,6 +57,8 @@ pub struct Pictures {
     pub avatar_pressed: bool,
     /// A date divider sits right above: it keeps the space, the header adds none.
     pub after_divider: bool,
+    /// A video message's player (the timeline keeps one per message).
+    pub video: Option<gpui::AnyView>,
 }
 
 /// A file's download, as its card shows it.
@@ -723,9 +725,9 @@ fn blur_image(hash: &str) -> Option<Arc<Image>> {
 /// width. (Percentage widths with an aspect ratio are measured differently
 /// for a row's height than for drawing it, which left a gap under a shrunk
 /// picture; a measured box answers both the same.)
-struct Shape {
-    w: f32,
-    h: f32,
+pub(crate) struct Shape {
+    pub w: f32,
+    pub h: f32,
 }
 
 impl IntoElement for Shape {
@@ -1003,7 +1005,12 @@ fn body_el(
             height,
             duration,
             ..
-        } => return video_el(body, *width, *height, *duration, pics.media.clone()),
+        } => {
+            if let Some(player) = &pics.video {
+                return div().flex().child(player.clone()).into_any_element();
+            }
+            return video_el(body, *width, *height, *duration, pics.media.clone());
+        }
         MessageKind::Redacted => {
             return muted_body("Message deleted");
         }

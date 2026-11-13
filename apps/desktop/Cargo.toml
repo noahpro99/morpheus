@@ -24,6 +24,7 @@ morpheus-view-model = { workspace = true }
 directories = { workspace = true }
 futures = "0.3"
 morpheus-call = { workspace = true }
+morpheus-video = { workspace = true }
 rodio = { version = "0.23", default-features = false, features = ["playback"] }
 image = { version = "0.25", default-features = false }
 notify-rust = { workspace = true }

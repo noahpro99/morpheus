@@ -12,7 +12,7 @@ use std::{
 use crate::view_model::calls::{SOUND_RATE, Sound};
 
 /// Whether sounds come out of the speakers (not in test runs).
-fn audible() -> bool {
+pub(crate) fn audible() -> bool {
     morpheus_call::AudioMode::from_env() == morpheus_call::AudioMode::Platform
 }
 

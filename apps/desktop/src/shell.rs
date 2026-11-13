@@ -766,6 +766,7 @@ impl Shell {
                     | TimelineEvent::SenderMenu(..)
                     | TimelineEvent::Thread(..)
                     | TimelineEvent::OpenImage(..)
+                    | TimelineEvent::FullscreenVideo(..)
                     | TimelineEvent::Failed(..) => {}
                 })
             }));
@@ -789,6 +790,7 @@ impl Shell {
                 TimelineEvent::Failed(what, err) => this.fail(what, err, cx),
                 TimelineEvent::Thread(message) => this.open_thread((**message).clone(), cx),
                 TimelineEvent::OpenImage(images, index) => this.open_lightbox(images.clone(), *index, cx),
+                TimelineEvent::FullscreenVideo(player) => this.open_video(player.clone(), cx),
                 TimelineEvent::SenderMenu(message, at) => this.open_sender_menu(message, *at, cx),
                 TimelineEvent::Sender(message, at) => {
                     let seen = Some((message.sender_name.clone(), message.sender_avatar.clone()));

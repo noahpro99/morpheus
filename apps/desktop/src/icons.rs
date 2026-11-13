@@ -92,6 +92,11 @@ pub const SCREEN_SHARE: &str = r#"<path d="M13 3H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 
 pub const SCREEN_SHARE_OFF: &str = r#"<path d="M13 3H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-3" /> <path d="M8 21h8" /> <path d="M12 17v4" /> <path d="m22 3-5 5" /> <path d="m17 3 5 5" />"#;
 pub const MAXIMIZE_2: &str = r#"<polyline points="15 3 21 3 21 9" /> <polyline points="9 21 3 21 3 15" /> <line x1="21" x2="14" y1="3" y2="10" /> <line x1="3" x2="10" y1="21" y2="14" />"#;
 pub const MINIMIZE_2: &str = r#"<polyline points="4 14 10 14 10 20" /> <polyline points="20 10 14 10 14 4" /> <line x1="14" x2="21" y1="10" y2="3" /> <line x1="3" x2="10" y1="21" y2="14" />"#;
+/// The video player's controls (play and pause filled, as Discord's).
+pub const PLAY: &str = r#"<polygon points="6 3 20 12 6 21 6 3" fill="currentColor" />"#;
+pub const PAUSE: &str = r#"<rect x="14" y="4" width="4" height="16" rx="1" fill="currentColor" /> <rect x="6" y="4" width="4" height="16" rx="1" fill="currentColor" />"#;
+pub const VOLUME_X: &str = r#"<path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z" /> <line x1="22" x2="16" y1="9" y2="15" /> <line x1="16" x2="22" y1="9" y2="15" />"#;
+pub const DOWNLOAD: &str = r#"<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /> <polyline points="7 10 12 15 17 10" /> <line x1="12" x2="12" y1="15" y2="3" />"#;
 
 /// The glyph named by an asset path `icons/<name>.svg`.
 fn glyph(name: &str) -> Option<&'static str> {
@@ -173,6 +178,10 @@ fn glyph(name: &str) -> Option<&'static str> {
         "audio-waveform" => AUDIO_WAVEFORM,
         "audio-waveform-off" => AUDIO_WAVEFORM_OFF,
         "minimize-2" => MINIMIZE_2,
+        "play" => PLAY,
+        "pause" => PAUSE,
+        "volume-x" => VOLUME_X,
+        "download" => DOWNLOAD,
         _ => return None,
     })
 }

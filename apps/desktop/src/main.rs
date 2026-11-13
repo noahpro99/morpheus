@@ -60,6 +60,7 @@ mod typing;
 mod timeline;
 mod theme;
 mod user_bar;
+mod video;
 // The view-models live in their own crate; the old module path stays valid.
 use morpheus_view_model as view_model;
 

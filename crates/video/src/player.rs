@@ -214,6 +214,13 @@ impl Player {
     pub fn frame(&self) -> Option<Arc<Frame>> {
         self.shared.frame.lock().ok().and_then(|f| f.clone())
     }
+
+    /// The picture showing now if it is new since the last call: taken, so
+    /// its pixels are not copied (then [`Player::frame`] has none until the next).
+    pub fn take_frame(&self) -> Option<Frame> {
+        let frame = self.shared.frame.lock().ok()?.take()?;
+        Some(Arc::try_unwrap(frame).unwrap_or_else(|shared| (*shared).clone()))
+    }
 }
 
 /// The decoding thread's state.

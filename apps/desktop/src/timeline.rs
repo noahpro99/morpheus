@@ -96,6 +96,8 @@ pub enum TimelineEvent {
     Thread(Box<Message>),
     /// A picture clicked: the room's pictures and which one.
     OpenImage(Vec<crate::lightbox::GalleryImage>, usize),
+    /// A video's full-window button.
+    FullscreenVideo(gpui::Entity<crate::video::VideoPlayer>),
 }
 
 impl EventEmitter<TimelineEvent> for TimelineView {}
@@ -164,6 +166,9 @@ pub struct TimelineView {
     /// had when left (what came after is new on return) and whether the view
     /// sat at the newest end.
     left_at: Option<(Option<String>, bool)>,
+    /// Video messages' players, by the message's unique ID (kept while the
+    /// view lives, so a video scrolled away and back is where it was).
+    videos: HashMap<String, gpui::Entity<crate::video::VideoPlayer>>,
 }
 
 /// Scroll numbers of a list, in px: what a test and the jump button read.
@@ -268,6 +273,7 @@ impl TimelineView {
             menu_message: None,
             pressed_avatar: None,
             left_at: None,
+            videos: HashMap::new(),
         };
         if let Some(session) = session {
             cx.spawn(async move |this, cx| {
@@ -772,10 +778,38 @@ impl TimelineView {
                 pictures.media = self.picture(media, (800, 600), cx);
             }
             MessageKind::Video {
-                media, thumbnail, ..
+                media,
+                thumbnail,
+                body,
+                width,
+                height,
+                duration,
             } => {
                 let source = thumbnail.as_ref().unwrap_or(media).clone();
-                pictures.media = self.picture(&source, (480, 320), cx);
+                // Without a thumbnail, the picture comes from the player itself.
+                let thumb = if thumbnail.is_some() { self.picture(&source, (480, 320), cx) } else { None };
+                let player = match self.videos.get(&row.message.unique_id) {
+                    Some(player) => player.clone(),
+                    None => {
+                        let session = self.session.clone();
+                        let (media, body, width, height, duration) =
+                            (media.clone(), body.clone(), *width, *height, *duration);
+                        let player = cx.new(|cx| {
+                            crate::video::VideoPlayer::new(session, media, body, width, height, duration, cx)
+                        });
+                        cx.subscribe(&player, |_, player, event: &crate::video::VideoEvent, cx| {
+                            if matches!(event, crate::video::VideoEvent::Fullscreen) {
+                                cx.emit(TimelineEvent::FullscreenVideo(player));
+                            }
+                        })
+                        .detach();
+                        self.videos.insert(row.message.unique_id.clone(), player.clone());
+                        player
+                    }
+                };
+                player.update(cx, |player, cx| player.set_thumbnail(thumb.clone(), cx));
+                pictures.media = thumb;
+                pictures.video = Some(player.into());
             }
             _ => {}
         }

@@ -7412,6 +7412,7 @@ dependencies = [
  "mimalloc",
  "morpheus-call",
  "morpheus-core",
+ "morpheus-video",
  "morpheus-view-model",
  "notify-rust",
  "png 0.17.16",

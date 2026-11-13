@@ -55,6 +55,8 @@ pub enum Dialog {
     Preview(Entity<crate::room_preview::RoomPreview>),
     /// A picture of the room, full size.
     Lightbox(Entity<crate::lightbox::Lightbox>),
+    /// A video of the room, in the full-window player.
+    Video(Entity<crate::video::VideoViewer>),
 }
 
 /// Something done at once that its Undo toast can still take back.
@@ -714,6 +716,7 @@ pub fn render_dialog(shell: &mut Shell, window: &mut Window, cx: &mut Context<Sh
         }
         Dialog::Preview(entity) => Some(entity.clone().into_any_element()),
         Dialog::Lightbox(entity) => Some(entity.clone().into_any_element()),
+        Dialog::Video(entity) => Some(entity.clone().into_any_element()),
         Dialog::About => Some(crate::about::render(&focus, window, cx, close)),
     }
 }
