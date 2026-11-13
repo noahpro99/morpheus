@@ -431,3 +431,181 @@ async fn notifications_can_hide_the_message_or_the_sender() {
     let notice = shown_for(&app, &hs, &writer, &room, &text).await;
     assert_eq!(notice["body"].as_str(), Some(text.as_str()), "{notice}");
 }
+
+// ---- message sounds ---------------------------------------------------------
+
+/// `writer` says `text` in `room` through the API.
+fn say(hs: &str, writer: &str, room: &str, text: &str) {
+    let room = room.replace('!', "%21").replace(':', "%3A");
+    api_as(
+        hs,
+        writer,
+        "PUT",
+        &format!(
+            "rooms/{room}/send/m.room.message/{}-{}",
+            std::process::id(),
+            text.replace(' ', "_")
+        ),
+        Some(serde_json::json!({ "msgtype": "m.text", "body": text })),
+    )
+    .expect("send");
+}
+
+/// A second room of `writer`'s with `reader` in it.
+fn second_room(hs: &str, writer: &str, reader: &str, name: &str) -> String {
+    let room = api_as(
+        hs,
+        writer,
+        "POST",
+        "createRoom",
+        Some(serde_json::json!({ "name": name })),
+    )
+    .expect("a room");
+    let room = room["room_id"].as_str().expect("room id").to_owned();
+    let id = room.replace('!', "%21").replace(':', "%3A");
+    api_as(
+        hs,
+        writer,
+        "POST",
+        &format!("rooms/{id}/invite"),
+        Some(serde_json::json!({ "user_id": format!("@{reader}:localhost") })),
+    )
+    .expect("invite");
+    api_as(hs, reader, "POST", &format!("rooms/{id}/join"), Some(serde_json::json!({})))
+        .expect("reader joins");
+    room
+}
+
+/// How many message sounds `app` has played.
+async fn message_sounds(app: &mut App) -> usize {
+    app.texts(".sound-log li")
+        .await
+        .expect("sounds")
+        .iter()
+        .filter(|s| *s == "message")
+        .count()
+}
+
+async fn wait_message_sounds(app: &mut App, want: usize, what: &str) {
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let have = message_sounds(app).await;
+        if have == want {
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "{what}: {have} message sounds, wanted {want}"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+}
+
+/// A message that notifies you makes one short sound, even for a burst; the
+/// sound is told apart from the call chimes.
+#[tokio::test]
+async fn a_new_message_plays_one_sound_for_a_burst() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let (mut app, _reader, writer, room) = pair(&hs, "chime").await;
+    assert_eq!(message_sounds(&mut app).await, 0);
+    for n in 0..3 {
+        say(&hs, &writer, &room, &format!("burst {n}"));
+    }
+    wait_message_sounds(&mut app, 1, "a burst").await;
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+    assert_eq!(message_sounds(&mut app).await, 1, "one for the burst");
+    // Later, another.
+    say(&hs, &writer, &room, "and later");
+    wait_message_sounds(&mut app, 2, "a later message").await;
+}
+
+/// No sound for your own messages, nor for a muted room.
+#[tokio::test]
+async fn own_messages_and_muted_rooms_make_no_sound() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let (mut app, reader, writer, room) = pair(&hs, "hushed").await;
+    let muted = second_room(&hs, &writer, &reader, "muted room");
+    let rule = format!("pushrules/global/override/{}", muted.replace('!', "%21").replace(':', "%3A"));
+    api_as(
+        &hs,
+        &reader,
+        "PUT",
+        &rule,
+        Some(serde_json::json!({
+            "conditions": [{ "kind": "event_match", "key": "room_id", "pattern": muted }],
+            "actions": [],
+        })),
+    )
+    .expect("mute the room");
+    say(&hs, &writer, &muted, "into the muted room");
+    // The app's own message.
+    app.open_room("hushed chat").await.ok();
+    app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
+        .await
+        .expect("composer ready");
+    send(&mut app, "my own words").await;
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+    assert_eq!(message_sounds(&mut app).await, 0, "no sound yet");
+    // A message that does notify, as proof the others were seen and skipped.
+    say(&hs, &writer, &room, "this one counts");
+    wait_message_sounds(&mut app, 1, "the one that notifies").await;
+}
+
+/// Settings > Notifications > "Message sounds" turns them off, kept on the
+/// device.
+#[tokio::test]
+async fn message_sounds_can_be_turned_off() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let (mut app, _reader, writer, room) = pair(&hs, "toggle").await;
+    let off = app.data_dir().join("message_sounds_off");
+    app.click(".settings-button").await.expect("gear");
+    app.wait_for_text(".settings-nav button", "Notifications", DEFAULT_WAIT)
+        .await
+        .expect("settings");
+    app.click_text(".settings-nav button", "Notifications")
+        .await
+        .expect("notifications page");
+    app.wait_for(".settings-page input[name=message-sounds]:checked", DEFAULT_WAIT)
+        .await
+        .expect("on by default");
+    app.click(".settings-page input[name=message-sounds]")
+        .await
+        .expect("turn off");
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    while !off.exists() {
+        assert!(std::time::Instant::now() < deadline, "setting not kept");
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+    app.press("body", "Escape").await.expect("close settings");
+    say(&hs, &writer, &room, "silent one");
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+    assert_eq!(message_sounds(&mut app).await, 0, "off means off");
+
+    app.click(".settings-button").await.expect("gear");
+    app.wait_for_text(".settings-nav button", "Notifications", DEFAULT_WAIT)
+        .await
+        .expect("settings");
+    app.click_text(".settings-nav button", "Notifications")
+        .await
+        .expect("notifications page");
+    app.click(".settings-page input[name=message-sounds]")
+        .await
+        .expect("turn on");
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    while off.exists() {
+        assert!(std::time::Instant::now() < deadline, "setting not cleared");
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+    app.press("body", "Escape").await.expect("close settings");
+    say(&hs, &writer, &room, "audible one");
+    wait_message_sounds(&mut app, 1, "back on").await;
+}

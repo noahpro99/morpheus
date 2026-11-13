@@ -229,6 +229,7 @@ impl SettingsView {
             self.hl("room-defaults"),
         );
         let on_here = self.on_here;
+        let sounds_here = self.sounds_here;
         let mut device = vec![
             choice(
                 "device-notifications".into(),
@@ -243,6 +244,23 @@ impl SettingsView {
                     match vm::set_notifications_enabled(&this.data_dir, want) {
                         Ok(()) => this.on_here = want,
                         Err(err) => eprintln!("morpheus-desktop: saving the notification setting: {err}"),
+                    }
+                    cx.notify();
+                }),
+            ),
+            choice(
+                "message-sounds".into(),
+                "message-sounds",
+                "",
+                "Message sounds",
+                sounds_here,
+                true,
+                false,
+                cx.listener(move |this, _, _, cx| {
+                    let want = !this.sounds_here;
+                    match vm::set_message_sounds_enabled(&this.data_dir, want) {
+                        Ok(()) => this.sounds_here = want,
+                        Err(err) => eprintln!("morpheus-desktop: saving the message sound setting: {err}"),
                     }
                     cx.notify();
                 }),

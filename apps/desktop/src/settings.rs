@@ -34,7 +34,7 @@ use crate::{
         },
         settings::{
             Autostart, NotificationContent, SettingEntry, SettingsPage, Theme, find_settings,
-            notification_content, notifications_enabled, read_autostart,
+            message_sounds_enabled, notification_content, notifications_enabled, read_autostart,
         },
         verification::{self, Action, Kind, Tone, VERIFIED_NOTE_SECS},
     },
@@ -118,6 +118,7 @@ pub struct SettingsView {
     notify_notes: [Option<Result<&'static str, String>>; 2],
     /// This device's notification settings, and the autostart entry.
     on_here: bool,
+    sounds_here: bool,
     content: NotificationContent,
     autostart: Option<Autostart>,
     startup_note: Option<String>,
@@ -194,6 +195,7 @@ impl SettingsView {
             notify_defaults: [None, None],
             notify_notes: [None, None],
             on_here: true,
+            sounds_here: true,
             content: NotificationContent::Full,
             autostart: None,
             startup_note: None,
@@ -223,6 +225,7 @@ impl SettingsView {
         self.search.update(cx, |input, cx| input.set_value("", cx));
         self.highlight = None;
         self.on_here = notifications_enabled(&self.data_dir);
+        self.sounds_here = message_sounds_enabled(&self.data_dir);
         self.content = notification_content(&self.data_dir);
         self.autostart = read_autostart();
         self.startup_note = None;

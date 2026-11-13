@@ -478,6 +478,8 @@ pub enum Sound {
     Ring,
     /// Your call ringing the other person (repeats until they answer).
     Ringback,
+    /// A new message that notifies you (short and soft).
+    Message,
 }
 
 /// The sample rate the sounds are made at.
@@ -498,6 +500,7 @@ impl Sound {
             Self::ScreenOff => "screen-off",
             Self::Ring => "ring",
             Self::Ringback => "ringback",
+            Self::Message => "message",
         }
     }
 
@@ -516,6 +519,7 @@ impl Sound {
             Self::ScreenOff => &[(1046.5, 80), (659.25, 80), (523.25, 240)],
             Self::Ring => &[(659.25, 120), (830.61, 120), (987.77, 120), (1318.51, 320)],
             Self::Ringback => &[(440.0, 380), (440.0, 380)],
+            Self::Message => &[(987.77, 70), (1318.51, 150)],
         }
     }
 

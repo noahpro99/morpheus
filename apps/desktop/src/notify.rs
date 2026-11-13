@@ -93,6 +93,36 @@ static LOG: Mutex<Vec<Notification>> = Mutex::new(Vec::new());
 static ACTIVE: AtomicBool = AtomicBool::new(false);
 static OPEN_ROOM: Mutex<Option<OwnedRoomId>> = Mutex::new(None);
 
+/// Sounds made by the notifier, for the shell to note in its log (`.sound-log`).
+static SOUNDS: Mutex<Vec<&'static str>> = Mutex::new(Vec::new());
+/// When each room last made a message sound.
+static LAST_SOUND: Mutex<Vec<(OwnedRoomId, std::time::Instant)>> = Mutex::new(Vec::new());
+/// One message sound per room in this time: a burst is one ping.
+const SOUND_GAP: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// The short sound of a new message that notifies you (the notifier has
+/// already left out your own, muted rooms and the room you are looking at),
+/// unless this device has them off or `room` just made one.
+fn message_sound(room: &OwnedRoomId) {
+    let dir = crate::data_dir();
+    if !settings::message_sounds_enabled(&dir) {
+        return;
+    }
+    let now = std::time::Instant::now();
+    if let Ok(mut last) = LAST_SOUND.lock() {
+        last.retain(|(_, at)| now.duration_since(*at) < SOUND_GAP);
+        if last.iter().any(|(r, _)| r == room) {
+            return;
+        }
+        last.push((room.clone(), now));
+    }
+    let log = std::env::var_os("MORPHEUS_E2E_PORT").map(|_| dir.join("played-sounds.log"));
+    crate::sounds::play(crate::view_model::calls::Sound::Message, log.as_ref());
+    if let Ok(mut sounds) = SOUNDS.lock() {
+        sounds.push(crate::view_model::calls::Sound::Message.key());
+    }
+}
+
 /// The announcements since launch (the inbox's Mentions, the test log).
 pub fn log() -> Vec<Notification> {
     LOG.lock().map(|log| log.clone()).unwrap_or_default()
@@ -126,6 +156,9 @@ pub fn spawn_notifier(session: Session, redraw: impl Fn() + Send + 'static) {
                     if let Ok(mut log) = LOG.lock() {
                         notices::log_notice(&mut log, notice.clone());
                     }
+                    if !looking {
+                        message_sound(&notice.room_id);
+                    }
                     redraw();
                     if looking {
                         continue;
@@ -147,6 +180,14 @@ pub fn spawn_notifier(session: Session, redraw: impl Fn() + Send + 'static) {
 impl Shell {
     /// The log of announcements, as the notifier has it.
     pub fn sync_notices(&mut self, cx: &mut Context<Self>) {
+        let sounds: Vec<&'static str> = SOUNDS
+            .lock()
+            .map(|mut queue| std::mem::take(&mut *queue))
+            .unwrap_or_default();
+        if !sounds.is_empty() {
+            self.calls.sounds.extend(sounds);
+            cx.notify();
+        }
         let log = log();
         if log != self.notices {
             self.notices = log;
