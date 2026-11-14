@@ -1488,6 +1488,24 @@ mod widget_tests {
         cx.run_until_parked();
     }
 
+    /// The placeholder rows shown while a room loads (and above its oldest
+    /// message while older ones load) are message-shaped: a grey picture and
+    /// grey lines across the row, not the pictures alone.
+    #[gpui::test]
+    fn placeholder_rows_have_their_grey_lines(cx: &mut TestAppContext) {
+        let (_view, cx) = open(cx);
+        redraw(cx);
+        let rows = e2e::query_all_bounds(".skeleton-row .message-main");
+        let lines = e2e::query_all_bounds(".skeleton-bar");
+        assert!(!rows.is_empty() && !lines.is_empty(), "no placeholder rows");
+        for row in rows {
+            assert!(row.w >= 300.0, "a placeholder row's lines are {row:?}");
+        }
+        for line in lines {
+            assert!(line.w >= 60.0 && line.h > 0.0, "a placeholder line is {line:?}");
+        }
+    }
+
     #[gpui::test]
     fn messages_without_keys_are_locked_rows_with_a_banner_never_a_skeleton(
         cx: &mut TestAppContext,
