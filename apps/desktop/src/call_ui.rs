@@ -11,7 +11,7 @@ use gpui::{
     RenderImage, Styled as _, StyledImage as _, Window, canvas, div, img, prelude::*, px, rgb, rgba,
 };
 use morpheus_core::{OwnedRoomId, OwnedUserId, RoomSummary};
-use crate::zoom::{MAX_ZOOM, ZoomPan};
+use crate::zoom::ZoomPan;
 
 use crate::{
     e2e::E2eExt as _,
@@ -818,33 +818,58 @@ fn screen_skeleton() -> AnyElement {
         .into_any_element()
 }
 
-/// A zoomed screen's size at the tile's bottom right; a click puts it back to fit.
-fn zoom_indicator(shell: &Shell, key: &str, zoom: f32) -> AnyElement {
+/// A zoom button at the focused screen tile's bottom right:
+/// - When not zoomed (zoom <= 1.001): shows "Zoom", clicking zooms halfway (2.0x).
+/// - When zoomed: shows percentage (e.g. "200%"), clicking resets to fit.
+fn zoom_control(shell: &Shell, key: &str, zoom: f32) -> AnyElement {
     let frame = shell.calls.frames.get(key).cloned();
-    let text = format!("{:.0}%", zoom * 100.0);
+    let zoomed = zoom > 1.001;
+    let label = if zoomed {
+        format!("{:.0}%", zoom * 100.0)
+    } else {
+        "Zoom".to_owned()
+    };
     div()
-        .id("screen-zoom-indicator")
+        .id("screen-zoom-button")
         .absolute()
         .right(px(8.0))
         .bottom(px(8.0))
         .px(px(8.0))
-        .py(px(2.0))
+        .py(px(4.0))
+        .flex()
+        .items_center()
+        .gap(px(4.0))
         .rounded(px(theme::RADIUS_SM))
         .bg(black(0.6))
+        .hover(|s| s.bg(black(0.8)))
         .text_size(px(0.8 * theme::REM))
         .text_color(rgb(0xffffff))
         .cursor_pointer()
-        .child(text.clone())
+        .when(!zoomed, |d| d.child(icon("search", 13.0).text_color(rgb(0xffffff))))
+        .child(label.clone())
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_click(move |_, _, cx| {
             cx.stop_propagation();
             if let Some(frame) = &frame {
-                frame.update(cx, |f, cx| f.reset_zoom(cx));
+                frame.update(cx, |f, cx| {
+                    if f.view.zoomed() {
+                        f.reset_zoom(cx);
+                    } else {
+                        f.zoom_halfway(cx);
+                    }
+                });
             }
         })
-        .e2e("button", "screen-zoom-indicator")
-        .attr("title", "Fit to the tile")
-        .text(text)
+        .e2e(
+            "button",
+            if zoomed {
+                "screen-zoom-button screen-zoom-indicator"
+            } else {
+                "screen-zoom-button"
+            },
+        )
+        .attr("title", if zoomed { "Reset zoom (fit to tile)" } else { "Zoom in halfway" })
+        .text(label)
         .into_any_element()
 }
 
@@ -1057,29 +1082,11 @@ fn video_card(
                 .on_mouse_up_out(MouseButton::Left, move |_, _, cx| {
                     up_out.update(cx, |f, cx| f.release(cx));
                 })
-                .on_click(cx.listener(move |_, _, _, cx| {
-                    // Not a click: the end of a drag or of a double click.
-                    // A single click on the focused screen waits a moment, in
-                    // case it is the first of a double click.
-                    let Some(wait) = click.update(cx, |f, _| f.clicked()) else {
-                        return;
-                    };
-                    let key = click_key.clone();
-                    cx.spawn(async move |this, cx| {
-                        cx.background_executor().timer(Duration::from_millis(280)).await;
-                        this.update(cx, |this, cx| {
-                            let still = this
-                                .calls
-                                .frames
-                                .get(&key)
-                                .is_some_and(|f| f.read(cx).still_waiting(wait));
-                            if still {
-                                this.toggle_focus(&key, cx);
-                            }
-                        })
-                        .ok();
-                    })
-                    .detach();
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    let clicked = click.update(cx, |f, _| f.clicked());
+                    if clicked {
+                        this.toggle_focus(&click_key, cx);
+                    }
                 }))
         }
         _ => tile.on_click(cx.listener(move |this, _, _, cx| this.toggle_focus(&click_key, cx))),
@@ -1090,8 +1097,8 @@ fn video_card(
     if waiting {
         tile = tile.child(screen_skeleton());
     }
-    if zoomable && view.zoomed() {
-        tile = tile.child(zoom_indicator(shell, &key, view.zoom));
+    if zoomable {
+        tile = tile.child(zoom_control(shell, &key, view.zoom));
     }
     tile = tile
         .child(focus_button(shell, cx, &key, &group))
@@ -1848,10 +1855,6 @@ pub struct VideoFrame {
     panning: Option<((f32, f32), (f32, f32))>,
     /// The press became a drag: its click is not a click.
     dragged: bool,
-    /// The press was a double click's second: it zoomed.
-    doubled: bool,
-    /// Counts the clicks waiting to see whether they are single ones.
-    waiting: u64,
     born: std::time::Instant,
 }
 
@@ -1905,8 +1908,6 @@ impl VideoFrame {
             area: Rc::new(std::cell::Cell::new(gpui::Bounds::default())),
             panning: None,
             dragged: false,
-            doubled: false,
-            waiting: 0,
             born: std::time::Instant::now(),
         }
     }
@@ -1920,12 +1921,18 @@ impl VideoFrame {
     }
 
     pub fn reset_zoom(&mut self, cx: &mut Context<Self>) {
-        self.waiting += 1;
         if self.view != ZoomPan::default() || self.panning.is_some() {
             self.view.reset();
             self.panning = None;
             cx.notify();
         }
+    }
+
+    pub fn zoom_halfway(&mut self, cx: &mut Context<Self>) {
+        let (_, size) = self.tile();
+        let center = (size.0 / 2.0, size.1 / 2.0);
+        self.view.zoom_at(2.0, center, size, size);
+        cx.notify();
     }
 
     pub fn wheel(&mut self, event: &gpui::ScrollWheelEvent, cx: &mut Context<Self>) {
@@ -1938,25 +1945,11 @@ impl VideoFrame {
         cx.notify();
     }
 
-    /// A press on the tile: a second one toggles fit and actual size, a press
-    /// starts a pan when it is zoomed.
-    pub fn press(&mut self, event: &gpui::MouseDownEvent, cx: &mut Context<Self>) {
+    /// A press on the tile: starts a pan when it is zoomed.
+    pub fn press(&mut self, event: &gpui::MouseDownEvent, _cx: &mut Context<Self>) {
         self.dragged = false;
-        self.doubled = event.click_count >= 2;
-        let (origin, size) = self.tile();
         let at = (f32::from(event.position.x), f32::from(event.position.y));
-        if self.doubled {
-            self.waiting += 1;
-            self.panning = None;
-            let to = if self.view.zoomed() {
-                1.0
-            } else {
-                let actual = if size.0 > 0.0 { self.dim.0 as f32 / size.0 } else { 0.0 };
-                if actual > 1.05 { actual.min(MAX_ZOOM) } else { 2.0 }
-            };
-            self.view.zoom_at(to, (at.0 - origin.0, at.1 - origin.1), size, size);
-            cx.notify();
-        } else if self.view.zoomed() {
+        if self.view.zoomed() {
             self.panning = Some((at, self.view.offset));
         }
     }
@@ -1983,20 +1976,10 @@ impl VideoFrame {
         self.panning = None;
     }
 
-    /// The tile was clicked: `None` if that was no click (a drag's end, a
-    /// double click's second); else a number to hand back to
-    /// [`Self::still_waiting`] after a moment.
-    pub fn clicked(&mut self) -> Option<u64> {
-        if std::mem::take(&mut self.dragged) || std::mem::take(&mut self.doubled) {
-            return None;
-        }
-        self.waiting += 1;
-        Some(self.waiting)
-    }
-
-    /// Whether nothing happened since click `wait` (so it was a single one).
-    pub fn still_waiting(&self, wait: u64) -> bool {
-        self.waiting == wait
+    /// The tile was clicked: returns `false` if that was a drag's end;
+    /// `true` if it was a plain click that should toggle focus.
+    pub fn clicked(&mut self) -> bool {
+        !std::mem::take(&mut self.dragged)
     }
 
     /// Your own camera (in a call, or the preview) is a mirror.
