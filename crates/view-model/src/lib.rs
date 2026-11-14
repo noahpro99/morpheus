@@ -33,6 +33,7 @@ pub mod room_dialogs;
 pub mod room_menu;
 pub mod settings;
 pub mod state_lines;
+pub mod streamer;
 pub mod rail_drag;
 pub mod reorder;
 pub mod rich;

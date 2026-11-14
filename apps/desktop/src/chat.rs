@@ -7,7 +7,7 @@ use gpui::{Context, ExternalPaths, FontWeight, IntoElement, div, prelude::*, px,
 
 use crate::{
     e2e::E2eExt as _, icons::icon, media::avatar, shell::Shell, theme,
-    view_model::{nicknames::room_title, room_dialogs::RoomDialogKind},
+    view_model::room_dialogs::RoomDialogKind,
 };
 
 pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> impl IntoElement {
@@ -65,7 +65,7 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                 .pl(px(6.0)).pr(px(16.0))
                 .border_b_1()
                 .border_color(gpui::rgba(0x0000004d));
-            let title = room_title(&shell.nicknames, room);
+            let title = crate::streamer::room_title(&shell.nicknames, room);
             // The icon (a DM's picture, a channel's #) and the name are one
             // button, as tall as the bar and with a hover background, as in
             // Discord: any of it opens the room's menu, under the name.

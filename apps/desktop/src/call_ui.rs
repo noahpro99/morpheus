@@ -30,7 +30,7 @@ use crate::{
 
 /// A person's shown name: your nickname for them, else their profile's.
 fn shown(shell: &Shell, user: &OwnedUserId) -> String {
-    shown_name(&shell.nicknames, user.as_str(), &shell.calls.name_of(user))
+    crate::streamer::name(&shown_name(&shell.nicknames, user.as_str(), &shell.calls.name_of(user)))
 }
 
 fn picture_of(shell: &Shell, user: &OwnedUserId, size: u32) -> Option<Arc<gpui::Image>> {

@@ -605,7 +605,7 @@ fn thread_chip(
 }
 
 fn reply_quote(reply: &morpheus_core::ReplyPreview) -> impl IntoElement {
-    let name = reply.sender_name.clone().unwrap_or_else(|| "…".into());
+    let name = reply.sender_name.clone().map(|n| crate::streamer::name(&n)).unwrap_or_else(|| "…".into());
     let mut quote = div()
         .flex()
         .gap(px(6.0))
@@ -1445,7 +1445,7 @@ pub fn message_el(
 
     let mut main = div().flex_1().min_w_0().flex().flex_col();
     if show_header {
-        let name = pics.nickname.clone().unwrap_or_else(|| m.sender_name.clone());
+        let name = crate::streamer::name(&pics.nickname.clone().unwrap_or_else(|| m.sender_name.clone()));
         main = main.child(
             div()
                 .flex()
@@ -1470,7 +1470,7 @@ pub fn message_el(
                         actions,
                     )
                         .e2e("button", "sender")
-                        .attr("title", m.sender.to_string())
+                        .attr("title", crate::streamer::id(m.sender.as_str()))
                         .text(name),
                 )
                 .child(

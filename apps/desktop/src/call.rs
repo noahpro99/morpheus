@@ -350,7 +350,7 @@ impl Shell {
         };
         let (room_id, room_name) = match call_room_for(&room_id, &self.rooms) {
             Some((elsewhere, name)) => {
-                self.open_room(elsewhere.clone(), cx);
+                self.open_room_now(elsewhere.clone(), cx);
                 (elsewhere, name)
             }
             None => (room_id, room_name),
@@ -467,7 +467,7 @@ impl Shell {
             && let Some(room) = self.calls.state.as_ref().map(|c| c.room_id.clone())
             && self.selected.as_ref() != Some(&room)
         {
-            self.open_room(room, cx);
+            self.open_room_now(room, cx);
         }
         self.set_video(false, on, cx);
     }
@@ -489,7 +489,7 @@ impl Shell {
             && let Some(room) = self.calls.state.as_ref().map(|c| c.room_id.clone())
             && self.selected.as_ref() != Some(&room)
         {
-            self.open_room(room, cx);
+            self.open_room_now(room, cx);
         }
         self.set_video(true, on, cx);
     }
@@ -598,7 +598,7 @@ impl Shell {
             .find(|r| r.id == call.room_id)
             .map(|r| r.name.clone())
             .unwrap_or_else(|| call.caller.to_string());
-        self.open_room(call.room_id.clone(), cx);
+        self.open_room_now(call.room_id.clone(), cx);
         self.join_call(call.room_id.clone(), name, cx);
     }
 

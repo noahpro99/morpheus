@@ -197,7 +197,7 @@ impl Render for MembersView {
                     );
                     for member in group.members {
                         let picture = member.avatar.clone().and_then(|m| self.picture(&m, cx));
-                        let shown = shown_name(&self.nicknames, member.user_id.as_str(), &member.name);
+                        let shown = crate::streamer::name(&shown_name(&self.nicknames, member.user_id.as_str(), &member.name));
                         panel = panel.child(member_row(&member, shown, picture, cx));
                     }
                 }
@@ -291,7 +291,7 @@ fn member_row(
         "member"
     };
     row.e2e("button", classes)
-        .attr("title", member.user_id.to_string())
+        .attr("title", crate::streamer::id(member.user_id.as_str()))
 }
 
 /// A member's row, greyed: a round picture and a name's worth of bar.

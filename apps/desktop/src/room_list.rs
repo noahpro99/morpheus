@@ -12,7 +12,7 @@ use gpui::{Context, FontWeight, IntoElement, MouseButton, div, prelude::*, px, r
 use morpheus_core::{OwnedRoomId, RoomSummary, SpaceRoom};
 
 use crate::{
-    view_model::{nicknames::room_title, room_dialogs::RoomDialogKind},
+    view_model::room_dialogs::RoomDialogKind,
     e2e::E2eExt as _,
     icons::icon,
     media::avatar,
@@ -508,7 +508,7 @@ fn room_button(
                 this.drop_channel(dragged.id.clone(), target.clone(), &listed, cx)
             }));
     }
-    let title = room_title(&shell.nicknames, room);
+    let title = crate::streamer::room_title(&shell.nicknames, room);
     button = if room.is_dm {
         button.child(avatar(
             shell.picture(&room.avatar, 32),

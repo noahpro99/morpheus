@@ -188,6 +188,10 @@ pub struct Shell {
     pub pending_dm: Option<OwnedRoomId>,
     /// The inbox panel, shown or not, and where its keys go.
     pub inbox_open: bool,
+    /// The "don't ask again during this share" tick of the open-channel question, and
+    /// whether it was ticked for the share going on.
+    pub ask_tick: bool,
+    pub ask_skipped: bool,
     pub inbox_focus: Option<FocusHandle>,
     pub inbox_take_focus: bool,
     /// A channel of the server that you are not in, shown as a join card.
@@ -299,6 +303,8 @@ impl Shell {
             this.save_prefs(cx);
         })
         .detach();
+        cx.subscribe(&settings, |this, _, _: &crate::settings::StreamerChanged, cx| this.streamer_changed(cx))
+            .detach();
         cx.subscribe(&settings, |this, _, chosen: &DevicesChosen, cx| {
             this.calls.devices = crate::view_model::calls::read_device_prefs(&crate::data_dir());
             if chosen.0 != crate::view_model::menu::DeviceKind::Camera {
@@ -384,6 +390,8 @@ impl Shell {
             friends_page: None,
             pending_dm: None,
             inbox_open: false,
+            ask_tick: false,
+            ask_skipped: false,
             inbox_focus: None,
             inbox_take_focus: false,
             preview: None,
@@ -726,11 +734,12 @@ impl Shell {
         if let Some(room) = target
             && self.selected.as_ref() != Some(&room)
         {
-            self.open_room(room, cx);
+            self.open_room_now(room, cx);
         }
     }
 
-    pub fn open_room(&mut self, id: OwnedRoomId, cx: &mut Context<Self>) {
+    /// Show a room now, whatever streamer mode would ask (`open_room` asks).
+    pub fn open_room_now(&mut self, id: OwnedRoomId, cx: &mut Context<Self>) {
         if self.last_room_in.get(&self.scope) != Some(&id) {
             self.last_room_in.insert(self.scope.clone(), id.clone());
             self.save_last_rooms();
@@ -1119,6 +1128,7 @@ impl Render for Shell {
         let covered = self.chat_covered();
         crate::notify::set_looking(window.is_window_active(), self.selected.clone().filter(|_| !covered));
         self.see_open_room(cx);
+        self.sync_streamer(cx);
         if let Some((_, timeline)) = &self.timeline {
             timeline.update(cx, |timeline, cx| timeline.set_covered(covered, cx));
         }

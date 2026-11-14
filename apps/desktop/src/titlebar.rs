@@ -171,6 +171,25 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                     .justify_end()
                     .items_center()
                     .gap(px(2.0))
+                    .when(crate::streamer::active(), |d| {
+                        d.child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap(px(4.0))
+                                .px(px(8.0))
+                                .h(px(20.0))
+                                .mr(px(6.0))
+                                .rounded(px(10.0))
+                                .bg(rgba(theme::accent_tint()))
+                                .text_color(rgb(theme::accent()))
+                                .child(icon("eye-off", 12.0))
+                                .child("Streamer mode")
+                                .e2e("div", "streamer-badge")
+                                .attr("title", "Streamer mode is on: names and IDs are hidden")
+                                .text("Streamer mode"),
+                        )
+                    })
                     .child(
                         inbox.e2e("button", "ghost titlebar-button inbox-button")
                             .attr("title", "Inbox (Ctrl+I)")

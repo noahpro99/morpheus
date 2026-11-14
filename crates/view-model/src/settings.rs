@@ -18,17 +18,19 @@ pub enum SettingsPage {
     Notifications,
     Appearance,
     VoiceVideo,
+    StreamerMode,
     Startup,
     Help,
 }
 
 impl SettingsPage {
-    pub const ALL: [SettingsPage; 7] = [
+    pub const ALL: [SettingsPage; 8] = [
         SettingsPage::Account,
         SettingsPage::Security,
         SettingsPage::Notifications,
         SettingsPage::Appearance,
         SettingsPage::VoiceVideo,
+        SettingsPage::StreamerMode,
         SettingsPage::Startup,
         SettingsPage::Help,
     ];
@@ -40,6 +42,7 @@ impl SettingsPage {
             SettingsPage::Notifications => "Notifications",
             SettingsPage::Appearance => "Appearance",
             SettingsPage::VoiceVideo => "Voice & Video",
+            SettingsPage::StreamerMode => "Streamer Mode",
             SettingsPage::Startup => "Startup",
             SettingsPage::Help => "Help & Feedback",
         }
@@ -52,6 +55,7 @@ impl SettingsPage {
             SettingsPage::Notifications => "bell",
             SettingsPage::Appearance => "palette",
             SettingsPage::VoiceVideo => "mic",
+            SettingsPage::StreamerMode => "eye-off",
             SettingsPage::Startup => "square",
             SettingsPage::Help => "circle-help",
         }
@@ -154,6 +158,12 @@ pub const SETTINGS_INDEX: &[SettingEntry] = &[
         "voice video audio input output devices calls",
         SettingsPage::VoiceVideo,
         "audio-devices",
+    ),
+    entry(
+        "Streamer mode",
+        "streamer hide names privacy sharing screen share notifications ids obscure",
+        SettingsPage::StreamerMode,
+        "streamer",
     ),
     entry(
         "Open at sign-in",
@@ -446,11 +456,12 @@ mod tests {
                 "Notifications",
                 "Appearance",
                 "Voice & Video",
+                "Streamer Mode",
                 "Startup",
                 "Help & Feedback"
             ]
         );
-        assert_eq!(SettingsPage::listed(true).len(), 7);
+        assert_eq!(SettingsPage::listed(true).len(), 8);
         assert!(!SettingsPage::listed(false).contains(&SettingsPage::Startup));
     }
 

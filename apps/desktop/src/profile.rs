@@ -113,7 +113,7 @@ impl ProfileCard {
                 .bare("textarea", "note")
         });
         let message = cx.new(|cx| {
-            TextInput::new("message", &format!("Message @{name}"), false, "", cx)
+            TextInput::new("message", &format!("Message @{}", crate::streamer::name(&name)), false, "", cx)
                 .bare("input", "card-message")
         });
         let report_reason = cx.new(|cx| TextInput::new("reason", "What is wrong?", false, "", cx).framed());
@@ -387,7 +387,7 @@ impl Render for ProfileCard {
         if self.full {
             return self.render_full(window, cx);
         }
-        let name = self.name();
+        let name = crate::streamer::name(&self.name());
         let picture = self.picture(144, cx);
         let size = window.viewport_size();
         let app = Area {
@@ -494,7 +494,7 @@ impl Render for ProfileCard {
                     as_wide_as_its_text(div()
                         .text_size(px(0.85 * theme::REM))
                         .text_color(rgb(theme::text_muted()))
-                        .child(self.user.to_string())
+                        .child(crate::streamer::id(self.user.as_str()))
                         .id("profile-id")
                         .cursor_pointer()
                         .on_click(cx.listener(|this, _, _, cx| this.show_full(cx))),
@@ -505,7 +505,7 @@ impl Render for ProfileCard {
                 )
                     .e2e("p", "profile-id muted")
                     .attr("title", "View full profile")
-                    .text(self.user.to_string()),
+                    .text(crate::streamer::id(self.user.as_str())),
             );
         if let Some(status) = self.profile.as_ref().and_then(|p| p.status.clone()) {
             body = body.child(div().child(status.clone()).e2e("p", "profile-status").text(status));
@@ -705,7 +705,7 @@ impl ProfileCard {
     /// The full-page profile: the card's person larger, with the servers
     /// you share listed (each opens its server).
     fn render_full(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
-        let name = self.name();
+        let name = crate::streamer::name(&self.name());
         let picture = self.picture(160, cx);
         let top = 0.15 * f32::from(window.viewport_size().height);
         let mut body = div()
@@ -737,7 +737,7 @@ impl ProfileCard {
                     div()
                         .text_size(px(0.85 * theme::REM))
                         .text_color(rgb(theme::text_muted()))
-                        .child(self.user.to_string())
+                        .child(crate::streamer::id(self.user.as_str()))
                         .id("profile-id")
                         .cursor_pointer()
                         .on_click(cx.listener(|this, _, _, cx| {
@@ -749,7 +749,7 @@ impl ProfileCard {
                 )
                     .e2e("p", "profile-id muted")
                     .attr("title", "Copy the link to this profile")
-                    .text(self.user.to_string()),
+                    .text(crate::streamer::id(self.user.as_str())),
             );
         if let Some(status) = self.profile.as_ref().and_then(|p| p.status.clone()) {
             body = body.child(div().child(status.clone()).e2e("p", "profile-status").text(status));

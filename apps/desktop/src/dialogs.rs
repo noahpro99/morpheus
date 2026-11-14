@@ -542,6 +542,7 @@ pub fn render_dialog(shell: &mut Shell, window: &mut Window, cx: &mut Context<Sh
     match dialog {
         Dialog::Confirm(confirm, action) => {
             let (confirm, action) = (confirm.clone(), action.clone());
+            let opens_room = matches!(action, ConfirmAction::OpenRoom(_));
             let go = {
                 let action = action.clone();
                 cx.listener(move |this, _: &gpui::ClickEvent, _, cx| this.confirmed(action.clone(), cx))
@@ -559,16 +560,18 @@ pub fn render_dialog(shell: &mut Shell, window: &mut Window, cx: &mut Context<Sh
                 }))
                 .child(heading(&confirm.title))
                 .child(muted(&confirm.body, "muted"))
+                .when(opens_room, |d| d.child(dont_ask_tick(shell.ask_tick, cx)))
                 .child(actions(vec![
                     dialog_button("confirm-cancel", "Cancel", false)
                         .text_color(rgb(theme::text()))
                         .on_click(cx.listener(|this, _, _, cx| this.dialog_close(cx)))
-                        .e2e("button", "secondary")
+                        .e2e("button", "secondary confirm-cancel")
                         .text("Cancel")
                         .into_any_element(),
                     dialog_button("confirm-go", &confirm.confirm, true)
+                        .when(opens_room, |d| d.bg(rgb(theme::accent())))
                         .on_click(go)
-                        .e2e("button", "danger")
+                        .e2e("button", if opens_room { "primary confirm-go" } else { "danger confirm-go" })
                         .text(confirm.confirm.clone())
                         .into_any_element(),
                 ]))
@@ -730,6 +733,10 @@ impl Shell {
         match action {
             ConfirmAction::DeleteMessage(message) => self.delete_with_undo(*message, cx),
             ConfirmAction::SignOut => cx.emit(crate::shell::AccountEvent::SignOut),
+            ConfirmAction::OpenRoom(room) => {
+                self.ask_skipped |= std::mem::take(&mut self.ask_tick);
+                self.open_room_now(room, cx);
+            }
         }
     }
 }
@@ -1104,4 +1111,37 @@ impl Render for PinnedDialog {
             this.update(cx, |_, cx| cx.emit(Closed)).ok();
         })
     }
+}
+
+/// The open-channel question's "Don't ask again during this share" tick.
+fn dont_ask_tick(ticked: bool, cx: &mut Context<Shell>) -> impl IntoElement {
+    let ring = rgb(if ticked { theme::accent() } else { theme::text_muted() });
+    let mark = div()
+        .size(px(18.0))
+        .flex_none()
+        .flex()
+        .items_center()
+        .justify_center()
+        .border_2()
+        .border_color(ring)
+        .rounded(px(3.0))
+        .when(ticked, |d| d.child(div().size(px(8.0)).rounded(px(3.0)).bg(rgb(theme::accent()))))
+        .e2e("input", "")
+        .attr("type", "checkbox")
+        .attr("name", "dont-ask");
+    let mark = if ticked { mark.attr("checked", "true") } else { mark };
+    div()
+        .id("dont-ask")
+        .flex()
+        .items_center()
+        .gap(px(8.0))
+        .mt(px(12.0))
+        .cursor_pointer()
+        .on_click(cx.listener(|this, _, _, cx| {
+            this.ask_tick = !this.ask_tick;
+            cx.notify();
+        }))
+        .child(mark)
+        .child("Don't ask again during this share")
+        .e2e("label", "dont-ask")
 }
