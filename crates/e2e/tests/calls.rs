@@ -4585,12 +4585,12 @@ async fn a_shared_screen_zooms_pans_and_resets() {
         "clamped at the edge: ({fx}, {fy}) in {tile:?}"
     );
 
-    // A double click toggles fit and 100%.
-    alice.click_at(SCREEN_TILE, 0.0, 0.0, 2).await.expect("double click");
+    // The zoom button toggles halfway zoom and fit.
+    alice.click(".screen-zoom-indicator").await.expect("reset");
     assert!((tile_num(&mut alice, "data-zoom").await - 1.0).abs() < 1e-6, "fit again");
-    alice.click_at(SCREEN_TILE, 0.0, 0.0, 2).await.expect("double click");
+    alice.click(".screen-zoom-button").await.expect("zoom button");
     let actual = tile_num(&mut alice, "data-zoom").await;
-    assert!(actual > 1.2, "actual size is bigger than the fitted tile: {actual}");
+    assert!((actual - 2.0).abs() < 1e-6, "zoom button zooms halfway: {actual}");
     assert_eq!(alice.count(".call-cards.focused").await.expect("count"), 1, "still focused");
     // The indicator resets.
     alice.click(".screen-zoom-indicator").await.expect("reset");
