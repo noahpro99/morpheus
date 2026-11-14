@@ -660,3 +660,44 @@ async fn viewing_a_room_clears_its_inbox_entries_at_once() {
         "nothing left in the inbox"
     );
 }
+
+/// A message that arrived while the app was closed is history when it opens:
+/// no sound and no desktop notification at sign-in, though it came seconds
+/// before; one sent after the first sync still sounds.
+#[tokio::test]
+async fn a_message_from_before_signing_in_makes_no_sound_or_notification() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let reader = new_account(&hs, "backr").expect("reader");
+    let writer = new_account(&hs, "backw").expect("writer");
+    // A DM from bob to alice, the app not running.
+    let room = api_as(
+        &hs,
+        &writer,
+        "POST",
+        "createRoom",
+        Some(serde_json::json!({
+            "is_direct": true,
+            "preset": "trusted_private_chat",
+            "invite": [format!("@{reader}:localhost")],
+        })),
+    )
+    .expect("a dm");
+    let room = room["room_id"].as_str().expect("room id").to_owned();
+    let id = room.replace('!', "%21").replace(':', "%3A");
+    api_as(&hs, &reader, "POST", &format!("rooms/{id}/join"), Some(serde_json::json!({})))
+        .expect("reader joins");
+    say(&hs, &writer, &room, "while you were away");
+
+    let mut app = App::launch_desktop(&hs).await.expect("launch");
+    login(&mut app, &reader).await;
+    app.wait_for(".room", DEFAULT_WAIT).await.expect("rooms");
+    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    assert_eq!(message_sounds(&mut app).await, 0, "no sound for old messages");
+    assert!(shown(&app).is_empty(), "no notification for old messages: {:?}", shown(&app));
+
+    say(&hs, &writer, &room, "now you are here");
+    wait_message_sounds(&mut app, 1, "a message after the first sync").await;
+}
