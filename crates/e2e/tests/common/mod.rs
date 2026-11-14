@@ -25,6 +25,10 @@ pub async fn login(app: &mut App, user: &str, password: &str) {
 /// The window's pixels (RGB rows) and size, from a `grim` capture of the
 /// test window (found by the app's pid on Hyprland); `None` elsewhere.
 pub fn capture(app: &App) -> Option<(Vec<u8>, usize, usize)> {
+    // Headless (no pixels): a loud skip, never a pass.
+    if !morpheus_e2e::display_or_skip("pixel check") {
+        return None;
+    }
     // A locked session (hyprlock) is what grim sees: no pixels of the app.
     // That fails the test rather than skipping it, so a locked run never
     // passes pixel checks it did not make.

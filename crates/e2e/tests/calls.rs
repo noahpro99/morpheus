@@ -4721,7 +4721,8 @@ async fn a_screen_share_shows_a_skeleton_until_its_first_frame() {
 
 /// The screen can be captured: Hyprland, the session not locked.
 fn can_capture() -> bool {
-    std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_some()
+    morpheus_e2e::display_or_skip("pixel check")
+        && std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_some()
         && !std::process::Command::new("pgrep")
             .args(["-x", "hyprlock"])
             .status()

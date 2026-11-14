@@ -130,7 +130,9 @@ impl App {
         size: Option<(u32, u32)>,
         env: &[(&str, &str)],
     ) -> Result<Self> {
-        keep_test_windows_unfocused();
+        if !headless() {
+            keep_test_windows_unfocused();
+        }
         prune_test_devices(homeserver);
         std::fs::create_dir_all(&data_dir)?;
         // A disposable, test-local stand-in for the real Downloads directory
@@ -174,10 +176,15 @@ impl App {
         // (titled "Morpheus (test)", which the window rule sends to the hidden
         // test monitor), and only once that monitor is set up.
         ensure_test_build(&bin)?;
-        test_windows_placed()?;
+        if !headless() {
+            test_windows_placed()?;
+        }
 
         let mut command = Command::new(&bin);
-        if let Some((width, height)) = size {
+        display_env(&mut command);
+        // Headless, the window keeps the size it opens at: the one
+        // `fit_window` gives a window on Hyprland.
+        if let Some((width, height)) = size.or(headless().then_some((1280, 800))) {
             command.env("MORPHEUS_E2E_SIZE", format!("{width}x{height}"));
         }
         let child = command
@@ -204,7 +211,7 @@ impl App {
         let stream = connect(port, &log_path).await?;
         let (reader, writer) = stream.into_split();
         // A launched binary is the desktop (GPUI) app, in a phone run too.
-        if let Some(pid) = child.id() {
+        if let Some(pid) = child.id().filter(|_| !headless()) {
             fit_window(pid, size.unwrap_or((1280, 800))).await;
         }
         Ok(Self {
@@ -1353,6 +1360,10 @@ impl App {
     /// Best effort: works on Hyprland with `grim` available and returns
     /// `None` elsewhere so tests stay portable.
     pub async fn screenshot(&mut self, name: &str) -> Result<Option<PathBuf>> {
+        // Headless: no pixels (screenshots are artifacts, not checks).
+        if headless() {
+            return Ok(None);
+        }
         if self.android {
             return android_screenshot(name);
         }
@@ -1478,7 +1489,9 @@ impl App {
             .ok_or_else(|| anyhow::anyhow!("adb could not open {link}"))?;
             return Ok(());
         }
-        let status = std::process::Command::new(binary_path()?)
+        let mut command = std::process::Command::new(binary_path()?);
+        display_env_std(&mut command);
+        let status = command
             .arg(link)
             .env("MORPHEUS_DATA_DIR", &self.data_dir)
             .env("MORPHEUS_HOMESERVER", &self.homeserver)
@@ -2087,6 +2100,70 @@ fn ensure_test_build(bin: &Path) -> Result<()> {
     }
     CHECKED.lock().unwrap().push(key);
     Ok(())
+}
+
+/// Whether this is a headless run (`MORPHEUS_E2E_HEADLESS=1`, which
+/// `just e2e-headless` sets): the app runs with no display server at all, on
+/// gpui's headless platform with offscreen windows (vendor/gpui
+/// `platform/linux/headless/window.rs`). Layout, paint, element bounds and
+/// input are real; nothing is drawn to pixels, so pixel checks are skipped
+/// (see [`display_or_skip`]). No window ever reaches the session, so it runs
+/// with the screen locked, in CI, and without Hyprland.
+pub fn headless() -> bool {
+    std::env::var("MORPHEUS_E2E_HEADLESS").is_ok_and(|v| !v.is_empty() && v != "0")
+}
+
+/// For a check that needs a display (pixels, or a window manager resizing
+/// the window): `true` when there is one. A headless run has neither: this
+/// says so on stderr (`SKIPPED (needs a
+/// display)`), notes the test in `target/e2e/display-skips.log` (which
+/// `just e2e-headless` counts) and returns `false`, so the check is skipped
+/// loudly, never passed.
+pub fn display_or_skip(what: &str) -> bool {
+    if !headless() {
+        return true;
+    }
+    let test = std::thread::current()
+        .name()
+        .unwrap_or("unnamed test")
+        .to_owned();
+    eprintln!("SKIPPED (needs a display): {test}: {what}");
+    if let Ok(root) = workspace_root() {
+        let dir = root.join("target/e2e");
+        let _ = std::fs::create_dir_all(&dir);
+        if let Ok(mut log) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(dir.join("display-skips.log"))
+        {
+            use std::io::Write as _;
+            let _ = writeln!(log, "{test}\t{what}");
+        }
+    }
+    false
+}
+
+/// The environment of an app process for this run's display: headless,
+/// no display server (and so no Hyprland) is visible to it.
+fn display_env(command: &mut Command) {
+    if headless() {
+        command
+            .env("ZED_HEADLESS", "1")
+            .env_remove("WAYLAND_DISPLAY")
+            .env_remove("DISPLAY")
+            .env_remove("HYPRLAND_INSTANCE_SIGNATURE");
+    }
+}
+
+/// [`display_env`] for a blocking `std` command.
+fn display_env_std(command: &mut std::process::Command) {
+    if headless() {
+        command
+            .env("ZED_HEADLESS", "1")
+            .env_remove("WAYLAND_DISPLAY")
+            .env_remove("DISPLAY")
+            .env_remove("HYPRLAND_INSTANCE_SIGNATURE");
+    }
 }
 
 /// Hyprland's name for the monitor test windows open on.
@@ -2711,7 +2788,9 @@ impl App {
         timeout: Duration,
     ) -> Result<Option<std::process::ExitStatus>> {
         let port = free_port().await?;
-        let mut child = Command::new(binary_path()?)
+        let mut command = Command::new(binary_path()?);
+        display_env(&mut command);
+        let mut child = command
             .env("MORPHEUS_E2E_PORT", port.to_string())
             .env("MORPHEUS_CALL_AUDIO", "tone")
             .env("MORPHEUS_DATA_DIR", &self.data_dir)

@@ -75,6 +75,9 @@ async fn resizing_the_window_shows_no_white() {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
     };
+    if !morpheus_e2e::display_or_skip("resizes the window through Hyprland") {
+        return;
+    }
     if std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_none() {
         eprintln!("not on Hyprland; skipping");
         return;

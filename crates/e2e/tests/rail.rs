@@ -781,7 +781,8 @@ async fn the_dms_icon_lines_up_with_the_top_bar_and_the_panel_is_rounded() {
         .and_then(|r| r.parse().ok())
         .unwrap_or(0.0);
     assert!(radius >= 8.0, "the panel's top left corner has a radius of {radius}");
-    let can_capture = std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_some()
+    let can_capture = morpheus_e2e::display_or_skip("pixel check")
+        && std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_some()
         && !std::process::Command::new("pgrep").args(["-x", "hyprlock"]).status().is_ok_and(|s| s.success());
     let at = app.pid().and_then(|pid| {
         let out = std::process::Command::new("hyprctl").args(["clients", "-j"]).output().ok()?;

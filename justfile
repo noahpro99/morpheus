@@ -45,6 +45,28 @@ e2e-build:
 e2e file="" name="": e2e-build hs-seed
     MORPHEUS_E2E_BIN=$PWD/target/debug/morpheus-desktop-e2e MORPHEUS_TEST_HOMESERVER={{hs}} cargo test -p morpheus-e2e {{ if file == "" { "" } else { "--test " + file } }} {{name}} -- --nocapture --test-threads=1 ${E2E_TEST_ARGS:-}
 
+# Desktop e2e tests with no display at all: `just e2e-headless timeline [name]`.
+# The app runs on gpui's headless platform (offscreen windows: real layout and
+# input, no pixels), so it works with the screen locked, in CI, and touches no
+# window of the session. Checks that need a display (pixels, a window manager)
+# are skipped loudly and counted at the end.
+e2e-headless file="" name="": e2e-build hs-seed
+    #!/usr/bin/env bash
+    set -uo pipefail
+    skips=target/e2e/display-skips.log
+    mkdir -p target/e2e && rm -f "$skips"
+    env -u WAYLAND_DISPLAY -u DISPLAY -u HYPRLAND_INSTANCE_SIGNATURE MORPHEUS_E2E_HEADLESS=1 \
+        MORPHEUS_E2E_BIN=$PWD/target/debug/morpheus-desktop-e2e MORPHEUS_TEST_HOMESERVER={{hs}} \
+        cargo test -p morpheus-e2e {{ if file == "" { "" } else { "--test " + file } }} {{name}} -- --nocapture --test-threads=1 ${E2E_TEST_ARGS:-}
+    status=$?
+    if [ -s "$skips" ]; then
+        echo "headless: $(cut -f1 "$skips" | sort -u | wc -l) test(s) skipped a check that needs a display (run them with \`just e2e-display\`):"
+        sort -u "$skips" | sed 's/^/  /; s/\t/: /'
+    else
+        echo "headless: no test skipped a check for want of a display"
+    fi
+    exit $status
+
 # The old name of `just e2e`
 gpui-e2e file="" name="": (e2e file name)
 

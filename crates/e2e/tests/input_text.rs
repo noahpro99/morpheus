@@ -33,7 +33,8 @@ fn contrast(a: [u8; 3], b: [u8; 3]) -> f64 {
 
 /// The screen can be captured: Hyprland, the session not locked.
 fn can_capture() -> bool {
-    std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_some()
+    morpheus_e2e::display_or_skip("pixel check")
+        && std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_some()
         && !std::process::Command::new("pgrep")
             .args(["-x", "hyprlock"])
             .status()
