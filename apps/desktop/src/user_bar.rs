@@ -49,6 +49,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         Some(profile) => (profile.name.clone(), profile.avatar.clone()),
         None => (user_id.trim_start_matches('@').to_owned(), None),
     };
+    let (name, user_id) = (crate::streamer::name(&name), crate::streamer::id(&user_id));
     let chip = div()
         .id("profile-chip")
         .flex_1()

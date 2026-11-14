@@ -130,6 +130,10 @@ pub struct Message {
     pub kind: MessageKind,
     /// For a [`MessageKind::State`]: which kind of line it is.
     pub state_kind: Option<StateKind>,
+    /// For a [`MessageKind::State`]: the name its text starts with (the
+    /// sender, or whoever a membership change is about), so a screen that
+    /// hides names can swap it.
+    pub state_who: Option<String>,
     /// A warning about who really sent this (encrypted rooms only).
     pub shield: Option<Shield>,
 }
@@ -471,6 +475,13 @@ impl Message {
             )
         };
 
+        let state_who = matches!(kind, MessageKind::State(_)).then(|| match event.content() {
+            TimelineItemContent::MembershipChange(change) => change
+                .display_name()
+                .unwrap_or_else(|| change.user_id().to_string()),
+            _ => sender_name.clone(),
+        });
+
         Self {
             unique_id,
             id,
@@ -490,6 +501,7 @@ impl Message {
             kind,
             shield: Shield::of(event),
             state_kind,
+            state_who,
         }
     }
 }

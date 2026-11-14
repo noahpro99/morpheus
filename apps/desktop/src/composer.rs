@@ -471,7 +471,9 @@ impl Composer {
                 sender_name,
                 summary,
                 ..
-            } => (
+            } => {
+                let sender_name = &crate::streamer::name(sender_name);
+                (
                 div()
                     .flex()
                     .gap(px(4.0))
@@ -481,7 +483,8 @@ impl Composer {
                     .text(format!("Replying to {sender_name}"))
                     .into_any_element(),
                 Some(summary.clone()),
-            ),
+                )
+            }
             ComposerMode::Edit { .. } => (
                 div()
                     .child("Editing message")
@@ -1107,6 +1110,7 @@ mod tests {
             },
             shield: None,
             state_kind: None,
+            state_who: None,
         };
         let (composer, cx) = open(cx);
         focus(&composer, cx);
@@ -1156,6 +1160,7 @@ mod tests {
             },
             shield: None,
             state_kind: None,
+            state_who: None,
         };
         let (composer, cx) = open(cx);
         focus(&composer, cx);

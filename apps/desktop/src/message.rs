@@ -553,6 +553,8 @@ fn thread_chip(
     actions: Option<&ActionHandler>,
 ) -> impl IntoElement {
     let count = crate::view_model::threads::chip_count(thread);
+    let mut named = thread.clone();
+    named.latest_sender_name = named.latest_sender_name.map(|name| crate::streamer::name(&name));
     let mut chip = div()
         .flex()
         .items_center()
@@ -579,7 +581,7 @@ fn thread_chip(
                 .e2e("span", "thread-chip-count")
                 .text(count),
         );
-    if let Some(text) = crate::view_model::threads::chip_latest(thread) {
+    if let Some(text) = crate::view_model::threads::chip_latest(&named) {
         chip = chip.child(
             div()
                 .max_w(px(160.0))
@@ -1110,12 +1112,13 @@ fn body_el(
                     .into_any_element();
             }
         },
-        MessageKind::State(text) => return muted_body(text),
+        MessageKind::State(text) => return muted_body(&crate::streamer::state_line(text, row.message.state_who.as_deref())),
         MessageKind::Unsupported(what) => return muted_body(&format!("Unsupported: {what}")),
         MessageKind::ProfileChange | MessageKind::CallPlumbing => return div().into_any_element(),
     };
-    let text = rich::text_of(&row.blocks);
-    blocks_el(&row.blocks, key, base, links)
+    let blocks = crate::streamer::pills(&row.blocks);
+    let text = rich::text_of(&blocks);
+    blocks_el(&blocks, key, base, links)
         .e2e(
             if rich_html { "div" } else { "p" },
             &format!("{class}{}", if rich_html { " rich" } else { "" }),
@@ -1375,6 +1378,7 @@ pub fn message_el(
 
     // A membership or state change: a quiet line.
     if let MessageKind::State(text) = &m.kind {
+        let text = &crate::streamer::state_line(text, m.state_who.as_deref());
         use crate::view_model::state_lines::{self, Tone};
         let look = state_lines::icon(m.state_kind);
         let tone = match look.tone {
@@ -1561,7 +1565,7 @@ pub fn message_el(
                 actions,
             )
                 .e2e("button", "avatar-button")
-                .attr("title", m.sender.to_string()),
+                .attr("title", crate::streamer::id(m.sender.as_str())),
         )
     } else {
         line.child(

@@ -679,7 +679,7 @@ async fn declined(
         .unwrap_or(true);
     this.update(cx, |this, cx| {
         eprintln!("morpheus-desktop: {name} declined the call in {room_for_log} (alone: {alone})");
-        this.toast(format!("{name} declined the call"), cx);
+        this.toast(format!("{} declined the call", crate::streamer::name(&name)), cx);
         if alone {
             this.hang_up(cx);
         }

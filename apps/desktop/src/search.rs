@@ -146,9 +146,9 @@ impl Render for SearchPanel {
                                     .child(
                                         div()
                                             .font_weight(FontWeight::SEMIBOLD)
-                                            .child(row.sender.clone())
+                                            .child(crate::streamer::name(&row.sender))
                                             .e2e("span", "search-sender")
-                                            .text(row.sender.clone()),
+                                            .text(crate::streamer::name(&row.sender)),
                                     )
                                     .child(
                                         div()

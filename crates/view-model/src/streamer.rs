@@ -11,6 +11,8 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 
+use crate::rich::{Block, Para, Span};
+
 /// The dots that stand for what is hidden.
 pub const DOTS: &str = "\u{2022}\u{2022}\u{2022}";
 
@@ -86,6 +88,81 @@ pub fn mask_id(id: &str) -> String {
     if id.is_empty() { String::new() } else { format!("{DOTS}{DOTS}") }
 }
 
+/// A state line ("bob joined the room") with the name it starts with swapped
+/// for `shown`; as it was when it does not start with `who`.
+pub fn swap_who(text: &str, who: &str, shown: &str) -> String {
+    match text.strip_prefix(who) {
+        Some(rest) if !who.is_empty() => format!("{shown}{rest}"),
+        _ => text.to_owned(),
+    }
+}
+
+/// Whether a link target is a person (a matrix.to link to a user).
+fn is_person_link(href: &str) -> bool {
+    href.strip_prefix("https://matrix.to/#/")
+        .is_some_and(|rest| rest.starts_with('@') || rest.starts_with("%40"))
+}
+
+/// `blocks` with each person's mention pill shown as `@` and what `mask`
+/// makes of its name (a room's pill and everything else stay as they were).
+pub fn mask_pills(blocks: &[Block], mask: &dyn Fn(&str) -> String) -> Vec<Block> {
+    blocks
+        .iter()
+        .map(|block| match block {
+            Block::Para(para) => Block::Para(mask_para(para, mask)),
+            Block::Quote(inner) => Block::Quote(mask_pills(inner, mask)),
+            Block::List { ordered, start, items } => Block::List {
+                ordered: *ordered,
+                start: *start,
+                items: items.iter().map(|item| mask_pills(item, mask)).collect(),
+            },
+            other => other.clone(),
+        })
+        .collect()
+}
+
+fn mask_para(para: &Para, mask: &dyn Fn(&str) -> String) -> Para {
+    let mut pills: Vec<(std::ops::Range<usize>, String)> = para
+        .spans
+        .iter()
+        .filter(|s| s.style.mention && s.style.link.as_deref().is_some_and(is_person_link))
+        .map(|s| (s.range.clone(), format!("@{}", mask(&para.text[s.range.clone()]))))
+        .collect();
+    if pills.is_empty() {
+        return para.clone();
+    }
+    pills.sort_by_key(|(range, _)| range.start);
+    pills.dedup_by(|b, a| b.0.start < a.0.end);
+    // An old byte position as a new one.
+    let moved = |at: usize| -> usize {
+        let mut new = at as isize;
+        for (range, shown) in &pills {
+            let shift = shown.len() as isize - (range.end - range.start) as isize;
+            if range.end <= at {
+                new += shift;
+            } else if range.start < at {
+                // Inside a pill: its end.
+                new += shift + (range.end - at) as isize;
+            }
+        }
+        new as usize
+    };
+    let mut text = String::new();
+    let mut from = 0;
+    for (range, shown) in &pills {
+        text.push_str(&para.text[from..range.start]);
+        text.push_str(shown);
+        from = range.end;
+    }
+    text.push_str(&para.text[from..]);
+    let spans = para
+        .spans
+        .iter()
+        .map(|s| Span { range: moved(s.range.start)..moved(s.range.end), style: s.style.clone() })
+        .collect();
+    Para { text, spans }
+}
+
 /// What the question says when a room is about to open during a share.
 pub fn open_question(name: &str, dm: bool) -> String {
     if dm {
@@ -130,5 +207,46 @@ mod tests {
         std::fs::write(dir.join(FILE), r#"{"ask":false}"#).expect("write");
         assert_eq!(StreamerSettings::load(&dir), StreamerSettings { ask: false, ..Default::default() });
         std::fs::remove_dir_all(&dir).ok();
+    }
+}
+
+#[cfg(test)]
+mod pill_tests {
+    use super::*;
+    use crate::rich::Style;
+
+    fn pill(text: &str, link: &str) -> Para {
+        let mut para = Para::default();
+        para.push("hi ", Style::default());
+        para.push(text, Style { mention: true, link: Some(link.into()), ..Style::default() });
+        para.push(" and more", Style { bold: true, ..Style::default() });
+        para
+    }
+
+    #[test]
+    fn a_persons_pill_is_masked_and_the_spans_after_it_move() {
+        let para = pill("Bobby Tables", "https://matrix.to/#/@bob:x");
+        let masked = mask_pills(&[Block::Para(para)], &|n| mask_name(n));
+        let [Block::Para(out)] = masked.as_slice() else {
+            panic!("a paragraph");
+        };
+        assert_eq!(out.text, format!("hi @B{DOTS} and more"));
+        let bold = out.spans.iter().find(|s| s.style.bold).expect("bold span");
+        assert_eq!(&out.text[bold.range.clone()], " and more");
+        let pill = out.spans.iter().find(|s| s.style.mention).expect("pill span");
+        assert_eq!(&out.text[pill.range.clone()], format!("@B{DOTS}"));
+    }
+
+    #[test]
+    fn a_rooms_pill_and_plain_text_stay() {
+        let para = pill("#general", "https://matrix.to/#/#general:x");
+        assert_eq!(mask_pills(&[Block::Para(para.clone())], &|n| mask_name(n)), vec![Block::Para(para)]);
+    }
+
+    #[test]
+    fn a_state_line_swaps_the_name_it_starts_with() {
+        assert_eq!(swap_who("bob joined the room", "bob", "b\u{2022}"), "b\u{2022} joined the room");
+        assert_eq!(swap_who("someone joined", "bob", "b"), "someone joined");
+        assert_eq!(swap_who("joined", "", "b"), "joined");
     }
 }

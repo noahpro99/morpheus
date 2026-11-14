@@ -125,3 +125,38 @@ pub fn room_title(nicknames: &crate::view_model::nicknames::NickMap, room: &morp
     let title = crate::view_model::nicknames::room_title(nicknames, room);
     if room.is_dm { name(&title) } else { title }
 }
+
+/// A state line ("bob joined the room") as it may be shown: `who`, the name
+/// it starts with (an ID when the person has no name), swapped for its mask.
+pub fn state_line(text: &str, who: Option<&str>) -> String {
+    let Some(who) = who else { return text.to_owned() };
+    let shown = if who.starts_with('@') && who.contains(':') { id_or_name(who) } else { name(who) };
+    crate::view_model::streamer::swap_who(text, who, &shown)
+}
+
+/// An ID standing where a name would be: it is both an ID and a person.
+fn id_or_name(user: &str) -> String {
+    if active() && settings().ids { mask_id(user) } else { name(user) }
+}
+
+/// A message's blocks as they may be shown: the person pills in them masked.
+pub fn pills(blocks: &[crate::view_model::rich::Block]) -> std::borrow::Cow<'_, [crate::view_model::rich::Block]> {
+    if active() && settings().names {
+        std::borrow::Cow::Owned(crate::view_model::streamer::mask_pills(blocks, &|n| mask_name(n.trim_start_matches('@'))))
+    } else {
+        std::borrow::Cow::Borrowed(blocks)
+    }
+}
+
+/// An invited room as it may be shown: the person who invited you, and a
+/// direct message's name (it is the other person's), masked.
+pub fn invite(room: &morpheus_core::RoomSummary) -> morpheus_core::RoomSummary {
+    let mut room = room.clone();
+    // A direct message is named for the other person, and an invite to one
+    // that is not marked as such yet is named for whoever asked.
+    if room.is_dm || room.inviter.as_deref() == Some(room.name.as_str()) {
+        room.name = name(&room.name);
+    }
+    room.inviter = room.inviter.map(|who| name(&who));
+    room
+}

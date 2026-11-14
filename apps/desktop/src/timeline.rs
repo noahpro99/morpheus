@@ -1341,6 +1341,7 @@ mod widget_tests {
             kind,
             shield: None,
             state_kind: None,
+            state_who: None,
         }))
     }
 
