@@ -604,6 +604,7 @@ fn capture(shared: &Shared, mode: AudioMode) {
         sent = stats.sent,
         max_send_gap_ms = stats.max_send_gap.as_millis() as u64,
         loopback_underruns = stats.underruns,
+        dropped_as_late = stats.stale,
         "microphone capture stopped"
     );
 }
@@ -727,6 +728,8 @@ struct Device {
 struct Chunker {
     chunk: usize,
     pending: VecDeque<i16>,
+    /// The most samples one callback has brought.
+    largest: usize,
 }
 
 impl Chunker {
@@ -734,16 +737,34 @@ impl Chunker {
         Self {
             chunk,
             pending: VecDeque::with_capacity(chunk * 4),
+            largest: 0,
         }
     }
 
     fn push(&mut self, samples: &[i16]) {
+        self.largest = self.largest.max(samples.len());
         self.pending.extend(samples);
     }
 
     /// The next whole chunk, if one has come.
     fn next(&mut self) -> Option<Vec<i16>> {
         (self.pending.len() >= self.chunk).then(|| self.pending.drain(..self.chunk).collect())
+    }
+
+    /// More waiting than 30 ms, or than the largest callback (up to 100 ms)
+    /// and a chunk (a device calling back with more than 10 ms at a time
+    /// brings that much at once; dropping it was a gap every callback): the
+    /// thread stalled (a model loading), so all but the newest chunk is
+    /// dropped and the call does not stay that much late. How many samples
+    /// went.
+    fn drop_stale(&mut self) -> usize {
+        let callback = self.largest.min(10 * self.chunk);
+        if self.pending.len() <= (3 * self.chunk).max(callback + self.chunk) {
+            return 0;
+        }
+        let late = self.pending.len() - self.chunk;
+        self.pending.drain(..late);
+        late
     }
 }
 
@@ -904,12 +925,8 @@ impl Device {
             self.chunker.push(&more);
             self.arrived = at;
         }
-        // More than 30 ms waiting (the thread stalled: a model loading):
-        // the oldest is dropped, so the call does not stay that much late.
-        let chunk = self.chunker.chunk;
-        if self.chunker.pending.len() > 3 * chunk {
-            let late = self.chunker.pending.len() - chunk;
-            self.chunker.pending.drain(..late);
+        let late = self.chunker.drop_stale();
+        if late > 0 {
             self.counters.stale.fetch_add(late as u64, Ordering::Relaxed);
         }
         let raw = loop {
@@ -1699,6 +1716,38 @@ mod flow {
             }
             assert_eq!(chunker.pending.len(), total - out.len(), "the rest waits");
         }
+    }
+
+    /// A device that calls back with 40 ms at a time (a Windows driver
+    /// whose shared-mode period is longer than the 10 ms asked for, a
+    /// Bluetooth headset) loses nothing: only a backlog longer than a
+    /// callback and a chunk is dropped as late (the capture thread stalled).
+    #[test]
+    fn large_callbacks_are_not_dropped_as_late() {
+        let mut chunker = Chunker::new(FRAME);
+        let (mut taken, mut dropped) = (0, 0);
+        for _ in 0..100 {
+            chunker.push(&[1; 4 * FRAME]);
+            dropped += chunker.drop_stale();
+            while chunker.next().is_some() {
+                taken += 1;
+            }
+        }
+        assert_eq!((taken, dropped), (400, 0));
+        // A stall: 200 ms waiting, of which all but the newest 10 ms go.
+        for _ in 0..5 {
+            chunker.push(&[1; 4 * FRAME]);
+        }
+        assert_eq!(chunker.drop_stale(), 19 * FRAME);
+        assert_eq!(chunker.pending.len(), FRAME);
+        // 10 ms callbacks: more than 30 ms waiting is late.
+        let mut small = Chunker::new(FRAME);
+        for _ in 0..3 {
+            small.push(&[1; FRAME]);
+        }
+        assert_eq!(small.drop_stale(), 0);
+        small.push(&[1; FRAME]);
+        assert_eq!(small.drop_stale(), 3 * FRAME);
     }
 
     /// The real microphone (and speaker, played silently) for 10 s, as the
