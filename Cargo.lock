@@ -7343,6 +7343,7 @@ dependencies = [
  "livekit-api",
  "ndarray",
  "pkg-config",
+ "pulseaudio",
  "rustls",
  "thiserror 2.0.21",
  "tokio",
