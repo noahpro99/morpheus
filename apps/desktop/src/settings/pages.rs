@@ -123,6 +123,9 @@ impl SettingsView {
 
     /// Opens a page on the setting a search found, flashing it a moment.
     pub(crate) fn show_setting(&mut self, entry: &'static SettingEntry, cx: &mut Context<Self>) {
+        if entry.page != crate::view_model::settings::SettingsPage::VoiceVideo {
+            self.stop_video(cx);
+        }
         self.page = entry.page;
         self.highlight = Some(entry.anchor);
         self.search.update(cx, |input, cx| input.set_value("", cx));
@@ -402,11 +405,13 @@ impl SettingsView {
             |_: &mut Self, mode, cx| cx.emit(super::NoiseChosen(mode)),
             |_: &mut Self, on, cx| cx.emit(super::MicTest(on)),
         );
+        let video = self.video_section(cx);
         vec![
             section_classed("Devices", "audio-devices", children, self.hl("audio-devices"), "voice-devices")
                 .into_any_element(),
             section_classed("Noise suppression", "noise-suppression", noise, self.hl("noise-suppression"), "voice-noise")
                 .into_any_element(),
+            video,
         ]
     }
 

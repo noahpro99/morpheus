@@ -21,8 +21,10 @@ use morpheus_core::{
 };
 
 mod pages;
+mod video;
 
 use crate::{
+    call_ui::VideoFrame,
     e2e::E2eExt as _,
     icons::icon,
     input::{Submit, TextInput},
@@ -130,6 +132,12 @@ pub struct SettingsView {
     voice: Option<VoiceLists>,
     voice_prefs: crate::view_model::calls::DevicePrefs,
     picker_open: Option<&'static str>,
+    /// Settings' camera preview: what it shows (under which key), its
+    /// message, and whether the camera is opening.
+    preview: Option<(&'static str, gpui::Entity<VideoFrame>)>,
+    preview_message: Option<String>,
+    preview_starting: bool,
+    preview_watch: u64,
 }
 
 impl SettingsView {
@@ -204,6 +212,10 @@ impl SettingsView {
             voice: None,
             voice_prefs: Default::default(),
             picker_open: None,
+            preview: None,
+            preview_message: None,
+            preview_starting: false,
+            preview_watch: 0,
         }
     }
 
@@ -245,6 +257,7 @@ impl SettingsView {
             if morpheus_call::mic_test_running() {
                 cx.emit(MicTest(false));
             }
+            self.stop_video(cx);
             self.set_up_when_ready = false;
             cx.notify();
         }
@@ -1123,6 +1136,9 @@ impl Render for SettingsView {
                     .child(icon(item.glyph(), 18.0).text_color(rgb(if selected { theme::text() } else { theme::text_muted() })))
                     .child(item.label())
                     .on_click(cx.listener(move |this, _, _, cx| {
+                        if item != SettingsPage::VoiceVideo {
+                            this.stop_video(cx);
+                        }
                         this.page = item;
                         cx.notify();
                     }))
@@ -1201,7 +1217,8 @@ impl Render for SettingsView {
             )
             .child(header)
             .children(body)
-            .e2e("section", "settings-page");
+            .e2e("section", "settings-page")
+            .scrollable(std::rc::Rc::new(crate::e2e::HandleProbe(self.scroll.clone())));
         let panel = div()
             .id("settings")
             .track_focus(&self.focus)
