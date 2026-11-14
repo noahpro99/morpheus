@@ -1537,8 +1537,11 @@ pub fn voice_channel(
                     .e2e("span", "unread-dot"),
             )
         })
-        .on_click(cx.listener(|this, _, _, cx| {
+        .on_click(cx.listener(|this, _, window, cx| {
             this.calls.voice_chat = !this.calls.voice_chat;
+            if this.calls.voice_chat && let Some((_, composer)) = &this.composer {
+                composer.update(cx, |composer, cx| composer.focus_input(window, cx));
+            }
             cx.notify();
         }))
         .e2e(

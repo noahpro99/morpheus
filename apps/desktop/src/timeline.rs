@@ -331,6 +331,7 @@ impl TimelineView {
                                 this.read_at = read_at;
                                 this.rebuild();
                                 this.continue_jump(cx);
+                                this.check_history(cx);
                                 cx.notify();
                             })
                             .is_ok();
@@ -638,6 +639,11 @@ impl TimelineView {
             }
         } else if !self.at_start() && self.handle.is_some() {
             rows.insert(0, Row::Skeleton { older: true });
+        } else if self.at_start()
+            && !rows.iter().any(|r| matches!(r, Row::Message { .. }))
+            && !rows.iter().any(|r| matches!(r, Row::Start))
+        {
+            rows.push(Row::Start);
         }
         let (start, removed, added) = changed_range(&self.rows, &rows);
         // A view scrolled up stays on the row it was on: the list keeps its
@@ -687,9 +693,15 @@ impl TimelineView {
                 // A page of hidden events (joins, say) leaves the column short: look
                 // again once it has settled, nothing else will draw it.
                 if !this.reached_start {
+                    let has_messages = this.rows.iter().any(|r| matches!(r, Row::Message { .. }));
+                    let delay = if has_messages { AUTO_FILL_SETTLE } else { Duration::from_millis(10) };
                     cx.spawn(async move |this, cx| {
-                        cx.background_executor().timer(AUTO_FILL_SETTLE).await;
-                        this.update(cx, |_, cx| cx.notify()).ok();
+                        cx.background_executor().timer(delay).await;
+                        this.update(cx, |this, cx| {
+                            this.check_history(cx);
+                            cx.notify();
+                        })
+                        .ok();
                     })
                     .detach();
                 }
@@ -764,15 +776,20 @@ impl TimelineView {
         if self.handle.is_none() || self.paginating || self.at_start() {
             return;
         }
+        let has_messages = self.rows.iter().any(|r| matches!(r, Row::Message { .. }));
+        if !has_messages {
+            self.load_older(cx);
+            return;
+        }
         let top = self.list.logical_scroll_top().item_ix;
-        let scrolled = top < self.rows.len();
-        if scrolled && top <= NEAR_TOP_ROWS {
+        if top <= NEAR_TOP_ROWS {
             self.load_older(cx);
             return;
         }
         let settled = self.last_update.elapsed() >= AUTO_FILL_SETTLE;
         let viewport = metrics(&self.list).viewport;
-        if !scrolled
+        let at_bottom = !self.away_from_present();
+        if at_bottom
             && settled
             && viewport > 0.0
             && metrics(&self.list).range < FILL_PX
@@ -1089,13 +1106,24 @@ impl TimelineView {
             return;
         }
         self.covered = covered;
-        if !covered
-            && !self.keep_unread
-            && self.thread_root.is_none()
-            && let Some(handle) = self.handle.as_ref()
-        {
-            let receipt = handle.send_read_receipt();
-            cx.spawn(async move |_, _| drop(receipt.await)).detach();
+        if !covered {
+            if !self.keep_unread
+                && self.thread_root.is_none()
+                && let Some(handle) = self.handle.as_ref()
+            {
+                let receipt = handle.send_read_receipt();
+                cx.spawn(async move |_, _| drop(receipt.await)).detach();
+            }
+            self.jump_to_present(cx);
+            cx.spawn(async move |this, cx| {
+                cx.background_executor().timer(Duration::from_millis(50)).await;
+                this.update(cx, |this, cx| {
+                    this.check_history(cx);
+                    cx.notify();
+                })
+                .ok();
+            })
+            .detach();
         }
     }
 
@@ -1504,6 +1532,27 @@ mod widget_tests {
         for line in lines {
             assert!(line.w >= 60.0 && line.h > 0.0, "a placeholder line is {line:?}");
         }
+    }
+
+    /// A channel whose loaded events are all hidden call events automatically
+    /// shows the beginning of the room once start is reached, instead of being blank.
+    #[gpui::test]
+    fn hidden_call_events_at_start_show_beginning_row(cx: &mut TestAppContext) {
+        let (view, cx) = open(cx);
+        feed(
+            &view,
+            cx,
+            vec![
+                entry(0, "@alice:x", 1000, MessageKind::CallPlumbing),
+                entry(1, "@bob:x", 1001, MessageKind::CallPlumbing),
+            ],
+        );
+        view.update(cx, |t, _| {
+            t.reached_start = true;
+            t.rebuild();
+        });
+        redraw(cx);
+        assert!(!texts(".timeline-start").is_empty(), "beginning of room should show");
     }
 
     #[gpui::test]
