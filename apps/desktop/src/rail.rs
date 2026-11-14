@@ -237,7 +237,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
     let unread_in = |scope: &Scope| scope_has_unread(rooms, scope);
     let unread_dms = rooms
         .iter()
-        .filter(|r| r.invited || (r.is_dm && r.highlight_count > 0))
+        .filter(|r| r.invited || (r.is_dm && r.highlight_count > 0 && !crate::locks::is_locked(&r.id)))
         .count();
     let has_favorites = rooms.iter().any(|r| r.favorite && !r.invited);
     let spaces = top_spaces(rooms);

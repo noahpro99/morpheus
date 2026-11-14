@@ -10,13 +10,14 @@ use morpheus_core::{NotifyMode, OwnedRoomId, RoomSummary, marks};
 
 use crate::{
     dialogs::{Closed, Dialog, PendingUndo},
+    locks::{has_lock, is_locked},
     room_dialogs::{Done, RoomDialog},
     menu::OpenMenu,
     model::{Scope, rooms_in_scope},
     shell::Shell,
     view_model::{
         menu::{MenuAction, MenuTarget},
-        room_menu::{DmState, dm_menu, invite_targets, room_menu, space_menu},
+        room_menu::{DmState, dm_menu, invite_targets, lock_items, room_menu, space_menu, with_lock_items},
         nicknames::with_nickname,
         room_dialogs::RoomDialogKind,
     },
@@ -210,6 +211,7 @@ impl Shell {
                             user,
                         };
                         let items = dm_menu(&room, &state);
+                        let items = with_lock_items(items, lock_items(&room.id, has_lock(&room.id), is_locked(&room.id)));
                         this.open_menu(OpenMenu::new(at, items, false, MenuTarget::Other), cx);
                     })
                     .ok();
@@ -222,6 +224,7 @@ impl Shell {
                     let mode = mode.await.ok();
                     this.update(cx, |this, cx| {
                         let items = room_menu(&room, mode);
+                        let items = with_lock_items(items, lock_items(&room.id, has_lock(&room.id), is_locked(&room.id)));
                         this.open_menu(OpenMenu::new(at, items, false, MenuTarget::Other), cx);
                     })
                     .ok();
@@ -383,6 +386,7 @@ impl Shell {
                 self.toast("Link copied", cx);
             }
             MenuAction::RoomDialog(kind) => self.open_room_dialog(kind, cx),
+            MenuAction::LockNow(room) => self.lock_now(&room, cx),
             MenuAction::CreateChannel(space) => {
                 self.set_scope(Scope::Space(space), cx);
                 self.open_room_dialog(RoomDialogKind::Create, cx);
@@ -468,6 +472,8 @@ impl Shell {
                 self.save_prefs(cx);
                 cx.notify();
             }
+            Done::LockSet { room, hash } => self.lock_set(room, hash.clone(), cx),
+            Done::LockRemoved(room) => self.lock_removed(room, cx),
             Done::ProfileSaved => self.refresh_members(cx),
             Done::OwnProfileChanged => self.reload_own_profile(cx),
             Done::NicknameSaved { user, nickname } => {

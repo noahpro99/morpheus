@@ -168,6 +168,10 @@ pub fn spawn_notifier(session: Session, redraw: impl Fn() + Send + 'static) {
                         eprintln!("morpheus-desktop: notifications are off on this device; not shown");
                         continue;
                     }
+                    if crate::locks::is_locked(&notice.room_id) {
+                        show("Morpheus".into(), crate::view_model::locks::NOTIFICATION.into(), None, None, None);
+                        continue;
+                    }
                     if crate::streamer::notifications_hidden() {
                         show("Morpheus".into(), "Someone sent a message".into(), None, None, None);
                         continue;

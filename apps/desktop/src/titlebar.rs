@@ -66,7 +66,7 @@ fn bar_button(shell: &Shell, cx: &mut Context<Shell>, id: &'static str) -> gpui:
 }
 
 pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
-    let unread = unread_count(&shell.rooms);
+    let unread = unread_count(&crate::locks::unlocked(&shell.rooms));
     let title = header_title(&shell.rooms, &shell.scope);
     let colour_of = |id: &'static str| format!("{:06x}", crate::chat::bar_colour(shell, id, theme::text_muted()));
     let nav_button = |cx: &mut Context<Shell>, id: &'static str, glyph: &'static str, label: &'static str, enabled: bool, step: isize| {

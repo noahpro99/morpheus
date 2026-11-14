@@ -35,6 +35,18 @@ pub const MIN_PASSWORD: usize = 4;
 
 const FILE: &str = "locks.json";
 
+/// What the "set a password" form says a lock is.
+pub const LOCK_BLURB: &str = "This chat will open only with the password, on this device: its messages are hidden from the list, notifications, the inbox and search while it is locked. It is a privacy screen, not encryption, and other devices are not affected.";
+
+/// What to do about a forgotten password.
+pub const FORGOT: &str = "Forgot the password? Removing a forgotten lock means signing out and back in, which clears every lock on this device.";
+
+/// Under a lock screen's password box.
+pub const LOCKED_TITLE: &str = "This chat is locked";
+
+/// A notification for a locked room says only this.
+pub const NOTIFICATION: &str = "New message in a locked chat";
+
 /// A salted Argon2id hash (in the PHC string form) of `password`.
 pub fn hash_password(password: &str) -> Result<String, String> {
     use argon2::{

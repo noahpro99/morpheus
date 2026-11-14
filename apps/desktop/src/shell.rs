@@ -217,6 +217,12 @@ pub struct Shell {
     pub update: Option<crate::view_model::updates::Offer>,
     pub update_later: bool,
     pub update_busy: bool,
+    /// A locked room that is open: its password box, the last refusal, whether
+    /// a check runs, and whether the box should take the focus.
+    pub lock_input: Option<(OwnedRoomId, Entity<TextInput>)>,
+    pub lock_error: Option<String>,
+    pub lock_busy: bool,
+    pub lock_take_focus: bool,
 }
 
 impl Shell {
@@ -226,6 +232,7 @@ impl Shell {
         shell.start_update_checks(cx);
         shell.start_calls(&session, cx);
         shell.make_search_box(cx);
+        shell.start_lock_clock(cx);
         let subscribed = session.room_list();
         cx.spawn(async move |this, cx| {
             let Ok(mut updates) = subscribed.await else {
@@ -407,6 +414,10 @@ impl Shell {
             update: None,
             update_later: false,
             update_busy: false,
+            lock_input: None,
+            lock_error: None,
+            lock_busy: false,
+            lock_take_focus: false,
         }
     }
 
@@ -765,6 +776,24 @@ impl Shell {
             cx.notify();
             return;
         }
+        if crate::locks::is_locked(&id) {
+            // A locked room has no timeline: a lock screen shows in its place.
+            self.stash_timeline(cx);
+            drop(self.timeline_cache.take(&id));
+            self.composer = None;
+            self.typing = None;
+            self.timeline_handle = None;
+            self.members = None;
+            self.thread = None;
+            self.search = None;
+            self.pinned.clear();
+            self.selected = Some(id.clone());
+            self.show_lock_screen(&id, cx);
+            self.save_place();
+            cx.notify();
+            return;
+        }
+        self.lock_input = None;
         if self.session.is_some() && self.timeline.as_ref().is_none_or(|(room, _)| room != &id) {
             self.stash_timeline(cx);
             // A room left, or one this account is not in any more, is not reused.
@@ -1136,6 +1165,11 @@ impl Render for Shell {
         self.mark_menu_message(cx);
         self.fetch_people(cx);
         self.sync_video_frames(cx);
+        if std::mem::take(&mut self.lock_take_focus)
+            && let Some((_, input)) = &self.lock_input
+        {
+            input.read(cx).focus(window);
+        }
         let root_focus = self
             .root_focus
             .get_or_insert_with(|| {
@@ -1250,7 +1284,9 @@ impl Render for Shell {
                 div()
                     .size_0()
                     .children(self.notices.iter().map(|notice| {
-                        let line = if crate::streamer::notifications_hidden() {
+                        let line = if crate::locks::is_locked(&notice.room_id) {
+                            crate::view_model::locks::NOTIFICATION.to_owned()
+                        } else if crate::streamer::notifications_hidden() {
                             "Someone sent a message".to_owned()
                         } else {
                             crate::view_model::notices::log_line(notice)

@@ -47,6 +47,8 @@ pub enum MenuAction {
     /// Reads a room (or, for a server, each of its rooms).
     MarkRead(Vec<OwnedRoomId>),
     MarkRoomUnread(OwnedRoomId),
+    /// Close an unlocked, password-locked room at once.
+    LockNow(OwnedRoomId),
     Notify(Vec<OwnedRoomId>, NotifyMode),
     /// Leaves a room, undoably: its name for the toast.
     Leave(OwnedRoomId, String),

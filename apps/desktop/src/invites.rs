@@ -379,7 +379,7 @@ pub fn inbox(shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>) ->
         window.focus(&focus);
     }
     let pending: Vec<RoomSummary> = invites::pending_invites(&shell.rooms).iter().map(crate::streamer::invite).collect();
-    let items: Vec<RoomSummary> = invites::unread_rooms(&shell.rooms).iter().map(crate::streamer::invite).collect();
+    let items: Vec<RoomSummary> = invites::unread_rooms(&crate::locks::unlocked(&shell.rooms)).iter().map(crate::streamer::invite).collect();
     let mut panel = div()
         .id("inbox-panel")
         .track_focus(&focus)
@@ -520,7 +520,7 @@ pub fn inbox(shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>) ->
         }
     }
     let mentions: Vec<_> = crate::view_model::notices::recent_mentions(
-        &shell.notices.iter().filter(|n| !shell.seen_mentions.contains(&n.event_id)).cloned().collect::<Vec<_>>(),
+        &shell.notices.iter().filter(|n| !crate::locks::is_locked(&n.room_id) && !shell.seen_mentions.contains(&n.event_id)).cloned().collect::<Vec<_>>(),
     )
         .into_iter()
         .cloned()

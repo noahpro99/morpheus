@@ -27,6 +27,8 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                 None => div().into_any_element(),
             }
         }
+        // A locked room: a lock screen, nothing of its content.
+        Some(room) if crate::locks::is_locked(&room.id) => crate::locks::lock_screen(shell, cx, room),
         // A server's voice channel is all call: no top bar, only its chat
         // button in the corner.
         Some(room) if room.is_voice && !room.is_dm => {
