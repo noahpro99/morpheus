@@ -65,6 +65,7 @@ impl Shell {
             return;
         }
         self.update_busy = true;
+        self.toast("Downloading update…", cx);
         cx.notify();
         let installing = session.install_update(download);
         cx.spawn(async move |this, cx| {

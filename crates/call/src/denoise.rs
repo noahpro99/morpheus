@@ -18,7 +18,7 @@ pub const DELAY: usize = 1440;
 /// The most a frame is taken down by (the model alone: 100 dB).
 const ATTEN_LIM_DB: f32 = 40.0;
 /// How fast a frame's gain may fall from one frame to the next.
-const RELEASE_DB: f32 = 3.0;
+const RELEASE_DB: f32 = 2.0;
 /// A frame with more than this times the noise floor's energy is speech...
 const SPEECH_OVER: f32 = 4.0;
 /// ...and keeps at least this much (amplitude, -3 dB) of what is above it

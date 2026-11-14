@@ -13,6 +13,7 @@ use crate::{
     model::scope_for,
     room_preview::{Joined, RoomPreview},
     shell::Shell,
+    view_model::updates::{Action, Offer},
 };
 
 impl Shell {
@@ -95,7 +96,7 @@ impl Shell {
     }
 
     /// Ask the release feed and say what it found in a toast.
-    pub fn check_for_updates(&mut self, _asked: bool, cx: &mut Context<Self>) {
+    pub fn check_for_updates(&mut self, asked: bool, cx: &mut Context<Self>) {
         let Some(session) = self.session.clone() else {
             return;
         };
@@ -109,13 +110,36 @@ impl Shell {
                     format!("Morpheus {version}: this build has no release feed to check"),
                     cx,
                 ),
-                Ok(UpdateStatus::Available { version, url, .. }) => this.toast(
-                    match &url {
-                        Some(url) => format!("Morpheus {version} is available: {url}"),
-                        None => format!("Morpheus {version} is available"),
-                    },
-                    cx,
-                ),
+                Ok(UpdateStatus::Available { version, url, download }) => {
+                    let offer = Offer {
+                        version: version.clone(),
+                        url: url.clone(),
+                        download: download.clone(),
+                    };
+                    this.update = Some(offer.clone());
+                    this.update_later = false;
+                    cx.notify();
+                    let action = offer.action(morpheus_core::installs_updates());
+                    match action {
+                        Action::Install(download) if asked => {
+                            this.toast(format!("Updating to Morpheus {version}…"), cx);
+                            this.install_update(download, cx);
+                        }
+                        Action::Download(target) if asked => {
+                            this.toast(format!("Morpheus {version} is available"), cx);
+                            this.link_clicked(&target, cx);
+                        }
+                        _ => {
+                            this.toast(
+                                match &url {
+                                    Some(url) => format!("Morpheus {version} is available: {url}"),
+                                    None => format!("Morpheus {version} is available"),
+                                },
+                                cx,
+                            );
+                        }
+                    }
+                }
                 Err(err) => this.fail("update check", &err.to_string(), cx),
             })
             .ok();

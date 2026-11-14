@@ -751,15 +751,14 @@ impl Chunker {
         (self.pending.len() >= self.chunk).then(|| self.pending.drain(..self.chunk).collect())
     }
 
-    /// More waiting than 30 ms, or than the largest callback (up to 100 ms)
-    /// and a chunk (a device calling back with more than 10 ms at a time
-    /// brings that much at once; dropping it was a gap every callback): the
-    /// thread stalled (a model loading), so all but the newest chunk is
-    /// dropped and the call does not stay that much late. How many samples
-    /// went.
+    /// More waiting than ~80 ms, or than two callback buffers plus jitter
+    /// margin: the thread stalled (e.g. a model loading), so all but the
+    /// newest chunk is dropped and the call does not stay that much late.
+    /// How many samples went.
     fn drop_stale(&mut self) -> usize {
         let callback = self.largest.min(10 * self.chunk);
-        if self.pending.len() <= (3 * self.chunk).max(callback + self.chunk) {
+        let max_queued = (8 * self.chunk).max(2 * callback + 2 * self.chunk);
+        if self.pending.len() <= max_queued {
             return 0;
         }
         let late = self.pending.len() - self.chunk;
@@ -1740,14 +1739,14 @@ mod flow {
         }
         assert_eq!(chunker.drop_stale(), 19 * FRAME);
         assert_eq!(chunker.pending.len(), FRAME);
-        // 10 ms callbacks: more than 30 ms waiting is late.
+        // 10 ms callbacks: more than 80 ms waiting is late.
         let mut small = Chunker::new(FRAME);
-        for _ in 0..3 {
+        for _ in 0..8 {
             small.push(&[1; FRAME]);
         }
         assert_eq!(small.drop_stale(), 0);
         small.push(&[1; FRAME]);
-        assert_eq!(small.drop_stale(), 3 * FRAME);
+        assert_eq!(small.drop_stale(), 8 * FRAME);
     }
 
     /// The real microphone (and speaker, played silently) for 10 s, as the
