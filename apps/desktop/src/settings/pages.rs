@@ -713,3 +713,35 @@ impl SettingsView {
         vec![section("Streamer mode", "streamer", children, self.hl("streamer")).into_any_element()]
     }
 }
+
+impl SettingsView {
+    /// Security > Locked chats: how long an unlocked chat that is not looked
+    /// at stays unlocked.
+    pub(super) fn locked_chats_section(&self, cx: &mut Context<Self>) -> AnyElement {
+        use crate::view_model::locks::TIMEOUT_CHOICES;
+        let now = crate::locks::timeout_secs();
+        let mut children = vec![
+            muted(
+                "A chat locked with a password (its menu, Lock with a password) opens again with the password only. Unlocked, it locks itself when you have not been looking at it for:",
+                "muted",
+            )
+            .into_any_element(),
+        ];
+        for (secs, label) in TIMEOUT_CHOICES {
+            children.push(choice(
+                format!("lock-timeout-{secs}"),
+                "lock-timeout",
+                &secs.to_string(),
+                label,
+                now == secs,
+                false,
+                false,
+                cx.listener(move |_, _, _, cx| {
+                    crate::locks::set_timeout_secs(secs);
+                    cx.notify();
+                }),
+            ));
+        }
+        section("Locked chats", "locked-chats", children, self.hl("locked-chats")).into_any_element()
+    }
+}

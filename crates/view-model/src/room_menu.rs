@@ -78,9 +78,13 @@ pub fn lock_items(room: &OwnedRoomId, has_lock: bool, locked: bool) -> Vec<MenuI
     items
 }
 
-/// Where the lock items go in a menu: before its last item (Leave, or Close).
+/// Where the lock items go in a menu: after "Privacy & encryption" (before the
+/// last item when there is none).
 pub fn with_lock_items(mut items: Vec<MenuItem>, lock: Vec<MenuItem>) -> Vec<MenuItem> {
-    let at = items.len().saturating_sub(1);
+    let at = items
+        .iter()
+        .position(|item| item.label == "Privacy & encryption")
+        .map_or(items.len().saturating_sub(1), |at| at + 1);
     items.splice(at..at, lock);
     items
 }
