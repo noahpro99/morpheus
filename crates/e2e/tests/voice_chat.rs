@@ -214,6 +214,137 @@ async fn the_messages_button_opens_a_rounded_chat_that_works() {
     alice.click(".voice-panel .hang-up").await.expect("leave");
 }
 
+/// The panel shows its messages as the main timeline does: each a readable
+/// row (its text laid out, inked and inside the panel), with the sender's
+/// name and picture, one under another, the newest at the bottom.
+#[tokio::test]
+async fn the_chats_messages_show_as_readable_rows() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    // Bob first: the later window is on top, and the pixels are alice's.
+    let mut bob = App::launch_desktop(&hs).await.expect("launch bob");
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    if !alice.is_gpui() {
+        return;
+    }
+    let channel = fresh_voice_channel(&hs);
+    login(&mut bob, "bob").await;
+    bob.wait_for_text(".room .room-name", &channel, DEFAULT_WAIT).await.expect("bob's list");
+    bob.click_text(".room.voice", &channel).await.expect("bob joins");
+    bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT).await.expect("bob in the call");
+    login(&mut alice, "alice").await;
+    alice.wait_for_text(".room .room-name", &channel, DEFAULT_WAIT).await.expect("listed");
+    let room_id = alice.attr_containing(".room.voice", &channel, "data-room").await.expect("id").expect("id");
+    let said: Vec<String> = (0..6)
+        .map(|n| match n {
+            3 => "readable 3: a longer message that has to wrap onto more than one line in a panel this narrow".to_owned(),
+            n => format!("readable {n}"),
+        })
+        .collect();
+    // As in a call: some come before alice is there, some while she is in
+    // the call with the chat closed, the rest with it open.
+    let say = |n: usize| bob_says(&hs, &room_id, &format!("readable{n}"), &said[n]);
+    // A voice channel's history is mostly calls coming and going (events
+    // the timeline hides).
+    for n in 0..30 {
+        api_as(
+            &hs,
+            "bob",
+            "PUT",
+            &format!("rooms/{}/state/org.matrix.msc3401.call.member/_@bob:localhost_OLD{n}", path_of(&room_id)),
+            Some(serde_json::json!({})),
+        )
+        .expect("a call come and gone");
+    }
+    say(0);
+    join_and_open(&mut alice, &channel).await;
+    for n in 1..4 {
+        say(n);
+    }
+    alice.wait_for(".voice-chat-toggle .unread-dot", DEFAULT_WAIT).await.expect("unread");
+    alice.click(".voice-chat-toggle").await.expect("open");
+    alice.wait_for(".voice-chat .timeline", DEFAULT_WAIT).await.expect("panel");
+    // The rest typed by bob in his own panel.
+    bob.click_text(".room.voice", &channel).await.expect("bob's page");
+    bob.click(".voice-chat-toggle").await.expect("bob's chat");
+    for body in &said[4..] {
+        bob.type_into(".voice-chat .composer-input", body).await.expect("type");
+        bob.press(".voice-chat .composer-input", "Enter").await.expect("send");
+        bob.wait_for_text(".voice-chat .message.own .body", body, DEFAULT_WAIT).await.expect("sent");
+    }
+    alice
+        .wait_for_text(".voice-chat .message .body", "readable 5", DEFAULT_WAIT)
+        .await
+        .expect("the newest message");
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+    let panel = bounds(&mut alice, ".voice-chat").await;
+    let timeline = bounds(&mut alice, ".voice-chat .timeline").await;
+    let inside = |b: &Bounds, of: &Bounds| {
+        b.x >= of.x - 0.5 && b.right() <= of.right() + 0.5 && b.y >= of.y - 0.5 && b.bottom() <= of.bottom() + 0.5
+    };
+    assert!(inside(&timeline, &panel), "the timeline {timeline:?} is not in the panel {panel:?}");
+    assert!(timeline.h >= 200.0 && timeline.w >= 200.0, "the timeline is {timeline:?}");
+    let texts = alice.texts(".voice-chat .message .body").await.expect("texts");
+    // Each once, in the order sent.
+    let ours: Vec<&str> = texts.iter().map(|t| t.trim()).filter(|t| t.starts_with("readable")).collect();
+    assert_eq!(ours, said.iter().map(String::as_str).collect::<Vec<_>>(), "the messages as shown");
+    let boxes = alice.all_bounds(".voice-chat .message .body").await.expect("bounds");
+    assert_eq!(texts.len(), boxes.len());
+    let mut rows = Vec::new();
+    for body in &said {
+        let at = texts.iter().position(|t| t.trim() == body).unwrap_or_else(|| panic!("{body:?} not shown: {texts:?}"));
+        let b = boxes[at];
+        assert!(b.h >= 12.0 && b.w >= 40.0, "{body:?} is laid out {b:?}");
+        assert!(inside(&b, &timeline), "{body:?} at {b:?} is outside the timeline {timeline:?}");
+        rows.push((body.clone(), b));
+    }
+    for pair in rows.windows(2) {
+        let ((a, ab), (b, bb)) = (&pair[0], &pair[1]);
+        assert!(ab.bottom() <= bb.y + 0.5, "{a:?} {ab:?} is not above {b:?} {bb:?}");
+    }
+    let (_, newest) = rows.last().expect("rows");
+    assert!(timeline.bottom() - newest.bottom() <= 120.0, "the newest {newest:?} is not at the bottom of {timeline:?}");
+    let long = rows[3].1;
+    assert!(long.h >= 2.0 * rows[2].1.h - 1.0, "the long message did not wrap: {long:?}");
+    // Every row has its main column laid out across the panel.
+    let mains = alice.all_bounds(".voice-chat .message-main").await.expect("bounds");
+    for b in &mains {
+        assert!(b.w >= timeline.w / 2.0 && b.h > 0.0 && b.x >= timeline.x && b.right() <= timeline.right() + 0.5, "a row's main column at {b:?}");
+    }
+    for part in [".voice-chat .message .sender", ".voice-chat .message .avatar-button"] {
+        let all = alice.all_bounds(part).await.expect("bounds");
+        assert!(!all.is_empty(), "no {part}");
+        for b in all {
+            assert!(b.h > 0.0 && b.w > 0.0 && inside(&b, &timeline), "{part} at {b:?}");
+        }
+    }
+
+    // In pixels: each message's text is drawn (ink over the panel).
+    if let Some(shot) = common::capture(&alice) {
+        let bg = common::pixel_at(&shot, panel.x + panel.w / 2.0, panel.y + 4.0);
+        for (body, b) in &rows {
+            let mut inked = 0;
+            let (mut y, mut x);
+            y = b.y.ceil();
+            while y < b.bottom() {
+                x = b.x.ceil();
+                while x < b.right().min(shot.1 as f64 - 1.0) {
+                    if common::colour_distance(common::pixel_at(&shot, x, y), bg) > 150 {
+                        inked += 1;
+                    }
+                    x += 1.0;
+                }
+                y += 1.0;
+            }
+            assert!(inked >= 40, "{body:?}: only {inked} inked pixels at {b:?}");
+        }
+    }
+    alice.click(".voice-panel .hang-up").await.expect("leave");
+}
+
 /// Scrolling the panel with the wheel, and older messages loading.
 #[tokio::test]
 async fn the_chat_scrolls_and_loads_older_messages() {

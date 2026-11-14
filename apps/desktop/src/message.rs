@@ -432,6 +432,7 @@ fn shimmer_bar(width: f32, key: &str) -> impl IntoElement {
         .rounded(px(7.0))
         .bg(rgb(theme::bg_elevated()))
         .id(ElementId::from(SharedString::from(key.to_owned())))
+        .e2e("div", "skeleton-bar")
 }
 
 /// Placeholder rows: message-shaped, grey, for a room still loading and for
@@ -475,7 +476,9 @@ fn skeleton(older: bool) -> AnyElement {
             )
             .into_any_element()
     });
-    let column = div().flex().flex_col().children(rows);
+    // As wide as the list: a list item is laid out at its content's width,
+    // which for these (lines of a share of the width) is none at all.
+    let column = div().w_full().flex().flex_col().children(rows);
     if older {
         column.e2e("div", "older-skeleton").into_any_element()
     } else {
