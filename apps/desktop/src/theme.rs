@@ -54,6 +54,8 @@ pub fn alpha(color: u32, a: u8) -> u32 {
     (color << 8) | u32::from(a)
 }
 
+/// The gold of a mention's bar and tint (Discord's); the same in every theme.
+pub const MENTION_GOLD: u32 = 0xfaa81a;
 pub const RADIUS: f32 = 8.0;
 /// `html { font-size: 15px }`: what 1rem is.
 pub const REM: f32 = 15.0;
