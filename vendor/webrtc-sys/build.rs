@@ -278,14 +278,19 @@ fn main() {
             }
 
             if x86 || arm {
-                let cuda_home = PathBuf::from(match env::var("CUDA_HOME") {
-                    Ok(p) => p,
-                    Err(_) => "/usr/local/cuda".to_owned(),
-                });
-                let cuda_include_dir = cuda_home.join("include");
+                let cuda_include_dir = [
+                    env::var("CUDA_HOME").ok().map(|p| PathBuf::from(p).join("include")),
+                    env::var("CUDA_PATH").ok().map(|p| PathBuf::from(p).join("include")),
+                    Some(PathBuf::from("/usr/local/cuda/include")),
+                    Some(PathBuf::from("/usr/include")),
+                    Some(PathBuf::from("/usr/include/cuda")),
+                ]
+                .into_iter()
+                .flatten()
+                .find(|dir| dir.join("cuda.h").exists());
 
                 // libcuda and libnvcuvid are dlopened, so do not link them.
-                if cuda_include_dir.join("cuda.h").exists() {
+                if let Some(cuda_include_dir) = cuda_include_dir {
                     builder
                         .include(cuda_include_dir)
                         .flag("-Isrc/nvidia/NvCodec/include")
