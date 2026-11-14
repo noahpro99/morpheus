@@ -11,7 +11,7 @@ use matrix_sdk::{
     Room, RoomState,
     event_handler::RawEvent,
     ruma::{
-        MilliSecondsSinceUnixEpoch, UInt,
+        MilliSecondsSinceUnixEpoch,
         events::room::message::{MessageType, OriginalSyncRoomMessageEvent},
         push::Action,
         serde::Raw,
@@ -21,9 +21,6 @@ use tokio::sync::mpsc;
 use tracing::debug;
 
 use crate::{CoreFuture, MediaRef, OwnedRoomId, Session};
-
-/// Messages older than this at subscription time are history, not news.
-const STALE_AFTER_MS: u64 = 60_000;
 
 /// A new, notification-worthy message from someone other than the current user.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,11 +62,11 @@ impl Session {
 
         self.core.run(async move {
             let (tx, rx) = mpsc::unbounded_channel();
-            let since = MilliSecondsSinceUnixEpoch::now();
-            let cutoff = since
-                .0
-                .checked_sub(UInt::from(STALE_AFTER_MS as u32))
-                .unwrap_or(since.0);
+            // Anything sent before the app started listening (while it was
+            // closed, or in the first sync backlog) is history, however
+            // recently: no grace period, or a message sent seconds before
+            // sign-in chimed at launch.
+            let cutoff = MilliSecondsSinceUnixEpoch::now().0;
 
             // The handler is dropped with the client; a dropped consumer just
             // makes sends fail, which is fine.
