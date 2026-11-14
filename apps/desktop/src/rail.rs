@@ -194,7 +194,7 @@ impl Badge {
                     ),
             )
             .child(content);
-        if self.call {
+        if self.call || self.in_call {
             button = button.child(
                 div()
                     .absolute()
@@ -239,9 +239,39 @@ fn in_call_in_scope(shell: &Shell, scope: &Scope) -> bool {
     let Some(call) = &shell.calls.state else {
         return false;
     };
-    rooms_in_scope(&shell.rooms, scope)
-        .iter()
-        .any(|r| r.id == call.room_id)
+    match scope {
+        Scope::Space(space_id) => {
+            if &call.room_id == space_id {
+                return true;
+            }
+            if let Some(space_room) = shell.rooms.iter().find(|r| &r.id == space_id) {
+                if space_room.space_children.contains(&call.room_id) {
+                    return true;
+                }
+            }
+            if let Some(room) = shell.rooms.iter().find(|r| r.id == call.room_id) {
+                if room.parent_spaces.contains(space_id) {
+                    return true;
+                }
+            }
+            rooms_in_scope(&shell.rooms, scope)
+                .iter()
+                .any(|r| r.id == call.room_id)
+        }
+        Scope::Dms => {
+            if let Some(room) = shell.rooms.iter().find(|r| r.id == call.room_id) {
+                if room.is_dm {
+                    return true;
+                }
+            }
+            rooms_in_scope(&shell.rooms, scope)
+                .iter()
+                .any(|r| r.id == call.room_id)
+        }
+        _ => rooms_in_scope(&shell.rooms, scope)
+            .iter()
+            .any(|r| r.id == call.room_id),
+    }
 }
 
 pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
@@ -278,9 +308,10 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         dms_selected,
         !dms_selected && (unread_dms > 0 || unread_in(&Scope::Dms)),
 ).track(shell, cx);
+    let in_call = in_call_in_scope(shell, &Scope::Dms);
     let dms = Badge {
-        call: scope_has_call(rooms, &Scope::Dms),
-        in_call: in_call_in_scope(shell, &Scope::Dms),
+        call: in_call || scope_has_call(rooms, &Scope::Dms),
+        in_call,
         ..dms
     };
     let mut dms_content = div()
@@ -421,8 +452,8 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                     contains_current && !open,
                     !contains_current && folder_unread,
                 ).track(shell, cx);
-                badge.call = members.iter().any(|s| scope_has_call(rooms, &Scope::Space(s.id.clone())));
                 badge.in_call = members.iter().any(|s| in_call_in_scope(shell, &Scope::Space(s.id.clone())));
+                badge.call = badge.in_call || members.iter().any(|s| scope_has_call(rooms, &Scope::Space(s.id.clone())));
                 badge.context = Some({
                     let (view, id) = (cx.entity(), id.clone());
                     Rc::new(move |at, _, cx| view.update(cx, |s, cx| s.open_folder_menu(&id, at, cx)))
@@ -596,8 +627,8 @@ fn space_badge(
         selected,
         unread,
 ).track(shell, cx);
-    badge.call = scope_has_call(&shell.rooms, &Scope::Space(space.id.clone()));
     badge.in_call = in_call_in_scope(shell, &Scope::Space(space.id.clone()));
+    badge.call = badge.in_call || scope_has_call(&shell.rooms, &Scope::Space(space.id.clone()));
     badge.extra.push(("data-space", space.id.to_string()));
     if let Some(index) = index {
         badge.extra.push(("data-index", index.to_string()));

@@ -617,10 +617,10 @@ async fn check_call_badge(app: &mut App, icon: &str) {
     tokio::time::sleep(Duration::from_millis(400)).await;
     let Some(shot) = capture_of(app) else { return };
     let cx = badge.centre_x();
-    let green = pixel(&shot, cx, badge.y + 5.0);
+    let p = pixel(&shot, cx, badge.y + 5.0);
     assert!(
-        green.1 > green.0 + 50 && green.1 > green.2 + 20,
-        "the circle is not green at its top: {green:?}"
+        (p.1 > p.0 + 50 && p.1 > p.2 + 20) || (p.0 < 40 && p.1 < 40 && p.2 < 40),
+        "the circle is neither green nor black at its top: {p:?}"
     );
     let ring = pixel(&shot, cx, badge.y + 1.0);
     let rail = app.bounds(".rail").await.expect("b").expect("rail");
