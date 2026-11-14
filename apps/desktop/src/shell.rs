@@ -1318,7 +1318,6 @@ impl Render for Shell {
             .when(show_backup_prompt(self.keys, self.backup_later), |d| {
                 d.child(backup_prompt(cx))
             })
-            .children(crate::update::card(self, cx))
             .children(self.settings.clone())
             .children(inbox)
             .children(incoming)

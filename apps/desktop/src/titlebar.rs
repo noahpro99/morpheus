@@ -190,6 +190,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                                 .text("Streamer mode"),
                         )
                     })
+                    .children(crate::update::topbar_button(shell, cx))
                     .child(
                         inbox.e2e("button", "ghost titlebar-button inbox-button")
                             .attr("title", "Inbox (Ctrl+I)")
