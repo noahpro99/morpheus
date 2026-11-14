@@ -112,6 +112,11 @@ impl ThreadPanel {
         (self.timeline.clone(), self.handle.clone())
     }
 
+    /// The reply box.
+    pub fn composer(&self) -> &Entity<Composer> {
+        &self.composer
+    }
+
     /// Whether the reply box has something open that Escape closes first.
     pub fn composer_busy(&self, cx: &gpui::App) -> bool {
         self.composer.read(cx).busy()

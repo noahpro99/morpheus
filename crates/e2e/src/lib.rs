@@ -1263,6 +1263,17 @@ impl App {
         self.eval(&js).await.map(drop)
     }
 
+    /// Press each character of `keys` as a key (a capital with Shift) on the
+    /// GPUI app, into what has the focus (or the element's, when it has one):
+    /// unlike `type_into` nothing is selected or replaced, so it types vim
+    /// commands. `Enter`, `Escape` and combos go through `press` and `key_combo`.
+    pub async fn keys(&mut self, selector: &str, keys: &str) -> Result<()> {
+        if !self.is_gpui() {
+            anyhow::bail!("keys is for the GPUI app");
+        }
+        self.op("keys", selector, json!({ "text": keys })).await.map(drop)
+    }
+
     /// Dispatch a `keydown` for `key` (e.g. "Enter") on the element.
     pub async fn press(&mut self, selector: &str, key: &str) -> Result<()> {
         if self.is_gpui() {

@@ -154,6 +154,12 @@ pub const SETTINGS_INDEX: &[SettingEntry] = &[
         "theme",
     ),
     entry(
+        "Vim mode",
+        "keyboard vim modal editing normal insert keys hotkeys shortcuts",
+        SettingsPage::Appearance,
+        "keyboard",
+    ),
+    entry(
         "Microphone and speaker",
         "voice video audio input output devices calls",
         SettingsPage::VoiceVideo,

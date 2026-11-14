@@ -300,7 +300,7 @@ async fn handle(request: &Request, cx: &mut AsyncApp) -> Reply {
             Ok(Value::Null)
         }
         "attach_file" => attach_file(request, cx).await,
-        "click" | "right_click" | "type" | "press" | "submit" | "drag" | "release" | "hover" | "wheel" => act(op, request, cx).await,
+        "click" | "right_click" | "type" | "keys" | "press" | "submit" | "drag" | "release" | "hover" | "wheel" => act(op, request, cx).await,
         _ => Err(format!("unknown op: {op}")),
     }
 }
@@ -921,6 +921,18 @@ async fn act(op: &str, request: &Request, cx: &mut AsyncApp) -> Reply {
                 .ok_or("nothing is held (drag with hold first)")?;
             cx.update_window(window, |_, window, cx| {
                 release_at(window, cx, at, MouseButton::Left, held)
+            })
+            .map_err(|err| err.to_string())?;
+        }
+        "keys" => {
+            let text = request.text.clone().ok_or("missing text")?;
+            cx.update_window(window, |_, window, cx| {
+                if let Some(handle) = &focus {
+                    window.focus(handle);
+                }
+                for c in text.chars() {
+                    window.dispatch_keystroke(char_keystroke(c), cx);
+                }
             })
             .map_err(|err| err.to_string())?;
         }

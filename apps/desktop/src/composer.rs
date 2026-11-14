@@ -63,6 +63,8 @@ pub struct Composer {
     emoji_open: bool,
     /// Put the caret in the box on the next frame (a window is needed).
     pending_focus: bool,
+    /// Let go of the box on the next frame (vim mode's Esc).
+    pending_blur: bool,
     /// The room opened: take the caret too, but only if nothing else holds it
     /// (a dialog opened meanwhile keeps its own field focused).
     open_focus: bool,
@@ -82,6 +84,7 @@ impl Composer {
             TextInput::new("composer", "", false, "", cx)
                 .multiline(8)
                 .bare("textarea", "composer-input")
+                .vim()
         });
         input.update(cx, |input, cx| input.set_disabled(true, cx));
         cx.subscribe(&input, |this, _, _: &Changed, cx| this.edited(cx))
@@ -113,6 +116,7 @@ impl Composer {
             fetching_members: false,
             emoji_open: false,
             pending_focus: false,
+            pending_blur: false,
             open_focus: false,
             placeholder: None,
         };
@@ -167,6 +171,17 @@ impl Composer {
     /// Your newest editable message changed (for Up to edit it).
     pub fn set_last_own(&mut self, message: Option<Message>) {
         self.last_own = message;
+    }
+
+    /// Whether the box takes Escape itself (vim mode: insert or visual mode,
+    /// or a command half typed).
+    pub fn vim_wants_escape(&self, window: &Window, cx: &gpui::App) -> bool {
+        self.input.read(cx).wants_escape(window)
+    }
+
+    /// Whether Ctrl+R is redo in the box (vim mode, not in insert mode).
+    pub fn vim_wants_ctrl_r(&self, window: &Window, cx: &gpui::App) -> bool {
+        self.input.read(cx).wants_ctrl_r(window)
     }
 
     /// The caret goes to the box.
@@ -306,6 +321,12 @@ impl Composer {
                 self.sync_capture(cx);
             }
             NavKey::Escape if self.emoji_open => self.emoji_open = false,
+            NavKey::Escape if self.state.mode.is_some() => self.cancel(cx),
+            // Vim mode: Esc in normal mode with nothing to close lets go of
+            // the box, to the keys that move through the messages.
+            NavKey::Escape if crate::vim::enabled() && self.input.read(cx).vim_mode().is_some() => {
+                self.pending_blur = true;
+            }
             NavKey::Escape => self.cancel(cx),
             NavKey::Up => {
                 // Up in an empty box edits your newest message.
@@ -825,6 +846,11 @@ impl Render for Composer {
         if std::mem::take(&mut self.pending_focus) {
             self.input.read(cx).focus(window);
         }
+        if std::mem::take(&mut self.pending_blur)
+            && let Some(root) = cx.try_global::<crate::shell::RootFocus>().map(|root| root.0.clone())
+        {
+            window.focus(&root);
+        }
         let nothing_held = window.focused(cx).is_none_or(|held| {
             cx.try_global::<crate::shell::RootFocus>()
                 .is_some_and(|root| root.0 == held)
@@ -873,6 +899,16 @@ impl Render for Composer {
             .line_height(relative(theme::LINE_HEIGHT))
             .child(attach)
             .child(self.input.clone())
+            .children(self.input.read(cx).vim_label().map(|label| {
+                div()
+                    .flex_none()
+                    .text_size(rem(0.7))
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .text_color(rgb(theme::text_faint()))
+                    .child(label.clone())
+                    .e2e("span", "vim-mode")
+                    .text(label)
+            }))
             .child(emoji);
         row = if lines > 1 {
             row.items_end().pb(px(7.0))
