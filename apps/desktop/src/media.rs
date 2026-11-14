@@ -43,6 +43,17 @@ impl Avatars {
             .or_else(|| ANY_SIZE.lock().ok()?.get(media.key()).map(|(_, image)| image.clone()))
     }
 
+    /// The media these pictures are of (to drop them from the shared copies).
+    pub fn keys(&self) -> Vec<String> {
+        self.images.keys().map(|(key, _)| key.clone()).collect()
+    }
+
+    /// Drops this view's pictures from the shared copies (not from itself).
+    pub fn forget_shared(&self) {
+        let ids: Vec<u64> = self.images.values().flatten().map(|image| image.id()).collect();
+        forget(&self.keys(), &ids);
+    }
+
     /// How many pictures are held (a weight for what keeps them).
     pub fn len(&self) -> usize {
         self.images.len()
@@ -64,6 +75,28 @@ impl Avatars {
         }
         self.images.insert(key, image);
     }
+}
+
+/// Drops every shared in-memory copy of the pictures of `keys` (the biggest
+/// copy of each, and the cut copies made from them), as when the room they
+/// were in locks.
+pub fn forget(keys: &[String], also_images: &[u64]) {
+    let mut ids: Vec<u64> = also_images.to_vec();
+    if let Ok(mut any) = ANY_SIZE.lock() {
+        for key in keys {
+            if let Some((_, image)) = any.remove(key) {
+                ids.push(image.id());
+            }
+        }
+    }
+    if let Ok(mut cut) = SQUARED.lock() {
+        cut.retain(|(id, _), _| !ids.contains(id));
+    }
+}
+
+/// How many shared pictures are held in memory (for tests to watch).
+pub fn held() -> usize {
+    ANY_SIZE.lock().map_or(0, |any| any.len()) + SQUARED.lock().map_or(0, |cut| cut.len())
 }
 
 /// The picture for fetched bytes, if their format is one GPUI draws.
@@ -183,6 +216,27 @@ pub fn avatar(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn forgetting_drops_the_shared_copies_of_the_pictures() {
+        let (mine, other) = ("mxc://test/forget-mine".to_owned(), "mxc://test/forget-other".to_owned());
+        let picture = |bytes: &[u8]| Arc::new(Image::from_bytes(ImageFormat::Png, bytes.to_vec()));
+        let (a, b) = (picture(b"one"), picture(b"two"));
+        {
+            let mut any = ANY_SIZE.lock().expect("lock");
+            any.insert(mine.clone(), (80, a.clone()));
+            any.insert(other.clone(), (80, b.clone()));
+        }
+        let (cut_a, cut_b) = (squared(&a), squared(&b));
+        drop((cut_a, cut_b));
+        forget(&[mine.clone()], &[]);
+        let any = ANY_SIZE.lock().expect("lock");
+        assert!(!any.contains_key(&mine), "its picture is still held");
+        assert!(any.contains_key(&other), "another room's picture was dropped");
+        let cut = SQUARED.lock().expect("lock");
+        assert!(!cut.keys().any(|(id, _)| *id == a.id()), "its cut copy is still held");
+        assert!(cut.keys().any(|(id, _)| *id == b.id()), "another picture's cut copy was dropped");
+    }
 
     #[test]
     fn letters() {

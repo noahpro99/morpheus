@@ -40,6 +40,13 @@ fn cache() -> &'static std::sync::Mutex<std::collections::HashMap<(String, Owned
     CACHE.get_or_init(Default::default)
 }
 
+/// The room's kept member lists are forgotten (it was locked).
+pub fn forget_room(room: &OwnedRoomId) {
+    if let Ok(mut cache) = cache().lock() {
+        cache.retain(|(_, cached), _| cached != room);
+    }
+}
+
 pub struct MembersView {
     session: Option<Session>,
     room: OwnedRoomId,
@@ -54,6 +61,11 @@ pub struct MembersView {
 }
 
 impl MembersView {
+    /// Drops this list's pictures from the shared copies.
+    pub fn forget_pictures(&self) {
+        self.images.forget_shared();
+    }
+
     pub fn new(session: Option<Session>, room: OwnedRoomId, cx: &mut Context<Self>) -> Self {
         let known = session
             .as_ref()

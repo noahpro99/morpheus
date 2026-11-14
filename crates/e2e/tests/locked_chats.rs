@@ -589,3 +589,41 @@ async fn the_reactions_viewer_and_the_lightbox_close_when_the_room_locks() {
     s.app.wait_for(".lightbox-overlay", DEFAULT_WAIT).await.expect("lightbox");
     s.wait_locked_clean("the lightbox").await;
 }
+
+/// How many shared pictures the app holds in memory now.
+async fn held(app: &mut App) -> usize {
+    app.attr(".shell-body", "data-held-pictures")
+        .await
+        .expect("held")
+        .and_then(|n| n.parse::<usize>().ok())
+        .expect("a number of pictures")
+}
+
+/// The pictures of a room are held in memory beyond its views (shared
+/// copies by media): locking the room drops them, going away does not.
+#[tokio::test]
+async fn locking_a_room_drops_its_pictures_from_memory() {
+    let hs = hs!();
+    let mut s = setup(&hs, "lm", &[]).await;
+    let wide: &[u8] = include_bytes!("../fixtures/wide.png");
+    morpheus_e2e::send_image_as(&hs, &s.writer, &s.dm, wide, "kept in memory.png", None).expect("a picture");
+    s.lock_dm("tulip").await;
+    s.unlocked_and_open("tulip").await;
+    s.app.reveal_element(".message img.image", DEFAULT_WAIT).await.expect("the picture shows");
+    let with_it = held(&mut s.app).await;
+    assert!(with_it >= 1, "the shown picture is held: {with_it}");
+
+    // Away without a lock: still held (the room is kept for coming back).
+    s.leave_to_elsewhere().await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert!(held(&mut s.app).await >= with_it, "going away dropped it");
+
+    // Locked: gone from the shared copies.
+    s.open_dm().await;
+    s.app.reveal_element(".message img.image", DEFAULT_WAIT).await.expect("the picture shows again");
+    s.dm_menu("Lock now").await;
+    s.app.wait_for(".lock-screen", DEFAULT_WAIT).await.expect("locked");
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let after = held(&mut s.app).await;
+    assert!(after < with_it, "the locked room's picture is still held: {after} of {with_it}");
+}

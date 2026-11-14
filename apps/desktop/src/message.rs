@@ -766,12 +766,22 @@ fn attachment_card(
         )
 }
 
+static BLURS: std::sync::Mutex<Option<std::collections::HashMap<String, Option<Arc<Image>>>>> =
+    std::sync::Mutex::new(None);
+
+/// Drops the blurred stand-ins (a room's pictures were locked away; they are
+/// made again from the hash when wanted).
+pub fn forget_blurs() {
+    if let Ok(mut blurs) = BLURS.lock() {
+        *blurs = None;
+    }
+}
+
 /// A blurred stand-in for a picture, drawn from its BlurHash (decoded once
 /// per hash): shown behind the picture, and alone until it has loaded.
 fn blur_image(hash: &str) -> Option<Arc<Image>> {
-    use std::{collections::HashMap, sync::Mutex};
-    static CACHE: Mutex<Option<HashMap<String, Option<Arc<Image>>>>> = Mutex::new(None);
-    let mut cache = CACHE.lock().ok()?;
+    use std::collections::HashMap;
+    let mut cache = BLURS.lock().ok()?;
     cache
         .get_or_insert_with(HashMap::new)
         .entry(hash.to_owned())
