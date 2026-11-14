@@ -69,9 +69,6 @@ pub enum Download {
     Failed(String),
 }
 
-/// The gold of a mention's bar and tint (Discord's).
-const MENTION_GOLD: u32 = 0xfaa81a;
-
 fn rem(n: f32) -> gpui::Pixels {
     px(n * theme::REM)
 }
@@ -1538,8 +1535,8 @@ pub fn message_el(
     // edge (Discord's), the tint stronger under the pointer.
     let lit = m.mentions_me && !m.is_own;
     line = if lit {
-        line.bg(rgba(theme::alpha(MENTION_GOLD, 0x1a)))
-            .hover(|s| s.bg(rgba(theme::alpha(MENTION_GOLD, 0x26))))
+        line.bg(rgba(theme::alpha(theme::MENTION_GOLD, 0x1a)))
+            .hover(|s| s.bg(rgba(theme::alpha(theme::MENTION_GOLD, 0x26))))
     } else {
         line.hover(|s| s.bg(rgba(theme::bg_hover())))
     };
@@ -1605,7 +1602,7 @@ pub fn message_el(
                 .top_0()
                 .bottom_0()
                 .w(px(2.0))
-                .bg(rgb(MENTION_GOLD))
+                .bg(rgb(theme::MENTION_GOLD))
                 .e2e("div", "mention-bar"),
         );
     }
@@ -1636,7 +1633,7 @@ pub fn message_el(
     if lit {
         line = line
             .attr("data-mentioned", "true")
-            .attr("data-bg", format!("{:08x}", theme::alpha(MENTION_GOLD, 0x1a)));
+            .attr("data-bg", format!("{:08x}", theme::alpha(theme::MENTION_GOLD, 0x1a)));
     }
     if show_header {
         div()
