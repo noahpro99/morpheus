@@ -59,7 +59,7 @@ impl Shell {
         if scope != self.scope {
             self.set_scope(scope, cx);
         }
-        self.open_room(room.id, cx);
+        self.open_room_now(room.id, cx);
     }
 
     /// The room last open in each rail entry, for the next run.

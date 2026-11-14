@@ -366,6 +366,10 @@ impl FriendsPage {
                 &key,
                 profile.map(|p| (p.name.as_str(), p.status.as_deref())),
             );
+            let row = friends::FriendRow {
+                subtitle: if row.subtitle == key { crate::streamer::id(&key) } else { row.subtitle },
+                name: crate::streamer::name(&row.name),
+            };
             let (open, remove, talk) = (user_id.clone(), user_id.clone(), user_id.clone());
             let mut item = div()
                 .id(ElementId::Name(format!("friend-{key}").into()))

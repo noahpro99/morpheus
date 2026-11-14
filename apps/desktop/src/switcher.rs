@@ -187,7 +187,7 @@ pub fn rooms_for(
             let (kind, picture, letter_of) = scope_name(room);
             SwitchRoom {
                 id: room.id.clone(),
-                name: crate::view_model::nicknames::room_title(nicknames, room),
+                name: crate::streamer::room_title(nicknames, room),
                 real_name: room.name.clone(),
                 squircle: letter_of.is_some(),
                 kind,

@@ -656,3 +656,60 @@ impl SettingsView {
 fn relative_36() -> gpui::DefiniteLength {
     gpui::relative(0.36)
 }
+
+impl SettingsView {
+    /// Keep a change to the streamer mode choices and tell the shell.
+    fn save_streamer(&mut self, settings: crate::view_model::streamer::StreamerSettings, cx: &mut Context<Self>) {
+        if let Err(err) = settings.save(&self.data_dir) {
+            eprintln!("morpheus-desktop: saving the streamer mode setting: {err}");
+        }
+        crate::streamer::set_settings(settings);
+        cx.emit(super::StreamerChanged);
+        cx.notify();
+    }
+
+    pub(super) fn streamer_page(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        use crate::view_model::streamer::StreamerSettings;
+        let s = crate::streamer::settings();
+        let switch = |name: &'static str, label: &str, checked: bool, change: fn(&mut StreamerSettings)| {
+            choice(
+                format!("streamer-{name}"),
+                &format!("streamer-{name}"),
+                "",
+                label,
+                checked,
+                true,
+                false,
+                cx.listener(move |this, _, _, cx| {
+                    let mut now = crate::streamer::settings();
+                    change(&mut now);
+                    this.save_streamer(now, cx);
+                }),
+            )
+        };
+        let children = vec![
+            muted(
+                "Hides what could give you or others away while you share your screen, as in Discord: names are shortened to a first letter, IDs and links are dotted out, notifications say nothing.",
+                "muted",
+            )
+            .into_any_element(),
+            switch("auto", "Turn on by itself while I share my screen", s.auto, |s| s.auto = !s.auto),
+            switch("now", "Turn on now", s.now, |s| s.now = !s.now),
+            group(
+                "What to hide",
+                "",
+                None,
+                false,
+                vec![
+                    switch("names", "People's names (shortened to a letter)", s.names, |s| s.names = !s.names),
+                    switch("notifications", "What notifications say", s.notifications, |s| {
+                        s.notifications = !s.notifications
+                    }),
+                    switch("ids", "IDs, e-mail addresses, phone numbers and links", s.ids, |s| s.ids = !s.ids),
+                ],
+            ),
+            switch("ask", "Ask before opening another channel while I share", s.ask, |s| s.ask = !s.ask),
+        ];
+        vec![section("Streamer mode", "streamer", children, self.hl("streamer")).into_any_element()]
+    }
+}

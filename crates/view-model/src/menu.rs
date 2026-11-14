@@ -442,6 +442,8 @@ pub struct Confirm {
 pub enum ConfirmAction {
     DeleteMessage(Box<Message>),
     SignOut,
+    /// Open a room while the screen is shared (streamer mode asked).
+    OpenRoom(OwnedRoomId),
 }
 
 /// "Are you sure?" before deleting a message.

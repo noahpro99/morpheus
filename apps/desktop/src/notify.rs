@@ -168,6 +168,10 @@ pub fn spawn_notifier(session: Session, redraw: impl Fn() + Send + 'static) {
                         eprintln!("morpheus-desktop: notifications are off on this device; not shown");
                         continue;
                     }
+                    if crate::streamer::notifications_hidden() {
+                        show("Morpheus".into(), "Someone sent a message".into(), None, None, None);
+                        continue;
+                    }
                     let ready = notices::ready(&session, notice, &dir).await;
                     show(ready.text.title, ready.text.body, ready.icon, ready.image, None);
                 }
@@ -233,7 +237,8 @@ pub fn spawn_ring_watcher(session: Session) {
                                     Err(_) => call.caller.localpart().to_owned(),
                                 };
                                 let hidden = settings::notification_content(&dir)
-                                    == settings::NotificationContent::Hidden;
+                                    == settings::NotificationContent::Hidden
+                                    || crate::streamer::notifications_hidden();
                                 show(
                                     format!("{} is calling", if hidden { "Someone" } else { &name }),
                                     "Open Morpheus to answer".into(),

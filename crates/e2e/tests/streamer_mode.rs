@@ -1,0 +1,315 @@
+//! Streamer mode (GPUI only): while the screen is shared, or when turned on by
+//! hand in Settings > Streamer Mode, names are abbreviated (first letter and
+//! three dots), IDs are hidden, notifications say nothing, and switching
+//! channels while sharing asks first.
+
+#![allow(clippy::expect_used)]
+
+use morpheus_e2e::{App, DEFAULT_WAIT, api_as, new_account};
+
+fn homeserver() -> Option<String> {
+    std::env::var("MORPHEUS_TEST_HOMESERVER").ok()
+}
+
+/// How a name is abbreviated: its first letter and three dots.
+fn masked(name: &str) -> String {
+    format!("{}\u{2022}\u{2022}\u{2022}", name.chars().next().expect("a name"))
+}
+
+async fn login(app: &mut App, user: &str) {
+    app.wait_for("form.login", DEFAULT_WAIT).await.expect("login form");
+    app.type_into("form.login input[name=username]", user).await.expect("username");
+    app.type_into("form.login input[name=password]", &format!("{user}-password"))
+        .await
+        .expect("password");
+    app.submit("form.login").await.expect("submit");
+    app.wait_for(".room", DEFAULT_WAIT).await.expect("room listed");
+}
+
+/// Settings > Streamer Mode, open.
+async fn open_streamer_settings(app: &mut App) {
+    app.click(".settings-button").await.expect("gear");
+    app.wait_for_text(".settings-nav button", "Streamer Mode", DEFAULT_WAIT)
+        .await
+        .expect("a Streamer Mode page");
+    app.click_text(".settings-nav button", "Streamer Mode").await.expect("page");
+    app.wait_for(".settings-page input[name=streamer-now]", DEFAULT_WAIT)
+        .await
+        .expect("the switches");
+}
+
+/// Turn a Streamer Mode switch the other way.
+async fn flip(app: &mut App, name: &str) {
+    let sel = format!(".settings-page input[name={name}]");
+    let was = app.checked(&sel).await.expect("checked")[0];
+    app.click(&sel).await.expect("flip");
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    while app.checked(&sel).await.expect("checked")[0] == was {
+        assert!(std::time::Instant::now() < deadline, "{name} did not flip");
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+}
+
+async fn flip_now(app: &mut App) {
+    open_streamer_settings(app).await;
+    flip(app, "streamer-now").await;
+    app.press("body", "Escape").await.expect("close settings");
+}
+
+/// A fresh pair in a room of their own: `reader` is signed in on a desktop
+/// app, and `writer` posts through the API. Their names start with r and w.
+async fn pair(hs: &str, name: &str) -> (App, String, String, String) {
+    let reader = new_account(hs, &format!("r{name}")).expect("reader");
+    let writer = new_account(hs, &format!("w{name}")).expect("writer");
+    let room = api_as(
+        hs,
+        &writer,
+        "POST",
+        "createRoom",
+        Some(serde_json::json!({ "name": format!("{name} chat") })),
+    )
+    .expect("a room");
+    let room = room["room_id"].as_str().expect("room id").to_owned();
+    let id = room.replace('!', "%21").replace(':', "%3A");
+    api_as(
+        hs,
+        &writer,
+        "POST",
+        &format!("rooms/{id}/invite"),
+        Some(serde_json::json!({ "user_id": format!("@{reader}:localhost") })),
+    )
+    .expect("invite");
+    api_as(hs, &reader, "POST", &format!("rooms/{id}/join"), Some(serde_json::json!({})))
+        .expect("reader joins");
+    let mut app = App::launch_desktop(hs).await.expect("launch");
+    login(&mut app, &reader).await;
+    (app, reader, writer, room)
+}
+
+/// What the desktop app would have shown (the test log of notifications).
+fn shown(app: &App) -> Vec<serde_json::Value> {
+    std::fs::read_to_string(app.data_dir().join("shown-notifications.jsonl"))
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|line| serde_json::from_str(line).ok())
+        .collect()
+}
+
+/// `writer` posts `text` in `room` (no waiting).
+fn post(hs: &str, writer: &str, room: &str, text: &str) {
+    let room = room.replace('!', "%21").replace(':', "%3A");
+    api_as(
+        hs,
+        writer,
+        "PUT",
+        &format!("rooms/{room}/send/m.room.message/{}", text.len()),
+        Some(serde_json::json!({ "msgtype": "m.text", "body": text })),
+    )
+    .expect("send");
+}
+
+/// `writer` says `text` in `room`; the first notification the app shows after
+/// those already shown.
+async fn shown_for(app: &App, hs: &str, writer: &str, room: &str, text: &str) -> serde_json::Value {
+    let before = shown(app).len();
+    post(hs, writer, room, text);
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        if let Some(notice) = shown(app).into_iter().nth(before) {
+            return notice;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "nothing shown for {text:?}: {:?}",
+            shown(app)
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+}
+
+/// Turned on by hand, names are abbreviated in the timeline, the member list,
+/// the profile card and Settings' account page, IDs are hidden, a badge sits
+/// in the title bar; turned off, all is as before.
+#[tokio::test]
+async fn streamer_mode_by_hand_abbreviates_names_and_hides_ids() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let (mut app, reader, writer, room) = pair(&hs, "strm").await;
+    if !app.is_gpui() {
+        eprintln!("streamer mode is in the GPUI app only; skipping");
+        return;
+    }
+    post(&hs, &writer, &room, "hello streamer");
+    app.open_room("strm chat").await.expect("open");
+    app.wait_for_text(".timeline .sender", &writer, DEFAULT_WAIT).await.expect("her message");
+    app.wait_for_text(".members .member-name", &reader, DEFAULT_WAIT).await.expect("members");
+    assert_eq!(app.count(".titlebar .streamer-badge").await.expect("count"), 0);
+
+    flip_now(&mut app).await;
+    app.wait_for(".titlebar .streamer-badge", DEFAULT_WAIT).await.expect("the badge");
+    let senders = app.texts(".timeline .sender").await.expect("senders");
+    assert!(!senders.is_empty() && senders.iter().all(|s| *s == masked(&writer)), "senders: {senders:?}");
+    let members = app.texts(".members .member-name").await.expect("members");
+    assert!(members.contains(&masked(&writer)) && members.contains(&masked(&reader)), "members: {members:?}");
+    assert!(
+        members.iter().all(|m| !m.contains(&writer) && !m.contains(&reader)),
+        "members: {members:?}"
+    );
+
+    // The profile card: abbreviated name, no ID.
+    app.click_text(".members .member", &masked(&writer)).await.expect("open the card");
+    app.wait_for(".profile-card", DEFAULT_WAIT).await.expect("card");
+    let card = app.text(".profile-card").await.expect("text").unwrap_or_default();
+    assert!(!card.contains(&writer) && !card.contains("localhost"), "the card gives away: {card}");
+    assert_eq!(app.text(".profile-card .profile-name").await.expect("name"), Some(masked(&writer)));
+    app.press("body", "Escape").await.expect("close card");
+    app.wait_for_count(".profile-card", 0, DEFAULT_WAIT).await.expect("closed");
+
+    // Settings' account page does not show your ID.
+    app.click(".settings-button").await.expect("gear");
+    app.wait_for(".settings-user", DEFAULT_WAIT).await.expect("account page");
+    let own = app.text(".settings-user").await.expect("text").unwrap_or_default();
+    assert!(!own.contains(&reader) && !own.contains("localhost"), "your ID: {own}");
+    app.press("body", "Escape").await.expect("close settings");
+
+    // And off again: everything as it was.
+    flip_now(&mut app).await;
+    app.wait_for_count(".titlebar .streamer-badge", 0, DEFAULT_WAIT).await.expect("badge gone");
+    app.wait_for_text(".timeline .sender", &writer, DEFAULT_WAIT).await.expect("name back");
+    app.wait_for_text(".members .member-name", &reader, DEFAULT_WAIT).await.expect("members back");
+}
+
+/// In streamer mode a notification says nothing about who or what.
+#[tokio::test]
+async fn streamer_mode_hides_notification_contents() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let (mut app, _reader, writer, room) = pair(&hs, "strn").await;
+    if !app.is_gpui() {
+        eprintln!("streamer mode is in the GPUI app only; skipping");
+        return;
+    }
+    let pid = std::process::id();
+    let before = format!("plain words {pid}");
+    let notice = shown_for(&app, &hs, &writer, &room, &before).await;
+    assert_eq!(notice["body"].as_str(), Some(before.as_str()), "{notice}");
+
+    flip_now(&mut app).await;
+    let secret = format!("secret words {pid}");
+    let notice = shown_for(&app, &hs, &writer, &room, &secret).await;
+    assert_eq!(notice["title"].as_str(), Some("Morpheus"), "{notice}");
+    assert_eq!(notice["body"].as_str(), Some("Someone sent a message"), "{notice}");
+
+    // Not hiding them is a choice of its own.
+    open_streamer_settings(&mut app).await;
+    flip(&mut app, "streamer-notifications").await;
+    app.press("body", "Escape").await.expect("close settings");
+    let open = format!("open words {pid}");
+    let notice = shown_for(&app, &hs, &writer, &room, &open).await;
+    assert_eq!(notice["body"].as_str(), Some(open.as_str()), "{notice}");
+}
+
+/// The page's defaults, and that the choices are kept over a restart.
+#[tokio::test]
+async fn streamer_mode_settings_are_kept() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch_desktop(&hs).await.expect("launch");
+    if !app.is_gpui() {
+        eprintln!("streamer mode is in the GPUI app only; skipping");
+        return;
+    }
+    login(&mut app, "alice").await;
+    open_streamer_settings(&mut app).await;
+    let state = async |app: &mut App| {
+        let mut out = Vec::new();
+        for n in ["auto", "now", "names", "notifications", "ids", "ask"] {
+            out.push(
+                app.checked(&format!(".settings-page input[name=streamer-{n}]"))
+                    .await
+                    .expect("checked")[0],
+            );
+        }
+        out
+    };
+    assert_eq!(state(&mut app).await, [true, false, true, true, true, true], "defaults");
+    flip(&mut app, "streamer-auto").await;
+    flip(&mut app, "streamer-ids").await;
+    flip(&mut app, "streamer-ask").await;
+    flip(&mut app, "streamer-now").await;
+    assert_eq!(state(&mut app).await, [false, true, true, true, false, false]);
+
+    let mut app = app.relaunch().await.expect("relaunch");
+    app.wait_for(".room", DEFAULT_WAIT).await.expect("signed in again");
+    app.wait_for(".titlebar .streamer-badge", DEFAULT_WAIT).await.expect("still on");
+    open_streamer_settings(&mut app).await;
+    assert_eq!(state(&mut app).await, [false, true, true, true, false, false], "kept");
+}
+
+/// Sharing the screen turns it on by itself, asks before another channel is
+/// opened (Cancel stays, Open goes, a tick stops the asking while this share
+/// lasts) and the end of the share turns it off.
+#[tokio::test]
+async fn sharing_the_screen_turns_streamer_mode_on_and_asks_before_switching() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch(&hs).await.expect("launch alice");
+    if !app.is_gpui() {
+        eprintln!("streamer mode is in the GPUI app only; skipping");
+        return;
+    }
+    login(&mut app, "alice").await;
+    app.open_room("general").await.expect("general");
+    app.wait_for_text(".members .member-name", "bob", DEFAULT_WAIT).await.expect("bob listed");
+    app.click_text(".room", "hangout").await.expect("join the call");
+    app.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT).await.expect("connected");
+    assert_eq!(app.count(".titlebar .streamer-badge").await.expect("count"), 0);
+
+    app.click(".voice-panel .screen-button").await.expect("share");
+    app.wait_for(".screen-quality .screen-go", DEFAULT_WAIT).await.expect("popover");
+    app.click(".screen-quality .screen-go").await.expect("go live");
+    app.wait_for(".titlebar .streamer-badge", DEFAULT_WAIT).await.expect("streamer mode on");
+
+    // Another channel: asked first. Cancel stays.
+    app.click_text(".room", "general").await.expect("click general");
+    app.wait_for_text(".confirm-dialog", "You're sharing your screen. Open #general?", DEFAULT_WAIT)
+        .await
+        .expect("asked");
+    app.click(".confirm-dialog .confirm-cancel").await.expect("cancel");
+    app.wait_for_count(".confirm-dialog", 0, DEFAULT_WAIT).await.expect("closed");
+    assert_eq!(app.count(".chat-header h2").await.expect("count"), 0, "still on the call's page");
+
+    // Open goes, with the names abbreviated there.
+    app.click_text(".room", "general").await.expect("click general");
+    app.wait_for(".confirm-dialog input[name=dont-ask]", DEFAULT_WAIT).await.expect("the tick");
+    app.click(".confirm-dialog .confirm-go").await.expect("open");
+    app.wait_for_text(".chat-header h2", "general", DEFAULT_WAIT).await.expect("general open");
+    app.wait_for_text(".members .member-name", "b\u{2022}\u{2022}\u{2022}", DEFAULT_WAIT)
+        .await
+        .expect("abbreviated");
+    let members = app.texts(".members .member-name").await.expect("members");
+    assert!(members.iter().all(|m| m != "bob" && m != "alice"), "members: {members:?}");
+
+    // "Don't ask again during this share": the next one goes straight.
+    app.click_text(".room", "hangout").await.expect("hangout");
+    app.wait_for(".confirm-dialog", DEFAULT_WAIT).await.expect("asked");
+    app.click(".confirm-dialog input[name=dont-ask]").await.expect("tick");
+    app.click(".confirm-dialog .confirm-go").await.expect("open");
+    app.wait_for_count(".confirm-dialog", 0, DEFAULT_WAIT).await.expect("closed");
+    app.click_text(".room", "general").await.expect("general again");
+    app.wait_for_text(".chat-header h2", "general", DEFAULT_WAIT).await.expect("straight there");
+    assert_eq!(app.count(".confirm-dialog").await.expect("count"), 0);
+
+    // The share ends: back to normal.
+    app.click(".voice-panel .screen-button").await.expect("stop");
+    app.wait_for_count(".titlebar .streamer-badge", 0, DEFAULT_WAIT).await.expect("off again");
+    app.wait_for_text(".members .member-name", "bob", DEFAULT_WAIT).await.expect("names back");
+}

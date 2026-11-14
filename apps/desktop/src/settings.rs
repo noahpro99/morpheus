@@ -53,6 +53,11 @@ pub struct ThemeChosen(pub Theme);
 
 impl EventEmitter<ThemeChosen> for SettingsView {}
 
+/// A streamer mode choice was kept: the shell draws again.
+pub struct StreamerChanged;
+
+impl EventEmitter<StreamerChanged> for SettingsView {}
+
 /// A call device was picked on the Voice & Video page (kept already): the
 /// shell makes a call going now switch over.
 pub struct DevicesChosen(pub crate::view_model::menu::DeviceKind);
@@ -975,9 +980,9 @@ impl SettingsView {
         let mut children: Vec<gpui::AnyElement> = vec![
             div()
                 .font_weight(FontWeight::SEMIBOLD)
-                .child(user.clone())
+                .child(crate::streamer::id(&user))
                 .e2e("p", "settings-user")
-                .text(user)
+                .text(crate::streamer::id(&user))
                 .into_any_element(),
         ];
         if let Some(Ok(status)) = &self.status {
@@ -986,7 +991,7 @@ impl SettingsView {
                 .as_ref()
                 .map(|d| d.to_string())
                 .unwrap_or_default();
-            children.push(muted(&format!("This device: {device}"), "muted").into_any_element());
+            children.push(muted(&format!("This device: {}", crate::streamer::id(&device)), "muted").into_any_element());
         }
         vec![section("Account", "account", children, self.hl("account")).into_any_element()]
     }
@@ -1160,6 +1165,7 @@ impl Render for SettingsView {
             SettingsPage::Notifications => self.notifications_page(cx),
             SettingsPage::Appearance => self.appearance_page(cx),
             SettingsPage::VoiceVideo => self.voice_page(cx),
+            SettingsPage::StreamerMode => self.streamer_page(cx),
             SettingsPage::Startup => self.startup_page(cx),
             SettingsPage::Help => self.help_page(cx),
         };

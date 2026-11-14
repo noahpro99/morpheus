@@ -50,6 +50,7 @@ mod search;
 mod settings;
 mod shell;
 mod sounds;
+mod streamer;
 mod switcher;
 mod thread;
 mod mac_menu;
@@ -690,6 +691,7 @@ fn main() {
         return;
     }
     init_logging();
+    streamer::load(&data_dir());
     let start_hidden = std::env::args().any(|arg| arg == view_model::settings::HIDDEN_FLAG);
     let core = match Core::new(data_dir()) {
         Ok(core) => core,
