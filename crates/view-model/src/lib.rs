@@ -12,6 +12,7 @@ pub mod emoji;
 pub mod emoji_picker;
 pub mod format;
 pub mod friends;
+pub mod history;
 pub mod hotkeys;
 pub mod instance;
 pub mod invites;
@@ -46,6 +47,7 @@ pub mod threads;
 pub mod toast;
 pub mod typing;
 pub mod updates;
+pub mod vim;
 pub mod verification;
 
 #[cfg(test)]
