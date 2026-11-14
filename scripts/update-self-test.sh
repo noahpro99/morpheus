@@ -52,7 +52,7 @@ pack "$work/new" "$work/serve/$asset"
 
 port=$((20000 + RANDOM % 20000))
 cat > "$work/serve/feed.json" <<JSON
-{"version": "99.0.0", "url": "http://127.0.0.1:$port/",
+{"tag_name": "v99.0.0", "url": "https://api.github.com/repos/example/releases/1", "html_url": "http://127.0.0.1:$port/",
  "assets": [{"name": "$asset", "browser_download_url": "http://127.0.0.1:$port/$asset"}]}
 JSON
 py=$(command -v python3 || command -v python)
