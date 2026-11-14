@@ -65,6 +65,46 @@ fn bar_button(shell: &Shell, cx: &mut Context<Shell>, id: &'static str) -> gpui:
     )
 }
 
+/// The streamer mode button: always there; clicking it turns the mode on or
+/// off. While the mode is on it reads "Streamer mode" (the badge).
+fn streamer_button(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
+    let on = crate::streamer::active();
+    let toggle = cx.listener(|this, _, _, cx| {
+        let mut settings = crate::streamer::settings();
+        settings.now = !crate::streamer::active();
+        if let Err(err) = settings.save(&crate::data_dir()) {
+            eprintln!("morpheus-desktop: saving the streamer mode setting: {err}");
+        }
+        crate::streamer::set_settings(settings);
+        this.streamer_changed(cx);
+    });
+    if on {
+        bar_button(shell, cx, "streamer-button")
+            .w_auto()
+            .px(px(8.0))
+            .h(px(20.0))
+            .mr(px(6.0))
+            .gap(px(4.0))
+            .rounded(px(10.0))
+            .bg(rgba(theme::accent_tint()))
+            .text_color(rgb(theme::accent()))
+            .child(icon("eye-off", 12.0))
+            .child("Streamer mode")
+            .on_click(toggle)
+            .e2e("button", "streamer-badge streamer-button")
+            .attr("title", "Streamer mode is on: names and IDs are hidden. Click to turn off")
+            .text("Streamer mode")
+    } else {
+        bar_button(shell, cx, "streamer-button")
+            .child(icon("eye-off", 16.0))
+            .on_click(toggle)
+            .e2e("button", "ghost titlebar-button streamer-button")
+            .attr("title", "Turn on streamer mode")
+            .attr("data-color", format!("{:06x}", crate::chat::bar_colour(shell, "streamer-button", theme::text_muted())))
+            .attr("data-bg", "")
+    }
+}
+
 pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
     let unread = unread_count(&crate::locks::unlocked(&shell.rooms));
     let title = header_title(&shell.rooms, &shell.scope);
@@ -177,25 +217,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                     .justify_end()
                     .items_center()
                     .gap(px(2.0))
-                    .when(crate::streamer::active(), |d| {
-                        d.child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap(px(4.0))
-                                .px(px(8.0))
-                                .h(px(20.0))
-                                .mr(px(6.0))
-                                .rounded(px(10.0))
-                                .bg(rgba(theme::accent_tint()))
-                                .text_color(rgb(theme::accent()))
-                                .child(icon("eye-off", 12.0))
-                                .child("Streamer mode")
-                                .e2e("div", "streamer-badge")
-                                .attr("title", "Streamer mode is on: names and IDs are hidden")
-                                .text("Streamer mode"),
-                        )
-                    })
+                    .child(streamer_button(shell, cx))
                     .children(crate::update::topbar_button(shell, cx))
                     .child(
                         inbox.e2e("button", "ghost titlebar-button inbox-button")
