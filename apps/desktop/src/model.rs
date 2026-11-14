@@ -225,7 +225,19 @@ pub fn scope_has_unread(rooms: &[RoomSummary], scope: &Scope) -> bool {
 /// Whether someone is in a call in a scope's voice channels (or DMs): the
 /// speaker badge on its rail icon.
 pub fn scope_has_call(rooms: &[RoomSummary], scope: &Scope) -> bool {
-    rooms_in_scope(rooms, scope).iter().any(|room| !room.call_participants.is_empty())
+    match scope {
+        Scope::Space(space_id) => {
+            if let Some(space_room) = rooms.iter().find(|r| &r.id == space_id) {
+                if rooms.iter().any(|r| {
+                    space_room.space_children.contains(&r.id) && !r.call_participants.is_empty()
+                }) {
+                    return true;
+                }
+            }
+            rooms_in_scope(rooms, scope).iter().any(|room| !room.call_participants.is_empty())
+        }
+        _ => rooms_in_scope(rooms, scope).iter().any(|room| !room.call_participants.is_empty()),
+    }
 }
 
 /// The sidebar header: what the rail selected.
@@ -344,5 +356,19 @@ pub mod tests {
         assert!(scope_has_unread(&[r.clone()], &Scope::Rooms));
         r.muted = true;
         assert!(!scope_has_unread(&[r], &Scope::Rooms));
+    }
+
+    #[test]
+    fn scope_has_call_checks_participants_and_space_children() {
+        let mut space = room("!s:x", "Server");
+        space.is_space = true;
+        let mut channel = room("!v:x", "Voice");
+        channel.is_voice = true;
+        space.space_children = vec![channel.id.clone()];
+        let scope = Scope::Space(space.id.clone());
+
+        assert!(!scope_has_call(&[space.clone(), channel.clone()], &scope));
+        channel.call_participants.push(morpheus_core::OwnedUserId::try_from("@bob:x").unwrap());
+        assert!(scope_has_call(&[space, channel], &scope));
     }
 }
