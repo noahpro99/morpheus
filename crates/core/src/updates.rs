@@ -68,11 +68,32 @@ fn platform() -> Option<&'static str> {
     }
 }
 
+/// Whether the app is running on NixOS or from a Nix store.
+pub(crate) fn is_nixos() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        if std::env::var_os("MORPHEUS_UPDATE_SELF_TEST").is_some() {
+            return false;
+        }
+        std::path::Path::new("/etc/NIXOS").exists()
+            || std::env::current_exe().is_ok_and(|p| p.starts_with("/nix/store"))
+            || std::fs::read_to_string("/etc/os-release")
+                .is_ok_and(|s| s.lines().any(|l| l.trim() == "ID=nixos"))
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        false
+    }
+}
+
 /// Whether this build replaces itself with a downloaded release: desktops,
 /// when the app's folder is the app's to change. An install it can't write
-/// to (Nix's store, a package manager's files) and phones are updated by
+/// to (Nix's store, NixOS, a package manager's files) and phones are updated by
 /// whatever installed them.
 pub fn installs_updates() -> bool {
+    if is_nixos() {
+        return false;
+    }
     #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
     {
         swap::can_replace()
@@ -270,6 +291,11 @@ mod swap {
     }
 
     pub fn install(zip: &[u8]) -> io::Result<()> {
+        if super::is_nixos() {
+            return Err(io::Error::other(
+                "auto-updates are not supported on NixOS; update via your package manager or Nix flake",
+            ));
+        }
         let (exe, dir) = place()?;
         let staging = dir.join(STAGING);
         let _ = std::fs::remove_dir_all(&staging);
@@ -340,6 +366,9 @@ mod swap {
     /// Whether the app's folder takes new files (tried, as permissions
     /// alone don't say: a read-only mount, or Windows' own rules).
     pub fn can_replace() -> bool {
+        if super::is_nixos() {
+            return false;
+        }
         let Ok((_, dir)) = place() else {
             return false;
         };
@@ -370,6 +399,15 @@ mod swap {
 #[cfg(test)]
 mod tests {
     use super::is_newer;
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn nixos_detection_matches_system() {
+        if std::path::Path::new("/etc/NIXOS").exists() {
+            assert!(super::is_nixos());
+            assert!(!super::installs_updates());
+        }
+    }
 
     /// GitHub's real latest-release document (v0.2.1's) reads: its version, its
     /// page and the Windows zip. It has `url` and `html_url` both, which
