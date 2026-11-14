@@ -21,6 +21,7 @@ use crate::{
     input::{Submit, TextInput},
     model::{Scope, rooms_in_scope},
     theme,
+    view_model::locks as vm_locks,
     view_model::room_dialogs::{
         self as vm, ENCRYPTION_OFF, ENCRYPTION_ON, ENCRYPTION_PERMANENT, ENCRYPTION_WARNING,
         Encryption, HISTORY_CHOICES, JOIN_CHOICES, Note, RoomDialogKind,
@@ -42,6 +43,10 @@ pub enum Done {
     ProfileSaved,
     /// Your own name, picture or status changed (the footer reads them again).
     OwnProfileChanged,
+    /// A lock was set: the room and the hash of its password.
+    LockSet { room: OwnedRoomId, hash: String },
+    /// A lock was taken off.
+    LockRemoved(OwnedRoomId),
 }
 
 pub struct RoomDialog {
@@ -147,6 +152,17 @@ impl RoomDialog {
                 name = field(cx, "nickname", current, &existing);
             }
             RoomDialogKind::RenameFolder(_, current) => name = field(cx, "name", "", current),
+            RoomDialogKind::LockSet(_) | RoomDialogKind::LockRemove(_) => {
+                let secret = |cx: &mut Context<Self>, name: &'static str| {
+                    let input = cx.new(|cx| TextInput::new(name, "", true, "", cx).framed());
+                    cx.subscribe(&input, |this, _, _: &Submit, cx| this.submit(cx)).detach();
+                    Some(input)
+                };
+                name = secret(cx, "password");
+                if matches!(&kind, RoomDialogKind::LockSet(_)) {
+                    topic = secret(cx, "again");
+                }
+            }
             RoomDialogKind::Privacy(_) | RoomDialogKind::LeaveSpace(_) => {}
         }
         let categories = match &kind {
@@ -434,6 +450,54 @@ impl RoomDialog {
             RoomDialogKind::RenameFolder(folder, _) => {
                 let name = self.text(&self.name, cx);
                 cx.emit(Done::FolderRenamed { folder, name });
+            }
+            RoomDialogKind::LockSet(room) => {
+                let (password, again) = (self.text(&self.name, cx), self.text(&self.topic, cx));
+                if let Some(problem) = vm_locks::password_problem(&password, &again) {
+                    self.note = Some(Note::error(problem));
+                    cx.notify();
+                    return;
+                }
+                self.busy = true;
+                cx.notify();
+                let hashing = cx.background_executor().spawn(async move { vm_locks::hash_password(&password) });
+                cx.spawn(async move |this, cx| {
+                    let hashed = hashing.await;
+                    this.update(cx, |this, cx| {
+                        this.busy = false;
+                        match hashed {
+                            Ok(hash) => cx.emit(Done::LockSet { room, hash }),
+                            Err(err) => this.note = Some(Note::error(err)),
+                        }
+                        cx.notify();
+                    })
+                    .ok();
+                })
+                .detach();
+            }
+            RoomDialogKind::LockRemove(room) => {
+                let password = self.text(&self.name, cx);
+                let Some(hash) = crate::locks::hash_of(&room) else {
+                    cx.emit(Done::LockRemoved(room));
+                    return;
+                };
+                self.busy = true;
+                cx.notify();
+                let checking = cx.background_executor().spawn(async move { vm_locks::verify_password(&hash, &password) });
+                cx.spawn(async move |this, cx| {
+                    let right = checking.await;
+                    this.update(cx, |this, cx| {
+                        this.busy = false;
+                        if right {
+                            cx.emit(Done::LockRemoved(room));
+                        } else {
+                            this.note = Some(Note::error("That is not the password."));
+                        }
+                        cx.notify();
+                    })
+                    .ok();
+                })
+                .detach();
             }
             RoomDialogKind::LeaveSpace(space) => {
                 let children: Vec<OwnedRoomId> = self
@@ -1216,6 +1280,41 @@ impl RoomDialog {
                     .into_any_element(),
                 );
                 ("profile-editor status-editor", parts)
+            }
+            RoomDialogKind::LockSet(_) => {
+                parts.push(heading("Lock with a password").into_any_element());
+                parts.push(muted(vm_locks::LOCK_BLURB, "muted").into_any_element());
+                if let Some(input) = &self.name {
+                    parts.push(field("Password", input));
+                }
+                if let Some(input) = &self.topic {
+                    parts.push(field("Password again", input));
+                }
+                parts.extend(note);
+                parts.push(
+                    actions(vec![
+                        self.submit_button(Some("lock"), "Lock", cx),
+                        self.close_button("Cancel", cx),
+                    ])
+                    .into_any_element(),
+                );
+                ("lock-dialog", parts)
+            }
+            RoomDialogKind::LockRemove(_) => {
+                parts.push(heading("Remove lock").into_any_element());
+                parts.push(muted(vm_locks::FORGOT, "muted forgot").into_any_element());
+                if let Some(input) = &self.name {
+                    parts.push(field("Password", input));
+                }
+                parts.extend(note);
+                parts.push(
+                    actions(vec![
+                        self.submit_button(Some("lock-open"), "Remove lock", cx),
+                        self.close_button("Cancel", cx),
+                    ])
+                    .into_any_element(),
+                );
+                ("lock-dialog", parts)
             }
             RoomDialogKind::LeaveSpace(space) => {
                 let name = self.name_of(&space);

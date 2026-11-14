@@ -58,6 +58,33 @@ fn privacy_item(room: &RoomSummary) -> MenuItem {
     )
 }
 
+/// The lock items of a room's menu: none yet, "Lock with a password…"; a
+/// locked one, "Remove lock…" (and, while it is open, "Lock now").
+pub fn lock_items(room: &OwnedRoomId, has_lock: bool, locked: bool) -> Vec<MenuItem> {
+    if !has_lock {
+        return vec![
+            MenuItem::new("Lock with a password…", MenuAction::RoomDialog(RoomDialogKind::LockSet(room.clone())))
+                .icon("lock"),
+        ];
+    }
+    let mut items = Vec::new();
+    if !locked {
+        items.push(MenuItem::new("Lock now", MenuAction::LockNow(room.clone())).icon("lock"));
+    }
+    items.push(
+        MenuItem::new("Remove lock…", MenuAction::RoomDialog(RoomDialogKind::LockRemove(room.clone())))
+            .icon("lock-open"),
+    );
+    items
+}
+
+/// Where the lock items go in a menu: before its last item (Leave, or Close).
+pub fn with_lock_items(mut items: Vec<MenuItem>, lock: Vec<MenuItem>) -> Vec<MenuItem> {
+    let at = items.len().saturating_sub(1);
+    items.splice(at..at, lock);
+    items
+}
+
 /// The right-click menu for a room row. `mode`: its notification mode, if known.
 pub fn room_menu(room: &RoomSummary, mode: Option<NotifyMode>) -> Vec<MenuItem> {
     let mut items = vec![read_item(room)];

@@ -27,6 +27,10 @@ pub enum RoomDialogKind {
     SetStatus,
     /// A rail folder (its id) and its name now.
     RenameFolder(String, String),
+    /// Put a password lock on a room or DM (on this device).
+    LockSet(OwnedRoomId),
+    /// Take the lock off (the password is asked).
+    LockRemove(OwnedRoomId),
 }
 
 /// The message of a form: a note that it worked, or why it did not.

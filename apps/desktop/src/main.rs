@@ -23,6 +23,7 @@ mod hotkeys;
 mod hover_underline;
 mod icons;
 mod invites;
+mod locks;
 mod message;
 mod input;
 mod login;
@@ -270,6 +271,7 @@ impl Root {
                     core.switch_account(key).await.ok().flatten()
                 }
                 shell::AccountEvent::SignOut => {
+                    locks::clear_all();
                     let _ = session.logout().await;
                     core.restore_session().await.ok().flatten()
                 }

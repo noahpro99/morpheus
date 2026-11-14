@@ -432,6 +432,7 @@ fn room_button(
     reorder: Option<&std::rc::Rc<Vec<OwnedRoomId>>>,
 ) -> impl IntoElement {
     let selected = shell.selected.as_ref() == Some(&room.id) && !shell.friends_open;
+    let locked = crate::locks::is_locked(&room.id);
     let unread = room.unread_messages > 0 || room.marked_unread;
     let pinned = shell.marks.is_pinned(room);
     let mut classes = String::from("room");
@@ -442,6 +443,7 @@ fn room_button(
         (pinned, "pinned"),
         (shell.marks.is_muted(room), "muted"),
         (selected, "selected"),
+        (locked, "locked"),
         (unread, "unread"),
     ] {
         if on {
@@ -540,7 +542,15 @@ fn room_button(
     if pinned {
         button = button.child(icon("pin", 12.0).text_color(rgb(theme::text_faint())));
     }
-    if room.highlight_count > 0 {
+    if locked {
+        // A lock hides how many: a dot says there is something.
+        button = button.child(icon("lock", 12.0).text_color(rgb(theme::text_faint())).e2e("svg", "lock-icon"));
+        if unread || room.highlight_count > 0 {
+            button = button.child(
+                div().size(px(8.0)).flex_none().rounded_full().bg(rgb(theme::danger())).e2e("span", "lock-dot"),
+            );
+        }
+    } else if room.highlight_count > 0 {
         let count = room.highlight_count.to_string();
         button = button.child(
             div()
