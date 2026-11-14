@@ -878,7 +878,11 @@ impl Outgoing {
         }
         // The screen's sound, when wanted: the share goes on without it if
         // there is none to be had.
-        let sound = if screen && quality.audio {
+        // (Not even tried where the platform has no way: macOS.)
+        let sound = if screen
+            && quality.audio
+            && (mode == AudioMode::Tone || screen_audio_unavailable().is_none())
+        {
             match ScreenSound::publish(room, mode, encrypted).await {
                 Ok(sound) => Some(sound),
                 Err(why) => {
