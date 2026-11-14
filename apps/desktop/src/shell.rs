@@ -188,6 +188,9 @@ pub struct Shell {
     pub pending_dm: Option<OwnedRoomId>,
     /// The inbox panel, shown or not, and where its keys go.
     pub inbox_open: bool,
+    /// The first key of a two-key vim command (`g` of `gg`, `d` of `dd`) in
+    /// the timeline.
+    pub vim_pending: Option<char>,
     /// The "don't ask again during this share" tick of the open-channel question, and
     /// whether it was ticked for the share going on.
     pub ask_tick: bool,
@@ -397,6 +400,7 @@ impl Shell {
             friends_page: None,
             pending_dm: None,
             inbox_open: false,
+            vim_pending: None,
             ask_tick: false,
             ask_skipped: false,
             inbox_focus: None,

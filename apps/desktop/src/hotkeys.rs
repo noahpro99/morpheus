@@ -4,6 +4,7 @@
 //! is `view_model::hotkeys`.
 
 use gpui::{Context, KeyDownEvent, Window};
+use morpheus_core::MessageId;
 
 use crate::{
     dialogs::Dialog,
@@ -40,6 +41,154 @@ impl Shell {
         room || thread
     }
 
+    /// Whether a message box (the room's or the thread's) takes Escape in
+    /// vim mode, or Ctrl+R (as redo).
+    fn vim_input_wants(&self, window: &Window, cx: &gpui::App, ctrl_r: bool) -> bool {
+        if !crate::vim::enabled() {
+            return false;
+        }
+        let asks = |composer: &gpui::Entity<crate::composer::Composer>| {
+            let composer = composer.read(cx);
+            if ctrl_r {
+                composer.vim_wants_ctrl_r(window, cx)
+            } else {
+                composer.vim_wants_escape(window, cx)
+            }
+        };
+        self.composer.as_ref().is_some_and(|(_, c)| asks(c))
+            || self.thread.as_ref().is_some_and(|(_, panel)| asks(panel.read(cx).composer()))
+    }
+
+    /// Whether vim mode's timeline keys apply: no box has the keyboard and
+    /// nothing is open over the chat.
+    fn vim_nav_ready(&self, window: &Window, cx: &gpui::App) -> bool {
+        crate::vim::enabled()
+            && !self.modal_open(cx)
+            && !self.inbox_open
+            && !self.chat_covered()
+            && self.timeline.is_some()
+            && self.root_focus.as_ref().is_some_and(|focus| focus.is_focused(window))
+    }
+
+    /// Vim mode with no box focused: j and k move a selection through the
+    /// messages, gg and G go to the ends, Ctrl+D and Ctrl+U scroll half a
+    /// page, / searches, and on the selected message r replies, e edits, dd
+    /// (D without asking) deletes, + reacts, y copies, o or Enter opens its
+    /// thread or the box, i goes to the box. Whether it took the key.
+    fn vim_nav(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        use crate::{message::RowAction, timeline::VimStep};
+        if !self.vim_nav_ready(window, cx) {
+            self.vim_pending = None;
+            return false;
+        }
+        let Some((_, timeline)) = self.timeline.clone() else {
+            return false;
+        };
+        let ks = &event.keystroke;
+        let m = ks.modifiers;
+        if m.control && !m.alt && !m.shift && !m.platform && matches!(ks.key.as_str(), "d" | "u") {
+            self.vim_pending = None;
+            timeline.update(cx, |timeline, cx| timeline.scroll_half_page(ks.key == "d", cx));
+            return true;
+        }
+        if m.control || m.alt || m.platform {
+            return false;
+        }
+        let typed = ks
+            .key_char
+            .as_ref()
+            .filter(|t| t.chars().count() == 1 && !t.chars().any(char::is_control))
+            .and_then(|t| t.chars().next());
+        let c = match (typed, ks.key.as_str()) {
+            (Some(c), _) => c,
+            (None, "enter") if !m.shift => '\n',
+            _ => return false,
+        };
+        let pending = self.vim_pending.take();
+        let selected = timeline.read(cx).vim_selection();
+        let uid = selected.as_ref().map(|m| m.unique_id.clone());
+        let event_id = selected.as_ref().is_some_and(|m| matches!(m.id, MessageId::Event(_)));
+        let act = |action: RowAction, cx: &mut Context<Self>| {
+            if let Some(uid) = &uid {
+                timeline.update(cx, |timeline, cx| timeline.row_action(action, uid, cx));
+            }
+        };
+        match (pending, c) {
+            (Some('g'), 'g') => timeline.update(cx, |t, cx| t.vim_select(VimStep::Oldest, cx)),
+            (Some('d'), 'd') => {
+                if selected.as_ref().is_some_and(|m| m.is_own) && event_id {
+                    act(RowAction::Delete(false), cx);
+                }
+            }
+            (_, 'g') => self.vim_pending = Some('g'),
+            (_, 'd') => self.vim_pending = selected.as_ref().map(|_| 'd'),
+            (_, 'j') => timeline.update(cx, |t, cx| t.vim_select(VimStep::Newer, cx)),
+            (_, 'k') => timeline.update(cx, |t, cx| t.vim_select(VimStep::Older, cx)),
+            (_, 'G') => timeline.update(cx, |t, cx| t.vim_select(VimStep::Newest, cx)),
+            (_, '/') => {
+                if self.current().is_some() {
+                    timeline.update(cx, |t, cx| {
+                        t.vim_clear(cx);
+                    });
+                    self.focus_search(window, cx);
+                }
+            }
+            (_, 'r') if event_id => {
+                act(RowAction::Reply, cx);
+                timeline.update(cx, |t, cx| {
+                    t.vim_clear(cx);
+                });
+            }
+            (_, 'e') if selected.as_ref().is_some_and(|m| m.can_edit) => {
+                act(RowAction::Edit, cx);
+                timeline.update(cx, |t, cx| {
+                    t.vim_clear(cx);
+                });
+            }
+            (_, 'D') if selected.as_ref().is_some_and(|m| m.is_own) && event_id => {
+                act(RowAction::Delete(true), cx);
+            }
+            (_, '+') => {
+                // Beside the message when it is measured, else mid-window.
+                let at = match timeline.read(cx).vim_selection_bounds() {
+                    Some(bounds) => gpui::point(bounds.right() - gpui::px(120.0), bounds.top() + gpui::px(12.0)),
+                    None => {
+                        let view = window.viewport_size();
+                        gpui::point(view.width / 2.0, view.height / 2.0)
+                    }
+                };
+                act(RowAction::MoreReactions(at), cx);
+            }
+            (_, 'y') => {
+                if let Some(text) = selected.as_ref().and_then(|m| m.kind.plain_body()).filter(|t| !t.is_empty()) {
+                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(text.to_owned()));
+                    self.toast("Copied", cx);
+                }
+            }
+            (_, 'o' | '\n') => {
+                if selected.as_ref().is_some_and(|m| m.thread.is_some()) && event_id {
+                    act(RowAction::Thread, cx);
+                } else if selected.is_some() {
+                    self.vim_focus_composer(&timeline, window, cx);
+                }
+            }
+            (_, 'i' | 'a') => self.vim_focus_composer(&timeline, window, cx),
+            // Any other letter does nothing (it does not go to the box).
+            _ => {}
+        }
+        true
+    }
+
+    /// The caret goes to the message box, in insert mode, and the selection goes.
+    fn vim_focus_composer(&mut self, timeline: &gpui::Entity<crate::timeline::TimelineView>, window: &mut Window, cx: &mut Context<Self>) {
+        timeline.update(cx, |t, cx| {
+            t.vim_clear(cx);
+        });
+        if let Some((_, composer)) = &self.composer {
+            composer.update(cx, |composer, cx| composer.focus_input(window, cx));
+        }
+    }
+
     /// The shell's capture-phase key listener. Returns whether it used the
     /// key (the caller then stops it going on).
     pub fn handle_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) -> bool {
@@ -48,6 +197,20 @@ impl Shell {
         let key = keystroke.key.as_str();
         let ringing = !self.ringing(crate::call::now_ms()).is_empty();
         if key == "escape" && !m.shift && !m.control && !m.alt {
+            // Vim mode: a message box in insert or visual mode takes the key
+            // (to go to normal mode); with none focused it lets go of the
+            // selected message.
+            if self.vim_input_wants(window, cx, false) {
+                return false;
+            }
+            if self.vim_nav_ready(window, cx) {
+                self.vim_pending = None;
+                if let Some((_, timeline)) = self.timeline.clone()
+                    && timeline.update(cx, |timeline, cx| timeline.vim_clear(cx))
+                {
+                    return true;
+                }
+            }
             // Escape closes the noise suppression card.
             if self.calls.noise_card.is_some() {
                 self.close_noise_card(cx);
@@ -99,6 +262,10 @@ impl Shell {
             }
             return true;
         }
+        // Vim mode: the timeline's keys.
+        if crate::vim::enabled() && self.vim_nav(event, window, cx) {
+            return true;
+        }
         // Typing with nothing focused goes to the message box, as in Discord.
         if !ctrl
             && !m.alt
@@ -120,6 +287,10 @@ impl Shell {
             "down" => "ArrowDown",
             other => other,
         };
+        // Ctrl+R is redo in a message box in vim's normal mode, not a reload.
+        if ctrl && !m.alt && !m.shift && key == "r" && self.vim_input_wants(window, cx, true) {
+            return false;
+        }
         let Some(action) = hotkeys::classify(name, ctrl, m.alt, m.shift) else {
             return false;
         };

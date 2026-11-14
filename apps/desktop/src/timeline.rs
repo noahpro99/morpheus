@@ -160,6 +160,8 @@ pub struct TimelineView {
     highlight: Option<String>,
     /// The message whose right-click menu is open (unique ID).
     menu_message: Option<String>,
+    /// The message vim mode's selection is on (unique ID).
+    vim_selected: Option<String>,
     /// The message whose avatar is held down (it sits a pixel lower).
     pressed_avatar: Option<String>,
     /// Set while the room is kept in the background: the newest message it
@@ -171,6 +173,15 @@ pub struct TimelineView {
     videos: HashMap<String, gpui::Entity<crate::video::VideoPlayer>>,
     /// The room's members, to turn a typed "" into a mention pill.
     people: Vec<crate::view_model::rich::Person>,
+}
+
+/// Where vim mode's selection goes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VimStep {
+    Newest,
+    Oldest,
+    Older,
+    Newer,
 }
 
 /// Scroll numbers of a list, in px: what a test and the jump button read.
@@ -273,6 +284,7 @@ impl TimelineView {
             jump: None,
             highlight: None,
             menu_message: None,
+            vim_selected: None,
             pressed_avatar: None,
             left_at: None,
             videos: HashMap::new(),
@@ -422,10 +434,81 @@ impl TimelineView {
         cx.notify();
     }
 
+    /// Which way vim mode's selection moves.
+    pub fn vim_select(&mut self, step: VimStep, cx: &mut Context<Self>) {
+        let messages: Vec<(usize, String)> = self
+            .rows
+            .iter()
+            .enumerate()
+            .filter_map(|(ix, row)| match row {
+                Row::Message { row, .. } => Some((ix, row.message.unique_id.clone())),
+                _ => None,
+            })
+            .collect();
+        let Some(last) = messages.len().checked_sub(1) else {
+            return;
+        };
+        let current = self
+            .vim_selected
+            .as_ref()
+            .and_then(|id| messages.iter().position(|(_, unique)| unique == id));
+        let target = match (step, current) {
+            (VimStep::Newest, _) | (VimStep::Older | VimStep::Newer, None) => last,
+            (VimStep::Oldest, _) => 0,
+            (VimStep::Older, Some(i)) => i.saturating_sub(1),
+            (VimStep::Newer, Some(i)) => (i + 1).min(last),
+        };
+        let (ix, unique) = messages[target].clone();
+        self.vim_selected = Some(unique);
+        if target == last {
+            self.jump_to_present(cx);
+        } else {
+            self.list.scroll_to_reveal_item(ix);
+        }
+        cx.notify();
+    }
+
+    /// The message vim mode's selection is on.
+    pub fn vim_selection(&self) -> Option<Message> {
+        let id = self.vim_selected.as_deref()?;
+        self.rows.iter().find_map(|row| match row {
+            Row::Message { row, .. } if row.message.unique_id == id => Some(row.message.clone()),
+            _ => None,
+        })
+    }
+
+    /// Where the selected message is on screen.
+    pub fn vim_selection_bounds(&self) -> Option<gpui::Bounds<Pixels>> {
+        let id = self.vim_selected.as_deref()?;
+        let ix = self
+            .rows
+            .iter()
+            .position(|row| matches!(row, Row::Message { row, .. } if row.message.unique_id == id))?;
+        self.list.bounds_for_item(ix)
+    }
+
+    /// Lets go of vim mode's selection; whether there was one.
+    pub fn vim_clear(&mut self, cx: &mut Context<Self>) -> bool {
+        let had = self.vim_selected.take().is_some();
+        if had {
+            cx.notify();
+        }
+        had
+    }
+
     /// Page Up / Page Down: the chat scrolls by (nearly) a page.
     pub fn scroll_page(&mut self, down: bool, cx: &mut Context<Self>) {
+        self.scroll_by_fraction(down, 0.9, cx);
+    }
+
+    /// Ctrl+D / Ctrl+U in vim mode: half a page, eased the same way.
+    pub fn scroll_half_page(&mut self, down: bool, cx: &mut Context<Self>) {
+        self.scroll_by_fraction(down, 0.5, cx);
+    }
+
+    fn scroll_by_fraction(&mut self, down: bool, fraction: f32, cx: &mut Context<Self>) {
         let now = metrics(&self.list);
-        let page = now.viewport * 0.9;
+        let page = now.viewport * fraction;
         // A page asked for while one goes adds to it.
         let base = self.paging.map_or(now.from_bottom, |(target, _)| target);
         let target = (base + if down { -page } else { page }).clamp(0.0, now.range);
@@ -802,6 +885,7 @@ impl TimelineView {
             keys: self.keys,
             highlight: self.highlight.as_deref() == Some(row.message.unique_id.as_str()),
             menu_open: self.menu_message.as_deref() == Some(row.message.unique_id.as_str()),
+            selected: self.vim_selected.as_deref() == Some(row.message.unique_id.as_str()),
             avatar_pressed: self.pressed_avatar.as_deref() == Some(row.message.unique_id.as_str()),
             after_divider: ix > 0 && matches!(self.rows.get(ix - 1), Some(Row::Date(..))),
             ..Pictures::default()

@@ -27,7 +27,10 @@ use gpui::{
 use crate::{
     e2e::E2eExt as _,
     theme,
-    view_model::text_buffer::TextBuffer,
+    view_model::{
+        text_buffer::TextBuffer,
+        vim::{Key as VimKey, Mode as VimMode, Vim},
+    },
 };
 
 /// Enter was pressed in the input (a plain Enter in the message box).
@@ -103,6 +106,11 @@ pub struct TextInput {
     scroll: ScrollHandle,
     /// The caret when the view last followed it, to follow only a moved one.
     followed: Rc<RefCell<Option<(usize, usize)>>>,
+    /// A message box that vim mode (when on) makes modal; its engine and
+    /// undo history (the history serves every box).
+    vim_capable: bool,
+    vim: Vim,
+    was_focused: bool,
 }
 
 impl TextInput {
@@ -134,6 +142,9 @@ impl TextInput {
             drawn_colour: Rc::default(),
             scroll: ScrollHandle::new(),
             followed: Rc::default(),
+            vim_capable: false,
+            vim: Vim::new(),
+            was_focused: false,
         }
     }
 
@@ -175,6 +186,50 @@ impl TextInput {
         self
     }
 
+    /// A message box: vim mode, when it is on, makes it modal.
+    pub fn vim(mut self) -> Self {
+        self.vim_capable = true;
+        self
+    }
+
+    /// Whether vim mode rules this box now.
+    fn vim_on(&self) -> bool {
+        self.vim_capable && self.max_lines > 1 && !self.password && !self.disabled && crate::vim::enabled()
+    }
+
+    /// The mode, when vim mode rules this box.
+    pub fn vim_mode(&self) -> Option<VimMode> {
+        self.vim_on().then(|| self.vim.mode())
+    }
+
+    /// "-- NORMAL --" and what is typed so far of a command, when vim mode
+    /// rules this box.
+    pub fn vim_label(&self) -> Option<String> {
+        let mode = self.vim_mode()?;
+        let name = match mode {
+            VimMode::Insert => "INSERT",
+            VimMode::Normal => "NORMAL",
+            VimMode::Visual => "VISUAL",
+        };
+        let pending = self.vim.pending();
+        Some(if pending.is_empty() { format!("-- {name} --") } else { format!("-- {name} -- {pending}") })
+    }
+
+    /// Whether Escape is this box's to take: vim mode is on and the box is
+    /// in insert or visual mode, or has a command half typed (the shell's
+    /// Escape handling leaves it alone).
+    pub fn wants_escape(&self, window: &Window) -> bool {
+        self.vim_on()
+            && self.focus.is_focused(window)
+            && (self.vim.mode() != VimMode::Normal || !self.vim.pending().is_empty())
+    }
+
+    /// Whether Ctrl+R is redo here, not the app's reload: vim mode is on and
+    /// the box is in normal or visual mode.
+    pub fn wants_ctrl_r(&self, window: &Window) -> bool {
+        self.vim_on() && self.focus.is_focused(window) && self.vim.mode() != VimMode::Insert
+    }
+
     pub fn is_focused(&self, window: &Window) -> bool {
         self.focus.is_focused(window) && !self.disabled
     }
@@ -191,6 +246,8 @@ impl TextInput {
     pub fn set_value(&mut self, text: &str, cx: &mut Context<Self>) {
         self.buf.set_text(text);
         self.goal_x = None;
+        self.vim.history.clear();
+        self.vim.settle(&mut self.buf);
         cx.notify();
     }
 
@@ -292,6 +349,10 @@ impl TextInput {
             }
         }
         self.selecting = event.click_count <= 1;
+        self.vim.history.break_run();
+        if self.vim_on() && self.vim.mode() == VimMode::Normal {
+            self.vim.settle(&mut self.buf);
+        }
         cx.notify();
     }
 
@@ -399,6 +460,66 @@ impl TextInput {
         self.key_down(&KeyDownEvent { keystroke, is_held: false }, cx);
     }
 
+    /// A key in vim mode: whether the engine took it (otherwise the box
+    /// types or edits as usual: insert mode, and Ctrl combos such as copy).
+    fn vim_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
+        let keystroke = &event.keystroke;
+        let m = keystroke.modifiers;
+        let cmd = m.control || m.platform;
+        let mode = self.vim.mode();
+        let typed = keystroke
+            .key_char
+            .as_ref()
+            .filter(|t| t.chars().count() == 1 && !t.chars().any(char::is_control))
+            .and_then(|t| t.chars().next());
+        let key = match keystroke.key.as_str() {
+            "escape" => Some(VimKey::Esc),
+            "enter" if !m.shift && !cmd && !m.alt => Some(VimKey::Enter),
+            "backspace" if !m.shift && !cmd && !m.alt => Some(VimKey::Backspace),
+            "left" if mode != VimMode::Insert && !cmd => Some(VimKey::Char('h')),
+            "right" if mode != VimMode::Insert && !cmd => Some(VimKey::Char('l')),
+            "up" if mode != VimMode::Insert && !cmd => Some(VimKey::Char('k')),
+            "down" if mode != VimMode::Insert && !cmd => Some(VimKey::Char('j')),
+            "home" if mode != VimMode::Insert && !cmd => Some(VimKey::Char('0')),
+            "end" if mode != VimMode::Insert && !cmd => Some(VimKey::Char('$')),
+            k if cmd && !m.alt && k.chars().count() == 1 => k.chars().next().map(VimKey::Ctrl),
+            _ if !cmd && !m.alt => typed.map(VimKey::Char),
+            _ => None,
+        };
+        let Some(key) = key else {
+            // In normal and visual mode an unmapped key types nothing (the
+            // Ctrl combos, copy and paste, are the box's).
+            return mode != VimMode::Insert && !cmd;
+        };
+        // Escape with suggestions open closes them first (the owner's).
+        if mode == VimMode::Insert && key == VimKey::Esc && self.capture_nav {
+            return false;
+        }
+        if mode != VimMode::Insert && matches!(key, VimKey::Char('p' | 'P')) {
+            let clip = cx.read_from_clipboard().and_then(|item| item.text());
+            self.vim.set_clipboard(clip.as_deref());
+        }
+        let out = self.vim.key(&mut self.buf, key);
+        if !out.handled {
+            return false;
+        }
+        self.goal_x = None;
+        if let Some(text) = self.vim.take_yank() {
+            cx.write_to_clipboard(ClipboardItem::new_string(text));
+        }
+        cx.notify();
+        if out.changed {
+            cx.emit(Changed);
+        }
+        if out.submit {
+            cx.emit(Submit);
+        }
+        if out.escape {
+            cx.emit(Nav(NavKey::Escape));
+        }
+        true
+    }
+
     fn key_down(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
         if self.disabled {
             return;
@@ -411,6 +532,13 @@ impl TextInput {
         let cmd = m.control || m.platform;
         let word = m.control || m.alt;
         let was = (self.buf.text().to_owned(), self.buf.selection());
+        let before = self.buf.clone();
+        let mut typing = false;
+        let mut undid = false;
+
+        if self.vim_on() && self.vim_key(event, cx) {
+            return;
+        }
 
         // Keys the owner takes over.
         let nav = match key {
@@ -445,6 +573,13 @@ impl TextInput {
                 "v" => {
                     self.paste(cx);
                 }
+                "z" => {
+                    undid = if m.shift {
+                        self.vim.history.redo(&mut self.buf)
+                    } else {
+                        self.vim.history.undo(&mut self.buf)
+                    };
+                }
                 "home" => self.buf.home(m.shift, true),
                 "end" => self.buf.end(m.shift, true),
                 "left" => self.buf.left(m.shift, true),
@@ -472,9 +607,12 @@ impl TextInput {
                     }
                 }
                 "backspace" => {
+                    typing = true;
+                    self.vim.backspaced();
                     self.buf.backspace(m.alt);
                 }
                 "delete" => {
+                    typing = true;
                     self.buf.delete(m.alt);
                 }
                 "left" => self.buf.left(m.shift, word),
@@ -491,6 +629,8 @@ impl TextInput {
                     }
                     match &keystroke.key_char {
                         Some(text) if !text.chars().any(char::is_control) => {
+                            typing = true;
+                            self.vim.typed(text);
                             self.insert_text(text)
                         }
                         _ => return,
@@ -501,9 +641,21 @@ impl TextInput {
         if !matches!(key, "up" | "down") {
             self.goal_x = None;
         }
+        if self.vim_on() {
+            self.vim.settle(&mut self.buf);
+        }
         cx.notify();
         if self.buf.text() != was.0 {
+            if !undid && !self.password {
+                if typing {
+                    self.vim.history.record_typing(&before);
+                } else {
+                    self.vim.history.record(&before);
+                }
+            }
             cx.emit(Changed);
+        } else {
+            self.vim.history.break_run();
         }
     }
 
@@ -543,6 +695,8 @@ struct EditorText {
     input: Entity<TextInput>,
     text: StyledText,
     caret: Option<usize>,
+    /// A block cursor (vim's normal mode): where it ends, as a drawn offset.
+    block: Option<usize>,
     selection: Option<Range<usize>>,
     /// Where each selected character of the real text is, as drawn offsets.
     selected_chars: Vec<(usize, usize, bool)>,
@@ -656,14 +810,30 @@ impl Element for EditorText {
             }
         }
 
+        // The block cursor, under the character it stands on.
+        if let (Some(from), Some(to)) = (self.caret, self.block)
+            && let Some(a) = layout.position_for_index(from)
+        {
+            let width = layout
+                .position_for_index(to)
+                .filter(|b| (b.y - a.y).abs() < px(1.0) && b.x > a.x)
+                .map_or(px(8.0), |b| b.x - a.x);
+            window.paint_quad(fill(
+                Bounds::new(a, size(width, line)),
+                rgba(theme::alpha(theme::accent(), 0xcc)),
+            ));
+        }
+
         self.text
             .paint(id, inspector_id, bounds, state, &mut (), window, cx);
 
         if let Some(at) = self.caret.and_then(|i| layout.position_for_index(i)) {
-            window.paint_quad(fill(
-                Bounds::new(at, size(px(1.5), line)),
-                rgb(theme::text()),
-            ));
+            if self.block.is_none() {
+                window.paint_quad(fill(
+                    Bounds::new(at, size(px(1.5), line)),
+                    rgb(theme::text()),
+                ));
+            }
             let input = self.input.clone();
             input.update(cx, |input, _| input.follow_caret(at, window));
         }
@@ -696,6 +866,17 @@ impl Element for EditorText {
 impl Render for TextInput {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let focused = self.focus.is_focused(window) && !self.disabled;
+        // A box gaining the focus starts in insert mode; switched off, vim
+        // leaves nothing behind.
+        if focused != self.was_focused {
+            self.was_focused = focused;
+            if focused {
+                self.vim.enter_insert();
+            }
+        }
+        if !self.vim_on() && self.vim.mode() != VimMode::Insert {
+            self.vim.enter_insert();
+        }
         let (shown, is_placeholder) = self.shown();
         let mut text = StyledText::new(shown.clone());
         if is_placeholder && !shown.is_empty() {
@@ -707,12 +888,15 @@ impl Render for TextInput {
                 },
             )]);
         }
-        let selection = self.buf.has_selection().then(|| {
-            let range = self.buf.selection();
-            self.to_shown(range.start)..self.to_shown(range.end)
-        });
-        let selected_chars: Vec<(usize, usize, bool)> = if selection.is_some() {
-            let range = self.buf.selection();
+        let chosen = self
+            .vim_on()
+            .then(|| self.vim.visual_range(&self.buf))
+            .flatten()
+            .or_else(|| self.buf.has_selection().then(|| self.buf.selection()));
+        let selection = chosen
+            .clone()
+            .map(|range| self.to_shown(range.start)..self.to_shown(range.end));
+        let selected_chars: Vec<(usize, usize, bool)> = if let Some(range) = chosen {
             self.buf.text()[range.clone()]
                 .char_indices()
                 .map(|(i, c)| {
@@ -728,6 +912,12 @@ impl Render for TextInput {
             input: cx.entity(),
             text,
             caret: focused.then(|| self.to_shown(self.buf.head())),
+            block: (focused && self.vim_on() && self.vim.mode() != VimMode::Insert).then(|| {
+                let head = self.buf.head();
+                let next = self.buf.next_boundary(head);
+                let at_line_end = self.buf.text()[head..next].contains('\n');
+                self.to_shown(if at_line_end { head } else { next })
+            }),
             selection,
             selected_chars,
             layout: self.layout.clone(),

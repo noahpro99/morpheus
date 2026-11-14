@@ -53,6 +53,8 @@ pub struct Pictures {
     pub highlight: bool,
     /// Its right-click menu is open: stays highlighted (`data-menu-open`).
     pub menu_open: bool,
+    /// Vim mode's selection is on it (`vim-selected`).
+    pub selected: bool,
     /// Its sender's picture is held down: a pixel lower.
     pub avatar_pressed: bool,
     /// A date divider sits right above: it keeps the space, the header adds none.
@@ -1638,11 +1640,26 @@ pub fn message_el(
     if pics.menu_open {
         line = line.bg(rgba(theme::bg_hover()));
     }
+    if pics.selected {
+        classes.push_str(" vim-selected");
+        line = line.bg(rgba(theme::bg_hover())).child(
+            div()
+                .absolute()
+                .left_0()
+                .top_0()
+                .bottom_0()
+                .w(px(2.0))
+                .bg(rgb(theme::accent())),
+        );
+    }
     let mut line = line
         .e2e("div", &classes)
         .attr("data-event-id", event_id);
     if pics.menu_open {
         line = line.attr("data-menu-open", "");
+    }
+    if pics.selected {
+        line = line.attr("data-vim-selected", "");
     }
     if lit {
         line = line

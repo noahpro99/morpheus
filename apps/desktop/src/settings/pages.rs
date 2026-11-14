@@ -350,7 +350,38 @@ impl SettingsView {
                 .attr("data-theme", theme_choice.key())
         });
         let row = div().flex().flex_wrap().gap(px(12.0)).children(options).e2e("div", "theme-options");
-        vec![section("Theme", "theme", vec![row.into_any_element()], self.hl("theme")).into_any_element()]
+        let vim_on = crate::vim::enabled();
+        let vim = choice(
+            "vim-mode".into(),
+            "vim-mode",
+            "",
+            "Vim mode",
+            vim_on,
+            true,
+            false,
+            cx.listener(|this, _, _, cx| {
+                crate::vim::set(&this.data_dir, !crate::vim::enabled());
+                cx.emit(super::StreamerChanged);
+                cx.notify();
+            }),
+        );
+        let keyboard = section(
+            "Keyboard",
+            "keyboard",
+            vec![
+                vim,
+                muted(
+                    "Modal editing as in vim. The message box starts in insert mode; Esc goes to normal mode (h j k l, w b e, 0 ^ $, gg G, x, dd, D, C, cw, ciw, yy, p, u, Ctrl+R, i a I A o O, v, counts and . work), and Enter sends from there. With no box focused, j and k move through the messages, r replies, e edits, dd deletes, + reacts, y copies, o opens the thread, / searches and i goes back to the box.",
+                    "muted",
+                )
+                .into_any_element(),
+            ],
+            self.hl("keyboard"),
+        );
+        vec![
+            section("Theme", "theme", vec![row.into_any_element()], self.hl("theme")).into_any_element(),
+            keyboard.into_any_element(),
+        ]
     }
 
     pub(super) fn voice_page(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
