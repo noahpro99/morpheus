@@ -484,8 +484,12 @@ async fn sharing_the_screen_opens_the_call() {
         .await
         .expect("sharing brought the call's view up");
     alice.wait_for(".voice-chat-toggle", DEFAULT_WAIT).await.expect("the channel's page");
-    // Stopping from another room does not move you.
-    alice.open_room("general").await.expect("general");
+    // Stopping from another room does not move you. (Streamer mode asks before
+    // leaving for another channel while the screen is shared: Open.)
+    alice.click_text(".room .room-name", "general").await.expect("general");
+    alice.wait_for(".confirm-dialog .confirm-go", DEFAULT_WAIT).await.expect("streamer mode asks");
+    alice.click(".confirm-dialog .confirm-go").await.expect("open it");
+    alice.wait_for_text(".chat-header h2", "general", DEFAULT_WAIT).await.expect("in general");
     alice.wait_for(".voice-panel .screen-button.active", DEFAULT_WAIT).await.expect("sharing");
     alice.click(".voice-panel .screen-button").await.expect("stop");
     tokio::time::sleep(std::time::Duration::from_millis(800)).await;

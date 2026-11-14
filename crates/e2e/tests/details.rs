@@ -535,14 +535,32 @@ async fn loading_shows_skeletons_not_words() {
         .expect("security");
     watch(&mut app, Duration::from_secs(2), &mut seen).await;
     app.press("body", "Escape").await.expect("close settings");
-    // A picture, full size.
+    // A picture, full size: one sent now lands at the bottom (#general's older
+    // pictures are thousands of rows up).
+    let room_id: String = app
+        .attr(".room.selected", "data-room")
+        .await
+        .expect("room id")
+        .expect("a selected room");
+    morpheus_e2e::send_image_as(&hs, "bob", &room_id, DUSK_PNG, &format!("dusk {}.png", std::process::id()), None)
+        .expect("bob sends a picture");
     app.reveal_element(".message img.image", DEFAULT_WAIT)
         .await
         .expect("an image");
-    app.click(".message img.image").await.expect("open it");
-    app.wait_for(".lightbox-overlay", DEFAULT_WAIT)
-        .await
-        .expect("lightbox");
+    // (A picture still loading, or half under the message box, may not take the
+    // first click: click again, as a user would.)
+    let mut opened = false;
+    for _ in 0..5 {
+        app.reveal_element(".message img.image", DEFAULT_WAIT)
+            .await
+            .expect("an image");
+        app.click(".message img.image").await.expect("open it");
+        if app.wait_for(".lightbox-overlay", Duration::from_secs(3)).await.is_ok() {
+            opened = true;
+            break;
+        }
+    }
+    assert!(opened, "the picture opened no lightbox");
     watch(&mut app, Duration::from_secs(1), &mut seen).await;
 
     if !app.is_gpui() {

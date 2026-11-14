@@ -191,7 +191,9 @@ async fn the_title_bars_buttons_are_natural_sized() {
     tokio::time::sleep(std::time::Duration::from_millis(400)).await;
     assert_eq!(app.count(".inbox-panel").await.expect("count"), 0, "the bar's edge opened the inbox");
     let inbox = b(&mut app, ".titlebar .inbox-button").await;
-    click_in(&mut app, ".titlebar .inbox-button", inbox.w / 2.0 - 2.0, -(inbox.h / 2.0 - 2.0)).await;
+    // Near the corner, but below the window's own 5 px resize strip along its top edge
+    // (which, in a window that is not maximised, takes a press there before any button).
+    click_in(&mut app, ".titlebar .inbox-button", inbox.w / 2.0 - 2.0, -(inbox.h / 2.0 - 7.0)).await;
     app.wait_for(".inbox-panel", DEFAULT_WAIT).await.expect("the inbox button's corner opens the inbox");
 }
 
