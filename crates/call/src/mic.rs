@@ -158,6 +158,12 @@ impl Processor {
         for (s, f) in frame.iter_mut().zip(&self.scratch) {
             *s = (f * 32767.0) as i16;
         }
+        let volume = crate::input_volume();
+        if (volume - 1.0).abs() > 0.001 {
+            for s in frame.iter_mut() {
+                *s = (f32::from(*s) * volume).clamp(-32768.0, 32767.0) as i16;
+            }
+        }
     }
 }
 
@@ -549,6 +555,12 @@ fn capture(shared: &Shared, mode: AudioMode) {
         processor.process(&mut frame);
         if !live {
             add_tone(&mut frame, &mut tone);
+            let volume = crate::input_volume();
+            if (volume - 1.0).abs() > 0.001 {
+                for s in frame.iter_mut() {
+                    *s = (f32::from(*s) * volume).clamp(-32768.0, 32767.0) as i16;
+                }
+            }
         }
         let rms = (frame.iter().map(|s| f32::from(*s).powi(2)).sum::<f32>() / FRAME as f32).sqrt()
             / 32768.0;

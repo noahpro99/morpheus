@@ -588,11 +588,25 @@ pub const AUDIO_DEVICES: &str = "audio_devices.json";
 
 /// The microphone, speaker and camera chosen for calls (absent: the system's
 /// defaults, the first camera that works).
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DevicePrefs {
     pub microphone: Option<String>,
     pub speaker: Option<String>,
     pub camera: Option<String>,
+    pub input_volume: f32,
+    pub output_volume: f32,
+}
+
+impl Default for DevicePrefs {
+    fn default() -> Self {
+        Self {
+            microphone: None,
+            speaker: None,
+            camera: None,
+            input_volume: 1.0,
+            output_volume: 1.0,
+        }
+    }
 }
 
 pub fn read_device_prefs(data_dir: &std::path::Path) -> DevicePrefs {
@@ -601,10 +615,19 @@ pub fn read_device_prefs(data_dir: &std::path::Path) -> DevicePrefs {
         .and_then(|bytes| serde_json::from_slice(&bytes).ok())
         .unwrap_or_default();
     let field = |name: &str| saved.get(name).and_then(|v| v.as_str()).map(str::to_owned);
+    let volume_field = |name: &str| {
+        saved
+            .get(name)
+            .and_then(|v| v.as_f64())
+            .map(|v| v as f32)
+            .unwrap_or(1.0)
+    };
     DevicePrefs {
         microphone: field("microphone"),
         speaker: field("speaker"),
         camera: field("camera"),
+        input_volume: volume_field("input_volume"),
+        output_volume: volume_field("output_volume"),
     }
 }
 
@@ -613,6 +636,8 @@ pub fn write_device_prefs(data_dir: &std::path::Path, prefs: &DevicePrefs) -> st
         "microphone": prefs.microphone,
         "speaker": prefs.speaker,
         "camera": prefs.camera,
+        "input_volume": prefs.input_volume,
+        "output_volume": prefs.output_volume,
     });
     std::fs::write(data_dir.join(AUDIO_DEVICES), json.to_string())
 }
@@ -638,6 +663,55 @@ pub fn device_menu(kind: crate::menu::DeviceKind, rows: &[DeviceRow]) -> Vec<cra
     }
     items.push(MenuItem::new("Voice & Video settings", MenuAction::VoiceSettings));
     items
+}
+
+/// The bottom-left voice popup with input/output device selectors (hover flyouts),
+/// volume sliders, and the Voice Settings button.
+pub fn voice_popup_menu(
+    microphones: &[DeviceRow],
+    speakers: &[DeviceRow],
+    input_volume: f32,
+    output_volume: f32,
+) -> Vec<crate::menu::MenuItem> {
+    use crate::menu::{DeviceKind, MenuAction, MenuItem, MenuSlider};
+
+    let mic_children: Vec<MenuItem> = microphones
+        .iter()
+        .map(|row| {
+            MenuItem::new(row.name.clone(), MenuAction::Device(DeviceKind::Microphone, row.id.clone()))
+                .checked(row.checked)
+        })
+        .collect();
+
+    let mic_item = MenuItem {
+        action: None,
+        children: mic_children,
+        icon: Some("mic"),
+        ..MenuItem::new("Input Device", MenuAction::VoiceSettings)
+    };
+
+    let speaker_children: Vec<MenuItem> = speakers
+        .iter()
+        .map(|row| {
+            MenuItem::new(row.name.clone(), MenuAction::Device(DeviceKind::Speaker, row.id.clone()))
+                .checked(row.checked)
+        })
+        .collect();
+
+    let speaker_item = MenuItem {
+        action: None,
+        children: speaker_children,
+        icon: Some("volume-2"),
+        ..MenuItem::new("Output Device", MenuAction::VoiceSettings)
+    };
+
+    vec![
+        mic_item,
+        MenuItem::slider("Input Volume", MenuSlider::InputVolume(input_volume)),
+        speaker_item,
+        MenuItem::slider("Output Volume", MenuSlider::OutputVolume(output_volume)),
+        MenuItem::new("Voice Settings", MenuAction::VoiceSettings),
+    ]
 }
 
 #[cfg(test)]
@@ -928,9 +1002,39 @@ mod tests {
             microphone: Some("mic".into()),
             speaker: None,
             camera: Some("cam".into()),
+            input_volume: 1.5,
+            output_volume: 0.8,
         };
         write_device_prefs(&dir, &chosen).expect("write");
         assert_eq!(read_device_prefs(&dir), chosen);
         std::fs::remove_dir_all(&dir).expect("clean");
+    }
+
+    #[test]
+    fn voice_popup_menu_has_selectors_sliders_and_settings() {
+        let mics = vec![DeviceRow {
+            id: Some("mic1".into()),
+            name: "Mic 1".into(),
+            checked: true,
+        }];
+        let speakers = vec![DeviceRow {
+            id: Some("spk1".into()),
+            name: "Speaker 1".into(),
+            checked: false,
+        }];
+        let items = voice_popup_menu(&mics, &speakers, 1.2, 0.7);
+        assert_eq!(items.len(), 5);
+        assert_eq!(items[0].label, "Input Device");
+        assert!(items[0].has_submenu());
+        assert_eq!(items[0].children[0].label, "Mic 1");
+        assert_eq!(items[1].label, "Input Volume");
+        assert_eq!(items[1].slider, Some(crate::menu::MenuSlider::InputVolume(1.2)));
+        assert_eq!(items[2].label, "Output Device");
+        assert!(items[2].has_submenu());
+        assert_eq!(items[2].children[0].label, "Speaker 1");
+        assert_eq!(items[3].label, "Output Volume");
+        assert_eq!(items[3].slider, Some(crate::menu::MenuSlider::OutputVolume(0.7)));
+        assert_eq!(items[4].label, "Voice Settings");
+        assert_eq!(items[4].action, Some(crate::menu::MenuAction::VoiceSettings));
     }
 }
