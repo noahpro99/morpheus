@@ -156,12 +156,14 @@ fn play_tone(stop: &AtomicBool, mut out: Out) {
 }
 
 /// Sums 10 ms frames of several streams into one, kept from clipping hard.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub(crate) fn mix_into(sum: &mut [i32], frame: impl IntoIterator<Item = i16>) {
     for (s, v) in sum.iter_mut().zip(frame) {
         *s += i32::from(v);
     }
 }
 
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub(crate) fn clamp(sum: &[i32], out: &mut [i16]) {
     for (o, s) in out.iter_mut().zip(sum) {
         *o = (*s).clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;

@@ -7348,6 +7348,8 @@ dependencies = [
  "tract-hir",
  "tract-onnx",
  "tract-pulse",
+ "windows 0.62.2",
+ "windows-core 0.62.2",
  "zune-jpeg",
 ]
 
