@@ -4,10 +4,21 @@ description = "Morpheus desktop app (GPUI)."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+# `cargo run` (and `cargo r`) start the app, not the e2e build below.
+default-run = "morpheus-desktop"
 
 [[bin]]
 name = "morpheus-desktop"
 path = "src/main.rs"
+
+# The same program with the test bridge, as its own binary, so building it
+# (`just e2e-build`) never replaces target/debug/morpheus-desktop, which a
+# developer may be running. Cargo warns that main.rs is in two targets: it is
+# meant to be.
+[[bin]]
+name = "morpheus-desktop-e2e"
+path = "src/main.rs"
+required-features = ["e2e"]
 
 [features]
 # The test bridge (`MORPHEUS_E2E_PORT`) and element tags; never in a release.
