@@ -235,6 +235,17 @@ impl Shell {
             if !self.modal_open(cx) && !self.inbox_open && self.escape_search(window, cx) {
                 return true;
             }
+            // Escape in a voice channel with its chat side panel open: close the chat panel first.
+            if self.calls.voice_chat
+                && self.current().is_some_and(|r| r.is_voice && !r.is_dm)
+                && !self.modal_open(cx)
+                && !self.inbox_open
+                && !self.composer_busy(cx)
+            {
+                self.calls.voice_chat = false;
+                cx.notify();
+                return true;
+            }
             // Escape in a call with a card focused: back to the grid.
             if self.calls.focus.is_some() && !self.modal_open(cx) && !self.inbox_open && !self.composer_busy(cx) {
                 return self.clear_call_focus(cx);
