@@ -4857,3 +4857,221 @@ async fn a_video_card_rings_green_while_its_person_speaks() {
         assert!(seen < 10, "no green left on the edge ({seen} pixels)");
     }
 }
+
+/// A figure from an attribute ("0.173"), or 0.
+async fn attr_f64(app: &mut App, selector: &str, name: &str) -> f64 {
+    app.attr(selector, name)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.0)
+}
+
+/// Wait until `selector`'s `name` attribute, as a number, passes `ok`.
+async fn wait_attr_f64(
+    app: &mut App,
+    selector: &str,
+    name: &str,
+    what: &str,
+    ok: impl Fn(f64) -> bool,
+) -> f64 {
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let v = attr_f64(app, selector, name).await;
+        if ok(v) {
+            return v;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "{what}: {selector} {name} is {v}"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    }
+}
+
+/// Sharing the screen sends the computer's sound with it unless the popover's
+/// sound switch is off (on at first, as in Discord): the others hear it as a
+/// track of its own, not the sharer's voice (test runs: the voice is a 440 Hz
+/// tone, the computer's sound 660 Hz left and 990 Hz right), at a volume of
+/// their own from the screen's card, silent while they are deafened, and it
+/// ends with the share.
+#[tokio::test]
+async fn a_shared_screens_sound_is_heard_at_its_own_volume_until_the_share_stops() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let (mut alice, mut bob) = two_in_a_call(&hs, &[]).await;
+    if !alice.is_gpui() {
+        eprintln!("GPUI only (the screen's sound is chosen in the quality popover)");
+        return;
+    }
+    let button = ".voice-panel .screen-button";
+    let mine = ".call-stage .video-tile.screen.self";
+    let theirs = ".call-stage .video-tile.screen[data-user=\"@alice:localhost\"]";
+    alice.click(button).await.expect("share");
+    alice
+        .wait_for(".screen-quality .screen-audio-toggle", DEFAULT_WAIT)
+        .await
+        .expect("a sound switch in the popover");
+    alice
+        .wait_for(".screen-quality .screen-audio-toggle.active", DEFAULT_WAIT)
+        .await
+        .expect("on at first");
+    alice.click(".screen-quality .screen-go").await.expect("go live");
+    alice
+        .wait_for(&format!("{mine} .video[data-shown=true]"), DEFAULT_WAIT)
+        .await
+        .expect("her own screen");
+    // Sent as music: stereo, a high bitrate, no gaps for quiet passages.
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    let sent = loop {
+        let sent = alice.attr(mine, "data-audio-sent").await.expect("attr").unwrap_or_default();
+        if !sent.is_empty() || std::time::Instant::now() > deadline {
+            break sent;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    };
+    eprintln!("sent: {sent}");
+    assert!(sent.contains("stereo"), "{sent:?}");
+    assert!(sent.contains("bitrate=128000"), "{sent:?}");
+    assert!(sent.contains("dtx=false"), "{sent:?}");
+
+    // Bob hears it: its own tones, both sides, and not her voice.
+    bob.wait_for(&format!("{theirs}[data-audio=on]"), DEFAULT_WAIT)
+        .await
+        .expect("her screen has sound");
+    wait_attr_f64(&mut bob, theirs, "data-audio-level", "her screen's sound", |v| v > 0.1).await;
+    // Steady (the first figures may include the silence before it began;
+    // the card's figures are renewed once a second).
+    tokio::time::sleep(std::time::Duration::from_millis(2500)).await;
+    let full = attr_f64(&mut bob, theirs, "data-audio-level").await;
+    assert!(full > 0.15, "a steady tone: {full}");
+    let hz = bob.attr(theirs, "data-audio-hz").await.expect("attr").unwrap_or_default();
+    eprintln!("bob hears her screen at {full} ({hz} Hz)");
+    let pitches: Vec<f64> = hz.split('/').filter_map(|v| v.parse().ok()).collect();
+    assert_eq!(pitches.len(), 2, "{hz:?}");
+    assert!((pitches[0] - 660.0).abs() < 20.0, "left {hz:?} (her voice is 440)");
+    assert!((pitches[1] - 990.0).abs() < 20.0, "right {hz:?}");
+    let played_full = wait_attr_f64(&mut bob, theirs, "data-audio-played", "played", |v| v > 0.05).await;
+
+    // His volume for it, on its card: half.
+    let slider = format!("{theirs} .screen-volume");
+    assert_eq!(
+        bob.attr(&slider, "data-value").await.expect("attr").as_deref(),
+        Some("100"),
+        "as sent at first"
+    );
+    let bar = bob.bounds(&slider).await.expect("bounds").expect("a volume slider");
+    // The bar runs 0 to 200%: a quarter of the way is half.
+    bob.click_at(&slider, (-0.25 * bar.w) as f32, 0.0, 1)
+        .await
+        .expect("half volume");
+    wait_attr_f64(&mut bob, &slider, "data-value", "the slider at half", |v| (v - 50.0).abs() <= 3.0).await;
+    let half = wait_attr_f64(&mut bob, theirs, "data-audio-level", "half as loud", |v| {
+        v < full * 0.6 && v > full * 0.4
+    })
+    .await;
+    let played_half = wait_attr_f64(&mut bob, theirs, "data-audio-played", "WebRTC plays it lower", |v| {
+        v > 0.0 && v < played_full * 0.8
+    })
+    .await;
+    eprintln!("at half: {half} (played {played_half}, was {played_full})");
+    // Deafened: silent.
+    bob.click(".user-pill .deafen-button").await.expect("deafen");
+    wait_attr_f64(&mut bob, theirs, "data-audio-level", "silent deafened", |v| v < 0.005).await;
+    bob.click(".user-pill .deafen-button").await.expect("undeafen");
+    wait_attr_f64(&mut bob, theirs, "data-audio-level", "back undeafened", |v| v > full * 0.4).await;
+
+    // Stopping the share ends it.
+    alice.click(button).await.expect("stop");
+    bob.wait_for_count(".video-tile.screen", 0, DEFAULT_WAIT)
+        .await
+        .expect("her screen goes");
+    bob.wait_for_count("[data-audio=on]", 0, DEFAULT_WAIT)
+        .await
+        .expect("and its sound");
+    assert_eq!(
+        alice.attr(".voice-panel", "data-screen-audio").await.expect("attr").as_deref(),
+        Some(""),
+        "nothing sent once stopped"
+    );
+}
+
+/// The sound switch off: the screen goes alone, no sound track; the choice is
+/// kept (screen-quality.json) and shown next time.
+#[tokio::test]
+async fn sharing_the_screen_without_its_sound_sends_none_and_is_remembered() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let (mut alice, mut bob) = two_in_a_call(&hs, &[]).await;
+    if !alice.is_gpui() {
+        eprintln!("GPUI only (the screen's sound is chosen in the quality popover)");
+        return;
+    }
+    let button = ".voice-panel .screen-button";
+    let mine = ".call-stage .video-tile.screen.self";
+    let theirs = ".call-stage .video-tile.screen[data-user=\"@alice:localhost\"]";
+    alice.click(button).await.expect("share");
+    alice
+        .wait_for(".screen-quality .screen-audio-toggle.active", DEFAULT_WAIT)
+        .await
+        .expect("on at first");
+    if let Some(path) = alice.screenshot("screen-quality-sound").await.expect("screenshot") {
+        eprintln!("screenshot: {}", path.display());
+    }
+    alice
+        .click(".screen-quality .screen-audio-toggle")
+        .await
+        .expect("sound off");
+    alice
+        .wait_for_count(".screen-quality .screen-audio-toggle.active", 0, DEFAULT_WAIT)
+        .await
+        .expect("switched off");
+    let kept = std::fs::read_to_string(alice.data_dir().join("screen-quality.json"))
+        .unwrap_or_default();
+    assert!(kept.contains("\"audio\":false"), "kept in {kept:?}");
+    alice.click(".screen-quality .screen-go").await.expect("go live");
+    alice
+        .wait_for(&format!("{mine} .video[data-shown=true]"), DEFAULT_WAIT)
+        .await
+        .expect("her own screen");
+    wait_screen_pattern(&mut bob, "@alice:localhost")
+        .await
+        .expect("bob sees it");
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+    assert_eq!(
+        bob.count(&format!("{theirs}[data-audio=on]")).await.expect("count"),
+        0,
+        "no sound came with it"
+    );
+    assert_eq!(bob.count(&format!("{theirs} .screen-volume")).await.expect("count"), 0);
+    assert_eq!(
+        alice.attr(mine, "data-audio-sent").await.expect("attr").as_deref(),
+        Some(""),
+        "none sent"
+    );
+    alice.click(button).await.expect("stop");
+    alice
+        .wait_for_count(".video-tile.screen", 0, DEFAULT_WAIT)
+        .await
+        .expect("stopped");
+    // Next time: still off.
+    alice.click(button).await.expect("share again");
+    alice
+        .wait_for(".screen-quality .screen-audio-toggle", DEFAULT_WAIT)
+        .await
+        .expect("the popover");
+    assert_eq!(
+        alice
+            .count(".screen-quality .screen-audio-toggle.active")
+            .await
+            .expect("count"),
+        0,
+        "remembered off"
+    );
+    alice.press("body", "Escape").await.expect("close");
+}
