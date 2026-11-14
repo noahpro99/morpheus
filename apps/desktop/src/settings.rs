@@ -967,6 +967,7 @@ impl SettingsView {
         vec![
             section("Encryption", "encryption", encryption, self.hl("encryption")).into_any_element(),
             section("Devices", "sessions", devices, self.hl("sessions")).into_any_element(),
+            self.locked_chats_section(cx),
         ]
     }
 

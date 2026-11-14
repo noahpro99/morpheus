@@ -133,6 +133,8 @@ impl Shell {
             self.thread = None;
             self.search = None;
             self.pinned.clear();
+            // Just closed: a fresh box.
+            self.lock_input = None;
             self.show_lock_screen(room, cx);
         }
         cx.notify();
@@ -140,6 +142,10 @@ impl Shell {
 
     /// The password box of a locked room that is open.
     pub fn show_lock_screen(&mut self, room: &OwnedRoomId, cx: &mut Context<Self>) {
+        // Opening the room again (the room list changed under it) keeps what was typed.
+        if self.lock_input.as_ref().is_some_and(|(id, _)| id == room) {
+            return;
+        }
         let input = cx.new(|cx| TextInput::new("password", "Password", true, "", cx).framed());
         cx.subscribe(&input, |this, _, _: &Submit, cx| this.try_unlock(cx)).detach();
         self.lock_input = Some((room.clone(), input));

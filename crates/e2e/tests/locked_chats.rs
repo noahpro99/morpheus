@@ -97,8 +97,15 @@ impl Setup {
         self.app.open_room("lock elsewhere").await.expect("the other room");
     }
 
+    /// The DM list, shown (the rail's DMs).
+    async fn show_dms(&mut self) {
+        self.app.click(".rail-dms").await.expect("DMs");
+        self.app.wait_for(".room.dm", DEFAULT_WAIT).await.expect("the DM is listed");
+    }
+
     async fn dm_menu(&mut self, item: &str) {
         let writer = self.writer.clone();
+        self.show_dms().await;
         self.app.right_click_exact(".room.dm .room-name", &writer).await.expect("right-click the DM");
         self.app.wait_for(".context-menu", DEFAULT_WAIT).await.expect("menu");
         self.app
@@ -109,6 +116,7 @@ impl Setup {
 
     /// Lock the DM with `password` through its menu.
     async fn lock_dm(&mut self, password: &str) {
+        self.open_dm().await;
         self.dm_menu("Lock with a password").await;
         self.app.wait_for(".lock-dialog", DEFAULT_WAIT).await.expect("the dialog");
         self.app.type_into(".lock-dialog input[name=password]", password).await.expect("password");
@@ -118,6 +126,7 @@ impl Setup {
     }
 
     async fn unlock(&mut self, password: &str) {
+        self.app.wait_for(".lock-screen input[name=password]", DEFAULT_WAIT).await.expect("the password box");
         self.app.type_into(".lock-screen input[name=password]", password).await.expect("type");
         self.app.click(".lock-screen .unlock").await.expect("Unlock");
     }
@@ -134,7 +143,10 @@ impl Setup {
     async fn wait_message(&mut self, shown: bool) {
         let deadline = std::time::Instant::now() + DEFAULT_WAIT;
         while self.shows_message().await != shown {
-            assert!(std::time::Instant::now() < deadline, "the message should show: {shown}");
+            if std::time::Instant::now() >= deadline {
+                let seen = self.app.texts("*").await.unwrap_or_default();
+                panic!("the message should show: {shown}; on screen: {seen:?}");
+            }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
     }
@@ -279,6 +291,7 @@ async fn a_locked_room_gives_nothing_away_elsewhere() {
     let mut s = setup(&hs, "ln", &[]).await;
     s.lock_dm("tulip").await;
     s.leave_to_elsewhere().await;
+    s.show_dms().await;
     s.app.wait_for(".room.dm.locked", DEFAULT_WAIT).await.expect("the row is marked locked");
 
     let before = shown(&s.app).len();
@@ -367,4 +380,38 @@ async fn a_lock_is_kept_over_a_restart_and_holds_no_password() {
     let seen = app.texts("*").await.expect("texts");
     assert!(!seen.iter().any(|t| t.contains(&secret)), "nothing of it shown");
     let _ = hs2;
+}
+
+/// Settings > Security > Locked chats: the timeout, 5 minutes unless changed,
+/// kept in locks.json.
+#[tokio::test]
+async fn the_lock_timeout_is_a_setting() {
+    let hs = hs!();
+    let mut s = setup(&hs, "ls", &[]).await;
+    s.app.click(".settings-button").await.expect("gear");
+    s.app.wait_for_text(".settings-nav button", "Security", DEFAULT_WAIT).await.expect("settings");
+    s.app.click_text(".settings-nav button", "Security").await.expect("Security");
+    s.app
+        .wait_for(".settings-page input[name=lock-timeout]", DEFAULT_WAIT)
+        .await
+        .expect("the timeout choices");
+    let checked = s.app.checked(".settings-page input[name=lock-timeout]").await.expect("checked");
+    assert_eq!(checked, vec![false, true, false, false, false], "5 minutes by default");
+    // 15 minutes.
+    s.app
+        .click_text(".settings-page label.notify-choice", "15 minutes")
+        .await
+        .expect("choose 15 minutes");
+    let file = s.app.data_dir().join("locks.json");
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let kept = std::fs::read_to_string(&file).unwrap_or_default();
+        if kept.contains("\"timeout_secs\":900") {
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline, "not kept: {kept}");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    let checked = s.app.checked(".settings-page input[name=lock-timeout]").await.expect("checked");
+    assert_eq!(checked, vec![false, false, true, false, false], "15 minutes shows chosen");
 }
