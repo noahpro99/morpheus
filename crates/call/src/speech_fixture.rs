@@ -186,3 +186,57 @@ pub fn change_db(input: &[f32], out: &[f32], frames: &[bool], delay: usize) -> f
     }
     10.0 * (after / before).log10()
 }
+
+/// Speech that trails off, as the quiet end of a sentence: [`noisy_speech`]
+/// whose phrases keep `voice_gain` for 0.5 s, then fall 30 dB over the
+/// next 0.9 s (to their end).
+pub struct FadingSpeech {
+    pub voice: Vec<f32>,
+    pub noise: Vec<f32>,
+    /// Per 10 ms frame: the middle of a vowel in a fade.
+    pub tail: Vec<bool>,
+}
+
+impl FadingSpeech {
+    pub fn mix(&self) -> Vec<f32> {
+        self.voice
+            .iter()
+            .zip(&self.noise)
+            .map(|(v, n)| v + n)
+            .collect()
+    }
+}
+
+pub fn fading_speech(secs: usize, voice_gain: f32, noise_gain: f32) -> FadingSpeech {
+    const HOLD: f32 = 0.5;
+    const FADE: f32 = 0.9;
+    const FADE_DB: f32 = 30.0;
+    let speech = noisy_speech(secs, voice_gain, noise_gain);
+    let at = |i: usize| i as f32 / SR as f32 % 2.0;
+    let voice = speech
+        .voice
+        .iter()
+        .enumerate()
+        .map(|(i, v)| {
+            let into = (at(i) - HOLD).clamp(0.0, FADE);
+            v * 10f32.powf(-FADE_DB * into / FADE / 20.0)
+        })
+        .collect();
+    let tail = speech
+        .speech
+        .iter()
+        .enumerate()
+        .map(|(f, vowel)| *vowel && at(f * HOP) >= HOLD)
+        .collect();
+    FadingSpeech {
+        voice,
+        noise: speech.noise,
+        tail,
+    }
+}
+
+/// Energy of `x`'s 10 ms frame `f`, `delay` samples later.
+pub fn frame_energy(x: &[f32], f: usize, delay: usize) -> f64 {
+    let a = f * HOP + delay;
+    x.get(a..a + HOP).map_or(0.0, energy)
+}
