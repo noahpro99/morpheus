@@ -955,6 +955,9 @@ async fn run_call(
         _ => share_key().await,
     }
 
+    let learned = refresh_people(&session, &room_id, &mut people).await;
+    show_learned(&this, cx, &people, &mut said, &learned);
+
     // A key that reaches someone before the room key it is encrypted with is
     // read once the event cache decrypts it (core's `call_keys`); ours goes
     // out again whenever someone joins, as in Element Call.
@@ -1023,9 +1026,9 @@ async fn run_call(
         match event {
             CallEvent::Joined(_) => {
                 this.update(cx, |this, _| this.chime(Sound::Join)).ok();
+                cx.background_executor().spawn(share_key()).detach();
                 let learned = refresh_people(&session, &room_id, &mut people).await;
                 show_learned(&this, cx, &people, &mut said, &learned);
-                share_key().await;
             }
             CallEvent::Speaking(identities) => {
                 said.speaking = identities.clone();
