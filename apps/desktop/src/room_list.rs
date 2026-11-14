@@ -195,6 +195,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         .border_color(gpui::rgba(0x0000004d))
         // The DMs have no heading: the command palette button is there (as
         // Discord's "Find or start a conversation").
+        .when(*scope == Scope::Dms, |h| h.px(px(10.0)))
         .child(if *scope == Scope::Dms {
             palette_button(cx).into_any_element()
         } else {
@@ -813,9 +814,7 @@ fn palette_button(cx: &mut Context<Shell>) -> impl IntoElement {
         .flex()
         .items_center()
         .justify_between()
-        .flex_1()
-        .min_w_0()
-        .mx(px(10.0))
+        .w_full()
         .px(px(10.0))
         .h(px(30.0))
         .rounded(px(theme::RADIUS_SM))

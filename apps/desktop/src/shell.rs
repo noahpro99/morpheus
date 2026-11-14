@@ -1443,6 +1443,8 @@ mod widget_tests {
         click(cx, ".rail-item[title=\"Direct messages\"]");
         assert!(texts(".sidebar-header h2").is_empty());
         assert_eq!(query(".sidebar-header .palette-button").len(), 1);
+        let bounds = crate::e2e::query_bounds(".sidebar-header .palette-button").unwrap();
+        assert!(bounds.w > 200.0, "palette button should stretch across the sidebar header, got w={}", bounds.w);
         assert_eq!(texts(".room.dm .room-name"), ["bob"]);
         assert!(
             query(".create-room-button").is_empty(),
