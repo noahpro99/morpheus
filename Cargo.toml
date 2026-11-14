@@ -5,10 +5,10 @@ members = ["crates/core", "crates/call", "crates/view-model", "crates/video", "c
 default-members = ["crates/core", "apps/desktop"]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.2.3"
 edition = "2024"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/noahpro/morpheus"
+repository = "https://github.com/noahpro99/morpheus"
 
 [workspace.dependencies]
 morpheus-core = { path = "crates/core" }
