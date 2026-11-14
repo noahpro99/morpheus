@@ -191,6 +191,7 @@ impl FriendPicker {
     }
 
     fn row_el(&self, user: &OwnedUserId, row: FriendRow, cx: &mut Context<Self>) -> AnyElement {
+    let row = FriendRow { name: crate::streamer::name(&row.name), ..row };
         let key = user.to_string();
         let state = self.states.get(&key);
         let (label, tag) = match state {
@@ -236,9 +237,9 @@ impl FriendPicker {
                             .truncate()
                             .text_size(px(0.8 * theme::REM))
                             .text_color(rgb(theme::text_muted()))
-                            .child(key.clone())
+                            .child(crate::streamer::id(&key))
                             .e2e("span", "friend-pick-id muted")
-                            .text(key.clone()),
+                            .text(crate::streamer::id(&key)),
                     ),
             )
             .child(

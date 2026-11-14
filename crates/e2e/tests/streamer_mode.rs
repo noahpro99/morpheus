@@ -313,3 +313,231 @@ async fn sharing_the_screen_turns_streamer_mode_on_and_asks_before_switching() {
     app.wait_for_count(".titlebar .streamer-badge", 0, DEFAULT_WAIT).await.expect("off again");
     app.wait_for_text(".members .member-name", "bob", DEFAULT_WAIT).await.expect("names back");
 }
+
+// ---- the sweep: every view, with the names hidden ----
+
+/// `user`'s ID path-escaped for a URL.
+fn esc(id: &str) -> String {
+    id.replace('@', "%40").replace(':', "%3A").replace('!', "%21").replace('$', "%24")
+}
+
+/// What on screen (the text of every tagged element, and the titles) gives a
+/// secret away: `stage`, and the snippet around each hit.
+async fn leaks(app: &mut App, stage: &str, secrets: &[String], found: &mut std::collections::BTreeSet<String>) {
+    let mut seen = app.texts("*").await.expect("texts");
+    seen.extend(app.attrs("*", "title").await.expect("titles").into_iter().flatten());
+    for text in seen {
+        for secret in secrets.iter().map(String::as_str).chain([":localhost"]) {
+            if let Some(at) = text.find(secret) {
+                let from = text[..at].char_indices().rev().nth(20).map_or(0, |(i, _)| i);
+                let to = text[at..].char_indices().nth(secret.len() + 20).map_or(text.len(), |(i, _)| at + i);
+                found.insert(format!("{stage}: ...{}...", &text[from..to]));
+            }
+        }
+    }
+}
+
+/// With streamer mode on, no view of the app gives a name or an ID away: the
+/// timeline (senders, state lines, reactions, typing, mention pills, a
+/// thread chip), the reactions viewer, the thread panel, search results, the
+/// inbox (mentions and invites), an invite card, the invite dialog's friend
+/// list, the Friends page, a DM and the member list. Every leak of every
+/// stage is listed at once.
+#[tokio::test]
+async fn streamer_mode_hides_every_name_in_every_view() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let reader = new_account(&hs, "rsweep").expect("reader");
+    let writer = new_account(&hs, "wsweep").expect("writer");
+    let carol = new_account(&hs, "csweep").expect("carol");
+    let dan = new_account(&hs, "dsweep").expect("dan, a friend in no room");
+    let user = |name: &str| format!("@{name}:localhost");
+    let secrets = [reader.clone(), writer.clone(), carol.clone(), dan.clone()];
+    let api = |who: &str, method: &str, path: &str, body: serde_json::Value| {
+        api_as(&hs, who, method, path, Some(body)).expect("api")
+    };
+
+    // The room: all three in it, with a topic, a message with a reaction, a
+    // thread, a pill to the reader, a plain @name for carol, and the writer typing.
+    let room = api(&writer, "POST", "createRoom", serde_json::json!({ "name": "sweep chat" }));
+    let room = room["room_id"].as_str().expect("room").to_owned();
+    let id = esc(&room);
+    for who in [&reader, &carol] {
+        api(&writer, "POST", &format!("rooms/{id}/invite"), serde_json::json!({ "user_id": user(who) }));
+        api(who, "POST", &format!("rooms/{id}/join"), serde_json::json!({}));
+    }
+    api(&writer, "PUT", &format!("rooms/{id}/state/m.room.topic"), serde_json::json!({ "topic": "sweeping" }));
+    let send = |who: &str, txn: &str, content: serde_json::Value| -> String {
+        let sent = api(who, "PUT", &format!("rooms/{id}/send/m.room.message/{txn}"), content);
+        sent["event_id"].as_str().expect("event id").to_owned()
+    };
+    let hello = send(&writer, "1", serde_json::json!({ "msgtype": "m.text", "body": "hello sweep" }));
+    api(
+        &carol,
+        "PUT",
+        &format!("rooms/{id}/send/m.reaction/2"),
+        serde_json::json!({ "m.relates_to": { "rel_type": "m.annotation", "event_id": hello, "key": "\u{1f389}" } }),
+    );
+    let root = send(&writer, "3", serde_json::json!({ "msgtype": "m.text", "body": "thread root sweep" }));
+    send(
+        &carol,
+        "4",
+        serde_json::json!({
+            "msgtype": "m.text", "body": "thread reply sweep",
+            "m.relates_to": { "rel_type": "m.thread", "event_id": root, "is_falling_back": true,
+                "m.in_reply_to": { "event_id": root } },
+        }),
+    );
+    send(
+        &writer,
+        "5",
+        serde_json::json!({
+            "msgtype": "m.text", "body": "look over here pangolin", "format": "org.matrix.custom.html",
+            "formatted_body": format!("<a href=\"https://matrix.to/#/{}\">{reader}</a> look over here pangolin", user(&reader)),
+            "m.mentions": { "user_ids": [user(&reader)] },
+        }),
+    );
+    send(&writer, "6", serde_json::json!({ "msgtype": "m.text", "body": format!("and you @{carol} too") }));
+
+    // Another room, not opened.
+    let other = api(&writer, "POST", "createRoom", serde_json::json!({ "name": "sweep other" }));
+    let other = other["room_id"].as_str().expect("room").to_owned();
+    api(&writer, "POST", &format!("rooms/{}/invite", esc(&other)), serde_json::json!({ "user_id": user(&reader) }));
+    api(&reader, "POST", &format!("rooms/{}/join", esc(&other)), serde_json::json!({}));
+    // The reader's friends: the writer, carol and dan (who is in no room).
+    api(
+        &reader,
+        "PUT",
+        &format!("user/{}/account_data/dev.morpheus.friends", esc(&user(&reader))),
+        serde_json::json!({ "users": [user(&writer), user(&carol), user(&dan)] }),
+    );
+
+    let mut app = App::launch_desktop(&hs).await.expect("launch");
+    if !app.is_gpui() {
+        eprintln!("streamer mode is in the GPUI app only; skipping");
+        return;
+    }
+    login(&mut app, &reader).await;
+    app.open_room("sweep chat").await.expect("open");
+    app.wait_for_text(".timeline .sender", &writer, DEFAULT_WAIT).await.expect("messages");
+    app.wait_for_text(".timeline", "pangolin", DEFAULT_WAIT).await.expect("the pill message");
+    app.wait_for(".thread-chip", DEFAULT_WAIT).await.expect("the thread chip");
+    app.wait_for(".members .member", DEFAULT_WAIT).await.expect("members");
+    api(
+        &writer,
+        "PUT",
+        &format!("rooms/{id}/typing/{}", esc(&user(&writer))),
+        serde_json::json!({ "typing": true, "timeout": 120000 }),
+    );
+    app.wait_for_text(".typing", "typing", DEFAULT_WAIT).await.expect("typing");
+    app.wait_for_text(".timeline .system-text", "changed the topic", DEFAULT_WAIT).await.expect("topic line");
+    app.wait_for(".members .member", DEFAULT_WAIT).await.expect("members");
+    flip_now(&mut app).await;
+    app.wait_for(".titlebar .streamer-badge", DEFAULT_WAIT).await.expect("the badge");
+    // The sweep sees something: names are there, abbreviated.
+    app.wait_for_text(".typing", &masked(&writer), DEFAULT_WAIT).await.expect("typing, abbreviated");
+
+    let mut found = std::collections::BTreeSet::new();
+    // The sweep does see the abbreviated forms, so a clean result means something.
+    let (w, c, r) = (masked(&writer), masked(&carol), masked(&reader));
+    for (selector, want) in [
+        (".timeline .system-text", format!("{w} changed the topic")),
+        (".timeline", format!("")),
+        (".thread-chip", format!("last from {c}")),
+        (".user-bar", r.clone()),
+    ] {
+        app.wait_for_text(selector, &want, DEFAULT_WAIT).await.unwrap_or_else(|e| panic!("{selector} lacks {want:?}: {e}"));
+    }
+    leaks(&mut app, "the timeline", &secrets, &mut found).await;
+
+    // The reactions viewer.
+    app.right_click_text(".message", "hello sweep").await.expect("menu");
+    app.wait_for(".context-menu", DEFAULT_WAIT).await.expect("menu");
+    app.click_text(".context-item", "View reactions").await.expect("view");
+    app.wait_for(".reactions-dialog .reaction-senders", DEFAULT_WAIT).await.expect("viewer");
+    leaks(&mut app, "the reactions viewer", &secrets, &mut found).await;
+    app.press(".reactions-dialog", "Escape").await.expect("close");
+    app.wait_for_count(".reactions-dialog", 0, DEFAULT_WAIT).await.expect("closed");
+
+    // The thread panel.
+    app.click_text(".thread-chip", "repl").await.expect("thread");
+    app.wait_for(".thread-panel .message", DEFAULT_WAIT).await.expect("thread panel");
+    app.wait_for_text(".thread-panel .timeline", "thread reply sweep", DEFAULT_WAIT).await.expect("reply");
+    leaks(&mut app, "the thread panel", &secrets, &mut found).await;
+    app.press("body", "Escape").await.expect("close thread");
+    app.wait_for_count(".thread-panel", 0, DEFAULT_WAIT).await.expect("thread closed");
+
+    // Search results.
+    app.click(".chat-header .search-bar input[name=search]").await.expect("search box");
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        app.type_into(".chat-header input[name=search]", "pangolin").await.expect("query");
+        app.press(".chat-header input[name=search]", "Enter").await.expect("search");
+        if app.wait_for(".search-panel .search-hit", std::time::Duration::from_secs(2)).await.is_ok() {
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline, "no search results");
+    }
+    leaks(&mut app, "search results", &secrets, &mut found).await;
+    app.press(".chat-header input[name=search]", "Escape").await.ok();
+
+    // The invite dialog's friend list.
+    app.right_click_text(".room:not(.invite-row)", "sweep chat").await.expect("room menu");
+    app.wait_for(".context-menu", DEFAULT_WAIT).await.expect("room menu");
+    app.click_text(".context-item", "Invite people").await.expect("invite");
+    app.wait_for(".invite-dialog .friend-pick", DEFAULT_WAIT).await.expect("the friends");
+    leaks(&mut app, "the invite dialog", &secrets, &mut found).await;
+    app.press(".invite-dialog", "Escape").await.expect("close");
+    app.wait_for_count(".invite-dialog", 0, DEFAULT_WAIT).await.expect("closed");
+
+    // While it runs: a mention in the other room, and a DM invite from the
+    // writer (not answered yet), for the inbox.
+    api(
+        &writer,
+        "PUT",
+        &format!("rooms/{}/send/m.room.message/7", esc(&other)),
+        serde_json::json!({
+            "msgtype": "m.text", "body": "ping in the other room",
+            "m.mentions": { "user_ids": [user(&reader)] },
+        }),
+    );
+    let dm = api(
+        &writer,
+        "POST",
+        "createRoom",
+        serde_json::json!({ "is_direct": true, "preset": "trusted_private_chat", "invite": [user(&reader)] }),
+    );
+    let dm = dm["room_id"].as_str().expect("dm").to_owned();
+    // The inbox: a mention and an invite.
+    app.click(".titlebar .inbox-button").await.expect("inbox");
+    app.wait_for(".inbox-panel .inbox-mention", DEFAULT_WAIT).await.expect("a mention");
+    app.wait_for(".inbox-panel .inbox-invite", DEFAULT_WAIT).await.expect("an invite");
+    leaks(&mut app, "the inbox", &secrets, &mut found).await;
+    // The invite's card.
+    app.click(".inbox-panel .inbox-invite .inbox-open").await.expect("open the invite");
+    app.wait_for(".invite-card", DEFAULT_WAIT).await.expect("the card");
+    leaks(&mut app, "an invite card", &secrets, &mut found).await;
+
+    // Joined, the DM is in the list and opens.
+    api(&reader, "POST", &format!("rooms/{}/join", esc(&dm)), serde_json::json!({}));
+    api(
+        &reader,
+        "PUT",
+        &format!("user/{}/account_data/m.direct", esc(&user(&reader))),
+        serde_json::json!({ user(&writer): [dm] }),
+    );
+    app.click(".rail-dms").await.expect("DMs");
+    app.wait_for(".sidebar .room.dm:not(.invite-row)", DEFAULT_WAIT).await.expect("the DM");
+    app.click(".sidebar .room.dm:not(.invite-row)").await.expect("open the DM");
+    app.wait_for(".chat-header h2", DEFAULT_WAIT).await.expect("DM header");
+    leaks(&mut app, "a DM", &secrets, &mut found).await;
+
+    // The Friends page.
+    app.click(".sidebar .friends-row").await.expect("Friends");
+    app.wait_for_count(".friends-page .friend", 3, DEFAULT_WAIT).await.expect("friends");
+    leaks(&mut app, "the Friends page", &secrets, &mut found).await;
+
+    assert!(found.is_empty(), "streamer mode leaks:\n{}", found.into_iter().collect::<Vec<_>>().join("\n"));
+}

@@ -611,12 +611,12 @@ pub fn render_dialog(shell: &mut Shell, window: &mut Window, cx: &mut Context<Sh
                                 .text_color(rgb(theme::text_muted()))
                                 .text_size(px(0.9 * theme::REM))
                                 .children(reaction.senders.iter().enumerate().map(|(i, sender)| {
-                                    let name = sender.localpart().to_owned();
+                                    let name = crate::streamer::name(sender.localpart());
                                     let shown = if i > 0 { format!(", {name}") } else { name.clone() };
                                     div()
                                         .child(shown)
                                         .e2e("span", "")
-                                        .attr("title", sender.to_string())
+                                        .attr("title", crate::streamer::id(sender.as_str()))
                                         .text(name)
                                 }))
                                 .e2e("span", "reaction-senders"),

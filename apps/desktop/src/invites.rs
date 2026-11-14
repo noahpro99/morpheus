@@ -159,6 +159,7 @@ fn round_button(
 
 /// An invite in the sidebar: the room, who asked, accept and decline.
 pub fn invite_row(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -> AnyElement {
+    let room = &crate::streamer::invite(room);
     let selected = shell.selected.as_ref() == Some(&room.id);
     let (open, accept, decline) = (room.id.clone(), room.id.clone(), room.id.clone());
     let from = invites::from_line(room);
@@ -316,6 +317,7 @@ fn card_shell(
 
 /// Shown in the chat column for an invited room instead of a timeline.
 pub fn invite_card(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -> AnyElement {
+    let room = &crate::streamer::invite(room);
     let (accept, decline) = (room.id.clone(), room.id.clone());
     card_shell(
         avatar(shell.picture(&room.avatar, 72), &room.name, 72.0, None),
@@ -376,8 +378,8 @@ pub fn inbox(shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>) ->
     if std::mem::take(&mut shell.inbox_take_focus) {
         window.focus(&focus);
     }
-    let pending = invites::pending_invites(&shell.rooms);
-    let items = invites::unread_rooms(&shell.rooms);
+    let pending: Vec<RoomSummary> = invites::pending_invites(&shell.rooms).iter().map(crate::streamer::invite).collect();
+    let items: Vec<RoomSummary> = invites::unread_rooms(&shell.rooms).iter().map(crate::streamer::invite).collect();
     let mut panel = div()
         .id("inbox-panel")
         .track_focus(&focus)
@@ -538,7 +540,8 @@ pub fn inbox(shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>) ->
         );
         for (index, notice) in mentions.into_iter().enumerate() {
             let room = shell.rooms.iter().find(|r| r.id == notice.room_id).cloned();
-            let who = format!("{} in {}", notice.sender_name, notice.room_name);
+            let room_name = if room.as_ref().is_some_and(|r| r.is_dm) { crate::streamer::name(&notice.room_name) } else { notice.room_name.clone() };
+            let who = format!("{} in {}", crate::streamer::name(&notice.sender_name), room_name);
             let mut item = div()
                 .id(SharedString::from(format!("inbox-mention-{index}")))
                 .flex()

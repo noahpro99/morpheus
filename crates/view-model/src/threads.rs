@@ -66,6 +66,7 @@ mod tests {
             },
             shield: None,
             state_kind: None,
+            state_who: None,
         }
     }
 

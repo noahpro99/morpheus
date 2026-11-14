@@ -1250,7 +1250,11 @@ impl Render for Shell {
                 div()
                     .size_0()
                     .children(self.notices.iter().map(|notice| {
-                        let line = crate::view_model::notices::log_line(notice);
+                        let line = if crate::streamer::notifications_hidden() {
+                            "Someone sent a message".to_owned()
+                        } else {
+                            crate::view_model::notices::log_line(notice)
+                        };
                         div()
                             .size_0()
                             .e2e("li", "")

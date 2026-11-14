@@ -263,6 +263,7 @@ mod tests {
             kind,
             shield: None,
             state_kind: None,
+            state_who: None,
         }))
     }
 
