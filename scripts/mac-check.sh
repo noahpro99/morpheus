@@ -48,6 +48,7 @@ esac
 osa -e "tell application \"System Events\" to set frontmost of (first process whose unix id is $pid) to true" >/dev/null 2>&1
 sleep 2
 before=$(windows)
+echo "frontmost: $(osa -e 'tell application "System Events" to get name of first process whose frontmost is true')"
 # Tried a few times: on a busy runner the first keystroke can land before the
 # window is key.
 for _ in 1 2 3; do
@@ -60,6 +61,7 @@ if [ "$before" -ge 1 ] 2>/dev/null && [ "$after" = 0 ] && kill -0 "$pid" 2>/dev/
     echo "ok: ⌘W closed the window ($before → $after), still running"
 else
     fail "⌘W did not close the window (windows $before → $after)"
+    echo "--- app log ---"; tail -40 "$data/log.txt"
 fi
 
 # Clicking the app again (the Dock's reopen) shows the window.

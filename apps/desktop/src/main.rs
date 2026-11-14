@@ -480,6 +480,10 @@ fn open_main_window(cx: &mut App) {
     if let Err(e) = &opened {
         eprintln!("morpheus-desktop: opening the window failed: {e}");
     }
+    // macOS: a program started from a shell (not Finder) is not made the
+    // active app by the system; a window of an inactive app takes no keys.
+    #[cfg(target_os = "macos")]
+    cx.activate(true);
     HEADLESS.store(false, Ordering::Relaxed);
     gpui::KEEP_RUNNING_WITHOUT_WINDOWS.store(tray::hides_on_close(), Ordering::Relaxed);
     #[cfg(feature = "e2e")]
@@ -495,6 +499,8 @@ pub(crate) fn show_window(cx: &mut App) {
             window
                 .update(cx, |_, window, _| window.activate_window())
                 .ok();
+            #[cfg(target_os = "macos")]
+            cx.activate(true);
         }
         None => open_main_window(cx),
     }
