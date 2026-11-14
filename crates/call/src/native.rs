@@ -61,6 +61,9 @@ pub use platform_camera::{PlatformCamera, camera_frame, set_platform_camera};
 #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 #[path = "denoise.rs"]
 mod denoise;
+#[cfg(target_os = "windows")]
+#[path = "ducking.rs"]
+mod ducking;
 #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 #[path = "mic.rs"]
 mod mic;
@@ -325,6 +328,9 @@ impl Call {
         let (source, platform, captured) = {
             let platform = match mode {
                 AudioMode::Platform => {
+                    // Before WebRTC opens its communications streams.
+                    #[cfg(target_os = "windows")]
+                    ducking::opt_out("call start");
                     let platform =
                         PlatformAudio::new().map_err(|err| Error::Audio(err.to_string()))?;
                     if let Err(err) = devices::apply(&platform, false) {
@@ -393,6 +399,11 @@ impl Call {
             }
             mic.unmute();
         }
+        // Again, now the call's audio has started.
+        #[cfg(target_os = "windows")]
+        if mode == AudioMode::Platform {
+            ducking::opt_out("call audio started");
+        }
 
         let deafened = Arc::new(Mutex::new(false));
         let (speech, speech_rx) = unbounded_channel();
@@ -460,6 +471,10 @@ impl Call {
         let _enter = runtime().enter();
         #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
         mic::reopen_devices();
+        #[cfg(target_os = "windows")]
+        if self.platform.is_some() {
+            ducking::opt_out("devices changed");
+        }
         match &self.platform {
             Some(platform) => devices::apply(platform, true),
             None => Ok(()),
@@ -609,6 +624,18 @@ impl Drop for Call {
     fn drop(&mut self) {
         for task in &self.tasks {
             task.abort();
+        }
+        // The last user lets go of WebRTC's device module: its playout (a
+        // communications stream, which Windows ducks other apps for) stops.
+        if self.platform.take().is_some() {
+            use livekit::webrtc::peer_connection_factory::native::PeerConnectionFactoryExt as _;
+            let runtime = livekit::rtc_engine::lk_runtime::LkRuntime::instance();
+            let factory = runtime.pc_factory();
+            info!(
+                active = factory.is_platform_adm_active(),
+                users = factory.platform_adm_ref_count(),
+                "call devices released"
+            );
         }
         for video in [&self.camera, &self.screen] {
             if let Ok(mut video) = video.try_lock()
