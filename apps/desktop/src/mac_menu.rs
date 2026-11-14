@@ -91,18 +91,30 @@ pub fn install(cx: &mut App) {
     cx.on_action(|_: &Hide, cx| cx.hide());
     cx.on_action(|_: &HideOthers, cx| cx.hide_other_apps());
     cx.on_action(|_: &ShowAll, cx| cx.unhide_other_apps());
+    // Deferred: a shortcut's action runs while its window is handling the
+    // key, and a window cannot be updated from inside itself (the update
+    // fails, so Cmd+W did nothing). As on any Mac, closing the window leaves
+    // the app running (the Dock icon or the tray brings it back).
     cx.on_action(|_: &CloseWindow, cx| {
-        eprintln!("morpheus-desktop: closing the window (Close or Cmd+W)");
-        // The key window, else the only one (a shortcut can land before macOS
-        // makes the window key).
-        if let Some(window) = cx.active_window().or_else(|| cx.windows().first().copied()) {
-            window.update(cx, |_, window, _| window.remove_window()).ok();
-        }
+        cx.defer(|cx| {
+            // The key window, else the only one.
+            if let Some(window) = cx.active_window().or_else(|| cx.windows().first().copied()) {
+                window
+                    .update(cx, |_, window, _| {
+                        crate::notify::set_looking(false, None);
+                        gpui::KEEP_RUNNING_WITHOUT_WINDOWS.store(true, std::sync::atomic::Ordering::Relaxed);
+                        window.remove_window();
+                    })
+                    .ok();
+            }
+        });
     });
     cx.on_action(|_: &Minimize, cx| {
-        if let Some(window) = cx.active_window() {
-            window.update(cx, |_, window, _| window.minimize_window()).ok();
-        }
+        cx.defer(|cx| {
+            if let Some(window) = cx.active_window().or_else(|| cx.windows().first().copied()) {
+                window.update(cx, |_, window, _| window.minimize_window()).ok();
+            }
+        });
     });
     // The bindings come first: the menus show the shortcuts they find.
     cx.bind_keys(bindings());
