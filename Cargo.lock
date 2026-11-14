@@ -6081,8 +6081,6 @@ dependencies = [
 [[package]]
 name = "libwebrtc"
 version = "0.3.52"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8718693f33f921a97c784f34fcbf085ebe68989e53bf4802f93aa8e083cf0a65"
 dependencies = [
  "cxx",
  "jni 0.21.1",
@@ -6235,8 +6233,6 @@ checksum = "4744e383959f0db86ede514b809b1c53251889093803c05267acc7d4e7030d70"
 [[package]]
 name = "livekit"
 version = "0.9.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b997899186e33ae91e6c87b9d3887632dd7ca5ba3fe02c0ebf0171974899571c"
 dependencies = [
  "bmrng",
  "bytes",
@@ -13421,8 +13417,6 @@ dependencies = [
 [[package]]
 name = "webrtc-sys"
 version = "0.3.49"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b803a52c561fbb9faaf09c1b6fc0260f337cbc1ae6f2a525f673c77eb4411022"
 dependencies = [
  "cc",
  "cxx",

@@ -357,3 +357,140 @@ async fn a_shared_screen_is_seen_as_a_screen_by_the_other_side() {
     sharer.leave().await;
     viewer.leave().await;
 }
+
+/// What `who`'s shared screen sounds like here, once it does: loud enough
+/// and as `want` says.
+async fn wait_screen_audio(
+    who: &str,
+    what: &str,
+    want: impl Fn(&morpheus_call::ScreenAudio) -> bool,
+) -> morpheus_call::ScreenAudio {
+    let mut last = None;
+    let found = timeout(Duration::from_secs(20), async {
+        loop {
+            last = morpheus_call::screen_audio(who);
+            if let Some(heard) = &last
+                && want(heard)
+            {
+                return heard.clone();
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await;
+    found.unwrap_or_else(|_| panic!("{what}: the screen's sound is {last:?}"))
+}
+
+/// A shared screen with its sound: the others get it as a track of its own
+/// (not the sharer's voice: the test voice is 440 Hz, the screen's tone is
+/// 660 Hz left and 990 Hz right, so stereo too), at the volume each of them
+/// gives it, silent while deafened, gone with the share. Sharing without
+/// sound sends none.
+#[tokio::test]
+async fn a_shared_screens_sound_is_heard_at_its_own_volume_until_the_share_stops() {
+    let Some(url) = livekit() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping media test");
+        return;
+    };
+    let room = format!("screen-audio-test-{}", std::process::id());
+    let sharer_id = format!("sharer-{}", std::process::id());
+    let (viewer, mut events) = Call::connect(&url, &token(&room, "viewer"), AudioMode::Tone)
+        .await
+        .expect("viewer connects");
+    let (sharer, _sharer_events) = Call::connect(&url, &token(&room, &sharer_id), AudioMode::Tone)
+        .await
+        .expect("sharer connects");
+    let with_audio = morpheus_call::ScreenQuality {
+        audio: true,
+        ..Default::default()
+    };
+    sharer
+        .set_screen_share_with(true, with_audio)
+        .await
+        .expect("share with sound");
+    wait_for(&mut events, "the screen's sound arriving", |e| {
+        matches!(e, CallEvent::ScreenAudio { identity, on: true } if *identity == sharer_id)
+    })
+    .await;
+    let near = |hz: f32, want: f32| (hz - want).abs() < 20.0;
+    let full = wait_screen_audio(&sharer_id, "its tone, stereo", |a| {
+        a.level > 0.05
+            && near(a.left_hz, morpheus_call::SCREEN_TONE_LEFT)
+            && near(a.right_hz, morpheus_call::SCREEN_TONE_RIGHT)
+    })
+    .await;
+    // The first reading may include the silence before it began.
+    let _ = full;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let full = morpheus_call::screen_audio(&sharer_id).expect("still sounding");
+    eprintln!("at full volume: {full:?}");
+    assert!(full.level > 0.1, "a steady tone: {full:?}");
+
+    // Half the volume: half the level.
+    viewer.set_screen_volume(&sharer_id, 0.5);
+    let half = wait_screen_audio(&sharer_id, "at half volume", |a| {
+        a.level > full.level * 0.35 && a.level < full.level * 0.65
+    })
+    .await;
+    eprintln!("at half volume: {half:?}");
+    // WebRTC itself plays it at half (its level, after the volume, is a
+    // perceptual scale: lower, not half). Read again once it has updated.
+    tokio::time::sleep(Duration::from_millis(1200)).await;
+    let half = morpheus_call::screen_audio(&sharer_id).expect("still sounding");
+    eprintln!("played at full {}, at half {}", full.played, half.played);
+    assert!(full.played > 0.05, "played at all: {full:?}");
+    assert!(
+        half.played < full.played * 0.8 && half.played > full.played * 0.2,
+        "WebRTC's own level at half volume: {} (full {})",
+        half.played,
+        full.played
+    );
+    // Deafened: nothing.
+    viewer.set_deafened(true);
+    wait_screen_audio(&sharer_id, "deafened", |a| a.level < 0.005).await;
+    tokio::time::sleep(Duration::from_millis(1200)).await;
+    let deaf = morpheus_call::screen_audio(&sharer_id).expect("still arriving");
+    assert!(deaf.played < 0.01, "WebRTC plays it while deafened: {deaf:?}");
+    viewer.set_deafened(false);
+    wait_screen_audio(&sharer_id, "undeafened", |a| a.level > full.level * 0.35).await;
+
+    // Stopping the share ends its sound.
+    sharer
+        .set_screen_share_with(false, with_audio)
+        .await
+        .expect("stop");
+    wait_for(&mut events, "the screen's sound going", |e| {
+        matches!(e, CallEvent::ScreenAudio { identity, on: false } if *identity == sharer_id)
+    })
+    .await;
+    assert!(morpheus_call::screen_audio(&sharer_id).is_none());
+
+    // Without sound: the screen, and no sound track.
+    sharer
+        .set_screen_share_with(
+            true,
+            morpheus_call::ScreenQuality {
+                audio: false,
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("share without sound");
+    wait_for(&mut events, "the screen again", |e| {
+        matches!(e, CallEvent::Video { identity, screen: true, on: true, .. } if *identity == sharer_id)
+    })
+    .await;
+    let sound = timeout(Duration::from_secs(3), async {
+        loop {
+            if let Some(CallEvent::ScreenAudio { identity, on: true }) = events.recv().await
+                && identity == sharer_id
+            {
+                return;
+            }
+        }
+    })
+    .await;
+    assert!(sound.is_err(), "a sound track came with a share without sound");
+    sharer.leave().await;
+    viewer.leave().await;
+}

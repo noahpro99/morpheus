@@ -3,10 +3,7 @@
 //! frame rate, and the encoding that goes with them. Plain data and sums, so
 //! every platform and the browser build have it.
 
-use std::{
-    collections::HashMap,
-    sync::Mutex,
-};
+use std::{collections::HashMap, sync::Mutex};
 
 /// How large the shared screen is sent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -63,6 +60,9 @@ pub const SCREEN_FPS: [u32; 3] = [15, 30, 60];
 pub struct ScreenQuality {
     pub resolution: ScreenResolution,
     pub fps: u32,
+    /// The computer's sound goes with it (Discord's "share audio"; on unless
+    /// turned off).
+    pub audio: bool,
 }
 
 impl Default for ScreenQuality {
@@ -70,6 +70,7 @@ impl Default for ScreenQuality {
         Self {
             resolution: ScreenResolution::P1080,
             fps: 30,
+            audio: true,
         }
     }
 }
@@ -120,9 +121,10 @@ impl ScreenQuality {
     /// The saved form.
     pub fn to_json(self) -> String {
         format!(
-            "{{\"resolution\":\"{}\",\"fps\":{}}}",
+            "{{\"resolution\":\"{}\",\"fps\":{},\"audio\":{}}}",
             self.resolution.key(),
-            self.fps
+            self.fps,
+            self.audio
         )
     }
 
@@ -130,7 +132,10 @@ impl ScreenQuality {
     pub fn from_json(json: &str) -> Self {
         let find = |name: &str| -> Option<String> {
             let at = json.find(&format!("\"{name}\""))?;
-            let rest = json[at + name.len() + 2..].trim_start().strip_prefix(':')?.trim_start();
+            let rest = json[at + name.len() + 2..]
+                .trim_start()
+                .strip_prefix(':')?
+                .trim_start();
             let rest = rest.strip_prefix('"').unwrap_or(rest);
             let end = rest.find(['"', ',', '}']).unwrap_or(rest.len());
             Some(rest[..end].trim().to_owned())
@@ -139,7 +144,14 @@ impl ScreenQuality {
             .and_then(|k| ScreenResolution::from_key(&k))
             .unwrap_or_default();
         let fps = find("fps").and_then(|f| f.parse().ok()).unwrap_or(30);
-        Self { resolution, fps }.normalized()
+        // Kept from before the choice existed: on, as the default.
+        let audio = find("audio").is_none_or(|a| a != "false");
+        Self {
+            resolution,
+            fps,
+            audio,
+        }
+        .normalized()
     }
 }
 
@@ -194,7 +206,8 @@ static PUBLISHED: Mutex<Option<HashMap<String, PublishedVideo>>> = Mutex::new(No
 
 pub(crate) fn note_published(key: &str, video: PublishedVideo) {
     if let Ok(mut all) = PUBLISHED.lock() {
-        all.get_or_insert_with(HashMap::new).insert(key.to_owned(), video);
+        all.get_or_insert_with(HashMap::new)
+            .insert(key.to_owned(), video);
     }
 }
 
@@ -217,14 +230,21 @@ mod tests {
     use super::*;
 
     fn q(resolution: ScreenResolution, fps: u32) -> ScreenQuality {
-        ScreenQuality { resolution, fps }
+        ScreenQuality {
+            resolution,
+            fps,
+            audio: true,
+        }
     }
 
     #[test]
     fn a_screen_is_fitted_to_the_resolution_and_never_enlarged() {
         assert_eq!(q(ScreenResolution::P720, 30).fit(2560, 1440), (1280, 720));
         assert_eq!(q(ScreenResolution::P1080, 30).fit(2560, 1440), (1920, 1080));
-        assert_eq!(q(ScreenResolution::Source, 30).fit(2560, 1440), (2560, 1440));
+        assert_eq!(
+            q(ScreenResolution::Source, 30).fit(2560, 1440),
+            (2560, 1440)
+        );
         assert_eq!(q(ScreenResolution::P1080, 30).fit(1366, 768), (1366, 768));
         // Ultrawide: the width is what limits.
         assert_eq!(q(ScreenResolution::P1080, 30).fit(3440, 1440), (1920, 804));
@@ -255,11 +275,21 @@ mod tests {
     fn the_choice_is_kept_and_read_back() {
         for resolution in ScreenResolution::ALL {
             for fps in SCREEN_FPS {
-                let quality = q(resolution, fps);
-                assert_eq!(ScreenQuality::from_json(&quality.to_json()), quality);
+                for audio in [true, false] {
+                    let quality = ScreenQuality {
+                        audio,
+                        ..q(resolution, fps)
+                    };
+                    assert_eq!(ScreenQuality::from_json(&quality.to_json()), quality);
+                }
             }
         }
-        assert_eq!(ScreenQuality::from_json("nonsense"), ScreenQuality::default());
+        // A choice kept before there was a sound switch: sound on.
+        assert!(ScreenQuality::from_json("{\"resolution\":\"720\",\"fps\":15}").audio);
+        assert_eq!(
+            ScreenQuality::from_json("nonsense"),
+            ScreenQuality::default()
+        );
         assert_eq!(
             ScreenQuality::from_json("{\"resolution\":\"720\",\"fps\":24}").fps,
             30

@@ -48,6 +48,10 @@ pub enum CallEvent {
         screen: bool,
         on: bool,
     },
+    ScreenAudio {
+        identity: String,
+        on: bool,
+    },
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -105,6 +109,10 @@ impl Call {
     pub fn set_muted(&self, _muted: bool) {}
 
     pub fn set_deafened(&self, _deafened: bool) {}
+
+    pub fn set_screen_volume(&self, identity: &str, volume: f32) {
+        let _ = (identity, volume);
+    }
 
     pub fn camera_on(&self) -> bool {
         false
@@ -252,3 +260,11 @@ pub const SCREEN_PATTERN: TestPattern = TestPattern {
     height: 1440,
     key: LOCAL_SCREEN,
 };
+
+/// Why this platform cannot share its sound.
+pub fn screen_audio_unavailable() -> Option<&'static str> {
+    Some("Sharing sound isn't available here")
+}
+
+pub const SCREEN_TONE_LEFT: f32 = 660.0;
+pub const SCREEN_TONE_RIGHT: f32 = 990.0;
