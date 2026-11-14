@@ -8,7 +8,7 @@ use crate::{
     model::Scope,
     profile::{ProfileCard, ProfileEvent},
     shell::Shell,
-    view_model::{menu::MenuTarget, profile::more_menu, room_menu::invite_targets},
+    view_model::{menu::MenuTarget, profile::more_menu, room_menu::available_invite_targets},
 };
 
 impl Shell {
@@ -56,11 +56,12 @@ impl Shell {
                 this.open_mod_view(user.clone(), shown, cx);
             }
             ProfileEvent::More(at) => {
-                let (user, own, blocked) = {
+                let (user, own, blocked, mutual) = {
                     let card = card.read(cx);
-                    (card.user.clone(), card.is_own(), card.is_blocked())
+                    (card.user.clone(), card.is_own(), card.is_blocked(), card.mutual().to_vec())
                 };
-                let items = more_menu(&user, own, blocked, &invite_targets(&this.rooms));
+                let invite_to = available_invite_targets(&this.rooms, this.selected.as_ref(), &mutual);
+                let items = more_menu(&user, own, blocked, &invite_to);
                 this.open_menu(OpenMenu::new(*at, items, false, MenuTarget::Other), cx);
             }
         })

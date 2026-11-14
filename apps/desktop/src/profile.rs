@@ -214,6 +214,10 @@ impl ProfileCard {
         self.blocked
     }
 
+    pub fn mutual(&self) -> &[OwnedRoomId] {
+        &self.mutual
+    }
+
     /// "Report user profile": shows the form.
     pub fn start_report(&mut self, cx: &mut Context<Self>) {
         self.reporting = true;

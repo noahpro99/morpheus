@@ -17,7 +17,10 @@ use crate::{
     shell::Shell,
     view_model::{
         menu::{MenuAction, MenuTarget},
-        room_menu::{DmState, dm_menu, invite_targets, lock_items, room_menu, space_menu, with_lock_items},
+        room_menu::{
+            DmState, available_invite_targets, dm_menu, lock_items, room_menu, space_menu,
+            with_lock_items,
+        },
         nicknames::with_nickname,
         room_dialogs::RoomDialogKind,
     },
@@ -197,8 +200,10 @@ impl Shell {
         match room.dm_user.clone().filter(|_| room.is_dm) {
             Some(user) => {
                 let blocked = session.is_blocked(user.clone());
+                let mutual = session.mutual_spaces(user.clone());
                 cx.spawn(async move |this, cx| {
                     let blocked = blocked.await.unwrap_or(false);
+                    let mutual = mutual.await.unwrap_or_default();
                     this.update(cx, |this, cx| {
                         let state = DmState {
                             pinned: this.marks.is_pinned(&room),
@@ -206,7 +211,7 @@ impl Shell {
                             blocked,
                             muted: this.marks.is_muted(&room),
                             friend: this.friends.contains(&user),
-                            invite_to: invite_targets(&this.rooms),
+                            invite_to: available_invite_targets(&this.rooms, None, &mutual),
                             name: room.name.clone(),
                             user,
                         };
@@ -339,7 +344,26 @@ impl Shell {
             MenuAction::Invite(room, user) => {
                 if let Some(session) = session {
                     let inviting = session.invite(room, user);
-                    self.run_in_background("invite", inviting, cx);
+                    cx.spawn(async move |this, cx| {
+                        match inviting.await {
+                            Ok(()) => {
+                                this.update(cx, |this, cx| this.toast("Invite sent", cx))
+                                    .ok();
+                            }
+                            Err(err) => {
+                                let msg = err.to_string();
+                                this.update(cx, |this, cx| {
+                                    if msg.to_lowercase().contains("already in the room") {
+                                        this.toast("Already in the server", cx);
+                                    } else {
+                                        this.fail("invite", &msg, cx);
+                                    }
+                                })
+                                .ok();
+                            }
+                        }
+                    })
+                    .detach();
                 }
             }
             MenuAction::ToggleHideMuted => {

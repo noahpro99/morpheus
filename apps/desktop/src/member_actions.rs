@@ -12,7 +12,7 @@ use crate::{
     view_model::{
         members::{MemberMenuInput, member_menu},
         menu::MenuTarget,
-        room_menu::invite_targets,
+        room_menu::available_invite_targets,
     },
 };
 
@@ -65,19 +65,47 @@ impl Shell {
         at: Point<Pixels>,
         cx: &mut Context<Self>,
     ) {
+        let mutual_spaces = self
+            .session
+            .as_ref()
+            .map(|session| session.mutual_spaces(member.user_id.clone()));
+        let member = member.clone();
+        cx.spawn(async move |this, cx| {
+            let mutual = match mutual_spaces {
+                Some(f) => f.await.unwrap_or_default(),
+                None => Vec::new(),
+            };
+            this.update(cx, |this, cx| {
+                this.open_member_menu_with_mutual(room, &member, permissions, mutual, at, cx);
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    pub fn open_member_menu_with_mutual(
+        &mut self,
+        room: morpheus_core::OwnedRoomId,
+        member: &Member,
+        permissions: MemberPermissions,
+        mutual: Vec<morpheus_core::OwnedRoomId>,
+        at: Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
         let own = self
             .session
             .as_ref()
             .and_then(|session| session.user_id())
             .as_ref()
             == Some(&member.user_id);
+        let invite_to = available_invite_targets(&self.rooms, Some(&room), &mutual);
         let items = member_menu(&MemberMenuInput {
             room: &room,
             member,
             permissions,
             own,
             friend: self.friends.contains(&member.user_id),
-            invite_to: invite_targets(&self.rooms),
+            invite_to,
         });
         self.open_menu(OpenMenu::new(at, items, false, MenuTarget::Other), cx);
     }
@@ -107,9 +135,11 @@ impl Shell {
         };
         let members = session.members(room.clone());
         let permissions = session.my_permissions(room.clone());
+        let mutual = session.mutual_spaces(user.clone());
         cx.spawn(async move |this, cx| {
             let members = members.await.unwrap_or_default();
             let permissions = permissions.await.unwrap_or_default();
+            let mutual = mutual.await.unwrap_or_default();
             // Someone who has left still gets a menu (profile, message, block).
             let member = members
                 .into_iter()
@@ -122,8 +152,10 @@ impl Shell {
                     power_level: 0,
                     is_ignored: false,
                 });
-            this.update(cx, |this, cx| this.open_member_menu_in(room, &member, permissions, at, cx))
-                .ok();
+            this.update(cx, |this, cx| {
+                this.open_member_menu_with_mutual(room, &member, permissions, mutual, at, cx);
+            })
+            .ok();
         })
         .detach();
     }

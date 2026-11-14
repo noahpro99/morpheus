@@ -53,8 +53,11 @@ impl Session {
                 // Fetched when not here yet: in a big server this device holds
                 // only the members of recent events.
                 if let Ok(Some(member)) = room.get_member(&user_id).await
-                    && member.membership()
-                        == &matrix_sdk::ruma::events::room::member::MembershipState::Join
+                    && matches!(
+                        member.membership(),
+                        matrix_sdk::ruma::events::room::member::MembershipState::Join
+                            | matrix_sdk::ruma::events::room::member::MembershipState::Invite
+                    )
                 {
                     out.push(room.room_id().to_owned());
                 }

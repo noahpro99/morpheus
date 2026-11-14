@@ -149,6 +149,57 @@ pub fn invite_targets(rooms: &[RoomSummary]) -> Vec<(OwnedRoomId, String)> {
         .collect()
 }
 
+/// The spaces containing `room_id` directly or indirectly (ancestors),
+/// or descendant sub-spaces if `room_id` is a space,
+/// including `room_id` itself if it is a space.
+pub fn spaces_containing(rooms: &[RoomSummary], room_id: &OwnedRoomId) -> Vec<OwnedRoomId> {
+    let mut out = Vec::new();
+    let mut queue = vec![room_id.clone()];
+    while let Some(current) = queue.pop() {
+        if let Some(r) = rooms.iter().find(|r| r.id == current) {
+            if r.is_space && !out.contains(&r.id) {
+                out.push(r.id.clone());
+            }
+            for parent in &r.parent_spaces {
+                if !out.contains(parent) && !queue.contains(parent) {
+                    queue.push(parent.clone());
+                }
+            }
+        }
+    }
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for r in rooms {
+            if r.is_space && !out.contains(&r.id) {
+                if r.parent_spaces.iter().any(|p| p == room_id || out.contains(p)) {
+                    out.push(r.id.clone());
+                    changed = true;
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Where a person can be invited, excluding servers/rooms they already belong to or are in.
+pub fn available_invite_targets(
+    rooms: &[RoomSummary],
+    in_room: Option<&OwnedRoomId>,
+    already_in: &[OwnedRoomId],
+) -> Vec<(OwnedRoomId, String)> {
+    let mut excluded = already_in.to_vec();
+    if let Some(room_id) = in_room {
+        excluded.push(room_id.clone());
+        excluded.extend(spaces_containing(rooms, room_id));
+    }
+
+    invite_targets(rooms)
+        .into_iter()
+        .filter(|(id, _)| !excluded.contains(id))
+        .collect()
+}
+
 /// The menu of a DM, as Discord's: what you do with the conversation and
 /// with the person in it.
 pub fn dm_menu(room: &RoomSummary, dm: &DmState) -> Vec<MenuItem> {
@@ -562,5 +613,27 @@ mod tests {
         // No rooms: nothing is "all muted".
         let empty = space_menu(&space, &[], false, &[]);
         assert!(empty.iter().any(|i| i.label == "Mute server"));
+    }
+
+    #[test]
+    fn available_invite_targets_excludes_current_server_and_already_joined() {
+        let mut server_a = room("!server_a:x", "Server A");
+        server_a.is_space = true;
+        let mut channel_a = room("!channel_a:x", "general");
+        channel_a.parent_spaces = vec![server_a.id.clone()];
+        let mut server_b = room("!server_b:x", "Server B");
+        server_b.is_space = true;
+        let mut server_c = room("!server_c:x", "Server C");
+        server_c.is_space = true;
+
+        let rooms = vec![server_a.clone(), channel_a.clone(), server_b.clone(), server_c.clone()];
+
+        // Viewing general in Server A, user is already in Server B.
+        let targets = available_invite_targets(&rooms, Some(&channel_a.id), &[server_b.id.clone()]);
+        let names: Vec<String> = targets.into_iter().map(|(_, name)| name).collect();
+        // Server A is excluded because general is inside Server A.
+        // Server B is excluded because user is already in Server B.
+        // Server C is the only remaining target.
+        assert_eq!(names, vec!["Server C"]);
     }
 }
