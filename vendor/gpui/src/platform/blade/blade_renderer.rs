@@ -622,6 +622,9 @@ impl BladeRenderer {
     }
 
     pub fn destroy(&mut self) {
+        if std::thread::panicking() {
+            return;
+        }
         self.wait_for_gpu();
         self.atlas.destroy();
         self.gpu.destroy_sampler(self.atlas_sampler);
