@@ -20,13 +20,16 @@ use std::{
     time::Duration,
 };
 
-use futures_util::StreamExt;
+use futures_util::{FutureExt as _, StreamExt};
 use livekit::{
     e2ee::{
         E2eeOptions, EncryptionType,
         key_provider::{KeyProvider, KeyProviderOptions},
     },
-    options::{DegradationPreference, TrackPublishOptions, VideoEncoding, compute_video_encodings},
+    options::{
+        AudioEncoding, DegradationPreference, TrackPublishOptions, VideoEncoding,
+        compute_video_encodings,
+    },
     prelude::*,
     webrtc::{
         audio_frame::AudioFrame,
@@ -182,6 +185,12 @@ pub enum CallEvent {
         key: String,
         /// A shared screen, not a camera.
         screen: bool,
+        on: bool,
+    },
+    /// The sound of `identity`'s shared screen started (`on`) or stopped
+    /// arriving ([`crate::screen_audio`]).
+    ScreenAudio {
+        identity: String,
         on: bool,
     },
 }
@@ -383,7 +392,11 @@ impl Call {
         let (speech, speech_rx) = unbounded_channel();
         let me = room.local_participant().identity().to_string();
         tasks.push(tokio::spawn(aggregate(speech_rx, tx.clone())));
-        tasks.push(tokio::spawn(watch_mic(mic.clone(), me.clone(), speech.clone())));
+        tasks.push(tokio::spawn(watch_mic(
+            mic.clone(),
+            me.clone(),
+            speech.clone(),
+        )));
         tasks.push(tokio::spawn(forward_events(
             room_events,
             tx,
@@ -480,6 +493,25 @@ impl Call {
         }
     }
 
+    /// Play `identity`'s shared screen's sound at `volume` (1 as sent, up to
+    /// [`crate::MAX_SCREEN_VOLUME`]), now and whenever it comes again.
+    pub fn set_screen_volume(&self, identity: &str, volume: f32) {
+        let _enter = runtime().enter();
+        let volume = crate::screen_audio::note_volume(identity, volume);
+        for participant in self.room.remote_participants().values() {
+            if participant.identity().as_str() != identity {
+                continue;
+            }
+            for publication in participant.track_publications().values() {
+                if publication.source() == TrackSource::ScreenshareAudio
+                    && let Some(RemoteTrack::Audio(track)) = publication.track()
+                {
+                    apply_screen_volume(&track, volume);
+                }
+            }
+        }
+    }
+
     /// Whether the camera is on.
     pub fn camera_on(&self) -> bool {
         self.sending(VideoKind::Camera)
@@ -541,7 +573,8 @@ impl Call {
                     match (on, video.take()) {
                         (true, Some(running)) => *video = Some(running),
                         (true, None) => {
-                            *video = Some(Outgoing::start(&room, kind, mode, encrypted, quality).await?)
+                            *video =
+                                Some(Outgoing::start(&room, kind, mode, encrypted, quality).await?)
                         }
                         (false, Some(running)) => running.stop(&room).await,
                         (false, None) => {}
@@ -607,6 +640,15 @@ struct Outgoing {
     track: LocalVideoTrack,
     kind: VideoKind,
     stop: Arc<AtomicBool>,
+    /// A shared screen's sound, when it has some.
+    sound: Option<ScreenSound>,
+}
+
+/// The computer's sound, published beside its screen.
+struct ScreenSound {
+    track: LocalAudioTrack,
+    /// Captures until dropped.
+    _capture: system_audio::Capture,
 }
 
 /// Where outgoing frames come from.
@@ -754,7 +796,11 @@ impl Outgoing {
             fps: fps.round() as u32,
             max_bitrate: top,
             layers: encodings.len(),
-            hint: if screen { quality.content_hint() } else { "motion" },
+            hint: if screen {
+                quality.content_hint()
+            } else {
+                "motion"
+            },
             degradation: if screen {
                 "maintain-resolution"
             } else {
@@ -829,11 +875,42 @@ impl Outgoing {
                 let _ = sink.set(source.clone());
             }
         }
-        Ok(Self { track, kind, stop })
+        // The screen's sound, when wanted: the share goes on without it if
+        // there is none to be had.
+        let sound = if screen && quality.audio {
+            match ScreenSound::publish(room, mode, encrypted).await {
+                Ok(sound) => Some(sound),
+                Err(why) => {
+                    warn!(%why, "screen shared without its sound");
+                    crate::screen_audio::note_sent(Some(Err(why)));
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        Ok(Self {
+            track,
+            kind,
+            stop,
+            sound,
+        })
     }
 
     async fn stop(self, room: &Room) {
         self.halt();
+        if let Some(sound) = &self.sound {
+            if let Err(err) = room
+                .local_participant()
+                .unpublish_track(&sound.track.sid())
+                .await
+            {
+                debug!(%err, "unpublishing the screen's sound");
+            }
+        }
+        if self.kind == VideoKind::Screen {
+            crate::screen_audio::note_sent(None);
+        }
         if let Err(err) = room
             .local_participant()
             .unpublish_track(&self.track.sid())
@@ -853,6 +930,192 @@ impl Outgoing {
     fn halt(&self) {
         self.stop.store(true, Ordering::Relaxed);
     }
+}
+
+/// A shared screen's sound is sent at a music bitrate, with no gaps for
+/// silence (DTX cuts quiet passages of music) and no redundancy copies.
+const SCREEN_AUDIO_BITRATE: u64 = 128_000;
+
+impl ScreenSound {
+    async fn publish(
+        room: &Room,
+        mode: AudioMode,
+        encrypted: bool,
+    ) -> std::result::Result<Self, String> {
+        // Music and films as they are: no echo cancelling, gain or noise
+        // suppression. No queue: the capture's own clock paces it.
+        let source = NativeAudioSource::new(
+            AudioSourceOptions {
+                echo_cancellation: false,
+                noise_suppression: false,
+                auto_gain_control: false,
+            },
+            system_audio::RATE,
+            system_audio::CHANNELS as u32,
+            0,
+        );
+        let feeding = source.clone();
+        let capture = system_audio::start(
+            mode,
+            Box::new(move |frame: &[i16]| {
+                let _ = feeding
+                    .capture_frame(&AudioFrame {
+                        data: Cow::Borrowed(frame),
+                        sample_rate: system_audio::RATE,
+                        num_channels: system_audio::CHANNELS as u32,
+                        samples_per_channel: system_audio::FRAME as u32,
+                    })
+                    .now_or_never();
+            }),
+        )?;
+        let track =
+            LocalAudioTrack::create_audio_track("screen-audio", RtcAudioSource::Native(source));
+        // Encrypted calls: silent until the encryptor sits on the track.
+        if encrypted {
+            track.mute();
+        }
+        let publication = room
+            .local_participant()
+            .publish_track(
+                LocalTrack::Audio(track.clone()),
+                TrackPublishOptions {
+                    source: TrackSource::ScreenshareAudio,
+                    dtx: false,
+                    red: false,
+                    stereo: true,
+                    audio_encoding: Some(AudioEncoding {
+                        max_bitrate: SCREEN_AUDIO_BITRATE,
+                    }),
+                    ..Default::default()
+                },
+            )
+            .await
+            .map_err(|err| err.to_string())?;
+        if encrypted {
+            let key = (room.local_participant().identity(), publication.sid());
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            while !room.e2ee_manager().frame_cryptors().contains_key(&key) {
+                if std::time::Instant::now() > deadline {
+                    let _ = room.local_participant().unpublish_track(&key.1).await;
+                    return Err("its encryption did not start".into());
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            track.unmute();
+        }
+        let sent = format!(
+            "{} Hz stereo bitrate={SCREEN_AUDIO_BITRATE} dtx=false",
+            system_audio::RATE
+        );
+        info!(track = %publication.sid(), %sent, "screen sound published");
+        crate::screen_audio::note_sent(Some(Ok(sent)));
+        Ok(Self {
+            track,
+            _capture: capture,
+        })
+    }
+}
+
+/// How loud WebRTC plays a screen's sound (its measured level, before this,
+/// is scaled by the volume where it is reported).
+fn apply_screen_volume(track: &RemoteAudioTrack, volume: f32) {
+    track.rtc_track().set_volume(f64::from(volume));
+}
+
+/// Play and measure the sound of `who`'s shared screen until it ends: its
+/// level (at the volume it is played at) and pitch for the interface and
+/// tests, and what it puts out of the speakers for the echo canceller.
+async fn watch_screen_audio(
+    track: RemoteAudioTrack,
+    who: String,
+    echo: bool,
+    deafened: Arc<Mutex<bool>>,
+) {
+    use system_audio::{CHANNELS, FRAME};
+    let mut stream = NativeAudioStream::new(
+        track.rtc_track(),
+        system_audio::RATE as i32,
+        CHANNELS as i32,
+    );
+    let far = format!("{who} (screen)");
+    // A tenth of a second at a time.
+    let mut window: Vec<i16> = Vec::with_capacity(10 * FRAME * CHANNELS);
+    let mut mono = Vec::with_capacity(FRAME);
+    // What WebRTC says it plays at, asked every fifth window.
+    let mut played = 0f32;
+    let mut windows = 0u32;
+    loop {
+        // Deafened, WebRTC plays it silent (after this sink: the samples
+        // still come).
+        let volume = if deafened.lock().is_ok_and(|d| *d) {
+            0.0
+        } else {
+            crate::screen_volume(&who)
+        };
+        match tokio::time::timeout(Duration::from_millis(300), stream.next()).await {
+            Ok(Some(frame)) => {
+                if echo {
+                    mono.clear();
+                    mono.extend(frame.data.chunks_exact(CHANNELS).map(|pair| {
+                        let sum: i32 = pair.iter().map(|s| i32::from(*s)).sum();
+                        ((sum as f32 / CHANNELS as f32) * volume)
+                            .clamp(f32::from(i16::MIN), f32::from(i16::MAX))
+                            as i16
+                    }));
+                    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+                    mic::far_end(&far, &mono);
+                }
+                window.extend_from_slice(&frame.data);
+                if window.len() < 10 * FRAME * CHANNELS {
+                    continue;
+                }
+                windows += 1;
+                if windows % 5 == 1
+                    && let Ok(stats) = track.get_stats().await
+                {
+                    use livekit::webrtc::stats::RtcStats;
+                    if let Some(level) = stats.iter().find_map(|s| match s {
+                        RtcStats::InboundRtp(i) if i.stream.kind == "audio" => {
+                            Some(i.inbound.audio_level as f32)
+                        }
+                        _ => None,
+                    }) {
+                        played = level;
+                    }
+                }
+                crate::screen_audio::note_heard(
+                    &who,
+                    crate::ScreenAudio {
+                        level: rms(&window) / 32_768.0 * volume,
+                        left_hz: system_audio::zero_crossing_hz(&window, CHANNELS, 0),
+                        right_hz: system_audio::zero_crossing_hz(&window, CHANNELS, 1),
+                        volume,
+                        played,
+                    },
+                );
+                window.clear();
+            }
+            Ok(None) => break,
+            // Nothing arriving (deafened, or the sharer's computer is quiet).
+            Err(_) => {
+                window.clear();
+                crate::screen_audio::note_heard(
+                    &who,
+                    crate::ScreenAudio {
+                        level: 0.0,
+                        left_hz: 0.0,
+                        right_hz: 0.0,
+                        volume,
+                        played: 0.0,
+                    },
+                );
+            }
+        }
+    }
+    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+    mic::far_end_gone(&far);
+    let _ = (far, mono, echo);
+    crate::screen_audio::forget_heard(&who);
 }
 
 /// A 440 Hz tone at a speaking level, in real time.
@@ -915,17 +1178,52 @@ async fn forward_events(
                 ));
                 continue;
             }
-            RoomEvent::TrackMuted { participant: Participant::Remote(p), publication }
-                if publication.kind() == TrackKind::Audio =>
-            {
+            RoomEvent::TrackMuted {
+                participant: Participant::Remote(p),
+                publication,
+            } if publication.source() == TrackSource::Microphone => {
                 let _ = speech.send(Speech::Muted(p.identity().to_string(), true));
                 continue;
             }
-            RoomEvent::TrackUnmuted { participant: Participant::Remote(p), publication }
-                if publication.kind() == TrackKind::Audio =>
-            {
+            RoomEvent::TrackUnmuted {
+                participant: Participant::Remote(p),
+                publication,
+            } if publication.source() == TrackSource::Microphone => {
                 let _ = speech.send(Speech::Muted(p.identity().to_string(), false));
                 continue;
+            }
+            // A shared screen's sound: not their voice (it does not make them
+            // speak), played at its own volume.
+            RoomEvent::TrackSubscribed {
+                track: RemoteTrack::Audio(track),
+                participant,
+                publication,
+            } if publication.source() == TrackSource::ScreenshareAudio => {
+                let identity = participant.identity().to_string();
+                info!(who = %identity, track = %track.sid(), "screen sound arriving");
+                if deafened.lock().is_ok_and(|d| *d) {
+                    track.disable();
+                }
+                apply_screen_volume(&track, crate::screen_volume(&identity));
+                tokio::spawn(watch_screen_audio(
+                    track,
+                    identity.clone(),
+                    mode == AudioMode::Platform,
+                    deafened.clone(),
+                ));
+                CallEvent::ScreenAudio { identity, on: true }
+            }
+            RoomEvent::TrackUnsubscribed {
+                track: RemoteTrack::Audio(_),
+                participant,
+                publication,
+            } if publication.source() == TrackSource::ScreenshareAudio => {
+                let identity = participant.identity().to_string();
+                crate::screen_audio::forget_heard(&identity);
+                CallEvent::ScreenAudio {
+                    identity,
+                    on: false,
+                }
             }
             RoomEvent::TrackSubscribed {
                 track: RemoteTrack::Audio(track),
@@ -1129,7 +1427,11 @@ enum Speech {
     /// The server's list (the fallback).
     Server(Vec<String>),
     /// A measured state (and level, to order by) for `who`.
-    Measured { who: String, speaking: bool, level: f32 },
+    Measured {
+        who: String,
+        speaking: bool,
+        level: f32,
+    },
     /// `who` is no longer measured (no frames): the server decides again.
     Unmeasured(String),
     /// `who` muted their microphone (or not): muted is never speaking.
@@ -1140,10 +1442,7 @@ enum Speech {
 
 /// Merge everything into [`CallEvent::Speaking`], sent only when the set
 /// changes.
-async fn aggregate(
-    mut input: UnboundedReceiver<Speech>,
-    out: UnboundedSender<CallEvent>,
-) {
+async fn aggregate(mut input: UnboundedReceiver<Speech>, out: UnboundedSender<CallEvent>) {
     use std::collections::{HashMap, HashSet};
     let mut measured: HashMap<String, (bool, f32)> = HashMap::new();
     let mut server: Vec<String> = Vec::new();
@@ -1152,7 +1451,11 @@ async fn aggregate(
     while let Some(item) = input.recv().await {
         match item {
             Speech::Server(list) => server = list,
-            Speech::Measured { who, speaking, level } => {
+            Speech::Measured {
+                who,
+                speaking,
+                level,
+            } => {
                 measured.insert(who, (speaking, level));
             }
             Speech::Unmeasured(who) => {
@@ -1301,7 +1604,9 @@ async fn watch_mic(mic: LocalAudioTrack, me: String, speech: UnboundedSender<Spe
             continue;
         }
         let Some(level) = stats.iter().find_map(|s| match s {
-            RtcStats::MediaSource(m) if m.source.kind == "audio" => Some(m.audio.audio_level as f32),
+            RtcStats::MediaSource(m) if m.source.kind == "audio" => {
+                Some(m.audio.audio_level as f32)
+            }
             _ => None,
         }) else {
             continue;

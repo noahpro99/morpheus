@@ -543,6 +543,8 @@ pub fn join_call(session: Session, room_id: OwnedRoomId, room_name: String) {
                     return;
                 }
                 CallEvent::Left(_) => play(Sound::Leave),
+                // The web view plays a shared screen's sound as WebRTC does.
+                CallEvent::ScreenAudio { .. } => {}
             }
         }
     });

@@ -1040,6 +1040,7 @@ async fn run_call(
             CallEvent::Left(_) => {
                 this.update(cx, |this, _| this.chime(Sound::Leave)).ok();
             }
+            CallEvent::ScreenAudio { .. } => {}
         }
     }
 }

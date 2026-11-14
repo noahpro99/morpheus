@@ -39,3 +39,9 @@ pub use quality::{
     PublishedVideo, SCREEN_FPS, ScreenQuality, ScreenResolution, bitrate_for, camera_bitrate,
     published_video,
 };
+
+#[path = "screen_audio.rs"]
+mod screen_audio;
+pub use screen_audio::{
+    MAX_SCREEN_VOLUME, ScreenAudio, screen_audio, screen_volume, sent_screen_audio,
+};

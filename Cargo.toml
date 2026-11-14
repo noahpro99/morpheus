@@ -113,3 +113,12 @@ xattr = { path = "vendor/xattr" }
 # so no outside code can call it; vendor/gpui makes DispatchEventResult pub
 # (the only change) for the e2e bridge's mouse input.
 gpui = { path = "vendor/gpui" }
+# A shared screen's sound (crates/call): LiveKit's Rust SDK 0.9.5 cannot mark
+# an audio track stereo (so the SFU never answers with Opus stereo=1 and the
+# encoder sends mono) nor set a received track's volume (libwebrtc's
+# AudioSourceInterface::SetVolume, Discord's stream volume). Copies with only
+# those added, each marked "Morpheus patch": livekit gets
+# TrackPublishOptions::stereo, webrtc-sys and libwebrtc RtcAudioTrack::set_volume.
+livekit = { path = "vendor/livekit" }
+libwebrtc = { path = "vendor/libwebrtc" }
+webrtc-sys = { path = "vendor/webrtc-sys" }

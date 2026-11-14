@@ -7,5 +7,7 @@ use super::system_audio::Out;
 
 /// Capture until `stop`; `started` hears once whether it could.
 pub(crate) fn run(_stop: &AtomicBool, _out: Out, started: Sender<Result<(), String>>) {
-    let _ = started.send(Err("sharing the computer's sound is not written for Windows yet".into()));
+    let _ = started.send(Err(
+        "sharing the computer's sound is not written for Windows yet".into(),
+    ));
 }
