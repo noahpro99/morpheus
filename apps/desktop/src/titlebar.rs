@@ -94,20 +94,22 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                 .bottom(px(2.0))
                 .min_w(px(16.0))
                 .h(px(16.0))
-                .px(px(4.0))
+                .px(px(3.0))
                 .flex()
                 .items_center()
                 .justify_center()
-                .rounded(px(8.0))
+                .rounded_full()
                 .bg(rgb(theme::danger()))
                 .text_color(rgb(0xffffff))
                 .text_size(px(0.65 * theme::REM))
-                .line_height(px(16.0))
+                .font_weight(FontWeight::BOLD)
+                .text_align(gpui::TextAlign::Center)
                 .child(unread.to_string())
                 .e2e("span", "rail-badge inbox-badge")
                 .text(unread.to_string()),
         );
     }
+
     let help = bar_button(shell, cx, "help-button")
         .child(icon("circle-help", 16.0))
         .on_click(cx.listener(|this, _, _, cx| this.toggle_help(cx)));
@@ -213,3 +215,40 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
     )
     .e2e("header", "titlebar")
 }
+
+#[cfg(all(test, feature = "e2e"))]
+mod badge_tests {
+    use super::*;
+    use crate::model::tests::room;
+    use gpui::{Entity, TestAppContext, point};
+
+    struct Harness(Entity<Shell>);
+    impl gpui::Render for Harness {
+        fn render(&mut self, _: &mut gpui::Window, _: &mut Context<Self>) -> impl IntoElement {
+            crate::e2e::frame(div().size_full().child(self.0.clone()))
+        }
+    }
+
+    #[gpui::test]
+    fn inspect_inbox_badge(cx: &mut TestAppContext) {
+        let (harness, cx) = cx.add_window_view(|_, cx| Harness(cx.new(|_| Shell::bare(None))));
+        let shell = harness.read_with(cx, |h, _| h.0.clone());
+        shell.update(cx, |s, cx| {
+            let mut r = room("!r:x", "test");
+            r.unread_messages = 5;
+            s.rooms = vec![r];
+            cx.notify();
+        });
+        cx.run_until_parked();
+        cx.draw(point(px(0.0), px(0.0)), gpui::size(px(800.0), px(600.0)), |_, _| div());
+        cx.run_until_parked();
+
+        let badge = crate::e2e::query_bounds(".inbox-badge").expect("badge");
+        let texts = crate::e2e::query(".inbox-badge");
+        assert_eq!(texts.len(), 1);
+        let (_, (tx, ty)) = &texts[0];
+        assert_eq!(*tx, badge.x + badge.w / 2.0);
+        assert_eq!(*ty, badge.y + badge.h / 2.0);
+    }
+}
+
