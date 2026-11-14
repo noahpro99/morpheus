@@ -1,0 +1,92 @@
+# The desktop app's e2e tests, headless (`just e2e-headless`): the app runs
+# on gpui's headless platform (offscreen windows: real layout, hit-testing and
+# input, no pixels), so no display server or GPU is needed. A smoke subset
+# against the dev homeserver (Synapse) and LiveKit, in docker as on a
+# developer's machine (dev/homeserver). Checks that need a display (pixels,
+# window resizing) report themselves skipped and are counted in the log.
+name: e2e (headless)
+
+on:
+  workflow_dispatch:
+    inputs:
+      tests:
+        description: Test files to run, space separated
+        required: false
+        default: gpui_smoke account chat timeline settings vim_mode scrolling
+
+jobs:
+  e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Libraries
+        run: |
+          sudo apt-get update
+          # The build needs the same libraries as the release build (linux.yml).
+          # jq, curl, openssl: the homeserver's scripts. pulseaudio: a null
+          # sink, so sounds have somewhere to go (calls use a test tone).
+          sudo apt-get install -y --no-install-recommends \
+            libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev libxcb1-dev libx11-xcb-dev \
+            libx11-dev libxext-dev libxfixes-dev libxdamage-dev libxrandr-dev libxcomposite-dev libxtst-dev \
+            libfontconfig-dev libfreetype-dev libvulkan-dev libgl-dev libdrm-dev libgbm-dev \
+            libssl-dev libasound2-dev libpulse-dev libpipewire-0.3-dev libdbus-1-dev \
+            pkg-config cmake python3 nasm jq curl openssl pulseaudio dbus-x11
+          wget -qO llvm.sh https://apt.llvm.org/llvm.sh
+          sudo bash llvm.sh 21
+          echo "CC_x86_64_unknown_linux_gnu=clang-21" >> "$GITHUB_ENV"
+          echo "CXX_x86_64_unknown_linux_gnu=clang++-21" >> "$GITHUB_ENV"
+          echo "/usr/lib/llvm-21/bin" >> "$GITHUB_PATH"
+
+      - name: Rust
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: e2e-headless
+
+      - name: Homeserver and LiveKit
+        run: just hs-up
+
+      - name: Sound server (a null sink)
+        run: |
+          pulseaudio --start --exit-idle-time=-1
+          pactl load-module module-null-sink sink_name=null
+          pactl set-default-sink null
+
+      - name: Build the test app
+        run: just e2e-build
+
+      - name: e2e (headless)
+        env:
+          TESTS: ${{ inputs.tests }}
+          # Keep each app's data directory (and its app.log) for the logs below.
+          MORPHEUS_E2E_KEEP: "1"
+        run: |
+          status=0
+          for file in $TESTS; do
+            echo "::group::$file"
+            just e2e-headless "$file" || status=1
+            echo "::endgroup::"
+          done
+          exit $status
+
+      - name: App logs
+        if: failure()
+        run: |
+          mkdir -p e2e-logs
+          find /tmp -maxdepth 2 -path "*/morpheus-e2e-*/app.log" 2>/dev/null | while read -r log; do
+            cp "$log" "e2e-logs/$(echo "$log" | tr / _)"
+          done
+          docker logs morpheus-synapse > e2e-logs/synapse.log 2>&1 || true
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-logs
+          path: e2e-logs

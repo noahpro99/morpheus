@@ -40,16 +40,21 @@ e2e-build:
     cargo build -p morpheus-desktop --features e2e
     cp target/debug/morpheus-desktop target/debug/morpheus-desktop-e2e
 
-# Desktop e2e tests: `just e2e` (all), `just e2e timeline` or `just e2e timeline pictures`.
-# Needs `just hs-up hs-seed`; the window opens on the hidden test monitor.
-e2e file="" name="": e2e-build hs-seed
+# Needs `just hs-up hs-seed`. Checks that need a display are skipped and counted;
+# `just e2e-display` runs them on the hidden Hyprland test monitor.
+# Desktop e2e tests, headless: `just e2e` (all), `just e2e timeline` or `just e2e timeline pictures`
+e2e file="" name="": (e2e-headless file name)
+
+# Pixel checks need the session unlocked.
+# Desktop e2e tests in real windows on the hidden Hyprland test monitor (pixel checks too)
+e2e-display file="" name="": e2e-build hs-seed
     MORPHEUS_E2E_BIN=$PWD/target/debug/morpheus-desktop-e2e MORPHEUS_TEST_HOMESERVER={{hs}} cargo test -p morpheus-e2e {{ if file == "" { "" } else { "--test " + file } }} {{name}} -- --nocapture --test-threads=1 ${E2E_TEST_ARGS:-}
 
-# Desktop e2e tests with no display at all: `just e2e-headless timeline [name]`.
 # The app runs on gpui's headless platform (offscreen windows: real layout and
 # input, no pixels), so it works with the screen locked, in CI, and touches no
 # window of the session. Checks that need a display (pixels, a window manager)
 # are skipped loudly and counted at the end.
+# Desktop e2e tests with no display at all: `just e2e-headless timeline [name]`
 e2e-headless file="" name="": e2e-build hs-seed
     #!/usr/bin/env bash
     set -uo pipefail

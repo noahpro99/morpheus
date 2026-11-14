@@ -30,7 +30,7 @@ Hover a message for reactions, reply, edit and delete.
 | `just check`     | type-check all crates                                            |
 | `just test`      | unit tests                                                       |
 | `just test-live` | logs in to the local Synapse, syncs rooms, reads and sends       |
-| `just e2e`       | Playwright-style tests that drive the real desktop window         |
+| `just e2e`       | Playwright-style tests that drive the real desktop app, headless  |
 | `just lint`      | clippy, warnings are errors                                      |
 | `just ci`        | fmt + lint + test                                                |
 
@@ -56,6 +56,12 @@ Each test gets a fresh data directory and its own app process. Set
 `MORPHEUS_E2E_KEEP=1` to keep the data dir and `app.log` after a failure.
 Test windows are titled "Morpheus (test)" and open unfocused; on Hyprland the driver also adds
 `nofocus` rules for that title so keystrokes never land in them mid-run (undo with a config reload).
+
+`just e2e` (the same as `just e2e-headless`) runs the tests with no display server: the app runs on
+gpui's headless platform (offscreen windows with real layout and input, no pixels), so it works
+with the screen locked, over SSH and in CI (`.github/workflows/e2e-headless.yml`). Checks that
+need real pixels or a window manager print `SKIPPED (needs a display)` and are counted at the
+end; run those files with `just e2e-display` (the hidden Hyprland monitor).
 
 Run one file at a time with `just e2e-one <file>` (for example `just e2e-one perf`).
 `just e2e` and `just e2e-one` reseed the homeserver first (`just hs-seed` is idempotent and
