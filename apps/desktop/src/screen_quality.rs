@@ -99,6 +99,76 @@ fn row<T: Copy + 'static>(
         .into_any_element()
 }
 
+/// "Share your computer's sound", a switch (on unless turned off, as in
+/// Discord); where this platform cannot, off and greyed with why.
+fn sound_switch(on: bool, cx: &mut Context<Shell>) -> AnyElement {
+    let unavailable = morpheus_call::screen_audio_unavailable();
+    let on = on && unavailable.is_none();
+    let knob = div()
+        .absolute()
+        .top(px(2.0))
+        .when(on, |d| d.right(px(2.0)))
+        .when(!on, |d| d.left(px(2.0)))
+        .size(px(14.0))
+        .rounded_full()
+        .bg(rgb(0xffffff));
+    let switch = div()
+        .relative()
+        .flex_none()
+        .w(px(32.0))
+        .h(px(18.0))
+        .rounded_full()
+        .bg(if on {
+            rgb(theme::green())
+        } else {
+            rgb(theme::text_faint())
+        })
+        .child(knob);
+    let mut button = div()
+        .id("screen-audio-toggle")
+        .flex()
+        .items_center()
+        .justify_between()
+        .gap(px(8.0))
+        .py(px(4.0))
+        .child(div().child("Share your computer's sound"))
+        .child(switch);
+    if unavailable.is_none() {
+        button = button
+            .cursor_pointer()
+            .on_click(cx.listener(|this, _, _, cx| {
+                let q = this.calls.screen_quality;
+                this.choose_screen_quality(ScreenQuality { audio: !q.audio, ..q }, cx);
+            }));
+    } else {
+        button = button.opacity(0.5);
+    }
+    let mut column = div().flex().flex_col().gap(px(2.0)).child(
+        button
+            .e2e(
+                "button",
+                if on {
+                    "screen-audio-toggle active"
+                } else {
+                    "screen-audio-toggle"
+                },
+            )
+            .attr("data-on", on.to_string())
+            .text("Share your computer's sound"),
+    );
+    if let Some(why) = unavailable {
+        column = column.child(
+            div()
+                .text_size(px(0.75 * theme::REM))
+                .text_color(rgb(theme::text_muted()))
+                .child(why)
+                .e2e("div", "screen-audio-note")
+                .text(why),
+        );
+    }
+    column.into_any_element()
+}
+
 /// The popover, over everything, while it is open.
 pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElement> {
     let at = shell.calls.screen_popover?;
@@ -148,6 +218,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElement> {
             let q = this.calls.screen_quality;
             this.choose_screen_quality(ScreenQuality { fps, ..q }, cx);
         }))
+        .child(sound_switch(quality.audio, cx))
         .child(
             div()
                 .id("screen-go")

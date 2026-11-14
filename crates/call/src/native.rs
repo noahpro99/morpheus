@@ -613,6 +613,7 @@ impl Drop for Call {
         }
         video::forget(LOCAL_CAMERA);
         video::forget(LOCAL_SCREEN);
+        crate::screen_audio::note_sent(None);
     }
 }
 

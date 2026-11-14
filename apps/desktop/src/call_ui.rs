@@ -606,6 +606,8 @@ pub fn voice_panel(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElement>
         panel
             .e2e("div", "voice-panel")
             .attr("data-heard", heard)
+            // This device's own screen's sound, as it goes out.
+            .attr("data-screen-audio", sent_screen_audio())
             // What the call's microphone is processed with now.
             .attr(
                 "data-noise",
@@ -691,6 +693,102 @@ fn focus_button(shell: &Shell, cx: &mut Context<Shell>, key: &str, group: &str) 
         }))
         .e2e("button", "card-enlarge")
         .attr("title", if focused { "Shrink" } else { "Enlarge" })
+        .into_any_element()
+}
+
+/// A shared screen's sound, at its bottom right on a hover: mute and a
+/// volume bar (0 to 200%, Discord's stream volume) for how loud it plays
+/// here.
+fn screen_volume(cx: &mut Context<Shell>, user: &OwnedUserId, volume: f32, group: &str) -> AnyElement {
+    let max = morpheus_call::MAX_SCREEN_VOLUME;
+    let bar: Rc<std::cell::Cell<gpui::Bounds<gpui::Pixels>>> = Rc::default();
+    let set_at = {
+        let bar = bar.clone();
+        move |x: gpui::Pixels| -> Option<f32> {
+            let bounds = bar.get();
+            let width = f32::from(bounds.size.width);
+            (width > 0.0).then(|| (f32::from(x - bounds.origin.x) / width).clamp(0.0, 1.0) * max)
+        }
+    };
+    let (down_set, move_set) = (set_at.clone(), set_at);
+    let (down_user, move_user, mute_user) = (user.clone(), user.clone(), user.clone());
+    let muted = volume <= 0.0;
+    let percent = (volume * 100.0).round() as u32;
+    let mute = div()
+        .id(gpui::SharedString::from(format!("screen-mute-{user}")))
+        .flex_none()
+        .cursor_pointer()
+        .child(icon(if muted { "volume-x" } else { "volume-2" }, 16.0).text_color(rgb(0xffffff)))
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        .on_click(cx.listener(move |this, _, _, cx| {
+            cx.stop_propagation();
+            let now = this.calls.screen_volumes.get(&mute_user).copied().unwrap_or(1.0);
+            this.set_screen_volume(&mute_user, if now > 0.0 { 0.0 } else { 1.0 }, cx);
+        }))
+        .e2e("button", "screen-volume-mute")
+        .attr("title", if muted { "Unmute stream" } else { "Mute stream" });
+    let slider = div()
+        .id(gpui::SharedString::from(format!("screen-volume-{user}")))
+        .relative()
+        .w(px(96.0))
+        .h(px(14.0))
+        .flex()
+        .items_center()
+        .cursor_pointer()
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+                cx.stop_propagation();
+                if let Some(volume) = down_set(event.position.x) {
+                    this.set_screen_volume(&down_user, volume, cx);
+                }
+            }),
+        )
+        .on_mouse_move(cx.listener(move |this, event: &gpui::MouseMoveEvent, _, cx| {
+            if event.pressed_button == Some(MouseButton::Left)
+                && let Some(volume) = move_set(event.position.x)
+            {
+                this.set_screen_volume(&move_user, volume, cx);
+            }
+        }))
+        .on_click(|_, _, cx| cx.stop_propagation())
+        .child(canvas(move |bounds, _, _| bar.set(bounds), |_, _, _, _| {}).absolute().inset_0())
+        .child(
+            div()
+                .relative()
+                .w_full()
+                .h(px(4.0))
+                .rounded_full()
+                .bg(rgba(0xffffff40))
+                .child(
+                    div()
+                        .absolute()
+                        .top_0()
+                        .left_0()
+                        .h_full()
+                        .w(gpui::relative((volume / max).clamp(0.0, 1.0)))
+                        .rounded_full()
+                        .bg(rgb(0xffffff)),
+                ),
+        )
+        .e2e("div", "screen-volume")
+        .attr("data-value", percent.to_string())
+        .attr("title", format!("Stream volume {percent}%"));
+    div()
+        .absolute()
+        .right(px(8.0))
+        .bottom(px(8.0))
+        .flex()
+        .items_center()
+        .gap(px(6.0))
+        .px(px(8.0))
+        .py(px(4.0))
+        .rounded(px(theme::RADIUS_SM))
+        .bg(black(0.6))
+        .opacity(0.0)
+        .group_hover(gpui::SharedString::from(group.to_owned()), |s| s.opacity(1.0))
+        .child(mute)
+        .child(slider)
         .into_any_element()
 }
 
@@ -998,6 +1096,16 @@ fn video_card(
     tile = tile
         .child(focus_button(shell, cx, &key, &group))
         .child(name_label(label));
+    // Someone else's screen with sound: how it sounds here, and its volume.
+    let heard = (feed.screen && !own)
+        .then(|| shell.calls.screen_audio.get(&feed.user))
+        .flatten()
+        .map(|identity| morpheus_call::screen_audio(identity));
+    if heard.is_some() {
+        let volume = shell.calls.screen_volumes.get(&feed.user).copied().unwrap_or(1.0);
+        tile = tile.child(screen_volume(cx, &feed.user, volume, &group));
+    }
+    let sound = heard.clone().flatten();
     if speaking {
         // Over the picture, following the card's corners.
         tile = tile.child(
@@ -1025,9 +1133,43 @@ fn video_card(
             "data-mirrored",
             if key == morpheus_call::LOCAL_CAMERA { "true" } else { "false" },
         )
+        .attr("data-audio", if heard.is_some() { "on" } else { "" })
+        .attr(
+            "data-audio-level",
+            sound.as_ref().map(|s| format!("{:.4}", s.level)).unwrap_or_default(),
+        )
+        .attr(
+            "data-audio-hz",
+            sound
+                .as_ref()
+                .map(|s| format!("{:.0}/{:.0}", s.left_hz, s.right_hz))
+                .unwrap_or_default(),
+        )
+        .attr(
+            "data-audio-played",
+            sound.as_ref().map(|s| format!("{:.4}", s.played)).unwrap_or_default(),
+        )
+        .attr(
+            "data-audio-sent",
+            if feed.screen && own {
+                sent_screen_audio()
+            } else {
+                String::new()
+            },
+        )
         .attr("data-feed", key)
         .attr("data-user", feed.user.to_string())
         .into_any_element()
+}
+
+/// How this device's own share's sound goes out ("48000 Hz stereo
+/// bitrate=128000 dtx=false"), "none: why" if it could not, else nothing.
+pub fn sent_screen_audio() -> String {
+    match morpheus_call::sent_screen_audio() {
+        Some(Ok(sent)) => sent,
+        Some(Err(why)) => format!("none: {why}"),
+        None => String::new(),
+    }
 }
 
 /// The card shown while you are the only one in the call, a person's size:

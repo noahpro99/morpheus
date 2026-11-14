@@ -81,6 +81,11 @@ pub struct Calls {
     pub devices: crate::view_model::calls::DevicePrefs,
     /// How the screen is shared, as last chosen (kept in the data directory).
     pub screen_quality: morpheus_call::ScreenQuality,
+    /// Whose shared screen has sound now, and their name in the call.
+    pub screen_audio: HashMap<OwnedUserId, String>,
+    /// The volume given to each person's screen sound (1 as sent; up to
+    /// [`morpheus_call::MAX_SCREEN_VOLUME`]), for as long as the app runs.
+    pub screen_volumes: HashMap<OwnedUserId, f32>,
     /// Share screen's question is open, over this point.
     pub screen_popover: Option<gpui::Point<gpui::Pixels>>,
     /// The noise suppression card is open, above this point (the button's
@@ -357,6 +362,7 @@ impl Shell {
         // a hang-up) has come since.
         let generation = GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
         let previous = (self.calls.media.take(), self.calls.state.take());
+        self.calls.screen_audio.clear();
         if previous.1.is_some() {
             self.chime(Sound::Leave);
         }
@@ -386,6 +392,7 @@ impl Shell {
         GENERATION.fetch_add(1, Ordering::SeqCst);
         let call = self.calls.media.take();
         let room = self.calls.state.take().map(|state| state.room_id);
+        self.calls.screen_audio.clear();
         self.calls.published = None;
         if let Some(room) = &room {
             self.calls
@@ -524,6 +531,13 @@ impl Shell {
                     Err(err) if err.to_string().contains("cancelled") => {}
                     Err(err) if screen => this.fail("sharing the screen", &err.to_string(), cx),
                     Err(err) => this.fail("turning the camera on", &err.to_string(), cx),
+                    Ok(()) if screen && on => {
+                        this.chime(Sound::ScreenOn);
+                        // The screen went, but its sound could not.
+                        if let Some(Err(why)) = morpheus_call::sent_screen_audio() {
+                            this.toast(format!("Sharing without sound: {why}"), cx);
+                        }
+                    }
                     Ok(()) => {
                         this.chime(match (screen, on) {
                             (false, true) => Sound::CameraOn,
@@ -539,6 +553,17 @@ impl Shell {
             .ok();
         })
         .detach();
+    }
+
+    /// How loud `user`'s shared screen plays here (1 as sent), now and the
+    /// next time they share with sound.
+    pub fn set_screen_volume(&mut self, user: &OwnedUserId, volume: f32, cx: &mut Context<Self>) {
+        let volume = volume.clamp(0.0, morpheus_call::MAX_SCREEN_VOLUME);
+        self.calls.screen_volumes.insert(user.clone(), volume);
+        if let (Some(call), Some(identity)) = (&self.calls.media, self.calls.screen_audio.get(user)) {
+            call.set_screen_volume(identity, volume);
+        }
+        cx.notify();
     }
 
     /// Calls use these devices, the one going now included.
@@ -912,7 +937,16 @@ async fn run_call(
             return;
         }
         let event = match next {
-            Next::Tick => continue,
+            // A screen's sound: its figures on its card, once a second.
+            Next::Tick => {
+                this.update(cx, |this, cx| {
+                    if !this.calls.screen_audio.is_empty() {
+                        cx.notify();
+                    }
+                })
+                .ok();
+                continue;
+            }
             Next::Event(None) => return,
             Next::Event(Some(event)) => event,
             Next::Key(None) => {
@@ -1040,7 +1074,29 @@ async fn run_call(
             CallEvent::Left(_) => {
                 this.update(cx, |this, _| this.chime(Sound::Leave)).ok();
             }
-            CallEvent::ScreenAudio { .. } => {}
+            CallEvent::ScreenAudio { identity, on } => {
+                if !people.contains_key(&identity) {
+                    let learned = refresh_people(&session, &room_id, &mut people).await;
+                    show_learned(&this, cx, &people, &mut said, &learned);
+                }
+                let Some(user) = people.get(&identity).cloned() else {
+                    continue;
+                };
+                this.update(cx, |this, cx| {
+                    if on {
+                        // At the volume you gave their screen before.
+                        let volume = this.calls.screen_volumes.get(&user).copied().unwrap_or(1.0);
+                        if let Some(call) = &this.calls.media {
+                            call.set_screen_volume(&identity, volume);
+                        }
+                        this.calls.screen_audio.insert(user, identity);
+                    } else {
+                        this.calls.screen_audio.remove(&user);
+                    }
+                    cx.notify();
+                })
+                .ok();
+            }
         }
     }
 }
