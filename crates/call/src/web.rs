@@ -110,6 +110,8 @@ impl Call {
 
     pub fn set_deafened(&self, _deafened: bool) {}
 
+    pub fn set_output_volume(&self, _volume: f32) {}
+
     pub fn set_screen_volume(&self, identity: &str, volume: f32) {
         let _ = (identity, volume);
     }

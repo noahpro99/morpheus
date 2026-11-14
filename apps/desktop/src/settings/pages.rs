@@ -6,8 +6,8 @@
 use std::time::Duration;
 
 use gpui::{
-    AnyElement, ClickEvent, Context, ElementId, FontWeight, IntoElement, SharedString, Window,
-    div, prelude::*, px, rgb, rgba,
+    AnyElement, ClickEvent, Context, ElementId, FontWeight, IntoElement, MouseButton, SharedString,
+    Window, canvas, div, prelude::*, px, rgb, rgba,
 };
 use morpheus_core::NotifyMode;
 
@@ -402,6 +402,13 @@ impl SettingsView {
                     self.voice_prefs.microphone.as_deref(),
                     cx,
                 ));
+                children.push(self.volume_slider(
+                    "Input Volume",
+                    "input-volume",
+                    self.voice_prefs.input_volume,
+                    true,
+                    cx,
+                ));
                 children.push(self.device_picker(
                     DeviceKind::Speaker,
                     "speaker",
@@ -409,6 +416,13 @@ impl SettingsView {
                     "Speaker",
                     &found.speakers,
                     self.voice_prefs.speaker.as_deref(),
+                    cx,
+                ));
+                children.push(self.volume_slider(
+                    "Output Volume",
+                    "output-volume",
+                    self.voice_prefs.output_volume,
+                    false,
                     cx,
                 ));
                 if !found.cameras.is_empty() {
@@ -540,6 +554,114 @@ impl SettingsView {
             );
         }
         choice.e2e("div", "device-choice").attr("data-kind", name).into_any_element()
+    }
+
+    /// An input or output volume slider in Settings.
+    fn volume_slider(
+        &self,
+        label: &'static str,
+        class: &'static str,
+        volume: f32,
+        is_input: bool,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        use std::rc::Rc;
+        let max = morpheus_call::MAX_VOLUME;
+        let percent = (volume * 100.0).round() as u32;
+        let bar: Rc<std::cell::Cell<gpui::Bounds<gpui::Pixels>>> = Rc::default();
+        let set_at = {
+            let bar = bar.clone();
+            move |x: gpui::Pixels| -> Option<f32> {
+                let bounds = bar.get();
+                let width = f32::from(bounds.size.width);
+                (width > 0.0).then(|| (f32::from(x - bounds.origin.x) / width).clamp(0.0, 1.0) * max)
+            }
+        };
+        let (down_set, move_set) = (set_at.clone(), set_at);
+
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(6.0))
+            .w_full()
+            .mt(px(2.0))
+            .mb(px(8.0))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .text_size(px(0.85 * theme::REM))
+                    .text_color(rgb(theme::text_muted()))
+                    .child(label)
+                    .child(
+                        div()
+                            .text_color(rgb(theme::text_faint()))
+                            .child(format!("{percent}%"))
+                            .e2e("span", "volume-percent"),
+                    ),
+            )
+            .child(
+                div()
+                    .relative()
+                    .w_full()
+                    .h(px(20.0))
+                    .flex()
+                    .items_center()
+                    .cursor_pointer()
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+                            cx.stop_propagation();
+                            if let Some(vol) = down_set(event.position.x) {
+                                if is_input {
+                                    this.voice_prefs.input_volume = vol;
+                                    cx.emit(super::InputVolumeChanged(vol));
+                                } else {
+                                    this.voice_prefs.output_volume = vol;
+                                    cx.emit(super::OutputVolumeChanged(vol));
+                                }
+                                cx.notify();
+                            }
+                        }),
+                    )
+                    .on_mouse_move(cx.listener(move |this, event: &gpui::MouseMoveEvent, _, cx| {
+                        if event.pressed_button == Some(MouseButton::Left)
+                            && let Some(vol) = move_set(event.position.x)
+                        {
+                            if is_input {
+                                this.voice_prefs.input_volume = vol;
+                                cx.emit(super::InputVolumeChanged(vol));
+                            } else {
+                                this.voice_prefs.output_volume = vol;
+                                cx.emit(super::OutputVolumeChanged(vol));
+                            }
+                            cx.notify();
+                        }
+                    }))
+                    .child(canvas(move |bounds, _, _| bar.set(bounds), |_, _, _, _| {}).absolute().inset_0())
+                    .child(
+                        div()
+                            .relative()
+                            .w_full()
+                            .h(px(6.0))
+                            .rounded_full()
+                            .bg(rgba(theme::bg_selected()))
+                            .child(
+                                div()
+                                    .absolute()
+                                    .top_0()
+                                    .left_0()
+                                    .h_full()
+                                    .w(gpui::relative((volume / max).clamp(0.0, 1.0)))
+                                    .rounded_full()
+                                    .bg(rgb(theme::accent())),
+                            ),
+                    )
+                    .e2e("div", &format!("volume-slider {class}"))
+                    .attr("data-value", percent.to_string()),
+            )
+            .into_any_element()
     }
 
     /// A device picked in Settings: kept, used by the next call (a call

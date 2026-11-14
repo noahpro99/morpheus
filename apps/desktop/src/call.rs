@@ -177,6 +177,8 @@ impl Shell {
             speaker: prefs.speaker.clone(),
         });
         morpheus_call::choose_camera(prefs.camera.clone());
+        morpheus_call::set_input_volume(prefs.input_volume);
+        morpheus_call::set_output_volume(prefs.output_volume);
         morpheus_call::set_noise_suppression(crate::noise::read());
         self.calls.devices = prefs;
         self.calls.screen_quality = crate::screen_quality::read();
@@ -568,6 +570,41 @@ impl Shell {
         self.calls.screen_volumes.insert(user.clone(), volume);
         if let (Some(call), Some(identity)) = (&self.calls.media, self.calls.screen_audio.get(user)) {
             call.set_screen_volume(identity, volume);
+        }
+        cx.notify();
+    }
+
+    /// Sets input (microphone) volume multiplier (0.0 to 2.0).
+    pub fn set_input_volume(&mut self, volume: f32, cx: &mut Context<Self>) {
+        let volume = volume.clamp(0.0, morpheus_call::MAX_VOLUME);
+        morpheus_call::set_input_volume(volume);
+        self.calls.devices.input_volume = volume;
+        self.save_devices(cx);
+        if let Some(menu) = &mut self.menu {
+            for item in &mut menu.items {
+                if let Some(crate::view_model::menu::MenuSlider::InputVolume(v)) = &mut item.slider {
+                    *v = volume;
+                }
+            }
+        }
+        cx.notify();
+    }
+
+    /// Sets output (speaker) volume multiplier (0.0 to 2.0).
+    pub fn set_output_volume(&mut self, volume: f32, cx: &mut Context<Self>) {
+        let volume = volume.clamp(0.0, morpheus_call::MAX_VOLUME);
+        morpheus_call::set_output_volume(volume);
+        self.calls.devices.output_volume = volume;
+        if let Some(call) = &self.calls.media {
+            call.set_output_volume(volume);
+        }
+        self.save_devices(cx);
+        if let Some(menu) = &mut self.menu {
+            for item in &mut menu.items {
+                if let Some(crate::view_model::menu::MenuSlider::OutputVolume(v)) = &mut item.slider {
+                    *v = volume;
+                }
+            }
         }
         cx.notify();
     }
@@ -1128,22 +1165,28 @@ impl Shell {
         at: gpui::Point<gpui::Pixels>,
         cx: &mut Context<Self>,
     ) {
-        use crate::view_model::{calls::{device_menu, device_rows}, menu::DeviceKind};
+        use crate::view_model::calls::{device_rows, voice_popup_menu};
         let found = morpheus_call::audio_devices(AudioMode::from_env());
         cx.spawn(async move |this, cx| {
             let found = found.await;
             this.update(cx, |this, cx| {
-                let (list, current, kind) = if speakers {
-                    (found.speakers, this.calls.devices.speaker.clone(), DeviceKind::Speaker)
-                } else {
-                    (found.microphones, this.calls.devices.microphone.clone(), DeviceKind::Microphone)
-                };
-                let list: Vec<(String, String)> = list.into_iter().map(|d| (d.id, d.name)).collect();
-                let items = device_menu(kind, &device_rows(&list, current.as_deref()));
-                this.open_menu(
-                    crate::menu::OpenMenu::new(at, items, false, crate::view_model::menu::MenuTarget::Other),
-                    cx,
+                let mics: Vec<(String, String)> =
+                    found.microphones.into_iter().map(|d| (d.id, d.name)).collect();
+                let spks: Vec<(String, String)> =
+                    found.speakers.into_iter().map(|d| (d.id, d.name)).collect();
+                let mic_rows = device_rows(&mics, this.calls.devices.microphone.as_deref());
+                let spk_rows = device_rows(&spks, this.calls.devices.speaker.as_deref());
+                let in_vol = morpheus_call::input_volume();
+                let out_vol = morpheus_call::output_volume();
+                let items = voice_popup_menu(&mic_rows, &spk_rows, in_vol, out_vol);
+                let mut menu = crate::menu::OpenMenu::new(
+                    at,
+                    items,
+                    false,
+                    crate::view_model::menu::MenuTarget::Other,
                 );
+                menu.open = Some(if speakers { 2 } else { 0 });
+                this.open_menu(menu, cx);
             })
             .ok();
         })

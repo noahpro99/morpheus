@@ -7,7 +7,7 @@
 
 use gpui::{
     AnyElement, ClickEvent, Context, FocusHandle, FontWeight, IntoElement, MouseButton, Pixels, Point,
-    ScrollHandle, Window, anchored, deferred, div, prelude::*, px, relative, rgb, rgba,
+    ScrollHandle, Window, anchored, canvas, deferred, div, prelude::*, px, relative, rgb, rgba,
 };
 
 use crate::{
@@ -231,6 +231,9 @@ fn item_el(
     height: f32,
     cx: &mut Context<Shell>,
 ) -> AnyElement {
+    if let Some(slider) = &item.slider {
+        return menu_slider_el(row, &item.label, slider, cx);
+    }
     let path = (row, sub);
     let hovered = menu.hover == Some(path);
     let glyph = item.glyph();
@@ -383,5 +386,127 @@ fn flyout(
     list.e2e("div", "context-menu context-submenu")
         .attr("role", "menu")
         .scrollable(std::rc::Rc::new(HandleProbe(menu.flyout_scroll.clone())))
+        .into_any_element()
+}
+
+/// An interactive volume slider row in a menu.
+fn menu_slider_el(
+    row: usize,
+    label: &str,
+    slider: &crate::view_model::menu::MenuSlider,
+    cx: &mut Context<Shell>,
+) -> AnyElement {
+    use std::rc::Rc;
+    let max = morpheus_call::MAX_VOLUME;
+    let volume = slider.value();
+    let percent = (volume * 100.0).round() as u32;
+    let bar: Rc<std::cell::Cell<gpui::Bounds<gpui::Pixels>>> = Rc::default();
+    let set_at = {
+        let bar = bar.clone();
+        move |x: gpui::Pixels| -> Option<f32> {
+            let bounds = bar.get();
+            let width = f32::from(bounds.size.width);
+            (width > 0.0).then(|| (f32::from(x - bounds.origin.x) / width).clamp(0.0, 1.0) * max)
+        }
+    };
+    let (down_set, move_set) = (set_at.clone(), set_at);
+    let down_kind = slider.clone();
+    let move_kind = slider.clone();
+
+    let path = (row, None);
+    let id_prefix = match slider {
+        crate::view_model::menu::MenuSlider::InputVolume(_) => "input-volume",
+        crate::view_model::menu::MenuSlider::OutputVolume(_) => "output-volume",
+    };
+
+    let label_str = label.to_owned();
+    div()
+        .id(gpui::ElementId::from(gpui::SharedString::from(format!("ctx-slider-{row}"))))
+        .relative()
+        .flex()
+        .flex_col()
+        .gap(px(4.0))
+        .w_full()
+        .px(px(10.0))
+        .py(px(6.0))
+        .rounded(px(theme::RADIUS_SM))
+        .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+            if *hovered {
+                this.menu_hover(path, cx);
+            }
+        }))
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .justify_between()
+                .text_size(px(0.8 * theme::REM))
+                .text_color(rgb(theme::text_muted()))
+                .child(label_str)
+                .child(div().child(format!("{percent}%")).e2e("span", "slider-percent")),
+        )
+        .child(
+            div()
+                .id(gpui::ElementId::from(gpui::SharedString::from(format!("ctx-bar-{row}"))))
+                .relative()
+                .w_full()
+                .h(px(14.0))
+                .flex()
+                .items_center()
+                .cursor_pointer()
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+                        cx.stop_propagation();
+                        if let Some(vol) = down_set(event.position.x) {
+                            match &down_kind {
+                                crate::view_model::menu::MenuSlider::InputVolume(_) => {
+                                    this.set_input_volume(vol, cx);
+                                }
+                                crate::view_model::menu::MenuSlider::OutputVolume(_) => {
+                                    this.set_output_volume(vol, cx);
+                                }
+                            }
+                        }
+                    }),
+                )
+                .on_mouse_move(cx.listener(move |this, event: &gpui::MouseMoveEvent, _, cx| {
+                    if event.pressed_button == Some(MouseButton::Left)
+                        && let Some(vol) = move_set(event.position.x)
+                    {
+                        match &move_kind {
+                            crate::view_model::menu::MenuSlider::InputVolume(_) => {
+                                this.set_input_volume(vol, cx);
+                            }
+                            crate::view_model::menu::MenuSlider::OutputVolume(_) => {
+                                this.set_output_volume(vol, cx);
+                            }
+                        }
+                    }
+                }))
+                .on_click(|_, _, cx| cx.stop_propagation())
+                .child(canvas(move |bounds, _, _| bar.set(bounds), |_, _, _, _| {}).absolute().inset_0())
+                .child(
+                    div()
+                        .relative()
+                        .w_full()
+                        .h(px(4.0))
+                        .rounded_full()
+                        .bg(rgba(theme::bg_selected()))
+                        .child(
+                            div()
+                                .absolute()
+                                .top_0()
+                                .left_0()
+                                .h_full()
+                                .w(gpui::relative((volume / max).clamp(0.0, 1.0)))
+                                .rounded_full()
+                                .bg(rgb(theme::accent())),
+                        ),
+                )
+                .e2e("div", &format!("menu-slider {id_prefix}"))
+                .attr("data-value", percent.to_string()),
+        )
+        .e2e("div", &format!("context-slider {id_prefix}"))
         .into_any_element()
 }

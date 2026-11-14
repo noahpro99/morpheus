@@ -115,6 +115,21 @@ pub enum DeviceKind {
     Camera,
 }
 
+/// An interactive slider in a menu row (e.g. input / output volume).
+#[derive(Clone, Debug, PartialEq)]
+pub enum MenuSlider {
+    InputVolume(f32),
+    OutputVolume(f32),
+}
+
+impl MenuSlider {
+    pub fn value(&self) -> f32 {
+        match *self {
+            Self::InputVolume(v) | Self::OutputVolume(v) => v,
+        }
+    }
+}
+
 /// One row of a menu.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MenuItem {
@@ -133,6 +148,8 @@ pub struct MenuItem {
     /// A picture in front of the label instead of a glyph (rooms, servers):
     /// the name its letter comes from.
     pub avatar: Option<String>,
+    /// An interactive slider in the row (e.g. volume).
+    pub slider: Option<MenuSlider>,
 }
 
 impl MenuItem {
@@ -146,6 +163,21 @@ impl MenuItem {
             grid: false,
             icon: None,
             avatar: None,
+            slider: None,
+        }
+    }
+
+    pub fn slider(label: impl Into<String>, slider: MenuSlider) -> Self {
+        Self {
+            label: label.into(),
+            action: None,
+            danger: false,
+            checked: false,
+            children: Vec::new(),
+            grid: false,
+            icon: None,
+            avatar: None,
+            slider: Some(slider),
         }
     }
 

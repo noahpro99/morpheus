@@ -31,7 +31,10 @@ use crate::{
     view_model::{marks::Marks, nicknames::NickMap, toast::ToastList},
     prefs::Prefs,
     rail, room_list,
-    settings::{DevicesChosen, KeysChanged, MicTest, NoiseChosen, SettingsView, ThemeChosen},
+    settings::{
+        DevicesChosen, InputVolumeChanged, KeysChanged, MicTest, NoiseChosen, OutputVolumeChanged,
+        SettingsView, ThemeChosen,
+    },
     theme,
     input::{Submit, TextInput},
     search::{SearchEvent, SearchPanel},
@@ -320,6 +323,14 @@ impl Shell {
             if chosen.0 != crate::view_model::menu::DeviceKind::Camera {
                 this.use_devices(cx);
             }
+        })
+        .detach();
+        cx.subscribe(&settings, |this, _, vol: &InputVolumeChanged, cx| {
+            this.set_input_volume(vol.0, cx);
+        })
+        .detach();
+        cx.subscribe(&settings, |this, _, vol: &OutputVolumeChanged, cx| {
+            this.set_output_volume(vol.0, cx);
         })
         .detach();
         cx.subscribe(&settings, |this, _, chosen: &NoiseChosen, cx| this.choose_noise(chosen.0, cx))

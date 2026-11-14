@@ -64,6 +64,14 @@ pub struct DevicesChosen(pub crate::view_model::menu::DeviceKind);
 
 impl EventEmitter<DevicesChosen> for SettingsView {}
 
+pub struct InputVolumeChanged(pub f32);
+
+impl EventEmitter<InputVolumeChanged> for SettingsView {}
+
+pub struct OutputVolumeChanged(pub f32);
+
+impl EventEmitter<OutputVolumeChanged> for SettingsView {}
+
 /// A noise suppression mode was picked on the Voice & Video page.
 pub struct NoiseChosen(pub morpheus_call::NoiseSuppression);
 

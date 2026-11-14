@@ -33,6 +33,12 @@ pub use noise::{
     NoiseSuppression, applied_noise_suppression, noise_suppression, set_noise_suppression,
 };
 
+#[path = "volume.rs"]
+mod volume;
+pub use volume::{
+    MAX_VOLUME, input_volume, output_volume, set_input_volume, set_output_volume,
+};
+
 #[path = "quality.rs"]
 mod quality;
 pub use quality::{
