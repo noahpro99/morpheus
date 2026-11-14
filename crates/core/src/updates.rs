@@ -152,16 +152,23 @@ async fn check(
         return Ok(UpdateStatus::NoFeed);
     };
     let failed = |err: &dyn std::fmt::Display| Error::Other(format!("update feed: {err}"));
-    let response = http
+    let mut request = http
         .get(&url)
         // GitHub turns away requests that don't say who they are.
         .header("User-Agent", "Morpheus")
         .header("Accept", "application/vnd.github+json")
-        .timeout(std::time::Duration::from_secs(15))
-        .send()
-        .await
-        .and_then(|response| response.error_for_status())
-        .map_err(|err| failed(&err))?;
+        .timeout(std::time::Duration::from_secs(15));
+    if let Ok(token) = std::env::var("GITHUB_TOKEN").or_else(|_| std::env::var("GH_TOKEN")) {
+        request = request.header("Authorization", format!("Bearer {token}"));
+    }
+    let response = request.send().await.map_err(|err| failed(&err))?;
+    if (response.status() == matrix_sdk::reqwest::StatusCode::FORBIDDEN
+        || response.status() == matrix_sdk::reqwest::StatusCode::TOO_MANY_REQUESTS)
+        && url == RELEASES
+    {
+        return check_github_redirect(&http, current).await;
+    }
+    let response = response.error_for_status().map_err(|err| failed(&err))?;
     let body = response.text().await.map_err(|err| failed(&err))?;
     let feed: Feed = serde_json::from_str(&body).map_err(|err| failed(&err))?;
     if !is_newer(&feed.version, current) {
@@ -176,6 +183,37 @@ async fn check(
     Ok(UpdateStatus::Available {
         version: feed.version.trim_start_matches('v').to_owned(),
         url: feed.html_url.or(feed.url),
+        download,
+    })
+}
+
+async fn check_github_redirect(
+    http: &matrix_sdk::reqwest::Client,
+    current: &'static str,
+) -> Result<UpdateStatus, Error> {
+    let failed = |err: &dyn std::fmt::Display| Error::Other(format!("update feed: {err}"));
+    let res = http
+        .get("https://github.com/noahpro99/morpheus/releases/latest")
+        .header("User-Agent", "Morpheus")
+        .timeout(std::time::Duration::from_secs(15))
+        .send()
+        .await
+        .map_err(|err| failed(&err))?;
+    let final_url = res.url().to_string();
+    let tag = final_url.rsplit('/').next().unwrap_or_default();
+    if tag.is_empty() || tag == "latest" {
+        return Err(Error::Other("could not resolve latest release tag from GitHub redirect".into()));
+    }
+    if !is_newer(tag, current) {
+        return Ok(UpdateStatus::UpToDate);
+    }
+    let version = tag.trim_start_matches('v').to_owned();
+    let download = platform().map(|plat| {
+        format!("https://github.com/noahpro99/morpheus/releases/download/{tag}/morpheus-{version}-{plat}.zip")
+    });
+    Ok(UpdateStatus::Available {
+        version,
+        url: Some(final_url),
         download,
     })
 }
@@ -210,7 +248,10 @@ async fn install(http: matrix_sdk::reqwest::Client, download: String) -> Result<
 impl Session {
     /// Ask the release feed whether something newer than `current` exists.
     pub fn check_for_update(&self, current: &'static str) -> CoreFuture<UpdateStatus> {
-        let http = self.client.http_client().clone();
+        let http = matrix_sdk::reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(15))
+            .build()
+            .unwrap_or_else(|_| self.client.http_client().clone());
         self.core.run(check(http, current))
     }
 
@@ -218,7 +259,10 @@ impl Session {
     /// in place of the running app, then start it (it waits for this one to
     /// quit). The caller quits once this returns. Desktops only.
     pub fn install_update(&self, download: String) -> CoreFuture<()> {
-        let http = self.client.http_client().clone();
+        let http = matrix_sdk::reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(60))
+            .build()
+            .unwrap_or_else(|_| self.client.http_client().clone());
         self.core.run(install(http, download))
     }
 }
@@ -431,5 +475,16 @@ mod tests {
         assert!(!is_newer("0.1", "0.1.0"));
         assert!(!is_newer("0.0.9", "0.1.0"));
         assert!(!is_newer("0.1.0-beta.2", "0.1.0"));
+    }
+
+    #[test]
+    fn parse_tag_from_github_release_url() {
+        let final_url = "https://github.com/noahpro99/morpheus/releases/tag/v0.2.2";
+        let tag = final_url.rsplit('/').next().unwrap_or_default();
+        assert_eq!(tag, "v0.2.2");
+        assert!(is_newer(tag, "0.2.0"));
+        assert!(!is_newer(tag, "0.2.2"));
+        let version = tag.trim_start_matches('v');
+        assert_eq!(version, "0.2.2");
     }
 }
