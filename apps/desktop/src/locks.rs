@@ -133,6 +133,22 @@ impl Shell {
             self.thread = None;
             self.search = None;
             self.pinned.clear();
+            // What was opened from the room (the pins, a reactions viewer, a
+            // picture or video full size, a report of a message) goes too.
+            if matches!(
+                self.dialog,
+                Some(
+                    crate::dialogs::Dialog::Reactions(_)
+                        | crate::dialogs::Dialog::Report(_)
+                        | crate::dialogs::Dialog::Pinned(_)
+                        | crate::dialogs::Dialog::Lightbox(_)
+                        | crate::dialogs::Dialog::Video(_)
+                )
+            ) {
+                self.dialog = None;
+            }
+            self.menu = None;
+            self.picker = None;
             // Just closed: a fresh box.
             self.lock_input = None;
             self.show_lock_screen(room, cx);

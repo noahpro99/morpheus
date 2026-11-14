@@ -474,3 +474,118 @@ async fn a_call_in_a_locked_dm_does_not_name_the_caller() {
     }
     s.nothing_of_it_on_screen("the call in a locked chat").await;
 }
+
+/// Sends `body` as `user` into `room` (a reply in `root`'s thread when
+/// given); the event's ID.
+fn send_id(hs: &str, user: &str, room: &str, body: &str, root: Option<&str>) -> String {
+    let mut content = serde_json::json!({ "msgtype": "m.text", "body": body });
+    if let Some(root) = root {
+        content["m.relates_to"] = serde_json::json!({
+            "rel_type": "m.thread", "event_id": root, "is_falling_back": true,
+            "m.in_reply_to": { "event_id": root }
+        });
+    }
+    let sent = api(user, hs, "PUT", &format!("rooms/{}/send/m.room.message/{}", esc(room), unique()), content);
+    sent["event_id"].as_str().expect("event id").to_owned()
+}
+
+impl Setup {
+    /// Unlocks the DM and opens it; its messages show.
+    async fn unlocked_and_open(&mut self, password: &str) {
+        self.open_dm().await;
+        self.unlock(password).await;
+        self.wait_message(true).await;
+    }
+
+    /// With the clock at 3 s and the window not in front, the room locks by
+    /// itself: nothing of what was open from it stays on screen.
+    async fn wait_locked_clean(&mut self, what: &str) {
+        self.app
+            .wait_for(".lock-screen", Duration::from_secs(20))
+            .await
+            .unwrap_or_else(|err| panic!("{what}: the room never locked: {err}"));
+        for part in [
+            ".thread-panel",
+            ".pinned-dialog",
+            ".search-panel",
+            ".reactions-dialog",
+            ".lightbox-overlay",
+            ".video-viewer",
+            ".dialog",
+            ".modal",
+        ] {
+            assert_eq!(self.app.count(part).await.expect("count"), 0, "{what}: {part} is left on screen");
+        }
+        self.nothing_of_it_on_screen(what).await;
+    }
+}
+
+/// A thread panel, the pins dialog and the search results opened from the
+/// room go when it locks by itself.
+#[tokio::test]
+async fn a_thread_the_pins_and_search_close_when_the_room_locks() {
+    let hs = hs!();
+    let mut s = setup(&hs, "lo", &[("MORPHEUS_E2E_LOCK_SECS", "3")]).await;
+    let word = format!("kumquat{}", std::process::id());
+    let root = send_id(&hs, &s.writer, &s.dm, &format!("{word} root"), None);
+    send_id(&hs, &s.writer, &s.dm, &format!("{word} reply in the thread"), Some(&root));
+    s.lock_dm("tulip").await;
+    s.unlocked_and_open("tulip").await;
+
+    // The thread panel.
+    s.app.wait_for_text(".thread-chip", "repl", DEFAULT_WAIT).await.expect("thread chip");
+    s.app.click_text(".thread-chip", "repl").await.expect("open the thread");
+    s.app.wait_for(".thread-panel", DEFAULT_WAIT).await.expect("thread panel");
+    s.wait_locked_clean("a thread panel").await;
+
+    // The search results.
+    s.unlock("tulip").await;
+    s.wait_message(true).await;
+    s.app.click(".chat-header .search-bar input[name=search]").await.expect("search box");
+    s.app.type_into(".chat-header input[name=search]", &word).await.expect("type");
+    s.app.press(".chat-header input[name=search]", "Enter").await.expect("search");
+    s.app.wait_for(".search-panel .search-hit", DEFAULT_WAIT).await.expect("a hit");
+    s.wait_locked_clean("the search results").await;
+
+    // The pinned messages.
+    s.unlock("tulip").await;
+    s.wait_message(true).await;
+    s.app.click(".pin-toggle").await.expect("pins");
+    s.app.wait_for(".pinned-dialog", DEFAULT_WAIT).await.expect("pins dialog");
+    s.wait_locked_clean("the pins dialog").await;
+}
+
+/// The reactions viewer and a picture opened full size go when it locks.
+#[tokio::test]
+async fn the_reactions_viewer_and_the_lightbox_close_when_the_room_locks() {
+    let hs = hs!();
+    let mut s = setup(&hs, "lp", &[("MORPHEUS_E2E_LOCK_SECS", "3")]).await;
+    let word = format!("loquat{}", std::process::id());
+    let message = send_id(&hs, &s.writer, &s.dm, &format!("{word} for reactions"), None);
+    api(
+        &s.reader,
+        &hs,
+        "PUT",
+        &format!("rooms/{}/send/m.reaction/{}", esc(&s.dm), unique()),
+        serde_json::json!({ "m.relates_to": { "rel_type": "m.annotation", "event_id": message, "key": "🎉" } }),
+    );
+    let wide: &[u8] = include_bytes!("../fixtures/wide.png");
+    morpheus_e2e::send_image_as(&hs, &s.writer, &s.dm, wide, &format!("{word}.png"), None).expect("a picture");
+    s.lock_dm("tulip").await;
+    s.unlocked_and_open("tulip").await;
+
+    // The reactions viewer.
+    s.app.wait_for_text(".message .body", &word, DEFAULT_WAIT).await.expect("the message");
+    s.app.right_click_text(".message .body", &word).await.expect("its menu");
+    s.app.click_text(".context-item", "View reactions").await.expect("view");
+    s.app.wait_for(".reactions-dialog", DEFAULT_WAIT).await.expect("viewer");
+    s.wait_locked_clean("the reactions viewer").await;
+
+    // The picture, full size.
+    s.unlock("tulip").await;
+    s.wait_message(true).await;
+    s.app.reveal_element(".message img.image", DEFAULT_WAIT).await.expect("an image");
+    s.app.click(".message img.image").await.expect("open it");
+    s.app.wait_for(".lightbox-overlay", DEFAULT_WAIT).await.expect("lightbox");
+    s.wait_locked_clean("the lightbox").await;
+}
