@@ -1297,6 +1297,66 @@ mod tests {
         }
     }
 
+    /// A voice trailing off over noise (30 dB over 0.9 s, to the end of each
+    /// phrase): until it is down near the noise (6 dB above it) it stays in
+    /// rather than being gated to silence, and its level changes smoothly
+    /// from one 10 ms frame to the next (no chopping).
+    #[test]
+    fn a_quiet_end_of_speech_fades_out_smoothly_instead_of_chopping() {
+        use crate::imp::speech_fixture::{fading_speech, frame_energy};
+        /// The voice's energy over the noise's that counts as still talking.
+        const AUDIBLE: f64 = 4.0;
+        /// The most a voice still talking may lose (dB).
+        const FLOOR: f64 = -12.0;
+        /// The most its level may change from one frame to the next (dB).
+        const STEP: f64 = 8.0;
+        let speech = fading_speech(10, 0.05, 0.01);
+        let mix = speech.mix();
+        let mut failures = Vec::new();
+        for mode in [
+            NoiseSuppression::Off,
+            NoiseSuppression::Standard,
+            NoiseSuppression::Strong,
+        ] {
+            let out = run(mode, &mix);
+            let mut processor = Processor::new(mode, true);
+            if processor.needs_model() {
+                processor.load_model();
+            }
+            let delay = processor.delay();
+            // Per vowel frame of a fade with the voice still talking: how
+            // much of its energy comes out (dB).
+            let kept: Vec<Option<f64>> = (0..speech.tail.len())
+                .map(|f| {
+                    let voice = frame_energy(&speech.voice, f, 0);
+                    let noise = frame_energy(&speech.noise, f, 0);
+                    let out = frame_energy(&out, f, delay).max(1e-12);
+                    (f >= 100 && speech.tail[f] && voice >= AUDIBLE * noise)
+                        .then(|| 10.0 * (out / voice).log10())
+                })
+                .collect();
+            let lowest = kept.iter().flatten().copied().fold(f64::MAX, f64::min);
+            let gated = kept.iter().flatten().filter(|k| **k < FLOOR).count();
+            let steps: Vec<f64> = kept
+                .windows(2)
+                .filter_map(|w| Some((w[1]? - w[0]?).abs()))
+                .collect();
+            let biggest = steps.iter().copied().fold(0.0, f64::max);
+            let chops = steps.iter().filter(|s| **s > STEP).count();
+            eprintln!(
+                "{mode:?}: {} tail frames, lowest {lowest:.1} dB ({gated} under {FLOOR}), largest step {biggest:.1} dB ({chops} over {STEP})",
+                kept.iter().flatten().count()
+            );
+            if gated > 0 {
+                failures.push(format!("{mode:?} gated the tail ({lowest:.1} dB)"));
+            }
+            if chops > 0 {
+                failures.push(format!("{mode:?} chopped the tail ({biggest:.1} dB steps)"));
+            }
+        }
+        assert!(failures.is_empty(), "{failures:?}");
+    }
+
     #[test]
     fn strong_takes_out_the_noise_off_leaves_and_both_keep_the_voice() {
         let speech = noisy_speech(10, 0.05, 0.03);
