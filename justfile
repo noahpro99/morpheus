@@ -33,12 +33,13 @@ test: sweep
 test-live:
     MORPHEUS_TEST_HOMESERVER={{hs}} cargo test -p morpheus-core --test live -- --nocapture
 
-# The desktop app with the in-app test bridge, copied to morpheus-desktop-e2e: a plain
-# `cargo build` overwrites target/debug/morpheus-desktop, which has no bridge and
-# opens on your screen, so the tests only ever run the copy.
+# The desktop app with the in-app test bridge, its own binary (morpheus-desktop-e2e, an
+# [[bin]] of apps/desktop that needs the e2e feature): cargo writes
+# target/debug/morpheus-desktop-e2e directly and never touches
+# target/debug/morpheus-desktop, which you may be running (`cargo r`); that one has no
+# bridge and opens on your screen.
 e2e-build:
-    cargo build -p morpheus-desktop --features e2e
-    cp target/debug/morpheus-desktop target/debug/morpheus-desktop-e2e
+    cargo build -p morpheus-desktop --bin morpheus-desktop-e2e --features e2e
 
 # Needs `just hs-up hs-seed`. Checks that need a display are skipped and counted;
 # `just e2e-display` runs them on the hidden Hyprland test monitor.
