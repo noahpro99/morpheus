@@ -185,6 +185,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         name = name.child(icon("chevron-down", 14.0).text_color(rgb(name_colour)));
     }
     let mut header = div()
+        .w_full()
         .h(px(48.0))
         .flex_none()
         .flex()
@@ -812,7 +813,6 @@ fn palette_button(cx: &mut Context<Shell>) -> impl IntoElement {
         .mx(px(10.0))
         .px(px(10.0))
         .h(px(30.0))
-        .flex_none()
         .rounded(px(theme::RADIUS_SM))
         .bg(rgb(theme::bg_elevated()))
         .text_size(px(0.85 * theme::REM))
