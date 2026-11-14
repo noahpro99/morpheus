@@ -3,6 +3,6 @@
 /result
 /.dev-data
 /dev/homeserver/data
-/dev/homeserver/.seeded
+/dev/homeserver/.seeded*
 *.log
 /.claude/worktrees

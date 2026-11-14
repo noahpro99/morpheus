@@ -40,7 +40,12 @@ struct Asset {
 struct Feed {
     #[serde(alias = "tag_name")]
     version: String,
-    #[serde(alias = "html_url")]
+    // GitHub's document has both `url` (its API address) and `html_url` (the
+    // page): read apart, as an alias of one another they were a "duplicate
+    // field" and every check of a GitHub release failed.
+    #[serde(default)]
+    html_url: Option<String>,
+    #[serde(default)]
     url: Option<String>,
     #[serde(default)]
     assets: Vec<Asset>,
@@ -149,7 +154,7 @@ async fn check(
     });
     Ok(UpdateStatus::Available {
         version: feed.version.trim_start_matches('v').to_owned(),
-        url: feed.url,
+        url: feed.html_url.or(feed.url),
         download,
     })
 }
@@ -365,6 +370,18 @@ mod swap {
 #[cfg(test)]
 mod tests {
     use super::is_newer;
+
+    /// GitHub's real latest-release document (v0.2.1's) reads: its version, its
+    /// page and the Windows zip. It has `url` and `html_url` both, which
+    /// made every check fail ("duplicate field `url`") before.
+    #[test]
+    fn githubs_release_document_reads() {
+        let body = include_str!("../fixtures/github-latest-release.json");
+        let feed: super::Feed = serde_json::from_str(body).expect("GitHub's document reads");
+        assert_eq!(feed.version, "v0.2.1");
+        assert_eq!(feed.html_url.as_deref(), Some("https://github.com/noahpro99/morpheus/releases/tag/v0.2.1"));
+        assert!(feed.assets.iter().any(|a| a.name == "morpheus-0.2.1-windows-x86_64.zip"));
+    }
 
     #[test]
     fn versions_compare_by_field() {
