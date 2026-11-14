@@ -61,6 +61,21 @@ impl TextBuffer {
         self.head = self.text.len();
     }
 
+    /// The text and caret as they were (undo and redo).
+    pub fn restore(&mut self, text: &str, head: usize) {
+        self.text = text.to_owned();
+        self.head = self.clamp(head);
+        self.anchor = self.head;
+    }
+
+    /// `range` of the text becomes `with`; the caret goes to the start of it.
+    pub fn replace_range(&mut self, range: Range<usize>, with: &str) {
+        let range = self.clamp(range.start)..self.clamp(range.end);
+        self.text.replace_range(range.clone(), with);
+        self.head = range.start;
+        self.anchor = range.start;
+    }
+
     fn clamp(&self, offset: usize) -> usize {
         let mut offset = offset.min(self.text.len());
         while !self.text.is_char_boundary(offset) {
