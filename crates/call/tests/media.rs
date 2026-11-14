@@ -28,6 +28,15 @@ fn token(room: &str, identity: &str) -> String {
         .expect("token")
 }
 
+/// Every test here holds this for its whole run. They are separate LiveKit
+/// rooms, but one process: libwebrtc shares its audio device and mixer (as far as measured: only
+/// the two audio tests failed when run together, each alone passes) across
+/// all calls in it, so with the tests run on parallel threads the
+/// speaker's tone and "hearing" events of two tests got in each other's way
+/// (`one_participant_hears_the_other_until_they_mute` timed out waiting for
+/// the speaker's audio). Serial, the whole file takes the same few seconds.
+static ONE_AT_A_TIME: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 /// Wait for an event matching `want`, skipping others.
 async fn wait_for(
     events: &mut UnboundedReceiver<CallEvent>,
@@ -48,6 +57,7 @@ async fn wait_for(
 
 #[tokio::test]
 async fn one_participant_hears_the_other_until_they_mute() {
+    let _serial = ONE_AT_A_TIME.lock().await;
     let Some(url) = livekit() else {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping media test");
         return;
@@ -101,6 +111,7 @@ async fn one_participant_hears_the_other_until_they_mute() {
 
 #[tokio::test]
 async fn encrypted_audio_is_heard_only_with_the_speakers_key() {
+    let _serial = ONE_AT_A_TIME.lock().await;
     let Some(url) = livekit() else {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping media test");
         return;
@@ -212,6 +223,7 @@ fn pixel(jpeg: &[u8], x: usize, y: usize) -> (u8, u8, u8) {
 
 #[tokio::test]
 async fn a_camera_turned_on_is_seen_by_the_other_side_until_turned_off() {
+    let _serial = ONE_AT_A_TIME.lock().await;
     let Some(url) = livekit() else {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping media test");
         return;
@@ -303,6 +315,7 @@ async fn a_camera_turned_on_is_seen_by_the_other_side_until_turned_off() {
 
 #[tokio::test]
 async fn a_shared_screen_is_seen_as_a_screen_by_the_other_side() {
+    let _serial = ONE_AT_A_TIME.lock().await;
     let Some(url) = livekit() else {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping media test");
         return;
@@ -388,6 +401,7 @@ async fn wait_screen_audio(
 /// sound sends none.
 #[tokio::test]
 async fn a_shared_screens_sound_is_heard_at_its_own_volume_until_the_share_stops() {
+    let _serial = ONE_AT_A_TIME.lock().await;
     let Some(url) = livekit() else {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping media test");
         return;
@@ -499,6 +513,7 @@ async fn a_shared_screens_sound_is_heard_at_its_own_volume_until_the_share_stops
 /// with the sharer's key it arrives as sent (stereo tones).
 #[tokio::test]
 async fn an_encrypted_shared_screens_sound_is_heard_with_the_key() {
+    let _serial = ONE_AT_A_TIME.lock().await;
     let Some(url) = livekit() else {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping media test");
         return;
