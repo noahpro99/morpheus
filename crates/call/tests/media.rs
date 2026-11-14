@@ -494,3 +494,53 @@ async fn a_shared_screens_sound_is_heard_at_its_own_volume_until_the_share_stops
     sharer.leave().await;
     viewer.leave().await;
 }
+
+/// In an encrypted call a shared screen's sound is encrypted like the rest:
+/// with the sharer's key it arrives as sent (stereo tones).
+#[tokio::test]
+async fn an_encrypted_shared_screens_sound_is_heard_with_the_key() {
+    let Some(url) = livekit() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping media test");
+        return;
+    };
+    let room = format!("screen-audio-e2ee-{}", std::process::id());
+    let sharer_id = format!("e2ee-sharer-{}", std::process::id());
+    let sharer_key = b"0123456789abcdef".to_vec();
+    let (viewer, mut events) = Call::connect_encrypted(
+        &url,
+        &token(&room, "viewer"),
+        AudioMode::Tone,
+        b"fedcba9876543210".to_vec(),
+    )
+    .await
+    .expect("viewer connects");
+    let (sharer, _sharer_events) = Call::connect_encrypted(
+        &url,
+        &token(&room, &sharer_id),
+        AudioMode::Tone,
+        sharer_key.clone(),
+    )
+    .await
+    .expect("sharer connects");
+    viewer.set_key(&sharer_id, sharer_key);
+    sharer
+        .set_screen_share_with(true, morpheus_call::ScreenQuality::default())
+        .await
+        .expect("share with sound");
+    let sent = morpheus_call::sent_screen_audio();
+    assert!(matches!(&sent, Some(Ok(s)) if s.contains("stereo")), "{sent:?}");
+    wait_for(&mut events, "the screen's sound arriving", |e| {
+        matches!(e, CallEvent::ScreenAudio { identity, on: true } if *identity == sharer_id)
+    })
+    .await;
+    let near = |hz: f32, want: f32| (hz - want).abs() < 20.0;
+    let heard = wait_screen_audio(&sharer_id, "its tone, decrypted", |a| {
+        a.level > 0.1
+            && near(a.left_hz, morpheus_call::SCREEN_TONE_LEFT)
+            && near(a.right_hz, morpheus_call::SCREEN_TONE_RIGHT)
+    })
+    .await;
+    eprintln!("encrypted: {heard:?}");
+    sharer.leave().await;
+    viewer.leave().await;
+}
