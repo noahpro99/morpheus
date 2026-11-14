@@ -46,11 +46,16 @@ esac
 
 # ⌘W, as a person presses it, closes the window (the app keeps running).
 osa -e "tell application \"System Events\" to set frontmost of (first process whose unix id is $pid) to true" >/dev/null 2>&1
-sleep 1
-before=$(windows)
-osa -e 'tell application "System Events" to keystroke "w" using command down'
 sleep 2
-after=$(windows)
+before=$(windows)
+# Tried a few times: on a busy runner the first keystroke can land before the
+# window is key.
+for _ in 1 2 3; do
+    osa -e 'tell application "System Events" to keystroke "w" using command down'
+    sleep 2
+    after=$(windows)
+    [ "$after" = 0 ] && break
+done
 if [ "$before" -ge 1 ] 2>/dev/null && [ "$after" = 0 ] && kill -0 "$pid" 2>/dev/null; then
     echo "ok: ⌘W closed the window ($before → $after), still running"
 else
