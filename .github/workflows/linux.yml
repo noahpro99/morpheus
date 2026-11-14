@@ -36,7 +36,7 @@ jobs:
             libx11-dev libxext-dev libxfixes-dev libxdamage-dev libxrandr-dev libxcomposite-dev libxtst-dev \
             libfontconfig-dev libfreetype-dev libvulkan-dev libgl-dev libdrm-dev libgbm-dev \
             libssl-dev libasound2-dev libpulse-dev libpipewire-0.3-dev libdbus-1-dev \
-            pkg-config cmake zip python3 nasm
+            pkg-config cmake zip python3 nasm nvidia-cuda-dev
           # libwebrtc (calls) is built against Chromium's libc++ and needs a
           # recent clang, as in the dev shell.
           wget -qO llvm.sh https://apt.llvm.org/llvm.sh
