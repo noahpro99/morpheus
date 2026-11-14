@@ -486,12 +486,12 @@ impl TextInput {
                 "home" => self.buf.home(m.shift, false),
                 "end" => self.buf.end(m.shift, false),
                 _ => {
-                    if m.control || m.alt || m.platform {
+                    if (m.control || m.alt || m.platform) && !types_with_modifiers(keystroke) {
                         return;
                     }
-                    match &keystroke.key_char {
+                    match typed_text(keystroke) {
                         Some(text) if !text.chars().any(char::is_control) => {
-                            self.insert_text(text)
+                            self.insert_text(&text)
                         }
                         _ => return,
                     }
@@ -1118,5 +1118,45 @@ mod tests {
             assert_eq!(i.to_shown(i.buf.head()), 18);
             assert_eq!(i.from_shown(6), 3, "two bytes for the é");
         });
+    }
+}
+
+/// The text a key types. gpui on Windows reports Space as the named key
+/// "space" with no `key_char` (Linux and macOS give " "), so a box built on
+/// `key_char` alone could not type a space there.
+fn typed_text(keystroke: &gpui::Keystroke) -> Option<String> {
+    keystroke
+        .key_char
+        .clone()
+        .or_else(|| (keystroke.key == "space").then(|| " ".to_owned()))
+}
+
+/// Keys that type a character although a modifier is down: AltGr on Windows
+/// (reported as Ctrl+Alt, e.g. @ on a German keyboard) and Option on macOS
+/// (Option+L is @ on a German Mac). Shortcuts (Ctrl or Cmd alone) never type.
+fn types_with_modifiers(keystroke: &gpui::Keystroke) -> bool {
+    let m = keystroke.modifiers;
+    let has_char = keystroke.key_char.as_ref().is_some_and(|t| !t.chars().any(char::is_control));
+    let altgr = cfg!(target_os = "windows") && m.control && m.alt && !m.platform;
+    let option = cfg!(target_os = "macos") && m.alt && !m.control && !m.platform;
+    has_char && (altgr || option)
+}
+
+#[cfg(test)]
+mod typed_text_tests {
+    use super::typed_text;
+
+    #[test]
+    fn space_types_a_space_even_without_a_key_char() {
+        // As gpui's Windows backend reports it.
+        let windows = gpui::Keystroke { modifiers: Default::default(), key: "space".into(), key_char: None };
+        assert_eq!(typed_text(&windows).as_deref(), Some(" "));
+        // As Linux and macOS report it.
+        let linux = gpui::Keystroke { modifiers: Default::default(), key: "space".into(), key_char: Some(" ".into()) };
+        assert_eq!(typed_text(&linux).as_deref(), Some(" "));
+        let a = gpui::Keystroke { modifiers: Default::default(), key: "a".into(), key_char: Some("a".into()) };
+        assert_eq!(typed_text(&a).as_deref(), Some("a"));
+        let f5 = gpui::Keystroke { modifiers: Default::default(), key: "f5".into(), key_char: None };
+        assert_eq!(typed_text(&f5), None);
     }
 }
