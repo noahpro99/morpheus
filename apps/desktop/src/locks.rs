@@ -123,7 +123,22 @@ impl Shell {
     /// A room just closed (a lock put on, "Lock now", the clock): nothing of
     /// it stays in the cache or on screen.
     pub fn apply_lock(&mut self, room: &OwnedRoomId, cx: &mut Context<Self>) {
-        drop(self.timeline_cache.take(room));
+        // Its decrypted rows go with the views, its pictures from the shared
+        // copies, and its people from the member lists kept.
+        if let Some(cached) = self.timeline_cache.take(room) {
+            cached.read(cx).forget_pictures();
+        }
+        if let Some((id, timeline)) = &self.timeline
+            && id == room
+        {
+            timeline.read(cx).forget_pictures();
+        }
+        if let Some((id, members)) = &self.members
+            && id == room
+        {
+            members.read(cx).forget_pictures();
+        }
+        crate::members::forget_room(room);
         if self.selected.as_ref() == Some(room) {
             self.timeline = None;
             self.composer = None;

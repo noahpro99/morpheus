@@ -1073,6 +1073,13 @@ impl TimelineView {
         cx.notify();
     }
 
+    /// The room's pictures leave the shared copies and the stand-ins (it was
+    /// locked: the views are dropped by the caller).
+    pub fn forget_pictures(&self) {
+        self.images.forget_shared();
+        crate::message::forget_blurs();
+    }
+
     /// What keeping this room costs, in entries (a picture counts as one).
     pub fn weight(&self) -> usize {
         self.entries.len() + self.images.len()

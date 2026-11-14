@@ -1308,7 +1308,8 @@ impl Render for Shell {
                     .min_h_0()
                     .child(left)
                     .child(chat::render(self, window, cx))
-                    .e2e("div", "shell-body"),
+                    .e2e("div", "shell-body")
+                    .attr("data-held-pictures", crate::media::held().to_string()),
             )
             .when(show_backup_prompt(self.keys, self.backup_later), |d| {
                 d.child(backup_prompt(cx))
