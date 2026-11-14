@@ -415,3 +415,62 @@ async fn the_lock_timeout_is_a_setting() {
     let checked = s.app.checked(".settings-page input[name=lock-timeout]").await.expect("checked");
     assert_eq!(checked, vec![false, false, true, false, false], "15 minutes shows chosen");
 }
+
+/// Someone calling in a locked DM: the card and the system notification say
+/// only that a call came in a locked chat (not who), answering works, and
+/// the chat's messages stay hidden meanwhile.
+#[tokio::test]
+async fn a_call_in_a_locked_dm_does_not_name_the_caller() {
+    let hs = hs!();
+    let mut s = setup(&hs, "lc", &[]).await;
+    s.lock_dm("tulip").await;
+    s.leave_to_elsewhere().await;
+    let before = shown(&s.app).len();
+
+    // The writer calls from a second app (the DM is theirs too, and a room of their own is listed).
+    api(&s.writer, &hs, "POST", "createRoom", serde_json::json!({ "name": "caller elsewhere" }));
+    api(
+        &s.writer,
+        &hs,
+        "PUT",
+        &format!("user/{}/account_data/m.direct", esc(&format!("@{}:localhost", s.writer))),
+        serde_json::json!({ format!("@{}:localhost", s.reader): [s.dm] }),
+    );
+    let mut caller = App::launch(&hs).await.expect("launch the caller");
+    login(&mut caller, &s.writer).await;
+    caller.click(".rail-dms").await.expect("DMs");
+    caller.open_room(&s.reader).await.expect("open the DM");
+    caller.wait_for(".chat-header .call-button", DEFAULT_WAIT).await.expect("call button");
+    caller.click(".chat-header .call-button").await.expect("call");
+
+    s.app.wait_for(".incoming-call", DEFAULT_WAIT).await.expect("it rings");
+    let mut seen = s.app.texts(".incoming-calls *").await.expect("texts");
+    seen.extend(s.app.attrs(".incoming-calls *", "title").await.expect("titles").into_iter().flatten());
+    assert!(!seen.iter().any(|t| t.contains(&s.writer)), "the card names the caller: {seen:?}");
+    assert_eq!(
+        s.app.texts(".incoming-call .incoming-call-name").await.expect("name"),
+        vec!["Incoming call in a locked chat".to_owned()]
+    );
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let all = shown(&s.app).into_iter().skip(before).map(|n| n.to_string()).collect::<Vec<_>>();
+        assert!(!all.iter().any(|n| n.contains(&s.writer)), "a notification names the caller: {all:?}");
+        if all.iter().any(|n| n.contains("Incoming call in a locked chat")) {
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline, "no ring notification: {all:?}");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+
+    // Answering works; the chat itself stays behind the lock.
+    s.app.click(".incoming-call .accept-call").await.expect("answer");
+    s.app
+        .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("in the call");
+    s.app.wait_for(".lock-screen", DEFAULT_WAIT).await.expect("still locked");
+    for part in [".timeline", ".message", ".voice-chat", ".composer"] {
+        assert_eq!(s.app.count(part).await.expect("count"), 0, "{part} shows while locked");
+    }
+    s.nothing_of_it_on_screen("the call in a locked chat").await;
+}

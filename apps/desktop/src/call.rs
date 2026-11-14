@@ -200,6 +200,7 @@ impl Shell {
                 let alive = match update {
                     Ringing::Incoming(call) => {
                         let caller = call.caller.clone();
+                        let ring_room = call.room_id.clone();
                         let alive = this
                             .update(cx, |this, cx| {
                                 this.calls.rings.retain(|c| c.room_id != call.room_id);
@@ -224,7 +225,12 @@ impl Shell {
                             };
                             let hidden = crate::view_model::settings::notification_content(&crate::data_dir())
                                 == crate::view_model::settings::NotificationContent::Hidden;
-                            notify_ring(format!("{} is calling", if hidden { "Someone" } else { &name }));
+                            let title = if crate::locks::is_locked(&ring_room) {
+                                crate::locks::LOCKED_CALL.to_owned()
+                            } else {
+                                format!("{} is calling", if hidden { "Someone" } else { &name })
+                            };
+                            notify_ring(title);
                         }
                         alive
                     }
