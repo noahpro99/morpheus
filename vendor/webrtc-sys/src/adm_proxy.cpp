@@ -531,6 +531,13 @@ int32_t AdmProxy::StartPlayout() {
     playing_ = true;
 
     if (IsPlatformPlayoutActive()) {
+      if (!platform_adm_->PlayoutIsInitialized()) {
+        int32_t init_res = platform_adm_->InitPlayout();
+        if (init_res != 0) {
+          RTC_LOG(LS_ERROR) << "AdmProxy::StartPlayout - InitPlayout failed: " << init_res;
+          return init_res;
+        }
+      }
       return platform_adm_->StartPlayout();
     }
     // Synthetic mode
@@ -576,6 +583,13 @@ int32_t AdmProxy::StartRecording() {
       return 0;
     }
     recording_ = true;
+    if (!adm->RecordingIsInitialized()) {
+      int32_t init_res = adm->InitRecording();
+      if (init_res != 0) {
+        RTC_LOG(LS_ERROR) << "AdmProxy::StartRecording - InitRecording failed: " << init_res;
+        return init_res;
+      }
+    }
     return adm->StartRecording();
   });
 }

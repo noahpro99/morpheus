@@ -315,6 +315,65 @@ async fn encrypted_rooms_encrypt_the_call_and_both_sides_still_hear() {
     .expect("the call empties");
 }
 
+#[tokio::test]
+async fn rejoin_after_app_restart_can_hear_each_other() {
+    rejoin_after_app_restart_can_hear_each_other_in_channel("hangout").await;
+}
+
+#[tokio::test]
+async fn rejoin_after_app_restart_can_hear_each_other_encrypted() {
+    rejoin_after_app_restart_can_hear_each_other_in_channel("vault").await;
+}
+
+async fn rejoin_after_app_restart_can_hear_each_other_in_channel(channel: &str) {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    login_and_open(&mut alice, "alice", channel).await;
+    let mut bob = App::launch(&hs).await.expect("launch bob");
+    login_and_open(&mut bob, "bob", channel).await;
+
+    alice.click(CALL_BUTTON).await.expect("call");
+    alice
+        .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("alice connected");
+    bob.click(CALL_BUTTON).await.expect("join");
+    bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("bob connected");
+
+    wait_hears(&mut bob, "alice")
+        .await
+        .expect("bob hears alice initially");
+    wait_hears(&mut alice, "bob")
+        .await
+        .expect("alice hears bob initially");
+
+    // Bob leaves VC, closes the app completely, then rejoins VC.
+    bob.click(".voice-panel .hang-up")
+        .await
+        .expect("bob leaves vc");
+    let mut bob = bob.relaunch().await.expect("relaunch bob");
+    bob.wait_for(".room", DEFAULT_WAIT).await.expect("rooms");
+    open_without_joining(&mut bob, channel).await;
+
+    // Bob rejoins VC.
+    bob.click(CALL_BUTTON).await.expect("bob rejoins");
+    bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("bob connected after rejoin");
+
+    wait_hears(&mut bob, "alice")
+        .await
+        .expect("bob hears alice after rejoin");
+    wait_hears(&mut alice, "bob")
+        .await
+        .expect("alice hears bob after rejoin");
+}
+
 /// Choose a device in a picker, as a person would: open it, pick one.
 async fn choose(app: &mut App, picker: &str, id: &str) {
     app.click(&format!(

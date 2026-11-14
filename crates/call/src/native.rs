@@ -13,6 +13,7 @@
 
 use std::{
     borrow::Cow,
+    collections::HashMap,
     sync::{
         Arc, Mutex, OnceLock,
         atomic::{AtomicBool, Ordering},
@@ -1219,6 +1220,8 @@ async fn forward_events(
     mode: AudioMode,
     deafened: Arc<Mutex<bool>>,
 ) {
+    let mut voice_tasks: HashMap<String, tokio::task::JoinHandle<()>> = HashMap::new();
+    let mut measure_tasks: HashMap<String, tokio::task::JoinHandle<()>> = HashMap::new();
     while let Some(event) = events.recv().await {
         // What happens in a call goes to the log: when someone cannot be
         // heard or seen, it says whether they arrived, sent anything, and
@@ -1229,9 +1232,18 @@ async fn forward_events(
                 CallEvent::Joined(p.identity().to_string())
             }
             RoomEvent::ParticipantDisconnected(p) => {
-                info!(who = %p.identity(), "left the call");
-                let _ = speech.send(Speech::Gone(p.identity().to_string()));
-                CallEvent::Left(p.identity().to_string())
+                let identity = p.identity().to_string();
+                info!(who = %identity, "left the call");
+                if let Some(task) = voice_tasks.remove(&identity) {
+                    task.abort();
+                }
+                if let Some(task) = measure_tasks.remove(&identity) {
+                    task.abort();
+                }
+                #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+                mic::far_end_gone(&identity);
+                let _ = speech.send(Speech::Gone(identity.clone()));
+                CallEvent::Left(identity)
             }
             RoomEvent::E2eeStateChanged { participant, state } => {
                 info!(who = %participant.identity(), ?state, "call encryption");
@@ -1282,12 +1294,25 @@ async fn forward_events(
                 track: RemoteTrack::Audio(_),
                 participant,
                 publication,
-            } if publication.source() == TrackSource::ScreenshareAudio => {
+            } => {
                 let identity = participant.identity().to_string();
-                crate::screen_audio::forget_heard(&identity);
-                CallEvent::ScreenAudio {
-                    identity,
-                    on: false,
+                if publication.source() == TrackSource::ScreenshareAudio {
+                    crate::screen_audio::forget_heard(&identity);
+                    CallEvent::ScreenAudio {
+                        identity,
+                        on: false,
+                    }
+                } else {
+                    if let Some(task) = voice_tasks.remove(&identity) {
+                        task.abort();
+                    }
+                    if let Some(task) = measure_tasks.remove(&identity) {
+                        task.abort();
+                    }
+                    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+                    mic::far_end_gone(&identity);
+                    let _ = speech.send(Speech::Unmeasured(identity));
+                    continue;
                 }
             }
             RoomEvent::TrackSubscribed {
@@ -1295,23 +1320,38 @@ async fn forward_events(
                 participant,
                 ..
             } => {
-                info!(who = %participant.identity(), track = %track.sid(), "audio arriving");
+                let identity = participant.identity().to_string();
+                info!(who = %identity, track = %track.sid(), "audio arriving");
                 if deafened.lock().is_ok_and(|d| *d) {
                     track.disable();
+                } else {
+                    track.enable();
                 }
                 track.rtc_track().set_volume(f64::from(crate::output_volume()));
-                tokio::spawn(watch_voice(
-                    track.clone(),
-                    participant.identity().to_string(),
-                    speech.clone(),
-                    mode == AudioMode::Platform,
-                ));
+                if let Some(prev) = voice_tasks.remove(&identity) {
+                    prev.abort();
+                }
+                voice_tasks.insert(
+                    identity.clone(),
+                    tokio::spawn(watch_voice(
+                        track.clone(),
+                        identity.clone(),
+                        speech.clone(),
+                        mode == AudioMode::Platform,
+                    )),
+                );
                 if mode == AudioMode::Tone {
-                    tokio::spawn(measure(
-                        track,
-                        participant.identity().to_string(),
-                        tx.clone(),
-                    ));
+                    if let Some(prev) = measure_tasks.remove(&identity) {
+                        prev.abort();
+                    }
+                    measure_tasks.insert(
+                        identity.clone(),
+                        tokio::spawn(measure(
+                            track,
+                            identity,
+                            tx.clone(),
+                        )),
+                    );
                 }
                 continue;
             }
