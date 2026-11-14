@@ -224,6 +224,13 @@ pub const SCREEN_PATTERN: TestPattern = TestPattern {
     right: (210, 16, 146),
 };
 
+impl TestPattern {
+    /// The same picture, shown under another key.
+    pub(crate) fn shown_as(self, key: &'static str) -> Self {
+        Self { key, ..self }
+    }
+}
+
 /// The size a test run's camera or screen has: `var` ("640x480") if set,
 /// else the pattern's own.
 pub(crate) fn test_size(var: &str, pattern: TestPattern) -> (u32, u32) {
@@ -245,6 +252,8 @@ pub(crate) async fn play_test_pattern(
     source: NativeVideoSource,
     stop: Arc<AtomicBool>,
 ) {
+    // A camera held open, as far as the counters go.
+    let _open = crate::imp::preview::OpenGuard::new();
     let colour = |col: u32, bar: u32| {
         if col.abs_diff(bar) < 6 {
             (235, 128, 128)

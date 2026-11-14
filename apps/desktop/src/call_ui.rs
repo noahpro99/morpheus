@@ -1133,6 +1133,10 @@ fn video_card(
             "data-mirrored",
             if key == morpheus_call::LOCAL_CAMERA { "true" } else { "false" },
         )
+        .attr(
+            "data-camera",
+            if own && !feed.screen { morpheus_call::camera_in_use().unwrap_or_default() } else { String::new() },
+        )
         .attr("data-audio", if heard.is_some() { "on" } else { "" })
         .attr(
             "data-audio-level",
@@ -1814,8 +1818,10 @@ pub struct VideoFrame {
     /// What the pictures look like, for tests: pixel colours left and right.
     sample: (String, String),
     pub dim: (u32, u32),
-    /// The shell, told when the picture's shape changes (its card follows it).
-    shell: gpui::WeakEntity<Shell>,
+    /// Told when the picture's shape changes (its card follows it).
+    on_resize: Box<dyn Fn(&mut gpui::App)>,
+    /// The settings preview, not a call's tile.
+    preview: bool,
     /// Zoom and pan of the picture in its tile (a focused screen).
     pub view: ZoomPan,
     /// Where the tile was painted (window coordinates).
@@ -1838,6 +1844,26 @@ impl VideoFrame {
         shell: gpui::WeakEntity<Shell>,
         cx: &mut Context<Self>,
     ) -> Self {
+        Self::with(
+            key,
+            screen,
+            false,
+            Box::new(move |cx| {
+                let _ = shell.update(cx, |_, cx| cx.notify());
+            }),
+            cx,
+        )
+    }
+
+    /// A feed drawn for someone who wants to hear (`on_resize`) when its shape
+    /// changes; `preview`: it is Settings' camera preview.
+    pub fn with(
+        key: String,
+        screen: bool,
+        preview: bool,
+        on_resize: Box<dyn Fn(&mut gpui::App)>,
+        cx: &mut Context<Self>,
+    ) -> Self {
         cx.spawn(async move |this, cx| {
             loop {
                 cx.background_executor().timer(Duration::from_millis(16)).await;
@@ -1855,7 +1881,8 @@ impl VideoFrame {
             stale: Vec::new(),
             sample: (String::new(), String::new()),
             dim: (0, 0),
-            shell,
+            on_resize,
+            preview,
             view: ZoomPan::default(),
             area: Rc::new(std::cell::Cell::new(gpui::Bounds::default())),
             panning: None,
@@ -1954,6 +1981,11 @@ impl VideoFrame {
         self.waiting == wait
     }
 
+    /// Your own camera (in a call, or the preview) is a mirror.
+    fn mirrored(&self) -> bool {
+        self.key == morpheus_call::LOCAL_CAMERA || self.key == morpheus_call::PREVIEW_CAMERA
+    }
+
     /// Takes the latest frame, if it is a new one.
     fn poll(&mut self, cx: &mut Context<Self>) {
         // Test builds can hold the first picture back, to look at the skeleton.
@@ -1975,11 +2007,11 @@ impl VideoFrame {
         if self.dim != (width, height) {
             self.dim = (width, height);
             // The card is the picture's shape: the shell lays it out again.
-            let _ = self.shell.update(cx, |_, cx| cx.notify());
+            (self.on_resize)(cx);
         }
         // Your own camera is drawn mirrored, like a mirror (what is sent is not).
         let mut pixels = frame.bgra.to_vec();
-        if self.key == morpheus_call::LOCAL_CAMERA && width > 0 {
+        if self.mirrored() && width > 0 {
             for row in pixels.chunks_exact_mut(width as usize * 4) {
                 let (mut left, mut right) = (0, width as usize - 1);
                 while left < right {
@@ -2072,7 +2104,8 @@ impl gpui::Render for VideoFrame {
             }
             None => base,
         }
-        .e2e("img", "video")
+        .e2e("img", if self.preview { "preview-video" } else { "video" })
+        .attr("data-mirrored", if self.mirrored() { "true" } else { "false" })
         .attr("data-shown", if shown { "true" } else { "false" })
         .attr("data-seq", self.seen.to_string())
         .attr("data-size", format!("{}x{}", self.dim.0, self.dim.1))

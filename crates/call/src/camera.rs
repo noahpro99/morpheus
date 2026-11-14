@@ -1,4 +1,4 @@
-//! The camera on Linux, through Video4Linux: the first device that captures
+//! The camera on Linux, through Video4Linux: the first device that catures
 //! YUYV (webcams do; the infrared cameras next to them only give grey), at
 //! the widest 16:9 mode it has up to 1280×720 (see [`pick_mode`]), converted to the I420 that WebRTC sends.
 
@@ -98,6 +98,9 @@ pub(crate) struct Camera {
     width: u32,
     height: u32,
     stride: u32,
+    /// The device's path.
+    id: String,
+    _open: crate::imp::preview::OpenGuard,
 }
 
 impl Camera {
@@ -120,6 +123,10 @@ impl Camera {
                 .capabilities()
                 .map(|caps| caps.card().to_owned())
                 .unwrap_or_default();
+            let id = device
+                .path()
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_default();
             let (want_w, want_h) = pick_mode(&modes_of(&device)).unwrap_or((640, 480));
             let capture =
                 device.video_capture(PixFormat::new(want_w, want_h, PixelFormat::YUYV))?;
@@ -133,6 +140,8 @@ impl Camera {
             }
             info!(name, width, height, "camera open");
             return Ok(Self {
+                id,
+                _open: crate::imp::preview::OpenGuard::new(),
                 stream: capture.into_stream()?,
                 width: width & !1,
                 height: height & !1,
@@ -140,6 +149,10 @@ impl Camera {
             });
         }
         Err(io::Error::new(io::ErrorKind::NotFound, "no camera found"))
+    }
+
+    pub(crate) fn id(&self) -> &str {
+        &self.id
     }
 
     pub(crate) fn resolution(&self) -> VideoResolution {
@@ -151,35 +164,44 @@ impl Camera {
 
     /// Send frames to `source` (and show them as this device's camera) on a
     /// thread of its own, until `stop` is set.
-    pub(crate) fn run(mut self, source: NativeVideoSource, stop: Arc<AtomicBool>) {
+    pub(crate) fn run(self, source: NativeVideoSource, stop: Arc<AtomicBool>) {
         let spawned = std::thread::Builder::new()
             .name("morpheus-camera".into())
-            .spawn(move || {
-                let every = video::show_every();
-                let mut shown: Option<Instant> = None;
-                while !stop.load(Ordering::Relaxed) {
-                    let frame = self.stream.dequeue(|buf| {
-                        Ok(yuyv_to_i420(&buf, self.width, self.height, self.stride))
-                    });
-                    let buffer = match frame {
-                        Ok(buffer) => buffer,
-                        Err(err) => {
-                            warn!(%err, "camera stopped");
-                            break;
-                        }
-                    };
-                    let frame = VideoFrame::new(VideoRotation::VideoRotation0, buffer);
-                    source.capture_frame(&frame);
-                    if shown.is_none_or(|at| at.elapsed() >= every) {
-                        shown = Some(Instant::now());
-                        video::keep(LOCAL_CAMERA, &frame.buffer);
-                    }
-                }
-                video::forget(LOCAL_CAMERA);
-            });
+            .spawn(move || self.run_blocking(source, stop, LOCAL_CAMERA));
         if let Err(err) = spawned {
             warn!(%err, "no camera thread");
         }
+    }
+
+    /// Frames to `source`, shown under `key`, on this thread until `stop` is
+    /// set; the camera is let go when it returns.
+    pub(crate) fn run_blocking(
+        mut self,
+        source: NativeVideoSource,
+        stop: Arc<AtomicBool>,
+        key: &'static str,
+    ) {
+        let every = video::show_every();
+        let mut shown: Option<Instant> = None;
+        while !stop.load(Ordering::Relaxed) {
+            let frame = self.stream.dequeue(|buf| {
+                Ok(yuyv_to_i420(&buf, self.width, self.height, self.stride))
+            });
+            let buffer = match frame {
+                Ok(buffer) => buffer,
+                Err(err) => {
+                    warn!(%err, "camera stopped");
+                    break;
+                }
+            };
+            let frame = VideoFrame::new(VideoRotation::VideoRotation0, buffer);
+            source.capture_frame(&frame);
+            if shown.is_none_or(|at| at.elapsed() >= every) {
+                shown = Some(Instant::now());
+                video::keep(key, &frame.buffer);
+            }
+        }
+        video::forget(key);
     }
 }
 

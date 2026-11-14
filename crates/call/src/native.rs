@@ -105,6 +105,12 @@ pub use no_mic_test::*;
 #[cfg(test)]
 #[path = "speech_fixture.rs"]
 mod speech_fixture;
+#[path = "preview.rs"]
+mod preview;
+pub use preview::{
+    PREVIEW_CAMERA, PreviewError, camera_in_use, camera_opens, camera_preview_device,
+    camera_preview_key, camera_preview_start, camera_preview_stop,
+};
 #[path = "video.rs"]
 mod video;
 pub use video::{
@@ -643,6 +649,8 @@ struct Outgoing {
     stop: Arc<AtomicBool>,
     /// A shared screen's sound, when it has some.
     sound: Option<ScreenSound>,
+    /// A camera: the preview knows the call has it (let go when this drops).
+    _claim: Option<preview::CallClaim>,
 }
 
 /// The computer's sound, published beside its screen.
@@ -679,10 +687,15 @@ impl Outgoing {
     ) -> Result<Self> {
         let stop = Arc::new(AtomicBool::new(false));
         let screen = kind == VideoKind::Screen;
+        // The camera is the call's from here (a preview lets go of it).
+        let claim = if screen { None } else { Some(preview::CallClaim::take().await) };
         let (feed, source) = match (mode, kind) {
             (AudioMode::Tone, VideoKind::Camera) => {
                 let (width, height) =
                     video::test_size("MORPHEUS_CALL_CAMERA_SIZE", video::CAMERA_PATTERN);
+                if let Some(claim) = &claim {
+                    claim.using(preview::test_camera_id());
+                }
                 (
                     Feed::TestPattern(video::CAMERA_PATTERN, width, height, video::FPS as u32),
                     NativeVideoSource::new(VideoResolution { width, height }, false),
@@ -716,6 +729,9 @@ impl Outgoing {
                 let device = tokio::task::spawn_blocking(camera::Camera::open)
                     .await?
                     .map_err(|err| Error::Video(err.to_string()))?;
+                if let Some(claim) = &claim {
+                    claim.using(device.id().to_owned());
+                }
                 let source = NativeVideoSource::new(device.resolution(), false);
                 (Feed::Camera(device), source)
             }
@@ -899,6 +915,7 @@ impl Outgoing {
             kind,
             stop,
             sound,
+            _claim: claim,
         })
     }
 
