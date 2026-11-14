@@ -185,6 +185,8 @@ async fn a_locked_dm_shows_a_lock_screen_until_the_password_is_entered() {
     // The form wants the password twice.
     s.dm_menu("Lock with a password").await;
     s.app.wait_for(".lock-dialog", DEFAULT_WAIT).await.expect("the dialog");
+    let blurb = s.app.text(".lock-dialog").await.expect("text").unwrap_or_default();
+    assert!(blurb.contains("they don't encrypt it further"), "the dialog says what a lock is: {blurb}");
     s.app.type_into(".lock-dialog input[name=password]", "tulip").await.expect("password");
     s.app.type_into(".lock-dialog input[name=again]", "tulop").await.expect("again");
     s.app.click(".lock-dialog button[type=submit]").await.expect("set");

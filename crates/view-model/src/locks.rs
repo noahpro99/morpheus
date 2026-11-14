@@ -36,7 +36,7 @@ pub const MIN_PASSWORD: usize = 4;
 const FILE: &str = "locks.json";
 
 /// What the "set a password" form says a lock is.
-pub const LOCK_BLURB: &str = "This chat will open only with the password, on this device: its messages are hidden from the list, notifications, the inbox and search while it is locked. It is a privacy screen, not encryption, and other devices are not affected.";
+pub const LOCK_BLURB: &str = "This chat will open only with the password, on this device: its messages are hidden from the list, notifications, the inbox and search while it is locked. Locks hide this chat in Morpheus on this device; they don't encrypt it further, and other devices are not affected.";
 
 /// What to do about a forgotten password.
 pub const FORGOT: &str = "Forgot the password? Removing a forgotten lock means signing out and back in, which clears every lock on this device.";
@@ -216,6 +216,14 @@ impl Locks {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_lock_form_says_a_lock_does_not_encrypt() {
+        assert!(
+            LOCK_BLURB.contains("Locks hide this chat in Morpheus on this device; they don't encrypt it further"),
+            "{LOCK_BLURB}"
+        );
+    }
 
     fn temp_dir(name: &str) -> std::path::PathBuf {
         let dir = std::env::temp_dir().join(format!("morpheus-locks-{name}-{}", std::process::id()));
