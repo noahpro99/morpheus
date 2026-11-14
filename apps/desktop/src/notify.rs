@@ -244,7 +244,11 @@ pub fn spawn_ring_watcher(session: Session) {
                                     == settings::NotificationContent::Hidden
                                     || crate::streamer::notifications_hidden();
                                 show(
-                                    format!("{} is calling", if hidden { "Someone" } else { &name }),
+                                    if crate::locks::is_locked(&call.room_id) {
+                                        crate::locks::LOCKED_CALL.to_owned()
+                                    } else {
+                                        format!("{} is calling", if hidden { "Someone" } else { &name })
+                                    },
                                     "Open Morpheus to answer".into(),
                                     None,
                                     None,

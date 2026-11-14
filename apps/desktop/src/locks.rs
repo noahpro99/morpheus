@@ -339,3 +339,6 @@ pub fn lock_screen(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -
         )
         .into_any_element()
 }
+
+/// What a ring in a locked chat says instead of who is calling.
+pub const LOCKED_CALL: &str = "Incoming call in a locked chat";

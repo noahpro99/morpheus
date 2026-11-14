@@ -1628,7 +1628,10 @@ pub fn incoming_calls(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyEleme
     }
     let cards = ringing.into_iter().map(|call| {
         let room = shell.rooms.iter().find(|r| r.id == call.room_id);
+        let locked = crate::locks::is_locked(&call.room_id);
         let (name, picture) = match room {
+            // A locked chat: not who, not which, only that it rings.
+            _ if locked => (crate::locks::LOCKED_CALL.to_owned(), None),
             Some(room) => (room.name.clone(), shell.picture(&room.avatar, 48)),
             None => (call.caller.localpart().to_owned(), None),
         };
@@ -1643,7 +1646,19 @@ pub fn incoming_calls(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyEleme
             .bg(rgb(theme::bg_elevated()))
             .text_color(rgb(theme::text()))
             .shadow_lg()
-            .child(avatar(picture, &name, 48.0, None))
+            .child(if locked {
+                div()
+                    .size(px(48.0))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded_full()
+                    .bg(rgb(theme::bg_selected()))
+                    .child(icon("lock", 24.0).text_color(rgb(theme::text_muted())))
+                    .into_any_element()
+            } else {
+                avatar(picture, &name, 48.0, None).into_any_element()
+            })
             .child(
                 div()
                     .flex_1()
