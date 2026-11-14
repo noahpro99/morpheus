@@ -92,7 +92,9 @@ pub fn install(cx: &mut App) {
     cx.on_action(|_: &HideOthers, cx| cx.hide_other_apps());
     cx.on_action(|_: &ShowAll, cx| cx.unhide_other_apps());
     cx.on_action(|_: &CloseWindow, cx| {
-        if let Some(window) = cx.active_window() {
+        // The key window, else the only one (a shortcut can land before macOS
+        // makes the window key).
+        if let Some(window) = cx.active_window().or_else(|| cx.windows().first().copied()) {
             window.update(cx, |_, window, _| window.remove_window()).ok();
         }
     });
