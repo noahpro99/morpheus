@@ -61,6 +61,21 @@ mod denoise;
 #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 #[path = "mic.rs"]
 mod mic;
+#[path = "system_audio.rs"]
+#[cfg_attr(
+    not(any(target_os = "linux", target_os = "windows", target_os = "macos")),
+    allow(dead_code)
+)]
+pub(crate) mod system_audio;
+pub use system_audio::{
+    TONE_LEFT as SCREEN_TONE_LEFT, TONE_RIGHT as SCREEN_TONE_RIGHT, screen_audio_unavailable,
+};
+#[cfg(target_os = "linux")]
+#[path = "system_audio_pulse.rs"]
+mod system_audio_pulse;
+#[cfg(target_os = "windows")]
+#[path = "system_audio_wasapi.rs"]
+mod system_audio_wasapi;
 #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 pub use mic::{
     AudioStats, audio_stats, mic_level, mic_loopback, mic_test_running, reset_audio_stats,

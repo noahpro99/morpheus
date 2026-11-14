@@ -44,6 +44,9 @@ linuxvideo = "0.3"
 # PulseAudio (PipeWire's too) for the microphone, by the same names WebRTC's
 # device module lists.
 cpal = { version = "0.18", features = ["pulseaudio"] }
+# What other apps play, for a shared screen's sound (src/system_audio_pulse.rs):
+# the PulseAudio protocol in Rust (PipeWire's server speaks it), as cpal uses.
+pulseaudio = "0.3"
 # Iterates GLib's default main context for the screen-share portal when no GTK does (src/screen.rs). Same version as the GTK stack's, so nothing new builds.
 glib = "0.18"
 
