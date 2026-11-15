@@ -27,7 +27,28 @@ pub fn current() -> Theme {
         .unwrap_or_default()
 }
 
-fn palette() -> Palette {
+/// The custom colour chosen (its base), and the palette derived from it, if any.
+static CUSTOM: std::sync::RwLock<Option<(u32, Palette)>> = std::sync::RwLock::new(None);
+
+/// Draw with a palette derived from `colour` (0xRRGGBB) instead of the theme, or, with
+/// `None`, with the theme.
+pub fn set_custom(colour: Option<u32>) {
+    if let Ok(mut custom) = CUSTOM.write() {
+        *custom = colour.map(|c| (c, crate::view_model::theme::derive(c)));
+    }
+}
+
+pub fn custom() -> Option<u32> {
+    CUSTOM.read().ok().and_then(|c| c.map(|(base, _)| base))
+}
+
+/// The palette in use.
+pub fn palette() -> Palette {
+    if let Ok(custom) = CUSTOM.read()
+        && let Some((_, palette)) = *custom
+    {
+        return palette;
+    }
     Palette::of(current())
 }
 

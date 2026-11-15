@@ -28,7 +28,7 @@ use crate::{
     call_ui::VideoFrame,
     e2e::E2eExt as _,
     icons::icon,
-    input::{Submit, TextInput},
+    input::{Changed, Submit, TextInput},
     theme,
     view_model::{
         keys::{
@@ -53,6 +53,11 @@ impl EventEmitter<KeysChanged> for SettingsView {}
 pub struct ThemeChosen(pub Theme);
 
 impl EventEmitter<ThemeChosen> for SettingsView {}
+
+/// A custom theme colour (0xRRGGBB) was chosen: the shell applies and keeps it.
+pub struct CustomColourChosen(pub u32);
+
+impl EventEmitter<CustomColourChosen> for SettingsView {}
 
 /// A streamer mode choice was kept: the shell draws again.
 pub struct StreamerChanged;
@@ -146,6 +151,9 @@ pub struct SettingsView {
     startup_note: Option<String>,
     /// The theme in the account's prefs (the shell tells us).
     pub theme: Theme,
+    /// The custom colour in use, and the box it is typed in.
+    pub custom: Option<u32>,
+    colour_input: Entity<TextInput>,
     data_dir: std::path::PathBuf,
     /// The devices to pick from (None while looking), what is chosen, and
     /// which list is open.
@@ -171,6 +179,20 @@ pub struct SettingsView {
 }
 
 impl SettingsView {
+    /// Show the custom colour the account has (the shell tells us).
+    pub fn set_custom_shown(&mut self, colour: Option<u32>, cx: &mut Context<Self>) {
+        self.custom = colour;
+        let text = colour.map(crate::view_model::theme::hex).unwrap_or_default();
+        self.colour_input.update(cx, |input, cx| input.set_value(&text, cx));
+    }
+
+    /// A colour picked from the grid (or typed): apply it.
+    pub(crate) fn pick_colour(&mut self, colour: u32, cx: &mut Context<Self>) {
+        self.set_custom_shown(Some(colour), cx);
+        cx.emit(CustomColourChosen(colour));
+        cx.notify();
+    }
+
     pub fn new(session: Option<Session>, cx: &mut Context<Self>) -> Self {
         let key_input =
             cx.new(|cx| TextInput::new("recovery-key", keys::RECOVERY_PLACEHOLDER, true, "", cx));
@@ -192,6 +214,18 @@ impl SettingsView {
             cx.new(|cx| TextInput::new("displayname", "Display name", false, "", cx).framed());
         cx.subscribe(&name_input, |this, _, _: &Submit, cx| this.save_name(cx))
             .detach();
+        let colour_input = cx.new(|cx| TextInput::new("custom-colour", "#rrggbb", false, "", cx).framed());
+        cx.subscribe(&colour_input, |this, _, _: &Changed, cx| {
+            let typed = this.colour_input.read(cx).value().to_owned();
+            if let Some(colour) = crate::view_model::theme::parse_hex(&typed)
+                && this.custom != Some(colour)
+            {
+                this.custom = Some(colour);
+                cx.emit(CustomColourChosen(colour));
+                cx.notify();
+            }
+        })
+        .detach();
         let data_dir = crate::data_dir();
         if let Some(session) = session.clone() {
             // Incoming requests from the user's other devices pop the window.
@@ -241,6 +275,8 @@ impl SettingsView {
             autostart: None,
             startup_note: None,
             theme: Theme::Dark,
+            custom: None,
+            colour_input,
             data_dir,
             voice: None,
             voice_prefs: Default::default(),

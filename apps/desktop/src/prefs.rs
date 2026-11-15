@@ -194,6 +194,26 @@ impl Prefs {
         self.extra.insert("theme".into(), theme.key().into());
     }
 
+    /// The custom theme colour, if one is chosen (it replaces the theme).
+    pub fn custom_colour(&self) -> Option<u32> {
+        self.extra
+            .get("custom_colour")
+            .and_then(|v| v.as_str())
+            .and_then(crate::view_model::theme::parse_hex)
+    }
+
+    pub fn set_custom_colour(&mut self, colour: Option<u32>) {
+        match colour {
+            Some(c) => {
+                self.extra
+                    .insert("custom_colour".into(), crate::view_model::theme::hex(c).into());
+            }
+            None => {
+                self.extra.remove("custom_colour");
+            }
+        }
+    }
+
     pub fn to_json(&self) -> serde_json::Value {
         let rail: Vec<serde_json::Value> = self
             .rail

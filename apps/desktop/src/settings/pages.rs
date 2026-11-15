@@ -348,7 +348,7 @@ impl SettingsView {
 
     pub(super) fn appearance_page(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let options = Theme::ALL.into_iter().map(|theme_choice| {
-            let selected = theme_choice == self.theme;
+            let selected = theme_choice == self.theme && self.custom.is_none();
             let (side, chat) = theme::swatch_of(theme_choice);
             let swatch = div()
                 .flex()
@@ -386,6 +386,7 @@ impl SettingsView {
                 )
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.theme = theme_choice;
+                    this.set_custom_shown(None, cx);
                     cx.emit(ThemeChosen(theme_choice));
                     cx.notify();
                 }))
@@ -441,6 +442,7 @@ impl SettingsView {
                 self.hl("theme"),
             )
             .into_any_element(),
+            self.custom_colour_section(cx).into_any_element(),
             keyboard.into_any_element(),
         ]
     }
@@ -1291,4 +1293,142 @@ impl SettingsView {
         .chain(note)
         .collect()
     }
+}
+
+/// One colour of the picker grid: hue across, lightness down.
+fn colour_grid() -> Vec<Vec<u32>> {
+    use crate::view_model::theme::from_hsl;
+    [0.25, 0.4, 0.55, 0.7, 0.85]
+        .into_iter()
+        .map(|l| (0..12).map(|i| from_hsl(i as f32 * 30.0, 0.6, l)).collect())
+        .collect()
+}
+
+impl SettingsView {
+    /// Appearance's custom colour: a hex box, a grid to pick from and the preview.
+    fn custom_colour_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let palette = self
+            .custom
+            .map(crate::view_model::theme::derive)
+            .unwrap_or_else(theme::palette);
+        let grid = div().flex().flex_col().gap(px(4.0)).children(colour_grid().into_iter().map(|row| {
+            div().flex().gap(px(4.0)).children(row.into_iter().map(|colour| {
+                div()
+                    .id(ElementId::from(SharedString::from(format!("colour-{colour:06x}"))))
+                    .size(px(24.0))
+                    .rounded(px(theme::RADIUS_SM))
+                    .bg(rgb(colour))
+                    .cursor_pointer()
+                    .on_click(cx.listener(move |this, _, _, cx| this.pick_colour(colour, cx)))
+                    .e2e("button", "colour-swatch")
+                    .attr("data-colour", format!("{colour:06x}"))
+            }))
+        }));
+        let picker = div()
+            .flex()
+            .flex_col()
+            .gap(px(10.0))
+            .child(muted(
+                "One colour themes the whole app: type a hex colour or pick one. Text turns black on a light colour.",
+                "muted",
+            ))
+            .child(div().w(px(180.0)).child(self.colour_input.clone()))
+            .child(grid)
+            .e2e("div", "custom-colour");
+        section(
+            "Custom colour",
+            "custom-colour",
+            vec![
+                picker.into_any_element(),
+                preview(palette).into_any_element(),
+            ],
+            false,
+        )
+    }
+}
+
+/// Sample room list and messages (one in a thread) drawn with `p`: the live preview.
+fn preview(p: crate::view_model::theme::Palette) -> impl IntoElement {
+    let side = div()
+        .flex()
+        .flex_col()
+        .gap(px(2.0))
+        .w(px(150.0))
+        .p(px(8.0))
+        .bg(rgb(p.bg_sidebar))
+        .child(
+            div()
+                .px(px(8.0))
+                .py(px(5.0))
+                .rounded(px(theme::RADIUS_SM))
+                .bg(rgba(p.bg_selected))
+                .text_color(rgb(p.text))
+                .child("# general")
+                .e2e("div", "preview-room selected")
+                .text("# general"),
+        )
+        .child(
+            div()
+                .px(px(8.0))
+                .py(px(5.0))
+                .text_color(rgb(p.text_muted))
+                .child("# random")
+                .e2e("div", "preview-room")
+                .text("# random"),
+        );
+    let message = |name: &'static str, body: &'static str, class: &'static str| {
+        div()
+            .flex()
+            .gap(px(8.0))
+            .child(div().size(px(28.0)).flex_none().rounded_full().bg(rgb(p.accent)))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .child(div().font_weight(FontWeight::SEMIBOLD).text_color(rgb(p.own)).child(name))
+                    .child(div().text_color(rgb(p.text)).child(body)),
+            )
+            .e2e("div", class)
+            .text(body)
+    };
+    let thread = div()
+        .ml(px(36.0))
+        .pl(px(8.0))
+        .border_l_2()
+        .border_color(rgb(p.accent))
+        .text_color(rgb(p.accent))
+        .child("2 replies in a thread")
+        .e2e("div", "preview-thread")
+        .text("2 replies in a thread");
+    let chat = div()
+        .flex()
+        .flex_col()
+        .flex_1()
+        .gap(px(8.0))
+        .p(px(10.0))
+        .child(message("alice", "Morning! Shall we start?", "preview-message"))
+        .child(thread)
+        .child(message("you", "Yes, give me a minute.", "preview-message"))
+        .child(
+            div()
+                .px(px(10.0))
+                .py(px(6.0))
+                .rounded(px(theme::RADIUS))
+                .bg(rgb(p.bg_input))
+                .text_color(rgb(p.text_faint))
+                .child("Message #general"),
+        );
+    div()
+        .flex()
+        .mt(px(12.0))
+        .rounded(px(theme::RADIUS_LG))
+        .overflow_hidden()
+        .bg(rgb(p.bg_chat))
+        .border_1()
+        .border_color(rgba(p.edge))
+        .child(side)
+        .child(chat)
+        .e2e("div", "custom-preview")
+        .attr("data-bg", format!("{:06x}", p.bg_chat))
+        .attr("data-color", format!("{:06x}", p.text))
 }
