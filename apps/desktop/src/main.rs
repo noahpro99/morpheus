@@ -39,6 +39,7 @@ mod pictures;
 mod prefs;
 mod profile;
 mod profile_actions;
+mod profile_sync;
 mod rail;
 mod last_place;
 mod lightbox;

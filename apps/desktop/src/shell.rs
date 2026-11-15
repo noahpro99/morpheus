@@ -237,6 +237,7 @@ impl Shell {
         shell.wait_for_last_place(cx);
         shell.start_update_checks(cx);
         shell.start_calls(&session, cx);
+        shell.start_profile_sync(&session, cx);
         shell.make_search_box(cx);
         shell.start_lock_clock(cx);
         let subscribed = session.room_list();
