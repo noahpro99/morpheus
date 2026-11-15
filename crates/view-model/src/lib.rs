@@ -6,6 +6,7 @@
 //! front ends.
 
 pub mod about;
+pub mod avatar_color;
 pub mod calls;
 pub mod composer;
 pub mod emoji;

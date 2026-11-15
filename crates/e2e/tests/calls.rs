@@ -5345,3 +5345,87 @@ async fn a_speaking_avatar_card_rings_the_card_not_the_avatar_inside() {
         "the avatar inside the speaking card has no ring of its own"
     );
 }
+
+/// Bob's profile picture, solid red, until dropped; then no picture again.
+struct RedAvatar(String);
+
+impl RedAvatar {
+    fn set(hs: &str) -> Self {
+        let mut png = std::io::Cursor::new(Vec::new());
+        image::RgbaImage::from_pixel(64, 64, image::Rgba([230, 20, 20, 255]))
+            .write_to(&mut png, image::ImageFormat::Png)
+            .expect("png");
+        morpheus_e2e::set_avatar_as(hs, "bob", &png.into_inner()).expect("an avatar");
+        Self(hs.to_owned())
+    }
+}
+
+impl Drop for RedAvatar {
+    fn drop(&mut self) {
+        let _ = morpheus_e2e::api_as(
+            &self.0,
+            "bob",
+            "PUT",
+            "profile/%40bob%3Alocalhost/avatar_url",
+            Some(serde_json::json!({ "avatar_url": "" })),
+        );
+    }
+}
+
+/// A call card for someone without video is the colour of their picture
+/// (dark enough for white text); without a picture it keeps its usual colour.
+#[tokio::test]
+async fn an_avatar_card_takes_the_colour_of_the_picture() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let _avatar = RedAvatar::set(&hs);
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    if !alice.is_gpui() {
+        return;
+    }
+    let channel = fresh_voice_channel(&hs);
+    login_and_open(&mut alice, "alice", "general").await;
+    open_without_joining(&mut alice, &channel).await;
+    alice.click(CALL_BUTTON).await.expect("alice joins");
+    alice
+        .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("alice connected");
+    let mut bob = App::launch(&hs).await.expect("launch bob");
+    login_and_open(&mut bob, "bob", "general").await;
+    open_without_joining(&mut bob, &channel).await;
+    bob.click(CALL_BUTTON).await.expect("bob joins");
+    bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("bob connected");
+
+    let bobs = ".call-stage .call-tile[data-user=\"@bob:localhost\"]";
+    let alices = ".call-stage .call-tile[data-user=\"@alice:localhost\"]";
+    let channels = |hex: &str| -> [i32; 3] {
+        let v = i64::from_str_radix(hex.trim_start_matches('#'), 16).expect("a hex colour");
+        [(v >> 16) as i32 & 255, (v >> 8) as i32 & 255, v as i32 & 255]
+    };
+    // His picture arrives after the card; the card changes colour with it.
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    let red = loop {
+        alice.wait_for(bobs, DEFAULT_WAIT).await.expect("bob's card");
+        let bg = alice.attrs(bobs, "data-bg").await.expect("attrs")[0].clone().unwrap_or_default();
+        if !bg.is_empty() {
+            let [r, g, b] = channels(&bg);
+            if r > g + 15 && r > b + 15 {
+                break [r, g, b];
+            }
+        }
+        assert!(std::time::Instant::now() < deadline, "bob's card never turned red: {bg:?}");
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    };
+    // Dark enough for white text, and not the pure picture colour.
+    assert!(red.iter().all(|c| *c < 110), "too bright for white text: {red:?}");
+    // Alice has no picture: her card keeps the usual colour (not red).
+    alice.wait_for(alices, DEFAULT_WAIT).await.expect("alice's own card");
+    let mine = alice.attrs(alices, "data-bg").await.expect("attrs")[0].clone().unwrap_or_default();
+    let [r, g, b] = channels(&mine);
+    assert!(!(r > g + 15 && r > b + 15), "a card without a picture is not tinted: {mine}");
+}

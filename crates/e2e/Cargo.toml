@@ -24,6 +24,8 @@ morpheus-core = { workspace = true }
 base64 = { workspace = true }
 sha2 = "0.10"
 url = "2"
+# A solid-colour profile picture.
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 [lints]
 workspace = true

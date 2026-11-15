@@ -7452,6 +7452,7 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "futures-util",
+ "image",
  "morpheus-core",
  "serde",
  "serde_json",
