@@ -23,6 +23,7 @@
 #![allow(unsafe_code)]
 
 use std::{
+    mem::offset_of,
     ptr::NonNull,
     sync::{
         Mutex, OnceLock,
@@ -37,7 +38,7 @@ use dispatch2::{DispatchQueue, DispatchRetained};
 use objc2::{
     AnyThread, DefinedClass, Message, define_class, msg_send, rc::Retained, runtime::ProtocolObject,
 };
-use objc2_core_audio_types::AudioBuffer;
+use objc2_core_audio_types::{AudioBuffer, AudioBufferList};
 use objc2_core_foundation::CFRetained;
 use objc2_core_media::{
     CMAudioFormatDescriptionGetStreamBasicDescription, CMBlockBuffer, CMSampleBuffer, CMTime,
@@ -156,6 +157,8 @@ struct OutputState {
     framer: Framer,
     /// Buffers that could not be read (logged once).
     unreadable: u64,
+    /// Whether the first readable buffer was logged.
+    told: bool,
 }
 
 define_class!(
@@ -184,10 +187,17 @@ define_class!(
                 };
                 // SAFETY: a sample buffer ScreenCaptureKit handed over, used
                 // only during this call.
-                if let Err(why) = unsafe { read(sample, &mut state.framer) } {
-                    state.unreadable += 1;
-                    if state.unreadable == 1 {
-                        warn!(%why, "screen audio: a buffer could not be read");
+                match unsafe { read(sample, &mut state.framer) } {
+                    Ok(layout) if !state.told => {
+                        state.told = true;
+                        info!(?layout, "screen audio: the first sound arrived");
+                    }
+                    Ok(_) => {}
+                    Err(why) => {
+                        state.unreadable += 1;
+                        if state.unreadable == 1 {
+                            warn!(%why, "screen audio: a buffer could not be read");
+                        }
                     }
                 }
             });
@@ -207,6 +217,7 @@ impl Output {
         let this = Self::alloc().set_ivars(Mutex::new(OutputState {
             framer: Framer::new(out),
             unreadable: 0,
+            told: false,
         }));
         // SAFETY: NSObject's init.
         unsafe { msg_send![super(this), init] }
@@ -217,10 +228,10 @@ impl Output {
 ///
 /// # Safety
 /// `sample` is a live CMSampleBuffer.
-unsafe fn read(sample: &CMSampleBuffer, framer: &mut Framer) -> Result<usize, String> {
+unsafe fn read(sample: &CMSampleBuffer, framer: &mut Framer) -> Result<Layout, String> {
     // SAFETY: plain CoreMedia getters on a live buffer; the buffer list is
-    // ours, large enough (8 channels), and its data is held by the retained
-    // block buffer until the end of this function.
+    // ours, of the size CoreMedia asked for, and its data is held by the
+    // retained block buffer until the end of this function.
     unsafe {
         let frames = usize::try_from(sample.num_samples()).unwrap_or(0);
         let format = sample.format_description().ok_or("no format")?;
@@ -235,39 +246,51 @@ unsafe fn read(sample: &CMSampleBuffer, framer: &mut Framer) -> Result<usize, St
             basic.mBitsPerChannel,
             basic.mChannelsPerFrame,
         )?;
-        #[repr(C)]
-        struct List {
-            count: u32,
-            buffers: [AudioBuffer; 8],
+        let what = || {
+            format!(
+                "{frames} frames, {} Hz, {} channels, {} bits, flags {:#x}",
+                basic.mSampleRate, basic.mChannelsPerFrame, basic.mBitsPerChannel, basic.mFormatFlags
+            )
+        };
+        let flags = kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment;
+        // The list's size, asked first (it depends on the buffers and flags).
+        let mut needed = 0usize;
+        let status = sample.audio_buffer_list_with_retained_block_buffer(
+            &mut needed,
+            std::ptr::null_mut(),
+            0,
+            None,
+            None,
+            flags,
+            std::ptr::null_mut(),
+        );
+        if status != 0 || needed < size_of::<AudioBufferList>() {
+            return Err(format!("its buffers' size: OSStatus {status} ({})", what()));
         }
-        let empty = AudioBuffer {
-            mNumberChannels: 0,
-            mDataByteSize: 0,
-            mData: std::ptr::null_mut(),
-        };
-        let mut list = List {
-            count: 0,
-            buffers: [empty; 8],
-        };
+        // 8-byte words, as aligned as an AudioBufferList.
+        let mut words = vec![0u64; needed.div_ceil(8)];
+        let list = words.as_mut_ptr().cast::<AudioBufferList>();
         let mut block: *mut CMBlockBuffer = std::ptr::null_mut();
         let status = sample.audio_buffer_list_with_retained_block_buffer(
             std::ptr::null_mut(),
-            (&raw mut list).cast(),
-            size_of::<List>(),
+            list,
+            words.len() * 8,
             None,
             None,
-            kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment,
+            flags,
             &mut block,
         );
         // Released when this returns.
         let _block = NonNull::new(block).map(|b| CFRetained::from_raw(b));
         if status != 0 {
-            return Err(format!("its buffers: OSStatus {status}"));
+            return Err(format!("its buffers: OSStatus {status} ({}, list {needed} bytes)", what()));
         }
-        let count = (list.count as usize).min(list.buffers.len());
-        let buffers: Vec<&[u8]> = list.buffers[..count]
-            .iter()
-            .map(|b| {
+        let room = (needed - offset_of!(AudioBufferList, mBuffers)) / size_of::<AudioBuffer>();
+        let count = ((*list).mNumberBuffers as usize).min(room);
+        let first = (&raw const (*list).mBuffers).cast::<AudioBuffer>();
+        let buffers: Vec<&[u8]> = (0..count)
+            .map(|i| {
+                let b = *first.add(i);
                 if b.mData.is_null() {
                     &[][..]
                 } else {
@@ -275,7 +298,8 @@ unsafe fn read(sample: &CMSampleBuffer, framer: &mut Framer) -> Result<usize, St
                 }
             })
             .collect();
-        Ok(framer.push(&layout, &buffers, frames))
+        framer.push(&layout, &buffers, frames);
+        Ok(layout)
     }
 }
 

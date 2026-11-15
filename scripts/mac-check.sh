@@ -33,6 +33,9 @@ sound_status=$?
 kill "$tone" 2>/dev/null
 echo "$sound" | grep "screen audio" | head -8
 report=$(echo "$sound" | grep -m1 "screen audio self-test:")
+if echo "$sound" | grep -q "a buffer could not be read"; then
+    fail "the screen's sound came but could not be read"
+fi
 case "$report" in
     *"self-test: ok:"*"; 0 frames"*) echo "ok: the screen's sound started, but no sound came here (no audio device?)" ;;
     *"self-test: ok:"*"peak 0.000"*) echo "ok: the screen's sound started, but heard silence here (no audio device?)" ;;
