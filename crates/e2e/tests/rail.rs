@@ -1021,17 +1021,13 @@ async fn the_dms_icon_lines_up_with_the_top_bar_and_the_panel_is_rounded() {
 }
 
 /// The width of `selector` once it has stopped changing (about 100 ms of it).
-async fn settled_width(app: &mut App, selector: &str) -> f64 {
+async fn settled_bounds(app: &mut App, selector: &str) -> morpheus_e2e::Bounds {
     tokio::time::sleep(Duration::from_millis(400)).await;
-    app.bounds(selector)
-        .await
-        .expect("bounds")
-        .expect("a box")
-        .w
+    app.bounds(selector).await.expect("bounds").expect("a box")
 }
 
 #[tokio::test]
-async fn rail_buttons_shrink_while_pressed_and_spring_back() {
+async fn rail_buttons_sink_while_pressed_and_come_back() {
     let Some(hs) = homeserver() else {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
@@ -1041,40 +1037,29 @@ async fn rail_buttons_shrink_while_pressed_and_spring_back() {
     app.wait_for(".rail-dms", DEFAULT_WAIT)
         .await
         .expect("DMs button");
-    let rest = settled_width(&mut app, ".rail-dms").await;
-    let slot = app.bounds(".rail-dms").await.expect("bounds").expect("box");
+    let rest = settled_bounds(&mut app, ".rail-dms").await;
 
-    // Pressed: about 0.95 of its size.
+    // Pressed: 1-2 px lower, the same size and place across.
     app.drag_hold(".rail-dms", 0, 0).await.expect("press");
-    let pressed = settled_width(&mut app, ".rail-dms").await;
+    let down = settled_bounds(&mut app, ".rail-dms").await;
+    let dy = down.y - rest.y;
+    assert!((1.0..=2.0).contains(&dy), "pressed: {dy} px lower, not 1-2");
     assert!(
-        (pressed / rest - 0.95).abs() < 0.015,
-        "pressed width {pressed} should be 0.95 of {rest}"
-    );
-    // It is in place (the centre does not move).
-    let now = app.bounds(".rail-dms").await.expect("bounds").expect("box");
-    assert!(
-        ((now.x + now.w / 2.0) - (slot.x + slot.w / 2.0)).abs() < 0.5,
-        "stays centred"
+        (down.w - rest.w).abs() < 0.3 && (down.h - rest.h).abs() < 0.3 && (down.x - rest.x).abs() < 0.3,
+        "pressed: {down:?} should keep the size and column of {rest:?}"
     );
 
-    // The pointer leaving springs it back while the button is still down.
+    // The pointer leaving brings it back while the button is still down.
     app.hover(".rail-add").await.expect("move away");
-    let back = settled_width(&mut app, ".rail-dms").await;
-    assert!(
-        (back - rest).abs() < 0.5,
-        "back to {rest} after leaving, not {back}"
-    );
+    let back = settled_bounds(&mut app, ".rail-dms").await;
+    assert!((back.y - rest.y).abs() < 0.3, "back to {} after leaving, not {}", rest.y, back.y);
     app.release().await.expect("let go");
 
-    // Pressing and releasing on it springs back too.
+    // Pressing and releasing on it comes back too.
     app.drag_hold(".rail-dms", 0, 0).await.expect("press again");
-    let pressed = settled_width(&mut app, ".rail-dms").await;
-    assert!(pressed < rest - 1.0, "pressed again: {pressed}");
+    let down = settled_bounds(&mut app, ".rail-dms").await;
+    assert!(down.y - rest.y >= 1.0, "pressed again: {} px lower", down.y - rest.y);
     app.release().await.expect("release");
-    let back = settled_width(&mut app, ".rail-dms").await;
-    assert!(
-        (back - rest).abs() < 0.5,
-        "back to {rest} after release, not {back}"
-    );
+    let back = settled_bounds(&mut app, ".rail-dms").await;
+    assert!((back.y - rest.y).abs() < 0.3, "back to {} after release, not {}", rest.y, back.y);
 }

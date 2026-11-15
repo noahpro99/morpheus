@@ -170,7 +170,7 @@ impl Badge {
                 cx.new(|_| BadgeGhost(dragged.clone()))
             });
         }
-        button = crate::press::press(button, &self.id, self.size, self.on_hover.clone());
+        button = crate::press::press(button, &self.id, self.on_hover.clone());
         if let Some(context) = self.context.clone() {
             button = button.on_mouse_down(MouseButton::Right, move |event, window, cx| {
                 context(event.position, window, cx)

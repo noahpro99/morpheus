@@ -6065,7 +6065,7 @@ async fn the_call_controls_are_squircles_like_the_rail_icons() {
 }
 
 #[tokio::test]
-async fn the_call_controls_shrink_while_pressed_and_spring_back() {
+async fn the_call_controls_sink_while_pressed_and_come_back() {
     let Some(hs) = homeserver() else {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
@@ -6078,23 +6078,27 @@ async fn the_call_controls_shrink_while_pressed_and_spring_back() {
         .await
         .expect("the controls");
     tokio::time::sleep(std::time::Duration::from_millis(400)).await;
-    let rest = alice.bounds(button).await.expect("bounds").expect("box").w;
+    let rest = alice.bounds(button).await.expect("bounds").expect("box");
     alice.drag_hold(button, 0, 0).await.expect("press");
     tokio::time::sleep(std::time::Duration::from_millis(400)).await;
-    let pressed = alice.bounds(button).await.expect("bounds").expect("box").w;
+    let down = alice.bounds(button).await.expect("bounds").expect("box");
+    let dy = down.y - rest.y;
+    assert!((1.0..=2.0).contains(&dy), "pressed: {dy} px lower, not 1-2");
     assert!(
-        (pressed / rest - 0.95).abs() < 0.015,
-        "pressed {pressed} should be 0.95 of {rest}"
+        (down.w - rest.w).abs() < 0.3 && (down.h - rest.h).abs() < 0.3 && (down.x - rest.x).abs() < 0.3,
+        "pressed {down:?} should keep the size of {rest:?}"
     );
     alice
         .hover(".call-stage .call-controls .mute-button")
         .await
         .expect("away");
     tokio::time::sleep(std::time::Duration::from_millis(400)).await;
-    let back = alice.bounds(button).await.expect("bounds").expect("box").w;
+    let back = alice.bounds(button).await.expect("bounds").expect("box");
     assert!(
-        (back - rest).abs() < 0.5,
-        "back to {rest} after the pointer left, not {back}"
+        (back.y - rest.y).abs() < 0.3,
+        "back to {} after the pointer left, not {}",
+        rest.y,
+        back.y
     );
 }
 
