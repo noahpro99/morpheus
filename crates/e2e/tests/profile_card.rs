@@ -1002,6 +1002,76 @@ async fn a_dm_whose_room_picture_is_gone_shows_the_partners_in_the_list_and_the_
         .unwrap_or_else(|e| panic!("the partner's picture in the top bar: {e}"));
 }
 
+/// A DM where the partner's member event has no picture at all (they set
+/// theirs after joining, or only globally) but their global profile has one:
+/// the DM list and the top bar show the global picture, as the member list does.
+#[tokio::test]
+async fn a_dm_whose_partner_has_no_member_picture_shows_their_global_one() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let ann = new_account(&hs, "dmnann").expect("account");
+    let eve = new_account(&hs, "dmneve").expect("account");
+    let made = api_as(&hs, &ann, "POST", "createRoom", Some(serde_json::json!({ "invite": [format!("@{eve}:localhost")], "is_direct": true, "preset": "trusted_private_chat" }))).expect("a DM");
+    let room = made["room_id"].as_str().expect("room id").to_owned();
+    api_as(
+        &hs,
+        &ann,
+        "PUT",
+        &format!("user/%40{ann}%3Alocalhost/account_data/m.direct"),
+        Some(serde_json::json!({ format!("@{eve}:localhost"): [room.clone()] })),
+    )
+    .expect("m.direct");
+    morpheus_e2e::set_avatar_as(&hs, &eve, include_bytes!("../fixtures/framed.png"))
+        .expect("eve's picture");
+    std::thread::sleep(Duration::from_secs(3));
+    let member = api_as(
+        &hs,
+        &ann,
+        "GET",
+        &format!(
+            "rooms/{}/state/m.room.member/{}",
+            escaped(&room),
+            escaped(&format!("@{eve}:localhost"))
+        ),
+        None,
+    )
+    .expect("member event");
+    assert!(
+        member.get("avatar_url").is_none(),
+        "the member event still has a picture: {member}"
+    );
+
+    let mut app = App::launch(&hs).await.expect("launch");
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    app.type_into("form.login input[name=username]", &ann)
+        .await
+        .expect("username");
+    app.type_into(
+        "form.login input[name=password]",
+        &format!("{ann}-password"),
+    )
+    .await
+    .expect("password");
+    app.submit("form.login").await.expect("submit");
+    app.wait_for(".rail-dms", DEFAULT_WAIT)
+        .await
+        .expect("signed in");
+    app.click(".rail-dms").await.expect("the DMs");
+    let item = format!(".room.dm[data-room=\"{room}\"]");
+    app.wait_for(&item, DEFAULT_WAIT).await.expect("the DM");
+    app.wait_for(&format!("{item} img.avatar"), DEFAULT_WAIT)
+        .await
+        .unwrap_or_else(|e| panic!("her global picture in the DM list: {e}"));
+    app.click(&item).await.expect("open the DM");
+    app.wait_for(".chat-header .room-head img.avatar", DEFAULT_WAIT)
+        .await
+        .unwrap_or_else(|e| panic!("her global picture in the top bar: {e}"));
+}
+
 /// While the card loads it does not claim "0 mutual servers": a skeleton of
 /// the same size holds the place (and the status line's) until the count is
 /// known (GPUI only).

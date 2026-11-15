@@ -396,3 +396,32 @@ mod tests {
             .unwrap_or_default()
     }
 }
+
+/// How long a person's global picture (or its absence) is remembered by [`global_avatar`].
+const GLOBAL_FOR: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+
+/// The picture in `user`'s global profile, for a DM whose room has none of its own (their
+/// member event there carries no picture: they set theirs after being invited, or their
+/// server does not copy it into the rooms). Remembered for [`GLOBAL_FOR`], absence too,
+/// as the room list asks for every room on each update.
+pub(crate) async fn global_avatar(client: &matrix_sdk::Client, user: &OwnedUserId) -> Option<OwnedMxcUri> {
+    type Known = std::collections::HashMap<OwnedUserId, (crate::rt::Instant, Option<OwnedMxcUri>)>;
+    static KNOWN: std::sync::OnceLock<std::sync::Mutex<Known>> = std::sync::OnceLock::new();
+    let known = KNOWN.get_or_init(Default::default);
+    if let Ok(known) = known.lock()
+        && let Some((at, found)) = known.get(user)
+        && at.elapsed() < GLOBAL_FOR
+    {
+        return found.clone();
+    }
+    let found = client
+        .account()
+        .fetch_user_profile_of(user)
+        .await
+        .ok()
+        .and_then(|profile| profile.data.get_static::<AvatarUrl>().ok().flatten());
+    if let Ok(mut known) = known.lock() {
+        known.insert(user.clone(), (crate::rt::Instant::now(), found.clone()));
+    }
+    found
+}
