@@ -672,3 +672,56 @@ async fn a_voice_channel_is_created_from_the_create_dialog_and_joins_its_call() 
     alice.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT).await.expect("joined its call");
     alice.click(".voice-panel .hang-up").await.expect("leave");
 }
+
+/// In a big window (the panel at its widest) the chat's list fills the
+/// panel's timeline: its messages show at the bottom of the panel, not in a
+/// strip at its top (#25: the list fell back to its rows' measured height,
+/// a sliver, when the panel was at its widest).
+#[tokio::test]
+async fn the_chat_fills_its_panel_in_a_big_window() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut alice = App::launch_sized(&hs, 1600, 1000).await.expect("launch alice");
+    if !alice.is_gpui() {
+        return;
+    }
+    login(&mut alice, "alice").await;
+    let channel = fresh_voice_channel(&hs);
+    alice.wait_for_text(".room .room-name", &channel, DEFAULT_WAIT).await.expect("listed");
+    let room_id = alice.attr_containing(".room.voice", &channel, "data-room").await.expect("id").expect("id");
+    let said: Vec<String> = (0..4).map(|n| format!("big window {n}")).collect();
+    morpheus_e2e::send_many_as(&hs, "bob", &room_id, &said).expect("send");
+    join_and_open(&mut alice, &channel).await;
+    alice.click(".voice-chat-toggle").await.expect("open");
+    alice
+        .wait_for_text(".voice-chat .message .body", "big window 3", DEFAULT_WAIT)
+        .await
+        .expect("the newest message");
+    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+    let panel = bounds(&mut alice, ".voice-chat").await;
+    let timeline = bounds(&mut alice, ".voice-chat .timeline").await;
+    assert!(panel.w >= 370.0, "the panel is not at its widest: {panel:?}");
+    assert!(timeline.h >= panel.h - 120.0, "the timeline {timeline:?} is not most of the panel {panel:?}");
+    // The list is as tall as the timeline it is in.
+    let list = alice.scroll_state(".voice-chat .timeline").await.expect("state").expect("scrolls");
+    assert!(
+        list.viewport >= timeline.h - 1.0,
+        "the list is {} px tall in a {} px timeline: a sliver",
+        list.viewport,
+        timeline.h
+    );
+    // Its messages are laid out in it, the newest at its bottom.
+    let texts = alice.texts(".voice-chat .message .body").await.expect("texts");
+    let boxes = alice.all_bounds(".voice-chat .message .body").await.expect("bounds");
+    for body in &said {
+        let at = texts.iter().position(|t| t.trim() == body).unwrap_or_else(|| panic!("{body:?} not shown: {texts:?}"));
+        let b = boxes[at];
+        assert!(b.h >= 12.0 && b.y >= timeline.y && b.bottom() <= timeline.bottom() + 0.5, "{body:?} at {b:?}, timeline {timeline:?}");
+    }
+    let _ = alice.screenshot("voice-chat-big-window").await;
+    let newest = boxes[texts.iter().position(|t| t.trim() == said[3]).expect("newest")];
+    assert!(timeline.bottom() - newest.bottom() <= 120.0, "the newest {newest:?} is not at the bottom of {timeline:?}");
+    alice.click(".voice-panel .hang-up").await.expect("leave");
+}
