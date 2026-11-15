@@ -794,6 +794,17 @@ fn main() {
     if update_self_test::requested() {
         update_self_test::run(data_dir());
     }
+    // CI's check (scripts/mac-check.sh) that the shared screen's sound starts
+    // with what this computer plays, or says why not: no window.
+    if let Some(seconds) = std::env::var_os("MORPHEUS_SCREEN_AUDIO_SELF_TEST") {
+        init_logging();
+        let seconds = seconds.to_string_lossy().parse().unwrap_or(3.0);
+        match morpheus_call::screen_audio_self_test(seconds) {
+            Ok(report) => eprintln!("screen audio self-test: ok: {report}"),
+            Err(why) => eprintln!("screen audio self-test: failed: {why}"),
+        }
+        std::process::exit(0);
+    }
     // A later launch hands over to the one running (its window shows, or the
     // Matrix link it was given opens) and ends.
     let link = view_model::instance::link_in_args(std::env::args().skip(1));

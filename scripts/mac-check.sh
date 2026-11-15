@@ -21,6 +21,26 @@ else
     echo "ok: icon $icon_file"
 fi
 
+# The shared screen's sound (#36): the app's ScreenCaptureKit stream of what
+# this Mac plays (less the app itself) starts and hears a sound played
+# meanwhile; where the runner has no Screen Recording permission or no audio
+# device, it says why rather than hanging or crashing.
+( for _ in 1 2 3 4 5 6 7 8 9 10; do afplay /System/Library/Sounds/Submarine.aiff; done ) >/dev/null 2>&1 &
+tone=$!
+sound=$(MORPHEUS_SCREEN_AUDIO_SELF_TEST=4 MORPHEUS_DATA_DIR="$(mktemp -d)" \
+    perl -e "alarm 60; exec @ARGV" "$app/Contents/MacOS/morpheus-desktop" 2>&1)
+sound_status=$?
+kill "$tone" 2>/dev/null
+echo "$sound" | grep "screen audio" | head -8
+report=$(echo "$sound" | grep -m1 "screen audio self-test:")
+case "$report" in
+    *"self-test: ok:"*"; 0 frames"*) echo "ok: the screen's sound started, but no sound came here (no audio device?)" ;;
+    *"self-test: ok:"*"peak 0.000"*) echo "ok: the screen's sound started, but heard silence here (no audio device?)" ;;
+    *"self-test: ok:"*) echo "ok: the screen's sound started and heard the tone" ;;
+    *"self-test: failed:"*) echo "ok: the screen's sound did not start here, and said why" ;;
+    *) fail "the screen's sound self-test did not report (exit $sound_status)"; echo "$sound" | tail -20 ;;
+esac
+
 data=$(mktemp -d)
 MORPHEUS_LOG_WINDOW_MOVE=1 MORPHEUS_DATA_DIR="$data" "$app/Contents/MacOS/morpheus-desktop" > "$data/log.txt" 2>&1 &
 pid=$!

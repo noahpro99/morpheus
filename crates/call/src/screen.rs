@@ -98,6 +98,10 @@ pub(crate) fn run(
             // macOS has none and shares the main screen.
             #[cfg(target_os = "macos")]
             options.set_sck_system_picker(true);
+            // The picker's choice also gives the shared sound its content
+            // (system_audio_sck.rs): watched from before it comes up.
+            #[cfg(target_os = "macos")]
+            crate::imp::system_audio_sck::watch_picker();
             // libwebrtc's macOS capturers are Objective-C: every call from this
             // thread goes in an autorelease pool (none of its own; see
             // autorelease.rs).

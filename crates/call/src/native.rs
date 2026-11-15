@@ -82,7 +82,8 @@ mod mic;
 )]
 pub(crate) mod system_audio;
 pub use system_audio::{
-    TONE_LEFT as SCREEN_TONE_LEFT, TONE_RIGHT as SCREEN_TONE_RIGHT, screen_audio_unavailable,
+    TONE_LEFT as SCREEN_TONE_LEFT, TONE_RIGHT as SCREEN_TONE_RIGHT, screen_audio_self_test,
+    screen_audio_unavailable,
 };
 #[cfg(target_os = "linux")]
 #[path = "system_audio_pulse.rs"]
@@ -90,6 +91,12 @@ mod system_audio_pulse;
 #[cfg(target_os = "windows")]
 #[path = "system_audio_wasapi.rs"]
 mod system_audio_wasapi;
+#[cfg(target_os = "macos")]
+#[path = "system_audio_sck.rs"]
+pub(crate) mod system_audio_sck;
+#[path = "system_audio_frames.rs"]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+mod system_audio_frames;
 #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 pub use mic::{
     AudioStats, audio_stats, mic_level, mic_loopback, mic_test_running, reset_audio_stats,
@@ -995,7 +1002,7 @@ impl Outgoing {
         }
         // The screen's sound, when wanted: the share goes on without it if
         // there is none to be had.
-        // (Not even tried where the platform has no way: macOS.)
+        // (Not even tried where the platform has no way: macOS before 13.)
         let sound = if screen
             && quality.audio
             && (mode == AudioMode::Tone || screen_audio_unavailable().is_none())
