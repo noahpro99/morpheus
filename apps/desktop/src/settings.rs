@@ -20,7 +20,7 @@ use morpheus_core::{
     VerificationStep,
 };
 
-mod pages;
+pub(crate) mod pages;
 mod video;
 
 use crate::{

@@ -649,8 +649,8 @@ pub fn render_dialog(shell: &mut Shell, window: &mut Window, cx: &mut Context<Sh
                         this.dialog_close(cx);
                     }
                 }))
-                .w(px(680.0))
-                .max_h(px(520.0))
+                .w(px(880.0))
+                .max_h(px(680.0))
                 .child(heading("Keyboard shortcuts"))
                 .child(actions(vec![
                     dialog_button("help-report-bug", "Report a bug", false)
@@ -674,46 +674,35 @@ pub fn render_dialog(shell: &mut Shell, window: &mut Window, cx: &mut Context<Sh
                         .flex_1()
                         .min_h_0()
                         .overflow_y_scroll()
-                        .children(crate::view_model::hotkeys::GROUPS.iter().map(|(group, rows)| {
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap(px(4.0))
-                        .child(
-                            div()
-                                .mt(px(8.0))
-                                .text_size(px(0.75 * theme::REM))
-                                .font_weight(FontWeight::SEMIBOLD)
-                                .text_color(rgb(theme::text_faint()))
-                                .child(group.to_string())
-                                .e2e("h3", "")
-                                .text(group.to_string()),
-                        )
-                        .children(rows.iter().map(|(keys, what)| {
+                        .children(crate::view_model::hotkeys::GROUPS.iter().map(|(group, rows)| help_group(group, rows)))
+                        .child({
+                            let on = crate::vim::enabled();
                             div()
                                 .flex()
-                                .gap(px(12.0))
-                                .child(
-                                    div()
-                                        .w(px(200.0))
-                                        .flex_none()
-                                        .font_weight(FontWeight::SEMIBOLD)
-                                        .child(keys.to_string())
-                                        .e2e("kbd", "")
-                                        .text(keys.to_string()),
-                                )
-                                .child(
-                                    div()
-                                        .text_color(rgb(theme::text_muted()))
-                                        .child(what.to_string())
-                                        .e2e("span", "")
-                                        .text(what.to_string()),
-                                )
-                                .e2e("div", "help-row")
-                        }))
-                        .e2e("section", "help-group")
-                        }))
+                                .flex_col()
+                                .when(!on, |d| d.opacity(0.4))
+                                .children(crate::view_model::hotkeys::VIM_GROUPS.iter().map(|(group, rows)| help_group(group, rows)))
+                                .e2e("div", if on { "vim-keys on" } else { "vim-keys off" })
+                        })
                         .e2e("div", "help-body"),
+                )
+                .child(
+                    div()
+                        .mt(px(10.0))
+                        .child(crate::settings::pages::choice(
+                            "help-vim-mode".into(),
+                            "help-vim-mode",
+                            "",
+                            "Vim mode",
+                            crate::vim::enabled(),
+                            true,
+                            false,
+                            cx.listener(|_, _, _, cx| {
+                                crate::vim::set(&crate::data_dir(), !crate::vim::enabled());
+                                cx.notify();
+                            }),
+                        ))
+                        .e2e("div", "help-vim-switch"),
                 )
                 .e2e("div", "message-dialog help-dialog")
                 .text("Keyboard shortcuts")
@@ -1144,4 +1133,46 @@ fn dont_ask_tick(ticked: bool, cx: &mut Context<Shell>) -> impl IntoElement {
         .child(mark)
         .child("Don't ask again during this share")
         .e2e("label", "dont-ask")
+}
+
+
+/// One group of the shortcuts dialog: its name, then a row per shortcut.
+fn help_group(group: &str, rows: &[(&str, &str)]) -> impl IntoElement {
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(4.0))
+        .child(
+            div()
+                .mt(px(8.0))
+                .text_size(px(0.75 * theme::REM))
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(rgb(theme::text_faint()))
+                .child(group.to_string())
+                .e2e("h3", "")
+                .text(group.to_string()),
+        )
+        .children(rows.iter().map(|(keys, what)| {
+            div()
+                .flex()
+                .gap(px(12.0))
+                .child(
+                    div()
+                        .w(px(200.0))
+                        .flex_none()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .child(keys.to_string())
+                        .e2e("kbd", "")
+                        .text(keys.to_string()),
+                )
+                .child(
+                    div()
+                        .text_color(rgb(theme::text_muted()))
+                        .child(what.to_string())
+                        .e2e("span", "")
+                        .text(what.to_string()),
+                )
+                .e2e("div", "help-row")
+        }))
+        .e2e("section", "help-group")
 }

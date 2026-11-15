@@ -27,7 +27,7 @@ const HIGHLIGHT: Duration = Duration::from_millis(2500);
 
 /// A radio button or checkbox with its words: `.notify-choice`.
 #[allow(clippy::too_many_arguments)]
-fn choice(
+pub(crate) fn choice(
     id: String,
     group: &str,
     value: &str,
