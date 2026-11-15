@@ -259,8 +259,12 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                 .text(text),
         );
     }
-    // Invites show in every scope, above everything else.
-    let pending = crate::view_model::invites::pending_invites(&shell.rooms);
+    // Invites show at the top of the DMs list only (and in the inbox).
+    let pending = if *scope == Scope::Dms {
+        crate::view_model::invites::pending_invites(&shell.rooms)
+    } else {
+        Vec::new()
+    };
     if !pending.is_empty() {
         list = list.child(section("Invites", "invites"));
         for room in &pending {

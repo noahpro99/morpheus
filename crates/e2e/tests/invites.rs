@@ -85,6 +85,7 @@ async fn invites_are_listed_declined_and_accepted() {
 
     let mut bob = App::launch(&hs).await.expect("launch bob");
     login(&mut bob, "bob").await;
+    bob.click(".rail-dms").await.expect("DMs");
     // Nothing pending before the invite.
     bob.wait_for_text_gone(".invite-row", &name, DEFAULT_WAIT)
         .await
@@ -245,6 +246,7 @@ async fn invite_dialogs_list_friends_and_invite_from_the_list() {
     }
     login(&mut alice, "alice").await;
     login(&mut bob, "bob").await;
+    bob.click(".rail-dms").await.expect("DMs");
     alice.open_room("general").await.expect("open general");
 
     // A room.
@@ -416,4 +418,75 @@ async fn invite_list_leaves_out_members_and_marks_the_invited() {
         alice.count("[data-user=\"@bob:localhost\"]").await.expect("count"),
         0
     );
+}
+
+/// A pending invite is listed at the top of the DMs list and in the inbox,
+/// not in the channel list of a server bob is in.
+#[tokio::test]
+async fn invites_show_only_in_the_dms_list_and_the_inbox() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let _clean = reset_rooms_named(&hs, &["alice", "bob"], "e2e room invite");
+    let pid = std::process::id();
+    let server = format!("e2e room invite home {pid}");
+    let invited = format!("e2e room invite pending {pid}");
+    let made = morpheus_e2e::api_as(
+        &hs,
+        "alice",
+        "POST",
+        "createRoom",
+        Some(serde_json::json!({
+            "name": server,
+            "preset": "private_chat",
+            "creation_content": { "type": "m.space" },
+        })),
+    )
+    .expect("space made");
+    let space = made["room_id"].as_str().expect("room id").to_owned();
+    morpheus_e2e::admin_join(&hs, "bob", &space).expect("bob joins");
+    let made = morpheus_e2e::api_as(
+        &hs,
+        "alice",
+        "POST",
+        "createRoom",
+        Some(serde_json::json!({ "name": invited, "preset": "private_chat" })),
+    )
+    .expect("room made");
+    let room = made["room_id"].as_str().expect("room id").replace('!', "%21").replace(':', "%3A");
+    morpheus_e2e::api_as(
+        &hs,
+        "alice",
+        "POST",
+        &format!("rooms/{room}/invite"),
+        Some(serde_json::json!({ "user_id": "@bob:localhost" })),
+    )
+    .expect("invite bob");
+
+    let mut bob = App::launch(&hs).await.expect("launch bob");
+    login(&mut bob, "bob").await;
+    bob.click(".rail-item.rail-dms").await.expect("DMs");
+    bob.wait_for_text(".invite-row", &invited, DEFAULT_WAIT)
+        .await
+        .expect("listed in the DMs list");
+    bob.click(&format!(".rail-item[title=\"{server}\"]"))
+        .await
+        .expect("open the server");
+    bob.wait_for_text(".sidebar-header h2", &server, DEFAULT_WAIT)
+        .await
+        .expect("server scoped");
+    // The server's list has had time to render its own rooms before the check.
+    bob.wait_for(".room, .muted", DEFAULT_WAIT).await.expect("list shown");
+    assert_eq!(
+        bob.count(".invite-row").await.expect("count"),
+        0,
+        "no invite in a server's list"
+    );
+    assert_eq!(bob.count(".invites").await.expect("count"), 0, "no Invites heading");
+    // Still in the inbox.
+    bob.click(".titlebar .inbox-button").await.expect("inbox");
+    bob.wait_for_text(".inbox-invite", &invited, DEFAULT_WAIT)
+        .await
+        .expect("listed in the inbox");
 }
