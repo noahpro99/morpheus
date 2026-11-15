@@ -224,6 +224,19 @@
 
           guiLibs = guiLibsFor pkgs;
 
+          # Calls' hardware video codecs (webrtc-sys): it builds VAAPI (Intel,
+          # AMD) when pkg-config finds libva and NVENC/NVDEC when it finds
+          # cuda.h. Both are dlopened at run time from the system's drivers
+          # (/run/opengl-driver/lib on NixOS), so only headers are needed:
+          # libva's dev output, and cuda.h on its own (the NvCodec sources
+          # bring the rest) rather than CUDA's runtime or toolkit.
+          cudaHeaders = pkgs.runCommand "cuda-headers" { } ''
+            install -Dm644 ${pkgs.cudaPackages.cuda_cudart}/include/cuda.h $out/include/cuda.h
+          '';
+          hwCodecEnv = {
+            CUDA_PATH = "${cudaHeaders}";
+          };
+
           tools = with pkgs; [
             dioxus-cli
             cargo-sweep # scripts/prune-target.sh
@@ -333,9 +346,10 @@
         {
           default = pkgs.mkShell (
             commonEnv
+            // hwCodecEnv
             // {
               nativeBuildInputs = tools ++ [ toolchain ];
-              buildInputs = guiLibs;
+              buildInputs = guiLibs ++ [ pkgs.libva ];
               inherit shellHook;
             }
           );

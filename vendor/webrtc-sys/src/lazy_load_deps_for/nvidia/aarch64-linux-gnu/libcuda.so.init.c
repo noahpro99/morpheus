@@ -18,6 +18,7 @@
 #define THREAD_SAFE 1
 
 #include <dlfcn.h>
+#include "../../../driver_dlopen.h" // Morpheus patch
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -118,7 +119,7 @@ static int load_library(void) {
   lib_handle = ("libcuda.so.1");
   CHECK(lib_handle, "failed to load library 'libcuda.so.1' via callback ''");
 #else
-  lib_handle = dlopen("libcuda.so.1", RTLD_LAZY | RTLD_GLOBAL);
+  lib_handle = lk_driver_dlopen("libcuda.so.1", RTLD_LAZY | RTLD_GLOBAL);
   CHECK(lib_handle, "failed to load library 'libcuda.so.1' via dlopen: %s", dlerror());
 #endif
 

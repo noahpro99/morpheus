@@ -183,6 +183,22 @@ pub struct PublishedVideo {
     pub layers: usize,
     pub hint: &'static str,
     pub degradation: &'static str,
+    /// What encodes it, once it is encoding: "vaapi", "nvenc" or "software".
+    pub encoder: Option<&'static str>,
+}
+
+/// The hardware (or not) behind a libwebrtc encoder or decoder, from the
+/// implementation name its stats give ("NVIDIA H264 Encoder", "VAAPI H264
+/// Encoder", "SimulcastEncoderAdapter (NVIDIA H264 Encoder, …)", "libvpx",
+/// "OpenH264", "FFmpeg", …).
+pub fn codec_backend(implementation: &str, encoder: bool) -> &'static str {
+    if implementation.contains("NVIDIA") {
+        if encoder { "nvenc" } else { "nvdec" }
+    } else if implementation.contains("VAAPI") {
+        "vaapi"
+    } else {
+        "software"
+    }
 }
 
 impl std::fmt::Display for PublishedVideo {
@@ -198,7 +214,11 @@ impl std::fmt::Display for PublishedVideo {
             self.layers,
             self.hint,
             self.degradation
-        )
+        )?;
+        if let Some(encoder) = self.encoder {
+            write!(f, " encoder={encoder}")?;
+        }
+        Ok(())
     }
 }
 
@@ -208,6 +228,15 @@ pub(crate) fn note_published(key: &str, video: PublishedVideo) {
     if let Ok(mut all) = PUBLISHED.lock() {
         all.get_or_insert_with(HashMap::new)
             .insert(key.to_owned(), video);
+    }
+}
+
+/// Note what encodes the video published as `key`.
+pub(crate) fn note_encoder(key: &str, encoder: &'static str) {
+    if let Ok(mut all) = PUBLISHED.lock()
+        && let Some(video) = all.as_mut().and_then(|all| all.get_mut(key))
+    {
+        video.encoder = Some(encoder);
     }
 }
 
@@ -228,6 +257,23 @@ pub fn published_video(key: &str) -> Option<PublishedVideo> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn codec_backends_are_read_off_implementation_names() {
+        assert_eq!(codec_backend("NVIDIA H264 Encoder", true), "nvenc");
+        assert_eq!(
+            codec_backend(
+                "SimulcastEncoderAdapter (NVIDIA H264 Encoder, NVIDIA H264 Encoder)",
+                true
+            ),
+            "nvenc"
+        );
+        assert_eq!(codec_backend("NVIDIA H264 Decoder", false), "nvdec");
+        assert_eq!(codec_backend("VAAPI H264 Encoder", true), "vaapi");
+        assert_eq!(codec_backend("libvpx", true), "software");
+        assert_eq!(codec_backend("OpenH264", true), "software");
+        assert_eq!(codec_backend("FFmpeg", false), "software");
+    }
 
     fn q(resolution: ScreenResolution, fps: u32) -> ScreenQuality {
         ScreenQuality {

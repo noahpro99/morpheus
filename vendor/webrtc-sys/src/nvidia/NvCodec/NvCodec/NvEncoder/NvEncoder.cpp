@@ -10,6 +10,7 @@
  */
 
 #include "NvEncoder.h"
+#include "../../../../driver_dlopen.h"  // Morpheus patch
 
 #include <algorithm>
 #include <limits>
@@ -80,7 +81,7 @@ void NvEncoder::LoadNvEncApi() {
   HMODULE hModule = LoadLibrary(TEXT("nvEncodeAPI.dll"));
 #endif
 #else
-  void* hModule = dlopen("libnvidia-encode.so.1", RTLD_LAZY);
+  void* hModule = lk_driver_dlopen("libnvidia-encode.so.1", RTLD_LAZY);
 #endif
 
   if (hModule == NULL) {

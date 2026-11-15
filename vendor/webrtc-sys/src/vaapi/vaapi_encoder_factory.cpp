@@ -1,4 +1,5 @@
 #include "vaapi_encoder_factory.h"
+#include "../driver_dlopen.h"  // Morpheus patch
 
 #include <memory>
 #include <iostream>
@@ -40,14 +41,14 @@ VAAPIVideoEncoderFactory::~VAAPIVideoEncoderFactory() {}
 bool VAAPIVideoEncoderFactory::IsSupported() {
   // Ensure that libva and libva-drm are actually available for loading.
   // Otherwise, we will immediately abort.
-  void* libva_ptr = dlopen("libva.so.2", RTLD_LAZY);
+  void* libva_ptr = lk_driver_dlopen("libva.so.2", RTLD_LAZY);
   if (!libva_ptr) {
     RTC_LOG(LS_INFO) << "libva.so.2 is not found";
     return false;
   }
   dlclose(libva_ptr);
 
-  void* libvadrm_ptr = dlopen("libva-drm.so.2", RTLD_LAZY);
+  void* libvadrm_ptr = lk_driver_dlopen("libva-drm.so.2", RTLD_LAZY);
   if (!libvadrm_ptr) {
     RTC_LOG(LS_INFO) << "libva-drm.so.2 is not found";
     return false;

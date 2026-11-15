@@ -1,4 +1,5 @@
 #include "cuda_context.h"
+#include "../driver_dlopen.h"  // Morpheus patch
 
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
@@ -57,7 +58,7 @@ static bool load_cuda_modules() {
   }
   s_module_ptr = module;
 #elif defined(__linux__)
-  s_module_ptr = dlopen("libcuda.so.1", RTLD_LAZY | RTLD_GLOBAL);
+  s_module_ptr = lk_driver_dlopen("libcuda.so.1", RTLD_LAZY | RTLD_GLOBAL);
   if (!s_module_ptr)
     return false;
 

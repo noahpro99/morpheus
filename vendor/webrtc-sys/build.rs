@@ -27,6 +27,11 @@ fn main() {
 
     println!("cargo:rerun-if-env-changed=LK_DEBUG_WEBRTC");
     println!("cargo:rerun-if-env-changed=LK_CUSTOM_WEBRTC");
+    // Morpheus patch: the hardware codecs are built when their headers are
+    // found (libva through pkg-config, cuda.h through these).
+    println!("cargo:rerun-if-env-changed=CUDA_HOME");
+    println!("cargo:rerun-if-env-changed=CUDA_PATH");
+    println!("cargo:rerun-if-env-changed=PKG_CONFIG_PATH");
 
     let mut rust_files = vec![
         "src/peer_connection.rs",

@@ -1,4 +1,5 @@
 #include "nvidia_encoder_factory.h"
+#include "../driver_dlopen.h"  // Morpheus patch
 
 #include <algorithm>
 #include <cstring>
@@ -125,7 +126,7 @@ NvencProbeResult ProbeNvencSupport() {
   // CUDA being available does NOT imply NVENC is present. Compute-only GPUs
   // (H100, A100, etc.) have full CUDA support but no encode hardware.
   // Probe the NVENC library and try to open a session to be sure.
-  void* hModule = dlopen("libnvidia-encode.so.1", RTLD_LAZY);
+  void* hModule = lk_driver_dlopen("libnvidia-encode.so.1", RTLD_LAZY);
   if (!hModule) {
     RTC_LOG(LS_WARNING) << "NVENC library (libnvidia-encode.so.1) not found, "
                            "hardware encoding unavailable.";

@@ -1,4 +1,5 @@
 #include "nvidia_decoder_factory.h"
+#include "../driver_dlopen.h"  // Morpheus patch
 
 #include <modules/video_coding/codecs/h264/include/h264.h>
 
@@ -39,7 +40,7 @@ constexpr char kNvdecRuntimeLibrary[] = "libnvcuvid.so.1";
 namespace {
 
 bool IsNvdecRuntimeAvailable() {
-  void* hModule = dlopen(kNvdecRuntimeLibrary, RTLD_LAZY | RTLD_LOCAL);
+  void* hModule = lk_driver_dlopen(kNvdecRuntimeLibrary, RTLD_LAZY | RTLD_LOCAL);
   if (!hModule) {
     RTC_LOG(LS_WARNING) << "NVDEC runtime library (" << kNvdecRuntimeLibrary
                         << ") not found, hardware decoding unavailable.";

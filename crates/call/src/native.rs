@@ -28,8 +28,8 @@ use livekit::{
         key_provider::{KeyProvider, KeyProviderOptions},
     },
     options::{
-        AudioEncoding, DegradationPreference, TrackPublishOptions, VideoEncoding,
-        compute_video_encodings,
+        AudioEncoding, DegradationPreference, TrackPublishOptions, VideoCodec, VideoEncoderBackend,
+        VideoEncoding, compute_video_encodings,
     },
     prelude::*,
     webrtc::{
@@ -772,6 +772,105 @@ enum Feed {
     Screen(Arc<OnceLock<NativeVideoSource>>),
 }
 
+/// The codec video is sent in: H.264 where this computer has a hardware
+/// encoder for it (Linux: VAAPI on Intel and AMD, NVENC on NVIDIA, which
+/// are H.264 encoders), VP8 in software otherwise. If the hardware encoder
+/// fails to start, libwebrtc encodes H.264 in software (OpenH264) instead.
+/// `MORPHEUS_HW_VIDEO=0` keeps to VP8 in software.
+fn video_codec() -> VideoCodec {
+    static CODEC: OnceLock<VideoCodec> = OnceLock::new();
+    *CODEC.get_or_init(|| {
+        let backends: Vec<_> = VideoEncoderBackend::list_available().into_iter().collect();
+        let hardware = cfg!(target_os = "linux")
+            && std::env::var("MORPHEUS_HW_VIDEO").as_deref() != Ok("0")
+            && backends
+                .iter()
+                .any(|b| matches!(b, VideoEncoderBackend::Nvenc | VideoEncoderBackend::Vaapi));
+        let codec = if hardware {
+            VideoCodec::H264
+        } else {
+            VideoCodec::VP8
+        };
+        info!(?backends, ?codec, "video encoders available");
+        codec
+    })
+}
+
+/// Log which encoder sends a published video (`kind`: camera or screen),
+/// from its sender's stats, when it starts and whenever it changes (a
+/// hardware encoder that fails is replaced by a software one), and note it
+/// for the interface and tests.
+async fn watch_encoder(
+    track: LocalVideoTrack,
+    key: &'static str,
+    kind: &'static str,
+    stop: Arc<AtomicBool>,
+) {
+    use livekit::webrtc::stats::RtcStats;
+    let mut last: Option<String> = None;
+    while !stop.load(Ordering::Relaxed) {
+        tokio::time::sleep(Duration::from_secs(if last.is_some() { 5 } else { 1 })).await;
+        let Ok(stats) = track.get_stats().await else {
+            continue;
+        };
+        let Some(implementation) = stats.into_iter().find_map(|s| match s {
+            RtcStats::OutboundRtp(o)
+                if o.stream.kind == "video" && !o.outbound.encoder_implementation.is_empty() =>
+            {
+                Some(o.outbound.encoder_implementation)
+            }
+            _ => None,
+        }) else {
+            continue;
+        };
+        if last.as_ref() != Some(&implementation) {
+            let encoder = crate::codec_backend(&implementation, true);
+            info!(kind, encoder, %implementation, "video encoder");
+            if !stop.load(Ordering::Relaxed) {
+                crate::quality::note_encoder(key, encoder);
+            }
+            last = Some(implementation);
+        }
+    }
+}
+
+/// Log which decoder shows someone's video (NVDEC or software), from the
+/// receiver's stats, when it starts and whenever it changes.
+async fn watch_decoder(track: RemoteVideoTrack, who: String) {
+    use livekit::webrtc::stats::RtcStats;
+    let started = std::time::Instant::now();
+    let mut last: Option<String> = None;
+    let mut frames = 0;
+    loop {
+        tokio::time::sleep(Duration::from_secs(if last.is_some() { 5 } else { 1 })).await;
+        let Ok(stats) = track.get_stats().await else {
+            return;
+        };
+        let decoding = stats.into_iter().find_map(|s| match s {
+            RtcStats::InboundRtp(i)
+                if i.stream.kind == "video" && !i.inbound.decoder_implementation.is_empty() =>
+            {
+                Some((i.inbound.decoder_implementation, i.inbound.frames_decoded))
+            }
+            _ => None,
+        });
+        match decoding {
+            // Stopped (unsubscribed or paused): nothing more to log.
+            Some((_, decoded)) if last.is_some() && decoded == frames => return,
+            Some((implementation, decoded)) => {
+                frames = decoded;
+                if last.as_ref() != Some(&implementation) {
+                    let decoder = crate::codec_backend(&implementation, false);
+                    info!(%who, track = %track.sid(), decoder, %implementation, "video decoder");
+                    last = Some(implementation);
+                }
+            }
+            None if last.is_some() || started.elapsed() > Duration::from_secs(60) => return,
+            None => {}
+        }
+    }
+}
+
 /// How long the desktop's screen picker may take.
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 const PICKER_TIMEOUT: Duration = Duration::from_secs(180);
@@ -879,6 +978,7 @@ impl Outgoing {
             // sharpness before smoothness.
             TrackPublishOptions {
                 source: track_source,
+                video_codec: video_codec(),
                 simulcast: false,
                 video_encoding: Some(VideoEncoding {
                     max_bitrate: quality.max_bitrate(resolution.width, resolution.height),
@@ -890,6 +990,7 @@ impl Outgoing {
         } else {
             TrackPublishOptions {
                 source: track_source,
+                video_codec: video_codec(),
                 // A camera of 720p or more has a bitrate of its own (the
                 // default for a 16:9 picture is read off the next preset up).
                 video_encoding: (resolution.width * resolution.height >= 1280 * 720).then(|| {
@@ -927,7 +1028,9 @@ impl Outgoing {
             } else {
                 "maintain-framerate"
             },
+            encoder: None,
         };
+        let options_codec = options.video_codec;
         let track =
             LocalVideoTrack::create_video_track(name, RtcVideoSource::Native(source.clone()));
         let published = room
@@ -945,12 +1048,17 @@ impl Outgoing {
             track = %publication.sid(),
             kind = if screen { "screen" } else { "camera" },
             published = %published_as,
+            codec = ?options_codec,
             "video track published"
         );
-        crate::quality::note_published(
-            if screen { LOCAL_SCREEN } else { LOCAL_CAMERA },
-            published_as,
-        );
+        let key = if screen { LOCAL_SCREEN } else { LOCAL_CAMERA };
+        crate::quality::note_published(key, published_as);
+        tokio::spawn(watch_encoder(
+            track.clone(),
+            key,
+            if screen { "screen" } else { "camera" },
+            stop.clone(),
+        ));
         // Encrypted calls: no frames until the encryptor sits on the track,
         // or the first would leave in the clear.
         if encrypted {
@@ -1426,6 +1534,7 @@ async fn forward_events(
                 let identity = participant.identity().to_string();
                 let key = format!("{identity}/{}", track.sid());
                 info!(who = %identity, track = %track.sid(), "video arriving");
+                tokio::spawn(watch_decoder(track.clone(), identity.clone()));
                 tokio::spawn(video::show_remote(
                     track,
                     key.clone(),

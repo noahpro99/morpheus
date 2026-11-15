@@ -119,6 +119,8 @@ gpui = { path = "vendor/gpui" }
 # AudioSourceInterface::SetVolume, Discord's stream volume). Copies with only
 # those added, each marked "Morpheus patch": livekit gets
 # TrackPublishOptions::stereo, webrtc-sys and libwebrtc RtcAudioTrack::set_volume.
+# webrtc-sys also finds the GPU driver libraries its hardware codecs dlopen
+# (VAAPI, NVENC/NVDEC) in NixOS's /run/opengl-driver/lib (src/driver_dlopen.h).
 livekit = { path = "vendor/livekit" }
 libwebrtc = { path = "vendor/libwebrtc" }
 webrtc-sys = { path = "vendor/webrtc-sys" }
