@@ -2131,6 +2131,75 @@ async fn hanging_up_leaves_the_voice_channels_list_at_once() {
     assert!(listed.is_empty(), "listed again: {listed:?}");
 }
 
+/// Quitting hangs up first, so nobody is left looking at a ghost: matrix.org
+/// takes no delayed events (alice's app here is told to do without them too),
+/// so a client that just died stays listed in the call for hours. Closing the
+/// window to the tray is not quitting: the call goes on.
+#[tokio::test]
+async fn quitting_the_app_hangs_up_first_but_closing_to_the_tray_does_not() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let channel = fresh_voice_channel(&hs);
+    let mut alice = App::launch_with_env(&hs, &[("MORPHEUS_DELAYED_EVENTS", "off")])
+        .await
+        .expect("launch alice");
+    login_and_open(&mut alice, "alice", "general").await;
+    open_without_joining(&mut alice, &channel).await;
+    let room_id: String = alice
+        .attr(".room.selected", "data-room")
+        .await
+        .expect("room id")
+        .expect("a selected room");
+    let mut bob = App::launch(&hs).await.expect("launch bob");
+    login_and_open(&mut bob, "bob", "general").await;
+    open_without_joining(&mut bob, &channel).await;
+
+    alice.click(CALL_BUTTON).await.expect("call");
+    alice
+        .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("alice connected");
+    bob.click(CALL_BUTTON).await.expect("join");
+    bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("bob connected");
+    wait_in_call(&mut bob, &room_id, "alice").await.expect("bob sees alice");
+
+    // To the tray: still in the call.
+    alice.close_to_tray().await.expect("close to tray");
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+    assert!(alice.is_running(), "closing the window ended the app");
+    wait_in_call(&mut bob, &room_id, "alice")
+        .await
+        .expect("alice still in the call with her window closed");
+
+    // Quit (the system's polite way: SIGTERM, as at logout): she hangs up
+    // before the app ends, and bob sees it within a few seconds.
+    let pid = alice.pid().expect("alice's pid");
+    let killed = std::process::Command::new("kill")
+        .args(["-TERM", &pid.to_string()])
+        .status()
+        .expect("kill");
+    assert!(killed.success());
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while alice.is_running() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the app did not end within 5 s of SIGTERM"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    bob.wait_for_text_gone(
+        &format!(".room-call[data-room=\"{room_id}\"] .call-participant"),
+        "alice",
+        std::time::Duration::from_secs(5),
+    )
+    .await
+    .expect("bob sees alice leave once her app quit");
+}
+
 /// In a call, its controls are part of the profile card at the bottom left
 /// (which grows to hold them), and hanging up is red wherever it shows.
 #[tokio::test]

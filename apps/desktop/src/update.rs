@@ -70,7 +70,10 @@ impl Shell {
         let installing = session.install_update(download);
         cx.spawn(async move |this, cx| {
             match installing.await {
-                Ok(()) => std::process::exit(0),
+                // The new version starts on its own; this one hangs up and ends.
+                Ok(()) => {
+                    cx.update(crate::quit).ok();
+                }
                 Err(err) => {
                     this.update(cx, |this, cx| {
                         this.update_busy = false;

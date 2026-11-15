@@ -435,6 +435,29 @@ impl Shell {
             .detach();
     }
 
+    /// Hang up before the app quits, waiting for it (this blocks the caller)
+    /// up to [`QUIT_LEAVE_FOR`]: the call membership's leave, then LiveKit.
+    /// Without it the others see a ghost in the call until the homeserver's
+    /// delayed leave fires, or for hours where delayed events are off
+    /// (matrix.org). A quit must never hang, so after that it gives up.
+    pub fn leave_before_quit(&mut self) {
+        GENERATION.fetch_add(1, Ordering::SeqCst);
+        let call = self.calls.media.take();
+        let room = self.calls.state.take().map(|state| state.room_id);
+        let (Some(session), Some(room)) = (self.session.clone(), room) else {
+            return;
+        };
+        eprintln!("morpheus-desktop: quitting: leaving the call first");
+        // Run here, on the caller: a watchdog ends the app if it takes too long.
+        std::thread::spawn(|| {
+            std::thread::sleep(QUIT_LEAVE_FOR);
+            eprintln!("morpheus-desktop: quitting: leaving the call timed out");
+            std::process::exit(0);
+        });
+        futures::executor::block_on(leave_media(&session, room, call));
+        eprintln!("morpheus-desktop: quitting: left the call");
+    }
+
     /// Mute and deafen as asked, with the chime and what the call hears.
     pub fn set_voice(&mut self, next: VoiceFlags, cx: &mut Context<Self>) {
         let before = self.calls.voice;
@@ -733,6 +756,9 @@ async fn leave_media(session: &Session, room: OwnedRoomId, call: Option<Call>) {
 
 /// How long a hung-up room's list hides this account while the server catches up.
 const LEFT_FOR_MS: u64 = 10_000;
+
+/// How long quitting waits to hang up cleanly before it ends the app anyway.
+const QUIT_LEAVE_FOR: Duration = Duration::from_secs(2);
 
 pub fn now_ms() -> u64 {
     std::time::SystemTime::now()

@@ -67,3 +67,7 @@ ksni = { version = "0.3.6", default-features = false, features = ["blocking", "a
 # StatusNotifierItem through ksni above).
 [target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
 tray-icon = { version = "0.21", default-features = false }
+
+# SIGTERM (logout, shutdown, `kill`) quits as the Quit item does: hanging up first.
+[target.'cfg(unix)'.dependencies]
+signal-hook = "0.3.18"

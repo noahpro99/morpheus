@@ -25,7 +25,7 @@ pub fn close_window(window: &mut Window, cx: &mut App) {
         gpui::KEEP_RUNNING_WITHOUT_WINDOWS.store(true, std::sync::atomic::Ordering::Relaxed);
         window.remove_window();
     } else {
-        cx.quit();
+        crate::quit(cx);
     }
 }
 
