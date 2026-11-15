@@ -29,7 +29,7 @@ Download the file for your system from the
 | --- | --- |
 | Linux (x86-64) | `morpheus-<version>-linux-x86_64.zip`: unzip, run `morpheus-desktop` |
 | Windows | `morpheus-<version>-windows-x86_64.zip`: unzip, run `Morpheus.exe` |
-| macOS | `morpheus-<version>-macos-arm64.zip` (Apple silicon) or `-macos-x86_64.zip` (Intel): unzip, open `Morpheus.app` |
+| macOS | `morpheus-<version>-macos-arm64.dmg` (Apple silicon) or `-macos-x86_64.dmg` (Intel): open it, drag `Morpheus.app` to Applications. The `.zip` of the same name holds the same app |
 | Android | `morpheus-<version>-android-arm64.apk` |
 | iPhone | `morpheus-<version>-ios-arm64-unsigned.ipa` (unsigned: sign and install it with your own tooling) |
 

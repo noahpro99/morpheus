@@ -1,6 +1,6 @@
 # Releasing
 
-A release is a GitHub release `vX.Y.Z` with six files attached, named by a
+A release is a GitHub release `vX.Y.Z` with eight files attached, named by a
 GitHub milestone (`X.Y.Z`; issues that go into the release are put in it).
 The version is the workspace `version` in `Cargo.toml` (and `Cargo.lock`); the
 Android version code is derived from it by `scripts/release-android.sh`
@@ -13,13 +13,15 @@ file names matter.
 | `morpheus-X.Y.Z-ios-arm64-unsigned.ipa` | `apple.yml` (job `ios`) |
 | `morpheus-X.Y.Z-linux-x86_64.zip` | `linux.yml` |
 | `morpheus-X.Y.Z-macos-arm64.zip` | `apple.yml` (macOS, arm64) |
+| `morpheus-X.Y.Z-macos-arm64.dmg` | `apple.yml` (macOS, arm64; the disk image for people, the updater uses the zip) |
 | `morpheus-X.Y.Z-macos-x86_64.zip` | `apple.yml` (macOS, x86_64) |
+| `morpheus-X.Y.Z-macos-x86_64.dmg` | `apple.yml` (macOS, x86_64; as above) |
 | `morpheus-X.Y.Z-windows-x86_64.zip` | `windows.yml` |
 
-The desktop zips are each built, run through the update self-test
+The desktop zips (and dmgs) are each built, run through the update self-test
 (`scripts/update-self-test.sh`) and attached by the workflow. A release is
 public the moment it is published, and clients that check for updates then
-offer it, so it is published only when all six assets are there.
+offer it, so it is published only when all eight assets are there.
 
 ## Steps
 
@@ -78,7 +80,7 @@ offer it, so it is published only when all six assets are there.
    Keep `~/.config/morpheus/release.keystore` and its password file: Android
    installs an update only over an app signed with the same key.
 
-6. **Check, then publish.** All six assets must be attached:
+6. **Check, then publish.** All eight assets must be attached:
 
    ```sh
    gh release view vX.Y.Z --json assets -q '.assets[].name'
