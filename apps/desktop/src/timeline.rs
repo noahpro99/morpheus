@@ -107,6 +107,8 @@ pub struct TimelineView {
     room_id: OwnedRoomId,
     session: Option<Session>,
     handle: Option<TimelineHandle>,
+    /// A direct message: an empty one offers "Say hi!" (set by the shell).
+    say_hi: bool,
     entries: Vector<TimelineEntry>,
     rows: Vec<Row>,
     list: ListState,
@@ -252,6 +254,7 @@ impl TimelineView {
             room_id: room_id.clone(),
             session: session.clone(),
             handle: None,
+            say_hi: false,
             entries: Vector::new(),
             rows: vec![Row::Skeleton { older: false }],
             list,
@@ -553,6 +556,28 @@ impl TimelineView {
     }
 
     /// The people you ignore changed: their messages fold away (or show).
+    /// Whether this is a direct message, which offers "Say hi!" while empty.
+    pub fn set_direct(&mut self, direct: bool, cx: &mut Context<Self>) {
+        if self.say_hi != direct {
+            self.say_hi = direct;
+            self.rebuild();
+            cx.notify();
+        }
+    }
+
+    fn say_hi(&mut self, cx: &mut Context<Self>) {
+        let Some(handle) = self.handle.clone() else {
+            return;
+        };
+        let sending = handle.send_text("Hi! 👋".to_owned());
+        cx.spawn(async move |_, _| {
+            if let Err(err) = sending.await {
+                eprintln!("morpheus-desktop: sending: {err}");
+            }
+        })
+        .detach();
+    }
+
     pub fn set_ignored(&mut self, ignored: std::collections::HashSet<String>, cx: &mut Context<Self>) {
         if self.ignored == ignored {
             return;
@@ -861,6 +886,17 @@ impl TimelineView {
             return div().into_any_element();
         };
         let Row::Message { row, show_header } = row else {
+            if matches!(row, Row::Start)
+                && self.say_hi
+                && !self.rows.iter().any(|r| {
+                    matches!(r, Row::Message { row, .. } if !matches!(row.message.kind, MessageKind::State(_)))
+                })
+            {
+                let weak = cx.weak_entity();
+                return message::say_hi_row(move |cx| {
+                    weak.update(cx, |this, cx| this.say_hi(cx)).ok();
+                });
+            }
             return message::other_row(&row);
         };
         // Someone you ignore: folded away, shown on request.
