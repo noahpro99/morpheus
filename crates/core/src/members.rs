@@ -450,6 +450,9 @@ pub(crate) async fn is_ignored(
 pub struct ProfileChange {
     pub room_id: OwnedRoomId,
     pub user_id: OwnedUserId,
+    /// Their display name there now (none: they have none) and picture.
+    pub name: Option<String>,
+    pub avatar: Option<MediaRef>,
 }
 
 /// Profile changes as they sync in, across every joined room.
@@ -490,6 +493,8 @@ impl Session {
                             let _ = tx.send(ProfileChange {
                                 room_id: room.room_id().to_owned(),
                                 user_id: event.state_key.clone(),
+                                name: event.content.displayname.clone(),
+                                avatar: event.content.avatar_url.clone().map(MediaRef::from_mxc),
                             });
                         }
                     }

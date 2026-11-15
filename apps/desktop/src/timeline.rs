@@ -141,6 +141,10 @@ pub struct TimelineView {
     keys: KeyAccess,
     /// Your nicknames for people, shown over their names.
     nicknames: Arc<NickMap>,
+    /// Names and pictures people changed while this timeline was open, by user:
+    /// drawn over what the messages carry (the timeline itself only follows
+    /// picture changes, not a new name alone).
+    profiles: std::collections::HashMap<String, (Option<String>, Option<morpheus_core::MediaRef>)>,
     /// People you ignore: their messages are folded away until shown.
     ignored: std::collections::HashSet<String>,
     /// Folded messages shown on request (by unique ID).
@@ -278,6 +282,7 @@ impl TimelineView {
             echoed: None,
             keys: KeyAccess::default(),
             nicknames: Arc::default(),
+            profiles: Default::default(),
             ignored: Default::default(),
             revealed: Default::default(),
             downloads: Default::default(),
@@ -596,6 +601,20 @@ impl TimelineView {
             return;
         }
         self.ignored = ignored;
+        let rows = self.rows.len();
+        self.list.splice(0..rows, rows);
+        cx.notify();
+    }
+
+    /// `user` changed their name or picture: their messages are drawn again with it.
+    pub fn set_profile(
+        &mut self,
+        user: String,
+        name: Option<String>,
+        avatar: Option<morpheus_core::MediaRef>,
+        cx: &mut Context<Self>,
+    ) {
+        self.profiles.insert(user, (name, avatar));
         let rows = self.rows.len();
         self.list.splice(0..rows, rows);
         cx.notify();
@@ -946,7 +965,13 @@ impl TimelineView {
                 )
                 .into_any_element();
         }
-        let row = self.with_name_mentions(row);
+        let mut row = self.with_name_mentions(row);
+        if let Some((name, avatar)) = self.profiles.get(row.message.sender.as_str()) {
+            let mut message = row.message.clone();
+            message.sender_name = name.clone().unwrap_or_else(|| message.sender.localpart().to_owned());
+            message.sender_avatar = avatar.clone();
+            row = Arc::new(MessageRow { message, blocks: row.blocks.clone(), time: row.time.clone() });
+        }
         let mut pictures = Pictures {
             keys: self.keys,
             highlight: self.highlight.as_deref() == Some(row.message.unique_id.as_str()),
