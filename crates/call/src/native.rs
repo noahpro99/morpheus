@@ -108,11 +108,11 @@ mod no_mic_test {
 }
 #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
 pub use no_mic_test::*;
+#[path = "preview.rs"]
+mod preview;
 #[cfg(test)]
 #[path = "speech_fixture.rs"]
 mod speech_fixture;
-#[path = "preview.rs"]
-mod preview;
 pub use preview::{
     PREVIEW_CAMERA, PreviewError, camera_in_use, camera_opens, camera_preview_device,
     camera_preview_key, camera_preview_start, camera_preview_stop,
@@ -546,14 +546,16 @@ impl Call {
         crate::set_user_volume(user, volume);
         for participant in self.room.remote_participants().values() {
             let identity = participant.identity().to_string();
-            if !(identity == user || identity.starts_with(&format!("{user}:"))) {
+            if !crate::voice_belongs_to(&identity, user) {
                 continue;
             }
             for publication in participant.track_publications().values() {
                 if publication.source() != TrackSource::ScreenshareAudio
                     && let Some(RemoteTrack::Audio(track)) = publication.track()
                 {
-                    track.rtc_track().set_volume(f64::from(crate::voice_gain(&identity)));
+                    track
+                        .rtc_track()
+                        .set_volume(f64::from(crate::voice_gain(&identity)));
                 }
             }
         }
@@ -757,7 +759,11 @@ impl Outgoing {
         let stop = Arc::new(AtomicBool::new(false));
         let screen = kind == VideoKind::Screen;
         // The camera is the call's from here (a preview lets go of it).
-        let claim = if screen { None } else { Some(preview::CallClaim::take().await) };
+        let claim = if screen {
+            None
+        } else {
+            Some(preview::CallClaim::take().await)
+        };
         let (feed, source) = match (mode, kind) {
             (AudioMode::Tone, VideoKind::Camera) => {
                 let (width, height) =
@@ -1352,7 +1358,9 @@ async fn forward_events(
                 } else {
                     track.enable();
                 }
-                track.rtc_track().set_volume(f64::from(crate::voice_gain(&identity)));
+                track
+                    .rtc_track()
+                    .set_volume(f64::from(crate::voice_gain(&identity)));
                 if let Some(prev) = voice_tasks.remove(&identity) {
                     prev.abort();
                 }
@@ -1371,11 +1379,7 @@ async fn forward_events(
                     }
                     measure_tasks.insert(
                         identity.clone(),
-                        tokio::spawn(measure(
-                            track,
-                            identity,
-                            tx.clone(),
-                        )),
+                        tokio::spawn(measure(track, identity, tx.clone())),
                     );
                 }
                 continue;

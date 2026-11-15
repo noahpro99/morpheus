@@ -330,7 +330,9 @@ impl ModView {
 
 impl Render for ModView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        if std::mem::take(&mut self.take_focus) {
+        // The sheet keeps the keyboard: when what had it is gone (a Kick or Ban button the
+        // next frame replaces), Escape must still reach the sheet.
+        if std::mem::take(&mut self.take_focus) || !self.focus.contains_focused(window, cx) {
             window.focus(&self.focus);
         }
         let rows: Vec<AnyElement> = match &self.rooms {

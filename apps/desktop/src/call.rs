@@ -884,6 +884,22 @@ fn show_learned(
     if learned.is_empty() {
         return;
     }
+    // Their volumes play on these names from now on (a name is no user ID).
+    let mut owners: Vec<OwnedUserId> = Vec::new();
+    for identity in learned {
+        if let Some(user) = people.get(identity) {
+            morpheus_call::note_voice_identity(identity, user.as_str());
+            if !owners.contains(user) {
+                owners.push(user.clone());
+            }
+        }
+    }
+    this.update(cx, |this, _| {
+        for user in &owners {
+            this.apply_user_volume(user);
+        }
+    })
+    .ok();
     let speaking: Vec<OwnedUserId> = said
         .speaking
         .iter()
