@@ -1,6 +1,8 @@
 //! Sharing the screen, through libwebrtc's desktop capturer. On Wayland that
 //! asks the desktop portal, which lets the person pick a screen or a window
-//! (or cancel); elsewhere it takes the whole screen.
+//! (or cancel); on macOS 14 and later ScreenCaptureKit's system picker does;
+//! on Windows the app's own picker chose the screen or window beforehand
+//! (`screen_sources.rs`).
 
 use std::{
     sync::{
@@ -67,6 +69,7 @@ fn ensure_glib_loop() {
 pub(crate) fn run(
     sink: Arc<std::sync::OnceLock<NativeVideoSource>>,
     quality: ScreenQuality,
+    source: Option<crate::ScreenSource>,
     stop: Arc<AtomicBool>,
     started: oneshot::Sender<Result<(u32, u32), String>>,
 ) {
@@ -75,12 +78,26 @@ pub(crate) fn run(
     let spawned = std::thread::Builder::new()
         .name("morpheus-screen".into())
         .spawn(move || {
+            // A source picked in the app (Windows) says screen or window;
+            // otherwise the system asks: Wayland's portal (screens and
+            // windows, the generic capturer), macOS's ScreenCaptureKit picker.
             #[cfg(target_os = "linux")]
-            let kind = DesktopCaptureSourceType::Generic;
+            let default_kind = DesktopCaptureSourceType::Generic;
             #[cfg(not(target_os = "linux"))]
-            let kind = DesktopCaptureSourceType::Screen;
+            let default_kind = DesktopCaptureSourceType::Screen;
+            let kind = match source.as_ref().map(|s| s.kind) {
+                Some(crate::ScreenSourceKind::Window) => DesktopCaptureSourceType::Window,
+                Some(crate::ScreenSourceKind::Screen) => DesktopCaptureSourceType::Screen,
+                None => default_kind,
+            };
             let mut options = DesktopCapturerOptions::new(kind);
             options.set_include_cursor(true);
+            // macOS 14 and later: SCContentSharingPicker, the system's own
+            // picker of screens, windows and apps, comes up when capture
+            // starts (the source list is then that picker alone). Earlier
+            // macOS has none and shares the main screen.
+            #[cfg(target_os = "macos")]
+            options.set_sck_system_picker(true);
             // libwebrtc's macOS capturers are Objective-C: every call from this
             // thread goes in an autorelease pool (none of its own; see
             // autorelease.rs).
@@ -88,11 +105,27 @@ pub(crate) fn run(
                 let _ = started.send(Err("screen capture is not available here".into()));
                 return;
             };
-            // Wayland picks through the portal; elsewhere, the first screen.
-            let chosen = if cfg!(target_os = "linux") {
-                None
-            } else {
-                autorelease::pool(|| capturer.get_source_list().into_iter().next())
+            // The one picked in the app, if it is still there; else Wayland
+            // picks through the portal, macOS through its picker (its one
+            // source), elsewhere the first screen.
+            let chosen = match &source {
+                Some(wanted) => {
+                    let found = autorelease::pool(|| {
+                        capturer
+                            .get_source_list()
+                            .into_iter()
+                            .find(|s| s.id() == wanted.id)
+                    });
+                    if found.is_none() {
+                        let gone = format!("{} is not there any more", wanted.name);
+                        let _ = started.send(Err(gone));
+                        return;
+                    }
+                    info!(source = %wanted.key(), "screen capture: the source picked");
+                    found
+                }
+                None if cfg!(target_os = "linux") => None,
+                None => autorelease::pool(|| capturer.get_source_list().into_iter().next()),
             };
             let mut started = Some(started);
             let failed = Arc::new(AtomicBool::new(false));

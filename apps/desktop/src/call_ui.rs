@@ -1333,6 +1333,16 @@ fn video_card(
                 String::new()
             },
         )
+        .attr(
+            "data-source",
+            if feed.screen && own {
+                morpheus_call::shared_screen_source()
+                    .map(|s| s.key())
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            },
+        )
         .attr("data-feed", key)
         .attr("data-user", feed.user.to_string())
         .into_any_element()

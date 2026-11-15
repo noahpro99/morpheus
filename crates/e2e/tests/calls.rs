@@ -5863,6 +5863,224 @@ async fn sharing_the_screen_without_its_sound_sends_none_and_is_remembered() {
     alice.press("body", "Escape").await.expect("close");
 }
 
+/// Where the desktop has no picker of its own (Windows), Go Live opens the
+/// app's: the screens and the windows on tabs of their own, each with its
+/// name and a picture that keeps up with it, the sound switch, Share and
+/// Cancel. Cancel shares nothing; Share shares the one picked, with or
+/// without its sound. The sources here are a test's (MORPHEUS_E2E_SCREEN_SOURCES).
+#[tokio::test]
+async fn the_screen_picker_lists_screens_and_windows_and_shares_the_one_picked() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let sources = "screen:1:Built-in Display;screen:2:Studio Display;\
+                   window:101:Notes - todo.txt;window:102:Terminal";
+    let (mut alice, mut bob) =
+        two_in_a_call(&hs, &[("MORPHEUS_E2E_SCREEN_SOURCES", sources)]).await;
+    if !alice.is_gpui() {
+        eprintln!("GPUI only (the picker is the desktop app's)");
+        return;
+    }
+    let button = ".voice-panel .screen-button";
+    let mine = ".call-stage .video-tile.screen.self";
+    let theirs = ".call-stage .video-tile.screen[data-user=\"@alice:localhost\"]";
+    let picker = ".screen-picker";
+
+    alice.click(button).await.expect("share");
+    alice
+        .click(".screen-quality .screen-go")
+        .await
+        .expect("go live");
+    alice
+        .wait_for(picker, DEFAULT_WAIT)
+        .await
+        .expect("the source picker");
+    assert_eq!(
+        alice.count(".video-tile.screen").await.expect("count"),
+        0,
+        "nothing is shared before a source is picked"
+    );
+    // Screens first, a tab each for screens and windows.
+    let tabs = alice
+        .texts(&format!("{picker} .screen-picker-tab"))
+        .await
+        .expect("tabs");
+    assert_eq!(tabs, ["Screens", "Windows"]);
+    alice
+        .wait_for(
+            &format!("{picker} .screen-picker-tab.active[data-value=screens]"),
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("screens first");
+    let names = alice
+        .texts(&format!("{picker} .screen-source .screen-source-name"))
+        .await
+        .expect("names");
+    assert_eq!(names, ["Built-in Display", "Studio Display"]);
+    // Each has a picture, and it keeps up (a new one every second or so).
+    let thumb = format!("{picker} .screen-source[data-source=\"screen:1\"] .screen-thumb");
+    alice
+        .wait_for(&format!("{thumb}[data-shown=true]"), DEFAULT_WAIT)
+        .await
+        .expect("a picture of the screen");
+    let first: u64 = alice
+        .attr(&thumb, "data-seq")
+        .await
+        .expect("attr")
+        .unwrap_or_default()
+        .parse()
+        .unwrap_or(0);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        let now: u64 = alice
+            .attr(&thumb, "data-seq")
+            .await
+            .expect("attr")
+            .unwrap_or_default()
+            .parse()
+            .unwrap_or(0);
+        if now > first {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the picture is not refreshed ({first} -> {now})"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+    // The windows on their own tab.
+    alice
+        .click(&format!("{picker} .screen-picker-tab[data-value=windows]"))
+        .await
+        .expect("windows tab");
+    alice
+        .wait_for(
+            &format!("{picker} .screen-source[data-source=\"window:102\"]"),
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("the windows");
+    let names = alice
+        .texts(&format!("{picker} .screen-source .screen-source-name"))
+        .await
+        .expect("names");
+    assert_eq!(names, ["Notes - todo.txt", "Terminal"]);
+    alice
+        .wait_for(&format!("{picker} .screen-audio-toggle"), DEFAULT_WAIT)
+        .await
+        .expect("the sound switch");
+    alice
+        .wait_for(&format!("{picker} .screen-picker-share"), DEFAULT_WAIT)
+        .await
+        .expect("Share");
+
+    // Cancel: nothing shared.
+    alice
+        .click(&format!("{picker} .screen-picker-cancel"))
+        .await
+        .expect("cancel");
+    alice
+        .wait_for_count(picker, 0, DEFAULT_WAIT)
+        .await
+        .expect("closed");
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    assert_eq!(alice.count(".video-tile.screen").await.expect("count"), 0);
+    assert_eq!(
+        alice
+            .count(&format!("{button}.active"))
+            .await
+            .expect("count"),
+        0
+    );
+
+    // Again: the Terminal window, without its sound.
+    alice.click(button).await.expect("share again");
+    alice
+        .click(".screen-quality .screen-go")
+        .await
+        .expect("go live");
+    alice
+        .click(&format!("{picker} .screen-picker-tab[data-value=windows]"))
+        .await
+        .expect("windows tab");
+    alice
+        .click(&format!("{picker} .screen-source[data-source=\"window:102\"]"))
+        .await
+        .expect("pick Terminal");
+    alice
+        .wait_for(
+            &format!("{picker} .screen-source.selected[data-source=\"window:102\"]"),
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("picked");
+    alice
+        .wait_for(&format!("{picker} .screen-audio-toggle.active"), DEFAULT_WAIT)
+        .await
+        .expect("sound on at first");
+    alice
+        .click(&format!("{picker} .screen-audio-toggle"))
+        .await
+        .expect("sound off");
+    alice
+        .wait_for_count(
+            &format!("{picker} .screen-audio-toggle.active"),
+            0,
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("switched off");
+    if let Some(path) = alice.screenshot("screen-picker").await.expect("screenshot") {
+        eprintln!("screenshot: {}", path.display());
+    }
+    alice
+        .click(&format!("{picker} .screen-picker-share"))
+        .await
+        .expect("share");
+    alice
+        .wait_for_count(picker, 0, DEFAULT_WAIT)
+        .await
+        .expect("closed by Share");
+    alice
+        .wait_for(&format!("{mine} .video[data-shown=true]"), DEFAULT_WAIT)
+        .await
+        .expect("her own screen");
+    assert_eq!(
+        alice
+            .attr(mine, "data-source")
+            .await
+            .expect("attr")
+            .as_deref(),
+        Some("window:102"),
+        "the window picked is the one shared"
+    );
+    wait_screen_pattern(&mut bob, "@alice:localhost")
+        .await
+        .expect("bob sees it");
+    assert_eq!(
+        alice
+            .attr(mine, "data-audio-sent")
+            .await
+            .expect("attr")
+            .as_deref(),
+        Some(""),
+        "no sound sent"
+    );
+    assert_eq!(
+        bob.count(&format!("{theirs}[data-audio=on]"))
+            .await
+            .expect("count"),
+        0
+    );
+    alice.click(button).await.expect("stop");
+    alice
+        .wait_for_count(".video-tile.screen", 0, DEFAULT_WAIT)
+        .await
+        .expect("stopped");
+}
+
 /// The green ring is on the call card only: the avatar inside a speaking
 /// person's card has no ring of its own.
 #[tokio::test]
