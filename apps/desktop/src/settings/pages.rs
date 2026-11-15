@@ -1030,7 +1030,23 @@ impl SettingsView {
             )
             .into_any_element(),
             switch("auto", "Turn on by itself while I share my screen", s.auto, |s| s.auto = !s.auto),
-            switch("now", "Turn on now", s.now, |s| s.now = !s.now),
+            choice(
+                "streamer-now".to_owned(),
+                "streamer-now",
+                "",
+                "Turn on now",
+                crate::streamer::active(),
+                true,
+                false,
+                cx.listener(|this, _, _, cx| {
+                    let next = if crate::streamer::active() {
+                        crate::streamer::turn_off()
+                    } else {
+                        crate::streamer::turn_on()
+                    };
+                    this.save_streamer(next, cx);
+                }),
+            ),
             group(
                 "What to hide",
                 "",

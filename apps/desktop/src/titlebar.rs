@@ -70,8 +70,7 @@ fn streamer_button(shell: &Shell, cx: &mut Context<Shell>) -> Option<impl IntoEl
         return None;
     }
     let toggle = cx.listener(|this, _, _, cx| {
-        let mut settings = crate::streamer::settings();
-        settings.now = false;
+        let settings = crate::streamer::turn_off();
         if let Err(err) = settings.save(&crate::data_dir()) {
             eprintln!("morpheus-desktop: saving the streamer mode setting: {err}");
         }

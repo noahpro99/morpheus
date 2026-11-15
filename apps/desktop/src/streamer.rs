@@ -19,6 +19,9 @@ static SETTINGS: RwLock<StreamerSettings> = RwLock::new(StreamerSettings {
     ask: true,
 });
 static SHARING: AtomicBool = AtomicBool::new(false);
+/// Streamer mode was turned off by hand during this share: it stays off until
+/// the share ends, whatever the auto-on-share setting says.
+static OVERRIDDEN: AtomicBool = AtomicBool::new(false);
 
 /// Read this device's choices (at startup).
 pub fn load(dir: &std::path::Path) {
@@ -44,13 +47,36 @@ pub fn sharing() -> bool {
 /// mode is on.
 pub fn set_sharing(on: bool) -> bool {
     let was = active();
+    if !on {
+        OVERRIDDEN.store(false, Ordering::Relaxed);
+    }
     SHARING.store(on, Ordering::Relaxed);
     was != active()
 }
 
 /// Whether streamer mode is on now.
 pub fn active() -> bool {
-    settings().active(sharing())
+    settings().active(sharing()) && !(sharing() && OVERRIDDEN.load(Ordering::Relaxed))
+}
+
+/// Turn streamer mode off (the pill, the Settings switch): the saved choice
+/// goes off, and during a share it stays off until the share ends; the
+/// auto-on-share setting is kept. Returns the settings to save.
+pub fn turn_off() -> StreamerSettings {
+    let mut s = settings();
+    s.now = false;
+    if sharing() {
+        OVERRIDDEN.store(true, Ordering::Relaxed);
+    }
+    s
+}
+
+/// Turn streamer mode on by hand; returns the settings to save.
+pub fn turn_on() -> StreamerSettings {
+    OVERRIDDEN.store(false, Ordering::Relaxed);
+    let mut s = settings();
+    s.now = true;
+    s
 }
 
 /// A person's name as it may be shown.
@@ -133,7 +159,7 @@ impl Shell {
         cx: &mut Context<Self>,
     ) {
         let asking =
-            sharing() && settings().ask && !self.ask_skipped && self.selected.as_ref() != Some(&id);
+            sharing() && active() && settings().ask && !self.ask_skipped && self.selected.as_ref() != Some(&id);
         let room = self
             .rooms
             .iter()
