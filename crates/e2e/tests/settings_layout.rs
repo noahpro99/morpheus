@@ -7,8 +7,7 @@
 
 use morpheus_e2e::{App, DEFAULT_WAIT};
 
-const CATEGORIES: [&str; 5] = [
-    "My Account",
+const CATEGORIES: [&str; 4] = [
     "Security & Privacy",
     "Notifications",
     "Appearance",
@@ -330,4 +329,79 @@ async fn settings_open_with_the_search_bar_focused() {
     )
     .await
     .expect("highlighted");
+}
+
+#[tokio::test]
+async fn the_sidebar_starts_with_a_profile_header_that_opens_my_account() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch_desktop(&hs).await.expect("launch app");
+    login(&mut app, "carol").await;
+    let name = app
+        .text(".sidebar-footer .user")
+        .await
+        .expect("text")
+        .expect("your name in the user bar");
+    open_settings(&mut app).await;
+
+    // No "Settings" title.
+    assert_eq!(app.count(".settings-nav h2").await.expect("count"), 0, "no title");
+
+    // The header: your picture (~40 px), your name, and "Edit profile" under it,
+    // above the search box.
+    app.wait_for(".settings-nav .settings-profile", DEFAULT_WAIT)
+        .await
+        .expect("profile header");
+    let picture = app
+        .bounds(".settings-profile .avatar")
+        .await
+        .expect("bounds")
+        .expect("your picture in the header");
+    assert!((36.0..=44.0).contains(&picture.w), "picture is {} wide", picture.w);
+    let shown = app
+        .text(".settings-profile .settings-profile-name")
+        .await
+        .expect("text")
+        .expect("name");
+    assert_eq!(shown.trim(), name.trim());
+    let edit = app
+        .bounds(".settings-profile .settings-profile-edit")
+        .await
+        .expect("bounds")
+        .expect("edit line");
+    let name_box = app
+        .bounds(".settings-profile .settings-profile-name")
+        .await
+        .expect("bounds")
+        .expect("name box");
+    assert!(edit.y > name_box.y, "Edit profile sits under the name");
+    assert!(edit.x >= picture.x + picture.w, "the text is right of the picture");
+    app.wait_for_text(".settings-profile .settings-profile-edit", "Edit profile", DEFAULT_WAIT)
+        .await
+        .expect("Edit profile");
+    let search = app
+        .bounds(".settings-nav input")
+        .await
+        .expect("bounds")
+        .expect("search box");
+    assert!(picture.y + picture.h <= search.y, "the header is above the search box");
+
+    // My Account has no list entry; the header opens it.
+    assert_eq!(
+        app.count(".settings-nav button.settings-nav-item").await.expect("count"),
+        app.texts(".settings-nav button.settings-nav-item")
+            .await
+            .expect("texts")
+            .iter()
+            .filter(|t| !t.contains("My Account"))
+            .count(),
+        "no My Account list entry"
+    );
+    page(&mut app, "Appearance").await;
+    app.click(".settings-profile").await.expect("click header");
+    app.wait_for_text(".settings-page h2", "My Account", DEFAULT_WAIT)
+        .await
+        .expect("the header opens My Account");
 }
