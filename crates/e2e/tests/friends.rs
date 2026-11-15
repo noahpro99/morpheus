@@ -324,3 +324,35 @@ async fn the_dms_sidebar_starts_with_the_command_palette_button() {
     app.click(".sidebar .palette-button").await.expect("click");
     app.wait_for(".switcher input", DEFAULT_WAIT).await.expect("the palette opened");
 }
+
+#[tokio::test]
+async fn new_message_copies_a_link_to_your_profile() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch(&hs).await.expect("launch app");
+    app.wait_for("form.login", DEFAULT_WAIT).await.expect("login form");
+    app.type_into("form.login input[name=username]", "carol").await.expect("username");
+    app.type_into("form.login input[name=password]", "carol-password").await.expect("password");
+    app.submit("form.login").await.expect("submit");
+    app.wait_for(".room", DEFAULT_WAIT).await.expect("rooms");
+    open_friends(&mut app).await;
+    app.click(".friends-header .new-message-tab").await.expect("New Message");
+    app.wait_for("form.new-message input", DEFAULT_WAIT).await.expect("the form");
+
+    app.wait_for_text(".new-message .copy-profile-link", "Copy link to your profile", DEFAULT_WAIT)
+        .await
+        .expect("the button");
+    app.click(".new-message .copy-profile-link").await.expect("copy");
+    app.wait_for_text(".new-message .copy-profile-link", "Copied", DEFAULT_WAIT)
+        .await
+        .expect("confirmation");
+
+    // What went to the clipboard: paste it into the name box.
+    app.click("form.new-message input").await.expect("focus the box");
+    app.shortcut("form.new-message input", "v", true).await.expect("paste");
+    app.wait_for_value("form.new-message input", "https://matrix.to/#/@carol:localhost", DEFAULT_WAIT)
+        .await
+        .expect("the clipboard holds the profile link");
+}
