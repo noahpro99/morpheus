@@ -32,6 +32,10 @@ impl Shell {
         }
         if self.selected.as_ref() == Some(&change.room_id) {
             self.refresh_members(cx);
+            if let Some((_, timeline)) = &self.timeline {
+                let (user, name, avatar) = (change.user_id.to_string(), change.name.clone(), change.avatar.clone());
+                timeline.update(cx, |timeline, cx| timeline.set_profile(user, name, avatar, cx));
+            }
         }
         cx.notify();
     }
