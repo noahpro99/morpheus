@@ -297,7 +297,7 @@ impl Render for Lightbox {
                     }),
                 )
                 .child(
-                    img(full.clone())
+                    img(crate::media::drawn(full.clone()))
                         .size_full()
                         .rounded(px(6.0))
                         .object_fit(ObjectFit::Contain),

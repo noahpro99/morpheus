@@ -317,11 +317,7 @@ impl ProfileCard {
             );
             let fetched_media = media.clone();
             cx.spawn(async move |this, cx| {
-                let image = fetching
-                    .await
-                    .ok()
-                    .flatten()
-                    .and_then(|bytes| media::decode_avatar(&bytes));
+                let image = media::fetched(cx, fetching, (size, size), true).await;
                 this.update(cx, |this, cx| {
                     this.images.finish(&fetched_media, size, image);
                     cx.notify();
@@ -1066,11 +1062,7 @@ impl ProfileCard {
         if self.images.begin(&media, 56) {
             let fetching = session.thumbnail(media.clone(), 56, 56);
             cx.spawn(async move |this, cx| {
-                let image = fetching
-                    .await
-                    .ok()
-                    .flatten()
-                    .and_then(|bytes| media::decode(&bytes));
+                let image = media::fetched(cx, fetching, (56, 56), false).await;
                 this.update(cx, |this, cx| {
                     this.images.finish(&media, 56, image);
                     cx.notify();

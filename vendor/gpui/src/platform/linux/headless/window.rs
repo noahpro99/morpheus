@@ -384,4 +384,21 @@ impl PlatformAtlas for HeadlessAtlas {
     fn remove(&self, key: &AtlasKey) {
         self.0.lock().tiles.remove(key);
     }
+
+    fn stats(&self) -> crate::AtlasStats {
+        let state = self.0.lock();
+        let mut stats = crate::AtlasStats {
+            tiles: state.tiles.len(),
+            textures: state.tiles.len(),
+            ..Default::default()
+        };
+        for (key, tile) in &state.tiles {
+            let colour = key.texture_kind() == crate::AtlasTextureKind::Polychrome;
+            stats.colour_tiles += usize::from(colour);
+            stats.bytes += tile.bounds.size.width.0.max(0) as usize
+                * tile.bounds.size.height.0.max(0) as usize
+                * if colour { 4 } else { 1 };
+        }
+        stats
+    }
 }

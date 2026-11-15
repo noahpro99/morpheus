@@ -32,6 +32,7 @@ mod locks;
 mod login;
 mod mac_menu;
 mod media;
+mod memory;
 mod member_actions;
 mod members;
 mod menu;
@@ -766,15 +767,27 @@ fn main() {
     // and one saved at 0 silenced every chime and ring for good. PulseAudio's
     // client properties come from this variable (what the system mixer shows
     // too); setting it means starting over with it.
+    //
+    // The same restart tells mimalloc (read when the process starts) to hand
+    // freed memory back at once: with its default delay, memory freed by a
+    // thread that then goes idle (GPUI's workers decoding pictures) stayed
+    // resident; opening 30 rooms with pictures left 636 MB resident against
+    // 459 MB with this (issue #10).
     #[cfg(target_os = "linux")]
-    if std::env::var_os("PULSE_PROP").is_none()
+    if (std::env::var_os("PULSE_PROP").is_none()
+        || std::env::var_os("MIMALLOC_PURGE_DELAY").is_none())
         && let Ok(exe) = std::env::current_exe()
     {
         use std::os::unix::process::CommandExt as _;
-        let err = std::process::Command::new(exe)
-            .args(std::env::args_os().skip(1))
-            .env("PULSE_PROP", "state.restore-props=false")
-            .exec();
+        let mut command = std::process::Command::new(exe);
+        command.args(std::env::args_os().skip(1));
+        if std::env::var_os("PULSE_PROP").is_none() {
+            command.env("PULSE_PROP", "state.restore-props=false");
+        }
+        if std::env::var_os("MIMALLOC_PURGE_DELAY").is_none() {
+            command.env("MIMALLOC_PURGE_DELAY", "0");
+        }
+        let err = command.exec();
         eprintln!("morpheus-desktop: could not restart with PULSE_PROP: {err}");
     }
     // CI's check that an update installs and the new version starts: no window.

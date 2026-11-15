@@ -567,6 +567,41 @@ impl ImageSource {
 #[derive(Clone)]
 enum ImageDecoder {}
 
+/// Morpheus patch: an [`Image`] drawn with `img` is decoded once and kept, in
+/// GPUI's asset cache and (once painted) the windows' sprite atlas, for as
+/// long as the app runs. These let the app let go of pictures it no longer
+/// shows.
+impl Image {
+    /// Drops the decoded copy of this picture from GPUI's cache and every
+    /// window's sprite atlas (`window` is the one being updated, if any). Drawn
+    /// again later, it is decoded again. True when there was a decoded copy.
+    pub fn evict(self: &Arc<Self>, window: Option<&mut Window>, cx: &mut App) -> bool {
+        match cx.take_asset::<AssetLogger<ImageDecoder>>(self) {
+            Some(Ok(decoded)) => {
+                cx.drop_image(decoded, window);
+                true
+            }
+            _ => false,
+        }
+    }
+}
+
+/// Morpheus patch: how many decoded pictures GPUI's asset cache holds for
+/// [`Image`]s, and their bytes (BGRA, every frame).
+pub fn decoded_image_stats(cx: &App) -> (usize, usize) {
+    let decoded = cx.loaded_assets::<AssetLogger<ImageDecoder>>();
+    let bytes = decoded
+        .iter()
+        .filter_map(|result| result.as_ref().ok())
+        .map(|image| {
+            (0..image.frame_count())
+                .map(|frame| image.as_bytes(frame).map_or(0, <[u8]>::len))
+                .sum::<usize>()
+        })
+        .sum();
+    (decoded.len(), bytes)
+}
+
 impl Asset for ImageDecoder {
     type Source = Arc<Image>;
     type Output = Result<Arc<RenderImage>, ImageCacheError>;

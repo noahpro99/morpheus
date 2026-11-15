@@ -3209,6 +3209,11 @@ impl Window {
         });
     }
 
+    /// Morpheus patch: what this window's sprite atlas holds.
+    pub fn sprite_atlas_stats(&self) -> crate::AtlasStats {
+        self.sprite_atlas.stats()
+    }
+
     /// Removes an image from the sprite atlas.
     pub fn drop_image(&mut self, data: Arc<RenderImage>) -> Result<()> {
         for frame_index in 0..data.frame_count() {

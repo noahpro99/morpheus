@@ -101,6 +101,32 @@ impl PlatformAtlas for BladeAtlas {
         }
     }
 
+    fn stats(&self) -> crate::AtlasStats {
+        let lock = self.0.lock();
+        let mut stats = crate::AtlasStats {
+            tiles: lock.tiles_by_key.len(),
+            colour_tiles: lock
+                .tiles_by_key
+                .keys()
+                .filter(|key| key.texture_kind() == AtlasTextureKind::Polychrome)
+                .count(),
+            ..Default::default()
+        };
+        for list in [
+            &lock.storage.monochrome_textures,
+            &lock.storage.polychrome_textures,
+        ] {
+            for texture in list.textures.iter().flatten() {
+                let size = texture.allocator.size();
+                stats.textures += 1;
+                stats.bytes += size.width.max(0) as usize
+                    * size.height.max(0) as usize
+                    * texture.bytes_per_pixel() as usize;
+            }
+        }
+        stats
+    }
+
     fn remove(&self, key: &AtlasKey) {
         let mut lock = self.0.lock();
 

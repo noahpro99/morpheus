@@ -50,6 +50,7 @@ pub fn forget_room(room: &OwnedRoomId) {
 }
 
 pub struct MembersView {
+    _alive: crate::memory::Alive,
     session: Option<Session>,
     room: OwnedRoomId,
     members: Option<Result<Vec<Member>, String>>,
@@ -84,6 +85,7 @@ impl MembersView {
             permissions: MemberPermissions::default(),
             shown: PAGE,
             images: Avatars::default(),
+            _alive: crate::memory::Alive::new(&crate::memory::MEMBER_VIEWS),
             scroll: ScrollHandle::new(),
         };
         this.refresh(cx);
@@ -161,11 +163,7 @@ impl MembersView {
             );
             let media = media.clone();
             cx.spawn(async move |this, cx| {
-                let image = fetching
-                    .await
-                    .ok()
-                    .flatten()
-                    .and_then(|bytes| media::decode(&bytes));
+                let image = media::fetched(cx, fetching, (SIZE, SIZE), false).await;
                 this.update(cx, |this, cx| {
                     this.images.finish(&media, SIZE, image);
                     cx.notify();

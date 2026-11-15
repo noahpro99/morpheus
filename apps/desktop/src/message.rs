@@ -797,6 +797,13 @@ static BLURS: std::sync::Mutex<Option<std::collections::HashMap<String, Option<A
 
 /// Drops the blurred stand-ins (a room's pictures were locked away; they are
 /// made again from the hash when wanted).
+/// How many blurred stand-ins are held (for the memory report).
+pub fn blur_count() -> usize {
+    BLURS.lock().map_or(0, |blurs| {
+        blurs.as_ref().map_or(0, std::collections::HashMap::len)
+    })
+}
+
 pub fn forget_blurs() {
     if let Ok(mut blurs) = BLURS.lock() {
         *blurs = None;
@@ -922,7 +929,7 @@ fn image_el(
         .bg(rgb(theme::bg_input()))
         .child(Shape { w, h })
         .children(blur.map(|blur| {
-            img(blur)
+            img(crate::media::drawn(blur))
                 .absolute()
                 .size_full()
                 .rounded(px(theme::RADIUS))
@@ -935,7 +942,7 @@ fn image_el(
                 el.on_click(move |_, window, cx| actions(RowAction::OpenImage, &key, window, cx))
             })
             .child(
-                img(image)
+                img(crate::media::drawn(image))
                     .absolute()
                     .top_0()
                     .left_0()
