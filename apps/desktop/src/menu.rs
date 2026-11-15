@@ -420,7 +420,12 @@ fn flyout(
         (width, height),
         8.0,
     );
-    let (dx, dy) = (x - f32::from(frame.origin.x), y - f32::from(frame.origin.y));
+    // Until measured it waits far off to the side, so it is neither drawn nor hit over its menu.
+    let (dx, dy) = if measured.is_some() {
+        (x - f32::from(frame.origin.x), y - f32::from(frame.origin.y))
+    } else {
+        (-20000.0, 0.0)
+    };
     let size_cell = menu.flyout_size.clone();
     let mut list = div()
         .id("context-flyout")
