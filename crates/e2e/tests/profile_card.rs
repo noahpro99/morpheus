@@ -717,3 +717,32 @@ async fn the_banner_takes_the_colour_of_the_picture() {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
 }
+
+/// The role label arrives after the card opens; its place is held, so the
+/// card's sections sit where they will stay (GPUI only).
+#[tokio::test]
+async fn the_card_does_not_shift_when_the_role_arrives() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch_with_env(&hs, &[("MORPHEUS_E2E_CARD_DELAY_MS", "2500")])
+        .await
+        .expect("launch");
+    if !app.is_gpui() {
+        return;
+    }
+    login_and_open(&mut app, "alice", "general").await;
+    open_card_for(&mut app, "bob").await;
+    let first = app.bounds(".profile-card .card-section").await.expect("bounds").expect("a section");
+    app.wait_for(".profile-card .card-tags .tag:not(.skeleton)", DEFAULT_WAIT * 2)
+        .await
+        .expect("the role arrives");
+    let after = app.bounds(".profile-card .card-section").await.expect("bounds").expect("a section");
+    assert!(
+        (first.y - after.y).abs() < 0.5,
+        "the note section moved from {} to {} when the role arrived",
+        first.y,
+        after.y
+    );
+}
