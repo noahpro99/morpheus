@@ -1302,7 +1302,12 @@ impl Render for TimelineView {
             self.list.clone(),
             cx.processor(|this, ix, _window, cx| this.render_row(ix, cx)),
         )
-        .size_full()
+        // Pinned to the timeline by its edges, not a percentage size: under a
+        // flex-sized parent (the voice channel's chat panel in a big window)
+        // 100% is indefinite, and the list then took its rows' measured
+        // height, a sliver at the top (#25).
+        .absolute()
+        .inset_0()
         .pt(px(16.0))
         .pb(px(8.0));
         let mut timeline = div()
