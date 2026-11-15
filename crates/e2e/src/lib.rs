@@ -90,6 +90,17 @@ impl App {
         self.child.as_ref().and_then(Child::id)
     }
 
+    /// [`Self::launch_sized`] with extra environment variables.
+    pub async fn launch_sized_with_env(
+        homeserver: &str,
+        width: u32,
+        height: u32,
+        env: &[(&str, &str)],
+    ) -> Result<Self> {
+        let data_dir = std::env::temp_dir().join(format!("morpheus-e2e-{}", unique()));
+        Self::launch_with_data_dir(homeserver, data_dir, Some((width, height)), env).await
+    }
+
     /// Launch with a window of `width` x `height` logical pixels, e.g. a
     /// phone-sized one for the narrow layout.
     pub async fn launch_sized(homeserver: &str, width: u32, height: u32) -> Result<Self> {

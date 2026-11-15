@@ -1051,3 +1051,83 @@ async fn the_card_shows_a_skeleton_not_zero_mutual_servers_while_loading() {
         "the line moved or changed size when the count arrived: {first:?} -> {after:?}"
     );
 }
+
+/// The card does not move or resize when its content finishes loading: not
+/// for someone with a status, nor for someone without one, and not when it
+/// is opened low down in the window, where a taller or shorter card would be
+/// placed differently (GPUI only).
+#[tokio::test]
+async fn the_card_does_not_move_or_resize_when_it_finishes_loading() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app =
+        App::launch_sized_with_env(&hs, 1280, 720, &[("MORPHEUS_E2E_CARD_DELAY_MS", "3000")])
+            .await
+            .expect("launch");
+    if !app.is_gpui() {
+        return;
+    }
+    // Carol has a status line, bob none.
+    api_as(
+        &hs,
+        "carol",
+        "PUT",
+        "presence/%40carol%3Alocalhost/status",
+        Some(serde_json::json!({ "presence": "online", "status_msg": "out for lunch" })),
+    )
+    .expect("a status");
+    login_and_open(&mut app, "alice", "general").await;
+    let room_id = app
+        .attr(".room.selected", "data-room")
+        .await
+        .expect("room id")
+        .expect("a selected room");
+    for (who, has_status) in [("carol", true), ("bob", false)] {
+        // Their message is the lowest, so the card opens near the window's bottom.
+        let text = format!("low {who} {}", std::process::id());
+        morpheus_e2e::send_as(&hs, who, &room_id, &text).expect("they write");
+        app.wait_for_text(".message .body", &text, DEFAULT_WAIT)
+            .await
+            .expect("their message");
+        app.click_in_message(&text, ".avatar-button")
+            .await
+            .expect("open the card");
+        app.wait_for(".profile-card .mutual-servers.skeleton", DEFAULT_WAIT)
+            .await
+            .expect("the card is still loading");
+        let first = app
+            .bounds(".profile-card")
+            .await
+            .expect("bounds")
+            .expect("a card");
+        app.wait_for(
+            ".profile-card .mutual-servers:not(.skeleton)",
+            DEFAULT_WAIT * 2,
+        )
+        .await
+        .expect("it loads");
+        let shown = app
+            .count(".profile-card .profile-status:not(.skeleton)")
+            .await
+            .expect("count");
+        assert_eq!(shown > 0, has_status, "{who}: the status line");
+        let after = app
+            .bounds(".profile-card")
+            .await
+            .expect("bounds")
+            .expect("a card");
+        assert!(
+            (first.x - after.x).abs() < 0.5
+                && (first.y - after.y).abs() < 0.5
+                && (first.w - after.w).abs() < 0.5
+                && (first.h - after.h).abs() < 0.5,
+            "{who}: the card moved or resized on loading: {first:?} -> {after:?}"
+        );
+        app.press("body", "Escape").await.expect("close");
+        app.wait_for_count(".profile-card", 0, DEFAULT_WAIT)
+            .await
+            .expect("closed");
+    }
+}
