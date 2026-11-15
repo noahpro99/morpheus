@@ -5429,3 +5429,64 @@ async fn an_avatar_card_takes_the_colour_of_the_picture() {
     let [r, g, b] = channels(&mine);
     assert!(!(r > g + 15 && r > b + 15), "a card without a picture is not tinted: {mine}");
 }
+
+/// Double-clicking someone in the sidebar's list of who is in a call, while
+/// you are in that call, opens the call view focused on their screen when
+/// they share one, else on their card. Not in the call: nothing special.
+#[tokio::test]
+async fn double_clicking_a_listed_person_focuses_their_screen_or_card_in_the_call() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    if !alice.is_gpui() {
+        eprintln!("double clicking the list is a GPUI app feature; skipping");
+        return;
+    }
+    join_hangout(&mut alice, "alice").await;
+    let mut bob = App::launch(&hs).await.expect("launch bob");
+    join_hangout(&mut bob, "bob").await;
+    let mut carol = App::launch(&hs).await.expect("launch carol");
+    login_and_open(&mut carol, "carol", "general").await;
+
+    let listed = |user: &str| format!(".room-call .call-participant[data-user=\"{user}\"]");
+    alice
+        .wait_for(&listed("@bob:localhost"), DEFAULT_WAIT)
+        .await
+        .expect("bob listed");
+
+    // Bob is not sharing: his card.
+    alice.click_at(&listed("@bob:localhost"), 0.0, 0.0, 2).await.expect("double click bob");
+    alice
+        .wait_for(".call-cards.focused .call-focus-main > .call-tile[data-user=\"@bob:localhost\"]", DEFAULT_WAIT)
+        .await
+        .expect("bob's card is focused");
+    alice.key_combo("body", "Escape", false, false, false).await.expect("esc");
+    alice.wait_for_count(".call-cards.focused", 0, DEFAULT_WAIT).await.expect("back to the grid");
+
+    // Sharing: his screen.
+    start_share(&mut bob, ".call-stage .call-controls .screen-button").await;
+    alice
+        .wait_for(&format!("{} .media-live", listed("@bob:localhost")), DEFAULT_WAIT)
+        .await
+        .expect("bob listed as LIVE");
+    alice.click_at(&listed("@bob:localhost"), 0.0, 0.0, 2).await.expect("double click bob");
+    alice
+        .wait_for(".call-cards.focused .call-focus-main .video-tile.screen[data-user=\"@bob:localhost\"]", DEFAULT_WAIT)
+        .await
+        .expect("bob's screen is focused");
+
+    // Not in the call: nothing opens.
+    carol
+        .wait_for(&listed("@bob:localhost"), DEFAULT_WAIT)
+        .await
+        .expect("bob listed for carol");
+    carol.click_at(&listed("@bob:localhost"), 0.0, 0.0, 2).await.expect("double click bob");
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    assert_eq!(carol.count(".call-cards.focused").await.expect("count"), 0, "a call view opened for someone not in the call");
+    assert_eq!(carol.count(".call-stage").await.expect("count"), 0, "a call view opened for someone not in the call");
+
+    bob.click(".call-stage .call-controls .hang-up").await.expect("bob leaves");
+    alice.click(".call-stage .call-controls .hang-up").await.expect("alice leaves");
+}

@@ -177,11 +177,19 @@ pub fn room_call(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -> 
                 gpui::point(px(theme::RAIL_W + theme::SIDEBAR_W - 8.0), at.y)
             };
             let (opened, menu_user, menu_room) = (user.clone(), user.clone(), room.id.clone());
+            let (dbl_user, dbl_room) = (user.clone(), room.id.clone());
             let (seen_name, menu_name) = (name.clone(), name.clone());
             row.id(gpui::SharedString::from(format!("call-participant-{}-{user}", room.id)))
                 .cursor_pointer()
                 .hover(|s| s.bg(rgba(theme::bg_hover())))
                 .on_click(cx.listener(move |this, event: &gpui::ClickEvent, _, cx| {
+                    // A double click while in this call: its view, on their
+                    // screen or card.
+                    if event.click_count() >= 2 && this.calls.in_call(&dbl_room) {
+                        cx.stop_propagation();
+                        this.focus_person_in_call(dbl_room.clone(), &dbl_user, cx);
+                        return;
+                    }
                     cx.stop_propagation();
                     let seen = Some((seen_name.clone(), None));
                     this.open_profile(opened.clone(), Some(beside(event.position())), seen, cx)
@@ -1858,6 +1866,25 @@ pub fn header_call_button(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSum
 }
 
 impl Shell {
+    /// Show the call's view with `user`'s shared screen focused, else their card.
+    pub fn focus_person_in_call(&mut self, room: OwnedRoomId, user: &OwnedUserId, cx: &mut Context<Self>) {
+        let key = self.calls.state.as_ref().and_then(|call| {
+            let feed = call.video.iter().find(|f| f.screen && &f.user == user).or_else(|| call.video.iter().find(|f| &f.user == user));
+            Some(feed.map_or_else(|| user.to_string(), |f| f.key.clone()))
+        });
+        let Some(key) = key else { return };
+        if self.selected.as_ref() != Some(&room) {
+            self.open_room_now(room, cx);
+        }
+        // The first click of the double click opened their profile card.
+        self.card = None;
+        self.calls.focus = Some(key);
+        for frame in self.calls.frames.values() {
+            frame.update(cx, |f, cx| f.reset_zoom(cx));
+        }
+        cx.notify();
+    }
+
     /// Focus a card, or, focused already, go back to the grid.
     pub fn toggle_focus(&mut self, card: &str, cx: &mut Context<Self>) {
         self.calls.focus = toggled_focus(&self.calls.focus, card);
