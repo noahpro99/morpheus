@@ -1,0 +1,14 @@
+{
+  "type": "io.element.call.encryption_keys",
+  "sender": "@ellie:localhost",
+  "content": {
+    "room_id": "!call:localhost",
+    "member_id": "@ellie:localhost:ELEMENTDEV",
+    "media_key": { "index": 1, "key": "AAECAwQFBgcICQoLDA0ODw==" },
+    "keys": { "index": 1, "key": "AAECAwQFBgcICQoLDA0ODw==" },
+    "member": {
+      "claimed_device_id": "ELEMENTDEV",
+      "id": "@ellie:localhost:ELEMENTDEV"
+    }
+  }
+}

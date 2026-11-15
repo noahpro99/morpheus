@@ -1163,6 +1163,16 @@ async fn run_call(
     let learned = refresh_people(&session, &room_id, &mut people).await;
     show_learned(&this, cx, &people, &mut said, &learned);
 
+    // The devices in the call our key went to. Element Call takes keys only
+    // sent to its device, and its membership can arrive after its LiveKit
+    // join: a device seen in the call for the first time gets the key too.
+    let members_now = async || -> Option<HashSet<(OwnedUserId, String)>> {
+        let members = session.call_members(room_id.clone()).await.ok()?;
+        Some(members.into_iter().map(|m| (m.user_id, m.device_id)).collect())
+    };
+    let mut keyed = members_now().await.unwrap_or_default();
+    let mut members_checked = std::time::Instant::now();
+
     // A key that reaches someone before the room key it is encrypted with is
     // read once the event cache decrypts it (core's `call_keys`); ours goes
     // out again whenever someone joins, as in Element Call.
@@ -1189,6 +1199,16 @@ async fn run_call(
         };
         if !current() || !still_wanted(&this, cx) {
             return;
+        }
+        if credentials.media_key.is_some() && members_checked.elapsed() >= Duration::from_secs(2)
+        {
+            members_checked = std::time::Instant::now();
+            if let Some(devices) = members_now().await {
+                if devices.iter().any(|device| !keyed.contains(device)) {
+                    cx.background_executor().spawn(share_key()).detach();
+                }
+                keyed = devices;
+            }
         }
         let event = match next {
             // A screen's sound: its figures on its card, once a second.
@@ -1220,7 +1240,7 @@ async fn run_call(
                 let applied = this.read_with(cx, |this, _| {
                     if let Some(call) = &this.calls.media {
                         for identity in &key.livekit_identities {
-                            call.set_key(identity, key.key.clone());
+                            call.set_key(identity, key.index, key.key.clone());
                         }
                     }
                 });

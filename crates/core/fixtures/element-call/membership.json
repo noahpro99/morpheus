@@ -1,0 +1,25 @@
+{
+  "type": "org.matrix.msc3401.call.member",
+  "state_key": "_@ellie:localhost_ELEMENTDEV_m.call",
+  "sender": "@ellie:localhost",
+  "event_id": "$element-call-membership",
+  "origin_server_ts": 1763200000000,
+  "content": {
+    "application": "m.call",
+    "call_id": "",
+    "scope": "m.room",
+    "device_id": "ELEMENTDEV",
+    "membershipID": "@ellie:localhost:ELEMENTDEV",
+    "expires": 14400000,
+    "m.call.intent": "audio",
+    "focus_active": { "type": "livekit", "focus_selection": "multi_sfu" },
+    "foci_preferred": [
+      {
+        "livekit_alias": "!call:localhost",
+        "type": "livekit",
+        "livekit_service_url": "http://localhost:8080"
+      }
+    ],
+    "created_ts": 1763200000000
+  }
+}

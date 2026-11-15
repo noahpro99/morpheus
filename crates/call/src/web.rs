@@ -100,7 +100,7 @@ impl Call {
         String::new()
     }
 
-    pub fn set_key(&self, _identity: &str, _key: Vec<u8>) {}
+    pub fn set_key(&self, _identity: &str, _index: u32, _key: Vec<u8>) {}
 
     pub fn use_chosen_devices(&self) -> Result<()> {
         Ok(())

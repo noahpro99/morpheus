@@ -317,11 +317,11 @@ impl Call {
         mode: AudioMode,
         own_key: Option<Vec<u8>>,
     ) -> Result<(Self, UnboundedReceiver<CallEvent>)> {
-        // Element Call's settings: per-participant keys (no shared key), the
-        // LiveKit defaults for derivation and ratcheting, AES-GCM.
+        // Element Call's settings: per-participant keys (no shared key), its
+        // derivation, ratcheting and key ring ([`key_options`]), AES-GCM.
         let keys = own_key
             .as_ref()
-            .map(|_| KeyProvider::new(KeyProviderOptions::default()));
+            .map(|_| KeyProvider::new(key_options()));
         let mut options = RoomOptions::default();
         options.encryption = keys.clone().map(|key_provider| E2eeOptions {
             encryption_type: EncryptionType::Gcm,
@@ -471,15 +471,17 @@ impl Call {
         self.room.local_participant().identity().to_string()
     }
 
-    /// Hear `identity` in an encrypted call: their media key, as they sent it.
-    pub fn set_key(&self, identity: &str, key: Vec<u8>) {
+    /// Hear `identity` in an encrypted call: their media key at `index`, as
+    /// they sent it (Element Call moves to the next index when it changes key).
+    pub fn set_key(&self, identity: &str, index: u32, key: Vec<u8>) {
         info!(
             who = identity,
+            index,
             encrypted = self.keys.is_some(),
             "call key received"
         );
         if let Some(keys) = &self.keys {
-            keys.set_key(&ParticipantIdentity(identity.to_owned()), 0, key);
+            keys.set_key(&ParticipantIdentity(identity.to_owned()), (index % 256) as i32, key);
         }
     }
 
@@ -2038,5 +2040,55 @@ async fn watch_connection(room: Arc<Room>, mic: LocalAudioTrack) {
             d.jitter_ms = jitter.or(d.jitter_ms);
             d.audio_bitrate = bitrate.or(d.audio_bitrate);
         });
+    }
+}
+
+/// Media keys as Element Call (livekit-client's `MatrixKeyProvider`) uses them.
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod element_call_keys {
+    use super::*;
+
+    /// A key ratcheted once: what livekit-client's `ratchet` gives for a key
+    /// Element Call imported (HKDF-SHA256, salt `LKFrameEncryptionKey`, 128
+    /// zero bytes of info, 256 bits). The same derivation makes the frame
+    /// key, so equal ratchets mean both sides encrypt with the same key.
+    fn browser_ratchet(key: &[u8]) -> Vec<u8> {
+        let mut out = vec![0u8; 32];
+        hkdf::Hkdf::<sha2::Sha256>::new(Some(b"LKFrameEncryptionKey"), key)
+            .expand(&[0u8; 128], &mut out)
+            .expect("hkdf");
+        out
+    }
+
+    #[test]
+    fn keys_derive_as_in_element_call() {
+        let keys = KeyProvider::new(key_options());
+        let who = ParticipantIdentity("@ellie:localhost:ELEMENTDEV".into());
+        let key: Vec<u8> = (0u8..16).collect();
+        keys.set_key(&who, 0, key.clone());
+        assert_eq!(keys.ratchet_key(&who, 0), Some(browser_ratchet(&key)));
+    }
+
+    #[test]
+    fn every_key_index_element_call_uses_has_a_place() {
+        // Element Call's keys go round 0..=255 (`keyringSize: 256`); a
+        // frame naming an index past the ring is not decrypted.
+        assert_eq!(key_options().key_ring_size, 256);
+        assert_eq!(key_options().ratchet_window_size, 10);
+    }
+}
+
+/// The media key settings, Element Call's (livekit-client's
+/// `MatrixKeyProvider`): a key is HKDF material (the browser imports it so),
+/// ratcheted up to 10 times when frames stop decrypting, in a ring of 256
+/// (its key indices go round 0..=255). LiveKit's Rust default, PBKDF2 in a
+/// ring of 16, decrypts nothing of Element Call's.
+fn key_options() -> KeyProviderOptions {
+    KeyProviderOptions {
+        ratchet_window_size: 10,
+        key_ring_size: 256,
+        key_derivation_algorithm: livekit::e2ee::key_provider::KeyDerivationAlgorithm::HKDF,
+        ..KeyProviderOptions::default()
     }
 }

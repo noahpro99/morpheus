@@ -19,7 +19,7 @@ morpheus-video = { path = "crates/video" }
 
 # Shared by every platform; the stores and logins are added per target in
 # crates/core (a browser has IndexedDB, and no local server for SSO).
-matrix-sdk = { version = "0.19.1", default-features = false, features = ["e2e-encryption", "automatic-room-key-forwarding", "markdown", "qrcode"] }
+matrix-sdk = { version = "0.19.1", default-features = false, features = ["e2e-encryption", "automatic-room-key-forwarding", "markdown", "qrcode", "experimental-send-custom-to-device"] }
 matrix-sdk-ui = "0.19.1"
 dioxus = "0.7.10"
 

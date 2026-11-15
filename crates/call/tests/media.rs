@@ -154,7 +154,7 @@ async fn encrypted_audio_is_heard_only_with_the_speakers_key() {
     .expect("speaker connects");
 
     // The friend was given the speaker's key (over Matrix, in the app).
-    friend.set_key("speaker", speaker_key);
+    friend.set_key("speaker", 0, speaker_key);
     wait_for(
         &mut friend_events,
         "the speaker's audio, decrypted",
@@ -242,7 +242,7 @@ async fn a_camera_turned_on_is_seen_by_the_other_side_until_turned_off() {
     )
     .await
     .expect("camera connects");
-    viewer.set_key("camera", alice_key);
+    viewer.set_key("camera", 0, alice_key);
 
     camera.set_camera(true).await.expect("camera on");
     assert!(camera.camera_on());
@@ -537,7 +537,7 @@ async fn an_encrypted_shared_screens_sound_is_heard_with_the_key() {
     )
     .await
     .expect("sharer connects");
-    viewer.set_key(&sharer_id, sharer_key);
+    viewer.set_key(&sharer_id, 0, sharer_key);
     sharer
         .set_screen_share_with(true, morpheus_call::ScreenQuality::default())
         .await

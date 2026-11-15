@@ -1969,6 +1969,93 @@ async fn call_media_keys_travel_encrypted_to_the_room() {
     );
 }
 
+/// Element Call reads media keys only to-device (Olm-encrypted, to each
+/// device in the call): a key goes to every device in the call that way too,
+/// and one that comes that way is read, at its index. (#82)
+#[tokio::test]
+async fn call_media_keys_go_to_each_device_in_the_call_as_element_call_sends_them() {
+    let Some(env) = env() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping live test");
+        return;
+    };
+    let login = async |user: &str| {
+        let core =
+            Core::with_session_store(fresh_data_dir(), SessionStoreKind::File).expect("core");
+        core.login(LoginRequest {
+            homeserver: env.homeserver.clone(),
+            username: user.into(),
+            password: format!("{user}-password"),
+        })
+        .await
+        .expect("login")
+    };
+    let find = async |session: &Session| {
+        let mut updates = session.room_list().await.expect("room list");
+        let mut rooms = Vector::new();
+        drive(
+            &mut rooms,
+            async || updates.next().await,
+            |rooms| rooms.iter().any(|r| r.name == "encrypted"),
+        )
+        .await;
+        rooms
+            .iter()
+            .find(|r| r.name == "encrypted")
+            .expect("encrypted room")
+            .id
+            .clone()
+    };
+    // Alice is in the call; bob, who is not yet, sees her there.
+    let alice = login("alice").await;
+    let room = find(&alice).await;
+    let mut keys = alice.call_keys(room.clone()).await.expect("subscribe");
+    alice.join_call(room.clone()).await.expect("alice joins");
+    let alice_device = alice.device_id().expect("device");
+
+    let bob = login("bob").await;
+    find(&bob).await;
+    timeout(WAIT, async {
+        loop {
+            let members = bob.call_members(room.clone()).await.expect("members");
+            if members.iter().any(|m| m.device_id == alice_device) {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+    })
+    .await
+    .expect("bob sees alice's device in the call");
+
+    let key = format!("key-{}", std::process::id()).into_bytes();
+    bob
+        .send_call_key(room.clone(), key.clone(), "bob-in-the-call".to_owned())
+        .await
+        .expect("send key");
+    let bob_id = bob.user_id().expect("bob");
+    let bob_device = bob.device_id().expect("device");
+    let got = timeout(WAIT, async {
+        loop {
+            let got = keys.next().await.expect("key stream");
+            if got.user_id == bob_id && got.device_id == bob_device && got.to_device {
+                return got;
+            }
+        }
+    })
+    .await
+    .expect("bob's key arrives to-device");
+    assert_eq!(got.key, key);
+    assert_eq!(got.index, 0);
+    assert_eq!(got.livekit_identity.as_deref(), Some("bob-in-the-call"));
+    // And under the name Element Call would give him in LiveKit.
+    assert!(
+        got.livekit_identities
+            .contains(&format!("{bob_id}:{bob_device}")),
+        "{:?}",
+        got.livekit_identities
+    );
+    alice.leave_call(room).await.expect("alice leaves");
+}
+
 /// Calling someone in a direct message rings them (MSC4075
 /// `m.rtc.notification`); group rooms don't ring. Declining tells the caller.
 #[tokio::test]

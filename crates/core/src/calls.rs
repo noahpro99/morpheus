@@ -78,6 +78,9 @@ impl Session {
             let user_id = client.user_id().ok_or(Error::NoSession)?.to_owned();
             let device_id = client.device_id().ok_or(Error::NoSession)?.to_owned();
 
+            // Keys sent to this device once the others see it in the call
+            // come once: listened for before the membership goes out.
+            listen_for_to_device_keys(&client);
             let mut services = livekit_services_cached(&client).await;
             if services.is_empty() {
                 // The well-known may have timed out: once more, before giving up.
@@ -430,8 +433,40 @@ async fn room_services(
     found
 }
 
-/// Swap an OpenID token for a LiveKit one at `service` (`/get_token`, or the
-/// older `/sfu/get` for services that predate it).
+/// The requests that swap `openid` for a LiveKit token, in the order they
+/// are tried (the next only where the one before is missing). `/sfu/get`
+/// first, as Element Call's publisher asks: it names this device
+/// `@user:server:DEVICE` in LiveKit, the name Element Call looks for a
+/// member under (`/get_token`'s hashed name it never finds).
+fn token_requests(
+    room_id: &OwnedRoomId,
+    user_id: &OwnedUserId,
+    device_id: &str,
+    openid: &Value,
+) -> [(&'static str, Value); 2] {
+    [
+        (
+            "sfu/get",
+            json!({ "room": room_id, "openid_token": openid, "device_id": device_id }),
+        ),
+        (
+            "get_token",
+            json!({
+                "room_id": room_id,
+                "slot_id": CALL_SLOT,
+                "openid_token": openid,
+                "member": {
+                    "id": format!("{device_id}_m.call"),
+                    "claimed_user_id": user_id,
+                    "claimed_device_id": device_id,
+                },
+            }),
+        ),
+    ]
+}
+
+/// Swap an OpenID token for a LiveKit one at `service` (`/sfu/get`, or
+/// `/get_token` where that is gone).
 async fn livekit_token(
     client: &matrix_sdk::Client,
     room_id: &OwnedRoomId,
@@ -454,25 +489,7 @@ async fn livekit_token(
         "matrix_server_name": openid.matrix_server_name.to_string(),
         "expires_in": openid.expires_in.as_secs(),
     });
-    let attempts = [
-        (
-            "get_token",
-            json!({
-                "room_id": room_id,
-                "slot_id": CALL_SLOT,
-                "openid_token": openid,
-                "member": {
-                    "id": format!("{device_id}_m.call"),
-                    "claimed_user_id": user_id,
-                    "claimed_device_id": device_id,
-                },
-            }),
-        ),
-        (
-            "sfu/get",
-            json!({ "room": room_id, "openid_token": openid, "device_id": device_id }),
-        ),
-    ];
+    let attempts = token_requests(room_id, user_id, device_id, &openid);
     let http = client.http_client();
     let mut last = ServiceError::transient(format!("the call service ({name}) did not answer"));
     for (path, body) in attempts {
@@ -520,7 +537,7 @@ async fn livekit_token(
             status.canonical_reason().unwrap_or(""),
             &text,
         );
-        // Only a missing endpoint is worth the older one.
+        // Only a missing endpoint is worth the other one.
         if status.as_u16() != 404 && status.as_u16() != 405 {
             break;
         }
@@ -860,6 +877,9 @@ pub struct CallKey {
     pub livekit_identities: Vec<String>,
     /// The sender's LiveKit identity as it said (`IDENTITY_FIELD`).
     pub livekit_identity: Option<String>,
+    /// It came to this device alone (to-device, Element Call's way), not
+    /// as a room event.
+    pub to_device: bool,
 }
 
 /// Our field in the key event: the sender's own LiveKit identity, from its
@@ -882,8 +902,9 @@ impl CallKeyUpdates {
 }
 
 impl Session {
-    /// Share this device's media key with everyone in `room_id`'s call, as
-    /// an (encrypted) room event, Element Call's way.
+    /// Share this device's media key with everyone in `room_id`'s call:
+    /// to each device in it, Olm-encrypted (Element Call reads only that),
+    /// and as an encrypted room event (what Morpheus 0.2.3 and older read).
     /// `livekit_identity` is this device's name in the call, from its token.
     pub fn send_call_key(
         &self,
@@ -895,11 +916,9 @@ impl Session {
         self.core.run(async move {
             use base64::Engine as _;
             let room = session.room(&room_id)?;
-            let device_id = session
-                .client
-                .device_id()
-                .ok_or(Error::NoSession)?
-                .to_string();
+            let client = &session.client;
+            let user_id = client.user_id().ok_or(Error::NoSession)?.to_owned();
+            let device_id = client.device_id().ok_or(Error::NoSession)?.to_string();
             let sent_ts = now_ms();
             let content = json!({
                 "keys": [{
@@ -911,8 +930,33 @@ impl Session {
                 "sent_ts": sent_ts,
                 IDENTITY_FIELD: livekit_identity,
             });
-            room.send_raw(KEYS_EVENT, content).await?;
-            Ok(())
+            // First: sending it brings the room's devices up to date, which
+            // the to-device keys need.
+            let in_room = room.send_raw(KEYS_EVENT, content).await;
+            let to_device = to_device_content_for_call(
+                &room,
+                &to_device_key_content(
+                    &room_id,
+                    &user_id,
+                    &device_id,
+                    &key,
+                    &livekit_identity,
+                    sent_ts,
+                ),
+            )
+            .await;
+            match (in_room, to_device) {
+                (Err(err), Err(_)) => Err(err.into()),
+                (in_room, to_device) => {
+                    if let Err(err) = in_room {
+                        debug!(%err, "call key not sent to the room");
+                    }
+                    if let Err(err) = to_device {
+                        debug!(%err, "call key not sent to the devices in the call");
+                    }
+                    Ok(())
+                }
+            }
         })
     }
 
@@ -941,6 +985,28 @@ impl Session {
                     }
                 }
             });
+            // Keys sent to this device alone (Element Call's only way).
+            {
+                let mut arriving = to_device_key_stream(&client);
+                let (tx, newest, room_id) = (tx.clone(), newest.clone(), room_id.clone());
+                crate::rt::spawn(async move {
+                    loop {
+                        let next = Box::pin(arriving.recv());
+                        let closed = Box::pin(tx.closed());
+                        let (room, sender, content) =
+                            match futures_util::future::select(next, closed).await {
+                                futures_util::future::Either::Left((Some(found), _)) => found,
+                                _ => break,
+                            };
+                        if room != room_id {
+                            continue;
+                        }
+                        for key in to_device_keys_in(&room_id, &sender, &content, &newest) {
+                            let _ = tx.send(key);
+                        }
+                    }
+                });
+            }
             // A key event that arrived before the room key it is encrypted
             // with (they travel separately: the room key to-device) is
             // undecryptable at first, and the handler above never sees it
@@ -1005,14 +1071,13 @@ impl Session {
     }
 }
 
-/// The keys in a decrypted key event (its JSON), unless its sender's device
-/// already gave a newer one or it was sent before `since` (ms).
+/// The keys in a decrypted key room event (its JSON), unless its sender's
+/// device already gave a newer one or it was sent before `since` (ms).
 fn keys_in(
     json: &str,
     newest: &Mutex<HashMap<(OwnedUserId, String), u64>>,
     since: u64,
 ) -> Vec<CallKey> {
-    use base64::Engine as _;
     let Ok(event) = serde_json::from_str::<Value>(json) else {
         return Vec::new();
     };
@@ -1025,50 +1090,269 @@ fn keys_in(
     else {
         return Vec::new();
     };
-    let content = &event["content"];
-    let sent = content["sent_ts"]
-        .as_u64()
-        .or_else(|| event["origin_server_ts"].as_u64())
-        .unwrap_or_default();
+    let sent_at = event["origin_server_ts"].as_u64().unwrap_or_default();
+    keys_from(&sender, &event["content"], sent_at, newest, since)
+}
+
+/// The key in a decrypted to-device key event's `content` from `sender`,
+/// if it is for `room_id`'s call, read as Element Call reads it
+/// (`ToDeviceKeyTransport`): `media_key` (or `keys`) with its index, from
+/// the device `member.claimed_device_id`.
+fn to_device_keys_in(
+    room_id: &OwnedRoomId,
+    sender: &OwnedUserId,
+    content: &Value,
+    newest: &Mutex<HashMap<(OwnedUserId, String), u64>>,
+) -> Vec<CallKey> {
+    if content["room_id"].as_str() != Some(room_id.as_str()) {
+        return Vec::new();
+    }
+    // Element Call's say nothing of when: they count from their arrival.
+    let mut keys = keys_from(sender, content, now_ms(), newest, 0);
+    for key in &mut keys {
+        key.to_device = true;
+    }
+    keys
+}
+
+/// The keys in a key event's `content` from `sender` (a room event's, or a
+/// to-device one's), sent at `sent_at` unless it says (`sent_ts`), unless
+/// that device already gave a newer one or it was sent before `since`.
+fn keys_from(
+    sender: &OwnedUserId,
+    content: &Value,
+    sent_at: u64,
+    newest: &Mutex<HashMap<(OwnedUserId, String), u64>>,
+    since: u64,
+) -> Vec<CallKey> {
+    use base64::Engine as _;
+    let sent = content["sent_ts"].as_u64().unwrap_or(sent_at);
     if sent < since {
         return Vec::new();
     }
-    if let Some(device_id) = content["device_id"].as_str()
-        && let Ok(mut newest) = newest.lock()
-    {
+    let Some(device_id) = content["device_id"]
+        .as_str()
+        .or_else(|| content["member"]["claimed_device_id"].as_str())
+    else {
+        return Vec::new();
+    };
+    if let Ok(mut newest) = newest.lock() {
         let at = newest.entry((sender.clone(), device_id.to_owned())).or_default();
         if sent < *at {
             return Vec::new();
         }
         *at = sent;
     }
-    let sender: &matrix_sdk::ruma::UserId = &sender;
-    let Some(device_id) = content["device_id"].as_str() else {
-        return Vec::new();
-    };
-    let user_id = sender.to_owned();
     let said = content[IDENTITY_FIELD].as_str().map(str::to_owned);
     let mut identities: Vec<String> = said.iter().cloned().collect();
-    identities.extend(livekit_identities(&user_id, device_id));
-    content["keys"]
-        .as_array()
+    identities.extend(livekit_identities(sender, device_id));
+    // A room event lists its keys; a to-device one has one (`media_key`,
+    // or `keys` in Element Call's older ones).
+    let entries: Vec<&Value> = match &content["keys"] {
+        Value::Array(entries) => entries.iter().collect(),
+        _ => [&content["media_key"], &content["keys"]]
+            .into_iter()
+            .find(|entry| entry.is_object())
+            .into_iter()
+            .collect(),
+    };
+    entries
         .into_iter()
-        .flatten()
         .filter_map(|entry| {
-            let encoded = entry["key"].as_str()?;
+            let encoded = entry["key"].as_str().filter(|k| !k.is_empty())?;
             let key = base64::engine::general_purpose::STANDARD_NO_PAD
                 .decode(encoded.trim_end_matches('='))
                 .ok()?;
             Some(CallKey {
                 livekit_identities: identities.clone(),
                 livekit_identity: said.clone(),
-                user_id: user_id.clone(),
+                user_id: sender.clone(),
                 device_id: device_id.to_owned(),
                 index: entry["index"].as_u64().unwrap_or(0) as u32,
                 key,
+                to_device: false,
             })
         })
         .collect()
+}
+
+/// Element Call's to-device key event for this device's `key` (index 0:
+/// Morpheus keeps one key for the whole call), with Morpheus's own fields
+/// (when it was sent, and the name this device has in the call).
+fn to_device_key_content(
+    room_id: &OwnedRoomId,
+    user_id: &OwnedUserId,
+    device_id: &str,
+    key: &[u8],
+    livekit_identity: &str,
+    sent_ts: u64,
+) -> Value {
+    use base64::Engine as _;
+    let media_key = json!({
+        "index": 0,
+        "key": base64::engine::general_purpose::STANDARD.encode(key),
+    });
+    // The member id Element Call gives a membership like Morpheus's.
+    let member_id = format!("{user_id}:{device_id}");
+    json!({
+        "room_id": room_id,
+        "member_id": member_id,
+        "media_key": media_key,
+        "keys": media_key,
+        "member": { "claimed_device_id": device_id, "id": member_id },
+        "device_id": device_id,
+        "call_id": "",
+        "sent_ts": sent_ts,
+        IDENTITY_FIELD: livekit_identity,
+    })
+}
+
+/// Send `content` (a to-device key event's) to each device in `room`'s call
+/// but this one, Olm-encrypted.
+async fn to_device_content_for_call(room: &matrix_sdk::Room, content: &Value) -> crate::Result<()> {
+    let client = room.client();
+    let own = (client.user_id().map(ToOwned::to_owned), client.device_id().map(ToOwned::to_owned));
+    let mut devices = Vec::new();
+    for raw in room
+        .get_state_events_static::<CallMemberEventContent>()
+        .await?
+    {
+        let Ok(matrix_sdk::deserialized_responses::SyncOrStrippedState::Sync(event)) =
+            raw.deserialize()
+        else {
+            continue;
+        };
+        let Some(original) = event.as_original() else {
+            continue;
+        };
+        let user_id = original.state_key.user_id().to_owned();
+        for membership in original
+            .content
+            .active_memberships(Some(original.origin_server_ts))
+        {
+            let device_id = membership.device_id().to_owned();
+            if (Some(&user_id), Some(&device_id)) == (own.0.as_ref(), own.1.as_ref()) {
+                continue;
+            }
+            match client.encryption().get_device(&user_id, &device_id).await {
+                Ok(Some(device)) => devices.push(device),
+                _ => debug!(%user_id, %device_id, "no keys for a device in the call"),
+            }
+        }
+    }
+    if devices.is_empty() {
+        return Ok(());
+    }
+    let raw = matrix_sdk::ruma::serde::Raw::new(content)?.cast_unchecked();
+    let failed = client
+        .encryption()
+        .encrypt_and_send_raw_to_device(devices.iter().collect(), KEYS_EVENT, raw, Default::default())
+        .await?;
+    if !failed.is_empty() {
+        debug!(?failed, "call key not sent to some devices");
+    }
+    Ok(())
+}
+
+/// Keys that came to-device lately, and who wants them, per account:
+/// they come once, and may come before the call's key stream is asked for.
+#[derive(Default)]
+struct ToDeviceKeys {
+    listening: bool,
+    /// When each came, its room, sender and content.
+    recent: Vec<(Instant, OwnedRoomId, OwnedUserId, Value)>,
+    wanted: Vec<tokio::sync::mpsc::UnboundedSender<(OwnedRoomId, OwnedUserId, Value)>>,
+}
+
+/// A signed-in device: its user and device ids.
+type Account = (OwnedUserId, matrix_sdk::ruma::OwnedDeviceId);
+
+/// How long a to-device key waits for its call's key stream.
+const KEEP_TO_DEVICE_KEYS: Duration = Duration::from_secs(120);
+
+fn to_device_keys() -> &'static Mutex<HashMap<Account, ToDeviceKeys>> {
+    static KEYS: OnceLock<Mutex<HashMap<Account, ToDeviceKeys>>> = OnceLock::new();
+    KEYS.get_or_init(Default::default)
+}
+
+/// Listen for to-device keys on `client` (once per account), keeping them
+/// for the key streams of their calls. Only Olm-encrypted ones count, its
+/// sender as Olm says, as Element Call does.
+fn listen_for_to_device_keys(client: &matrix_sdk::Client) {
+    let (Some(user), Some(device)) = (client.user_id(), client.device_id()) else {
+        return;
+    };
+    let me: Account = (user.to_owned(), device.to_owned());
+    {
+        let Ok(mut all) = to_device_keys().lock() else {
+            return;
+        };
+        let mine = all.entry(me.clone()).or_default();
+        if mine.listening {
+            return;
+        }
+        mine.listening = true;
+    }
+    client.add_event_handler(
+        move |event: matrix_sdk::ruma::events::AnyToDeviceEvent,
+              encryption: Option<EncryptionInfo>,
+              raw: RawEvent| {
+            let me = me.clone();
+            async move {
+                if event.event_type().to_string() != KEYS_EVENT {
+                    return;
+                }
+                let Some(encryption) = encryption else {
+                    debug!("a call key came in the clear: ignored");
+                    return;
+                };
+                let Ok(event) = serde_json::from_str::<Value>(raw.0.get()) else {
+                    return;
+                };
+                let content = event["content"].clone();
+                let Some(room_id) = content["room_id"]
+                    .as_str()
+                    .and_then(|r| OwnedRoomId::try_from(r).ok())
+                else {
+                    return;
+                };
+                let sender = encryption.sender;
+                let Ok(mut all) = to_device_keys().lock() else {
+                    return;
+                };
+                let mine = all.entry(me).or_default();
+                mine.recent
+                    .retain(|(at, ..)| at.elapsed() < KEEP_TO_DEVICE_KEYS);
+                mine.recent
+                    .push((Instant::now(), room_id.clone(), sender.clone(), content.clone()));
+                mine.wanted.retain(|tx| {
+                    tx.send((room_id.clone(), sender.clone(), content.clone()))
+                        .is_ok()
+                });
+            }
+        },
+    );
+}
+
+/// The to-device keys for `client`'s account from now on, those of the last
+/// minutes first.
+fn to_device_key_stream(
+    client: &matrix_sdk::Client,
+) -> tokio::sync::mpsc::UnboundedReceiver<(OwnedRoomId, OwnedUserId, Value)> {
+    listen_for_to_device_keys(client);
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    if let (Some(user), Some(device)) = (client.user_id(), client.device_id())
+        && let Ok(mut all) = to_device_keys().lock()
+    {
+        let mine = all.entry((user.to_owned(), device.to_owned())).or_default();
+        mine.recent
+            .retain(|(at, ..)| at.elapsed() < KEEP_TO_DEVICE_KEYS);
+        for (_, room, sender, content) in &mine.recent {
+            let _ = tx.send((room.clone(), sender.clone(), content.clone()));
+        }
+        mine.wanted.push(tx);
+    }
+    rx
 }
 
 /// How long a call rings before giving up (MSC4075's lifetime), in milliseconds.
@@ -1619,5 +1903,204 @@ impl CallCredentials {
             .ok()?;
         let claims: Value = serde_json::from_slice(&bytes).ok()?;
         claims.get("sub")?.as_str().map(str::to_owned)
+    }
+}
+
+/// Morpheus against what Element Call sends and expects (fixtures written
+/// out from its source; see docs/element-call-interop.md).
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod element_call_tests {
+    use super::*;
+
+    fn fixture(name: &str) -> Value {
+        let text = match name {
+            "membership" => include_str!("../fixtures/element-call/membership.json"),
+            "sfu-get" => include_str!("../fixtures/element-call/sfu-get-request.json"),
+            "get-token" => include_str!("../fixtures/element-call/get-token-request.json"),
+            "key" => include_str!("../fixtures/element-call/encryption-keys-to-device.json"),
+            _ => unreachable!(),
+        };
+        serde_json::from_str(text).expect("fixture")
+    }
+
+    /// Element Call's own reading of a session membership
+    /// (`checkSessionsMembershipData`, `CallMembership.parseFromEvent`):
+    /// `None` if it would not count it, else its member id and the LiveKit
+    /// names it looks for that member under.
+    fn as_element_call_reads(sender: &str, content: &Value) -> Option<(String, Vec<String>)> {
+        for field in ["device_id", "call_id", "application"] {
+            content.get(field)?.as_str()?;
+        }
+        content["focus_active"]["type"].as_str()?;
+        if content["application"] != "m.call" || content["call_id"] != "" {
+            return None;
+        }
+        let device = content["device_id"].as_str()?;
+        let member_id = content["membershipID"]
+            .as_str()
+            .map(str::to_owned)
+            .unwrap_or(format!("{sender}:{device}"));
+        let transports: Vec<&Value> = content["foci_preferred"]
+            .as_array()?
+            .iter()
+            .filter(|t| t["type"] == "livekit")
+            .collect();
+        let mut identities = Vec::new();
+        if transports.iter().any(|t| t.get("url").is_some()) {
+            use base64::Engine as _;
+            use sha2::Digest as _;
+            let parts = json!([sender, member_id]).to_string();
+            identities.push(
+                base64::engine::general_purpose::STANDARD_NO_PAD
+                    .encode(sha2::Sha256::digest(parts.as_bytes())),
+            );
+        }
+        if transports.iter().any(|t| t.get("livekit_service_url").is_some()) {
+            identities.push(format!("{sender}:{device}"));
+        }
+        Some((member_id, identities))
+    }
+
+    /// The LiveKit name lk-jwt-service (v0.10) gives for each request.
+    fn token_service_names(user: &str, path: &str, body: &Value) -> String {
+        match path {
+            "sfu/get" => format!("{user}:{}", body["device_id"].as_str().expect("device")),
+            "get_token" => {
+                use base64::Engine as _;
+                use sha2::Digest as _;
+                let member = &body["member"];
+                let parts = json!([user, member["claimed_device_id"], member["id"]]).to_string();
+                base64::engine::general_purpose::STANDARD_NO_PAD
+                    .encode(sha2::Sha256::digest(parts.as_bytes()))
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn element_call_membership_counts_as_in_the_call() {
+        let mut event = fixture("membership");
+        // Fresh, or it has expired (`created_ts` + 4 h).
+        let now = u64::from(MilliSecondsSinceUnixEpoch::now().get());
+        event["content"]["created_ts"] = json!(now);
+        event["origin_server_ts"] = json!(now);
+        let parsed: matrix_sdk::ruma::events::call::member::OriginalSyncCallMemberEvent =
+            serde_json::from_value(event.clone()).expect("ruma reads Element Call's membership");
+        let active = parsed.content.active_memberships(Some(parsed.origin_server_ts));
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0].device_id().as_str(), "ELEMENTDEV");
+        assert_eq!(
+            services_in(event["content"].get("foci_preferred")),
+            vec!["http://localhost:8080".to_owned()]
+        );
+        // Morpheus looks for them under the name Element Call publishes as.
+        let user: OwnedUserId = "@ellie:localhost".try_into().expect("user");
+        let (_, theirs) =
+            as_element_call_reads("@ellie:localhost", &event["content"]).expect("element reads");
+        let ours = livekit_identities(&user, "ELEMENTDEV");
+        assert!(theirs.iter().all(|id| ours.contains(id)), "{ours:?} lacks {theirs:?}");
+    }
+
+    #[test]
+    fn element_call_finds_morpheus_under_the_name_morpheus_has_in_livekit() {
+        let room: OwnedRoomId = "!call:localhost".try_into().expect("room");
+        let user: OwnedUserId = "@me:localhost".try_into().expect("user");
+        let device: matrix_sdk::ruma::OwnedDeviceId = "MYDEVICE".into();
+        let content =
+            serde_json::to_value(member_content(&room, &device, "http://localhost:8080"))
+                .expect("content");
+        let (member_id, looks_for) =
+            as_element_call_reads(user.as_str(), &content).expect("Element Call counts it");
+        assert_eq!(member_id, "@me:localhost:MYDEVICE");
+        // The name the token service gives Morpheus (its first request).
+        let [(path, body), _] = token_requests(&room, &user, device.as_str(), &json!({}));
+        let name = token_service_names(user.as_str(), path, &body);
+        assert!(
+            looks_for.contains(&name),
+            "Element Call looks for {looks_for:?}, Morpheus is {name}"
+        );
+    }
+
+    #[test]
+    fn token_requests_are_element_calls() {
+        let room: OwnedRoomId = "!call:localhost".try_into().expect("room");
+        let user: OwnedUserId = "@ellie:localhost".try_into().expect("user");
+        let openid = fixture("sfu-get")["openid_token"].clone();
+        let [(first, body), (then, fallback)] =
+            token_requests(&room, &user, "ELEMENTDEV", &openid);
+        // Element Call's publisher asks `/sfu/get`, exactly so.
+        assert_eq!((first, body), ("sfu/get", fixture("sfu-get")));
+        // `/get_token` as Element Call's subscriber asks it, but for the member id.
+        let mut expected = fixture("get-token");
+        expected["member"]["id"] = fallback["member"]["id"].clone();
+        assert_eq!((then, fallback), ("get_token", expected));
+    }
+
+    #[test]
+    fn element_call_keys_are_read_at_their_index_for_their_livekit_name() {
+        let room: OwnedRoomId = "!call:localhost".try_into().expect("room");
+        let event = fixture("key");
+        let sender: OwnedUserId = "@ellie:localhost".try_into().expect("user");
+        let newest = Mutex::default();
+        let keys = to_device_keys_in(&room, &sender, &event["content"], &newest);
+        assert_eq!(keys.len(), 1, "{keys:?}");
+        let key = &keys[0];
+        assert_eq!(key.user_id, sender);
+        assert_eq!(key.device_id, "ELEMENTDEV");
+        assert_eq!(key.index, 1);
+        assert_eq!(key.key, (0u8..16).collect::<Vec<u8>>());
+        // Filed under the name Element Call publishes as (`/sfu/get`'s).
+        assert!(
+            key.livekit_identities
+                .contains(&"@ellie:localhost:ELEMENTDEV".to_owned()),
+            "{:?}",
+            key.livekit_identities
+        );
+        // Another room's call: not this one's key.
+        let other: OwnedRoomId = "!other:localhost".try_into().expect("room");
+        assert!(to_device_keys_in(&other, &sender, &event["content"], &newest).is_empty());
+        // `keys` alone (no `media_key`) is read too, as Element Call does.
+        let mut older = event["content"].clone();
+        older.as_object_mut().expect("object").remove("media_key");
+        assert_eq!(to_device_keys_in(&room, &sender, &older, &newest).len(), 1);
+    }
+
+    /// Element Call's reading of a to-device key event
+    /// (`ToDeviceKeyTransport.getValidEventContent`): the room, the key and
+    /// its index, and the device that sent it.
+    fn as_element_call_reads_key(room: &str, content: &Value) -> Option<(String, u64, String)> {
+        if content["room_id"] != room {
+            return None;
+        }
+        let parse = |media: &Value| {
+            let key = media["key"].as_str().filter(|k| !k.is_empty())?;
+            Some((key.to_owned(), media["index"].as_u64()?))
+        };
+        let (key, index) = parse(&content["media_key"]).or_else(|| parse(&content["keys"]))?;
+        let device = content["member"]["claimed_device_id"].as_str()?.to_owned();
+        Some((key, index, device))
+    }
+
+    #[test]
+    fn morpheus_keys_read_as_element_call_reads_them() {
+        use base64::Engine as _;
+        let room: OwnedRoomId = "!call:localhost".try_into().expect("room");
+        let user: OwnedUserId = "@me:localhost".try_into().expect("user");
+        let key: Vec<u8> = (0u8..16).collect();
+        let content = to_device_key_content(&room, &user, "MYDEVICE", &key, "@me:localhost:MYDEVICE", 7);
+        let (sent, index, device) =
+            as_element_call_reads_key(room.as_str(), &content).expect("Element Call reads it");
+        assert_eq!(base64::engine::general_purpose::STANDARD.decode(sent).expect("b64"), key);
+        assert_eq!((index, device.as_str()), (0, "MYDEVICE"));
+        // Under the member id Element Call gives Morpheus's membership.
+        assert_eq!(content["member_id"], "@me:localhost:MYDEVICE");
+        assert_eq!(content["member"]["id"], "@me:localhost:MYDEVICE");
+        // And Morpheus reads its own (the name it has in the call first).
+        let newest = Mutex::default();
+        let back = to_device_keys_in(&room, &user, &content, &newest);
+        assert_eq!(back.len(), 1);
+        assert_eq!(back[0].key, key);
+        assert_eq!(back[0].livekit_identity.as_deref(), Some("@me:localhost:MYDEVICE"));
     }
 }

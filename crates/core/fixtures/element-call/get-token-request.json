@@ -1,0 +1,15 @@
+{
+  "room_id": "!call:localhost",
+  "slot_id": "m.call#ROOM",
+  "openid_token": {
+    "access_token": "openid-token",
+    "token_type": "Bearer",
+    "matrix_server_name": "localhost",
+    "expires_in": 3600
+  },
+  "member": {
+    "id": "@ellie:localhost:ELEMENTDEV",
+    "claimed_user_id": "@ellie:localhost",
+    "claimed_device_id": "ELEMENTDEV"
+  }
+}
