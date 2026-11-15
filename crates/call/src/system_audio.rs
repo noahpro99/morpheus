@@ -11,7 +11,9 @@
 //!   apart by their `application.process.id`.
 //! - Windows: WASAPI process loopback of everything but this process tree
 //!   (Windows 10 2004 and later).
-//! - macOS: not yet (the screen is captured by libwebrtc, which has no audio).
+//! - macOS 13 and later: a ScreenCaptureKit stream of sound alone, less this
+//!   process, of what was picked in the system's picker or else the main
+//!   display (`system_audio_sck.rs`).
 //! - Test runs ([`AudioMode::Tone`]): a tone, [`TONE_LEFT`] Hz on the left
 //!   and [`TONE_RIGHT`] Hz on the right, instead of the computer's sound.
 
@@ -61,13 +63,21 @@ impl Drop for Capture {
 /// Why this platform cannot share its sound, if it cannot (shown by the
 /// audio choice when sharing).
 pub fn screen_audio_unavailable() -> Option<&'static str> {
+    #[cfg(target_os = "macos")]
+    return macos_unavailable(crate::imp::system_audio_sck::macos_major());
+    #[cfg(not(target_os = "macos"))]
     if cfg!(any(target_os = "linux", target_os = "windows")) {
         None
-    } else if cfg!(target_os = "macos") {
-        Some("Sharing your computer's sound isn't available on macOS yet")
     } else {
         Some("Sharing sound isn't available here")
     }
+}
+
+/// Why a Mac on macOS `major` cannot share its sound, if it cannot:
+/// ScreenCaptureKit captures sound from macOS 13.
+#[cfg_attr(not(any(target_os = "macos", test)), allow(dead_code))]
+pub(crate) fn macos_unavailable(major: isize) -> Option<&'static str> {
+    (major < 13).then_some("Sharing your computer's sound needs macOS 13 or later")
 }
 
 /// Start capturing what the computer plays (or the test tone) into `out`.
@@ -98,16 +108,21 @@ pub(crate) fn start(mode: AudioMode, out: Out) -> Result<Capture, String> {
             _pulse: Some(running),
         })
     }
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
     {
+        #[cfg(target_os = "macos")]
+        use crate::imp::system_audio_sck::run;
+        #[cfg(target_os = "windows")]
+        use crate::imp::system_audio_wasapi::run;
         let running = stop.clone();
         let (tx, rx) = std::sync::mpsc::channel();
         let thread = std::thread::Builder::new()
             .name("morpheus-screen-audio".into())
-            .spawn(move || crate::imp::system_audio_wasapi::run(&running, out, tx))
+            .spawn(move || run(&running, out, tx))
             .map_err(|err| err.to_string())?;
-        // Started, or why not.
-        match rx.recv_timeout(Duration::from_secs(5)) {
+        // Started, or why not (ScreenCaptureKit gets up to 10 s for each of
+        // its two answers).
+        match rx.recv_timeout(Duration::from_secs(25)) {
             Ok(Ok(())) => Ok(Capture {
                 stop,
                 thread: Some(thread),
@@ -122,13 +137,42 @@ pub(crate) fn start(mode: AudioMode, out: Out) -> Result<Capture, String> {
             }
         }
     }
-    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
     {
         let _ = out;
         Err(screen_audio_unavailable()
             .unwrap_or("not available")
             .to_owned())
     }
+}
+
+/// A check of the real capture (not the test tone) for CI's Macs and for
+/// trying it by hand: capture for `seconds`, then say how many 10 ms frames
+/// came and how loud the loudest was, or why it did not start.
+pub fn screen_audio_self_test(seconds: f32) -> Result<String, String> {
+    let seen = Arc::new(std::sync::Mutex::new((0u64, 0i32)));
+    let into = seen.clone();
+    let began = Instant::now();
+    let capture = start(
+        AudioMode::Platform,
+        Box::new(move |frame: &[i16]| {
+            if let Ok(mut seen) = into.lock() {
+                seen.0 += 1;
+                let loudest = frame.iter().map(|s| i32::from(*s).abs()).max().unwrap_or(0);
+                seen.1 = seen.1.max(loudest);
+            }
+        }),
+    )?;
+    let took = began.elapsed();
+    std::thread::sleep(Duration::from_secs_f32(seconds.max(0.0)));
+    drop(capture);
+    let (frames, peak) = seen.lock().map(|s| *s).unwrap_or_default();
+    Ok(format!(
+        "started in {} ms; {frames} frames ({:.1} s of sound) in {seconds} s; peak {:.3}",
+        took.as_millis(),
+        frames as f32 / 100.0,
+        peak as f32 / 32768.0
+    ))
 }
 
 /// The test tone, in real time (by the clock, not by a sleep each time, so
@@ -244,5 +288,15 @@ mod tests {
         assert!((left - TONE_LEFT).abs() < 15.0, "left {left}");
         assert!((right - TONE_RIGHT).abs() < 15.0, "right {right}");
         assert!(power_at(&got, 2, 0, TONE_LEFT) > 100.0 * power_at(&got, 2, 0, TONE_RIGHT));
+    }
+
+    #[test]
+    fn macs_share_their_sound_from_macos_13() {
+        for old in [11, 12] {
+            assert!(macos_unavailable(old).is_some_and(|why| why.contains("macOS 13")));
+        }
+        for new in [13, 14, 15, 26] {
+            assert_eq!(macos_unavailable(new), None);
+        }
     }
 }

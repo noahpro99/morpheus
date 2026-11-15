@@ -47,6 +47,19 @@ windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Gd
 # Its `implement` macro (a COM callback) names this crate.
 windows-core = "0.62"
 
+# macOS: the shared screen's sound by ScreenCaptureKit (macOS 13 and later;
+# src/system_audio_sck.rs), on the objc2 crates the rest of the app's
+# dependencies already use.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+block2 = "0.6"
+dispatch2 = "0.3"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSError", "NSProcessInfo", "NSString", "NSObject"] }
+objc2-screen-capture-kit = { version = "0.3", default-features = false, features = ["std", "block2", "dispatch2", "objc2-core-media", "SCContentSharingPicker", "SCError", "SCShareableContent", "SCStream"] }
+objc2-core-media = { version = "0.3", default-features = false, features = ["std", "objc2-core-audio-types", "CMBase", "CMBlockBuffer", "CMFormatDescription", "CMSampleBuffer", "CMTime"] }
+objc2-core-foundation = { version = "0.3", default-features = false, features = ["std"] }
+objc2-core-audio-types = { version = "0.3", default-features = false, features = ["std", "CoreAudioBaseTypes"] }
+
 # The camera (Video4Linux, without C bindings to build).
 [target.'cfg(target_os = "linux")'.dependencies]
 linuxvideo = "0.3"
@@ -63,9 +76,10 @@ glib = "0.18"
 pkg-config = "0.3"
 
 [lints.rust]
-# The workspace forbids unsafe code; Windows' process loopback (the shared
-# screen's sound, src/system_audio_wasapi.rs) is COM through raw calls, so
-# this crate denies it instead and allows it in that one module.
+# The workspace forbids unsafe code; the shared screen's sound is COM on
+# Windows (src/system_audio_wasapi.rs) and Objective-C on macOS
+# (src/system_audio_sck.rs) through raw calls, so this crate denies it instead
+# and allows it in those modules (and ducking.rs, autorelease.rs).
 unsafe_code = "deny"
 
 [lints.clippy]
