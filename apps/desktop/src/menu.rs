@@ -338,6 +338,7 @@ fn item_el(
     }
     el.e2e(if item.has_submenu() { "div" } else { "button" }, &classes)
         .attr("role", "menuitem")
+        .attr("data-icon", glyph.unwrap_or(""))
         .into_any_element()
 }
 
@@ -458,7 +459,7 @@ fn menu_slider_el(
                     MouseButton::Left,
                     cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
                         cx.stop_propagation();
-                        if let Some(vol) = down_set(event.position.x) {
+                        if let Some(vol) = (if event.click_count >= 2 { Some(1.0) } else { down_set(event.position.x) }) {
                             match &down_kind {
                                 crate::view_model::menu::MenuSlider::InputVolume(_) => {
                                     this.set_input_volume(vol, cx);
@@ -502,11 +503,28 @@ fn menu_slider_el(
                                 .w(gpui::relative((volume / max).clamp(0.0, 1.0)))
                                 .rounded_full()
                                 .bg(rgb(theme::accent())),
-                        ),
+                        )
+                        .child(slider_handle(volume / max, 4.0)),
                 )
                 .e2e("div", &format!("menu-slider {id_prefix}"))
                 .attr("data-value", percent.to_string()),
         )
         .e2e("div", &format!("context-slider {id_prefix}"))
         .into_any_element()
+}
+
+/// The round knob on a volume slider's track, `fraction` of the way along;
+/// `top` lifts it so it is centred on the track.
+pub(crate) fn slider_handle(fraction: f32, top: f32) -> impl IntoElement {
+    div()
+        .absolute()
+        .top(px(-top))
+        .left(gpui::relative(fraction.clamp(0.0, 1.0)))
+        .ml(px(-6.0))
+        .size(px(12.0))
+        .rounded_full()
+        .bg(rgb(0xffffff))
+        .border_2()
+        .border_color(rgb(theme::accent()))
+        .e2e("div", "slider-handle")
 }

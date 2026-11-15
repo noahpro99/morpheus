@@ -665,52 +665,37 @@ pub fn device_menu(kind: crate::menu::DeviceKind, rows: &[DeviceRow]) -> Vec<cra
     items
 }
 
-/// The bottom-left voice popup with input/output device selectors (hover flyouts),
-/// volume sliders, and the Voice Settings button.
+/// The bottom-left voice popups: the microphone button's menu is about input
+/// only (the device list, the input volume), the headphones button's about
+/// output only; both end with Voice Settings.
 pub fn voice_popup_menu(
-    microphones: &[DeviceRow],
-    speakers: &[DeviceRow],
-    input_volume: f32,
-    output_volume: f32,
+    kind: crate::menu::DeviceKind,
+    devices: &[DeviceRow],
+    volume: f32,
 ) -> Vec<crate::menu::MenuItem> {
     use crate::menu::{DeviceKind, MenuAction, MenuItem, MenuSlider};
 
-    let mic_children: Vec<MenuItem> = microphones
+    let children: Vec<MenuItem> = devices
         .iter()
-        .map(|row| {
-            MenuItem::new(row.name.clone(), MenuAction::Device(DeviceKind::Microphone, row.id.clone()))
-                .checked(row.checked)
-        })
+        .map(|row| MenuItem::new(row.name.clone(), MenuAction::Device(kind, row.id.clone())).checked(row.checked))
         .collect();
-
-    let mic_item = MenuItem {
-        action: None,
-        children: mic_children,
-        icon: Some("mic"),
-        ..MenuItem::new("Input Device", MenuAction::VoiceSettings)
+    let (label, icon, volume_label, slider) = match kind {
+        DeviceKind::Speaker => ("Output Device", "volume-2", "Output Volume", MenuSlider::OutputVolume(volume)),
+        _ => ("Input Device", "mic", "Input Volume", MenuSlider::InputVolume(volume)),
     };
-
-    let speaker_children: Vec<MenuItem> = speakers
-        .iter()
-        .map(|row| {
-            MenuItem::new(row.name.clone(), MenuAction::Device(DeviceKind::Speaker, row.id.clone()))
-                .checked(row.checked)
-        })
-        .collect();
-
-    let speaker_item = MenuItem {
+    let device = MenuItem {
         action: None,
-        children: speaker_children,
-        icon: Some("volume-2"),
-        ..MenuItem::new("Output Device", MenuAction::VoiceSettings)
+        children,
+        icon: Some(icon),
+        ..MenuItem::new(label, MenuAction::VoiceSettings)
     };
-
     vec![
-        mic_item,
-        MenuItem::slider("Input Volume", MenuSlider::InputVolume(input_volume)),
-        speaker_item,
-        MenuItem::slider("Output Volume", MenuSlider::OutputVolume(output_volume)),
-        MenuItem::new("Voice Settings", MenuAction::VoiceSettings),
+        device,
+        MenuItem::slider(volume_label, slider),
+        MenuItem {
+            icon: Some("settings"),
+            ..MenuItem::new("Voice Settings", MenuAction::VoiceSettings)
+        },
     ]
 }
 
@@ -1011,30 +996,18 @@ mod tests {
     }
 
     #[test]
-    fn voice_popup_menu_has_selectors_sliders_and_settings() {
-        let mics = vec![DeviceRow {
-            id: Some("mic1".into()),
-            name: "Mic 1".into(),
-            checked: true,
-        }];
-        let speakers = vec![DeviceRow {
-            id: Some("spk1".into()),
-            name: "Speaker 1".into(),
-            checked: false,
-        }];
-        let items = voice_popup_menu(&mics, &speakers, 1.2, 0.7);
-        assert_eq!(items.len(), 5);
+    fn voice_popups_are_input_only_or_output_only() {
+        use crate::menu::{DeviceKind, MenuSlider};
+        let mics = vec![DeviceRow { id: Some("mic1".into()), name: "Mic 1".into(), checked: true }];
+        let items = voice_popup_menu(DeviceKind::Microphone, &mics, 1.2);
+        assert_eq!(items.len(), 3);
         assert_eq!(items[0].label, "Input Device");
-        assert!(items[0].has_submenu());
         assert_eq!(items[0].children[0].label, "Mic 1");
-        assert_eq!(items[1].label, "Input Volume");
-        assert_eq!(items[1].slider, Some(crate::menu::MenuSlider::InputVolume(1.2)));
-        assert_eq!(items[2].label, "Output Device");
-        assert!(items[2].has_submenu());
-        assert_eq!(items[2].children[0].label, "Speaker 1");
-        assert_eq!(items[3].label, "Output Volume");
-        assert_eq!(items[3].slider, Some(crate::menu::MenuSlider::OutputVolume(0.7)));
-        assert_eq!(items[4].label, "Voice Settings");
-        assert_eq!(items[4].action, Some(crate::menu::MenuAction::VoiceSettings));
+        assert_eq!(items[1].slider, Some(MenuSlider::InputVolume(1.2)));
+        assert_eq!(items[2].label, "Voice Settings");
+        assert_eq!(items[2].icon, Some("settings"));
+        let items = voice_popup_menu(DeviceKind::Speaker, &[], 0.7);
+        assert_eq!(items[0].label, "Output Device");
+        assert_eq!(items[1].slider, Some(MenuSlider::OutputVolume(0.7)));
     }
 }

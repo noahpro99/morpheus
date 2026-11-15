@@ -1191,7 +1191,7 @@ impl Shell {
         at: gpui::Point<gpui::Pixels>,
         cx: &mut Context<Self>,
     ) {
-        use crate::view_model::calls::{device_rows, voice_popup_menu};
+        use crate::view_model::{calls::{device_rows, voice_popup_menu}, menu::DeviceKind};
         let found = morpheus_call::audio_devices(AudioMode::from_env());
         cx.spawn(async move |this, cx| {
             let found = found.await;
@@ -1200,18 +1200,20 @@ impl Shell {
                     found.microphones.into_iter().map(|d| (d.id, d.name)).collect();
                 let spks: Vec<(String, String)> =
                     found.speakers.into_iter().map(|d| (d.id, d.name)).collect();
-                let mic_rows = device_rows(&mics, this.calls.devices.microphone.as_deref());
-                let spk_rows = device_rows(&spks, this.calls.devices.speaker.as_deref());
-                let in_vol = morpheus_call::input_volume();
-                let out_vol = morpheus_call::output_volume();
-                let items = voice_popup_menu(&mic_rows, &spk_rows, in_vol, out_vol);
+                let items = if speakers {
+                    let rows = device_rows(&spks, this.calls.devices.speaker.as_deref());
+                    voice_popup_menu(DeviceKind::Speaker, &rows, morpheus_call::output_volume())
+                } else {
+                    let rows = device_rows(&mics, this.calls.devices.microphone.as_deref());
+                    voice_popup_menu(DeviceKind::Microphone, &rows, morpheus_call::input_volume())
+                };
                 let mut menu = crate::menu::OpenMenu::new(
                     at,
                     items,
                     false,
                     crate::view_model::menu::MenuTarget::Other,
                 );
-                menu.open = Some(if speakers { 2 } else { 0 });
+                menu.open = Some(0);
                 this.open_menu(menu, cx);
             })
             .ok();
