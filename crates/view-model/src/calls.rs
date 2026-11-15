@@ -672,6 +672,7 @@ pub fn voice_popup_menu(
     kind: crate::menu::DeviceKind,
     devices: &[DeviceRow],
     volume: f32,
+    noise: &str,
 ) -> Vec<crate::menu::MenuItem> {
     use crate::menu::{DeviceKind, MenuAction, MenuItem, MenuSlider};
 
@@ -689,14 +690,26 @@ pub fn voice_popup_menu(
         icon: Some(icon),
         ..MenuItem::new(label, MenuAction::VoiceSettings)
     };
-    vec![
-        device,
-        MenuItem::slider(volume_label, slider),
+    let mut items = vec![device, MenuItem::slider(volume_label, slider)];
+    if kind != DeviceKind::Speaker {
+        let modes = [("off", "Off"), ("standard", "Standard"), ("strong", "Strong")];
+        items.push(MenuItem {
+            action: None,
+            icon: Some("audio-waveform"),
+            children: modes
+                .iter()
+                .map(|(key, label)| MenuItem::new(*label, MenuAction::Noise((*key).into())).checked(*key == noise))
+                .collect(),
+            ..MenuItem::new("Noise Suppression", MenuAction::VoiceSettings)
+        });
+    }
+    items.push(
         MenuItem {
             icon: Some("settings"),
             ..MenuItem::new("Voice Settings", MenuAction::VoiceSettings)
         },
-    ]
+    );
+    items
 }
 
 #[cfg(test)]
@@ -999,14 +1012,18 @@ mod tests {
     fn voice_popups_are_input_only_or_output_only() {
         use crate::menu::{DeviceKind, MenuSlider};
         let mics = vec![DeviceRow { id: Some("mic1".into()), name: "Mic 1".into(), checked: true }];
-        let items = voice_popup_menu(DeviceKind::Microphone, &mics, 1.2);
-        assert_eq!(items.len(), 3);
+        let items = voice_popup_menu(DeviceKind::Microphone, &mics, 1.2, "strong");
+        assert_eq!(items.len(), 4);
         assert_eq!(items[0].label, "Input Device");
         assert_eq!(items[0].children[0].label, "Mic 1");
         assert_eq!(items[1].slider, Some(MenuSlider::InputVolume(1.2)));
-        assert_eq!(items[2].label, "Voice Settings");
-        assert_eq!(items[2].icon, Some("settings"));
-        let items = voice_popup_menu(DeviceKind::Speaker, &[], 0.7);
+        assert_eq!(items[2].label, "Noise Suppression");
+        let modes: Vec<_> = items[2].children.iter().map(|c| (c.label.as_str(), c.checked)).collect();
+        assert_eq!(modes, [("Off", false), ("Standard", false), ("Strong", true)]);
+        assert_eq!(items[3].label, "Voice Settings");
+        assert_eq!(items[3].icon, Some("settings"));
+        let items = voice_popup_menu(DeviceKind::Speaker, &[], 0.7, "strong");
+        assert_eq!(items.len(), 3);
         assert_eq!(items[0].label, "Output Device");
         assert_eq!(items[1].slider, Some(MenuSlider::OutputVolume(0.7)));
     }

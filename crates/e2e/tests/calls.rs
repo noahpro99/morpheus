@@ -2597,6 +2597,62 @@ async fn voice_settings_have_icons_and_a_camera_choice() {
     }
 }
 
+/// The mic's menu has a Noise Suppression row (Off / Standard / Strong, the same setting as
+/// Settings and the call's card): the current mode is ticked and a pick applies and is kept.
+#[tokio::test]
+async fn the_mic_menu_switches_noise_suppression() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    login_and_open(&mut alice, "alice", "general").await;
+    alice
+        .right_click(".user-pill .mute-button")
+        .await
+        .expect("right-click the mic");
+    wait_menu_has(&mut alice, &["Noise Suppression"])
+        .await
+        .expect("a noise row in the mic menu");
+    // Strong is the default.
+    alice
+        .click_text(".context-menu .context-item", "Noise Suppression")
+        .await
+        .expect("open the modes");
+    alice
+        .wait_for_text(
+            ".context-submenu .context-item.checked",
+            "Strong",
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("strong ticked");
+    alice
+        .click_text(".context-submenu .context-item", "Standard")
+        .await
+        .expect("pick standard");
+    alice
+        .wait_for_count(".context-menu", 0, DEFAULT_WAIT)
+        .await
+        .expect("menu closes");
+    alice
+        .right_click(".user-pill .mute-button")
+        .await
+        .expect("right-click the mic again");
+    alice
+        .click_text(".context-menu .context-item", "Noise Suppression")
+        .await
+        .expect("open the modes");
+    alice
+        .wait_for_text(
+            ".context-submenu .context-item.checked",
+            "Standard",
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("standard ticked");
+}
+
 /// A menu's flyout waits off to the side until it has been measured; it is never drawn
 /// (or hit) over its menu, where a fast click would land on it instead of a menu row.
 #[tokio::test]
