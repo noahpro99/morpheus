@@ -245,13 +245,24 @@ async fn install(http: matrix_sdk::reqwest::Client, download: String) -> Result<
     installed
 }
 
+/// A client that gives up after `secs`; the browser's fetch has no timeout to set.
+fn client_with_timeout(secs: u64) -> Option<matrix_sdk::reqwest::Client> {
+    #[cfg(not(target_arch = "wasm32"))]
+    return matrix_sdk::reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(secs))
+        .build()
+        .ok();
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = secs;
+        None
+    }
+}
+
 impl Session {
     /// Ask the release feed whether something newer than `current` exists.
     pub fn check_for_update(&self, current: &'static str) -> CoreFuture<UpdateStatus> {
-        let http = matrix_sdk::reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(15))
-            .build()
-            .unwrap_or_else(|_| self.client.http_client().clone());
+        let http = client_with_timeout(15).unwrap_or_else(|| self.client.http_client().clone());
         self.core.run(check(http, current))
     }
 
@@ -259,10 +270,7 @@ impl Session {
     /// in place of the running app, then start it (it waits for this one to
     /// quit). The caller quits once this returns. Desktops only.
     pub fn install_update(&self, download: String) -> CoreFuture<()> {
-        let http = matrix_sdk::reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(60))
-            .build()
-            .unwrap_or_else(|_| self.client.http_client().clone());
+        let http = client_with_timeout(60).unwrap_or_else(|| self.client.http_client().clone());
         self.core.run(install(http, download))
     }
 }

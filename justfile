@@ -2,6 +2,9 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 
 hs := env("MORPHEUS_HOMESERVER", "http://localhost:8008")
 
+# Without full Xcode macOS has no `metal` compiler, so GPUI compiles its shaders at startup.
+shaders := if os() == "macos" { "--features runtime-shaders" } else { "" }
+
 # List recipes
 default:
     @just --list --unsorted
@@ -103,11 +106,11 @@ ci: fmt lint test
 
 # Run the desktop app
 desktop: sweep
-    cargo run -p morpheus-desktop
+    cargo run -p morpheus-desktop {{shaders}}
 
 # Run the desktop app as a named profile (separate data dir), e.g. `just desktop-as bob`
 desktop-as profile: sweep
-    MORPHEUS_DATA_DIR="$PWD/.dev-data/{{profile}}" cargo run -p morpheus-desktop
+    MORPHEUS_DATA_DIR="$PWD/.dev-data/{{profile}}" cargo run -p morpheus-desktop {{shaders}}
 
 # Release build of the desktop app
 desktop-release: sweep
