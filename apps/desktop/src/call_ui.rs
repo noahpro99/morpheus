@@ -1020,6 +1020,10 @@ fn person_card(
     if speaking {
         classes.push_str(" speaking");
     }
+    // The average colour of their picture (darkened), else the usual one.
+    let card_bg = picture_of(shell, user, 72)
+        .and_then(|image| crate::media::card_color_of(&image))
+        .unwrap_or_else(theme::bg_elevated);
     let mut tile = sized(
         div().id(gpui::SharedString::from(format!("card-{key}"))),
         fit,
@@ -1032,7 +1036,7 @@ fn person_card(
     .items_center()
     .justify_center()
     .rounded(px(theme::RADIUS_LG))
-    .bg(rgb(theme::bg_elevated()))
+    .bg(rgb(card_bg))
     .border_2()
     .border_color(if speaking {
         gpui::Hsla::from(rgb(theme::green()))
@@ -1050,6 +1054,7 @@ fn person_card(
     }
     tile.e2e("div", &classes)
         .attr("data-user", user.to_string())
+        .attr("data-bg", format!("{card_bg:06x}"))
         .into_any_element()
 }
 

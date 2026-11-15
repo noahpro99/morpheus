@@ -1028,7 +1028,7 @@ impl Shell {
                     .await
                     .ok()
                     .flatten()
-                    .and_then(|bytes| media::decode(&bytes));
+                    .and_then(|bytes| media::decode_avatar(&bytes));
                 this.update(cx, |this, cx| {
                     this.avatars.finish(&media, size, image);
                     cx.notify();

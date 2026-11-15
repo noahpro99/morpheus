@@ -111,6 +111,30 @@ pub fn decode(media: &morpheus_core::Media) -> Option<Arc<Image>> {
     Some(Arc::new(Image::from_bytes(format, media.bytes.clone())))
 }
 
+/// The card colour of each avatar picture, by the picture's id, worked out
+/// once when the avatar is decoded (`decode_avatar`).
+static CARD_COLORS: std::sync::LazyLock<std::sync::Mutex<HashMap<u64, u32>>> =
+    std::sync::LazyLock::new(Default::default);
+
+/// [`decode`] for an avatar: also keeps the colour a call card takes from it
+/// (see [`card_color_of`]).
+pub fn decode_avatar(media: &morpheus_core::Media) -> Option<Arc<Image>> {
+    let image = decode(media)?;
+    let color = image::load_from_memory(&media.bytes)
+        .ok()
+        .and_then(|decoded| crate::view_model::avatar_color::average_rgba(decoded.to_rgba8().as_raw()))
+        .map(crate::view_model::avatar_color::card_color);
+    if let (Some(color), Ok(mut colors)) = (color, CARD_COLORS.lock()) {
+        colors.insert(image.id(), color);
+    }
+    Some(image)
+}
+
+/// The call card colour (RRGGBB) of a picture made by `decode_avatar`.
+pub fn card_color_of(image: &Image) -> Option<u32> {
+    CARD_COLORS.lock().ok()?.get(&image.id()).copied()
+}
+
 /// Copies of pictures cut to a shape, by the original's id and the shape.
 static SQUARED: std::sync::LazyLock<std::sync::Mutex<HashMap<(u64, u32), Arc<Image>>>> =
     std::sync::LazyLock::new(Default::default);
