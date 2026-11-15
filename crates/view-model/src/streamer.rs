@@ -172,6 +172,11 @@ pub fn open_question(name: &str, dm: bool) -> String {
     }
 }
 
+/// The question before a server's welcome screen (it lists channels) shows.
+pub fn open_server_question(name: &str) -> String {
+    format!("You're sharing your screen. Open the server {name}?")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

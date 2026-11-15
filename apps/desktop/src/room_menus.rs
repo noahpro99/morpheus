@@ -388,7 +388,7 @@ impl Shell {
                     .detach();
                 }
             }
-            MenuAction::ServerOverview(space) => self.show_welcome(space, cx),
+            MenuAction::ServerOverview(space) => self.open_welcome(space, cx),
             MenuAction::ToggleHideMuted => {
                 self.prefs.hide_muted = !self.prefs.hide_muted;
                 self.save_prefs(cx);

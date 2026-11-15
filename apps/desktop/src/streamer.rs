@@ -110,7 +110,7 @@ use crate::{
     shell::Shell,
     view_model::{
         menu::{Confirm, ConfirmAction},
-        streamer::open_question,
+        streamer::{open_question, open_server_question},
     },
 };
 
@@ -152,6 +152,32 @@ impl Shell {
         self.go_to(Some(scope), id, cx)
     }
 
+    /// Show a server's welcome screen, asking first while sharing (it lists
+    /// the server's channels).
+    pub fn open_welcome(&mut self, space: OwnedRoomId, cx: &mut Context<Self>) {
+        let asking = sharing()
+            && active()
+            && settings().ask
+            && !self.ask_skipped
+            && self.welcome.as_ref() != Some(&space);
+        let server = self.rooms.iter().find(|room| room.id == space);
+        let Some(server) = server.filter(|_| asking) else {
+            return self.show_welcome(space, cx);
+        };
+        let body = open_server_question(&server.name);
+        self.ask_tick = false;
+        self.ask_scope = None;
+        let confirm = Confirm {
+            title: "Open server".into(),
+            body,
+            confirm: "Open".into(),
+        };
+        self.dialog_open(
+            Dialog::Confirm(confirm, ConfirmAction::OpenWelcome(space)),
+            cx,
+        );
+    }
+
     pub(crate) fn go_to(
         &mut self,
         scope: Option<crate::model::Scope>,
@@ -159,7 +185,8 @@ impl Shell {
         cx: &mut Context<Self>,
     ) {
         let asking =
-            sharing() && active() && settings().ask && !self.ask_skipped && self.selected.as_ref() != Some(&id);
+            sharing() && active() && settings().ask && !self.ask_skipped
+            && (self.selected.as_ref() != Some(&id) || self.welcome.is_some());
         let room = self
             .rooms
             .iter()

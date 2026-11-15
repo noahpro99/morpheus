@@ -836,7 +836,7 @@ impl Shell {
             && !self.is_welcomed(space)
         {
             if remembered.is_none() {
-                return self.show_welcome(space.clone(), cx);
+                return self.open_welcome(space.clone(), cx);
             }
             self.mark_welcomed(space);
         }
@@ -848,7 +848,7 @@ impl Shell {
             _ => None,
         });
         match target {
-            Some(room) if self.selected.as_ref() != Some(&room) => {
+            Some(room) if self.selected.as_ref() != Some(&room) || self.welcome.is_some() => {
                 self.open_room_in(scope, room, cx)
             }
             _ => self.set_scope(scope, cx),

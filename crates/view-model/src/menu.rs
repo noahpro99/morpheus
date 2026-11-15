@@ -490,6 +490,9 @@ pub enum ConfirmAction {
     SignOut,
     /// Open a room while the screen is shared (streamer mode asked).
     OpenRoom(OwnedRoomId),
+    /// Open a server's welcome screen while the screen is shared (it lists
+    /// its channels).
+    OpenWelcome(OwnedRoomId),
 }
 
 /// "Are you sure?" before deleting a message.

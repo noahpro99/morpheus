@@ -586,7 +586,10 @@ pub fn render_dialog(
     match dialog {
         Dialog::Confirm(confirm, action) => {
             let (confirm, action) = (confirm.clone(), action.clone());
-            let opens_room = matches!(action, ConfirmAction::OpenRoom(_));
+            let opens_room = matches!(
+                action,
+                ConfirmAction::OpenRoom(_) | ConfirmAction::OpenWelcome(_)
+            );
             let go = {
                 let action = action.clone();
                 cx.listener(move |this, _: &gpui::ClickEvent, _, cx| {
@@ -800,6 +803,10 @@ impl Shell {
                     self.set_scope(scope, cx);
                 }
                 self.open_room_now(room, cx);
+            }
+            ConfirmAction::OpenWelcome(space) => {
+                self.ask_skipped |= std::mem::take(&mut self.ask_tick);
+                self.show_welcome(space, cx);
             }
         }
     }
