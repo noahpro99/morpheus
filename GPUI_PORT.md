@@ -67,11 +67,10 @@ instead of JavaScript:
 
 ## Rules for agents
 
-- Work in `/home/noahpro/repos/morpheus-gpui` on branch `gpui-desktop`.
-  Never touch `/home/noahpro/repos/morpheus` (that is `main`, in use).
-- `target` is a symlink to the main checkout's target directory, so builds
-  share compiled dependencies. Don't delete it or make a new one; disk is
-  limited.
+- Work in `/home/noahpro/repos/morpheus` on `main` (the old `morpheus-gpui`
+  worktree and `gpui-desktop` branch are gone). The backlog is GitHub issues
+  (`gh issue list`); one issue per commit, "fixes #N" in the message.
+- Don't delete `target` or make another one; disk is limited.
 - One build at a time, in the foreground. No background builds, no
   `--release`, no parallel test runs. Run single tests with filters
   (`cargo test -p morpheus-e2e --test account <name>`), not the suite.
@@ -80,8 +79,8 @@ instead of JavaScript:
 - Homeserver for tests: `just hs-up hs-seed` in the main checkout is
   how tests get one; `MORPHEUS_TEST_HOMESERVER` points at it. If it's not
   running, say so rather than starting long-running services yourself.
-- Commit to `gpui-desktop` when your task's acceptance check passes, with a
-  message that says what now works. Don't push. Don't merge.
+- Commit to `main` when your issue's tests pass, with a message that says
+  what now works; `git pull --rebase origin main`, then `git push origin main`.
 - Stay inside your task. If something outside it blocks you, stop and report.
 - Report back: what works, what was checked and how, what doesn't, anything
   you changed outside `apps/desktop-gpui`.
