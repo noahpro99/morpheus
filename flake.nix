@@ -254,6 +254,9 @@
                 gst-libav # H.264 and H.265 (videos in messages)
               ];
             MORPHEUS_HOMESERVER = "http://localhost:8008";
+            # Vulkan's validation layer, found but off unless asked for:
+            # MORPHEUS_GPU_VALIDATION=1 (or VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation).
+            VK_ADD_LAYER_PATH = "${pkgs.vulkan-validation-layers}/share/vulkan/explicit_layer.d";
             # Calls: libwebrtc (webrtc-sys) is built against Chromium's libc++ and
             # needs a recent clang for the host; gcc stays the default elsewhere.
             CC_x86_64_unknown_linux_gnu = "${pkgs.llvmPackages_21.clang}/bin/clang";

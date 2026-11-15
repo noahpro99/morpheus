@@ -25,7 +25,11 @@ impl BladeContext {
             unsafe {
                 gpu::Context::init(gpu::ContextDesc {
                     presentation: true,
-                    validation: false,
+                    // Morpheus patch (issue #76): MORPHEUS_GPU_VALIDATION=1 turns on
+                    // Vulkan's validation layer (in the dev shell) and blade's crash
+                    // markers, which name the last pass the GPU ran when it is lost.
+                    validation: std::env::var_os("MORPHEUS_GPU_VALIDATION")
+                        .is_some_and(|v| v == "1"),
                     device_id: device_id_forced.unwrap_or(0),
                     ..Default::default()
                 })

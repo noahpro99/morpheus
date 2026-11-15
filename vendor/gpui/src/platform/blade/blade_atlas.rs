@@ -25,6 +25,19 @@ struct BladeAtlasState {
     tiles_by_key: FxHashMap<AtlasKey, AtlasTile>,
     initializations: Vec<AtlasTextureId>,
     uploads: Vec<PendingUpload>,
+    /// Morpheus patch (issue #76): the last frame submitted, and textures
+    /// taken out while a frame that may sample them was still on the GPU,
+    /// each with that frame's sync point. `remove` used to destroy a texture
+    /// at once, freeing its memory under a command buffer still in flight:
+    /// the renderer only waits for the frame before the one it just
+    /// submitted, and a call's videos take last frame's picture out on every
+    /// new one (each 2560 px screen frame is a texture of its own), so in a
+    /// call this happened many times a second (Vulkan's validation layer:
+    /// VUID-vkDestroyImage-image-01000, an atlas image destroyed while in use
+    /// by the "main" command buffer) and now and then lost the device ("GPU
+    /// has crashed").
+    last_submitted: Option<gpu::SyncPoint>,
+    retired: Vec<(gpu::SyncPoint, BladeAtlasTexture)>,
 }
 
 #[cfg(gles)]
@@ -32,8 +45,42 @@ unsafe impl Send for BladeAtlasState {}
 
 impl BladeAtlasState {
     fn destroy(&mut self) {
+        // The renderer waited for the GPU before this.
+        for (_, mut texture) in self.retired.drain(..) {
+            texture.destroy(&self.gpu);
+        }
         self.storage.destroy(&self.gpu);
         self.upload_belt.destroy(&self.gpu);
+    }
+
+    /// Morpheus patch (issue #76): destroys the textures taken out whose
+    /// last possible frame the GPU has finished (frames finish in order).
+    fn destroy_retired(&mut self) {
+        let done = self
+            .retired
+            .iter()
+            .position(|(sync_point, _)| !self.gpu.wait_for(sync_point, 0))
+            .unwrap_or(self.retired.len());
+        for (_, mut texture) in self.retired.drain(..done) {
+            texture.destroy(&self.gpu);
+        }
+    }
+
+    /// Morpheus patch (issue #76): `texture` was taken out of the atlas: it
+    /// is destroyed now if no submitted frame can still use it, else once
+    /// the last one submitted is done. Uploads still waiting for it go too
+    /// (its slot may be given to a new texture before the next frame).
+    fn retire(&mut self, mut texture: BladeAtlasTexture) {
+        let id = texture.id;
+        self.uploads.retain(|upload| upload.id != id);
+        self.initializations.retain(|init| *init != id);
+        match &self.last_submitted {
+            Some(sync_point) if !self.gpu.wait_for(sync_point, 0) => {
+                self.retired.push((sync_point.clone(), texture));
+            }
+            _ => texture.destroy(&self.gpu),
+        }
+        self.destroy_retired();
     }
 }
 
@@ -54,6 +101,8 @@ impl BladeAtlas {
             tiles_by_key: Default::default(),
             initializations: Vec::new(),
             uploads: Vec::new(),
+            last_submitted: None,
+            retired: Vec::new(),
         }))
     }
 
@@ -69,6 +118,9 @@ impl BladeAtlas {
     pub fn after_frame(&self, sync_point: &gpu::SyncPoint) {
         let mut lock = self.0.lock();
         lock.upload_belt.flush(sync_point);
+        // Morpheus patch (issue #76).
+        lock.last_submitted = Some(sync_point.clone());
+        lock.destroy_retired();
     }
 
     pub fn get_texture_info(&self, id: AtlasTextureId) -> BladeTextureInfo {
@@ -110,6 +162,7 @@ impl PlatformAtlas for BladeAtlas {
                 .keys()
                 .filter(|key| key.texture_kind() == AtlasTextureKind::Polychrome)
                 .count(),
+            retired: lock.retired.len(),
             ..Default::default()
         };
         for list in [
@@ -144,7 +197,8 @@ impl PlatformAtlas for BladeAtlas {
                 lock.storage[id.kind]
                     .free_list
                     .push(texture.id.index as usize);
-                texture.destroy(&lock.gpu);
+                // Morpheus patch (issue #76): not under a frame on the GPU.
+                lock.retire(texture);
             } else {
                 *texture_slot = Some(texture);
             }

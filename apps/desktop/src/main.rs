@@ -29,6 +29,7 @@ mod last_place;
 mod lightbox;
 mod links;
 mod locks;
+mod log_file;
 mod login;
 mod mac_menu;
 mod media;
@@ -733,8 +734,9 @@ fn run_window(core: Core, commands: Commands, first: Option<Command>, start_hidd
 }
 
 /// The terminal, and a file in the data dir (`morpheus.log`, fresh each
-/// start) to read after something went wrong; Settings' "Report a bug"
-/// sends its end.
+/// start, the last three runs' kept beside it; see `log_file`) to read
+/// after something went wrong; Settings' "Report a bug" sends its end.
+/// Panics are written to it too.
 fn init_logging() {
     use tracing_subscriber::{
         EnvFilter, Layer as _, layer::SubscriberExt as _, util::SubscriberInitExt as _,
@@ -747,9 +749,10 @@ fn init_logging() {
                 "morpheus=debug,livekit=info,pulseaudio::client::reactor=off,warn".into()
             })
     };
-    let log_file = std::fs::create_dir_all(data_dir())
-        .and_then(|()| std::fs::File::create(data_dir().join("morpheus.log")))
-        .ok();
+    let log_file = log_file::start(&data_dir()).ok();
+    if log_file.is_some() {
+        log_file::log_panics(log_file::path(&data_dir(), 0));
+    }
     let _ = tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer().with_filter(filter()))
         .with(log_file.map(|file| {

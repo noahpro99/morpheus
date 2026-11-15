@@ -114,7 +114,7 @@ impl std::fmt::Display for Report {
         write!(
             f,
             "rss {:.0} MB (anon {:.0}, lazily freed {:.0}); gpui decoded pictures {} / {:.1} MB; \
-             atlas {} textures / {:.1} MB ({} tiles, {} colour); drawn {} / {:.1} MB; \
+             atlas {} textures / {:.1} MB ({} tiles, {} colour, {} retired); drawn {} / {:.1} MB; \
              shared pictures {} / {:.1} MB; cut pictures {} / {:.1} MB; card colours {}; \
              blurs {}; timelines {} (weight {}); video pictures {}; views: {} timelines, {} member lists",
             self.rss_kb as f64 / 1024.0,
@@ -126,6 +126,7 @@ impl std::fmt::Display for Report {
             mb(self.atlas.bytes),
             self.atlas.tiles,
             self.atlas.colour_tiles,
+            self.atlas.retired,
             self.drawn.entries,
             mb(self.drawn.bytes),
             self.any_size.entries,
@@ -156,6 +157,7 @@ impl Report {
                 "colour_tiles": self.atlas.colour_tiles,
                 "textures": self.atlas.textures,
                 "bytes": self.atlas.bytes,
+                "retired": self.atlas.retired,
             },
             "drawn": held(self.drawn),
             "any_size": held(self.any_size),

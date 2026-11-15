@@ -786,6 +786,9 @@ pub struct AtlasStats {
     pub textures: usize,
     /// Bytes of the textures (headless: of the tiles).
     pub bytes: usize,
+    /// Textures taken out, waiting for the GPU to finish a frame that may
+    /// still use them before they are destroyed (issue #76).
+    pub retired: usize,
 }
 
 struct AtlasTextureList<T> {
