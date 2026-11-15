@@ -873,3 +873,26 @@ fn palette_button(cx: &mut Context<Shell>) -> impl IntoElement {
         .attr("data-bg", format!("#{:06x}", theme::bg_elevated()))
         .text(label)
 }
+
+/// What a server's welcome screen lists: its channels you are in (text, then
+/// voice, in the sidebar's order) and the ones you are not.
+pub fn welcome_channels(shell: &Shell, space: &OwnedRoomId) -> (Vec<RoomSummary>, Vec<SpaceRoom>) {
+    let scope = Scope::Space(space.clone());
+    let found = sections(
+        &shell.rooms,
+        &scope,
+        &shell.directory,
+        &Filters {
+            hide_muted: false,
+            open: None,
+            marks: &shell.marks,
+            hidden: &shell.hidden_rooms,
+        },
+    );
+    let mut joined = found.channels;
+    for (_, _, members) in found.categories {
+        joined.extend(members);
+    }
+    joined.retain(|r| !r.is_space && !r.invited);
+    (joined, found.unjoined)
+}

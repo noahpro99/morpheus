@@ -256,6 +256,7 @@ async fn the_server_menu_opens_from_the_badge_and_the_name() {
     app.wait_for(badge, DEFAULT_WAIT).await.expect("badge");
 
     let wanted = [
+        "Server overview",
         "Mark as read",
         "Invite to server",
         "Mute server",

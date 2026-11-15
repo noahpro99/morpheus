@@ -68,6 +68,8 @@ pub enum MenuAction {
     MoveToFolder(OwnedRoomId, String),
     MoveToNewFolder(OwnedRoomId),
     MoveOutOfFolders(OwnedRoomId),
+    /// The server's welcome screen again (its overview).
+    ServerOverview(OwnedRoomId),
     /// Breaks a rail folder up: its servers stay, in its place.
     Ungroup(String),
     Profile(OwnedUserId),
