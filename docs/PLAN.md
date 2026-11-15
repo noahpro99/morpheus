@@ -1,20 +1,36 @@
 # Morpheus — plan
 
-Goal: a fast, beautiful, Discord-style Matrix client. Native Rust everywhere,
-one shared UI, separate desktop and mobile apps.
+Goal: a fast, beautiful, Discord-style Matrix client. Native Rust everywhere.
+
+> **Status (0.2.x): this is the original plan, kept for the reasons in it.**
+> What is done is ticked. What changed since it was written:
+>
+> - The desktop app is drawn with **GPUI** (`apps/desktop`, logic in
+>   `crates/view-model`) on Linux, Windows and macOS, not Dioxus: see
+>   [GPUI_PORT.md](GPUI_PORT.md) and [gpui-port-history.md](gpui-port-history.md).
+>   Phone (`apps/mobile`) and web (`apps/web`) are still Dioxus on `crates/ui`.
+>   Phase 6 (Dioxus Native) is therefore dropped, and where the text below says
+>   "desktop webview", "Dioxus signal" or "evaluates JavaScript" for the desktop
+>   app it is out of date.
+> - Planned work now lives in GitHub issues, and milestones name releases
+>   ([releasing.md](releasing.md)). The unticked items and ideas below are older
+>   than that and may already be issues or done.
+> - Release notes: [releases/](releases/).
 
 ## Stack decisions
 
 | Layer          | Choice                             | Why                                                                 |
 | -------------- | ---------------------------------- | ------------------------------------------------------------------- |
 | Matrix         | matrix-rust-sdk + matrix-sdk-ui    | Production-grade (Element X, Fractal). Timeline + sliding sync free. |
-| UI             | Dioxus 0.7, webview renderer       | One component model for desktop and mobile; CSS for polish.         |
-| Future UI      | Dioxus Native (Blitz)              | Same components, GPU rendering. Flip when text input/IME are solid.  |
+| UI (phone, web) | Dioxus 0.7                        | One component model for phone and web; CSS for polish.              |
+| UI (desktop)   | GPUI (was Dioxus webview, until 0.2.0) | GPU-drawn, no web view; logic in `crates/view-model`.            |
 | Async          | Tokio runtime owned by the core    | Core works under any executor; UI never touches the SDK directly.    |
 | Dev homeserver | Synapse in Docker                  | Reference implementation, native simplified sliding sync.            |
 | Env            | Nix flake + direnv + just          | Reproducible on NixOS; `just` for the muscle-memory commands.        |
 
 ## Architecture
+
+(The diagram is the phone and web shape; the desktop app sits on the same core with `crates/view-model` and GPUI in place of `morpheus-ui`.)
 
 ```
 apps/desktop ─┐                 ┌─ Session ── room_list() ── VectorDiff<RoomSummary>
@@ -116,7 +132,7 @@ timeline → send.
 - [x] Pane swipes like Discord: the chat slides in over the room list; a rightward drag moves the top pane with the finger, revealing the one underneath (members → chat → list); a leftward drag on the list brings the last chat back, and on the chat pulls in the parked member list. Phone e2e tests hold a real finger mid-drag. Opening a thread by swipe is not done (which thread would it be?).
 - [x] Keyboard avoidance on Android: the page shrinks for the keyboard and the message box and newest message stay above it (phone e2e test). iOS still to verify.
 - [x] UnifiedPush notifications (Sunup, ntfy…; tap opens the room). They show sender and text: a running app hands over what it decrypted; with the app closed, the push service decrypts the message itself through the core (SDK notification client, via JNI). Phone e2e test covers both.
-- [ ] iOS build on a Mac runner
+- [x] iOS build on a Mac runner: `apple.yml` attaches an unsigned `.ipa` to each release (Apple only installs signed apps; not tried on a device here)
 
 ### 5b. Calls (MatrixRTC, Element Call compatible signalling)
 - [x] Signalling in the core: the homeserver names a LiveKit token service (MSC4143 `rtc/transports`, else `org.matrix.msc4143.rtc_foci` in the well-known); an OpenID token buys a LiveKit token (`/get_token`, falling back to `/sfu/get`); each device posts `org.matrix.msc3401.call.member` (Element Call's state key and focus shape). Live tests.
@@ -139,9 +155,8 @@ timeline → send.
 - [x] Phone cameras (Camera2 over JNI): the front camera (else the back one) in calls, upright as its sensor says; phone e2e with the emulator camera.
 - [x] Screen share: the button in the voice panel; on Wayland the desktop portal asks which screen or window (cancelling leaves it off). Shared screens show first, wider, named "<name>'s screen"; encrypted like the camera. Test runs send a green/yellow pattern; call-crate test + e2e.
 
-### 6. Native renderer
-- [ ] Evaluate Dioxus Native (Blitz) on desktop; gate behind a cargo feature
-- [ ] Measure cold start, scroll FPS, memory against the webview build
+### 6. Native renderer — done differently
+The desktop app moved to GPUI in 0.2.0 (see [GPUI_PORT.md](GPUI_PORT.md)); Dioxus Native was not pursued.
 
 ### 7. Always-on desktop presence
 - [x] Tray icon (logo, Open / Quit menu, left click shows the window); closing the window hides it; syncing and OS notifications continue on a desktop-side thread (the webview's runtime stalls while hidden) and the UI catches up on reopen.
@@ -188,7 +203,7 @@ timeline → send.
 
 - **Unit tests** in `crates/core` and `crates/ui` for pure logic (grouping, formatting, mapping SDK items).
 - **Live tests** (`crates/core/tests/live.rs`) against the seeded local Synapse: login, sliding sync, timeline back-fill, send and echo. These are the regression suite for the core.
-- **End-to-end UI tests** (`crates/e2e`, `just e2e`): a Playwright-style driver launches the real desktop binary built with the `e2e` feature, which exposes a loopback socket that evaluates JavaScript in the webview. Tests log in, switch rooms, send messages, verify session restore, and can screenshot the window.
+- **End-to-end UI tests** (`crates/e2e`, `just e2e`): a Playwright-style driver launches the real desktop binary built with the `e2e` feature, which exposes a loopback socket answering selector requests (GPUI; the phone and web apps evaluate JavaScript in their page). Tests log in, switch rooms, send messages, verify session restore, and can screenshot the window.
 - **Manual multi-user** with `just desktop-as alice` and `just desktop-as bob` side by side.
 - **Flakes**: the scroll-to-newest and Esc-jump tests used to depend on the test window being short enough for the first page to overflow (a tiled window's size follows the developer's layout); they now load history until the timeline scrolls. Still watched: the NEW-divider test when the suite runs back to back, and the two-device verification (app B has died on "They match" a few times; never with logs kept). Follow-up: isolate runs with fresh users per run (admin API) instead of the shared alice/bob/carol, and rerun failed files once before reporting.
 - Later: pixel-diff the e2e screenshots against golden images, and a `cargo test` harness that drives a `Core` without a homeserver via `matrix-sdk-test`.
