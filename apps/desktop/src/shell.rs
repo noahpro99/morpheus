@@ -1460,7 +1460,7 @@ impl Render for Shell {
                     }))
                     .e2e("ul", "notification-log"),
             )
-            .child(crate::titlebar::render(self, cx))
+            .child(crate::titlebar::render(self, window, cx))
             .child(
                 div()
                     .flex()

@@ -1353,6 +1353,33 @@ impl PlatformWindow for MacWindow {
             .detach();
     }
 
+    // Morpheus: dragging the window by an app-drawn title bar (a transparent
+    // system bar). Deferred like `zoom`, as AppKit's drag loop would call back
+    // into the app (window moved) while it handles this mouse-down; the
+    // mouse-down event is kept for it, and nothing happens if the button is
+    // already up (AppKit would otherwise wait for the next press).
+    fn start_window_move(&self) {
+        let this = self.0.lock();
+        let window = this.native_window;
+        unsafe {
+            let app = NSApplication::sharedApplication(nil);
+            let event: id = msg_send![app, currentEvent];
+            if event.is_null() {
+                return;
+            }
+            let _: id = msg_send![event, retain];
+            this.executor
+                .spawn(async move {
+                    let pressed: NSUInteger = msg_send![class!(NSEvent), pressedMouseButtons];
+                    if pressed & 1 != 0 {
+                        let _: () = msg_send![window, performWindowDragWithEvent: event];
+                    }
+                    let _: () = msg_send![event, release];
+                })
+                .detach();
+        }
+    }
+
     fn toggle_fullscreen(&self) {
         let this = self.0.lock();
         let window = this.native_window;
