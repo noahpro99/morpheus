@@ -760,9 +760,13 @@ impl Element for EditorText {
     ) -> (LayoutId, ()) {
         let colour = gpui::Rgba::from(window.text_style().color);
         let byte = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u32;
-        self.drawn_colour.set(Some(
-            byte(colour.r) << 16 | byte(colour.g) << 8 | byte(colour.b),
-        ));
+        let drawn = Some(byte(colour.r) << 16 | byte(colour.g) << 8 | byte(colour.b));
+        if self.drawn_colour.get() != drawn {
+            // The tag (built when the box renders, before this) reads it: draw once more
+            // when the colour changed (the theme did), so it is not a frame behind.
+            self.drawn_colour.set(drawn);
+            self.input.update(cx, |_, cx| cx.notify());
+        }
         // The text in a node that grows to the input's width (the body is a
         // flex row): sized by percentages, the body and the text came out 0 px
         // wide in an input stretched by a flex column (the login form's), and

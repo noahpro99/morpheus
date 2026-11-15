@@ -179,11 +179,21 @@ pub struct SettingsView {
 }
 
 impl SettingsView {
+    /// The colours changed: the boxes are views of their own and take the new text
+    /// colour only when redrawn (a hex box kept the old theme's light text on a light
+    /// colour).
+    fn redraw_inputs(&self, cx: &mut Context<Self>) {
+        for input in [&self.key_input, &self.search, &self.colour_input, &self.name_input] {
+            input.update(cx, |_, cx| cx.notify());
+        }
+    }
+
     /// Show the custom colour the account has (the shell tells us).
     pub fn set_custom_shown(&mut self, colour: Option<u32>, cx: &mut Context<Self>) {
         self.custom = colour;
         let text = colour.map(crate::view_model::theme::hex).unwrap_or_default();
         self.colour_input.update(cx, |input, cx| input.set_value(&text, cx));
+        self.redraw_inputs(cx);
     }
 
     /// A colour picked from the grid (or typed): apply it.
@@ -222,6 +232,7 @@ impl SettingsView {
             {
                 this.custom = Some(colour);
                 cx.emit(CustomColourChosen(colour));
+                this.redraw_inputs(cx);
                 cx.notify();
             }
         })
@@ -640,6 +651,8 @@ fn muted(text: &str, class: &str) -> impl IntoElement {
         .child(text.to_owned())
         .e2e("p", class)
         .text(text)
+        .attr("data-color", format!("{:06x}", theme::text_muted()))
+        .attr("data-bg", format!("{:06x}", theme::bg_chat()))
 }
 
 fn note(text: &str, class: &'static str, color: u32) -> impl IntoElement {
@@ -690,7 +703,9 @@ fn section_classed(
                 .text_color(rgb(theme::text_muted()))
                 .child(title.to_uppercase())
                 .e2e("h3", "")
-                .text(title),
+                .text(title)
+                .attr("data-color", format!("{:06x}", theme::text_muted()))
+                .attr("data-bg", format!("{:06x}", theme::bg_chat())),
         )
         .children(children)
         .e2e("section", &classes)
