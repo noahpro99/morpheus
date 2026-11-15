@@ -1201,3 +1201,54 @@ async fn the_card_does_not_move_or_resize_when_it_finishes_loading() {
             .expect("closed");
     }
 }
+
+/// The full profile, opened while it loads, does not claim "Mutual servers — 0"
+/// or "None yet": a skeleton holds the place until the servers are known
+/// (GPUI only).
+#[tokio::test]
+async fn the_full_profile_shows_a_skeleton_not_zero_mutual_servers_while_loading() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch_with_env(&hs, &[("MORPHEUS_E2E_CARD_DELAY_MS", "2500")])
+        .await
+        .expect("launch");
+    if !app.is_gpui() {
+        return;
+    }
+    login_and_open(&mut app, "alice", "general").await;
+    open_card_for(&mut app, "bob").await;
+    app.click(".profile-card .profile-id")
+        .await
+        .expect("the id");
+    app.wait_for(".profile-modal", DEFAULT_WAIT)
+        .await
+        .expect("the full profile");
+    let loading = app
+        .text(".profile-modal")
+        .await
+        .expect("text")
+        .unwrap_or_default();
+    assert!(
+        !loading.contains("None yet") && !loading.contains("servers — 0"),
+        "the loading profile says {loading:?}"
+    );
+    assert_eq!(
+        app.count(".profile-modal .mutual-skeleton")
+            .await
+            .expect("count"),
+        1,
+        "no skeleton for the mutual servers while loading"
+    );
+    app.wait_for(".profile-modal .mutual-server", DEFAULT_WAIT * 2)
+        .await
+        .expect("the servers arrive");
+    assert_eq!(
+        app.count(".profile-modal .mutual-skeleton")
+            .await
+            .expect("count"),
+        0,
+        "the skeleton stays"
+    );
+}

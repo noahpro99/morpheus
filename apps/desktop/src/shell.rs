@@ -259,6 +259,7 @@ impl Shell {
                             apply(&mut this.rooms, diff);
                         }
                         crate::model::adopt_children(&mut this.rooms);
+                        this.share_servers_with_card(cx);
                         this.keep_joined_here();
                         this.reopen_closed(cx);
                         this.open_pending_dm(cx);

@@ -1256,6 +1256,12 @@ impl TimelineView {
     /// Whether the timeline is out of sight (then it reads nothing); shown
     /// again, it reads the room up to its newest message.
     pub fn set_covered(&mut self, covered: bool, cx: &mut Context<Self>) {
+        self.cover(covered, true, cx);
+    }
+
+    /// `to_present`: shown again, the view goes to the newest message (a room
+    /// resumed keeps its place instead).
+    fn cover(&mut self, covered: bool, to_present: bool, cx: &mut Context<Self>) {
         if self.covered == covered {
             return;
         }
@@ -1268,7 +1274,9 @@ impl TimelineView {
                 let receipt = handle.send_read_receipt();
                 cx.spawn(async move |_, _| drop(receipt.await)).detach();
             }
-            self.jump_to_present(cx);
+            if to_present {
+                self.jump_to_present(cx);
+            }
             cx.spawn(async move |this, cx| {
                 cx.background_executor()
                     .timer(Duration::from_millis(50))
@@ -1341,7 +1349,7 @@ impl TimelineView {
             cx.emit(TimelineEvent::Opened(handle.clone()));
         }
         cx.emit(TimelineEvent::LastOwn(self.last_own.clone()));
-        self.set_covered(false, cx);
+        self.cover(false, false, cx);
         cx.notify();
     }
 

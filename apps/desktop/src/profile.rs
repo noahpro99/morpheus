@@ -168,6 +168,7 @@ impl ProfileCard {
             let note = session.note(user.clone());
             let blocked = session.is_blocked(user.clone());
             let role = open_in.map(|room| session.member_role(room, user.clone()));
+            let user = user.clone();
             cx.spawn(async move |this, cx| {
                 // Test builds can hold the fetch back, to look at the first frames.
                 if std::env::var_os("MORPHEUS_E2E_PORT").is_some()
@@ -202,11 +203,79 @@ impl ProfileCard {
                     cx.notify();
                 })
                 .ok();
+                // A lookup that found nothing may have asked too early (the
+                // account is still syncing, or the server was slow): look
+                // again a few times before the count stays at none.
+                for wait in [1500u64, 3000, 6000] {
+                    let missing = this
+                        .update(cx, |this, _| {
+                            this.mutual.is_empty()
+                                && this.servers.iter().any(|s| s.is_space && !s.invited)
+                        })
+                        .unwrap_or(false);
+                    if !missing {
+                        break;
+                    }
+                    cx.background_executor()
+                        .timer(std::time::Duration::from_millis(wait))
+                        .await;
+                    let Some(found) = this
+                        .update(cx, |this, _| this.session.clone())
+                        .ok()
+                        .flatten()
+                        .map(|s| s.mutual_spaces(user.clone()))
+                    else {
+                        break;
+                    };
+                    if let Ok(found) = found.await
+                        && !found.is_empty()
+                    {
+                        this.update(cx, |this, cx| {
+                            this.mutual = found;
+                            cx.notify();
+                        })
+                        .ok();
+                    }
+                }
             })
             .detach();
         }
         this.take_focus = true;
         this
+    }
+
+    /// The joined servers changed (the room list is still arriving): the
+    /// card names the ones you share from the new list, and looks for the
+    /// shared ones again when a server it did not know turned up.
+    pub fn set_servers(&mut self, servers: Vec<RoomSummary>, cx: &mut Context<Self>) {
+        let ids = |list: &[RoomSummary]| -> Vec<OwnedRoomId> {
+            list.iter().map(|s| s.id.clone()).collect()
+        };
+        let grew = ids(&servers)
+            .iter()
+            .any(|id| !ids(&self.servers).contains(id));
+        if servers == self.servers {
+            return;
+        }
+        self.servers = servers;
+        cx.notify();
+        if !grew || !self.loaded {
+            return;
+        }
+        let Some(session) = self.session.clone() else {
+            return;
+        };
+        let mutual = session.mutual_spaces(self.user.clone());
+        cx.spawn(async move |this, cx| {
+            if let Ok(mutual) = mutual.await {
+                this.update(cx, |this, cx| {
+                    this.mutual = mutual;
+                    cx.notify();
+                })
+                .ok();
+            }
+        })
+        .detach();
     }
 
     /// The full-page profile of the same person.
@@ -902,7 +971,12 @@ impl ProfileCard {
         }
         if !self.own {
             let servers = shared_servers(&self.servers, &self.mutual);
-            let heading = mutual_heading(servers.len());
+            let loading = self.session.is_some() && !self.loaded;
+            let heading = if loading {
+                "Mutual servers".to_string()
+            } else {
+                mutual_heading(servers.len())
+            };
             let mut section = div()
                 .w_full()
                 .mt(px(12.0))
@@ -922,7 +996,13 @@ impl ProfileCard {
                         .e2e("h4", "")
                         .text(heading),
                 );
-            if servers.is_empty() {
+            if loading {
+                // Not known yet: a line of grey, not "None yet".
+                section = section.child(
+                    skeleton(160.0, 0.9 * theme::REM * theme::LINE_HEIGHT)
+                        .e2e("div", "mutual-skeleton"),
+                );
+            } else if servers.is_empty() {
                 section = section.child(
                     div()
                         .text_color(rgb(theme::text_muted()))
