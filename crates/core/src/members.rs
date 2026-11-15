@@ -443,3 +443,62 @@ pub(crate) async fn is_ignored(
         .and_then(|raw| raw.deserialize().ok())
         .is_some_and(|content| content.ignored_users.contains_key(user_id))
 }
+
+/// A person who is in a room changed their display name or picture there
+/// (an `m.room.member` event that keeps them joined).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProfileChange {
+    pub room_id: OwnedRoomId,
+    pub user_id: OwnedUserId,
+}
+
+/// Profile changes as they sync in, across every joined room.
+pub struct ProfileUpdates {
+    rx: tokio::sync::mpsc::UnboundedReceiver<ProfileChange>,
+    _handle: matrix_sdk::event_handler::EventHandlerDropGuard,
+}
+
+impl ProfileUpdates {
+    pub async fn next(&mut self) -> Option<ProfileChange> {
+        self.rx.recv().await
+    }
+}
+
+impl Session {
+    /// Hear when anyone's display name or picture changes in a joined room
+    /// (the homeserver sends a member event into every room they share with us).
+    pub fn profile_changes(&self) -> CoreFuture<ProfileUpdates> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+            let handle = client.add_event_handler(
+                move |event: matrix_sdk::ruma::events::room::member::OriginalSyncRoomMemberEvent,
+                      room: matrix_sdk::Room| {
+                    let tx = tx.clone();
+                    async move {
+                        if room.state() != matrix_sdk::RoomState::Joined
+                            || event.content.membership != MembershipState::Join
+                        {
+                            return;
+                        }
+                        let changed = event.prev_content().is_some_and(|prev| {
+                            prev.membership == MembershipState::Join
+                                && (prev.displayname != event.content.displayname
+                                    || prev.avatar_url != event.content.avatar_url)
+                        });
+                        if changed {
+                            let _ = tx.send(ProfileChange {
+                                room_id: room.room_id().to_owned(),
+                                user_id: event.state_key.clone(),
+                            });
+                        }
+                    }
+                },
+            );
+            Ok(ProfileUpdates {
+                rx,
+                _handle: client.event_handler_drop_guard(handle),
+            })
+        })
+    }
+}

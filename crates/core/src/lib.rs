@@ -55,7 +55,9 @@ pub use calls::{
 };
 pub use links::{LinkedRoom, MatrixLink, parse_matrix_link};
 pub use media::{Media, MediaRef};
-pub use members::{Member, MemberPermissions, MemberRole, ModRoom, Standing};
+pub use members::{
+    Member, MemberPermissions, MemberRole, ModRoom, ProfileChange, ProfileUpdates, Standing,
+};
 pub use messages::PinnedMessage;
 pub use notifications::{Notification, NotificationUpdates};
 pub use people::marks;
