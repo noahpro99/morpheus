@@ -55,6 +55,7 @@ mod sounds;
 mod streamer;
 mod vim;
 mod switcher;
+mod tab;
 mod thread;
 mod mac_menu;
 mod update;
@@ -353,6 +354,9 @@ impl Render for Root {
                 Screen::Rooms(rooms) => base.child(div().flex_1().min_h_0().child(rooms.clone())),
             }
             .child(chrome::resize_edges(window))
+            .on_key_down(cx.listener(|_, event: &gpui::KeyDownEvent, window, cx| {
+                tab::on_key(event, None, window, cx);
+            }))
             .e2e("body", "app")
             .attr("data-font", "Inter")
             .attr("data-bg", format!("{:06x}", theme::bg_chat()))

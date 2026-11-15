@@ -11,6 +11,7 @@ use gpui::{
 };
 use morpheus_core::{OwnedRoomId, OwnedUserId, Profile, Session};
 
+use crate::tab::Tabbable as _;
 use crate::{
     e2e::E2eExt as _,
     icons::icon,
@@ -213,6 +214,7 @@ impl FriendsPage {
             .font_weight(FontWeight::SEMIBOLD)
             .whitespace_nowrap()
             .cursor_pointer()
+            .tabbable()
             .child(tab.label());
         button = match (new_message, active) {
             (true, false) => button.bg(rgb(theme::green())).text_color(rgb(0xffffff)),
@@ -254,6 +256,7 @@ impl FriendsPage {
             .bg(rgb(theme::accent()))
             .text_color(rgb(0xffffff))
             .font_weight(FontWeight::SEMIBOLD)
+            .tabbable()
             .child(label);
         button = if can {
             button

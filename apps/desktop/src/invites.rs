@@ -10,6 +10,7 @@ use gpui::{
 };
 use morpheus_core::{OwnedRoomId, RoomSummary, SpaceRoom};
 
+use crate::tab::Tabbable as _;
 use crate::{
     e2e::E2eExt as _,
     icons::icon,
@@ -252,6 +253,7 @@ fn card_button(id: &'static str, label: &'static str, primary: bool) -> gpui::St
         })
         .text_color(rgb(if primary { 0xffffff } else { theme::text() }))
         .child(label)
+        .tabbable()
 }
 
 fn card_shell(

@@ -13,6 +13,7 @@ use gpui::{
 };
 use morpheus_core::{History, OwnedRoomId, Privacy, RoomSummary, Session};
 
+use crate::tab::Tabbable as _;
 use crate::{
     dialogs::{Closed, actions, dialog_box, heading, muted, overlay},
     friend_picker::{FriendPicker, Picked, RowState},
@@ -634,6 +635,7 @@ pub(crate) fn button(
         .text_color(rgb(color))
         .children(glyph.map(|glyph| icon(glyph, 16.0).text_color(rgb(color))))
         .child(label.to_owned())
+        .tabbable()
         .on_click(on_click);
     let tagged = el.e2e("button", class).text(label);
     if submit {
@@ -1375,7 +1377,7 @@ impl Render for RoomDialog {
             )
             .focusable(&self.focus);
         let this = cx.weak_entity();
-        overlay(window, boxed.into_any_element(), move |_, cx| {
+        overlay(window, cx, boxed.into_any_element(), move |_, cx| {
             this.update(cx, |_, cx| cx.emit(Closed)).ok();
         })
     }

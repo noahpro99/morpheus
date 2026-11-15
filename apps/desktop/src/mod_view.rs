@@ -9,6 +9,7 @@ use gpui::{
 };
 use morpheus_core::{MemberRole, ModRoom, OwnedRoomId, OwnedUserId, Session};
 
+use crate::tab::Tabbable as _;
 use crate::{
     dialogs::{Closed, actions, dialog_box, overlay},
     e2e::E2eExt as _,
@@ -131,6 +132,7 @@ impl ModView {
             .when(!danger, |d| d.text_color(rgb(theme::text())))
             .child(icon(glyph, 16.0).text_color(rgb(if danger { 0xffffff } else { theme::text() })))
             .child(label)
+            .tabbable()
             .on_click(on_click)
             .e2e("button", class)
             .text(label)
@@ -365,7 +367,7 @@ impl Render for ModView {
             .e2e("div", "message-dialog mod-view")
             .focusable(&self.focus);
         let this = cx.weak_entity();
-        overlay(window, boxed.into_any_element(), move |_, cx| {
+        overlay(window, cx, boxed.into_any_element(), move |_, cx| {
             this.update(cx, |_, cx| cx.emit(Closed)).ok();
         })
     }

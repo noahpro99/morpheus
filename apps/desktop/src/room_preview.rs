@@ -147,7 +147,7 @@ impl Render for RoomPreview {
             .e2e("div", "message-dialog room-dialog room-preview")
             .focusable(&self.focus);
         let this = cx.weak_entity();
-        overlay(window, boxed.into_any_element(), move |_, cx| {
+        overlay(window, cx, boxed.into_any_element(), move |_, cx| {
             this.update(cx, |_, cx| cx.emit(Closed)).ok();
         })
     }

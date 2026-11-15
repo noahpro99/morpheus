@@ -92,5 +92,5 @@ pub fn render(
         .e2e("div", "message-dialog settings about")
         .text("Acknowledgements")
         .focusable(focus);
-    overlay(window, boxed.into_any_element(), close)
+    overlay(window, cx, boxed.into_any_element(), close)
 }

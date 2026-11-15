@@ -15,6 +15,7 @@ use morpheus_core::{
     Message, MessageId, OwnedEventId, OwnedRoomId, PinnedMessage, Session, TimelineHandle,
 };
 
+use crate::tab::Tabbable as _;
 use crate::hover_underline::underline_on_hover;
 use crate::{
     e2e::E2eExt as _,
@@ -440,7 +441,8 @@ impl Shell {
 // ---- drawing --------------------------------------------------------------
 
 /// `.overlay`: the dimmed window, the dialog near the top.
-pub(crate) fn overlay(window: &Window, content: AnyElement, close: impl Fn(&mut Window, &mut gpui::App) + 'static) -> AnyElement {
+pub(crate) fn overlay(window: &Window, cx: &mut gpui::App, content: AnyElement, close: impl Fn(&mut Window, &mut gpui::App) + 'static) -> AnyElement {
+    let trap = crate::tab::trap(cx);
     let top = 0.15 * f32::from(window.viewport_size().height);
     let layer = div()
         .absolute()
@@ -453,6 +455,15 @@ pub(crate) fn overlay(window: &Window, content: AnyElement, close: impl Fn(&mut 
         .pt(px(top))
         .bg(rgba(0x0000008c))
         .occlude()
+        .track_focus(&trap)
+        .on_key_down({
+            let trap = trap.clone();
+            move |event, window, cx| {
+                if crate::tab::on_key(event, Some(&trap), window, cx) {
+                    cx.stop_propagation();
+                }
+            }
+        })
         .on_mouse_down(MouseButton::Left, move |_, window, cx| close(window, cx))
         .child(content)
         .e2e("div", "overlay");
@@ -512,6 +523,7 @@ pub(crate) fn dialog_button(id: impl Into<SharedString>, label: &str, danger: bo
         })
         .when(!danger, |d| d.px(px(6.0)).py(px(1.0)))
         .child(label.to_owned())
+        .tabbable()
 }
 
 pub(crate) fn actions(buttons: Vec<AnyElement>) -> impl IntoElement {
@@ -578,7 +590,7 @@ pub fn render_dialog(shell: &mut Shell, window: &mut Window, cx: &mut Context<Sh
                 .e2e("div", "message-dialog confirm-dialog")
                 .attr("role", "alertdialog")
                 .focusable(&focus);
-            Some(overlay(window, boxed.into_any_element(), close))
+            Some(overlay(window, cx, boxed.into_any_element(), close))
         }
         Dialog::Reactions(message) => {
             let boxed = dialog_box()
@@ -633,7 +645,7 @@ pub fn render_dialog(shell: &mut Shell, window: &mut Window, cx: &mut Context<Sh
                 ]))
                 .e2e("div", "message-dialog reactions-dialog")
                 .focusable(&focus);
-            Some(overlay(window, boxed.into_any_element(), close))
+            Some(overlay(window, cx, boxed.into_any_element(), close))
         }
         Dialog::Report(entity) => Some(entity.clone().into_any_element()),
         Dialog::Pinned(entity) => Some(entity.clone().into_any_element()),
@@ -707,7 +719,7 @@ pub fn render_dialog(shell: &mut Shell, window: &mut Window, cx: &mut Context<Sh
                 .e2e("div", "message-dialog help-dialog")
                 .text("Keyboard shortcuts")
                 .focusable(&focus);
-            Some(overlay(window, boxed.into_any_element(), close))
+            Some(overlay(window, cx, boxed.into_any_element(), close))
         }
         Dialog::Preview(entity) => Some(entity.clone().into_any_element()),
         Dialog::Lightbox(entity) => Some(entity.clone().into_any_element()),
@@ -932,11 +944,12 @@ impl Render for ReportDialog {
             .child(actions(buttons))
             .e2e("form", "message-dialog report-dialog")
             .focusable(&self.focus);
+        let this = cx.weak_entity();
         overlay(
             window,
+            cx,
             boxed.into_any_element(),
             {
-                let this = cx.weak_entity();
                 move |_, cx| {
                     this.update(cx, |_, cx| cx.emit(Closed)).ok();
                 }
@@ -1096,7 +1109,7 @@ impl Render for PinnedDialog {
             .e2e("div", "message-dialog pinned-dialog")
             .focusable(&self.focus);
         let this = cx.weak_entity();
-        overlay(window, boxed.into_any_element(), move |_, cx| {
+        overlay(window, cx, boxed.into_any_element(), move |_, cx| {
             this.update(cx, |_, cx| cx.emit(Closed)).ok();
         })
     }
