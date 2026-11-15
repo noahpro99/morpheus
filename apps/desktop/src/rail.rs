@@ -572,6 +572,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         },
     ))
     .e2e("nav", "rail")
+    .attr("data-bg", format!("{:06x}", theme::bg_rail()))
 }
 
 /// One top-level entry of the rail, as a slot a badge can be dropped on: the

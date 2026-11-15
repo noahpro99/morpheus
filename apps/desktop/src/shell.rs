@@ -288,9 +288,14 @@ impl Shell {
                     this.prefs = Prefs::from_json(&value);
                     let theme = this.prefs.theme();
                     crate::theme::set(theme);
+                    crate::theme::set_custom(this.prefs.custom_colour());
                     cx.refresh_windows();
                     if let Some(settings) = &this.settings {
-                        settings.update(cx, |settings, _| settings.theme = theme);
+                        let custom = this.prefs.custom_colour();
+                        settings.update(cx, |settings, cx| {
+                            settings.theme = theme;
+                            settings.set_custom_shown(custom, cx);
+                        });
                     }
                     cx.notify();
                 })
@@ -315,10 +320,19 @@ impl Shell {
             this.refresh_keys(cx)
         })
         .detach();
+        cx.subscribe(&settings, |this, _, chosen: &crate::settings::CustomColourChosen, cx| {
+            crate::theme::set_custom(Some(chosen.0));
+            cx.refresh_windows();
+            this.prefs.set_custom_colour(Some(chosen.0));
+            this.save_prefs(cx);
+        })
+        .detach();
         cx.subscribe(&settings, |this, _, chosen: &ThemeChosen, cx| {
             crate::theme::set(chosen.0);
             cx.refresh_windows();
             this.prefs.set_theme(chosen.0);
+            crate::theme::set_custom(None);
+            this.prefs.set_custom_colour(None);
             this.save_prefs(cx);
         })
         .detach();

@@ -369,6 +369,7 @@ impl Render for Root {
             .e2e("body", "app")
             .attr("data-font", "Inter")
             .attr("data-bg", format!("{:06x}", theme::bg_chat()))
+            .attr("data-color", format!("{:06x}", theme::text()))
             .attr(
                 "data-cursor",
                 if cx.has_active_drag() {
