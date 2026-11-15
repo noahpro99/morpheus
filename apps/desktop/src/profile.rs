@@ -575,6 +575,10 @@ impl Render for ProfileCard {
                 skeleton(120.0, theme::REM * theme::LINE_HEIGHT)
                     .e2e("p", "profile-status skeleton"),
             );
+        } else if self.session.is_some() {
+            // Someone with no status keeps the line's place, so the card is the
+            // same height as it was while loading.
+            body = body.child(div().h(px(theme::REM * theme::LINE_HEIGHT)));
         }
         // The row is always as tall as a tag, so the role arriving late (or
         // never) moves nothing; a pill-shaped skeleton holds its place.
