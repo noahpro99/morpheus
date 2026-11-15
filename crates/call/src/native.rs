@@ -44,6 +44,8 @@ use tracing::{debug, info, warn};
 
 use crate::quality::ScreenQuality;
 
+#[path = "autorelease.rs"]
+mod autorelease;
 #[path = "devices.rs"]
 mod devices;
 pub use devices::{

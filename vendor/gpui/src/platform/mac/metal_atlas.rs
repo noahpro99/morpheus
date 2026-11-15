@@ -59,7 +59,11 @@ impl PlatformAtlas for MetalAtlas {
 
     fn remove(&self, key: &AtlasKey) {
         let mut lock = self.0.lock();
-        let Some(id) = lock.tiles_by_key.get(key).map(|v| v.texture_id) else {
+        // Morpheus patch: the key goes whether or not its texture still
+        // holds other tiles (as Blade's atlas does). It stayed while the
+        // texture was shared, so a removed picture's key was kept for good
+        // and a second removal decremented the texture's count again.
+        let Some(id) = lock.tiles_by_key.remove(key).map(|v| v.texture_id) else {
             return;
         };
 
@@ -81,7 +85,6 @@ impl PlatformAtlas for MetalAtlas {
 
             if texture.is_unreferenced() {
                 textures.free_list.push(id.index as usize);
-                lock.tiles_by_key.remove(key);
             } else {
                 *texture_slot = Some(texture);
             }

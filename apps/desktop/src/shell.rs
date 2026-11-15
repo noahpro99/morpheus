@@ -1169,6 +1169,7 @@ pub fn apply(rooms: &mut Vec<RoomSummary>, diff: VectorDiff<RoomSummary>) {
 
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        crate::pictures::drop_orphans(window);
         let covered = self.chat_covered();
         crate::notify::set_looking(window.is_window_active(), self.selected.clone().filter(|_| !covered));
         self.see_open_room(cx);
