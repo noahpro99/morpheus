@@ -607,3 +607,171 @@ async fn the_mic_test_button_is_readable() {
         "the mic test is {fg} on {bg}, a contrast of {ratio:.1}"
     );
 }
+
+/// The shown value of the number setting `key`.
+async fn shown(app: &mut App, key: &str) -> Option<String> {
+    app.attr(&format!(".voice-noise .noise-adv[data-key={key}]"), "data-value")
+        .await
+        .expect("value")
+}
+
+/// The saved tuning (`noise-suppression.json`'s "tuning"), as the app kept it.
+fn saved_tuning(app: &morpheus_e2e::App) -> serde_json::Value {
+    let json = std::fs::read_to_string(app.data_dir().join("noise-suppression.json"))
+        .unwrap_or_default();
+    serde_json::from_str::<serde_json::Value>(&json)
+        .map(|v| v["tuning"].clone())
+        .unwrap_or_default()
+}
+
+/// Wait until the saved tuning has `key` equal to `want`.
+async fn wait_saved(app: &mut App, key: &str, want: serde_json::Value) {
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let got = saved_tuning(app)[key].clone();
+        if got == want {
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "saved {key} is {got}, not {want}"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+}
+
+/// Settings → Voice & Video has an Advanced section (folded away until
+/// opened) with the suppressor's tunables: each number steps up and down
+/// within a safe range, each switch flips, all are kept in
+/// `noise-suppression.json`, and Reset to defaults puts them all back. While
+/// the mic test runs a change is in use at once, and the added latency shown
+/// follows the setting.
+#[tokio::test]
+async fn the_advanced_noise_settings_change_what_is_kept_and_reset_restores_defaults() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch(&hs).await.expect("launch app");
+    if !app.is_gpui() {
+        return;
+    }
+    common::login(&mut app, "alice", "alice-password").await;
+    open_voice_settings(&mut app).await;
+    let page = ".voice-noise";
+
+    // Folded away at first; the toggle opens it.
+    assert_eq!(app.count(&format!("{page} .noise-advanced")).await.expect("count"), 0);
+    app.click(&format!("{page} .noise-advanced-toggle"))
+        .await
+        .expect("open Advanced");
+    app.wait_for(&format!("{page} .noise-advanced"), DEFAULT_WAIT)
+        .await
+        .expect("the Advanced section");
+
+    let row = |key: &str| format!("{page} .noise-adv[data-key={key}]");
+    // Every setting is listed with a line of explanation.
+    for key in [
+        "atten_limit_db",
+        "min_snr_db",
+        "max_erb_snr_db",
+        "max_df_snr_db",
+        "post_filter_beta",
+        "floor_margin_db",
+        "max_fall_db",
+    ] {
+        app.wait_for(&row(key), DEFAULT_WAIT).await.expect("a number setting");
+        let about = app
+            .text(&format!("{} .noise-about", row(key)))
+            .await
+            .expect("about")
+            .unwrap_or_default();
+        assert!(about.len() > 15, "{key} has an explanation: {about:?}");
+    }
+    for key in ["post_filter", "echo_cancellation", "auto_gain", "high_pass"] {
+        app.wait_for(&format!("{page} .noise-switch[data-key={key}]"), DEFAULT_WAIT)
+            .await
+            .expect("a switch");
+    }
+    assert_eq!(shown(&mut app, "atten_limit_db").await.as_deref(), Some("40"));
+
+    // A number steps, is kept, and stops at its end of the range.
+    app.click(&format!("{} .noise-step[data-dir=down]", row("atten_limit_db")))
+        .await
+        .expect("step down");
+    wait_saved(&mut app, "atten_limit_db", serde_json::json!(35.0)).await;
+    assert_eq!(shown(&mut app, "atten_limit_db").await.as_deref(), Some("35"));
+    for _ in 0..14 {
+        app.click(&format!("{} .noise-step[data-dir=up]", row("atten_limit_db")))
+            .await
+            .expect("step up");
+    }
+    wait_saved(&mut app, "atten_limit_db", serde_json::json!(60.0)).await;
+    assert_eq!(shown(&mut app, "atten_limit_db").await.as_deref(), Some("60"));
+
+    // A switch flips and is kept.
+    app.click(&format!("{page} .noise-switch[data-key=post_filter]"))
+        .await
+        .expect("post-filter on");
+    wait_saved(&mut app, "post_filter", serde_json::json!(true)).await;
+    app.click(&format!("{page} .noise-switch[data-key=high_pass]"))
+        .await
+        .expect("high-pass off");
+    wait_saved(&mut app, "high_pass", serde_json::json!(false)).await;
+
+    // The latency follows echo cancellation (Strong: 30 ms and the canceller's 9).
+    app.wait_for(&format!("{page} .noise-latency[data-ms=\"39\"]"), DEFAULT_WAIT)
+        .await
+        .expect("39 ms with echo cancellation");
+    app.click(&format!("{page} .noise-switch[data-key=echo_cancellation]"))
+        .await
+        .expect("echo cancellation off");
+    wait_saved(&mut app, "echo_cancellation", serde_json::json!(false)).await;
+    app.wait_for(&format!("{page} .noise-latency[data-ms=\"30\"]"), DEFAULT_WAIT)
+        .await
+        .expect("30 ms without");
+
+    // While the mic test runs, a change is in use within moments.
+    app.click(&format!("{page} .mic-test")).await.expect("start the test");
+    wait_meter(&mut app, page, Some(TONE_LEVEL)).await;
+    app.click(&format!("{} .noise-step[data-dir=down]", row("atten_limit_db")))
+        .await
+        .expect("step down while testing");
+    app.wait_for(
+        &format!("{page} .noise-advanced[data-applied-atten=\"55\"]"),
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("the running suppressor took the change");
+    app.click(&format!("{page} .mic-test")).await.expect("stop the test");
+    wait_meter(&mut app, page, None).await;
+
+    // Reset to defaults.
+    app.click(&format!("{page} .noise-reset")).await.expect("reset");
+    wait_saved(&mut app, "atten_limit_db", serde_json::json!(40.0)).await;
+    wait_saved(&mut app, "post_filter", serde_json::json!(false)).await;
+    wait_saved(&mut app, "high_pass", serde_json::json!(true)).await;
+    wait_saved(&mut app, "echo_cancellation", serde_json::json!(true)).await;
+    assert_eq!(shown(&mut app, "atten_limit_db").await.as_deref(), Some("40"));
+    app.wait_for(&format!("{page} .noise-latency[data-ms=\"39\"]"), DEFAULT_WAIT)
+        .await
+        .expect("back to 39 ms");
+
+    // Kept over a restart.
+    app.click(&format!("{} .noise-step[data-dir=down]", row("max_fall_db")))
+        .await
+        .expect("fall rate down");
+    wait_saved(&mut app, "max_fall_db", serde_json::json!(1.5)).await;
+    let mut app = app.relaunch().await.expect("relaunch");
+    app.wait_for(".room", DEFAULT_WAIT).await.expect("rooms");
+    open_voice_settings(&mut app).await;
+    app.click(&format!("{page} .noise-advanced-toggle"))
+        .await
+        .expect("open Advanced");
+    app.wait_for(
+        &format!("{page} .noise-adv[data-key=max_fall_db][data-value=\"1.5\"]"),
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("the fall rate came back");
+}

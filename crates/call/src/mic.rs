@@ -36,21 +36,14 @@ use livekit::webrtc::{
 use tracing::{info, warn};
 
 use crate::{
-    NoiseSuppression,
+    NoiseSuppression, NoiseTuning,
     imp::{
         AudioMode, SAMPLE_RATE,
-        denoise::{DELAY, Denoiser, FRAME},
+        denoise::{Denoiser, FRAME},
     },
-    noise::note_applied,
-    noise_suppression,
+    noise::{note_applied, note_applied_tuning},
+    noise_suppression, noise_tuning,
 };
-
-/// What WebRTC's processing delays the microphone by with its echo canceller
-/// on (measured: 9 ms at 48 kHz, its band split and blocks). A fixed cost of
-/// echo cancellation.
-const APM_DELAY: usize = 432;
-/// What its noise suppression (Standard) adds to that (measured: 6 ms).
-const APM_NS_DELAY: usize = 288;
 
 /// WebRTC's processing and, in Strong, the neural suppressor, on 10 ms
 /// frames of 48 kHz mono.
@@ -61,6 +54,7 @@ pub struct Processor {
     apm: AudioProcessingModule,
     /// Loaded the first time Strong is used, and kept.
     denoiser: Option<Denoiser>,
+    tuning: NoiseTuning,
     scratch: Vec<f32>,
 }
 
@@ -69,14 +63,51 @@ impl Processor {
         Self {
             mode,
             live,
-            apm: Self::apm(mode, live),
+            apm: Self::apm(mode, live, &NoiseTuning::default()),
             denoiser: None,
+            tuning: NoiseTuning::default(),
             scratch: vec![0.0; FRAME],
         }
     }
 
-    fn apm(mode: NoiseSuppression, live: bool) -> AudioProcessingModule {
-        AudioProcessingModule::new(live, live, true, mode == NoiseSuppression::Standard)
+    /// Which of WebRTC's processing is on: (echo cancellation, gain control,
+    /// high-pass, noise suppression). Echo and gain need a real microphone.
+    fn apm_flags(mode: NoiseSuppression, live: bool, tuning: &NoiseTuning) -> (bool, bool, bool, bool) {
+        (
+            live && tuning.echo_cancellation,
+            live && tuning.auto_gain,
+            tuning.high_pass,
+            mode == NoiseSuppression::Standard,
+        )
+    }
+
+    fn apm(mode: NoiseSuppression, live: bool, tuning: &NoiseTuning) -> AudioProcessingModule {
+        let (echo, gain, high_pass, noise) = Self::apm_flags(mode, live, tuning);
+        AudioProcessingModule::new(echo, gain, high_pass, noise)
+    }
+
+    /// Process with `tuning` from the next frame: the neural suppressor and
+    /// our smoothing follow at once; WebRTC's processing starts again when
+    /// one of its switches changed (its echo canceller relearns the room).
+    pub fn set_tuning(&mut self, tuning: NoiseTuning) {
+        let tuning = tuning.clamped();
+        if tuning == self.tuning {
+            return;
+        }
+        if Self::apm_flags(self.mode, self.live, &tuning)
+            != Self::apm_flags(self.mode, self.live, &self.tuning)
+        {
+            self.apm = Self::apm(self.mode, self.live, &tuning);
+        }
+        if let Some(denoiser) = self.denoiser.as_mut() {
+            denoiser.tune(&tuning);
+        }
+        self.tuning = tuning;
+    }
+
+    /// What the frames are tuned to now.
+    pub fn tuning(&self) -> NoiseTuning {
+        self.tuning
     }
 
     /// Process as `mode` from the next frame. WebRTC's processing starts
@@ -87,7 +118,7 @@ impl Processor {
         }
         let standard = NoiseSuppression::Standard;
         if (mode == standard) != (self.mode == standard) {
-            self.apm = Self::apm(mode, self.live);
+            self.apm = Self::apm(mode, self.live, &self.tuning);
         }
         self.mode = mode;
     }
@@ -105,12 +136,7 @@ impl Processor {
     /// echo canceller ([`APM_DELAY`]), its noise suppression in Standard
     /// ([`APM_NS_DELAY`]), DeepFilterNet in Strong ([`DELAY`]).
     pub fn delay(&self) -> usize {
-        let apm = if self.live { APM_DELAY } else { 0 };
-        match self.applied() {
-            NoiseSuppression::Strong => apm + DELAY,
-            NoiseSuppression::Standard => apm + APM_NS_DELAY,
-            NoiseSuppression::Off => apm,
-        }
+        self.tuning.delay_samples(self.applied(), self.live)
     }
 
     /// Strong is chosen and its model not loaded yet (it takes ~0.2 s).
@@ -119,7 +145,7 @@ impl Processor {
     }
 
     pub fn load_model(&mut self) {
-        match Denoiser::new() {
+        match Denoiser::new(&self.tuning) {
             Ok(denoiser) => self.denoiser = Some(denoiser),
             Err(err) => {
                 warn!(%err, "noise suppression model did not load; using Standard");
@@ -529,6 +555,7 @@ fn capture(shared: &Shared, mode: AudioMode) {
     let counters = shared.counters.clone();
     let live = mode == AudioMode::Platform;
     let mut processor = Processor::new(noise_suppression(), live);
+    processor.set_tuning(noise_tuning());
     // The model first (~0.2 s, on this thread: it cannot move between
     // threads), or the microphone's first 0.2 s would queue behind it and
     // the call start that late.
@@ -550,6 +577,7 @@ fn capture(shared: &Shared, mode: AudioMode) {
             fade.restart();
         }
         processor.set_mode(noise_suppression());
+        processor.set_tuning(noise_tuning());
         if processor.needs_model() {
             // Strong chosen during the capture: ~0.2 s on this thread; the
             // microphone's backlog meanwhile is dropped (`Device::next`)
@@ -557,6 +585,7 @@ fn capture(shared: &Shared, mode: AudioMode) {
             processor.load_model();
         }
         note_applied(Some(processor.applied()));
+        note_applied_tuning(Some(processor.tuning()));
         counters
             .algorithmic
             .store(processor.delay() as u64, Ordering::Relaxed);
@@ -634,6 +663,7 @@ fn capture(shared: &Shared, mode: AudioMode) {
         );
     }
     note_applied(None);
+    note_applied_tuning(None);
     shared.level.store(0, Ordering::Relaxed);
     shared.looping.store(false, Ordering::Relaxed);
     let stats = counters.snapshot();
@@ -2077,5 +2107,113 @@ mod flow {
         detach_call(id);
         QUIET.store(false, Ordering::Relaxed);
         assert!(failures.is_empty(), "{failures:#?}");
+    }
+}
+
+#[cfg(test)]
+mod tuning_tests {
+    use super::*;
+
+    fn strong() -> Processor {
+        let mut processor = Processor::new(NoiseSuppression::Strong, true);
+        processor.load_model();
+        assert_eq!(processor.applied(), NoiseSuppression::Strong);
+        processor
+    }
+
+    /// Every number setting, moved off its default, is what the model (or the
+    /// smoothing) is set to afterwards, and a setting out of range reaches the
+    /// chain clamped.
+    #[test]
+    fn every_neural_setting_reaches_the_model() {
+        let mut processor = strong();
+        let defaults = processor.denoiser.as_ref().expect("model").model_settings();
+        assert_eq!(defaults, (Some(10f32.powf(-40.0 / 20.0)), false, 0.0, -10.0, 30.0, 20.0));
+
+        let set = |processor: &mut Processor, key: &str, value: f32| {
+            processor.set_tuning(NoiseTuning::default().with_param(key, value));
+            processor.denoiser.as_ref().expect("model").model_settings()
+        };
+        let (atten, ..) = set(&mut processor, "atten_limit_db", 20.0);
+        assert_eq!(atten, Some(10f32.powf(-20.0 / 20.0)));
+        // Out of range: the safe end, not the wild value.
+        let (atten, ..) = set(&mut processor, "atten_limit_db", 1000.0);
+        assert_eq!(atten, Some(10f32.powf(-60.0 / 20.0)));
+        let (.., min, _, _) = set(&mut processor, "min_snr_db", -20.0);
+        assert_eq!(min, -20.0);
+        let (.., min, _, _) = set(&mut processor, "min_snr_db", -500.0);
+        assert_eq!(min, -30.0);
+        let (.., erb, _) = set(&mut processor, "max_erb_snr_db", 40.0);
+        assert_eq!(erb, 40.0);
+        let (.., df) = set(&mut processor, "max_df_snr_db", 10.0);
+        assert_eq!(df, 10.0);
+
+        // The post-filter: off is a zero beta, on takes the beta.
+        processor.set_tuning(NoiseTuning::default().with_switch("post_filter", true).with_param("post_filter_beta", 0.05));
+        let (_, on, beta, ..) = processor.denoiser.as_ref().expect("model").model_settings();
+        assert!(on);
+        assert!((beta - 0.05).abs() < 1e-6, "{beta}");
+        processor.set_tuning(NoiseTuning::default().with_switch("post_filter", false).with_param("post_filter_beta", 0.05));
+        let (_, on, beta, ..) = processor.denoiser.as_ref().expect("model").model_settings();
+        assert!(!on);
+        assert_eq!(beta, 0.0);
+
+        // Our smoothing.
+        processor.set_tuning(
+            NoiseTuning::default()
+                .with_param("floor_margin_db", -6.0)
+                .with_param("max_fall_db", 5.0),
+        );
+        let (keep, fall) = processor.denoiser.as_ref().expect("model").smoothing();
+        assert!((keep - 10f32.powf(-6.0 / 20.0)).abs() < 1e-6);
+        assert_eq!(fall, 5.0);
+        processor.set_tuning(NoiseTuning::default().with_param("max_fall_db", 1e6));
+        assert_eq!(processor.denoiser.as_ref().expect("model").smoothing().1, 10.0);
+    }
+
+    /// A tuning set before the model loads is the one it loads with.
+    #[test]
+    fn a_tuning_set_before_the_model_loads_is_what_it_loads_with() {
+        let mut processor = Processor::new(NoiseSuppression::Strong, true);
+        processor.set_tuning(NoiseTuning::default().with_param("atten_limit_db", 15.0));
+        processor.load_model();
+        let (atten, ..) = processor.denoiser.as_ref().expect("model").model_settings();
+        assert_eq!(atten, Some(10f32.powf(-15.0 / 20.0)));
+    }
+
+    /// WebRTC's switches (echo cancellation, gain, high-pass) are what its
+    /// processing is built with, and a real microphone only has the first two.
+    #[test]
+    fn webrtc_switches_reach_its_processing() {
+        let t = NoiseTuning::default();
+        let flags = |mode, live, t: &NoiseTuning| Processor::apm_flags(mode, live, t);
+        assert_eq!(flags(NoiseSuppression::Off, true, &t), (true, true, true, false));
+        assert_eq!(flags(NoiseSuppression::Standard, true, &t), (true, true, true, true));
+        let off = t
+            .with_switch("echo_cancellation", false)
+            .with_switch("auto_gain", false)
+            .with_switch("high_pass", false);
+        assert_eq!(flags(NoiseSuppression::Standard, true, &off), (false, false, false, true));
+        assert_eq!(flags(NoiseSuppression::Off, false, &t), (false, false, true, false));
+        // The processor rebuilds its processing for them, and keeps its tuning.
+        let mut processor = Processor::new(NoiseSuppression::Off, true);
+        processor.set_tuning(off);
+        assert_eq!(processor.tuning(), off);
+    }
+
+    /// The latency the settings page shows is what the processor delays by.
+    #[test]
+    fn the_latency_shown_is_the_delay_of_the_processing() {
+        for mode in NoiseSuppression::ALL {
+            for echo in [true, false] {
+                let tuning = NoiseTuning::default().with_switch("echo_cancellation", echo);
+                let mut processor = Processor::new(mode, true);
+                processor.set_tuning(tuning);
+                if processor.needs_model() {
+                    processor.load_model();
+                }
+                assert_eq!(processor.delay(), tuning.delay_samples(mode, true));
+            }
+        }
     }
 }

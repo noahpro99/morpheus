@@ -6,24 +6,21 @@
 //! the frame's speech-to-noise ratio is under -10 dB, and the quiet end of
 //! a sentence 6-12 dB above the noise was guessed so, frame by frame: it
 //! came through in bits. Here no frame goes down more than
-//! [`ATTEN_LIM_DB`]; a frame clearly louder than the noise floor keeps at
-//! least part of itself ([`SPEECH_OVER`], [`SPEECH_KEEP`]); and the
-//! frame's overall gain falls at most [`RELEASE_DB`] per frame. What is
+//! the attenuation limit (40 dB by default); a frame clearly louder than the noise floor keeps at
+//! least part of itself ([`SPEECH_OVER`], the floor margin); and the
+//! frame's overall gain falls at most the fall rate (2 dB) per frame. What is
 //! kept beyond the model's output is mixed back from the frame as it came
 //! in.
 
 /// How late the cleaned voice comes out, in samples (30 ms).
-pub const DELAY: usize = 1440;
+pub const DELAY: usize = crate::noise::DFN_DELAY;
 
-/// The most a frame is taken down by (the model alone: 100 dB).
-const ATTEN_LIM_DB: f32 = 40.0;
-/// How fast a frame's gain may fall from one frame to the next.
-const RELEASE_DB: f32 = 2.0;
+use crate::noise::NoiseTuning;
+
 /// A frame with more than this times the noise floor's energy is speech...
 const SPEECH_OVER: f32 = 4.0;
-/// ...and keeps at least this much (amplitude, -3 dB) of what is above it
-/// (`(1 - SPEECH_OVER * floor / energy).sqrt()`).
-const SPEECH_KEEP: f32 = 0.7;
+// ...and keeps at least `tuning.floor_margin_db` (-3 dB by default) of what
+// is above it (`(1 - SPEECH_OVER * floor / energy).sqrt()`).
 /// How fast the noise floor (the quietest frame lately) rises: 3 dB/s.
 const FLOOR_RISE_DB: f32 = 0.03;
 
@@ -38,6 +35,8 @@ pub struct Denoiser {
     /// The frames that went in, [`DELAY`] long: the one the output matches
     /// is the oldest.
     history: std::collections::VecDeque<f32>,
+    /// What the model and the smoothing are tuned to now.
+    tuning: NoiseTuning,
     /// The last frame's gain (amplitude, as sent).
     gain: f32,
     /// The noise floor: the quietest frame energy lately (rises 3 dB/s).
@@ -46,9 +45,9 @@ pub struct Denoiser {
 
 impl Denoiser {
     /// Loads the model (built in; about 0.2 s).
-    pub fn new() -> Result<Self, String> {
+    pub fn new(tuning: &NoiseTuning) -> Result<Self, String> {
         let params = df::tract::DfParams::default();
-        let runtime = df::tract::RuntimeParams::default_with_ch(1).with_atten_lim(ATTEN_LIM_DB);
+        let runtime = df::tract::RuntimeParams::default_with_ch(1);
         let model = df::tract::DfTract::new(params, &runtime).map_err(|err| format!("{err:#}"))?;
         if model.hop_size != FRAME || model.sr != 48_000 {
             return Err(format!(
@@ -56,14 +55,48 @@ impl Denoiser {
                 model.hop_size, model.sr
             ));
         }
-        Ok(Self {
+        let mut denoiser = Self {
             model,
             input: ndarray::Array2::zeros((1, FRAME)),
             output: ndarray::Array2::zeros((1, FRAME)),
             history: std::iter::repeat_n(0.0, DELAY).collect(),
             gain: 1.0,
             noise: 0.0,
-        })
+            tuning: *tuning,
+        };
+        denoiser.tune(tuning);
+        Ok(denoiser)
+    }
+
+    /// Tune the model and the smoothing from the next frame (the model keeps
+    /// its state, so a voice in the middle of a word is not cut).
+    pub fn tune(&mut self, tuning: &NoiseTuning) {
+        let tuning = tuning.clamped();
+        self.model.set_atten_lim(tuning.atten_limit_db);
+        self.model
+            .set_pf_beta(if tuning.post_filter { tuning.post_filter_beta } else { 0.0 });
+        self.model.min_db_thresh = tuning.min_snr_db;
+        self.model.max_db_erb_thresh = tuning.max_erb_snr_db;
+        self.model.max_db_df_thresh = tuning.max_df_snr_db;
+        self.tuning = tuning;
+    }
+
+    /// What the model itself is set to, read back from it (for tests).
+    #[cfg(test)]
+    pub fn model_settings(&self) -> (Option<f32>, bool, f32, f32, f32, f32) {
+        let m = &self.model;
+        (m.atten_lim, m.post_filter, m.post_filter_beta, m.min_db_thresh, m.max_db_erb_thresh, m.max_db_df_thresh)
+    }
+
+    /// The smoothing's settings: (floor margin as amplitude, fall per frame, dB).
+    #[cfg(test)]
+    pub fn smoothing(&self) -> (f32, f32) {
+        (self.keep(), self.tuning.max_fall_db)
+    }
+
+    /// What a frame over the floor keeps, as amplitude.
+    fn keep(&self) -> f32 {
+        10f32.powf(self.tuning.floor_margin_db / 20.0)
     }
 
     /// One 10 ms frame (480 samples, full scale ±1), cleaned in place; what
@@ -101,11 +134,11 @@ impl Denoiser {
             self.noise *= 10f32.powf(FLOOR_RISE_DB / 10.0);
         }
         let speech = if before > 1e-9 {
-            (1.0 - SPEECH_OVER * self.noise / before).max(0.0).sqrt() * SPEECH_KEEP
+            (1.0 - SPEECH_OVER * self.noise / before).max(0.0).sqrt() * self.keep()
         } else {
             0.0
         };
-        let least = (self.gain * 10f32.powf(-RELEASE_DB / 20.0)).max(speech);
+        let least = (self.gain * 10f32.powf(-self.tuning.max_fall_db / 20.0)).max(speech);
         let mix = (least - gain).max(0.0);
         self.gain = gain.max(least);
         frame
@@ -124,7 +157,7 @@ mod tests {
     fn strong_suppression_takes_noise_out_of_pauses_and_keeps_the_voice() {
         let speech = noisy_speech(10, 0.05, 0.03);
         let mix = speech.mix();
-        let mut denoiser = Denoiser::new().expect("model");
+        let mut denoiser = Denoiser::new(&NoiseTuning::default()).expect("model");
         let mut out = mix.clone();
         for frame in out.chunks_exact_mut(FRAME) {
             denoiser.process(frame);

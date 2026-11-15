@@ -160,6 +160,8 @@ pub struct SettingsView {
     voice: Option<VoiceLists>,
     voice_prefs: crate::view_model::calls::DevicePrefs,
     picker_open: Option<&'static str>,
+    /// Whether the noise suppression page's Advanced section is open.
+    noise_advanced: bool,
     /// Settings' camera preview: what it shows (under which key), its
     /// message, and whether the camera is opening.
     preview: Option<(&'static str, gpui::Entity<VideoFrame>)>,
@@ -292,6 +294,7 @@ impl SettingsView {
             voice: None,
             voice_prefs: Default::default(),
             picker_open: None,
+            noise_advanced: false,
             preview: None,
             preview_message: None,
             preview_starting: false,

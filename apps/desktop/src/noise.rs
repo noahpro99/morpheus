@@ -15,7 +15,7 @@ use gpui::{
     AnyElement, Context, IntoElement, MouseButton, Pixels, Point, anchored, deferred, div,
     prelude::*, px, rgb, rgba,
 };
-use morpheus_call::NoiseSuppression;
+use morpheus_call::{NoiseSuppression, NoiseTuning};
 
 use crate::{e2e::E2eExt as _, icons::icon, shell::Shell, theme, view_model::calls::VoiceFlags};
 
@@ -28,8 +28,23 @@ pub fn read() -> NoiseSuppression {
         .unwrap_or_default()
 }
 
-fn write(mode: NoiseSuppression) {
-    if let Err(err) = std::fs::write(crate::data_dir().join(FILE), mode.to_json()) {
+/// The advanced settings kept from last time (the defaults if none).
+pub fn read_tuning() -> NoiseTuning {
+    std::fs::read_to_string(crate::data_dir().join(FILE))
+        .ok()
+        .and_then(|json| serde_json::from_str::<serde_json::Value>(&json).ok())
+        .map(|file| NoiseTuning::from_value(&file["tuning"]))
+        .unwrap_or_default()
+}
+
+/// Keeps the mode and the advanced settings now in use:
+/// `{"mode":"strong","tuning":{...}}`.
+fn write() {
+    let file = serde_json::json!({
+        "mode": morpheus_call::noise_suppression().key(),
+        "tuning": morpheus_call::noise_tuning().to_value(),
+    });
+    if let Err(err) = std::fs::write(crate::data_dir().join(FILE), file.to_string()) {
         eprintln!("morpheus-desktop: saving noise suppression: {err}");
     }
 }
@@ -46,7 +61,14 @@ pub fn glyph(mode: NoiseSuppression) -> &'static str {
 /// Use `mode` from now on, and keep it.
 pub fn choose(mode: NoiseSuppression) {
     morpheus_call::set_noise_suppression(mode);
-    write(mode);
+    write();
+}
+
+/// Use the advanced settings `f` makes from the ones in use, from now on (a
+/// call or mic test going takes them within a frame), and keep them.
+pub fn tune(f: impl FnOnce(NoiseTuning) -> NoiseTuning) {
+    morpheus_call::set_noise_tuning(f(morpheus_call::noise_tuning()));
+    write();
 }
 
 impl Shell {
@@ -397,4 +419,296 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElement> {
         )
         .e2e("div", "noise-card-backdrop");
     Some(deferred(backdrop).with_priority(30).into_any_element())
+}
+
+/// A setting's number as shown and kept: no trailing zeros (`35`, `1.5`).
+fn shown(value: f32) -> String {
+    format!("{}", (value * 1000.0).round() / 1000.0)
+}
+
+/// A square − or + that steps a number setting.
+fn step_button<V: 'static>(
+    cx: &mut Context<V>,
+    key: &'static str,
+    up: bool,
+    bump: impl Fn(&mut V, &mut Context<V>) + 'static,
+) -> AnyElement {
+    div()
+        .id(gpui::SharedString::from(format!(
+            "noise-step-{key}-{}",
+            if up { "up" } else { "down" }
+        )))
+        .size(px(24.0))
+        .flex_none()
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(px(theme::RADIUS_SM))
+        .bg(rgba(theme::bg_selected()))
+        .text_color(rgb(theme::text()))
+        .cursor_pointer()
+        .hover(|s| s.opacity(0.8))
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        .on_click(cx.listener(move |this, _, _, cx| bump(this, cx)))
+        .child(if up { "+" } else { "\u{2212}" })
+        .e2e("button", "noise-step")
+        .attr("data-dir", if up { "up" } else { "down" })
+        .text(if up { "+" } else { "-" })
+        .into_any_element()
+}
+
+/// A line under a setting's name saying what it does.
+fn about_line(text: &str) -> AnyElement {
+    div()
+        .text_size(px(0.75 * theme::REM))
+        .text_color(rgb(theme::text_muted()))
+        .child(text.to_owned())
+        .e2e("div", "noise-about")
+        .text(text)
+        .into_any_element()
+}
+
+/// One number setting: its name, a line on what it does, and − value + .
+fn number_row<V: 'static>(cx: &mut Context<V>, param: morpheus_call::NoiseParam) -> AnyElement {
+    let now = (param.get)(&morpheus_call::noise_tuning());
+    let key = param.key;
+    let change = move |up: bool| {
+        move |_: &mut V, cx: &mut Context<V>| {
+            let delta = if up { param.step } else { -param.step };
+            tune(|t| t.with_param(key, (param.get)(&t) + delta));
+            cx.notify();
+        }
+    };
+    let value = if param.unit.is_empty() {
+        shown(now)
+    } else {
+        format!("{} {}", shown(now), param.unit)
+    };
+    div()
+        .flex()
+        .items_center()
+        .justify_between()
+        .gap(px(12.0))
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(2.0))
+                .min_w_0()
+                .child(div().child(param.label))
+                .child(about_line(param.about)),
+        )
+        .child(
+            div()
+                .flex()
+                .flex_none()
+                .items_center()
+                .gap(px(8.0))
+                .child(step_button(cx, key, false, change(false)))
+                .child(
+                    div()
+                        .min_w(px(84.0))
+                        .flex()
+                        .justify_center()
+                        .text_color(rgb(theme::text_muted()))
+                        .child(value),
+                )
+                .child(step_button(cx, key, true, change(true))),
+        )
+        .e2e("div", "noise-adv")
+        .attr("data-key", key)
+        .attr("data-value", shown(now))
+        .into_any_element()
+}
+
+/// One on/off setting.
+fn switch_row<V: 'static>(cx: &mut Context<V>, switch: morpheus_call::NoiseSwitch) -> AnyElement {
+    let on = (switch.get)(&morpheus_call::noise_tuning());
+    let key = switch.key;
+    div()
+        .flex()
+        .items_center()
+        .justify_between()
+        .gap(px(12.0))
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(2.0))
+                .min_w_0()
+                .child(div().child(switch.label))
+                .child(about_line(switch.about)),
+        )
+        .child(
+            div()
+                .id(gpui::SharedString::from(format!("noise-switch-{key}")))
+                .flex_none()
+                .w(px(38.0))
+                .h(px(20.0))
+                .rounded_full()
+                .p(px(2.0))
+                .flex()
+                .when(on, |d| d.justify_end())
+                .bg(if on {
+                    rgb(theme::accent_solid())
+                } else {
+                    rgb(theme::bg_input())
+                })
+                .cursor_pointer()
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .on_click(cx.listener(move |_: &mut V, _, _, cx| {
+                    tune(|t| t.with_switch(key, !(switch.get)(&t)));
+                    cx.notify();
+                }))
+                .child(div().size(px(16.0)).rounded_full().bg(rgb(0xffffff)))
+                .e2e("button", "noise-switch")
+                .attr("data-key", key)
+                .attr("data-on", on.to_string()),
+        )
+        .into_any_element()
+}
+
+fn heading(text: &str) -> AnyElement {
+    div()
+        .mt(px(6.0))
+        .font_weight(gpui::FontWeight::SEMIBOLD)
+        .text_size(px(0.85 * theme::REM))
+        .text_color(rgb(theme::text_muted()))
+        .child(text.to_owned())
+        .into_any_element()
+}
+
+/// The Advanced section of Settings' noise suppression: a toggle that
+/// folds the tunables in and out (`open`, `toggle`), and when open each
+/// setting with its explanation, the latency the current setting adds, and
+/// Reset to defaults. A change is kept and used at once, by a running mic
+/// test or call too.
+pub fn advanced<V: 'static>(
+    cx: &mut Context<V>,
+    open: bool,
+    toggle: impl Fn(&mut V, &mut Context<V>) + 'static,
+) -> Vec<AnyElement> {
+    let header = div()
+        .id("noise-advanced-toggle")
+        .flex()
+        .items_center()
+        .gap(px(6.0))
+        .cursor_pointer()
+        .font_weight(gpui::FontWeight::SEMIBOLD)
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        .on_click(cx.listener(move |this, _, _, cx| toggle(this, cx)))
+        .child(if open { "\u{25BE}" } else { "\u{25B8}" })
+        .child("Advanced")
+        .e2e("button", "noise-advanced-toggle")
+        .attr("data-open", open.to_string())
+        .text("Advanced")
+        .into_any_element();
+    if !open {
+        return vec![header];
+    }
+    let tuning = morpheus_call::noise_tuning();
+    let param = |key: &str| {
+        NoiseTuning::PARAMS
+            .into_iter()
+            .find(|p| p.key == key)
+            .expect("a known setting")
+    };
+    let switch = |key: &str| {
+        NoiseTuning::SWITCHES
+            .into_iter()
+            .find(|s| s.key == key)
+            .expect("a known switch")
+    };
+    let mode = morpheus_call::noise_suppression();
+    let ms = tuning.added_latency_ms(mode, true);
+    let applied = morpheus_call::applied_noise_tuning()
+        .map(|t| shown(t.atten_limit_db))
+        .unwrap_or_default();
+    let model = div()
+        .flex()
+        .items_center()
+        .justify_between()
+        .gap(px(12.0))
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(2.0))
+                .child(div().child("Model"))
+                .child(about_line(
+                    "The neural model Strong runs; a low-latency one will be listed here when there is one.",
+                )),
+        )
+        .child(
+            div()
+                .text_color(rgb(theme::text_muted()))
+                .child(tuning.model.label()),
+        )
+        .e2e("div", "noise-adv")
+        .attr("data-key", "model")
+        .attr("data-value", tuning.model.key())
+        .into_any_element();
+    let mut rows = vec![heading("Strong (DeepFilterNet)"), model];
+    for key in [
+        "atten_limit_db",
+        "min_snr_db",
+        "max_erb_snr_db",
+        "max_df_snr_db",
+    ] {
+        rows.push(number_row(cx, param(key)));
+    }
+    rows.push(switch_row(cx, switch("post_filter")));
+    rows.push(number_row(cx, param("post_filter_beta")));
+    rows.push(heading("Smoothing on top"));
+    rows.push(number_row(cx, param("floor_margin_db")));
+    rows.push(number_row(cx, param("max_fall_db")));
+    rows.push(heading("Standard (WebRTC), in every mode"));
+    for key in ["echo_cancellation", "auto_gain", "high_pass"] {
+        rows.push(switch_row(cx, switch(key)));
+    }
+    rows.push(about_line(
+        "WebRTC's noise suppression level is fixed by the library and cannot be changed here.",
+    ));
+    let latency = div()
+        .flex()
+        .items_center()
+        .justify_between()
+        .child(div().child("Added latency"))
+        .child(
+            div()
+                .text_color(rgb(theme::text_muted()))
+                .child(format!("{ms:.0} ms")),
+        )
+        .e2e("div", "noise-latency")
+        .attr("data-ms", format!("{ms:.0}"))
+        .into_any_element();
+    let reset = div()
+        .id("noise-reset")
+        .flex_none()
+        .px(px(14.0))
+        .py(px(7.0))
+        .rounded(px(theme::RADIUS_SM))
+        .bg(rgba(theme::bg_selected()))
+        .cursor_pointer()
+        .hover(|s| s.opacity(0.85))
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        .on_click(cx.listener(|_: &mut V, _, _, cx| {
+            tune(|_| NoiseTuning::default());
+            cx.notify();
+        }))
+        .child("Reset to defaults")
+        .e2e("button", "noise-reset")
+        .text("Reset to defaults")
+        .into_any_element();
+    let body = div()
+        .flex()
+        .flex_col()
+        .gap(px(10.0))
+        .children(rows)
+        .child(latency)
+        .child(div().flex().child(reset))
+        .e2e("div", "noise-advanced")
+        .attr("data-applied-atten", applied)
+        .into_any_element();
+    vec![header, body]
 }

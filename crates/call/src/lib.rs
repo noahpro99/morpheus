@@ -30,6 +30,7 @@ pub use imp::*;
 )]
 mod noise;
 pub use noise::{
+    NoiseModel, NoiseParam, NoiseSwitch, NoiseTuning, applied_noise_tuning, noise_tuning, set_noise_tuning,
     NoiseSuppression, applied_noise_suppression, noise_suppression, set_noise_suppression,
 };
 
