@@ -2597,6 +2597,41 @@ async fn voice_settings_have_icons_and_a_camera_choice() {
     }
 }
 
+/// A menu's flyout waits off to the side until it has been measured; it is never drawn
+/// (or hit) over its menu, where a fast click would land on it instead of a menu row.
+#[tokio::test]
+async fn a_menu_flyout_is_never_over_its_menu_while_it_waits_to_be_placed() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    login_and_open(&mut alice, "alice", "general").await;
+    alice
+        .click(".user-pill .device-menu-button[title=Microphone]")
+        .await
+        .expect("the arrow beside the mic");
+    // Sample from the first frame on.
+    let start = std::time::Instant::now();
+    let mut seen = 0;
+    while start.elapsed() < std::time::Duration::from_millis(600) {
+        let menu = alice
+            .bounds(".context-menu:not(.context-submenu)")
+            .await
+            .expect("bounds");
+        let fly = alice.bounds(".context-submenu").await.expect("bounds");
+        if let (Some(menu), Some(fly)) = (menu, fly) {
+            seen += 1;
+            assert!(
+                fly.x >= menu.x + menu.w - 12.0 || fly.x + fly.w <= menu.x + 12.0,
+                "the flyout ({fly:?}) sits over its menu ({menu:?})"
+            );
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(3)).await;
+    }
+    assert!(seen > 0, "the flyout never showed");
+}
+
 /// The profile card's mic and headphones each have an arrow (and a
 /// right-click) for a quick list of microphones or speakers; picking one
 /// switches to it. Right-clicking the camera button in a call lists cameras.
@@ -2615,26 +2650,6 @@ async fn quick_device_menus_on_the_mic_headphones_and_camera() {
     wait_menu_has(&mut alice, &["Test microphone 1", "Test microphone 2"])
         .await
         .expect("microphones listed");
-    // The flyout is placed beside its row a frame or two after it opens; until then it
-    // overlaps the menu, and a click on it lands on the wrong row.
-    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
-    loop {
-        let menu = alice.bounds(".context-menu").await.expect("bounds");
-        let row = alice
-            .bounds(".context-menu .context-item:not(.has-submenu)")
-            .await
-            .expect("bounds");
-        if let (Some(menu), Some(row)) = (menu, row)
-            && row.x >= menu.x + menu.w
-        {
-            break;
-        }
-        assert!(
-            std::time::Instant::now() < deadline,
-            "the flyout was never placed beside its menu"
-        );
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-    }
     alice
         // The device rows themselves: "Input Device" holds them in its flyout, so its text has theirs too.
         .click_text(
