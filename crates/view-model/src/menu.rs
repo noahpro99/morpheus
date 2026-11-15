@@ -105,6 +105,12 @@ pub enum MenuAction {
     Device(DeviceKind, Option<String>),
     /// Opens Settings on Voice & Video.
     VoiceSettings,
+
+    // On a person's card in a call (`calls::call_card_items`).
+    /// Silences (true) or restores their voice for you alone.
+    CallMute(OwnedUserId, bool),
+    /// Focuses the card with this key, or (when focused already) puts it back.
+    CallFocus(String),
 }
 
 /// Which device a call's quick list picks.
@@ -120,12 +126,14 @@ pub enum DeviceKind {
 pub enum MenuSlider {
     InputVolume(f32),
     OutputVolume(f32),
+    /// How loud one person's voice plays for you.
+    UserVolume(OwnedUserId, f32),
 }
 
 impl MenuSlider {
     pub fn value(&self) -> f32 {
-        match *self {
-            Self::InputVolume(v) | Self::OutputVolume(v) => v,
+        match self {
+            Self::InputVolume(v) | Self::OutputVolume(v) | Self::UserVolume(_, v) => *v,
         }
     }
 }

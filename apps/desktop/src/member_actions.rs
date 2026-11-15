@@ -92,6 +92,21 @@ impl Shell {
         at: Point<Pixels>,
         cx: &mut Context<Self>,
     ) {
+        self.open_member_menu_extra(room, member, permissions, mutual, Vec::new(), at, cx)
+    }
+
+    /// The member menu with `extra` rows (a call card's) above it.
+    #[allow(clippy::too_many_arguments)]
+    pub fn open_member_menu_extra(
+        &mut self,
+        room: morpheus_core::OwnedRoomId,
+        member: &Member,
+        permissions: MemberPermissions,
+        mutual: Vec<morpheus_core::OwnedRoomId>,
+        extra: Vec<crate::view_model::menu::MenuItem>,
+        at: Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
         let own = self
             .session
             .as_ref()
@@ -99,14 +114,15 @@ impl Shell {
             .as_ref()
             == Some(&member.user_id);
         let invite_to = available_invite_targets(&self.rooms, Some(&room), &mutual);
-        let items = member_menu(&MemberMenuInput {
+        let mut items = extra;
+        items.extend(member_menu(&MemberMenuInput {
             room: &room,
             member,
             permissions,
             own,
             friend: self.friends.contains(&member.user_id),
             invite_to,
-        });
+        }));
         self.open_menu(OpenMenu::new(at, items, false, MenuTarget::Other), cx);
     }
 
@@ -127,6 +143,19 @@ impl Shell {
         room: morpheus_core::OwnedRoomId,
         user: morpheus_core::OwnedUserId,
         name: String,
+        at: Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
+        self.open_user_menu_extra(room, user, name, Vec::new(), at, cx)
+    }
+
+    /// [`Self::open_user_menu`] with `extra` rows above it.
+    pub fn open_user_menu_extra(
+        &mut self,
+        room: morpheus_core::OwnedRoomId,
+        user: morpheus_core::OwnedUserId,
+        name: String,
+        extra: Vec<crate::view_model::menu::MenuItem>,
         at: Point<Pixels>,
         cx: &mut Context<Self>,
     ) {
@@ -153,7 +182,7 @@ impl Shell {
                     is_ignored: false,
                 });
             this.update(cx, |this, cx| {
-                this.open_member_menu_with_mutual(room, &member, permissions, mutual, at, cx);
+                this.open_member_menu_extra(room, &member, permissions, mutual, extra, at, cx);
             })
             .ok();
         })

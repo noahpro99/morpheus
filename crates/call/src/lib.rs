@@ -37,6 +37,7 @@ pub use noise::{
 mod volume;
 pub use volume::{
     MAX_VOLUME, input_volume, output_volume, set_input_volume, set_output_volume,
+    set_user_volume, user_volume, voice_gain,
 };
 
 #[path = "quality.rs"]

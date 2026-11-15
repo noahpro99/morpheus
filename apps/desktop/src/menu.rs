@@ -473,6 +473,7 @@ fn menu_slider_el(
     let id_prefix = match slider {
         crate::view_model::menu::MenuSlider::InputVolume(_) => "input-volume",
         crate::view_model::menu::MenuSlider::OutputVolume(_) => "output-volume",
+        crate::view_model::menu::MenuSlider::UserVolume(..) => "user-volume",
     };
 
     let label_str = label.to_owned();
@@ -522,6 +523,9 @@ fn menu_slider_el(
                                 crate::view_model::menu::MenuSlider::OutputVolume(_) => {
                                     this.set_output_volume(vol, cx);
                                 }
+                                crate::view_model::menu::MenuSlider::UserVolume(user, _) => {
+                                    this.set_user_volume(user, vol, cx);
+                                }
                             }
                         }
                     }),
@@ -536,6 +540,9 @@ fn menu_slider_el(
                             }
                             crate::view_model::menu::MenuSlider::OutputVolume(_) => {
                                 this.set_output_volume(vol, cx);
+                            }
+                            crate::view_model::menu::MenuSlider::UserVolume(user, _) => {
+                                this.set_user_volume(user, vol, cx);
                             }
                         }
                     }

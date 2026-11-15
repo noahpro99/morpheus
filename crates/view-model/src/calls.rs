@@ -1011,3 +1011,35 @@ mod tests {
         assert_eq!(items[1].slider, Some(MenuSlider::OutputVolume(0.7)));
     }
 }
+
+/// What a right-click on someone's card in a call adds to their user menu:
+/// their volume for you and mute for you (not on your own card), and focus.
+pub fn call_card_items(
+    user: &morpheus_core::OwnedUserId,
+    own: bool,
+    volume: f32,
+    muted: bool,
+    key: &str,
+    focused: bool,
+) -> Vec<crate::menu::MenuItem> {
+    use crate::menu::{MenuAction, MenuItem, MenuSlider};
+    let mut items = Vec::new();
+    if !own {
+        items.push(MenuItem::slider("Volume", MenuSlider::UserVolume(user.clone(), volume)));
+        items.push(
+            MenuItem::new(
+                if muted { "Unmute for me" } else { "Mute for me" },
+                MenuAction::CallMute(user.clone(), !muted),
+            )
+            .icon(if muted { "volume-2" } else { "volume-x" }),
+        );
+    }
+    items.push(
+        MenuItem::new(
+            if focused { "Unfocus" } else { "Focus" },
+            MenuAction::CallFocus(key.to_owned()),
+        )
+        .icon(if focused { "minimize-2" } else { "maximize-2" }),
+    );
+    items
+}

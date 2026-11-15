@@ -539,12 +539,32 @@ impl Call {
         }
     }
 
+    /// Play `user`'s voice at `volume` (1 as sent, 0 for none) on top of the
+    /// output volume, now and whenever it comes again.
+    pub fn set_user_volume(&self, user: &str, volume: f32) {
+        let _enter = runtime().enter();
+        crate::set_user_volume(user, volume);
+        for participant in self.room.remote_participants().values() {
+            let identity = participant.identity().to_string();
+            if !(identity == user || identity.starts_with(&format!("{user}:"))) {
+                continue;
+            }
+            for publication in participant.track_publications().values() {
+                if publication.source() != TrackSource::ScreenshareAudio
+                    && let Some(RemoteTrack::Audio(track)) = publication.track()
+                {
+                    track.rtc_track().set_volume(f64::from(crate::voice_gain(&identity)));
+                }
+            }
+        }
+    }
+
     /// Play voice audio at `volume` (1.0 as sent, up to [`crate::MAX_VOLUME`]).
     pub fn set_output_volume(&self, volume: f32) {
         let _enter = runtime().enter();
         crate::set_output_volume(volume);
-        let vol = crate::output_volume();
         for participant in self.room.remote_participants().values() {
+            let vol = crate::voice_gain(participant.identity().as_str());
             for publication in participant.track_publications().values() {
                 if publication.source() != TrackSource::ScreenshareAudio
                     && let Some(RemoteTrack::Audio(track)) = publication.track()
@@ -1332,7 +1352,7 @@ async fn forward_events(
                 } else {
                     track.enable();
                 }
-                track.rtc_track().set_volume(f64::from(crate::output_volume()));
+                track.rtc_track().set_volume(f64::from(crate::voice_gain(&identity)));
                 if let Some(prev) = voice_tasks.remove(&identity) {
                     prev.abort();
                 }

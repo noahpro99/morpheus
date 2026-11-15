@@ -425,6 +425,8 @@ impl Shell {
             }
             // The rest is for messages.
             MenuAction::Device(kind, id) => self.pick_device(kind, id, cx),
+            MenuAction::CallMute(user, muted) => self.set_user_muted(&user, muted, cx),
+            MenuAction::CallFocus(key) => self.toggle_focus(&key, cx),
             MenuAction::VoiceSettings => {
                 self.open_settings(crate::view_model::keys::SettingsFocus::VoiceVideo, cx)
             }

@@ -1055,6 +1055,13 @@ fn person_card(
     })
     .cursor_pointer()
     .on_click(cx.listener(move |this, _, _, cx| this.toggle_focus(&click_key, cx)))
+    .on_mouse_down(MouseButton::Right, {
+        let (room, user, key) = (room.clone(), user.clone(), key.clone());
+        cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+            cx.stop_propagation();
+            this.open_call_card_menu(room.clone(), user.clone(), key.clone(), event.position, cx)
+        })
+    })
     // The ring is the card's; the picture inside has none of its own.
     .child(avatar(picture_of(shell, user, 72), &name, size, None))
     .child(focus_button(shell, cx, &key, &group))
@@ -1137,6 +1144,13 @@ fn video_card(
         rgb(theme::bg_elevated())
     })
     .cursor_pointer();
+    tile = tile.on_mouse_down(MouseButton::Right, {
+        let (room, user, key) = (room.clone(), feed.user.clone(), key.clone());
+        cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+            cx.stop_propagation();
+            this.open_call_card_menu(room.clone(), user.clone(), key.clone(), event.position, cx)
+        })
+    });
     tile = match frame.clone() {
         Some(frame) if zoomable => {
             let (down, wheel, up, up_out, click) = (
@@ -2376,5 +2390,26 @@ mod widget_tests {
         // Clicking it again goes back to the grid.
         click(cx, ".call-focus-main > .call-tile");
         assert!(query(".call-cards.focused").is_empty());
+    }
+}
+
+impl Shell {
+    /// Right-click on someone's card in the call: their user menu with the
+    /// call's items (volume, mute for you, focus) above it.
+    pub fn open_call_card_menu(
+        &mut self,
+        room: OwnedRoomId,
+        user: OwnedUserId,
+        key: String,
+        at: gpui::Point<gpui::Pixels>,
+        cx: &mut Context<Self>,
+    ) {
+        let own = self.session.as_ref().and_then(|s| s.user_id()).as_ref() == Some(&user);
+        let volume = self.calls.user_volumes.get(&user).copied().unwrap_or(1.0);
+        let muted = self.calls.muted_for_me.contains(&user);
+        let focused = self.calls.focus.as_deref() == Some(key.as_str());
+        let extra = crate::view_model::calls::call_card_items(&user, own, volume, muted, &key, focused);
+        let name = shown(self, &user);
+        self.open_user_menu_extra(room, user, name, extra, at, cx);
     }
 }
