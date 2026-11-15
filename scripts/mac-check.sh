@@ -77,8 +77,8 @@ else
     fail "traffic lights not at the left of the 32 px bar (close button $((bx - wx)),$((by - wy)) from the window's corner)"
 fi
 mouse() { perl -e "alarm 120; exec @ARGV" swift "$(dirname "$0")/mac-mouse.swift" "$@" 2>&1; }
-# Twice: in the system bar's own height, and below it (still the app's bar).
-for down in 14 30; do
+# In the system bar's own height, below it (still the app's bar), and in it again.
+for down in 14 30 14; do
     read -r x0 y0 <<< "$(ui "get position of window 1" | xy)"
     mouse drag $((x0 + 220)) $((y0 + down)) 100 60
     sleep 1

@@ -245,6 +245,15 @@ unsafe fn build_classes() {
                     accepts_first_mouse as extern "C" fn(&Object, Sel, id) -> BOOL,
                 );
 
+                // Morpheus: under a transparent title bar AppKit would move
+                // the window itself from a press in the system bar's height
+                // (even on the app's buttons there), apart from the app's own
+                // drag below it; the app decides (`start_window_move`).
+                decl.add_method(
+                    sel!(mouseDownCanMoveWindow),
+                    mouse_down_can_move_window as extern "C" fn(&Object, Sel) -> BOOL,
+                );
+
                 decl.add_method(
                     sel!(characterIndexForPoint:),
                     character_index_for_point as extern "C" fn(&Object, Sel, NSPoint) -> u64,
@@ -2369,6 +2378,10 @@ extern "C" fn accepts_first_mouse(this: &Object, _: Sel, _: id) -> BOOL {
     let mut lock = window_state.as_ref().lock();
     lock.first_mouse = true;
     YES
+}
+
+extern "C" fn mouse_down_can_move_window(_: &Object, _: Sel) -> BOOL {
+    NO
 }
 
 extern "C" fn character_index_for_point(this: &Object, _: Sel, position: NSPoint) -> u64 {
