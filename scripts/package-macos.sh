@@ -85,11 +85,13 @@ cp apps/desktop/assets/dmg-background.png "$stage/.background/background.png"
 rm -f "$dmg" "$stage.rw.dmg"
 hdiutil create -quiet -volname Morpheus -srcfolder "$stage" -fs HFS+ -format UDRW \
     -size "$(( $(du -sm "$stage" | cut -f1) + 30 ))m" "$stage.rw.dmg"
-hdiutil detach /Volumes/Morpheus -quiet 2>/dev/null || true
+detach() { perl -e 'alarm shift; exec @ARGV' 30 hdiutil detach "$@"; }
+detach /Volumes/Morpheus -quiet 2>/dev/null || true
 hdiutil attach -quiet -readwrite -noverify -noautoopen "$stage.rw.dmg"
 # Finder keeps the layout in the volume's .DS_Store. Best effort: without a Finder
 # (a headless session) the image still works, just without the window layout.
-osascript <<'APPLESCRIPT' || echo "DMG window layout skipped (no Finder)" >&2
+# Finder can hang on a headless runner (an automation prompt nobody answers): 60 s at most.
+perl -e 'alarm shift; exec @ARGV' 60 osascript <<'APPLESCRIPT' || echo "DMG window layout skipped (no Finder, or it took over 60 s)" >&2
 tell application "Finder"
     tell disk "Morpheus"
         open
@@ -116,7 +118,7 @@ APPLESCRIPT
 cp "$app/Contents/Resources/Morpheus.icns" /Volumes/Morpheus/.VolumeIcon.icns
 SetFile -a C /Volumes/Morpheus || echo "DMG volume icon skipped (no SetFile)" >&2
 sync
-hdiutil detach /Volumes/Morpheus -quiet || { sleep 3; hdiutil detach /Volumes/Morpheus -force -quiet; }
+detach /Volumes/Morpheus -quiet || { sleep 3; detach /Volumes/Morpheus -force -quiet; }
 hdiutil convert -quiet "$stage.rw.dmg" -format UDZO -o "$dmg"
 rm -rf "$stage" "$stage.rw.dmg"
 
