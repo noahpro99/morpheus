@@ -31,7 +31,20 @@ pub(crate) fn phases(prepaint: f32, paint: f32) {
     PHASES.with(|p| p.set((prepaint, paint)));
 }
 
+static COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static LAST_MS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// Morpheus patch: frames drawn so far and how long the last took (draw +
+/// present, ms); never cleared, for the diagnostics overlay.
+pub fn frame_counter() -> (u64, f32) {
+    use std::sync::atomic::Ordering::Relaxed;
+    (COUNT.load(Relaxed), f32::from_bits(LAST_MS.load(Relaxed)))
+}
+
 pub(crate) fn record(draw: f32, present: f32) {
+    use std::sync::atomic::Ordering::Relaxed;
+    COUNT.fetch_add(1, Relaxed);
+    LAST_MS.store((draw + present).to_bits(), Relaxed);
     let (prepaint, paint) = PHASES.with(|p| p.get());
     if let Ok(mut frames) = FRAMES.lock()
         && frames.len() < KEEP

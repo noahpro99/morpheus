@@ -12,6 +12,24 @@
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
+    // What the diagnostics (Settings > Help & Feedback) say about this build.
+    println!("cargo:rerun-if-changed=../../.git/HEAD");
+    println!("cargo:rerun-if-changed=../../Cargo.lock");
+    let commit = std::process::Command::new("git")
+        .args(["rev-parse", "--short=10", "HEAD"])
+        .output()
+        .ok()
+        .filter(|out| out.status.success())
+        .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_owned())
+        .unwrap_or_else(|| "unknown".to_owned());
+    println!("cargo:rustc-env=MORPHEUS_COMMIT={commit}");
+    let lock = std::fs::read_to_string("../../Cargo.lock").unwrap_or_default();
+    let sdk = lock
+        .split("[[package]]")
+        .find(|package| package.contains("name = \"matrix-sdk\"\n"))
+        .and_then(|package| package.lines().find_map(|l| l.strip_prefix("version = ")))
+        .map_or("unknown", |v| v.trim_matches('"'));
+    println!("cargo:rustc-env=MORPHEUS_MATRIX_SDK={sdk}");
     println!("cargo:rerun-if-changed=windows");
     println!("cargo:rerun-if-changed=icons/icon.ico");
     match std::env::var("CARGO_CFG_TARGET_OS").as_deref() {

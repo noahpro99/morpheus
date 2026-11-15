@@ -144,6 +144,9 @@ pub struct Shell {
     pub dialog_focus: Option<FocusHandle>,
     pub take_dialog_focus: bool,
     pub toasts: ToastList,
+    /// The F3 stats overlay is showing, and its redraw timer runs.
+    pub diag_overlay: bool,
+    pub diag_timer: bool,
     /// Deletions waiting out their Undo toast, by toast.
     pub pending: HashMap<u32, PendingUndo>,
     /// Rooms just left, still undoable: out of the lists.
@@ -427,6 +430,8 @@ impl Shell {
             dialog_focus: None,
             take_dialog_focus: false,
             toasts: ToastList::default(),
+            diag_overlay: false,
+            diag_timer: false,
             pending: HashMap::new(),
             hidden_rooms: HashSet::new(),
             marks: Marks::default(),
@@ -1342,6 +1347,7 @@ impl Render for Shell {
         crate::media::sweep(window, cx);
         self.note_timelines();
         crate::memory::log_now_and_then(window, cx);
+        crate::diagnostics::note_rooms(self.rooms.len());
         let covered = self.chat_covered();
         crate::notify::set_looking(
             window.is_window_active(),
@@ -1383,6 +1389,7 @@ impl Render for Shell {
         let dialog = dialogs::render_dialog(self, window, cx);
         let inbox = crate::invites::inbox(self, window, cx);
         let toasts = dialogs::render_toasts(self, cx);
+        let diagnostics = self.diagnostics_overlay(window, cx);
         let incoming = crate::call_ui::incoming_calls(self, cx);
         // The Rooms scope is empty of rooms at first; nothing else to wait for.
         let _ = rooms_in_scope;
@@ -1532,6 +1539,7 @@ impl Render for Shell {
             .children(screen_quality)
             .children(noise_card)
             .children(toasts)
+            .children(diagnostics)
             .e2e(
                 "div",
                 if self.members_open {

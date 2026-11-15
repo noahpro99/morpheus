@@ -61,3 +61,7 @@ pub use screen_sources::{
     ScreenSource, ScreenSourceKind, ScreenSourceProvider, Thumbnail, fit_thumbnail,
     platform_source_provider, shared_screen_source,
 };
+
+#[path = "diag.rs"]
+mod diag;
+pub use diag::{CallDiag, TrackDiag, call_diag, processing};

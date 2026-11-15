@@ -943,17 +943,95 @@ impl SettingsView {
         ]
     }
 
-    pub(super) fn help_page(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+    pub(super) fn help_page(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let version = vm::version_line();
+        let encryption = self.status.as_ref().and_then(|s| s.as_ref().ok()).cloned();
+        let inputs = crate::diagnostics::Inputs {
+            session: self.session.as_ref(),
+            encryption: encryption.as_ref(),
+        };
+        let diagnostics = crate::diagnostics::full(window, cx, &inputs);
+        if !self.diag_timer {
+            self.diag_timer = true;
+            cx.spawn(async move |this, cx| {
+                loop {
+                    cx.background_executor().timer(crate::diagnostics::REFRESH).await;
+                    let keep = this
+                        .update(cx, |this, cx| {
+                            let showing = this.open && this.page == crate::view_model::settings::SettingsPage::Help;
+                            if showing {
+                                cx.notify();
+                            } else {
+                                this.diag_timer = false;
+                            }
+                            showing
+                        })
+                        .unwrap_or(false);
+                    if !keep {
+                        break;
+                    }
+                }
+            })
+            .detach();
+        }
+        let text = diagnostics.text();
+        let report_text = diagnostics.text_within(2200);
+        let data_dir = self.data_dir.clone();
         let report = button("report-bug", "Report a bug", Kind::Primary, "report-bug")
             .child(icon("bug", 16.0).text_color(rgb(theme::text())))
             .child("Report a bug")
-            .on_click(cx.listener(|this, _, _, cx| {
-                let url = morpheus_core::bug_report_url(env!("CARGO_PKG_VERSION"), &this.data_dir);
+            .on_click(cx.listener(move |this, _, _, cx| {
+                let url = morpheus_core::bug_report_url_with(
+                    env!("CARGO_PKG_VERSION"),
+                    &this.data_dir,
+                    &report_text,
+                );
                 crate::shell::open_external(&url, cx);
             }))
             .e2e("a", "button primary report-bug")
             .text("Report a bug");
+        let copy = button("diag-copy", "Copy all", Kind::Secondary, "diag-copy")
+            .child("Copy all")
+            .on_click(cx.listener(move |_, _, _, cx| {
+                cx.write_to_clipboard(gpui::ClipboardItem::new_string(text.clone()));
+            }))
+            .e2e("a", "button secondary diag-copy")
+            .text("Copy all");
+        let folder = button("diag-open-folder", "Open folder", Kind::Secondary, "diag-open-folder")
+            .child("Open folder")
+            .on_click(cx.listener(move |_, _, _, cx| {
+                if std::env::var_os("MORPHEUS_E2E_PORT").is_none() {
+                    cx.reveal_path(&data_dir);
+                }
+            }))
+            .e2e("a", "button secondary diag-open-folder")
+            .text("Open folder");
+        let mut diag_children: Vec<AnyElement> = vec![
+            div()
+                .flex()
+                .gap(px(8.0))
+                .child(copy)
+                .child(folder)
+                .into_any_element(),
+        ];
+        for section in &diagnostics.sections {
+            diag_children.push(
+                div()
+                    .mt(px(10.0))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .child(section.title.clone())
+                    .e2e("div", "diag-heading")
+                    .text(section.title.clone())
+                    .into_any_element(),
+            );
+            for (label, value) in &section.lines {
+                diag_children.push(crate::diagnostics::line_element(
+                    label,
+                    value,
+                    theme::text_muted(),
+                ));
+            }
+        }
         vec![
             section(
                 "Report a bug",
@@ -979,6 +1057,8 @@ impl SettingsView {
                 self.hl("version"),
             )
             .into_any_element(),
+            section("Diagnostics", "diagnostics", diag_children, self.hl("diagnostics"))
+                .into_any_element(),
         ]
     }
 }

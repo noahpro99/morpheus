@@ -195,6 +195,12 @@ pub const SETTINGS_INDEX: &[SettingEntry] = &[
         SettingsPage::Help,
         "version",
     ),
+    entry(
+        "Diagnostics",
+        "help diagnostics gpu graphics fps memory call debug stats copy f3",
+        SettingsPage::Help,
+        "diagnostics",
+    ),
 ];
 
 /// The settings matching every word of `query`, in their name or the other

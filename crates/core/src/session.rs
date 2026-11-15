@@ -481,6 +481,12 @@ impl Session {
         self.client.device_id().map(ToString::to_string)
     }
 
+    /// What the sync service is doing now ("running", "offline", ...), for
+    /// the diagnostics.
+    pub fn sync_state(&self) -> String {
+        format!("{:?}", self.sync.state().get()).to_lowercase()
+    }
+
     pub fn homeserver(&self) -> String {
         self.client.homeserver().to_string()
     }

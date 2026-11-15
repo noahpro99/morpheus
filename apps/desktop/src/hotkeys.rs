@@ -371,8 +371,9 @@ impl Shell {
         let toggles_help =
             matches!(action, Hotkey::Shortcuts) && matches!(self.dialog, Some(Dialog::Help));
         let toggles_switcher = matches!(action, Hotkey::Switcher) && self.switcher.is_some();
-        if (self.modal_open(cx) && !toggles_help && !toggles_switcher)
-            || (self.inbox_open && !matches!(action, Hotkey::Inbox))
+        let toggles_diagnostics = matches!(action, Hotkey::Diagnostics);
+        if (self.modal_open(cx) && !toggles_help && !toggles_switcher && !toggles_diagnostics)
+            || (self.inbox_open && !matches!(action, Hotkey::Inbox | Hotkey::Diagnostics))
         {
             return false;
         }
@@ -389,6 +390,7 @@ impl Shell {
             }
             Hotkey::CreateServer => self.open_room_dialog(RoomDialogKind::CreateSpace(None), cx),
             Hotkey::Shortcuts => self.toggle_help(cx),
+            Hotkey::Diagnostics => self.toggle_diagnostics(cx),
             Hotkey::History { forward } => self.nav_jump(if forward { 1 } else { -1 }, cx),
             Hotkey::Inbox => self.toggle_inbox(cx),
             Hotkey::Members => self.toggle_members(cx),

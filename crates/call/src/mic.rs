@@ -83,6 +83,7 @@ impl Processor {
 
     fn apm(mode: NoiseSuppression, live: bool, tuning: &NoiseTuning) -> AudioProcessingModule {
         let (echo, gain, high_pass, noise) = Self::apm_flags(mode, live, tuning);
+        crate::diag::note_processing(echo, gain);
         AudioProcessingModule::new(echo, gain, high_pass, noise)
     }
 

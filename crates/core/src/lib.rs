@@ -64,7 +64,7 @@ pub use people::marks;
 pub use profile::Profile;
 pub use push::{DEFAULT_PUSH_GATEWAY, PUSH_APP_ID, PushRegistration};
 pub use recovery::{EncryptionStatus, RecoveryAvailability};
-pub use report::{bug_report_url, device};
+pub use report::{bug_report_url, bug_report_url_with, device};
 pub use rooms::{NotifyMode, RoomListUpdates, RoomSummary, SpaceRoom};
 pub use search::SearchHit;
 pub use session::{LoginFlows, LoginRequest, NotificationPreview, Session, UrlOpener};

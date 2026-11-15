@@ -50,6 +50,8 @@ pub enum Hotkey {
     CopyLink,
     /// Ctrl+Q: quit Morpheus (hanging up first).
     Quit,
+    /// F3: show or hide the stats overlay.
+    Diagnostics,
     /// Page Up / Page Down: scroll the chat by a page.
     Page { down: bool },
 }
@@ -102,6 +104,7 @@ pub fn classify(key: &str, ctrl: bool, alt: bool, shift: bool) -> Option<Hotkey>
             _ => direction.map(|forward| Hotkey::Scope { forward }),
         },
         (false, false, false) => match key {
+            "F3" | "f3" => Some(Hotkey::Diagnostics),
             "PageUp" | "pageup" => Some(Hotkey::Page { down: false }),
             "PageDown" | "pagedown" => Some(Hotkey::Page { down: true }),
             _ => None,
@@ -193,6 +196,7 @@ pub const GROUPS: &[(&str, &[(&str, &str)])] = &[
             ("Ctrl+Shift+N", "Create or join a server"),
             ("Ctrl+Shift+L", "Copy the open room's link"),
             ("Page Up / Page Down", "Scroll the chat"),
+            ("F3", "Stats overlay: FPS, graphics card, call quality"),
             ("Ctrl+R", "Reload the app"),
             ("Ctrl+Q", "Quit Morpheus"),
         ],
@@ -250,6 +254,7 @@ mod tests {
     fn combos_name_their_actions() {
         assert_eq!(classify("ArrowRight", true, true, false), Some(Hotkey::LastPlace));
         assert_eq!(classify("ArrowDown", true, true, true), Some(Hotkey::Mention { forward: true }));
+        assert_eq!(classify("F3", false, false, false), Some(Hotkey::Diagnostics));
         assert_eq!(classify("r", true, false, false), Some(Hotkey::Reload));
         assert_eq!(classify("q", true, false, false), Some(Hotkey::Quit));
         assert_eq!(classify("L", true, false, true), Some(Hotkey::CopyLink));

@@ -116,6 +116,8 @@ const STATUS_REREADS: u32 = 15;
 
 pub struct SettingsView {
     session: Option<Session>,
+    /// The Diagnostics section redraws itself every second while shown.
+    diag_timer: bool,
     open: bool,
     page: SettingsPage,
     status: Option<Result<EncryptionStatus, String>>,
@@ -263,6 +265,7 @@ impl SettingsView {
         }
         Self {
             session,
+            diag_timer: false,
             open: false,
             page: SettingsPage::Account,
             status: None,
@@ -1371,7 +1374,7 @@ impl Render for SettingsView {
             SettingsPage::VoiceVideo => self.voice_page(cx),
             SettingsPage::StreamerMode => self.streamer_page(cx),
             SettingsPage::Startup => self.startup_page(cx),
-            SettingsPage::Help => self.help_page(cx),
+            SettingsPage::Help => self.help_page(window, cx),
         };
         let header = div()
             .flex()

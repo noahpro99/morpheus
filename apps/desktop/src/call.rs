@@ -1057,7 +1057,10 @@ async fn run_call(
         .ok();
     };
     let credentials = match session.join_call(room_id.clone()).await {
-        Ok(credentials) => credentials,
+        Ok(credentials) => {
+            crate::diagnostics::set_call_service(&credentials.service_url);
+            credentials
+        }
         Err(err) => return give_up(&this, cx, "joining the call", err.to_string()),
     };
     // Keys others share, subscribed before ours goes out so no answer is missed.

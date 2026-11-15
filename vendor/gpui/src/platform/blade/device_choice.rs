@@ -42,6 +42,25 @@ pub(super) struct Device {
     pub presents: Option<bool>,
 }
 
+impl Device {
+    pub(super) fn describe(&self) -> crate::GpuDevice {
+        crate::GpuDevice {
+            name: self.name.clone(),
+            vendor_id: self.vendor_id,
+            device_id: self.device_id,
+            kind: match self.device_type {
+                vk::PhysicalDeviceType::DISCRETE_GPU => "discrete",
+                vk::PhysicalDeviceType::INTEGRATED_GPU => "integrated",
+                vk::PhysicalDeviceType::VIRTUAL_GPU => "virtual",
+                vk::PhysicalDeviceType::CPU => "software",
+                _ => "other",
+            }
+            .to_owned(),
+            presents: self.presents,
+        }
+    }
+}
+
 impl std::fmt::Display for Device {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(

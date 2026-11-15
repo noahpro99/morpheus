@@ -47,7 +47,7 @@ mod view;
 mod frame_stats;
 mod smooth_scroll;
 pub use smooth_scroll::ease_step;
-pub use frame_stats::{FrameTime, take_frame_times};
+pub use frame_stats::{FrameTime, frame_counter, take_frame_times};
 mod window;
 
 #[cfg(doc)]
@@ -326,3 +326,44 @@ pub static PREFER_INTEGRATED_GPU: std::sync::atomic::AtomicBool =
 /// later in the same run. Unset (the default) is upstream's behaviour.
 pub static KEEP_RUNNING_WITHOUT_WINDOWS: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
+
+/// Morpheus patch: a GPU Vulkan lists, for the app's diagnostics.
+#[derive(Clone, Debug, Default)]
+pub struct GpuDevice {
+    /// The name Vulkan gives it.
+    pub name: String,
+    /// The PCI vendor id.
+    pub vendor_id: u32,
+    /// The PCI device id.
+    pub device_id: u32,
+    /// "discrete", "integrated", "virtual", "software" or "other".
+    pub kind: String,
+    /// Whether it can present to the Wayland display (None: not asked).
+    pub presents: Option<bool>,
+}
+
+/// Morpheus patch: the GPUs found and the one drawing (Linux, Vulkan via
+/// Blade), for the app's diagnostics; empty until the window system started.
+#[derive(Clone, Debug, Default)]
+pub struct GpuInfo {
+    /// Every device Vulkan lists.
+    pub devices: Vec<GpuDevice>,
+    /// The device drawing: name, driver name and driver info.
+    pub drawing: Option<(String, String, String)>,
+    /// Vulkan's validation layer is on (`MORPHEUS_GPU_VALIDATION=1`).
+    pub validation: bool,
+}
+
+static GPU_INFO: std::sync::Mutex<Option<GpuInfo>> = std::sync::Mutex::new(None);
+
+pub(crate) fn update_gpu_info(change: impl FnOnce(&mut GpuInfo)) {
+    if let Ok(mut info) = GPU_INFO.lock() {
+        change(info.get_or_insert_with(GpuInfo::default));
+    }
+}
+
+/// Morpheus patch: what is known of the GPUs (None where the window system
+/// does not use Vulkan, or has not started).
+pub fn gpu_info() -> Option<GpuInfo> {
+    GPU_INFO.lock().ok()?.clone()
+}

@@ -14,6 +14,7 @@ mod call_ui;
 mod chat;
 mod chrome;
 mod composer;
+mod diagnostics;
 mod dialogs;
 mod e2e;
 mod emoji_picker;

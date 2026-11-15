@@ -62,6 +62,14 @@ impl BladeContext {
             info.driver_name,
             info.driver_info
         );
+        crate::update_gpu_info(|gpu_info| {
+            gpu_info.drawing = Some((
+                info.device_name.clone(),
+                info.driver_name.clone(),
+                info.driver_info.clone(),
+            ));
+            gpu_info.validation = std::env::var_os("MORPHEUS_GPU_VALIDATION").is_some_and(|v| v == "1");
+        });
         Ok(Self { gpu })
     }
 }
@@ -78,6 +86,9 @@ fn choose_device(wayland_display: Option<*mut std::ffi::c_void>) -> Option<u32> 
             return None;
         }
     };
+    crate::update_gpu_info(|info| {
+        info.devices = devices.iter().map(super::device_choice::Device::describe).collect();
+    });
     for device in &devices {
         log::info!(target: LOG, "GPU found: {device}");
     }

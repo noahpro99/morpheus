@@ -11,11 +11,25 @@ const NEW_ISSUE: &str = "https://github.com/noahpro99/morpheus/issues/new";
 /// than 8 KB, and the log grows several times over once escaped.
 const LOG_CHARS: usize = 2500;
 
+/// And at most this much of the diagnostics.
+const DIAGNOSTICS_CHARS: usize = 2200;
+
 /// The new-issue link, for `version` (the app's) with the log in `data_dir`.
 pub fn bug_report_url(version: &str, data_dir: &Path) -> String {
+    bug_report_url_with(version, data_dir, "")
+}
+
+/// Like [`bug_report_url`], with the app's diagnostics (text, cut to fit)
+/// ahead of the log in the Logs field.
+pub fn bug_report_url_with(version: &str, data_dir: &Path, diagnostics: &str) -> String {
     let logs = std::fs::read_to_string(data_dir.join("morpheus.log"))
         .map(|log| log_tail(&log, LOG_CHARS))
         .unwrap_or_default();
+    let logs = if diagnostics.is_empty() {
+        logs
+    } else {
+        format!("{}\n\nLog:\n{logs}", cut_lines(diagnostics, DIAGNOSTICS_CHARS))
+    };
     let mut url = url::Url::parse(NEW_ISSUE).unwrap_or_else(|_| unreachable!("a fixed url"));
     url.query_pairs_mut()
         .append_pair("template", "bug_report.yml")
@@ -23,6 +37,20 @@ pub fn bug_report_url(version: &str, data_dir: &Path) -> String {
         .append_pair("device", &device())
         .append_pair("logs", &logs);
     url.into()
+}
+
+/// The first whole lines of `text` that fit in `max` bytes.
+fn cut_lines(text: &str, max: usize) -> String {
+    let mut kept = String::new();
+    for line in text.trim_end().lines() {
+        if kept.len() + line.len() + 1 > max {
+            kept.push_str("(cut)");
+            break;
+        }
+        kept.push_str(line);
+        kept.push('\n');
+    }
+    kept.trim_end().to_owned()
 }
 
 /// The last whole lines of `log` that fit in `max` bytes.

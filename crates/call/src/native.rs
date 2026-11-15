@@ -423,6 +423,8 @@ impl Call {
         let deafened = Arc::new(Mutex::new(false));
         let (speech, speech_rx) = unbounded_channel();
         let me = room.local_participant().identity().to_string();
+        crate::diag::begin(&url);
+        tasks.push(tokio::spawn(watch_connection(room.clone(), mic.clone())));
         tasks.push(tokio::spawn(aggregate(speech_rx, tx.clone())));
         tasks.push(tokio::spawn(watch_mic(
             mic.clone(),
@@ -693,6 +695,7 @@ impl Call {
 
 impl Drop for Call {
     fn drop(&mut self) {
+        crate::diag::end();
         for task in &self.tasks {
             task.abort();
         }
@@ -809,20 +812,41 @@ async fn watch_encoder(
     use livekit::webrtc::stats::RtcStats;
     let mut last: Option<String> = None;
     while !stop.load(Ordering::Relaxed) {
-        tokio::time::sleep(Duration::from_secs(if last.is_some() { 5 } else { 1 })).await;
+        tokio::time::sleep(Duration::from_secs(if last.is_some() { 2 } else { 1 })).await;
         let Ok(stats) = track.get_stats().await else {
             continue;
         };
-        let Some(implementation) = stats.into_iter().find_map(|s| match s {
+        let loss = stats.iter().find_map(|s| match s {
+            RtcStats::RemoteInboundRtp(r) if r.stream.kind == "video" => {
+                Some(r.remote_inbound.fraction_lost * 100.0)
+            }
+            _ => None,
+        });
+        let Some(sent) = stats.into_iter().find_map(|s| match s {
             RtcStats::OutboundRtp(o)
                 if o.stream.kind == "video" && !o.outbound.encoder_implementation.is_empty() =>
             {
-                Some(o.outbound.encoder_implementation)
+                Some(o)
             }
             _ => None,
         }) else {
             continue;
         };
+        let implementation = sent.outbound.encoder_implementation.clone();
+        if !stop.load(Ordering::Relaxed) {
+            crate::diag::note_track(crate::TrackDiag {
+                label: kind.to_owned(),
+                direction: "sending",
+                backend: Some(crate::codec_backend(&implementation, true)),
+                implementation: implementation.clone(),
+                width: sent.outbound.frame_width,
+                height: sent.outbound.frame_height,
+                fps: sent.outbound.frames_per_second,
+                bitrate: Some(sent.outbound.target_bitrate).filter(|b| *b > 0.0),
+                loss_percent: loss,
+                jitter_ms: None,
+            });
+        }
         if last.as_ref() != Some(&implementation) {
             let encoder = crate::codec_backend(&implementation, true);
             info!(kind, encoder, %implementation, "video encoder");
@@ -832,17 +856,25 @@ async fn watch_encoder(
             last = Some(implementation);
         }
     }
+    crate::diag::forget_track(kind);
 }
 
 /// Log which decoder shows someone's video (NVDEC or software), from the
 /// receiver's stats, when it starts and whenever it changes.
 async fn watch_decoder(track: RemoteVideoTrack, who: String) {
+    let label = format!("{who}/{}", track.sid());
+    watch_decoder_inner(&track, &who, &label).await;
+    crate::diag::forget_track(&label);
+}
+
+async fn watch_decoder_inner(track: &RemoteVideoTrack, who: &str, label: &str) {
     use livekit::webrtc::stats::RtcStats;
     let started = std::time::Instant::now();
     let mut last: Option<String> = None;
     let mut frames = 0;
+    let mut bytes: Option<(u64, std::time::Instant)> = None;
     loop {
-        tokio::time::sleep(Duration::from_secs(if last.is_some() { 5 } else { 1 })).await;
+        tokio::time::sleep(Duration::from_secs(if last.is_some() { 2 } else { 1 })).await;
         let Ok(stats) = track.get_stats().await else {
             return;
         };
@@ -850,15 +882,37 @@ async fn watch_decoder(track: RemoteVideoTrack, who: String) {
             RtcStats::InboundRtp(i)
                 if i.stream.kind == "video" && !i.inbound.decoder_implementation.is_empty() =>
             {
-                Some((i.inbound.decoder_implementation, i.inbound.frames_decoded))
+                Some(i)
             }
             _ => None,
         });
         match decoding {
             // Stopped (unsubscribed or paused): nothing more to log.
-            Some((_, decoded)) if last.is_some() && decoded == frames => return,
-            Some((implementation, decoded)) => {
-                frames = decoded;
+            Some(i) if last.is_some() && i.inbound.frames_decoded == frames => return,
+            Some(i) => {
+                frames = i.inbound.frames_decoded;
+                let implementation = i.inbound.decoder_implementation.clone();
+                let now = std::time::Instant::now();
+                let bitrate = bytes.and_then(|(before, at)| {
+                    let secs = now.duration_since(at).as_secs_f64();
+                    (i.inbound.bytes_received >= before && secs > 0.0)
+                        .then(|| (i.inbound.bytes_received - before) as f64 * 8.0 / secs)
+                });
+                bytes = Some((i.inbound.bytes_received, now));
+                let received = i.received.packets_received as f64;
+                let lost = i.received.packets_lost.max(0) as f64;
+                crate::diag::note_track(crate::TrackDiag {
+                    label: label.to_owned(),
+                    direction: "receiving",
+                    backend: Some(crate::codec_backend(&implementation, false)),
+                    implementation: implementation.clone(),
+                    width: i.inbound.frame_width,
+                    height: i.inbound.frame_height,
+                    fps: i.inbound.frames_per_second,
+                    bitrate,
+                    loss_percent: (received + lost > 0.0).then(|| lost / (received + lost) * 100.0),
+                    jitter_ms: Some(i.received.jitter * 1000.0),
+                });
                 if last.as_ref() != Some(&implementation) {
                     let decoder = crate::codec_backend(&implementation, false);
                     info!(%who, track = %track.sid(), decoder, %implementation, "video decoder");
@@ -1931,5 +1985,58 @@ mod speech_tests {
         assert!(!gate.feed(0.5, ms(900)));
         assert!(!gate.feed(0.0, ms(910)));
         assert!(!gate.feed(0.5, ms(920)));
+    }
+}
+
+/// Measure the call's connection for the diagnostics (`crate::diag`): its
+/// state, and from the microphone track's sender stats the round trip, loss,
+/// jitter and what our voice is sent at.
+async fn watch_connection(room: Arc<Room>, mic: LocalAudioTrack) {
+    use livekit::webrtc::stats::RtcStats;
+    let mut last_sent: Option<(u64, std::time::Instant)> = None;
+    loop {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let state = format!("{:?}", room.connection_state()).to_lowercase();
+        crate::diag::update(|d| d.state = state);
+        let Ok(stats) = mic.get_stats().await else {
+            continue;
+        };
+        let mut rtt = None;
+        let (mut loss, mut jitter, mut sent) = (None, None, None);
+        for stat in stats {
+            match stat {
+                RtcStats::CandidatePair(pair) if pair.candidate_pair.current_round_trip_time > 0.0 => {
+                    rtt = Some(pair.candidate_pair.current_round_trip_time * 1000.0);
+                }
+                RtcStats::RemoteInboundRtp(r) if r.stream.kind == "audio" => {
+                    loss = Some(r.remote_inbound.fraction_lost * 100.0);
+                    jitter = Some(r.received.jitter * 1000.0);
+                    if rtt.is_none() && r.remote_inbound.round_trip_time > 0.0 {
+                        rtt = Some(r.remote_inbound.round_trip_time * 1000.0);
+                    }
+                }
+                RtcStats::OutboundRtp(o) if o.stream.kind == "audio" => {
+                    sent = Some(o.sent.bytes_sent);
+                }
+                _ => {}
+            }
+        }
+        let now = std::time::Instant::now();
+        let bitrate = match (sent, last_sent) {
+            (Some(bytes), Some((before, at))) if bytes >= before => {
+                let secs = now.duration_since(at).as_secs_f64();
+                (secs > 0.0).then(|| (bytes - before) as f64 * 8.0 / secs)
+            }
+            _ => None,
+        };
+        if let Some(bytes) = sent {
+            last_sent = Some((bytes, now));
+        }
+        crate::diag::update(|d| {
+            d.rtt_ms = rtt.or(d.rtt_ms);
+            d.loss_percent = loss.or(d.loss_percent);
+            d.jitter_ms = jitter.or(d.jitter_ms);
+            d.audio_bitrate = bitrate.or(d.audio_bitrate);
+        });
     }
 }

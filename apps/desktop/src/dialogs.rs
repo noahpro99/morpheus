@@ -720,13 +720,19 @@ pub fn render_dialog(
                 .child(actions(vec![
                     dialog_button("help-report-bug", "Report a bug", false)
                         .text_color(rgb(theme::text()))
-                        .on_click(|_, _, cx| {
-                            let url = morpheus_core::bug_report_url(
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            let inputs = crate::diagnostics::Inputs {
+                                session: this.session.as_ref(),
+                                encryption: None,
+                            };
+                            let report = crate::diagnostics::full(window, cx, &inputs);
+                            let url = morpheus_core::bug_report_url_with(
                                 env!("CARGO_PKG_VERSION"),
                                 &crate::data_dir(),
+                                &report.text_within(2200),
                             );
                             crate::shell::open_external(&url, cx);
-                        })
+                        }))
                         .e2e("a", "button secondary report-bug")
                         .text("Report a bug")
                         .into_any_element(),
