@@ -19,6 +19,7 @@ mod e2e;
 mod emoji_picker;
 mod friend_picker;
 mod friends;
+mod graphics;
 mod hotkeys;
 mod hover_underline;
 mod icons;
@@ -829,6 +830,8 @@ fn main() {
     init_logging();
     streamer::load(&data_dir());
     vim::load(&data_dir());
+    // The GPU is chosen when the window system starts (MORPHEUS_GPU overrides it).
+    graphics::load(&data_dir());
     let start_hidden = std::env::args().any(|arg| arg == view_model::settings::HIDDEN_FLAG);
     let core = match Core::new(data_dir()) {
         Ok(core) => core,

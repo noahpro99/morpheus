@@ -10,6 +10,15 @@ pub struct BladeContext {
 
 impl BladeContext {
     pub fn new() -> anyhow::Result<Self> {
+        Self::for_display(None)
+    }
+
+    /// Morpheus patch: on Linux, with the Wayland display (when there is
+    /// one) so the GPU chosen is one that presents to it; see
+    /// `device_choice`.
+    pub fn for_display(
+        #[allow(unused_variables)] wayland_display: Option<*mut std::ffi::c_void>,
+    ) -> anyhow::Result<Self> {
         let device_id_forced = match std::env::var("ZED_DEVICE_ID") {
             Ok(val) => parse_pci_id(&val)
                 .context("Failed to parse device ID from `ZED_DEVICE_ID` environment variable")
@@ -21,23 +30,61 @@ impl BladeContext {
                 None
             }
         };
-        let gpu = Arc::new(
-            unsafe {
-                gpu::Context::init(gpu::ContextDesc {
-                    presentation: true,
-                    // Morpheus patch (issue #76): MORPHEUS_GPU_VALIDATION=1 turns on
-                    // Vulkan's validation layer (in the dev shell) and blade's crash
-                    // markers, which name the last pass the GPU ran when it is lost.
-                    validation: std::env::var_os("MORPHEUS_GPU_VALIDATION")
-                        .is_some_and(|v| v == "1"),
-                    device_id: device_id_forced.unwrap_or(0),
-                    ..Default::default()
-                })
+        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+        let device_id_chosen = device_id_forced.or_else(|| choose_device(wayland_display));
+        #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
+        let device_id_chosen = device_id_forced;
+        let init = |device_id: u32| unsafe {
+            gpu::Context::init(gpu::ContextDesc {
+                presentation: true,
+                // Morpheus patch (issue #76): MORPHEUS_GPU_VALIDATION=1 turns on
+                // Vulkan's validation layer (in the dev shell) and blade's crash
+                // markers, which name the last pass the GPU ran when it is lost.
+                validation: std::env::var_os("MORPHEUS_GPU_VALIDATION").is_some_and(|v| v == "1"),
+                device_id,
+                ..Default::default()
+            })
+        };
+        let context = match (init(device_id_chosen.unwrap_or(0)), device_id_chosen) {
+            // Morpheus patch: the device picked would not start; Blade's own pick.
+            (Err(err), Some(id)) if device_id_forced.is_none() => {
+                log::warn!("GPU 0x{id:04x} could not be used ({err:?}); trying the others");
+                init(0)
             }
-            .map_err(|e| anyhow::anyhow!("{e:?}"))?,
+            (result, _) => result,
+        };
+        let gpu = Arc::new(context.map_err(|e| anyhow::anyhow!("{e:?}"))?);
+        let info = gpu.device_information();
+        log::info!(
+            target: "morpheus_gpu",
+            "GPU: drawing with {} (driver {}, {})",
+            info.device_name,
+            info.driver_name,
+            info.driver_info
         );
         Ok(Self { gpu })
     }
+}
+
+/// Morpheus patch: the PCI device id of the GPU to draw with (see
+/// `device_choice`), logged with the others Vulkan lists.
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+fn choose_device(wayland_display: Option<*mut std::ffi::c_void>) -> Option<u32> {
+    use super::device_choice::{LOG, choose, devices, wanted};
+    let devices = match devices(wayland_display) {
+        Ok(devices) => devices,
+        Err(err) => {
+            log::warn!(target: LOG, "GPU: could not list the Vulkan devices: {err}");
+            return None;
+        }
+    };
+    for device in &devices {
+        log::info!(target: LOG, "GPU found: {device}");
+    }
+    let wanted = wanted();
+    let chosen = choose(&devices, wanted)?;
+    log::info!(target: LOG, "GPU chosen ({wanted:?} wanted): {chosen}");
+    Some(chosen.device_id)
 }
 
 fn parse_pci_id(id: &str) -> anyhow::Result<u32> {

@@ -14,6 +14,7 @@ pub mod emoji;
 pub mod emoji_picker;
 pub mod format;
 pub mod friends;
+pub mod gpu;
 pub mod history;
 pub mod hotkeys;
 pub mod instance;

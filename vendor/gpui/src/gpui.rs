@@ -314,6 +314,12 @@ pub struct GpuSpecs {
     pub driver_info: String,
 }
 
+/// Morpheus patch: draw with the integrated GPU rather than a discrete one
+/// (Linux; read when the first window system starts). `MORPHEUS_GPU=integrated`
+/// or `discrete` overrides it, `ZED_DEVICE_ID` forces a device.
+pub static PREFER_INTEGRATED_GPU: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 /// Morpheus patch: when set, closing the last window does not stop the Linux
 /// event loop (both backends stop it there by default), so an app that lives
 /// on in a tray keeps its entities, tasks and calls, and opens a new window

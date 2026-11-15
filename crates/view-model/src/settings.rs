@@ -160,6 +160,12 @@ pub const SETTINGS_INDEX: &[SettingEntry] = &[
         "keyboard",
     ),
     entry(
+        "Use the dedicated graphics card",
+        "graphics gpu card nvidia intel discrete integrated dedicated vulkan",
+        SettingsPage::Appearance,
+        "graphics",
+    ),
+    entry(
         "Microphone and speaker",
         "voice video audio input output devices calls",
         SettingsPage::VoiceVideo,

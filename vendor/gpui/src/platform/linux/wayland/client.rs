@@ -500,7 +500,10 @@ impl WaylandClient {
             })
             .unwrap();
 
-        let gpu_context = BladeContext::new().expect("Unable to init GPU context");
+        // Morpheus patch: the GPU chosen must present to this display.
+        let gpu_context =
+            BladeContext::for_display(Some(conn.backend().display_ptr().cast::<std::ffi::c_void>()))
+                .expect("Unable to init GPU context");
 
         let seat = seat.unwrap();
         let globals = Globals::new(

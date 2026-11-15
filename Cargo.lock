@@ -4557,6 +4557,7 @@ version = "0.2.1"
 dependencies = [
  "anyhow",
  "as-raw-xcb-connection",
+ "ash",
  "ashpd 0.11.1",
  "async-task",
  "backtrace",
