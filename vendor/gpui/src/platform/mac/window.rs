@@ -1370,10 +1370,15 @@ impl PlatformWindow for MacWindow {
     }
 
     // Morpheus: dragging the window by an app-drawn title bar (a transparent
-    // system bar). Deferred like `zoom`, as AppKit's drag loop would call back
-    // into the app (window moved) while it handles this mouse-down; the
-    // mouse-down event is kept for it, and nothing happens if the button is
-    // already up (AppKit would otherwise wait for the next press).
+    // system bar). The window follows the mouse from the press until the
+    // button is let go, moved here rather than by the window server
+    // (performWindowDragWithEvent): from a press in the system bar's 28 px
+    // the window server's drag followed the mouse sideways but not down
+    // (#68, mac-check: +100,+1 for a +100,+60 drag, the mouse ending where
+    // it should), while from lower down it followed exactly; this way the
+    // whole bar drags alike. Deferred like `zoom`, as moving the window calls
+    // back into the app (window moved); nothing happens if the button is
+    // already up. The let-go is passed on, so the app sees the press end.
     fn start_window_move(&self) {
         let this = self.0.lock();
         let window = this.native_window;
@@ -1383,19 +1388,52 @@ impl PlatformWindow for MacWindow {
             if event.is_null() {
                 return;
             }
+            let style: NSUInteger = msg_send![window, styleMask];
+            if style & (1 << 14) != 0 {
+                return; // full screen
+            }
+            let at: NSPoint = msg_send![event, locationInWindow];
             // For scripts/mac-check.sh: whether a press on the bar reached it.
             if std::env::var_os("MORPHEUS_LOG_WINDOW_MOVE").is_some() {
-                let at: NSPoint = msg_send![event, locationInWindow];
                 eprintln!("morpheus-desktop: start_window_move at {},{}", at.x, at.y);
             }
-            let _: id = msg_send![event, retain];
+            // Where the press was on the screen, and the window then.
+            let frame: NSRect = msg_send![window, frame];
+            let (start_x, start_y) = (frame.origin.x + at.x, frame.origin.y + at.y);
+            let origin = frame.origin;
             this.executor
                 .spawn(async move {
                     let pressed: NSUInteger = msg_send![class!(NSEvent), pressedMouseButtons];
-                    if pressed & 1 != 0 {
-                        let _: () = msg_send![window, performWindowDragWithEvent: event];
+                    if pressed & 1 == 0 {
+                        return;
                     }
-                    let _: () = msg_send![event, release];
+                    // Left mouse dragged (6) and up (2).
+                    let mask: u64 = (1 << 6) | (1 << 2);
+                    let until: id = msg_send![class!(NSDate), distantFuture];
+                    let mode = ns_string("NSEventTrackingRunLoopMode");
+                    loop {
+                        let next: id = msg_send![app, nextEventMatchingMask: mask untilDate: until inMode: mode dequeue: YES];
+                        if next.is_null() {
+                            break;
+                        }
+                        let now: NSPoint = msg_send![class!(NSEvent), mouseLocation];
+                        let mut frame: NSRect = msg_send![window, frame];
+                        frame.origin = NSPoint::new(
+                            origin.x + now.x - start_x,
+                            origin.y + now.y - start_y,
+                        );
+                        // Kept below the menu bar, as the system's own drag does.
+                        let screen: id = msg_send![window, screen];
+                        if !screen.is_null() {
+                            frame = msg_send![window, constrainFrameRect: frame toScreen: screen];
+                        }
+                        let _: () = msg_send![window, setFrameOrigin: frame.origin];
+                        let kind: NSUInteger = msg_send![next, type];
+                        if kind == 2 {
+                            let _: () = msg_send![app, sendEvent: next];
+                            break;
+                        }
+                    }
                 })
                 .detach();
         }
