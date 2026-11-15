@@ -920,6 +920,16 @@ impl SettingsView {
         let Some(session) = self.session.clone() else {
             return;
         };
+        let managing = session.account_management_url();
+        cx.spawn(async move |this, cx| {
+            let url = managing.await.ok().flatten();
+            this.update(cx, |this, cx| {
+                this.manage_url = url;
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
         self.picked = None;
         self.profile_note = None;
         let profile = session.own_profile();

@@ -99,6 +99,21 @@ impl Session {
         })
     }
 
+    /// The page where the homeserver lets this account be managed (its OIDC
+    /// provider's account page), when it advertises one.
+    pub fn account_management_url(&self) -> CoreFuture<Option<String>> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            Ok(client
+                .oauth()
+                .server_metadata()
+                .await
+                .ok()
+                .and_then(|metadata| metadata.account_management_uri)
+                .map(|url| url.to_string()))
+        })
+    }
+
     /// Remove the signed-in user's avatar.
     pub fn remove_avatar(&self) -> CoreFuture<()> {
         let client = self.client.clone();

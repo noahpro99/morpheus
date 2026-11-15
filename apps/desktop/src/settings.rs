@@ -164,6 +164,8 @@ pub struct SettingsView {
     picked: Option<(std::path::PathBuf, std::sync::Arc<gpui::Image>)>,
     profile_note: Option<Result<String, String>>,
     profile_busy: bool,
+    /// Where the server lets the account be managed (its OIDC account page), if it says.
+    manage_url: Option<String>,
 }
 
 impl SettingsView {
@@ -248,6 +250,7 @@ impl SettingsView {
             picked: None,
             profile_note: None,
             profile_busy: false,
+            manage_url: None,
         }
     }
 
@@ -1000,7 +1003,7 @@ impl SettingsView {
         ]
     }
 
-    fn account_page(&self) -> Vec<gpui::AnyElement> {
+    fn account_page(&self, cx: &mut Context<Self>) -> Vec<gpui::AnyElement> {
         let user = self
             .session
             .as_ref()
@@ -1023,7 +1026,20 @@ impl SettingsView {
                 .unwrap_or_default();
             children.push(muted(&format!("This device: {}", crate::streamer::id(&device)), "muted").into_any_element());
         }
-        vec![section("Account", "account", children, self.hl("account")).into_any_element()]
+        if let Some(url) = self.manage_url.clone() {
+            children.push(
+                button("manage-account", "Manage account", Kind::Secondary, "")
+                    .child(icon("link", 16.0).text_color(rgb(theme::text())))
+                    .child("Manage account")
+                    .on_click(cx.listener(move |_, _, _, cx| crate::shell::open_external(&url, cx)))
+                    .e2e("button", "secondary manage-account")
+                    .text("Manage account")
+                    .into_any_element(),
+            );
+        }
+        let mut page = vec![section("Account", "account", children, self.hl("account")).into_any_element()];
+        page.extend(self.edit_profile_page(cx));
+        page
     }
 }
 
@@ -1190,8 +1206,7 @@ impl Render for SettingsView {
             .e2e("nav", "settings-nav");
 
         let body = match page {
-            SettingsPage::Account => self.account_page(),
-            SettingsPage::EditProfile => self.edit_profile_page(cx),
+            SettingsPage::Account => self.account_page(cx),
             SettingsPage::Security => self.security_page(cx),
             SettingsPage::Notifications => self.notifications_page(cx),
             SettingsPage::Appearance => self.appearance_page(cx),
