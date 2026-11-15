@@ -179,6 +179,9 @@ struct Shared {
     stop: AtomicBool,
     /// Open the devices again (another was chosen).
     reopen: AtomicBool,
+    /// Fade the microphone in again from the next frame ([`FadeIn`]): a
+    /// call started hearing it, or it was unmuted.
+    refade: AtomicBool,
     /// The cleaned microphone's level (an `f32`'s bits; full scale 1).
     level: AtomicU32,
     /// What is played back now goes somewhere.
@@ -415,6 +418,7 @@ pub(crate) fn attach_call(source: NativeAudioSource, mode: AudioMode) -> Option<
     if let Ok(mut call) = shared.call.lock() {
         *call = Some((id, source));
     }
+    shared.refade.store(true, Ordering::Relaxed);
     Some(id)
 }
 
@@ -458,6 +462,13 @@ pub fn mic_level() -> f32 {
 /// Whether the mic test is playing the microphone back now.
 pub fn mic_loopback() -> bool {
     shared().is_some_and(|s| s.testing.load(Ordering::Relaxed) && s.looping.load(Ordering::Relaxed))
+}
+
+/// The call hears the microphone again (unmuted): fade it in, no click.
+pub(crate) fn fade_in() {
+    if let Some(shared) = shared() {
+        shared.refade.store(true, Ordering::Relaxed);
+    }
 }
 
 /// The chosen devices changed: capture (and play back) on them.
@@ -528,11 +539,15 @@ fn capture(shared: &Shared, mode: AudioMode) {
     let mut output: Option<Output> = None;
     let mut tone = 0f32;
     let mut level = 0f32;
+    // From silence, at the start and after any break in the signal (#30).
+    let mut fade = FadeIn::new();
+    let mut last_frame = Instant::now();
     info!(live, "microphone capture started");
     while !shared.stop.load(Ordering::Relaxed) {
         if shared.reopen.swap(false, Ordering::Relaxed) {
             input = Input::open(mode, &counters);
             output = None;
+            fade.restart();
         }
         processor.set_mode(noise_suppression());
         if processor.needs_model() {
@@ -545,9 +560,21 @@ fn capture(shared: &Shared, mode: AudioMode) {
         counters
             .algorithmic
             .store(processor.delay() as u64, Ordering::Relaxed);
+        let stale = counters.stale.load(Ordering::Relaxed);
         let Some((mut frame, arrived)) = input.next() else {
             continue;
         };
+        // A backlog dropped, or nothing for long (the device stalled): the
+        // signal breaks off there, so it comes back from silence. Or a call
+        // started hearing it, or it was unmuted.
+        let refade = shared.refade.swap(false, Ordering::Relaxed);
+        if refade
+            || counters.stale.load(Ordering::Relaxed) != stale
+            || last_frame.elapsed() > BREAK
+        {
+            fade.restart();
+        }
+        last_frame = Instant::now();
         if live {
             let mut far = far_frame(shared);
             processor.far_end(&mut far);
@@ -562,6 +589,7 @@ fn capture(shared: &Shared, mode: AudioMode) {
                 }
             }
         }
+        fade.apply(&mut frame);
         let rms = (frame.iter().map(|s| f32::from(*s).powi(2)).sum::<f32>() / FRAME as f32).sqrt()
             / 32768.0;
         level = rms.max(level * 0.85);
@@ -779,6 +807,47 @@ impl Chunker {
     }
 }
 
+/// How long the microphone takes to come up to full level (30 ms).
+const FADE: usize = 30 * SAMPLE_RATE as usize / 1000;
+/// No frame for this long is a break in the signal (a stalled device), not
+/// a callback that came late: the microphone fades in again after it.
+const BREAK: Duration = Duration::from_millis(200);
+
+/// The microphone faded in, so the call hears no click: when the capture
+/// starts, when the call is attached, and after any gap or dropped backlog.
+struct FadeIn {
+    /// Samples of the ramp done.
+    done: usize,
+}
+
+impl FadeIn {
+    fn new() -> Self {
+        Self { done: 0 }
+    }
+
+    /// From silence again (the signal broke off, or a call starts hearing it).
+    fn restart(&mut self) {
+        self.done = 0;
+    }
+
+    /// `frame` (48 kHz mono), scaled by the ramp where it still runs: a
+    /// raised cosine, so neither its start nor its end is a corner.
+    fn apply(&mut self, frame: &mut [i16]) {
+        if self.done >= FADE {
+            return;
+        }
+        for s in frame.iter_mut() {
+            if self.done >= FADE {
+                break;
+            }
+            let x = self.done as f32 / FADE as f32;
+            let gain = 0.5 - 0.5 * (std::f32::consts::PI * x).cos();
+            *s = (f32::from(*s) * gain) as i16;
+            self.done += 1;
+        }
+    }
+}
+
 fn host() -> cpal::Host {
     // With PulseAudio (or PipeWire's) on Linux; WASAPI, CoreAudio elsewhere.
     cpal::default_host()
@@ -815,12 +884,40 @@ fn find<I: Iterator<Item = cpal::Device>>(
     default
 }
 
-/// A stream config at 48 kHz if the device has one, else its default.
+/// On macOS a stream opened at another rate or format than the device runs
+/// at sets the device's (cpal sets the hardware format): its clock changes
+/// for everyone using it, the call's own playout on a headset included,
+/// and that is heard as a click or a burst of noise when a call starts
+/// (#2, #30). There the device is used as it runs and resampled here.
+const KEEP_DEVICE_FORMAT: bool = cfg!(target_os = "macos");
+
+/// The stream config to open a device with ([`choose_config`]).
 fn config(
     ranges: Result<Vec<cpal::SupportedStreamConfigRange>, cpal::Error>,
     default: Result<cpal::SupportedStreamConfig, cpal::Error>,
 ) -> Result<cpal::SupportedStreamConfig, String> {
+    choose_config(ranges, default, KEEP_DEVICE_FORMAT)
+}
+
+/// The device's current format (`default`) when `keep_current` and it is
+/// one we can cut into 10 ms and read; else 48 kHz if the device has it,
+/// else its default.
+fn choose_config(
+    ranges: Result<Vec<cpal::SupportedStreamConfigRange>, cpal::Error>,
+    default: Result<cpal::SupportedStreamConfig, cpal::Error>,
+    keep_current: bool,
+) -> Result<cpal::SupportedStreamConfig, String> {
     use cpal::SampleFormat::{F32, I16};
+    let default = match default {
+        Ok(current)
+            if keep_current
+                && current.sample_rate() % 100 == 0
+                && matches!(current.sample_format(), F32 | I16) =>
+        {
+            return Ok(current);
+        }
+        other => other,
+    };
     let at_48k = ranges.ok().and_then(|ranges| {
         let mut usable: Vec<_> = ranges
             .into_iter()
@@ -1759,6 +1856,131 @@ mod flow {
         assert_eq!(small.drop_stale(), 0);
         small.push(&[1; FRAME]);
         assert_eq!(small.drop_stale(), 8 * FRAME);
+    }
+
+    /// CoreAudio calls back with 512 or 1024 samples (10.7 or 21.3 ms): a
+    /// capture thread late by a whole callback now and then (two arrive
+    /// together) drops nothing (#2's "taser" was a drop every callback).
+    #[test]
+    fn coreaudio_sized_callbacks_with_a_late_thread_drop_nothing() {
+        for size in [512usize, 1024] {
+            let mut chunker = Chunker::new(FRAME);
+            let mut dropped = 0;
+            for i in 0..500 {
+                chunker.push(&[1; 1024][..size]);
+                // Every fifth callback the thread was busy: the next one comes too.
+                if i % 5 == 0 {
+                    chunker.push(&[1; 1024][..size]);
+                }
+                dropped += chunker.drop_stale();
+                // It takes one chunk per pass, two passes per callback at most.
+                for _ in 0..3 {
+                    let _ = chunker.next();
+                }
+            }
+            assert_eq!(dropped, 0, "{size}-sample callbacks");
+        }
+    }
+
+    /// On macOS (`keep_current`) a device running at 44.1 kHz is opened at
+    /// 44.1 kHz and resampled here, not switched to 48 kHz under everyone
+    /// using it; elsewhere 48 kHz is asked for. A current format that will
+    /// not do (not whole 10 ms, not samples we read) still gets 48 kHz.
+    #[test]
+    fn macos_opens_a_device_at_the_rate_it_runs() {
+        use cpal::{SampleFormat, SupportedBufferSize, SupportedStreamConfig, SupportedStreamConfigRange};
+        let any = SupportedBufferSize::Range { min: 14, max: 4096 };
+        let ranges = || {
+            Ok(vec![
+                SupportedStreamConfigRange::new(2, 44_100, 48_000, any.clone(), SampleFormat::F32),
+                SupportedStreamConfigRange::new(1, 8_000, 96_000, any.clone(), SampleFormat::F32),
+            ])
+        };
+        let running = |rate, format| Ok(SupportedStreamConfig::new(2, rate, any.clone(), format));
+
+        let kept = choose_config(ranges(), running(44_100, SampleFormat::F32), true).expect("config");
+        assert_eq!((kept.sample_rate(), kept.channels()), (44_100, 2), "as it runs");
+        let asked = choose_config(ranges(), running(44_100, SampleFormat::F32), false).expect("config");
+        assert_eq!((asked.sample_rate(), asked.channels()), (48_000, 1), "48 kHz mono");
+        // 11.025 kHz is no whole 10 ms; 24-bit samples are not read here.
+        for unusable in [running(11_025, SampleFormat::F32), running(44_100, SampleFormat::I24)] {
+            let fallback = choose_config(ranges(), unusable, true).expect("config");
+            assert_eq!(fallback.sample_rate(), 48_000);
+        }
+    }
+
+    /// A full-scale tone, the microphone's frames as they come.
+    fn loud(frames: usize) -> Vec<Vec<i16>> {
+        (0..frames)
+            .map(|f| {
+                (0..FRAME)
+                    .map(|i| {
+                        let t = (f * FRAME + i) as f32 / SAMPLE_RATE as f32;
+                        ((t * 440.0 * std::f32::consts::TAU).sin() * 30_000.0) as i16
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
+    /// How far the signal ever jumps from one sample to the next, in `out`.
+    fn biggest_step(out: &[i16]) -> i32 {
+        out.windows(2)
+            .map(|w| (i32::from(w[1]) - i32::from(w[0])).abs())
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// The microphone comes up from silence over 30 ms, not at once (#30:
+    /// a click on joining): the first sample is silent, the level rises
+    /// steadily, and from then on the frames pass untouched.
+    #[test]
+    fn the_microphone_fades_in_when_it_starts() {
+        let mut fade = FadeIn::new();
+        let input = loud(6);
+        let mut out = Vec::new();
+        for frame in &input {
+            let mut frame = frame.clone();
+            fade.apply(&mut frame);
+            out.extend(frame);
+        }
+        let flat: Vec<i16> = input.concat();
+        assert_eq!(out[0], 0, "starts from silence");
+        // Within the ramp, never louder than the signal; in its first half,
+        // at most half as loud.
+        for (i, (o, s)) in out.iter().zip(&flat).enumerate().take(FADE) {
+            let s = i32::from(*s).abs();
+            let allowed = if i < FADE / 2 { s / 2 + 1 } else { s };
+            assert!(i32::from(*o).abs() <= allowed, "sample {i}: {o} of {s}");
+        }
+        assert_eq!(&out[FADE..], &flat[FADE..], "untouched once faded in");
+        // No step bigger than the tone's own steepest.
+        assert!(biggest_step(&out) <= biggest_step(&flat));
+    }
+
+    /// After a gap (no samples for a while, a backlog dropped, a call
+    /// attached) it fades in again rather than jumping back to full level.
+    #[test]
+    fn the_microphone_fades_in_again_after_a_gap() {
+        let mut fade = FadeIn::new();
+        for frame in loud(10) {
+            let mut frame = frame;
+            fade.apply(&mut frame);
+        }
+        fade.restart();
+        let mut frame = loud(1).remove(0);
+        // Mid-wave, at full level: the worst place to start again.
+        frame.rotate_left(FRAME / 4 + 27);
+        let before = frame.clone();
+        fade.apply(&mut frame);
+        assert_eq!(frame[0], 0, "starts again from silence");
+        assert!(
+            i32::from(frame[1]).abs() < i32::from(before[1]).abs() / 50 + 2,
+            "and rises: {} of {}",
+            frame[1],
+            before[1]
+        );
+        assert!(frame.iter().zip(&before).all(|(a, b)| a.abs() <= b.abs()));
     }
 
     /// The real microphone (and speaker, played silently) for 10 s, as the

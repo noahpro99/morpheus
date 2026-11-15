@@ -493,6 +493,9 @@ impl Call {
             self.mic.mute();
             let _ = self.speech.send(Speech::Muted(self.me.clone(), true));
         } else {
+            // Back from silence without a click (#30).
+            #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+            mic::fade_in();
             self.mic.unmute();
             let _ = self.speech.send(Speech::Muted(self.me.clone(), false));
         }
