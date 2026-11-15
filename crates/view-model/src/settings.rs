@@ -14,6 +14,7 @@ use super::keys::SettingsFocus;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsPage {
     Account,
+    EditProfile,
     Security,
     Notifications,
     Appearance,
@@ -24,8 +25,9 @@ pub enum SettingsPage {
 }
 
 impl SettingsPage {
-    pub const ALL: [SettingsPage; 8] = [
+    pub const ALL: [SettingsPage; 9] = [
         SettingsPage::Account,
+        SettingsPage::EditProfile,
         SettingsPage::Security,
         SettingsPage::Notifications,
         SettingsPage::Appearance,
@@ -38,6 +40,7 @@ impl SettingsPage {
     pub fn label(self) -> &'static str {
         match self {
             SettingsPage::Account => "My Account",
+            SettingsPage::EditProfile => "Edit Profile",
             SettingsPage::Security => "Security & Privacy",
             SettingsPage::Notifications => "Notifications",
             SettingsPage::Appearance => "Appearance",
@@ -51,6 +54,7 @@ impl SettingsPage {
     pub fn glyph(self) -> &'static str {
         match self {
             SettingsPage::Account => "user",
+            SettingsPage::EditProfile => "pencil",
             SettingsPage::Security => "shield",
             SettingsPage::Notifications => "bell",
             SettingsPage::Appearance => "palette",
@@ -458,6 +462,7 @@ mod tests {
             labels,
             [
                 "My Account",
+                "Edit Profile",
                 "Security & Privacy",
                 "Notifications",
                 "Appearance",
@@ -467,7 +472,7 @@ mod tests {
                 "Help & Feedback"
             ]
         );
-        assert_eq!(SettingsPage::listed(true).len(), 8);
+        assert_eq!(SettingsPage::listed(true).len(), 9);
         assert!(!SettingsPage::listed(false).contains(&SettingsPage::Startup));
     }
 

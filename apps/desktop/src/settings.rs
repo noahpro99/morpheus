@@ -65,6 +65,12 @@ pub struct DevicesChosen(pub crate::view_model::menu::DeviceKind);
 
 impl EventEmitter<DevicesChosen> for SettingsView {}
 
+/// The signed-in user's name or picture was changed on the Edit Profile page: the
+/// shell reads it again and redraws what shows it.
+pub struct OwnProfileChanged;
+
+impl EventEmitter<OwnProfileChanged> for SettingsView {}
+
 pub struct InputVolumeChanged(pub f32);
 
 impl EventEmitter<InputVolumeChanged> for SettingsView {}
@@ -152,6 +158,12 @@ pub struct SettingsView {
     preview_message: Option<String>,
     preview_starting: bool,
     preview_watch: u64,
+    /// The Edit Profile page: the name box, the picture picked (path and
+    /// preview) and not yet set, what the last call said, and a call running.
+    name_input: Entity<TextInput>,
+    picked: Option<(std::path::PathBuf, std::sync::Arc<gpui::Image>)>,
+    profile_note: Option<Result<String, String>>,
+    profile_busy: bool,
 }
 
 impl SettingsView {
@@ -173,6 +185,8 @@ impl SettingsView {
             }
         })
         .detach();
+        let name_input = cx.new(|cx| TextInput::new("displayname", "Display name", false, "", cx).framed());
+        cx.subscribe(&name_input, |this, _, _: &Submit, cx| this.save_name(cx)).detach();
         let data_dir = crate::data_dir();
         if let Some(session) = session.clone() {
             // Incoming requests from the user's other devices pop the window.
@@ -230,6 +244,10 @@ impl SettingsView {
             preview_message: None,
             preview_starting: false,
             preview_watch: 0,
+            name_input,
+            picked: None,
+            profile_note: None,
+            profile_busy: false,
         }
     }
 
@@ -256,6 +274,7 @@ impl SettingsView {
         self.autostart = read_autostart();
         self.startup_note = None;
         self.load_notify_defaults(cx);
+        self.load_own_name(cx);
         self.load_voice(cx);
         self.take_focus = true;
         self.focus_key = focus == SettingsFocus::RecoveryKey;
@@ -1172,6 +1191,7 @@ impl Render for SettingsView {
 
         let body = match page {
             SettingsPage::Account => self.account_page(),
+            SettingsPage::EditProfile => self.edit_profile_page(cx),
             SettingsPage::Security => self.security_page(cx),
             SettingsPage::Notifications => self.notifications_page(cx),
             SettingsPage::Appearance => self.appearance_page(cx),

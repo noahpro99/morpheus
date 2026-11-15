@@ -316,6 +316,8 @@ impl Shell {
             this.save_prefs(cx);
         })
         .detach();
+        cx.subscribe(&settings, |this, _, _: &crate::settings::OwnProfileChanged, cx| this.reload_own_profile(cx))
+            .detach();
         cx.subscribe(&settings, |this, _, _: &crate::settings::StreamerChanged, cx| this.streamer_changed(cx))
             .detach();
         cx.subscribe(&settings, |this, _, chosen: &DevicesChosen, cx| {

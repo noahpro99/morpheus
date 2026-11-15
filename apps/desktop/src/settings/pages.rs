@@ -899,3 +899,216 @@ impl SettingsView {
         section("Locked chats", "locked-chats", children, self.hl("locked-chats")).into_any_element()
     }
 }
+
+// ---- Edit Profile -----------------------------------------------------------------
+
+/// The picture in `bytes`, if it is a format GPUI draws.
+fn picture_from(bytes: Vec<u8>) -> Option<std::sync::Arc<gpui::Image>> {
+    let format = match image::guess_format(&bytes).ok()? {
+        image::ImageFormat::Png => gpui::ImageFormat::Png,
+        image::ImageFormat::Jpeg => gpui::ImageFormat::Jpeg,
+        image::ImageFormat::Gif => gpui::ImageFormat::Gif,
+        image::ImageFormat::WebP => gpui::ImageFormat::Webp,
+        _ => return None,
+    };
+    Some(std::sync::Arc::new(gpui::Image::from_bytes(format, bytes)))
+}
+
+impl SettingsView {
+    /// Puts the account's current display name in the name box.
+    pub(super) fn load_own_name(&mut self, cx: &mut Context<Self>) {
+        let Some(session) = self.session.clone() else {
+            return;
+        };
+        self.picked = None;
+        self.profile_note = None;
+        let profile = session.own_profile();
+        cx.spawn(async move |this, cx| {
+            if let Ok(profile) = profile.await {
+                this.update(cx, |this, cx| {
+                    let name = profile.name;
+                    this.name_input.update(cx, |input, cx| input.set_value(&name, cx));
+                })
+                .ok();
+            }
+        })
+        .detach();
+    }
+
+    /// Runs a profile call; its note says how it went and the shell reads the profile again.
+    fn run_profile(
+        &mut self,
+        call: morpheus_core::CoreFuture<()>,
+        done: &'static str,
+        cx: &mut Context<Self>,
+    ) {
+        if self.profile_busy {
+            return;
+        }
+        self.profile_busy = true;
+        self.profile_note = None;
+        cx.spawn(async move |this, cx| {
+            let result = call.await.map_err(|err| err.to_string());
+            this.update(cx, |this, cx| {
+                this.profile_busy = false;
+                match result {
+                    Ok(()) => {
+                        this.profile_note = Some(Ok(done.to_owned()));
+                        cx.emit(super::OwnProfileChanged);
+                    }
+                    Err(err) => this.profile_note = Some(Err(err)),
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+        cx.notify();
+    }
+
+    pub(super) fn save_name(&mut self, cx: &mut Context<Self>) {
+        let Some(session) = self.session.clone() else {
+            return;
+        };
+        let name = self.name_input.read(cx).value().to_owned();
+        let call = session.set_display_name(name);
+        self.run_profile(call, "Saved.", cx);
+    }
+
+    fn pick_picture(&mut self, cx: &mut Context<Self>) {
+        // Tests cannot drive the system's file dialog: they name the file.
+        #[cfg(feature = "e2e")]
+        if let Ok(path) = std::env::var("MORPHEUS_E2E_PICK") {
+            self.picture_picked(std::path::PathBuf::from(path), cx);
+            return;
+        }
+        let picking = cx.prompt_for_paths(gpui::PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: Some("Choose a picture".into()),
+        });
+        cx.spawn(async move |this, cx| {
+            let Ok(Ok(Some(paths))) = picking.await else {
+                return;
+            };
+            let Some(path) = paths.into_iter().next() else {
+                return;
+            };
+            this.update(cx, |this, cx| this.picture_picked(path, cx)).ok();
+        })
+        .detach();
+    }
+
+    /// Shows the picked file as a preview; nothing changes until "Set as avatar".
+    fn picture_picked(&mut self, path: std::path::PathBuf, cx: &mut Context<Self>) {
+        match std::fs::read(&path).ok().and_then(picture_from) {
+            Some(image) => {
+                self.picked = Some((path, image));
+                self.profile_note = None;
+            }
+            None => {
+                self.picked = None;
+                self.profile_note = Some(Err("That file is not a picture Morpheus can show.".to_owned()));
+            }
+        }
+        cx.notify();
+    }
+
+    fn set_picture(&mut self, cx: &mut Context<Self>) {
+        let (Some(session), Some((path, _))) = (self.session.clone(), self.picked.clone()) else {
+            return;
+        };
+        let call = session.set_avatar(path);
+        self.picked = None;
+        self.run_profile(call, "Picture updated.", cx);
+    }
+
+    fn remove_picture(&mut self, cx: &mut Context<Self>) {
+        let Some(session) = self.session.clone() else {
+            return;
+        };
+        self.picked = None;
+        let call = session.remove_avatar();
+        self.run_profile(call, "Picture removed.", cx);
+    }
+
+    pub(super) fn edit_profile_page(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let busy = self.profile_busy;
+        let name_box = div()
+            .flex()
+            .flex_col()
+            .gap(px(6.0))
+            .child(muted("Display name", "muted"))
+            .child(self.name_input.clone())
+            .into_any_element();
+        let save = button("save-name", "Save", Kind::Primary, "")
+            .when(busy, |d| d.opacity(0.6))
+            .child("Save")
+            .on_click(cx.listener(|this, _, _, cx| this.save_name(cx)))
+            .e2e("button", "primary")
+            .text("Save")
+            .into_any_element();
+        let note = self.profile_note.as_ref().map(|note| match note {
+            Ok(text) => super::note(text, "ok", theme::ok()).into_any_element(),
+            Err(text) => super::note(text, "error", theme::danger()).into_any_element(),
+        });
+        let preview = div()
+            .flex()
+            .items_center()
+            .gap(px(12.0))
+            .child(crate::media::avatar(
+                self.picked.as_ref().map(|(_, image)| image.clone()),
+                "?",
+                72.0,
+                None,
+            ))
+            .child(muted(
+                if self.picked.is_some() { "Preview" } else { "Pick a picture to preview it" },
+                "muted",
+            ))
+            .e2e("div", "profile-preview")
+            .into_any_element();
+        let pick = button("pick-picture", "Choose picture…", Kind::Secondary, "")
+            .child(icon("image", 16.0).text_color(rgb(theme::text())))
+            .child("Choose picture…")
+            .on_click(cx.listener(|this, _, _, cx| this.pick_picture(cx)))
+            .e2e("button", "secondary")
+            .text("Choose picture…");
+        let set = button("set-picture", "Set as avatar", Kind::Primary, "")
+            .when(busy || self.picked.is_none(), |d| d.opacity(0.5))
+            .child("Set as avatar")
+            .on_click(cx.listener(|this, _, _, cx| this.set_picture(cx)))
+            .e2e("button", "primary")
+            .text("Set as avatar");
+        let remove = button("remove-picture", "Remove picture", Kind::Danger, "")
+            .when(busy, |d| d.opacity(0.6))
+            .child("Remove picture")
+            .on_click(cx.listener(|this, _, _, cx| this.remove_picture(cx)))
+            .e2e("button", "danger")
+            .text("Remove picture");
+        vec![
+            section("Display name", "profile-name", vec![name_box, save], self.hl("profile-name"))
+                .into_any_element(),
+            section(
+                "Profile picture",
+                "profile-picture",
+                vec![
+                    preview,
+                    div()
+                        .flex()
+                        .gap(px(8.0))
+                        .child(pick)
+                        .child(set)
+                        .child(remove)
+                        .into_any_element(),
+                ],
+                self.hl("profile-picture"),
+            )
+            .into_any_element(),
+        ]
+        .into_iter()
+        .chain(note)
+        .collect()
+    }
+}
