@@ -9,6 +9,7 @@ pub mod about;
 pub mod avatar_color;
 pub mod calls;
 pub mod composer;
+pub mod crop;
 pub mod emoji;
 pub mod emoji_picker;
 pub mod format;

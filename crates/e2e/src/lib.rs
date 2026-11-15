@@ -3705,6 +3705,26 @@ pub fn profile_of(homeserver: &str, user: &str) -> Result<Value> {
     Ok(serde_json::from_str(&out)?)
 }
 
+/// The bytes of a user's current profile picture, downloaded from the homeserver.
+pub fn avatar_bytes_of(homeserver: &str, user: &str) -> Result<Vec<u8>> {
+    let profile = profile_of(homeserver, user)?;
+    let mxc = profile["avatar_url"]
+        .as_str()
+        .ok_or_else(|| anyhow!("{user} has no picture"))?;
+    let path = mxc
+        .strip_prefix("mxc://")
+        .ok_or_else(|| anyhow!("not an mxc uri: {mxc}"))?;
+    let token = user_token(homeserver, user)?;
+    let out = std::process::Command::new("curl")
+        .args(["-sf", "-H", &format!("Authorization: Bearer {token}")])
+        .arg(format!("{homeserver}/_matrix/client/v1/media/download/{path}"))
+        .output()?;
+    if !out.status.success() {
+        bail!("could not download {mxc}");
+    }
+    Ok(out.stdout)
+}
+
 /// Change a user's display name from outside the app, as another client would.
 pub fn set_display_name_as(homeserver: &str, user: &str, name: &str) -> Result<()> {
     let token = user_token(homeserver, user)?;

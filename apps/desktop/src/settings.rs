@@ -171,7 +171,7 @@ pub struct SettingsView {
     /// The Edit Profile page: the name box, the picture picked (path and
     /// preview) and not yet set, what the last call said, and a call running.
     name_input: Entity<TextInput>,
-    picked: Option<(std::path::PathBuf, std::sync::Arc<gpui::Image>)>,
+    picked: Option<pages::Picked>,
     profile_note: Option<Result<String, String>>,
     profile_busy: bool,
     /// Where the server lets the account be managed (its OIDC account page), if it says.
