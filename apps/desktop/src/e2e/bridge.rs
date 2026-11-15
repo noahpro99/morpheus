@@ -975,7 +975,13 @@ async fn act(op: &str, request: &Request, cx: &mut AsyncApp) -> Reply {
                 if let Some(handle) = &focus {
                     window.focus(handle);
                 }
+                let released = matches!(key.key.as_str(), "enter" | "space") && !key.modifiers.modified();
+                let up = key.clone();
                 window.dispatch_keystroke(key, cx);
+                // A focused button presses on the key coming up.
+                if released {
+                    window.dispatch_event(PlatformInput::KeyUp(gpui::KeyUpEvent { keystroke: up }), cx);
+                }
             })
             .map_err(|err| err.to_string())?;
         }

@@ -6,11 +6,12 @@
 use std::time::Duration;
 
 use gpui::{
-    Context, Entity, EventEmitter, FontWeight, IntoElement, MouseButton, Render, SharedString,
+    Context, Entity, EventEmitter, FontWeight, IntoElement, Render, SharedString,
     Window, div, prelude::*, px, rgb, svg,
 };
 use morpheus_core::{Core, LoginFlows, LoginRequest, Session};
 
+use crate::tab::Tabbable as _;
 use crate::e2e::E2eExt as _;
 use crate::input::{Changed, Submit, TextInput};
 use crate::theme;
@@ -217,6 +218,7 @@ fn button(label: impl Into<SharedString>, primary: bool, busy: bool) -> gpui::St
             theme::bg_input()
         }))
         .child(label)
+        .tabbable()
 }
 
 fn label(text: &str, field: Entity<TextInput>) -> impl IntoElement {
@@ -317,10 +319,7 @@ impl Render for Login {
             form = form.child(
                 button("Sign in", true, busy)
                     .mt(px(8.0))
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(|this, _, _, cx| this.submit(cx)),
-                    )
+                    .on_click(cx.listener(|this, _, _, cx| this.submit(cx)))
                     .e2e("button", "")
                     .attr("type", "submit")
                     .attr("disabled", busy.to_string())
@@ -330,10 +329,7 @@ impl Render for Login {
         if flows.sso {
             form = form.child(
                 button("Sign in with single sign-on", false, busy)
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(|this, _, _, cx| this.sso(cx)),
-                    )
+                    .on_click(cx.listener(|this, _, _, cx| this.sso(cx)))
                     .e2e("button", "secondary")
                     .attr("type", "button")
                     .text("Sign in with single sign-on"),
@@ -343,10 +339,7 @@ impl Render for Login {
             let text = format!("Back to {account}");
             form = form.child(
                 button(text.clone(), false, busy)
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(|this, _, _, cx| this.back(cx)),
-                    )
+                    .on_click(cx.listener(|this, _, _, cx| this.back(cx)))
                     .e2e("button", "secondary back-to-account")
                     .attr("type", "button")
                     .text(text),

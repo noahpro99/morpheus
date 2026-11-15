@@ -23,6 +23,7 @@ use morpheus_core::{
 pub(crate) mod pages;
 mod video;
 
+use crate::tab::Tabbable as _;
 use crate::{
     call_ui::VideoFrame,
     e2e::E2eExt as _,
@@ -546,6 +547,7 @@ fn button(id: impl Into<SharedString>, _label: &str, kind: Kind, _classes: &str)
         .cursor_pointer()
         .bg(bg)
         .text_color(fg)
+        .tabbable()
 }
 
 fn kind_class(kind: Kind) -> &'static str {

@@ -265,6 +265,12 @@ impl TextInput {
         }
     }
 
+    /// Tab stays with this box: the message composer (and its suggestions)
+    /// use it themselves and never pass the focus on.
+    fn keeps_tab(&self) -> bool {
+        self.capture_nav || (self.vim_capable && self.max_lines > 1)
+    }
+
     /// Whether Up, Down, Enter and Tab go to the owner (as [`Nav`]).
     pub fn set_capture_nav(&mut self, capture: bool) {
         self.capture_nav = capture;
@@ -938,7 +944,7 @@ impl Render for TextInput {
         let body = body.child(editor);
         let mut outer = div()
             .id(self.name)
-            .track_focus(&self.focus)
+            .track_focus(&self.focus.clone().tab_stop(!self.keeps_tab() && !self.disabled))
             .key_context(crate::mac_menu::TEXT_INPUT)
             .on_action({
                 let entity = entity.clone();
@@ -957,6 +963,10 @@ impl Render for TextInput {
                 move |_: &crate::mac_menu::SelectAll, _, cx| entity.update(cx, |input, cx| input.shortcut("a", cx))
             })
             .on_key_down(move |event, _, cx| {
+                // A Tab nobody takes goes up to the form, to move the focus.
+                if event.keystroke.key == "tab" && entity.read(cx).keeps_tab() {
+                    cx.stop_propagation();
+                }
                 entity.update(cx, |input, cx| input.key_down(event, cx));
             })
             .flex()
