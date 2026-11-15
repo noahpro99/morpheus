@@ -119,7 +119,6 @@ async fn your_own_new_name_and_picture_show_everywhere_at_once() {
     let member_before = srcs(&mut app, &format!("{MEMBER} img.avatar")).await;
 
     app.click(".settings-button").await.expect("gear");
-    app.click_text(".settings-nav button", "Edit Profile").await.expect("page");
     let name = format!("Alice {}", std::process::id());
     app.type_into(".settings-page input[name=displayname]", &name).await.expect("name");
     app.click_text(".settings-page button", "Save").await.expect("save");

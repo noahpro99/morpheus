@@ -1,4 +1,4 @@
-//! Settings' Edit Profile page: change the display name, pick a picture,
+//! Settings' My Account page: change the display name, pick a picture,
 //! preview it and set it, remove it; errors show on the page.
 
 #![allow(clippy::expect_used)]
@@ -17,9 +17,6 @@ const PICTURE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/fixtures/dusk.png");
 async fn open_edit_profile(app: &mut App) {
     app.click(".settings-button").await.expect("gear button");
     app.wait_for(".settings", DEFAULT_WAIT).await.expect("settings");
-    app.click_text(".settings-nav button", "Edit Profile")
-        .await
-        .expect("Edit Profile in the page list");
     app.wait_for(".settings-page input[name=displayname]", DEFAULT_WAIT)
         .await
         .expect("the page's name box");
@@ -114,4 +111,22 @@ async fn wait_src_not(app: &mut App, src: &str) {
         assert!(started.elapsed() < DEFAULT_WAIT, "the account still shows the old picture");
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
+}
+
+#[tokio::test]
+async fn manage_account_is_hidden_when_the_server_has_no_account_page() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch(&hs).await.expect("launch app");
+    login(&mut app, "carol", "carol-password").await;
+    open_edit_profile(&mut app).await;
+    // Let the lookup finish before looking for the button.
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    assert_eq!(
+        app.count(".settings-page .manage-account").await.expect("count"),
+        0,
+        "the local homeserver has no account management page, so no button"
+    );
 }
