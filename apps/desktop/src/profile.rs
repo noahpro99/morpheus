@@ -72,6 +72,8 @@ pub struct ProfileCard {
     /// As seen where it was opened from, until the profile arrives.
     seen: Option<(String, Option<MediaRef>)>,
     role: Option<MemberRole>,
+    /// Whether the role (and the rest fetched with it) has arrived.
+    loaded: bool,
     blocked: bool,
     mutual: Vec<OwnedRoomId>,
     /// Joined servers, for the names of the ones you share.
@@ -137,6 +139,7 @@ impl ProfileCard {
             report_note: None,
             report_busy: false,
             role: None,
+            loaded: false,
             blocked: false,
             mutual: Vec::new(),
             servers,
@@ -157,6 +160,12 @@ impl ProfileCard {
             let blocked = session.is_blocked(user.clone());
             let role = open_in.map(|room| session.member_role(room, user.clone()));
             cx.spawn(async move |this, cx| {
+                // Test builds can hold the fetch back, to look at the first frames.
+                if std::env::var_os("MORPHEUS_E2E_PORT").is_some()
+                    && let Some(ms) = std::env::var("MORPHEUS_E2E_CARD_DELAY_MS").ok().and_then(|v| v.parse().ok())
+                {
+                    cx.background_executor().timer(std::time::Duration::from_millis(ms)).await;
+                }
                 let profile = profile.await.ok();
                 let mutual = mutual.await.unwrap_or_default();
                 let stored = note.await.unwrap_or_default();
@@ -170,6 +179,7 @@ impl ProfileCard {
                     this.mutual = mutual;
                     this.blocked = blocked;
                     this.role = role;
+                    this.loaded = true;
                     // A late fetch must not put the old note over what was typed.
                     if !this.note_dirty {
                         this.note.update(cx, |input, cx| input.set_value(&stored, cx));
@@ -519,7 +529,10 @@ impl Render for ProfileCard {
         if let Some(status) = self.profile.as_ref().and_then(|p| p.status.clone()) {
             body = body.child(div().child(status.clone()).e2e("p", "profile-status").text(status));
         }
-        let mut tags = div().flex().flex_wrap().gap(px(6.0));
+        // The row is always as tall as a tag, so the role arriving late (or
+        // never) moves nothing; a pill-shaped skeleton holds its place.
+        let tag_h = 0.7 * theme::REM * theme::LINE_HEIGHT + 2.0;
+        let mut tags = div().flex().flex_wrap().gap(px(6.0)).min_h(px(tag_h));
         if self.own {
             tags = tags.child(tag("This is you", false));
         }
@@ -528,6 +541,15 @@ impl Render for ProfileCard {
         }
         if let Some(role) = self.role {
             tags = tags.child(tag(role_tag(role), false));
+        } else if self.in_room && !self.loaded {
+            tags = tags.child(
+                div()
+                    .w(px(48.0))
+                    .h(px(tag_h))
+                    .rounded(px(10.0))
+                    .bg(rgba(theme::bg_elevated() << 8 | 0xff))
+                    .e2e("span", "tag skeleton"),
+            );
         }
         body = body.child(tags.e2e("div", "card-tags"));
         if !self.own {
