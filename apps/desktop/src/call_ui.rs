@@ -483,6 +483,83 @@ fn ghost_button(
     }
 }
 
+/// Where the voice panel would be, after a join that did not come off: why,
+/// a button to try again and one to put it away.
+pub fn join_error(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElement> {
+    if shell.calls.state.is_some() {
+        return None;
+    }
+    let failed = shell.calls.join_error.clone()?;
+    let (room_id, room_name) = (failed.room_id.clone(), failed.room_name.clone());
+    let text = div()
+        .flex_1()
+        .min_w_0()
+        .flex()
+        .flex_col()
+        .child(
+            div()
+                .text_size(px(0.85 * theme::REM))
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(rgb(theme::danger()))
+                .child("Could not join")
+                .e2e("span", "voice-state failed")
+                .text("Could not join"),
+        )
+        .child(
+            div()
+                .text_size(px(0.8 * theme::REM))
+                .text_color(rgb(theme::text_muted()))
+                .child(failed.message.clone())
+                .e2e("span", "call-join-error-text")
+                .text(failed.message.clone()),
+        );
+    let panel = div()
+        .flex_none()
+        .flex()
+        .items_center()
+        .gap(px(8.0))
+        .pt(px(10.0))
+        .pb(px(10.0))
+        .pl(px(12.0))
+        .pr(px(6.0))
+        .border_b_1()
+        .border_color(rgba(theme::bg_hover()))
+        .child(text)
+        .child(ghost_button(
+            "call-retry-join",
+            "ghost retry-join".into(),
+            "Try again",
+            "refresh-cw",
+            false,
+            false,
+            true,
+            cx.listener(move |this, _, _, cx| {
+                this.join_call(room_id.clone(), room_name.clone(), cx)
+            }),
+            None,
+        ))
+        .child(ghost_button(
+            "call-dismiss-join-error",
+            "ghost dismiss-join-error".into(),
+            "Dismiss",
+            "x",
+            false,
+            false,
+            true,
+            cx.listener(|this, _, _, cx| {
+                this.calls.join_error = None;
+                cx.notify();
+            }),
+            None,
+        ));
+    Some(
+        panel
+            .e2e("div", "call-join-error")
+            .attr("data-room", failed.room_id.to_string())
+            .into_any_element(),
+    )
+}
+
 /// At the top of the profile card while in a call: which call, and hang up.
 pub fn voice_panel(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElement> {
     let call = shell.calls.state.as_ref()?;

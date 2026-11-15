@@ -1283,6 +1283,32 @@ fn renamed(jwt: &str, identity: &str) -> String {
 /// device), and lets nobody set their own LiveKit attributes: the dev
 /// service in front, each token renamed. Returns its URL.
 async fn renaming_token_service() -> String {
+    token_service(true, Outage::default()).await
+}
+
+/// A token service that is down (answers nginx's 503 page, as matrix.org's
+/// did in #2) while `down` is set, and then for the next `fail_next`
+/// requests; otherwise the dev service, unchanged.
+#[derive(Clone, Default)]
+struct Outage {
+    down: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    fail_next: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl Outage {
+    fn failing(&self) -> bool {
+        use std::sync::atomic::Ordering::SeqCst;
+        self.down.load(SeqCst)
+            || self
+                .fail_next
+                .fetch_update(SeqCst, SeqCst, |n| n.checked_sub(1))
+                .is_ok()
+    }
+}
+
+/// The dev token service behind a proxy: each token renamed (`rename`, see
+/// [`renaming_token_service`]), and failing as `outage` says.
+async fn token_service(rename: bool, outage: Outage) -> String {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
@@ -1293,6 +1319,7 @@ async fn renaming_token_service() -> String {
         while let Ok((mut client, _)) = listener.accept().await {
             served += 1;
             let identity = format!("renamed-{served}-{}", std::process::id());
+            let outage = outage.clone();
             tokio::spawn(async move {
                 // One request: headers, then the body its length says.
                 let mut request = Vec::new();
@@ -1327,6 +1354,15 @@ async fn renaming_token_service() -> String {
                 let head = String::from_utf8_lossy(&request[..head_end]).to_string();
                 let path = head.split_whitespace().nth(1).unwrap_or("/").to_owned();
                 let body = String::from_utf8_lossy(&request[head_end..]).to_string();
+                if outage.failing() {
+                    let page = "<html>\r\n<head><title>503 Service Temporarily Unavailable</title></head>\r\n<body>\r\n<center><h1>503 Service Temporarily Unavailable</h1></center>\r\n<hr><center>nginx</center>\r\n</body>\r\n</html>\r\n";
+                    let response = format!(
+                        "HTTP/1.1 503 Service Temporarily Unavailable\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{page}",
+                        page.len()
+                    );
+                    let _ = client.write_all(response.as_bytes()).await;
+                    return;
+                }
                 let answer = tokio::process::Command::new("curl")
                     .args([
                         "-s",
@@ -1345,7 +1381,7 @@ async fn renaming_token_service() -> String {
                     .unwrap_or_default();
                 let (text, status) = answer.rsplit_once('\n').unwrap_or(("", "502"));
                 let text = match serde_json::from_str::<serde_json::Value>(text) {
-                    Ok(mut answer) if answer["jwt"].is_string() => {
+                    Ok(mut answer) if rename && answer["jwt"].is_string() => {
                         let jwt = answer["jwt"].as_str().unwrap_or_default().to_owned();
                         answer["jwt"] = serde_json::json!(renamed(&jwt, &identity));
                         answer.to_string()
@@ -1419,6 +1455,68 @@ async fn encrypted_calls_work_whatever_the_token_service_names_people() {
         .click(".voice-panel .hang-up")
         .await
         .expect("alice hangs up");
+    out_of_call(&mut alice).await;
+}
+
+/// The call service being down (matrix.org's answered nginx's 503 page in
+/// #2) does not fail a join silently or with that page in a toast: a short
+/// outage is ridden out (the join tries again), and a long one ends in a
+/// plain error by the voice panel's place, with a button to try again, that
+/// joins once the service is back.
+#[tokio::test]
+async fn a_call_service_outage_is_retried_then_shown_with_a_retry_button() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let outage = Outage::default();
+    // Down from the start: nothing is fetched ahead of the join either.
+    outage.down.store(true, std::sync::atomic::Ordering::SeqCst);
+    let service = token_service(false, outage.clone()).await;
+    let env = [("MORPHEUS_LIVEKIT_SERVICE", service.as_str())];
+    let mut alice = App::launch_with_env(&hs, &env).await.expect("launch alice");
+    login_and_open(&mut alice, "alice", "hangout").await;
+
+    // A long outage: a clear error with a way to try again, not "Connecting…" forever.
+    alice.click(CALL_BUTTON).await.expect("join");
+    alice
+        .wait_for(".call-join-error", DEFAULT_WAIT)
+        .await
+        .expect("the failed join is shown");
+    let shown = alice
+        .texts(".call-join-error .call-join-error-text")
+        .await
+        .expect("error text")
+        .join(" ");
+    assert!(
+        shown.contains("call service") && !shown.contains('<'),
+        "a plain message, not the service's page: {shown:?}"
+    );
+    alice
+        .wait_for_count(".voice-panel", 0, DEFAULT_WAIT)
+        .await
+        .expect("not left connecting");
+
+    // The service comes back after a blip: trying again rides that out too.
+    outage.fail_next.store(2, std::sync::atomic::Ordering::SeqCst);
+    outage.down.store(false, std::sync::atomic::Ordering::SeqCst);
+    alice
+        .click(".call-join-error .retry-join")
+        .await
+        .expect("try again");
+    alice
+        .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("joined once the service answered");
+    assert_eq!(
+        alice.count(".call-join-error").await.expect("count"),
+        0,
+        "the error is gone once joined"
+    );
+    alice
+        .click(".voice-panel .hang-up")
+        .await
+        .expect("hang up");
     out_of_call(&mut alice).await;
 }
 
