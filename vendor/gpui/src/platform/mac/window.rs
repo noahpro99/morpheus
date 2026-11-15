@@ -245,6 +245,14 @@ unsafe fn build_classes() {
                     accepts_first_mouse as extern "C" fn(&Object, Sel, id) -> BOOL,
                 );
 
+                // Morpheus (as upstream Zed): who drags the window from the
+                // system title bar's height (#68).
+                decl.add_method(
+                    sel!(_opaqueRectForWindowMoveWhenInTitlebar),
+                    opaque_rect_for_window_move_when_in_titlebar
+                        as extern "C" fn(&Object, Sel) -> NSRect,
+                );
+
                 decl.add_method(
                     sel!(characterIndexForPoint:),
                     character_index_for_point as extern "C" fn(&Object, Sel, NSPoint) -> u64,
@@ -406,6 +414,11 @@ struct MacWindowState {
     synthetic_drag_counter: usize,
     traffic_light_position: Option<Point<Pixels>>,
     transparent_titlebar: bool,
+    // Morpheus (#68): the app draws the title bar under a transparent system
+    // one and drags the window itself (`start_window_move`) from the whole
+    // bar; AppKit is told the view owns the system bar's height, so it does
+    // not move the window from there its own way.
+    app_owns_titlebar_drag: bool,
     previous_modifiers_changed_event: Option<PlatformInput>,
     keystroke_for_do_command: Option<Keystroke>,
     do_command_handled: Option<bool>,
@@ -713,6 +726,9 @@ impl MacWindow {
                 transparent_titlebar: titlebar
                     .as_ref()
                     .is_none_or(|titlebar| titlebar.appears_transparent),
+                app_owns_titlebar_drag: titlebar
+                    .as_ref()
+                    .is_some_and(|titlebar| titlebar.appears_transparent),
                 previous_modifiers_changed_event: None,
                 keystroke_for_do_command: None,
                 do_command_handled: None,
@@ -1366,6 +1382,11 @@ impl PlatformWindow for MacWindow {
             let event: id = msg_send![app, currentEvent];
             if event.is_null() {
                 return;
+            }
+            // For scripts/mac-check.sh: whether a press on the bar reached it.
+            if std::env::var_os("MORPHEUS_LOG_WINDOW_MOVE").is_some() {
+                let at: NSPoint = msg_send![event, locationInWindow];
+                eprintln!("morpheus-desktop: start_window_move at {},{}", at.x, at.y);
             }
             let _: id = msg_send![event, retain];
             this.executor
@@ -2361,6 +2382,21 @@ extern "C" fn view_did_change_effective_appearance(this: &Object, _: Sel) {
             callback();
             state.lock().appearance_changed_callback = Some(callback);
         }
+    }
+}
+
+// Morpheus (#68, as upstream Zed): which part of the view AppKit treats as
+// the app's own content in the system title bar's height rather than a place
+// to move the window from. The app's bar drags the window itself through
+// `start_window_move`; left to AppKit, a press in the top 28 px moved the
+// window its own way (mac-check: following the mouse sideways, not down).
+extern "C" fn opaque_rect_for_window_move_when_in_titlebar(this: &Object, _: Sel) -> NSRect {
+    let window_state = unsafe { get_window_state(this) };
+    let owns = window_state.as_ref().lock().app_owns_titlebar_drag;
+    if owns {
+        unsafe { msg_send![this, bounds] }
+    } else {
+        NSRect::new(NSPoint::new(0., 0.), NSSize::new(0., 0.))
     }
 }
 
