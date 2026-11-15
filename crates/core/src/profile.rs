@@ -99,6 +99,15 @@ impl Session {
         })
     }
 
+    /// Remove the signed-in user's avatar.
+    pub fn remove_avatar(&self) -> CoreFuture<()> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            client.account().set_avatar_url(None).await?;
+            Ok(())
+        })
+    }
+
     /// Set (or clear, with `None`) the presence status message other users
     /// see next to this account. Presence is set to online alongside it.
     pub fn set_status(&self, status: Option<String>) -> CoreFuture<()> {

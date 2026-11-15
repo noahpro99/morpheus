@@ -3572,3 +3572,82 @@ async fn fit_window(pid: u32, (width, height): (u32, u32)) {
         sleep(Duration::from_millis(100)).await;
     }
 }
+
+/// A fresh access token for a test user (password `<user>-password`).
+fn user_token(homeserver: &str, user: &str) -> Result<String> {
+    let login = curl(&[
+        "-X",
+        "POST",
+        &format!("{homeserver}/_matrix/client/v3/login"),
+        "-d",
+        &json!({ "type": "m.login.password", "identifier": { "type": "m.id.user", "user": user }, "password": format!("{user}-password") }).to_string(),
+    ])?;
+    let login: Value = serde_json::from_str(&login)?;
+    Ok(login["access_token"]
+        .as_str()
+        .ok_or_else(|| anyhow!("no token for {user}"))?
+        .to_owned())
+}
+
+/// A user's global profile, from the homeserver: `displayname` and `avatar_url`.
+pub fn profile_of(homeserver: &str, user: &str) -> Result<Value> {
+    let out = curl(&[&format!("{homeserver}/_matrix/client/v3/profile/%40{user}%3Alocalhost")])?;
+    Ok(serde_json::from_str(&out)?)
+}
+
+/// Change a user's display name from outside the app, as another client would.
+pub fn set_display_name_as(homeserver: &str, user: &str, name: &str) -> Result<()> {
+    let token = user_token(homeserver, user)?;
+    curl(&[
+        "-X",
+        "PUT",
+        "-H",
+        &format!("Authorization: Bearer {token}"),
+        &format!("{homeserver}/_matrix/client/v3/profile/%40{user}%3Alocalhost/displayname"),
+        "-d",
+        &json!({ "displayname": name }).to_string(),
+    ])?;
+    Ok(())
+}
+
+/// Puts a test user's name and picture back when dropped (also when the
+/// test fails), so a test that changes them leaves the seed as it was.
+pub struct ProfileGuard {
+    homeserver: String,
+    user: String,
+    original: Value,
+}
+
+impl ProfileGuard {
+    pub fn new(homeserver: &str, user: &str) -> Result<Self> {
+        Ok(Self {
+            homeserver: homeserver.to_owned(),
+            user: user.to_owned(),
+            original: profile_of(homeserver, user)?,
+        })
+    }
+}
+
+impl Drop for ProfileGuard {
+    fn drop(&mut self) {
+        let Ok(token) = user_token(&self.homeserver, &self.user) else {
+            return;
+        };
+        let put = |field: &str, value: Value| {
+            let _ = curl(&[
+                "-X",
+                "PUT",
+                "-H",
+                &format!("Authorization: Bearer {token}"),
+                &format!(
+                    "{}/_matrix/client/v3/profile/%40{}%3Alocalhost/{field}",
+                    self.homeserver, self.user
+                ),
+                "-d",
+                &json!({ field: value }).to_string(),
+            ]);
+        };
+        put("displayname", self.original["displayname"].clone());
+        put("avatar_url", self.original["avatar_url"].as_str().map_or(json!(""), |s| json!(s)));
+    }
+}
