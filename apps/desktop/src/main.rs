@@ -83,7 +83,7 @@ static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use gpui::{
     App, Application, AssetSource, Bounds, Context, Entity, IntoElement, Render, SharedString,
-    TitlebarOptions, Window, WindowBounds, WindowOptions, div, prelude::*, px, rgb, size, svg,
+    Window, WindowBounds, WindowOptions, div, prelude::*, px, rgb, size, svg,
 };
 use morpheus_core::Core;
 use std::sync::{
@@ -342,7 +342,7 @@ impl Render for Root {
         e2e::frame(
             match &self.screen {
                 // The logo, no name.
-                Screen::Splash => base.child(chrome::window_bar()).child(
+                Screen::Splash => base.child(chrome::window_bar(window)).child(
                     div()
                         .flex_1()
                         .flex()
@@ -358,7 +358,7 @@ impl Render for Root {
                         .e2e("div", "splash"),
                 ),
                 Screen::Login(login) => base
-                    .child(chrome::window_bar())
+                    .child(chrome::window_bar(window))
                     .child(div().flex_1().min_h_0().child(login.clone())),
                 Screen::Rooms(rooms) => base.child(div().flex_1().min_h_0().child(rooms.clone())),
             }
@@ -483,12 +483,14 @@ fn window_options(cx: &App) -> WindowOptions {
     let bounds = Bounds::centered(None, window_size(), cx);
     WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(bounds)),
-        titlebar: Some(TitlebarOptions {
-            title: Some(SharedString::from(TITLE)),
-            ..Default::default()
-        }),
+        // macOS: the system bar transparent, its traffic lights on ours.
+        titlebar: Some(
+            chrome::Layout::for_os(chrome::Os::current(), false)
+                .titlebar_options(SharedString::from(TITLE)),
+        ),
         app_id: Some("morpheus-desktop".into()),
-        // The app draws its own bar, buttons and resize edges.
+        // The app draws its own bar, buttons and resize edges (Linux and
+        // Windows; macOS ignores this).
         window_decorations: Some(gpui::WindowDecorations::Client),
         ..Default::default()
     }
@@ -504,8 +506,26 @@ fn open_main_window(cx: &mut App) {
         window.set_window_title(TITLE);
         root
     });
-    if let Err(e) = &opened {
-        eprintln!("morpheus-desktop: opening the window failed: {e}");
+    match &opened {
+        Err(e) => eprintln!("morpheus-desktop: opening the window failed: {e}"),
+        // For scripts/mac-check.sh: whose buttons are on the bar, where the
+        // bar's content starts, and whether the content reaches the window's
+        // top (a transparent system bar) or sits under a system bar.
+        Ok(handle) => {
+            let _ = handle.update(cx, |_, window, _| {
+                let layout = chrome::Layout::current(window);
+                let (frame, content) = (window.bounds().size, window.viewport_size());
+                eprintln!(
+                    "morpheus-desktop: window chrome: buttons {}, inset {}, frame {}x{}, content {}x{}",
+                    layout.buttons(),
+                    layout.left_padding,
+                    f32::from(frame.width),
+                    f32::from(frame.height),
+                    f32::from(content.width),
+                    f32::from(content.height),
+                );
+            });
+        }
     }
     // macOS: a program started from a shell (not Finder) is not made the
     // active app by the system; a window of an inactive app takes no keys.

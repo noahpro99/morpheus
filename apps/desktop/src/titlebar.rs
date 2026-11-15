@@ -100,7 +100,8 @@ fn streamer_button(shell: &Shell, cx: &mut Context<Shell>) -> Option<impl IntoEl
     )
 }
 
-pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
+pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> impl IntoElement {
+    let layout = chrome::Layout::current(window);
     let unread = unread_count(&crate::locks::unlocked(&shell.rooms));
     let title = header_title(&shell.rooms, &shell.scope);
     let colour_of = |id: &'static str| {
@@ -171,7 +172,8 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             .flex_none()
             .flex()
             .items_center()
-            .px(px(8.0))
+            .pl(px(layout.left_padding))
+            .pr(px(chrome::BAR_PADDING))
             .bg(rgb(theme::bg_rail()))
             .text_size(px(0.8 * theme::REM))
             .text_color(rgb(theme::text_muted()))
@@ -241,11 +243,13 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                             .attr("data-color", colour_of("help-button"))
                             .attr("data-bg", ""),
                     )
-                    .child(chrome::window_controls())
+                    .child(chrome::window_controls(window))
                     .e2e("div", "titlebar-actions"),
             ),
     )
     .e2e("header", "titlebar")
+    .attr("data-window-buttons", layout.buttons())
+    .attr("data-inset", layout.left_padding.to_string())
 }
 
 #[cfg(all(test, feature = "e2e"))]

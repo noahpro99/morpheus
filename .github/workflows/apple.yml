@@ -92,7 +92,8 @@ jobs:
           kill "$pid"
           echo "Morpheus is running after 20s"; tail -5 smoke/log.txt
 
-      # As a Mac user expects it: its icon, an Edit menu that pastes, ⌘W
+      # As a Mac user expects it: its icon, an Edit menu that pastes, one
+      # title bar with the traffic lights that drags the window, ⌘W
       # closing the window, and the Dock bringing it back.
       - name: Behaves as a Mac app
         if: matrix.arch == 'arm64'
