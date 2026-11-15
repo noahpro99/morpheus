@@ -5,6 +5,7 @@
 #
 #   scripts/package-macos.sh aarch64-apple-darwin arm64
 #   scripts/package-macos.sh x86_64-apple-darwin x86_64
+# Also writes the same name as .dmg (for people and brew cask; the updater uses the zip).
 # Prints the zip's path. Used by CI (apple.yml); needs macOS (sips, iconutil, codesign).
 set -euo pipefail
 # Info-ZIP reads options from $ZIP and $ZIPOPT.
@@ -72,4 +73,53 @@ codesign --verify --deep "$app"
 zip="dist/morpheus-$version-macos-$arch.zip"
 rm -f "$zip"
 ditto -c -k --keepParent "$app" "$zip"
+
+# A disk image for people: Morpheus.app on the left, an Applications shortcut on the
+# right, an arrow between them (apps/desktop/assets/dmg-background.png, 600x400).
+dmg="${zip%.zip}.dmg"
+stage=$(mktemp -d)
+cp -R "$app" "$stage/"
+ln -s /Applications "$stage/Applications"
+mkdir "$stage/.background"
+cp apps/desktop/assets/dmg-background.png "$stage/.background/background.png"
+rm -f "$dmg" "$stage.rw.dmg"
+hdiutil create -quiet -volname Morpheus -srcfolder "$stage" -fs HFS+ -format UDRW \
+    -size "$(( $(du -sm "$stage" | cut -f1) + 30 ))m" "$stage.rw.dmg"
+detach() { perl -e 'alarm shift; exec @ARGV' 30 hdiutil detach "$@"; }
+detach /Volumes/Morpheus -quiet 2>/dev/null || true
+hdiutil attach -quiet -readwrite -noverify -noautoopen "$stage.rw.dmg"
+# Finder keeps the layout in the volume's .DS_Store. Best effort: without a Finder
+# (a headless session) the image still works, just without the window layout.
+# Finder can hang on a headless runner (an automation prompt nobody answers): 60 s at most.
+perl -e 'alarm shift; exec @ARGV' 60 osascript <<'APPLESCRIPT' || echo "DMG window layout skipped (no Finder, or it took over 60 s)" >&2
+tell application "Finder"
+    tell disk "Morpheus"
+        open
+        set current view of container window to icon view
+        set toolbar visible of container window to false
+        set statusbar visible of container window to false
+        set the bounds of container window to {200, 120, 800, 548}
+        set opts to the icon view options of container window
+        set arrangement of opts to not arranged
+        set icon size of opts to 100
+        set background picture of opts to file ".background:background.png"
+        set position of item "Morpheus.app" of container window to {120, 190}
+        set position of item "Applications" of container window to {480, 190}
+        close
+        open
+        update without registering applications
+        delay 2
+        close
+    end tell
+end tell
+APPLESCRIPT
+# The icon beside the window's title: the app's own, flagged as the volume's custom icon.
+# After the layout step, which removes both.
+cp "$app/Contents/Resources/Morpheus.icns" /Volumes/Morpheus/.VolumeIcon.icns
+SetFile -a C /Volumes/Morpheus || echo "DMG volume icon skipped (no SetFile)" >&2
+sync
+detach /Volumes/Morpheus -quiet || { sleep 3; detach /Volumes/Morpheus -force -quiet; }
+hdiutil convert -quiet "$stage.rw.dmg" -format UDZO -o "$dmg"
+rm -rf "$stage" "$stage.rw.dmg"
+
 echo "$zip"

@@ -51,6 +51,16 @@ struct Feed {
     assets: Vec<Asset>,
 }
 
+/// The release file the updater installs for `platform`: the zip (the apk on
+/// Android), never the .dmg that sits beside it for people.
+fn pick_asset(assets: &[Asset], platform: &str) -> Option<String> {
+    let ext = if platform.starts_with("android") { ".apk" } else { ".zip" };
+    assets
+        .iter()
+        .find(|asset| asset.name.contains(platform) && asset.name.ends_with(ext))
+        .map(|asset| asset.browser_download_url.clone())
+}
+
 /// The name part of this platform's release asset.
 fn platform() -> Option<&'static str> {
     if cfg!(all(target_os = "windows", target_arch = "x86_64")) {
@@ -174,12 +184,7 @@ async fn check(
     if !is_newer(&feed.version, current) {
         return Ok(UpdateStatus::UpToDate);
     }
-    let download = platform().and_then(|platform| {
-        feed.assets
-            .iter()
-            .find(|asset| asset.name.contains(platform))
-            .map(|asset| asset.browser_download_url.clone())
-    });
+    let download = platform().and_then(|platform| pick_asset(&feed.assets, platform));
     Ok(UpdateStatus::Available {
         version: feed.version.trim_start_matches('v').to_owned(),
         url: feed.html_url.or(feed.url),
@@ -245,13 +250,24 @@ async fn install(http: matrix_sdk::reqwest::Client, download: String) -> Result<
     installed
 }
 
+/// A client that gives up after `secs`; the browser's fetch has no timeout to set.
+fn client_with_timeout(secs: u64) -> Option<matrix_sdk::reqwest::Client> {
+    #[cfg(not(target_arch = "wasm32"))]
+    return matrix_sdk::reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(secs))
+        .build()
+        .ok();
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = secs;
+        None
+    }
+}
+
 impl Session {
     /// Ask the release feed whether something newer than `current` exists.
     pub fn check_for_update(&self, current: &'static str) -> CoreFuture<UpdateStatus> {
-        let http = matrix_sdk::reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(15))
-            .build()
-            .unwrap_or_else(|_| self.client.http_client().clone());
+        let http = client_with_timeout(15).unwrap_or_else(|| self.client.http_client().clone());
         self.core.run(check(http, current))
     }
 
@@ -259,10 +275,7 @@ impl Session {
     /// in place of the running app, then start it (it waits for this one to
     /// quit). The caller quits once this returns. Desktops only.
     pub fn install_update(&self, download: String) -> CoreFuture<()> {
-        let http = matrix_sdk::reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(60))
-            .build()
-            .unwrap_or_else(|_| self.client.http_client().clone());
+        let http = client_with_timeout(60).unwrap_or_else(|| self.client.http_client().clone());
         self.core.run(install(http, download))
     }
 }
@@ -463,6 +476,23 @@ mod tests {
         assert_eq!(feed.version, "v0.2.1");
         assert_eq!(feed.html_url.as_deref(), Some("https://github.com/noahpro99/morpheus/releases/tag/v0.2.1"));
         assert!(feed.assets.iter().any(|a| a.name == "morpheus-0.2.1-windows-x86_64.zip"));
+    }
+
+    #[test]
+    fn the_zip_is_picked_over_a_dmg_listed_first() {
+        let body = include_str!("../fixtures/github-latest-release.json");
+        let mut feed: super::Feed = serde_json::from_str(body).unwrap();
+        feed.assets.insert(
+            0,
+            super::Asset {
+                name: "morpheus-0.2.1-macos-arm64.dmg".into(),
+                browser_download_url: "https://example.test/morpheus-0.2.1-macos-arm64.dmg".into(),
+            },
+        );
+        let url = super::pick_asset(&feed.assets, "macos-arm64").unwrap();
+        assert!(url.ends_with(".zip"), "{url}");
+        let apk = super::pick_asset(&feed.assets, "android-arm64").unwrap();
+        assert!(apk.ends_with(".apk"), "{apk}");
     }
 
     #[test]

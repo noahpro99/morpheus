@@ -15,7 +15,10 @@ target=target
 [ -d "$target" ] || exit 0
 cap_gb=${MORPHEUS_TARGET_CAP_GB:-60}
 
-before=$(du -s --block-size=1G "$target" 2>/dev/null | cut -f1)
+# Whole GB (rounded down); `du -sk` is the form GNU and macOS du share.
+gb() { echo $(( $(du -sk "$target" 2>/dev/null | cut -f1) / 1048576 )); }
+
+before=$(gb)
 
 # Incremental caches: one folder per crate build, rewritten by every build
 # that uses it.
@@ -30,10 +33,10 @@ else
   nix run nixpkgs#cargo-sweep -- sweep --recursive --time 2 "$target" >/dev/null 2>&1 || true
 fi
 
-size=$(du -s --block-size=1G "$target" 2>/dev/null | cut -f1)
+size=$(gb)
 if [ "$size" -gt "$cap_gb" ]; then
   find "$target" -maxdepth 4 -type d -name incremental -prune -exec rm -rf {} +
   find "$target" -path '*/deps/*' -type f -mmin +1440 -delete 2>/dev/null || true
-  size=$(du -s --block-size=1G "$target" 2>/dev/null | cut -f1)
+  size=$(gb)
 fi
 echo "target/: ${before} GB -> ${size} GB"

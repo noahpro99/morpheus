@@ -6,3 +6,4 @@
 /dev/homeserver/.seeded*
 *.log
 /.claude/worktrees
+/dist
