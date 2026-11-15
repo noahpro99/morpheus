@@ -51,8 +51,16 @@ async fn the_top_bar_spans_to_the_right_over_a_side_card() {
         .await
         .expect("members shown");
     let (width, height) = window_size(&mut app).await;
-    let header = app.bounds(".chat-header").await.expect("header").expect("a header");
-    let side = app.bounds(".side-pane").await.expect("side").expect("a side pane");
+    let header = app
+        .bounds(".chat-header")
+        .await
+        .expect("header")
+        .expect("a header");
+    let side = app
+        .bounds(".side-pane")
+        .await
+        .expect("side")
+        .expect("a side pane");
     assert!(
         header.right() >= width - 1.0,
         "the top bar stops short of the right edge: header {header:?}, window {width}"
@@ -82,7 +90,10 @@ async fn the_top_bar_spans_to_the_right_over_a_side_card() {
         .as_f64()
         .unwrap_or(0.0)
     };
-    assert!(radius >= 6.0, "the side panel is not rounded on all four corners: {radius}");
+    assert!(
+        radius >= 6.0,
+        "the side panel is not rounded on all four corners: {radius}"
+    );
 }
 
 #[tokio::test]
@@ -113,10 +124,26 @@ async fn a_call_button_only_where_calls_belong() {
     app.wait_for(".chat-header .call-button", DEFAULT_WAIT)
         .await
         .expect("a call button in a DM");
-    let call = app.bounds(".chat-header > .call-button").await.expect("call").expect("call button");
-    let pin = app.bounds(".chat-header > .pin-toggle").await.expect("pin").expect("pin button");
-    let search = app.bounds(".chat-header > .search-bar").await.expect("search").expect("search");
-    let header = app.bounds(".chat-header").await.expect("header").expect("header");
+    let call = app
+        .bounds(".chat-header > .call-button")
+        .await
+        .expect("call")
+        .expect("call button");
+    let pin = app
+        .bounds(".chat-header > .pin-toggle")
+        .await
+        .expect("pin")
+        .expect("pin button");
+    let search = app
+        .bounds(".chat-header > .search-bar")
+        .await
+        .expect("search")
+        .expect("search");
+    let header = app
+        .bounds(".chat-header")
+        .await
+        .expect("header")
+        .expect("header");
     // Buttons across the bar: the call button, then the pins right after it.
     assert!(
         call.right() <= pin.x + 1.0 && pin.x - call.right() < 24.0,
@@ -126,7 +153,10 @@ async fn a_call_button_only_where_calls_belong() {
         search.x >= pin.right() - 1.0 && search.x >= call.right() - 1.0,
         "the search bar is not at the right end: {search:?}"
     );
-    assert!(search.w >= 140.0, "search is a button, not a bar: {search:?}");
+    assert!(
+        search.w >= 140.0,
+        "search is a button, not a bar: {search:?}"
+    );
     assert!(
         header.right() - search.right() <= 24.0,
         "the search bar is not at the top right: {search:?} in {header:?}"
@@ -134,33 +164,71 @@ async fn a_call_button_only_where_calls_belong() {
 }
 
 async fn menu_opens_and_closes(app: &mut App, what: &str) {
-    let label = if app.count(".chat-header .room-head .avatar").await.expect("count") > 0 { "Close DM" } else { "Edit room" };
+    let label = if app
+        .count(".chat-header .room-head .avatar")
+        .await
+        .expect("count")
+        > 0
+    {
+        "Close DM"
+    } else {
+        "Edit room"
+    };
     app.wait_for_text(".context-menu .context-item", label, DEFAULT_WAIT)
         .await
         .unwrap_or_else(|e| panic!("{what} should open the room menu: {e}"));
     app.press(".context-menu", "Escape").await.expect("escape");
-    app.wait_for_count(".context-menu", 0, DEFAULT_WAIT).await.expect("menu closed");
+    app.wait_for_count(".context-menu", 0, DEFAULT_WAIT)
+        .await
+        .expect("menu closed");
 }
 
 /// The icon (a channel's #, a DM's picture) and the name are one button, as
 /// a natural box (not the bar's height): the whole of it opens the room's menu, its edges too.
 async fn head_button_is_one_big_target(app: &mut App, icon: &str) {
     let bar = app.bounds(".chat-header").await.expect("b").expect("bar");
-    let head = app.bounds(".chat-header .room-head").await.expect("b").expect("the head button");
-    assert!((24.0..=36.0).contains(&head.h) && head.h < bar.h - 6.0, "a natural size, not the bar's height: {head:?} in {bar:?}");
+    let head = app
+        .bounds(".chat-header .room-head")
+        .await
+        .expect("b")
+        .expect("the head button");
+    assert!(
+        (24.0..=36.0).contains(&head.h) && head.h < bar.h - 6.0,
+        "a natural size, not the bar's height: {head:?} in {bar:?}"
+    );
     assert!(head.x <= bar.x + 12.0, "at the bar's left: {head:?}");
-    let icon_b = app.bounds(&format!(".chat-header .room-head {icon}")).await.expect("b").expect("icon");
-    assert!(icon_b.right() <= head.right() && icon_b.x >= head.x, "the icon is inside it");
-    let name = app.bounds(".chat-header .room-head .room-title").await.expect("b").expect("name");
-    assert!(name.x >= icon_b.right(), "the name is right of the icon: {name:?} {icon_b:?}");
-    app.click(&format!(".chat-header .room-head {icon}")).await.expect("click the icon");
+    let icon_b = app
+        .bounds(&format!(".chat-header .room-head {icon}"))
+        .await
+        .expect("b")
+        .expect("icon");
+    assert!(
+        icon_b.right() <= head.right() && icon_b.x >= head.x,
+        "the icon is inside it"
+    );
+    let name = app
+        .bounds(".chat-header .room-head .room-title")
+        .await
+        .expect("b")
+        .expect("name");
+    assert!(
+        name.x >= icon_b.right(),
+        "the name is right of the icon: {name:?} {icon_b:?}"
+    );
+    app.click(&format!(".chat-header .room-head {icon}"))
+        .await
+        .expect("click the icon");
     menu_opens_and_closes(app, "the icon").await;
-    app.click(".chat-header .room-head .room-title").await.expect("click the name");
+    app.click(".chat-header .room-head .room-title")
+        .await
+        .expect("click the name");
     menu_opens_and_closes(app, "the name").await;
     // The corners of the box, well off the glyphs.
     let (dx, dy) = (head.w / 2.0 - 2.0, head.h / 2.0 - 2.0);
     for (ox, oy) in [(-dx, -dy), (dx, -dy), (-dx, dy), (dx, dy)] {
-        app.click_at(".chat-header .room-head", ox as f32, oy as f32, 1).await.expect("click the edge");
+        app.click_at(".chat-header .room-head", ox as f32, oy as f32, 1)
+            .await
+            .expect("click the edge");
         menu_opens_and_closes(app, &format!("the button's edge ({ox}, {oy})")).await;
     }
 }
@@ -177,7 +245,9 @@ async fn a_channels_hash_and_name_are_one_big_menu_button() {
     }
     login(&mut app, "alice").await;
     app.open_room("general").await.expect("general");
-    app.wait_for(".chat-header .room-title", DEFAULT_WAIT).await.expect("title");
+    app.wait_for(".chat-header .room-title", DEFAULT_WAIT)
+        .await
+        .expect("title");
     head_button_is_one_big_target(&mut app, ".hash").await;
 }
 
@@ -193,10 +263,18 @@ async fn a_dms_picture_and_name_are_one_big_menu_button() {
     }
     login(&mut app, "alice").await;
     app.click(".rail-dms").await.expect("DMs");
-    app.wait_for(".room.dm .room-name", DEFAULT_WAIT).await.expect("a DM");
+    app.wait_for(".room.dm .room-name", DEFAULT_WAIT)
+        .await
+        .expect("a DM");
     app.click(".room.dm").await.expect("open it");
-    app.wait_for(".chat-header .room-title", DEFAULT_WAIT).await.expect("title");
-    let avatar = app.bounds(".chat-header .avatar").await.expect("b").expect("the DM's avatar");
+    app.wait_for(".chat-header .room-title", DEFAULT_WAIT)
+        .await
+        .expect("title");
+    let avatar = app
+        .bounds(".chat-header .avatar")
+        .await
+        .expect("b")
+        .expect("the DM's avatar");
     assert!((avatar.w - 24.0).abs() < 1.0, "a 24 px picture: {avatar:?}");
     head_button_is_one_big_target(&mut app, ".avatar").await;
 }

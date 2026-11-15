@@ -62,13 +62,20 @@ async fn renders_and_downloads_attachments() {
     if morpheus_e2e::gpui() {
         // The seeded clip is 1 s with no sound: it plays by itself, looping,
         // like a GIF (video_player.rs tests the player).
-        app.reveal_element(".video-card[data-body=\"clip.mp4\"]", DEFAULT_WAIT).await.expect("reveal video");
-        app.wait_for(".video-card .video-player[data-autoplay=\"1\"][data-loop=\"1\"]", DEFAULT_WAIT)
+        app.reveal_element(".video-card[data-body=\"clip.mp4\"]", DEFAULT_WAIT)
             .await
-            .expect("the clip plays by itself");
+            .expect("reveal video");
+        app.wait_for(
+            ".video-card .video-player[data-autoplay=\"1\"][data-loop=\"1\"]",
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("the clip plays by itself");
     } else {
         // Video card: thumbnail (or placeholder) plus a play button.
-        app.reveal_text(".video-card .video-duration", "0:01", DEFAULT_WAIT).await.expect("reveal video");
+        app.reveal_text(".video-card .video-duration", "0:01", DEFAULT_WAIT)
+            .await
+            .expect("reveal video");
         app.wait_for(".video-card .play-button", DEFAULT_WAIT)
             .await
             .expect("video play button");
@@ -78,9 +85,13 @@ async fn renders_and_downloads_attachments() {
     }
 
     // Audio row: name, duration and a download button.
-    app.reveal_text(".attachment-card.audio .attachment-name", "voice-note.m4a", DEFAULT_WAIT)
-        .await
-        .expect("reveal audio");
+    app.reveal_text(
+        ".attachment-card.audio .attachment-name",
+        "voice-note.m4a",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("reveal audio");
     app.wait_for_text(
         ".attachment-card.audio .attachment-name",
         "voice-note.m4a",
@@ -98,9 +109,13 @@ async fn renders_and_downloads_attachments() {
 
     // Download the file attachment and verify it actually landed on disk,
     // in the test's disposable Downloads stand-in.
-    app.reveal_text(".attachment-card .attachment-name", "release-notes.txt", DEFAULT_WAIT)
-        .await
-        .expect("file card in view");
+    app.reveal_text(
+        ".attachment-card .attachment-name",
+        "release-notes.txt",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("file card in view");
     app.click_within(
         ".attachment-card",
         "release-notes.txt",
@@ -143,7 +158,10 @@ const TINY_PNG: &[u8] = &[
 
 /// Whether the timeline shows a picture or a file card for `name`.
 async fn in_timeline(app: &mut App, name: &str) -> bool {
-    let picture = format!(".timeline .image[alt={}]", serde_json::to_string(name).expect("json"));
+    let picture = format!(
+        ".timeline .image[alt={}]",
+        serde_json::to_string(name).expect("json")
+    );
     app.count(&picture).await.expect("count") > 0
         || app
             .texts(".timeline .attachment-card")

@@ -109,11 +109,17 @@ async fn the_shield_sits_at_the_right_and_takes_no_height() {
         format!("shield row {pid} c"),
     ];
     send(&mut alice, texts[0].clone()).await;
-    bob.wait_for_text(".message", &texts[0], DEFAULT_WAIT).await.expect("a arrives");
+    bob.wait_for_text(".message", &texts[0], DEFAULT_WAIT)
+        .await
+        .expect("a arrives");
     send(&mut bob, texts[1].clone()).await;
-    bob.wait_for_text(".message", &texts[1], DEFAULT_WAIT).await.expect("b sent");
+    bob.wait_for_text(".message", &texts[1], DEFAULT_WAIT)
+        .await
+        .expect("b sent");
     send(&mut alice, texts[2].clone()).await;
-    bob.wait_for_text(".message", &texts[2], DEFAULT_WAIT).await.expect("c arrives");
+    bob.wait_for_text(".message", &texts[2], DEFAULT_WAIT)
+        .await
+        .expect("c arrives");
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
     let shielded = bob
@@ -144,18 +150,33 @@ async fn the_shield_sits_at_the_right_and_takes_no_height() {
     // Whatever else a row holds, a shield adds nothing: the row is its header plus its text, as a row of bob's is.
     let mut extras = Vec::new();
     for (text, row) in [(&texts[1], plain), (&texts[2], again)] {
-        let meta = bob.bounds_within(".message", text, ".message-meta").await.expect("meta").expect("header");
-        let body = bob.bounds_within(".message", text, ".body").await.expect("body").expect("text");
+        let meta = bob
+            .bounds_within(".message", text, ".message-meta")
+            .await
+            .expect("meta")
+            .expect("header");
+        let body = bob
+            .bounds_within(".message", text, ".body")
+            .await
+            .expect("body")
+            .expect("text");
         extras.push(row.h - meta.h - body.h);
     }
-    assert!(extras[1] < 8.0, "the shield has no line of its own: the row is {} taller than its header and text", extras[1]);
+    assert!(
+        extras[1] < 8.0,
+        "the shield has no line of its own: the row is {} taller than its header and text",
+        extras[1]
+    );
     assert!(
         (extras[0] - extras[1]).abs() < 1.0,
         "a row with a shield is no taller than one without (row minus header minus text: bob's {}, alice's {}): {plain:?} {again:?}",
         extras[0],
         extras[1]
     );
-    assert!(shield.x > body.x + 100.0, "the shield is right of the text: {shield:?} {body:?}");
+    assert!(
+        shield.x > body.x + 100.0,
+        "the shield is right of the text: {shield:?} {body:?}"
+    );
     assert!(
         shield.centre_x() > shielded.x + shielded.w / 2.0,
         "in the right half of the row: {shield:?} {shielded:?}"

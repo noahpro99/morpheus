@@ -472,10 +472,19 @@ async fn phone_tap_targets_are_at_least_44_points() {
 /// tree's changes: sampled while the test waits).
 async fn loading_now(app: &mut App) -> Vec<String> {
     let mut found = Vec::new();
-    for scope in [".members", ".pinned-dialog", ".settings-page", ".lightbox-overlay", ".side-pane"] {
+    for scope in [
+        ".members",
+        ".pinned-dialog",
+        ".settings-page",
+        ".lightbox-overlay",
+        ".side-pane",
+    ] {
         for text in app.texts(scope).await.unwrap_or_default() {
             if text.contains("Loading…") {
-                found.push(format!("{scope}: {}", text.trim().chars().take(40).collect::<String>()));
+                found.push(format!(
+                    "{scope}: {}",
+                    text.trim().chars().take(40).collect::<String>()
+                ));
             }
         }
     }
@@ -509,7 +518,7 @@ async fn loading_shows_skeletons_not_words() {
     // Note any "Loading…" that appears anywhere, however briefly.
     let mut seen: Vec<String> = Vec::new();
     if !app.is_gpui() {
-    app.eval("window.__loadingSeen = []; new MutationObserver(changes => { for (const c of changes) for (const n of [c.target, ...c.addedNodes]) { const t = n.textContent || ''; if (/Loading…/.test(t) && n.nodeType !== 9) window.__loadingSeen.push((n.className || n.nodeName) + ': ' + t.trim().slice(0, 40)); } }).observe(document.body, { subtree: true, childList: true, characterData: true }); return true;")
+        app.eval("window.__loadingSeen = []; new MutationObserver(changes => { for (const c of changes) for (const n of [c.target, ...c.addedNodes]) { const t = n.textContent || ''; if (/Loading…/.test(t) && n.nodeType !== 9) window.__loadingSeen.push((n.className || n.nodeName) + ': ' + t.trim().slice(0, 40)); } }).observe(document.body, { subtree: true, childList: true, characterData: true }); return true;")
         .await
         .expect("observer");
     }
@@ -542,8 +551,15 @@ async fn loading_shows_skeletons_not_words() {
         .await
         .expect("room id")
         .expect("a selected room");
-    morpheus_e2e::send_image_as(&hs, "bob", &room_id, DUSK_PNG, &format!("dusk {}.png", std::process::id()), None)
-        .expect("bob sends a picture");
+    morpheus_e2e::send_image_as(
+        &hs,
+        "bob",
+        &room_id,
+        DUSK_PNG,
+        &format!("dusk {}.png", std::process::id()),
+        None,
+    )
+    .expect("bob sends a picture");
     app.reveal_element(".message img.image", DEFAULT_WAIT)
         .await
         .expect("an image");
@@ -555,7 +571,11 @@ async fn loading_shows_skeletons_not_words() {
             .await
             .expect("an image");
         app.click(".message img.image").await.expect("open it");
-        if app.wait_for(".lightbox-overlay", Duration::from_secs(3)).await.is_ok() {
+        if app
+            .wait_for(".lightbox-overlay", Duration::from_secs(3))
+            .await
+            .is_ok()
+        {
             opened = true;
             break;
         }
@@ -570,7 +590,10 @@ async fn loading_shows_skeletons_not_words() {
             .expect("seen");
         seen = serde_json::from_value(observed).expect("a list");
     }
-    assert!(seen.is_empty(), "\"Loading…\" shown while waiting: {seen:?}");
+    assert!(
+        seen.is_empty(),
+        "\"Loading…\" shown while waiting: {seen:?}"
+    );
 }
 
 const DUSK_PNG: &[u8] = include_bytes!("../fixtures/dusk.png");

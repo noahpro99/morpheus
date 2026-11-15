@@ -33,11 +33,17 @@ pub fn capture(app: &App) -> Option<(Vec<u8>, usize, usize)> {
     // That fails the test rather than skipping it, so a locked run never
     // passes pixel checks it did not make.
     assert!(
-        !std::process::Command::new("pgrep").args(["-x", "hyprlock"]).output().is_ok_and(|o| o.status.success()),
+        !std::process::Command::new("pgrep")
+            .args(["-x", "hyprlock"])
+            .output()
+            .is_ok_and(|o| o.status.success()),
         "pixel check impossible: the session is locked (hyprlock); rerun unlocked"
     );
     let pid = app.pid()?;
-    let out = std::process::Command::new("hyprctl").args(["clients", "-j"]).output().ok()?;
+    let out = std::process::Command::new("hyprctl")
+        .args(["clients", "-j"])
+        .output()
+        .ok()?;
     let clients: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
     let window = clients
         .as_array()?
@@ -72,7 +78,10 @@ pub fn capture(app: &App) -> Option<(Vec<u8>, usize, usize)> {
 pub fn pixel_at(capture: &(Vec<u8>, usize, usize), x: f64, y: f64) -> (u8, u8, u8) {
     let (pixels, w, h) = capture;
     let (x, y) = (x.round() as usize, y.round() as usize);
-    assert!(x < *w && y < *h, "({x}, {y}) is outside the {w}x{h} capture");
+    assert!(
+        x < *w && y < *h,
+        "({x}, {y}) is outside the {w}x{h} capture"
+    );
     let i = (y * w + x) * 3;
     (pixels[i], pixels[i + 1], pixels[i + 2])
 }
@@ -86,13 +95,22 @@ pub fn colour_distance(a: (u8, u8, u8), b: (u8, u8, u8)) -> u32 {
 /// there (sampled 30 px along the same edge). `which` is a mask of the
 /// corners to check (top-left, top-right, bottom-left, bottom-right).
 /// Returns the names of corners drawn square; `None` where there is no capture.
-pub fn square_corners(app: &App, b: &morpheus_e2e::Bounds, which: [bool; 4]) -> Option<Vec<&'static str>> {
+pub fn square_corners(
+    app: &App,
+    b: &morpheus_e2e::Bounds,
+    which: [bool; 4],
+) -> Option<Vec<&'static str>> {
     square_corners_at(app, b, which, 2.5)
 }
 
 /// [`square_corners`] with the sampled pixel `inset` px in from the corner
 /// (small for large radii: the pixel must lie outside the arc).
-pub fn square_corners_at(app: &App, b: &morpheus_e2e::Bounds, which: [bool; 4], inset: f64) -> Option<Vec<&'static str>> {
+pub fn square_corners_at(
+    app: &App,
+    b: &morpheus_e2e::Bounds,
+    which: [bool; 4],
+    inset: f64,
+) -> Option<Vec<&'static str>> {
     let shot = capture(app)?;
     let mut square = Vec::new();
     let corners = [

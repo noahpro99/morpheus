@@ -98,8 +98,18 @@ fn account_with_two_servers(hs: &str) -> String {
     let user = new_account(hs, "scopes").expect("account");
     let enc = |id: &str| id.replace('!', "%21").replace(':', "%3A");
     // One room outside the servers, so Rooms has a row for `login` to wait for.
-    api_as(hs, &user, "POST", "createRoom", Some(serde_json::json!({ "name": "lobby" }))).expect("lobby");
-    for (server, channels) in [("Xserver", &["x-one", "x-two"][..]), ("Yserver", &["y-one"][..])] {
+    api_as(
+        hs,
+        &user,
+        "POST",
+        "createRoom",
+        Some(serde_json::json!({ "name": "lobby" })),
+    )
+    .expect("lobby");
+    for (server, channels) in [
+        ("Xserver", &["x-one", "x-two"][..]),
+        ("Yserver", &["y-one"][..]),
+    ] {
         let space = api_as(
             hs,
             &user,
@@ -197,7 +207,14 @@ async fn a_server_never_visited_opens_its_first_listed_channel() {
     };
     let user = new_account(&hs, "topchan").expect("account");
     let enc = |id: &str| id.replace('!', "%21").replace(':', "%3A");
-    api_as(&hs, &user, "POST", "createRoom", Some(serde_json::json!({ "name": "lobby" }))).expect("lobby");
+    api_as(
+        &hs,
+        &user,
+        "POST",
+        "createRoom",
+        Some(serde_json::json!({ "name": "lobby" })),
+    )
+    .expect("lobby");
     let space = api_as(
         &hs,
         &user,
@@ -208,7 +225,11 @@ async fn a_server_never_visited_opens_its_first_listed_channel() {
     .expect("space");
     let space = space["room_id"].as_str().expect("id").to_owned();
     // Listed in this order: a voice channel, then z-first, then z-second.
-    for (name, voice, order) in [("z-call", true, "a"), ("z-first", false, "b"), ("z-second", false, "c")] {
+    for (name, voice, order) in [
+        ("z-call", true, "a"),
+        ("z-first", false, "b"),
+        ("z-second", false, "c"),
+    ] {
         let content = if voice {
             serde_json::json!({ "name": name, "creation_content": { "type": "org.matrix.msc3417.call" } })
         } else {
@@ -231,9 +252,16 @@ async fn a_server_never_visited_opens_its_first_listed_channel() {
         eprintln!("skipped: the Dioxus rail badges do not open a server's channel");
         return;
     }
-    let z =".rail-item[title=\"Zserver\"]";
+    let z = ".rail-item[title=\"Zserver\"]";
     app.wait_for(z, DEFAULT_WAIT).await.expect("Z badge");
     app.click(z).await.expect("Z");
-    app.wait_for_text(".room", "z-second", DEFAULT_WAIT).await.expect("Z listed");
-    header_is(&mut app, "z-first", "a server never visited opens its top channel").await;
+    app.wait_for_text(".room", "z-second", DEFAULT_WAIT)
+        .await
+        .expect("Z listed");
+    header_is(
+        &mut app,
+        "z-first",
+        "a server never visited opens its top channel",
+    )
+    .await;
 }

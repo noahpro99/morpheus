@@ -471,8 +471,14 @@ fn second_room(hs: &str, writer: &str, reader: &str, name: &str) -> String {
         Some(serde_json::json!({ "user_id": format!("@{reader}:localhost") })),
     )
     .expect("invite");
-    api_as(hs, reader, "POST", &format!("rooms/{id}/join"), Some(serde_json::json!({})))
-        .expect("reader joins");
+    api_as(
+        hs,
+        reader,
+        "POST",
+        &format!("rooms/{id}/join"),
+        Some(serde_json::json!({})),
+    )
+    .expect("reader joins");
     room
 }
 
@@ -531,7 +537,10 @@ async fn own_messages_and_muted_rooms_make_no_sound() {
     };
     let (mut app, reader, writer, room) = pair(&hs, "hushed").await;
     let muted = second_room(&hs, &writer, &reader, "muted room");
-    let rule = format!("pushrules/global/override/{}", muted.replace('!', "%21").replace(':', "%3A"));
+    let rule = format!(
+        "pushrules/global/override/{}",
+        muted.replace('!', "%21").replace(':', "%3A")
+    );
     api_as(
         &hs,
         &reader,
@@ -574,9 +583,12 @@ async fn message_sounds_can_be_turned_off() {
     app.click_text(".settings-nav button", "Notifications")
         .await
         .expect("notifications page");
-    app.wait_for(".settings-page input[name=message-sounds]:checked", DEFAULT_WAIT)
-        .await
-        .expect("on by default");
+    app.wait_for(
+        ".settings-page input[name=message-sounds]:checked",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("on by default");
     app.click(".settings-page input[name=message-sounds]")
         .await
         .expect("turn off");
@@ -626,7 +638,9 @@ async fn viewing_a_room_clears_its_inbox_entries_at_once() {
     app.wait_for(".room .badge", DEFAULT_WAIT)
         .await
         .expect("the room's mention badge");
-    app.click(".titlebar .inbox-button").await.expect("open inbox");
+    app.click(".titlebar .inbox-button")
+        .await
+        .expect("open inbox");
     app.wait_for(".inbox-mention", DEFAULT_WAIT)
         .await
         .expect("a mention listed");
@@ -652,8 +666,12 @@ async fn viewing_a_room_clears_its_inbox_entries_at_once() {
         gone < std::time::Duration::from_millis(300),
         "the badges went after {gone:?}, not at once"
     );
-    app.click(".titlebar .inbox-button").await.expect("open inbox");
-    app.wait_for(".inbox-panel", DEFAULT_WAIT).await.expect("inbox");
+    app.click(".titlebar .inbox-button")
+        .await
+        .expect("open inbox");
+    app.wait_for(".inbox-panel", DEFAULT_WAIT)
+        .await
+        .expect("inbox");
     assert_eq!(
         app.count(".inbox-panel .inbox-item").await.expect("items"),
         0,
@@ -687,16 +705,30 @@ async fn a_message_from_before_signing_in_makes_no_sound_or_notification() {
     .expect("a dm");
     let room = room["room_id"].as_str().expect("room id").to_owned();
     let id = room.replace('!', "%21").replace(':', "%3A");
-    api_as(&hs, &reader, "POST", &format!("rooms/{id}/join"), Some(serde_json::json!({})))
-        .expect("reader joins");
+    api_as(
+        &hs,
+        &reader,
+        "POST",
+        &format!("rooms/{id}/join"),
+        Some(serde_json::json!({})),
+    )
+    .expect("reader joins");
     say(&hs, &writer, &room, "while you were away");
 
     let mut app = App::launch_desktop(&hs).await.expect("launch");
     login(&mut app, &reader).await;
     app.wait_for(".room", DEFAULT_WAIT).await.expect("rooms");
     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-    assert_eq!(message_sounds(&mut app).await, 0, "no sound for old messages");
-    assert!(shown(&app).is_empty(), "no notification for old messages: {:?}", shown(&app));
+    assert_eq!(
+        message_sounds(&mut app).await,
+        0,
+        "no sound for old messages"
+    );
+    assert!(
+        shown(&app).is_empty(),
+        "no notification for old messages: {:?}",
+        shown(&app)
+    );
 
     say(&hs, &writer, &room, "now you are here");
     wait_message_sounds(&mut app, 1, "a message after the first sync").await;

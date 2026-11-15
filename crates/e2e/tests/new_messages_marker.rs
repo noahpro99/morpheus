@@ -295,7 +295,11 @@ async fn new_message_marker_appears_above_unread_messages() {
 
     // Discord's shape: a red line across the whole timeline, the red NEW pill
     // at its right end, centred on the line.
-    let timeline = alice.bounds(".timeline").await.expect("bounds").expect("timeline");
+    let timeline = alice
+        .bounds(".timeline")
+        .await
+        .expect("bounds")
+        .expect("timeline");
     let line = alice
         .bounds(".new-divider .new-line")
         .await

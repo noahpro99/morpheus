@@ -1400,11 +1400,15 @@ fn sender_target(
     el
 }
 
-/// A sender's picture as a button (as tall as the picture, not the row: a
-/// stretched button made the shadow a tall pill hanging below the circle): a
-/// small even shadow, no y offset, that grows under the
-/// pointer, and a pixel lower while held down (the timeline keeps the held
-/// state, `pressed`, as layout is not restyled by the pointer in gpui).
+/// The soft shadow under a hovered avatar: down, blur, opacity.
+const HOVER_Y: f32 = 2.5;
+const HOVER_BLUR: f32 = 6.0;
+const HOVER_ALPHA: f32 = 0.25;
+
+/// A sender's picture as a button (as tall as the picture, not the row): no
+/// shadow at rest, a soft one falling below it under the pointer, and a pixel
+/// lower while held down (the timeline keeps the held state, `pressed`, as
+/// layout is not restyled by the pointer in gpui).
 fn avatar_button(
     el: Stateful<Div>,
     pressed: bool,
@@ -1424,8 +1428,7 @@ fn avatar_button(
         .top(if pressed { px(1.0) } else { px(0.0) })
         .rounded_full()
         .flex_none()
-        .shadow(shadow(0.35, 0.0, 4.0))
-        .hover(move |s| s.shadow(shadow(0.6, 0.0, 10.0)));
+        .hover(move |s| s.shadow(shadow(HOVER_ALPHA, HOVER_Y, HOVER_BLUR)));
     if let Some(actions) = actions {
         for press in [true, false] {
             let (handler, uid) = (actions.clone(), unique_id.to_owned());
@@ -1667,6 +1670,11 @@ pub fn message_el(
                 actions,
             )
             .e2e("button", "avatar-button")
+            .attr("data-shadow", "none")
+            .attr(
+                "data-hover-shadow",
+                format!("{HOVER_Y} {HOVER_BLUR} {HOVER_ALPHA}"),
+            )
             .attr("title", crate::streamer::id(m.sender.as_str())),
         )
     } else {

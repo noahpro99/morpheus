@@ -336,11 +336,15 @@ async fn header_name_opens_the_room_menu() {
     app.open_room("random").await.expect("open random");
     if app.is_gpui() {
         assert_eq!(
-            app.count(".chat-header .room-menu-button").await.expect("count"),
+            app.count(".chat-header .room-menu-button")
+                .await
+                .expect("count"),
             0,
             "no three-dots button in the bar"
         );
-        app.click(".chat-header .room-title").await.expect("the name");
+        app.click(".chat-header .room-title")
+            .await
+            .expect("the name");
     } else {
         app.click(".chat-header .room-menu-button")
             .await
@@ -353,17 +357,34 @@ async fn header_name_opens_the_room_menu() {
     app.press(".context-menu", "Escape").await.expect("escape");
     menu_closed(&mut app).await;
     room_menu(&mut app, "random").await;
-    assert_eq!(menu_labels(&mut app).await, items, "the same items as the room's own menu");
+    assert_eq!(
+        menu_labels(&mut app).await,
+        items,
+        "the same items as the room's own menu"
+    );
     app.press(".context-menu", "Escape").await.expect("escape");
     menu_closed(&mut app).await;
-    app.click(if app.is_gpui() { ".chat-header .room-title" } else { ".chat-header .room-menu-button" })
+    app.click(if app.is_gpui() {
+        ".chat-header .room-title"
+    } else {
+        ".chat-header .room-menu-button"
+    })
+    .await
+    .expect("the name again");
+    app.wait_for(".context-menu", DEFAULT_WAIT)
         .await
-        .expect("the name again");
-    app.wait_for(".context-menu", DEFAULT_WAIT).await.expect("menu again");
+        .expect("menu again");
     if app.is_gpui() {
-        let name = app.bounds(".chat-header .room-title").await.expect("b").expect("name");
+        let name = app
+            .bounds(".chat-header .room-title")
+            .await
+            .expect("b")
+            .expect("name");
         let menu = app.bounds(".context-menu").await.expect("b").expect("menu");
-        assert!(menu.y >= name.bottom() - 1.0, "the menu is under the name: {menu:?} {name:?}");
+        assert!(
+            menu.y >= name.bottom() - 1.0,
+            "the menu is under the name: {menu:?} {name:?}"
+        );
         assert!(
             menu.x >= name.x - 8.0 && menu.x <= name.right(),
             "the menu starts at the name: {menu:?} {name:?}"
@@ -472,7 +493,11 @@ async fn a_dm_menu_has_what_discord_has() {
         .await
         .expect("flyout");
     let durations = alice
-        .texts_within(".context-item.has-submenu", "Mute @bob", ".context-submenu .menu-label")
+        .texts_within(
+            ".context-item.has-submenu",
+            "Mute @bob",
+            ".context-submenu .menu-label",
+        )
         .await
         .expect("durations");
     let durations: Vec<_> = durations.iter().map(|d| d.trim()).collect();

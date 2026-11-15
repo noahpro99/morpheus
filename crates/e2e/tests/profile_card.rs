@@ -407,7 +407,10 @@ async fn the_card_counts_mutual_servers_and_the_full_profile_lists_them() {
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     };
-    assert!(counted >= 1, "alice and bob share Engineering (the card says {said:?})");
+    assert!(
+        counted >= 1,
+        "alice and bob share Engineering (the card says {said:?})"
+    );
     app.click(".profile-card .mutual-servers")
         .await
         .expect("the count");
@@ -481,11 +484,7 @@ async fn the_card_stays_on_screen_as_it_fills_in() {
         .await
         .expect("card")
         .expect("a card");
-    let shell = app
-        .bounds(".shell")
-        .await
-        .expect("shell")
-        .expect("a shell");
+    let shell = app.bounds(".shell").await.expect("shell").expect("a shell");
     assert!(
         card.y >= shell.y - 1.0 && card.bottom() <= shell.bottom() + 1.0,
         "the card ran off the app: {card:?} in {shell:?}"
@@ -625,7 +624,9 @@ async fn clicking_the_id_on_the_card_opens_the_full_profile() {
         return;
     }
     open_card_for(&mut app, "bob").await;
-    app.click(".profile-card .profile-id").await.expect("the id");
+    app.click(".profile-card .profile-id")
+        .await
+        .expect("the id");
     app.wait_for_text(".profile-modal .profile-id", "@bob:localhost", DEFAULT_WAIT)
         .await
         .expect("the full profile");
@@ -649,11 +650,23 @@ async fn clicking_the_id_on_the_full_profile_copies_the_link() {
         return;
     }
     open_card_for(&mut app, "bob").await;
-    app.click(".profile-card .card-button.more").await.expect("more");
-    app.click_text(".context-item", "View full profile").await.expect("full");
-    app.wait_for(".profile-modal .profile-id", DEFAULT_WAIT).await.expect("modal");
-    assert_eq!(app.count(".toast").await.expect("toasts"), 0, "no toast yet");
-    app.click(".profile-modal .profile-id").await.expect("the id");
+    app.click(".profile-card .card-button.more")
+        .await
+        .expect("more");
+    app.click_text(".context-item", "View full profile")
+        .await
+        .expect("full");
+    app.wait_for(".profile-modal .profile-id", DEFAULT_WAIT)
+        .await
+        .expect("modal");
+    assert_eq!(
+        app.count(".toast").await.expect("toasts"),
+        0,
+        "no toast yet"
+    );
+    app.click(".profile-modal .profile-id")
+        .await
+        .expect("the id");
     app.wait_for_text(".toast", "Link copied", DEFAULT_WAIT)
         .await
         .expect("a toast saying so");
@@ -701,19 +714,31 @@ async fn the_banner_takes_the_colour_of_the_picture() {
 
     // Without a picture the banner keeps its usual colour (no averaged one).
     open_card_for(&mut app, &plain).await;
-    assert_eq!(banner_colour(&mut app).await, None, "no picture, no averaged colour");
+    assert_eq!(
+        banner_colour(&mut app).await,
+        None,
+        "no picture, no averaged colour"
+    );
     app.press(".profile-card", "Escape").await.expect("close");
-    app.wait_for_count(".profile-card", 0, DEFAULT_WAIT).await.expect("closed");
+    app.wait_for_count(".profile-card", 0, DEFAULT_WAIT)
+        .await
+        .expect("closed");
 
     // With one, the banner is that picture's colour, darkened: red stays red.
     open_card_for(&mut app, &red).await;
     let started = std::time::Instant::now();
     loop {
         if let Some([r, g, b]) = banner_colour(&mut app).await {
-            assert!(r > g + 30 && r > b + 30, "a red picture gives a reddish banner, not {r},{g},{b}");
+            assert!(
+                r > g + 30 && r > b + 30,
+                "a red picture gives a reddish banner, not {r},{g},{b}"
+            );
             break;
         }
-        assert!(started.elapsed() < DEFAULT_WAIT, "the banner never took the picture's colour");
+        assert!(
+            started.elapsed() < DEFAULT_WAIT,
+            "the banner never took the picture's colour"
+        );
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
 }
@@ -734,11 +759,22 @@ async fn the_card_does_not_shift_when_the_role_arrives() {
     }
     login_and_open(&mut app, "alice", "general").await;
     open_card_for(&mut app, "bob").await;
-    let first = app.bounds(".profile-card .card-section").await.expect("bounds").expect("a section");
-    app.wait_for(".profile-card .card-tags .tag:not(.skeleton)", DEFAULT_WAIT * 2)
+    let first = app
+        .bounds(".profile-card .card-section")
         .await
-        .expect("the role arrives");
-    let after = app.bounds(".profile-card .card-section").await.expect("bounds").expect("a section");
+        .expect("bounds")
+        .expect("a section");
+    app.wait_for(
+        ".profile-card .card-tags .tag:not(.skeleton)",
+        DEFAULT_WAIT * 2,
+    )
+    .await
+    .expect("the role arrives");
+    let after = app
+        .bounds(".profile-card .card-section")
+        .await
+        .expect("bounds")
+        .expect("a section");
     assert!(
         (first.y - after.y).abs() < 0.5,
         "the note section moved from {} to {} when the role arrived",
@@ -759,19 +795,31 @@ fn dm_of(hs: &str, owner: &str, guest: &str) -> String {
     )
     .expect("a DM");
     let room = made["room_id"].as_str().expect("room id").to_owned();
-    api_as(hs, guest, "POST", &format!("join/{}", escaped(&room)), Some(serde_json::json!({})))
-        .expect("join");
+    api_as(
+        hs,
+        guest,
+        "POST",
+        &format!("join/{}", escaped(&room)),
+        Some(serde_json::json!({})),
+    )
+    .expect("join");
     room
 }
 
 fn escaped(id: &str) -> String {
-    id.replace('!', "%21").replace('@', "%40").replace(':', "%3A")
+    id.replace('!', "%21")
+        .replace('@', "%40")
+        .replace(':', "%3A")
 }
 
 /// `user`'s membership in `room`, with `avatar` as its picture (as a
 /// per-room picture is set), leaving their global profile as it is.
 fn set_member_avatar(hs: &str, user: &str, room: &str, avatar: &str) {
-    let state = format!("rooms/{}/state/m.room.member/{}", escaped(room), escaped(&format!("@{user}:localhost")));
+    let state = format!(
+        "rooms/{}/state/m.room.member/{}",
+        escaped(room),
+        escaped(&format!("@{user}:localhost"))
+    );
     // A profile change reaches the room's member events after a moment: set
     // this one once that has happened, so it is not overwritten.
     let deadline = std::time::Instant::now() + Duration::from_secs(10);
@@ -788,7 +836,9 @@ fn set_member_avatar(hs: &str, user: &str, room: &str, avatar: &str) {
         user,
         "PUT",
         &state,
-        Some(serde_json::json!({ "membership": "join", "displayname": user, "avatar_url": avatar })),
+        Some(
+            serde_json::json!({ "membership": "join", "displayname": user, "avatar_url": avatar }),
+        ),
     )
     .expect("member avatar");
 }
@@ -835,7 +885,10 @@ async fn a_picture_gone_from_its_server_falls_back_to_the_persons_other_one() {
         &hs,
         &ben,
         "PUT",
-        &format!("profile/{}/avatar_url", escaped(&format!("@{ben}:localhost"))),
+        &format!(
+            "profile/{}/avatar_url",
+            escaped(&format!("@{ben}:localhost"))
+        ),
         Some(serde_json::json!({ "avatar_url": gone(&ben) })),
     )
     .expect("dead global picture");
@@ -845,17 +898,33 @@ async fn a_picture_gone_from_its_server_falls_back_to_the_persons_other_one() {
     set_member_avatar(&hs, &cal, &with_cal, &gone(&cal));
 
     let mut app = App::launch(&hs).await.expect("launch");
-    app.wait_for("form.login", DEFAULT_WAIT).await.expect("login form");
-    app.type_into("form.login input[name=username]", &ann).await.expect("username");
-    app.type_into("form.login input[name=password]", &format!("{ann}-password")).await.expect("password");
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    app.type_into("form.login input[name=username]", &ann)
+        .await
+        .expect("username");
+    app.type_into(
+        "form.login input[name=password]",
+        &format!("{ann}-password"),
+    )
+    .await
+    .expect("password");
     app.submit("form.login").await.expect("submit");
-    app.wait_for(".rail-dms", DEFAULT_WAIT).await.expect("signed in");
+    app.wait_for(".rail-dms", DEFAULT_WAIT)
+        .await
+        .expect("signed in");
     app.click(".rail-dms").await.expect("the DMs");
     for (who, room) in [(&ben, &with_ben), (&cal, &with_cal)] {
-        app.wait_for(&format!(".room.dm[data-room=\"{room}\"] img.avatar"), DEFAULT_WAIT)
+        app.wait_for(
+            &format!(".room.dm[data-room=\"{room}\"] img.avatar"),
+            DEFAULT_WAIT,
+        )
+        .await
+        .unwrap_or_else(|e| panic!("{who}'s picture in the DM list: {e}"));
+        app.click(&format!(".room.dm[data-room=\"{room}\"]"))
             .await
-            .unwrap_or_else(|e| panic!("{who}'s picture in the DM list: {e}"));
-        app.click(&format!(".room.dm[data-room=\"{room}\"]")).await.expect("open the DM");
+            .expect("open the DM");
         let member = format!(".members .member[title=\"@{who}:localhost\"]");
         app.wait_for(&format!("{member} img.avatar"), DEFAULT_WAIT)
             .await
@@ -865,6 +934,8 @@ async fn a_picture_gone_from_its_server_falls_back_to_the_persons_other_one() {
             .await
             .unwrap_or_else(|e| panic!("{who}'s picture on the profile card: {e}"));
         app.press("body", "Escape").await.expect("close the card");
-        app.wait_for_count(".profile-card", 0, DEFAULT_WAIT).await.expect("card closed");
+        app.wait_for_count(".profile-card", 0, DEFAULT_WAIT)
+            .await
+            .expect("card closed");
     }
 }

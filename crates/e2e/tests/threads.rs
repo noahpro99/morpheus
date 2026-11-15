@@ -239,9 +239,13 @@ async fn thread_replies_have_the_message_menu_and_the_panel_closes() {
     app.click_text(".thread-chip", "repl")
         .await
         .expect("open thread panel");
-    app.wait_for_text(".thread-panel .message .body", "react to this reply", DEFAULT_WAIT)
-        .await
-        .expect("replies shown");
+    app.wait_for_text(
+        ".thread-panel .message .body",
+        "react to this reply",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("replies shown");
 
     // Right click: the menu, with its message highlighted.
     app.right_click_text(".thread-panel .message", "react to this reply")
@@ -272,9 +276,13 @@ async fn thread_replies_have_the_message_menu_and_the_panel_closes() {
     app.shift_click_in_message("delete this reply", ".actions .action.delete")
         .await
         .expect("shift-click delete");
-    app.wait_for_text_gone(".thread-panel .message .body", "delete this reply", DEFAULT_WAIT)
-        .await
-        .expect("deleted from the thread");
+    app.wait_for_text_gone(
+        ".thread-panel .message .body",
+        "delete this reply",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("deleted from the thread");
     assert_eq!(
         app.count(".confirm-dialog").await.expect("count"),
         0,

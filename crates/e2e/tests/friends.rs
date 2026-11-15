@@ -282,9 +282,15 @@ async fn the_dms_sidebar_starts_with_the_command_palette_button() {
     if !app.is_gpui() {
         return;
     }
-    app.wait_for("form.login", DEFAULT_WAIT).await.expect("login form");
-    app.type_into("form.login input[name=username]", "alice").await.expect("username");
-    app.type_into("form.login input[name=password]", "alice-password").await.expect("password");
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    app.type_into("form.login input[name=username]", "alice")
+        .await
+        .expect("username");
+    app.type_into("form.login input[name=password]", "alice-password")
+        .await
+        .expect("password");
     app.submit("form.login").await.expect("submit");
     app.wait_for(".rail-dms", DEFAULT_WAIT).await.expect("rail");
     app.click(".rail-dms").await.expect("DMs");
@@ -297,32 +303,67 @@ async fn the_dms_sidebar_starts_with_the_command_palette_button() {
         "no heading text in the top bar of the DMs"
     );
     assert!(
-        app.texts(".sidebar-header").await.expect("texts").iter().all(|t| !t.contains("Direct messages")),
+        app.texts(".sidebar-header")
+            .await
+            .expect("texts")
+            .iter()
+            .all(|t| !t.contains("Direct messages")),
         "the old heading text is gone"
     );
-    let header = app.bounds(".sidebar-header").await.expect("bounds").expect("header");
-    let text = app.text(".sidebar .palette-button").await.expect("text").unwrap_or_default();
-    assert!(text.contains("Command palette") && text.contains("Ctrl+K"), "button text {text:?}");
-    let button = app.bounds(".sidebar .palette-button").await.expect("bounds").expect("button");
-    let friends = app.bounds(".sidebar .friends-row").await.expect("bounds").expect("friends");
-    let sidebar = app.bounds(".sidebar").await.expect("bounds").expect("sidebar");
+    let header = app
+        .bounds(".sidebar-header")
+        .await
+        .expect("bounds")
+        .expect("header");
+    let text = app
+        .text(".sidebar .palette-button")
+        .await
+        .expect("text")
+        .unwrap_or_default();
+    assert!(
+        text.contains("Command palette") && text.contains("Ctrl+K"),
+        "button text {text:?}"
+    );
+    let button = app
+        .bounds(".sidebar .palette-button")
+        .await
+        .expect("bounds")
+        .expect("button");
+    let friends = app
+        .bounds(".sidebar .friends-row")
+        .await
+        .expect("bounds")
+        .expect("friends");
+    let sidebar = app
+        .bounds(".sidebar")
+        .await
+        .expect("bounds")
+        .expect("sidebar");
     assert!(
         button.y >= header.y && button.bottom() <= header.bottom() + 0.5,
         "the button {button:?} is not inside the top bar {header:?}"
     );
-    assert!(button.bottom() <= friends.y + 0.5, "the button {button:?} is not above Friends {friends:?}");
+    assert!(
+        button.bottom() <= friends.y + 0.5,
+        "the button {button:?} is not above Friends {friends:?}"
+    );
     assert!(
         button.x > sidebar.x + 4.0 && button.right() < sidebar.right() - 4.0,
         "the button {button:?} is not inset in the sidebar {sidebar:?}"
     );
-    let bg = app.colours_of(".sidebar .palette-button", "background").await.expect("bg");
+    let bg = app
+        .colours_of(".sidebar .palette-button", "background")
+        .await
+        .expect("bg");
     let side = app.colours_of(".sidebar", "background").await.expect("bg");
     assert!(
         bg.first().is_some_and(|c| !c.is_empty()) && bg.first() != side.first(),
         "the button's background {bg:?} does not stand out from the sidebar's {side:?}"
     );
     app.click(".sidebar .palette-button").await.expect("click");
-    app.wait_for(".switcher input", DEFAULT_WAIT).await.expect("the palette opened");
+    app.wait_for(".switcher input", DEFAULT_WAIT)
+        .await
+        .expect("the palette opened");
 }
 
 #[tokio::test]
@@ -332,27 +373,51 @@ async fn new_message_copies_a_link_to_your_profile() {
         return;
     };
     let mut app = App::launch(&hs).await.expect("launch app");
-    app.wait_for("form.login", DEFAULT_WAIT).await.expect("login form");
-    app.type_into("form.login input[name=username]", "carol").await.expect("username");
-    app.type_into("form.login input[name=password]", "carol-password").await.expect("password");
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    app.type_into("form.login input[name=username]", "carol")
+        .await
+        .expect("username");
+    app.type_into("form.login input[name=password]", "carol-password")
+        .await
+        .expect("password");
     app.submit("form.login").await.expect("submit");
     app.wait_for(".room", DEFAULT_WAIT).await.expect("rooms");
     open_friends(&mut app).await;
-    app.click(".friends-header .new-message-tab").await.expect("New Message");
-    app.wait_for("form.new-message input", DEFAULT_WAIT).await.expect("the form");
-
-    app.wait_for_text(".new-message .copy-profile-link", "Copy link to your profile", DEFAULT_WAIT)
+    app.click(".friends-header .new-message-tab")
         .await
-        .expect("the button");
-    app.click(".new-message .copy-profile-link").await.expect("copy");
+        .expect("New Message");
+    app.wait_for("form.new-message input", DEFAULT_WAIT)
+        .await
+        .expect("the form");
+
+    app.wait_for_text(
+        ".new-message .copy-profile-link",
+        "Copy link to your profile",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("the button");
+    app.click(".new-message .copy-profile-link")
+        .await
+        .expect("copy");
     app.wait_for_text(".new-message .copy-profile-link", "Copied", DEFAULT_WAIT)
         .await
         .expect("confirmation");
 
     // What went to the clipboard: paste it into the name box.
-    app.click("form.new-message input").await.expect("focus the box");
-    app.shortcut("form.new-message input", "v", true).await.expect("paste");
-    app.wait_for_value("form.new-message input", "https://matrix.to/#/@carol:localhost", DEFAULT_WAIT)
+    app.click("form.new-message input")
         .await
-        .expect("the clipboard holds the profile link");
+        .expect("focus the box");
+    app.shortcut("form.new-message input", "v", true)
+        .await
+        .expect("paste");
+    app.wait_for_value(
+        "form.new-message input",
+        "https://matrix.to/#/@carol:localhost",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("the clipboard holds the profile link");
 }

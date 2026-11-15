@@ -388,7 +388,10 @@ async fn choose(app: &mut App, picker: &str, id: &str) {
     // Readable: the text is not the colour of the list behind it.
     let text = app.colours_of(&option, "color").await.expect("colours");
     let list = app
-        .colours_of(&format!(".device-choice[data-kind={picker}] .device-options"), "background")
+        .colours_of(
+            &format!(".device-choice[data-kind={picker}] .device-options"),
+            "background",
+        )
         .await
         .expect("colours");
     assert!(
@@ -570,7 +573,10 @@ async fn a_call_in_a_dm_rings_the_other_person_who_can_answer_or_decline() {
     if alice.is_gpui() {
         // The line leads with a green phone.
         alice
-            .wait_for(".message.system .state-icon.call-started[data-icon=phone][data-tone=good]", DEFAULT_WAIT)
+            .wait_for(
+                ".message.system .state-icon.call-started[data-icon=phone][data-tone=good]",
+                DEFAULT_WAIT,
+            )
             .await
             .expect("the call's line has its icon");
     }
@@ -647,8 +653,11 @@ async fn a_call_in_a_dm_rings_the_other_person_who_can_answer_or_decline() {
 async fn wait_pictures(app: &mut App, user: &str) -> anyhow::Result<()> {
     if app.is_gpui() {
         let tile = format!(".call-stage .video-tile[data-user=\"{user}\"]");
-        app.wait_for(&format!("{tile}.screen .video[data-shown=true]"), DEFAULT_WAIT)
-            .await?;
+        app.wait_for(
+            &format!("{tile}.screen .video[data-shown=true]"),
+            DEFAULT_WAIT,
+        )
+        .await?;
         return app
             .wait_for(
                 &format!("{tile}:not(.screen) .video[data-shown=true]"),
@@ -911,7 +920,9 @@ async fn wait_screen_pattern(app: &mut App, user: &str) -> anyhow::Result<()> {
             let tiles = app.count(&tile).await?;
             let shown = app.attr(&tile, "data-shown").await?.unwrap_or_default();
             let seq = app.attr(&tile, "data-seq").await?.unwrap_or_default();
-            seen = format!("tiles {tiles}, shown {shown:?}, seq {seq:?}, left {left:?}, right {right:?}");
+            seen = format!(
+                "tiles {tiles}, shown {shown:?}, seq {seq:?}, left {left:?}, right {right:?}"
+            );
             let rgb = |hex: &str| {
                 (hex.len() == 6)
                     .then(|| u32::from_str_radix(hex, 16).ok())
@@ -1001,16 +1012,20 @@ async fn a_screen_shared_out_of_view_holds_only_a_few_pictures() {
         .wait_for(".voice-panel .screen-button.active", DEFAULT_WAIT)
         .await
         .expect("still sharing");
-    assert_eq!(alice.count(".call-stage").await.expect("count"), 0, "the call is out of view");
+    assert_eq!(
+        alice.count(".call-stage").await.expect("count"),
+        0,
+        "the call is out of view"
+    );
     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
     let held = alice.video_pictures().await.expect("count");
     eprintln!("[pictures] {held} held after 3 s out of view");
-    assert!(held <= 4, "{held} pictures held for a screen not drawn (at most a few)");
+    assert!(
+        held <= 4,
+        "{held} pictures held for a screen not drawn (at most a few)"
+    );
 
-    alice
-        .click(".voice-panel .hang-up")
-        .await
-        .expect("hang up");
+    alice.click(".voice-panel .hang-up").await.expect("hang up");
 }
 
 #[tokio::test]
@@ -1127,7 +1142,10 @@ async fn wait_sound(app: &mut App, sound: &str) -> anyhow::Result<()> {
     let deadline = std::time::Instant::now() + DEFAULT_WAIT;
     while count_sound(app, sound).await == 0 {
         if std::time::Instant::now() >= deadline {
-            anyhow::bail!("{sound} never played; played {:?}", sounds_played(app).await);
+            anyhow::bail!(
+                "{sound} never played; played {:?}",
+                sounds_played(app).await
+            );
         }
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
@@ -1498,8 +1516,12 @@ async fn a_call_service_outage_is_retried_then_shown_with_a_retry_button() {
         .expect("not left connecting");
 
     // The service comes back after a blip: trying again rides that out too.
-    outage.fail_next.store(2, std::sync::atomic::Ordering::SeqCst);
-    outage.down.store(false, std::sync::atomic::Ordering::SeqCst);
+    outage
+        .fail_next
+        .store(2, std::sync::atomic::Ordering::SeqCst);
+    outage
+        .down
+        .store(false, std::sync::atomic::Ordering::SeqCst);
     alice
         .click(".call-join-error .retry-join")
         .await
@@ -1513,10 +1535,7 @@ async fn a_call_service_outage_is_retried_then_shown_with_a_retry_button() {
         0,
         "the error is gone once joined"
     );
-    alice
-        .click(".voice-panel .hang-up")
-        .await
-        .expect("hang up");
+    alice.click(".voice-panel .hang-up").await.expect("hang up");
     out_of_call(&mut alice).await;
 }
 
@@ -1944,11 +1963,7 @@ async fn clicking_a_voice_channel_joins_its_call() {
         .await
         .expect("the voice channel listed");
     assert!(
-        alice
-            .count(".room.voice .voice-icon")
-            .await
-            .expect("count")
-            > 0,
+        alice.count(".room.voice .voice-icon").await.expect("count") > 0,
         "listed with a speaker"
     );
     assert_eq!(
@@ -2030,7 +2045,10 @@ async fn join_figures(hs: &str, label: &str, bound_ms: u128) {
     let mut figures = Vec::new();
     for round in 0..3 {
         let started = std::time::Instant::now();
-        alice.click_text(".room.voice", "lounge").await.expect("join");
+        alice
+            .click_text(".room.voice", "lounge")
+            .await
+            .expect("join");
         let joining = loop {
             let panel = alice.texts(".voice-panel").await.unwrap_or_default();
             if panel.iter().any(|t| t.contains("Connecting")) {
@@ -2067,7 +2085,10 @@ async fn join_figures(hs: &str, label: &str, bound_ms: u128) {
     let _ = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/join-latency.txt"))
+        .open(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../target/join-latency.txt"
+        ))
         .and_then(|mut f| std::io::Write::write_all(&mut f, text.as_bytes()));
     eprintln!("{text}");
     for (round, joining, connected) in figures {
@@ -2103,19 +2124,26 @@ async fn hanging_up_leaves_the_voice_channels_list_at_once() {
         .await
         .expect("room id")
         .expect("the lounge's id");
-    alice.click_text(".room.voice", "lounge").await.expect("join");
+    alice
+        .click_text(".room.voice", "lounge")
+        .await
+        .expect("join");
     alice
         .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
         .await
         .expect("in");
-    wait_in_call(&mut alice, &room_id, "alice").await.expect("listed under it");
+    wait_in_call(&mut alice, &room_id, "alice")
+        .await
+        .expect("listed under it");
     // Let the membership settle on the server, so the removal below is the
     // only thing in flight.
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     alice.click(".voice-panel .hang-up").await.expect("hang up");
     // No waiting: the very next look.
     let listed = alice
-        .texts(&format!(".room-call[data-room=\"{room_id}\"] .call-participant"))
+        .texts(&format!(
+            ".room-call[data-room=\"{room_id}\"] .call-participant"
+        ))
         .await
         .expect("texts");
     assert!(
@@ -2125,7 +2153,9 @@ async fn hanging_up_leaves_the_voice_channels_list_at_once() {
     // And it stays gone once the server has answered.
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     let listed = alice
-        .texts(&format!(".room-call[data-room=\"{room_id}\"] .call-participant"))
+        .texts(&format!(
+            ".room-call[data-room=\"{room_id}\"] .call-participant"
+        ))
         .await
         .expect("texts");
     assert!(listed.is_empty(), "listed again: {listed:?}");
@@ -2165,7 +2195,9 @@ async fn quitting_the_app_hangs_up_first_but_closing_to_the_tray_does_not() {
     bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
         .await
         .expect("bob connected");
-    wait_in_call(&mut bob, &room_id, "alice").await.expect("bob sees alice");
+    wait_in_call(&mut bob, &room_id, "alice")
+        .await
+        .expect("bob sees alice");
 
     // To the tray: still in the call.
     alice.close_to_tray().await.expect("close to tray");
@@ -2542,7 +2574,10 @@ async fn voice_settings_have_icons_and_a_camera_choice() {
         .count(".voice-devices .device-choice .device-label svg.icon")
         .await
         .expect("icons");
-    assert!(lists > 0 && icons == lists, "device lists without an icon: {lists} lists, {icons} icons");
+    assert!(
+        lists > 0 && icons == lists,
+        "device lists without an icon: {lists} lists, {icons} icons"
+    );
     choose(&mut alice, "camera", "test-camera-2").await;
     alice
         .wait_for(
@@ -2706,7 +2741,10 @@ async fn muted_marks_the_mic_and_its_arrow_red_together() {
     }
     let mic = alice.bounds(mic).await.expect("mic").expect("a mic");
     let arrow = alice.bounds(arrow).await.expect("arrow").expect("an arrow");
-    assert!(mic.right() < arrow.x, "no gap between the mic and its arrow");
+    assert!(
+        mic.right() < arrow.x,
+        "no gap between the mic and its arrow"
+    );
 }
 
 /// Clicking a voice channel lists you under it at once, greyed until the
@@ -2734,7 +2772,8 @@ async fn joining_lists_you_at_once_greyed_until_connected() {
         .click_text(".room.voice", &channel)
         .await
         .expect("click");
-    let me = format!(".room-call[data-room=\"{id}\"] .call-participant[data-user=\"@alice:localhost\"]");
+    let me =
+        format!(".room-call[data-room=\"{id}\"] .call-participant[data-user=\"@alice:localhost\"]");
     alice
         .wait_for(
             &format!("{me}.connecting"),
@@ -2880,10 +2919,18 @@ async fn a_voice_channel_joins_in_place_and_opens_as_a_call_page() {
     let deadline = std::time::Instant::now() + DEFAULT_WAIT;
     loop {
         alice
-            .scroll_to(".voice-chat .timeline", morpheus_e2e::ScrollTo::FromBottom(2000.0))
+            .scroll_to(
+                ".voice-chat .timeline",
+                morpheus_e2e::ScrollTo::FromBottom(2000.0),
+            )
             .await
             .expect("scroll up");
-        if alice.count(".voice-chat .jump-to-bottom").await.expect("count") > 0 {
+        if alice
+            .count(".voice-chat .jump-to-bottom")
+            .await
+            .expect("count")
+            > 0
+        {
             break;
         }
         assert!(std::time::Instant::now() < deadline, "no Jump to present");
@@ -3084,7 +3131,11 @@ async fn focus_state(app: &mut App) -> Option<(Option<String>, Vec<String>, bool
         .attr(".call-focus-main > *", "data-user")
         .await
         .expect("main");
-    let screen = app.count(".call-focus-main > .screen").await.expect("count") > 0;
+    let screen = app
+        .count(".call-focus-main > .screen")
+        .await
+        .expect("count")
+        > 0;
     let main = user.map(|u| if screen { format!("screen:{u}") } else { u });
     let strip: Vec<String> = app
         .attrs(".call-strip > *", "data-user")
@@ -3329,7 +3380,9 @@ async fn a_call_goes_on_with_the_window_closed() {
         .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
         .await
         .expect("alice connected");
-    wait_hears(&mut alice, "bob").await.expect("alice hears bob");
+    wait_hears(&mut alice, "bob")
+        .await
+        .expect("alice hears bob");
 
     // Bob closes the window to the tray: the call must not end.
     bob.close_to_tray().await.expect("close");
@@ -3359,7 +3412,9 @@ async fn a_call_goes_on_with_the_window_closed() {
     wait_in_call(&mut bob, &room_id, "bob")
         .await
         .expect("bob listed in the call");
-    bob.click(".voice-panel .hang-up").await.expect("bob leaves");
+    bob.click(".voice-panel .hang-up")
+        .await
+        .expect("bob leaves");
     wait_not_in_call(&mut alice, &room_id, "bob")
         .await
         .expect("bob hung up");
@@ -3743,16 +3798,18 @@ async fn the_speaking_ring_follows_the_voice_quickly() {
             click,
         ]);
     }
-    let report = format!(
-        "[own on, other on, own off, other off, click] ms per round: {rounds:?}\n"
-    );
+    let report =
+        format!("[own on, other on, own off, other off, click] ms per round: {rounds:?}\n");
     eprintln!("{report}");
     {
         use std::io::Write;
         if let Ok(mut file) = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
-            .open(concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/speaking-latency.txt"))
+            .open(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../target/speaking-latency.txt"
+            ))
         {
             let _ = write!(file, "{report}");
         }
@@ -3765,10 +3822,26 @@ async fn the_speaking_ring_follows_the_voice_quickly() {
         all.sort_unstable();
         all[all.len() - 2]
     };
-    assert!(worst(0) <= 220, "own ring on after {} ms\n{report}", worst(0));
-    assert!(worst(1) <= 420, "alice's ring on after {} ms\n{report}", worst(1));
-    assert!(worst(2) <= 650, "own ring off after {} ms\n{report}", worst(2));
-    assert!(worst(3) <= 650, "alice's ring off after {} ms\n{report}", worst(3));
+    assert!(
+        worst(0) <= 220,
+        "own ring on after {} ms\n{report}",
+        worst(0)
+    );
+    assert!(
+        worst(1) <= 420,
+        "alice's ring on after {} ms\n{report}",
+        worst(1)
+    );
+    assert!(
+        worst(2) <= 650,
+        "own ring off after {} ms\n{report}",
+        worst(2)
+    );
+    assert!(
+        worst(3) <= 650,
+        "alice's ring off after {} ms\n{report}",
+        worst(3)
+    );
 }
 
 /// A camera's card shows the whole picture the camera sends, in its own
@@ -3804,11 +3877,7 @@ async fn a_cameras_card_shows_the_whole_picture_with_round_corners() {
         .await
         .expect("the test pattern");
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-    let card = alice
-        .bounds(tile)
-        .await
-        .expect("bounds")
-        .expect("the card");
+    let card = alice.bounds(tile).await.expect("bounds").expect("the card");
     let Some((pixels, w, h)) = common::capture(&alice) else {
         eprintln!("no grim capture here; skipping the pixel check");
         return;
@@ -3848,22 +3917,43 @@ async fn a_cameras_card_shows_the_whole_picture_with_round_corners() {
         .as_deref()
         == Some("true");
     let (left_is, right_is): (&dyn Fn((u8, u8, u8)) -> bool, &dyn Fn((u8, u8, u8)) -> bool) =
-        if mirrored { (&blue, &red) } else { (&red, &blue) };
+        if mirrored {
+            (&blue, &red)
+        } else {
+            (&red, &blue)
+        };
     let left = [pixel(px + 4.0, cy), pixel(px + 24.0, cy)];
     let right = [pixel(px + pw - 4.0, cy), pixel(px + pw - 24.0, cy)];
-    assert!(left.iter().any(|p| left_is(*p)), "the left edge is {left:?}, not the picture's red");
-    assert!(right.iter().any(|p| right_is(*p)), "the right edge is {right:?}, not the picture's blue");
+    assert!(
+        left.iter().any(|p| left_is(*p)),
+        "the left edge is {left:?}, not the picture's red"
+    );
+    assert!(
+        right.iter().any(|p| right_is(*p)),
+        "the right edge is {right:?}, not the picture's blue"
+    );
     // The middle of the top and bottom edges show the picture too.
     for (x, red_side) in [(px + pw * 0.25, !mirrored), (px + pw * 0.75, mirrored)] {
         for y in [py + 3.0, py + ph - 3.0] {
             let p = pixel(x, y);
-            assert!(if red_side { red(p) } else { blue(p) }, "the edge at ({x}, {y}) is {p:?}");
+            assert!(
+                if red_side { red(p) } else { blue(p) },
+                "the edge at ({x}, {y}) is {p:?}"
+            );
         }
     }
     // The corners of the picture are the card's background, not picture.
-    for (x, y) in [(px + 1.0, py + 1.0), (px + pw - 2.0, py + 1.0), (px + 1.0, py + ph - 2.0), (px + pw - 2.0, py + ph - 2.0)] {
+    for (x, y) in [
+        (px + 1.0, py + 1.0),
+        (px + pw - 2.0, py + 1.0),
+        (px + 1.0, py + ph - 2.0),
+        (px + pw - 2.0, py + ph - 2.0),
+    ] {
         let p = pixel(x, y);
-        assert!(!red(p) && !blue(p), "the picture's corner at ({x}, {y}) is {p:?}: it is not rounded (card {card:?}, picture {px},{py} {pw}x{ph})");
+        assert!(
+            !red(p) && !blue(p),
+            "the picture's corner at ({x}, {y}) is {p:?}: it is not rounded (card {card:?}, picture {px},{py} {pw}x{ph})"
+        );
     }
 }
 
@@ -3881,7 +3971,10 @@ async fn joining_a_voice_channel_is_quick() {
 /// distance away; matrix.org's answers took longer): returns the proxy's URL.
 async fn slow_homeserver(hs: &str, delay: std::time::Duration) -> String {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    let target = hs.trim_start_matches("http://").trim_end_matches('/').to_owned();
+    let target = hs
+        .trim_start_matches("http://")
+        .trim_end_matches('/')
+        .to_owned();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind");
@@ -3967,25 +4060,40 @@ async fn a_call_ending_leaves_one_ended_a_call_line_when_the_last_person_leaves(
     bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
         .await
         .expect("bob connected");
-    wait_in_call(&mut alice, &room, "bob").await.expect("alice sees bob");
-    alice.click(".voice-chat-toggle").await.expect("open the chat");
+    wait_in_call(&mut alice, &room, "bob")
+        .await
+        .expect("alice sees bob");
+    alice
+        .click(".voice-chat-toggle")
+        .await
+        .expect("open the chat");
     alice
         .wait_for(".voice-chat .timeline", DEFAULT_WAIT)
         .await
         .expect("the chat");
 
     // Alice leaves, bob is still in: no ended line.
-    alice.click(".voice-panel .hang-up").await.expect("alice hangs up");
-    wait_not_in_call(&mut bob, &room, "alice").await.expect("alice gone");
+    alice
+        .click(".voice-panel .hang-up")
+        .await
+        .expect("alice hangs up");
+    wait_not_in_call(&mut bob, &room, "alice")
+        .await
+        .expect("alice gone");
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     assert_eq!(
-        alice.count(".voice-chat .message.system .state-icon.call-ended").await.expect("count"),
+        alice
+            .count(".voice-chat .message.system .state-icon.call-ended")
+            .await
+            .expect("count"),
         0,
         "an ended line while bob is still in the call"
     );
 
     // Bob leaves, the call is empty: one line.
-    bob.click(".voice-panel .hang-up").await.expect("bob hangs up");
+    bob.click(".voice-panel .hang-up")
+        .await
+        .expect("bob hangs up");
     alice
         .wait_for(
             ".voice-chat .message.system .state-icon.call-ended[data-icon=phone][data-tone=quiet]",
@@ -3999,7 +4107,10 @@ async fn a_call_ending_leaves_one_ended_a_call_line_when_the_last_person_leaves(
         .expect("it names who left last");
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     assert_eq!(
-        alice.count(".voice-chat .message.system .state-icon.call-ended").await.expect("count"),
+        alice
+            .count(".voice-chat .message.system .state-icon.call-ended")
+            .await
+            .expect("count"),
         1,
         "one ended line for the call"
     );
@@ -4018,10 +4129,7 @@ async fn picture_size(app: &mut App, tile: &str) -> (f64, f64) {
 
 /// Alice and bob in a fresh voice channel, alice's camera on and showing on
 /// both: alice launched with `env`.
-async fn two_in_a_call_with_alices_camera(
-    hs: &str,
-    env: &[(&str, &str)],
-) -> (App, App) {
+async fn two_in_a_call_with_alices_camera(hs: &str, env: &[(&str, &str)]) -> (App, App) {
     let mut alice = App::launch_with_env(hs, env).await.expect("launch alice");
     let mut bob = App::launch(hs).await.expect("launch bob");
     let channel = fresh_voice_channel(hs);
@@ -4103,7 +4211,10 @@ async fn a_camera_is_sent_at_720p_widescreen_with_a_matching_bitrate() {
         .unwrap_or_default();
     eprintln!("published: {published}");
     // "1280x720@30 bitrate=1700000 layers=3 ..."
-    assert!(published.starts_with("1280x720@"), "published {published:?}");
+    assert!(
+        published.starts_with("1280x720@"),
+        "published {published:?}"
+    );
     let bitrate: u64 = published
         .split_whitespace()
         .find_map(|part| part.strip_prefix("bitrate="))
@@ -4201,11 +4312,29 @@ async fn sharing_the_screen_asks_for_its_quality_and_sends_that() {
         .wait_for(".screen-quality", DEFAULT_WAIT)
         .await
         .expect("the quality popover");
-    assert_eq!(alice.count(".screen-quality .screen-res").await.expect("count"), 3);
-    assert_eq!(alice.count(".screen-quality .screen-fps").await.expect("count"), 3);
-    let labels = alice.texts(".screen-quality .screen-res").await.expect("texts");
+    assert_eq!(
+        alice
+            .count(".screen-quality .screen-res")
+            .await
+            .expect("count"),
+        3
+    );
+    assert_eq!(
+        alice
+            .count(".screen-quality .screen-fps")
+            .await
+            .expect("count"),
+        3
+    );
+    let labels = alice
+        .texts(".screen-quality .screen-res")
+        .await
+        .expect("texts");
     assert_eq!(labels, ["720p", "1080p", "Source"]);
-    let labels = alice.texts(".screen-quality .screen-fps").await.expect("texts");
+    let labels = alice
+        .texts(".screen-quality .screen-fps")
+        .await
+        .expect("texts");
     assert_eq!(labels, ["15", "30", "60"]);
     // The usual choice first: 1080p at 30.
     alice
@@ -4216,7 +4345,13 @@ async fn sharing_the_screen_asks_for_its_quality_and_sends_that() {
         .wait_for(".screen-fps.active[data-value=\"30\"]", DEFAULT_WAIT)
         .await
         .expect("30 fps chosen");
-    assert_eq!(alice.count(".screen-quality .screen-go").await.expect("count"), 1);
+    assert_eq!(
+        alice
+            .count(".screen-quality .screen-go")
+            .await
+            .expect("count"),
+        1
+    );
     // Nothing is shared until Go Live; Escape closes the popover.
     assert_eq!(alice.count(".video-tile.screen").await.expect("count"), 0);
     alice.press("body", "Escape").await.expect("escape");
@@ -4224,7 +4359,13 @@ async fn sharing_the_screen_asks_for_its_quality_and_sends_that() {
         .wait_for_count(".screen-quality", 0, DEFAULT_WAIT)
         .await
         .expect("closed");
-    assert_eq!(alice.count(&format!("{button}.active")).await.expect("count"), 0);
+    assert_eq!(
+        alice
+            .count(&format!("{button}.active"))
+            .await
+            .expect("count"),
+        0
+    );
 
     // 720p at 15.
     alice.click(button).await.expect("share again");
@@ -4236,7 +4377,10 @@ async fn sharing_the_screen_asks_for_its_quality_and_sends_that() {
         .click(".screen-quality .screen-fps[data-value=\"15\"]")
         .await
         .expect("15 fps");
-    alice.click(".screen-quality .screen-go").await.expect("go live");
+    alice
+        .click(".screen-quality .screen-go")
+        .await
+        .expect("go live");
     alice
         .wait_for_count(".screen-quality", 0, DEFAULT_WAIT)
         .await
@@ -4248,11 +4392,17 @@ async fn sharing_the_screen_asks_for_its_quality_and_sends_that() {
     let p = published(&mut alice, mine).await;
     eprintln!("720p15: {p}");
     assert!(p.starts_with("1280x720@15 "), "{p}");
-    assert!(p.contains("simulcast=false"), "one full layer for a screen: {p}");
+    assert!(
+        p.contains("simulcast=false"),
+        "one full layer for a screen: {p}"
+    );
     assert!(p.contains("hint=detail"), "{p}");
     assert!(p.contains("degradation=maintain-resolution"), "{p}");
     let bitrate = published_bitrate(&p);
-    assert!((800_000..=2_000_000).contains(&bitrate), "720p15 bitrate {bitrate}");
+    assert!(
+        (800_000..=2_000_000).contains(&bitrate),
+        "720p15 bitrate {bitrate}"
+    );
     wait_picture_size(&mut alice, mine, 1280.0, 720.0).await;
     wait_picture_size(&mut bob, theirs, 1280.0, 720.0).await;
     // Stopping needs no question.
@@ -4273,9 +4423,12 @@ async fn sharing_the_screen_asks_for_its_quality_and_sends_that() {
         .wait_for(".screen-fps.active[data-value=\"15\"]", DEFAULT_WAIT)
         .await
         .expect("15 remembered");
-    let kept = std::fs::read_to_string(alice.data_dir().join("screen-quality.json"))
-        .unwrap_or_default();
-    assert!(kept.contains("720") && kept.contains("15"), "kept in {kept:?}");
+    let kept =
+        std::fs::read_to_string(alice.data_dir().join("screen-quality.json")).unwrap_or_default();
+    assert!(
+        kept.contains("720") && kept.contains("15"),
+        "kept in {kept:?}"
+    );
 
     // 1080p at 60: more bits, and motion over text.
     alice
@@ -4286,7 +4439,10 @@ async fn sharing_the_screen_asks_for_its_quality_and_sends_that() {
         .click(".screen-quality .screen-fps[data-value=\"60\"]")
         .await
         .expect("60 fps");
-    alice.click(".screen-quality .screen-go").await.expect("go live");
+    alice
+        .click(".screen-quality .screen-go")
+        .await
+        .expect("go live");
     alice
         .wait_for(&format!("{mine} .video[data-shown=true]"), DEFAULT_WAIT)
         .await
@@ -4296,7 +4452,10 @@ async fn sharing_the_screen_asks_for_its_quality_and_sends_that() {
     assert!(p.starts_with("1920x1080@60 "), "{p}");
     assert!(p.contains("hint=motion"), "{p}");
     let bitrate = published_bitrate(&p);
-    assert!((6_000_000..=12_000_000).contains(&bitrate), "1080p60 bitrate {bitrate}");
+    assert!(
+        (6_000_000..=12_000_000).contains(&bitrate),
+        "1080p60 bitrate {bitrate}"
+    );
     wait_picture_size(&mut bob, theirs, 1920.0, 1080.0).await;
     alice.click(button).await.expect("stop");
     alice
@@ -4314,7 +4473,10 @@ async fn sharing_the_screen_asks_for_its_quality_and_sends_that() {
         .click(".screen-quality .screen-fps[data-value=\"15\"]")
         .await
         .expect("15 fps");
-    alice.click(".screen-quality .screen-go").await.expect("go live");
+    alice
+        .click(".screen-quality .screen-go")
+        .await
+        .expect("go live");
     alice
         .wait_for(&format!("{mine} .video[data-shown=true]"), DEFAULT_WAIT)
         .await
@@ -4347,14 +4509,18 @@ async fn camera_and_screen_share_play_sounds() {
     }
 
     alice.click(camera).await.expect("camera on");
-    wait_sound(&mut alice, "camera-on").await.expect("camera on sound");
+    wait_sound(&mut alice, "camera-on")
+        .await
+        .expect("camera on sound");
     alice
         .wait_for(&format!("{camera}.active"), DEFAULT_WAIT)
         .await
         .expect("camera on");
     assert_eq!(count_sound(&mut alice, "camera-off").await, 0);
     alice.click(camera).await.expect("camera off");
-    wait_sound(&mut alice, "camera-off").await.expect("camera off sound");
+    wait_sound(&mut alice, "camera-off")
+        .await
+        .expect("camera off sound");
     assert_eq!(count_sound(&mut alice, "camera-on").await, 1);
     assert_eq!(count_sound(&mut alice, "camera-off").await, 1);
 
@@ -4376,11 +4542,17 @@ async fn camera_and_screen_share_play_sounds() {
     }
 
     start_share(&mut alice, screen).await;
-    wait_sound(&mut alice, "screen-on").await.expect("share sound");
-    wait_sound(&mut bob, "screen-on").await.expect("bob hears the share start");
+    wait_sound(&mut alice, "screen-on")
+        .await
+        .expect("share sound");
+    wait_sound(&mut bob, "screen-on")
+        .await
+        .expect("bob hears the share start");
     assert_eq!(count_sound(&mut alice, "screen-off").await, 0);
     alice.click(screen).await.expect("stop");
-    wait_sound(&mut alice, "screen-off").await.expect("stop sound");
+    wait_sound(&mut alice, "screen-off")
+        .await
+        .expect("stop sound");
     tokio::time::sleep(std::time::Duration::from_millis(800)).await;
     assert_eq!(count_sound(&mut alice, "screen-on").await, 1);
     assert_eq!(count_sound(&mut alice, "screen-off").await, 1);
@@ -4413,7 +4585,11 @@ async fn a_person_under_a_voice_channel_opens_their_profile_beside_the_row() {
         .wait_for_text(".profile-card .profile-id", "@bob:localhost", DEFAULT_WAIT)
         .await
         .expect("bob's profile opens");
-    let card = alice.bounds(".profile-card").await.expect("bounds").expect("card");
+    let card = alice
+        .bounds(".profile-card")
+        .await
+        .expect("bounds")
+        .expect("card");
     let row_box = alice.bounds(row).await.expect("bounds").expect("row");
     assert!(
         card.x >= row_box.x + row_box.w - 1.0,
@@ -4430,8 +4606,16 @@ async fn a_person_under_a_voice_channel_opens_their_profile_beside_the_row() {
 /// What a tile's picture drew at a quarter and three quarters across.
 async fn drawn(app: &mut App, tile: &str) -> (String, String) {
     let tile = format!("{tile} .video");
-    let left = app.attr(&tile, "data-left").await.expect("attr").unwrap_or_default();
-    let right = app.attr(&tile, "data-right").await.expect("attr").unwrap_or_default();
+    let left = app
+        .attr(&tile, "data-left")
+        .await
+        .expect("attr")
+        .unwrap_or_default();
+    let right = app
+        .attr(&tile, "data-right")
+        .await
+        .expect("attr")
+        .unwrap_or_default();
     (left, right)
 }
 
@@ -4451,12 +4635,19 @@ async fn your_own_camera_is_mirrored_in_your_view_only() {
     let mine = ".call-stage .video-tile:not(.screen).self";
     let theirs = ".call-stage .video-tile:not(.screen)[data-user=\"@alice:localhost\"]";
     assert_eq!(
-        alice.attr(mine, "data-mirrored").await.expect("attr").as_deref(),
+        alice
+            .attr(mine, "data-mirrored")
+            .await
+            .expect("attr")
+            .as_deref(),
         Some("true"),
         "alice's self view is flagged mirrored"
     );
     assert_ne!(
-        bob.attr(theirs, "data-mirrored").await.expect("attr").as_deref(),
+        bob.attr(theirs, "data-mirrored")
+            .await
+            .expect("attr")
+            .as_deref(),
         Some("true"),
         "bob sees alice's camera unmirrored"
     );
@@ -4476,14 +4667,20 @@ async fn your_own_camera_is_mirrored_in_your_view_only() {
     );
 
     // Bob's own camera: alice sees it as sent.
-    bob.click(".voice-panel .camera-button").await.expect("bob's camera");
+    bob.click(".voice-panel .camera-button")
+        .await
+        .expect("bob's camera");
     let bobs = ".call-stage .video-tile:not(.screen)[data-user=\"@bob:localhost\"]";
     alice
         .wait_for(&format!("{bobs} .video[data-shown=true]"), DEFAULT_WAIT)
         .await
         .expect("bob's camera shows");
     assert_ne!(
-        alice.attr(bobs, "data-mirrored").await.expect("attr").as_deref(),
+        alice
+            .attr(bobs, "data-mirrored")
+            .await
+            .expect("attr")
+            .as_deref(),
         Some("true"),
         "others' cameras are not mirrored"
     );
@@ -4494,7 +4691,11 @@ async fn your_own_camera_is_mirrored_in_your_view_only() {
         .expect("her own screen as it is");
     let screen = ".call-stage .video-tile.screen.self";
     assert_ne!(
-        alice.attr(screen, "data-mirrored").await.expect("attr").as_deref(),
+        alice
+            .attr(screen, "data-mirrored")
+            .await
+            .expect("attr")
+            .as_deref(),
         Some("true"),
         "a screen is never mirrored"
     );
@@ -4558,7 +4759,9 @@ async fn check_focus_fills_stage(app: &mut App, who: &str, card: &str, ratio: Op
         assert!(s.w < big.w, "{who}: a strip card is as big as the focused");
     }
     // Click the focused card: back to the grid.
-    app.click(".call-focus-main > *").await.expect("click again");
+    app.click(".call-focus-main > *")
+        .await
+        .expect("click again");
     app.wait_for_count(".call-cards.focused", 0, DEFAULT_WAIT)
         .await
         .unwrap_or_else(|e| panic!("{who}: a second click did not unfocus: {e}"));
@@ -4665,7 +4868,11 @@ async fn alone_in_a_voice_channel_you_can_invite_friends_to_it() {
         .await
         .expect("the invite card while alone");
     alice
-        .wait_for_text(".call-invite button", "Invite to voice channel", DEFAULT_WAIT)
+        .wait_for_text(
+            ".call-invite button",
+            "Invite to voice channel",
+            DEFAULT_WAIT,
+        )
         .await
         .expect("its button");
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
@@ -4747,7 +4954,9 @@ async fn alone_in_a_voice_channel_you_can_invite_friends_to_it() {
             .any(|row| row.contains("alice"));
         if invited {
             bob.click_text(".invite-row", "alice").await.expect("open");
-            bob.click(".invite-card .invite-accept").await.expect("accept");
+            bob.click(".invite-card .invite-accept")
+                .await
+                .expect("accept");
             break;
         }
         if bob.open_room("alice").await.is_ok() {
@@ -4768,13 +4977,20 @@ async fn alone_in_a_voice_channel_you_can_invite_friends_to_it() {
         .find(|(name, _)| name.contains(&channel))
         .and_then(|(_, href)| href)
         .expect("a link named for the channel");
-    assert!(href.starts_with("https://matrix.to/#/!"), "a matrix.to link to a room: {href}");
+    assert!(
+        href.starts_with("https://matrix.to/#/!"),
+        "a matrix.to link to a room: {href}"
+    );
     bob.click(&format!(".message .body a[href=\"{href}\"]"))
         .await
         .expect("click the link");
-    bob.wait_for_text(".chat-header h2, .voice-page-join h2", &channel, DEFAULT_WAIT)
-        .await
-        .expect("the link opens the channel");
+    bob.wait_for_text(
+        ".chat-header h2, .voice-page-join h2",
+        &channel,
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("the link opens the channel");
     bob.click(CALL_BUTTON).await.expect("bob joins");
     bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
         .await
@@ -4830,7 +5046,10 @@ async fn a_shared_screen_zooms_pans_and_resets() {
         .wait_for(".call-cards.focused", DEFAULT_WAIT)
         .await
         .unwrap_or_else(|e| panic!("a click did not focus the screen: {e}"));
-    assert!((tile_num(&mut alice, "data-zoom").await - 1.0).abs() < 1e-6, "fit at first");
+    assert!(
+        (tile_num(&mut alice, "data-zoom").await - 1.0).abs() < 1e-6,
+        "fit at first"
+    );
 
     // The wheel zooms around the pointer.
     alice
@@ -4839,7 +5058,10 @@ async fn a_shared_screen_zooms_pans_and_resets() {
         .expect("wheel up");
     let z = tile_num(&mut alice, "data-zoom").await;
     assert!(z > 2.0 && z < 8.0, "wheel up zooms in: {z}");
-    let (x, y) = (tile_num(&mut alice, "data-x").await, tile_num(&mut alice, "data-y").await);
+    let (x, y) = (
+        tile_num(&mut alice, "data-x").await,
+        tile_num(&mut alice, "data-y").await,
+    );
     assert!(
         (x + 60.0 * (z - 1.0)).abs() < 2.0 && (y - 30.0 * (z - 1.0)).abs() < 2.0,
         "zoomed around the pointer: zoom {z}, offset ({x}, {y})"
@@ -4852,22 +5074,48 @@ async fn a_shared_screen_zooms_pans_and_resets() {
         .wheel_pixels_at(SCREEN_TILE, 0.0, 0.0, -5000.0)
         .await
         .expect("wheel up lots");
-    assert!((tile_num(&mut alice, "data-zoom").await - 8.0).abs() < 1e-6, "8x at most");
+    assert!(
+        (tile_num(&mut alice, "data-zoom").await - 8.0).abs() < 1e-6,
+        "8x at most"
+    );
 
     // A drag pans, and does not unfocus.
-    let (x0, y0) = (tile_num(&mut alice, "data-x").await, tile_num(&mut alice, "data-y").await);
-    alice.drag_at(SCREEN_TILE, 0.0, 0.0, -80, -40).await.expect("drag");
-    let (x1, y1) = (tile_num(&mut alice, "data-x").await, tile_num(&mut alice, "data-y").await);
+    let (x0, y0) = (
+        tile_num(&mut alice, "data-x").await,
+        tile_num(&mut alice, "data-y").await,
+    );
+    alice
+        .drag_at(SCREEN_TILE, 0.0, 0.0, -80, -40)
+        .await
+        .expect("drag");
+    let (x1, y1) = (
+        tile_num(&mut alice, "data-x").await,
+        tile_num(&mut alice, "data-y").await,
+    );
     assert!(
         (x1 - x0 + 80.0).abs() < 3.0 && (y1 - y0 + 40.0).abs() < 3.0,
         "dragged by (-80, -40): ({x0}, {y0}) -> ({x1}, {y1})"
     );
     tokio::time::sleep(std::time::Duration::from_millis(600)).await;
-    assert_eq!(alice.count(".call-cards.focused").await.expect("count"), 1, "a drag is not a click");
+    assert_eq!(
+        alice.count(".call-cards.focused").await.expect("count"),
+        1,
+        "a drag is not a click"
+    );
     // Far past the edge it stays clamped to the tile.
-    let tile = alice.bounds(SCREEN_TILE).await.expect("bounds").expect("tile");
-    alice.drag_at(SCREEN_TILE, 0.0, 0.0, 9000, 9000).await.expect("drag far");
-    let (fx, fy) = (tile_num(&mut alice, "data-x").await, tile_num(&mut alice, "data-y").await);
+    let tile = alice
+        .bounds(SCREEN_TILE)
+        .await
+        .expect("bounds")
+        .expect("tile");
+    alice
+        .drag_at(SCREEN_TILE, 0.0, 0.0, 9000, 9000)
+        .await
+        .expect("drag far");
+    let (fx, fy) = (
+        tile_num(&mut alice, "data-x").await,
+        tile_num(&mut alice, "data-y").await,
+    );
     assert!(
         (fx - tile.w * 7.0 / 2.0).abs() < 2.0 && (fy - tile.h * 7.0 / 2.0).abs() < 2.0,
         "clamped at the edge: ({fx}, {fy}) in {tile:?}"
@@ -4875,14 +5123,30 @@ async fn a_shared_screen_zooms_pans_and_resets() {
 
     // The zoom button toggles halfway zoom and fit.
     alice.click(".screen-zoom-indicator").await.expect("reset");
-    assert!((tile_num(&mut alice, "data-zoom").await - 1.0).abs() < 1e-6, "fit again");
-    alice.click(".screen-zoom-button").await.expect("zoom button");
+    assert!(
+        (tile_num(&mut alice, "data-zoom").await - 1.0).abs() < 1e-6,
+        "fit again"
+    );
+    alice
+        .click(".screen-zoom-button")
+        .await
+        .expect("zoom button");
     let actual = tile_num(&mut alice, "data-zoom").await;
-    assert!((actual - 2.0).abs() < 1e-6, "zoom button zooms halfway: {actual}");
-    assert_eq!(alice.count(".call-cards.focused").await.expect("count"), 1, "still focused");
+    assert!(
+        (actual - 2.0).abs() < 1e-6,
+        "zoom button zooms halfway: {actual}"
+    );
+    assert_eq!(
+        alice.count(".call-cards.focused").await.expect("count"),
+        1,
+        "still focused"
+    );
     // The indicator resets.
     alice.click(".screen-zoom-indicator").await.expect("reset");
-    assert!((tile_num(&mut alice, "data-zoom").await - 1.0).abs() < 1e-6, "reset to fit");
+    assert!(
+        (tile_num(&mut alice, "data-zoom").await - 1.0).abs() < 1e-6,
+        "reset to fit"
+    );
 
     // Another tile focused: the zoom is back to fit.
     alice
@@ -4890,9 +5154,15 @@ async fn a_shared_screen_zooms_pans_and_resets() {
         .await
         .expect("zoom");
     assert!(tile_num(&mut alice, "data-zoom").await > 2.0);
-    alice.click(".voice-panel .camera-button").await.expect("camera on");
     alice
-        .wait_for(".call-strip .video-tile:not(.screen), .call-strip .call-tile", DEFAULT_WAIT)
+        .click(".voice-panel .camera-button")
+        .await
+        .expect("camera on");
+    alice
+        .wait_for(
+            ".call-strip .video-tile:not(.screen), .call-strip .call-tile",
+            DEFAULT_WAIT,
+        )
         .await
         .expect("her own tile in the strip");
     alice
@@ -4909,7 +5179,10 @@ async fn a_shared_screen_zooms_pans_and_resets() {
     );
 
     // A plain click on the focused screen unfocuses it; focused again it is at fit.
-    alice.click(".call-strip .video-tile.screen").await.expect("focus the screen");
+    alice
+        .click(".call-strip .video-tile.screen")
+        .await
+        .expect("focus the screen");
     alice
         .wait_for(".call-focus-main .video-tile.screen", DEFAULT_WAIT)
         .await
@@ -4928,21 +5201,33 @@ async fn a_shared_screen_zooms_pans_and_resets() {
         .wait_for(".call-cards.focused", DEFAULT_WAIT)
         .await
         .expect("focused");
-    assert!((tile_num(&mut alice, "data-zoom").await - 1.0).abs() < 1e-6, "back at fit");
+    assert!(
+        (tile_num(&mut alice, "data-zoom").await - 1.0).abs() < 1e-6,
+        "back at fit"
+    );
 
     // The share stops: the tile goes; sharing again starts at fit.
     alice
         .wheel_pixels_at(SCREEN_TILE, 0.0, 0.0, -600.0)
         .await
         .expect("zoom");
-    alice.click(".voice-panel .screen-button").await.expect("stop");
+    alice
+        .click(".voice-panel .screen-button")
+        .await
+        .expect("stop");
     alice
         .wait_for_count(SCREEN_TILE, 0, DEFAULT_WAIT)
         .await
         .expect("tile gone");
     start_share(&mut alice, ".voice-panel .screen-button").await;
-    alice.wait_for(SCREEN_TILE, DEFAULT_WAIT).await.expect("tile back");
-    assert!((tile_num(&mut alice, "data-zoom").await - 1.0).abs() < 1e-6, "new share at fit");
+    alice
+        .wait_for(SCREEN_TILE, DEFAULT_WAIT)
+        .await
+        .expect("tile back");
+    assert!(
+        (tile_num(&mut alice, "data-zoom").await - 1.0).abs() < 1e-6,
+        "new share at fit"
+    );
     alice.click(".voice-panel .hang-up").await.expect("hang up");
 }
 
@@ -4957,7 +5242,9 @@ async fn a_screen_share_shows_a_skeleton_until_its_first_frame() {
         return;
     };
     let hold = [("MORPHEUS_E2E_FRAME_DELAY_MS", "6000")];
-    let mut alice = App::launch_with_env(&hs, &hold).await.expect("launch alice");
+    let mut alice = App::launch_with_env(&hs, &hold)
+        .await
+        .expect("launch alice");
     if !alice.is_gpui() {
         eprintln!("the skeleton is built in the GPUI app only; skipping");
         return;
@@ -5003,11 +5290,17 @@ async fn a_screen_share_shows_a_skeleton_until_its_first_frame() {
         .await
         .unwrap_or_else(|e| panic!("{who}: the picture did not replace the skeleton: {e}"));
         assert_eq!(
-            app.count(".video-tile.screen.skeleton").await.expect("count"),
+            app.count(".video-tile.screen.skeleton")
+                .await
+                .expect("count"),
             0,
             "{who}: the skeleton is gone"
         );
-        assert_eq!(app.count(".video-tile.screen").await.expect("count"), 1, "{who}: one screen tile");
+        assert_eq!(
+            app.count(".video-tile.screen").await.expect("count"),
+            1,
+            "{who}: one screen tile"
+        );
     }
     alice.click(".voice-panel .hang-up").await.expect("hang up");
     bob.click(".voice-panel .hang-up").await.expect("hang up");
@@ -5025,15 +5318,27 @@ fn can_capture() -> bool {
 
 /// The pixels (RGB) of `area` (window coordinates) of the app's window.
 fn capture_window_area(pid: u32, area: (f64, f64, f64, f64)) -> Option<Vec<[u8; 3]>> {
-    let out = std::process::Command::new("hyprctl").args(["clients", "-j"]).output().ok()?;
+    let out = std::process::Command::new("hyprctl")
+        .args(["clients", "-j"])
+        .output()
+        .ok()?;
     let clients: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
     let window = clients
         .as_array()?
         .iter()
         .find(|c| c["pid"].as_u64() == Some(u64::from(pid)))?
         .clone();
-    let (x, y) = (window["at"][0].as_f64()? + area.0, window["at"][1].as_f64()? + area.1);
-    let geometry = format!("{},{} {}x{}", x.round(), y.round(), area.2.round().max(1.0), area.3.round().max(1.0));
+    let (x, y) = (
+        window["at"][0].as_f64()? + area.0,
+        window["at"][1].as_f64()? + area.1,
+    );
+    let geometry = format!(
+        "{},{} {}x{}",
+        x.round(),
+        y.round(),
+        area.2.round().max(1.0),
+        area.3.round().max(1.0)
+    );
     let out = std::process::Command::new("grim")
         .args(["-s", "1", "-t", "ppm", "-g", &geometry, "-"])
         .output()
@@ -5057,7 +5362,9 @@ fn capture_window_area(pid: u32, area: (f64, f64, f64, f64)) -> Option<Vec<[u8; 
 fn green_on_edge(app: &App, card: &morpheus_e2e::Bounds) -> Option<usize> {
     let pid = app.pid()?;
     let corner = 14.0;
-    let green = |p: &[u8; 3]| i32::from(p[1]) > i32::from(p[0]) + 50 && i32::from(p[1]) > i32::from(p[2]) + 30;
+    let green = |p: &[u8; 3]| {
+        i32::from(p[1]) > i32::from(p[0]) + 50 && i32::from(p[1]) > i32::from(p[2]) + 30
+    };
     let top = capture_window_area(pid, (card.x + corner, card.y, card.w - 2.0 * corner, 3.0))?;
     let left = capture_window_area(pid, (card.x, card.y + corner, 3.0, card.h - 2.0 * corner))?;
     Some(top.iter().chain(left.iter()).filter(|p| green(p)).count())
@@ -5092,7 +5399,9 @@ async fn a_video_card_rings_green_while_its_person_speaks() {
     bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
         .await
         .expect("bob connected");
-    bob.click(".voice-panel .camera-button").await.expect("camera on");
+    bob.click(".voice-panel .camera-button")
+        .await
+        .expect("camera on");
     wait_test_pattern(&mut alice, "@bob:localhost")
         .await
         .expect("alice sees bob's camera");
@@ -5121,7 +5430,10 @@ async fn a_video_card_rings_green_while_its_person_speaks() {
             }
             tokio::time::sleep(std::time::Duration::from_millis(150)).await;
         }
-        assert!(seen > 40, "green along bob's video card edge for alice ({seen} pixels)");
+        assert!(
+            seen > 40,
+            "green along bob's video card edge for alice ({seen} pixels)"
+        );
         let card = bob.bounds(own).await.expect("bounds").expect("card");
         let mut seen = 0;
         for _ in 0..10 {
@@ -5131,7 +5443,10 @@ async fn a_video_card_rings_green_while_its_person_speaks() {
             }
             tokio::time::sleep(std::time::Duration::from_millis(150)).await;
         }
-        assert!(seen > 40, "green along bob's own video card edge ({seen} pixels)");
+        assert!(
+            seen > 40,
+            "green along bob's own video card edge ({seen} pixels)"
+        );
     } else {
         eprintln!("session locked or no Hyprland: no pixel check");
     }
@@ -5214,7 +5529,10 @@ async fn a_shared_screens_sound_is_heard_at_its_own_volume_until_the_share_stops
         .wait_for(".screen-quality .screen-audio-toggle.active", DEFAULT_WAIT)
         .await
         .expect("on at first");
-    alice.click(".screen-quality .screen-go").await.expect("go live");
+    alice
+        .click(".screen-quality .screen-go")
+        .await
+        .expect("go live");
     alice
         .wait_for(&format!("{mine} .video[data-shown=true]"), DEFAULT_WAIT)
         .await
@@ -5222,7 +5540,11 @@ async fn a_shared_screens_sound_is_heard_at_its_own_volume_until_the_share_stops
     // Sent as music: stereo, a high bitrate, no gaps for quiet passages.
     let deadline = std::time::Instant::now() + DEFAULT_WAIT;
     let sent = loop {
-        let sent = alice.attr(mine, "data-audio-sent").await.expect("attr").unwrap_or_default();
+        let sent = alice
+            .attr(mine, "data-audio-sent")
+            .await
+            .expect("attr")
+            .unwrap_or_default();
         if !sent.is_empty() || std::time::Instant::now() > deadline {
             break sent;
         }
@@ -5237,47 +5559,96 @@ async fn a_shared_screens_sound_is_heard_at_its_own_volume_until_the_share_stops
     bob.wait_for(&format!("{theirs}[data-audio=on]"), DEFAULT_WAIT)
         .await
         .expect("her screen has sound");
-    wait_attr_f64(&mut bob, theirs, "data-audio-level", "her screen's sound", |v| v > 0.1).await;
+    wait_attr_f64(
+        &mut bob,
+        theirs,
+        "data-audio-level",
+        "her screen's sound",
+        |v| v > 0.1,
+    )
+    .await;
     // Steady (the first figures may include the silence before it began;
     // the card's figures are renewed once a second).
     tokio::time::sleep(std::time::Duration::from_millis(2500)).await;
     let full = attr_f64(&mut bob, theirs, "data-audio-level").await;
     assert!(full > 0.15, "a steady tone: {full}");
-    let hz = bob.attr(theirs, "data-audio-hz").await.expect("attr").unwrap_or_default();
+    let hz = bob
+        .attr(theirs, "data-audio-hz")
+        .await
+        .expect("attr")
+        .unwrap_or_default();
     eprintln!("bob hears her screen at {full} ({hz} Hz)");
     let pitches: Vec<f64> = hz.split('/').filter_map(|v| v.parse().ok()).collect();
     assert_eq!(pitches.len(), 2, "{hz:?}");
-    assert!((pitches[0] - 660.0).abs() < 20.0, "left {hz:?} (her voice is 440)");
+    assert!(
+        (pitches[0] - 660.0).abs() < 20.0,
+        "left {hz:?} (her voice is 440)"
+    );
     assert!((pitches[1] - 990.0).abs() < 20.0, "right {hz:?}");
-    let played_full = wait_attr_f64(&mut bob, theirs, "data-audio-played", "played", |v| v > 0.05).await;
+    let played_full = wait_attr_f64(&mut bob, theirs, "data-audio-played", "played", |v| {
+        v > 0.05
+    })
+    .await;
 
     // His volume for it, on its card: half.
     let slider = format!("{theirs} .screen-volume");
     assert_eq!(
-        bob.attr(&slider, "data-value").await.expect("attr").as_deref(),
+        bob.attr(&slider, "data-value")
+            .await
+            .expect("attr")
+            .as_deref(),
         Some("100"),
         "as sent at first"
     );
-    let bar = bob.bounds(&slider).await.expect("bounds").expect("a volume slider");
+    let bar = bob
+        .bounds(&slider)
+        .await
+        .expect("bounds")
+        .expect("a volume slider");
     // The bar runs 0 to 200%: a quarter of the way is half.
     bob.click_at(&slider, (-0.25 * bar.w) as f32, 0.0, 1)
         .await
         .expect("half volume");
-    wait_attr_f64(&mut bob, &slider, "data-value", "the slider at half", |v| (v - 50.0).abs() <= 3.0).await;
+    wait_attr_f64(&mut bob, &slider, "data-value", "the slider at half", |v| {
+        (v - 50.0).abs() <= 3.0
+    })
+    .await;
     let half = wait_attr_f64(&mut bob, theirs, "data-audio-level", "half as loud", |v| {
         v < full * 0.6 && v > full * 0.4
     })
     .await;
-    let played_half = wait_attr_f64(&mut bob, theirs, "data-audio-played", "WebRTC plays it lower", |v| {
-        v > 0.0 && v < played_full * 0.8
-    })
+    let played_half = wait_attr_f64(
+        &mut bob,
+        theirs,
+        "data-audio-played",
+        "WebRTC plays it lower",
+        |v| v > 0.0 && v < played_full * 0.8,
+    )
     .await;
     eprintln!("at half: {half} (played {played_half}, was {played_full})");
     // Deafened: silent.
-    bob.click(".user-pill .deafen-button").await.expect("deafen");
-    wait_attr_f64(&mut bob, theirs, "data-audio-level", "silent deafened", |v| v < 0.005).await;
-    bob.click(".user-pill .deafen-button").await.expect("undeafen");
-    wait_attr_f64(&mut bob, theirs, "data-audio-level", "back undeafened", |v| v > full * 0.4).await;
+    bob.click(".user-pill .deafen-button")
+        .await
+        .expect("deafen");
+    wait_attr_f64(
+        &mut bob,
+        theirs,
+        "data-audio-level",
+        "silent deafened",
+        |v| v < 0.005,
+    )
+    .await;
+    bob.click(".user-pill .deafen-button")
+        .await
+        .expect("undeafen");
+    wait_attr_f64(
+        &mut bob,
+        theirs,
+        "data-audio-level",
+        "back undeafened",
+        |v| v > full * 0.4,
+    )
+    .await;
 
     // Stopping the share ends it.
     alice.click(button).await.expect("stop");
@@ -5288,7 +5659,11 @@ async fn a_shared_screens_sound_is_heard_at_its_own_volume_until_the_share_stops
         .await
         .expect("and its sound");
     assert_eq!(
-        alice.attr(".voice-panel", "data-screen-audio").await.expect("attr").as_deref(),
+        alice
+            .attr(".voice-panel", "data-screen-audio")
+            .await
+            .expect("attr")
+            .as_deref(),
         Some(""),
         "nothing sent once stopped"
     );
@@ -5315,7 +5690,11 @@ async fn sharing_the_screen_without_its_sound_sends_none_and_is_remembered() {
         .wait_for(".screen-quality .screen-audio-toggle.active", DEFAULT_WAIT)
         .await
         .expect("on at first");
-    if let Some(path) = alice.screenshot("screen-quality-sound").await.expect("screenshot") {
+    if let Some(path) = alice
+        .screenshot("screen-quality-sound")
+        .await
+        .expect("screenshot")
+    {
         eprintln!("screenshot: {}", path.display());
     }
     alice
@@ -5323,13 +5702,20 @@ async fn sharing_the_screen_without_its_sound_sends_none_and_is_remembered() {
         .await
         .expect("sound off");
     alice
-        .wait_for_count(".screen-quality .screen-audio-toggle.active", 0, DEFAULT_WAIT)
+        .wait_for_count(
+            ".screen-quality .screen-audio-toggle.active",
+            0,
+            DEFAULT_WAIT,
+        )
         .await
         .expect("switched off");
-    let kept = std::fs::read_to_string(alice.data_dir().join("screen-quality.json"))
-        .unwrap_or_default();
+    let kept =
+        std::fs::read_to_string(alice.data_dir().join("screen-quality.json")).unwrap_or_default();
     assert!(kept.contains("\"audio\":false"), "kept in {kept:?}");
-    alice.click(".screen-quality .screen-go").await.expect("go live");
+    alice
+        .click(".screen-quality .screen-go")
+        .await
+        .expect("go live");
     alice
         .wait_for(&format!("{mine} .video[data-shown=true]"), DEFAULT_WAIT)
         .await
@@ -5339,13 +5725,24 @@ async fn sharing_the_screen_without_its_sound_sends_none_and_is_remembered() {
         .expect("bob sees it");
     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
     assert_eq!(
-        bob.count(&format!("{theirs}[data-audio=on]")).await.expect("count"),
+        bob.count(&format!("{theirs}[data-audio=on]"))
+            .await
+            .expect("count"),
         0,
         "no sound came with it"
     );
-    assert_eq!(bob.count(&format!("{theirs} .screen-volume")).await.expect("count"), 0);
     assert_eq!(
-        alice.attr(mine, "data-audio-sent").await.expect("attr").as_deref(),
+        bob.count(&format!("{theirs} .screen-volume"))
+            .await
+            .expect("count"),
+        0
+    );
+    assert_eq!(
+        alice
+            .attr(mine, "data-audio-sent")
+            .await
+            .expect("attr")
+            .as_deref(),
         Some(""),
         "none sent"
     );
@@ -5474,29 +5871,52 @@ async fn an_avatar_card_takes_the_colour_of_the_picture() {
     let alices = ".call-stage .call-tile[data-user=\"@alice:localhost\"]";
     let channels = |hex: &str| -> [i32; 3] {
         let v = i64::from_str_radix(hex.trim_start_matches('#'), 16).expect("a hex colour");
-        [(v >> 16) as i32 & 255, (v >> 8) as i32 & 255, v as i32 & 255]
+        [
+            (v >> 16) as i32 & 255,
+            (v >> 8) as i32 & 255,
+            v as i32 & 255,
+        ]
     };
     // His picture arrives after the card; the card changes colour with it.
     let deadline = std::time::Instant::now() + DEFAULT_WAIT;
     let red = loop {
-        alice.wait_for(bobs, DEFAULT_WAIT).await.expect("bob's card");
-        let bg = alice.attrs(bobs, "data-bg").await.expect("attrs")[0].clone().unwrap_or_default();
+        alice
+            .wait_for(bobs, DEFAULT_WAIT)
+            .await
+            .expect("bob's card");
+        let bg = alice.attrs(bobs, "data-bg").await.expect("attrs")[0]
+            .clone()
+            .unwrap_or_default();
         if !bg.is_empty() {
             let [r, g, b] = channels(&bg);
             if r > g + 15 && r > b + 15 {
                 break [r, g, b];
             }
         }
-        assert!(std::time::Instant::now() < deadline, "bob's card never turned red: {bg:?}");
+        assert!(
+            std::time::Instant::now() < deadline,
+            "bob's card never turned red: {bg:?}"
+        );
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     };
     // Dark enough for white text, and not the pure picture colour.
-    assert!(red.iter().all(|c| *c < 110), "too bright for white text: {red:?}");
+    assert!(
+        red.iter().all(|c| *c < 110),
+        "too bright for white text: {red:?}"
+    );
     // Alice has no picture: her card keeps the usual colour (not red).
-    alice.wait_for(alices, DEFAULT_WAIT).await.expect("alice's own card");
-    let mine = alice.attrs(alices, "data-bg").await.expect("attrs")[0].clone().unwrap_or_default();
+    alice
+        .wait_for(alices, DEFAULT_WAIT)
+        .await
+        .expect("alice's own card");
+    let mine = alice.attrs(alices, "data-bg").await.expect("attrs")[0]
+        .clone()
+        .unwrap_or_default();
     let [r, g, b] = channels(&mine);
-    assert!(!(r > g + 15 && r > b + 15), "a card without a picture is not tinted: {mine}");
+    assert!(
+        !(r > g + 15 && r > b + 15),
+        "a card without a picture is not tinted: {mine}"
+    );
 }
 
 /// Double-clicking someone in the sidebar's list of who is in a call, while
@@ -5526,23 +5946,44 @@ async fn double_clicking_a_listed_person_focuses_their_screen_or_card_in_the_cal
         .expect("bob listed");
 
     // Bob is not sharing: his card.
-    alice.click_at(&listed("@bob:localhost"), 0.0, 0.0, 2).await.expect("double click bob");
     alice
-        .wait_for(".call-cards.focused .call-focus-main > .call-tile[data-user=\"@bob:localhost\"]", DEFAULT_WAIT)
+        .click_at(&listed("@bob:localhost"), 0.0, 0.0, 2)
+        .await
+        .expect("double click bob");
+    alice
+        .wait_for(
+            ".call-cards.focused .call-focus-main > .call-tile[data-user=\"@bob:localhost\"]",
+            DEFAULT_WAIT,
+        )
         .await
         .expect("bob's card is focused");
-    alice.key_combo("body", "Escape", false, false, false).await.expect("esc");
-    alice.wait_for_count(".call-cards.focused", 0, DEFAULT_WAIT).await.expect("back to the grid");
+    alice
+        .key_combo("body", "Escape", false, false, false)
+        .await
+        .expect("esc");
+    alice
+        .wait_for_count(".call-cards.focused", 0, DEFAULT_WAIT)
+        .await
+        .expect("back to the grid");
 
     // Sharing: his screen.
     start_share(&mut bob, ".call-stage .call-controls .screen-button").await;
     alice
-        .wait_for(&format!("{} .media-live", listed("@bob:localhost")), DEFAULT_WAIT)
+        .wait_for(
+            &format!("{} .media-live", listed("@bob:localhost")),
+            DEFAULT_WAIT,
+        )
         .await
         .expect("bob listed as LIVE");
-    alice.click_at(&listed("@bob:localhost"), 0.0, 0.0, 2).await.expect("double click bob");
     alice
-        .wait_for(".call-cards.focused .call-focus-main .video-tile.screen[data-user=\"@bob:localhost\"]", DEFAULT_WAIT)
+        .click_at(&listed("@bob:localhost"), 0.0, 0.0, 2)
+        .await
+        .expect("double click bob");
+    alice
+        .wait_for(
+            ".call-cards.focused .call-focus-main .video-tile.screen[data-user=\"@bob:localhost\"]",
+            DEFAULT_WAIT,
+        )
         .await
         .expect("bob's screen is focused");
 
@@ -5551,13 +5992,29 @@ async fn double_clicking_a_listed_person_focuses_their_screen_or_card_in_the_cal
         .wait_for(&listed("@bob:localhost"), DEFAULT_WAIT)
         .await
         .expect("bob listed for carol");
-    carol.click_at(&listed("@bob:localhost"), 0.0, 0.0, 2).await.expect("double click bob");
+    carol
+        .click_at(&listed("@bob:localhost"), 0.0, 0.0, 2)
+        .await
+        .expect("double click bob");
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-    assert_eq!(carol.count(".call-cards.focused").await.expect("count"), 0, "a call view opened for someone not in the call");
-    assert_eq!(carol.count(".call-stage").await.expect("count"), 0, "a call view opened for someone not in the call");
+    assert_eq!(
+        carol.count(".call-cards.focused").await.expect("count"),
+        0,
+        "a call view opened for someone not in the call"
+    );
+    assert_eq!(
+        carol.count(".call-stage").await.expect("count"),
+        0,
+        "a call view opened for someone not in the call"
+    );
 
-    bob.click(".call-stage .call-controls .hang-up").await.expect("bob leaves");
-    alice.click(".call-stage .call-controls .hang-up").await.expect("alice leaves");
+    bob.click(".call-stage .call-controls .hang-up")
+        .await
+        .expect("bob leaves");
+    alice
+        .click(".call-stage .call-controls .hang-up")
+        .await
+        .expect("alice leaves");
 }
 
 #[tokio::test]
@@ -5579,7 +6036,13 @@ async fn the_call_controls_are_squircles_like_the_rail_icons() {
         .expect("the rail icons note their corner radius")
         .parse()
         .expect("a number");
-    for control in [".mute-button", ".deafen-button", ".camera-button", ".screen-button", ".hang-up"] {
+    for control in [
+        ".mute-button",
+        ".deafen-button",
+        ".camera-button",
+        ".screen-button",
+        ".hang-up",
+    ] {
         let selector = format!(".call-stage .call-controls {control}");
         let radius: f64 = alice
             .attr(&selector, "data-radius")
@@ -5594,7 +6057,10 @@ async fn the_call_controls_are_squircles_like_the_rail_icons() {
             "{control} is a rounded square, not a circle: radius {radius} on {}",
             size.w
         );
-        assert!((radius - rail).abs() < 0.5, "{control} has the rail icons' corners: {radius} against {rail}");
+        assert!(
+            (radius - rail).abs() < 0.5,
+            "{control} has the rail icons' corners: {radius} against {rail}"
+        );
     }
 }
 
@@ -5607,17 +6073,29 @@ async fn the_call_controls_shrink_while_pressed_and_spring_back() {
     let mut alice = App::launch(&hs).await.expect("launch alice");
     join_hangout(&mut alice, "alice").await;
     let button = ".call-stage .call-controls .camera-button";
-    alice.wait_for(button, DEFAULT_WAIT).await.expect("the controls");
+    alice
+        .wait_for(button, DEFAULT_WAIT)
+        .await
+        .expect("the controls");
     tokio::time::sleep(std::time::Duration::from_millis(400)).await;
     let rest = alice.bounds(button).await.expect("bounds").expect("box").w;
     alice.drag_hold(button, 0, 0).await.expect("press");
     tokio::time::sleep(std::time::Duration::from_millis(400)).await;
     let pressed = alice.bounds(button).await.expect("bounds").expect("box").w;
-    assert!((pressed / rest - 0.95).abs() < 0.015, "pressed {pressed} should be 0.95 of {rest}");
-    alice.hover(".call-stage .call-controls .mute-button").await.expect("away");
+    assert!(
+        (pressed / rest - 0.95).abs() < 0.015,
+        "pressed {pressed} should be 0.95 of {rest}"
+    );
+    alice
+        .hover(".call-stage .call-controls .mute-button")
+        .await
+        .expect("away");
     tokio::time::sleep(std::time::Duration::from_millis(400)).await;
     let back = alice.bounds(button).await.expect("bounds").expect("box").w;
-    assert!((back - rest).abs() < 0.5, "back to {rest} after the pointer left, not {back}");
+    assert!(
+        (back - rest).abs() < 0.5,
+        "back to {rest} after the pointer left, not {back}"
+    );
 }
 
 /// Right-clicking someone's card in a call opens the user menu used elsewhere
@@ -5637,40 +6115,81 @@ async fn right_clicking_a_card_in_a_call_opens_the_user_menu_with_call_items() {
     let mut bob = App::launch(&hs).await.expect("launch bob");
     join_hangout(&mut bob, "bob").await;
     let card = ".call-stage [data-user=\"@bob:localhost\"]";
-    alice.wait_for(card, DEFAULT_WAIT).await.expect("bob's card");
+    alice
+        .wait_for(card, DEFAULT_WAIT)
+        .await
+        .expect("bob's card");
 
-    alice.right_click(card).await.expect("right-click bob's card");
+    alice
+        .right_click(card)
+        .await
+        .expect("right-click bob's card");
     wait_menu_has(
         &mut alice,
-        &["Profile", "Message", "Mention", "Copy user ID", "Mute for me", "Focus"],
+        &[
+            "Profile",
+            "Message",
+            "Mention",
+            "Copy user ID",
+            "Mute for me",
+            "Focus",
+        ],
     )
     .await
     .expect("the user menu with call items");
     assert_eq!(
-        alice.count(".context-menu .menu-slider.user-volume").await.expect("count"),
+        alice
+            .count(".context-menu .menu-slider.user-volume")
+            .await
+            .expect("count"),
         1,
         "a volume slider for bob"
     );
 
     // Mute for me: the next menu offers to undo it.
-    alice.click_text(".context-menu .context-item", "Mute for me").await.expect("mute");
-    alice.wait_for_count(".context-menu", 0, DEFAULT_WAIT).await.expect("closed");
+    alice
+        .click_text(".context-menu .context-item", "Mute for me")
+        .await
+        .expect("mute");
+    alice
+        .wait_for_count(".context-menu", 0, DEFAULT_WAIT)
+        .await
+        .expect("closed");
     alice.right_click(card).await.expect("again");
-    wait_menu_has(&mut alice, &["Unmute for me"]).await.expect("muted for me");
-    alice.click_text(".context-menu .context-item", "Unmute for me").await.expect("unmute");
-    alice.wait_for_count(".context-menu", 0, DEFAULT_WAIT).await.expect("closed");
+    wait_menu_has(&mut alice, &["Unmute for me"])
+        .await
+        .expect("muted for me");
+    alice
+        .click_text(".context-menu .context-item", "Unmute for me")
+        .await
+        .expect("unmute");
+    alice
+        .wait_for_count(".context-menu", 0, DEFAULT_WAIT)
+        .await
+        .expect("closed");
 
     // Focus, then unfocus, from the same menu.
     alice.right_click(card).await.expect("again");
     wait_menu_has(&mut alice, &["Focus"]).await.expect("menu");
-    alice.click_text(".context-menu .context-item", "Focus").await.expect("focus");
-    alice.wait_for(".call-stage .call-cards.focused", DEFAULT_WAIT).await.expect("focused");
+    alice
+        .click_text(".context-menu .context-item", "Focus")
+        .await
+        .expect("focus");
+    alice
+        .wait_for(".call-stage .call-cards.focused", DEFAULT_WAIT)
+        .await
+        .expect("focused");
     alice
         .right_click(".call-focus-main [data-user=\"@bob:localhost\"]")
         .await
         .expect("on the focused card");
-    wait_menu_has(&mut alice, &["Unfocus"]).await.expect("unfocus offered");
-    alice.click_text(".context-menu .context-item", "Unfocus").await.expect("unfocus");
+    wait_menu_has(&mut alice, &["Unfocus"])
+        .await
+        .expect("unfocus offered");
+    alice
+        .click_text(".context-menu .context-item", "Unfocus")
+        .await
+        .expect("unfocus");
     alice
         .wait_for_count(".call-cards.focused", 0, DEFAULT_WAIT)
         .await
@@ -5681,12 +6200,32 @@ async fn right_clicking_a_card_in_a_call_opens_the_user_menu_with_call_items() {
         .right_click(".call-stage [data-user=\"@alice:localhost\"]")
         .await
         .expect("own card");
-    wait_menu_has(&mut alice, &["Profile", "Copy user ID"]).await.expect("menu");
-    assert_eq!(alice.count(".context-menu .menu-slider").await.expect("count"), 0, "a volume for yourself");
-    let labels = alice.texts(".context-menu .context-item").await.expect("labels");
-    assert!(!labels.iter().any(|l| l.contains("Mute for me")), "{labels:?}");
+    wait_menu_has(&mut alice, &["Profile", "Copy user ID"])
+        .await
+        .expect("menu");
+    assert_eq!(
+        alice
+            .count(".context-menu .menu-slider")
+            .await
+            .expect("count"),
+        0,
+        "a volume for yourself"
+    );
+    let labels = alice
+        .texts(".context-menu .context-item")
+        .await
+        .expect("labels");
+    assert!(
+        !labels.iter().any(|l| l.contains("Mute for me")),
+        "{labels:?}"
+    );
     alice.press("body", "Escape").await.expect("close");
 
-    bob.click(".voice-panel .hang-up").await.expect("bob leaves");
-    alice.click(".voice-panel .hang-up").await.expect("alice leaves");
+    bob.click(".voice-panel .hang-up")
+        .await
+        .expect("bob leaves");
+    alice
+        .click(".voice-panel .hang-up")
+        .await
+        .expect("alice leaves");
 }

@@ -23,7 +23,11 @@ fn contrast(a: [u8; 3], b: [u8; 3]) -> f64 {
     let lum = |c: [u8; 3]| {
         let ch = |v: u8| {
             let v = f64::from(v) / 255.0;
-            if v <= 0.039_28 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) }
+            if v <= 0.039_28 {
+                v / 12.92
+            } else {
+                ((v + 0.055) / 1.055).powf(2.4)
+            }
         };
         0.2126 * ch(c[0]) + 0.7152 * ch(c[1]) + 0.0722 * ch(c[2])
     };
@@ -43,7 +47,10 @@ fn can_capture() -> bool {
 
 /// The window's top-left corner on the screen (by the app's pid).
 fn window_at(pid: u32) -> Option<(f64, f64)> {
-    let out = std::process::Command::new("hyprctl").args(["clients", "-j"]).output().ok()?;
+    let out = std::process::Command::new("hyprctl")
+        .args(["clients", "-j"])
+        .output()
+        .ok()?;
     let clients: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
     let window = clients
         .as_array()?
@@ -86,31 +93,45 @@ fn capture(area: &Bounds, at: (f64, f64)) -> Option<Vec<[u8; 3]>> {
 async fn check(app: &mut App, misses: &mut Vec<String>, input: &str) {
     app.click(input).await.expect("focus");
     app.type_into(input, "WMWMWMWM").await.expect("type");
-    app.wait_for(&format!("{input}[value=WMWMWMWM]"), DEFAULT_WAIT).await.expect("typed");
+    app.wait_for(&format!("{input}[value=WMWMWMWM]"), DEFAULT_WAIT)
+        .await
+        .expect("typed");
     // A frame for the colour the text was drawn in to be noted.
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     let colour = app.attr(input, "data-color").await.expect("attr");
     let bg = app.attr(input, "data-bg").await.expect("attr");
-    let (Some(colour), Some(bg)) = (colour.as_deref().and_then(hex), bg.as_deref().and_then(hex)) else {
+    let (Some(colour), Some(bg)) = (colour.as_deref().and_then(hex), bg.as_deref().and_then(hex))
+    else {
         misses.push(format!("{input}: data-color {colour:?}, data-bg {bg:?}"));
         return;
     };
     let ratio = contrast(colour, bg);
     eprintln!("{input}: text {colour:?} on {bg:?}, contrast {ratio:.1}");
     if ratio < 4.5 {
-        misses.push(format!("{input}: text {colour:?} on {bg:?} has a contrast of {ratio:.1}"));
+        misses.push(format!(
+            "{input}: text {colour:?} on {bg:?} has a contrast of {ratio:.1}"
+        ));
     }
     if !can_capture() {
         eprintln!("screen locked or not Hyprland: no pixel check");
         return;
     }
-    let bounds = app.bounds(input).await.expect("bounds").expect("input bounds");
+    let bounds = app
+        .bounds(input)
+        .await
+        .expect("bounds")
+        .expect("input bounds");
     let Some(at) = app.pid().and_then(window_at) else {
         eprintln!("window not found: no pixel check");
         return;
     };
     // The inside, clear of the border and rounded corners.
-    let inside = Bounds { x: bounds.x + 6.0, y: bounds.y + 4.0, w: bounds.w - 12.0, h: bounds.h - 8.0 };
+    let inside = Bounds {
+        x: bounds.x + 6.0,
+        y: bounds.y + 4.0,
+        w: bounds.w - 12.0,
+        h: bounds.h - 8.0,
+    };
     let Some(pixels) = capture(&inside, at) else {
         eprintln!("grim failed: no pixel check");
         return;
@@ -119,12 +140,20 @@ async fn check(app: &mut App, misses: &mut Vec<String>, input: &str) {
     // ~2x20 px; eight capitals are several hundred).
     let ink = pixels
         .iter()
-        .filter(|p| p.iter().zip(bg).map(|(a, b)| (i32::from(*a) - i32::from(b)).abs()).sum::<i32>() > 120)
+        .filter(|p| {
+            p.iter()
+                .zip(bg)
+                .map(|(a, b)| (i32::from(*a) - i32::from(b)).abs())
+                .sum::<i32>()
+                > 120
+        })
         .count();
     eprintln!("{input}: {ink} of {} pixels inked", pixels.len());
     if ink < 150 {
         let shot = app.screenshot("input-text").await.ok().flatten();
-        misses.push(format!("{input}: the typed text does not show ({ink} pixels inked; {shot:?})"));
+        misses.push(format!(
+            "{input}: the typed text does not show ({ink} pixels inked; {shot:?})"
+        ));
     }
 }
 
@@ -139,42 +168,79 @@ async fn typed_text_shows_on_the_login_and_add_account_forms() {
         return;
     }
     let mut misses = Vec::new();
-    app.wait_for("form.login", DEFAULT_WAIT).await.expect("login form");
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
     for name in ["homeserver", "username", "password"] {
-        check(&mut app, &mut misses, &format!("form.login input[name={name}]")).await;
+        check(
+            &mut app,
+            &mut misses,
+            &format!("form.login input[name={name}]"),
+        )
+        .await;
     }
     // Sign in (the homeserver field back to the test server's).
-    app.type_into("form.login input[name=homeserver]", &hs).await.expect("homeserver");
-    app.type_into("form.login input[name=username]", "alice").await.expect("username");
-    app.type_into("form.login input[name=password]", "alice-password").await.expect("password");
+    app.type_into("form.login input[name=homeserver]", &hs)
+        .await
+        .expect("homeserver");
+    app.type_into("form.login input[name=username]", "alice")
+        .await
+        .expect("username");
+    app.type_into("form.login input[name=password]", "alice-password")
+        .await
+        .expect("password");
     app.submit("form.login").await.expect("submit");
     app.wait_for(".room", DEFAULT_WAIT).await.expect("rooms");
 
     // Add an account: the same form, over a signed-in app.
     app.click(".profile-chip").await.expect("chip");
-    app.wait_for(".context-menu", DEFAULT_WAIT).await.expect("account menu");
-    app.click_submenu("Switch account", "Add an account").await.expect("add");
-    app.wait_for_text("form.login button", "Back to", DEFAULT_WAIT).await.expect("login");
+    app.wait_for(".context-menu", DEFAULT_WAIT)
+        .await
+        .expect("account menu");
+    app.click_submenu("Switch account", "Add an account")
+        .await
+        .expect("add");
+    app.wait_for_text("form.login button", "Back to", DEFAULT_WAIT)
+        .await
+        .expect("login");
     for name in ["homeserver", "username", "password"] {
-        check(&mut app, &mut misses, &format!("form.login input[name={name}]")).await;
+        check(
+            &mut app,
+            &mut misses,
+            &format!("form.login input[name={name}]"),
+        )
+        .await;
     }
-    app.click_text("form.login button", "Back to").await.expect("back");
+    app.click_text("form.login button", "Back to")
+        .await
+        .expect("back");
     app.wait_for(".room", DEFAULT_WAIT).await.expect("rooms");
     app.open_room("general").await.expect("general");
 
     // Other forms' inputs.
     app.click(".create-room-button").await.expect("plus");
-    app.wait_for(".create-room-dialog input[name=name]", DEFAULT_WAIT).await.expect("dialog");
+    app.wait_for(".create-room-dialog input[name=name]", DEFAULT_WAIT)
+        .await
+        .expect("dialog");
     for name in ["name", "topic"] {
-        check(&mut app, &mut misses, &format!(".create-room-dialog input[name={name}]")).await;
+        check(
+            &mut app,
+            &mut misses,
+            &format!(".create-room-dialog input[name={name}]"),
+        )
+        .await;
     }
-    app.press(".create-room-dialog", "Escape").await.expect("close");
+    app.press(".create-room-dialog", "Escape")
+        .await
+        .expect("close");
     for (item, input) in [
         ("Edit profile", ".profile-editor input[name=displayname]"),
         ("Set status", ".status-editor input[name=status]"),
     ] {
         app.click(".profile-chip").await.expect("chip");
-        app.wait_for(".context-menu", DEFAULT_WAIT).await.expect("account menu");
+        app.wait_for(".context-menu", DEFAULT_WAIT)
+            .await
+            .expect("account menu");
         app.click_text(".context-item", item).await.expect(item);
         app.wait_for(input, DEFAULT_WAIT).await.expect(item);
         check(&mut app, &mut misses, input).await;

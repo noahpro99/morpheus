@@ -16,7 +16,9 @@ fn homeserver() -> Option<String> {
     if std::env::var_os("MORPHEUS_E2E_WEB").is_none()
         && std::env::var_os("MORPHEUS_E2E_ANDROID").is_none()
     {
-        eprintln!("mobile_layout drives the Dioxus layout: run with MORPHEUS_E2E_WEB or MORPHEUS_E2E_ANDROID; skipping");
+        eprintln!(
+            "mobile_layout drives the Dioxus layout: run with MORPHEUS_E2E_WEB or MORPHEUS_E2E_ANDROID; skipping"
+        );
         return None;
     }
     std::env::var("MORPHEUS_TEST_HOMESERVER").ok()

@@ -127,9 +127,12 @@ async fn reactions_picker_viewer_and_removal() {
         .expect("copy id");
     app.press(".context-menu", "Escape").await.expect("escape");
     // Recent rows may all be ours; scroll up to someone else's message.
-    app.reveal_element(".message:not(.own):not(.system):not(.skeleton-row)", DEFAULT_WAIT)
-        .await
-        .expect("another sender's message");
+    app.reveal_element(
+        ".message:not(.own):not(.system):not(.skeleton-row)",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("another sender's message");
     app.right_click(".message:not(.own):not(.system):not(.skeleton-row)")
         .await
         .expect("other");
@@ -399,7 +402,11 @@ async fn the_hover_bar_opens_a_full_emoji_picker_to_react() {
         .texts_within(".message", &row, ".actions .action.more-reactions")
         .await
         .expect("more");
-    assert_eq!((quick.len(), more.len()), (3, 1), "three quick reactions and more");
+    assert_eq!(
+        (quick.len(), more.len()),
+        (3, 1),
+        "three quick reactions and more"
+    );
 
     app.click_in_message(&row, ".actions .more-reactions")
         .await
@@ -490,7 +497,10 @@ async fn the_hover_bar_opens_a_full_emoji_picker_to_react() {
     app.type_into(".emoji-picker input.emoji-search", "thumbsup")
         .await
         .expect("search");
-    wait_cells(&mut app, |cells| cells.first().is_some_and(|c| c.trim() == "👍🏽")).await;
+    wait_cells(&mut app, |cells| {
+        cells.first().is_some_and(|c| c.trim() == "👍🏽")
+    })
+    .await;
     app.click(".emoji-picker .emoji-cell").await.expect("pick");
     app.wait_for_within(".message", &row, ".reactions", Some("👍🏽"), DEFAULT_WAIT)
         .await
@@ -521,10 +531,7 @@ async fn the_hover_bar_opens_a_full_emoji_picker_to_react() {
 async fn wait_cells(app: &mut App, ok: impl Fn(&[String]) -> bool) {
     let deadline = std::time::Instant::now() + DEFAULT_WAIT;
     loop {
-        let cells = app
-            .texts(".emoji-picker .emoji-cell")
-            .await
-            .expect("cells");
+        let cells = app.texts(".emoji-picker .emoji-cell").await.expect("cells");
         if ok(&cells) {
             return;
         }
@@ -555,5 +562,9 @@ async fn shift_picking_delete_in_the_menu_deletes_without_asking() {
     app.wait_for_text_gone(".message .body", &text, DEFAULT_WAIT)
         .await
         .expect("deleted at once");
-    assert_eq!(app.count(".confirm-dialog").await.expect("count"), 0, "asked anyway");
+    assert_eq!(
+        app.count(".confirm-dialog").await.expect("count"),
+        0,
+        "asked anyway"
+    );
 }

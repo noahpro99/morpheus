@@ -115,16 +115,31 @@ async fn palette_runs_settings_and_pill_matches_composer_margin() {
         .expect("settings closed");
 
     // The pill's right margin equals the message box's left padding.
-    let bar = app.bounds(".user-bar").await.expect("bar").expect("the user bar");
-    let pill = app.bounds(".user-pill").await.expect("pill").expect("the pill");
-    let composer = app.bounds(".composer").await.expect("composer").expect("the composer");
+    let bar = app
+        .bounds(".user-bar")
+        .await
+        .expect("bar")
+        .expect("the user bar");
+    let pill = app
+        .bounds(".user-pill")
+        .await
+        .expect("pill")
+        .expect("the pill");
+    let composer = app
+        .bounds(".composer")
+        .await
+        .expect("composer")
+        .expect("the composer");
     let row = app
         .bounds(".composer .composer-row")
         .await
         .expect("row")
         .expect("the box's row");
     let (right, left) = (bar.right() - pill.right(), row.x - composer.x);
-    assert_eq!(right, left, "pill right gap {right} vs composer left gap {left}");
+    assert_eq!(
+        right, left,
+        "pill right gap {right} vs composer left gap {left}"
+    );
 }
 
 #[tokio::test]
@@ -147,11 +162,26 @@ async fn profile_card_opens_beside_the_avatar_towards_the_middle() {
     app.wait_for(".profile-card", DEFAULT_WAIT)
         .await
         .expect("card");
-    let window = app.bounds("body").await.expect("window").expect("the window");
-    let card = app.bounds(".profile-card").await.expect("card").expect("the card");
-    let member = app.bounds(".member").await.expect("member").expect("the member row");
+    let window = app
+        .bounds("body")
+        .await
+        .expect("window")
+        .expect("the window");
+    let card = app
+        .bounds(".profile-card")
+        .await
+        .expect("card")
+        .expect("the card");
+    let member = app
+        .bounds(".member")
+        .await
+        .expect("member")
+        .expect("the member row");
     assert!(
-        card.x > 0.0 && card.right() <= member.centre_x() + 1.0 && card.bottom() <= window.h && card.y >= 0.0,
+        card.x > 0.0
+            && card.right() <= member.centre_x() + 1.0
+            && card.bottom() <= window.h
+            && card.y >= 0.0,
         "card left of where the member row was clicked (its middle), inside the window: {card:?} {member:?}"
     );
     app.key_combo("body", "Escape", false, false, false)
@@ -172,7 +202,11 @@ async fn profile_card_opens_beside_the_avatar_towards_the_middle() {
     app.wait_for(".profile-card", DEFAULT_WAIT)
         .await
         .expect("card");
-    let card = app.bounds(".profile-card").await.expect("card").expect("the card");
+    let card = app
+        .bounds(".profile-card")
+        .await
+        .expect("card")
+        .expect("the card");
     let avatar = app
         .bounds(".message:not(.system) .avatar-button")
         .await
@@ -195,7 +229,9 @@ async fn pasting_anywhere_goes_to_the_message_box() {
     let mut app = App::launch(&hs).await.expect("launch app");
     login_and_open(&mut app, "general").await;
     if app.is_gpui() {
-        eprintln!("a text paste with nothing focused is not ported to GPUI (no clipboard in the bridge); skipping");
+        eprintln!(
+            "a text paste with nothing focused is not ported to GPUI (no clipboard in the bridge); skipping"
+        );
         return;
     }
     let text = format!("pasted from afar {}", std::process::id());

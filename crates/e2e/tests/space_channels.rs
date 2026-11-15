@@ -54,7 +54,9 @@ async fn channels(app: &mut App) -> (Vec<String>, Vec<String>) {
 /// if the list shifted under the pointer, so one click is enough once the
 /// thing clicked is the one meant (not a row that is still on its way).
 async fn click_until_text(app: &mut App, click: &str, wait: &str, text: &str) {
-    app.wait_for(click, DEFAULT_WAIT).await.expect("something to click");
+    app.wait_for(click, DEFAULT_WAIT)
+        .await
+        .expect("something to click");
     app.click(click).await.expect("click");
     app.wait_for_text(wait, text, DEFAULT_WAIT)
         .await
@@ -191,7 +193,13 @@ async fn an_unjoined_channel_opens_a_join_card() {
     wait_joined_order(&mut app, &["projects-news", "projects-general"])
         .await
         .expect("the joined channels listed");
-    click_until_text(&mut app, ".room.unjoined", ".join-card h2", "projects-archive").await;
+    click_until_text(
+        &mut app,
+        ".room.unjoined",
+        ".join-card h2",
+        "projects-archive",
+    )
+    .await;
     assert_eq!(app.count(".chat .composer").await.expect("count"), 0);
     app.wait_for_text(".join-card", "The projects-archive room", DEFAULT_WAIT)
         .await
@@ -289,9 +297,12 @@ async fn a_server_admin_reorders_channels_for_everyone() {
         .expect("carol may drag");
     // The list fills in as the sync arrives (rows come in one by one and push
     // the others about): drag only once all of it is there.
-    wait_joined_order(&mut carol, &["projects-news", "projects-general", "projects-archive"])
-        .await
-        .expect("carol's list in the server's order");
+    wait_joined_order(
+        &mut carol,
+        &["projects-news", "projects-general", "projects-archive"],
+    )
+    .await
+    .expect("carol's list in the server's order");
     // general onto news: general goes before it.
     drag(
         &mut carol,

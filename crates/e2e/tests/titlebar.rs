@@ -231,10 +231,30 @@ async fn the_inbox_button_comes_before_help() {
     };
     let mut app = App::launch_desktop(&hs).await.expect("launch app");
     login(&mut app, "alice").await;
-    app.wait_for(".titlebar .help-button", DEFAULT_WAIT).await.expect("help");
-    let inbox = app.bounds(".titlebar .inbox-button").await.expect("bounds").expect("inbox");
-    let help = app.bounds(".titlebar .help-button").await.expect("bounds").expect("help");
-    let controls = app.bounds(".titlebar .window-controls").await.expect("bounds").expect("controls");
-    assert!(inbox.right() <= help.x + 0.5, "inbox {inbox:?} is not left of help {help:?}");
-    assert!(help.right() <= controls.x + 4.0, "help {help:?} is not next to the controls {controls:?}");
+    app.wait_for(".titlebar .help-button", DEFAULT_WAIT)
+        .await
+        .expect("help");
+    let inbox = app
+        .bounds(".titlebar .inbox-button")
+        .await
+        .expect("bounds")
+        .expect("inbox");
+    let help = app
+        .bounds(".titlebar .help-button")
+        .await
+        .expect("bounds")
+        .expect("help");
+    let controls = app
+        .bounds(".titlebar .window-controls")
+        .await
+        .expect("bounds")
+        .expect("controls");
+    assert!(
+        inbox.right() <= help.x + 0.5,
+        "inbox {inbox:?} is not left of help {help:?}"
+    );
+    assert!(
+        help.right() <= controls.x + 4.0,
+        "help {help:?} is not next to the controls {controls:?}"
+    );
 }

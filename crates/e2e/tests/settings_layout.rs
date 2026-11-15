@@ -120,8 +120,16 @@ async fn desktop_settings_have_categories_themes_and_notification_defaults() {
     open_settings(&mut app).await;
 
     // About 70% of the window, categories down the side, My Account first.
-    let settings = app.bounds(".settings").await.expect("settings box").expect("settings");
-    let window = app.bounds(".shell").await.expect("shell box").expect("shell");
+    let settings = app
+        .bounds(".settings")
+        .await
+        .expect("settings box")
+        .expect("settings");
+    let window = app
+        .bounds(".shell")
+        .await
+        .expect("shell box")
+        .expect("shell");
     let share = settings.w / window.w;
     assert!(
         (0.66..=0.74).contains(&share),
@@ -151,7 +159,9 @@ async fn desktop_settings_have_categories_themes_and_notification_defaults() {
     // Appearance: picking a theme applies it at once.
     page(&mut app, "Appearance").await;
     // Whatever an earlier run left: start from Dark.
-    app.click_text(".theme-option", "Dark").await.expect("pick Dark first");
+    app.click_text(".theme-option", "Dark")
+        .await
+        .expect("pick Dark first");
     wait_theme(&mut app, "dark").await;
     let before = bg_chat(&mut app).await;
     app.click_text(".theme-option", "Light")
@@ -210,7 +220,7 @@ async fn desktop_settings_have_categories_themes_and_notification_defaults() {
     // Put both back for other tests.
     app.click(&format!(
         ".notify-default[data-kind=group] input[value={}]",
-was
+        was
     ))
     .await
     .expect("restore default");
@@ -347,7 +357,11 @@ async fn the_sidebar_starts_with_a_profile_header_that_opens_my_account() {
     open_settings(&mut app).await;
 
     // No "Settings" title.
-    assert_eq!(app.count(".settings-nav h2").await.expect("count"), 0, "no title");
+    assert_eq!(
+        app.count(".settings-nav h2").await.expect("count"),
+        0,
+        "no title"
+    );
 
     // The header: your picture (~40 px), your name, and "Edit profile" under it,
     // above the search box.
@@ -359,7 +373,11 @@ async fn the_sidebar_starts_with_a_profile_header_that_opens_my_account() {
         .await
         .expect("bounds")
         .expect("your picture in the header");
-    assert!((36.0..=44.0).contains(&picture.w), "picture is {} wide", picture.w);
+    assert!(
+        (36.0..=44.0).contains(&picture.w),
+        "picture is {} wide",
+        picture.w
+    );
     let shown = app
         .text(".settings-profile .settings-profile-name")
         .await
@@ -377,20 +395,32 @@ async fn the_sidebar_starts_with_a_profile_header_that_opens_my_account() {
         .expect("bounds")
         .expect("name box");
     assert!(edit.y > name_box.y, "Edit profile sits under the name");
-    assert!(edit.x >= picture.x + picture.w, "the text is right of the picture");
-    app.wait_for_text(".settings-profile .settings-profile-edit", "Edit profile", DEFAULT_WAIT)
-        .await
-        .expect("Edit profile");
+    assert!(
+        edit.x >= picture.x + picture.w,
+        "the text is right of the picture"
+    );
+    app.wait_for_text(
+        ".settings-profile .settings-profile-edit",
+        "Edit profile",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("Edit profile");
     let search = app
         .bounds(".settings-nav input")
         .await
         .expect("bounds")
         .expect("search box");
-    assert!(picture.y + picture.h <= search.y, "the header is above the search box");
+    assert!(
+        picture.y + picture.h <= search.y,
+        "the header is above the search box"
+    );
 
     // My Account has no list entry; the header opens it.
     assert_eq!(
-        app.count(".settings-nav button.settings-nav-item").await.expect("count"),
+        app.count(".settings-nav button.settings-nav-item")
+            .await
+            .expect("count"),
         app.texts(".settings-nav button.settings-nav-item")
             .await
             .expect("texts")

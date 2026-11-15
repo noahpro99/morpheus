@@ -82,8 +82,8 @@ async fn shortcuts_navigate_rooms_scopes_history_and_panels() {
             ".composer .composer-input:not([disabled]), .room.selected.voice",
             DEFAULT_WAIT,
         )
-            .await
-            .expect("the next room is open");
+        .await
+        .expect("the next room is open");
     }
     app.key_combo("body", "ArrowUp", false, true, false)
         .await
@@ -274,9 +274,12 @@ async fn ctrl_r_reloads_the_app() {
     // in Rooms).
     if app.is_gpui() {
         app.click(".rail-dms").await.expect("the DMs");
-        app.wait_for(".rail-item.selected[title=\"Direct messages\"]", DEFAULT_WAIT)
-            .await
-            .expect("in the DMs");
+        app.wait_for(
+            ".rail-item.selected[title=\"Direct messages\"]",
+            DEFAULT_WAIT,
+        )
+        .await
+        .expect("in the DMs");
     } else {
         app.eval("document.querySelector('.shell').dataset.beforeReload = 'yes'; return true;")
             .await
@@ -321,8 +324,14 @@ async fn ctrl_shift_m_mutes_and_ctrl_shift_d_deafens() {
     async fn state(app: &mut App) -> serde_json::Value {
         if app.is_gpui() {
             let on = |n: usize| n > 0;
-            let muted = on(app.count(".user-bar .mute-button.active").await.expect("mute"));
-            let deafened = on(app.count(".user-bar .deafen-button.active").await.expect("deafen"));
+            let muted = on(app
+                .count(".user-bar .mute-button.active")
+                .await
+                .expect("mute"));
+            let deafened = on(app
+                .count(".user-bar .deafen-button.active")
+                .await
+                .expect("deafen"));
             return serde_json::json!([muted, deafened]);
         }
         app.eval("return [document.querySelector('.user-bar .mute-button').classList.contains('active'), \
@@ -636,7 +645,10 @@ async fn the_shortcuts_dialog_is_wide_with_one_line_rows() {
             .await
             .expect("dialog")
             .expect("a dialog");
-        let rows = app.all_bounds(".help-dialog .help-row").await.expect("rows");
+        let rows = app
+            .all_bounds(".help-dialog .help-row")
+            .await
+            .expect("rows");
         let caps = app.count(".help-dialog .help-row kbd").await.expect("caps");
         assert!(rows.len() >= 10, "shortcut rows: {}", rows.len());
         assert!(dialog.w >= 640.0, "the dialog is too narrow: {dialog:?}");
@@ -722,7 +734,9 @@ async fn nothing_animates_forever_once_loaded() {
         return;
     };
     if morpheus_e2e::gpui() {
-        eprintln!("skipped on GPUI: CSS animations (a page-only concept; the GPUI app draws only when something changes)");
+        eprintln!(
+            "skipped on GPUI: CSS animations (a page-only concept; the GPUI app draws only when something changes)"
+        );
         return;
     }
     let mut app = App::launch(&hs).await.expect("launch app");

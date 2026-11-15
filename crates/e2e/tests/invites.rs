@@ -136,8 +136,8 @@ async fn invites_are_listed_declined_and_accepted() {
         .await
         .expect("invite gone");
     bob.wait_for_count(".invite-card", 0, DEFAULT_WAIT)
-    .await
-    .expect("card gone");
+        .await
+        .expect("card gone");
 
     // Invite again and accept from the sidebar row.
     invite_bob(&mut alice, &name).await;
@@ -222,10 +222,17 @@ async fn use_the_friend_list(alice: &mut App, bob: &mut App, name: &str, what: &
         .expect("a full id");
     alice.submit(".invite-dialog").await.expect("submit");
     alice
-        .wait_for_text(".invite-dialog .ok", "Invited @carol:localhost", DEFAULT_WAIT)
+        .wait_for_text(
+            ".invite-dialog .ok",
+            "Invited @carol:localhost",
+            DEFAULT_WAIT,
+        )
         .await
         .unwrap_or_else(|e| panic!("{what}: a typed ID did not invite: {e}"));
-    alice.press(".invite-dialog", "Escape").await.expect("escape");
+    alice
+        .press(".invite-dialog", "Escape")
+        .await
+        .expect("escape");
 }
 
 /// Every invite dialog has the searchable list of friends: the room's and
@@ -373,7 +380,11 @@ async fn invite_list_leaves_out_members_and_marks_the_invited() {
         .await
         .expect("typed");
     alice
-        .wait_for_text(".invite-dialog .friend-pick-state", "Already in", DEFAULT_WAIT)
+        .wait_for_text(
+            ".invite-dialog .friend-pick-state",
+            "Already in",
+            DEFAULT_WAIT,
+        )
         .await
         .expect("the typed member's row says already in");
     alice.submit(".invite-dialog").await.expect("submit");
@@ -391,10 +402,16 @@ async fn invite_list_leaves_out_members_and_marks_the_invited() {
         .await
         .expect("click carol");
     alice
-        .wait_for("[data-user=\"@carol:localhost\"][data-state=sent]", DEFAULT_WAIT)
+        .wait_for(
+            "[data-user=\"@carol:localhost\"][data-state=sent]",
+            DEFAULT_WAIT,
+        )
         .await
         .expect("invited");
-    alice.press(".invite-dialog", "Escape").await.expect("escape");
+    alice
+        .press(".invite-dialog", "Escape")
+        .await
+        .expect("escape");
     alice
         .click(".sidebar-header h2.server-name")
         .await
@@ -411,11 +428,18 @@ async fn invite_list_leaves_out_members_and_marks_the_invited() {
         .await
         .expect("carol still listed, marked Invited");
     alice
-        .wait_for_text("[data-user=\"@carol:localhost\"] .friend-pick-state", "Invited", DEFAULT_WAIT)
+        .wait_for_text(
+            "[data-user=\"@carol:localhost\"] .friend-pick-state",
+            "Invited",
+            DEFAULT_WAIT,
+        )
         .await
         .expect("says Invited");
     assert_eq!(
-        alice.count("[data-user=\"@bob:localhost\"]").await.expect("count"),
+        alice
+            .count("[data-user=\"@bob:localhost\"]")
+            .await
+            .expect("count"),
         0
     );
 }
@@ -454,7 +478,11 @@ async fn invites_show_only_in_the_dms_list_and_the_inbox() {
         Some(serde_json::json!({ "name": invited, "preset": "private_chat" })),
     )
     .expect("room made");
-    let room = made["room_id"].as_str().expect("room id").replace('!', "%21").replace(':', "%3A");
+    let room = made["room_id"]
+        .as_str()
+        .expect("room id")
+        .replace('!', "%21")
+        .replace(':', "%3A");
     morpheus_e2e::api_as(
         &hs,
         "alice",
@@ -477,13 +505,19 @@ async fn invites_show_only_in_the_dms_list_and_the_inbox() {
         .await
         .expect("server scoped");
     // The server's list has had time to render its own rooms before the check.
-    bob.wait_for(".room, .muted", DEFAULT_WAIT).await.expect("list shown");
+    bob.wait_for(".room, .muted", DEFAULT_WAIT)
+        .await
+        .expect("list shown");
     assert_eq!(
         bob.count(".invite-row").await.expect("count"),
         0,
         "no invite in a server's list"
     );
-    assert_eq!(bob.count(".invites").await.expect("count"), 0, "no Invites heading");
+    assert_eq!(
+        bob.count(".invites").await.expect("count"),
+        0,
+        "no Invites heading"
+    );
     // Still in the inbox.
     bob.click(".titlebar .inbox-button").await.expect("inbox");
     bob.wait_for_text(".inbox-invite", &invited, DEFAULT_WAIT)

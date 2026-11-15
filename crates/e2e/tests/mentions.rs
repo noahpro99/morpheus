@@ -13,13 +13,22 @@ fn homeserver() -> Option<String> {
 }
 
 async fn login(app: &mut App, user: &str) {
-    app.wait_for("form.login", DEFAULT_WAIT).await.expect("login form");
-    app.type_into("form.login input[name=username]", user).await.expect("username");
-    app.type_into("form.login input[name=password]", &format!("{user}-password"))
+    app.wait_for("form.login", DEFAULT_WAIT)
         .await
-        .expect("password");
+        .expect("login form");
+    app.type_into("form.login input[name=username]", user)
+        .await
+        .expect("username");
+    app.type_into(
+        "form.login input[name=password]",
+        &format!("{user}-password"),
+    )
+    .await
+    .expect("password");
     app.submit("form.login").await.expect("submit");
-    app.wait_for(".room", DEFAULT_WAIT).await.expect("room listed");
+    app.wait_for(".room", DEFAULT_WAIT)
+        .await
+        .expect("room listed");
 }
 
 fn enc(id: &str) -> String {
@@ -46,8 +55,14 @@ fn room_of(hs: &str, writer: &str, readers: &[&str], name: &str) -> String {
             Some(serde_json::json!({ "user_id": format!("@{reader}:localhost") })),
         )
         .expect("invite");
-        api_as(hs, reader, "POST", &format!("rooms/{}/join", enc(&room)), Some(serde_json::json!({})))
-            .expect("join");
+        api_as(
+            hs,
+            reader,
+            "POST",
+            &format!("rooms/{}/join", enc(&room)),
+            Some(serde_json::json!({})),
+        )
+        .expect("join");
     }
     room
 }
@@ -60,7 +75,11 @@ fn mention(hs: &str, writer: &str, room: &str, who: &str, word: &str) {
         hs,
         writer,
         "PUT",
-        &format!("rooms/{}/send/m.room.message/{}-{word}", enc(room), std::process::id()),
+        &format!(
+            "rooms/{}/send/m.room.message/{}-{word}",
+            enc(room),
+            std::process::id()
+        ),
         Some(serde_json::json!({
             "msgtype": "m.text",
             "body": body,
@@ -92,10 +111,24 @@ async fn a_mention_is_a_clickable_tinted_pill() {
     mention(&hs, &writer, &room, &writer, "pillword");
     let pill = r##".message a[href^="https://matrix.to/#/@"]"##;
     app.wait_for(pill, DEFAULT_WAIT).await.expect("the pill");
-    assert_eq!(app.attr(pill, "data-pill").await.expect("attr").as_deref(), Some("true"));
-    let bg = app.attr(pill, "data-bg").await.expect("bg").expect("a background");
-    let colour = app.attr(pill, "data-color").await.expect("colour").expect("a text colour");
-    assert!(bg.len() == 8 && !bg.ends_with("ff"), "a translucent background {bg} behind text {colour}");
+    assert_eq!(
+        app.attr(pill, "data-pill").await.expect("attr").as_deref(),
+        Some("true")
+    );
+    let bg = app
+        .attr(pill, "data-bg")
+        .await
+        .expect("bg")
+        .expect("a background");
+    let colour = app
+        .attr(pill, "data-color")
+        .await
+        .expect("colour")
+        .expect("a text colour");
+    assert!(
+        bg.len() == 8 && !bg.ends_with("ff"),
+        "a translucent background {bg} behind text {colour}"
+    );
     // The tint is about 30% (alpha 0x4d), stronger when hovered.
     assert!(bg.ends_with("4d"), "tint {bg}");
     app.hover(pill).await.expect("hover");
@@ -111,16 +144,29 @@ async fn a_mention_is_a_clickable_tinted_pill() {
         let beside = common::pixel_at(&shot, b.x - 12.0, y);
         let within = common::pixel_at(&shot, b.x + b.w / 2.0, y);
         assert_ne!(inside, beside, "the tint is not painted behind the pill");
-        assert!(inside.2 > beside.2 + 10, "tinted towards the accent: {inside:?} vs {beside:?}");
+        assert!(
+            inside.2 > beside.2 + 10,
+            "tinted towards the accent: {inside:?} vs {beside:?}"
+        );
         assert_eq!(inside, within, "one even tint along the pill");
     }
     // A link to a room is one too.
     let room_pill = r##".message a[href^="https://matrix.to/#/#random"]"##;
-    assert_eq!(app.attr(room_pill, "data-pill").await.expect("attr").as_deref(), Some("true"));
+    assert_eq!(
+        app.attr(room_pill, "data-pill")
+            .await
+            .expect("attr")
+            .as_deref(),
+        Some("true")
+    );
     app.click(pill).await.expect("click");
-    app.wait_for_text(".profile-modal .profile-id", &format!("@{writer}:localhost"), DEFAULT_WAIT)
-        .await
-        .expect("the profile");
+    app.wait_for_text(
+        ".profile-modal .profile-id",
+        &format!("@{writer}:localhost"),
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("the profile");
 }
 
 /// A message that mentions you lights its row; one that mentions someone
@@ -150,19 +196,38 @@ async fn a_message_that_mentions_you_is_lit() {
     a.wait_for(".message[data-mentioned=true]", DEFAULT_WAIT)
         .await
         .expect("alice's row is lit");
-    let row = a.bounds(".message[data-mentioned=true]").await.expect("b").expect("row bounds");
+    let row = a
+        .bounds(".message[data-mentioned=true]")
+        .await
+        .expect("b")
+        .expect("row bounds");
     let bar = a
         .bounds(".message[data-mentioned=true] .mention-bar")
         .await
         .expect("b")
         .expect("the gold bar");
-    assert!((bar.x - row.x).abs() < 1.0, "the bar at the row's left edge: {bar:?} {row:?}");
+    assert!(
+        (bar.x - row.x).abs() < 1.0,
+        "the bar at the row's left edge: {bar:?} {row:?}"
+    );
     assert!((bar.w - 2.0).abs() < 0.5, "2 px wide: {bar:?}");
-    assert!((bar.h - row.h).abs() < 1.0, "the row's height: {bar:?} {row:?}");
-    let lit = a.attr(".message[data-mentioned=true]", "data-bg").await.expect("bg").expect("bg");
+    assert!(
+        (bar.h - row.h).abs() < 1.0,
+        "the row's height: {bar:?} {row:?}"
+    );
+    let lit = a
+        .attr(".message[data-mentioned=true]", "data-bg")
+        .await
+        .expect("bg")
+        .expect("bg");
     assert!(lit.starts_with("faa81a"), "a warm yellow tint: {lit}");
     // Carol is not mentioned.
-    assert_eq!(c.count(".message[data-mentioned=true]").await.expect("count"), 0);
+    assert_eq!(
+        c.count(".message[data-mentioned=true]")
+            .await
+            .expect("count"),
+        0
+    );
     assert_eq!(c.count(".mention-bar").await.expect("count"), 0);
 }
 
@@ -203,7 +268,11 @@ async fn a_typed_at_name_is_a_pill() {
         &hs,
         &writer,
         "PUT",
-        &format!("rooms/{}/send/m.room.message/{}-typed", enc(&room), std::process::id()),
+        &format!(
+            "rooms/{}/send/m.room.message/{}-typed",
+            enc(&room),
+            std::process::id()
+        ),
         Some(serde_json::json!({
             "msgtype": "m.text",
             "body": format!("hi @{alice} and @Carrie Typed, but not @nobody typedword"),
@@ -227,7 +296,11 @@ async fn a_typed_at_name_is_a_pill() {
                 && hrefs.contains(&format!("https://matrix.to/#/@{carol}:localhost")),
             "{who}: pills point at the two people: {hrefs:?}"
         );
-        let bg = app.attr(pill, "data-bg").await.expect("bg").expect("a tint");
+        let bg = app
+            .attr(pill, "data-bg")
+            .await
+            .expect("bg")
+            .expect("a tint");
         assert!(bg.ends_with("4d"), "{who}: the pill look: {bg}");
     }
     // The text is as typed, @nobody is not a pill.
@@ -238,10 +311,21 @@ async fn a_typed_at_name_is_a_pill() {
     a.wait_for(".message[data-mentioned=true]", DEFAULT_WAIT)
         .await
         .expect("alice's row is lit");
-    assert_eq!(d.count(".message[data-mentioned=true]").await.expect("count"), 0);
+    assert_eq!(
+        d.count(".message[data-mentioned=true]")
+            .await
+            .expect("count"),
+        0
+    );
     // A click opens the profile.
-    a.click_text(pill, &format!("@{alice}")).await.expect("click");
-    a.wait_for_text(".profile-modal .profile-id", &format!("@{alice}:localhost"), DEFAULT_WAIT)
+    a.click_text(pill, &format!("@{alice}"))
         .await
-        .expect("the profile");
+        .expect("click");
+    a.wait_for_text(
+        ".profile-modal .profile-id",
+        &format!("@{alice}:localhost"),
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("the profile");
 }

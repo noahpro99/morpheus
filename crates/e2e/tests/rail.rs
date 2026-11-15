@@ -51,7 +51,11 @@ async fn create_server(app: &mut App, name: &str) {
 /// top edge with `before`) and, unless `hold`, let go (a drag the app sees
 /// as real pointer input, in either UI).
 async fn drag_to(app: &mut App, from: &str, to: &str, before: bool, hold: bool) {
-    let a = app.bounds(from).await.expect("from").expect("a source badge");
+    let a = app
+        .bounds(from)
+        .await
+        .expect("from")
+        .expect("a source badge");
     let b = app.bounds(to).await.expect("to").expect("a target badge");
     let y = if before { b.y + 3.0 } else { b.y + b.h / 2.0 };
     let (dx, dy) = (
@@ -75,12 +79,15 @@ async fn drag_before(app: &mut App, from: &str, to: &str) {
 /// The titles of the rail's servers and folders, top-level, in order (a
 /// folder has none).
 async fn top_level(app: &mut App) -> Vec<String> {
-    app.attrs(".rail > .rail-item.space-badge, .rail > .rail-folder", "title")
-        .await
-        .expect("titles")
-        .into_iter()
-        .map(Option::unwrap_or_default)
-        .collect()
+    app.attrs(
+        ".rail > .rail-item.space-badge, .rail > .rail-folder",
+        "title",
+    )
+    .await
+    .expect("titles")
+    .into_iter()
+    .map(Option::unwrap_or_default)
+    .collect()
 }
 
 /// The titles of the rail's server badges (not in folders), in order.
@@ -203,7 +210,10 @@ async fn servers_drag_into_folders_and_reorder() {
     app.wait_for(&badge, DEFAULT_WAIT)
         .await
         .expect("folder remembered");
-    wait_top_level(&mut app, "order remembered", |titles| titles.first() == Some(&b)).await;
+    wait_top_level(&mut app, "order remembered", |titles| {
+        titles.first() == Some(&b)
+    })
+    .await;
 
     // Ungroup: the folder goes, its servers stay.
     app.right_click(&badge).await.expect("folder menu");
@@ -223,7 +233,10 @@ async fn servers_drag_into_folders_and_reorder() {
 /// with unread messages.
 /// The mark (a bar or a dot) beside a badge: where it is.
 async fn pill_of(app: &mut App, badge: &str) -> Option<morpheus_e2e::Bounds> {
-    app.bounds(&format!("{badge} .rail-pill")).await.ok().flatten()
+    app.bounds(&format!("{badge} .rail-pill"))
+        .await
+        .ok()
+        .flatten()
 }
 
 #[tokio::test]
@@ -265,8 +278,12 @@ async fn the_rail_marks_the_current_scope_and_unread_ones() {
     let rooms = ".rail-item[title=\"Rooms\"]";
     let deadline = std::time::Instant::now() + DEFAULT_WAIT;
     loop {
-        let tall = pill_of(&mut app, selected).await.is_some_and(|m| m.h >= 32.0);
-        let dot = pill_of(&mut app, rooms).await.is_some_and(|m| m.h > 0.0 && m.h <= 10.0);
+        let tall = pill_of(&mut app, selected)
+            .await
+            .is_some_and(|m| m.h >= 32.0);
+        let dot = pill_of(&mut app, rooms)
+            .await
+            .is_some_and(|m| m.h > 0.0 && m.h <= 10.0);
         if tall && dot {
             break;
         }
@@ -278,7 +295,11 @@ async fn the_rail_marks_the_current_scope_and_unread_ones() {
     }
     for selector in [selected, rooms] {
         let pill = pill_of(&mut app, selector).await.expect("mark");
-        let item = app.bounds(selector).await.expect("badge").expect("its badge");
+        let item = app
+            .bounds(selector)
+            .await
+            .expect("badge")
+            .expect("its badge");
         let colours = app
             .colours_of(&format!("{selector} .rail-pill"), "background")
             .await
@@ -490,7 +511,14 @@ async fn the_rail_pill_grows_on_hover_and_is_tall_when_selected() {
     };
     let user = new_account(&hs, "pill").expect("account");
     let enc = |id: &str| id.replace('!', "%21").replace(':', "%3A");
-    api_as(&hs, &user, "POST", "createRoom", Some(serde_json::json!({ "name": "lobby" }))).expect("lobby");
+    api_as(
+        &hs,
+        &user,
+        "POST",
+        "createRoom",
+        Some(serde_json::json!({ "name": "lobby" })),
+    )
+    .expect("lobby");
     let mut last_channel = String::new();
     for (server, channel) in [("Pread", "p-read"), ("Punread", "p-unread")] {
         let space = api_as(
@@ -502,8 +530,14 @@ async fn the_rail_pill_grows_on_hover_and_is_tall_when_selected() {
         )
         .expect("space");
         let space = space["room_id"].as_str().expect("id").to_owned();
-        let room = api_as(&hs, &user, "POST", "createRoom", Some(serde_json::json!({ "name": channel })))
-            .expect("channel");
+        let room = api_as(
+            &hs,
+            &user,
+            "POST",
+            "createRoom",
+            Some(serde_json::json!({ "name": channel })),
+        )
+        .expect("channel");
         let room = room["room_id"].as_str().expect("id").to_owned();
         api_as(
             &hs,
@@ -535,7 +569,14 @@ async fn the_rail_pill_grows_on_hover_and_is_tall_when_selected() {
         Some(serde_json::json!({ "user_id": "@bob:localhost" })),
     )
     .expect("invite bob");
-    api_as(&hs, "bob", "POST", &format!("rooms/{room}/join"), Some(serde_json::json!({}))).expect("bob joins");
+    api_as(
+        &hs,
+        "bob",
+        "POST",
+        &format!("rooms/{room}/join"),
+        Some(serde_json::json!({})),
+    )
+    .expect("bob joins");
     morpheus_e2e::send_as(&hs, "bob", &last_channel, "pill unread").expect("bob writes");
 
     let height = |m: Option<morpheus_e2e::Bounds>| m.map_or(0.0, |m| m.h);
@@ -546,13 +587,21 @@ async fn the_rail_pill_grows_on_hover_and_is_tall_when_selected() {
         if h > 0.0 && h <= 10.0 {
             break;
         }
-        assert!(std::time::Instant::now() < deadline, "a small dot beside the unread server (now {h})");
+        assert!(
+            std::time::Instant::now() < deadline,
+            "a small dot beside the unread server (now {h})"
+        );
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
     // Read, not selected, not hovered: nothing. (Pointer parked on the logo.)
-    app.hover(".rail-item[title=\"Rooms\"]").await.expect("park");
+    app.hover(".rail-item[title=\"Rooms\"]")
+        .await
+        .expect("park");
     tokio::time::sleep(Duration::from_millis(300)).await;
-    assert!(height(pill_of(&mut app, read).await) < 1.0, "no pill beside a read server");
+    assert!(
+        height(pill_of(&mut app, read).await) < 1.0,
+        "no pill beside a read server"
+    );
 
     // Hover: a medium bar, between the dot and the full bar.
     app.hover(read).await.expect("hover");
@@ -562,7 +611,10 @@ async fn the_rail_pill_grows_on_hover_and_is_tall_when_selected() {
         if (14.0..=28.0).contains(&h) {
             break;
         }
-        assert!(std::time::Instant::now() < deadline, "a medium bar while hovered (now {h})");
+        assert!(
+            std::time::Instant::now() < deadline,
+            "a medium bar while hovered (now {h})"
+        );
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     // An unread server grows too.
@@ -577,43 +629,81 @@ async fn the_rail_pill_grows_on_hover_and_is_tall_when_selected() {
     app.click(read).await.expect("open the server");
     tokio::time::sleep(Duration::from_millis(400)).await;
     let tall = height(pill_of(&mut app, ".rail-item.selected").await);
-    assert!(tall >= 32.0, "the server you are in has a tall bar (now {tall})");
+    assert!(
+        tall >= 32.0,
+        "the server you are in has a tall bar (now {tall})"
+    );
     // Not hovered any more, still tall; the other server is back to a dot.
-    app.hover(".rail-item[title=\"Rooms\"]").await.expect("away");
+    app.hover(".rail-item[title=\"Rooms\"]")
+        .await
+        .expect("away");
     tokio::time::sleep(Duration::from_millis(300)).await;
-    assert!(height(pill_of(&mut app, ".rail-item.selected").await) >= 32.0, "still tall");
-    assert!(height(pill_of(&mut app, read).await) >= 32.0, "the selected one is the server");
+    assert!(
+        height(pill_of(&mut app, ".rail-item.selected").await) >= 32.0,
+        "still tall"
+    );
+    assert!(
+        height(pill_of(&mut app, read).await) >= 32.0,
+        "the selected one is the server"
+    );
     let h = height(pill_of(&mut app, unread).await);
-    assert!(h > 0.0 && h <= 10.0, "an unread server is a dot again (now {h})");
+    assert!(
+        h > 0.0 && h <= 10.0,
+        "an unread server is a dot again (now {h})"
+    );
 }
 
 // ---- Calls on the rail (task 39) ------------------------------------------
 
 /// Bob joins `channel`'s call: through the switcher to its page, then Join.
 async fn bob_joins_voice(bob: &mut App, channel: &str) {
-    bob.key_combo("body", "k", true, false, false).await.expect("ctrl+k");
-    bob.wait_for(".switcher input", DEFAULT_WAIT).await.expect("switcher");
-    bob.type_into(".switcher input", channel).await.expect("filter");
-    bob.wait_for_text(".switcher-item.active", channel, DEFAULT_WAIT).await.expect("offered");
+    bob.key_combo("body", "k", true, false, false)
+        .await
+        .expect("ctrl+k");
+    bob.wait_for(".switcher input", DEFAULT_WAIT)
+        .await
+        .expect("switcher");
+    bob.type_into(".switcher input", channel)
+        .await
+        .expect("filter");
+    bob.wait_for_text(".switcher-item.active", channel, DEFAULT_WAIT)
+        .await
+        .expect("offered");
     bob.press(".switcher input", "Enter").await.expect("pick");
-    bob.wait_for(".voice-page-join .join-voice", DEFAULT_WAIT).await.expect("join page");
-    bob.click(".voice-page-join .join-voice").await.expect("join");
-    bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT).await.expect("connected");
+    bob.wait_for(".voice-page-join .join-voice", DEFAULT_WAIT)
+        .await
+        .expect("join page");
+    bob.click(".voice-page-join .join-voice")
+        .await
+        .expect("join");
+    bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("connected");
 }
 
 /// A badge with a green circle and a speaker at the icon's top right, ringed
 /// in the rail's colour; a pixel check where the session can be captured.
 async fn check_call_badge(app: &mut App, icon: &str) {
     let sel = format!("{icon} .rail-call-badge");
-    app.wait_for(&sel, DEFAULT_WAIT).await.unwrap_or_else(|e| panic!("no call badge on {icon}: {e}"));
+    app.wait_for(&sel, DEFAULT_WAIT)
+        .await
+        .unwrap_or_else(|e| panic!("no call badge on {icon}: {e}"));
     let badge = app.bounds(&sel).await.expect("b").expect("the call badge");
     let owner = app.bounds(icon).await.expect("b").expect("the icon");
-    assert!((16.0..=24.0).contains(&badge.w) && (badge.w - badge.h).abs() < 0.5, "a small circle: {badge:?}");
     assert!(
-        badge.centre_x() > owner.x + owner.w * 0.6 && badge.y + badge.h / 2.0 < owner.y + owner.h * 0.4,
+        (16.0..=24.0).contains(&badge.w) && (badge.w - badge.h).abs() < 0.5,
+        "a small circle: {badge:?}"
+    );
+    assert!(
+        badge.centre_x() > owner.x + owner.w * 0.6
+            && badge.y + badge.h / 2.0 < owner.y + owner.h * 0.4,
         "at the icon's top right: {badge:?} on {owner:?}"
     );
-    assert_eq!(app.count(&format!("{sel} svg")).await.expect("count"), 1, "a speaker icon in it");
+    assert_eq!(
+        app.count(&format!("{sel} svg")).await.expect("count"),
+        1,
+        "a speaker icon in it"
+    );
     tokio::time::sleep(Duration::from_millis(400)).await;
     let Some(shot) = capture_of(app) else { return };
     let cx = badge.centre_x();
@@ -626,8 +716,10 @@ async fn check_call_badge(app: &mut App, icon: &str) {
     let rail = app.bounds(".rail").await.expect("b").expect("rail");
     let behind = pixel(&shot, rail.x + 8.0, badge.y + badge.h + 3.0);
     assert!(
-        (i32::from(ring.0) - i32::from(behind.0)).abs() + (i32::from(ring.1) - i32::from(behind.1)).abs()
-            + (i32::from(ring.2) - i32::from(behind.2)).abs() < 16,
+        (i32::from(ring.0) - i32::from(behind.0)).abs()
+            + (i32::from(ring.1) - i32::from(behind.1)).abs()
+            + (i32::from(ring.2) - i32::from(behind.2)).abs()
+            < 16,
         "the ring is not the rail's colour: ring {ring:?}, rail {behind:?}"
     );
     // Nothing green beyond the ring (no bleed of the circle under it), where
@@ -636,10 +728,17 @@ async fn check_call_badge(app: &mut App, icon: &str) {
     for degrees in [-90.0_f64, -70.0, -45.0, -20.0, 0.0] {
         let angle = degrees.to_radians();
         for beyond in [0.6, 1.0, 1.6] {
-            let (x, y) = (cx + (radius + beyond) * angle.cos(), (badge.y + badge.h / 2.0) + (radius + beyond) * angle.sin());
+            let (x, y) = (
+                cx + (radius + beyond) * angle.cos(),
+                (badge.y + badge.h / 2.0) + (radius + beyond) * angle.sin(),
+            );
             let p = pixel(&shot, x, y);
             assert!(
-                (i32::from(p.0) - i32::from(behind.0)).abs().max((i32::from(p.1) - i32::from(behind.1)).abs()).max((i32::from(p.2) - i32::from(behind.2)).abs()) <= 6,
+                (i32::from(p.0) - i32::from(behind.0))
+                    .abs()
+                    .max((i32::from(p.1) - i32::from(behind.1)).abs())
+                    .max((i32::from(p.2) - i32::from(behind.2)).abs())
+                    <= 6,
                 "not the rail's colour (green bleeding?) {beyond} px outside the ring at {degrees} degrees ({x:.1}, {y:.1}): {p:?} (rail {behind:?})"
             );
         }
@@ -665,13 +764,18 @@ async fn a_server_with_a_call_going_shows_a_green_speaker_badge() {
     };
     let ann = new_account(&hs, "railcall").expect("account");
     let pid = std::process::id();
-    let (a, b, channel) = (format!("rc a {pid}"), format!("rc b {pid}"), format!("rc voice {pid}"));
-    let space = |name: &str| {
-        api_as(&hs, &ann, "POST", "createRoom", Some(serde_json::json!({
+    let (a, b, channel) = (
+        format!("rc a {pid}"),
+        format!("rc b {pid}"),
+        format!("rc voice {pid}"),
+    );
+    let space =
+        |name: &str| {
+            api_as(&hs, &ann, "POST", "createRoom", Some(serde_json::json!({
             "name": name, "preset": "public_chat", "creation_content": { "type": "m.space" },
         })))
         .expect("a space")["room_id"].as_str().expect("id").to_owned()
-    };
+        };
     let (sa, _sb) = (space(&a), space(&b));
     let voice = api_as(&hs, &ann, "POST", "createRoom", Some(serde_json::json!({
         "name": channel, "preset": "public_chat",
@@ -682,9 +786,22 @@ async fn a_server_with_a_call_going_shows_a_green_speaker_badge() {
     })))
     .expect("a voice channel")["room_id"].as_str().expect("id").to_owned();
     let enc = |id: &str| id.replace('!', "%21").replace(':', "%3A");
-    api_as(&hs, &ann, "PUT", &format!("rooms/{}/state/m.space.child/{}", enc(&sa), enc(&voice)),
-        Some(serde_json::json!({ "via": ["localhost"] }))).expect("a child");
-    api_as(&hs, "bob", "POST", &format!("rooms/{}/join", enc(&voice)), Some(serde_json::json!({}))).expect("bob joins");
+    api_as(
+        &hs,
+        &ann,
+        "PUT",
+        &format!("rooms/{}/state/m.space.child/{}", enc(&sa), enc(&voice)),
+        Some(serde_json::json!({ "via": ["localhost"] })),
+    )
+    .expect("a child");
+    api_as(
+        &hs,
+        "bob",
+        "POST",
+        &format!("rooms/{}/join", enc(&voice)),
+        Some(serde_json::json!({})),
+    )
+    .expect("bob joins");
 
     // Bob first: the later window is on top, and the pixel check sees ann's.
     let mut bob = App::launch_desktop(&hs).await.expect("launch bob");
@@ -693,30 +810,64 @@ async fn a_server_with_a_call_going_shows_a_green_speaker_badge() {
         return;
     }
     login(&mut app, &ann).await;
-    let (badge_a, badge_b) = (format!(".rail-item[title=\"{a}\"]"), format!(".rail-item[title=\"{b}\"]"));
-    app.wait_for(&badge_a, DEFAULT_WAIT).await.expect("server a");
-    app.wait_for(&badge_b, DEFAULT_WAIT).await.expect("server b");
-    assert_eq!(app.count(".rail-call-badge").await.expect("count"), 0, "a badge with no call");
+    let (badge_a, badge_b) = (
+        format!(".rail-item[title=\"{a}\"]"),
+        format!(".rail-item[title=\"{b}\"]"),
+    );
+    app.wait_for(&badge_a, DEFAULT_WAIT)
+        .await
+        .expect("server a");
+    app.wait_for(&badge_b, DEFAULT_WAIT)
+        .await
+        .expect("server b");
+    assert_eq!(
+        app.count(".rail-call-badge").await.expect("count"),
+        0,
+        "a badge with no call"
+    );
 
     // Bob starts a call in the channel: the badge is on its server only.
     login(&mut bob, "bob").await;
     bob_joins_voice(&mut bob, &channel).await;
     check_call_badge(&mut app, &badge_a).await;
-    assert_eq!(app.count(&format!("{badge_b} .rail-call-badge")).await.expect("count"), 0, "the other server has one");
-    assert_eq!(app.count(".rail-call-badge").await.expect("count"), 1, "one badge");
+    assert_eq!(
+        app.count(&format!("{badge_b} .rail-call-badge"))
+            .await
+            .expect("count"),
+        0,
+        "the other server has one"
+    );
+    assert_eq!(
+        app.count(".rail-call-badge").await.expect("count"),
+        1,
+        "one badge"
+    );
     // Hung up: gone.
     bob.click(".voice-panel .hang-up").await.expect("hang up");
-    app.wait_for_count(".rail-call-badge", 0, DEFAULT_WAIT).await.expect("the badge goes with the call");
+    app.wait_for_count(".rail-call-badge", 0, DEFAULT_WAIT)
+        .await
+        .expect("the badge goes with the call");
 
     // The two servers in a folder: the folder carries it.
     drag(&mut app, &badge_b, &badge_a).await;
-    wait_top_level(&mut app, "a folder of the two", |t| !t.contains(&a) && !t.contains(&b)).await;
-    app.wait_for(".rail-folder", DEFAULT_WAIT).await.expect("folder");
-    bob.click(".voice-page-join .join-voice").await.expect("join again");
-    bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT).await.expect("connected");
+    wait_top_level(&mut app, "a folder of the two", |t| {
+        !t.contains(&a) && !t.contains(&b)
+    })
+    .await;
+    app.wait_for(".rail-folder", DEFAULT_WAIT)
+        .await
+        .expect("folder");
+    bob.click(".voice-page-join .join-voice")
+        .await
+        .expect("join again");
+    bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("connected");
     check_call_badge(&mut app, ".rail-folder .folder-badge").await;
     bob.click(".voice-panel .hang-up").await.expect("hang up");
-    app.wait_for_count(".rail-call-badge", 0, DEFAULT_WAIT).await.expect("gone from the folder too");
+    app.wait_for_count(".rail-call-badge", 0, DEFAULT_WAIT)
+        .await
+        .expect("gone from the folder too");
 }
 
 /// A call in a direct message marks the DMs button.
@@ -733,25 +884,51 @@ async fn a_dm_call_marks_the_dms_button() {
     }
     login(&mut alice, "alice").await;
     login(&mut bob, "bob").await;
-    bob.click(".rail-item[title=\"Direct messages\"]").await.expect("dms");
+    bob.click(".rail-item[title=\"Direct messages\"]")
+        .await
+        .expect("dms");
     bob.open_room("alice").await.expect("the dm");
-    assert_eq!(alice.count(".rail-dms .rail-call-badge").await.expect("count"), 0, "no call yet");
-    bob.wait_for(".chat-header .call-button", DEFAULT_WAIT).await.expect("call button");
+    assert_eq!(
+        alice
+            .count(".rail-dms .rail-call-badge")
+            .await
+            .expect("count"),
+        0,
+        "no call yet"
+    );
+    bob.wait_for(".chat-header .call-button", DEFAULT_WAIT)
+        .await
+        .expect("call button");
     bob.click(".chat-header .call-button").await.expect("call");
-    bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT).await.expect("connected");
+    bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("connected");
     check_call_badge(&mut alice, ".rail-dms").await;
     bob.click(".voice-panel .hang-up").await.expect("hang up");
-    alice.wait_for_count(".rail-call-badge", 0, DEFAULT_WAIT).await.expect("gone");
+    alice
+        .wait_for_count(".rail-call-badge", 0, DEFAULT_WAIT)
+        .await
+        .expect("gone");
 }
 
 /// The pixel (RGB) at `x`, `y` of the screen, if it can be captured.
 fn screen_pixel(x: f64, y: f64) -> Option<[u8; 3]> {
     let out = std::process::Command::new("grim")
-        .args(["-s", "1", "-t", "ppm", "-g", &format!("{},{} 1x1", x.round(), y.round()), "-"])
+        .args([
+            "-s",
+            "1",
+            "-t",
+            "ppm",
+            "-g",
+            &format!("{},{} 1x1", x.round(), y.round()),
+            "-",
+        ])
         .output()
         .ok()?;
     let n = out.stdout.len();
-    out.stdout.get(n.checked_sub(3)?..).map(|p| [p[0], p[1], p[2]])
+    out.stdout
+        .get(n.checked_sub(3)?..)
+        .map(|p| [p[0], p[1], p[2]])
 }
 
 /// The DMs badge starts where the top bar does, and the panel above the
@@ -768,26 +945,59 @@ async fn the_dms_icon_lines_up_with_the_top_bar_and_the_panel_is_rounded() {
     }
     login(&mut app, "alice").await;
     app.open_room("general").await.expect("general");
-    app.wait_for(".chat-header", DEFAULT_WAIT).await.expect("a room open");
-    let dms = app.bounds(".rail-dms").await.expect("bounds").expect("the DMs badge");
-    let bar = app.bounds(".chat-header").await.expect("bounds").expect("the top bar");
-    let head = app.bounds(".sidebar-header").await.expect("bounds").expect("the panel");
-    assert!((dms.y - bar.y).abs() <= 1.0, "the DMs badge {dms:?} does not start where the top bar {bar:?} does");
-    assert!((head.y - bar.y).abs() <= 1.0, "the panel {head:?} and the top bar {bar:?} differ");
+    app.wait_for(".chat-header", DEFAULT_WAIT)
+        .await
+        .expect("a room open");
+    let dms = app
+        .bounds(".rail-dms")
+        .await
+        .expect("bounds")
+        .expect("the DMs badge");
+    let bar = app
+        .bounds(".chat-header")
+        .await
+        .expect("bounds")
+        .expect("the top bar");
+    let head = app
+        .bounds(".sidebar-header")
+        .await
+        .expect("bounds")
+        .expect("the panel");
+    assert!(
+        (dms.y - bar.y).abs() <= 1.0,
+        "the DMs badge {dms:?} does not start where the top bar {bar:?} does"
+    );
+    assert!(
+        (head.y - bar.y).abs() <= 1.0,
+        "the panel {head:?} and the top bar {bar:?} differ"
+    );
     let radius: f64 = app
         .attr(".sidebar", "data-radius-tl")
         .await
         .expect("attr")
         .and_then(|r| r.parse().ok())
         .unwrap_or(0.0);
-    assert!(radius >= 8.0, "the panel's top left corner has a radius of {radius}");
+    assert!(
+        radius >= 8.0,
+        "the panel's top left corner has a radius of {radius}"
+    );
     let can_capture = morpheus_e2e::display_or_skip("pixel check")
         && std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_some()
-        && !std::process::Command::new("pgrep").args(["-x", "hyprlock"]).status().is_ok_and(|s| s.success());
+        && !std::process::Command::new("pgrep")
+            .args(["-x", "hyprlock"])
+            .status()
+            .is_ok_and(|s| s.success());
     let at = app.pid().and_then(|pid| {
-        let out = std::process::Command::new("hyprctl").args(["clients", "-j"]).output().ok()?;
+        let out = std::process::Command::new("hyprctl")
+            .args(["clients", "-j"])
+            .output()
+            .ok()?;
         let clients: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
-        let w = clients.as_array()?.iter().find(|c| c["pid"].as_u64() == Some(u64::from(pid)))?.clone();
+        let w = clients
+            .as_array()?
+            .iter()
+            .find(|c| c["pid"].as_u64() == Some(u64::from(pid)))?
+            .clone();
         Some((w["at"][0].as_f64()?, w["at"][1].as_f64()?))
     });
     if let (true, Some((wx, wy))) = (can_capture, at) {
@@ -797,8 +1007,14 @@ async fn the_dms_icon_lines_up_with_the_top_bar_and_the_panel_is_rounded() {
             screen_pixel(wx + head.x + 3.0, wy + head.y + 30.0),
         );
         eprintln!("corner {corner:?}, rail {rail:?}, panel {panel:?}");
-        assert!(corner.is_some() && corner == rail, "the corner {corner:?} is not the rail's {rail:?}");
-        assert!(corner != panel, "the corner {corner:?} is drawn as the panel {panel:?}");
+        assert!(
+            corner.is_some() && corner == rail,
+            "the corner {corner:?} is not the rail's {rail:?}"
+        );
+        assert!(
+            corner != panel,
+            "the corner {corner:?} is drawn as the panel {panel:?}"
+        );
     } else {
         eprintln!("screen locked or not Hyprland: no pixel check");
     }
@@ -807,7 +1023,11 @@ async fn the_dms_icon_lines_up_with_the_top_bar_and_the_panel_is_rounded() {
 /// The width of `selector` once it has stopped changing (about 100 ms of it).
 async fn settled_width(app: &mut App, selector: &str) -> f64 {
     tokio::time::sleep(Duration::from_millis(400)).await;
-    app.bounds(selector).await.expect("bounds").expect("a box").w
+    app.bounds(selector)
+        .await
+        .expect("bounds")
+        .expect("a box")
+        .w
 }
 
 #[tokio::test]
@@ -818,7 +1038,9 @@ async fn rail_buttons_shrink_while_pressed_and_spring_back() {
     };
     let mut app = App::launch_desktop(&hs).await.expect("launch app");
     login(&mut app, "alice").await;
-    app.wait_for(".rail-dms", DEFAULT_WAIT).await.expect("DMs button");
+    app.wait_for(".rail-dms", DEFAULT_WAIT)
+        .await
+        .expect("DMs button");
     let rest = settled_width(&mut app, ".rail-dms").await;
     let slot = app.bounds(".rail-dms").await.expect("bounds").expect("box");
 
@@ -831,12 +1053,18 @@ async fn rail_buttons_shrink_while_pressed_and_spring_back() {
     );
     // It is in place (the centre does not move).
     let now = app.bounds(".rail-dms").await.expect("bounds").expect("box");
-    assert!(((now.x + now.w / 2.0) - (slot.x + slot.w / 2.0)).abs() < 0.5, "stays centred");
+    assert!(
+        ((now.x + now.w / 2.0) - (slot.x + slot.w / 2.0)).abs() < 0.5,
+        "stays centred"
+    );
 
     // The pointer leaving springs it back while the button is still down.
     app.hover(".rail-add").await.expect("move away");
     let back = settled_width(&mut app, ".rail-dms").await;
-    assert!((back - rest).abs() < 0.5, "back to {rest} after leaving, not {back}");
+    assert!(
+        (back - rest).abs() < 0.5,
+        "back to {rest} after leaving, not {back}"
+    );
     app.release().await.expect("let go");
 
     // Pressing and releasing on it springs back too.
@@ -845,5 +1073,8 @@ async fn rail_buttons_shrink_while_pressed_and_spring_back() {
     assert!(pressed < rest - 1.0, "pressed again: {pressed}");
     app.release().await.expect("release");
     let back = settled_width(&mut app, ".rail-dms").await;
-    assert!((back - rest).abs() < 0.5, "back to {rest} after release, not {back}");
+    assert!(
+        (back - rest).abs() < 0.5,
+        "back to {rest} after release, not {back}"
+    );
 }

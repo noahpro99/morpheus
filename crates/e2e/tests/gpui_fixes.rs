@@ -93,7 +93,9 @@ async fn the_side_panel_runs_to_the_bottom_of_the_chat() {
     assert_pane_reaches_bottom(&mut app, "a room with one member").await;
 
     // Search.
-    app.click(".chat-header input[name=search]").await.expect("search");
+    app.click(".chat-header input[name=search]")
+        .await
+        .expect("search");
     app.type_into(".chat-header input[name=search]", "pangolin")
         .await
         .expect("type");
@@ -106,9 +108,15 @@ async fn the_side_panel_runs_to_the_bottom_of_the_chat() {
     assert_pane_reaches_bottom(&mut app, "search with a hit").await;
 
     // A thread.
-    app.press(".chat-header input[name=search]", "Escape").await.ok();
-    app.wait_for(".thread-chip", DEFAULT_WAIT).await.expect("chip");
-    app.click_text(".thread-chip", "repl").await.expect("thread");
+    app.press(".chat-header input[name=search]", "Escape")
+        .await
+        .ok();
+    app.wait_for(".thread-chip", DEFAULT_WAIT)
+        .await
+        .expect("chip");
+    app.click_text(".thread-chip", "repl")
+        .await
+        .expect("thread");
     app.wait_for(".thread-panel .message", DEFAULT_WAIT)
         .await
         .expect("thread panel");
@@ -130,8 +138,12 @@ async fn the_member_list_of_a_dm_and_a_big_room_run_to_the_bottom() {
     assert_pane_reaches_bottom(&mut app, "a big room").await;
 
     app.open_room("bob").await.expect("a DM");
-    app.wait_for(".composer", DEFAULT_WAIT).await.expect("composer");
-    app.wait_for(".side-pane", DEFAULT_WAIT).await.expect("pane");
+    app.wait_for(".composer", DEFAULT_WAIT)
+        .await
+        .expect("composer");
+    app.wait_for(".side-pane", DEFAULT_WAIT)
+        .await
+        .expect("pane");
     assert_pane_reaches_bottom(&mut app, "a DM").await;
 }
 
@@ -204,15 +216,26 @@ async fn a_long_thread_in_a_short_window_stays_inside_the_pane() {
     let mut app = App::launch_sized(&hs, 1000, 520).await.expect("launch app");
     common::login(&mut app, &user, &format!("{user}-password")).await;
     app.open_room("long").await.expect("open room");
-    app.wait_for(".thread-chip", DEFAULT_WAIT).await.expect("chip");
-    app.click_text(".thread-chip", "repl").await.expect("thread");
+    app.wait_for(".thread-chip", DEFAULT_WAIT)
+        .await
+        .expect("chip");
+    app.click_text(".thread-chip", "repl")
+        .await
+        .expect("thread");
     app.wait_for(".thread-panel .message", DEFAULT_WAIT)
         .await
         .expect("thread panel");
     assert_pane_reaches_bottom(&mut app, "a long thread").await;
-    let panel = app.bounds(".thread-panel").await.expect("b").expect("panel");
+    let panel = app
+        .bounds(".thread-panel")
+        .await
+        .expect("b")
+        .expect("panel");
     let pane = app.bounds(".side-pane").await.expect("b").expect("pane");
-    assert!(panel.y + panel.h <= pane.y + pane.h + 1.0, "the panel spills out of the pane");
+    assert!(
+        panel.y + panel.h <= pane.y + pane.h + 1.0,
+        "the panel spills out of the pane"
+    );
 }
 
 /// The command palette (Ctrl+K): centred, rows of one height with their
@@ -243,7 +266,11 @@ async fn the_palette_is_laid_out_evenly() {
 
     let window = app.bounds(".shell").await.expect("b").expect("shell");
     let panel = app.bounds(".switcher").await.expect("b").expect("panel");
-    let input = app.bounds(".switcher input").await.expect("b").expect("input");
+    let input = app
+        .bounds(".switcher input")
+        .await
+        .expect("b")
+        .expect("input");
     let list = app
         .bounds(".switcher-results")
         .await
@@ -256,8 +283,15 @@ async fn the_palette_is_laid_out_evenly() {
     // Centred, and as wide as Dioxus draws it: 520, or 90% of a narrow window.
     let gap_left = panel.x - window.x;
     let gap_right = window.x + window.w - (panel.x + panel.w);
-    assert!((gap_left - gap_right).abs() <= 2.0, "not centred: {gap_left} / {gap_right}");
-    assert!((panel.w - 520.0f64.min(window.w * 0.9)).abs() <= 2.0, "width {}", panel.w);
+    assert!(
+        (gap_left - gap_right).abs() <= 2.0,
+        "not centred: {gap_left} / {gap_right}"
+    );
+    assert!(
+        (panel.w - 520.0f64.min(window.w * 0.9)).abs() <= 2.0,
+        "width {}",
+        panel.w
+    );
     // Its top is 15% down the window.
     assert!(
         (panel.y - window.y - window.h * 0.15).abs() <= 3.0,
@@ -266,23 +300,52 @@ async fn the_palette_is_laid_out_evenly() {
         window.h
     );
     // The input sits on top of the list, both as wide as the panel.
-    assert!(input.y >= panel.y - 1.0 && input.y + input.h <= list.y + 1.0, "input above the list");
-    assert!((list.x - panel.x).abs() <= 1.0 && (list.w - panel.w).abs() <= 1.0, "list as wide as the panel");
-    assert!(input.x >= panel.x - 1.0 && input.x + input.w <= panel.x + panel.w + 1.0, "input inside the panel");
+    assert!(
+        input.y >= panel.y - 1.0 && input.y + input.h <= list.y + 1.0,
+        "input above the list"
+    );
+    assert!(
+        (list.x - panel.x).abs() <= 1.0 && (list.w - panel.w).abs() <= 1.0,
+        "list as wide as the panel"
+    );
+    assert!(
+        input.x >= panel.x - 1.0 && input.x + input.w <= panel.x + panel.w + 1.0,
+        "input inside the panel"
+    );
     // The input band is as tall as Dioxus draws it (14 px, one line, 14 px), not a tall box.
-    assert!(list.y - panel.y <= 58.0, "the input band is {} tall", list.y - panel.y);
+    assert!(
+        list.y - panel.y <= 58.0,
+        "the input band is {} tall",
+        list.y - panel.y
+    );
     // Rows: one height, one left edge, one width, no gaps beyond a pixel.
     for (i, row) in rows.iter().enumerate() {
-        assert!((row.h - rows[0].h).abs() <= 1.0, "row {i} is {} tall, row 0 {}", row.h, rows[0].h);
-        assert!((row.x - rows[0].x).abs() <= 1.0 && (row.w - rows[0].w).abs() <= 1.0, "row {i} is out of line");
+        assert!(
+            (row.h - rows[0].h).abs() <= 1.0,
+            "row {i} is {} tall, row 0 {}",
+            row.h,
+            rows[0].h
+        );
+        assert!(
+            (row.x - rows[0].x).abs() <= 1.0 && (row.w - rows[0].w).abs() <= 1.0,
+            "row {i} is out of line"
+        );
         if i > 0 {
             let gap = row.y - (rows[i - 1].y + rows[i - 1].h);
             assert!(gap.abs() <= 1.0, "a gap of {gap} before row {i}");
         }
     }
-    assert!(rows[0].x > list.x && rows[0].x + rows[0].w < list.x + list.w, "rows are inset in the list");
+    assert!(
+        rows[0].x > list.x && rows[0].x + rows[0].w < list.x + list.w,
+        "rows are inset in the list"
+    );
     // Pictures, icons and names on the middle line of their row.
-    for sel in [".switcher-item .avatar", ".switcher-item svg.icon", ".switcher-item .name", ".switcher-item .kind"] {
+    for sel in [
+        ".switcher-item .avatar",
+        ".switcher-item svg.icon",
+        ".switcher-item .name",
+        ".switcher-item .kind",
+    ] {
         let found = app.all_bounds(sel).await.expect("bounds");
         for b in found {
             let mid = b.y + b.h / 2.0;
@@ -317,7 +380,10 @@ async fn palette_rows_keep_a_gap_between_picture_and_text() {
     for lead in [".switcher-item .avatar", ".switcher-item svg.icon"] {
         let leads = app.all_bounds(lead).await.expect("leads");
         assert!(!leads.is_empty(), "no {lead}");
-        let names = app.all_bounds(".switcher-item .name, .switcher-item .action-label").await.expect("names");
+        let names = app
+            .all_bounds(".switcher-item .name, .switcher-item .action-label")
+            .await
+            .expect("names");
         for l in leads {
             let mid = l.y + l.h / 2.0;
             let name = names
@@ -325,7 +391,10 @@ async fn palette_rows_keep_a_gap_between_picture_and_text() {
                 .find(|n| mid >= n.y && mid <= n.y + n.h)
                 .unwrap_or_else(|| panic!("no name beside {lead} {l:?}"));
             let gap = name.x - (l.x + l.w);
-            assert!((gap - 8.0).abs() <= 2.0, "{lead}: {gap} px between it and the name");
+            assert!(
+                (gap - 8.0).abs() <= 2.0,
+                "{lead}: {gap} px between it and the name"
+            );
         }
     }
 }
@@ -394,17 +463,29 @@ async fn pictures_keep_their_proportions_in_a_narrow_and_a_wide_window() {
                 b.w,
                 b.h
             );
-            assert!(b.x + b.w <= timeline.x + timeline.w + 1.0, "{name} sticks out of the timeline");
+            assert!(
+                b.x + b.w <= timeline.x + timeline.w + 1.0,
+                "{name} sticks out of the timeline"
+            );
             let fit = app.attrs(&sel, "data-fit").await.expect("fit");
             assert!(
-                fit.iter().all(|f| matches!(f.as_deref(), Some("contain" | "cover"))),
+                fit.iter()
+                    .all(|f| matches!(f.as_deref(), Some("contain" | "cover"))),
                 "{name} is drawn with fit {fit:?}"
             );
         }
         // A shrunk picture leaves no empty band under it: the next one starts
         // right below (the row's height is the box's, as it is drawn).
-        let wide = app.bounds(".message img.image[alt=\"wide.png\"]").await.expect("b").expect("wide");
-        let tall = app.bounds(".message img.image[alt=\"tall.png\"]").await.expect("b").expect("tall");
+        let wide = app
+            .bounds(".message img.image[alt=\"wide.png\"]")
+            .await
+            .expect("b")
+            .expect("wide");
+        let tall = app
+            .bounds(".message img.image[alt=\"tall.png\"]")
+            .await
+            .expect("b")
+            .expect("tall");
         assert!(
             tall.y - (wide.y + wide.h) <= 60.0,
             "{} px of empty space between the pictures at {w}x{h}",
@@ -479,14 +560,31 @@ async fn a_wide_picture_is_cropped_to_fill_a_round_avatar() {
     // Inside the circle, edge to edge: the middle of the picture (red), its
     // blue sides cropped away.
     let (cx, cy) = (b.x + b.w / 2.0, b.y + b.h / 2.0);
-    for (x, y) in [(cx, cy), (b.x + 3.0, cy), (b.right() - 3.0, cy), (cx, b.y + 3.0), (cx, b.y + b.h - 3.0)] {
+    for (x, y) in [
+        (cx, cy),
+        (b.x + 3.0, cy),
+        (b.right() - 3.0, cy),
+        (cx, b.y + 3.0),
+        (cx, b.y + b.h - 3.0),
+    ] {
         let p = pixel(x, y);
-        assert!(red(p), "inside the circle at ({x}, {y}) is {p:?}, not the picture's red middle");
+        assert!(
+            red(p),
+            "inside the circle at ({x}, {y}) is {p:?}, not the picture's red middle"
+        );
     }
     // The box's corners are outside the circle: neither part of the picture.
-    for (x, y) in [(b.x + 2.0, b.y + 2.0), (b.right() - 2.0, b.y + 2.0), (b.x + 2.0, b.y + b.h - 2.0), (b.right() - 2.0, b.y + b.h - 2.0)] {
+    for (x, y) in [
+        (b.x + 2.0, b.y + 2.0),
+        (b.right() - 2.0, b.y + 2.0),
+        (b.x + 2.0, b.y + b.h - 2.0),
+        (b.right() - 2.0, b.y + b.h - 2.0),
+    ] {
         let p = pixel(x, y);
-        assert!(!red(p) && !blue(p), "the avatar's corner at ({x}, {y}) is {p:?}: the picture is not cut to a circle");
+        assert!(
+            !red(p) && !blue(p),
+            "the avatar's corner at ({x}, {y}) is {p:?}: the picture is not cut to a circle"
+        );
     }
 }
 
@@ -543,7 +641,9 @@ async fn alice_in_general(hs: &str) -> App {
 }
 
 async fn open_bobs_card(app: &mut App) {
-    app.click_text(".members .member", "bob").await.expect("click member");
+    app.click_text(".members .member", "bob")
+        .await
+        .expect("click member");
     app.wait_for_text(".profile-card .profile-id", "@bob:localhost", DEFAULT_WAIT)
         .await
         .expect("card for bob");
@@ -562,14 +662,19 @@ async fn the_settings_modal_is_rounded_at_all_four_corners() {
     };
     let mut app = alice_in_general(&hs).await;
     app.click(".settings-button").await.expect("gear");
-    app.wait_for(".settings .settings-nav", DEFAULT_WAIT).await.expect("settings");
+    app.wait_for(".settings .settings-nav", DEFAULT_WAIT)
+        .await
+        .expect("settings");
     tokio::time::sleep(std::time::Duration::from_millis(600)).await;
     let b = app.bounds(".settings").await.expect("b").expect("modal");
     let Some(square) = common::square_corners(&app, &b, [true; 4]) else {
         eprintln!("no grim capture here; skipping the pixel check");
         return;
     };
-    assert!(square.is_empty(), "the settings modal's corners drawn square: {square:?}");
+    assert!(
+        square.is_empty(),
+        "the settings modal's corners drawn square: {square:?}"
+    );
 }
 
 #[tokio::test]
@@ -585,7 +690,10 @@ async fn the_profile_popup_is_rounded_at_its_top_corners() {
         eprintln!("no grim capture here; skipping the pixel check");
         return;
     };
-    assert!(square.is_empty(), "the popup's top corners drawn square: {square:?}");
+    assert!(
+        square.is_empty(),
+        "the popup's top corners drawn square: {square:?}"
+    );
 }
 
 #[tokio::test]
@@ -596,16 +704,29 @@ async fn the_full_profile_is_rounded_at_all_four_corners() {
     };
     let mut app = alice_in_general(&hs).await;
     open_bobs_card(&mut app).await;
-    app.click(".profile-card .card-button.more").await.expect("more");
-    app.click_text(".context-item", "View full profile").await.expect("full");
-    app.wait_for(".profile-modal .profile-id", DEFAULT_WAIT).await.expect("full profile");
+    app.click(".profile-card .card-button.more")
+        .await
+        .expect("more");
+    app.click_text(".context-item", "View full profile")
+        .await
+        .expect("full");
+    app.wait_for(".profile-modal .profile-id", DEFAULT_WAIT)
+        .await
+        .expect("full profile");
     tokio::time::sleep(std::time::Duration::from_millis(600)).await;
-    let b = app.bounds(".profile-modal").await.expect("b").expect("modal");
+    let b = app
+        .bounds(".profile-modal")
+        .await
+        .expect("b")
+        .expect("modal");
     let Some(square) = common::square_corners(&app, &b, [true; 4]) else {
         eprintln!("no grim capture here; skipping the pixel check");
         return;
     };
-    assert!(square.is_empty(), "the full profile's corners drawn square: {square:?}");
+    assert!(
+        square.is_empty(),
+        "the full profile's corners drawn square: {square:?}"
+    );
 }
 
 /// The side pane's own views (members, search, a thread) fill it with the
@@ -617,21 +738,32 @@ async fn the_side_pane_is_rounded_at_all_four_corners() {
         return;
     };
     let mut app = alice_in_general(&hs).await;
-    app.wait_for(".side-pane .members", DEFAULT_WAIT).await.expect("members");
+    app.wait_for(".side-pane .members", DEFAULT_WAIT)
+        .await
+        .expect("members");
     tokio::time::sleep(std::time::Duration::from_millis(600)).await;
     let b = app.bounds(".side-pane").await.expect("b").expect("pane");
     let Some(square) = common::square_corners(&app, &b, [true; 4]) else {
         eprintln!("no grim capture here; skipping the pixel check");
         return;
     };
-    assert!(square.is_empty(), "the side pane's corners drawn square: {square:?}");
+    assert!(
+        square.is_empty(),
+        "the side pane's corners drawn square: {square:?}"
+    );
 }
 
 async fn open_full_profile(app: &mut App) {
     open_bobs_card(app).await;
-    app.click(".profile-card .card-button.more").await.expect("more");
-    app.click_text(".context-item", "View full profile").await.expect("full");
-    app.wait_for(".profile-modal .profile-id", DEFAULT_WAIT).await.expect("full profile");
+    app.click(".profile-card .card-button.more")
+        .await
+        .expect("more");
+    app.click_text(".context-item", "View full profile")
+        .await
+        .expect("full");
+    app.wait_for(".profile-modal .profile-id", DEFAULT_WAIT)
+        .await
+        .expect("full profile");
     tokio::time::sleep(std::time::Duration::from_millis(400)).await;
 }
 
@@ -651,12 +783,27 @@ async fn the_full_profile_is_a_centred_modal_with_a_height_limit() {
     }
     open_full_profile(&mut app).await;
     let window = app.bounds(".shell").await.expect("b").expect("shell");
-    let m = app.bounds(".profile-modal").await.expect("b").expect("modal");
+    let m = app
+        .bounds(".profile-modal")
+        .await
+        .expect("b")
+        .expect("modal");
     eprintln!("modal {m:?} in {window:?}");
-    assert!(m.h < window.h * 0.8, "the modal is {} tall in a window {} tall: stretched", m.h, window.h);
+    assert!(
+        m.h < window.h * 0.8,
+        "the modal is {} tall in a window {} tall: stretched",
+        m.h,
+        window.h
+    );
     assert!(m.y > window.y + 40.0, "no margin above: {m:?}");
-    assert!(m.bottom() < window.bottom() - 24.0, "no margin below: {m:?}");
-    assert!((m.centre_x() - window.centre_x()).abs() < 2.0, "not centred across: {m:?} in {window:?}");
+    assert!(
+        m.bottom() < window.bottom() - 24.0,
+        "no margin below: {m:?}"
+    );
+    assert!(
+        (m.centre_x() - window.centre_x()).abs() < 2.0,
+        "not centred across: {m:?} in {window:?}"
+    );
 
     // A short window: the modal keeps its margin below and scrolls.
     drop(app);
@@ -665,21 +812,45 @@ async fn the_full_profile_is_a_centred_modal_with_a_height_limit() {
         new_account(&hs, "shortben").expect("account"),
     );
     room_of(&hs, &ann, &ben, "short room");
-    let mut app = App::launch_sized(&hs, 1000, 480).await.expect("launch small");
+    let mut app = App::launch_sized(&hs, 1000, 480)
+        .await
+        .expect("launch small");
     common::login(&mut app, &ann, &format!("{ann}-password")).await;
     app.open_room("short room").await.expect("open room");
-    app.wait_for(&format!(".members .member[title=\"@{ben}:localhost\"]"), DEFAULT_WAIT).await.expect("ben listed");
-    app.click(&format!(".members .member[title=\"@{ben}:localhost\"]")).await.expect("his row");
-    app.wait_for(".profile-card .card-button.more", DEFAULT_WAIT).await.expect("card");
+    app.wait_for(
+        &format!(".members .member[title=\"@{ben}:localhost\"]"),
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("ben listed");
+    app.click(&format!(".members .member[title=\"@{ben}:localhost\"]"))
+        .await
+        .expect("his row");
+    app.wait_for(".profile-card .card-button.more", DEFAULT_WAIT)
+        .await
+        .expect("card");
     tokio::time::sleep(std::time::Duration::from_millis(600)).await;
-    app.click(".profile-card .card-button.more").await.expect("more");
-    app.click_text(".context-item", "View full profile").await.expect("full");
-    app.wait_for(".profile-modal .profile-id", DEFAULT_WAIT).await.expect("full profile");
+    app.click(".profile-card .card-button.more")
+        .await
+        .expect("more");
+    app.click_text(".context-item", "View full profile")
+        .await
+        .expect("full");
+    app.wait_for(".profile-modal .profile-id", DEFAULT_WAIT)
+        .await
+        .expect("full profile");
     tokio::time::sleep(std::time::Duration::from_millis(400)).await;
     let window = app.bounds(".shell").await.expect("b").expect("shell");
-    let m = app.bounds(".profile-modal").await.expect("b").expect("modal");
+    let m = app
+        .bounds(".profile-modal")
+        .await
+        .expect("b")
+        .expect("modal");
     eprintln!("short window: modal {m:?} in {window:?}");
-    assert!(m.bottom() <= window.bottom() - 16.0, "runs to the bottom of a short window: {m:?} in {window:?}");
+    assert!(
+        m.bottom() <= window.bottom() - 16.0,
+        "runs to the bottom of a short window: {m:?} in {window:?}"
+    );
     assert!(m.h > 100.0, "squeezed away: {m:?}");
 }
 
@@ -698,9 +869,13 @@ async fn a_message_from_ben_saying(hs: &str, name: &str, body: &str) -> (App, St
     let mut app = App::launch_desktop(hs).await.expect("launch app");
     common::login(&mut app, &ann, &format!("{ann}-password")).await;
     app.open_room(name).await.expect("open room");
-    app.wait_for_text(".message .body", body.lines().next().unwrap_or(body), DEFAULT_WAIT)
-        .await
-        .expect("his message");
+    app.wait_for_text(
+        ".message .body",
+        body.lines().next().unwrap_or(body),
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("his message");
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     (app, ben)
 }
@@ -737,7 +912,11 @@ async fn hovering_a_sender_name_underlines_it() {
         eprintln!("skipped: hover cannot be driven on the web build");
         return;
     }
-    let b = app.bounds(".message .sender").await.expect("b").expect("sender");
+    let b = app
+        .bounds(".message .sender")
+        .await
+        .expect("b")
+        .expect("sender");
     // Away from it: no line under the name (letters alone never run that long).
     app.hover(".composer-input").await.expect("away");
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
@@ -750,18 +929,31 @@ async fn hovering_a_sender_name_underlines_it() {
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     let shot = common::capture(&app).expect("capture");
     let after = longest_bright_run(&shot, &b);
-    eprintln!("longest line in the name: {before} px away, {after} px hovered (name is {} wide)", b.w);
-    assert!(before < (b.w * 0.5) as usize, "a line under the name without hovering: {before}");
-    assert!(after as f64 >= b.w * 0.8, "no underline when hovered: {after} of {}", b.w);
+    eprintln!(
+        "longest line in the name: {before} px away, {after} px hovered (name is {} wide)",
+        b.w
+    );
+    assert!(
+        before < (b.w * 0.5) as usize,
+        "a line under the name without hovering: {before}"
+    );
+    assert!(
+        after as f64 >= b.w * 0.8,
+        "no underline when hovered: {after} of {}",
+        b.w
+    );
     // And away again, it goes.
     app.hover(".composer-input").await.expect("away");
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     let shot = common::capture(&app).expect("capture");
-    assert!(longest_bright_run(&shot, &b) < (b.w * 0.5) as usize, "the underline stayed");
+    assert!(
+        longest_bright_run(&shot, &b) < (b.w * 0.5) as usize,
+        "the underline stayed"
+    );
 }
 
 #[tokio::test]
-async fn an_avatar_grows_its_shadow_when_hovered_and_sinks_when_pressed() {
+async fn an_avatar_gets_a_shadow_when_hovered_and_sinks_when_pressed() {
     let Some(hs) = homeserver() else {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
@@ -771,7 +963,11 @@ async fn an_avatar_grows_its_shadow_when_hovered_and_sinks_when_pressed() {
         eprintln!("skipped: hover cannot be driven on the web build");
         return;
     }
-    let b = app.bounds(".message .avatar-button").await.expect("b").expect("avatar");
+    let b = app
+        .bounds(".message .avatar-button")
+        .await
+        .expect("b")
+        .expect("avatar");
     // The pointer on the name keeps the row's hover colour in both pictures:
     // only the avatar's own shadow differs.
     let sample = |shot: &(Vec<u8>, usize, usize)| {
@@ -783,20 +979,35 @@ async fn an_avatar_grows_its_shadow_when_hovered_and_sinks_when_pressed() {
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     if let Some(shot) = common::capture(&app) {
         let rest = sample(&shot);
-        app.hover(".message .avatar-button").await.expect("on the avatar");
+        app.hover(".message .avatar-button")
+            .await
+            .expect("on the avatar");
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
         let over = sample(&common::capture(&app).expect("capture"));
         eprintln!("beside the avatar: {rest} resting, {over} hovered (sum of r+g+b)");
-        assert!(over + 6 <= rest, "the shadow did not grow: {rest} at rest, {over} hovered");
+        assert!(
+            over + 2 <= rest,
+            "the shadow did not appear: {rest} at rest, {over} hovered"
+        );
     } else {
         eprintln!("no grim capture here; skipping the shadow pixels");
     }
 
     // Pressed: a pixel lower; let go: back.
-    let at = app.bounds(".message .avatar-button").await.expect("b").expect("avatar");
-    app.drag_hold(".message .avatar-button", 0, 0).await.expect("press");
+    let at = app
+        .bounds(".message .avatar-button")
+        .await
+        .expect("b")
+        .expect("avatar");
+    app.drag_hold(".message .avatar-button", 0, 0)
+        .await
+        .expect("press");
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-    let down = app.bounds(".message .avatar-button").await.expect("b").expect("avatar");
+    let down = app
+        .bounds(".message .avatar-button")
+        .await
+        .expect("b")
+        .expect("avatar");
     assert!(
         (down.y - at.y - 1.0).abs() < 0.3 && (down.x - at.x).abs() < 0.3,
         "pressed: {down:?}, not one pixel below {at:?}"
@@ -804,18 +1015,32 @@ async fn an_avatar_grows_its_shadow_when_hovered_and_sinks_when_pressed() {
     app.release().await.expect("let go");
     app.press("body", "Escape").await.ok();
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-    let up = app.bounds(".message .avatar-button").await.expect("b").expect("avatar");
-    assert!((up.y - at.y).abs() < 0.3, "released: {up:?}, not back at {at:?}");
+    let up = app
+        .bounds(".message .avatar-button")
+        .await
+        .expect("b")
+        .expect("avatar");
+    assert!(
+        (up.y - at.y).abs() < 0.3,
+        "released: {up:?}, not back at {at:?}"
+    );
 }
 
 /// The longest run of pixels along a row of `b` that differ between two
 /// captures (the text itself is the same in both: what differs is the line).
-fn longest_changed_run(a: &(Vec<u8>, usize, usize), c: &(Vec<u8>, usize, usize), b: &Bounds) -> usize {
+fn longest_changed_run(
+    a: &(Vec<u8>, usize, usize),
+    c: &(Vec<u8>, usize, usize),
+    b: &Bounds,
+) -> usize {
     let mut best = 0;
     for y in (b.y.floor() as usize)..(b.bottom().ceil() as usize) {
         let mut run = 0;
         for x in (b.x.floor() as usize)..(b.right().ceil() as usize) {
-            let (p, q) = (common::pixel_at(a, x as f64, y as f64), common::pixel_at(c, x as f64, y as f64));
+            let (p, q) = (
+                common::pixel_at(a, x as f64, y as f64),
+                common::pixel_at(c, x as f64, y as f64),
+            );
             if common::colour_distance(p, q) > 60 {
                 run += 1;
                 best = best.max(run);
@@ -845,9 +1070,16 @@ async fn hovering_ids_and_link_labels_underlines_them() {
     tokio::time::sleep(std::time::Duration::from_millis(600)).await;
     for (selector, away) in [
         (".profile-card .profile-id", ".profile-card .profile-name"),
-        (".profile-card .mutual-servers", ".profile-card .profile-name"),
+        (
+            ".profile-card .mutual-servers",
+            ".profile-card .profile-name",
+        ),
     ] {
-        let b = app.bounds(selector).await.expect("b").unwrap_or_else(|| panic!("no {selector}"));
+        let b = app
+            .bounds(selector)
+            .await
+            .expect("b")
+            .unwrap_or_else(|| panic!("no {selector}"));
         app.hover(away).await.expect("away");
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
         let Some(rest) = common::capture(&app) else {
@@ -858,29 +1090,54 @@ async fn hovering_ids_and_link_labels_underlines_them() {
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
         let over = common::capture(&app).expect("capture");
         let run = longest_changed_run(&rest, &over, &b);
-        eprintln!("{selector}: {run} px of line when hovered (label is {} wide)", b.w);
-        assert!(run as f64 >= b.w * 0.8, "{selector}: no underline when hovered: {run} of {}", b.w);
+        eprintln!(
+            "{selector}: {run} px of line when hovered (label is {} wide)",
+            b.w
+        );
+        assert!(
+            run as f64 >= b.w * 0.8,
+            "{selector}: no underline when hovered: {run} of {}",
+            b.w
+        );
         app.hover(away).await.expect("away again");
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
         let gone = common::capture(&app).expect("capture");
-        assert!(longest_changed_run(&rest, &gone, &b) < (b.w * 0.5) as usize, "{selector}: the line stayed");
+        assert!(
+            longest_changed_run(&rest, &gone, &b) < (b.w * 0.5) as usize,
+            "{selector}: the line stayed"
+        );
     }
     // The full profile's id.
-    app.click(".profile-card .card-button.more").await.expect("more");
-    app.click_text(".context-item", "View full profile").await.expect("full");
-    app.wait_for(".profile-modal .profile-id", DEFAULT_WAIT).await.expect("full profile");
+    app.click(".profile-card .card-button.more")
+        .await
+        .expect("more");
+    app.click_text(".context-item", "View full profile")
+        .await
+        .expect("full");
+    app.wait_for(".profile-modal .profile-id", DEFAULT_WAIT)
+        .await
+        .expect("full profile");
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     let selector = ".profile-modal .profile-id";
     let b = app.bounds(selector).await.expect("b").expect("id");
-    app.hover(".profile-modal .profile-name").await.expect("away");
+    app.hover(".profile-modal .profile-name")
+        .await
+        .expect("away");
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     let rest = common::capture(&app).expect("capture");
     app.hover(selector).await.expect("over it");
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     let over = common::capture(&app).expect("capture");
     let run = longest_changed_run(&rest, &over, &b);
-    eprintln!("{selector}: {run} px of line when hovered (label is {} wide)", b.w);
-    assert!(run as f64 >= b.w * 0.8, "{selector}: no underline when hovered: {run} of {}", b.w);
+    eprintln!(
+        "{selector}: {run} px of line when hovered (label is {} wide)",
+        b.w
+    );
+    assert!(
+        run as f64 >= b.w * 0.8,
+        "{selector}: no underline when hovered: {run} of {}",
+        b.w
+    );
 }
 
 /// How much darker than `reference` (r+g+b) the pixel is.
@@ -889,10 +1146,10 @@ fn darkness(shot: &(Vec<u8>, usize, usize), x: f64, y: f64, reference: u32) -> i
     reference as i32 - (u32::from(p.0) + u32::from(p.1) + u32::from(p.2)) as i32
 }
 
-/// A timeline avatar's shadow sits evenly around the circle, not hanging
-/// below it (a button as tall as the message made it a tall pill).
+/// A timeline avatar has no shadow at rest; hovered, a soft one falls below
+/// it (y 2-3 px, small blur, low opacity), not all around.
 #[tokio::test]
-async fn an_avatars_shadow_sits_evenly_around_the_circle() {
+async fn an_avatar_has_no_shadow_until_hovered_then_a_soft_one_below() {
     let Some(hs) = homeserver() else {
         eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
         return;
@@ -908,15 +1165,50 @@ async fn an_avatars_shadow_sits_evenly_around_the_circle() {
         eprintln!("skipped: the avatar shadow is GPUI's");
         return;
     }
-    let b = app.bounds(".message .avatar-button").await.expect("b").expect("avatar");
-    eprintln!("avatar button: {b:?}");
-    assert!(b.h <= b.w + 1.0, "the avatar button is {} tall for a picture {} wide", b.h, b.w);
+    let b = app
+        .bounds(".message .avatar-button")
+        .await
+        .expect("b")
+        .expect("avatar");
+    assert!(
+        b.h <= b.w + 1.0,
+        "the avatar button is {} tall for a picture {} wide",
+        b.h,
+        b.w
+    );
+    // The styles, as "y blur alpha" ("none" for no shadow).
+    let rest = app
+        .attr(".message .avatar-button", "data-shadow")
+        .await
+        .expect("attr");
+    assert_eq!(rest.as_deref(), Some("none"), "a shadow at rest");
+    let hover = app
+        .attr(".message .avatar-button", "data-hover-shadow")
+        .await
+        .expect("attr");
+    let nums: Vec<f32> = hover
+        .as_deref()
+        .unwrap_or("")
+        .split(' ')
+        .filter_map(|n| n.parse().ok())
+        .collect();
+    let [y, blur, alpha] = nums[..] else {
+        panic!("hover shadow is {hover:?}")
+    };
+    assert!((2.0..=3.0).contains(&y), "offset down {y}");
+    assert!(blur <= 8.0, "blur {blur}");
+    assert!(alpha <= 0.3, "alpha {alpha}");
+
     let r = b.w / 2.0;
     let (cx, cy) = (b.x + r, b.y + r);
     for hovered in [false, true] {
-        app.hover(if hovered { ".message .avatar-button" } else { ".composer-input" })
-            .await
-            .expect("hover");
+        app.hover(if hovered {
+            ".message .avatar-button"
+        } else {
+            ".composer-input"
+        })
+        .await
+        .expect("hover");
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
         let Some(shot) = common::capture(&app) else {
             eprintln!("no grim capture here; skipping the shadow pixels");
@@ -927,23 +1219,21 @@ async fn an_avatars_shadow_sits_evenly_around_the_circle() {
             u32::from(p.0) + u32::from(p.1) + u32::from(p.2)
         };
         let away = r + 2.5;
-        let sides = [
-            ("above", cx, cy - away),
-            ("below", cx, cy + away),
-            ("left", cx - away, cy),
-            ("right", cx + away, cy),
-        ]
-        .map(|(name, x, y)| (name, darkness(&shot, x, y, reference)));
-        eprintln!("hovered {hovered}: darkness {sides:?} (reference sum {reference})");
-        let most = sides.iter().map(|s| s.1).max().expect("sides");
-        let least = sides.iter().map(|s| s.1).min().expect("sides");
-        assert!(most >= 4, "hovered {hovered}: no shadow at all: {sides:?}");
-        // Even: the darkest side is within a factor of two (and a few
-        // levels) of the lightest.
-        assert!(
-            most <= least * 2 + 8,
-            "hovered {hovered}: the shadow is uneven around the circle: {sides:?}"
-        );
+        let dark = |x, y| darkness(&shot, x, y, reference);
+        let (above, below) = (dark(cx, cy - away), dark(cx, cy + away));
+        let (left, right) = (dark(cx - away, cy), dark(cx + away, cy));
+        eprintln!("hovered {hovered}: above {above} below {below} left {left} right {right}");
+        if hovered {
+            assert!(
+                below >= 4 && below > above,
+                "no shadow falling below: above {above}, below {below}"
+            );
+        } else {
+            assert!(
+                above.max(below).max(left).max(right) < 4,
+                "a shadow at rest"
+            );
+        }
     }
 }
 
@@ -961,13 +1251,32 @@ async fn the_date_divider_has_a_line_either_side_of_a_centred_date() {
         return;
     };
     let (mut app, _) = a_message_from_ben(&hs, "dated").await;
-    app.wait_for(".date-divider", DEFAULT_WAIT).await.expect("a date divider");
-    let d = app.bounds(".date-divider").await.expect("b").expect("divider");
-    let label = app.bounds(".date-divider span").await.expect("b").expect("label");
-    let list = app.bounds(".message").await.expect("b").expect("a message row");
+    app.wait_for(".date-divider", DEFAULT_WAIT)
+        .await
+        .expect("a date divider");
+    let d = app
+        .bounds(".date-divider")
+        .await
+        .expect("b")
+        .expect("divider");
+    let label = app
+        .bounds(".date-divider span")
+        .await
+        .expect("b")
+        .expect("label");
+    let list = app
+        .bounds(".message")
+        .await
+        .expect("b")
+        .expect("a message row");
     eprintln!("divider {d:?} label {label:?} message row {list:?}");
     // It spans the timeline (as wide as a message row, give or take margins).
-    assert!(d.w >= list.w - 40.0, "the divider is {} wide, a message row {}", d.w, list.w);
+    assert!(
+        d.w >= list.w - 40.0,
+        "the divider is {} wide, a message row {}",
+        d.w,
+        list.w
+    );
     let mid = |b: &Bounds| b.x + b.w / 2.0;
     assert!(
         (mid(&label) - mid(&d)).abs() <= 4.0,
@@ -987,7 +1296,10 @@ async fn the_date_divider_has_a_line_either_side_of_a_centred_date() {
         ("left", d.x + 24.0, label.x - 8.0),
         ("right", label.right() + 8.0, d.right() - 24.0),
     ] {
-        assert!(to - from > 50.0, "{name}: no room for a line ({from}..{to})");
+        assert!(
+            to - from > 50.0,
+            "{name}: no room for a line ({from}..{to})"
+        );
         let mut lines = 0;
         let mut total = 0;
         let mut x = from;
@@ -1000,7 +1312,10 @@ async fn the_date_divider_has_a_line_either_side_of_a_centred_date() {
             x += 1.0;
         }
         eprintln!("{name}: {lines} of {total} pixels are line");
-        assert!(lines * 10 >= total * 9, "{name}: the line is missing or broken: {lines} of {total}");
+        assert!(
+            lines * 10 >= total * 9,
+            "{name}: the line is missing or broken: {lines} of {total}"
+        );
     }
 }
 
@@ -1042,7 +1357,9 @@ async fn emojis_draw_as_one_colour_glyph_each() {
     for (_, emoji) in EMOJIS {
         morpheus_e2e::send_as(&hs, &ben, &room, emoji).expect("send");
     }
-    let mut app = App::launch_sized(&hs, 1200, 1000).await.expect("launch app");
+    let mut app = App::launch_sized(&hs, 1200, 1000)
+        .await
+        .expect("launch app");
     common::login(&mut app, &ann, &format!("{ann}-password")).await;
     app.open_room("emojis").await.expect("open room");
     app.wait_for_text(".message .body", EMOJIS[EMOJIS.len() - 1].1, DEFAULT_WAIT)
@@ -1060,14 +1377,40 @@ async fn emojis_draw_as_one_colour_glyph_each() {
     let rows = app.all_bounds(".message .body").await.expect("bodies");
     if let (Ok(path), Some(pid)) = (std::env::var("EMOJI_SHOT"), app.pid()) {
         // Debug aid: the emoji column of the test window only.
-        let clients = std::process::Command::new("hyprctl").args(["clients", "-j"]).output().expect("hyprctl").stdout;
+        let clients = std::process::Command::new("hyprctl")
+            .args(["clients", "-j"])
+            .output()
+            .expect("hyprctl")
+            .stdout;
         let clients: serde_json::Value = serde_json::from_slice(&clients).expect("json");
-        let at = clients.as_array().expect("clients").iter().find(|c| c["pid"].as_u64() == Some(u64::from(pid))).expect("window")["at"].clone();
-        let (x, y) = (at[0].as_f64().unwrap_or(0.0) + rows[0].x - 4.0, at[1].as_f64().unwrap_or(0.0) + rows[0].y - 4.0);
-        let geometry = format!("{},{} 60x{}", x as i64, y as i64, (rows[rows.len() - 1].bottom() - rows[0].y) as i64 + 8);
-        let _ = std::process::Command::new("grim").args(["-s", "8", "-g", &geometry, &path]).status();
+        let at = clients
+            .as_array()
+            .expect("clients")
+            .iter()
+            .find(|c| c["pid"].as_u64() == Some(u64::from(pid)))
+            .expect("window")["at"]
+            .clone();
+        let (x, y) = (
+            at[0].as_f64().unwrap_or(0.0) + rows[0].x - 4.0,
+            at[1].as_f64().unwrap_or(0.0) + rows[0].y - 4.0,
+        );
+        let geometry = format!(
+            "{},{} 60x{}",
+            x as i64,
+            y as i64,
+            (rows[rows.len() - 1].bottom() - rows[0].y) as i64 + 8
+        );
+        let _ = std::process::Command::new("grim")
+            .args(["-s", "8", "-g", &geometry, &path])
+            .status();
     }
-    assert_eq!(rows.len(), EMOJIS.len(), "{} bodies for {} emoji", rows.len(), EMOJIS.len());
+    assert_eq!(
+        rows.len(),
+        EMOJIS.len(),
+        "{} bodies for {} emoji",
+        rows.len(),
+        EMOJIS.len()
+    );
     let mut failed = Vec::new();
     let mut widths: Vec<f64> = Vec::new();
     for ((name, _), b) in EMOJIS.iter().zip(&rows) {
@@ -1092,7 +1435,10 @@ async fn emojis_draw_as_one_colour_glyph_each() {
             }
         }
         let width = if ink == 0 { 0.0 } else { right - left + 1.0 };
-        eprintln!("{name:24} ink {ink:4} colour {colour:4} width {width:5.1} (row {}x{})", b.w, b.h);
+        eprintln!(
+            "{name:24} ink {ink:4} colour {colour:4} width {width:5.1} (row {}x{})",
+            b.w, b.h
+        );
         widths.push(width);
         // Noto draws these in greys and white: no saturated colour to count.
         let grey = ["check mark vs16", "family zwj", "goose"].contains(name);
@@ -1102,7 +1448,9 @@ async fn emojis_draw_as_one_colour_glyph_each() {
         // A glyph of its own size (not a box outline or a sliver).
         let height = bottom - top + 1.0;
         if ink < 80 || width < 12.0 || height < 10.0 {
-            failed.push(format!("{name}: a {width} x {height} glyph with {ink} ink pixels"));
+            failed.push(format!(
+                "{name}: a {width} x {height} glyph with {ink} ink pixels"
+            ));
         }
     }
     // One glyph: a sequence is as wide as one emoji (about 16-18 px at this size), not several.
@@ -1111,7 +1459,11 @@ async fn emojis_draw_as_one_colour_glyph_each() {
             failed.push(format!("{name}: {w} px wide, more than one emoji"));
         }
     }
-    assert!(failed.is_empty(), "emoji not drawn as one colour glyph:\n{}", failed.join("\n"));
+    assert!(
+        failed.is_empty(),
+        "emoji not drawn as one colour glyph:\n{}",
+        failed.join("\n")
+    );
 }
 
 /// A direct message between `owner` and `guest`, marked as one in the
@@ -1172,7 +1524,9 @@ async fn the_palette_finds_a_person_by_nickname() {
     let mut app = App::launch_desktop(&hs).await.expect("launch app");
     common::login(&mut app, &ann, &format!("{ann}-password")).await;
     app.shortcut(".shell", "k", true).await.expect("ctrl+k");
-    app.wait_for(".switcher input", DEFAULT_WAIT).await.expect("palette");
+    app.wait_for(".switcher input", DEFAULT_WAIT)
+        .await
+        .expect("palette");
     // Wait for the nickname to arrive: the DM is listed under it.
     let row = format!(".switcher-item[data-key=\"{dm}\"]");
     let deadline = std::time::Instant::now() + DEFAULT_WAIT;
@@ -1182,21 +1536,34 @@ async fn the_palette_finds_a_person_by_nickname() {
             if app.count(&row).await.unwrap_or(0) == 1 {
                 break;
             }
-            assert!(std::time::Instant::now() < deadline, "typing {part:?} did not find the DM");
+            assert!(
+                std::time::Instant::now() < deadline,
+                "typing {part:?} did not find the DM"
+            );
             tokio::time::sleep(std::time::Duration::from_millis(200)).await;
             app.type_into(".switcher input", part).await.expect("type");
         }
-        app.wait_for_text(&row, nick, DEFAULT_WAIT).await.expect("listed under the nickname");
+        app.wait_for_text(&row, nick, DEFAULT_WAIT)
+            .await
+            .expect("listed under the nickname");
     }
     // A name nobody has finds nothing.
-    app.type_into(".switcher input", "qqqxyzzy").await.expect("type");
-    app.wait_for(".switcher-item.muted", DEFAULT_WAIT).await.expect("nothing matches");
+    app.type_into(".switcher input", "qqqxyzzy")
+        .await
+        .expect("type");
+    app.wait_for(".switcher-item.muted", DEFAULT_WAIT)
+        .await
+        .expect("nothing matches");
     assert_eq!(app.count(&row).await.expect("count"), 0);
     // Enter on the nickname opens the DM.
-    app.type_into(".switcher input", "zorblax").await.expect("type");
+    app.type_into(".switcher input", "zorblax")
+        .await
+        .expect("type");
     app.wait_for(&row, DEFAULT_WAIT).await.expect("row");
     app.press(".switcher input", "Enter").await.expect("enter");
-    app.wait_for_text(".chat-header h2", nick, DEFAULT_WAIT).await.expect("the DM opens");
+    app.wait_for_text(".chat-header h2", nick, DEFAULT_WAIT)
+        .await
+        .expect("the DM opens");
 }
 
 /// The palette's pictures are cut like every other avatar: a wide picture
@@ -1218,7 +1585,9 @@ async fn a_wide_picture_fills_the_palettes_round_avatar() {
     common::login(&mut app, &ann, &format!("{ann}-password")).await;
     app.shortcut(".shell", "k", true).await.expect("ctrl+k");
     let sel = format!(".switcher-item[data-key=\"{dm}\"] img.avatar");
-    app.wait_for(&sel, DEFAULT_WAIT).await.expect("his picture in the palette");
+    app.wait_for(&sel, DEFAULT_WAIT)
+        .await
+        .expect("his picture in the palette");
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     let b = app.bounds(&sel).await.expect("b").expect("avatar");
     assert!((b.w - b.h).abs() <= 1.0, "the avatar is not square: {b:?}");
@@ -1236,13 +1605,30 @@ async fn a_wide_picture_fills_the_palettes_round_avatar() {
     let blue = |p: (u8, u8, u8)| p.2 > 180 && p.0 < 80 && p.1 < 80;
     let (cx, cy) = (b.x + b.w / 2.0, b.y + b.h / 2.0);
     let inset = 2.5;
-    for (x, y) in [(cx, cy), (b.x + inset, cy), (b.right() - inset, cy), (cx, b.y + inset), (cx, b.y + b.h - inset)] {
+    for (x, y) in [
+        (cx, cy),
+        (b.x + inset, cy),
+        (b.right() - inset, cy),
+        (cx, b.y + inset),
+        (cx, b.y + b.h - inset),
+    ] {
         let p = pixel(x, y);
-        assert!(red(p), "inside the circle at ({x}, {y}) is {p:?}, not the picture's red middle ({b:?})");
+        assert!(
+            red(p),
+            "inside the circle at ({x}, {y}) is {p:?}, not the picture's red middle ({b:?})"
+        );
     }
-    for (x, y) in [(b.x + 1.5, b.y + 1.5), (b.right() - 1.5, b.y + 1.5), (b.x + 1.5, b.y + b.h - 1.5), (b.right() - 1.5, b.y + b.h - 1.5)] {
+    for (x, y) in [
+        (b.x + 1.5, b.y + 1.5),
+        (b.right() - 1.5, b.y + 1.5),
+        (b.x + 1.5, b.y + b.h - 1.5),
+        (b.right() - 1.5, b.y + b.h - 1.5),
+    ] {
         let p = pixel(x, y);
-        assert!(!red(p) && !blue(p), "the corner at ({x}, {y}) is {p:?}: not cut to a circle");
+        assert!(
+            !red(p) && !blue(p),
+            "the corner at ({x}, {y}) is {p:?}: not cut to a circle"
+        );
     }
 }
 
@@ -1262,7 +1648,9 @@ async fn a_servers_wide_icon_fills_the_palettes_avatar() {
             .expect("room id")
             .to_owned()
     };
-    let space = made(serde_json::json!({ "name": "Wide Server", "creation_content": { "type": "m.space" } }));
+    let space = made(
+        serde_json::json!({ "name": "Wide Server", "creation_content": { "type": "m.space" } }),
+    );
     made(serde_json::json!({ "name": "lobby" }));
     let chan = made(serde_json::json!({ "name": "wide-chan" }));
     api_as(
@@ -1277,10 +1665,16 @@ async fn a_servers_wide_icon_fills_the_palettes_avatar() {
     let mut app = App::launch_desktop(&hs).await.expect("launch app");
     common::login(&mut app, &ann, &format!("{ann}-password")).await;
     app.shortcut(".shell", "k", true).await.expect("ctrl+k");
-    app.wait_for(".switcher input", DEFAULT_WAIT).await.expect("palette");
-    app.type_into(".switcher input", "wide-chan").await.expect("type");
+    app.wait_for(".switcher input", DEFAULT_WAIT)
+        .await
+        .expect("palette");
+    app.type_into(".switcher input", "wide-chan")
+        .await
+        .expect("type");
     let sel = format!(".switcher-item[data-key=\"{chan}\"] img.avatar");
-    app.wait_for(&sel, DEFAULT_WAIT).await.expect("the server's picture in the palette");
+    app.wait_for(&sel, DEFAULT_WAIT)
+        .await
+        .expect("the server's picture in the palette");
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     let b = app.bounds(&sel).await.expect("b").expect("avatar");
     let Some((pixels, w, h)) = common::capture(&app) else {
@@ -1296,13 +1690,30 @@ async fn a_servers_wide_icon_fills_the_palettes_avatar() {
     let red = |p: (u8, u8, u8)| p.0 > 180 && p.1 < 80 && p.2 < 80;
     let blue = |p: (u8, u8, u8)| p.2 > 180 && p.0 < 80 && p.1 < 80;
     let (cx, cy) = (b.x + b.w / 2.0, b.y + b.h / 2.0);
-    for (x, y) in [(cx, cy), (b.x + 2.5, cy), (b.right() - 2.5, cy), (cx, b.y + 2.5), (cx, b.y + b.h - 2.5)] {
+    for (x, y) in [
+        (cx, cy),
+        (b.x + 2.5, cy),
+        (b.right() - 2.5, cy),
+        (cx, b.y + 2.5),
+        (cx, b.y + b.h - 2.5),
+    ] {
         let p = pixel(x, y);
-        assert!(red(p), "inside the icon at ({x}, {y}) is {p:?}, not the picture's red middle ({b:?})");
+        assert!(
+            red(p),
+            "inside the icon at ({x}, {y}) is {p:?}, not the picture's red middle ({b:?})"
+        );
     }
-    for (x, y) in [(b.x + 1.0, b.y + 1.0), (b.right() - 1.0, b.y + 1.0), (b.x + 1.0, b.y + b.h - 1.0), (b.right() - 1.0, b.y + b.h - 1.0)] {
+    for (x, y) in [
+        (b.x + 1.0, b.y + 1.0),
+        (b.right() - 1.0, b.y + 1.0),
+        (b.x + 1.0, b.y + b.h - 1.0),
+        (b.right() - 1.0, b.y + b.h - 1.0),
+    ] {
         let p = pixel(x, y);
-        assert!(!red(p) && !blue(p), "the corner at ({x}, {y}) is {p:?}: not cut to a rounded shape");
+        assert!(
+            !red(p) && !blue(p),
+            "the corner at ({x}, {y}) is {p:?}: not cut to a rounded shape"
+        );
     }
 }
 
@@ -1337,22 +1748,51 @@ async fn hovering_a_link_in_a_message_underlines_that_link_only() {
 
     app.hover(first).await.expect("over the first");
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-    assert_eq!(app.attr(first, "data-hovered").await.expect("attr").as_deref(), Some("true"));
+    assert_eq!(
+        app.attr(first, "data-hovered")
+            .await
+            .expect("attr")
+            .as_deref(),
+        Some("true")
+    );
     assert_eq!(app.attr(second, "data-hovered").await.expect("attr"), None);
     if let Some(rest) = &rest {
         let over = common::capture(&app).expect("capture");
-        let (run1, run2) = (longest_changed_run(rest, &over, &b1), longest_changed_run(rest, &over, &b2));
-        eprintln!("hovering the first: {run1} px of line under it (it is {} wide), {run2} under the second", b1.w);
-        assert!(run1 as f64 >= b1.w * 0.8, "no underline under the hovered link: {run1} of {}", b1.w);
-        assert!(run2 < (b2.w * 0.3) as usize, "the other link is underlined too: {run2} of {}", b2.w);
+        let (run1, run2) = (
+            longest_changed_run(rest, &over, &b1),
+            longest_changed_run(rest, &over, &b2),
+        );
+        eprintln!(
+            "hovering the first: {run1} px of line under it (it is {} wide), {run2} under the second",
+            b1.w
+        );
+        assert!(
+            run1 as f64 >= b1.w * 0.8,
+            "no underline under the hovered link: {run1} of {}",
+            b1.w
+        );
+        assert!(
+            run2 < (b2.w * 0.3) as usize,
+            "the other link is underlined too: {run2} of {}",
+            b2.w
+        );
     }
 
-    app.hover(".composer .composer-input").await.expect("away again");
+    app.hover(".composer .composer-input")
+        .await
+        .expect("away again");
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-    assert_eq!(app.attr(first, "data-hovered").await.expect("attr"), None, "still hovered after leaving");
+    assert_eq!(
+        app.attr(first, "data-hovered").await.expect("attr"),
+        None,
+        "still hovered after leaving"
+    );
     if let Some(rest) = &rest {
         let gone = common::capture(&app).expect("capture");
-        assert!(longest_changed_run(rest, &gone, &b1) < (b1.w * 0.3) as usize, "the line stayed");
+        assert!(
+            longest_changed_run(rest, &gone, &b1) < (b1.w * 0.3) as usize,
+            "the line stayed"
+        );
     }
 }
 
@@ -1365,15 +1805,22 @@ async fn a_toast_is_rounded_at_all_four_corners() {
         return;
     };
     let mut app = alice_in_general(&hs).await;
-    app.key_combo("body", "L", true, false, true).await.expect("ctrl+shift+l");
-    app.wait_for_text(".toast", "Link copied", DEFAULT_WAIT).await.expect("toast");
+    app.key_combo("body", "L", true, false, true)
+        .await
+        .expect("ctrl+shift+l");
+    app.wait_for_text(".toast", "Link copied", DEFAULT_WAIT)
+        .await
+        .expect("toast");
     tokio::time::sleep(std::time::Duration::from_millis(400)).await;
     let b = app.bounds(".toast").await.expect("b").expect("toast");
     let Some(square) = common::square_corners(&app, &b, [true; 4]) else {
         eprintln!("no grim capture here; skipping the pixel check");
         return;
     };
-    assert!(square.is_empty(), "the toast's corners drawn square: {square:?}");
+    assert!(
+        square.is_empty(),
+        "the toast's corners drawn square: {square:?}"
+    );
 }
 
 /// Task 36: a one-line message's avatar sits in the middle of the row's
@@ -1386,17 +1833,43 @@ async fn a_one_line_messages_avatar_is_centred_in_its_row() {
         return;
     };
     let (mut app, _) = a_message_from_ben(&hs, "centred").await;
-    let row = app.bounds(".message.with-header").await.expect("b").expect("row");
-    let av = app.bounds(".message.with-header .avatar-button").await.expect("b").expect("avatar");
+    let row = app
+        .bounds(".message.with-header")
+        .await
+        .expect("b")
+        .expect("row");
+    let av = app
+        .bounds(".message.with-header .avatar-button")
+        .await
+        .expect("b")
+        .expect("avatar");
     let (top, bottom) = (av.y - row.y, row.bottom() - av.bottom());
     eprintln!("one line: row {row:?} avatar {av:?} gaps {top} / {bottom}");
-    assert!((top - bottom).abs() <= 1.0, "{top} px above the avatar, {bottom} px below");
-    assert!((av.h - av.w).abs() <= 0.5 && av.h <= 48.0, "the button is the picture's size: {av:?}");
+    assert!(
+        (top - bottom).abs() <= 1.0,
+        "{top} px above the avatar, {bottom} px below"
+    );
+    assert!(
+        (av.h - av.w).abs() <= 0.5 && av.h <= 48.0,
+        "the button is the picture's size: {av:?}"
+    );
 
-    let (mut app, _) = a_message_from_ben_saying(&hs, "centred-tall", "one\ntwo\nthree\nfour").await;
-    let row = app.bounds(".message.with-header").await.expect("b").expect("row");
-    let av = app.bounds(".message.with-header .avatar-button").await.expect("b").expect("avatar");
+    let (mut app, _) =
+        a_message_from_ben_saying(&hs, "centred-tall", "one\ntwo\nthree\nfour").await;
+    let row = app
+        .bounds(".message.with-header")
+        .await
+        .expect("b")
+        .expect("row");
+    let av = app
+        .bounds(".message.with-header .avatar-button")
+        .await
+        .expect("b")
+        .expect("avatar");
     let (top, bottom) = (av.y - row.y, row.bottom() - av.bottom());
     eprintln!("four lines: row {row:?} avatar {av:?} gaps {top} / {bottom}");
-    assert!(top <= 6.0 && bottom > top + 10.0, "the avatar stays at the top: {top} / {bottom}");
+    assert!(
+        top <= 6.0 && bottom > top + 10.0,
+        "the avatar stays at the top: {top} / {bottom}"
+    );
 }

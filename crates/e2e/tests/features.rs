@@ -54,9 +54,15 @@ async fn media_rich_text_reactions_and_members() {
     // (GPUI draws bold and code as styled runs of the body, not elements:
     // the text of the rich body is checked there.)
     let (bold, code) = if app.is_gpui() {
-        ((".message .body.rich", "looks fast"), (".message .body.rich", "fn main"))
+        (
+            (".message .body.rich", "looks fast"),
+            (".message .body.rich", "fn main"),
+        )
     } else {
-        ((".message .rich strong", "fast"), (".message .rich pre code", "fn main"))
+        (
+            (".message .rich strong", "fast"),
+            (".message .rich pre code", "fn main"),
+        )
     };
     app.reveal_text(bold.0, bold.1, DEFAULT_WAIT)
         .await
@@ -291,7 +297,8 @@ async fn scrolling_up_loads_older_history() {
     app.wait_for(".message .body", DEFAULT_WAIT)
         .await
         .expect("newest");
-    let oldest_shown = |bodies: Vec<String>| bodies.iter().any(|b| b.trim() == "random filler message 1");
+    let oldest_shown =
+        |bodies: Vec<String>| bodies.iter().any(|b| b.trim() == "random filler message 1");
     assert!(
         !oldest_shown(app.texts(".message .body").await.expect("bodies")),
         "oldest loaded initially"
@@ -337,13 +344,7 @@ async fn heart_mine(app: &mut App) -> bool {
 
 /// Wait until a reaction chip with `key` (and `count`, if given) is shown
 /// (`present`), or until none is. `mine` looks at our own chips only.
-async fn wait_reaction(
-    app: &mut App,
-    key: &str,
-    count: Option<&str>,
-    mine: bool,
-    present: bool,
-) {
+async fn wait_reaction(app: &mut App, key: &str, count: Option<&str>, mine: bool, present: bool) {
     let selector = if mine { ".reaction.mine" } else { ".reaction" };
     let deadline = std::time::Instant::now() + DEFAULT_WAIT;
     loop {
@@ -367,20 +368,16 @@ async fn wait_reaction(
 /// GPUI: from the top of a room, scrolls down a little at a time until an
 /// element matching `selector` with `needle` in its text is drawn. Returns
 /// the scroll position (pixels up from the bottom) it stopped at.
-async fn scroll_down_until(
-    app: &mut App,
-    selector: &str,
-    needle: &str,
-    from: Option<f64>,
-) -> f64 {
+async fn scroll_down_until(app: &mut App, selector: &str, needle: &str, from: Option<f64>) -> f64 {
     let mut from_bottom = match from {
         Some(at) => at,
-        None => app
-            .scroll_state(".timeline")
-            .await
-            .expect("scroll state")
-            .expect("a timeline")
-            .range,
+        None => {
+            app.scroll_state(".timeline")
+                .await
+                .expect("scroll state")
+                .expect("a timeline")
+                .range
+        }
     };
     let deadline = std::time::Instant::now() + DEFAULT_WAIT;
     loop {

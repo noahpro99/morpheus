@@ -39,7 +39,10 @@ async fn srcs(app: &mut App, selector: &str) -> Vec<String> {
 async fn within(app: &mut App, what: &str, mut check: impl AsyncFnMut(&mut App) -> bool) {
     let started = Instant::now();
     while !check(app).await {
-        assert!(started.elapsed() < SECONDS, "after {SECONDS:?} still: {what}");
+        assert!(
+            started.elapsed() < SECONDS,
+            "after {SECONDS:?} still: {what}"
+        );
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
 }
@@ -61,7 +64,9 @@ async fn someone_elses_new_name_and_picture_show_everywhere_without_a_restart() 
     let mut app = App::launch(&hs).await.expect("launch app");
     login(&mut app, "bob", "bob-password").await;
     open_general(&mut app).await;
-    app.wait_for(MEMBER, DEFAULT_WAIT).await.expect("alice is a member");
+    app.wait_for(MEMBER, DEFAULT_WAIT)
+        .await
+        .expect("alice is a member");
     let member_before = srcs(&mut app, &format!("{MEMBER} img.avatar")).await;
     let sender_before = srcs(&mut app, ".message .avatar-button img.avatar").await;
     app.click(".rail-dms").await.expect("DMs");
@@ -72,34 +77,61 @@ async fn someone_elses_new_name_and_picture_show_everywhere_without_a_restart() 
 
     let name = format!("Alice {}", std::process::id());
     morpheus_e2e::set_display_name_as(&hs, "alice", &name).expect("rename");
-    morpheus_e2e::set_avatar_as(&hs, "alice", &std::fs::read(PICTURE).expect("fixture")).expect("picture");
+    morpheus_e2e::set_avatar_as(&hs, "alice", &std::fs::read(PICTURE).expect("fixture"))
+        .expect("picture");
 
-    within(&mut app, "the member list shows the new name", async |app| {
-        text_of(app, MEMBER).await.contains(&name)
-    })
+    within(
+        &mut app,
+        "the member list shows the new name",
+        async |app| text_of(app, MEMBER).await.contains(&name),
+    )
     .await;
-    within(&mut app, "the member list shows the new picture", async |app| {
-        let now = srcs(app, &format!("{MEMBER} img.avatar")).await;
-        !now.is_empty() && now != member_before
-    })
+    within(
+        &mut app,
+        "the member list shows the new picture",
+        async |app| {
+            let now = srcs(app, &format!("{MEMBER} img.avatar")).await;
+            !now.is_empty() && now != member_before
+        },
+    )
     .await;
-    within(&mut app, "a message shows the new sender name", async |app| {
-        app.wait_for_text(".message .sender", &name, Duration::from_millis(50)).await.is_ok()
-    })
+    within(
+        &mut app,
+        "a message shows the new sender name",
+        async |app| {
+            app.wait_for_text(".message .sender", &name, Duration::from_millis(50))
+                .await
+                .is_ok()
+        },
+    )
     .await;
-    within(&mut app, "a message shows the new sender picture", async |app| {
-        let now = srcs(app, ".message .avatar-button img.avatar").await;
-        !now.is_empty() && now != sender_before
-    })
+    within(
+        &mut app,
+        "a message shows the new sender picture",
+        async |app| {
+            let now = srcs(app, ".message .avatar-button img.avatar").await;
+            !now.is_empty() && now != sender_before
+        },
+    )
     .await;
-    within(&mut app, "the direct message list shows the new name", async |app| {
-        app.wait_for_text(".room.dm .room-name", &name, Duration::from_millis(50)).await.is_ok()
-    })
+    within(
+        &mut app,
+        "the direct message list shows the new name",
+        async |app| {
+            app.wait_for_text(".room.dm .room-name", &name, Duration::from_millis(50))
+                .await
+                .is_ok()
+        },
+    )
     .await;
-    within(&mut app, "the direct message list shows the new picture", async |app| {
-        let now = srcs(app, ".room.dm img.avatar").await;
-        !now.is_empty() && now != dm_before
-    })
+    within(
+        &mut app,
+        "the direct message list shows the new picture",
+        async |app| {
+            let now = srcs(app, ".room.dm img.avatar").await;
+            !now.is_empty() && now != dm_before
+        },
+    )
     .await;
 }
 
@@ -115,36 +147,62 @@ async fn your_own_new_name_and_picture_show_everywhere_at_once() {
         .expect("launch app");
     login(&mut app, "alice", "alice-password").await;
     open_general(&mut app).await;
-    app.wait_for(MEMBER, DEFAULT_WAIT).await.expect("alice is a member");
+    app.wait_for(MEMBER, DEFAULT_WAIT)
+        .await
+        .expect("alice is a member");
     let member_before = srcs(&mut app, &format!("{MEMBER} img.avatar")).await;
 
     app.click(".settings-button").await.expect("gear");
     let name = format!("Alice {}", std::process::id());
-    app.type_into(".settings-page input[name=displayname]", &name).await.expect("name");
-    app.click_text(".settings-page button", "Save").await.expect("save");
-    app.wait_for_text(".settings-page .ok", "Saved", DEFAULT_WAIT).await.expect("saved");
-    app.click_text(".settings-page button", "Choose picture").await.expect("choose");
-    app.click_text(".settings-page button", "Set as avatar").await.expect("set");
+    app.type_into(".settings-page input[name=displayname]", &name)
+        .await
+        .expect("name");
+    app.click_text(".settings-page button", "Save")
+        .await
+        .expect("save");
+    app.wait_for_text(".settings-page .ok", "Saved", DEFAULT_WAIT)
+        .await
+        .expect("saved");
+    app.click_text(".settings-page button", "Choose picture")
+        .await
+        .expect("choose");
+    app.click_text(".settings-page button", "Set as avatar")
+        .await
+        .expect("set");
     app.wait_for_text(".settings-page .ok", "Picture updated", DEFAULT_WAIT)
         .await
         .expect("set");
-    app.press(".settings", "Escape").await.expect("close settings");
+    app.press(".settings", "Escape")
+        .await
+        .expect("close settings");
 
     within(&mut app, "the account shows the new name", async |app| {
         text_of(app, ".sidebar-footer .user").await.contains(&name)
     })
     .await;
-    within(&mut app, "the member list shows the new name", async |app| {
-        text_of(app, MEMBER).await.contains(&name)
-    })
+    within(
+        &mut app,
+        "the member list shows the new name",
+        async |app| text_of(app, MEMBER).await.contains(&name),
+    )
     .await;
-    within(&mut app, "the member list shows the new picture", async |app| {
-        let now = srcs(app, &format!("{MEMBER} img.avatar")).await;
-        !now.is_empty() && now != member_before
-    })
+    within(
+        &mut app,
+        "the member list shows the new picture",
+        async |app| {
+            let now = srcs(app, &format!("{MEMBER} img.avatar")).await;
+            !now.is_empty() && now != member_before
+        },
+    )
     .await;
-    within(&mut app, "a message of yours shows the new name", async |app| {
-        app.wait_for_text(".message .sender", &name, Duration::from_millis(50)).await.is_ok()
-    })
+    within(
+        &mut app,
+        "a message of yours shows the new name",
+        async |app| {
+            app.wait_for_text(".message .sender", &name, Duration::from_millis(50))
+                .await
+                .is_ok()
+        },
+    )
     .await;
 }

@@ -258,7 +258,9 @@ impl App {
     /// answering the moment it hides, so the eval must return first.)
     pub async fn close_to_tray(&mut self) -> Result<()> {
         if self.is_gpui() {
-            return self.click(".titlebar .window-controls button[title=Close]").await;
+            return self
+                .click(".titlebar .window-controls button[title=Close]")
+                .await;
         }
         self.eval("setTimeout(() => document.querySelector('.titlebar button.close').click(), 50); return true;")
             .await
@@ -423,7 +425,12 @@ impl App {
 
     /// The attribute `name` of the first match, if it has one.
     pub async fn attr(&mut self, selector: &str, name: &str) -> Result<Option<String>> {
-        Ok(self.attrs(selector, name).await?.into_iter().next().flatten())
+        Ok(self
+            .attrs(selector, name)
+            .await?
+            .into_iter()
+            .next()
+            .flatten())
     }
 
     /// A colour of every shown match: its `background` or its text `color`,
@@ -431,12 +438,20 @@ impl App {
     /// The page's computed style; the GPUI app notes the colours it draws in
     /// `data-bg` and `data-color` on the elements tests look at.
     pub async fn colours_of(&mut self, selector: &str, property: &str) -> Result<Vec<String>> {
-        let attr = if property == "background" { "data-bg" } else { "data-color" };
+        let attr = if property == "background" {
+            "data-bg"
+        } else {
+            "data-color"
+        };
         if self.is_gpui() {
             let list = self.attrs(selector, attr).await?;
             return Ok(list.into_iter().map(Option::unwrap_or_default).collect());
         }
-        let style = if property == "background" { "backgroundColor" } else { "color" };
+        let style = if property == "background" {
+            "backgroundColor"
+        } else {
+            "color"
+        };
         let js = format!(
             "const hex = c => {{ const m = c.match(/^rgba?\\((\\d+), (\\d+), (\\d+)(?:, ([\\d.]+))?\\)$/); \
                if (!m) return c; const a = m[4] === undefined ? 1 : parseFloat(m[4]); \
@@ -600,7 +615,12 @@ impl App {
     pub async fn reveal_element(&mut self, selector: &str, timeout: Duration) -> Result<()> {
         if self.is_gpui() {
             return self
-                .reveal_gpui(&format!("element matching {selector}"), selector, None, timeout)
+                .reveal_gpui(
+                    &format!("element matching {selector}"),
+                    selector,
+                    None,
+                    timeout,
+                )
                 .await;
         }
         let predicate = format!(
@@ -620,7 +640,12 @@ impl App {
     ) -> Result<()> {
         if self.is_gpui() {
             return self
-                .reveal_gpui(&format!("{selector} containing {text:?}"), selector, Some(text), timeout)
+                .reveal_gpui(
+                    &format!("{selector} containing {text:?}"),
+                    selector,
+                    Some(text),
+                    timeout,
+                )
                 .await;
         }
         let predicate = format!(
@@ -640,7 +665,12 @@ impl App {
     pub async fn reveal_message(&mut self, text: &str, timeout: Duration) -> Result<()> {
         if self.is_gpui() {
             return self
-                .reveal_gpui(&format!("message {text:?}"), ".message .body", Some(text), timeout)
+                .reveal_gpui(
+                    &format!("message {text:?}"),
+                    ".message .body",
+                    Some(text),
+                    timeout,
+                )
                 .await;
         }
         let predicate = format!(
@@ -684,14 +714,19 @@ impl App {
             sleep(POLL).await;
             // At the very start of the room, what is wanted may sit further
             // down than the rows drawn at the top: walk down through the room.
-            if self.op("count", ".timeline-start", json!({})).await?.as_u64() > Some(0)
+            if self
+                .op("count", ".timeline-start", json!({}))
+                .await?
+                .as_u64()
+                > Some(0)
                 && let Some(state) = self.scroll_state(".timeline").await?
             {
                 let step = (state.viewport * 0.6).max(200.0);
                 let mut at = state.range;
                 while at > 0.0 {
                     at = (at - step).max(0.0);
-                    self.scroll_to(".timeline", ScrollTo::FromBottom(at)).await?;
+                    self.scroll_to(".timeline", ScrollTo::FromBottom(at))
+                        .await?;
                     sleep(Duration::from_millis(100)).await;
                     if self.op("count", selector, filter.clone()).await?.as_u64() > Some(0) {
                         return Ok(());
@@ -710,14 +745,16 @@ impl App {
     /// bottom edge too.
     pub async fn scroll_state(&mut self, selector: &str) -> Result<Option<ScrollState>> {
         let value = if self.is_gpui() {
-            self.op("scroll_state", selector, json!({})).await.or_else(|err| {
-                // Nothing there is not an error.
-                if err.to_string().contains("no element matching") {
-                    Ok(Value::Null)
-                } else {
-                    Err(err)
-                }
-            })?
+            self.op("scroll_state", selector, json!({}))
+                .await
+                .or_else(|err| {
+                    // Nothing there is not an error.
+                    if err.to_string().contains("no element matching") {
+                        Ok(Value::Null)
+                    } else {
+                        Err(err)
+                    }
+                })?
         } else {
             let js = format!(
                 "const t = document.querySelector({}); if (!t) return null; \
@@ -885,7 +922,11 @@ impl App {
     pub async fn drag_hold(&mut self, selector: &str, dx: i32, dy: i32) -> Result<()> {
         if self.is_gpui() {
             return self
-                .op("drag", selector, json!({ "dx": dx, "dy": dy, "hold": true }))
+                .op(
+                    "drag",
+                    selector,
+                    json!({ "dx": dx, "dy": dy, "hold": true }),
+                )
                 .await
                 .map(drop);
         }
@@ -917,7 +958,10 @@ impl App {
     /// ~150 ms; returns at once.
     pub async fn wheel(&mut self, selector: &str, notches: f32) -> Result<()> {
         if self.is_gpui() {
-            return self.op("wheel", selector, json!({ "lines": -notches })).await.map(drop);
+            return self
+                .op("wheel", selector, json!({ "lines": -notches }))
+                .await
+                .map(drop);
         }
         bail!("wheel is only driven in the GPUI app")
     }
@@ -935,10 +979,20 @@ impl App {
     }
 
     /// [`Self::wheel_pixels`] with the pointer `ox`, `oy` pixels from the element's centre.
-    pub async fn wheel_pixels_at(&mut self, selector: &str, ox: f32, oy: f32, px: f32) -> Result<()> {
+    pub async fn wheel_pixels_at(
+        &mut self,
+        selector: &str,
+        ox: f32,
+        oy: f32,
+        px: f32,
+    ) -> Result<()> {
         if self.is_gpui() {
             return self
-                .op("wheel", selector, json!({ "pixels": true, "dy": -px, "ox": ox, "oy": oy }))
+                .op(
+                    "wheel",
+                    selector,
+                    json!({ "pixels": true, "dy": -px, "ox": ox, "oy": oy }),
+                )
                 .await
                 .map(drop);
         }
@@ -946,10 +1000,21 @@ impl App {
     }
 
     /// [`Self::drag`] pressing `ox`, `oy` pixels from the element's centre (GPUI only).
-    pub async fn drag_at(&mut self, selector: &str, ox: f32, oy: f32, dx: i32, dy: i32) -> Result<()> {
+    pub async fn drag_at(
+        &mut self,
+        selector: &str,
+        ox: f32,
+        oy: f32,
+        dx: i32,
+        dy: i32,
+    ) -> Result<()> {
         if self.is_gpui() {
             return self
-                .op("drag", selector, json!({ "dx": dx, "dy": dy, "ox": ox, "oy": oy }))
+                .op(
+                    "drag",
+                    selector,
+                    json!({ "dx": dx, "dy": dy, "ox": ox, "oy": oy }),
+                )
                 .await
                 .map(drop);
         }
@@ -960,7 +1025,11 @@ impl App {
     pub async fn click_at(&mut self, selector: &str, ox: f32, oy: f32, clicks: u32) -> Result<()> {
         if self.is_gpui() {
             return self
-                .op("click", selector, json!({ "ox": ox, "oy": oy, "clicks": clicks }))
+                .op(
+                    "click",
+                    selector,
+                    json!({ "ox": ox, "oy": oy, "clicks": clicks }),
+                )
                 .await
                 .map(drop);
         }
@@ -974,11 +1043,23 @@ impl App {
         let list = |key: &str| -> Vec<f32> {
             value[key]
                 .as_array()
-                .map(|a| a.iter().filter_map(|v| v.as_f64()).map(|v| v as f32).collect())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_f64())
+                        .map(|v| v as f32)
+                        .collect()
+                })
                 .unwrap_or_default()
         };
-        let (draw, present, prepaint, paint) = (list("draw"), list("present"), list("prepaint"), list("paint"));
-        Ok((0..draw.len()).map(|i| [draw[i], present[i], prepaint[i], paint[i]]).collect())
+        let (draw, present, prepaint, paint) = (
+            list("draw"),
+            list("present"),
+            list("prepaint"),
+            list("paint"),
+        );
+        Ok((0..draw.len())
+            .map(|i| [draw[i], present[i], prepaint[i], paint[i]])
+            .collect())
     }
 
     /// How many pictures the GPUI app's live videos hold for drawing (each
@@ -992,7 +1073,9 @@ impl App {
     /// cost what a build without the e2e feature would (the tree a test sees
     /// stops updating).
     pub async fn set_tagging(&mut self, on: bool) -> Result<()> {
-        self.op("tagging", "", json!({ "enabled": on })).await.map(drop)
+        self.op("tagging", "", json!({ "enabled": on }))
+            .await
+            .map(drop)
     }
 
     /// Let go of the drag [`Self::drag_hold`] left in progress.
@@ -1285,7 +1368,9 @@ impl App {
         if !self.is_gpui() {
             anyhow::bail!("keys is for the GPUI app");
         }
-        self.op("keys", selector, json!({ "text": keys })).await.map(drop)
+        self.op("keys", selector, json!({ "text": keys }))
+            .await
+            .map(drop)
     }
 
     /// Dispatch a `keydown` for `key` (e.g. "Enter") on the element.
@@ -1565,13 +1650,16 @@ impl App {
     /// Wait until the first element matching `selector` has the keyboard.
     pub async fn wait_for_focus(&mut self, selector: &str, timeout: Duration) -> Result<()> {
         if self.is_gpui() {
-            return self.wait_for(&format!("{selector}[data-focused]"), timeout).await;
+            return self
+                .wait_for(&format!("{selector}[data-focused]"), timeout)
+                .await;
         }
         let js = format!(
             "return document.activeElement === document.querySelector({});",
             js_str(selector)
         );
-        self.wait_until(timeout, &format!("{selector} focused"), &js).await
+        self.wait_until(timeout, &format!("{selector} focused"), &js)
+            .await
     }
 
     /// Wait until the `index`th radio button or checkbox matching `selector`
@@ -1724,7 +1812,8 @@ impl App {
     /// quotes it. Hovers first.
     pub async fn click_in_message(&mut self, body: &str, selector: &str) -> Result<()> {
         if self.is_gpui() {
-            let extra = json!({ "within": ".message", "within_contains": body, "within_in": ".body" });
+            let extra =
+                json!({ "within": ".message", "within_contains": body, "within_in": ".body" });
             return self.op("click", selector, extra).await.map(drop);
         }
         let js = format!(
@@ -3200,7 +3289,12 @@ pub struct VideoMessage<'a> {
 }
 
 /// Send `video` into `room_id` as `user`.
-pub fn send_video_as(homeserver: &str, user: &str, room_id: &str, video: &VideoMessage<'_>) -> Result<()> {
+pub fn send_video_as(
+    homeserver: &str,
+    user: &str,
+    room_id: &str,
+    video: &VideoMessage<'_>,
+) -> Result<()> {
     let login = curl(&[
         "-X",
         "POST",
@@ -3250,7 +3344,10 @@ pub fn send_video_as(homeserver: &str, user: &str, room_id: &str, video: &VideoM
         "PUT",
         "-H",
         &auth,
-        &format!("{homeserver}/_matrix/client/v3/rooms/{room}/send/m.room.message/e2e-{}", unique()),
+        &format!(
+            "{homeserver}/_matrix/client/v3/rooms/{room}/send/m.room.message/e2e-{}",
+            unique()
+        ),
         "-d",
         &json!({ "msgtype": "m.video", "body": video.body, "url": url, "info": info }).to_string(),
     ])?;
@@ -3591,7 +3688,9 @@ fn user_token(homeserver: &str, user: &str) -> Result<String> {
 
 /// A user's global profile, from the homeserver: `displayname` and `avatar_url`.
 pub fn profile_of(homeserver: &str, user: &str) -> Result<Value> {
-    let out = curl(&[&format!("{homeserver}/_matrix/client/v3/profile/%40{user}%3Alocalhost")])?;
+    let out = curl(&[&format!(
+        "{homeserver}/_matrix/client/v3/profile/%40{user}%3Alocalhost"
+    )])?;
     Ok(serde_json::from_str(&out)?)
 }
 
@@ -3648,6 +3747,11 @@ impl Drop for ProfileGuard {
             ]);
         };
         put("displayname", self.original["displayname"].clone());
-        put("avatar_url", self.original["avatar_url"].as_str().map_or(json!(""), |s| json!(s)));
+        put(
+            "avatar_url",
+            self.original["avatar_url"]
+                .as_str()
+                .map_or(json!(""), |s| json!(s)),
+        );
     }
 }

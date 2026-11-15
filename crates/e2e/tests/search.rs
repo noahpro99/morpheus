@@ -81,7 +81,11 @@ async fn search_finds_a_message_and_jumps_to_it() {
             .await
             .expect("search");
         if app
-            .wait_for_text(".search-panel .search-hit", &word, std::time::Duration::from_secs(2))
+            .wait_for_text(
+                ".search-panel .search-hit",
+                &word,
+                std::time::Duration::from_secs(2),
+            )
             .await
             .is_ok()
         {
@@ -205,8 +209,16 @@ async fn the_search_box_widens_and_its_results_replace_the_member_list() {
     app.click(input).await.expect("focus the box");
     let wide = settle(&mut app, bar, true).await;
     assert!(wide >= rest + 60.0, "it widens: {rest} -> {wide}");
-    assert_eq!(app.count(".search-panel").await.expect("count"), 0, "no panel yet");
-    assert_eq!(app.count(".side-pane .members").await.expect("count"), 1, "members stay");
+    assert_eq!(
+        app.count(".search-panel").await.expect("count"),
+        0,
+        "no panel yet"
+    );
+    assert_eq!(
+        app.count(".side-pane .members").await.expect("count"),
+        1,
+        "members stay"
+    );
 
     // Enter searches: a panel wider than the member list, at the right.
     let deadline = std::time::Instant::now() + DEFAULT_WAIT;
@@ -214,7 +226,11 @@ async fn the_search_box_widens_and_its_results_replace_the_member_list() {
         app.type_into(input, &word).await.expect("query");
         app.press(input, "Enter").await.expect("search");
         if app
-            .wait_for_text(".search-panel .search-hit", &word, std::time::Duration::from_secs(2))
+            .wait_for_text(
+                ".search-panel .search-hit",
+                &word,
+                std::time::Duration::from_secs(2),
+            )
             .await
             .is_ok()
         {
@@ -225,37 +241,74 @@ async fn the_search_box_widens_and_its_results_replace_the_member_list() {
             "the message never showed up in the results"
         );
     }
-    let panel = app.bounds(".side-pane").await.expect("b").expect("side pane");
-    let window = app.bounds(".chat-header").await.expect("b").expect("header");
-    assert!(panel.w >= members_w + 100.0, "wider than the member list: {panel:?} vs {members_w}");
-    assert!(panel.right() >= window.right() - 12.0, "at the right: {panel:?} in {window:?}");
-    assert_eq!(app.count(".side-pane .members").await.expect("count"), 0, "members replaced");
+    let panel = app
+        .bounds(".side-pane")
+        .await
+        .expect("b")
+        .expect("side pane");
+    let window = app
+        .bounds(".chat-header")
+        .await
+        .expect("b")
+        .expect("header");
+    assert!(
+        panel.w >= members_w + 100.0,
+        "wider than the member list: {panel:?} vs {members_w}"
+    );
+    assert!(
+        panel.right() >= window.right() - 12.0,
+        "at the right: {panel:?} in {window:?}"
+    );
+    assert_eq!(
+        app.count(".side-pane .members").await.expect("count"),
+        0,
+        "members replaced"
+    );
 
     // Clicking elsewhere keeps it, and the box stays wide while it has text.
-    app.click(".composer .composer-input").await.expect("click away");
+    app.click(".composer .composer-input")
+        .await
+        .expect("click away");
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-    assert_eq!(app.count(".search-panel .search-hit").await.expect("count"), 1, "results stay");
+    assert_eq!(
+        app.count(".search-panel .search-hit").await.expect("count"),
+        1,
+        "results stay"
+    );
     settle(&mut app, bar, true).await;
 
     // The ✕ clears it: the member list is back, as it was.
-    app.click(".chat-header .search-clear").await.expect("clear");
+    app.click(".chat-header .search-clear")
+        .await
+        .expect("clear");
     app.wait_for_count(".search-panel", 0, DEFAULT_WAIT)
         .await
         .expect("panel closed");
     app.wait_for(".side-pane .members", DEFAULT_WAIT)
         .await
         .expect("members back");
-    assert!((width(&mut app, ".side-pane").await - members_w).abs() < 1.0, "same width");
-    assert_eq!(app.value(input).await.expect("value").unwrap_or_default(), "", "box emptied");
+    assert!(
+        (width(&mut app, ".side-pane").await - members_w).abs() < 1.0,
+        "same width"
+    );
+    assert_eq!(
+        app.value(input).await.expect("value").unwrap_or_default(),
+        "",
+        "box emptied"
+    );
     // An empty box that lost the caret shrinks back.
-    app.click(".composer .composer-input").await.expect("click away");
+    app.click(".composer .composer-input")
+        .await
+        .expect("click away");
     settle(&mut app, bar, false).await;
 
     // Escape in the box does the same.
     app.click(input).await.expect("focus");
     app.type_into(input, &word).await.expect("query");
     app.press(input, "Enter").await.expect("search");
-    app.wait_for(".search-panel", DEFAULT_WAIT).await.expect("panel");
+    app.wait_for(".search-panel", DEFAULT_WAIT)
+        .await
+        .expect("panel");
     app.press(input, "Escape").await.expect("escape");
     app.wait_for_count(".search-panel", 0, DEFAULT_WAIT)
         .await
@@ -270,9 +323,15 @@ async fn the_search_box_widens_and_its_results_replace_the_member_list() {
 async fn in_random() -> Option<App> {
     let hs = homeserver()?;
     let mut app = App::launch(&hs).await.expect("launch app");
-    app.wait_for("form.login", DEFAULT_WAIT).await.expect("login form");
-    app.type_into("form.login input[name=username]", "alice").await.expect("username");
-    app.type_into("form.login input[name=password]", "alice-password").await.expect("password");
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    app.type_into("form.login input[name=username]", "alice")
+        .await
+        .expect("username");
+    app.type_into("form.login input[name=password]", "alice-password")
+        .await
+        .expect("password");
     app.submit("form.login").await.expect("submit");
     app.wait_for(".room", DEFAULT_WAIT).await.expect("rooms");
     app.open_room("random").await.expect("open random");
@@ -288,17 +347,26 @@ async fn search_open(app: &mut App) {
     app.click(SEARCH_INPUT).await.expect("focus the box");
     app.type_into(SEARCH_INPUT, "okapi").await.expect("query");
     app.press(SEARCH_INPUT, "Enter").await.expect("search");
-    app.wait_for(".search-panel", DEFAULT_WAIT).await.expect("panel");
+    app.wait_for(".search-panel", DEFAULT_WAIT)
+        .await
+        .expect("panel");
 }
 
 async fn bar_settles_narrow(app: &mut App) {
     let deadline = std::time::Instant::now() + DEFAULT_WAIT;
     loop {
-        let w = app.bounds(".chat-header .search-bar").await.expect("bounds").map_or(0.0, |b| b.w);
+        let w = app
+            .bounds(".chat-header .search-bar")
+            .await
+            .expect("bounds")
+            .map_or(0.0, |b| b.w);
         if w < 160.0 {
             return;
         }
-        assert!(std::time::Instant::now() < deadline, "the box never shrank back (at {w})");
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the box never shrank back (at {w})"
+        );
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
 }
@@ -316,20 +384,50 @@ async fn escape_twice_leaves_the_search() {
         return;
     }
     search_open(&mut app).await;
-    app.press(SEARCH_INPUT, "Escape").await.expect("first escape");
-    app.wait_for_count(".search-panel", 0, DEFAULT_WAIT).await.expect("panel closed");
-    app.wait_for(".side-pane .members", DEFAULT_WAIT).await.expect("members back");
-    assert_eq!(app.value(SEARCH_INPUT).await.expect("value").unwrap_or_default(), "okapi", "text stays");
-    app.wait_for_focus(SEARCH_INPUT, DEFAULT_WAIT).await.expect("box keeps the caret");
+    app.press(SEARCH_INPUT, "Escape")
+        .await
+        .expect("first escape");
+    app.wait_for_count(".search-panel", 0, DEFAULT_WAIT)
+        .await
+        .expect("panel closed");
+    app.wait_for(".side-pane .members", DEFAULT_WAIT)
+        .await
+        .expect("members back");
+    assert_eq!(
+        app.value(SEARCH_INPUT)
+            .await
+            .expect("value")
+            .unwrap_or_default(),
+        "okapi",
+        "text stays"
+    );
+    app.wait_for_focus(SEARCH_INPUT, DEFAULT_WAIT)
+        .await
+        .expect("box keeps the caret");
 
-    app.press(SEARCH_INPUT, "Escape").await.expect("second escape");
+    app.press(SEARCH_INPUT, "Escape")
+        .await
+        .expect("second escape");
     let deadline = std::time::Instant::now() + DEFAULT_WAIT;
-    while !app.value(SEARCH_INPUT).await.expect("value").unwrap_or_default().is_empty() {
+    while !app
+        .value(SEARCH_INPUT)
+        .await
+        .expect("value")
+        .unwrap_or_default()
+        .is_empty()
+    {
         assert!(std::time::Instant::now() < deadline, "box never emptied");
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
-    app.wait_for_focus(".composer .composer-input", DEFAULT_WAIT).await.expect("composer has the caret");
-    assert_eq!(app.count(".chat-header input[name=search][data-focused]").await.expect("count"), 0);
+    app.wait_for_focus(".composer .composer-input", DEFAULT_WAIT)
+        .await
+        .expect("composer has the caret");
+    assert_eq!(
+        app.count(".chat-header input[name=search][data-focused]")
+            .await
+            .expect("count"),
+        0
+    );
     bar_settles_narrow(&mut app).await;
 }
 
@@ -347,11 +445,19 @@ async fn escape_with_no_results_leaves_the_search_at_once() {
     app.type_into(SEARCH_INPUT, "okapi").await.expect("query");
     app.press(SEARCH_INPUT, "Escape").await.expect("escape");
     let deadline = std::time::Instant::now() + DEFAULT_WAIT;
-    while !app.value(SEARCH_INPUT).await.expect("value").unwrap_or_default().is_empty() {
+    while !app
+        .value(SEARCH_INPUT)
+        .await
+        .expect("value")
+        .unwrap_or_default()
+        .is_empty()
+    {
         assert!(std::time::Instant::now() < deadline, "box never emptied");
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
-    app.wait_for_focus(".composer .composer-input", DEFAULT_WAIT).await.expect("composer has the caret");
+    app.wait_for_focus(".composer .composer-input", DEFAULT_WAIT)
+        .await
+        .expect("composer has the caret");
     bar_settles_narrow(&mut app).await;
 }
 
@@ -366,12 +472,26 @@ async fn escape_elsewhere_closes_the_results() {
         return;
     }
     search_open(&mut app).await;
-    app.click(".composer .composer-input").await.expect("click away");
-    app.wait_for_focus(".composer .composer-input", DEFAULT_WAIT).await.expect("composer focused");
-    assert_eq!(app.count(".search-panel").await.expect("count"), 1, "still open");
-    app.press(".composer .composer-input", "Escape").await.expect("escape");
-    app.wait_for_count(".search-panel", 0, DEFAULT_WAIT).await.expect("panel closed");
-    app.wait_for(".side-pane .members", DEFAULT_WAIT).await.expect("members back");
+    app.click(".composer .composer-input")
+        .await
+        .expect("click away");
+    app.wait_for_focus(".composer .composer-input", DEFAULT_WAIT)
+        .await
+        .expect("composer focused");
+    assert_eq!(
+        app.count(".search-panel").await.expect("count"),
+        1,
+        "still open"
+    );
+    app.press(".composer .composer-input", "Escape")
+        .await
+        .expect("escape");
+    app.wait_for_count(".search-panel", 0, DEFAULT_WAIT)
+        .await
+        .expect("panel closed");
+    app.wait_for(".side-pane .members", DEFAULT_WAIT)
+        .await
+        .expect("members back");
 }
 
 /// Clicking anywhere away from the box takes the caret out of it (not only
@@ -387,7 +507,9 @@ async fn clicking_away_from_the_search_box_unfocuses_it() {
         return;
     }
     let focused = ".chat-header input[name=search][data-focused]";
-    app.wait_for(".members-header", DEFAULT_WAIT).await.expect("the member list");
+    app.wait_for(".members-header", DEFAULT_WAIT)
+        .await
+        .expect("the member list");
     // Empty box: a click on the messages, then one on the member list's heading.
     for away in [".timeline", ".members-header", ".chat-header .room-head h2"] {
         app.click(SEARCH_INPUT).await.expect("focus the box");
@@ -408,13 +530,32 @@ async fn clicking_away_from_the_search_box_unfocuses_it() {
     app.click(SEARCH_INPUT).await.expect("focus the box");
     app.click(SEARCH_INPUT).await.expect("click inside");
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-    assert_eq!(app.count(focused).await.expect("count"), 1, "a click in the box dropped the caret");
+    assert_eq!(
+        app.count(focused).await.expect("count"),
+        1,
+        "a click in the box dropped the caret"
+    );
     // With results open: the panel and the text stay, the caret goes.
     app.type_into(SEARCH_INPUT, "okapi").await.expect("query");
     app.press(SEARCH_INPUT, "Enter").await.expect("search");
-    app.wait_for(".search-panel", DEFAULT_WAIT).await.expect("panel");
+    app.wait_for(".search-panel", DEFAULT_WAIT)
+        .await
+        .expect("panel");
     app.click(".timeline").await.expect("click away");
-    app.wait_for_count(focused, 0, DEFAULT_WAIT).await.expect("the caret left the box");
-    assert_eq!(app.count(".search-panel").await.expect("count"), 1, "the results closed");
-    assert_eq!(app.value(SEARCH_INPUT).await.expect("value").unwrap_or_default(), "okapi", "the text stays");
+    app.wait_for_count(focused, 0, DEFAULT_WAIT)
+        .await
+        .expect("the caret left the box");
+    assert_eq!(
+        app.count(".search-panel").await.expect("count"),
+        1,
+        "the results closed"
+    );
+    assert_eq!(
+        app.value(SEARCH_INPUT)
+            .await
+            .expect("value")
+            .unwrap_or_default(),
+        "okapi",
+        "the text stays"
+    );
 }

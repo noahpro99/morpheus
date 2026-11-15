@@ -236,9 +236,13 @@ async fn the_member_list_groups_by_role_and_offers_what_you_may_do() {
     // Other tests add people to #general, so the count is whatever the list holds.
     let listed = app.count(".members .member").await.expect("count");
     assert!(listed >= 3, "alice, bob and carol at least, got {listed}");
-    app.wait_for_text(".chat-header .member-toggle", &listed.to_string(), DEFAULT_WAIT)
-        .await
-        .expect("member count");
+    app.wait_for_text(
+        ".chat-header .member-toggle",
+        &listed.to_string(),
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("member count");
     assert_eq!(
         app.count(".members .member .avatar").await.expect("count"),
         listed,
@@ -257,7 +261,9 @@ async fn the_member_list_groups_by_role_and_offers_what_you_may_do() {
     app.right_click_text(".members .member", "alice")
         .await
         .expect("right-click yourself");
-    app.wait_for(".context-menu", DEFAULT_WAIT).await.expect("menu");
+    app.wait_for(".context-menu", DEFAULT_WAIT)
+        .await
+        .expect("menu");
     assert_eq!(labels(&mut app).await, ["Profile", "Copy user ID"]);
     app.press(".context-menu", "Escape").await.expect("escape");
     app.wait_for_count(".context-menu", 0, DEFAULT_WAIT)
@@ -268,10 +274,24 @@ async fn the_member_list_groups_by_role_and_offers_what_you_may_do() {
     app.right_click_text(".members .member", "bob")
         .await
         .expect("right-click bob");
-    app.wait_for(".context-menu", DEFAULT_WAIT).await.expect("menu");
+    app.wait_for(".context-menu", DEFAULT_WAIT)
+        .await
+        .expect("menu");
     let items = labels(&mut app).await;
-    for wanted in ["Profile", "Mention", "Message", "Block", "Roles", "Kick bob", "Ban bob", "Copy user ID"] {
-        assert!(items.iter().any(|l| l == wanted), "missing {wanted} in {items:?}");
+    for wanted in [
+        "Profile",
+        "Mention",
+        "Message",
+        "Block",
+        "Roles",
+        "Kick bob",
+        "Ban bob",
+        "Copy user ID",
+    ] {
+        assert!(
+            items.iter().any(|l| l == wanted),
+            "missing {wanted} in {items:?}"
+        );
     }
     app.press(".context-menu", "Escape").await.expect("escape");
 }

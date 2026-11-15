@@ -263,11 +263,7 @@ async fn scrolling_up_reaches_the_start_of_a_long_room() {
             .await
             .expect("text")
             .is_some_and(|t| t.contains("Loading older"));
-        if app
-            .count(".message .body")
-            .await
-            .expect("count")
-            > 0
+        if app.count(".message .body").await.expect("count") > 0
             && app
                 .texts(".message .body")
                 .await
@@ -293,17 +289,18 @@ async fn scrolling_up_reaches_the_start_of_a_long_room() {
     }
     // Past the first message are the room's creation events: once those are
     // in, the placeholders give way to the room's beginning.
-    until!("the beginning of the room, no placeholders", DEFAULT_WAIT, {
-        app.scroll_to(".timeline", ScrollTo::Top)
-            .await
-            .expect("scroll");
-        app.count(".timeline .older-skeleton").await.expect("count") == 0
-            && app.count(".timeline .timeline-start").await.expect("count") > 0
-    });
-    assert!(
-        skeletons,
-        "placeholder rows on the way up"
+    until!(
+        "the beginning of the room, no placeholders",
+        DEFAULT_WAIT,
+        {
+            app.scroll_to(".timeline", ScrollTo::Top)
+                .await
+                .expect("scroll");
+            app.count(".timeline .older-skeleton").await.expect("count") == 0
+                && app.count(".timeline .timeline-start").await.expect("count") > 0
+        }
     );
+    assert!(skeletons, "placeholder rows on the way up");
     assert!(!loading_text, "never a loading line");
 }
 
@@ -327,9 +324,10 @@ async fn reaching_the_top_stays_there_while_older_messages_load() {
     let room = room["room_id"].as_str().expect("room id").to_owned();
     let bodies: Vec<String> = (1..=80).map(|n| format!("line {n}")).collect();
     morpheus_e2e::send_many_as(&hs, &user, &room, &bodies).expect("history");
-    let mut app = morpheus_e2e::App::launch_with_env(&hs, &[("MORPHEUS_E2E_HISTORY_DELAY_MS", "800")])
-        .await
-        .expect("launch app");
+    let mut app =
+        morpheus_e2e::App::launch_with_env(&hs, &[("MORPHEUS_E2E_HISTORY_DELAY_MS", "800")])
+            .await
+            .expect("launch app");
     app.wait_for("form.login", morpheus_e2e::DEFAULT_WAIT)
         .await
         .expect("login form");
@@ -353,7 +351,9 @@ async fn reaching_the_top_stays_there_while_older_messages_load() {
     let until = Instant::now() + Duration::from_secs(10);
     while app.count(".timeline .older-skeleton").await.expect("count") == 0 {
         assert!(Instant::now() < until, "never reached the top");
-        app.scroll_to(".timeline", ScrollTo::Top).await.expect("scroll up");
+        app.scroll_to(".timeline", ScrollTo::Top)
+            .await
+            .expect("scroll up");
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
     let mut lowest = f64::MAX;
@@ -433,11 +433,18 @@ async fn long_room_open(hs: &str, name: &str, messages: usize) -> App {
     let bodies: Vec<String> = (1..=messages).map(|n| format!("line {n}")).collect();
     morpheus_e2e::send_many_as(hs, &user, &room, &bodies).expect("history");
     let mut app = App::launch(hs).await.expect("launch app");
-    app.wait_for("form.login", DEFAULT_WAIT).await.expect("login form");
-    app.type_into("form.login input[name=username]", &user).await.expect("username");
-    app.type_into("form.login input[name=password]", &format!("{user}-password"))
+    app.wait_for("form.login", DEFAULT_WAIT)
         .await
-        .expect("password");
+        .expect("login form");
+    app.type_into("form.login input[name=username]", &user)
+        .await
+        .expect("username");
+    app.type_into(
+        "form.login input[name=password]",
+        &format!("{user}-password"),
+    )
+    .await
+    .expect("password");
     app.submit("form.login").await.expect("submit");
     app.open_room(name).await.expect("open the room");
     app.wait_for_exact_text(".message .body", &format!("line {messages}"), DEFAULT_WAIT)
@@ -461,9 +468,16 @@ async fn a_wheel_notch_scrolls_the_timeline_smoothly() {
         eprintln!("skipped: GPUI's wheel");
         return;
     }
-    app.scroll_to(".timeline", ScrollTo::FromBottom(400.0)).await.expect("scroll");
+    app.scroll_to(".timeline", ScrollTo::FromBottom(400.0))
+        .await
+        .expect("scroll");
     tokio::time::sleep(Duration::from_millis(300)).await;
-    let start = app.scroll_state(".timeline").await.expect("s").expect("t").from_bottom;
+    let start = app
+        .scroll_state(".timeline")
+        .await
+        .expect("s")
+        .expect("t")
+        .from_bottom;
 
     // Three notches in one event: 60 px.
     let t0 = Instant::now();
@@ -471,7 +485,11 @@ async fn a_wheel_notch_scrolls_the_timeline_smoothly() {
     let seen = watch(&mut app, ".timeline", t0, 500).await;
     let (steps, end, reached) = eased(&seen, start);
     eprintln!("3 notches: from {start} to {end}, {steps} steps, there after {reached} ms");
-    assert!((start - end - 60.0).abs() < 1.5, "moved {} px, not 60", start - end);
+    assert!(
+        (start - end - 60.0).abs() < 1.5,
+        "moved {} px, not 60",
+        start - end
+    );
     assert!(steps >= 3, "{steps} intermediate positions: it jumped");
     assert!((60..=400).contains(&reached), "arrived after {reached} ms");
 
@@ -484,7 +502,11 @@ async fn a_wheel_notch_scrolls_the_timeline_smoothly() {
     let seen = watch(&mut app, ".timeline", t0, 500).await;
     let (steps, end, _) = eased(&seen, start);
     eprintln!("2 notches: from {start} to {end}, {steps} steps");
-    assert!((start - end - 40.0).abs() < 1.5, "moved {} px, not 40", start - end);
+    assert!(
+        (start - end - 40.0).abs() < 1.5,
+        "moved {} px, not 40",
+        start - end
+    );
     assert!(steps >= 3, "{steps} intermediate positions");
     assert!(
         seen.windows(2).all(|w| w[1].1 <= w[0].1 + 0.01),
@@ -495,8 +517,17 @@ async fn a_wheel_notch_scrolls_the_timeline_smoothly() {
     let start = end;
     app.wheel(".timeline", -2.0).await.expect("wheel");
     tokio::time::sleep(Duration::from_millis(400)).await;
-    let back = app.scroll_state(".timeline").await.expect("s").expect("t").from_bottom;
-    assert!((back - start - 40.0).abs() < 1.5, "moved {} px up, not 40", back - start);
+    let back = app
+        .scroll_state(".timeline")
+        .await
+        .expect("s")
+        .expect("t")
+        .from_bottom;
+    assert!(
+        (back - start - 40.0).abs() < 1.5,
+        "moved {} px up, not 40",
+        back - start
+    );
 }
 
 /// A touchpad's pixel deltas are applied exactly and at once, with no easing.
@@ -511,15 +542,40 @@ async fn touchpad_pixels_scroll_exactly_and_at_once() {
         eprintln!("skipped: GPUI's wheel");
         return;
     }
-    app.scroll_to(".timeline", ScrollTo::FromBottom(400.0)).await.expect("scroll");
+    app.scroll_to(".timeline", ScrollTo::FromBottom(400.0))
+        .await
+        .expect("scroll");
     tokio::time::sleep(Duration::from_millis(300)).await;
-    let start = app.scroll_state(".timeline").await.expect("s").expect("t").from_bottom;
+    let start = app
+        .scroll_state(".timeline")
+        .await
+        .expect("s")
+        .expect("t")
+        .from_bottom;
     app.wheel_pixels(".timeline", 37.0).await.expect("wheel");
-    let at = app.scroll_state(".timeline").await.expect("s").expect("t").from_bottom;
-    assert!((start - at - 37.0).abs() < 0.5, "moved {} px, not 37", start - at);
+    let at = app
+        .scroll_state(".timeline")
+        .await
+        .expect("s")
+        .expect("t")
+        .from_bottom;
+    assert!(
+        (start - at - 37.0).abs() < 0.5,
+        "moved {} px, not 37",
+        start - at
+    );
     app.wheel_pixels(".timeline", -11.0).await.expect("wheel");
-    let at = app.scroll_state(".timeline").await.expect("s").expect("t").from_bottom;
-    assert!((start - at - 26.0).abs() < 0.5, "then {} px, not 26", start - at);
+    let at = app
+        .scroll_state(".timeline")
+        .await
+        .expect("s")
+        .expect("t")
+        .from_bottom;
+    assert!(
+        (start - at - 26.0).abs() < 0.5,
+        "then {} px, not 26",
+        start - at
+    );
 }
 
 /// The room list (a plain scroll view) eases its notches too, to the same
@@ -533,30 +589,58 @@ async fn a_wheel_notch_scrolls_the_room_list_smoothly() {
     };
     let user = new_account(&hs, "smoothlist").expect("account");
     for n in 1..=30 {
-        api_as(&hs, &user, "POST", "createRoom", Some(serde_json::json!({ "name": format!("room {n:02}") })))
-            .expect("a room");
+        api_as(
+            &hs,
+            &user,
+            "POST",
+            "createRoom",
+            Some(serde_json::json!({ "name": format!("room {n:02}") })),
+        )
+        .expect("a room");
     }
     let mut app = App::launch_sized(&hs, 1000, 600).await.expect("launch");
     if !app.is_gpui() {
         eprintln!("skipped: GPUI's wheel");
         return;
     }
-    app.wait_for("form.login", DEFAULT_WAIT).await.expect("login form");
-    app.type_into("form.login input[name=username]", &user).await.expect("username");
-    app.type_into("form.login input[name=password]", &format!("{user}-password"))
+    app.wait_for("form.login", DEFAULT_WAIT)
         .await
-        .expect("password");
+        .expect("login form");
+    app.type_into("form.login input[name=username]", &user)
+        .await
+        .expect("username");
+    app.type_into(
+        "form.login input[name=password]",
+        &format!("{user}-password"),
+    )
+    .await
+    .expect("password");
     app.submit("form.login").await.expect("submit");
-    app.wait_for_text(".room-list", "room 30", DEFAULT_WAIT).await.expect("rooms");
-    app.scroll_to(".room-list", ScrollTo::FromBottom(300.0)).await.expect("scroll");
+    app.wait_for_text(".room-list", "room 30", DEFAULT_WAIT)
+        .await
+        .expect("rooms");
+    app.scroll_to(".room-list", ScrollTo::FromBottom(300.0))
+        .await
+        .expect("scroll");
     tokio::time::sleep(Duration::from_millis(300)).await;
-    let start = app.scroll_state(".room-list").await.expect("s").expect("t").from_bottom;
+    let start = app
+        .scroll_state(".room-list")
+        .await
+        .expect("s")
+        .expect("t")
+        .from_bottom;
     let t0 = Instant::now();
     app.wheel(".room-list", 3.0).await.expect("wheel");
     let seen = watch(&mut app, ".room-list", t0, 500).await;
     let (steps, end, reached) = eased(&seen, start);
-    eprintln!("room list, 3 notches: from {start} to {end}, {steps} steps, there after {reached} ms");
-    assert!((start - end - 72.0).abs() < 1.5, "moved {} px, not 72", start - end);
+    eprintln!(
+        "room list, 3 notches: from {start} to {end}, {steps} steps, there after {reached} ms"
+    );
+    assert!(
+        (start - end - 72.0).abs() < 1.5,
+        "moved {} px, not 72",
+        start - end
+    );
     assert!(steps >= 3, "{steps} intermediate positions: it jumped");
     assert!((60..=400).contains(&reached), "arrived after {reached} ms");
 }
@@ -564,7 +648,11 @@ async fn a_wheel_notch_scrolls_the_room_list_smoothly() {
 /// `n`, mean, p50, p95, p99 and max of a list of frame times.
 fn stats(label: &str, mut ms: Vec<f32>) -> String {
     ms.sort_by(|a, b| a.total_cmp(b));
-    let at = |q: f32| ms.get(((ms.len() as f32 * q) as usize).min(ms.len().saturating_sub(1))).copied().unwrap_or(0.0);
+    let at = |q: f32| {
+        ms.get(((ms.len() as f32 * q) as usize).min(ms.len().saturating_sub(1)))
+            .copied()
+            .unwrap_or(0.0)
+    };
     let mean = ms.iter().sum::<f32>() / ms.len().max(1) as f32;
     format!(
         "{label}: {} frames, mean {mean:.2} ms, p50 {:.2}, p95 {:.2}, p99 {:.2}, max {:.2}",
@@ -611,11 +699,23 @@ async fn frames_stay_short_while_scrolling_a_long_timeline_and_the_room_list() {
     };
     let user = new_account(&hs, "frames").expect("account");
     for n in 1..=30 {
-        api_as(&hs, &user, "POST", "createRoom", Some(serde_json::json!({ "name": format!("room {n:02}") })))
-            .expect("a room");
-    }
-    let room = api_as(&hs, &user, "POST", "createRoom", Some(serde_json::json!({ "name": "long pictures" })))
+        api_as(
+            &hs,
+            &user,
+            "POST",
+            "createRoom",
+            Some(serde_json::json!({ "name": format!("room {n:02}") })),
+        )
         .expect("a room");
+    }
+    let room = api_as(
+        &hs,
+        &user,
+        "POST",
+        "createRoom",
+        Some(serde_json::json!({ "name": "long pictures" })),
+    )
+    .expect("a room");
     let room = room["room_id"].as_str().expect("room id").to_owned();
     let wide: &[u8] = include_bytes!("../fixtures/wide.png");
     let tall: &[u8] = include_bytes!("../fixtures/tall.png");
@@ -637,7 +737,9 @@ async fn frames_stay_short_while_scrolling_a_long_timeline_and_the_room_list() {
     }
     common::login(&mut app, &user, &format!("{user}-password")).await;
     app.open_room("long pictures").await.expect("open the room");
-    app.wait_for("img.image", DEFAULT_WAIT).await.expect("a picture");
+    app.wait_for("img.image", DEFAULT_WAIT)
+        .await
+        .expect("a picture");
     tokio::time::sleep(Duration::from_secs(3)).await;
 
     let timeline = scroll_about(&mut app, ".timeline", 40.0, 160).await;
@@ -653,7 +755,10 @@ async fn frames_stay_short_while_scrolling_a_long_timeline_and_the_room_list() {
         ("timeline, no tags", &timeline_plain),
         ("room list, no tags", &list_plain),
     ] {
-        for (i, part) in ["draw", "present", "prepaint (render, layout)", "paint"].iter().enumerate() {
+        for (i, part) in ["draw", "present", "prepaint (render, layout)", "paint"]
+            .iter()
+            .enumerate()
+        {
             report.push(stats(&format!("{name} {part}"), column(frames, i)));
         }
     }
@@ -663,16 +768,34 @@ async fn frames_stay_short_while_scrolling_a_long_timeline_and_the_room_list() {
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/frame-times.txt"))
+        .open(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../target/frame-times.txt"
+        ))
         .expect("log");
     use std::io::Write as _;
-    writeln!(file, "--- {}", std::env::var("FRAME_LABEL").unwrap_or_default()).expect("write");
+    writeln!(
+        file,
+        "--- {}",
+        std::env::var("FRAME_LABEL").unwrap_or_default()
+    )
+    .expect("write");
     for line in &report {
         writeln!(file, "{line}").expect("write");
     }
-    assert!(timeline.len() > 40, "only {} frames drawn while scrolling", timeline.len());
-    assert!(p95(column(&timeline, 0)) < 16.0, "the timeline's frames are too long to scroll at 60 fps");
-    assert!(p95(column(&list, 0)) < 16.0, "the room list's frames are too long to scroll at 60 fps");
+    assert!(
+        timeline.len() > 40,
+        "only {} frames drawn while scrolling",
+        timeline.len()
+    );
+    assert!(
+        p95(column(&timeline, 0)) < 16.0,
+        "the timeline's frames are too long to scroll at 60 fps"
+    );
+    assert!(
+        p95(column(&list, 0)) < 16.0,
+        "the room list's frames are too long to scroll at 60 fps"
+    );
 }
 
 /// Page Up / Page Down ease like the wheel does (task 31): the position
@@ -691,29 +814,67 @@ async fn page_up_and_down_scroll_smoothly_by_a_page() {
     }
     // The list only counts the rows it has measured: look through the room first.
     let until = Instant::now() + Duration::from_secs(10);
-    while app.scroll_state(".timeline").await.expect("s").is_some_and(|s| s.range <= s.viewport * 1.5) {
+    while app
+        .scroll_state(".timeline")
+        .await
+        .expect("s")
+        .is_some_and(|s| s.range <= s.viewport * 1.5)
+    {
         assert!(Instant::now() < until, "the room never got long enough");
-        app.scroll_to(".timeline", ScrollTo::Top).await.expect("scroll");
+        app.scroll_to(".timeline", ScrollTo::Top)
+            .await
+            .expect("scroll");
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    app.scroll_to(".timeline", ScrollTo::Bottom).await.expect("scroll");
+    app.scroll_to(".timeline", ScrollTo::Bottom)
+        .await
+        .expect("scroll");
     tokio::time::sleep(Duration::from_millis(300)).await;
     let s = app.scroll_state(".timeline").await.expect("s").expect("t");
     assert!(s.range > s.viewport * 1.5, "a long enough chat: {s:?}");
     let (start, page) = (s.from_bottom, s.viewport * 0.9);
 
     for (key, sign) in [("PageUp", 1.0), ("PageDown", -1.0)] {
-        let from = app.scroll_state(".timeline").await.expect("s").expect("t").from_bottom;
+        let from = app
+            .scroll_state(".timeline")
+            .await
+            .expect("s")
+            .expect("t")
+            .from_bottom;
         let t0 = Instant::now();
-        app.press(".composer .composer-input", key).await.expect("press");
+        app.press(".composer .composer-input", key)
+            .await
+            .expect("press");
         let seen = watch(&mut app, ".timeline", t0, 600).await;
         let (steps, end, reached) = eased(&seen, from);
-        let first = seen.iter().find(|&&(_, p)| (p - from).abs() > 0.5).map_or(0, |&(t, _)| t);
+        let first = seen
+            .iter()
+            .find(|&&(_, p)| (p - from).abs() > 0.5)
+            .map_or(0, |&(t, _)| t);
         eprintln!("{key}: from {from} to {end}, {steps} steps, moving {first}..{reached} ms");
-        assert!((end - from - sign * page).abs() < 3.0, "{key} moved {} px, not {page}", end - from);
-        assert!(steps >= 3, "{key}: {steps} intermediate positions: it jumped");
-        assert!(reached.saturating_sub(first) >= 80, "{key}: took {} ms", reached.saturating_sub(first));
+        assert!(
+            (end - from - sign * page).abs() < 3.0,
+            "{key} moved {} px, not {page}",
+            end - from
+        );
+        assert!(
+            steps >= 3,
+            "{key}: {steps} intermediate positions: it jumped"
+        );
+        assert!(
+            reached.saturating_sub(first) >= 80,
+            "{key}: took {} ms",
+            reached.saturating_sub(first)
+        );
     }
-    let back = app.scroll_state(".timeline").await.expect("s").expect("t").from_bottom;
-    assert!((back - start).abs() < 3.0, "up then down returns to {start}, not {back}");
+    let back = app
+        .scroll_state(".timeline")
+        .await
+        .expect("s")
+        .expect("t")
+        .from_bottom;
+    assert!(
+        (back - start).abs() < 3.0,
+        "up then down returns to {start}, not {back}"
+    );
 }

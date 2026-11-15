@@ -137,9 +137,12 @@ async fn admin_changes_roles_kicks_and_bans() {
     .await;
     member_menu(&mut app, "carol").await;
     click_submenu(&mut app, "Roles", "Member").await;
-    wait_texts(&mut app, ".members-header", "carol back to member", |headers| {
-        !headers.iter().any(|h| h.contains("Moderators"))
-    })
+    wait_texts(
+        &mut app,
+        ".members-header",
+        "carol back to member",
+        |headers| !headers.iter().any(|h| h.contains("Moderators")),
+    )
     .await;
 
     // Kick carol: she leaves the list.
@@ -188,7 +191,10 @@ async fn member_menu_mentions_messages_and_blocks() {
         .expect("value")
         .is_some_and(|value| value.contains("@bob"))
     {
-        assert!(std::time::Instant::now() < deadline, "composer holds the mention");
+        assert!(
+            std::time::Instant::now() < deadline,
+            "composer holds the mention"
+        );
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
 

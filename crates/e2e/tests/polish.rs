@@ -158,9 +158,15 @@ async fn pictures_menus_and_spacing() {
             .await
             .expect("open the flyout");
     }
-    app.wait_for(INVITE_ROWS, DEFAULT_WAIT).await.expect("the flyout");
+    app.wait_for(INVITE_ROWS, DEFAULT_WAIT)
+        .await
+        .expect("the flyout");
     let targets = app
-        .texts_within(INVITE_PARENT.0, INVITE_PARENT.1, ".context-submenu .context-item .menu-label")
+        .texts_within(
+            INVITE_PARENT.0,
+            INVITE_PARENT.1,
+            ".context-submenu .context-item .menu-label",
+        )
         .await
         .expect("targets")
         .join("|");
@@ -177,16 +183,27 @@ async fn pictures_menus_and_spacing() {
         "a room inside a server is listed on its own: {targets}"
     );
     let rows = app
-        .texts_within(INVITE_PARENT.0, INVITE_PARENT.1, ".context-submenu .context-item")
+        .texts_within(
+            INVITE_PARENT.0,
+            INVITE_PARENT.1,
+            ".context-submenu .context-item",
+        )
         .await
         .expect("rows")
         .len();
     let pictures = app
-        .texts_within(INVITE_PARENT.0, INVITE_PARENT.1, ".context-submenu .context-item .menu-avatar .avatar")
+        .texts_within(
+            INVITE_PARENT.0,
+            INVITE_PARENT.1,
+            ".context-submenu .context-item .menu-avatar .avatar",
+        )
         .await
         .expect("pictures")
         .len();
-    assert!(rows > 0 && pictures >= rows, "invite targets lack pictures ({pictures} for {rows})");
+    assert!(
+        rows > 0 && pictures >= rows,
+        "invite targets lack pictures ({pictures} for {rows})"
+    );
     app.key_combo("body", "Escape", false, false, false)
         .await
         .expect("close menu");

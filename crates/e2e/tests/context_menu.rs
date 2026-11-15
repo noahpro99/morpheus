@@ -97,9 +97,15 @@ async fn message_menu_replies_reacts_and_offers_edit_delete() {
         .await
         .expect("thumbs up");
     menu_closed(&mut app).await;
-    app.wait_for_within(".message.own", &text, ".reaction.mine", Some(""), DEFAULT_WAIT)
-        .await
-        .expect("reaction landed on the message");
+    app.wait_for_within(
+        ".message.own",
+        &text,
+        ".reaction.mine",
+        Some(""),
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("reaction landed on the message");
 
     // Reply from the menu puts the composer in reply mode.
     app.right_click_text(".message.own", &text)
@@ -118,20 +124,19 @@ async fn message_menu_replies_reacts_and_offers_edit_delete() {
 
     // Someone else's message: no edit or delete. Recent rows may all be
     // ours, so scroll up until another sender shows.
-    app.reveal_element(".message:not(.own):not(.system):not(.skeleton-row)", DEFAULT_WAIT)
-        .await
-        .expect("another sender's message");
+    app.reveal_element(
+        ".message:not(.own):not(.system):not(.skeleton-row)",
+        DEFAULT_WAIT,
+    )
+    .await
+    .expect("another sender's message");
     app.right_click(".message:not(.own):not(.system):not(.skeleton-row)")
         .await
         .expect("right-click other");
     app.wait_for(".context-menu", DEFAULT_WAIT)
         .await
         .expect("menu");
-    let labels = app
-        .texts(".context-item")
-        .await
-        .expect("labels")
-        .join("|");
+    let labels = app.texts(".context-item").await.expect("labels").join("|");
     assert!(
         labels.contains("Reply") && !labels.contains("Delete") && !labels.contains("Edit"),
         "got {labels}"

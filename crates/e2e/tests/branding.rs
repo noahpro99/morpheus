@@ -24,12 +24,18 @@ async fn the_app_uses_the_sites_fonts_and_lockup() {
     // family they are drawn in, `data-font`).
     if app.is_gpui() {
         assert_eq!(
-            app.attr(".app", "data-font").await.expect("font").as_deref(),
+            app.attr(".app", "data-font")
+                .await
+                .expect("font")
+                .as_deref(),
             Some("Inter"),
             "Inter first"
         );
         assert_eq!(
-            app.attr("form.login h1", "data-font").await.expect("heading").as_deref(),
+            app.attr("form.login h1", "data-font")
+                .await
+                .expect("heading")
+                .as_deref(),
             Some("Unbounded"),
             "the Welcome back heading in Unbounded"
         );
@@ -112,7 +118,10 @@ async fn gpui_lockup(app: &mut App) {
         .and_then(|s| s.parse().ok())
         .expect("the name's size");
     let width = app.bounds(mark).await.expect("mark").expect("drawn").w;
-    assert!((width - 2.083 * size).abs() < 1.0, "2.083em wide: {width} for {size}");
+    assert!(
+        (width - 2.083 * size).abs() < 1.0,
+        "2.083em wide: {width} for {size}"
+    );
     for (selector, attr, want) in [
         (".brand .brand-name", "data-font", "Unbounded"),
         (".brand .brand-name", "data-weight", "700"),
@@ -125,6 +134,15 @@ async fn gpui_lockup(app: &mut App) {
             "{selector} {attr}"
         );
     }
-    assert_eq!(app.text(".brand .brand-name").await.expect("name").as_deref(), Some("Morpheus"));
-    assert_eq!(app.text(".brand .tm").await.expect("tm").as_deref(), Some("™"));
+    assert_eq!(
+        app.text(".brand .brand-name")
+            .await
+            .expect("name")
+            .as_deref(),
+        Some("Morpheus")
+    );
+    assert_eq!(
+        app.text(".brand .tm").await.expect("tm").as_deref(),
+        Some("™")
+    );
 }

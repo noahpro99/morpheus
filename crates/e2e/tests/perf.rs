@@ -131,7 +131,11 @@ async fn threads_and_memory_stay_modest() {
         .map(|tasks| tasks.count())
         .unwrap_or_default();
     let mut names = std::collections::BTreeMap::<String, usize>::new();
-    for task in std::fs::read_dir(format!("/proc/{pid}/task")).into_iter().flatten().flatten() {
+    for task in std::fs::read_dir(format!("/proc/{pid}/task"))
+        .into_iter()
+        .flatten()
+        .flatten()
+    {
         let name = std::fs::read_to_string(task.path().join("comm")).unwrap_or_default();
         *names.entry(name.trim().to_owned()).or_default() += 1;
     }
@@ -198,7 +202,6 @@ async fn threads_and_memory_stay_modest() {
     assert!(total_mb < 650, "{total_mb} MB for the app (4K window)");
 }
 
-
 /// A long scroll back keeps only the rows near the screen painted:
 /// 2000 messages back, the tree holds a few hundred rows, not thousands
 /// (every row is layout and memory). Coming back down brings the newer
@@ -219,7 +222,10 @@ async fn a_long_scroll_back_keeps_the_page_small() {
     // Back and back, until message 1000 is painted.
     let mut most = 0usize;
     for _ in 0..400 {
-        if lowest_number(&mut app, "deep message ").await.is_some_and(|n| n <= 1000) {
+        if lowest_number(&mut app, "deep message ")
+            .await
+            .is_some_and(|n| n <= 1000)
+        {
             break;
         }
         app.scroll_to(".timeline", ScrollTo::Top)
@@ -229,7 +235,9 @@ async fn a_long_scroll_back_keeps_the_page_small() {
         most = most.max(app.count(".message").await.expect("count"));
     }
     assert!(
-        lowest_number(&mut app, "deep message ").await.is_some_and(|n| n <= 1000),
+        lowest_number(&mut app, "deep message ")
+            .await
+            .is_some_and(|n| n <= 1000),
         "never got back to message 1000"
     );
     eprintln!("[timing] most rows painted while scrolling back: {most}");

@@ -71,8 +71,8 @@ async fn account_menu_edits_name_sets_status_and_signs_out() {
         .await
         .expect("escape");
     app.wait_for_count(".profile-editor", 0, DEFAULT_WAIT)
-    .await
-    .expect("editor closed");
+        .await
+        .expect("editor closed");
 
     // Put the seeded name back straight away: later tests (and later steps
     // here, if they fail) look for "bob".
@@ -107,8 +107,8 @@ async fn account_menu_edits_name_sets_status_and_signs_out() {
         .expect("type status");
     app.submit(".status-editor").await.expect("save status");
     app.wait_for_count(".status-editor", 0, DEFAULT_WAIT)
-    .await
-    .expect("status editor closes on save");
+        .await
+        .expect("status editor closes on save");
     open_chip_menu(&mut app).await;
     app.click_text(".context-item", "View profile")
         .await
@@ -134,8 +134,8 @@ async fn account_menu_edits_name_sets_status_and_signs_out() {
         .await
         .expect("clear");
     app.wait_for_count(".status-editor", 0, DEFAULT_WAIT)
-    .await
-    .expect("closed after clearing");
+        .await
+        .expect("closed after clearing");
 
     // Sign out asks first: Cancel keeps you signed in.
     open_chip_menu(&mut app).await;
@@ -149,8 +149,8 @@ async fn account_menu_edits_name_sets_status_and_signs_out() {
         .await
         .expect("cancel");
     app.wait_for_count(".confirm-dialog", 0, DEFAULT_WAIT)
-    .await
-    .expect("dialog gone");
+        .await
+        .expect("dialog gone");
     assert_eq!(
         app.count("form.login").await.expect("count"),
         0,

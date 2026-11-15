@@ -442,7 +442,11 @@ fn contrast_of(a: [u8; 3], b: [u8; 3]) -> f64 {
     let lum = |c: [u8; 3]| {
         let ch = |v: u8| {
             let v = f64::from(v) / 255.0;
-            if v <= 0.039_28 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) }
+            if v <= 0.039_28 {
+                v / 12.92
+            } else {
+                ((v + 0.055) / 1.055).powf(2.4)
+            }
         };
         0.2126 * ch(c[0]) + 0.7152 * ch(c[1]) + 0.0722 * ch(c[2])
     };
@@ -454,22 +458,45 @@ fn contrast_of(a: [u8; 3], b: [u8; 3]) -> f64 {
 /// contrast of 4.5 or more); the others are muted on nothing.
 async fn check_segments(app: &mut App, option: &str, what: &str) {
     let active = format!("{option}.active");
-    app.wait_for(&active, DEFAULT_WAIT).await.unwrap_or_else(|e| panic!("{what}: {e}"));
-    let fg = app.colours_of(&active, "color").await.expect("fg").remove(0);
-    let bg = app.colours_of(&active, "background").await.expect("bg").remove(0);
+    app.wait_for(&active, DEFAULT_WAIT)
+        .await
+        .unwrap_or_else(|e| panic!("{what}: {e}"));
+    let fg = app
+        .colours_of(&active, "color")
+        .await
+        .expect("fg")
+        .remove(0);
+    let bg = app
+        .colours_of(&active, "background")
+        .await
+        .expect("bg")
+        .remove(0);
     let (Some(f), Some(b)) = (rgb_of(&fg), rgb_of(&bg)) else {
         panic!("{what}: the chosen option's colours are {fg:?} on {bg:?}");
     };
     let ratio = contrast_of(f, b);
-    assert!(ratio >= 4.5, "{what}: the chosen option is {fg} on {bg}, a contrast of {ratio:.1}");
-    assert_eq!(fg.to_lowercase(), "#ffffff", "{what}: the chosen option's text is {fg}");
+    assert!(
+        ratio >= 4.5,
+        "{what}: the chosen option is {fg} on {bg}, a contrast of {ratio:.1}"
+    );
+    assert_eq!(
+        fg.to_lowercase(),
+        "#ffffff",
+        "{what}: the chosen option's text is {fg}"
+    );
     let others = format!("{option}:not(.active)");
     let fgs = app.colours_of(&others, "color").await.expect("fg");
     let bgs = app.colours_of(&others, "background").await.expect("bg");
     assert!(!fgs.is_empty(), "{what}: no other options");
     for (f, b) in fgs.iter().zip(&bgs) {
-        assert!(b.is_empty(), "{what}: an unchosen option has a background {b:?}");
-        assert!(rgb_of(f).is_some() && *f != fg, "{what}: an unchosen option's text is {f:?}");
+        assert!(
+            b.is_empty(),
+            "{what}: an unchosen option has a background {b:?}"
+        );
+        assert!(
+            rgb_of(f).is_some() && *f != fg,
+            "{what}: an unchosen option's text is {f:?}"
+        );
     }
 }
 
@@ -486,19 +513,58 @@ async fn the_chosen_option_of_a_segmented_chooser_can_be_read() {
         return;
     }
     join_hangout(&mut alice, "alice").await;
-    alice.click(".voice-panel .noise-button").await.expect("open the card");
-    alice.wait_for(".noise-card", DEFAULT_WAIT).await.expect("the card");
+    alice
+        .click(".voice-panel .noise-button")
+        .await
+        .expect("open the card");
+    alice
+        .wait_for(".noise-card", DEFAULT_WAIT)
+        .await
+        .expect("the card");
     check_segments(&mut alice, ".noise-card .noise-mode", "the noise card").await;
-    alice.click(".noise-card .noise-mode[data-value=standard]").await.expect("pick");
-    check_segments(&mut alice, ".noise-card .noise-mode", "the noise card, Standard").await;
-    alice.click_at(".noise-card-backdrop", 0.0, -250.0, 1).await.expect("close");
-    alice.wait_for_count(".noise-card", 0, DEFAULT_WAIT).await.expect("closed");
+    alice
+        .click(".noise-card .noise-mode[data-value=standard]")
+        .await
+        .expect("pick");
+    check_segments(
+        &mut alice,
+        ".noise-card .noise-mode",
+        "the noise card, Standard",
+    )
+    .await;
+    alice
+        .click_at(".noise-card-backdrop", 0.0, -250.0, 1)
+        .await
+        .expect("close");
+    alice
+        .wait_for_count(".noise-card", 0, DEFAULT_WAIT)
+        .await
+        .expect("closed");
 
-    alice.click(".voice-panel .screen-button").await.expect("share");
-    alice.wait_for(".screen-quality", DEFAULT_WAIT).await.expect("the popover");
-    check_segments(&mut alice, ".screen-quality .screen-res", "the screen resolution").await;
-    check_segments(&mut alice, ".screen-quality .screen-fps", "the screen frame rate").await;
-    alice.press("body", "Escape").await.expect("close the popover");
+    alice
+        .click(".voice-panel .screen-button")
+        .await
+        .expect("share");
+    alice
+        .wait_for(".screen-quality", DEFAULT_WAIT)
+        .await
+        .expect("the popover");
+    check_segments(
+        &mut alice,
+        ".screen-quality .screen-res",
+        "the screen resolution",
+    )
+    .await;
+    check_segments(
+        &mut alice,
+        ".screen-quality .screen-fps",
+        "the screen frame rate",
+    )
+    .await;
+    alice
+        .press("body", "Escape")
+        .await
+        .expect("close the popover");
 
     open_voice_settings(&mut alice).await;
     check_segments(&mut alice, ".voice-noise .noise-mode", "Settings").await;
@@ -518,12 +584,26 @@ async fn the_mic_test_button_is_readable() {
     }
     common::login(&mut alice, "alice", "alice-password").await;
     open_voice_settings(&mut alice).await;
-    alice.wait_for(".voice-noise .mic-test", DEFAULT_WAIT).await.expect("the button");
-    let fg = alice.attr(".voice-noise .mic-test", "data-color").await.expect("fg").expect("fg");
-    let bg = alice.attr(".voice-noise .mic-test", "data-bg").await.expect("bg").expect("bg");
+    alice
+        .wait_for(".voice-noise .mic-test", DEFAULT_WAIT)
+        .await
+        .expect("the button");
+    let fg = alice
+        .attr(".voice-noise .mic-test", "data-color")
+        .await
+        .expect("fg")
+        .expect("fg");
+    let bg = alice
+        .attr(".voice-noise .mic-test", "data-bg")
+        .await
+        .expect("bg")
+        .expect("bg");
     let (Some(f), Some(b)) = (rgb_of(&fg), rgb_of(&bg)) else {
         panic!("colours {fg:?} on {bg:?}");
     };
     let ratio = contrast_of(f, b);
-    assert!(ratio >= 4.5, "the mic test is {fg} on {bg}, a contrast of {ratio:.1}");
+    assert!(
+        ratio >= 4.5,
+        "the mic test is {fg} on {bg}, a contrast of {ratio:.1}"
+    );
 }

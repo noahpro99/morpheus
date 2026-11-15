@@ -327,7 +327,9 @@ async fn ctrl_k_pictures_follow_their_rooms() {
             app.key_combo(".switcher input", "a", true, false, false)
                 .await
                 .expect("select all");
-            app.press(".switcher input", "Backspace").await.expect("clear");
+            app.press(".switcher input", "Backspace")
+                .await
+                .expect("clear");
         } else {
             app.eval("const i = document.querySelector('.switcher input'); i.value = ''; i.dispatchEvent(new Event('input', { bubbles: true }));")
                 .await

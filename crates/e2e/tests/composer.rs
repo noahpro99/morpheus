@@ -16,12 +16,9 @@ const INPUT: &str = ".composer .composer-input";
 async fn open(app: &mut App, room: &str) {
     common::login(app, "alice", "alice-password").await;
     app.open_room(room).await.expect("open room");
-    app.wait_for(
-        ".composer .composer-input:not([disabled])",
-        DEFAULT_WAIT,
-    )
-    .await
-    .expect("composer ready");
+    app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
+        .await
+        .expect("composer ready");
 }
 
 async fn send(app: &mut App, text: &str) {
@@ -105,7 +102,11 @@ async fn the_box_names_the_room_and_grows_with_its_lines() {
 
     // Enter sends both lines as one message, and the box is empty again.
     app.press(INPUT, "Enter").await.expect("send");
-    wait_for_message_with(&mut app, &[&format!("first {pid}"), &format!("second {pid}")]).await;
+    wait_for_message_with(
+        &mut app,
+        &[&format!("first {pid}"), &format!("second {pid}")],
+    )
+    .await;
     app.wait_for_value(INPUT, "", DEFAULT_WAIT)
         .await
         .expect("box emptied");
@@ -140,14 +141,7 @@ async fn replies_and_edits_start_from_a_messages_hover_bar() {
         .expect("the banner clears after sending");
 
     // A cancelled reply leaves the box as it was.
-    hover_action(
-        &mut app,
-        &reply,
-        "reply",
-        ".composer-banner",
-        "Replying to",
-    )
-    .await;
+    hover_action(&mut app, &reply, "reply", ".composer-banner", "Replying to").await;
     app.click(".composer-banner .ghost").await.expect("cancel");
     app.wait_for_count(".composer-banner", 0, DEFAULT_WAIT)
         .await

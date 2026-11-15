@@ -26,18 +26,29 @@ async fn shot(app: &mut App, name: &str) {
 }
 
 async fn login(app: &mut App, user: &str) {
-    app.wait_for("form.login", DEFAULT_WAIT).await.expect("login form");
-    app.type_into("form.login input[name=username]", user).await.expect("username");
-    app.type_into("form.login input[name=password]", &format!("{user}-password"))
+    app.wait_for("form.login", DEFAULT_WAIT)
         .await
-        .expect("password");
+        .expect("login form");
+    app.type_into("form.login input[name=username]", user)
+        .await
+        .expect("username");
+    app.type_into(
+        "form.login input[name=password]",
+        &format!("{user}-password"),
+    )
+    .await
+    .expect("password");
     app.submit("form.login").await.expect("submit");
-    app.wait_for(".room", DEFAULT_WAIT).await.expect("room listed");
+    app.wait_for(".room", DEFAULT_WAIT)
+        .await
+        .expect("room listed");
 }
 
 async fn close(app: &mut App) {
     app.press("body", "Escape").await.expect("escape");
-    app.wait_for_count(".overlay", 0, DEFAULT_WAIT).await.expect("closed");
+    app.wait_for_count(".overlay", 0, DEFAULT_WAIT)
+        .await
+        .expect("closed");
 }
 
 #[tokio::test]
@@ -54,49 +65,93 @@ async fn room_dialogs() {
     shot(&mut app, "00-chat").await;
 
     app.click(".create-room-button").await.expect("plus");
-    app.wait_for(".create-room-dialog", DEFAULT_WAIT).await.expect("dialog");
+    app.wait_for(".create-room-dialog", DEFAULT_WAIT)
+        .await
+        .expect("dialog");
     shot(&mut app, "01-create-room").await;
     close(&mut app).await;
 
-    app.right_click_text(".room", "general").await.expect("menu");
-    app.wait_for(".context-menu", DEFAULT_WAIT).await.expect("menu");
+    app.right_click_text(".room", "general")
+        .await
+        .expect("menu");
+    app.wait_for(".context-menu", DEFAULT_WAIT)
+        .await
+        .expect("menu");
     shot(&mut app, "02-room-menu").await;
-    app.click_text(".context-item", "Edit room").await.expect("edit");
-    app.wait_for(".edit-room-dialog", DEFAULT_WAIT).await.expect("dialog");
+    app.click_text(".context-item", "Edit room")
+        .await
+        .expect("edit");
+    app.wait_for(".edit-room-dialog", DEFAULT_WAIT)
+        .await
+        .expect("dialog");
     shot(&mut app, "03-edit-room").await;
     close(&mut app).await;
 
-    app.right_click_text(".room", "general").await.expect("menu");
-    app.click_text(".context-item", "Invite people").await.expect("invite");
-    app.wait_for(".invite-dialog", DEFAULT_WAIT).await.expect("dialog");
-    app.type_into(".invite-dialog input[name=user]", "bob").await.expect("type");
+    app.right_click_text(".room", "general")
+        .await
+        .expect("menu");
+    app.click_text(".context-item", "Invite people")
+        .await
+        .expect("invite");
+    app.wait_for(".invite-dialog", DEFAULT_WAIT)
+        .await
+        .expect("dialog");
+    app.type_into(".invite-dialog input[name=user]", "bob")
+        .await
+        .expect("type");
     app.submit(".invite-dialog").await.expect("submit");
-    app.wait_for(".invite-dialog .error", DEFAULT_WAIT).await.expect("error");
+    app.wait_for(".invite-dialog .error", DEFAULT_WAIT)
+        .await
+        .expect("error");
     shot(&mut app, "04-invite-error").await;
     close(&mut app).await;
 
-    app.right_click_text(".room", "general").await.expect("menu");
-    app.click_text(".context-item", "Privacy").await.expect("privacy");
-    app.wait_for(".privacy-dialog", DEFAULT_WAIT).await.expect("dialog");
+    app.right_click_text(".room", "general")
+        .await
+        .expect("menu");
+    app.click_text(".context-item", "Privacy")
+        .await
+        .expect("privacy");
+    app.wait_for(".privacy-dialog", DEFAULT_WAIT)
+        .await
+        .expect("dialog");
     shot(&mut app, "05-privacy").await;
     close(&mut app).await;
 
     app.click(".rail-add").await.expect("rail plus");
-    app.wait_for(".create-space-dialog", DEFAULT_WAIT).await.expect("dialog");
+    app.wait_for(".create-space-dialog", DEFAULT_WAIT)
+        .await
+        .expect("dialog");
     shot(&mut app, "06-create-server").await;
     close(&mut app).await;
 
-    app.click(".rail-item[title=\"Engineering\"]").await.expect("space");
-    app.click(".sidebar-header h2.server-name").await.expect("name");
-    app.wait_for(".context-menu", DEFAULT_WAIT).await.expect("menu");
+    app.click(".rail-item[title=\"Engineering\"]")
+        .await
+        .expect("space");
+    app.click(".sidebar-header h2.server-name")
+        .await
+        .expect("name");
+    app.wait_for(".context-menu", DEFAULT_WAIT)
+        .await
+        .expect("menu");
     shot(&mut app, "07-server-menu").await;
-    app.click_text(".context-item", "Edit per-server profile").await.expect("profile");
-    app.wait_for(".room-profile-dialog", DEFAULT_WAIT).await.expect("dialog");
+    app.click_text(".context-item", "Edit per-server profile")
+        .await
+        .expect("profile");
+    app.wait_for(".room-profile-dialog", DEFAULT_WAIT)
+        .await
+        .expect("dialog");
     shot(&mut app, "08-server-profile").await;
     close(&mut app).await;
-    app.click(".sidebar-header h2.server-name").await.expect("name");
-    app.click_text(".context-item.danger", "Leave server").await.expect("leave");
-    app.wait_for(".leave-space-dialog", DEFAULT_WAIT).await.expect("dialog");
+    app.click(".sidebar-header h2.server-name")
+        .await
+        .expect("name");
+    app.click_text(".context-item.danger", "Leave server")
+        .await
+        .expect("leave");
+    app.wait_for(".leave-space-dialog", DEFAULT_WAIT)
+        .await
+        .expect("dialog");
     shot(&mut app, "09-leave-server").await;
 }
 
@@ -111,12 +166,20 @@ async fn settings_pages() {
     let mut app = App::launch_sized(&hs, 1200, 760).await.expect("launch");
     login(&mut app, "alice").await;
     app.click(".settings-button").await.expect("gear");
-    app.wait_for(".settings", DEFAULT_WAIT).await.expect("settings");
+    app.wait_for(".settings", DEFAULT_WAIT)
+        .await
+        .expect("settings");
     shot(&mut app, "s0-account").await;
-    app.type_into(".settings .settings-search", "notif").await.expect("search");
-    app.wait_for(".settings-result", DEFAULT_WAIT).await.expect("result");
+    app.type_into(".settings .settings-search", "notif")
+        .await
+        .expect("search");
+    app.wait_for(".settings-result", DEFAULT_WAIT)
+        .await
+        .expect("result");
     shot(&mut app, "s1-search").await;
-    app.press(".settings .settings-search", "Enter").await.expect("pick");
+    app.press(".settings .settings-search", "Enter")
+        .await
+        .expect("pick");
     shot(&mut app, "s2-notifications-highlight").await;
     for (nav, name) in [
         ("Notifications", "s3-notifications"),
@@ -125,7 +188,9 @@ async fn settings_pages() {
         ("Startup", "s6-startup"),
         ("Help & Feedback", "s7-help"),
     ] {
-        app.click_text(".settings-nav button", nav).await.expect("page");
+        app.click_text(".settings-nav button", nav)
+            .await
+            .expect("page");
         shot(&mut app, name).await;
     }
 }
@@ -168,7 +233,10 @@ async fn thread_panel() {
         "root",
         serde_json::json!({ "msgtype": "m.text", "body": "Let's plan Q4 in this thread" }),
     );
-    for (txn, text) in [("a", "I think threads should ship first"), ("b", "Agreed, then the emoji picker")] {
+    for (txn, text) in [
+        ("a", "I think threads should ship first"),
+        ("b", "Agreed, then the emoji picker"),
+    ] {
         send(
             txn,
             serde_json::json!({
@@ -181,10 +249,14 @@ async fn thread_panel() {
     let mut app = App::launch_sized(&hs, 1200, 760).await.expect("launch");
     login(&mut app, &user).await;
     app.open_room("plans").await.expect("open plans");
-    app.wait_for(".thread-chip", DEFAULT_WAIT).await.expect("chip");
+    app.wait_for(".thread-chip", DEFAULT_WAIT)
+        .await
+        .expect("chip");
     shot(&mut app, "t0-thread-chip").await;
     app.click(".thread-chip").await.expect("open thread");
-    app.wait_for(".thread-panel .message .body", DEFAULT_WAIT).await.expect("panel");
+    app.wait_for(".thread-panel .message .body", DEFAULT_WAIT)
+        .await
+        .expect("panel");
     shot(&mut app, "t1-thread-panel").await;
 }
 
@@ -200,17 +272,38 @@ async fn search_panel() {
     let mut app = App::launch_sized(&hs, 1200, 760).await.expect("launch");
     login(&mut app, "alice").await;
     app.open_room("general").await.expect("open general");
-    app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT).await.expect("composer");
+    app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
+        .await
+        .expect("composer");
     let word = format!("okapi{}", std::process::id());
-    app.type_into(".composer .composer-input", &format!("an {word} in the forest")).await.expect("type");
-    app.press(".composer .composer-input", "Enter").await.expect("send");
-    app.wait_for_text(".message.own:not(.pending) .body", &word, DEFAULT_WAIT).await.expect("sent");
-    app.click(".chat-header input[name=search]").await.expect("search");
+    app.type_into(
+        ".composer .composer-input",
+        &format!("an {word} in the forest"),
+    )
+    .await
+    .expect("type");
+    app.press(".composer .composer-input", "Enter")
+        .await
+        .expect("send");
+    app.wait_for_text(".message.own:not(.pending) .body", &word, DEFAULT_WAIT)
+        .await
+        .expect("sent");
+    app.click(".chat-header input[name=search]")
+        .await
+        .expect("search");
     shot(&mut app, "s0-search-empty").await;
     for _ in 0..10 {
-        app.type_into(".chat-header input[name=search]", &word).await.expect("query");
-        app.press(".chat-header input[name=search]", "Enter").await.expect("search");
-        if app.wait_for(".search-hit", Duration::from_secs(2)).await.is_ok() {
+        app.type_into(".chat-header input[name=search]", &word)
+            .await
+            .expect("query");
+        app.press(".chat-header input[name=search]", "Enter")
+            .await
+            .expect("search");
+        if app
+            .wait_for(".search-hit", Duration::from_secs(2))
+            .await
+            .is_ok()
+        {
             break;
         }
     }
@@ -229,18 +322,30 @@ async fn friends_page() {
     let mut app = App::launch_sized(&hs, 1200, 760).await.expect("launch");
     login(&mut app, "carol").await;
     app.open_room("general").await.expect("general");
-    app.wait_for_text(".members .member", "bob", DEFAULT_WAIT).await.expect("bob");
-    app.right_click_text(".members .member", "bob").await.expect("menu");
-    app.click_text(".context-menu .context-item", "Add friend").await.expect("add");
+    app.wait_for_text(".members .member", "bob", DEFAULT_WAIT)
+        .await
+        .expect("bob");
+    app.right_click_text(".members .member", "bob")
+        .await
+        .expect("menu");
+    app.click_text(".context-menu .context-item", "Add friend")
+        .await
+        .expect("add");
     app.click(".rail-dms").await.expect("dms");
-    app.wait_for(".sidebar .friends-row", DEFAULT_WAIT).await.expect("row");
+    app.wait_for(".sidebar .friends-row", DEFAULT_WAIT)
+        .await
+        .expect("row");
     app.click(".sidebar .friends-row").await.expect("friends");
-    app.wait_for(".friends-page .friend", DEFAULT_WAIT).await.expect("bob listed");
+    app.wait_for(".friends-page .friend", DEFAULT_WAIT)
+        .await
+        .expect("bob listed");
     shot(&mut app, "f0-friends").await;
     app.click(".new-message-tab").await.expect("tab");
     shot(&mut app, "f1-new-message").await;
     app.click(".all-friends-tab").await.expect("tab");
-    app.click_text(".friends-page .friend button", "Remove").await.expect("remove");
+    app.click_text(".friends-page .friend button", "Remove")
+        .await
+        .expect("remove");
 }
 
 /// An invite: the sidebar row, its card, the inbox.
@@ -265,13 +370,21 @@ async fn invite_card_and_inbox() {
     let mut app = App::launch_sized(&hs, 1200, 760).await.expect("launch");
     login(&mut app, "bob").await;
     app.click(".rail-dms").await.expect("DMs");
-    app.wait_for(".invite-row", DEFAULT_WAIT).await.expect("invite");
+    app.wait_for(".invite-row", DEFAULT_WAIT)
+        .await
+        .expect("invite");
     app.click_text(".invite-row", &name).await.expect("open");
-    app.wait_for(".invite-card", DEFAULT_WAIT).await.expect("card");
+    app.wait_for(".invite-card", DEFAULT_WAIT)
+        .await
+        .expect("card");
     shot(&mut app, "i0-invite-card").await;
     app.click(".titlebar .inbox-button").await.expect("inbox");
-    app.wait_for(".inbox-panel", DEFAULT_WAIT).await.expect("panel");
+    app.wait_for(".inbox-panel", DEFAULT_WAIT)
+        .await
+        .expect("panel");
     shot(&mut app, "i1-inbox").await;
     app.press(".inbox-panel", "Escape").await.expect("close");
-    app.click(".invite-card .invite-decline").await.expect("decline");
+    app.click(".invite-card .invite-decline")
+        .await
+        .expect("decline");
 }

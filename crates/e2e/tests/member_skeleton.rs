@@ -31,18 +31,37 @@ async fn the_member_list_shows_skeletons_while_loading_and_only_then() {
     app.wait_for(".members .skeleton-row", DEFAULT_WAIT)
         .await
         .expect("skeleton rows while the members load");
-    assert!(app.count(".members .skeleton-row").await.expect("count") >= 3, "a few rows");
-    assert_eq!(app.count(".members .member").await.expect("count"), 0, "real rows before they load");
     assert!(
-        app.count(".members .skeleton-row .avatar.skeleton").await.expect("count") >= 3,
+        app.count(".members .skeleton-row").await.expect("count") >= 3,
+        "a few rows"
+    );
+    assert_eq!(
+        app.count(".members .member").await.expect("count"),
+        0,
+        "real rows before they load"
+    );
+    assert!(
+        app.count(".members .skeleton-row .avatar.skeleton")
+            .await
+            .expect("count")
+            >= 3,
         "each row has a round picture like the timeline's"
     );
     let text = app.texts(".members").await.expect("text").join(" ");
-    assert!(!text.contains("Loading"), "words instead of a skeleton: {text:?}");
+    assert!(
+        !text.contains("Loading"),
+        "words instead of a skeleton: {text:?}"
+    );
 
     // Loaded: real rows replace them.
-    app.wait_for(".members .member", DEFAULT_WAIT * 2).await.expect("members");
-    assert_eq!(app.count(".members .skeleton-row").await.expect("count"), 0, "skeletons left over");
+    app.wait_for(".members .member", DEFAULT_WAIT * 2)
+        .await
+        .expect("members");
+    assert_eq!(
+        app.count(".members .skeleton-row").await.expect("count"),
+        0,
+        "skeletons left over"
+    );
 
     // Another room, and back: the list it had is there at once, no skeleton.
     app.open_room("general").await.expect("general");
@@ -55,5 +74,8 @@ async fn the_member_list_shows_skeletons_while_loading_and_only_then() {
         );
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
-    assert!(app.count(".members .member").await.expect("count") > 0, "the list is there at once");
+    assert!(
+        app.count(".members .member").await.expect("count") > 0,
+        "the list is there at once"
+    );
 }

@@ -47,23 +47,45 @@ async fn an_empty_dm_offers_a_say_hi_button_that_sends_hi() {
     )
     .expect("m.direct");
     // A room with messages never shows it.
-    api_as(&hs, &ann, "POST", "createRoom", Some(serde_json::json!({ "name": "hi elsewhere" }))).expect("room");
+    api_as(
+        &hs,
+        &ann,
+        "POST",
+        "createRoom",
+        Some(serde_json::json!({ "name": "hi elsewhere" })),
+    )
+    .expect("room");
 
     let mut app = App::launch_desktop(&hs).await.expect("launch app");
     common::login(&mut app, &ann, &format!("{ann}-password")).await;
     app.open_room("hi elsewhere").await.expect("the other room");
-    app.wait_for(".timeline-start", DEFAULT_WAIT).await.expect("an empty room");
-    assert_eq!(app.count(".say-hi").await.expect("count"), 0, "only DMs offer it");
+    app.wait_for(".timeline-start", DEFAULT_WAIT)
+        .await
+        .expect("an empty room");
+    assert_eq!(
+        app.count(".say-hi").await.expect("count"),
+        0,
+        "only DMs offer it"
+    );
 
     app.click(".rail-dms").await.expect("DMs");
     app.open_room(&ben).await.expect("the DM");
-    app.wait_for(".say-hi", DEFAULT_WAIT).await.expect("the button");
-    app.wait_for_text(".say-hi", "Say hi! 👋", DEFAULT_WAIT).await.expect("its label");
+    app.wait_for(".say-hi", DEFAULT_WAIT)
+        .await
+        .expect("the button");
+    app.wait_for_text(".say-hi", "Say hi! 👋", DEFAULT_WAIT)
+        .await
+        .expect("its label");
     app.click(".say-hi").await.expect("click it");
-    app.wait_for_text(".message .body", "Hi! 👋", DEFAULT_WAIT).await.expect("the greeting is sent");
+    app.wait_for_text(".message .body", "Hi! 👋", DEFAULT_WAIT)
+        .await
+        .expect("the greeting is sent");
     let deadline = std::time::Instant::now() + DEFAULT_WAIT;
     while app.count(".say-hi").await.expect("count") > 0 {
-        assert!(std::time::Instant::now() < deadline, "the button should go once there is a message");
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the button should go once there is a message"
+        );
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
 }
