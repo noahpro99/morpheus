@@ -10,7 +10,7 @@ use gpui::{
     Context, EventEmitter, FontWeight, Image, IntoElement, MouseButton, Pixels, Point, Render,
     ScrollHandle, Window, div, prelude::*, px, rgb, rgba,
 };
-use morpheus_core::{Member, MemberPermissions, MediaRef, OwnedRoomId, Session};
+use morpheus_core::{Member, MemberPermissions, MediaRef, OwnedRoomId, OwnedUserId, Session};
 
 use crate::{
     e2e::{E2eExt as _, HandleProbe},
@@ -131,14 +131,14 @@ impl MembersView {
     }
 
     /// The picture for `media`, starting its fetch if new.
-    fn picture(&mut self, media: &MediaRef, cx: &mut Context<Self>) -> Option<Arc<Image>> {
+    fn picture(&mut self, user: &OwnedUserId, media: &MediaRef, cx: &mut Context<Self>) -> Option<Arc<Image>> {
         const SIZE: u32 = 64;
         if let Some(image) = self.images.get(media, SIZE) {
             return Some(image);
         }
         let session = self.session.clone()?;
         if self.images.begin(media, SIZE) {
-            let fetching = session.thumbnail(media.clone(), SIZE, SIZE);
+            let fetching = media::fetch_picture(&session, Some((user.clone(), Some(self.room.clone()))), media, SIZE, SIZE);
             let media = media.clone();
             cx.spawn(async move |this, cx| {
                 let image = fetching
@@ -208,7 +208,7 @@ impl Render for MembersView {
                             .e2e("header", "members-header"),
                     );
                     for member in group.members {
-                        let picture = member.avatar.clone().and_then(|m| self.picture(&m, cx));
+                        let picture = member.avatar.clone().and_then(|m| self.picture(&member.user_id, &m, cx));
                         let shown = crate::streamer::name(&shown_name(&self.nicknames, member.user_id.as_str(), &member.name));
                         panel = panel.child(member_row(&member, shown, picture, cx));
                     }

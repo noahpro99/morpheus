@@ -22,7 +22,7 @@ use gpui::{
     rgb,
 };
 use morpheus_core::{
-    MediaRef, Message, MessageId, MessageKind, OpenTimeline, OwnedEventId, OwnedRoomId, Session,
+    MediaRef, Message, MessageId, MessageKind, OpenTimeline, OwnedEventId, OwnedRoomId, OwnedUserId, Session,
     TimelineEntry,
     TimelineHandle,
     Vector,
@@ -861,6 +861,18 @@ impl TimelineView {
     fn picture(
         &mut self,
         media: &MediaRef,
+        size: (u32, u32),
+        cx: &mut Context<Self>,
+    ) -> Option<Arc<Image>> {
+        self.picture_of(None, media, size, cx)
+    }
+
+    /// [`Self::picture`], of a person when `person` says whose (their
+    /// picture falls back to their other one when this one is gone).
+    fn picture_of(
+        &mut self,
+        person: Option<(OwnedUserId, Option<OwnedRoomId>)>,
+        media: &MediaRef,
         (w, h): (u32, u32),
         cx: &mut Context<Self>,
     ) -> Option<Arc<Image>> {
@@ -869,7 +881,7 @@ impl TimelineView {
         }
         let session = self.session.clone()?;
         if self.images.begin(media, w) {
-            let fetching = session.thumbnail(media.clone(), w, h);
+            let fetching = media::fetch_picture(&session, person, media, w, h);
             let media = media.clone();
             cx.spawn(async move |this, cx| {
                 let image = fetching
@@ -985,7 +997,8 @@ impl TimelineView {
             pictures.nickname = self.nicknames.get(row.message.sender.as_str()).cloned();
         }
         if show_header && let Some(avatar) = &row.message.sender_avatar {
-            pictures.avatar = self.picture(avatar, (80, 80), cx);
+            let person = Some((row.message.sender.clone(), Some(self.room_id.clone())));
+            pictures.avatar = self.picture_of(person, avatar, (80, 80), cx);
         }
         match &row.message.kind {
             MessageKind::Image { media, .. } => {

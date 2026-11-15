@@ -1023,11 +1023,28 @@ impl Shell {
         for person in self.calls.people.values() {
             wanted.extend(person.avatar.clone().into_iter().flat_map(|m| [(m.clone(), 20), (m, 72)]));
         }
+        // A DM's picture is the other person's: theirs falls back to their
+        // other picture when this one is gone.
+        let mut people: HashMap<String, (OwnedUserId, Option<OwnedRoomId>)> = self
+            .rooms
+            .iter()
+            .filter_map(|r| Some((r.avatar.as_ref()?.key().to_owned(), (r.dm_user.clone()?, Some(r.id.clone())))))
+            .collect();
+        // People in the call, likewise.
+        let call_room = self.calls.state.as_ref().map(|state| state.room_id.clone());
+        for (user, person) in &self.calls.people {
+            if let Some(media) = &person.avatar {
+                people
+                    .entry(media.key().to_owned())
+                    .or_insert_with(|| (user.clone(), call_room.clone()));
+            }
+        }
         for (media, size) in wanted {
             if !self.avatars.begin(&media, size) {
                 continue;
             }
-            let fetching = session.thumbnail(media.clone(), size * 2, size * 2);
+            let person = people.get(media.key()).cloned();
+            let fetching = media::fetch_picture(&session, person, &media, size * 2, size * 2);
             cx.spawn(async move |this, cx| {
                 let image = fetching
                     .await

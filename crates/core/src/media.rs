@@ -8,9 +8,9 @@ use crate::fs::nonblocking as fs;
 use directories::UserDirs;
 use matrix_sdk::{
     media::{MediaFormat, MediaRequestParameters, MediaThumbnailSettings},
-    ruma::{OwnedMxcUri, UInt, events::room::MediaSource},
+    ruma::{OwnedMxcUri, OwnedRoomId, OwnedUserId, UInt, events::room::MediaSource, profile::AvatarUrl},
 };
-use tracing::debug;
+use tracing::{debug, info};
 
 use crate::{CoreFuture, Session};
 
@@ -137,6 +137,92 @@ pub(crate) async fn fetch_thumbnail(
     Some(Media { bytes })
 }
 
+
+/// How long a person's picture that could not be had is not asked for again
+/// (it is retried after that: a server may have been down).
+const BROKEN_FOR: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+
+/// Pictures that could not be had lately (gone from their server, or not a
+/// picture), by media key, and since when.
+fn broken() -> &'static std::sync::Mutex<std::collections::HashMap<String, crate::rt::Instant>> {
+    static BROKEN: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, crate::rt::Instant>>> =
+        std::sync::OnceLock::new();
+    BROKEN.get_or_init(Default::default)
+}
+
+/// `media` as a picture, unless it failed lately or fails now (fetching it,
+/// or it is no picture at all), which is remembered for [`BROKEN_FOR`].
+async fn avatar_picture(client: &matrix_sdk::Client, media: &MediaRef, width: u32, height: u32) -> Option<Media> {
+    if let Ok(mut known) = broken().lock()
+        && let Some(at) = known.get(&media.key)
+    {
+        if at.elapsed() < BROKEN_FOR {
+            return None;
+        }
+        known.remove(&media.key);
+    }
+    let found = fetch_thumbnail(client, media.clone(), width, height)
+        .await
+        .filter(|found| found.mime().starts_with("image/"));
+    if found.is_none()
+        && let Ok(mut known) = broken().lock()
+    {
+        known.insert(media.key.clone(), crate::rt::Instant::now());
+    }
+    found
+}
+
+impl Session {
+    /// A person's picture, at most `width`×`height`: `media`, the one the
+    /// caller shows them with (their member event's in a room, or their
+    /// global profile's), else, when that one cannot be had (gone from its
+    /// server, not a picture), the other one known for them: their member
+    /// event in `room`, then their global profile. Every place a person's
+    /// picture shows asks this, so a stale copy in one of the two does not
+    /// leave them faceless there. What failed and what was used instead is
+    /// logged.
+    pub fn user_avatar(
+        &self,
+        user_id: OwnedUserId,
+        room_id: Option<OwnedRoomId>,
+        media: MediaRef,
+        width: u32,
+        height: u32,
+    ) -> CoreFuture<Option<Media>> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            if let Some(found) = avatar_picture(&client, &media, width, height).await {
+                return Ok(Some(found));
+            }
+            // The other pictures this person has: where the failed one came from
+            // is whichever of them it is.
+            let mut known: Vec<(&'static str, MediaRef)> = Vec::new();
+            if let Some(room) = room_id.and_then(|id| client.get_room(&id))
+                && let Ok(Some(member)) = room.get_member_no_sync(&user_id).await
+                && let Some(url) = member.avatar_url()
+            {
+                known.push(("room member", MediaRef::from_mxc(url.to_owned())));
+            }
+            if let Ok(profile) = client.account().fetch_user_profile_of(&user_id).await
+                && let Some(url) = profile.data.get_static::<AvatarUrl>().ok().flatten()
+            {
+                known.push(("global profile", MediaRef::from_mxc(url)));
+            }
+            let failed_source = known
+                .iter()
+                .find(|(_, other)| *other == media)
+                .map_or("as shown", |(source, _)| *source);
+            for (source, other) in known.iter().filter(|(_, other)| *other != media) {
+                if let Some(found) = avatar_picture(&client, other, width, height).await {
+                    info!(user = %user_id, failed = media.key, failed_source, used = other.key, used_source = source, "avatar unavailable; using the person's other picture");
+                    return Ok(Some(found));
+                }
+            }
+            info!(user = %user_id, failed = media.key, failed_source, "avatar unavailable, and no other picture of the person loads");
+            Ok(None)
+        })
+    }
+}
 impl Session {
     /// Fetch a thumbnail at most `width`×`height`, falling back to the full
     /// file when the server cannot thumbnail (tiny images, SVGs, ...).
