@@ -16,12 +16,21 @@ func number(_ i: Int) -> Double {
     return n
 }
 
+// Each event carries its movement from the last, as a real mouse's do (a
+// drag by the system's title bar may move the window by those, not by the
+// positions).
+var last: CGPoint? = nil
 func post(_ type: CGEventType, _ at: CGPoint, clicks: Int64 = 1) {
     guard let event = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: at, mouseButton: .left) else {
         FileHandle.standardError.write("could not make a mouse event\n".data(using: .utf8)!)
         exit(1)
     }
     event.setIntegerValueField(.mouseEventClickState, value: clicks)
+    if let from = last {
+        event.setIntegerValueField(.mouseEventDeltaX, value: Int64((at.x - from.x).rounded()))
+        event.setIntegerValueField(.mouseEventDeltaY, value: Int64((at.y - from.y).rounded()))
+    }
+    last = at
     event.post(tap: .cghidEventTap)
     usleep(30_000)
 }
