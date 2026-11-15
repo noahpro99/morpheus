@@ -22,7 +22,7 @@ else
 fi
 
 data=$(mktemp -d)
-MORPHEUS_DATA_DIR="$data" "$app/Contents/MacOS/morpheus-desktop" > "$data/log.txt" 2>&1 &
+MORPHEUS_LOG_WINDOW_MOVE=1 MORPHEUS_DATA_DIR="$data" "$app/Contents/MacOS/morpheus-desktop" > "$data/log.txt" 2>&1 &
 pid=$!
 sleep 15
 if ! kill -0 "$pid" 2>/dev/null; then
@@ -80,9 +80,11 @@ mouse() { perl -e "alarm 120; exec @ARGV" swift "$(dirname "$0")/mac-mouse.swift
 # In the system bar's own height, below it (still the app's bar), and in it again.
 for down in 14 30 14; do
     read -r x0 y0 <<< "$(ui "get position of window 1" | xy)"
+    moves0=$(grep -c "start_window_move" "$data/log.txt")
     mouse drag $((x0 + 220)) $((y0 + down)) 100 60
     sleep 1
     read -r x1 y1 <<< "$(ui "get position of window 1" | xy)"
+    echo "the app's own drag started $(( $(grep -c "start_window_move" "$data/log.txt") - moves0 )) time(s): $(grep "start_window_move" "$data/log.txt" | tail -1)"
     if [ $((x1 - x0)) -ge 90 ] && [ $((x1 - x0)) -le 110 ] && [ $((y1 - y0)) -ge 50 ] && [ $((y1 - y0)) -le 70 ]; then
         echo "ok: dragging the bar ${down} px down moved the window ($x0,$y0 → $x1,$y1)"
     else
