@@ -926,6 +926,9 @@ async fn a_picture_gone_from_its_server_falls_back_to_the_persons_other_one() {
             .await
             .expect("open the DM");
         let member = format!(".members .member[title=\"@{who}:localhost\"]");
+        app.wait_for(".chat-header .room-head img.avatar", DEFAULT_WAIT)
+            .await
+            .unwrap_or_else(|e| panic!("{who}'s picture in the top bar: {e}"));
         app.wait_for(&format!("{member} img.avatar"), DEFAULT_WAIT)
             .await
             .unwrap_or_else(|e| panic!("{who}'s picture in the member list: {e}"));
@@ -938,6 +941,65 @@ async fn a_picture_gone_from_its_server_falls_back_to_the_persons_other_one() {
             .await
             .expect("card closed");
     }
+}
+
+/// A DM whose own (room-level) picture is a dead one: the DM list and the
+/// top bar, which show the room's picture, use the partner's picture instead
+/// (they go through the same fallback as the member list and the card).
+#[tokio::test]
+async fn a_dm_whose_room_picture_is_gone_shows_the_partners_in_the_list_and_the_top_bar() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let ann = new_account(&hs, "dmgann").expect("account");
+    let dan = new_account(&hs, "dmgdan").expect("account");
+    let room = dm_of(&hs, &ann, &dan);
+    api_as(
+        &hs,
+        &ann,
+        "PUT",
+        &format!("user/%40{ann}%3Alocalhost/account_data/m.direct"),
+        Some(serde_json::json!({ format!("@{dan}:localhost"): [room.clone()] })),
+    )
+    .expect("m.direct");
+    morpheus_e2e::set_avatar_as(&hs, &dan, include_bytes!("../fixtures/framed.png"))
+        .expect("dan's picture");
+    api_as(
+        &hs,
+        &ann,
+        "PUT",
+        &format!("rooms/{}/state/m.room.avatar", escaped(&room)),
+        Some(serde_json::json!({ "url": "mxc://localhost/gonedmroom" })),
+    )
+    .expect("a dead room picture");
+
+    let mut app = App::launch(&hs).await.expect("launch");
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login form");
+    app.type_into("form.login input[name=username]", &ann)
+        .await
+        .expect("username");
+    app.type_into(
+        "form.login input[name=password]",
+        &format!("{ann}-password"),
+    )
+    .await
+    .expect("password");
+    app.submit("form.login").await.expect("submit");
+    app.wait_for(".rail-dms", DEFAULT_WAIT)
+        .await
+        .expect("signed in");
+    app.click(".rail-dms").await.expect("the DMs");
+    let item = format!(".room.dm[data-room=\"{room}\"]");
+    app.wait_for(&format!("{item} img.avatar"), DEFAULT_WAIT)
+        .await
+        .unwrap_or_else(|e| panic!("the partner's picture in the DM list: {e}"));
+    app.click(&item).await.expect("open the DM");
+    app.wait_for(".chat-header .room-head img.avatar", DEFAULT_WAIT)
+        .await
+        .unwrap_or_else(|e| panic!("the partner's picture in the top bar: {e}"));
 }
 
 /// While the card loads it does not claim "0 mutual servers": a skeleton of
