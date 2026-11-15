@@ -803,3 +803,47 @@ async fn the_dms_icon_lines_up_with_the_top_bar_and_the_panel_is_rounded() {
         eprintln!("screen locked or not Hyprland: no pixel check");
     }
 }
+
+/// The width of `selector` once it has stopped changing (about 100 ms of it).
+async fn settled_width(app: &mut App, selector: &str) -> f64 {
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    app.bounds(selector).await.expect("bounds").expect("a box").w
+}
+
+#[tokio::test]
+async fn rail_buttons_shrink_while_pressed_and_spring_back() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch_desktop(&hs).await.expect("launch app");
+    login(&mut app, "alice").await;
+    app.wait_for(".rail-dms", DEFAULT_WAIT).await.expect("DMs button");
+    let rest = settled_width(&mut app, ".rail-dms").await;
+    let slot = app.bounds(".rail-dms").await.expect("bounds").expect("box");
+
+    // Pressed: about 0.95 of its size.
+    app.drag_hold(".rail-dms", 0, 0).await.expect("press");
+    let pressed = settled_width(&mut app, ".rail-dms").await;
+    assert!(
+        (pressed / rest - 0.95).abs() < 0.015,
+        "pressed width {pressed} should be 0.95 of {rest}"
+    );
+    // It is in place (the centre does not move).
+    let now = app.bounds(".rail-dms").await.expect("bounds").expect("box");
+    assert!(((now.x + now.w / 2.0) - (slot.x + slot.w / 2.0)).abs() < 0.5, "stays centred");
+
+    // The pointer leaving springs it back while the button is still down.
+    app.hover(".rail-add").await.expect("move away");
+    let back = settled_width(&mut app, ".rail-dms").await;
+    assert!((back - rest).abs() < 0.5, "back to {rest} after leaving, not {back}");
+    app.release().await.expect("let go");
+
+    // Pressing and releasing on it springs back too.
+    app.drag_hold(".rail-dms", 0, 0).await.expect("press again");
+    let pressed = settled_width(&mut app, ".rail-dms").await;
+    assert!(pressed < rest - 1.0, "pressed again: {pressed}");
+    app.release().await.expect("release");
+    let back = settled_width(&mut app, ".rail-dms").await;
+    assert!((back - rest).abs() < 0.5, "back to {rest} after release, not {back}");
+}

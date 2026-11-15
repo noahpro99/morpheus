@@ -5528,3 +5528,25 @@ async fn the_call_controls_are_squircles_like_the_rail_icons() {
         assert!((radius - rail).abs() < 0.5, "{control} has the rail icons' corners: {radius} against {rail}");
     }
 }
+
+#[tokio::test]
+async fn the_call_controls_shrink_while_pressed_and_spring_back() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    join_hangout(&mut alice, "alice").await;
+    let button = ".call-stage .call-controls .camera-button";
+    alice.wait_for(button, DEFAULT_WAIT).await.expect("the controls");
+    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+    let rest = alice.bounds(button).await.expect("bounds").expect("box").w;
+    alice.drag_hold(button, 0, 0).await.expect("press");
+    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+    let pressed = alice.bounds(button).await.expect("bounds").expect("box").w;
+    assert!((pressed / rest - 0.95).abs() < 0.015, "pressed {pressed} should be 0.95 of {rest}");
+    alice.hover(".call-stage .call-controls .mute-button").await.expect("away");
+    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+    let back = alice.bounds(button).await.expect("bounds").expect("box").w;
+    assert!((back - rest).abs() < 0.5, "back to {rest} after the pointer left, not {back}");
+}
