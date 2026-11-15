@@ -75,9 +75,13 @@ async fn shortcuts_navigate_rooms_scopes_history_and_panels() {
         .expect("moved to the next room");
     if app.is_gpui() {
         // The GPUI room opens its timeline a moment after its header; Alt+Up
-        // before then would step from the room still opening. (On Dioxus the
-        // next room can be one with no message box, so this is not asked there.)
-        app.wait_for(".composer .composer-input:not([disabled])", DEFAULT_WAIT)
+        // before then would step from the room still opening. The next room
+        // can be a voice channel (other tests leave them), which has no
+        // message box: it is open once it is the selected row.
+        app.wait_for(
+            ".composer .composer-input:not([disabled]), .room.selected.voice",
+            DEFAULT_WAIT,
+        )
             .await
             .expect("the next room is open");
     }
