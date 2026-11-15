@@ -613,7 +613,7 @@ impl SettingsView {
                         MouseButton::Left,
                         cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
                             cx.stop_propagation();
-                            if let Some(vol) = down_set(event.position.x) {
+                            if let Some(vol) = (if event.click_count >= 2 { Some(1.0) } else { down_set(event.position.x) }) {
                                 if is_input {
                                     this.voice_prefs.input_volume = vol;
                                     cx.emit(super::InputVolumeChanged(vol));
@@ -656,7 +656,8 @@ impl SettingsView {
                                     .w(gpui::relative((volume / max).clamp(0.0, 1.0)))
                                     .rounded_full()
                                     .bg(rgb(theme::accent())),
-                            ),
+                            )
+                            .child(crate::menu::slider_handle(volume / max, 3.0)),
                     )
                     .e2e("div", &format!("volume-slider {class}"))
                     .attr("data-value", percent.to_string()),
