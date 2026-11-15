@@ -86,7 +86,7 @@ pub fn install(cx: &mut App) {
     if !cfg!(target_os = "macos") {
         return;
     }
-    cx.on_action(|_: &Quit, _| std::process::exit(0));
+    cx.on_action(|_: &Quit, _| crate::send_command(crate::Command::Quit));
     cx.on_action(|_: &About, _| crate::send_command(crate::Command::Tray(crate::tray::TrayAction::Acknowledgements)));
     cx.on_action(|_: &Hide, cx| cx.hide());
     cx.on_action(|_: &HideOthers, cx| cx.hide_other_apps());

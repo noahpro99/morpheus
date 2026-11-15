@@ -431,6 +431,8 @@ pub(crate) enum Command {
     Tray(tray::TrayAction),
     /// The notifier logged something: an open window shows it.
     Redraw,
+    /// Quit (the tray, Cmd+Q or Ctrl+Q, SIGTERM): hang up first, then end.
+    Quit,
 }
 
 static COMMANDS: OnceLock<UnboundedSender<Command>> = OnceLock::new();
@@ -531,11 +533,54 @@ fn run_command(command: Command, cx: &mut App) {
             show_window(cx);
             root.update(cx, |root, cx| root.tray_action(action, cx));
         }
-        Command::Tray(tray::TrayAction::Quit) => std::process::exit(0),
+        Command::Tray(tray::TrayAction::Quit) | Command::Quit => quit(cx),
         Command::Redraw => {
             root.update(cx, |root, cx| root.with_shell(cx, |shell, cx| shell.sync_notices(cx)));
         }
     }
+}
+
+/// Set once quitting has begun: a second ask (a signal during the tray's
+/// Quit) does not start it over.
+static QUITTING: AtomicBool = AtomicBool::new(false);
+
+/// End the app, hanging up any call first (at most a couple of seconds, see
+/// `Shell::leave_before_quit`), so the others do not see a ghost in it. Every
+/// way out goes through here: the tray's and the menu's Quit, Cmd+Q and
+/// Ctrl+Q, the window's close button when there is no tray to close to,
+/// SIGTERM/SIGINT/SIGHUP (logout, `kill`).
+pub(crate) fn quit(cx: &mut App) {
+    if QUITTING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    if let Some(root) = cx.try_global::<MainRoot>().map(|root| root.0.clone()) {
+        root.update(cx, |root, cx| root.with_shell(cx, |shell, _| shell.leave_before_quit()));
+    }
+    std::process::exit(0);
+}
+
+/// The system asking the app to end (logout, shutdown, `kill`, Ctrl+C in a
+/// terminal) quits as the Quit item does. Should the app not get to it
+/// (its event loop stuck), it ends a little later anyway.
+#[cfg(unix)]
+fn quit_on_signals() {
+    use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};
+    let mut signals = match signal_hook::iterator::Signals::new([SIGTERM, SIGINT, SIGHUP]) {
+        Ok(signals) => signals,
+        Err(err) => {
+            eprintln!("morpheus-desktop: not listening for signals: {err}");
+            return;
+        }
+    };
+    std::thread::spawn(move || {
+        if let Some(signal) = signals.forever().next() {
+            eprintln!("morpheus-desktop: signal {signal}: quitting");
+            send_command(Command::Quit);
+            std::thread::sleep(std::time::Duration::from_secs(4));
+            eprintln!("morpheus-desktop: quitting took too long; ending now");
+            std::process::exit(0);
+        }
+    });
 }
 
 /// Under test, a connection to the port after the bridge's brings a closed
@@ -601,6 +646,13 @@ fn run_window(core: Core, commands: Commands, first: Option<Command>, start_hidd
             let root = cx.new(|cx| Root::new(core, default_homeserver(), cx));
             cx.set_global(MainRoot(root));
             cx.on_window_closed(|cx| {
+                // No tray to close to: closing the window is quitting.
+                if cx.windows().is_empty()
+                    && !gpui::KEEP_RUNNING_WITHOUT_WINDOWS.load(Ordering::Relaxed)
+                {
+                    eprintln!("morpheus-desktop: window closed, quitting");
+                    quit(cx);
+                }
                 if cx.windows().is_empty() {
                     eprintln!("morpheus-desktop: window closed, app runs on");
                     HEADLESS.store(true, Ordering::Relaxed);
@@ -721,6 +773,8 @@ fn main() {
         });
     });
     tray::install(Arc::new(|action| send_command(Command::Tray(action))));
+    #[cfg(unix)]
+    quit_on_signals();
     #[cfg(feature = "e2e")]
     control_port();
     if let Some(link) = link {

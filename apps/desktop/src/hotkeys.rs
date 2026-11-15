@@ -348,6 +348,7 @@ impl Shell {
             Hotkey::LastPlace => self.toggle_last_place(cx),
             Hotkey::Mention { forward } => self.step_mention(forward, cx),
             Hotkey::Reload => cx.emit(crate::shell::AccountEvent::Reload),
+            Hotkey::Quit => crate::send_command(crate::Command::Quit),
             Hotkey::CopyLink => self.copy_room_link(cx),
             Hotkey::Page { down } => {
                 if let Some((_, timeline)) = &self.timeline {

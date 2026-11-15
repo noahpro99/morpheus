@@ -1514,6 +1514,11 @@ async fn schedule_leave(
     user_id: &OwnedUserId,
     state_key: &CallMemberStateKey,
 ) {
+    // `MORPHEUS_DELAYED_EVENTS=off` does without them, as on matrix.org
+    // (which turns them off): what a test of a clean leave needs.
+    if std::env::var("MORPHEUS_DELAYED_EVENTS").is_ok_and(|v| v == "off") {
+        return;
+    }
     let key = homeserver_key(client);
     if let Ok(refused) = delayed_refused().lock()
         && let Some(at) = refused.get(&key)

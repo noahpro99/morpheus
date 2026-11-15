@@ -48,6 +48,8 @@ pub enum Hotkey {
     Reload,
     /// Ctrl+Shift+L: copy the open room's link.
     CopyLink,
+    /// Ctrl+Q: quit Morpheus (hanging up first).
+    Quit,
     /// Page Up / Page Down: scroll the chat by a page.
     Page { down: bool },
 }
@@ -80,6 +82,7 @@ pub fn classify(key: &str, ctrl: bool, alt: bool, shift: bool) -> Option<Hotkey>
             "k" => Some(Hotkey::Switcher),
             "'" => Some(Hotkey::StartCall),
             "r" => Some(Hotkey::Reload),
+            "q" => Some(Hotkey::Quit),
             _ => None,
         },
         (true, false, true) => match key {
@@ -191,6 +194,7 @@ pub const GROUPS: &[(&str, &[(&str, &str)])] = &[
             ("Ctrl+Shift+L", "Copy the open room's link"),
             ("Page Up / Page Down", "Scroll the chat"),
             ("Ctrl+R", "Reload the app"),
+            ("Ctrl+Q", "Quit Morpheus"),
         ],
     ),
     (
@@ -247,6 +251,7 @@ mod tests {
         assert_eq!(classify("ArrowRight", true, true, false), Some(Hotkey::LastPlace));
         assert_eq!(classify("ArrowDown", true, true, true), Some(Hotkey::Mention { forward: true }));
         assert_eq!(classify("r", true, false, false), Some(Hotkey::Reload));
+        assert_eq!(classify("q", true, false, false), Some(Hotkey::Quit));
         assert_eq!(classify("L", true, false, true), Some(Hotkey::CopyLink));
         assert_eq!(classify("PageUp", false, false, false), Some(Hotkey::Page { down: false }));
         assert_eq!(classify("f", true, false, false), Some(Hotkey::Search));

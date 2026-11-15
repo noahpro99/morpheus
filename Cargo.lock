@@ -7440,6 +7440,7 @@ dependencies = [
  "ruma-html",
  "serde",
  "serde_json",
+ "signal-hook",
  "tokio",
  "tracing-subscriber",
  "tray-icon",
