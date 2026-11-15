@@ -92,3 +92,20 @@ impl Shell {
         }
     }
 }
+
+impl Shell {
+    /// An open card is told of the servers joined so far (they keep arriving
+    /// after sign-in).
+    pub(crate) fn share_servers_with_card(&self, cx: &mut Context<Self>) {
+        let Some(card) = self.card.clone() else {
+            return;
+        };
+        let servers: Vec<RoomSummary> = self
+            .rooms
+            .iter()
+            .filter(|r| r.is_space && !r.invited)
+            .cloned()
+            .collect();
+        card.update(cx, |card, cx| card.set_servers(servers, cx));
+    }
+}
