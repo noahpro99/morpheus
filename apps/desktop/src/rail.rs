@@ -163,9 +163,7 @@ impl Badge {
         if let Some(dragged) = drag {
             button = button.on_drag(dragged, |dragged, _, _, cx| cx.new(|_| BadgeGhost(dragged.clone())));
         }
-        if let Some(on_hover) = self.on_hover.clone() {
-            button = button.on_hover(move |over, _, cx| on_hover(*over, cx));
-        }
+        button = crate::press::press(button, &self.id, self.size, self.on_hover.clone());
         if let Some(context) = self.context.clone() {
             button = button.on_mouse_down(MouseButton::Right, move |event, window, cx| {
                 context(event.position, window, cx)

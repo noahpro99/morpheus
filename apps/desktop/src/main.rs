@@ -36,6 +36,7 @@ mod noise;
 mod model;
 mod notify;
 mod pictures;
+mod press;
 mod prefs;
 mod profile;
 mod profile_actions;

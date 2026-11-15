@@ -283,6 +283,7 @@ fn control_button(
         .hover(|s| s.opacity(0.9))
         .child(icon(glyph, size).text_color(fg))
         .on_click(on_click);
+    button = crate::press::press(button, id, side, None);
     if let Some(on_right) = on_right {
         button = button.on_mouse_down(MouseButton::Right, on_right);
     }
