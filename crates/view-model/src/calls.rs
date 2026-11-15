@@ -1031,9 +1031,12 @@ mod tests {
 
 /// What a right-click on someone's card in a call adds to their user menu:
 /// their volume for you and mute for you (not on your own card), and focus.
+/// On their shared screen (`stream`) the volume and mute are for its sound
+/// alone: "Stream volume" and "Mute stream".
 pub fn call_card_items(
     user: &morpheus_core::OwnedUserId,
     own: bool,
+    stream: bool,
     volume: f32,
     muted: bool,
     key: &str,
@@ -1041,7 +1044,16 @@ pub fn call_card_items(
 ) -> Vec<crate::menu::MenuItem> {
     use crate::menu::{MenuAction, MenuItem, MenuSlider};
     let mut items = Vec::new();
-    if !own {
+    if !own && stream {
+        items.push(MenuItem::slider("Stream volume", MenuSlider::StreamVolume(user.clone(), volume)));
+        items.push(
+            MenuItem::new(
+                if muted { "Unmute stream" } else { "Mute stream" },
+                MenuAction::CallMuteStream(user.clone(), !muted),
+            )
+            .icon(if muted { "volume-2" } else { "volume-x" }),
+        );
+    } else if !own {
         items.push(MenuItem::slider("Volume", MenuSlider::UserVolume(user.clone(), volume)));
         items.push(
             MenuItem::new(

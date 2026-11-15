@@ -29,24 +29,51 @@ pub fn set_output_volume(volume: f32) {
 
 use std::{collections::HashMap, sync::Mutex};
 
-static USER_VOLUMES: Mutex<Option<HashMap<String, f32>>> = Mutex::new(None);
+static USER_VOLUMES: Mutex<Option<HashMap<(String, TrackSource), f32>>> = Mutex::new(None);
+
+/// Which of a person's audio tracks a gain is for: their microphone or the
+/// sound of their shared screen. Each is kept apart.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum TrackSource {
+    Microphone,
+    ScreenShare,
+}
 
 /// How loud one person's voice plays for you on top of the output volume
 /// (1 as sent; 0 while muted for you), by their Matrix user ID.
 pub fn set_user_volume(user: &str, volume: f32) {
-    let volume = volume.clamp(0.0, MAX_VOLUME);
-    if let Ok(mut all) = USER_VOLUMES.lock() {
-        all.get_or_insert_with(HashMap::new)
-            .insert(user.to_owned(), volume);
-    }
+    set_user_track_volume(user, TrackSource::Microphone, volume);
 }
 
 pub fn user_volume(user: &str) -> f32 {
+    user_track_volume(user, TrackSource::Microphone)
+}
+
+/// How loud one of a person's tracks plays for you (1 as sent, 0 while muted).
+pub fn set_user_track_volume(user: &str, source: TrackSource, volume: f32) {
+    let volume = volume.clamp(0.0, MAX_VOLUME);
+    if let Ok(mut all) = USER_VOLUMES.lock() {
+        all.get_or_insert_with(HashMap::new)
+            .insert((user.to_owned(), source), volume);
+    }
+}
+
+pub fn user_track_volume(user: &str, source: TrackSource) -> f32 {
     USER_VOLUMES
         .lock()
         .ok()
-        .and_then(|all| all.as_ref()?.get(user).copied())
+        .and_then(|all| all.as_ref()?.get(&(user.to_owned(), source)).copied())
         .unwrap_or(1.0)
+}
+
+/// What `user`'s track of `source` plays at: the microphone at the output
+/// volume times theirs, a shared screen's sound at its own volume alone.
+pub fn user_track_gain(user: &str, source: TrackSource) -> f32 {
+    let own = user_track_volume(user, source);
+    match source {
+        TrackSource::Microphone => output_volume() * own,
+        TrackSource::ScreenShare => own,
+    }
 }
 
 static VOICE_OWNERS: Mutex<Option<HashMap<String, String>>> = Mutex::new(None);
@@ -69,15 +96,29 @@ pub fn voice_belongs_to(identity: &str, user: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// What a voice (a LiveKit identity) plays at: the output volume times the
-/// volume given to the person it belongs to.
-pub fn voice_gain(identity: &str) -> f32 {
-    let own = VOICE_OWNERS
+/// The person a LiveKit identity belongs to, once noted.
+pub fn voice_owner(identity: &str) -> Option<String> {
+    VOICE_OWNERS
         .lock()
         .ok()
         .and_then(|all| all.as_ref()?.get(identity).cloned())
-        .and_then(|user| USER_VOLUMES.lock().ok()?.as_ref()?.get(&user).copied());
-    output_volume() * own.unwrap_or(1.0)
+}
+
+/// What a track (of a LiveKit identity) plays at, by its source.
+pub fn track_gain(identity: &str, source: TrackSource) -> f32 {
+    match voice_owner(identity) {
+        Some(user) => user_track_gain(&user, source),
+        None => match source {
+            TrackSource::Microphone => output_volume(),
+            TrackSource::ScreenShare => 1.0,
+        },
+    }
+}
+
+/// What a voice (a LiveKit identity) plays at: the output volume times the
+/// volume given to the person it belongs to.
+pub fn voice_gain(identity: &str) -> f32 {
+    track_gain(identity, TrackSource::Microphone)
 }
 
 #[cfg(test)]
@@ -116,5 +157,29 @@ mod tests {
             "@vol-test:localhost:DEV",
             "@vol-test:localhost"
         ));
+    }
+
+    #[test]
+    fn a_streams_gain_applies_only_to_the_screen_share_track_and_the_mics_only_to_the_mic() {
+        let who = "@gain-test:localhost";
+        let identity = "hashed-gain-test-identity";
+        note_voice_identity(identity, who);
+        // (The output volume is shared with other tests: gains are only
+        // compared with zero and with each other.)
+        set_user_track_volume(who, TrackSource::ScreenShare, 0.0);
+        assert_eq!(track_gain(identity, TrackSource::ScreenShare), 0.0);
+        assert!(
+            track_gain(identity, TrackSource::Microphone) > 0.0,
+            "mic untouched"
+        );
+        set_user_track_volume(who, TrackSource::ScreenShare, 1.0);
+        set_user_volume(who, 0.0);
+        assert_eq!(
+            track_gain(identity, TrackSource::ScreenShare),
+            1.0,
+            "stream untouched"
+        );
+        assert_eq!(track_gain(identity, TrackSource::Microphone), 0.0);
+        assert_eq!(voice_gain(identity), 0.0);
     }
 }

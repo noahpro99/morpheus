@@ -454,6 +454,7 @@ impl Shell {
                 }
             }
             MenuAction::CallMute(user, muted) => self.set_user_muted(&user, muted, cx),
+            MenuAction::CallMuteStream(user, muted) => self.set_stream_muted(&user, muted, cx),
             MenuAction::CallFocus(key) => self.toggle_focus(&key, cx),
             MenuAction::VoiceSettings => {
                 self.open_settings(crate::view_model::keys::SettingsFocus::VoiceVideo, cx)

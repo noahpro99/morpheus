@@ -511,6 +511,7 @@ fn menu_slider_el(
         crate::view_model::menu::MenuSlider::InputVolume(_) => "input-volume",
         crate::view_model::menu::MenuSlider::OutputVolume(_) => "output-volume",
         crate::view_model::menu::MenuSlider::UserVolume(..) => "user-volume",
+        crate::view_model::menu::MenuSlider::StreamVolume(..) => "stream-volume",
     };
 
     let label_str = label.to_owned();
@@ -575,6 +576,9 @@ fn menu_slider_el(
                                 crate::view_model::menu::MenuSlider::UserVolume(user, _) => {
                                     this.set_user_volume(user, vol, cx);
                                 }
+                                crate::view_model::menu::MenuSlider::StreamVolume(user, _) => {
+                                    this.set_screen_volume(user, vol, cx);
+                                }
                             }
                         }
                     }),
@@ -593,6 +597,9 @@ fn menu_slider_el(
                                 }
                                 crate::view_model::menu::MenuSlider::UserVolume(user, _) => {
                                     this.set_user_volume(user, vol, cx);
+                                }
+                                crate::view_model::menu::MenuSlider::StreamVolume(user, _) => {
+                                    this.set_screen_volume(user, vol, cx);
                                 }
                             }
                         }

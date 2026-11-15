@@ -50,6 +50,9 @@ pub(crate) fn forget_heard(identity: &str) {
 
 /// The volume `identity`'s screen sound is played at (1 unless changed).
 pub fn screen_volume(identity: &str) -> f32 {
+    if let Some(user) = crate::voice_owner(identity) {
+        return crate::user_track_gain(&user, crate::TrackSource::ScreenShare);
+    }
     VOLUMES
         .lock()
         .ok()

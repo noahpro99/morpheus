@@ -92,6 +92,8 @@ pub struct Calls {
     /// for you, for as long as the app runs.
     pub user_volumes: HashMap<OwnedUserId, f32>,
     pub muted_for_me: std::collections::HashSet<OwnedUserId>,
+    /// Whose shared screen's sound is muted for you (apart from their voice).
+    pub stream_muted: std::collections::HashSet<OwnedUserId>,
     /// Share screen's question is open, over this point.
     pub screen_popover: Option<gpui::Point<gpui::Pixels>>,
     /// The noise suppression card is open, above this point (the button's
@@ -645,11 +647,47 @@ impl Shell {
     pub fn set_screen_volume(&mut self, user: &OwnedUserId, volume: f32, cx: &mut Context<Self>) {
         let volume = volume.clamp(0.0, morpheus_call::MAX_SCREEN_VOLUME);
         self.calls.screen_volumes.insert(user.clone(), volume);
+        self.apply_stream_volume(user);
+        if let Some(menu) = &mut self.menu {
+            for item in &mut menu.items {
+                if let Some(crate::view_model::menu::MenuSlider::StreamVolume(who, v)) =
+                    &mut item.slider
+                    && who == user
+                {
+                    *v = volume;
+                }
+            }
+        }
+        cx.notify();
+    }
+
+    /// Silences the sound of `user`'s shared screen for you alone, or brings
+    /// it back at its volume. Their voice is not touched.
+    pub fn set_stream_muted(&mut self, user: &OwnedUserId, muted: bool, cx: &mut Context<Self>) {
+        if muted {
+            self.calls.stream_muted.insert(user.clone());
+        } else {
+            self.calls.stream_muted.remove(user);
+        }
+        self.apply_stream_volume(user);
+        cx.notify();
+    }
+
+    pub(crate) fn apply_stream_volume(&self, user: &OwnedUserId) {
+        let volume = if self.calls.stream_muted.contains(user) {
+            0.0
+        } else {
+            self.calls.screen_volumes.get(user).copied().unwrap_or(1.0)
+        };
+        morpheus_call::set_user_track_volume(
+            user.as_str(),
+            morpheus_call::TrackSource::ScreenShare,
+            volume,
+        );
         if let (Some(call), Some(identity)) = (&self.calls.media, self.calls.screen_audio.get(user))
         {
             call.set_screen_volume(identity, volume);
         }
-        cx.notify();
     }
 
     /// How loud `user`'s voice plays here (1 as sent), unless muted for you.
@@ -923,6 +961,7 @@ fn show_learned(
     this.update(cx, |this, _| {
         for user in &owners {
             this.apply_user_volume(user);
+            this.apply_stream_volume(user);
         }
     })
     .ok();
@@ -1298,11 +1337,8 @@ async fn run_call(
                 this.update(cx, |this, cx| {
                     if on {
                         // At the volume you gave their screen before.
-                        let volume = this.calls.screen_volumes.get(&user).copied().unwrap_or(1.0);
-                        if let Some(call) = &this.calls.media {
-                            call.set_screen_volume(&identity, volume);
-                        }
-                        this.calls.screen_audio.insert(user, identity);
+                        this.calls.screen_audio.insert(user.clone(), identity);
+                        this.apply_stream_volume(&user);
                     } else {
                         this.calls.screen_audio.remove(&user);
                     }
