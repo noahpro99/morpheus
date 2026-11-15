@@ -479,8 +479,7 @@ impl Shell {
         match done {
             Done::RoomCreated { room, space } => {
                 self.dialog_close(cx);
-                self.set_scope(space.clone().map_or(Scope::Rooms, Scope::Space), cx);
-                self.open_room(room.clone(), cx);
+                self.open_room_in(space.clone().map_or(Scope::Rooms, Scope::Space), room.clone(), cx);
             }
             Done::SpaceCreated { space, parent } => {
                 self.dialog_close(cx);

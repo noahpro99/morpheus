@@ -564,3 +564,77 @@ async fn title_bar_streamer_button_toggles_streamer_mode() {
     app.wait_for_count(".titlebar .streamer-badge", 0, DEFAULT_WAIT).await.expect("off");
     app.wait_for_count(".titlebar .streamer-button", 0, DEFAULT_WAIT).await.expect("button gone");
 }
+
+/// Cancel the open-channel question, which must be showing.
+async fn refuse(app: &mut App, what: &str) {
+    app.wait_for(".confirm-dialog .confirm-cancel", DEFAULT_WAIT)
+        .await
+        .unwrap_or_else(|e| panic!("{what}: no question before switching: {e}"));
+    app.click(".confirm-dialog .confirm-cancel").await.expect("cancel");
+    app.wait_for_count(".confirm-dialog", 0, DEFAULT_WAIT).await.expect("closed");
+}
+
+/// Every way to another room asks first while sharing: the rail's DMs and
+/// server buttons, Ctrl+Alt+Down and Alt+Down; nothing changes until Open.
+#[tokio::test]
+async fn every_way_to_another_room_asks_while_sharing() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch(&hs).await.expect("launch alice");
+    if !app.is_gpui() {
+        eprintln!("streamer mode is in the GPUI app only; skipping");
+        return;
+    }
+    login(&mut app, "alice").await;
+    app.open_room("general").await.expect("general");
+    app.click_text(".room", "hangout").await.expect("join the call");
+    app.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT).await.expect("connected");
+    app.click(".voice-panel .screen-button").await.expect("share");
+    app.wait_for(".screen-quality .screen-go", DEFAULT_WAIT).await.expect("popover");
+    app.click(".screen-quality .screen-go").await.expect("go live");
+    app.wait_for(".titlebar .streamer-badge", DEFAULT_WAIT).await.expect("streamer mode on");
+
+    // Get a DM and a server's room remembered, answering Open each time.
+    app.click_text(".room", "general").await.expect("general");
+    app.click(".confirm-dialog .confirm-go").await.expect("open general");
+    app.wait_for_text(".chat-header h2", "general", DEFAULT_WAIT).await.expect("general");
+    app.click(".rail-item[title=\"Direct messages\"]").await.expect("DMs");
+    app.wait_for(".room.dm", DEFAULT_WAIT).await.expect("a DM listed");
+    app.click(".room.dm").await.expect("a DM");
+    app.wait_for(".confirm-dialog .confirm-go", DEFAULT_WAIT).await.expect("asked");
+    app.click(".confirm-dialog .confirm-go").await.expect("open the DM");
+    app.wait_for_count(".confirm-dialog", 0, DEFAULT_WAIT).await.expect("closed");
+    app.wait_for(".chat-header h2", DEFAULT_WAIT).await.expect("DM open");
+    let dm_header = app.text(".chat-header h2").await.expect("header");
+
+    // Another server from the DMs: asked, and Cancel leaves everything.
+    app.click(".rail > .rail-item.space-badge").await.expect("a server");
+    refuse(&mut app, "a server button").await;
+    assert_eq!(app.count(".rail-item.selected[title=\"Direct messages\"]").await.expect("count"), 1, "still in the DMs");
+    assert_eq!(app.text(".chat-header h2").await.expect("header"), dm_header, "still the DM");
+
+    // Open goes there.
+    app.click(".rail > .rail-item.space-badge").await.expect("a server");
+    app.wait_for(".confirm-dialog .confirm-go", DEFAULT_WAIT).await.expect("asked");
+    app.click(".confirm-dialog .confirm-go").await.expect("open");
+    app.wait_for_count(".rail-item.selected[title=\"Direct messages\"]", 0, DEFAULT_WAIT)
+        .await
+        .expect("in the server now");
+
+    // The DMs button from inside the server: asked.
+    let server_header = app.text(".chat-header h2").await.expect("header");
+    app.click(".rail-item[title=\"Direct messages\"]").await.expect("DMs");
+    refuse(&mut app, "the DMs button").await;
+    assert_eq!(app.count(".rail-item.selected[title=\"Direct messages\"]").await.expect("count"), 0, "still in the server");
+    assert_eq!(app.text(".chat-header h2").await.expect("header"), server_header);
+
+    // Ctrl+Alt+Down (the next rail entry) and Alt+Down (the next room): asked.
+    app.key_combo("body", "ArrowDown", true, true, false).await.expect("ctrl+alt+down");
+    refuse(&mut app, "Ctrl+Alt+Down").await;
+    assert_eq!(app.text(".chat-header h2").await.expect("header"), server_header);
+    app.key_combo("body", "ArrowDown", false, true, false).await.expect("alt+down");
+    refuse(&mut app, "Alt+Down").await;
+    assert_eq!(app.text(".chat-header h2").await.expect("header"), server_header);
+}

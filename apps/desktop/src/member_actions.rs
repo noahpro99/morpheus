@@ -170,8 +170,7 @@ impl Shell {
             let result = opening.await;
             this.update(cx, |this, cx| match result {
                 Ok(room) => {
-                    this.set_scope(Scope::Dms, cx);
-                    this.open_room(room, cx);
+                    this.open_room_in(Scope::Dms, room, cx);
                 }
                 Err(err) => this.fail("opening a DM", &err.to_string(), cx),
             })
