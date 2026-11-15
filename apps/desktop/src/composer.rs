@@ -9,8 +9,8 @@ use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use gpui::{
     AnyElement, Context, ElementId, Entity, ExternalPaths, FontWeight, Image, ImageFormat,
-    IntoElement, ObjectFit, PathPromptOptions, Render, StyledImage as _, Window, div,
-    img, prelude::*, px, relative, rgb, rgba,
+    IntoElement, ObjectFit, PathPromptOptions, Render, StyledImage as _, Window, div, img,
+    prelude::*, px, relative, rgb, rgba,
 };
 use morpheus_core::{Member, Message, OwnedRoomId, Session, TimelineHandle};
 
@@ -20,9 +20,7 @@ use crate::{
     input::{Changed, Nav, NavKey, Pasted, Submit, TextInput},
     theme,
     view_model::{
-        composer::{
-            self, ComposerMode, ComposerState, SendKind, SendPlan, Suggestion, mime_of,
-        },
+        composer::{self, ComposerMode, ComposerState, SendKind, SendPlan, Suggestion, mime_of},
         emoji,
     },
 };
@@ -450,9 +448,15 @@ impl Composer {
 
     /// A file the test bridge hands over, as pasted or dropped.
     #[cfg(feature = "e2e")]
-    pub fn attach_from_bridge(&mut self, file: crate::input::PastedFile, dropped: bool, cx: &mut Context<Self>) {
+    pub fn attach_from_bridge(
+        &mut self,
+        file: crate::input::PastedFile,
+        dropped: bool,
+        cx: &mut Context<Self>,
+    ) {
         if dropped {
-            let dir = std::env::temp_dir().join(format!("morpheus-desktop-drop-{}", std::process::id()));
+            let dir =
+                std::env::temp_dir().join(format!("morpheus-desktop-drop-{}", std::process::id()));
             let path = dir.join(&file.name);
             if std::fs::create_dir_all(&dir)
                 .and_then(|()| std::fs::write(&path, &file.bytes))
@@ -461,8 +465,7 @@ impl Composer {
                 self.attach_paths(&[path], cx);
             }
         } else {
-            self.input
-                .update(cx, |_, cx| cx.emit(Pasted(vec![file])));
+            self.input.update(cx, |_, cx| cx.emit(Pasted(vec![file])));
         }
     }
 
@@ -500,15 +503,19 @@ impl Composer {
             } => {
                 let sender_name = &crate::streamer::name(sender_name);
                 (
-                div()
-                    .flex()
-                    .gap(px(4.0))
-                    .child("Replying to")
-                    .child(div().font_weight(FontWeight::BOLD).child(sender_name.clone()))
-                    .e2e("span", "banner-label")
-                    .text(format!("Replying to {sender_name}"))
-                    .into_any_element(),
-                Some(summary.clone()),
+                    div()
+                        .flex()
+                        .gap(px(4.0))
+                        .child("Replying to")
+                        .child(
+                            div()
+                                .font_weight(FontWeight::BOLD)
+                                .child(sender_name.clone()),
+                        )
+                        .e2e("span", "banner-label")
+                        .text(format!("Replying to {sender_name}"))
+                        .into_any_element(),
+                    Some(summary.clone()),
                 )
             }
             ComposerMode::Edit { .. } => (
@@ -671,12 +678,18 @@ impl Composer {
             .occlude();
         for (index, row) in self.suggestions.iter().enumerate() {
             let (glyph, label, muted): (String, String, Option<String>) = match row {
-                Suggestion::Emoji { emoji, code } => ((*emoji).to_owned(), format!(":{code}:"), None),
+                Suggestion::Emoji { emoji, code } => {
+                    ((*emoji).to_owned(), format!(":{code}:"), None)
+                }
                 Suggestion::Member {
                     name,
                     nickname: Some(nickname),
                     user_id,
-                } => ("@".into(), nickname.clone(), Some(format!("{name} · {user_id}"))),
+                } => (
+                    "@".into(),
+                    nickname.clone(),
+                    Some(format!("{name} · {user_id}")),
+                ),
                 Suggestion::Member {
                     name,
                     nickname: None,
@@ -703,7 +716,12 @@ impl Composer {
                         .e2e("span", "emoji")
                         .text(glyph),
                 )
-                .child(div().child(label.clone()).e2e("span", "").text(label.clone()));
+                .child(
+                    div()
+                        .child(label.clone())
+                        .e2e("span", "")
+                        .text(label.clone()),
+                );
             if let Some(muted) = muted {
                 item = item.child(
                     div()
@@ -852,7 +870,9 @@ impl Render for Composer {
             self.input.read(cx).focus(window);
         }
         if std::mem::take(&mut self.pending_blur)
-            && let Some(root) = cx.try_global::<crate::shell::RootFocus>().map(|root| root.0.clone())
+            && let Some(root) = cx
+                .try_global::<crate::shell::RootFocus>()
+                .map(|root| root.0.clone())
         {
             window.focus(&root);
         }
@@ -982,7 +1002,13 @@ mod tests {
     ) -> (Entity<Composer>, &mut VisualTestContext) {
         let (harness, cx) = cx.add_window_view(|_, cx| {
             Harness(cx.new(|cx| {
-                Composer::new(None, "!r:x".try_into().expect("room"), "general".into(), false, cx)
+                Composer::new(
+                    None,
+                    "!r:x".try_into().expect("room"),
+                    "general".into(),
+                    false,
+                    cx,
+                )
             }))
         });
         let composer = harness.read_with(cx, |h, _| h.0.clone());
@@ -1051,7 +1077,10 @@ mod tests {
         cx.simulate_input("hot :fir");
         redraw(cx);
         let items = texts(".autocomplete .autocomplete-item");
-        assert!(items.first().is_some_and(|t| t.contains("fire")), "{items:?}");
+        assert!(
+            items.first().is_some_and(|t| t.contains("fire")),
+            "{items:?}"
+        );
         assert_eq!(query(".autocomplete-item.active").len(), 1);
         cx.simulate_keystrokes("enter");
         redraw(cx);
@@ -1120,7 +1149,10 @@ mod tests {
             query(".composer .composer-attachment img[src^='data:image/png']").len(),
             1
         );
-        assert_eq!(texts(".composer-attachment .attachment-label"), ["a.png", "b.txt"]);
+        assert_eq!(
+            texts(".composer-attachment .attachment-label"),
+            ["a.png", "b.txt"]
+        );
         click(cx, ".composer .composer-attachment .remove-attachment");
         assert_eq!(texts(".composer-attachment .attachment-label"), ["b.txt"]);
         composer.read_with(cx, |c, _| assert_eq!(c.state.attachments.len(), 1));
@@ -1173,7 +1205,11 @@ mod tests {
         cx.simulate_keystrokes("escape");
         redraw(cx);
         assert_eq!(query(".composer-banner").len(), 0);
-        assert_eq!(draft(&composer, cx), "", "cancelling an edit clears the box");
+        assert_eq!(
+            draft(&composer, cx),
+            "",
+            "cancelling an edit clears the box"
+        );
     }
 
     #[gpui::test]

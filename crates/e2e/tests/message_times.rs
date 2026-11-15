@@ -52,3 +52,37 @@ async fn message_times_are_relative_and_keep_up() {
         .await
         .expect("the time keeps up");
 }
+
+#[tokio::test]
+async fn the_gutter_beside_a_grouped_message_shows_only_the_clock_time() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let ann = new_account(&hs, "gutterann").expect("account");
+    let room = api_as(&hs, &ann, "POST", "createRoom", Some(serde_json::json!({ "name": "gutter room" })))
+        .expect("room")["room_id"]
+        .as_str()
+        .expect("id")
+        .to_owned();
+    let mut app = App::launch_desktop(&hs).await.expect("launch app");
+    common::login(&mut app, &ann, &format!("{ann}-password")).await;
+    app.open_room("gutter room").await.expect("the room");
+    for (n, body) in ["first of a group", "second of a group"].iter().enumerate() {
+        api_as(
+            &hs,
+            &ann,
+            "PUT",
+            &format!("rooms/{}/send/m.room.message/g{n}", room.replace('!', "%21").replace(':', "%3A")),
+            Some(serde_json::json!({ "msgtype": "m.text", "body": body })),
+        )
+        .expect("send");
+    }
+    app.wait_for_text(".message .body", "second of a group", DEFAULT_WAIT).await.expect("messages");
+    app.wait_for(".message .time.gutter", DEFAULT_WAIT).await.expect("a gutter time");
+    let text = app.text(".message .time.gutter").await.expect("text").unwrap_or_default();
+    let clock = text.len() == 5
+        && text.as_bytes()[2] == b':'
+        && text.chars().enumerate().all(|(i, c)| i == 2 || c.is_ascii_digit());
+    assert!(clock, "the gutter shows only HH:MM, got {text:?}");
+}

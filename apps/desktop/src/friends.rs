@@ -59,8 +59,14 @@ impl FriendsPage {
         cx: &mut Context<Self>,
     ) -> Self {
         let input = cx.new(|cx| {
-            TextInput::new("new-message-name", friends::NEW_MESSAGE_PLACEHOLDER, false, "", cx)
-                .bare("input", "")
+            TextInput::new(
+                "new-message-name",
+                friends::NEW_MESSAGE_PLACEHOLDER,
+                false,
+                "",
+                cx,
+            )
+            .bare("input", "")
         });
         cx.subscribe(&input, |this, _, _: &Changed, cx| {
             let text = this.input.read(cx).value().to_owned();
@@ -101,11 +107,15 @@ impl FriendsPage {
         let Some(user) = self.session.as_ref().and_then(|s| s.user_id()) else {
             return;
         };
-        cx.write_to_clipboard(gpui::ClipboardItem::new_string(format!("https://matrix.to/#/{user}")));
+        cx.write_to_clipboard(gpui::ClipboardItem::new_string(format!(
+            "https://matrix.to/#/{user}"
+        )));
         self.copied = true;
         cx.notify();
         cx.spawn(async move |this, cx| {
-            cx.background_executor().timer(std::time::Duration::from_secs(2)).await;
+            cx.background_executor()
+                .timer(std::time::Duration::from_secs(2))
+                .await;
             this.update(cx, |this, cx| {
                 this.copied = false;
                 cx.notify();
@@ -130,7 +140,10 @@ impl FriendsPage {
             let opened = async {
                 let user_id = finding.await.map_err(|err| err.to_string())?;
                 friends::check_target(own.as_ref().map(|u| u.as_str()), user_id.as_str())?;
-                session.dm_with(user_id).await.map_err(|err| err.to_string())
+                session
+                    .dm_with(user_id)
+                    .await
+                    .map_err(|err| err.to_string())
             }
             .await;
             this.update(cx, |this, cx| {
@@ -333,10 +346,14 @@ impl FriendsPage {
                     .text(friends::NEW_MESSAGE_HINT),
             )
             .child(form)
-            .child(
-                {
-                    let label = if self.copied { "Copied" } else { "Copy link to your profile" };
-                    div().flex().child(div()
+            .child({
+                let label = if self.copied {
+                    "Copied"
+                } else {
+                    "Copy link to your profile"
+                };
+                div().flex().child(
+                    div()
                         .id("copy-profile-link")
                         .mt(px(12.0))
                         .flex()
@@ -348,14 +365,16 @@ impl FriendsPage {
                         .cursor_pointer()
                         .bg(rgba(theme::bg_hover()))
                         .hover(|s| s.bg(rgba(theme::bg_selected())))
-                        .child(icon(if self.copied { "check" } else { "link" }, 16.0).text_color(rgb(theme::text())))
+                        .child(
+                            icon(if self.copied { "check" } else { "link" }, 16.0)
+                                .text_color(rgb(theme::text())),
+                        )
                         .child(label)
                         .on_click(cx.listener(|this, _, _, cx| this.copy_profile_link(cx)))
                         .e2e("button", "secondary copy-profile-link")
-                        .text(label)
-                    )
-                },
-            );
+                        .text(label),
+                )
+            });
         if let Some(reason) = &self.form.failed {
             panel = panel.child(
                 div()
@@ -415,7 +434,11 @@ impl FriendsPage {
                 profile.map(|p| (p.name.as_str(), p.status.as_deref())),
             );
             let row = friends::FriendRow {
-                subtitle: if row.subtitle == key { crate::streamer::id(&key) } else { row.subtitle },
+                subtitle: if row.subtitle == key {
+                    crate::streamer::id(&key)
+                } else {
+                    row.subtitle
+                },
                 name: crate::streamer::name(&row.name),
             };
             let (open, remove, talk) = (user_id.clone(), user_id.clone(), user_id.clone());
@@ -523,7 +546,6 @@ impl FriendsPage {
             .into_any_element()
     }
 }
-
 
 impl Render for FriendsPage {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {

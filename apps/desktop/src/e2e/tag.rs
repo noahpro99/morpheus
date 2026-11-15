@@ -93,7 +93,10 @@ pub trait E2eExt: IntoElement + Sized {
     /// (`button`), `classes` a space-separated class list.
     fn e2e(self, tag: &str, classes: &str) -> Tagged<Self> {
         if !tagging() {
-            return Tagged { inner: self, meta: Meta::default() };
+            return Tagged {
+                inner: self,
+                meta: Meta::default(),
+            };
         }
         Tagged {
             inner: self,
@@ -184,7 +187,15 @@ impl<E: Element> Element for TaggedElement<E> {
         cx: &mut App,
     ) {
         if !tagging() {
-            self.inner.paint(id, inspector_id, bounds, request_layout, prepaint, window, cx);
+            self.inner.paint(
+                id,
+                inspector_id,
+                bounds,
+                request_layout,
+                prepaint,
+                window,
+                cx,
+            );
             return;
         }
         if let Some(meta) = self.meta.take() {

@@ -33,7 +33,10 @@ impl Shell {
     /// Whether a message box has something open that Escape closes first
     /// (an edit or reply banner, suggestions, the emoji panel).
     pub(crate) fn composer_busy(&self, cx: &gpui::App) -> bool {
-        let room = self.composer.as_ref().is_some_and(|(_, c)| c.read(cx).busy());
+        let room = self
+            .composer
+            .as_ref()
+            .is_some_and(|(_, c)| c.read(cx).busy());
         let thread = self
             .thread
             .as_ref()
@@ -56,7 +59,10 @@ impl Shell {
             }
         };
         self.composer.as_ref().is_some_and(|(_, c)| asks(c))
-            || self.thread.as_ref().is_some_and(|(_, panel)| asks(panel.read(cx).composer()))
+            || self
+                .thread
+                .as_ref()
+                .is_some_and(|(_, panel)| asks(panel.read(cx).composer()))
     }
 
     /// Whether vim mode's timeline keys apply: no box has the keyboard and
@@ -67,7 +73,10 @@ impl Shell {
             && !self.inbox_open
             && !self.chat_covered()
             && self.timeline.is_some()
-            && self.root_focus.as_ref().is_some_and(|focus| focus.is_focused(window))
+            && self
+                .root_focus
+                .as_ref()
+                .is_some_and(|focus| focus.is_focused(window))
     }
 
     /// Vim mode with no box focused: j and k move a selection through the
@@ -75,7 +84,12 @@ impl Shell {
     /// page, / searches, and on the selected message r replies, e edits, dd
     /// (D without asking) deletes, + reacts, y copies, o or Enter opens its
     /// thread or the box, i goes to the box. Whether it took the key.
-    fn vim_nav(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) -> bool {
+    fn vim_nav(
+        &mut self,
+        event: &KeyDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
         use crate::{message::RowAction, timeline::VimStep};
         if !self.vim_nav_ready(window, cx) {
             self.vim_pending = None;
@@ -88,7 +102,9 @@ impl Shell {
         let m = ks.modifiers;
         if m.control && !m.alt && !m.shift && !m.platform && matches!(ks.key.as_str(), "d" | "u") {
             self.vim_pending = None;
-            timeline.update(cx, |timeline, cx| timeline.scroll_half_page(ks.key == "d", cx));
+            timeline.update(cx, |timeline, cx| {
+                timeline.scroll_half_page(ks.key == "d", cx)
+            });
             return true;
         }
         if m.control || m.alt || m.platform {
@@ -107,7 +123,9 @@ impl Shell {
         let pending = self.vim_pending.take();
         let selected = timeline.read(cx).vim_selection();
         let uid = selected.as_ref().map(|m| m.unique_id.clone());
-        let event_id = selected.as_ref().is_some_and(|m| matches!(m.id, MessageId::Event(_)));
+        let event_id = selected
+            .as_ref()
+            .is_some_and(|m| matches!(m.id, MessageId::Event(_)));
         let act = |action: RowAction, cx: &mut Context<Self>| {
             if let Some(uid) = &uid {
                 timeline.update(cx, |timeline, cx| timeline.row_action(action, uid, cx));
@@ -151,7 +169,10 @@ impl Shell {
             (_, '+') => {
                 // Beside the message when it is measured, else mid-window.
                 let at = match timeline.read(cx).vim_selection_bounds() {
-                    Some(bounds) => gpui::point(bounds.right() - gpui::px(120.0), bounds.top() + gpui::px(12.0)),
+                    Some(bounds) => gpui::point(
+                        bounds.right() - gpui::px(120.0),
+                        bounds.top() + gpui::px(12.0),
+                    ),
                     None => {
                         let view = window.viewport_size();
                         gpui::point(view.width / 2.0, view.height / 2.0)
@@ -160,7 +181,11 @@ impl Shell {
                 act(RowAction::MoreReactions(at), cx);
             }
             (_, 'y') => {
-                if let Some(text) = selected.as_ref().and_then(|m| m.kind.plain_body()).filter(|t| !t.is_empty()) {
+                if let Some(text) = selected
+                    .as_ref()
+                    .and_then(|m| m.kind.plain_body())
+                    .filter(|t| !t.is_empty())
+                {
                     cx.write_to_clipboard(gpui::ClipboardItem::new_string(text.to_owned()));
                     self.toast("Copied", cx);
                 }
@@ -180,7 +205,12 @@ impl Shell {
     }
 
     /// The caret goes to the message box, in insert mode, and the selection goes.
-    fn vim_focus_composer(&mut self, timeline: &gpui::Entity<crate::timeline::TimelineView>, window: &mut Window, cx: &mut Context<Self>) {
+    fn vim_focus_composer(
+        &mut self,
+        timeline: &gpui::Entity<crate::timeline::TimelineView>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         timeline.update(cx, |t, cx| {
             t.vim_clear(cx);
         });
@@ -191,7 +221,12 @@ impl Shell {
 
     /// The shell's capture-phase key listener. Returns whether it used the
     /// key (the caller then stops it going on).
-    pub fn handle_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) -> bool {
+    pub fn handle_key(
+        &mut self,
+        event: &KeyDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
         let keystroke = &event.keystroke;
         let m = keystroke.modifiers;
         let key = keystroke.key.as_str();
@@ -244,7 +279,10 @@ impl Shell {
                 && !self.inbox_open
                 && !self.composer_busy(cx)
             {
-                if self.composer.as_ref().is_some_and(|(_, c)| c.read(cx).input_focused(window, cx))
+                if self
+                    .composer
+                    .as_ref()
+                    .is_some_and(|(_, c)| c.read(cx).input_focused(window, cx))
                     && let Some(root) = self.root_focus.clone()
                 {
                     window.focus(&root);
@@ -256,17 +294,28 @@ impl Shell {
                 return true;
             }
             // Escape in a call with a card focused: back to the grid.
-            if self.calls.focus.is_some() && !self.modal_open(cx) && !self.inbox_open && !self.composer_busy(cx) {
+            if self.calls.focus.is_some()
+                && !self.modal_open(cx)
+                && !self.inbox_open
+                && !self.composer_busy(cx)
+            {
                 return self.clear_call_focus(cx);
             }
             // Escape closes the thread panel, when nothing nearer has it.
-            if self.thread.is_some() && !self.modal_open(cx) && !self.inbox_open && !self.composer_busy(cx) {
+            if self.thread.is_some()
+                && !self.modal_open(cx)
+                && !self.inbox_open
+                && !self.composer_busy(cx)
+            {
                 self.close_thread(cx);
                 return true;
             }
             // Escape with nothing open, scrolled up the chat: back to the newest message.
             if !self.modal_open(cx) && !self.inbox_open && !self.composer_busy(cx) {
-                let away = self.timeline.as_ref().is_some_and(|(_, t)| t.read(cx).away_from_present());
+                let away = self
+                    .timeline
+                    .as_ref()
+                    .is_some_and(|(_, t)| t.read(cx).away_from_present());
                 if away && let Some((_, timeline)) = &self.timeline {
                     timeline.update(cx, |timeline, cx| timeline.jump_to_present(cx));
                     return true;
@@ -295,7 +344,10 @@ impl Shell {
             && !self.modal_open(cx)
             && !self.inbox_open
             && !self.chat_covered()
-            && self.root_focus.as_ref().is_some_and(|focus| focus.is_focused(window))
+            && self
+                .root_focus
+                .as_ref()
+                .is_some_and(|focus| focus.is_focused(window))
             && let Some((_, composer)) = &self.composer
         {
             composer.update(cx, |composer, cx| composer.type_in(&text, cx));
@@ -316,7 +368,8 @@ impl Shell {
         };
         // The panels that toggle themselves stay reachable over their own
         // modal; anything else waits until the modal is closed.
-        let toggles_help = matches!(action, Hotkey::Shortcuts) && matches!(self.dialog, Some(Dialog::Help));
+        let toggles_help =
+            matches!(action, Hotkey::Shortcuts) && matches!(self.dialog, Some(Dialog::Help));
         let toggles_switcher = matches!(action, Hotkey::Switcher) && self.switcher.is_some();
         if (self.modal_open(cx) && !toggles_help && !toggles_switcher)
             || (self.inbox_open && !matches!(action, Hotkey::Inbox))
@@ -340,7 +393,9 @@ impl Shell {
             Hotkey::Inbox => self.toggle_inbox(cx),
             Hotkey::Members => self.toggle_members(cx),
             Hotkey::Pins => self.open_pinned(cx),
-            Hotkey::Settings => self.open_settings(crate::view_model::keys::SettingsFocus::None, cx),
+            Hotkey::Settings => {
+                self.open_settings(crate::view_model::keys::SettingsFocus::None, cx)
+            }
             Hotkey::Room { forward } => self.step_room(forward, false, cx),
             Hotkey::Unread { forward } => self.step_room(forward, true, cx),
             Hotkey::Scope { forward } => self.step_scope(forward, cx),
@@ -383,8 +438,9 @@ impl Shell {
         let offset = usize::from(friends);
         let mut candidates: Vec<bool> = if friends { vec![true] } else { Vec::new() };
         candidates.extend(
-            list.iter()
-                .map(|r| !unread || r.unread_messages > 0 || r.highlight_count > 0 || r.marked_unread),
+            list.iter().map(|r| {
+                !unread || r.unread_messages > 0 || r.highlight_count > 0 || r.marked_unread
+            }),
         );
         let current = if friends && self.friends_open {
             Some(0)
@@ -414,7 +470,10 @@ impl Shell {
             return;
         };
         let scope = all[next].clone();
-        match crate::room_list::sidebar_order(self, &scope).first().map(|first| first.id.clone()) {
+        match crate::room_list::sidebar_order(self, &scope)
+            .first()
+            .map(|first| first.id.clone())
+        {
             Some(first) => self.open_room_in(scope, first, cx),
             None => self.set_scope(scope, cx),
         }
@@ -432,11 +491,11 @@ impl Shell {
             self.last_server = self.scope.clone();
             Scope::Dms
         };
-        let room = self
-            .last_room_in
-            .get(&target)
-            .cloned()
-            .filter(|room| rooms_in_scope(&self.rooms, &target).iter().any(|r| r.id == *room));
+        let room = self.last_room_in.get(&target).cloned().filter(|room| {
+            rooms_in_scope(&self.rooms, &target)
+                .iter()
+                .any(|r| r.id == *room)
+        });
         match room {
             Some(room) => self.open_room_in(target, room, cx),
             None => self.set_scope(target, cx),
@@ -454,7 +513,9 @@ impl Shell {
             .selected
             .as_ref()
             .and_then(|id| all.iter().position(|r| &r.id == id));
-        if let Some(room) = hotkeys::step_room(&candidates, current, forward).and_then(|i| all.get(i)) {
+        if let Some(room) =
+            hotkeys::step_room(&candidates, current, forward).and_then(|i| all.get(i))
+        {
             let scope = crate::model::scope_for(&self.rooms, room);
             self.open_room_in(scope, room.id.clone(), cx);
         }

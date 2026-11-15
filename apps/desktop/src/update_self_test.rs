@@ -40,7 +40,12 @@ fn update(data_dir: PathBuf) -> Result<(), String> {
     let core = Core::new(data_dir).map_err(|err| err.to_string())?;
     let status = futures::executor::block_on(core.check_for_update(PRETEND_VERSION))
         .map_err(|err| err.to_string())?;
-    let UpdateStatus::Available { version, download: Some(download), .. } = status else {
+    let UpdateStatus::Available {
+        version,
+        download: Some(download),
+        ..
+    } = status
+    else {
         return Err(format!("no update offered for this platform: {status:?}"));
     };
     eprintln!("update self-test: {PRETEND_VERSION} sees {version}, installing {download}");
@@ -54,7 +59,9 @@ fn update(data_dir: PathBuf) -> Result<(), String> {
 fn after_update() -> Result<(), String> {
     let exe = std::env::current_exe().map_err(|err| err.to_string())?;
     // What the update replaces: the app's folder, or a Mac bundle's.
-    let bundle = exe.ancestors().find(|p| p.extension().is_some_and(|e| e == "app"));
+    let bundle = exe
+        .ancestors()
+        .find(|p| p.extension().is_some_and(|e| e == "app"));
     let dir = match (cfg!(target_os = "macos"), bundle) {
         (true, Some(bundle)) => bundle.parent(),
         _ => exe.parent(),
@@ -78,6 +85,9 @@ fn after_update() -> Result<(), String> {
     }
     let marker = std::env::var_os("MORPHEUS_UPDATE_SELF_TEST_MARKER").ok_or("no marker path")?;
     let from = std::env::var("MORPHEUS_UPDATED_FROM").unwrap_or_default();
-    std::fs::write(&marker, format!("updated from process {from}; now {}\n", exe.display()))
-        .map_err(|err| err.to_string())
+    std::fs::write(
+        &marker,
+        format!("updated from process {from}; now {}\n", exe.display()),
+    )
+    .map_err(|err| err.to_string())
 }

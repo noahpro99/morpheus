@@ -61,37 +61,47 @@ impl ThreadPanel {
         nicknames: &NickMap,
         cx: &mut Context<Self>,
     ) -> Self {
-        let timeline = cx.new(|cx| {
-            TimelineView::new_thread(session.clone(), room_id.clone(), root_id, cx)
-        });
+        let timeline =
+            cx.new(|cx| TimelineView::new_thread(session.clone(), room_id.clone(), root_id, cx));
         let composer = cx.new(|cx| {
             Composer::new(session.clone(), room_id.clone(), String::new(), false, cx)
                 .with_placeholder("Reply in thread", cx)
         });
         let target = composer.clone();
-        cx.subscribe(&timeline, move |this: &mut Self, _, event: &TimelineEvent, cx| {
-            target.update(cx, |composer, cx| match event {
-                TimelineEvent::Opened(handle) => composer.opened(handle.clone(), cx),
-                TimelineEvent::Reply(message) => composer.reply_to(message, cx),
-                TimelineEvent::Edit(message) => composer.edit(message, cx),
-                TimelineEvent::LastOwn(message) => composer.set_last_own(message.clone()),
-                _ => {}
-            });
-            match event {
-                TimelineEvent::Opened(handle) => this.handle = Some(handle.clone()),
-                TimelineEvent::Menu(message, at) => cx.emit(ThreadEvent::Menu(message.clone(), *at)),
-                TimelineEvent::Picker(message, at) => cx.emit(ThreadEvent::Picker(message.clone(), *at)),
-                TimelineEvent::Delete(message, skip) => cx.emit(ThreadEvent::Delete(message.clone(), *skip)),
-                TimelineEvent::Sender(message, at) => {
-                    cx.emit(ThreadEvent::Sender(message.clone(), *at))
+        cx.subscribe(
+            &timeline,
+            move |this: &mut Self, _, event: &TimelineEvent, cx| {
+                target.update(cx, |composer, cx| match event {
+                    TimelineEvent::Opened(handle) => composer.opened(handle.clone(), cx),
+                    TimelineEvent::Reply(message) => composer.reply_to(message, cx),
+                    TimelineEvent::Edit(message) => composer.edit(message, cx),
+                    TimelineEvent::LastOwn(message) => composer.set_last_own(message.clone()),
+                    _ => {}
+                });
+                match event {
+                    TimelineEvent::Opened(handle) => this.handle = Some(handle.clone()),
+                    TimelineEvent::Menu(message, at) => {
+                        cx.emit(ThreadEvent::Menu(message.clone(), *at))
+                    }
+                    TimelineEvent::Picker(message, at) => {
+                        cx.emit(ThreadEvent::Picker(message.clone(), *at))
+                    }
+                    TimelineEvent::Delete(message, skip) => {
+                        cx.emit(ThreadEvent::Delete(message.clone(), *skip))
+                    }
+                    TimelineEvent::Sender(message, at) => {
+                        cx.emit(ThreadEvent::Sender(message.clone(), *at))
+                    }
+                    TimelineEvent::SenderMenu(message, at) => {
+                        cx.emit(ThreadEvent::SenderMenu(message.clone(), *at))
+                    }
+                    TimelineEvent::Failed(what, err) => {
+                        cx.emit(ThreadEvent::Failed(what, err.clone()))
+                    }
+                    _ => {}
                 }
-                TimelineEvent::SenderMenu(message, at) => {
-                    cx.emit(ThreadEvent::SenderMenu(message.clone(), *at))
-                }
-                TimelineEvent::Failed(what, err) => cx.emit(ThreadEvent::Failed(what, err.clone())),
-                _ => {}
-            }
-        })
+            },
+        )
         .detach();
         let shared = Arc::new(nicknames.clone());
         timeline.update(cx, |timeline, cx| timeline.set_nicknames(shared, cx));

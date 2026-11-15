@@ -10,7 +10,7 @@ use gpui::{
     Context, EventEmitter, FontWeight, Image, IntoElement, MouseButton, Pixels, Point, Render,
     ScrollHandle, Window, div, prelude::*, px, rgb, rgba,
 };
-use morpheus_core::{Member, MemberPermissions, MediaRef, OwnedRoomId, OwnedUserId, Session};
+use morpheus_core::{MediaRef, Member, MemberPermissions, OwnedRoomId, OwnedUserId, Session};
 
 use crate::{
     e2e::{E2eExt as _, HandleProbe},
@@ -34,9 +34,11 @@ impl EventEmitter<MemberEvent> for MembersView {}
 
 /// Lists already read, so a room opened again shows its members at once
 /// (the skeleton is for the first read only); newest rooms kept.
-fn cache() -> &'static std::sync::Mutex<std::collections::HashMap<(String, OwnedRoomId), Vec<Member>>> {
-    static CACHE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<(String, OwnedRoomId), Vec<Member>>>> =
-        std::sync::OnceLock::new();
+fn cache()
+-> &'static std::sync::Mutex<std::collections::HashMap<(String, OwnedRoomId), Vec<Member>>> {
+    static CACHE: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<(String, OwnedRoomId), Vec<Member>>>,
+    > = std::sync::OnceLock::new();
     CACHE.get_or_init(Default::default)
 }
 
@@ -67,10 +69,13 @@ impl MembersView {
     }
 
     pub fn new(session: Option<Session>, room: OwnedRoomId, cx: &mut Context<Self>) -> Self {
-        let known = session
-            .as_ref()
-            .and_then(|s| s.user_id())
-            .and_then(|user| cache().lock().ok()?.get(&(user.to_string(), room.clone())).cloned());
+        let known = session.as_ref().and_then(|s| s.user_id()).and_then(|user| {
+            cache()
+                .lock()
+                .ok()?
+                .get(&(user.to_string(), room.clone()))
+                .cloned()
+        });
         let mut this = Self {
             session,
             room,
@@ -106,9 +111,13 @@ impl MembersView {
             // Test builds can hold the first read back, to look at the skeleton.
             if first
                 && std::env::var_os("MORPHEUS_E2E_PORT").is_some()
-                && let Some(ms) = std::env::var("MORPHEUS_E2E_MEMBERS_DELAY_MS").ok().and_then(|v| v.parse().ok())
+                && let Some(ms) = std::env::var("MORPHEUS_E2E_MEMBERS_DELAY_MS")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
             {
-                cx.background_executor().timer(std::time::Duration::from_millis(ms)).await;
+                cx.background_executor()
+                    .timer(std::time::Duration::from_millis(ms))
+                    .await;
             }
             let list = members.await.map_err(|err| err.to_string());
             if let (Some(user), Ok(list)) = (user, &list)
@@ -131,14 +140,25 @@ impl MembersView {
     }
 
     /// The picture for `media`, starting its fetch if new.
-    fn picture(&mut self, user: &OwnedUserId, media: &MediaRef, cx: &mut Context<Self>) -> Option<Arc<Image>> {
+    fn picture(
+        &mut self,
+        user: &OwnedUserId,
+        media: &MediaRef,
+        cx: &mut Context<Self>,
+    ) -> Option<Arc<Image>> {
         const SIZE: u32 = 64;
         if let Some(image) = self.images.get(media, SIZE) {
             return Some(image);
         }
         let session = self.session.clone()?;
         if self.images.begin(media, SIZE) {
-            let fetching = media::fetch_picture(&session, Some((user.clone(), Some(self.room.clone()))), media, SIZE, SIZE);
+            let fetching = media::fetch_picture(
+                &session,
+                Some((user.clone(), Some(self.room.clone()))),
+                media,
+                SIZE,
+                SIZE,
+            );
             let media = media.clone();
             cx.spawn(async move |this, cx| {
                 let image = fetching
@@ -164,7 +184,8 @@ impl Render for MembersView {
             .id("members")
             .flex()
             .flex_col()
-            .flex_1().min_h_0()
+            .flex_1()
+            .min_h_0()
             .overflow_y_scroll()
             .track_scroll(&self.scroll)
             .line_height(gpui::relative(theme::LINE_HEIGHT));
@@ -172,7 +193,10 @@ impl Render for MembersView {
             None => {
                 // Waiting shows the shape of what is coming (the timeline's
                 // grey picture and bars), not words.
-                for (index, width) in [62.0, 48.0, 75.0, 40.0, 56.0, 68.0, 45.0, 58.0].into_iter().enumerate() {
+                for (index, width) in [62.0, 48.0, 75.0, 40.0, 56.0, 68.0, 45.0, 58.0]
+                    .into_iter()
+                    .enumerate()
+                {
                     panel = panel.child(skeleton_row(index, width));
                 }
             }
@@ -208,8 +232,15 @@ impl Render for MembersView {
                             .e2e("header", "members-header"),
                     );
                     for member in group.members {
-                        let picture = member.avatar.clone().and_then(|m| self.picture(&member.user_id, &m, cx));
-                        let shown = crate::streamer::name(&shown_name(&self.nicknames, member.user_id.as_str(), &member.name));
+                        let picture = member
+                            .avatar
+                            .clone()
+                            .and_then(|m| self.picture(&member.user_id, &m, cx));
+                        let shown = crate::streamer::name(&shown_name(
+                            &self.nicknames,
+                            member.user_id.as_str(),
+                            &member.name,
+                        ));
                         panel = panel.child(member_row(&member, shown, picture, cx));
                     }
                 }
@@ -252,7 +283,10 @@ fn member_row(
     let (open, menu) = (Box::new(member.clone()), member.clone());
     let permissions_of = |this: &MembersView| this.permissions;
     let mut row = div()
-        .id(gpui::SharedString::from(format!("member-{}", member.user_id)))
+        .id(gpui::SharedString::from(format!(
+            "member-{}",
+            member.user_id
+        )))
         .flex()
         .items_center()
         .gap(px(10.0))

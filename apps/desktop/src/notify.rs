@@ -74,7 +74,10 @@ pub fn show(
 /// Run `future` on a small runtime of its own, as the threads here need one
 /// (the core's sleeps are tokio's).
 fn block_on<F: std::future::Future>(future: F) -> Option<F::Output> {
-    match tokio::runtime::Builder::new_current_thread().enable_all().build() {
+    match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
         Ok(runtime) => Some(runtime.block_on(future)),
         Err(err) => {
             eprintln!("morpheus-desktop: notifier runtime failed: {err}");
@@ -165,19 +168,39 @@ pub fn spawn_notifier(session: Session, redraw: impl Fn() + Send + 'static) {
                     }
                     let dir = crate::data_dir();
                     if !settings::notifications_enabled(&dir) {
-                        eprintln!("morpheus-desktop: notifications are off on this device; not shown");
+                        eprintln!(
+                            "morpheus-desktop: notifications are off on this device; not shown"
+                        );
                         continue;
                     }
                     if crate::locks::is_locked(&notice.room_id) {
-                        show("Morpheus".into(), crate::view_model::locks::NOTIFICATION.into(), None, None, None);
+                        show(
+                            "Morpheus".into(),
+                            crate::view_model::locks::NOTIFICATION.into(),
+                            None,
+                            None,
+                            None,
+                        );
                         continue;
                     }
                     if crate::streamer::notifications_hidden() {
-                        show("Morpheus".into(), "Someone sent a message".into(), None, None, None);
+                        show(
+                            "Morpheus".into(),
+                            "Someone sent a message".into(),
+                            None,
+                            None,
+                            None,
+                        );
                         continue;
                     }
                     let ready = notices::ready(&session, notice, &dir).await;
-                    show(ready.text.title, ready.text.body, ready.icon, ready.image, None);
+                    show(
+                        ready.text.title,
+                        ready.text.body,
+                        ready.icon,
+                        ready.image,
+                        None,
+                    );
                 }
             });
         })
@@ -247,7 +270,10 @@ pub fn spawn_ring_watcher(session: Session) {
                                     if crate::locks::is_locked(&call.room_id) {
                                         crate::locks::LOCKED_CALL.to_owned()
                                     } else {
-                                        format!("{} is calling", if hidden { "Someone" } else { &name })
+                                        format!(
+                                            "{} is calling",
+                                            if hidden { "Someone" } else { &name }
+                                        )
                                     },
                                     "Open Morpheus to answer".into(),
                                     None,
@@ -258,11 +284,19 @@ pub fn spawn_ring_watcher(session: Session) {
                             let log = std::env::var_os("MORPHEUS_E2E_PORT")
                                 .is_some()
                                 .then(|| dir.join("played-sounds.log"));
-                            crate::view_model::ringing::while_ringing(&session, &call, &declined, || {
-                                if crate::headless() {
-                                    crate::sounds::play(crate::view_model::calls::Sound::Ring, log.as_ref());
-                                }
-                            })
+                            crate::view_model::ringing::while_ringing(
+                                &session,
+                                &call,
+                                &declined,
+                                || {
+                                    if crate::headless() {
+                                        crate::sounds::play(
+                                            crate::view_model::calls::Sound::Ring,
+                                            log.as_ref(),
+                                        );
+                                    }
+                                },
+                            )
                             .await;
                         });
                     });

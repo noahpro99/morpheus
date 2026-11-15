@@ -31,7 +31,11 @@ impl EventEmitter<Closed> for CallInvite {}
 
 /// The link a voice channel is opened with: matrix.to, via its own server.
 pub fn channel_link(room: &OwnedRoomId, home: Option<&str>) -> String {
-    match room.server_name().map(|s| s.to_string()).or(home.map(str::to_owned)) {
+    match room
+        .server_name()
+        .map(|s| s.to_string())
+        .or(home.map(str::to_owned))
+    {
         Some(server) => format!("https://matrix.to/#/{room}?via={server}"),
         None => format!("https://matrix.to/#/{room}"),
     }
@@ -59,15 +63,25 @@ impl CallInvite {
                 cx,
             )
         });
-        cx.subscribe(&picker, |this, _, picked: &Picked, cx| this.send(picked.0.clone(), cx))
-            .detach();
+        cx.subscribe(&picker, |this, _, picked: &Picked, cx| {
+            this.send(picked.0.clone(), cx)
+        })
+        .detach();
         // Enter on a typed ID invites it.
         let input = picker.read(cx).input().clone();
         cx.subscribe(&input, |this, _, _: &crate::input::Submit, cx| {
-            let typed = this.picker.read(cx).input().read(cx).value().trim().to_owned();
+            let typed = this
+                .picker
+                .read(cx)
+                .input()
+                .read(cx)
+                .value()
+                .trim()
+                .to_owned();
             if let Ok(user) = typed.parse::<OwnedUserId>() {
-                this.picker
-                    .update(cx, |picker, cx| picker.set_state(&user, Some(RowState::Working), cx));
+                this.picker.update(cx, |picker, cx| {
+                    picker.set_state(&user, Some(RowState::Working), cx)
+                });
                 this.send(user, cx);
             }
         })
@@ -91,10 +105,16 @@ impl CallInvite {
         cx.spawn(async move |this, cx| {
             let sent = async {
                 if direct {
-                    session.invite(room, who).await.map_err(|err| err.to_string())
+                    session
+                        .invite(room, who)
+                        .await
+                        .map_err(|err| err.to_string())
                 } else {
                     let dm = session.dm_with(who).await.map_err(|err| err.to_string())?;
-                    let body = format!("Join me in [{name}]({})", channel_link(&room, home.as_deref()));
+                    let body = format!(
+                        "Join me in [{name}]({})",
+                        channel_link(&room, home.as_deref())
+                    );
                     session.say(dm, body).await.map_err(|err| err.to_string())
                 }
             }
@@ -118,7 +138,11 @@ impl Render for CallInvite {
         if std::mem::take(&mut self.take_focus) {
             self.picker.read(cx).input().read(cx).focus(window);
         }
-        let title = if self.direct { "Invite to call" } else { "Invite to voice channel" };
+        let title = if self.direct {
+            "Invite to call"
+        } else {
+            "Invite to voice channel"
+        };
         let hint = if self.direct {
             "They are invited to this conversation and can join the call."
         } else {
@@ -158,7 +182,8 @@ impl crate::shell::Shell {
             .map(|r| (r.name.clone(), r.is_dm))
             .unwrap_or_default();
         let (friends, nicknames) = (self.friends.clone(), self.nicknames.clone());
-        let dialog = cx.new(|cx| CallInvite::new(session, room, name, direct, friends, nicknames, cx));
+        let dialog =
+            cx.new(|cx| CallInvite::new(session, room, name, direct, friends, nicknames, cx));
         cx.subscribe(&dialog, |this, _, _: &Closed, cx| this.dialog_close(cx))
             .detach();
         self.dialog_open(crate::dialogs::Dialog::CallInvite(dialog), cx);

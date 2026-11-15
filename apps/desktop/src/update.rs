@@ -29,8 +29,16 @@ impl Shell {
         cx.spawn(async move |this, cx| {
             loop {
                 match session.check_for_update(VERSION).await {
-                    Ok(UpdateStatus::Available { version, url, download }) => {
-                        let offer = Offer { version, url, download };
+                    Ok(UpdateStatus::Available {
+                        version,
+                        url,
+                        download,
+                    }) => {
+                        let offer = Offer {
+                            version,
+                            url,
+                            download,
+                        };
                         let alive = this
                             .update(cx, |this, cx| {
                                 if this.update.as_ref() != Some(&offer) {

@@ -16,7 +16,9 @@ use std::{
 use futures::FutureExt as _;
 use gpui::{AsyncApp, Context, WeakEntity};
 use morpheus_call::{AudioMode, Call, CallEvent, LOCAL_CAMERA, LOCAL_SCREEN};
-use morpheus_core::{CallMedia, IncomingCall, MediaRef, OwnedRoomId, OwnedUserId, Ringing, Session};
+use morpheus_core::{
+    CallMedia, IncomingCall, MediaRef, OwnedRoomId, OwnedUserId, Ringing, Session,
+};
 
 use crate::{
     shell::Shell,
@@ -207,8 +209,10 @@ impl Shell {
             let mut updates = match listening.await {
                 Ok(updates) => updates,
                 Err(err) => {
-                    this.update(cx, |this, cx| this.fail("listening for calls", &err.to_string(), cx))
-                        .ok();
+                    this.update(cx, |this, cx| {
+                        this.fail("listening for calls", &err.to_string(), cx)
+                    })
+                    .ok();
                     return;
                 }
             };
@@ -229,17 +233,22 @@ impl Shell {
                             .update(|cx| {
                                 cx.windows()
                                     .first()
-                                    .and_then(|w| w.update(cx, |_, window, _| !window.is_window_active()).ok())
+                                    .and_then(|w| {
+                                        w.update(cx, |_, window, _| !window.is_window_active()).ok()
+                                    })
                                     .unwrap_or(true)
                             })
                             .unwrap_or(true);
-                        let wanted = crate::view_model::settings::notifications_enabled(&crate::data_dir());
+                        let wanted =
+                            crate::view_model::settings::notifications_enabled(&crate::data_dir());
                         if alive && background && wanted {
                             let name = match session.profile(caller.clone()).await {
                                 Ok(profile) => profile.name,
                                 Err(_) => caller.localpart().to_owned(),
                             };
-                            let hidden = crate::view_model::settings::notification_content(&crate::data_dir())
+                            let hidden = crate::view_model::settings::notification_content(
+                                &crate::data_dir(),
+                            )
                                 == crate::view_model::settings::NotificationContent::Hidden;
                             let title = if crate::locks::is_locked(&ring_room) {
                                 crate::locks::LOCKED_CALL.to_owned()
@@ -521,7 +530,12 @@ impl Shell {
 
     /// The Share screen button, pressed at `at`: sharing stops at once; where
     /// it is off, asks how to share first (Go Live starts it).
-    pub fn press_screen(&mut self, on: bool, at: gpui::Point<gpui::Pixels>, cx: &mut Context<Self>) {
+    pub fn press_screen(
+        &mut self,
+        on: bool,
+        at: gpui::Point<gpui::Pixels>,
+        cx: &mut Context<Self>,
+    ) {
         if on {
             self.ask_screen_quality(at, cx);
         } else {
@@ -585,14 +599,12 @@ impl Shell {
                             this.toast(format!("Sharing without sound: {why}"), cx);
                         }
                     }
-                    Ok(()) => {
-                        this.chime(match (screen, on) {
-                            (false, true) => Sound::CameraOn,
-                            (false, false) => Sound::CameraOff,
-                            (true, true) => Sound::ScreenOn,
-                            (true, false) => Sound::ScreenOff,
-                        })
-                    }
+                    Ok(()) => this.chime(match (screen, on) {
+                        (false, true) => Sound::CameraOn,
+                        (false, false) => Sound::CameraOff,
+                        (true, true) => Sound::ScreenOn,
+                        (true, false) => Sound::ScreenOff,
+                    }),
                 }
                 this.sync_published(cx);
                 cx.notify();
@@ -607,7 +619,8 @@ impl Shell {
     pub fn set_screen_volume(&mut self, user: &OwnedUserId, volume: f32, cx: &mut Context<Self>) {
         let volume = volume.clamp(0.0, morpheus_call::MAX_SCREEN_VOLUME);
         self.calls.screen_volumes.insert(user.clone(), volume);
-        if let (Some(call), Some(identity)) = (&self.calls.media, self.calls.screen_audio.get(user)) {
+        if let (Some(call), Some(identity)) = (&self.calls.media, self.calls.screen_audio.get(user))
+        {
             call.set_screen_volume(identity, volume);
         }
         cx.notify();
@@ -620,7 +633,8 @@ impl Shell {
         self.apply_user_volume(user);
         if let Some(menu) = &mut self.menu {
             for item in &mut menu.items {
-                if let Some(crate::view_model::menu::MenuSlider::UserVolume(who, v)) = &mut item.slider
+                if let Some(crate::view_model::menu::MenuSlider::UserVolume(who, v)) =
+                    &mut item.slider
                     && who == user
                 {
                     *v = volume;
@@ -661,7 +675,8 @@ impl Shell {
         self.save_devices(cx);
         if let Some(menu) = &mut self.menu {
             for item in &mut menu.items {
-                if let Some(crate::view_model::menu::MenuSlider::InputVolume(v)) = &mut item.slider {
+                if let Some(crate::view_model::menu::MenuSlider::InputVolume(v)) = &mut item.slider
+                {
                     *v = volume;
                 }
             }
@@ -680,7 +695,8 @@ impl Shell {
         self.save_devices(cx);
         if let Some(menu) = &mut self.menu {
             for item in &mut menu.items {
-                if let Some(crate::view_model::menu::MenuSlider::OutputVolume(v)) = &mut item.slider {
+                if let Some(crate::view_model::menu::MenuSlider::OutputVolume(v)) = &mut item.slider
+                {
                     *v = volume;
                 }
             }
@@ -713,7 +729,9 @@ impl Shell {
 
     /// Answers a ring: opens the room and joins.
     pub fn answer_call(&mut self, call: &IncomingCall, cx: &mut Context<Self>) {
-        self.calls.rings.retain(|r| r.notification != call.notification);
+        self.calls
+            .rings
+            .retain(|r| r.notification != call.notification);
         let name = self
             .rooms
             .iter()
@@ -726,7 +744,9 @@ impl Shell {
 
     /// Declines a ring.
     pub fn decline_ring(&mut self, call: &IncomingCall, cx: &mut Context<Self>) {
-        self.calls.rings.retain(|r| r.notification != call.notification);
+        self.calls
+            .rings
+            .retain(|r| r.notification != call.notification);
         cx.notify();
         let Some(session) = self.session.clone() else {
             return;
@@ -785,7 +805,9 @@ async fn declined(
     // A decline of a ring from before this call (one of an earlier call, still
     // arriving as the app catches up) is not this call's: the ring this call
     // sent goes out after it joined.
-    let joined = this.read_with(cx, |this, _| this.calls.joined_at_ms).unwrap_or(0);
+    let joined = this
+        .read_with(cx, |this, _| this.calls.joined_at_ms)
+        .unwrap_or(0);
     if let Ok(Some(sent)) = session.event_sent_at(room_id.clone(), notification).await
         && sent + 5_000 < joined
     {
@@ -804,7 +826,10 @@ async fn declined(
         .unwrap_or(true);
     this.update(cx, |this, cx| {
         eprintln!("morpheus-desktop: {name} declined the call in {room_for_log} (alone: {alone})");
-        this.toast(format!("{} declined the call", crate::streamer::name(&name)), cx);
+        this.toast(
+            format!("{} declined the call", crate::streamer::name(&name)),
+            cx,
+        );
         if alone {
             this.hang_up(cx);
         }
@@ -881,7 +906,8 @@ fn show_learned(
             Some((people.get(&id)?.clone(), key, screen))
         })
         .collect();
-    if learned.iter().any(|id| said.speaking.contains(id)) || !heard.is_empty() || !feeds.is_empty() {
+    if learned.iter().any(|id| said.speaking.contains(id)) || !heard.is_empty() || !feeds.is_empty()
+    {
         eprintln!(
             "morpheus-desktop: call names learned after their media: {learned:?} (speaking {}, heard {}, feeds {})",
             speaking.len(),
@@ -964,9 +990,10 @@ async fn run_call(
     // Our media key goes out while LiveKit is being reached, under the name
     // the token gives us (checked against LiveKit's own once connected).
     let early_key = match (credentials.media_key.clone(), credentials.identity()) {
-        (Some(key), Some(identity)) => {
-            Some((identity.clone(), session.send_call_key(room_id.clone(), key, identity)))
-        }
+        (Some(key), Some(identity)) => Some((
+            identity.clone(),
+            session.send_call_key(room_id.clone(), key, identity),
+        )),
         _ => None,
     };
     let connected = match credentials.media_key.clone() {
@@ -1027,9 +1054,10 @@ async fn run_call(
     }
     // Our media key, to everyone in the call (again whenever someone joins).
     let share_key = || {
-        let sending = credentials.media_key.clone().map(|key| {
-            session.send_call_key(room_id.clone(), key, own_identity.clone())
-        });
+        let sending = credentials
+            .media_key
+            .clone()
+            .map(|key| session.send_call_key(room_id.clone(), key, own_identity.clone()));
         async move {
             if let Some(sending) = sending
                 && let Err(err) = sending.await
@@ -1064,7 +1092,10 @@ async fn run_call(
                 }
             }
             .fuse();
-            let tick = cx.background_executor().timer(Duration::from_secs(1)).fuse();
+            let tick = cx
+                .background_executor()
+                .timer(Duration::from_secs(1))
+                .fuse();
             futures::pin_mut!(event, key, tick);
             futures::select_biased! {
                 event = event => Next::Event(event),
@@ -1174,7 +1205,8 @@ async fn run_call(
                 let user = people.get(&identity).cloned();
                 // Its sender not known yet: shown once their name is.
                 if on && user.is_none() {
-                    said.unplaced.insert(key.clone(), (identity.clone(), screen));
+                    said.unplaced
+                        .insert(key.clone(), (identity.clone(), screen));
                 } else {
                     said.unplaced.remove(&key);
                 }
@@ -1243,15 +1275,25 @@ async fn run_call(
 impl Shell {
     /// The camera button's right-click: the cameras, to pick from.
     pub fn open_camera_menu(&mut self, at: gpui::Point<gpui::Pixels>, cx: &mut Context<Self>) {
-        use crate::view_model::{calls::{camera_rows, device_menu}, menu::DeviceKind};
-        let cameras: Vec<(String, String)> =
-            morpheus_call::cameras(AudioMode::from_env())
-                .into_iter()
-                .map(|c| (c.id, c.name))
-                .collect();
+        use crate::view_model::{
+            calls::{camera_rows, device_menu},
+            menu::DeviceKind,
+        };
+        let cameras: Vec<(String, String)> = morpheus_call::cameras(AudioMode::from_env())
+            .into_iter()
+            .map(|c| (c.id, c.name))
+            .collect();
         let rows = camera_rows(&cameras, self.calls.devices.camera.as_deref());
         let items = device_menu(DeviceKind::Camera, &rows);
-        self.open_menu(crate::menu::OpenMenu::new(at, items, false, crate::view_model::menu::MenuTarget::Other), cx);
+        self.open_menu(
+            crate::menu::OpenMenu::new(
+                at,
+                items,
+                false,
+                crate::view_model::menu::MenuTarget::Other,
+            ),
+            cx,
+        );
     }
 
     /// The quick list of microphones (or, with `speakers`, speakers).
@@ -1261,13 +1303,19 @@ impl Shell {
         at: gpui::Point<gpui::Pixels>,
         cx: &mut Context<Self>,
     ) {
-        use crate::view_model::{calls::{device_rows, voice_popup_menu}, menu::DeviceKind};
+        use crate::view_model::{
+            calls::{device_rows, voice_popup_menu},
+            menu::DeviceKind,
+        };
         let found = morpheus_call::audio_devices(AudioMode::from_env());
         cx.spawn(async move |this, cx| {
             let found = found.await;
             this.update(cx, |this, cx| {
-                let mics: Vec<(String, String)> =
-                    found.microphones.into_iter().map(|d| (d.id, d.name)).collect();
+                let mics: Vec<(String, String)> = found
+                    .microphones
+                    .into_iter()
+                    .map(|d| (d.id, d.name))
+                    .collect();
                 let spks: Vec<(String, String)> =
                     found.speakers.into_iter().map(|d| (d.id, d.name)).collect();
                 let items = if speakers {
@@ -1311,7 +1359,9 @@ impl Shell {
                 if self.calls.state.as_ref().is_some_and(|c| c.camera) {
                     self.set_camera(false, cx);
                     cx.spawn(async move |this, cx| {
-                        cx.background_executor().timer(Duration::from_millis(400)).await;
+                        cx.background_executor()
+                            .timer(Duration::from_millis(400))
+                            .await;
                         this.update(cx, |this, cx| this.set_camera(true, cx)).ok();
                     })
                     .detach();

@@ -11,37 +11,36 @@ use gpui::{
     rgb,
 };
 use morpheus_core::{
-    MediaRef, Message, MessageId, OwnedEventId, OwnedRoomId, OwnedUserId, Profile, RoomSummary, Session, SpaceRoom,
-    TimelineHandle,
-    VectorDiff,
+    MediaRef, Message, MessageId, OwnedEventId, OwnedRoomId, OwnedUserId, Profile, RoomSummary,
+    Session, SpaceRoom, TimelineHandle, VectorDiff,
 };
 
 use crate::{
     chat,
-    friends::{FriendsEvent, FriendsPage},
     composer::Composer,
     dialogs::{self, Dialog, PendingUndo},
     e2e::E2eExt as _,
+    emoji_picker::EmojiPicker,
+    friends::{FriendsEvent, FriendsPage},
+    input::{Submit, TextInput},
     media::{self, Avatars},
     members::{MemberEvent, MembersView},
-    emoji_picker::EmojiPicker,
     menu::{self, OpenMenu},
-    profile::ProfileCard,
     model::{Scope, rooms_in_scope},
-    view_model::{marks::Marks, nicknames::NickMap, toast::ToastList},
     prefs::Prefs,
+    profile::ProfileCard,
     rail, room_list,
+    search::{SearchEvent, SearchPanel},
     settings::{
         DevicesChosen, InputVolumeChanged, KeysChanged, MicTest, NoiseChosen, OutputVolumeChanged,
         SettingsView, ThemeChosen,
     },
     theme,
-    input::{Submit, TextInput},
-    search::{SearchEvent, SearchPanel},
     thread::{ThreadEvent, ThreadPanel},
     timeline::{LinkClicked, TimelineEvent, TimelineView},
     user_bar,
     view_model::keys::{KeyAccess, SettingsFocus, show_backup_prompt},
+    view_model::{marks::Marks, nicknames::NickMap, toast::ToastList},
 };
 
 /// How often the lock state is re-read.
@@ -50,8 +49,10 @@ const KEYS_RECHECK: std::time::Duration = std::time::Duration::from_secs(30);
 /// pictures) between them. A timeline costs about 2-4 KB an entry (message,
 /// rows, measured heights), so the budget is some 25 MB at most; a usual room is
 /// 40-150 entries, so 20 rooms are around 5 MB.
-const TIMELINE_CACHE: crate::view_model::lru::Budget =
-    crate::view_model::lru::Budget { max_items: 20, max_weight: 6000 };
+const TIMELINE_CACHE: crate::view_model::lru::Budget = crate::view_model::lru::Budget {
+    max_items: 20,
+    max_weight: 6000,
+};
 
 /// The shell root's focus handle: holding it is holding nothing in particular.
 pub struct RootFocus(pub FocusHandle);
@@ -310,8 +311,10 @@ impl Shell {
         .detach();
         shell.scope = Scope::Rooms;
         let settings = cx.new(|cx| SettingsView::new(Some(session), cx));
-        cx.subscribe(&settings, |this, _, _: &KeysChanged, cx| this.refresh_keys(cx))
-            .detach();
+        cx.subscribe(&settings, |this, _, _: &KeysChanged, cx| {
+            this.refresh_keys(cx)
+        })
+        .detach();
         cx.subscribe(&settings, |this, _, chosen: &ThemeChosen, cx| {
             crate::theme::set(chosen.0);
             cx.refresh_windows();
@@ -319,10 +322,16 @@ impl Shell {
             this.save_prefs(cx);
         })
         .detach();
-        cx.subscribe(&settings, |this, _, _: &crate::settings::OwnProfileChanged, cx| this.reload_own_profile(cx))
-            .detach();
-        cx.subscribe(&settings, |this, _, _: &crate::settings::StreamerChanged, cx| this.streamer_changed(cx))
-            .detach();
+        cx.subscribe(
+            &settings,
+            |this, _, _: &crate::settings::OwnProfileChanged, cx| this.reload_own_profile(cx),
+        )
+        .detach();
+        cx.subscribe(
+            &settings,
+            |this, _, _: &crate::settings::StreamerChanged, cx| this.streamer_changed(cx),
+        )
+        .detach();
         cx.subscribe(&settings, |this, _, chosen: &DevicesChosen, cx| {
             this.calls.devices = crate::view_model::calls::read_device_prefs(&crate::data_dir());
             if chosen.0 != crate::view_model::menu::DeviceKind::Camera {
@@ -338,10 +347,14 @@ impl Shell {
             this.set_output_volume(vol.0, cx);
         })
         .detach();
-        cx.subscribe(&settings, |this, _, chosen: &NoiseChosen, cx| this.choose_noise(chosen.0, cx))
-            .detach();
-        cx.subscribe(&settings, |this, _, test: &MicTest, cx| this.set_mic_test(test.0, cx))
-            .detach();
+        cx.subscribe(&settings, |this, _, chosen: &NoiseChosen, cx| {
+            this.choose_noise(chosen.0, cx)
+        })
+        .detach();
+        cx.subscribe(&settings, |this, _, test: &MicTest, cx| {
+            this.set_mic_test(test.0, cx)
+        })
+        .detach();
         shell.settings = Some(settings);
         shell.refresh_keys(cx);
         shell.load_marks(cx);
@@ -446,19 +459,30 @@ impl Shell {
     /// box closes the results.
     fn make_search_box(&mut self, cx: &mut Context<Self>) {
         let input = cx.new(|cx| {
-            TextInput::new("search", crate::view_model::search::PLACEHOLDER, false, "", cx)
-                .bare("input", "search-input")
-                .slim()
+            TextInput::new(
+                "search",
+                crate::view_model::search::PLACEHOLDER,
+                false,
+                "",
+                cx,
+            )
+            .bare("input", "search-input")
+            .slim()
         });
-        cx.subscribe(&input, |this: &mut Self, _, _: &Submit, cx| this.run_search(cx))
-            .detach();
-        cx.subscribe(&input, |this: &mut Self, input, _: &crate::input::Changed, cx| {
-            // Emptied by hand: nothing left to show results for.
-            if input.read(cx).value().is_empty() && this.search.is_some() {
-                this.search = None;
-                cx.notify();
-            }
+        cx.subscribe(&input, |this: &mut Self, _, _: &Submit, cx| {
+            this.run_search(cx)
         })
+        .detach();
+        cx.subscribe(
+            &input,
+            |this: &mut Self, input, _: &crate::input::Changed, cx| {
+                // Emptied by hand: nothing left to show results for.
+                if input.read(cx).value().is_empty() && this.search.is_some() {
+                    this.search = None;
+                    cx.notify();
+                }
+            },
+        )
         .detach();
         self.search_input = Some(input);
     }
@@ -477,13 +501,18 @@ impl Shell {
             Some((id, panel)) if id == &room => panel.clone(),
             _ => {
                 let panel = cx.new(|_| SearchPanel::new(self.session.clone(), room.clone()));
-                cx.subscribe(&panel, |this: &mut Self, _, event: &SearchEvent, cx| match event {
-                    SearchEvent::Jump(event_id) => {
-                        if let Some((_, timeline)) = &this.timeline {
-                            timeline.update(cx, |timeline, cx| timeline.jump_to(event_id.clone(), cx));
+                cx.subscribe(
+                    &panel,
+                    |this: &mut Self, _, event: &SearchEvent, cx| match event {
+                        SearchEvent::Jump(event_id) => {
+                            if let Some((_, timeline)) = &this.timeline {
+                                timeline.update(cx, |timeline, cx| {
+                                    timeline.jump_to(event_id.clone(), cx)
+                                });
+                            }
                         }
-                    }
-                })
+                    },
+                )
                 .detach();
                 self.search = Some((room, panel.clone()));
                 panel
@@ -550,27 +579,30 @@ impl Shell {
         };
         let room_id = room.clone();
         let panel = cx.new(|cx| ThreadPanel::new(session, room_id, root, root_id, &nicknames, cx));
-        cx.subscribe(&panel, |this: &mut Self, _, event: &ThreadEvent, cx| match event {
-            ThreadEvent::Close => this.close_thread(cx),
-            ThreadEvent::Sender(message, at) => {
-                let seen = Some((message.sender_name.clone(), message.sender_avatar.clone()));
-                this.open_profile(message.sender.clone(), Some(*at), seen, cx)
-            }
-            ThreadEvent::SenderMenu(message, at) => this.open_sender_menu(message, *at, cx),
-            ThreadEvent::Menu(message, at) => {
-                this.acting_in_thread = true;
-                this.open_message_menu(message, *at, cx)
-            }
-            ThreadEvent::Picker(message, at) => {
-                this.acting_in_thread = true;
-                this.open_picker(message.id.clone(), *at, cx)
-            }
-            ThreadEvent::Delete(message, skip) => {
-                this.acting_in_thread = true;
-                this.delete_message((**message).clone(), *skip, cx)
-            }
-            ThreadEvent::Failed(what, err) => this.fail(what, err, cx),
-        })
+        cx.subscribe(
+            &panel,
+            |this: &mut Self, _, event: &ThreadEvent, cx| match event {
+                ThreadEvent::Close => this.close_thread(cx),
+                ThreadEvent::Sender(message, at) => {
+                    let seen = Some((message.sender_name.clone(), message.sender_avatar.clone()));
+                    this.open_profile(message.sender.clone(), Some(*at), seen, cx)
+                }
+                ThreadEvent::SenderMenu(message, at) => this.open_sender_menu(message, *at, cx),
+                ThreadEvent::Menu(message, at) => {
+                    this.acting_in_thread = true;
+                    this.open_message_menu(message, *at, cx)
+                }
+                ThreadEvent::Picker(message, at) => {
+                    this.acting_in_thread = true;
+                    this.open_picker(message.id.clone(), *at, cx)
+                }
+                ThreadEvent::Delete(message, skip) => {
+                    this.acting_in_thread = true;
+                    this.delete_message((**message).clone(), *skip, cx)
+                }
+                ThreadEvent::Failed(what, err) => this.fail(what, err, cx),
+            },
+        )
         .detach();
         self.thread = Some((room, panel));
         cx.notify();
@@ -586,14 +618,20 @@ impl Shell {
     /// The Friends page takes the chat area (the top of the DMs).
     pub fn open_friends(&mut self, cx: &mut Context<Self>) {
         if self.friends_page.is_none() {
-            let (session, friends, names) =
-                (self.session.clone(), self.friends.clone(), self.nicknames.clone());
+            let (session, friends, names) = (
+                self.session.clone(),
+                self.friends.clone(),
+                self.nicknames.clone(),
+            );
             let page = cx.new(|cx| FriendsPage::new(session, friends, names, cx));
-            cx.subscribe(&page, |this: &mut Self, _, event: &FriendsEvent, cx| match event {
-                FriendsEvent::OpenDm(id) => this.open_dm_when_listed(id.clone(), cx),
-                FriendsEvent::Remove(user) => this.set_friend(user.clone(), false, cx),
-                FriendsEvent::Failed(what, err) => this.fail(what, err, cx),
-            })
+            cx.subscribe(
+                &page,
+                |this: &mut Self, _, event: &FriendsEvent, cx| match event {
+                    FriendsEvent::OpenDm(id) => this.open_dm_when_listed(id.clone(), cx),
+                    FriendsEvent::Remove(user) => this.set_friend(user.clone(), false, cx),
+                    FriendsEvent::Failed(what, err) => this.fail(what, err, cx),
+                },
+            )
             .detach();
             self.friends_page = Some(page);
         }
@@ -611,7 +649,6 @@ impl Shell {
             self.pending_dm = Some(id);
         }
     }
-
 
     /// A room just accepted shows as joined even while the list still says
     /// invited; once the list agrees, it is left to it.
@@ -632,7 +669,9 @@ impl Shell {
     /// it is joined.
     pub fn open_pending_dm(&mut self, cx: &mut Context<Self>) {
         let listed = |this: &Self, id: &OwnedRoomId| {
-            this.rooms.iter().any(|room| &room.id == id && !room.invited)
+            this.rooms
+                .iter()
+                .any(|room| &room.id == id && !room.invited)
         };
         if let Some(id) = self.pending_dm.clone()
             && listed(self, &id)
@@ -709,7 +748,11 @@ impl Shell {
             summary.unread_messages = 0;
             summary.highlight_count = 0;
         }
-        for notice in self.notices.iter().filter(|n| n.room_id == room && n.is_mention) {
+        for notice in self
+            .notices
+            .iter()
+            .filter(|n| n.room_id == room && n.is_mention)
+        {
             self.seen_mentions.insert(notice.event_id.clone());
         }
     }
@@ -763,7 +806,9 @@ impl Shell {
             _ => None,
         });
         match target {
-            Some(room) if self.selected.as_ref() != Some(&room) => self.open_room_in(scope, room, cx),
+            Some(room) if self.selected.as_ref() != Some(&room) => {
+                self.open_room_in(scope, room, cx)
+            }
             _ => self.set_scope(scope, cx),
         }
     }
@@ -822,12 +867,13 @@ impl Shell {
             let fresh = kept.is_none();
             let session = self.session.clone();
             let room = id.clone();
-            let timeline = kept.unwrap_or_else(|| cx.new(|cx| TimelineView::new(session, room.clone(), cx)));
+            let timeline =
+                kept.unwrap_or_else(|| cx.new(|cx| TimelineView::new(session, room.clone(), cx)));
             if fresh {
-            cx.subscribe(&timeline, |this: &mut Self, _, event: &LinkClicked, cx| {
-                this.link_clicked(&event.0, cx)
-            })
-            .detach();
+                cx.subscribe(&timeline, |this: &mut Self, _, event: &LinkClicked, cx| {
+                    this.link_clicked(&event.0, cx)
+                })
+                .detach();
             }
             let (name, is_dm) = self
                 .rooms
@@ -836,61 +882,80 @@ impl Shell {
                 .map(|r| (r.name.clone(), r.is_dm))
                 .unwrap_or_default();
             timeline.update(cx, |t, cx| t.set_direct(is_dm, cx));
-            let composer = cx.new(|cx| Composer::new(self.session.clone(), room.clone(), name, is_dm, cx));
+            let composer =
+                cx.new(|cx| Composer::new(self.session.clone(), room.clone(), name, is_dm, cx));
             let target = composer.clone();
-            self.composer_link = Some(cx.subscribe(&timeline, move |_, _, event: &TimelineEvent, cx| {
-                target.update(cx, |composer, cx| match event {
-                    TimelineEvent::Opened(handle) => composer.opened(handle.clone(), cx),
-                    TimelineEvent::Reply(message) => composer.reply_to(message, cx),
-                    TimelineEvent::Edit(message) => composer.edit(message, cx),
-                    TimelineEvent::LastOwn(message) => composer.set_last_own(message.clone()),
-                    TimelineEvent::OpenSettings(_)
-                    | TimelineEvent::Menu(..)
-                    | TimelineEvent::Picker(..)
-                    | TimelineEvent::Delete(..)
-                    | TimelineEvent::Sender(..)
-                    | TimelineEvent::SenderMenu(..)
-                    | TimelineEvent::Thread(..)
-                    | TimelineEvent::OpenImage(..)
-                    | TimelineEvent::FullscreenVideo(..)
-                    | TimelineEvent::Failed(..) => {}
-                })
-            }));
+            self.composer_link = Some(cx.subscribe(
+                &timeline,
+                move |_, _, event: &TimelineEvent, cx| {
+                    target.update(cx, |composer, cx| match event {
+                        TimelineEvent::Opened(handle) => composer.opened(handle.clone(), cx),
+                        TimelineEvent::Reply(message) => composer.reply_to(message, cx),
+                        TimelineEvent::Edit(message) => composer.edit(message, cx),
+                        TimelineEvent::LastOwn(message) => composer.set_last_own(message.clone()),
+                        TimelineEvent::OpenSettings(_)
+                        | TimelineEvent::Menu(..)
+                        | TimelineEvent::Picker(..)
+                        | TimelineEvent::Delete(..)
+                        | TimelineEvent::Sender(..)
+                        | TimelineEvent::SenderMenu(..)
+                        | TimelineEvent::Thread(..)
+                        | TimelineEvent::OpenImage(..)
+                        | TimelineEvent::FullscreenVideo(..)
+                        | TimelineEvent::Failed(..) => {}
+                    })
+                },
+            ));
             if fresh {
-            cx.subscribe(&timeline, |this: &mut Self, from, event: &TimelineEvent, cx| match event {
-                // A timeline kept in the background says nothing to the shell.
-                _ if this.timeline.as_ref().is_none_or(|(_, open)| *open != from) => {}
-                TimelineEvent::Opened(handle) => this.timeline_handle = Some(handle.clone()),
-                TimelineEvent::Menu(message, at) => {
-                    this.acting_in_thread = false;
-                    this.open_message_menu(message, *at, cx)
-                }
-                TimelineEvent::Picker(message, at) => {
-                    this.acting_in_thread = false;
-                    this.open_picker(message.id.clone(), *at, cx)
-                }
-                TimelineEvent::Delete(message, skip) => {
-                    this.acting_in_thread = false;
-                    this.delete_message((**message).clone(), *skip, cx)
-                }
-                TimelineEvent::Failed(what, err) => this.fail(what, err, cx),
-                TimelineEvent::Thread(message) => this.open_thread((**message).clone(), cx),
-                TimelineEvent::OpenImage(images, index) => this.open_lightbox(images.clone(), *index, cx),
-                TimelineEvent::FullscreenVideo(player) => this.open_video(player.clone(), cx),
-                TimelineEvent::SenderMenu(message, at) => this.open_sender_menu(message, *at, cx),
-                TimelineEvent::Sender(message, at) => {
-                    let seen = Some((message.sender_name.clone(), message.sender_avatar.clone()));
-                    this.open_profile(message.sender.clone(), Some(*at), seen, cx)
-                }
-                _ => {}
-            })
-            .detach();
-            cx.subscribe(&timeline, |this: &mut Self, _, event: &TimelineEvent, cx| {
-                if let TimelineEvent::OpenSettings(focus) = event {
-                    this.open_settings(*focus, cx);
-                }
-            })
-            .detach();
+                cx.subscribe(
+                    &timeline,
+                    |this: &mut Self, from, event: &TimelineEvent, cx| match event {
+                        // A timeline kept in the background says nothing to the shell.
+                        _ if this.timeline.as_ref().is_none_or(|(_, open)| *open != from) => {}
+                        TimelineEvent::Opened(handle) => {
+                            this.timeline_handle = Some(handle.clone())
+                        }
+                        TimelineEvent::Menu(message, at) => {
+                            this.acting_in_thread = false;
+                            this.open_message_menu(message, *at, cx)
+                        }
+                        TimelineEvent::Picker(message, at) => {
+                            this.acting_in_thread = false;
+                            this.open_picker(message.id.clone(), *at, cx)
+                        }
+                        TimelineEvent::Delete(message, skip) => {
+                            this.acting_in_thread = false;
+                            this.delete_message((**message).clone(), *skip, cx)
+                        }
+                        TimelineEvent::Failed(what, err) => this.fail(what, err, cx),
+                        TimelineEvent::Thread(message) => this.open_thread((**message).clone(), cx),
+                        TimelineEvent::OpenImage(images, index) => {
+                            this.open_lightbox(images.clone(), *index, cx)
+                        }
+                        TimelineEvent::FullscreenVideo(player) => {
+                            this.open_video(player.clone(), cx)
+                        }
+                        TimelineEvent::SenderMenu(message, at) => {
+                            this.open_sender_menu(message, *at, cx)
+                        }
+                        TimelineEvent::Sender(message, at) => {
+                            let seen =
+                                Some((message.sender_name.clone(), message.sender_avatar.clone()));
+                            this.open_profile(message.sender.clone(), Some(*at), seen, cx)
+                        }
+                        _ => {}
+                    },
+                )
+                .detach();
+                cx.subscribe(
+                    &timeline,
+                    |this: &mut Self, _, event: &TimelineEvent, cx| {
+                        if let TimelineEvent::OpenSettings(focus) = event {
+                            this.open_settings(*focus, cx);
+                        }
+                    },
+                )
+                .detach();
             }
             let keys = self.keys;
             timeline.update(cx, |timeline, cx| timeline.set_keys(keys, cx));
@@ -899,7 +964,10 @@ impl Shell {
             self.composer = Some((id.clone(), composer));
             let session = self.session.clone();
             let room = id.clone();
-            self.typing = Some((id.clone(), cx.new(|cx| crate::typing::TypingView::new(session, room, cx))));
+            self.typing = Some((
+                id.clone(),
+                cx.new(|cx| crate::typing::TypingView::new(session, room, cx)),
+            ));
             self.timeline_handle = None;
             self.pinned.clear();
             // A room kept in the background: its composer hears of the open timeline
@@ -914,15 +982,18 @@ impl Shell {
             let session = self.session.clone();
             let room = id.clone();
             let members = cx.new(|cx| MembersView::new(session, room, cx));
-            cx.subscribe(&members, |this: &mut Self, _, event: &MemberEvent, cx| match event {
-                MemberEvent::Context(member, permissions, at) => {
-                    this.open_member_menu(member, *permissions, *at, cx)
-                }
-                MemberEvent::Open(member, at) => {
-                    let seen = Some((member.name.clone(), member.avatar.clone()));
-                    this.open_profile(member.user_id.clone(), Some(*at), seen, cx)
-                }
-            })
+            cx.subscribe(
+                &members,
+                |this: &mut Self, _, event: &MemberEvent, cx| match event {
+                    MemberEvent::Context(member, permissions, at) => {
+                        this.open_member_menu(member, *permissions, *at, cx)
+                    }
+                    MemberEvent::Open(member, at) => {
+                        let seen = Some((member.name.clone(), member.avatar.clone()));
+                        this.open_profile(member.user_id.clone(), Some(*at), seen, cx)
+                    }
+                },
+            )
             .detach();
             self.members_count = self
                 .rooms
@@ -976,7 +1047,9 @@ impl Shell {
             _ => None,
         });
         if let Some((_, timeline)) = &self.timeline {
-            timeline.update(cx, |timeline, cx| timeline.set_menu_message(open.clone(), cx));
+            timeline.update(cx, |timeline, cx| {
+                timeline.set_menu_message(open.clone(), cx)
+            });
         }
         if let Some((_, panel)) = &self.thread {
             let (timeline, _) = panel.read(cx).timeline();
@@ -996,7 +1069,12 @@ impl Shell {
         }
         // Invites: the sidebar row, and the card for the one open.
         for room in self.rooms.iter().filter(|r| r.invited) {
-            wanted.extend(room.avatar.clone().into_iter().flat_map(|m| [(m.clone(), 24), (m, 72)]));
+            wanted.extend(
+                room.avatar
+                    .clone()
+                    .into_iter()
+                    .flat_map(|m| [(m.clone(), 24), (m, 72)]),
+            );
         }
         if let Some(room) = &self.preview {
             wanted.extend(room.avatar.clone().map(|m| (m, 72)));
@@ -1007,7 +1085,12 @@ impl Shell {
                 .and_then(|p| p.avatar.clone())
                 .map(|m| (m, 34)),
         );
-        wanted.extend(self.profile.as_ref().and_then(|p| p.avatar.clone()).map(|m| (m, 72)));
+        wanted.extend(
+            self.profile
+                .as_ref()
+                .and_then(|p| p.avatar.clone())
+                .map(|m| (m, 72)),
+        );
         wanted.extend(
             self.rooms
                 .iter()
@@ -1021,14 +1104,25 @@ impl Shell {
                 .map(|m| (m, 24)),
         );
         for person in self.calls.people.values() {
-            wanted.extend(person.avatar.clone().into_iter().flat_map(|m| [(m.clone(), 20), (m, 72)]));
+            wanted.extend(
+                person
+                    .avatar
+                    .clone()
+                    .into_iter()
+                    .flat_map(|m| [(m.clone(), 20), (m, 72)]),
+            );
         }
         // A DM's picture is the other person's: theirs falls back to their
         // other picture when this one is gone.
         let mut people: HashMap<String, (OwnedUserId, Option<OwnedRoomId>)> = self
             .rooms
             .iter()
-            .filter_map(|r| Some((r.avatar.as_ref()?.key().to_owned(), (r.dm_user.clone()?, Some(r.id.clone())))))
+            .filter_map(|r| {
+                Some((
+                    r.avatar.as_ref()?.key().to_owned(),
+                    (r.dm_user.clone()?, Some(r.id.clone())),
+                ))
+            })
             .collect();
         // People in the call, likewise.
         let call_room = self.calls.state.as_ref().map(|state| state.room_id.clone());
@@ -1082,7 +1176,11 @@ fn backup_prompt(cx: &mut Context<Shell>) -> impl IntoElement {
             } else {
                 gpui::rgba(theme::bg_hover()).into()
             })
-            .text_color(if primary { rgb(0xffffff) } else { rgb(theme::text()) })
+            .text_color(if primary {
+                rgb(0xffffff)
+            } else {
+                rgb(theme::text())
+            })
             .child(label)
     };
     div()
@@ -1157,7 +1255,6 @@ fn backup_prompt(cx: &mut Context<Shell>) -> impl IntoElement {
         .attr("role", "status")
 }
 
-
 /// One batch change of the core's list, applied to a plain vector.
 pub fn apply(rooms: &mut Vec<RoomSummary>, diff: VectorDiff<RoomSummary>) {
     use VectorDiff::*;
@@ -1194,7 +1291,10 @@ impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         crate::pictures::drop_orphans(window);
         let covered = self.chat_covered();
-        crate::notify::set_looking(window.is_window_active(), self.selected.clone().filter(|_| !covered));
+        crate::notify::set_looking(
+            window.is_window_active(),
+            self.selected.clone().filter(|_| !covered),
+        );
         self.see_open_room(cx);
         self.sync_streamer(cx);
         if let Some((_, timeline)) = &self.timeline {
@@ -1274,14 +1374,18 @@ impl Render for Shell {
                     }
                 }),
             )
-            .on_mouse_move(cx.listener(|this, event: &gpui::MouseMoveEvent, window, cx| {
-                if let Some((y0, start)) = this.calls.stage_drag {
-                    let chat = f32::from(window.viewport_size().height) - 32.0 - 48.0;
-                    let moved = f32::from(event.position.y) - y0;
-                    this.calls.stage_height = Some(crate::view_model::calls::dragged_stage_height(start, moved, chat));
-                    cx.notify();
-                }
-            }))
+            .on_mouse_move(
+                cx.listener(|this, event: &gpui::MouseMoveEvent, window, cx| {
+                    if let Some((y0, start)) = this.calls.stage_drag {
+                        let chat = f32::from(window.viewport_size().height) - 32.0 - 48.0;
+                        let moved = f32::from(event.position.y) - y0;
+                        this.calls.stage_height = Some(
+                            crate::view_model::calls::dragged_stage_height(start, moved, chat),
+                        );
+                        cx.notify();
+                    }
+                }),
+            )
             .on_mouse_up(
                 gpui::MouseButton::Left,
                 cx.listener(|this, _, _, cx| {
@@ -1334,7 +1438,10 @@ impl Render for Shell {
                             .size_0()
                             .e2e("li", "")
                             .attr("data-room", notice.room_id.to_string())
-                            .attr("data-mention", if notice.is_mention { "true" } else { "false" })
+                            .attr(
+                                "data-mention",
+                                if notice.is_mention { "true" } else { "false" },
+                            )
                             .text(line)
                     }))
                     .e2e("ul", "notification-log"),
@@ -1355,7 +1462,10 @@ impl Render for Shell {
             })
             .children(self.settings.clone().inspect(|settings| {
                 let own = match &self.profile {
-                    Some(p) => (p.name.clone(), p.avatar.as_ref().and_then(|m| self.avatars.get(m, 72))),
+                    Some(p) => (
+                        p.name.clone(),
+                        p.avatar.as_ref().and_then(|m| self.avatars.get(m, 72)),
+                    ),
                     None => (String::new(), None),
                 };
                 settings.update(cx, |settings, _| settings.own = own);
@@ -1370,7 +1480,14 @@ impl Render for Shell {
             .children(screen_quality)
             .children(noise_card)
             .children(toasts)
-            .e2e("div", if self.members_open { "shell" } else { "shell no-side" })
+            .e2e(
+                "div",
+                if self.members_open {
+                    "shell"
+                } else {
+                    "shell no-side"
+                },
+            )
     }
 }
 
@@ -1485,7 +1602,11 @@ mod widget_tests {
         assert!(texts(".sidebar-header h2").is_empty());
         assert_eq!(query(".sidebar-header .palette-button").len(), 1);
         let bounds = crate::e2e::query_bounds(".sidebar-header .palette-button").unwrap();
-        assert!(bounds.w > 200.0, "palette button should stretch across the sidebar header, got w={}", bounds.w);
+        assert!(
+            bounds.w > 200.0,
+            "palette button should stretch across the sidebar header, got w={}",
+            bounds.w
+        );
         assert_eq!(texts(".room.dm .room-name"), ["bob"]);
         assert!(
             query(".create-room-button").is_empty(),

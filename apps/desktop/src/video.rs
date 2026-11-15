@@ -192,14 +192,19 @@ impl VideoPlayer {
         self.load = Load::Fetching;
         let fetching = session.media_file(self.media.clone());
         cx.spawn(async move |this, cx| {
-            let bytes = fetching.await.ok().flatten().map(|media| Arc::<[u8]>::from(media.bytes));
+            let bytes = fetching
+                .await
+                .ok()
+                .flatten()
+                .map(|media| Arc::<[u8]>::from(media.bytes));
             let probed = match bytes {
                 Some(bytes) => {
-                    cx.background_executor().spawn(async move {
-                        let info = morpheus_video::probe(&bytes);
-                        info.map(|info| (bytes, info))
-                    })
-                    .await
+                    cx.background_executor()
+                        .spawn(async move {
+                            let info = morpheus_video::probe(&bytes);
+                            info.map(|info| (bytes, info))
+                        })
+                        .await
                 }
                 None => Err(Unsupported::Broken("could not fetch it".into())),
             };
@@ -209,7 +214,9 @@ impl VideoPlayer {
                         this.gif = !info.has_audio && info.duration < GIF_MAX;
                         Load::Probed(bytes, info)
                     }
-                    Err(Unsupported::Format(_)) => Load::Unsupported("Can't play this format".into()),
+                    Err(Unsupported::Format(_)) => {
+                        Load::Unsupported("Can't play this format".into())
+                    }
                     Err(err) => Load::Failed(err.to_string()),
                 };
                 if this.gif {
@@ -245,7 +252,10 @@ impl VideoPlayer {
             volume: self.volume,
         };
         cx.spawn(async move |this, cx| {
-            let opened = cx.background_executor().spawn(async move { Player::open(bytes, options) }).await;
+            let opened = cx
+                .background_executor()
+                .spawn(async move { Player::open(bytes, options) })
+                .await;
             this.update(cx, |this, cx| {
                 this.opening = false;
                 match opened {
@@ -278,7 +288,9 @@ impl VideoPlayer {
                     break;
                 };
                 let wait = if fast { 16 } else { 120 };
-                cx.background_executor().timer(Duration::from_millis(wait)).await;
+                cx.background_executor()
+                    .timer(Duration::from_millis(wait))
+                    .await;
             }
         })
         .detach();
@@ -337,7 +349,11 @@ impl VideoPlayer {
 
     fn skip(&mut self, forward: bool, cx: &mut Context<Self>) {
         let at = self.status.position;
-        let to = if forward { at + SEEK_STEP } else { at.saturating_sub(SEEK_STEP) };
+        let to = if forward {
+            at + SEEK_STEP
+        } else {
+            at.saturating_sub(SEEK_STEP)
+        };
         self.seek(to, cx);
     }
 
@@ -357,7 +373,10 @@ impl VideoPlayer {
             Drag::Seek => {
                 // A seek decodes from the keyframe before: not on every move.
                 let now = Instant::now();
-                if self.last_drag_seek.is_some_and(|t| now - t < Duration::from_millis(80)) {
+                if self
+                    .last_drag_seek
+                    .is_some_and(|t| now - t < Duration::from_millis(80))
+                {
                     self.status.position = self.status.duration.mul_f32(fraction);
                     cx.notify();
                     return;
@@ -411,7 +430,9 @@ impl VideoPlayer {
     }
 
     fn start_download(&mut self, cx: &mut Context<Self>) {
-        let Some(session) = self.session.clone() else { return };
+        let Some(session) = self.session.clone() else {
+            return;
+        };
         self.download = Some("Downloading".into());
         let saving = session.download(self.media.clone(), self.body.clone());
         cx.spawn(async move |this, cx| {
@@ -444,7 +465,8 @@ impl VideoPlayer {
             self.frame_index = frame.index;
             self.frame_pts = frame.pts;
             // The pixels are B, G, R, A: what GPUI's images are made of.
-            if let Some(buffer) = image::RgbaImage::from_raw(frame.width, frame.height, frame.bgra) {
+            if let Some(buffer) = image::RgbaImage::from_raw(frame.width, frame.height, frame.bgra)
+            {
                 let image = Arc::new(RenderImage::new(vec![image::Frame::new(buffer)]));
                 self.pictures.show(image);
             }
@@ -517,7 +539,10 @@ impl VideoPlayer {
             _ => match self.pictures.image() {
                 Some(image) => {
                     let size = image.size(0);
-                    (u32::try_from(size.width.0).ok(), u32::try_from(size.height.0).ok())
+                    (
+                        u32::try_from(size.width.0).ok(),
+                        u32::try_from(size.height.0).ok(),
+                    )
                 }
                 None => (None, None),
             },
@@ -545,13 +570,13 @@ impl VideoPlayer {
                 this.toggle(cx);
             }));
         if !big {
-            surface = surface
-                .track_focus(&self.focus)
-                .on_key_down(cx.listener(|this, event: &gpui::KeyDownEvent, _, cx| {
+            surface = surface.track_focus(&self.focus).on_key_down(cx.listener(
+                |this, event: &gpui::KeyDownEvent, _, cx| {
                     if this.key(event.keystroke.key.as_str(), cx) {
                         cx.stop_propagation();
                     }
-                }));
+                },
+            ));
         }
         if let Some((image, painted)) = image {
             surface = surface.child(
@@ -560,7 +585,13 @@ impl VideoPlayer {
                     move |bounds, (), window, _| {
                         painted.set(true);
                         let fitted = ObjectFit::Contain.get_bounds(bounds, image.size(0));
-                        let _ = window.paint_image(fitted, gpui::Corners::all(px(radius)), image.clone(), 0, false);
+                        let _ = window.paint_image(
+                            fitted,
+                            gpui::Corners::all(px(radius)),
+                            image.clone(),
+                            0,
+                            false,
+                        );
                     },
                 )
                 .absolute()
@@ -699,13 +730,21 @@ impl VideoPlayer {
                 self.seek_bar.clone(),
                 vec![
                     Self::fill(buffered, 0xffffff59, "video-seek-buffered"),
-                    Self::fill(played, theme::alpha(theme::accent(), 0xff), "video-seek-played"),
+                    Self::fill(
+                        played,
+                        theme::alpha(theme::accent(), 0xff),
+                        "video-seek-played",
+                    ),
                 ],
                 cx,
             )
             .w_full()
             .e2e("div", "video-seek");
-        let time = format!("{} / {}", human_duration(self.status.position), human_duration(duration));
+        let time = format!(
+            "{} / {}",
+            human_duration(self.status.position),
+            human_duration(duration)
+        );
         let playing = self.status.playing;
         let (mute_glyph, mute_title) = if self.muted || self.volume <= 0.0 {
             ("volume-x", "Unmute")
@@ -717,7 +756,11 @@ impl VideoPlayer {
                 "video-volume",
                 Drag::Volume,
                 self.volume_bar.clone(),
-                vec![Self::fill(if self.muted { 0.0 } else { self.volume }, 0xffffffff, "video-volume-level")],
+                vec![Self::fill(
+                    if self.muted { 0.0 } else { self.volume },
+                    0xffffffff,
+                    "video-volume-level",
+                )],
                 cx,
             )
             .w(px(56.0))
@@ -749,24 +792,44 @@ impl VideoPlayer {
             .child(div().flex_1());
         if self.status.has_audio {
             row = row
-                .child(self.button("video-mute", "video-mute", mute_title, mute_glyph, cx, |this, _, cx| {
-                    this.toggle_mute(cx)
-                }))
+                .child(self.button(
+                    "video-mute",
+                    "video-mute",
+                    mute_title,
+                    mute_glyph,
+                    cx,
+                    |this, _, cx| this.toggle_mute(cx),
+                ))
                 .child(volume);
         }
         let download_title = self.download.clone().unwrap_or_else(|| "Download".into());
         row = row
-            .child(self.button("video-download", "video-download", &download_title, "download", cx, |this, _, cx| {
-                this.start_download(cx)
-            }))
+            .child(self.button(
+                "video-download",
+                "video-download",
+                &download_title,
+                "download",
+                cx,
+                |this, _, cx| this.start_download(cx),
+            ))
             .child(if big {
-                self.button("video-exit", "video-fullscreen", "Exit full window", "minimize-2", cx, |_, _, cx| {
-                    cx.emit(VideoEvent::ExitFullscreen)
-                })
+                self.button(
+                    "video-exit",
+                    "video-fullscreen",
+                    "Exit full window",
+                    "minimize-2",
+                    cx,
+                    |_, _, cx| cx.emit(VideoEvent::ExitFullscreen),
+                )
             } else {
-                self.button("video-full", "video-fullscreen", "Full window", "maximize-2", cx, |_, _, cx| {
-                    cx.emit(VideoEvent::Fullscreen)
-                })
+                self.button(
+                    "video-full",
+                    "video-fullscreen",
+                    "Full window",
+                    "maximize-2",
+                    cx,
+                    |_, _, cx| cx.emit(VideoEvent::Fullscreen),
+                )
             });
         div()
             .absolute()
@@ -791,7 +854,12 @@ impl VideoPlayer {
     /// What lies over the picture before it plays: the play button and the
     /// length, a loading mark, or why it cannot play.
     fn overlay(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        let mut overlay = div().absolute().inset_0().flex().items_center().justify_center();
+        let mut overlay = div()
+            .absolute()
+            .inset_0()
+            .flex()
+            .items_center()
+            .justify_center();
         match &self.load {
             Load::Unsupported(why) | Load::Failed(why) => {
                 let why = why.clone();
@@ -808,9 +876,14 @@ impl VideoPlayer {
                             .e2e("div", "video-unsupported")
                             .text(why),
                     )
-                    .child(self.button("video-download", "video-download", "Download", "download", cx, |this, _, cx| {
-                        this.start_download(cx)
-                    }))
+                    .child(self.button(
+                        "video-download",
+                        "video-download",
+                        "Download",
+                        "download",
+                        cx,
+                        |this, _, cx| this.start_download(cx),
+                    ))
                     .e2e("div", "video-overlay")
                     .into_any_element();
             }
@@ -883,7 +956,14 @@ impl VideoPlayer {
     }
 
     /// The player at `w` x `h` for the full-window viewer.
-    pub fn big(&mut self, w: f32, h: f32, focus: &FocusHandle, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+    pub fn big(
+        &mut self,
+        w: f32,
+        h: f32,
+        focus: &FocusHandle,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         self.pictures.drop_stale(window);
         let mut card = div()
             .id(SharedString::from(format!("video-big-{}", self.id)))
@@ -916,7 +996,10 @@ impl VideoPlayer {
 
     /// A drag on the seek bar or volume slider follows the pointer over the
     /// whole card and ends wherever the button is let go.
-    fn drag_listeners(card: gpui::Stateful<gpui::Div>, cx: &mut Context<Self>) -> gpui::Stateful<gpui::Div> {
+    fn drag_listeners(
+        card: gpui::Stateful<gpui::Div>,
+        cx: &mut Context<Self>,
+    ) -> gpui::Stateful<gpui::Div> {
         card.on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, cx| {
             if this.dragging.is_some() {
                 this.drag_to(event.position.x, cx);
@@ -924,7 +1007,9 @@ impl VideoPlayer {
         }))
         .on_mouse_up(
             MouseButton::Left,
-            cx.listener(|this, event: &MouseUpEvent, _, cx| this.end_drag(Some(event.position.x), cx)),
+            cx.listener(|this, event: &MouseUpEvent, _, cx| {
+                this.end_drag(Some(event.position.x), cx)
+            }),
         )
         .on_mouse_up_out(
             MouseButton::Left,
@@ -960,7 +1045,9 @@ impl Render for VideoPlayer {
             }))
             .on_mouse_up(
                 MouseButton::Left,
-                cx.listener(|this, event: &MouseUpEvent, _, cx| this.end_drag(Some(event.position.x), cx)),
+                cx.listener(|this, event: &MouseUpEvent, _, cx| {
+                    this.end_drag(Some(event.position.x), cx)
+                }),
             )
             .on_mouse_up_out(
                 MouseButton::Left,
@@ -1060,12 +1147,17 @@ impl Render for VideoViewer {
             window.focus(&self.focus);
         }
         let viewport = window.viewport_size();
-        let (avail_w, avail_h) = (0.92 * f32::from(viewport.width), 0.88 * f32::from(viewport.height));
+        let (avail_w, avail_h) = (
+            0.92 * f32::from(viewport.width),
+            0.88 * f32::from(viewport.height),
+        );
         let (w, h) = self.player.read(cx).shape();
         let scale = (avail_w / w).min(avail_h / h);
         let (w, h) = ((w * scale).floor(), (h * scale).floor());
         let focus = self.focus.clone();
-        let big = self.player.update(cx, |player, cx| player.big(w, h, &focus, window, cx));
+        let big = self
+            .player
+            .update(cx, |player, cx| player.big(w, h, &focus, window, cx));
         let player = self.player.clone();
         let layer = div()
             .id("video-viewer")
@@ -1089,7 +1181,10 @@ impl Render for VideoViewer {
             .justify_center()
             .bg(rgba(0x000000e6))
             .occlude()
-            .on_mouse_down(MouseButton::Left, cx.listener(|_, _, _, cx| cx.emit(Closed)))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|_, _, _, cx| cx.emit(Closed)),
+            )
             .child(
                 div()
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
@@ -1105,7 +1200,8 @@ impl crate::shell::Shell {
     /// Opens the full-window player on a message's video.
     pub fn open_video(&mut self, player: gpui::Entity<VideoPlayer>, cx: &mut Context<Self>) {
         let viewer = cx.new(|cx| VideoViewer::new(player, cx));
-        cx.subscribe(&viewer, |this, _, _: &Closed, cx| this.dialog_close(cx)).detach();
+        cx.subscribe(&viewer, |this, _, _: &Closed, cx| this.dialog_close(cx))
+            .detach();
         self.dialog_open(crate::dialogs::Dialog::Video(viewer), cx);
     }
 }

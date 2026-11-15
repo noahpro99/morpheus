@@ -11,7 +11,7 @@ use gpui::{
 };
 use morpheus_core::NotifyMode;
 
-use super::{SettingsView, ThemeChosen, button, muted, note, section, section_classed, Kind};
+use super::{Kind, SettingsView, ThemeChosen, button, muted, note, section, section_classed};
 use crate::{
     e2e::E2eExt as _,
     icons::icon,
@@ -37,7 +37,11 @@ pub(crate) fn choice(
     disabled: bool,
     on_click: impl Fn(&ClickEvent, &mut Window, &mut gpui::App) + 'static,
 ) -> AnyElement {
-    let ring = rgb(if checked { theme::accent() } else { theme::text_muted() });
+    let ring = rgb(if checked {
+        theme::accent()
+    } else {
+        theme::text_muted()
+    });
     let mark = div()
         .size(px(18.0))
         .flex_none()
@@ -46,12 +50,24 @@ pub(crate) fn choice(
         .justify_center()
         .border_2()
         .border_color(ring)
-        .map(|d| if checkbox { d.rounded(px(3.0)) } else { d.rounded_full() })
+        .map(|d| {
+            if checkbox {
+                d.rounded(px(3.0))
+            } else {
+                d.rounded_full()
+            }
+        })
         .when(checked, |d| {
             d.child(
                 div()
                     .size(px(8.0))
-                    .map(|d| if checkbox { d.rounded(px(3.0)) } else { d.rounded_full() })
+                    .map(|d| {
+                        if checkbox {
+                            d.rounded(px(3.0))
+                        } else {
+                            d.rounded_full()
+                        }
+                    })
                     .bg(rgb(theme::accent())),
             )
         })
@@ -59,8 +75,16 @@ pub(crate) fn choice(
         .attr("type", if checkbox { "checkbox" } else { "radio" })
         .attr("name", group)
         .attr("value", value);
-    let mark = if checked { mark.attr("checked", "true") } else { mark };
-    let mark = if disabled { mark.attr("disabled", "true") } else { mark };
+    let mark = if checked {
+        mark.attr("checked", "true")
+    } else {
+        mark
+    };
+    let mark = if disabled {
+        mark.attr("disabled", "true")
+    } else {
+        mark
+    };
     div()
         .id(ElementId::from(SharedString::from(id)))
         .flex()
@@ -108,7 +132,11 @@ fn group(
                 _ => "notify-default",
             },
         );
-    let el = if kind.is_empty() { el } else { el.attr("data-kind", kind) };
+    let el = if kind.is_empty() {
+        el
+    } else {
+        el.attr("data-kind", kind)
+    };
     match anchor {
         Some(anchor) => el.attr("data-setting", anchor).into_any_element(),
         None => el.into_any_element(),
@@ -205,7 +233,12 @@ impl SettingsView {
             .collect();
         match &self.notify_notes[slot] {
             Some(Ok(text)) => children.push(
-                div().text_color(rgb(theme::ok())).child(*text).e2e("span", "ok").text(*text).into_any_element(),
+                div()
+                    .text_color(rgb(theme::ok()))
+                    .child(*text)
+                    .e2e("span", "ok")
+                    .text(*text)
+                    .into_any_element(),
             ),
             Some(Err(text)) => children.push(
                 div()
@@ -246,7 +279,9 @@ impl SettingsView {
                     let want = !this.on_here;
                     match vm::set_notifications_enabled(&this.data_dir, want) {
                         Ok(()) => this.on_here = want,
-                        Err(err) => eprintln!("morpheus-desktop: saving the notification setting: {err}"),
+                        Err(err) => {
+                            eprintln!("morpheus-desktop: saving the notification setting: {err}")
+                        }
                     }
                     cx.notify();
                 }),
@@ -263,7 +298,9 @@ impl SettingsView {
                     let want = !this.sounds_here;
                     match vm::set_message_sounds_enabled(&this.data_dir, want) {
                         Ok(()) => this.sounds_here = want,
-                        Err(err) => eprintln!("morpheus-desktop: saving the message sound setting: {err}"),
+                        Err(err) => {
+                            eprintln!("morpheus-desktop: saving the message sound setting: {err}")
+                        }
                     }
                     cx.notify();
                 }),
@@ -284,7 +321,9 @@ impl SettingsView {
                     cx.listener(move |this, _, _, cx| {
                         match vm::set_notification_content(&this.data_dir, content) {
                             Ok(()) => this.content = content,
-                            Err(err) => eprintln!("morpheus-desktop: saving what notifications show: {err}"),
+                            Err(err) => {
+                                eprintln!("morpheus-desktop: saving what notifications show: {err}")
+                            }
                         }
                         cx.notify();
                     }),
@@ -320,14 +359,21 @@ impl SettingsView {
                 .child(div().w(relative_36()).h_full().bg(rgb(side)))
                 .child(div().flex_1().h_full().bg(rgb(chat)));
             div()
-                .id(ElementId::from(SharedString::from(format!("theme-{}", theme_choice.key()))))
+                .id(ElementId::from(SharedString::from(format!(
+                    "theme-{}",
+                    theme_choice.key()
+                ))))
                 .flex()
                 .flex_col()
                 .gap(px(8.0))
                 .p(px(8.0))
                 .rounded(px(theme::RADIUS_LG))
                 .border_2()
-                .border_color(if selected { rgb(theme::accent()) } else { rgb(theme::bg_elevated()) })
+                .border_color(if selected {
+                    rgb(theme::accent())
+                } else {
+                    rgb(theme::bg_elevated())
+                })
                 .bg(rgb(theme::bg_elevated()))
                 .cursor_pointer()
                 .child(swatch)
@@ -345,11 +391,20 @@ impl SettingsView {
                 }))
                 .e2e(
                     "button",
-                    if selected { "theme-option selected" } else { "theme-option" },
+                    if selected {
+                        "theme-option selected"
+                    } else {
+                        "theme-option"
+                    },
                 )
                 .attr("data-theme", theme_choice.key())
         });
-        let row = div().flex().flex_wrap().gap(px(12.0)).children(options).e2e("div", "theme-options");
+        let row = div()
+            .flex()
+            .flex_wrap()
+            .gap(px(12.0))
+            .children(options)
+            .e2e("div", "theme-options");
         let vim_on = crate::vim::enabled();
         let vim = choice(
             "vim-mode".into(),
@@ -379,7 +434,13 @@ impl SettingsView {
             self.hl("keyboard"),
         );
         vec![
-            section("Theme", "theme", vec![row.into_any_element()], self.hl("theme")).into_any_element(),
+            section(
+                "Theme",
+                "theme",
+                vec![row.into_any_element()],
+                self.hl("theme"),
+            )
+            .into_any_element(),
             keyboard.into_any_element(),
         ]
     }
@@ -452,10 +513,22 @@ impl SettingsView {
         );
         let video = self.video_section(cx);
         vec![
-            section_classed("Devices", "audio-devices", children, self.hl("audio-devices"), "voice-devices")
-                .into_any_element(),
-            section_classed("Noise suppression", "noise-suppression", noise, self.hl("noise-suppression"), "voice-noise")
-                .into_any_element(),
+            section_classed(
+                "Devices",
+                "audio-devices",
+                children,
+                self.hl("audio-devices"),
+                "voice-devices",
+            )
+            .into_any_element(),
+            section_classed(
+                "Noise suppression",
+                "noise-suppression",
+                noise,
+                self.hl("noise-suppression"),
+                "voice-noise",
+            )
+            .into_any_element(),
             video,
         ]
     }
@@ -496,12 +569,23 @@ impl SettingsView {
             .cursor_pointer()
             .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(cx.listener(move |this, _, _, cx| {
-                this.picker_open = if this.picker_open == Some(name) { None } else { Some(name) };
+                this.picker_open = if this.picker_open == Some(name) {
+                    None
+                } else {
+                    Some(name)
+                };
                 cx.notify();
             }))
             .child(div().child(shown.clone()).e2e("span", "").text(shown))
             .child(icon("chevron-down", 16.0).text_color(rgb(theme::text_muted())))
-            .e2e("button", if open { "device-current open" } else { "device-current" })
+            .e2e(
+                "button",
+                if open {
+                    "device-current open"
+                } else {
+                    "device-current"
+                },
+            )
             .attr("data-id", current_id);
         let mut choice = div()
             .flex()
@@ -524,7 +608,10 @@ impl SettingsView {
                 let id = row.id.clone();
                 let selected = row.checked;
                 div()
-                    .id(SharedString::from(format!("device-option-{name}-{}", row.id.clone().unwrap_or_default())))
+                    .id(SharedString::from(format!(
+                        "device-option-{name}-{}",
+                        row.id.clone().unwrap_or_default()
+                    )))
                     .px(px(12.0))
                     .py(px(8.0))
                     .rounded(px(theme::RADIUS_SM))
@@ -534,8 +621,17 @@ impl SettingsView {
                     .hover(|s| s.bg(rgba(theme::bg_hover())))
                     .child(row.name.clone())
                     .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                    .on_click(cx.listener(move |this, _, _, cx| this.pick_voice(kind, id.clone(), cx)))
-                    .e2e("button", if selected { "device-option selected" } else { "device-option" })
+                    .on_click(
+                        cx.listener(move |this, _, _, cx| this.pick_voice(kind, id.clone(), cx)),
+                    )
+                    .e2e(
+                        "button",
+                        if selected {
+                            "device-option selected"
+                        } else {
+                            "device-option"
+                        },
+                    )
                     .attr("data-id", row.id.clone().unwrap_or_default())
                     .attr("data-color", "#e6e8ee")
                     .text(row.name.clone())
@@ -553,7 +649,10 @@ impl SettingsView {
                     .attr("data-bg", "#222736"),
             );
         }
-        choice.e2e("div", "device-choice").attr("data-kind", name).into_any_element()
+        choice
+            .e2e("div", "device-choice")
+            .attr("data-kind", name)
+            .into_any_element()
     }
 
     /// An input or output volume slider in Settings.
@@ -574,7 +673,8 @@ impl SettingsView {
             move |x: gpui::Pixels| -> Option<f32> {
                 let bounds = bar.get();
                 let width = f32::from(bounds.size.width);
-                (width > 0.0).then(|| (f32::from(x - bounds.origin.x) / width).clamp(0.0, 1.0) * max)
+                (width > 0.0)
+                    .then(|| (f32::from(x - bounds.origin.x) / width).clamp(0.0, 1.0) * max)
             }
         };
         let (down_set, move_set) = (set_at.clone(), set_at);
@@ -613,7 +713,11 @@ impl SettingsView {
                         MouseButton::Left,
                         cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
                             cx.stop_propagation();
-                            if let Some(vol) = (if event.click_count >= 2 { Some(1.0) } else { down_set(event.position.x) }) {
+                            if let Some(vol) = (if event.click_count >= 2 {
+                                Some(1.0)
+                            } else {
+                                down_set(event.position.x)
+                            }) {
                                 if is_input {
                                     this.voice_prefs.input_volume = vol;
                                     cx.emit(super::InputVolumeChanged(vol));
@@ -625,21 +729,27 @@ impl SettingsView {
                             }
                         }),
                     )
-                    .on_mouse_move(cx.listener(move |this, event: &gpui::MouseMoveEvent, _, cx| {
-                        if event.pressed_button == Some(MouseButton::Left)
-                            && let Some(vol) = move_set(event.position.x)
-                        {
-                            if is_input {
-                                this.voice_prefs.input_volume = vol;
-                                cx.emit(super::InputVolumeChanged(vol));
-                            } else {
-                                this.voice_prefs.output_volume = vol;
-                                cx.emit(super::OutputVolumeChanged(vol));
+                    .on_mouse_move(
+                        cx.listener(move |this, event: &gpui::MouseMoveEvent, _, cx| {
+                            if event.pressed_button == Some(MouseButton::Left)
+                                && let Some(vol) = move_set(event.position.x)
+                            {
+                                if is_input {
+                                    this.voice_prefs.input_volume = vol;
+                                    cx.emit(super::InputVolumeChanged(vol));
+                                } else {
+                                    this.voice_prefs.output_volume = vol;
+                                    cx.emit(super::OutputVolumeChanged(vol));
+                                }
+                                cx.notify();
                             }
-                            cx.notify();
-                        }
-                    }))
-                    .child(canvas(move |bounds, _, _| bar.set(bounds), |_, _, _, _| {}).absolute().inset_0())
+                        }),
+                    )
+                    .child(
+                        canvas(move |bounds, _, _| bar.set(bounds), |_, _, _, _| {})
+                            .absolute()
+                            .inset_0(),
+                    )
                     .child(
                         div()
                             .relative()
@@ -683,7 +793,9 @@ impl SettingsView {
                 morpheus_call::choose_camera(id);
             }
         }
-        if let Err(err) = crate::view_model::calls::write_device_prefs(&self.data_dir, &self.voice_prefs) {
+        if let Err(err) =
+            crate::view_model::calls::write_device_prefs(&self.data_dir, &self.voice_prefs)
+        {
             eprintln!("morpheus-desktop: saving the audio devices: {err}");
         }
         cx.emit(super::DevicesChosen(kind));
@@ -696,14 +808,20 @@ impl SettingsView {
         self.picker_open = None;
         self.voice_prefs = crate::view_model::calls::read_device_prefs(&self.data_dir);
         let mode = morpheus_call::AudioMode::from_env();
-        let cameras: Vec<(String, String)> =
-            morpheus_call::cameras(mode).into_iter().map(|c| (c.id, c.name)).collect();
+        let cameras: Vec<(String, String)> = morpheus_call::cameras(mode)
+            .into_iter()
+            .map(|c| (c.id, c.name))
+            .collect();
         let finding = morpheus_call::audio_devices(mode);
         cx.spawn(async move |this, cx| {
             let found = finding.await;
             this.update(cx, |this, cx| {
                 this.voice = Some(super::VoiceLists {
-                    microphones: found.microphones.into_iter().map(|d| (d.id, d.name)).collect(),
+                    microphones: found
+                        .microphones
+                        .into_iter()
+                        .map(|d| (d.id, d.name))
+                        .collect(),
                     speakers: found.speakers.into_iter().map(|d| (d.id, d.name)).collect(),
                     cameras,
                 });
@@ -739,7 +857,13 @@ impl SettingsView {
                     true,
                     false,
                     cx.listener(move |this, _, _, cx| {
-                        this.set_autostart(Autostart { enabled: !state.enabled, hidden: state.hidden }, cx)
+                        this.set_autostart(
+                            Autostart {
+                                enabled: !state.enabled,
+                                hidden: state.hidden,
+                            },
+                            cx,
+                        )
                     }),
                 ));
                 children.push(choice(
@@ -751,7 +875,13 @@ impl SettingsView {
                     true,
                     !state.hidden_selectable(),
                     cx.listener(move |this, _, _, cx| {
-                        this.set_autostart(Autostart { enabled: state.enabled, hidden: !state.hidden }, cx)
+                        this.set_autostart(
+                            Autostart {
+                                enabled: state.enabled,
+                                hidden: !state.hidden,
+                            },
+                            cx,
+                        )
                     }),
                 ));
             }
@@ -796,7 +926,11 @@ impl SettingsView {
                 "Version",
                 "version",
                 vec![
-                    div().child(version.clone()).e2e("p", "").text(version).into_any_element(),
+                    div()
+                        .child(version.clone())
+                        .e2e("p", "")
+                        .text(version)
+                        .into_any_element(),
                     muted(&morpheus_core::device(), "muted").into_any_element(),
                 ],
                 self.hl("version"),
@@ -813,7 +947,11 @@ fn relative_36() -> gpui::DefiniteLength {
 
 impl SettingsView {
     /// Keep a change to the streamer mode choices and tell the shell.
-    fn save_streamer(&mut self, settings: crate::view_model::streamer::StreamerSettings, cx: &mut Context<Self>) {
+    fn save_streamer(
+        &mut self,
+        settings: crate::view_model::streamer::StreamerSettings,
+        cx: &mut Context<Self>,
+    ) {
         if let Err(err) = settings.save(&self.data_dir) {
             eprintln!("morpheus-desktop: saving the streamer mode setting: {err}");
         }
@@ -825,22 +963,23 @@ impl SettingsView {
     pub(super) fn streamer_page(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         use crate::view_model::streamer::StreamerSettings;
         let s = crate::streamer::settings();
-        let switch = |name: &'static str, label: &str, checked: bool, change: fn(&mut StreamerSettings)| {
-            choice(
-                format!("streamer-{name}"),
-                &format!("streamer-{name}"),
-                "",
-                label,
-                checked,
-                true,
-                false,
-                cx.listener(move |this, _, _, cx| {
-                    let mut now = crate::streamer::settings();
-                    change(&mut now);
-                    this.save_streamer(now, cx);
-                }),
-            )
-        };
+        let switch =
+            |name: &'static str, label: &str, checked: bool, change: fn(&mut StreamerSettings)| {
+                choice(
+                    format!("streamer-{name}"),
+                    &format!("streamer-{name}"),
+                    "",
+                    label,
+                    checked,
+                    true,
+                    false,
+                    cx.listener(move |this, _, _, cx| {
+                        let mut now = crate::streamer::settings();
+                        change(&mut now);
+                        this.save_streamer(now, cx);
+                    }),
+                )
+            };
         let children = vec![
             muted(
                 "Hides what could give you or others away while you share your screen, as in Discord: names are shortened to a first letter, IDs and links are dotted out, notifications say nothing.",
@@ -896,7 +1035,13 @@ impl SettingsView {
                 }),
             ));
         }
-        section("Locked chats", "locked-chats", children, self.hl("locked-chats")).into_any_element()
+        section(
+            "Locked chats",
+            "locked-chats",
+            children,
+            self.hl("locked-chats"),
+        )
+        .into_any_element()
     }
 }
 
@@ -937,7 +1082,8 @@ impl SettingsView {
             if let Ok(profile) = profile.await {
                 this.update(cx, |this, cx| {
                     let name = profile.name;
-                    this.name_input.update(cx, |input, cx| input.set_value(&name, cx));
+                    this.name_input
+                        .update(cx, |input, cx| input.set_value(&name, cx));
                 })
                 .ok();
             }
@@ -1005,7 +1151,8 @@ impl SettingsView {
             let Some(path) = paths.into_iter().next() else {
                 return;
             };
-            this.update(cx, |this, cx| this.picture_picked(path, cx)).ok();
+            this.update(cx, |this, cx| this.picture_picked(path, cx))
+                .ok();
         })
         .detach();
     }
@@ -1019,7 +1166,9 @@ impl SettingsView {
             }
             None => {
                 self.picked = None;
-                self.profile_note = Some(Err("That file is not a picture Morpheus can show.".to_owned()));
+                self.profile_note = Some(Err(
+                    "That file is not a picture Morpheus can show.".to_owned()
+                ));
             }
         }
         cx.notify();
@@ -1068,13 +1217,20 @@ impl SettingsView {
             .items_center()
             .gap(px(12.0))
             .child(crate::media::avatar(
-                self.picked.as_ref().map(|(_, image)| image.clone()).or_else(|| self.own.1.clone()),
+                self.picked
+                    .as_ref()
+                    .map(|(_, image)| image.clone())
+                    .or_else(|| self.own.1.clone()),
                 &self.own.0,
                 72.0,
                 None,
             ))
             .child(muted(
-                if self.picked.is_some() { "Preview" } else { "Your current picture" },
+                if self.picked.is_some() {
+                    "Preview"
+                } else {
+                    "Your current picture"
+                },
                 "muted",
             ))
             .e2e("div", "profile-preview")
@@ -1106,8 +1262,13 @@ impl SettingsView {
             .e2e("button", "secondary")
             .text("Cancel");
         vec![
-            section("Display name", "profile-name", vec![name_box, save], self.hl("profile-name"))
-                .into_any_element(),
+            section(
+                "Display name",
+                "profile-name",
+                vec![name_box, save],
+                self.hl("profile-name"),
+            )
+            .into_any_element(),
             section(
                 "Profile picture",
                 "profile-picture",

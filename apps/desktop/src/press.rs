@@ -11,7 +11,8 @@ use std::{
 };
 
 use gpui::{
-    App, InteractiveElement, MouseButton, ParentElement, StatefulInteractiveElement, Styled, Window, px,
+    App, InteractiveElement, MouseButton, ParentElement, StatefulInteractiveElement, Styled,
+    Window, px,
 };
 
 /// The scale of a pressed button.
@@ -34,7 +35,8 @@ static STATES: Mutex<Option<HashMap<String, State>>> = Mutex::new(None);
 /// The scale at `now`: from where the last change began to its target, eased out.
 fn scale_at(state: State, now: Instant) -> f32 {
     let target = if state.pressed { SCALE } else { 1.0 };
-    let t = (now.saturating_duration_since(state.since).as_secs_f32() / SPAN.as_secs_f32()).min(1.0);
+    let t =
+        (now.saturating_duration_since(state.since).as_secs_f32() / SPAN.as_secs_f32()).min(1.0);
     let eased = 1.0 - (1.0 - t) * (1.0 - t);
     state.from + (target - state.from) * eased
 }
@@ -50,7 +52,9 @@ fn scale_of(key: &str) -> f32 {
 /// Presses or lets go of `key`, and draws frames until the change is done.
 fn set(key: &str, pressed: bool, window: &mut Window, cx: &App) {
     {
-        let Ok(mut states) = STATES.lock() else { return };
+        let Ok(mut states) = STATES.lock() else {
+            return;
+        };
         let states = states.get_or_insert_with(HashMap::new);
         let now = Instant::now();
         let was = states.get(key).copied();
@@ -58,7 +62,14 @@ fn set(key: &str, pressed: bool, window: &mut Window, cx: &App) {
             return;
         }
         let from = was.map_or(1.0, |s| scale_at(s, now));
-        states.insert(key.to_owned(), State { pressed, from, since: now });
+        states.insert(
+            key.to_owned(),
+            State {
+                pressed,
+                from,
+                since: now,
+            },
+        );
     }
     window.refresh();
     window
@@ -98,7 +109,8 @@ fn watch(key: String, window: &mut Window, cx: &App) {
                     if !held {
                         return None;
                     }
-                    let inside = bounds_of(&key).is_none_or(|b| b.contains(&window.mouse_position()));
+                    let inside =
+                        bounds_of(&key).is_none_or(|b| b.contains(&window.mouse_position()));
                     if !inside {
                         set(&key, false, window, cx);
                     }
@@ -122,7 +134,12 @@ where
 {
     let scale = scale_of(key);
     let size = side * scale;
-    let (down, up, up_out, seen) = (key.to_owned(), key.to_owned(), key.to_owned(), key.to_owned());
+    let (down, up, up_out, seen) = (
+        key.to_owned(),
+        key.to_owned(),
+        key.to_owned(),
+        key.to_owned(),
+    );
     let button = button
         .size(px(size))
         .m(px((side - size) / 2.0))
@@ -130,7 +147,8 @@ where
             gpui::canvas(
                 move |bounds, _, _| {
                     if let Ok(mut all) = BOUNDS.lock() {
-                        all.get_or_insert_with(HashMap::new).insert(seen.clone(), bounds);
+                        all.get_or_insert_with(HashMap::new)
+                            .insert(seen.clone(), bounds);
                     }
                 },
                 |_, _, _, _| {},
@@ -142,8 +160,12 @@ where
             set(&down, true, window, cx);
             watch(down.clone(), window, cx);
         })
-        .on_mouse_up(MouseButton::Left, move |_, window, cx| set(&up, false, window, cx))
-        .on_mouse_up_out(MouseButton::Left, move |_, window, cx| set(&up_out, false, window, cx));
+        .on_mouse_up(MouseButton::Left, move |_, window, cx| {
+            set(&up, false, window, cx)
+        })
+        .on_mouse_up_out(MouseButton::Left, move |_, window, cx| {
+            set(&up_out, false, window, cx)
+        });
     match on_hover {
         Some(on_hover) => button.on_hover(move |over, _, cx| on_hover(*over, cx)),
         None => button,
@@ -157,12 +179,20 @@ mod tests {
     #[test]
     fn the_scale_eases_to_the_target_and_back() {
         let start = Instant::now();
-        let down = State { pressed: true, from: 1.0, since: start };
+        let down = State {
+            pressed: true,
+            from: 1.0,
+            since: start,
+        };
         assert_eq!(scale_at(down, start), 1.0);
         let mid = scale_at(down, start + SPAN / 2);
         assert!(mid < 1.0 && mid > SCALE, "{mid}");
         assert_eq!(scale_at(down, start + SPAN * 2), SCALE);
-        let up = State { pressed: false, from: SCALE, since: start };
+        let up = State {
+            pressed: false,
+            from: SCALE,
+            since: start,
+        };
         assert_eq!(scale_at(up, start + SPAN * 2), 1.0);
     }
 }

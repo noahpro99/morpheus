@@ -41,7 +41,11 @@ impl Shell {
 
 /// A ghost button of the bar, a 28 px square: no drag from it, no hover
 /// background (the glyph brightens, through `Shell::bar_hover`).
-fn bar_button(shell: &Shell, cx: &mut Context<Shell>, id: &'static str) -> gpui::Stateful<gpui::Div> {
+fn bar_button(
+    shell: &Shell,
+    cx: &mut Context<Shell>,
+    id: &'static str,
+) -> gpui::Stateful<gpui::Div> {
     let colour = crate::chat::bar_colour(shell, id, theme::text_muted());
     chrome::no_drag(
         div()
@@ -88,7 +92,10 @@ fn streamer_button(shell: &Shell, cx: &mut Context<Shell>) -> Option<impl IntoEl
             .child("Streamer mode")
             .on_click(toggle)
             .e2e("button", "streamer-badge streamer-button")
-            .attr("title", "Streamer mode is on: names and IDs are hidden. Click to turn off")
+            .attr(
+                "title",
+                "Streamer mode is on: names and IDs are hidden. Click to turn off",
+            )
             .text("Streamer mode"),
     )
 }
@@ -96,8 +103,18 @@ fn streamer_button(shell: &Shell, cx: &mut Context<Shell>) -> Option<impl IntoEl
 pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
     let unread = unread_count(&crate::locks::unlocked(&shell.rooms));
     let title = header_title(&shell.rooms, &shell.scope);
-    let colour_of = |id: &'static str| format!("{:06x}", crate::chat::bar_colour(shell, id, theme::text_muted()));
-    let nav_button = |cx: &mut Context<Shell>, id: &'static str, glyph: &'static str, label: &'static str, enabled: bool, step: isize| {
+    let colour_of = |id: &'static str| {
+        format!(
+            "{:06x}",
+            crate::chat::bar_colour(shell, id, theme::text_muted())
+        )
+    };
+    let nav_button = |cx: &mut Context<Shell>,
+                      id: &'static str,
+                      glyph: &'static str,
+                      label: &'static str,
+                      enabled: bool,
+                      step: isize| {
         let mut b = bar_button(shell, cx, id).child(icon(glyph, 18.0));
         if enabled {
             b = b.on_click(cx.listener(move |this, _, _, cx| this.nav_jump(step, cx)));
@@ -109,7 +126,11 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             .attr("title", label)
             .attr("data-color", colour_of(id))
             .attr("data-bg", "");
-        if enabled { tagged } else { tagged.attr("disabled", "") }
+        if enabled {
+            tagged
+        } else {
+            tagged.attr("disabled", "")
+        }
     };
     let mut inbox = bar_button(shell, cx, "inbox-button")
         .child(icon("inbox", 16.0))
@@ -208,7 +229,8 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                     .children(streamer_button(shell, cx))
                     .children(crate::update::topbar_button(shell, cx))
                     .child(
-                        inbox.e2e("button", "ghost titlebar-button inbox-button")
+                        inbox
+                            .e2e("button", "ghost titlebar-button inbox-button")
                             .attr("title", "Inbox (Ctrl+I)")
                             .attr("data-color", colour_of("inbox-button"))
                             .attr("data-bg", ""),
@@ -250,7 +272,11 @@ mod badge_tests {
             cx.notify();
         });
         cx.run_until_parked();
-        cx.draw(point(px(0.0), px(0.0)), gpui::size(px(800.0), px(600.0)), |_, _| div());
+        cx.draw(
+            point(px(0.0), px(0.0)),
+            gpui::size(px(800.0), px(600.0)),
+            |_, _| div(),
+        );
         cx.run_until_parked();
 
         let badge = crate::e2e::query_bounds(".inbox-badge").expect("badge");
@@ -261,4 +287,3 @@ mod badge_tests {
         assert_eq!(*ty, badge.y + badge.h / 2.0);
     }
 }
-

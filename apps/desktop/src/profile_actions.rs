@@ -32,38 +32,47 @@ impl Shell {
         let nickname = self.nicknames.get(user.as_str()).cloned();
         let card = cx.new(|cx| ProfileCard::new(session, user, room, at, seen, servers, cx));
         card.update(cx, |card, _| card.nickname = nickname);
-        cx.subscribe(&card, |this: &mut Self, card, event: &ProfileEvent, cx| match event {
-            ProfileEvent::Closed => {
-                this.card = None;
-                cx.notify();
-            }
-            ProfileEvent::OpenServer(space) => {
-                this.card = None;
-                this.set_scope(Scope::Space(space.clone()), cx);
-            }
-            ProfileEvent::OpenDm(room) => {
-                this.card = None;
-                this.open_room_in(Scope::Dms, room.clone(), cx);
-            }
-            ProfileEvent::Copied(link) => {
-                cx.write_to_clipboard(gpui::ClipboardItem::new_string(link.clone()));
-                this.toast("Link copied", cx);
-            }
-            ProfileEvent::ModView(user) => {
-                let shown = this.card.as_ref().map(|card| card.read(cx).name());
-                this.card = None;
-                this.open_mod_view(user.clone(), shown, cx);
-            }
-            ProfileEvent::More(at) => {
-                let (user, own, blocked, mutual) = {
-                    let card = card.read(cx);
-                    (card.user.clone(), card.is_own(), card.is_blocked(), card.mutual().to_vec())
-                };
-                let invite_to = available_invite_targets(&this.rooms, this.selected.as_ref(), &mutual);
-                let items = more_menu(&user, own, blocked, &invite_to);
-                this.open_menu(OpenMenu::new(*at, items, false, MenuTarget::Other), cx);
-            }
-        })
+        cx.subscribe(
+            &card,
+            |this: &mut Self, card, event: &ProfileEvent, cx| match event {
+                ProfileEvent::Closed => {
+                    this.card = None;
+                    cx.notify();
+                }
+                ProfileEvent::OpenServer(space) => {
+                    this.card = None;
+                    this.set_scope(Scope::Space(space.clone()), cx);
+                }
+                ProfileEvent::OpenDm(room) => {
+                    this.card = None;
+                    this.open_room_in(Scope::Dms, room.clone(), cx);
+                }
+                ProfileEvent::Copied(link) => {
+                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(link.clone()));
+                    this.toast("Link copied", cx);
+                }
+                ProfileEvent::ModView(user) => {
+                    let shown = this.card.as_ref().map(|card| card.read(cx).name());
+                    this.card = None;
+                    this.open_mod_view(user.clone(), shown, cx);
+                }
+                ProfileEvent::More(at) => {
+                    let (user, own, blocked, mutual) = {
+                        let card = card.read(cx);
+                        (
+                            card.user.clone(),
+                            card.is_own(),
+                            card.is_blocked(),
+                            card.mutual().to_vec(),
+                        )
+                    };
+                    let invite_to =
+                        available_invite_targets(&this.rooms, this.selected.as_ref(), &mutual);
+                    let items = more_menu(&user, own, blocked, &invite_to);
+                    this.open_menu(OpenMenu::new(*at, items, false, MenuTarget::Other), cx);
+                }
+            },
+        )
         .detach();
         self.card = Some(card);
         cx.notify();

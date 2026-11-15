@@ -87,7 +87,11 @@ pub fn install(cx: &mut App) {
         return;
     }
     cx.on_action(|_: &Quit, _| crate::send_command(crate::Command::Quit));
-    cx.on_action(|_: &About, _| crate::send_command(crate::Command::Tray(crate::tray::TrayAction::Acknowledgements)));
+    cx.on_action(|_: &About, _| {
+        crate::send_command(crate::Command::Tray(
+            crate::tray::TrayAction::Acknowledgements,
+        ))
+    });
     cx.on_action(|_: &Hide, cx| cx.hide());
     cx.on_action(|_: &HideOthers, cx| cx.hide_other_apps());
     cx.on_action(|_: &ShowAll, cx| cx.unhide_other_apps());
@@ -102,7 +106,8 @@ pub fn install(cx: &mut App) {
                 window
                     .update(cx, |_, window, _| {
                         crate::notify::set_looking(false, None);
-                        gpui::KEEP_RUNNING_WITHOUT_WINDOWS.store(true, std::sync::atomic::Ordering::Relaxed);
+                        gpui::KEEP_RUNNING_WITHOUT_WINDOWS
+                            .store(true, std::sync::atomic::Ordering::Relaxed);
                         window.remove_window();
                     })
                     .ok();
@@ -112,7 +117,9 @@ pub fn install(cx: &mut App) {
     cx.on_action(|_: &Minimize, cx| {
         cx.defer(|cx| {
             if let Some(window) = cx.active_window().or_else(|| cx.windows().first().copied()) {
-                window.update(cx, |_, window, _| window.minimize_window()).ok();
+                window
+                    .update(cx, |_, window, _| window.minimize_window())
+                    .ok();
             }
         });
     });

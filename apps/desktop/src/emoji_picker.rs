@@ -146,11 +146,20 @@ impl Render for EmojiPicker {
                                 this.remembered.set_tone(stored);
                                 this.tones_open = false;
                                 if let Err(err) = this.remembered.save(&crate::data_dir()) {
-                                    eprintln!("morpheus-desktop: could not save the skin tone: {err}");
+                                    eprintln!(
+                                        "morpheus-desktop: could not save the skin tone: {err}"
+                                    );
                                 }
                                 cx.notify();
                             }))
-                            .e2e("button", if active { "skin-tone-option active" } else { "skin-tone-option" })
+                            .e2e(
+                                "button",
+                                if active {
+                                    "skin-tone-option active"
+                                } else {
+                                    "skin-tone-option"
+                                },
+                            )
                             .attr("data-tone", name)
                             .attr("title", name)
                             .text(hand(option))
@@ -254,7 +263,10 @@ impl Render for EmojiPicker {
                 let emoji = cell.clone();
                 cells = cells.child(
                     div()
-                        .id(ElementId::from(SharedString::from(format!("{}-{cell}", section.group))))
+                        .id(ElementId::from(SharedString::from(format!(
+                            "{}-{cell}",
+                            section.group
+                        ))))
                         .w(px(37.0))
                         .h(px(37.0))
                         .flex()
@@ -299,8 +311,12 @@ impl Render for EmojiPicker {
 
         let size = window.viewport_size();
         // Beside the button, to its left, kept inside the window.
-        let x = (f32::from(self.at.x) - WIDTH - 8.0).max(8.0).min(f32::from(size.width) - WIDTH - 8.0);
-        let y = f32::from(self.at.y).max(8.0).min(f32::from(size.height) - HEIGHT - 8.0);
+        let x = (f32::from(self.at.x) - WIDTH - 8.0)
+            .max(8.0)
+            .min(f32::from(size.width) - WIDTH - 8.0);
+        let y = f32::from(self.at.y)
+            .max(8.0)
+            .min(f32::from(size.height) - HEIGHT - 8.0);
         let panel = div()
             .id("emoji-picker")
             .track_focus(&self.focus)
@@ -337,8 +353,14 @@ impl Render for EmojiPicker {
             .left_0()
             .size_full()
             .occlude()
-            .on_mouse_down(MouseButton::Left, cx.listener(|_, _, _, cx| cx.emit(PickerEvent::Closed)))
-            .on_mouse_down(MouseButton::Right, cx.listener(|_, _, _, cx| cx.emit(PickerEvent::Closed)))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|_, _, _, cx| cx.emit(PickerEvent::Closed)),
+            )
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(|_, _, _, cx| cx.emit(PickerEvent::Closed)),
+            )
             .child(
                 anchored()
                     .position(point(px(x), px(y)))

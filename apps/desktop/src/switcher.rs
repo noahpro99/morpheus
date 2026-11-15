@@ -7,8 +7,8 @@
 use std::sync::Arc;
 
 use gpui::{
-    BoxShadow, Context, Entity, EventEmitter, FontWeight, IntoElement, MouseButton, Render, Window, div, point,
-    prelude::*, px, rgb, rgba,
+    BoxShadow, Context, Entity, EventEmitter, FontWeight, IntoElement, MouseButton, Render, Window,
+    div, point, prelude::*, px, rgb, rgba,
 };
 use morpheus_core::{OwnedRoomId, RoomSummary};
 
@@ -103,8 +103,14 @@ pub struct Switcher {
 impl Switcher {
     pub fn new(rooms: Vec<SwitchRoom>, cx: &mut Context<Self>) -> Self {
         let input = cx.new(|cx| {
-            TextInput::new("switcher", "Jump to a room, an action or a setting…", false, "", cx)
-                .bare("input", "")
+            TextInput::new(
+                "switcher",
+                "Jump to a room, an action or a setting…",
+                false,
+                "",
+                cx,
+            )
+            .bare("input", "")
         });
         input.update(cx, |input, _| input.set_capture_nav(true));
         cx.subscribe(&input, |this, _, _: &Changed, cx| {
@@ -140,14 +146,20 @@ impl Switcher {
             .rooms
             .iter()
             .enumerate()
-            .filter(|(_, room)| needle.is_empty() || room.name.to_lowercase().contains(&needle) || room.real_name.to_lowercase().contains(&needle))
+            .filter(|(_, room)| {
+                needle.is_empty()
+                    || room.name.to_lowercase().contains(&needle)
+                    || room.real_name.to_lowercase().contains(&needle)
+            })
             .take(8)
             .map(|(index, _)| Entry::Room(index))
             .collect();
         list.extend(
             Action::ALL
                 .into_iter()
-                .filter(|action| needle.is_empty() || action.label().to_lowercase().contains(&needle))
+                .filter(|action| {
+                    needle.is_empty() || action.label().to_lowercase().contains(&needle)
+                })
                 .map(Entry::Action),
         );
         // Settings, found by their name or the words they answer to.
@@ -156,8 +168,7 @@ impl Switcher {
     }
 
     fn cursor_now(&self, cx: &gpui::App) -> usize {
-        self.cursor
-            .min(self.entries(cx).len().saturating_sub(1))
+        self.cursor.min(self.entries(cx).len().saturating_sub(1))
     }
 
     fn choose(&mut self, index: usize, cx: &mut Context<Self>) {
@@ -233,27 +244,34 @@ impl Render for Switcher {
             let row = match entry {
                 Entry::Room(room) => {
                     let room = &self.rooms[*room];
-                    row.child(avatar(room.picture.clone(), &room.letter_of, 24.0, room.squircle.then_some(8.0)))
-                        .child(
-                            div().ml(px(8.0))
-                                .child(room.name.clone())
-                                .e2e("span", "name")
-                                .text(room.name.clone()),
-                        )
-                        .child(
-                            div()
-                                .ml_auto()
-                                .text_size(px(0.8 * theme::REM))
-                                .text_color(rgb(theme::text_faint()))
-                                .child(room.kind.clone())
-                                .e2e("span", "kind")
-                                .text(room.kind.clone()),
-                        )
+                    row.child(avatar(
+                        room.picture.clone(),
+                        &room.letter_of,
+                        24.0,
+                        room.squircle.then_some(8.0),
+                    ))
+                    .child(
+                        div()
+                            .ml(px(8.0))
+                            .child(room.name.clone())
+                            .e2e("span", "name")
+                            .text(room.name.clone()),
+                    )
+                    .child(
+                        div()
+                            .ml_auto()
+                            .text_size(px(0.8 * theme::REM))
+                            .text_color(rgb(theme::text_faint()))
+                            .child(room.kind.clone())
+                            .e2e("span", "kind")
+                            .text(room.kind.clone()),
+                    )
                 }
                 Entry::Setting(setting) => row
                     .child(icon(setting.page.glyph(), 16.0).text_color(rgb(theme::text_faint())))
                     .child(
-                        div().ml(px(8.0))
+                        div()
+                            .ml(px(8.0))
                             .child(setting.label)
                             .e2e("span", "name")
                             .text(setting.label),
@@ -269,7 +287,13 @@ impl Render for Switcher {
                     ),
                 Entry::Action(action) => row
                     .child(icon(action.glyph(), 16.0).text_color(rgb(theme::text_faint())))
-                    .child(div().ml(px(8.0)).child(action.label()).e2e("span", "action-label").text(action.label())),
+                    .child(
+                        div()
+                            .ml(px(8.0))
+                            .child(action.label())
+                            .e2e("span", "action-label")
+                            .text(action.label()),
+                    ),
             };
             let key = match entry {
                 Entry::Room(room) => Some(self.rooms[*room].id.to_string()),
@@ -348,7 +372,11 @@ impl crate::shell::Shell {
                         space.map(|s| s.name.clone()),
                     )
                 }
-                Scope::Dms => ("Direct message".to_owned(), self.picture(&room.avatar, 32), None),
+                Scope::Dms => (
+                    "Direct message".to_owned(),
+                    self.picture(&room.avatar, 32),
+                    None,
+                ),
                 _ => ("Rooms".to_owned(), self.picture(&room.avatar, 32), None),
             }
         })
@@ -373,27 +401,32 @@ impl crate::shell::Shell {
         }
         let list = self.switch_rooms();
         let switcher = cx.new(|cx| Switcher::new(list, cx));
-        cx.subscribe(&switcher, |this: &mut Self, _, event: &SwitcherEvent, cx| {
-            this.switcher = None;
-            match event {
-                SwitcherEvent::Room(id) => {
-                    // Scope first, so the sidebar follows the room.
-                    this.open_room_in_scope(id.clone(), cx);
+        cx.subscribe(
+            &switcher,
+            |this: &mut Self, _, event: &SwitcherEvent, cx| {
+                this.switcher = None;
+                match event {
+                    SwitcherEvent::Room(id) => {
+                        // Scope first, so the sidebar follows the room.
+                        this.open_room_in_scope(id.clone(), cx);
+                    }
+                    SwitcherEvent::Action(Action::Settings) => {
+                        this.open_settings(crate::view_model::keys::SettingsFocus::None, cx)
+                    }
+                    SwitcherEvent::Action(Action::Shortcuts) => {
+                        this.dialog_open(crate::dialogs::Dialog::Help, cx)
+                    }
+                    SwitcherEvent::Action(Action::Inbox) => this.toggle_inbox(cx),
+                    SwitcherEvent::Action(Action::CheckForUpdates) => {
+                        this.check_for_updates(true, cx)
+                    }
+                    SwitcherEvent::Action(Action::Acknowledgements) => this.open_about(cx),
+                    SwitcherEvent::Setting(entry) => this.open_setting_entry(entry, cx),
+                    SwitcherEvent::Close => {}
                 }
-                SwitcherEvent::Action(Action::Settings) => {
-                    this.open_settings(crate::view_model::keys::SettingsFocus::None, cx)
-                }
-                SwitcherEvent::Action(Action::Shortcuts) => {
-                    this.dialog_open(crate::dialogs::Dialog::Help, cx)
-                }
-                SwitcherEvent::Action(Action::Inbox) => this.toggle_inbox(cx),
-                SwitcherEvent::Action(Action::CheckForUpdates) => this.check_for_updates(true, cx),
-                SwitcherEvent::Action(Action::Acknowledgements) => this.open_about(cx),
-                SwitcherEvent::Setting(entry) => this.open_setting_entry(entry, cx),
-                SwitcherEvent::Close => {}
-            }
-            cx.notify();
-        })
+                cx.notify();
+            },
+        )
         .detach();
         self.switcher = Some(switcher);
         cx.notify();

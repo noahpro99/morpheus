@@ -15,8 +15,8 @@ use morpheus_core::{
     Message, MessageId, OwnedEventId, OwnedRoomId, PinnedMessage, Session, TimelineHandle,
 };
 
-use crate::tab::Tabbable as _;
 use crate::hover_underline::underline_on_hover;
+use crate::tab::Tabbable as _;
 use crate::{
     e2e::E2eExt as _,
     input::{Submit, TextInput},
@@ -28,7 +28,7 @@ use crate::{
     view_model::{
         menu::{
             Confirm, ConfirmAction, MenuAction, MenuTarget, confirm_delete, forward_targets,
-            offers_quick_reactions, message_menu,
+            message_menu, offers_quick_reactions,
         },
         toast::{TOAST_SECS, UNDO_SECS, failure_text},
     },
@@ -169,9 +169,16 @@ impl Shell {
     }
 
     /// Runs what a menu item asked for.
-    pub fn run_menu_action(&mut self, action: MenuAction, target: MenuTarget, cx: &mut Context<Self>) {
+    pub fn run_menu_action(
+        &mut self,
+        action: MenuAction,
+        target: MenuTarget,
+        cx: &mut Context<Self>,
+    ) {
         match target {
-            MenuTarget::Message { message, room } => self.run_message_action(action, message, room, cx),
+            MenuTarget::Message { message, room } => {
+                self.run_message_action(action, message, room, cx)
+            }
             MenuTarget::Other => self.run_room_action(action, cx),
         }
     }
@@ -204,7 +211,9 @@ impl Shell {
             MenuAction::ReplyInThread => self.open_thread(*message, cx),
             MenuAction::React(key) => {
                 if let Some(timeline) = timeline {
-                    timeline.update(cx, |timeline, cx| timeline.react(message.id.clone(), key, cx));
+                    timeline.update(cx, |timeline, cx| {
+                        timeline.react(message.id.clone(), key, cx)
+                    });
                 }
             }
             MenuAction::RemoveReactions(keys) => {
@@ -302,8 +311,10 @@ impl Shell {
         let dialog = cx.new(|cx| PinnedDialog::new(session, room, cx));
         cx.subscribe(&dialog, |this, _, _: &Closed, cx| this.dialog_close(cx))
             .detach();
-        cx.subscribe(&dialog, |this, _, _: &PinsChanged, cx| this.refresh_pinned(cx))
-            .detach();
+        cx.subscribe(&dialog, |this, _, _: &PinsChanged, cx| {
+            this.refresh_pinned(cx)
+        })
+        .detach();
         self.dialog_open(Dialog::Pinned(dialog), cx);
     }
 
@@ -318,7 +329,10 @@ impl Shell {
 
     fn ask_to_delete(&mut self, message: Message, cx: &mut Context<Self>) {
         self.dialog_open(
-            Dialog::Confirm(confirm_delete(), ConfirmAction::DeleteMessage(Box::new(message))),
+            Dialog::Confirm(
+                confirm_delete(),
+                ConfirmAction::DeleteMessage(Box::new(message)),
+            ),
             cx,
         );
     }
@@ -397,7 +411,8 @@ impl Shell {
                             this.fail("delete", &err.to_string(), cx);
                         }
                         if let Some(timeline) = timeline.upgrade() {
-                            timeline.update(cx, |timeline, cx| timeline.show(&message.unique_id, cx));
+                            timeline
+                                .update(cx, |timeline, cx| timeline.show(&message.unique_id, cx));
                         }
                     })
                     .ok();
@@ -441,7 +456,12 @@ impl Shell {
 // ---- drawing --------------------------------------------------------------
 
 /// `.overlay`: the dimmed window, the dialog near the top.
-pub(crate) fn overlay(window: &Window, cx: &mut gpui::App, content: AnyElement, close: impl Fn(&mut Window, &mut gpui::App) + 'static) -> AnyElement {
+pub(crate) fn overlay(
+    window: &Window,
+    cx: &mut gpui::App,
+    content: AnyElement,
+    close: impl Fn(&mut Window, &mut gpui::App) + 'static,
+) -> AnyElement {
     let trap = crate::tab::trap(cx);
     let top = 0.15 * f32::from(window.viewport_size().height);
     let layer = div()
@@ -506,7 +526,11 @@ pub(crate) fn muted(text: &str, class: &str) -> impl IntoElement {
 }
 
 /// A button of a dialog: danger is a red block, others plain text.
-pub(crate) fn dialog_button(id: impl Into<SharedString>, label: &str, danger: bool) -> Stateful<Div> {
+pub(crate) fn dialog_button(
+    id: impl Into<SharedString>,
+    label: &str,
+    danger: bool,
+) -> Stateful<Div> {
     let id: SharedString = id.into();
     div()
         .id(ElementId::from(id))
@@ -536,11 +560,17 @@ pub(crate) fn actions(buttons: Vec<AnyElement>) -> impl IntoElement {
 }
 
 /// Whatever dialog is open, drawn over the window.
-pub fn render_dialog(shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>) -> Option<AnyElement> {
+pub fn render_dialog(
+    shell: &mut Shell,
+    window: &mut Window,
+    cx: &mut Context<Shell>,
+) -> Option<AnyElement> {
     let focus = shell.dialog_focus(cx);
     if std::mem::take(&mut shell.take_dialog_focus) {
         match &shell.dialog {
-            Some(Dialog::Confirm(..) | Dialog::Reactions(_) | Dialog::Help | Dialog::About) => window.focus(&focus),
+            Some(Dialog::Confirm(..) | Dialog::Reactions(_) | Dialog::Help | Dialog::About) => {
+                window.focus(&focus)
+            }
             _ => {}
         }
     }
@@ -557,14 +587,20 @@ pub fn render_dialog(shell: &mut Shell, window: &mut Window, cx: &mut Context<Sh
             let opens_room = matches!(action, ConfirmAction::OpenRoom(_));
             let go = {
                 let action = action.clone();
-                cx.listener(move |this, _: &gpui::ClickEvent, _, cx| this.confirmed(action.clone(), cx))
+                cx.listener(move |this, _: &gpui::ClickEvent, _, cx| {
+                    this.confirmed(action.clone(), cx)
+                })
             };
             let boxed = dialog_box()
                 .id("confirm-dialog")
                 .track_focus(&focus)
                 .on_key_down(cx.listener({
                     let action = action.clone();
-                    move |this, event: &gpui::KeyDownEvent, _, cx| match event.keystroke.key.as_str() {
+                    move |this, event: &gpui::KeyDownEvent, _, cx| match event
+                        .keystroke
+                        .key
+                        .as_str()
+                    {
                         "enter" => this.confirmed(action.clone(), cx),
                         "escape" => this.dialog_close(cx),
                         _ => {}
@@ -583,7 +619,14 @@ pub fn render_dialog(shell: &mut Shell, window: &mut Window, cx: &mut Context<Sh
                     dialog_button("confirm-go", &confirm.confirm, true)
                         .when(opens_room, |d| d.bg(rgb(theme::accent())))
                         .on_click(go)
-                        .e2e("button", if opens_room { "primary confirm-go" } else { "danger confirm-go" })
+                        .e2e(
+                            "button",
+                            if opens_room {
+                                "primary confirm-go"
+                            } else {
+                                "danger confirm-go"
+                            },
+                        )
                         .text(confirm.confirm.clone())
                         .into_any_element(),
                 ]))
@@ -624,7 +667,11 @@ pub fn render_dialog(shell: &mut Shell, window: &mut Window, cx: &mut Context<Sh
                                 .text_size(px(0.9 * theme::REM))
                                 .children(reaction.senders.iter().enumerate().map(|(i, sender)| {
                                     let name = crate::streamer::name(sender.localpart());
-                                    let shown = if i > 0 { format!(", {name}") } else { name.clone() };
+                                    let shown = if i > 0 {
+                                        format!(", {name}")
+                                    } else {
+                                        name.clone()
+                                    };
                                     div()
                                         .child(shown)
                                         .e2e("span", "")
@@ -686,14 +733,22 @@ pub fn render_dialog(shell: &mut Shell, window: &mut Window, cx: &mut Context<Sh
                         .flex_1()
                         .min_h_0()
                         .overflow_y_scroll()
-                        .children(crate::view_model::hotkeys::GROUPS.iter().map(|(group, rows)| help_group(group, rows)))
+                        .children(
+                            crate::view_model::hotkeys::GROUPS
+                                .iter()
+                                .map(|(group, rows)| help_group(group, rows)),
+                        )
                         .child({
                             let on = crate::vim::enabled();
                             div()
                                 .flex()
                                 .flex_col()
                                 .when(!on, |d| d.opacity(0.4))
-                                .children(crate::view_model::hotkeys::VIM_GROUPS.iter().map(|(group, rows)| help_group(group, rows)))
+                                .children(
+                                    crate::view_model::hotkeys::VIM_GROUPS
+                                        .iter()
+                                        .map(|(group, rows)| help_group(group, rows)),
+                                )
                                 .e2e("div", if on { "vim-keys on" } else { "vim-keys off" })
                         })
                         .e2e("div", "help-body"),
@@ -783,7 +838,13 @@ pub fn render_toasts(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElemen
                         cx.notify();
                     }
                 }))
-                .child(div().flex_1().child(toast.text.clone()).e2e("span", "toast-text").text(toast.text.clone()))
+                .child(
+                    div()
+                        .flex_1()
+                        .child(toast.text.clone())
+                        .e2e("span", "toast-text")
+                        .text(toast.text.clone()),
+                )
                 .when(toast.undo, |d| {
                     d.child(
                         underline_on_hover(
@@ -795,13 +856,15 @@ pub fn render_toasts(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElemen
                                 .text_color(rgb(theme::accent()))
                                 .cursor_pointer()
                                 .child("Undo")
-                                .on_click(cx.listener(move |this, _, _, cx| this.undo_toast(id, cx))),
+                                .on_click(
+                                    cx.listener(move |this, _, _, cx| this.undo_toast(id, cx)),
+                                ),
                             SharedString::from(format!("undo-hover-{id}")),
                             theme::accent(),
                             7.0,
                         )
-                            .e2e("button", "toast-undo")
-                            .text("Undo"),
+                        .e2e("button", "toast-undo")
+                        .text("Undo"),
                     )
                 })
                 .e2e("div", "toast")
@@ -829,9 +892,15 @@ pub struct ReportDialog {
 impl EventEmitter<Closed> for ReportDialog {}
 
 impl ReportDialog {
-    fn new(session: Session, room: OwnedRoomId, event_id: OwnedEventId, cx: &mut Context<Self>) -> Self {
+    fn new(
+        session: Session,
+        room: OwnedRoomId,
+        event_id: OwnedEventId,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let input = cx.new(|cx| TextInput::new("reason", "Spam, abuse, …", false, "", cx).framed());
-        cx.subscribe(&input, |this, _, _: &Submit, cx| this.submit(cx)).detach();
+        cx.subscribe(&input, |this, _, _: &Submit, cx| this.submit(cx))
+            .detach();
         Self {
             session,
             room,
@@ -950,16 +1019,11 @@ impl Render for ReportDialog {
             .e2e("form", "message-dialog report-dialog")
             .focusable(&self.focus);
         let this = cx.weak_entity();
-        overlay(
-            window,
-            cx,
-            boxed.into_any_element(),
-            {
-                move |_, cx| {
-                    this.update(cx, |_, cx| cx.emit(Closed)).ok();
-                }
-            },
-        )
+        overlay(window, cx, boxed.into_any_element(), {
+            move |_, cx| {
+                this.update(cx, |_, cx| cx.emit(Closed)).ok();
+            }
+        })
     }
 }
 
@@ -1122,7 +1186,11 @@ impl Render for PinnedDialog {
 
 /// The open-channel question's "Don't ask again during this share" tick.
 fn dont_ask_tick(ticked: bool, cx: &mut Context<Shell>) -> impl IntoElement {
-    let ring = rgb(if ticked { theme::accent() } else { theme::text_muted() });
+    let ring = rgb(if ticked {
+        theme::accent()
+    } else {
+        theme::text_muted()
+    });
     let mark = div()
         .size(px(18.0))
         .flex_none()
@@ -1132,11 +1200,22 @@ fn dont_ask_tick(ticked: bool, cx: &mut Context<Shell>) -> impl IntoElement {
         .border_2()
         .border_color(ring)
         .rounded(px(3.0))
-        .when(ticked, |d| d.child(div().size(px(8.0)).rounded(px(3.0)).bg(rgb(theme::accent()))))
+        .when(ticked, |d| {
+            d.child(
+                div()
+                    .size(px(8.0))
+                    .rounded(px(3.0))
+                    .bg(rgb(theme::accent())),
+            )
+        })
         .e2e("input", "")
         .attr("type", "checkbox")
         .attr("name", "dont-ask");
-    let mark = if ticked { mark.attr("checked", "true") } else { mark };
+    let mark = if ticked {
+        mark.attr("checked", "true")
+    } else {
+        mark
+    };
     div()
         .id("dont-ask")
         .flex()
@@ -1152,7 +1231,6 @@ fn dont_ask_tick(ticked: bool, cx: &mut Context<Shell>) -> impl IntoElement {
         .child("Don't ask again during this share")
         .e2e("label", "dont-ask")
 }
-
 
 /// One group of the shortcuts dialog: its name, then a row per shortcut.
 fn help_group(group: &str, rows: &[(&str, &str)]) -> impl IntoElement {

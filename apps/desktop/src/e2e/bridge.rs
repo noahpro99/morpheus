@@ -27,7 +27,8 @@ use futures::{
 };
 use gpui::{
     App, AppContext as _, AsyncApp, Keystroke, Modifiers, MouseButton, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, PlatformInput, ScrollDelta, ScrollWheelEvent, TouchPhase, point, px,
+    MouseMoveEvent, MouseUpEvent, PlatformInput, ScrollDelta, ScrollWheelEvent, TouchPhase, point,
+    px,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -258,7 +259,10 @@ async fn handle(request: &Request, cx: &mut AsyncApp) -> Reply {
         "video_pictures" => Ok(json!(crate::pictures::held())),
         // Stop (or resume) elements recording themselves, to time frames without it.
         "tagging" => {
-            super::tag::TAGGING.store(request.enabled.unwrap_or(true), std::sync::atomic::Ordering::Relaxed);
+            super::tag::TAGGING.store(
+                request.enabled.unwrap_or(true),
+                std::sync::atomic::Ordering::Relaxed,
+            );
             Ok(Value::Null)
         }
         "scroll_state" => {
@@ -302,7 +306,8 @@ async fn handle(request: &Request, cx: &mut AsyncApp) -> Reply {
             Ok(Value::Null)
         }
         "attach_file" => attach_file(request, cx).await,
-        "click" | "right_click" | "type" | "keys" | "press" | "submit" | "drag" | "release" | "hover" | "wheel" => act(op, request, cx).await,
+        "click" | "right_click" | "type" | "keys" | "press" | "submit" | "drag" | "release"
+        | "hover" | "wheel" => act(op, request, cx).await,
         _ => Err(format!("unknown op: {op}")),
     }
 }
@@ -311,11 +316,12 @@ async fn handle(request: &Request, cx: &mut AsyncApp) -> Reply {
 fn probe(request: &Request) -> Result<std::rc::Rc<dyn super::Scrollable>, String> {
     with_state(|state| {
         let index = target(&state.tree, request)?.ok_or_else(|| missing(request))?;
-        state
-            .scroll
-            .get(&index)
-            .cloned()
-            .ok_or_else(|| format!("{} does not scroll", request.selector.as_deref().unwrap_or("")))
+        state.scroll.get(&index).cloned().ok_or_else(|| {
+            format!(
+                "{} does not scroll",
+                request.selector.as_deref().unwrap_or("")
+            )
+        })
     })
 }
 
@@ -679,11 +685,7 @@ async fn attach_file(request: &Request, cx: &mut AsyncApp) -> Reply {
     let before = with_state(|state| state.frame);
     cx.update(|cx| {
         target.update(cx, |composer, cx| {
-            composer.attach_from_bridge(
-                crate::input::PastedFile { name, mime, bytes },
-                dropped,
-                cx,
-            )
+            composer.attach_from_bridge(crate::input::PastedFile { name, mime, bytes }, dropped, cx)
         })
     })
     .map_err(|err| err.to_string())?
@@ -789,27 +791,34 @@ async fn act(op: &str, request: &Request, cx: &mut AsyncApp) -> Reply {
             // again where it now is.
             let mut at = centre;
             for attempt in 0..10 {
-                cx.update_window(window, |_, window, cx| press_at(window, cx, at, button, held))
-                    .map_err(|err| err.to_string())?;
+                cx.update_window(window, |_, window, cx| {
+                    press_at(window, cx, at, button, held)
+                })
+                .map_err(|err| err.to_string())?;
                 // Let a frame draw between press and release (up to 40 ms).
                 let drawn = with_state(|state| state.frame);
                 for _ in 0..8 {
                     if with_state(|state| state.frame) != drawn {
                         break;
                     }
-                    cx.background_executor().timer(Duration::from_millis(5)).await;
+                    cx.background_executor()
+                        .timer(Duration::from_millis(5))
+                        .await;
                 }
                 let now = with_state(|state| click_centre(&state.tree, request, op));
                 // A right-click acts on the press (a context menu opens and
                 // can shift or cover the row), so pressing again would close
                 // that menu: keep the first press. A move under a pixel is no
                 // move.
-                let stayed = now.is_some_and(|(x, y)| (x - at.0).abs() < 1.0 && (y - at.1).abs() < 1.0);
+                let stayed =
+                    now.is_some_and(|(x, y)| (x - at.0).abs() < 1.0 && (y - at.1).abs() < 1.0);
                 // Gone after the press: the press did its work (a backdrop
                 // that closes its menu on mouse down), so let go where it was.
                 if stayed || now.is_none() || button == MouseButton::Right || attempt == 9 {
-                    cx.update_window(window, |_, window, cx| release_at(window, cx, at, button, held))
-                        .map_err(|err| err.to_string())?;
+                    cx.update_window(window, |_, window, cx| {
+                        release_at(window, cx, at, button, held)
+                    })
+                    .map_err(|err| err.to_string())?;
                     if request.clicks == Some(2) && stayed {
                         // The second click of a double click, at once.
                         CLICKS.with(|c| c.set(2));
@@ -975,12 +984,16 @@ async fn act(op: &str, request: &Request, cx: &mut AsyncApp) -> Reply {
                 if let Some(handle) = &focus {
                     window.focus(handle);
                 }
-                let released = matches!(key.key.as_str(), "enter" | "space") && !key.modifiers.modified();
+                let released =
+                    matches!(key.key.as_str(), "enter" | "space") && !key.modifiers.modified();
                 let up = key.clone();
                 window.dispatch_keystroke(key, cx);
                 // A focused button presses on the key coming up.
                 if released {
-                    window.dispatch_event(PlatformInput::KeyUp(gpui::KeyUpEvent { keystroke: up }), cx);
+                    window.dispatch_event(
+                        PlatformInput::KeyUp(gpui::KeyUpEvent { keystroke: up }),
+                        cx,
+                    );
                 }
             })
             .map_err(|err| err.to_string())?;

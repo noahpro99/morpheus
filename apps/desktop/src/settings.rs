@@ -16,8 +16,8 @@ use gpui::{
     prelude::*, px, relative, rgb, rgba,
 };
 use morpheus_core::{
-    Device, EncryptionStatus, NotifyMode, QrImage, Session, VerificationActions, VerificationHandle,
-    VerificationStep,
+    Device, EncryptionStatus, NotifyMode, QrImage, Session, VerificationActions,
+    VerificationHandle, VerificationStep,
 };
 
 pub(crate) mod pages;
@@ -172,9 +172,8 @@ pub struct SettingsView {
 
 impl SettingsView {
     pub fn new(session: Option<Session>, cx: &mut Context<Self>) -> Self {
-        let key_input = cx.new(|cx| {
-            TextInput::new("recovery-key", keys::RECOVERY_PLACEHOLDER, true, "", cx)
-        });
+        let key_input =
+            cx.new(|cx| TextInput::new("recovery-key", keys::RECOVERY_PLACEHOLDER, true, "", cx));
         cx.subscribe(&key_input, |this, _, _: &Submit, cx| this.submit_key(cx))
             .detach();
         let search = cx.new(|cx| {
@@ -189,8 +188,10 @@ impl SettingsView {
             }
         })
         .detach();
-        let name_input = cx.new(|cx| TextInput::new("displayname", "Display name", false, "", cx).framed());
-        cx.subscribe(&name_input, |this, _, _: &Submit, cx| this.save_name(cx)).detach();
+        let name_input =
+            cx.new(|cx| TextInput::new("displayname", "Display name", false, "", cx).framed());
+        cx.subscribe(&name_input, |this, _, _: &Submit, cx| this.save_name(cx))
+            .detach();
         let data_dir = crate::data_dir();
         if let Some(session) = session.clone() {
             // Incoming requests from the user's other devices pop the window.
@@ -266,7 +267,8 @@ impl SettingsView {
     pub fn open(&mut self, focus: SettingsFocus, cx: &mut Context<Self>) {
         self.open = true;
         self.form = RecoveryForm::default();
-        self.key_input.update(cx, |input, cx| input.set_value("", cx));
+        self.key_input
+            .update(cx, |input, cx| input.set_value("", cx));
         self.page = SettingsPage::for_focus(focus).unwrap_or(if self.flow.is_some() {
             SettingsPage::Security
         } else {
@@ -423,7 +425,8 @@ impl SettingsView {
             this.update(cx, |this, cx| {
                 match result {
                     Ok(()) => {
-                        this.key_input.update(cx, |input, cx| input.set_value("", cx));
+                        this.key_input
+                            .update(cx, |input, cx| input.set_value("", cx));
                         this.form.restored();
                         this.keys_changed(cx);
                     }
@@ -499,7 +502,11 @@ impl SettingsView {
                         .timer(Duration::from_secs(VERIFIED_NOTE_SECS))
                         .await;
                     this.update(cx, |this, cx| {
-                        if this.flow.as_ref().is_some_and(|f| verification::is_done(&f.read(cx).step)) {
+                        if this
+                            .flow
+                            .as_ref()
+                            .is_some_and(|f| verification::is_done(&f.read(cx).step))
+                        {
                             this.end_flow(cx);
                         }
                     })
@@ -552,12 +559,20 @@ impl SettingsView {
 }
 
 /// A button in the settings window.
-fn button(id: impl Into<SharedString>, _label: &str, kind: Kind, _classes: &str) -> Stateful<gpui::Div> {
+fn button(
+    id: impl Into<SharedString>,
+    _label: &str,
+    kind: Kind,
+    _classes: &str,
+) -> Stateful<gpui::Div> {
     let id: SharedString = id.into();
     let (bg, fg) = match kind {
         Kind::Primary => (rgb(theme::accent_solid()), rgb(0xffffff)),
         Kind::Secondary => (rgb(theme::bg_elevated()), rgb(theme::text())),
-        Kind::Danger => (rgba(theme::alpha(theme::danger(), 0x26)), rgb(theme::danger())),
+        Kind::Danger => (
+            rgba(theme::alpha(theme::danger(), 0x26)),
+            rgb(theme::danger()),
+        ),
     };
     div()
         .id(ElementId::from(id))
@@ -598,7 +613,6 @@ fn note(text: &str, class: &'static str, color: u32) -> impl IntoElement {
         .e2e("p", class)
         .text(text)
 }
-
 
 fn section(
     title: &str,
@@ -730,49 +744,52 @@ impl SettingsView {
                     .flex()
                     .flex_wrap()
                     .my(px(12.0))
-                    .children(panel.emojis.iter().enumerate().map(|(index, (symbol, name))| {
-                        div()
-                            .w(relative(0.25))
-                            .flex()
-                            .flex_col()
-                            .items_center()
-                            .gap(px(4.0))
-                            .py(px(4.0))
-                            .child(
+                    .children(
+                        panel
+                            .emojis
+                            .iter()
+                            .enumerate()
+                            .map(|(index, (symbol, name))| {
                                 div()
-                                    .text_size(px(2.0 * theme::REM))
-                                    .child(symbol.clone())
-                                    .e2e("span", "emoji")
-                                    .text(symbol.clone()),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(0.75 * theme::REM))
-                                    .text_color(rgb(theme::text_muted()))
-                                    .child(name.clone())
-                                    .e2e("span", "emoji-name")
-                                    .text(name.clone()),
-                            )
-                            .e2e("li", "")
-                            .attr("data-index", index.to_string())
-                    }))
+                                    .w(relative(0.25))
+                                    .flex()
+                                    .flex_col()
+                                    .items_center()
+                                    .gap(px(4.0))
+                                    .py(px(4.0))
+                                    .child(
+                                        div()
+                                            .text_size(px(2.0 * theme::REM))
+                                            .child(symbol.clone())
+                                            .e2e("span", "emoji")
+                                            .text(symbol.clone()),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(px(0.75 * theme::REM))
+                                            .text_color(rgb(theme::text_muted()))
+                                            .child(name.clone())
+                                            .e2e("span", "emoji-name")
+                                            .text(name.clone()),
+                                    )
+                                    .e2e("li", "")
+                                    .attr("data-index", index.to_string())
+                            }),
+                    )
                     .e2e("ul", "emoji-grid"),
             );
         }
         if !panel.buttons.is_empty() {
-            column = column.child(
-                div()
-                    .flex()
-                    .gap(px(8.0))
-                    .children(panel.buttons.iter().map(|b| {
-                        let action = b.action;
-                        button(format!("flow-{}", b.label), b.label, b.kind, b.class)
-                            .child(b.label)
-                            .on_click(cx.listener(move |this, _, _, cx| this.flow_action(action, cx)))
-                            .e2e("button", &format!("{} {}", kind_class(b.kind), b.class))
-                            .text(b.label)
-                    })),
-            );
+            column = column.child(div().flex().gap(px(8.0)).children(panel.buttons.iter().map(
+                |b| {
+                    let action = b.action;
+                    button(format!("flow-{}", b.label), b.label, b.kind, b.class)
+                        .child(b.label)
+                        .on_click(cx.listener(move |this, _, _, cx| this.flow_action(action, cx)))
+                        .e2e("button", &format!("{} {}", kind_class(b.kind), b.class))
+                        .text(b.label)
+                },
+            )));
         }
         column.e2e("div", "verification").into_any_element()
     }
@@ -963,7 +980,9 @@ impl SettingsView {
             );
         }
         match &self.form.message {
-            Some(Ok(message)) => encryption.push(note(message, "ok", theme::ok()).into_any_element()),
+            Some(Ok(message)) => {
+                encryption.push(note(message, "ok", theme::ok()).into_any_element())
+            }
             Some(Err(message)) => {
                 encryption.push(note(message, "error", theme::danger()).into_any_element())
             }
@@ -1000,7 +1019,13 @@ impl SettingsView {
             ],
         };
         vec![
-            section("Encryption", "encryption", encryption, self.hl("encryption")).into_any_element(),
+            section(
+                "Encryption",
+                "encryption",
+                encryption,
+                self.hl("encryption"),
+            )
+            .into_any_element(),
             section("Devices", "sessions", devices, self.hl("sessions")).into_any_element(),
             self.locked_chats_section(cx),
         ]
@@ -1027,7 +1052,13 @@ impl SettingsView {
                 .as_ref()
                 .map(|d| d.to_string())
                 .unwrap_or_default();
-            children.push(muted(&format!("This device: {}", crate::streamer::id(&device)), "muted").into_any_element());
+            children.push(
+                muted(
+                    &format!("This device: {}", crate::streamer::id(&device)),
+                    "muted",
+                )
+                .into_any_element(),
+            );
         }
         if let Some(url) = self.manage_url.clone() {
             children.push(
@@ -1040,7 +1071,8 @@ impl SettingsView {
                     .into_any_element(),
             );
         }
-        let mut page = vec![section("Account", "account", children, self.hl("account")).into_any_element()];
+        let mut page =
+            vec![section("Account", "account", children, self.hl("account")).into_any_element()];
         page.extend(self.edit_profile_page(cx));
         page
     }
@@ -1080,9 +1112,11 @@ fn device_row(device: &Device) -> impl IntoElement {
                 .text(device.id.to_string()),
         )
         .children(device.is_current.then(|| {
-            div()
-                .ml_auto()
-                .child(tag("this device", "tag", theme::alpha(theme::bg_elevated(), 0xff)))
+            div().ml_auto().child(tag(
+                "this device",
+                "tag",
+                theme::alpha(theme::bg_elevated(), 0xff),
+            ))
         }))
         .child(if device.verified {
             tag("verified", "tag ok", theme::alpha(theme::ok(), 0x26))
@@ -1117,7 +1151,10 @@ impl Render for SettingsView {
             .into_iter()
             .map(|entry: &'static SettingEntry| {
                 div()
-                    .id(ElementId::from(SharedString::from(format!("result-{}", entry.anchor))))
+                    .id(ElementId::from(SharedString::from(format!(
+                        "result-{}",
+                        entry.anchor
+                    ))))
                     .flex()
                     .items_center()
                     .gap(px(10.0))
@@ -1144,7 +1181,8 @@ impl Render for SettingsView {
             })
             .collect();
         if searching && results.is_empty() {
-            results.push(muted("No setting matches.", "muted settings-no-result").into_any_element());
+            results
+                .push(muted("No setting matches.", "muted settings-no-result").into_any_element());
         }
         let nav = div()
             .flex()
@@ -1202,7 +1240,9 @@ impl Render for SettingsView {
                                     .gap(px(4.0))
                                     .text_size(px(0.75 * theme::REM))
                                     .text_color(rgb(theme::text_muted()))
-                                    .child(icon("pencil", 12.0).text_color(rgb(theme::text_muted())))
+                                    .child(
+                                        icon("pencil", 12.0).text_color(rgb(theme::text_muted())),
+                                    )
                                     .child("Edit profile")
                                     .e2e("span", "settings-profile-edit")
                                     .text("Edit profile"),
@@ -1217,40 +1257,56 @@ impl Render for SettingsView {
             })
             .child(div().mb(px(8.0)).child(self.search.clone()))
             .children(results)
-            .children(SettingsPage::listed(true).into_iter().filter(|item| !searching && *item != SettingsPage::Account).map(|item| {
-                let selected = item == page;
-                div()
-                    .id(ElementId::from(SharedString::from(format!("nav-{}", item.label()))))
-                    .flex()
-                    .items_center()
-                    .gap(px(10.0))
-                    .w_full()
-                    .px(px(10.0))
-                    .py(px(6.5))
-                    .rounded(px(theme::RADIUS_SM))
-                    .cursor_pointer()
-                    .text_color(rgb(if selected { theme::text() } else { theme::text_muted() }))
-                    .when(selected, |d| d.bg(rgba(theme::bg_selected())))
-                    .hover(|s| s.bg(rgba(theme::bg_hover())).text_color(rgb(theme::text())))
-                    .child(icon(item.glyph(), 18.0).text_color(rgb(if selected { theme::text() } else { theme::text_muted() })))
-                    .child(item.label())
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        if item != SettingsPage::VoiceVideo {
-                            this.stop_video(cx);
-                        }
-                        this.page = item;
-                        cx.notify();
-                    }))
-                    .e2e(
-                        "button",
-                        if selected {
-                            "settings-nav-item selected"
-                        } else {
-                            "settings-nav-item"
-                        },
-                    )
-                    .text(item.label())
-            }))
+            .children(
+                SettingsPage::listed(true)
+                    .into_iter()
+                    .filter(|item| !searching && *item != SettingsPage::Account)
+                    .map(|item| {
+                        let selected = item == page;
+                        div()
+                            .id(ElementId::from(SharedString::from(format!(
+                                "nav-{}",
+                                item.label()
+                            ))))
+                            .flex()
+                            .items_center()
+                            .gap(px(10.0))
+                            .w_full()
+                            .px(px(10.0))
+                            .py(px(6.5))
+                            .rounded(px(theme::RADIUS_SM))
+                            .cursor_pointer()
+                            .text_color(rgb(if selected {
+                                theme::text()
+                            } else {
+                                theme::text_muted()
+                            }))
+                            .when(selected, |d| d.bg(rgba(theme::bg_selected())))
+                            .hover(|s| s.bg(rgba(theme::bg_hover())).text_color(rgb(theme::text())))
+                            .child(icon(item.glyph(), 18.0).text_color(rgb(if selected {
+                                theme::text()
+                            } else {
+                                theme::text_muted()
+                            })))
+                            .child(item.label())
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                if item != SettingsPage::VoiceVideo {
+                                    this.stop_video(cx);
+                                }
+                                this.page = item;
+                                cx.notify();
+                            }))
+                            .e2e(
+                                "button",
+                                if selected {
+                                    "settings-nav-item selected"
+                                } else {
+                                    "settings-nav-item"
+                                },
+                            )
+                            .text(item.label())
+                    }),
+            )
             .e2e("nav", "settings-nav");
 
         let body = match page {
@@ -1318,7 +1374,9 @@ impl Render for SettingsView {
             .child(header)
             .children(body)
             .e2e("section", "settings-page")
-            .scrollable(std::rc::Rc::new(crate::e2e::HandleProbe(self.scroll.clone())));
+            .scrollable(std::rc::Rc::new(crate::e2e::HandleProbe(
+                self.scroll.clone(),
+            )));
         let panel = div()
             .id("settings")
             .track_focus(&self.focus)

@@ -52,7 +52,8 @@ pub fn hides_on_close() -> bool {
 /// Whether this run puts up a tray icon: always, except that test runs (which
 /// open many windows) ask for it with `MORPHEUS_E2E_TRAY`.
 pub fn wanted() -> bool {
-    std::env::var_os("MORPHEUS_E2E_PORT").is_none() || std::env::var_os("MORPHEUS_E2E_TRAY").is_some()
+    std::env::var_os("MORPHEUS_E2E_PORT").is_none()
+        || std::env::var_os("MORPHEUS_E2E_TRAY").is_some()
 }
 
 /// The white logo as 64x64 RGBA (`apps/desktop/assets/tray.png`).
@@ -225,7 +226,9 @@ mod native {
             // Left click opens Morpheus (as Discord's does), right click the menu.
             .with_menu_on_left_click(false)
             .with_tooltip("Morpheus");
-        match logo_rgba().and_then(|(rgba, w, h)| Icon::from_rgba(rgba, w, h).map_err(|e| e.to_string())) {
+        match logo_rgba()
+            .and_then(|(rgba, w, h)| Icon::from_rgba(rgba, w, h).map_err(|e| e.to_string()))
+        {
             // macOS tints a template (the white logo's shape) for a light or dark menu bar.
             Ok(icon) => builder = builder.with_icon(icon).with_icon_as_template(true),
             Err(err) => eprintln!("morpheus-desktop: tray icon image failed, using none: {err}"),
@@ -274,13 +277,19 @@ mod native {
 pub fn install(handler: Handler) {
     if !wanted() {
         // A test run closes the window to see what keeps running.
-        HIDES_ON_CLOSE.store(std::env::var_os("MORPHEUS_E2E_PORT").is_some(), Ordering::Relaxed);
+        HIDES_ON_CLOSE.store(
+            std::env::var_os("MORPHEUS_E2E_PORT").is_some(),
+            Ordering::Relaxed,
+        );
         return;
     }
     #[cfg(target_os = "linux")]
     {
         let up = linux::install(handler);
-        HIDES_ON_CLOSE.store(up || std::env::var_os("MORPHEUS_E2E_PORT").is_some(), Ordering::Relaxed);
+        HIDES_ON_CLOSE.store(
+            up || std::env::var_os("MORPHEUS_E2E_PORT").is_some(),
+            Ordering::Relaxed,
+        );
     }
     // Windows and macOS: the icon is made by `install_native` once the event
     // loop runs; until then it is expected to work.
@@ -297,7 +306,10 @@ pub fn install(handler: Handler) {
 pub fn install_native(handler: Handler) {
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     if wanted() && !native::install(handler) {
-        HIDES_ON_CLOSE.store(std::env::var_os("MORPHEUS_E2E_PORT").is_some(), Ordering::Relaxed);
+        HIDES_ON_CLOSE.store(
+            std::env::var_os("MORPHEUS_E2E_PORT").is_some(),
+            Ordering::Relaxed,
+        );
     }
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     let _ = handler;

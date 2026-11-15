@@ -3,9 +3,9 @@
 //! resizing from the edges, and the bar over the screens before the shell
 //! (`WindowBar` in `crates/ui/src/components/titlebar.rs`).
 
-use gpui::{rgba, 
+use gpui::{
     AnyElement, App, CursorStyle, FontWeight, IntoElement, MouseButton, ResizeEdge, Window, div,
-    prelude::*, px, rgb,
+    prelude::*, px, rgb, rgba,
 };
 
 use crate::{e2e::E2eExt as _, icons::icon, theme};
@@ -71,7 +71,14 @@ pub fn window_controls() -> AnyElement {
                 "Maximize" => window.zoom_window(),
                 _ => close_window(window, cx),
             })
-            .e2e("button", if title == "Close" { "ghost close" } else { "ghost" })
+            .e2e(
+                "button",
+                if title == "Close" {
+                    "ghost close"
+                } else {
+                    "ghost"
+                },
+            )
             .attr("title", title)
     };
     div()
@@ -195,9 +202,21 @@ pub fn resize_edges(window: &Window) -> AnyElement {
         .child(strip(ResizeEdge::Bottom, CursorStyle::ResizeUpDown))
         .child(strip(ResizeEdge::Left, CursorStyle::ResizeLeftRight))
         .child(strip(ResizeEdge::Right, CursorStyle::ResizeLeftRight))
-        .child(strip(ResizeEdge::TopLeft, CursorStyle::ResizeUpLeftDownRight))
-        .child(strip(ResizeEdge::BottomRight, CursorStyle::ResizeUpLeftDownRight))
-        .child(strip(ResizeEdge::TopRight, CursorStyle::ResizeUpRightDownLeft))
-        .child(strip(ResizeEdge::BottomLeft, CursorStyle::ResizeUpRightDownLeft))
+        .child(strip(
+            ResizeEdge::TopLeft,
+            CursorStyle::ResizeUpLeftDownRight,
+        ))
+        .child(strip(
+            ResizeEdge::BottomRight,
+            CursorStyle::ResizeUpLeftDownRight,
+        ))
+        .child(strip(
+            ResizeEdge::TopRight,
+            CursorStyle::ResizeUpRightDownLeft,
+        ))
+        .child(strip(
+            ResizeEdge::BottomLeft,
+            CursorStyle::ResizeUpRightDownLeft,
+        ))
         .into_any_element()
 }

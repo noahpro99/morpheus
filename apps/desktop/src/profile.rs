@@ -24,11 +24,11 @@ use crate::{
     input::{Changed, Submit, TextInput},
     media::{self, Avatars, avatar},
     theme,
-    view_model::room_dialogs::Note,
     view_model::profile::{
-        CARD_W, Area, card_max_height, mutual_heading, mutual_servers_label, place_card, role_tag,
+        Area, CARD_W, card_max_height, mutual_heading, mutual_servers_label, place_card, role_tag,
         shared_servers,
     },
+    view_model::room_dialogs::Note,
 };
 
 /// What a profile tells the shell.
@@ -104,11 +104,7 @@ impl ProfileCard {
         servers: Vec<RoomSummary>,
         cx: &mut Context<Self>,
     ) -> Self {
-        let own = session
-            .as_ref()
-            .and_then(|s| s.user_id())
-            .as_ref()
-            == Some(&user);
+        let own = session.as_ref().and_then(|s| s.user_id()).as_ref() == Some(&user);
         let name = seen
             .as_ref()
             .map_or_else(|| user.localpart().to_owned(), |(n, _)| n.clone());
@@ -118,12 +114,21 @@ impl ProfileCard {
                 .bare("textarea", "note")
         });
         let message = cx.new(|cx| {
-            TextInput::new("message", &format!("Message @{}", crate::streamer::name(&name)), false, "", cx)
-                .bare("input", "card-message")
+            TextInput::new(
+                "message",
+                &format!("Message @{}", crate::streamer::name(&name)),
+                false,
+                "",
+                cx,
+            )
+            .bare("input", "card-message")
         });
-        let report_reason = cx.new(|cx| TextInput::new("reason", "What is wrong?", false, "", cx).framed());
+        let report_reason =
+            cx.new(|cx| TextInput::new("reason", "What is wrong?", false, "", cx).framed());
         let subscriptions = vec![
-            cx.subscribe(&report_reason, |this, _, _: &Submit, cx| this.send_report(cx)),
+            cx.subscribe(&report_reason, |this, _, _: &Submit, cx| {
+                this.send_report(cx)
+            }),
             cx.subscribe(&note, |this, _, _: &Changed, cx| this.note_changed(cx)),
             cx.subscribe(&message, |this, _, _: &Submit, cx| this.send_message(cx)),
         ];
@@ -166,9 +171,13 @@ impl ProfileCard {
             cx.spawn(async move |this, cx| {
                 // Test builds can hold the fetch back, to look at the first frames.
                 if std::env::var_os("MORPHEUS_E2E_PORT").is_some()
-                    && let Some(ms) = std::env::var("MORPHEUS_E2E_CARD_DELAY_MS").ok().and_then(|v| v.parse().ok())
+                    && let Some(ms) = std::env::var("MORPHEUS_E2E_CARD_DELAY_MS")
+                        .ok()
+                        .and_then(|v| v.parse().ok())
                 {
-                    cx.background_executor().timer(std::time::Duration::from_millis(ms)).await;
+                    cx.background_executor()
+                        .timer(std::time::Duration::from_millis(ms))
+                        .await;
                 }
                 let profile = profile.await.ok();
                 let mutual = mutual.await.unwrap_or_default();
@@ -186,7 +195,8 @@ impl ProfileCard {
                     this.loaded = true;
                     // A late fetch must not put the old note over what was typed.
                     if !this.note_dirty {
-                        this.note.update(cx, |input, cx| input.set_value(&stored, cx));
+                        this.note
+                            .update(cx, |input, cx| input.set_value(&stored, cx));
                         this.note_dirty = false;
                     }
                     cx.notify();
@@ -247,7 +257,10 @@ impl ProfileCard {
             return;
         }
         self.report_busy = true;
-        let reporting = session.report_user(self.user.clone(), self.report_reason.read(cx).value().to_owned());
+        let reporting = session.report_user(
+            self.user.clone(),
+            self.report_reason.read(cx).value().to_owned(),
+        );
         cx.spawn(async move |this, cx| {
             let result = reporting.await;
             this.update(cx, |this, cx| {
@@ -295,10 +308,20 @@ impl ProfileCard {
         }
         let session = self.session.clone()?;
         if self.images.begin(&media, size) {
-            let fetching = media::fetch_picture(&session, Some((self.user.clone(), self.room.clone())), &media, size, size);
+            let fetching = media::fetch_picture(
+                &session,
+                Some((self.user.clone(), self.room.clone())),
+                &media,
+                size,
+                size,
+            );
             let fetched_media = media.clone();
             cx.spawn(async move |this, cx| {
-                let image = fetching.await.ok().flatten().and_then(|bytes| media::decode_avatar(&bytes));
+                let image = fetching
+                    .await
+                    .ok()
+                    .flatten()
+                    .and_then(|bytes| media::decode_avatar(&bytes));
                 this.update(cx, |this, cx| {
                     this.images.finish(&fetched_media, size, image);
                     cx.notify();
@@ -368,7 +391,8 @@ impl ProfileCard {
             if let Ok(opened) = session.timeline(dm.clone()).await {
                 opened.handle.send_text(body).await.ok();
             }
-            this.update(cx, |_, cx| cx.emit(ProfileEvent::OpenDm(dm))).ok();
+            this.update(cx, |_, cx| cx.emit(ProfileEvent::OpenDm(dm)))
+                .ok();
         })
         .detach();
     }
@@ -420,7 +444,9 @@ impl Render for ProfileCard {
             app,
         );
 
-        let tint = picture.as_ref().and_then(|image| media::card_color_of(image));
+        let tint = picture
+            .as_ref()
+            .and_then(|image| media::card_color_of(image));
         let banner = div()
             .relative()
             .h(px(64.0))
@@ -456,7 +482,9 @@ impl Render for ProfileCard {
                             .hover(|s| s.bg(rgba(0x0000008c)))
                             .cursor_pointer()
                             .child(icon("shield-check", 16.0).text_color(rgb(0xffffff)))
-                            .on_click(cx.listener(move |_, _, _, cx| cx.emit(ProfileEvent::ModView(user.clone()))))
+                            .on_click(cx.listener(move |_, _, _, cx| {
+                                cx.emit(ProfileEvent::ModView(user.clone()))
+                            }))
                             .e2e("button", "ghost card-button card-mod-view")
                             .attr("title", "Mod view")
                     }))
@@ -481,7 +509,10 @@ impl Render for ProfileCard {
                     .e2e("div", "card-actions"),
             )
             .e2e("div", "profile-banner")
-            .attr("data-bg", tint.map(|c| format!("{c:06x}")).unwrap_or_default());
+            .attr(
+                "data-bg",
+                tint.map(|c| format!("{c:06x}")).unwrap_or_default(),
+            );
 
         let mut body = div()
             .flex()
@@ -514,24 +545,30 @@ impl Render for ProfileCard {
             )
             .child(
                 underline_on_hover(
-                    as_wide_as_its_text(div()
-                        .text_size(px(0.85 * theme::REM))
-                        .text_color(rgb(theme::text_muted()))
-                        .child(crate::streamer::id(self.user.as_str()))
-                        .id("profile-id")
-                        .cursor_pointer()
-                        .on_click(cx.listener(|this, _, _, cx| this.show_full(cx))),
+                    as_wide_as_its_text(
+                        div()
+                            .text_size(px(0.85 * theme::REM))
+                            .text_color(rgb(theme::text_muted()))
+                            .child(crate::streamer::id(self.user.as_str()))
+                            .id("profile-id")
+                            .cursor_pointer()
+                            .on_click(cx.listener(|this, _, _, cx| this.show_full(cx))),
                     ),
                     "card-profile-id",
                     theme::text_muted(),
                     2.0,
                 )
-                    .e2e("p", "profile-id muted")
-                    .attr("title", "View full profile")
-                    .text(crate::streamer::id(self.user.as_str())),
+                .e2e("p", "profile-id muted")
+                .attr("title", "View full profile")
+                .text(crate::streamer::id(self.user.as_str())),
             );
         if let Some(status) = self.profile.as_ref().and_then(|p| p.status.clone()) {
-            body = body.child(div().child(status.clone()).e2e("p", "profile-status").text(status));
+            body = body.child(
+                div()
+                    .child(status.clone())
+                    .e2e("p", "profile-status")
+                    .text(status),
+            );
         }
         // The row is always as tall as a tag, so the role arriving late (or
         // never) moves nothing; a pill-shaped skeleton holds its place.
@@ -573,9 +610,9 @@ impl Render for ProfileCard {
                     theme::accent(),
                     2.0,
                 )
-                    .e2e("button", "mutual-servers")
-                    .attr("title", "View full profile")
-                    .text(label),
+                .e2e("button", "mutual-servers")
+                .attr("title", "View full profile")
+                .text(label),
             );
         }
         let mut note = div()
@@ -666,8 +703,14 @@ impl Render for ProfileCard {
             .left_0()
             .size_full()
             .occlude()
-            .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| this.close(cx)))
-            .on_mouse_down(MouseButton::Right, cx.listener(|this, _, _, cx| this.close(cx)))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, _, _, cx| this.close(cx)),
+            )
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(|this, _, _, cx| this.close(cx)),
+            )
             .child(
                 anchored()
                     .position(gpui::point(px(x), px(y)))
@@ -683,10 +726,25 @@ impl ProfileCard {
     /// The inline form under the card: why you report them.
     fn report_form(&self, cx: &mut Context<Self>) -> AnyElement {
         let note = self.report_note.as_ref().map(|note| match note {
-            Note::Ok(text) => div().text_color(rgb(theme::ok())).child(text.clone()).e2e("p", "ok").text(text.clone()).into_any_element(),
-            Note::Error(text) => div().text_color(rgb(theme::danger())).child(text.clone()).e2e("p", "error").text(text.clone()).into_any_element(),
+            Note::Ok(text) => div()
+                .text_color(rgb(theme::ok()))
+                .child(text.clone())
+                .e2e("p", "ok")
+                .text(text.clone())
+                .into_any_element(),
+            Note::Error(text) => div()
+                .text_color(rgb(theme::danger()))
+                .child(text.clone())
+                .e2e("p", "error")
+                .text(text.clone())
+                .into_any_element(),
         });
-        let button = |id: &'static str, label: &'static str, danger: bool, kind: &'static str, submit: bool, on_click: Box<dyn Fn(&mut Self, &mut Context<Self>)>| {
+        let button = |id: &'static str,
+                      label: &'static str,
+                      danger: bool,
+                      kind: &'static str,
+                      submit: bool,
+                      on_click: Box<dyn Fn(&mut Self, &mut Context<Self>)>| {
             div()
                 .id(id)
                 .flex()
@@ -694,9 +752,16 @@ impl ProfileCard {
                 .gap(px(6.0))
                 .cursor_pointer()
                 .rounded(px(6.0))
-                .when(danger, |d| d.bg(rgb(theme::danger())).text_color(rgb(0xffffff)).px(px(14.0)).py(px(8.0)))
+                .when(danger, |d| {
+                    d.bg(rgb(theme::danger()))
+                        .text_color(rgb(0xffffff))
+                        .px(px(14.0))
+                        .py(px(8.0))
+                })
                 .when(!danger, |d| d.px(px(6.0)).py(px(1.0)))
-                .when(danger, |d| d.child(icon("flag", 16.0).text_color(rgb(0xffffff))))
+                .when(danger, |d| {
+                    d.child(icon("flag", 16.0).text_color(rgb(0xffffff)))
+                })
                 .child(label)
                 .on_click(cx.listener(move |this, _, _, cx| on_click(this, cx)))
                 .e2e("button", kind)
@@ -718,7 +783,12 @@ impl ProfileCard {
                     .text_size(px(0.85 * theme::REM))
                     .text_color(rgb(theme::text_muted()))
                     .child("Report this user")
-                    .child(div().text_size(px(theme::REM)).text_color(rgb(theme::text())).child(self.report_reason.clone()))
+                    .child(
+                        div()
+                            .text_size(px(theme::REM))
+                            .text_color(rgb(theme::text()))
+                            .child(self.report_reason.clone()),
+                    )
                     .e2e("label", "")
                     .text("Report this user"),
             )
@@ -727,11 +797,25 @@ impl ProfileCard {
                 div()
                     .flex()
                     .gap(px(8.0))
-                    .child(button("report-send", "Report", true, "danger", true, Box::new(|this, cx| this.send_report(cx))))
-                    .child(button("report-cancel", "Cancel", false, "secondary", false, Box::new(|this, cx| {
-                        this.reporting = false;
-                        cx.notify();
-                    }))),
+                    .child(button(
+                        "report-send",
+                        "Report",
+                        true,
+                        "danger",
+                        true,
+                        Box::new(|this, cx| this.send_report(cx)),
+                    ))
+                    .child(button(
+                        "report-cancel",
+                        "Cancel",
+                        false,
+                        "secondary",
+                        false,
+                        Box::new(|this, cx| {
+                            this.reporting = false;
+                            cx.notify();
+                        }),
+                    )),
             )
             .e2e("form", "report-user")
             .into_any_element()
@@ -742,7 +826,9 @@ impl ProfileCard {
     fn render_full(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let name = crate::streamer::name(&self.name());
         let picture = self.picture(160, cx);
-        let tint = picture.as_ref().and_then(|image| media::card_color_of(image));
+        let tint = picture
+            .as_ref()
+            .and_then(|image| media::card_color_of(image));
         let top = 0.15 * f32::from(window.viewport_size().height);
         let mut body = div()
             .flex()
@@ -777,18 +863,26 @@ impl ProfileCard {
                         .id("profile-id")
                         .cursor_pointer()
                         .on_click(cx.listener(|this, _, _, cx| {
-                            cx.emit(ProfileEvent::Copied(format!("https://matrix.to/#/{}", this.user)))
+                            cx.emit(ProfileEvent::Copied(format!(
+                                "https://matrix.to/#/{}",
+                                this.user
+                            )))
                         })),
                     "full-profile-id",
                     theme::text_muted(),
                     2.0,
                 )
-                    .e2e("p", "profile-id muted")
-                    .attr("title", "Copy the link to this profile")
-                    .text(crate::streamer::id(self.user.as_str())),
+                .e2e("p", "profile-id muted")
+                .attr("title", "Copy the link to this profile")
+                .text(crate::streamer::id(self.user.as_str())),
             );
         if let Some(status) = self.profile.as_ref().and_then(|p| p.status.clone()) {
-            body = body.child(div().child(status.clone()).e2e("p", "profile-status").text(status));
+            body = body.child(
+                div()
+                    .child(status.clone())
+                    .e2e("p", "profile-status")
+                    .text(status),
+            );
         }
         if self.own {
             body = body.child(tag("This is you", false));
@@ -863,7 +957,9 @@ impl ProfileCard {
             .relative()
             .w(px(360.0))
             .max_w(relative(0.9))
-            .max_h(px((f32::from(window.viewport_size().height) - top - 24.0).max(120.0)))
+            .max_h(px(
+                (f32::from(window.viewport_size().height) - top - 24.0).max(120.0)
+            ))
             .flex()
             .flex_col()
             .overflow_hidden()
@@ -897,7 +993,10 @@ impl ProfileCard {
                                 ))
                             })
                             .e2e("div", "profile-banner")
-                            .attr("data-bg", tint.map(|c| format!("{c:06x}")).unwrap_or_default()),
+                            .attr(
+                                "data-bg",
+                                tint.map(|c| format!("{c:06x}")).unwrap_or_default(),
+                            ),
                     )
                     .child(body.e2e("div", "profile-body")),
             )
@@ -927,14 +1026,21 @@ impl ProfileCard {
             .pt(px(top))
             .bg(rgba(0x0000008c))
             .occlude()
-            .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| this.close(cx)))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, _, _, cx| this.close(cx)),
+            )
             .child(modal)
             .e2e("div", "overlay");
         deferred(layer).with_priority(25).into_any_element()
     }
 
     /// A server's picture (its letter until pictures are fetched here).
-    fn server_picture(&mut self, server: &RoomSummary, cx: &mut Context<Self>) -> Option<Arc<Image>> {
+    fn server_picture(
+        &mut self,
+        server: &RoomSummary,
+        cx: &mut Context<Self>,
+    ) -> Option<Arc<Image>> {
         let media = server.avatar.clone()?;
         if let Some(image) = self.images.get(&media, 56) {
             return Some(image);
@@ -943,7 +1049,11 @@ impl ProfileCard {
         if self.images.begin(&media, 56) {
             let fetching = session.thumbnail(media.clone(), 56, 56);
             cx.spawn(async move |this, cx| {
-                let image = fetching.await.ok().flatten().and_then(|bytes| media::decode(&bytes));
+                let image = fetching
+                    .await
+                    .ok()
+                    .flatten()
+                    .and_then(|bytes| media::decode(&bytes));
                 this.update(cx, |this, cx| {
                     this.images.finish(&media, 56, image);
                     cx.notify();

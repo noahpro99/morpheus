@@ -6,26 +6,28 @@
 use std::{cell::Cell, ops::Range, rc::Rc, sync::Arc};
 
 use gpui::{
-    AnyElement, App, Bounds, DispatchPhase, Div, Element, ElementId, GlobalElementId,
-    InspectorElementId, LayoutId, MouseMoveEvent, FontStyle, FontWeight, Hsla, InteractiveText, Image,
-    ObjectFit, SharedString, Stateful, StrikethroughStyle, StyledImage as _, StyledText, TextRun,
-    UnderlineStyle, MouseButton, Pixels, Point, Window, div, font, img, prelude::*, px, relative, rgb,
-    rgba,
+    AnyElement, App, Bounds, DispatchPhase, Div, Element, ElementId, FontStyle, FontWeight,
+    GlobalElementId, Hsla, Image, InspectorElementId, InteractiveText, LayoutId, MouseButton,
+    MouseMoveEvent, ObjectFit, Pixels, Point, SharedString, Stateful, StrikethroughStyle,
+    StyledImage as _, StyledText, TextRun, UnderlineStyle, Window, div, font, img, prelude::*, px,
+    relative, rgb, rgba,
 };
 use morpheus_core::{Message, MessageKind, Reaction, ThreadSummary};
 
 use crate::hover_underline::underline_on_hover;
 use crate::{
     e2e::{self, E2eExt as _},
-    view_model::format::{day_label, full_time, human_duration, human_size, message_time, now_ms},
+    icons::icon,
+    media::avatar,
+    theme,
+    view_model::format::{
+        clock_time, day_label, full_time, human_duration, human_size, message_time, now_ms,
+    },
     view_model::keys::{
         KeyAccess, LOCKED_HINT, LOCKED_TEXT, Undecryptable, WAITING_HINT, undecryptable,
     },
-    icons::icon,
-    media::avatar,
     view_model::rich::{self, Block, Para},
     view_model::rows::{MessageRow, Row},
-    theme,
 };
 
 /// What a click on a link does (the timeline hands it on).
@@ -141,7 +143,9 @@ fn runs_hovering(para: &Para, base: Base, hover: Option<&Range<usize>>) -> Vec<T
                 font: f,
                 color: hsla(color),
                 background_color: style.code.then(|| hsla(theme::bg_input())),
-                underline: (style.underline || hover.is_some_and(|h| h.start <= w[0] && w[1] <= h.end)).then(|| UnderlineStyle {
+                underline: (style.underline
+                    || hover.is_some_and(|h| h.start <= w[0] && w[1] <= h.end))
+                .then(|| UnderlineStyle {
                     thickness: px(1.0),
                     color: Some(hsla(color)),
                     wavy: false,
@@ -178,9 +182,12 @@ fn para_el(para: &Para, key: &str, base: Base, links: &LinkHandler) -> AnyElemen
                 .filter(|(_, (_, url))| rich::is_pill(url))
                 .map(|(n, (r, _))| (r.clone(), hovered == Some(n)))
                 .collect();
-            let styled = StyledText::new(SharedString::from(para.text.clone())).with_runs(
-                runs_hovering(&para, base, hovered.and_then(|n| found.get(n)).map(|(r, _)| r)),
-            );
+            let styled =
+                StyledText::new(SharedString::from(para.text.clone())).with_runs(runs_hovering(
+                    &para,
+                    base,
+                    hovered.and_then(|n| found.get(n)).map(|(r, _)| r),
+                ));
             let layout = styled.layout().clone();
             let ranges: Vec<Range<usize>> = found.iter().map(|(r, _)| r.clone()).collect();
             let urls: Vec<Arc<str>> = found.iter().map(|(_, u)| u.clone()).collect();
@@ -311,7 +318,10 @@ impl Element for LinkText {
             let mut quad = |left: Pixels, right: Pixels, top: Pixels| {
                 window.paint_quad(
                     gpui::fill(
-                        Bounds::new(gpui::point(left - pad, top), gpui::size(right - left + pad * 2.0, line)),
+                        Bounds::new(
+                            gpui::point(left - pad, top),
+                            gpui::size(right - left + pad * 2.0, line),
+                        ),
                         hsla_alpha(pill_tint(*hovered)),
                     )
                     .corner_radii(px(4.0)),
@@ -393,12 +403,12 @@ pub fn blocks_el(blocks: &[Block], key: &str, base: Base, links: &LinkHandler) -
                         .flex()
                         .gap(px(6.0))
                         .child(div().flex_none().min_w(px(16.0)).child(marker))
-                        .child(
-                            div()
-                                .flex_1()
-                                .min_w_0()
-                                .child(blocks_el(item, &format!("{key}.{n}"), base, links)),
-                        )
+                        .child(div().flex_1().min_w_0().child(blocks_el(
+                            item,
+                            &format!("{key}.{n}"),
+                            base,
+                            links,
+                        )))
                 }))
                 .into_any_element(),
             Block::Rule => div()
@@ -502,7 +512,9 @@ fn reactions_el(
             let key = reaction.key.clone();
             let (actions, unique_id) = (actions.clone(), unique_id.clone());
             let mut chip = div()
-                .id(ElementId::from(SharedString::from(format!("reaction-{unique_id}-{key}"))))
+                .id(ElementId::from(SharedString::from(format!(
+                    "reaction-{unique_id}-{key}"
+                ))))
                 .flex()
                 .items_center()
                 .gap(px(4.0))
@@ -559,7 +571,9 @@ fn thread_chip(
 ) -> impl IntoElement {
     let count = crate::view_model::threads::chip_count(thread);
     let mut named = thread.clone();
-    named.latest_sender_name = named.latest_sender_name.map(|name| crate::streamer::name(&name));
+    named.latest_sender_name = named
+        .latest_sender_name
+        .map(|name| crate::streamer::name(&name));
     let mut chip = div()
         .flex()
         .items_center()
@@ -597,19 +611,24 @@ fn thread_chip(
         );
     }
     let mut chip = chip
-        .id(ElementId::from(SharedString::from(format!("thread-chip-{unique_id}"))))
+        .id(ElementId::from(SharedString::from(format!(
+            "thread-chip-{unique_id}"
+        ))))
         .hover(|s| s.bg(rgba(theme::bg_hover())).text_color(rgb(theme::text())));
     if let Some(actions) = actions {
         let (actions, unique_id) = (actions.clone(), unique_id.to_owned());
-        chip = chip.on_click(move |_, window, cx| {
-            actions(RowAction::Thread, &unique_id, window, cx)
-        });
+        chip =
+            chip.on_click(move |_, window, cx| actions(RowAction::Thread, &unique_id, window, cx));
     }
     chip.w_auto().e2e("button", "thread-chip")
 }
 
 fn reply_quote(reply: &morpheus_core::ReplyPreview) -> impl IntoElement {
-    let name = reply.sender_name.clone().map(|n| crate::streamer::name(&n)).unwrap_or_else(|| "…".into());
+    let name = reply
+        .sender_name
+        .clone()
+        .map(|n| crate::streamer::name(&n))
+        .unwrap_or_else(|| "…".into());
     let mut quote = div()
         .flex()
         .gap(px(6.0))
@@ -650,7 +669,9 @@ fn reply_quote(reply: &morpheus_core::ReplyPreview) -> impl IntoElement {
                 .e2e("span", "skeleton skeleton-inline"),
         ),
     };
-    quote.e2e("div", "reply-quote").attr("title", reply.event_id.to_string())
+    quote
+        .e2e("div", "reply-quote")
+        .attr("title", reply.event_id.to_string())
 }
 
 /// What a card's Download button does: ask the timeline for this message's file.
@@ -794,7 +815,9 @@ fn blur_image(hash: &str) -> Option<Arc<Image>> {
             use base64::Engine as _;
             let url = morpheus_core::blur_placeholder(hash)?;
             let data = url.strip_prefix("data:image/png;base64,")?;
-            let bytes = base64::engine::general_purpose::STANDARD.decode(data).ok()?;
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(data)
+                .ok()?;
             Some(Arc::new(Image::from_bytes(gpui::ImageFormat::Png, bytes)))
         })
         .clone()
@@ -838,16 +861,19 @@ impl gpui::Element for Shape {
         _cx: &mut App,
     ) -> (gpui::LayoutId, ()) {
         let (w, h) = (self.w, self.h);
-        let id = window.request_measured_layout(gpui::Style::default(), move |known, available, _, _| {
-            let width = match (known.width, available.width) {
-                (Some(width), _) => width,
-                (None, gpui::AvailableSpace::Definite(room)) => px(w).min(room),
-                (None, gpui::AvailableSpace::MaxContent) => px(w),
-                (None, gpui::AvailableSpace::MinContent) => px(0.0),
-            };
-            let height = known.height.unwrap_or(width * (h / w));
-            gpui::size(width, height)
-        });
+        let id = window.request_measured_layout(
+            gpui::Style::default(),
+            move |known, available, _, _| {
+                let width = match (known.width, available.width) {
+                    (Some(width), _) => width,
+                    (None, gpui::AvailableSpace::Definite(room)) => px(w).min(room),
+                    (None, gpui::AvailableSpace::MaxContent) => px(w),
+                    (None, gpui::AvailableSpace::MinContent) => px(0.0),
+                };
+                let height = known.height.unwrap_or(width * (h / w));
+                gpui::size(width, height)
+            },
+        );
         (id, ())
     }
 
@@ -1027,7 +1053,10 @@ fn video_el(
     }
     div()
         .flex()
-        .child(card.child(overlay.e2e("div", "video-overlay")).e2e("div", "video-card"))
+        .child(
+            card.child(overlay.e2e("div", "video-overlay"))
+                .e2e("div", "video-card"),
+        )
         .into_any_element()
 }
 
@@ -1041,15 +1070,28 @@ fn body_el(
     actions: Option<&ActionHandler>,
 ) -> AnyElement {
     let (class, base, rich_html) = match &row.message.kind {
-        MessageKind::Text { html, .. } => ("body", Base { color: theme::text(), italic: false }, html.is_some()),
+        MessageKind::Text { html, .. } => (
+            "body",
+            Base {
+                color: theme::text(),
+                italic: false,
+            },
+            html.is_some(),
+        ),
         MessageKind::Notice { html, .. } => (
             "body notice",
-            Base { color: theme::text_muted(), italic: false },
+            Base {
+                color: theme::text_muted(),
+                italic: false,
+            },
             html.is_some(),
         ),
         MessageKind::Emote { html, .. } => (
             "body emote",
-            Base { color: theme::text(), italic: true },
+            Base {
+                color: theme::text(),
+                italic: true,
+            },
             html.is_some(),
         ),
         MessageKind::Image {
@@ -1060,11 +1102,26 @@ fn body_el(
             ..
         } => {
             let open = actions.cloned().map(|actions| (actions, key.to_owned()));
-            return image_el(body, *width, *height, blurhash.as_deref(), pics.media.clone(), open);
+            return image_el(
+                body,
+                *width,
+                *height,
+                blurhash.as_deref(),
+                pics.media.clone(),
+                open,
+            );
         }
         MessageKind::File { body, size, .. } => {
             let meta = size.map(human_size).unwrap_or_default();
-            return attachment_card("📎", false, body, &meta, download, start_download(actions, key)).into_any_element();
+            return attachment_card(
+                "📎",
+                false,
+                body,
+                &meta,
+                download,
+                start_download(actions, key),
+            )
+            .into_any_element();
         }
         MessageKind::Audio {
             body,
@@ -1077,7 +1134,15 @@ fn body_el(
                 .flatten()
                 .collect::<Vec<_>>()
                 .join(" · ");
-            return attachment_card("🎵", true, body, &meta, download, start_download(actions, key)).into_any_element();
+            return attachment_card(
+                "🎵",
+                true,
+                body,
+                &meta,
+                download,
+                start_download(actions, key),
+            )
+            .into_any_element();
         }
         MessageKind::Video {
             body,
@@ -1127,7 +1192,12 @@ fn body_el(
                     .into_any_element();
             }
         },
-        MessageKind::State(text) => return muted_body(&crate::streamer::state_line(text, row.message.state_who.as_deref())),
+        MessageKind::State(text) => {
+            return muted_body(&crate::streamer::state_line(
+                text,
+                row.message.state_who.as_deref(),
+            ));
+        }
         MessageKind::Unsupported(what) => return muted_body(&format!("Unsupported: {what}")),
         MessageKind::ProfileChange | MessageKind::CallPlumbing => return div().into_any_element(),
     };
@@ -1313,7 +1383,9 @@ fn sender_target(
     unique_id: &str,
     actions: Option<&ActionHandler>,
 ) -> Stateful<Div> {
-    let mut el = el.id(ElementId::from(SharedString::from(id))).cursor_pointer();
+    let mut el = el
+        .id(ElementId::from(SharedString::from(id)))
+        .cursor_pointer();
     if let Some(actions) = actions {
         let (open, uid) = (actions.clone(), unique_id.to_owned());
         el = el.on_click(move |event, window, cx| {
@@ -1462,7 +1534,12 @@ pub fn message_el(
 
     let mut main = div().flex_1().min_w_0().flex().flex_col();
     if show_header {
-        let name = crate::streamer::name(&pics.nickname.clone().unwrap_or_else(|| m.sender_name.clone()));
+        let name = crate::streamer::name(
+            &pics
+                .nickname
+                .clone()
+                .unwrap_or_else(|| m.sender_name.clone()),
+        );
         main = main.child(
             div()
                 .flex()
@@ -1476,19 +1553,27 @@ pub fn message_el(
                         underline_on_hover(
                             div()
                                 .font_weight(FontWeight::SEMIBOLD)
-                                .text_color(rgb(if m.is_own { theme::own() } else { theme::text() }))
+                                .text_color(rgb(if m.is_own {
+                                    theme::own()
+                                } else {
+                                    theme::text()
+                                }))
                                 .child(name.clone()),
                             SharedString::from(format!("sender-{}", m.unique_id)),
-                            if m.is_own { theme::own() } else { theme::text() },
+                            if m.is_own {
+                                theme::own()
+                            } else {
+                                theme::text()
+                            },
                             3.0,
                         ),
                         format!("sender-{}", m.unique_id),
                         &m.unique_id,
                         actions,
                     )
-                        .e2e("button", "sender")
-                        .attr("title", crate::streamer::id(m.sender.as_str()))
-                        .text(name),
+                    .e2e("button", "sender")
+                    .attr("title", crate::streamer::id(m.sender.as_str()))
+                    .text(name),
                 )
                 .child(
                     div()
@@ -1581,8 +1666,8 @@ pub fn message_el(
                 &m.unique_id,
                 actions,
             )
-                .e2e("button", "avatar-button")
-                .attr("title", crate::streamer::id(m.sender.as_str())),
+            .e2e("button", "avatar-button")
+            .attr("title", crate::streamer::id(m.sender.as_str())),
         )
     } else {
         line.child(
@@ -1595,10 +1680,10 @@ pub fn message_el(
                 .text_color(rgb(theme::text_faint()))
                 .opacity(0.0)
                 .group_hover(group.clone(), |s| s.opacity(1.0))
-                .child(when(&row))
+                .child(clock_time(row.message.timestamp_ms))
                 .e2e("span", "time gutter")
                 .attr("title", full_time(row.message.timestamp_ms))
-                .text(when(&row)),
+                .text(clock_time(row.message.timestamp_ms)),
         )
     };
     let mut classes = String::from("message");
@@ -1658,9 +1743,7 @@ pub fn message_el(
                 .bg(rgb(theme::accent())),
         );
     }
-    let mut line = line
-        .e2e("div", &classes)
-        .attr("data-event-id", event_id);
+    let mut line = line.e2e("div", &classes).attr("data-event-id", event_id);
     if pics.menu_open {
         line = line.attr("data-menu-open", "");
     }
@@ -1668,9 +1751,10 @@ pub fn message_el(
         line = line.attr("data-vim-selected", "");
     }
     if lit {
-        line = line
-            .attr("data-mentioned", "true")
-            .attr("data-bg", format!("{:08x}", theme::alpha(theme::MENTION_GOLD, 0x1a)));
+        line = line.attr("data-mentioned", "true").attr(
+            "data-bg",
+            format!("{:08x}", theme::alpha(theme::MENTION_GOLD, 0x1a)),
+        );
     }
     if show_header {
         div()
@@ -1734,7 +1818,12 @@ pub fn other_row(row: &Row) -> AnyElement {
                     .text_size(rem(0.75))
                     .font_weight(FontWeight::SEMIBOLD)
                     .child(div().flex_1().h(px(1.0)).bg(rgb(theme::bg_elevated())))
-                    .child(div().child(day_label(*at, now_ms())).e2e("span", "").text(day_label(*at, now_ms())))
+                    .child(
+                        div()
+                            .child(day_label(*at, now_ms()))
+                            .e2e("span", "")
+                            .text(day_label(*at, now_ms())),
+                    )
                     .child(div().flex_1().h(px(1.0)).bg(rgb(theme::bg_elevated())))
                     .e2e("div", "date-divider"),
             )

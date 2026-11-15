@@ -5,8 +5,8 @@
 //! chat. What it shows for each outcome is in `view_model::search`.
 
 use gpui::{
-    Context, EventEmitter, FontWeight, IntoElement, Render, ScrollHandle, Window, div,
-    prelude::*, px, rgb,
+    Context, EventEmitter, FontWeight, IntoElement, Render, ScrollHandle, Window, div, prelude::*,
+    px, rgb,
 };
 use morpheus_core::{OwnedRoomId, SearchHit, Session};
 

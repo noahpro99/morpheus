@@ -41,8 +41,13 @@ impl Avatars {
     /// The copy of the size wanted, else the biggest one fetched anywhere
     /// (a stand-in while the size loads), else nothing.
     pub fn get_or_stand_in(&self, media: &MediaRef, size: u32) -> Option<Arc<Image>> {
-        self.get(media, size)
-            .or_else(|| ANY_SIZE.lock().ok()?.get(media.key()).map(|(_, image)| image.clone()))
+        self.get(media, size).or_else(|| {
+            ANY_SIZE
+                .lock()
+                .ok()?
+                .get(media.key())
+                .map(|(_, image)| image.clone())
+        })
     }
 
     /// The media these pictures are of (to drop them from the shared copies).
@@ -66,7 +71,10 @@ impl Avatars {
     pub fn begin(&mut self, media: &MediaRef, size: u32) -> bool {
         let key = (media.key().to_owned(), size);
         if self.images.contains_key(&key)
-            || self.failed.get(&key).is_some_and(|at| at.elapsed() < RETRY_AFTER)
+            || self
+                .failed
+                .get(&key)
+                .is_some_and(|at| at.elapsed() < RETRY_AFTER)
         {
             return false;
         }
@@ -96,7 +104,10 @@ impl Avatars {
 /// plain thumbnail.
 pub fn fetch_picture(
     session: &morpheus_core::Session,
-    person: Option<(morpheus_core::OwnedUserId, Option<morpheus_core::OwnedRoomId>)>,
+    person: Option<(
+        morpheus_core::OwnedUserId,
+        Option<morpheus_core::OwnedRoomId>,
+    )>,
     media: &MediaRef,
     width: u32,
     height: u32,
@@ -152,7 +163,9 @@ pub fn decode_avatar(media: &morpheus_core::Media) -> Option<Arc<Image>> {
     let image = decode(media)?;
     let color = image::load_from_memory(&media.bytes)
         .ok()
-        .and_then(|decoded| crate::view_model::avatar_color::average_rgba(decoded.to_rgba8().as_raw()))
+        .and_then(|decoded| {
+            crate::view_model::avatar_color::average_rgba(decoded.to_rgba8().as_raw())
+        })
         .map(crate::view_model::avatar_color::card_color);
     if let (Some(color), Ok(mut colors)) = (color, CARD_COLORS.lock()) {
         colors.insert(image.id(), color);
@@ -184,7 +197,11 @@ pub fn squared(image: &Arc<Image>) -> Arc<Image> {
 /// be read, is returned as it is.
 pub fn covering(image: &Arc<Image>, w: f32, h: f32) -> Arc<Image> {
     let key = (image.id(), ((w / h) * 1000.0).round() as u32);
-    if let Some(done) = SQUARED.lock().ok().and_then(|cache| cache.get(&key).cloned()) {
+    if let Some(done) = SQUARED
+        .lock()
+        .ok()
+        .and_then(|cache| cache.get(&key).cloned())
+    {
         return done;
     }
     let cut = (|| {
@@ -199,10 +216,18 @@ pub fn covering(image: &Arc<Image>, w: f32, h: f32) -> Arc<Image> {
             return None;
         }
         let (tw, th) = (tw as u32, th as u32);
-        let cropped = decoded.crop_imm((decoded.width() - tw) / 2, (decoded.height() - th) / 2, tw, th);
+        let cropped = decoded.crop_imm(
+            (decoded.width() - tw) / 2,
+            (decoded.height() - th) / 2,
+            tw,
+            th,
+        );
         let mut png = std::io::Cursor::new(Vec::new());
         cropped.write_to(&mut png, image::ImageFormat::Png).ok()?;
-        Some(Arc::new(Image::from_bytes(ImageFormat::Png, png.into_inner())))
+        Some(Arc::new(Image::from_bytes(
+            ImageFormat::Png,
+            png.into_inner(),
+        )))
     })()
     .unwrap_or_else(|| image.clone());
     if let Ok(mut cache) = SQUARED.lock() {
@@ -253,9 +278,9 @@ pub fn avatar(
                     .rounded(px(radius.unwrap_or(size / 2.0)))
                     .object_fit(ObjectFit::Fill),
             )
-                .e2e("img", "avatar")
-                .attr("data-fit", "cover")
-                .attr("src", src)
+            .e2e("img", "avatar")
+            .attr("data-fit", "cover")
+            .attr("src", src)
         }
         None => base
             .bg(rgb(theme::accent_strong()))
@@ -273,7 +298,10 @@ mod tests {
 
     #[test]
     fn forgetting_drops_the_shared_copies_of_the_pictures() {
-        let (mine, other) = ("mxc://test/forget-mine".to_owned(), "mxc://test/forget-other".to_owned());
+        let (mine, other) = (
+            "mxc://test/forget-mine".to_owned(),
+            "mxc://test/forget-other".to_owned(),
+        );
         let picture = |bytes: &[u8]| Arc::new(Image::from_bytes(ImageFormat::Png, bytes.to_vec()));
         let (a, b) = (picture(b"one"), picture(b"two"));
         {
@@ -286,10 +314,19 @@ mod tests {
         forget(&[mine.clone()], &[]);
         let any = ANY_SIZE.lock().expect("lock");
         assert!(!any.contains_key(&mine), "its picture is still held");
-        assert!(any.contains_key(&other), "another room's picture was dropped");
+        assert!(
+            any.contains_key(&other),
+            "another room's picture was dropped"
+        );
         let cut = SQUARED.lock().expect("lock");
-        assert!(!cut.keys().any(|(id, _)| *id == a.id()), "its cut copy is still held");
-        assert!(cut.keys().any(|(id, _)| *id == b.id()), "another picture's cut copy was dropped");
+        assert!(
+            !cut.keys().any(|(id, _)| *id == a.id()),
+            "its cut copy is still held"
+        );
+        assert!(
+            cut.keys().any(|(id, _)| *id == b.id()),
+            "another picture's cut copy was dropped"
+        );
     }
 
     #[test]

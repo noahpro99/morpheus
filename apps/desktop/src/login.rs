@@ -6,14 +6,14 @@
 use std::time::Duration;
 
 use gpui::{
-    Context, Entity, EventEmitter, FontWeight, IntoElement, Render, SharedString,
-    Window, div, prelude::*, px, rgb, svg,
+    Context, Entity, EventEmitter, FontWeight, IntoElement, Render, SharedString, Window, div,
+    prelude::*, px, rgb, svg,
 };
 use morpheus_core::{Core, LoginFlows, LoginRequest, Session};
 
-use crate::tab::Tabbable as _;
 use crate::e2e::E2eExt as _;
 use crate::input::{Changed, Submit, TextInput};
+use crate::tab::Tabbable as _;
 use crate::theme;
 
 /// Quiet time after the last keystroke in the homeserver field before asking

@@ -194,7 +194,11 @@ impl TextInput {
 
     /// Whether vim mode rules this box now.
     fn vim_on(&self) -> bool {
-        self.vim_capable && self.max_lines > 1 && !self.password && !self.disabled && crate::vim::enabled()
+        self.vim_capable
+            && self.max_lines > 1
+            && !self.password
+            && !self.disabled
+            && crate::vim::enabled()
     }
 
     /// The mode, when vim mode rules this box.
@@ -212,7 +216,11 @@ impl TextInput {
             VimMode::Visual => "VISUAL",
         };
         let pending = self.vim.pending();
-        Some(if pending.is_empty() { format!("-- {name} --") } else { format!("-- {name} -- {pending}") })
+        Some(if pending.is_empty() {
+            format!("-- {name} --")
+        } else {
+            format!("-- {name} -- {pending}")
+        })
     }
 
     /// Whether Escape is this box's to take: vim mode is on and the box is
@@ -316,7 +324,9 @@ impl TextInput {
         if self.buf.is_empty() {
             return Some(0);
         }
-        let shown = layout.index_for_position(position).unwrap_or_else(|nearest| nearest);
+        let shown = layout
+            .index_for_position(position)
+            .unwrap_or_else(|nearest| nearest);
         let real = self.from_shown(shown);
         // The index is of the character under the point: past its middle,
         // the caret belongs after it.
@@ -386,7 +396,14 @@ impl TextInput {
         };
         let goal = *self.goal_x.get_or_insert(at.x);
         let line = layout.line_height();
-        let target = point(goal, if up { at.y - line / 2.0 } else { at.y + line * 1.5 });
+        let target = point(
+            goal,
+            if up {
+                at.y - line / 2.0
+            } else {
+                at.y + line * 1.5
+            },
+        );
         let first_row = at.y < layout.bounds().top() + line;
         let moved = if up && first_row {
             Some(0)
@@ -463,7 +480,13 @@ impl TextInput {
             key: key.to_owned(),
             key_char: None,
         };
-        self.key_down(&KeyDownEvent { keystroke, is_held: false }, cx);
+        self.key_down(
+            &KeyDownEvent {
+                keystroke,
+                is_held: false,
+            },
+            cx,
+        );
     }
 
     /// A key in vim mode: whether the engine took it (otherwise the box
@@ -737,8 +760,9 @@ impl Element for EditorText {
     ) -> (LayoutId, ()) {
         let colour = gpui::Rgba::from(window.text_style().color);
         let byte = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u32;
-        self.drawn_colour
-            .set(Some(byte(colour.r) << 16 | byte(colour.g) << 8 | byte(colour.b)));
+        self.drawn_colour.set(Some(
+            byte(colour.r) << 16 | byte(colour.g) << 8 | byte(colour.b),
+        ));
         // The text in a node that grows to the input's width (the body is a
         // flex row): sized by percentages, the body and the text came out 0 px
         // wide in an input stretched by a flex column (the login form's), and
@@ -783,9 +807,10 @@ impl Element for EditorText {
             let mut run: Option<(gpui::Point<Pixels>, Pixels)> = None;
             let mut boxes = Vec::new();
             for &(start, end, newline) in &self.selected_chars {
-                let (Some(a), Some(b)) =
-                    (layout.position_for_index(start), layout.position_for_index(end))
-                else {
+                let (Some(a), Some(b)) = (
+                    layout.position_for_index(start),
+                    layout.position_for_index(end),
+                ) else {
                     continue;
                 };
                 let width = if newline || (b.y - a.y).abs() >= px(1.0) {
@@ -944,23 +969,36 @@ impl Render for TextInput {
         let body = body.child(editor);
         let mut outer = div()
             .id(self.name)
-            .track_focus(&self.focus.clone().tab_stop(!self.keeps_tab() && !self.disabled))
+            .track_focus(
+                &self
+                    .focus
+                    .clone()
+                    .tab_stop(!self.keeps_tab() && !self.disabled),
+            )
             .key_context(crate::mac_menu::TEXT_INPUT)
             .on_action({
                 let entity = entity.clone();
-                move |_: &crate::mac_menu::Cut, _, cx| entity.update(cx, |input, cx| input.shortcut("x", cx))
+                move |_: &crate::mac_menu::Cut, _, cx| {
+                    entity.update(cx, |input, cx| input.shortcut("x", cx))
+                }
             })
             .on_action({
                 let entity = entity.clone();
-                move |_: &crate::mac_menu::Copy, _, cx| entity.update(cx, |input, cx| input.shortcut("c", cx))
+                move |_: &crate::mac_menu::Copy, _, cx| {
+                    entity.update(cx, |input, cx| input.shortcut("c", cx))
+                }
             })
             .on_action({
                 let entity = entity.clone();
-                move |_: &crate::mac_menu::Paste, _, cx| entity.update(cx, |input, cx| input.shortcut("v", cx))
+                move |_: &crate::mac_menu::Paste, _, cx| {
+                    entity.update(cx, |input, cx| input.shortcut("v", cx))
+                }
             })
             .on_action({
                 let entity = entity.clone();
-                move |_: &crate::mac_menu::SelectAll, _, cx| entity.update(cx, |input, cx| input.shortcut("a", cx))
+                move |_: &crate::mac_menu::SelectAll, _, cx| {
+                    entity.update(cx, |input, cx| input.shortcut("a", cx))
+                }
             })
             .on_key_down(move |event, _, cx| {
                 // A Tab nobody takes goes up to the form, to move the focus.
@@ -983,10 +1021,18 @@ impl Render for TextInput {
                 .px(px(if self.compact { 10.0 } else { 12.0 }))
                 .py(px(if self.compact { 7.0 } else { 10.0 }))
                 .when(self.compact, |d| d.text_size(px(0.9 * theme::REM)))
-                .rounded(px(if self.compact { theme::RADIUS_SM } else { theme::RADIUS }))
+                .rounded(px(if self.compact {
+                    theme::RADIUS_SM
+                } else {
+                    theme::RADIUS
+                }))
                 .border_1()
                 .border_color(if self.framed || self.compact {
-                    rgb(if self.compact { theme::bg_input() } else { theme::bg_elevated() })
+                    rgb(if self.compact {
+                        theme::bg_input()
+                    } else {
+                        theme::bg_elevated()
+                    })
                 } else if focused {
                     rgb(theme::accent())
                 } else {
@@ -1010,7 +1056,12 @@ impl Render for TextInput {
         if multiline {
             tagged = tagged.attr(
                 "rows",
-                self.buf.text().lines().count().clamp(1, self.max_lines).to_string(),
+                self.buf
+                    .text()
+                    .lines()
+                    .count()
+                    .clamp(1, self.max_lines)
+                    .to_string(),
             );
         }
         if self.disabled {
@@ -1109,7 +1160,11 @@ mod tests {
         assert_eq!(query("textarea.composer-input[rows=\"2\"]").len(), 1);
         cx.simulate_keystrokes("enter");
         assert_eq!(*submits.borrow(), 1);
-        assert_eq!(value(&input, cx), "one\ntwo", "Enter leaves the text to its owner");
+        assert_eq!(
+            value(&input, cx),
+            "one\ntwo",
+            "Enter leaves the text to its owner"
+        );
     }
 
     #[gpui::test]
@@ -1161,7 +1216,10 @@ mod tests {
         cx.simulate_input("alpha beta");
         cx.dispatch_action(SelectAll);
         cx.dispatch_action(Copy);
-        assert_eq!(cx.read_from_clipboard().and_then(|c| c.text()).as_deref(), Some("alpha beta"));
+        assert_eq!(
+            cx.read_from_clipboard().and_then(|c| c.text()).as_deref(),
+            Some("alpha beta")
+        );
         cx.dispatch_action(Cut);
         assert_eq!(value(&input, cx), "");
         cx.dispatch_action(Paste);
@@ -1283,8 +1341,10 @@ mod tests {
         let keys = Rc::new(RefCell::new(Vec::new()));
         let sink = keys.clone();
         cx.update(|_, cx| {
-            cx.subscribe(&input, move |_, event: &Nav, _| sink.borrow_mut().push(event.0))
-                .detach();
+            cx.subscribe(&input, move |_, event: &Nav, _| {
+                sink.borrow_mut().push(event.0)
+            })
+            .detach();
         });
         // Up in an empty box, and Escape, always.
         cx.simulate_keystrokes("up escape");
@@ -1334,7 +1394,10 @@ fn typed_text(keystroke: &gpui::Keystroke) -> Option<String> {
 /// (Option+L is @ on a German Mac). Shortcuts (Ctrl or Cmd alone) never type.
 fn types_with_modifiers(keystroke: &gpui::Keystroke) -> bool {
     let m = keystroke.modifiers;
-    let has_char = keystroke.key_char.as_ref().is_some_and(|t| !t.chars().any(char::is_control));
+    let has_char = keystroke
+        .key_char
+        .as_ref()
+        .is_some_and(|t| !t.chars().any(char::is_control));
     let altgr = cfg!(target_os = "windows") && m.control && m.alt && !m.platform;
     let option = cfg!(target_os = "macos") && m.alt && !m.control && !m.platform;
     has_char && (altgr || option)
@@ -1347,14 +1410,30 @@ mod typed_text_tests {
     #[test]
     fn space_types_a_space_even_without_a_key_char() {
         // As gpui's Windows backend reports it.
-        let windows = gpui::Keystroke { modifiers: Default::default(), key: "space".into(), key_char: None };
+        let windows = gpui::Keystroke {
+            modifiers: Default::default(),
+            key: "space".into(),
+            key_char: None,
+        };
         assert_eq!(typed_text(&windows).as_deref(), Some(" "));
         // As Linux and macOS report it.
-        let linux = gpui::Keystroke { modifiers: Default::default(), key: "space".into(), key_char: Some(" ".into()) };
+        let linux = gpui::Keystroke {
+            modifiers: Default::default(),
+            key: "space".into(),
+            key_char: Some(" ".into()),
+        };
         assert_eq!(typed_text(&linux).as_deref(), Some(" "));
-        let a = gpui::Keystroke { modifiers: Default::default(), key: "a".into(), key_char: Some("a".into()) };
+        let a = gpui::Keystroke {
+            modifiers: Default::default(),
+            key: "a".into(),
+            key_char: Some("a".into()),
+        };
         assert_eq!(typed_text(&a).as_deref(), Some("a"));
-        let f5 = gpui::Keystroke { modifiers: Default::default(), key: "f5".into(), key_char: None };
+        let f5 = gpui::Keystroke {
+            modifiers: Default::default(),
+            key: "f5".into(),
+            key_char: None,
+        };
         assert_eq!(typed_text(&f5), None);
     }
 }

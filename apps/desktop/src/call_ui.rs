@@ -6,12 +6,12 @@
 
 use std::{rc::Rc, sync::Arc, time::Duration};
 
+use crate::zoom::ZoomPan;
 use gpui::{
-    AnyElement, App, Context, Entity, FontWeight, IntoElement, MouseButton, ObjectFit,
-    RenderImage, Styled as _, StyledImage as _, Window, canvas, div, img, prelude::*, px, rgb, rgba,
+    AnyElement, App, Context, Entity, FontWeight, IntoElement, MouseButton, ObjectFit, RenderImage,
+    Styled as _, StyledImage as _, Window, canvas, div, img, prelude::*, px, rgb, rgba,
 };
 use morpheus_core::{OwnedRoomId, OwnedUserId, RoomSummary};
-use crate::zoom::ZoomPan;
 
 use crate::{
     e2e::E2eExt as _,
@@ -21,8 +21,8 @@ use crate::{
     theme,
     view_model::{
         calls::{
-            CARD_RATIO, Card, CallState, VideoFeed, card_width, default_stage_height,
-            focused_card, listed, marks, media_of, tiles, toggled_focus,
+            CARD_RATIO, CallState, Card, VideoFeed, card_width, default_stage_height, focused_card,
+            listed, marks, media_of, tiles, toggled_focus,
         },
         nicknames::shown_name,
     },
@@ -30,7 +30,11 @@ use crate::{
 
 /// A person's shown name: your nickname for them, else their profile's.
 fn shown(shell: &Shell, user: &OwnedUserId) -> String {
-    crate::streamer::name(&shown_name(&shell.nicknames, user.as_str(), &shell.calls.name_of(user)))
+    crate::streamer::name(&shown_name(
+        &shell.nicknames,
+        user.as_str(),
+        &shell.calls.name_of(user),
+    ))
 }
 
 fn picture_of(shell: &Shell, user: &OwnedUserId, size: u32) -> Option<Arc<gpui::Image>> {
@@ -73,11 +77,13 @@ fn mark_elements(media: morpheus_core::CallMedia, video: bool, size: f32) -> Vec
                 .flex_none()
                 .flex()
                 .items_center()
-                .child(icon(glyph, size).text_color(rgb(if mark.class.starts_with("voice-state") {
-                    theme::danger()
-                } else {
-                    theme::text_muted()
-                })))
+                .child(icon(glyph, size).text_color(rgb(
+                    if mark.class.starts_with("voice-state") {
+                        theme::danger()
+                    } else {
+                        theme::text_muted()
+                    },
+                )))
                 .e2e("span", mark.class)
                 .attr("title", mark.title)
                 .into_any_element(),
@@ -146,7 +152,11 @@ pub fn room_call(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -> 
                 .py(px(3.0))
                 .rounded(px(theme::RADIUS_SM))
                 .text_size(px(0.85 * theme::REM))
-                .text_color(rgb(if speaks { theme::text() } else { theme::text_muted() }))
+                .text_color(rgb(if speaks {
+                    theme::text()
+                } else {
+                    theme::text_muted()
+                }))
                 .when(connecting, |d| d.opacity(0.45))
                 .child(
                     div()
@@ -179,36 +189,39 @@ pub fn room_call(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -> 
             let (opened, menu_user, menu_room) = (user.clone(), user.clone(), room.id.clone());
             let (dbl_user, dbl_room) = (user.clone(), room.id.clone());
             let (seen_name, menu_name) = (name.clone(), name.clone());
-            row.id(gpui::SharedString::from(format!("call-participant-{}-{user}", room.id)))
-                .cursor_pointer()
-                .hover(|s| s.bg(rgba(theme::bg_hover())))
-                .on_click(cx.listener(move |this, event: &gpui::ClickEvent, _, cx| {
-                    // A double click while in this call: its view, on their
-                    // screen or card.
-                    if event.click_count() >= 2 && this.calls.in_call(&dbl_room) {
-                        cx.stop_propagation();
-                        this.focus_person_in_call(dbl_room.clone(), &dbl_user, cx);
-                        return;
-                    }
+            row.id(gpui::SharedString::from(format!(
+                "call-participant-{}-{user}",
+                room.id
+            )))
+            .cursor_pointer()
+            .hover(|s| s.bg(rgba(theme::bg_hover())))
+            .on_click(cx.listener(move |this, event: &gpui::ClickEvent, _, cx| {
+                // A double click while in this call: its view, on their
+                // screen or card.
+                if event.click_count() >= 2 && this.calls.in_call(&dbl_room) {
                     cx.stop_propagation();
-                    let seen = Some((seen_name.clone(), None));
-                    this.open_profile(opened.clone(), Some(beside(event.position())), seen, cx)
-                }))
-                .on_mouse_down(
-                    MouseButton::Right,
-                    cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
-                        cx.stop_propagation();
-                        this.open_user_menu(
-                            menu_room.clone(),
-                            menu_user.clone(),
-                            menu_name.clone(),
-                            beside(event.position),
-                            cx,
-                        )
-                    }),
-                )
-                .e2e("div", &classes)
-                .attr("data-user", user.to_string())
+                    this.focus_person_in_call(dbl_room.clone(), &dbl_user, cx);
+                    return;
+                }
+                cx.stop_propagation();
+                let seen = Some((seen_name.clone(), None));
+                this.open_profile(opened.clone(), Some(beside(event.position())), seen, cx)
+            }))
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+                    cx.stop_propagation();
+                    this.open_user_menu(
+                        menu_room.clone(),
+                        menu_user.clone(),
+                        menu_name.clone(),
+                        beside(event.position),
+                        cx,
+                    )
+                }),
+            )
+            .e2e("div", &classes)
+            .attr("data-user", user.to_string())
         })
         .collect::<Vec<_>>();
     let join = cx.listener(move |this, _, _, cx| this.join_call(id.clone(), name.clone(), cx));
@@ -290,7 +303,14 @@ fn control_button(
     let tagged = button
         .e2e("button", &classes)
         .attr("title", title)
-        .attr("data-bg", if hang || (mute && active) { "#ff6b6b" } else { "" })
+        .attr(
+            "data-bg",
+            if hang || (mute && active) {
+                "#ff6b6b"
+            } else {
+                ""
+            },
+        )
         .attr("data-radius", theme::RADIUS_XL.to_string());
     if enabled {
         tagged.into_any_element()
@@ -304,11 +324,7 @@ fn control_button(
 fn stage_controls(shell: &Shell, cx: &mut Context<Shell>, call: &CallState) -> AnyElement {
     let flags = shell.calls.voice;
     let muted = flags.mic_off();
-    let mut row = div()
-        .flex_none()
-        .flex()
-        .justify_center()
-        .gap(px(12.0));
+    let mut row = div().flex_none().flex().justify_center().gap(px(12.0));
     row = row.child(control_button(
         Control {
             id: "stage-mute",
@@ -410,7 +426,8 @@ fn stage_controls(shell: &Shell, cx: &mut Context<Shell>, call: &CallState) -> A
         cx.listener(|this, _, _, cx| this.hang_up(cx)),
         None,
     ));
-    row.e2e("div", "call-controls stage-controls").into_any_element()
+    row.e2e("div", "call-controls stage-controls")
+        .into_any_element()
 }
 
 fn screen_classes(base: &str, call: &CallState) -> String {
@@ -433,7 +450,9 @@ fn screen_title(call: &CallState) -> &'static str {
 }
 
 /// The camera button's right-click: the cameras, to pick from.
-fn camera_right_click(cx: &mut Context<Shell>) -> Box<dyn Fn(&gpui::MouseDownEvent, &mut Window, &mut App)> {
+fn camera_right_click(
+    cx: &mut Context<Shell>,
+) -> Box<dyn Fn(&gpui::MouseDownEvent, &mut Window, &mut App)> {
     let view = cx.entity();
     Box::new(move |event, _, cx| {
         let at = event.position;
@@ -768,11 +787,12 @@ fn focus_button(shell: &Shell, cx: &mut Context<Shell>, key: &str, group: &str) 
         .rounded(px(theme::RADIUS_SM))
         .bg(black(0.6))
         .opacity(0.0)
-        .group_hover(gpui::SharedString::from(group.to_owned()), |s| s.opacity(1.0))
+        .group_hover(gpui::SharedString::from(group.to_owned()), |s| {
+            s.opacity(1.0)
+        })
         .cursor_pointer()
         .child(
-            icon(if focused { "minimize-2" } else { "maximize-2" }, 16.0)
-                .text_color(rgb(0xffffff)),
+            icon(if focused { "minimize-2" } else { "maximize-2" }, 16.0).text_color(rgb(0xffffff)),
         )
         .on_click(cx.listener(move |this, _, _, cx| {
             cx.stop_propagation();
@@ -786,7 +806,12 @@ fn focus_button(shell: &Shell, cx: &mut Context<Shell>, key: &str, group: &str) 
 /// A shared screen's sound, at its bottom right on a hover: mute and a
 /// volume bar (0 to 200%, Discord's stream volume) for how loud it plays
 /// here.
-fn screen_volume(cx: &mut Context<Shell>, user: &OwnedUserId, volume: f32, group: &str) -> AnyElement {
+fn screen_volume(
+    cx: &mut Context<Shell>,
+    user: &OwnedUserId,
+    volume: f32,
+    group: &str,
+) -> AnyElement {
     let max = morpheus_call::MAX_SCREEN_VOLUME;
     let bar: Rc<std::cell::Cell<gpui::Bounds<gpui::Pixels>>> = Rc::default();
     let set_at = {
@@ -809,11 +834,23 @@ fn screen_volume(cx: &mut Context<Shell>, user: &OwnedUserId, volume: f32, group
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_click(cx.listener(move |this, _, _, cx| {
             cx.stop_propagation();
-            let now = this.calls.screen_volumes.get(&mute_user).copied().unwrap_or(1.0);
+            let now = this
+                .calls
+                .screen_volumes
+                .get(&mute_user)
+                .copied()
+                .unwrap_or(1.0);
             this.set_screen_volume(&mute_user, if now > 0.0 { 0.0 } else { 1.0 }, cx);
         }))
         .e2e("button", "screen-volume-mute")
-        .attr("title", if muted { "Unmute stream" } else { "Mute stream" });
+        .attr(
+            "title",
+            if muted {
+                "Unmute stream"
+            } else {
+                "Mute stream"
+            },
+        );
     let slider = div()
         .id(gpui::SharedString::from(format!("screen-volume-{user}")))
         .relative()
@@ -831,15 +868,21 @@ fn screen_volume(cx: &mut Context<Shell>, user: &OwnedUserId, volume: f32, group
                 }
             }),
         )
-        .on_mouse_move(cx.listener(move |this, event: &gpui::MouseMoveEvent, _, cx| {
-            if event.pressed_button == Some(MouseButton::Left)
-                && let Some(volume) = move_set(event.position.x)
-            {
-                this.set_screen_volume(&move_user, volume, cx);
-            }
-        }))
+        .on_mouse_move(
+            cx.listener(move |this, event: &gpui::MouseMoveEvent, _, cx| {
+                if event.pressed_button == Some(MouseButton::Left)
+                    && let Some(volume) = move_set(event.position.x)
+                {
+                    this.set_screen_volume(&move_user, volume, cx);
+                }
+            }),
+        )
         .on_click(|_, _, cx| cx.stop_propagation())
-        .child(canvas(move |bounds, _, _| bar.set(bounds), |_, _, _, _| {}).absolute().inset_0())
+        .child(
+            canvas(move |bounds, _, _| bar.set(bounds), |_, _, _, _| {})
+                .absolute()
+                .inset_0(),
+        )
         .child(
             div()
                 .relative()
@@ -873,7 +916,9 @@ fn screen_volume(cx: &mut Context<Shell>, user: &OwnedUserId, volume: f32, group
         .rounded(px(theme::RADIUS_SM))
         .bg(black(0.6))
         .opacity(0.0)
-        .group_hover(gpui::SharedString::from(group.to_owned()), |s| s.opacity(1.0))
+        .group_hover(gpui::SharedString::from(group.to_owned()), |s| {
+            s.opacity(1.0)
+        })
         .child(mute)
         .child(slider)
         .into_any_element()
@@ -932,7 +977,9 @@ fn zoom_control(shell: &Shell, key: &str, zoom: f32) -> AnyElement {
         .text_size(px(0.8 * theme::REM))
         .text_color(rgb(0xffffff))
         .cursor_pointer()
-        .when(!zoomed, |d| d.child(icon("search", 13.0).text_color(rgb(0xffffff))))
+        .when(!zoomed, |d| {
+            d.child(icon("search", 13.0).text_color(rgb(0xffffff)))
+        })
         .child(label.clone())
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_click(move |_, _, cx| {
@@ -955,7 +1002,14 @@ fn zoom_control(shell: &Shell, key: &str, zoom: f32) -> AnyElement {
                 "screen-zoom-button"
             },
         )
-        .attr("title", if zoomed { "Reset zoom (fit to tile)" } else { "Zoom in halfway" })
+        .attr(
+            "title",
+            if zoomed {
+                "Reset zoom (fit to tile)"
+            } else {
+                "Zoom in halfway"
+            },
+        )
         .text(label)
         .into_any_element()
 }
@@ -1201,7 +1255,12 @@ fn video_card(
         .flatten()
         .map(|identity| morpheus_call::screen_audio(identity));
     if heard.is_some() {
-        let volume = shell.calls.screen_volumes.get(&feed.user).copied().unwrap_or(1.0);
+        let volume = shell
+            .calls
+            .screen_volumes
+            .get(&feed.user)
+            .copied()
+            .unwrap_or(1.0);
         tile = tile.child(screen_volume(cx, &feed.user, volume, &group));
     }
     let sound = heard.clone().flatten();
@@ -1230,16 +1289,27 @@ fn video_card(
         .attr("data-video-size", format!("{pw}x{ph}"))
         .attr(
             "data-mirrored",
-            if key == morpheus_call::LOCAL_CAMERA { "true" } else { "false" },
+            if key == morpheus_call::LOCAL_CAMERA {
+                "true"
+            } else {
+                "false"
+            },
         )
         .attr(
             "data-camera",
-            if own && !feed.screen { morpheus_call::camera_in_use().unwrap_or_default() } else { String::new() },
+            if own && !feed.screen {
+                morpheus_call::camera_in_use().unwrap_or_default()
+            } else {
+                String::new()
+            },
         )
         .attr("data-audio", if heard.is_some() { "on" } else { "" })
         .attr(
             "data-audio-level",
-            sound.as_ref().map(|s| format!("{:.4}", s.level)).unwrap_or_default(),
+            sound
+                .as_ref()
+                .map(|s| format!("{:.4}", s.level))
+                .unwrap_or_default(),
         )
         .attr(
             "data-audio-hz",
@@ -1250,7 +1320,10 @@ fn video_card(
         )
         .attr(
             "data-audio-played",
-            sound.as_ref().map(|s| format!("{:.4}", s.played)).unwrap_or_default(),
+            sound
+                .as_ref()
+                .map(|s| format!("{:.4}", s.played))
+                .unwrap_or_default(),
         )
         .attr(
             "data-audio-sent",
@@ -1279,7 +1352,11 @@ pub fn sent_screen_audio() -> String {
 /// the way to ask someone in (Discord's "Invite to voice channel").
 fn invite_card(cx: &mut Context<Shell>, room: &OwnedRoomId, direct: bool, fit: Fit) -> AnyElement {
     let room = room.clone();
-    let label = if direct { "Invite to call" } else { "Invite to voice channel" };
+    let label = if direct {
+        "Invite to call"
+    } else {
+        "Invite to voice channel"
+    };
     sized(div().id("call-invite-card"), fit, None)
         .flex()
         .items_center()
@@ -1302,7 +1379,9 @@ fn invite_card(cx: &mut Context<Shell>, room: &OwnedRoomId, direct: bool, fit: F
                 .cursor_pointer()
                 .child(icon("user-plus", 16.0).text_color(rgb(0xffffff)))
                 .child(label)
-                .on_click(cx.listener(move |this, _, _, cx| this.open_call_invite(room.clone(), cx)))
+                .on_click(
+                    cx.listener(move |this, _, _, cx| this.open_call_invite(room.clone(), cx)),
+                )
                 .e2e("button", "primary invite-to-call")
                 .text(label),
         )
@@ -1339,7 +1418,14 @@ fn cards(
     // 8 apart) and a little for rounding.
     let main_room = (
         (stage.0 - 1.0).max(40.0),
-        (stage.1 - if strip.is_empty() && invite.is_none() { 0.0 } else { 89.0 } - 1.0).max(40.0),
+        (stage.1
+            - if strip.is_empty() && invite.is_none() {
+                0.0
+            } else {
+                89.0
+            }
+            - 1.0)
+            .max(40.0),
     );
     let mut out = vec![
         div()
@@ -1395,7 +1481,11 @@ fn stage_body(
     {
         all.insert(
             0,
-            Card::Video(VideoFeed { user: me, key: morpheus_call::LOCAL_SCREEN.to_owned(), screen: true }),
+            Card::Video(VideoFeed {
+                user: me,
+                key: morpheus_call::LOCAL_SCREEN.to_owned(),
+                screen: true,
+            }),
         );
     }
     let count = all.len();
@@ -1472,7 +1562,14 @@ fn stage_body(
         .when(focused, |d| d.flex_col().flex_nowrap().justify_start())
         .child(probe)
         .children(children)
-        .e2e("div", if focused { "call-cards focused" } else { "call-cards" });
+        .e2e(
+            "div",
+            if focused {
+                "call-cards focused"
+            } else {
+                "call-cards"
+            },
+        );
     stage
         .child(area)
         .child(stage_controls(shell, cx, call))
@@ -1638,7 +1735,9 @@ pub fn voice_channel(
         })
         .on_click(cx.listener(|this, _, window, cx| {
             this.calls.voice_chat = !this.calls.voice_chat;
-            if this.calls.voice_chat && let Some((_, composer)) = &this.composer {
+            if this.calls.voice_chat
+                && let Some((_, composer)) = &this.composer
+            {
                 composer.update(cx, |composer, cx| composer.focus_input(window, cx));
             }
             cx.notify();
@@ -1651,7 +1750,14 @@ pub fn voice_channel(
                 "ghost voice-chat-toggle"
             },
         )
-        .attr("title", if open { "Hide the chat" } else { "Show the chat" });
+        .attr(
+            "title",
+            if open {
+                "Hide the chat"
+            } else {
+                "Show the chat"
+            },
+        );
     // The call's column: the button's strip, then the page (min width 0, so
     // a narrow window shrinks the call instead of pushing the chat out).
     let call = div()
@@ -1721,10 +1827,12 @@ pub fn voice_channel(
 
 /// Someone calling: who, with answer and decline.
 pub fn incoming_calls(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElement> {
-    let ringing = shell.ringing(std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or_default());
+    let ringing = shell.ringing(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or_default(),
+    );
     if ringing.is_empty() {
         return None;
     }
@@ -1786,7 +1894,10 @@ pub fn incoming_calls(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyEleme
             )
             .child(
                 div()
-                    .id(gpui::SharedString::from(format!("decline-{}", call.notification)))
+                    .id(gpui::SharedString::from(format!(
+                        "decline-{}",
+                        call.notification
+                    )))
                     .size(px(40.0))
                     .flex()
                     .items_center()
@@ -1801,7 +1912,10 @@ pub fn incoming_calls(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyEleme
             )
             .child(
                 div()
-                    .id(gpui::SharedString::from(format!("accept-{}", call.notification)))
+                    .id(gpui::SharedString::from(format!(
+                        "accept-{}",
+                        call.notification
+                    )))
                     .size(px(40.0))
                     .flex()
                     .items_center()
@@ -1839,12 +1953,14 @@ pub fn incoming_calls(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyEleme
 }
 
 /// The header's call button: DMs and (on a desktop) voice channels.
-pub fn header_call_button(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -> AnyElement {
+pub fn header_call_button(
+    shell: &Shell,
+    cx: &mut Context<Shell>,
+    room: &RoomSummary,
+) -> AnyElement {
     let in_this = shell.calls.in_call(&room.id);
-    let title = crate::view_model::calls::call_button_title(
-        in_this,
-        !room.call_participants.is_empty(),
-    );
+    let title =
+        crate::view_model::calls::call_button_title(in_this, !room.call_participants.is_empty());
     let (id, name) = (room.id.clone(), room.name.clone());
     let colour = if in_this {
         theme::green()
@@ -1854,7 +1970,9 @@ pub fn header_call_button(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSum
     div()
         .id("call-button")
         .px(px(8.0))
-        .h(px(28.0)).flex().items_center()
+        .h(px(28.0))
+        .flex()
+        .items_center()
         .rounded(px(theme::RADIUS_SM))
         .cursor_pointer()
         .when(in_this, |d| d.bg(rgba(theme::bg_selected())))
@@ -1877,15 +1995,31 @@ pub fn header_call_button(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSum
         )
         .attr("title", title)
         .attr("data-color", format!("{colour:06x}"))
-        .attr("data-bg", if in_this { format!("{:08x}", theme::bg_selected()) } else { String::new() })
+        .attr(
+            "data-bg",
+            if in_this {
+                format!("{:08x}", theme::bg_selected())
+            } else {
+                String::new()
+            },
+        )
         .into_any_element()
 }
 
 impl Shell {
     /// Show the call's view with `user`'s shared screen focused, else their card.
-    pub fn focus_person_in_call(&mut self, room: OwnedRoomId, user: &OwnedUserId, cx: &mut Context<Self>) {
+    pub fn focus_person_in_call(
+        &mut self,
+        room: OwnedRoomId,
+        user: &OwnedUserId,
+        cx: &mut Context<Self>,
+    ) {
         let key = self.calls.state.as_ref().and_then(|call| {
-            let feed = call.video.iter().find(|f| f.screen && &f.user == user).or_else(|| call.video.iter().find(|f| &f.user == user));
+            let feed = call
+                .video
+                .iter()
+                .find(|f| f.screen && &f.user == user)
+                .or_else(|| call.video.iter().find(|f| &f.user == user));
             Some(feed.map_or_else(|| user.to_string(), |f| f.key.clone()))
         });
         let Some(key) = key else { return };
@@ -1997,7 +2131,9 @@ impl VideoFrame {
     ) -> Self {
         cx.spawn(async move |this, cx| {
             loop {
-                cx.background_executor().timer(Duration::from_millis(16)).await;
+                cx.background_executor()
+                    .timer(Duration::from_millis(16))
+                    .await;
                 let Ok(()) = this.update(cx, |this, cx| this.poll(cx)) else {
                     break;
                 };
@@ -2049,7 +2185,10 @@ impl VideoFrame {
             return;
         };
         let (origin, size) = self.tile();
-        let at = (f32::from(event.position.x) - origin.0, f32::from(event.position.y) - origin.1);
+        let at = (
+            f32::from(event.position.x) - origin.0,
+            f32::from(event.position.y) - origin.1,
+        );
         self.view.zoom_at(self.view.zoom * factor, at, size, size);
         cx.notify();
     }
@@ -2071,7 +2210,10 @@ impl VideoFrame {
             self.panning = None;
             return;
         }
-        let (dx, dy) = (f32::from(event.position.x) - start.0, f32::from(event.position.y) - start.1);
+        let (dx, dy) = (
+            f32::from(event.position.x) - start.0,
+            f32::from(event.position.y) - start.1,
+        );
         if dx.abs() + dy.abs() > 3.0 {
             self.dragged = true;
         }
@@ -2101,7 +2243,9 @@ impl VideoFrame {
         // Test builds can hold the first picture back, to look at the skeleton.
         if self.seen == 0
             && std::env::var_os("MORPHEUS_E2E_PORT").is_some()
-            && let Some(ms) = std::env::var("MORPHEUS_E2E_FRAME_DELAY_MS").ok().and_then(|v| v.parse::<u64>().ok())
+            && let Some(ms) = std::env::var("MORPHEUS_E2E_FRAME_DELAY_MS")
+                .ok()
+                .and_then(|v| v.parse::<u64>().ok())
             && self.born.elapsed() < Duration::from_millis(ms)
         {
             return;
@@ -2140,7 +2284,10 @@ impl VideoFrame {
                 .map(|p| format!("{:02x}{:02x}{:02x}", p[2], p[1], p[0]))
                 .unwrap_or_default()
         };
-        self.sample = (sample(width / 4, height / 2), sample(3 * width / 4, height / 2));
+        self.sample = (
+            sample(width / 4, height / 2),
+            sample(3 * width / 4, height / 2),
+        );
         // The pixels are B, G, R, A: what GPUI's images are made of.
         let Some(buffer) = image::RgbaImage::from_raw(width, height, pixels) else {
             return;
@@ -2173,11 +2320,13 @@ impl gpui::Render for VideoFrame {
                             // A pan follows the pointer wherever it goes.
                             if panning {
                                 let me = me.clone();
-                                window.on_mouse_event(move |event: &gpui::MouseMoveEvent, phase, _, cx| {
-                                    if phase == gpui::DispatchPhase::Capture {
-                                        me.update(cx, |f, cx| f.drag(event, cx));
-                                    }
-                                });
+                                window.on_mouse_event(
+                                    move |event: &gpui::MouseMoveEvent, phase, _, cx| {
+                                        if phase == gpui::DispatchPhase::Capture {
+                                            me.update(cx, |f, cx| f.drag(event, cx));
+                                        }
+                                    },
+                                );
                             }
                             // The whole picture, in its own shape, centred; its
                             // corners are rounded here because the card's clip is
@@ -2210,8 +2359,18 @@ impl gpui::Render for VideoFrame {
             }
             None => base,
         }
-        .e2e("img", if self.preview { "preview-video" } else { "video" })
-        .attr("data-mirrored", if self.mirrored() { "true" } else { "false" })
+        .e2e(
+            "img",
+            if self.preview {
+                "preview-video"
+            } else {
+                "video"
+            },
+        )
+        .attr(
+            "data-mirrored",
+            if self.mirrored() { "true" } else { "false" },
+        )
         .attr("data-shown", if shown { "true" } else { "false" })
         .attr("data-seq", self.seen.to_string())
         .attr("data-size", format!("{}x{}", self.dim.0, self.dim.1))
@@ -2312,8 +2471,14 @@ mod widget_tests {
         let (_shell, _cx) = open(cx, vec![room("!g:x", "general"), channel()]);
         assert_eq!(query(".room.voice .voice-icon").len(), 1);
         assert_eq!(query(".room.voice .hash").len(), 0);
-        assert_eq!(query(".room-call[data-room=\"!lounge:x\"] .call-participant").len(), 1);
-        assert_eq!(query(".call-participant[data-user=\"@bob:x\"] .voice-state.muted").len(), 1);
+        assert_eq!(
+            query(".room-call[data-room=\"!lounge:x\"] .call-participant").len(),
+            1
+        );
+        assert_eq!(
+            query(".call-participant[data-user=\"@bob:x\"] .voice-state.muted").len(),
+            1
+        );
         // A room with nobody in its call lists no one.
         assert_eq!(query(".room-call[data-room=\"!g:x\"]").len(), 0);
     }
@@ -2339,7 +2504,10 @@ mod widget_tests {
             cx.notify();
         });
         redraw(cx);
-        assert_eq!(texts(".voice-panel .voice-state.connected"), ["Voice connected"]);
+        assert_eq!(
+            texts(".voice-panel .voice-state.connected"),
+            ["Voice connected"]
+        );
         assert_eq!(texts(".voice-panel .voice-room"), ["lounge"]);
         // Hanging up ends it.
         click(cx, ".voice-panel .hang-up");
@@ -2352,14 +2520,19 @@ mod widget_tests {
         let (shell, cx) = open(cx, vec![room("!g:x", "general")]);
         assert!(query(".user-pill .device-pair.active").is_empty());
         click(cx, ".user-pill .mute-button");
-        assert_eq!(query(".user-pill .device-pair.active .mute-button.active").len(), 1);
+        assert_eq!(
+            query(".user-pill .device-pair.active .mute-button.active").len(),
+            1
+        );
         shell.read_with(cx, |s, _| assert_eq!(s.calls.sounds, ["mute"]));
         // Deafening marks the other pair; unmuting undeafens too.
         click(cx, ".user-pill .deafen-button");
         assert_eq!(query(".user-pill .device-pair.active").len(), 2);
         click(cx, ".user-pill .mute-button");
         assert!(query(".user-pill .device-pair.active").is_empty());
-        shell.read_with(cx, |s, _| assert_eq!(s.calls.sounds, ["mute", "deafen", "undeafen"]));
+        shell.read_with(cx, |s, _| {
+            assert_eq!(s.calls.sounds, ["mute", "deafen", "undeafen"])
+        });
     }
 
     #[gpui::test]
@@ -2380,13 +2553,23 @@ mod widget_tests {
         assert_eq!(query(".call-stage[data-cards=\"2\"]").len(), 1);
         assert_eq!(query(".call-stage .call-tile").len(), 2);
         for control in [".mute-button", ".deafen-button", ".hang-up"] {
-            assert_eq!(query(&format!(".call-stage .call-controls {control}")).len(), 1, "{control}");
+            assert_eq!(
+                query(&format!(".call-stage .call-controls {control}")).len(),
+                1,
+                "{control}"
+            );
         }
         assert!(query(".call-cards.focused").is_empty());
         click(cx, ".call-stage .call-tile[data-user=\"@carol:x\"]");
         assert_eq!(query(".call-cards.focused").len(), 1);
-        assert_eq!(query(".call-focus-main > .call-tile[data-user=\"@carol:x\"]").len(), 1);
-        assert_eq!(query(".call-strip > .call-tile[data-user=\"@bob:x\"]").len(), 1);
+        assert_eq!(
+            query(".call-focus-main > .call-tile[data-user=\"@carol:x\"]").len(),
+            1
+        );
+        assert_eq!(
+            query(".call-strip > .call-tile[data-user=\"@bob:x\"]").len(),
+            1
+        );
         // Clicking it again goes back to the grid.
         click(cx, ".call-focus-main > .call-tile");
         assert!(query(".call-cards.focused").is_empty());
@@ -2408,7 +2591,8 @@ impl Shell {
         let volume = self.calls.user_volumes.get(&user).copied().unwrap_or(1.0);
         let muted = self.calls.muted_for_me.contains(&user);
         let focused = self.calls.focus.as_deref() == Some(key.as_str());
-        let extra = crate::view_model::calls::call_card_items(&user, own, volume, muted, &key, focused);
+        let extra =
+            crate::view_model::calls::call_card_items(&user, own, volume, muted, &key, focused);
         let name = shown(self, &user);
         self.open_user_menu_extra(room, user, name, extra, at, cx);
     }

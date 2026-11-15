@@ -150,12 +150,15 @@ fn round_button(
         .text_color(rgb(theme::text_muted()))
         .cursor_pointer()
         .hover(move |s| {
-            s.bg(rgb(if accept { theme::green() } else { theme::danger() }))
-                .text_color(rgb(0xffffff))
+            s.bg(rgb(if accept {
+                theme::green()
+            } else {
+                theme::danger()
+            }))
+            .text_color(rgb(0xffffff))
         })
         .child(icon(glyph, 14.0))
 }
-
 
 /// An invite in the sidebar: the room, who asked, accept and decline.
 pub fn invite_row(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -> AnyElement {
@@ -173,13 +176,22 @@ pub fn invite_row(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) ->
         .py(px(6.0))
         .rounded(px(theme::RADIUS_SM))
         .cursor_pointer()
-        .text_color(rgb(if selected { theme::text() } else { theme::text_muted() }))
+        .text_color(rgb(if selected {
+            theme::text()
+        } else {
+            theme::text_muted()
+        }))
         .when(selected, |d| d.bg(rgba(theme::bg_selected())))
         .when(!selected, |d| {
             d.hover(|s| s.bg(rgba(theme::bg_hover())).text_color(rgb(theme::text())))
         })
         .on_click(cx.listener(move |this, _, _, cx| this.open_room(open.clone(), cx)))
-        .child(avatar(shell.picture(&room.avatar, 24), &room.name, 24.0, None))
+        .child(avatar(
+            shell.picture(&room.avatar, 24),
+            &room.name,
+            24.0,
+            None,
+        ))
         .child(
             div()
                 .flex()
@@ -191,14 +203,16 @@ pub fn invite_row(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) ->
                 .line_height(gpui::relative(1.15))
                 .child(
                     div()
-                        .w_full().truncate()
+                        .w_full()
+                        .truncate()
                         .child(room.name.clone())
                         .e2e("span", "room-name")
                         .text(room.name.clone()),
                 )
                 .child(
                     div()
-                        .w_full().truncate()
+                        .w_full()
+                        .truncate()
                         .text_size(px(0.72 * theme::REM))
                         .text_color(rgb(theme::text_muted()))
                         .child(from.clone())
@@ -208,13 +222,18 @@ pub fn invite_row(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) ->
                 .e2e("span", "invite-text"),
         )
         .child(
-            round_button(format!("invite-accept-{}", room.id), "Accept", "check", true)
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    cx.stop_propagation();
-                    this.accept_invite(accept.clone(), cx)
-                }))
-                .e2e("button", "invite-accept")
-                .attr("title", "Accept"),
+            round_button(
+                format!("invite-accept-{}", room.id),
+                "Accept",
+                "check",
+                true,
+            )
+            .on_click(cx.listener(move |this, _, _, cx| {
+                cx.stop_propagation();
+                this.accept_invite(accept.clone(), cx)
+            }))
+            .e2e("button", "invite-accept")
+            .attr("title", "Accept"),
         )
         .child(
             round_button(format!("invite-decline-{}", room.id), "Decline", "x", false)
@@ -332,7 +351,9 @@ pub fn invite_card(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -
                 .text("Accept")
                 .into_any_element(),
             card_button("card-decline", "Decline", false)
-                .on_click(cx.listener(move |this, _, _, cx| this.decline_invite(decline.clone(), cx)))
+                .on_click(
+                    cx.listener(move |this, _, _, cx| this.decline_invite(decline.clone(), cx)),
+                )
                 .e2e("button", "secondary invite-decline")
                 .text("Decline")
                 .into_any_element(),
@@ -368,7 +389,11 @@ pub fn join_card(shell: &Shell, cx: &mut Context<Shell>, room: &SpaceRoom) -> An
 }
 
 /// The inbox, over the window from the title bar's button.
-pub fn inbox(shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>) -> Option<AnyElement> {
+pub fn inbox(
+    shell: &mut Shell,
+    window: &mut Window,
+    cx: &mut Context<Shell>,
+) -> Option<AnyElement> {
     if !shell.inbox_open {
         return None;
     }
@@ -379,8 +404,14 @@ pub fn inbox(shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>) ->
     if std::mem::take(&mut shell.inbox_take_focus) {
         window.focus(&focus);
     }
-    let pending: Vec<RoomSummary> = invites::pending_invites(&shell.rooms).iter().map(crate::streamer::invite).collect();
-    let items: Vec<RoomSummary> = invites::unread_rooms(&crate::locks::unlocked(&shell.rooms)).iter().map(crate::streamer::invite).collect();
+    let pending: Vec<RoomSummary> = invites::pending_invites(&shell.rooms)
+        .iter()
+        .map(crate::streamer::invite)
+        .collect();
+    let items: Vec<RoomSummary> = invites::unread_rooms(&crate::locks::unlocked(&shell.rooms))
+        .iter()
+        .map(crate::streamer::invite)
+        .collect();
     let mut panel = div()
         .id("inbox-panel")
         .track_focus(&focus)
@@ -494,9 +525,9 @@ pub fn inbox(shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>) ->
                                             .text(format!("from {}", invites::inviter(room))),
                                     ),
                             )
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.open_from_inbox(&open, cx)
-                            }))
+                            .on_click(
+                                cx.listener(move |this, _, _, cx| this.open_from_inbox(&open, cx)),
+                            )
                             .e2e("button", "inbox-open")
                             .text(name_line),
                     )
@@ -521,11 +552,18 @@ pub fn inbox(shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>) ->
         }
     }
     let mentions: Vec<_> = crate::view_model::notices::recent_mentions(
-        &shell.notices.iter().filter(|n| !crate::locks::is_locked(&n.room_id) && !shell.seen_mentions.contains(&n.event_id)).cloned().collect::<Vec<_>>(),
+        &shell
+            .notices
+            .iter()
+            .filter(|n| {
+                !crate::locks::is_locked(&n.room_id) && !shell.seen_mentions.contains(&n.event_id)
+            })
+            .cloned()
+            .collect::<Vec<_>>(),
     )
-        .into_iter()
-        .cloned()
-        .collect();
+    .into_iter()
+    .cloned()
+    .collect();
     if !mentions.is_empty() {
         panel = panel.child(
             div()
@@ -541,8 +579,16 @@ pub fn inbox(shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>) ->
         );
         for (index, notice) in mentions.into_iter().enumerate() {
             let room = shell.rooms.iter().find(|r| r.id == notice.room_id).cloned();
-            let room_name = if room.as_ref().is_some_and(|r| r.is_dm) { crate::streamer::name(&notice.room_name) } else { notice.room_name.clone() };
-            let who = format!("{} in {}", crate::streamer::name(&notice.sender_name), room_name);
+            let room_name = if room.as_ref().is_some_and(|r| r.is_dm) {
+                crate::streamer::name(&notice.room_name)
+            } else {
+                notice.room_name.clone()
+            };
+            let who = format!(
+                "{} in {}",
+                crate::streamer::name(&notice.sender_name),
+                room_name
+            );
             let mut item = div()
                 .id(SharedString::from(format!("inbox-mention-{index}")))
                 .flex()
@@ -571,7 +617,8 @@ pub fn inbox(shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>) ->
                         .text(notice.body_summary.clone()),
                 );
             if let Some(room) = room {
-                item = item.on_click(cx.listener(move |this, _, _, cx| this.open_from_inbox(&room, cx)));
+                item = item
+                    .on_click(cx.listener(move |this, _, _, cx| this.open_from_inbox(&room, cx)));
             }
             panel = panel.child(item.e2e("button", "inbox-item inbox-mention"));
         }

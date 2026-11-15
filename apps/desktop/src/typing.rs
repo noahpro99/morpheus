@@ -45,7 +45,11 @@ impl TypingView {
 
 impl Render for TypingView {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        let shown: Vec<String> = self.names.iter().map(|name| crate::streamer::name(name)).collect();
+        let shown: Vec<String> = self
+            .names
+            .iter()
+            .map(|name| crate::streamer::name(name))
+            .collect();
         match typing::line(&shown) {
             None => div().h(px(8.0)).flex_none().e2e("div", "typing empty"),
             Some(text) => div()

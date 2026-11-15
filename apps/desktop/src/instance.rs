@@ -3,7 +3,6 @@
 //! socket in the runtime directory to show its window (or open the Matrix
 //! link it was started with), then exits.
 
-
 #[cfg(unix)]
 mod imp {
     use std::{
@@ -82,5 +81,3 @@ mod imp {
 }
 
 pub use imp::{claim, listen};
-
-
