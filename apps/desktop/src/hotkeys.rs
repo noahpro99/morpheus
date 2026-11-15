@@ -235,13 +235,22 @@ impl Shell {
             if !self.modal_open(cx) && !self.inbox_open && self.escape_search(window, cx) {
                 return true;
             }
-            // Escape in a voice channel with its chat side panel open: close the chat panel first.
+            // Escape in a voice channel with its chat side panel open: first
+            // leave the message box, then close the chat panel, then (below)
+            // un-focus a card.
             if self.calls.voice_chat
                 && self.current().is_some_and(|r| r.is_voice && !r.is_dm)
                 && !self.modal_open(cx)
                 && !self.inbox_open
                 && !self.composer_busy(cx)
             {
+                if self.composer.as_ref().is_some_and(|(_, c)| c.read(cx).input_focused(window, cx))
+                    && let Some(root) = self.root_focus.clone()
+                {
+                    window.focus(&root);
+                    cx.notify();
+                    return true;
+                }
                 self.calls.voice_chat = false;
                 cx.notify();
                 return true;

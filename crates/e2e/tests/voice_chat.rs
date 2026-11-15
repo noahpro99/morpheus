@@ -182,7 +182,8 @@ async fn the_messages_button_opens_a_rounded_chat_that_works() {
         "the box empties after sending"
     );
 
-    // Escape keeps the chat open, and a draft.
+    // Escape while typing leaves the box (the chat stays, and the draft); the
+    // next Escape closes the chat.
     alice.type_into(".voice-chat .composer-input", "a draft").await.expect("type");
     alice.press(".voice-chat .composer-input", "Escape").await.expect("esc");
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
@@ -193,8 +194,13 @@ async fn the_messages_button_opens_a_rounded_chat_that_works() {
         "Escape threw the draft away"
     );
     alice.type_into(".voice-chat .composer-input", "").await.expect("clear");
+    alice.unfocus().await.expect("blur");
+    alice.key_combo("body", "Escape", false, false, false).await.expect("esc");
+    alice.wait_for_count(".voice-chat", 0, DEFAULT_WAIT).await.expect("the second Escape closes the chat");
 
-    // Closing: gone, the button back to resting.
+    // Closing by the button: open it again, then shut it.
+    alice.click(".voice-chat-toggle").await.expect("reopen");
+    alice.wait_for(".voice-chat .timeline", DEFAULT_WAIT).await.expect("reopened");
     alice.click(".voice-chat-toggle").await.expect("close");
     alice.wait_for_count(".voice-chat", 0, DEFAULT_WAIT).await.expect("closed");
     assert_eq!(alice.count(".voice-chat-toggle.active").await.expect("count"), 0, "still lit");
@@ -516,11 +522,16 @@ async fn the_chat_beside_a_focused_tile_and_a_resized_window() {
     let main = bounds(&mut alice, ".call-focus-main").await;
     assert!(main.right() <= panel.x + 0.5, "the focused tile {main:?} runs under the chat {panel:?}");
     assert_eq!(alice.count(".voice-chat").await.expect("count"), 1, "the chat closed");
-    // Escape (nothing typed in the chat) un-focuses the tile and keeps the chat.
+    // Escape (nothing typed in the chat): closes the chat first, keeping the
+    // focused tile; the next Escape un-focuses the tile.
     alice.unfocus().await.expect("blur");
     alice.key_combo("body", "Escape", false, false, false).await.expect("esc");
+    alice.wait_for_count(".voice-chat", 0, DEFAULT_WAIT).await.expect("the chat closes first");
+    assert_eq!(alice.count(".call-cards.focused").await.expect("count"), 1, "the first Escape un-focused the tile");
+    alice.key_combo("body", "Escape", false, false, false).await.expect("esc");
     alice.wait_for_count(".call-cards.focused", 0, DEFAULT_WAIT).await.expect("back to the grid");
-    assert_eq!(alice.count(".voice-chat").await.expect("count"), 1, "Escape closed the chat");
+    alice.click(".voice-chat-toggle").await.expect("reopen the chat");
+    alice.wait_for(".voice-chat .timeline", DEFAULT_WAIT).await.expect("chat back");
 
     // Window sizes: big, then small. The chat's width follows, the call keeps room.
     let pid = alice.pid().expect("pid");
