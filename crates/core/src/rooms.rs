@@ -141,6 +141,13 @@ impl RoomSummary {
                 .await
                 .into_iter()
                 .find_map(|hero| hero.avatar_url);
+            // Nobody's picture in the room: the partner's own (their profile's).
+            if avatar.is_none()
+                && let Some(user) = &dm_user
+            {
+                avatar = crate::media::global_avatar(&room.client(), user)
+                    .await;
+            }
         }
 
         Self {
