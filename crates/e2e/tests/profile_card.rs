@@ -939,3 +939,53 @@ async fn a_picture_gone_from_its_server_falls_back_to_the_persons_other_one() {
             .expect("card closed");
     }
 }
+
+/// While the card loads it does not claim "0 mutual servers": a skeleton of
+/// the same size holds the place (and the status line's) until the count is
+/// known (GPUI only).
+#[tokio::test]
+async fn the_card_shows_a_skeleton_not_zero_mutual_servers_while_loading() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch_with_env(&hs, &[("MORPHEUS_E2E_CARD_DELAY_MS", "2500")])
+        .await
+        .expect("launch");
+    if !app.is_gpui() {
+        return;
+    }
+    login_and_open(&mut app, "alice", "general").await;
+    open_card_for(&mut app, "bob").await;
+    let card = app
+        .text(".profile-card")
+        .await
+        .expect("text")
+        .unwrap_or_default();
+    assert!(!card.contains("0 mutual"), "the loading card says {card:?}");
+    let first = app
+        .bounds(".profile-card .mutual-servers")
+        .await
+        .expect("bounds")
+        .expect("the mutual servers place");
+    let status = app
+        .count(".profile-card .profile-status.skeleton")
+        .await
+        .expect("count");
+    assert_eq!(status, 1, "no skeleton for the status line while loading");
+    app.wait_for(
+        ".profile-card .mutual-servers:not(.skeleton)",
+        DEFAULT_WAIT * 2,
+    )
+    .await
+    .expect("the count arrives");
+    let after = app
+        .bounds(".profile-card .mutual-servers")
+        .await
+        .expect("bounds")
+        .expect("the mutual servers");
+    assert!(
+        (first.y - after.y).abs() < 0.5 && (first.h - after.h).abs() < 0.5,
+        "the line moved or changed size when the count arrived: {first:?} -> {after:?}"
+    );
+}

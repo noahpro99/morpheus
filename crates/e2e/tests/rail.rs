@@ -1045,21 +1045,37 @@ async fn rail_buttons_sink_while_pressed_and_come_back() {
     let dy = down.y - rest.y;
     assert!((1.0..=2.0).contains(&dy), "pressed: {dy} px lower, not 1-2");
     assert!(
-        (down.w - rest.w).abs() < 0.3 && (down.h - rest.h).abs() < 0.3 && (down.x - rest.x).abs() < 0.3,
+        (down.w - rest.w).abs() < 0.3
+            && (down.h - rest.h).abs() < 0.3
+            && (down.x - rest.x).abs() < 0.3,
         "pressed: {down:?} should keep the size and column of {rest:?}"
     );
 
     // The pointer leaving brings it back while the button is still down.
     app.hover(".rail-add").await.expect("move away");
     let back = settled_bounds(&mut app, ".rail-dms").await;
-    assert!((back.y - rest.y).abs() < 0.3, "back to {} after leaving, not {}", rest.y, back.y);
+    assert!(
+        (back.y - rest.y).abs() < 0.3,
+        "back to {} after leaving, not {}",
+        rest.y,
+        back.y
+    );
     app.release().await.expect("let go");
 
     // Pressing and releasing on it comes back too.
     app.drag_hold(".rail-dms", 0, 0).await.expect("press again");
     let down = settled_bounds(&mut app, ".rail-dms").await;
-    assert!(down.y - rest.y >= 1.0, "pressed again: {} px lower", down.y - rest.y);
+    assert!(
+        down.y - rest.y >= 1.0,
+        "pressed again: {} px lower",
+        down.y - rest.y
+    );
     app.release().await.expect("release");
     let back = settled_bounds(&mut app, ".rail-dms").await;
-    assert!((back.y - rest.y).abs() < 0.3, "back to {} after release, not {}", rest.y, back.y);
+    assert!(
+        (back.y - rest.y).abs() < 0.3,
+        "back to {} after release, not {}",
+        rest.y,
+        back.y
+    );
 }

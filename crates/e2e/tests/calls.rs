@@ -6085,7 +6085,9 @@ async fn the_call_controls_sink_while_pressed_and_come_back() {
     let dy = down.y - rest.y;
     assert!((1.0..=2.0).contains(&dy), "pressed: {dy} px lower, not 1-2");
     assert!(
-        (down.w - rest.w).abs() < 0.3 && (down.h - rest.h).abs() < 0.3 && (down.x - rest.x).abs() < 0.3,
+        (down.w - rest.w).abs() < 0.3
+            && (down.h - rest.h).abs() < 0.3
+            && (down.x - rest.x).abs() < 0.3,
         "pressed {down:?} should keep the size of {rest:?}"
     );
     alice
