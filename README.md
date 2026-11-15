@@ -1,46 +1,95 @@
 # Morpheus
 
-A Discord-shaped Matrix client, native in Rust.
+A Discord-shaped Matrix client, native in Rust. Rooms in spaces and folders,
+direct messages, threads, voice and video calls, end-to-end encryption, and
+Discord's keyboard shortcuts, on any Matrix homeserver.
 
-- **Core** (`crates/core`): matrix-rust-sdk, sessions, room list, timelines. No UI.
-- **UI** (`crates/ui`): shared Dioxus components and theme (phone and web apps). The desktop app draws its own UI with GPUI (`apps/desktop`, logic in `crates/view-model`).
-- **Apps** (`apps/desktop` GPUI, `apps/mobile` and `apps/web` Dioxus): thin binaries.
+| Where | App | Built with |
+| --- | --- | --- |
+| Linux, Windows, macOS | `apps/desktop` | [GPUI](https://www.gpui.rs) (GPU-drawn, no web view) |
+| Android, iOS | `apps/mobile` | Dioxus 0.7 |
+| Web (app.morpheuschat.org) | `apps/web` | Dioxus 0.7, WebAssembly |
 
-See [PLAN.md](PLAN.md) for the roadmap and architecture notes.
+## Features
 
-## Quick start (NixOS)
+- Rooms, spaces (servers) with channels and categories, folders on the rail, DMs, friends, invites.
+- Messages with Markdown, replies, edits, reactions, threads, pins, attachments, pictures and video, search, mentions and `:emoji:`.
+- Encrypted rooms: key backup, device verification (emoji and QR), shields.
+- Calls (MatrixRTC with LiveKit): voice channels, DM rings, camera, screen share, noise suppression (DeepFilterNet), mic test. Linux, Windows, macOS and Android.
+- Moderation tools, nicknames, per-server profiles, profile pictures with a crop view, password-locked chats, streamer mode, Vim mode, themes.
+- Desktop: a tray that keeps syncing and notifying with the window closed, autostart, in-place updates, `matrix:` links.
+- Phones: one pane at a time, swipes, UnifiedPush notifications, share target (Android).
+
+## Install
+
+Download the file for your system from the
+[releases page](https://github.com/noahpro99/morpheus/releases/latest):
+
+| System | File |
+| --- | --- |
+| Linux (x86-64) | `morpheus-<version>-linux-x86_64.zip`: unzip, run `morpheus-desktop` |
+| Windows | `morpheus-<version>-windows-x86_64.zip`: unzip, run `Morpheus.exe` |
+| macOS | `morpheus-<version>-macos-arm64.zip` (Apple silicon) or `-macos-x86_64.zip` (Intel): unzip, open `Morpheus.app` |
+| Android | `morpheus-<version>-android-arm64.apk` |
+| iPhone | `morpheus-<version>-ios-arm64-unsigned.ipa` (unsigned: sign and install it with your own tooling) |
+
+The desktop app updates itself in place from the releases. The web app needs
+no install. Releases are made as described in [docs/releasing.md](docs/releasing.md).
+
+## Build from source
+
+The repository is a Cargo workspace; on NixOS or with Nix, `direnv allow` (or
+`nix develop`) gives the shell with every library and tool. Commands are in the `justfile`
+(`just` lists them):
 
 ```sh
-direnv allow            # or: nix develop
-just hs-up              # local Synapse on http://localhost:8008
-just hs-seed            # users alice/bob/carol + rooms with history
 just desktop            # cargo run -p morpheus-desktop
+just desktop-as bob     # a second profile (own data dir under .dev-data), to talk to yourself
+just desktop-release    # release build
+just web                # the web app at http://localhost:8080 (nix develop .#web)
+just android            # run on a plugged-in phone (nix develop .#android)
+just android-virtual    # run on the emulator (just android-avd, just android-emulator first)
 ```
 
-Log in with `alice` / `alice-password`. Open a second window as another user
-with `just desktop-as bob` to watch messages and typing flow between them.
+Elsewhere you need a recent stable Rust (`rust-toolchain.toml`), and the
+GUI, audio and WebRTC libraries listed in `flake.nix` and `.github/workflows/linux.yml`.
+iOS needs a Mac (`apple.yml` builds it in CI).
 
-Shortcuts: `Ctrl+K` jumps to a room, `Enter` sends, `Esc` cancels a reply or edit.
-Hover a message for reactions, reply, edit and delete.
+## The dev homeserver
+
+Tests and manual runs use a local Synapse (with LiveKit and its token service)
+in Docker, in `dev/homeserver`:
+
+```sh
+just hs-up      # start it on http://localhost:8008 (first run generates its config)
+just hs-seed    # users alice, bob, carol (name-password, alice is admin) and rooms with history
+just hs-down    # stop it; just hs-logs tails it
+```
+
+Log in to the desktop app with `alice` / `alice-password` and the homeserver
+`http://localhost:8008`. `just hs-user dave secret` adds a user and
+`just hs-reset` destroys the server and all its data.
 
 ## Testing
 
-| Command          | What it does                                                     |
-| ---------------- | ---------------------------------------------------------------- |
-| `just check`     | type-check all crates                                            |
-| `just test`      | unit tests                                                       |
-| `just test-live` | logs in to the local Synapse, syncs rooms, reads and sends       |
-| `just e2e`       | Playwright-style tests that drive the real desktop app, headless  |
-| `just lint`      | clippy, warnings are errors                                      |
-| `just ci`        | fmt + lint + test                                                |
+| Command | What it does |
+| --- | --- |
+| `just check` | type-check the workspace |
+| `just test` | unit tests (`crates/view-model`, core, ...); live tests skip without a homeserver |
+| `just test-live` | core against the local Synapse: log in, sync, read and send |
+| `just e2e` | the desktop e2e tests, headless; `just e2e <file> [test]` for one file or test |
+| `just e2e-display` | the same in real windows on the hidden Hyprland test monitor (pixel checks too) |
+| `just e2e-one <file>` | one file with per-step timings |
+| `just e2e-web`, `just e2e-android` | the same tests against the web app (headless Chromium) or the emulator |
+| `just lint`, `just fmt`, `just ci` | clippy with warnings as errors, rustfmt, all of them |
 
-The live test is the fastest way to verify core changes without a GUI.
+### End-to-end tests
 
-### End-to-end UI tests
-
-`just e2e [file [test]]` builds the desktop (GPUI) app with the `e2e` feature, which opens a
-loopback control socket inside the app answering selector requests (the phone and web apps
-evaluate JavaScript in their page instead). The `morpheus-e2e` crate wraps it in a small driver:
+`crates/e2e` holds the tests (`crates/e2e/tests/<feature>.rs`) and a small
+Playwright-style driver. `just e2e` builds the desktop app with the `e2e`
+feature as its own binary, `morpheus-desktop-e2e`, which opens a loopback
+control socket answering selector requests (the phone and web apps evaluate
+JavaScript in their page instead):
 
 ```rust
 let mut app = App::launch(&homeserver).await?;
@@ -49,48 +98,33 @@ app.type_into("form.login input[type=text]", "alice").await?;
 app.submit("form.login").await?;
 app.click_text(".room", "dev").await?;
 app.wait_for_text(".message .body", "sliding sync is working", DEFAULT_WAIT).await?;
-app.screenshot("chat").await?; // target/e2e/chat.png on Hyprland
 ```
 
-Each test gets a fresh data directory and its own app process. Set
-`MORPHEUS_E2E_KEEP=1` to keep the data dir and `app.log` after a failure.
-Test windows are titled "Morpheus (test)" and open unfocused; on Hyprland the driver also adds
-`nofocus` rules for that title so keystrokes never land in them mid-run (undo with a config reload).
+- **Headless** (`just e2e`, the default): the app runs on gpui's headless
+  platform (offscreen windows with real layout and input, no pixels), so it
+  works with the screen locked, over SSH and in CI
+  (`.github/workflows/e2e-headless.yml`). A check that needs real pixels or a
+  window manager prints `SKIPPED (needs a display)` and is counted at the end.
+- **With a display** (`just e2e-display`): real windows, titled "Morpheus (test)", on the hidden Hyprland
+  monitor, unfocused (the driver adds `nofocus` rules for that title; undo with a config reload).
+  `app.screenshot("name")` writes `target/e2e/name.png` there.
+- Each test gets a fresh data directory and its own app process; `MORPHEUS_E2E_KEEP=1` keeps the
+  data dir and `app.log` after a failure. `MORPHEUS_E2E_TIMINGS=1` prints how long every wait took.
+- `just e2e` seeds the homeserver first (`just hs-seed` is idempotent). Tests that change a test
+  user's profile restore it (`ProfileGuard`).
+- Write the failing test first, run single tests, and run the whole suite only at milestones.
 
-`just e2e` (the same as `just e2e-headless`) runs the tests with no display server: the app runs on
-gpui's headless platform (offscreen windows with real layout and input, no pixels), so it works
-with the screen locked, over SSH and in CI (`.github/workflows/e2e-headless.yml`). Checks that
-need real pixels or a window manager print `SKIPPED (needs a display)` and are counted at the
-end; run those files with `just e2e-display` (the hidden Hyprland monitor).
+## Documentation
 
-Run one file at a time with `just e2e-one <file>` (for example `just e2e-one perf`).
-`just e2e` and `just e2e-one` reseed the homeserver first (`just hs-seed` is idempotent and
-puts kicked or banned test users back into `#moderation`).
+- [docs/GPUI_PORT.md](docs/GPUI_PORT.md): the desktop app's layout, how tests are the spec, rules for agents and contributors, gotchas.
+- [docs/gpui-port-history.md](docs/gpui-port-history.md): how the desktop port went, task by task.
+- [docs/PLAN.md](docs/PLAN.md): the original plan and architecture, with what is done marked.
+- [docs/releasing.md](docs/releasing.md): the release flow. [docs/releases/](docs/releases/): release notes.
+- [SECURITY.md](SECURITY.md): reporting a security problem.
 
-E2E files map to features: `chat`, `spaces`, `features`, `interactions`, `attachments`, `threads`,
-`new_messages_marker`, `settings`, `perf`, `layout`, `scrolling`, `context_menu`, `account`,
-`moderation`, `message_menu`, `room_menu`, `hotkeys`, `space_menu`, `profile_card`, `rail`,
-`titlebar`, `invites`, `notifications`, `autocomplete`, `toasts`, `focus`, `tray`, `mobile_layout`
-(the phone layout, driven on the desktop build inside a phone-sized box).
-
-Keyboard shortcuts follow Discord's defaults; press Ctrl+/ in the app for the list.
-With `MORPHEUS_E2E_TIMINGS=1` the driver prints how long every wait took, and
-the core logs any operation slower than 750 ms with its call site, so slow
-spots show up in both the test output and the app log.
-
-## Mobile
-
-```sh
-nix develop .#android
-just android
-```
-
-Builds and runs on a connected device or a running emulator. iOS requires a Mac.
-
-`just android-check` type-checks the mobile crate for `aarch64-linux-android` without a
-device. The mobile app is the same shell as the desktop one: on a phone-width window it
-shows one pane at a time (rooms, chat, members or thread) with back buttons, which
-`just e2e-one mobile_layout` used to drive the Dioxus desktop build inside a phone-sized box (that app is gone; the test needs the phone or web app).
+The crates: `crates/core` (matrix-rust-sdk: sessions, room list, timelines, no UI), `crates/view-model`
+(the logic behind the screens, no UI toolkit), `crates/call` (calls, audio, noise suppression, screen
+capture), `crates/ui` (shared Dioxus components for phone and web), `crates/video`, `crates/e2e`.
 
 ## Storage
 
