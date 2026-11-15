@@ -736,6 +736,11 @@ impl Shell {
             ConfirmAction::SignOut => cx.emit(crate::shell::AccountEvent::SignOut),
             ConfirmAction::OpenRoom(room) => {
                 self.ask_skipped |= std::mem::take(&mut self.ask_tick);
+                if let Some(scope) = self.ask_scope.take()
+                    && scope != self.scope
+                {
+                    self.set_scope(scope, cx);
+                }
                 self.open_room_now(room, cx);
             }
         }

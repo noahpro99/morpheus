@@ -378,13 +378,7 @@ impl crate::shell::Shell {
             match event {
                 SwitcherEvent::Room(id) => {
                     // Scope first, so the sidebar follows the room.
-                    if let Some(room) = this.rooms.iter().find(|r| &r.id == id) {
-                        let scope = crate::model::scope_for(&this.rooms, room);
-                        if scope != this.scope {
-                            this.set_scope(scope, cx);
-                        }
-                    }
-                    this.open_room(id.clone(), cx);
+                    this.open_room_in_scope(id.clone(), cx);
                 }
                 SwitcherEvent::Action(Action::Settings) => {
                     this.open_settings(crate::view_model::keys::SettingsFocus::None, cx)

@@ -413,9 +413,9 @@ impl Shell {
             return;
         };
         let scope = all[next].clone();
-        self.set_scope(scope.clone(), cx);
-        if let Some(first) = crate::room_list::sidebar_order(self, &scope).first() {
-            self.open_room(first.id.clone(), cx);
+        match crate::room_list::sidebar_order(self, &scope).first().map(|first| first.id.clone()) {
+            Some(first) => self.open_room_in(scope, first, cx),
+            None => self.set_scope(scope, cx),
         }
     }
 
@@ -431,11 +431,14 @@ impl Shell {
             self.last_server = self.scope.clone();
             Scope::Dms
         };
-        self.set_scope(target.clone(), cx);
-        if let Some(room) = self.last_room_in.get(&target).cloned()
-            && rooms_in_scope(&self.rooms, &target).iter().any(|r| r.id == room)
-        {
-            self.open_room(room, cx);
+        let room = self
+            .last_room_in
+            .get(&target)
+            .cloned()
+            .filter(|room| rooms_in_scope(&self.rooms, &target).iter().any(|r| r.id == *room));
+        match room {
+            Some(room) => self.open_room_in(target, room, cx),
+            None => self.set_scope(target, cx),
         }
     }
 
@@ -452,10 +455,7 @@ impl Shell {
             .and_then(|id| all.iter().position(|r| &r.id == id));
         if let Some(room) = hotkeys::step_room(&candidates, current, forward).and_then(|i| all.get(i)) {
             let scope = crate::model::scope_for(&self.rooms, room);
-            if scope != self.scope {
-                self.set_scope(scope, cx);
-            }
-            self.open_room(room.id.clone(), cx);
+            self.open_room_in(scope, room.id.clone(), cx);
         }
     }
 

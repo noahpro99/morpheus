@@ -64,13 +64,10 @@ impl Shell {
 
     /// Open `room_id` where it lives: its server (or the DMs, Rooms), then the room.
     pub fn open_room_in_scope(&mut self, room_id: OwnedRoomId, cx: &mut Context<Self>) {
-        if let Some(room) = self.rooms.iter().find(|r| r.id == room_id) {
-            let scope = scope_for(&self.rooms, room);
-            if scope != self.scope {
-                self.set_scope(scope, cx);
-            }
+        match self.rooms.iter().find(|r| r.id == room_id).map(|room| scope_for(&self.rooms, room)) {
+            Some(scope) => self.open_room_in(scope, room_id, cx),
+            None => self.open_room(room_id, cx),
         }
-        self.open_room(room_id, cx);
     }
 
     fn preview_room(&mut self, room: morpheus_core::LinkedRoom, via: Vec<String>, cx: &mut Context<Self>) {

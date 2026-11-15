@@ -26,13 +26,7 @@ impl Shell {
         let Some(room_id) = self.nav.step(step) else {
             return;
         };
-        if let Some(room) = self.rooms.iter().find(|r| r.id == room_id) {
-            let scope = scope_for(&self.rooms, room);
-            if scope != self.scope {
-                self.set_scope(scope, cx);
-            }
-        }
-        self.open_room(room_id, cx);
+        self.open_room_in_scope(room_id, cx);
     }
 
     /// The help button and Ctrl+/: the shortcuts dialog, open or closed.

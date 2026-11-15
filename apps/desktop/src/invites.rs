@@ -126,8 +126,7 @@ impl Shell {
     /// Opens a room from the inbox, in the scope that lists it.
     fn open_from_inbox(&mut self, room: &RoomSummary, cx: &mut Context<Self>) {
         let scope = crate::model::scope_for(&self.rooms, room);
-        self.set_scope(scope, cx);
-        self.open_room(room.id.clone(), cx);
+        self.open_room_in(scope, room.id.clone(), cx);
         self.close_inbox(cx);
     }
 }

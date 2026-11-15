@@ -197,6 +197,8 @@ pub struct Shell {
     /// The "don't ask again during this share" tick of the open-channel question, and
     /// whether it was ticked for the share going on.
     pub ask_tick: bool,
+    /// The rail entry to show when the open-channel question is answered Open.
+    pub ask_scope: Option<Scope>,
     pub ask_skipped: bool,
     pub inbox_focus: Option<FocusHandle>,
     pub inbox_take_focus: bool,
@@ -416,6 +418,7 @@ impl Shell {
             inbox_open: false,
             vim_pending: None,
             ask_tick: false,
+            ask_scope: None,
             ask_skipped: false,
             inbox_focus: None,
             inbox_take_focus: false,
@@ -601,10 +604,10 @@ impl Shell {
     /// A direct message that was just made is opened once the room list has
     /// it (before that it would have no name).
     fn open_dm_when_listed(&mut self, id: OwnedRoomId, cx: &mut Context<Self>) {
-        self.set_scope(Scope::Dms, cx);
         if self.rooms.iter().any(|room| room.id == id) {
-            self.open_room(id, cx);
+            self.open_room_in(Scope::Dms, id, cx);
         } else {
+            self.set_scope(Scope::Dms, cx);
             self.pending_dm = Some(id);
         }
     }
@@ -747,7 +750,6 @@ impl Shell {
     /// the sidebar lists (not a voice channel: a click on that joins its call);
     /// the other lists only change.
     pub fn pick_scope(&mut self, scope: Scope, cx: &mut Context<Self>) {
-        self.set_scope(scope.clone(), cx);
         let remembered = self.last_room_in.get(&scope).cloned().filter(|room| {
             crate::model::rooms_in_scope(&self.rooms, &scope)
                 .iter()
@@ -760,10 +762,9 @@ impl Shell {
                 .map(|r| r.id),
             _ => None,
         });
-        if let Some(room) = target
-            && self.selected.as_ref() != Some(&room)
-        {
-            self.open_room_now(room, cx);
+        match target {
+            Some(room) if self.selected.as_ref() != Some(&room) => self.open_room_in(scope, room, cx),
+            _ => self.set_scope(scope, cx),
         }
     }
 

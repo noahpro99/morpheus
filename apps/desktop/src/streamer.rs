@@ -103,9 +103,23 @@ impl Shell {
     /// Show a room the person asked for: while the screen is shared (and
     /// asking is on) the question comes first, as Discord's streamer mode.
     pub fn open_room(&mut self, id: OwnedRoomId, cx: &mut Context<Self>) {
+        self.go_to(None, id, cx)
+    }
+
+    /// [`Self::open_room`] in `scope` (the rail entry that lists the room): the
+    /// one gate every way to another room goes through, so the question comes
+    /// before anything changes, the list included.
+    pub fn open_room_in(&mut self, scope: crate::model::Scope, id: OwnedRoomId, cx: &mut Context<Self>) {
+        self.go_to(Some(scope), id, cx)
+    }
+
+    pub(crate) fn go_to(&mut self, scope: Option<crate::model::Scope>, id: OwnedRoomId, cx: &mut Context<Self>) {
         let asking = sharing() && settings().ask && !self.ask_skipped && self.selected.as_ref() != Some(&id);
         let room = self.rooms.iter().find(|room| room.id == id && !room.invited);
         let Some(room) = room.filter(|_| asking) else {
+            if let Some(scope) = scope.filter(|scope| *scope != self.scope) {
+                self.set_scope(scope, cx);
+            }
             return self.open_room_now(id, cx);
         };
         let shown = if room.is_dm {
@@ -115,6 +129,7 @@ impl Shell {
         };
         let body = open_question(&shown, room.is_dm);
         self.ask_tick = false;
+        self.ask_scope = scope;
         let confirm = Confirm { title: "Open channel".into(), body, confirm: "Open".into() };
         self.dialog_open(Dialog::Confirm(confirm, ConfirmAction::OpenRoom(id)), cx);
     }

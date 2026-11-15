@@ -43,8 +43,7 @@ impl Shell {
             }
             ProfileEvent::OpenDm(room) => {
                 this.card = None;
-                this.set_scope(Scope::Dms, cx);
-                this.open_room(room.clone(), cx);
+                this.open_room_in(Scope::Dms, room.clone(), cx);
             }
             ProfileEvent::Copied(link) => {
                 cx.write_to_clipboard(gpui::ClipboardItem::new_string(link.clone()));
