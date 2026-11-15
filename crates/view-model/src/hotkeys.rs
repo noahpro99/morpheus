@@ -205,6 +205,39 @@ pub const GROUPS: &[(&str, &[(&str, &str)])] = &[
     ),
 ];
 
+/// The vim keys, for the shortcuts dialog (greyed out while vim mode is off).
+pub const VIM_GROUPS: &[(&str, &[(&str, &str)])] = &[
+    (
+        "Vim: message box",
+        &[
+            ("Esc", "Normal mode (from insert); Enter then sends"),
+            ("i a I A o O", "Insert mode: before, after, line start, line end, new line"),
+            ("h j k l", "Move left, down, up, right"),
+            ("w b e", "Next word, previous word, end of word"),
+            ("0 ^ $", "Start of line, first character, end of line"),
+            ("gg G", "First line, last line"),
+            ("f t F T ; ,", "Find a character on the line, repeat it, reverse it"),
+            ("x X D C", "Delete a character, the one before, to line end (C: and insert)"),
+            ("dd cc yy", "Delete, change or copy the line (d c y also take a motion)"),
+            ("p P", "Paste after, before"),
+            ("u Ctrl+R", "Undo, redo"),
+            ("v", "Visual mode: select, then d y c"),
+            (".", "Repeat the last change"),
+        ],
+    ),
+    (
+        "Vim: messages (no box focused)",
+        &[
+            ("j k", "Select the next, previous message"),
+            ("r e", "Reply to, edit the selected message"),
+            ("dd", "Delete the selected message"),
+            ("+ y o", "React, copy, open the thread"),
+            ("/", "Search this room"),
+            ("i", "Back to the message box"),
+        ],
+    ),
+];
+
 #[cfg(test)]
 mod tests {
     use super::*;

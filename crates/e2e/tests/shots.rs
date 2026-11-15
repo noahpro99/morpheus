@@ -264,6 +264,7 @@ async fn invite_card_and_inbox() {
     let _ = room;
     let mut app = App::launch_sized(&hs, 1200, 760).await.expect("launch");
     login(&mut app, "bob").await;
+    app.click(".rail-dms").await.expect("DMs");
     app.wait_for(".invite-row", DEFAULT_WAIT).await.expect("invite");
     app.click_text(".invite-row", &name).await.expect("open");
     app.wait_for(".invite-card", DEFAULT_WAIT).await.expect("card");

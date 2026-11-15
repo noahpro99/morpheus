@@ -313,3 +313,61 @@ async fn turning_vim_mode_off_restores_ordinary_typing() {
     assert_eq!(app.count(".message.vim-selected").await.expect("count"), 0);
     app.type_into(INPUT, "").await.expect("clear");
 }
+
+/// The shortcuts dialog lists the vim keys, greyed out while vim mode is off,
+/// and has the Vim mode switch at its bottom: flipping it there turns vim mode
+/// on for the message box (and back off).
+#[tokio::test]
+async fn the_shortcuts_dialog_lists_the_vim_keys_with_a_switch() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let Some(mut app) = start(&hs).await else { return };
+    app.key_combo("body", "/", true, false, false).await.expect("ctrl+/");
+    app.wait_for(".help-dialog", DEFAULT_WAIT).await.expect("shortcuts dialog");
+
+    // Bigger than before, and still inside the window.
+    let window = app.bounds("body").await.expect("body").expect("a window");
+    let dialog = app.bounds(".help-dialog").await.expect("b").expect("a dialog");
+    assert!(dialog.w >= 800.0, "the dialog is too narrow: {dialog:?}");
+    assert!(dialog.h >= f64::min(600.0, window.h - 40.0), "the dialog is too short: {dialog:?}");
+    assert!(dialog.bottom() <= window.h, "the dialog does not fit: {dialog:?} in {window:?}");
+
+    // The vim keys are listed (the message box's and the messages'), off.
+    app.wait_for(".help-dialog .vim-keys.off .help-row", DEFAULT_WAIT).await.expect("vim keys, greyed");
+    assert_eq!(app.count(".help-dialog .vim-keys.on").await.expect("count"), 0);
+    let rows = app.texts(".help-dialog .vim-keys .help-row").await.expect("rows");
+    assert!(rows.len() >= 10, "vim rows: {rows:?}");
+    for want in ["dd", "gg", "Ctrl+R"] {
+        assert!(rows.iter().any(|r| r.contains(want)), "no vim row for {want}: {rows:?}");
+    }
+    // The switch is below the list and off.
+    let sw = ".help-dialog input[name=help-vim-mode]";
+    assert!(!app.checked(sw).await.expect("checked")[0], "off by default");
+    let switch = app.bounds(sw).await.expect("b").expect("the switch");
+    assert!(
+        switch.y > dialog.bottom() - 90.0 && switch.bottom() <= dialog.bottom(),
+        "the switch is not at the bottom: {switch:?} in {dialog:?}"
+    );
+
+    // Turning it on lights the keys up, and the message box is modal.
+    app.click(sw).await.expect("flip");
+    app.wait_for(".help-dialog .vim-keys.on .help-row", DEFAULT_WAIT).await.expect("keys no longer greyed");
+    assert_eq!(app.count(".help-dialog .vim-keys.off").await.expect("count"), 0);
+    assert!(app.checked(sw).await.expect("checked")[0], "now on");
+    app.press("body", "Escape").await.expect("close");
+    app.wait_for_count(".help-dialog", 0, DEFAULT_WAIT).await.expect("closed");
+    app.click(INPUT).await.expect("focus the box");
+    app.wait_for_text(MODE, "INSERT", DEFAULT_WAIT).await.expect("vim mode is on in the box");
+
+    // And off again from the dialog.
+    leave_box(&mut app).await;
+    app.key_combo("body", "/", true, false, false).await.expect("ctrl+/");
+    app.wait_for(".help-dialog .vim-keys.on", DEFAULT_WAIT).await.expect("open again");
+    app.click(sw).await.expect("flip back");
+    app.wait_for(".help-dialog .vim-keys.off", DEFAULT_WAIT).await.expect("greyed again");
+    app.press("body", "Escape").await.expect("close");
+    app.click(INPUT).await.expect("focus the box");
+    assert_eq!(app.count(MODE).await.expect("count"), 0, "no mode shown while off");
+}
