@@ -660,3 +660,60 @@ async fn clicking_the_id_on_the_full_profile_copies_the_link() {
     // It stays open: only the link was copied.
     assert_eq!(app.count(".profile-modal").await.expect("modal"), 1);
 }
+
+/// The banner's colour as `[r, g, b]`, from its `data-bg` ("" without a picture).
+async fn banner_colour(app: &mut App) -> Option<[i32; 3]> {
+    let bg = app
+        .attr(".profile-card .profile-banner", "data-bg")
+        .await
+        .expect("attr")
+        .unwrap_or_default();
+    let bg = bg.trim_start_matches('#');
+    if bg.len() != 6 {
+        return None;
+    }
+    let n = i32::from_str_radix(bg, 16).ok()?;
+    Some([(n >> 16) & 255, (n >> 8) & 255, n & 255])
+}
+
+#[tokio::test]
+async fn the_banner_takes_the_colour_of_the_picture() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let red = new_account(&hs, "bannerred").expect("account");
+    let plain = new_account(&hs, "bannerplain").expect("account");
+    for user in [&red, &plain] {
+        admin_join(&hs, user, "#general:localhost").expect("join general");
+    }
+    let mut png = std::io::Cursor::new(Vec::new());
+    image::RgbaImage::from_pixel(64, 64, image::Rgba([230, 20, 20, 255]))
+        .write_to(&mut png, image::ImageFormat::Png)
+        .expect("png");
+    morpheus_e2e::set_avatar_as(&hs, &red, &png.into_inner()).expect("picture");
+
+    let mut app = App::launch_desktop(&hs).await.expect("launch app");
+    login_and_open(&mut app, "alice", "general").await;
+    app.wait_for_text(".members .member", &plain, DEFAULT_WAIT)
+        .await
+        .expect("listed");
+
+    // Without a picture the banner keeps its usual colour (no averaged one).
+    open_card_for(&mut app, &plain).await;
+    assert_eq!(banner_colour(&mut app).await, None, "no picture, no averaged colour");
+    app.press(".profile-card", "Escape").await.expect("close");
+    app.wait_for_count(".profile-card", 0, DEFAULT_WAIT).await.expect("closed");
+
+    // With one, the banner is that picture's colour, darkened: red stays red.
+    open_card_for(&mut app, &red).await;
+    let started = std::time::Instant::now();
+    loop {
+        if let Some([r, g, b]) = banner_colour(&mut app).await {
+            assert!(r > g + 30 && r > b + 30, "a red picture gives a reddish banner, not {r},{g},{b}");
+            break;
+        }
+        assert!(started.elapsed() < DEFAULT_WAIT, "the banner never took the picture's colour");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}

@@ -284,7 +284,7 @@ impl ProfileCard {
             let fetching = session.thumbnail(media.clone(), size, size);
             let fetched_media = media.clone();
             cx.spawn(async move |this, cx| {
-                let image = fetching.await.ok().flatten().and_then(|bytes| media::decode(&bytes));
+                let image = fetching.await.ok().flatten().and_then(|bytes| media::decode_avatar(&bytes));
                 this.update(cx, |this, cx| {
                     this.images.finish(&fetched_media, size, image);
                     cx.notify();
@@ -406,6 +406,7 @@ impl Render for ProfileCard {
             app,
         );
 
+        let tint = picture.as_ref().and_then(|image| media::card_color_of(image));
         let banner = div()
             .relative()
             .h(px(64.0))
@@ -413,11 +414,14 @@ impl Render for ProfileCard {
             .rounded_tr(px(theme::RADIUS_XL - 1.0))
             .w_full()
             .flex_none()
-            .bg(linear_gradient(
-                135.0,
-                linear_color_stop(rgb(theme::accent_strong()), 0.0),
-                linear_color_stop(rgb(0x2d3a9e), 1.0),
-            ))
+            .when_some(tint, |d, color| d.bg(rgb(color)))
+            .when(tint.is_none(), |d| {
+                d.bg(linear_gradient(
+                    135.0,
+                    linear_color_stop(rgb(theme::accent_strong()), 0.0),
+                    linear_color_stop(rgb(0x2d3a9e), 1.0),
+                ))
+            })
             .child(
                 div()
                     .absolute()
@@ -462,7 +466,8 @@ impl Render for ProfileCard {
                     )
                     .e2e("div", "card-actions"),
             )
-            .e2e("div", "profile-banner");
+            .e2e("div", "profile-banner")
+            .attr("data-bg", tint.map(|c| format!("{c:06x}")).unwrap_or_default());
 
         let mut body = div()
             .flex()
@@ -711,6 +716,7 @@ impl ProfileCard {
     fn render_full(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let name = crate::streamer::name(&self.name());
         let picture = self.picture(160, cx);
+        let tint = picture.as_ref().and_then(|image| media::card_color_of(image));
         let top = 0.15 * f32::from(window.viewport_size().height);
         let mut body = div()
             .flex()
@@ -856,12 +862,16 @@ impl ProfileCard {
                             .flex_none()
                             .rounded_tl(px(theme::RADIUS_XL))
                             .rounded_tr(px(theme::RADIUS_XL))
-                            .bg(linear_gradient(
-                                135.0,
-                                linear_color_stop(rgb(theme::accent_strong()), 0.0),
-                                linear_color_stop(rgb(0x2d3a9e), 1.0),
-                            ))
-                            .e2e("div", "profile-banner"),
+                            .when_some(tint, |d, color| d.bg(rgb(color)))
+                            .when(tint.is_none(), |d| {
+                                d.bg(linear_gradient(
+                                    135.0,
+                                    linear_color_stop(rgb(theme::accent_strong()), 0.0),
+                                    linear_color_stop(rgb(0x2d3a9e), 1.0),
+                                ))
+                            })
+                            .e2e("div", "profile-banner")
+                            .attr("data-bg", tint.map(|c| format!("{c:06x}")).unwrap_or_default()),
                     )
                     .child(body.e2e("div", "profile-body")),
             )
