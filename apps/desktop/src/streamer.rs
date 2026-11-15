@@ -55,12 +55,20 @@ pub fn active() -> bool {
 
 /// A person's name as it may be shown.
 pub fn name(name: &str) -> String {
-    if active() && settings().names { mask_name(name) } else { name.to_owned() }
+    if active() && settings().names {
+        mask_name(name)
+    } else {
+        name.to_owned()
+    }
 }
 
 /// An ID, e-mail address, phone number or link as it may be shown.
 pub fn id(id: &str) -> String {
-    if active() && settings().ids { mask_id(id) } else { id.to_owned() }
+    if active() && settings().ids {
+        mask_id(id)
+    } else {
+        id.to_owned()
+    }
 }
 
 /// Whether notifications give nothing away.
@@ -109,13 +117,27 @@ impl Shell {
     /// [`Self::open_room`] in `scope` (the rail entry that lists the room): the
     /// one gate every way to another room goes through, so the question comes
     /// before anything changes, the list included.
-    pub fn open_room_in(&mut self, scope: crate::model::Scope, id: OwnedRoomId, cx: &mut Context<Self>) {
+    pub fn open_room_in(
+        &mut self,
+        scope: crate::model::Scope,
+        id: OwnedRoomId,
+        cx: &mut Context<Self>,
+    ) {
         self.go_to(Some(scope), id, cx)
     }
 
-    pub(crate) fn go_to(&mut self, scope: Option<crate::model::Scope>, id: OwnedRoomId, cx: &mut Context<Self>) {
-        let asking = sharing() && settings().ask && !self.ask_skipped && self.selected.as_ref() != Some(&id);
-        let room = self.rooms.iter().find(|room| room.id == id && !room.invited);
+    pub(crate) fn go_to(
+        &mut self,
+        scope: Option<crate::model::Scope>,
+        id: OwnedRoomId,
+        cx: &mut Context<Self>,
+    ) {
+        let asking =
+            sharing() && settings().ask && !self.ask_skipped && self.selected.as_ref() != Some(&id);
+        let room = self
+            .rooms
+            .iter()
+            .find(|room| room.id == id && !room.invited);
         let Some(room) = room.filter(|_| asking) else {
             if let Some(scope) = scope.filter(|scope| *scope != self.scope) {
                 self.set_scope(scope, cx);
@@ -123,20 +145,30 @@ impl Shell {
             return self.open_room_now(id, cx);
         };
         let shown = if room.is_dm {
-            name(&crate::view_model::nicknames::room_title(&self.nicknames, room))
+            name(&crate::view_model::nicknames::room_title(
+                &self.nicknames,
+                room,
+            ))
         } else {
             room.name.clone()
         };
         let body = open_question(&shown, room.is_dm);
         self.ask_tick = false;
         self.ask_scope = scope;
-        let confirm = Confirm { title: "Open channel".into(), body, confirm: "Open".into() };
+        let confirm = Confirm {
+            title: "Open channel".into(),
+            body,
+            confirm: "Open".into(),
+        };
         self.dialog_open(Dialog::Confirm(confirm, ConfirmAction::OpenRoom(id)), cx);
     }
 }
 
 /// A room's title as it may be shown: a direct message is named for a person.
-pub fn room_title(nicknames: &crate::view_model::nicknames::NickMap, room: &morpheus_core::RoomSummary) -> String {
+pub fn room_title(
+    nicknames: &crate::view_model::nicknames::NickMap,
+    room: &morpheus_core::RoomSummary,
+) -> String {
     let title = crate::view_model::nicknames::room_title(nicknames, room);
     if room.is_dm { name(&title) } else { title }
 }
@@ -144,20 +176,34 @@ pub fn room_title(nicknames: &crate::view_model::nicknames::NickMap, room: &morp
 /// A state line ("bob joined the room") as it may be shown: `who`, the name
 /// it starts with (an ID when the person has no name), swapped for its mask.
 pub fn state_line(text: &str, who: Option<&str>) -> String {
-    let Some(who) = who else { return text.to_owned() };
-    let shown = if who.starts_with('@') && who.contains(':') { id_or_name(who) } else { name(who) };
+    let Some(who) = who else {
+        return text.to_owned();
+    };
+    let shown = if who.starts_with('@') && who.contains(':') {
+        id_or_name(who)
+    } else {
+        name(who)
+    };
     crate::view_model::streamer::swap_who(text, who, &shown)
 }
 
 /// An ID standing where a name would be: it is both an ID and a person.
 fn id_or_name(user: &str) -> String {
-    if active() && settings().ids { mask_id(user) } else { name(user) }
+    if active() && settings().ids {
+        mask_id(user)
+    } else {
+        name(user)
+    }
 }
 
 /// A message's blocks as they may be shown: the person pills in them masked.
-pub fn pills(blocks: &[crate::view_model::rich::Block]) -> std::borrow::Cow<'_, [crate::view_model::rich::Block]> {
+pub fn pills(
+    blocks: &[crate::view_model::rich::Block],
+) -> std::borrow::Cow<'_, [crate::view_model::rich::Block]> {
     if active() && settings().names {
-        std::borrow::Cow::Owned(crate::view_model::streamer::mask_pills(blocks, &|n| mask_name(n.trim_start_matches('@'))))
+        std::borrow::Cow::Owned(crate::view_model::streamer::mask_pills(blocks, &|n| {
+            mask_name(n.trim_start_matches('@'))
+        }))
     } else {
         std::borrow::Cow::Borrowed(blocks)
     }

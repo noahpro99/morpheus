@@ -1,7 +1,9 @@
 //! The Acknowledgements dialog (`crates/ui/src/components/about.rs`),
 //! opened from the tray menu.
 
-use gpui::{AnyElement, Context, FocusHandle, FontWeight, SharedString, Window, div, prelude::*, px, rgb};
+use gpui::{
+    AnyElement, Context, FocusHandle, FontWeight, SharedString, Window, div, prelude::*, px, rgb,
+};
 
 use crate::{
     dialogs::{dialog_box, heading, muted, overlay},

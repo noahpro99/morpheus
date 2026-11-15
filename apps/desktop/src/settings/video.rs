@@ -47,10 +47,19 @@ impl SettingsView {
             .child(label)
             .e2e("button", class)
             .text(label);
-        let mut preview = div().flex().flex_col().gap(px(10.0)).items_start().child(button);
+        let mut preview = div()
+            .flex()
+            .flex_col()
+            .gap(px(10.0))
+            .items_start()
+            .child(button);
         if let Some((_, frame)) = &self.preview {
             let (w, h) = frame.read(cx).dim;
-            let ratio = if w > 0 && h > 0 { h as f32 / w as f32 } else { 9.0 / 16.0 };
+            let ratio = if w > 0 && h > 0 {
+                h as f32 / w as f32
+            } else {
+                9.0 / 16.0
+            };
             preview = preview.child(
                 div()
                     .relative()
@@ -84,8 +93,14 @@ impl SettingsView {
             .attr("data-camera", device)
             .attr("data-state", if running { "on" } else { "off" })
             .into_any_element();
-        section_classed("Video", "video-preview", vec![body, note], self.hl("video-preview"), "voice-video")
-            .into_any_element()
+        section_classed(
+            "Video",
+            "video-preview",
+            vec![body, note],
+            self.hl("video-preview"),
+            "voice-video",
+        )
+        .into_any_element()
     }
 
     /// Test Video: open the camera and show it.
@@ -139,7 +154,9 @@ impl SettingsView {
         let watch = self.preview_watch;
         cx.spawn(async move |this, cx| {
             loop {
-                cx.background_executor().timer(Duration::from_millis(250)).await;
+                cx.background_executor()
+                    .timer(Duration::from_millis(250))
+                    .await;
                 let Ok(going) = this.update(cx, |this, cx| {
                     if this.preview_watch != watch {
                         return false;

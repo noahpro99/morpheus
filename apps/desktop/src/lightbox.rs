@@ -9,9 +9,8 @@ use std::sync::Arc;
 
 use gpui::{
     AnyElement, ClickEvent, Context, EventEmitter, FocusHandle, FontWeight, Image, IntoElement,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ScrollWheelEvent,
-    MouseButton, ObjectFit, Render, StyledImage as _, Window, deferred, div, img, prelude::*, px,
-    rgb, rgba,
+    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ObjectFit, Render, ScrollWheelEvent,
+    StyledImage as _, Window, deferred, div, img, prelude::*, px, rgb, rgba,
 };
 use morpheus_core::{MediaRef, Session};
 
@@ -54,7 +53,12 @@ const STEP: f32 = 1.25;
 impl EventEmitter<Closed> for Lightbox {}
 
 impl Lightbox {
-    pub fn new(session: Session, images: Vec<GalleryImage>, index: usize, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        session: Session,
+        images: Vec<GalleryImage>,
+        index: usize,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let mut this = Self {
             session,
             index: index.min(images.len().saturating_sub(1)),
@@ -83,7 +87,11 @@ impl Lightbox {
         }
         let fetching = self.session.media_file(image.media.clone());
         cx.spawn(async move |this, cx| {
-            let picture = fetching.await.ok().flatten().and_then(|bytes| media::decode(&bytes));
+            let picture = fetching
+                .await
+                .ok()
+                .flatten()
+                .and_then(|bytes| media::decode(&bytes));
             this.update(cx, |this, cx| {
                 if let Some(picture) = picture {
                     this.full.insert(key, picture);
@@ -120,9 +128,21 @@ impl Lightbox {
     /// The zoom that shows the picture at its own pixels (2 if that is no
     /// more than fit: a small picture).
     fn actual_zoom(&self) -> f32 {
-        let natural = self.images.get(self.index).and_then(|image| image.width).unwrap_or(0) as f32;
-        let actual = if self.fit.0 > 0.0 { natural / self.fit.0 } else { 0.0 };
-        if actual > 1.05 { actual.min(MAX_ZOOM) } else { 2.0 }
+        let natural = self
+            .images
+            .get(self.index)
+            .and_then(|image| image.width)
+            .unwrap_or(0) as f32;
+        let actual = if self.fit.0 > 0.0 {
+            natural / self.fit.0
+        } else {
+            0.0
+        };
+        if actual > 1.05 {
+            actual.min(MAX_ZOOM)
+        } else {
+            2.0
+        }
     }
 
     fn wheel(&mut self, event: &ScrollWheelEvent, cx: &mut Context<Self>) {
@@ -141,7 +161,11 @@ impl Lightbox {
         let at = (f32::from(event.position.x), f32::from(event.position.y));
         if event.click_count >= 2 {
             self.panning = None;
-            let to = if self.view.zoomed() { 1.0 } else { self.actual_zoom() };
+            let to = if self.view.zoomed() {
+                1.0
+            } else {
+                self.actual_zoom()
+            };
             self.zoom_at(to, at, cx);
         } else if self.view.zoomed() {
             self.panning = Some((at, self.view.offset));
@@ -259,12 +283,25 @@ impl Render for Lightbox {
                 .top(px((h - h * zoom) / 2.0 + offset.1))
                 .w(px(w * zoom))
                 .h(px(h * zoom))
-                .when(zoom > 1.001, |d| if panning { d.cursor_grabbing() } else { d.cursor_grab() })
+                .when(zoom > 1.001, |d| {
+                    if panning {
+                        d.cursor_grabbing()
+                    } else {
+                        d.cursor_grab()
+                    }
+                })
                 .on_mouse_down(
                     MouseButton::Left,
-                    cx.listener(|this, event: &MouseDownEvent, _, cx| this.press_picture(event, cx)),
+                    cx.listener(|this, event: &MouseDownEvent, _, cx| {
+                        this.press_picture(event, cx)
+                    }),
                 )
-                .child(img(full.clone()).size_full().rounded(px(6.0)).object_fit(ObjectFit::Contain))
+                .child(
+                    img(full.clone())
+                        .size_full()
+                        .rounded(px(6.0))
+                        .object_fit(ObjectFit::Contain),
+                )
                 .e2e("img", "lightbox-image")
                 .attr("alt", image.body.clone())
                 .attr("data-zoom", format!("{zoom:.4}"))
@@ -282,7 +319,15 @@ impl Render for Lightbox {
         if count > 1 && self.index > 0 {
             row = row.child(self.nav_button("prev", "Previous image", "‹", -1, h / 2.0 - 20.0, cx));
         }
-        row = row.child(div().relative().w(px(w)).h(px(h)).flex_none().child(picture).e2e("div", "lightbox-image-wrap"));
+        row = row.child(
+            div()
+                .relative()
+                .w(px(w))
+                .h(px(h))
+                .flex_none()
+                .child(picture)
+                .e2e("div", "lightbox-image-wrap"),
+        );
         if count > 1 && self.index + 1 < count {
             row = row.child(self.nav_button("next", "Next image", "›", 1, h / 2.0 - 20.0, cx));
         }
@@ -301,11 +346,21 @@ impl Render for Lightbox {
             );
         if let (Some(w), Some(h)) = (image.width, image.height) {
             let dims = format!("{w} × {h}");
-            caption = caption.child(div().child(dims.clone()).e2e("span", "lightbox-dims").text(dims));
+            caption = caption.child(
+                div()
+                    .child(dims.clone())
+                    .e2e("span", "lightbox-dims")
+                    .text(dims),
+            );
         }
         if count > 1 {
             let place = format!("{} / {count}", self.index + 1);
-            caption = caption.child(div().child(place.clone()).e2e("span", "lightbox-count").text(place));
+            caption = caption.child(
+                div()
+                    .child(place.clone())
+                    .e2e("span", "lightbox-count")
+                    .text(place),
+            );
         }
         let boxed = div()
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
@@ -339,7 +394,11 @@ impl Render for Lightbox {
             })
             .relative()
             .e2e("div", "lightbox");
-        let percent = if zoom > 1.001 { format!("{:.0}%", zoom * 100.0) } else { "Fit".to_owned() };
+        let percent = if zoom > 1.001 {
+            format!("{:.0}%", zoom * 100.0)
+        } else {
+            "Fit".to_owned()
+        };
         let toolbar = div()
             .absolute()
             .bottom(px(20.0))
@@ -356,9 +415,27 @@ impl Render for Lightbox {
                     .rounded_full()
                     .bg(rgba(0x000000a6))
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                    .child(self.zoom_button("zoom-out", "Zoom out", "−".to_owned(), cx, |this, cx| this.zoom_middle(this.view.zoom / STEP, cx)))
-                    .child(self.zoom_button("zoom-reset", "Fit to window", percent, cx, |this, cx| this.zoom_middle(1.0, cx)))
-                    .child(self.zoom_button("zoom-in", "Zoom in", "+".to_owned(), cx, |this, cx| this.zoom_middle(this.view.zoom * STEP, cx)))
+                    .child(self.zoom_button(
+                        "zoom-out",
+                        "Zoom out",
+                        "−".to_owned(),
+                        cx,
+                        |this, cx| this.zoom_middle(this.view.zoom / STEP, cx),
+                    ))
+                    .child(self.zoom_button(
+                        "zoom-reset",
+                        "Fit to window",
+                        percent,
+                        cx,
+                        |this, cx| this.zoom_middle(1.0, cx),
+                    ))
+                    .child(self.zoom_button(
+                        "zoom-in",
+                        "Zoom in",
+                        "+".to_owned(),
+                        cx,
+                        |this, cx| this.zoom_middle(this.view.zoom * STEP, cx),
+                    ))
                     .e2e("div", "lightbox-zoombar"),
             );
         let layer = div()
@@ -384,7 +461,9 @@ impl Render for Lightbox {
             .justify_center()
             .bg(rgba(0x000000d9))
             .occlude()
-            .on_scroll_wheel(cx.listener(|this, event: &ScrollWheelEvent, _, cx| this.wheel(event, cx)))
+            .on_scroll_wheel(
+                cx.listener(|this, event: &ScrollWheelEvent, _, cx| this.wheel(event, cx)),
+            )
             .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, cx| this.drag(event, cx)))
             .on_mouse_up(
                 MouseButton::Left,
@@ -416,7 +495,12 @@ impl Render for Lightbox {
 
 impl crate::shell::Shell {
     /// Opens the full-size viewer on picture `index` of the room's pictures.
-    pub fn open_lightbox(&mut self, images: Vec<GalleryImage>, index: usize, cx: &mut Context<Self>) {
+    pub fn open_lightbox(
+        &mut self,
+        images: Vec<GalleryImage>,
+        index: usize,
+        cx: &mut Context<Self>,
+    ) {
         let Some(session) = self.session.clone() else {
             return;
         };

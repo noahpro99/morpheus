@@ -206,8 +206,17 @@ pub fn controls<V: 'static>(
             .rounded(px(theme::RADIUS_SM))
             .cursor_pointer()
             .when(active, |d| d.bg(rgb(theme::accent_solid())))
-            .text_color(if active { rgb(0xffffff) } else { rgb(theme::text_muted()) })
-            .when(!active, |d| d.hover(|s| s.bg(rgba(theme::bg_selected())).text_color(rgb(theme::text()))))
+            .text_color(if active {
+                rgb(0xffffff)
+            } else {
+                rgb(theme::text_muted())
+            })
+            .when(!active, |d| {
+                d.hover(|s| {
+                    s.bg(rgba(theme::bg_selected()))
+                        .text_color(rgb(theme::text()))
+                })
+            })
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(cx.listener(move |this, _, _, cx| pick(this, mode, cx)))
             .child(icon(glyph(mode), 18.0))
@@ -221,8 +230,22 @@ pub fn controls<V: 'static>(
                 },
             )
             .attr("data-value", mode.key())
-            .attr("data-color", if active { "#ffffff".to_owned() } else { format!("#{:06x}", theme::text_muted()) })
-            .attr("data-bg", if active { format!("#{:06x}", theme::accent_solid()) } else { String::new() })
+            .attr(
+                "data-color",
+                if active {
+                    "#ffffff".to_owned()
+                } else {
+                    format!("#{:06x}", theme::text_muted())
+                },
+            )
+            .attr(
+                "data-bg",
+                if active {
+                    format!("#{:06x}", theme::accent_solid())
+                } else {
+                    String::new()
+                },
+            )
             .attr("title", mode.about())
             .text(mode.label())
             .into_any_element()
@@ -271,7 +294,14 @@ pub fn controls<V: 'static>(
         .attr("data-color", "ffffff")
         .attr(
             "data-bg",
-            format!("{:06x}", if testing { theme::danger() } else { theme::accent_solid() }),
+            format!(
+                "{:06x}",
+                if testing {
+                    theme::danger()
+                } else {
+                    theme::accent_solid()
+                }
+            ),
         )
         .text(label);
     let meter = div()

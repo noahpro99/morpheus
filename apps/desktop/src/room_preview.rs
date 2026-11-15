@@ -3,7 +3,8 @@
 //! name, topic and size, and Join (which opens it).
 
 use gpui::{
-    Context, EventEmitter, FocusHandle, FontWeight, IntoElement, Render, Window, div, prelude::*, px, rgb,
+    Context, EventEmitter, FocusHandle, FontWeight, IntoElement, Render, Window, div, prelude::*,
+    px, rgb,
 };
 use morpheus_core::{LinkedRoom, OwnedRoomId, Session};
 
@@ -32,7 +33,12 @@ impl EventEmitter<Closed> for RoomPreview {}
 impl EventEmitter<Joined> for RoomPreview {}
 
 impl RoomPreview {
-    pub fn new(session: Session, room: LinkedRoom, via: Vec<String>, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        session: Session,
+        room: LinkedRoom,
+        via: Vec<String>,
+        cx: &mut Context<Self>,
+    ) -> Self {
         Self {
             session,
             room,
@@ -51,7 +57,9 @@ impl RoomPreview {
         self.busy = true;
         cx.notify();
         let room_id = self.room.room_id.clone();
-        let joining = self.session.join_room_via(room_id.clone(), self.via.clone());
+        let joining = self
+            .session
+            .join_room_via(room_id.clone(), self.via.clone());
         cx.spawn(async move |this, cx| {
             let result = joining.await;
             this.update(cx, |this, cx| {
@@ -112,7 +120,12 @@ impl Render for RoomPreview {
                     .e2e("div", "room-preview-head"),
             );
         if let Some(topic) = crate::view_model::links::preview_topic(&self.room) {
-            boxed = boxed.child(div().child(topic.clone()).e2e("p", "room-preview-topic").text(topic));
+            boxed = boxed.child(
+                div()
+                    .child(topic.clone())
+                    .e2e("p", "room-preview-topic")
+                    .text(topic),
+            );
         }
         if let Some(error) = &self.error {
             boxed = boxed.child(

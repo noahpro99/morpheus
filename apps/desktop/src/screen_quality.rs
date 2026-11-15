@@ -10,11 +10,7 @@ use gpui::{
 };
 use morpheus_call::{SCREEN_FPS, ScreenQuality, ScreenResolution};
 
-use crate::{
-    e2e::E2eExt as _,
-    shell::Shell,
-    theme,
-};
+use crate::{e2e::E2eExt as _, shell::Shell, theme};
 
 const FILE: &str = "screen-quality.json";
 
@@ -74,14 +70,44 @@ fn row<T: Copy + 'static>(
             .rounded(px(theme::RADIUS_SM))
             .cursor_pointer()
             .when(active, |d| d.bg(rgb(theme::accent_solid())))
-            .text_color(if active { rgb(0xffffff) } else { rgb(theme::text_muted()) })
-            .when(!active, |d| d.hover(|s| s.bg(rgba(theme::bg_selected())).text_color(rgb(theme::text()))))
+            .text_color(if active {
+                rgb(0xffffff)
+            } else {
+                rgb(theme::text_muted())
+            })
+            .when(!active, |d| {
+                d.hover(|s| {
+                    s.bg(rgba(theme::bg_selected()))
+                        .text_color(rgb(theme::text()))
+                })
+            })
             .child(text.clone())
             .on_click(cx.listener(move |this, _, _, cx| pick(this, value, cx)))
-            .e2e("button", &if active { format!("{class} active") } else { class.to_owned() })
+            .e2e(
+                "button",
+                &if active {
+                    format!("{class} active")
+                } else {
+                    class.to_owned()
+                },
+            )
             .attr("data-value", value_key)
-            .attr("data-color", if active { "#ffffff".to_owned() } else { format!("#{:06x}", theme::text_muted()) })
-            .attr("data-bg", if active { format!("#{:06x}", theme::accent_solid()) } else { String::new() })
+            .attr(
+                "data-color",
+                if active {
+                    "#ffffff".to_owned()
+                } else {
+                    format!("#{:06x}", theme::text_muted())
+                },
+            )
+            .attr(
+                "data-bg",
+                if active {
+                    format!("#{:06x}", theme::accent_solid())
+                } else {
+                    String::new()
+                },
+            )
             .text(text)
             .into_any_element()
     });
@@ -138,7 +164,13 @@ fn sound_switch(on: bool, cx: &mut Context<Shell>) -> AnyElement {
             .cursor_pointer()
             .on_click(cx.listener(|this, _, _, cx| {
                 let q = this.calls.screen_quality;
-                this.choose_screen_quality(ScreenQuality { audio: !q.audio, ..q }, cx);
+                this.choose_screen_quality(
+                    ScreenQuality {
+                        audio: !q.audio,
+                        ..q
+                    },
+                    cx,
+                );
             }));
     } else {
         button = button.opacity(0.5);
@@ -210,14 +242,26 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElement> {
                 .font_weight(gpui::FontWeight::SEMIBOLD)
                 .child("Share your screen"),
         )
-        .child(row(cx, "Resolution", "screen-res", resolutions, move |this, r, cx| {
-            let q = this.calls.screen_quality;
-            this.choose_screen_quality(ScreenQuality { resolution: r, ..q }, cx);
-        }))
-        .child(row(cx, "Frame rate", "screen-fps", rates, move |this, fps, cx| {
-            let q = this.calls.screen_quality;
-            this.choose_screen_quality(ScreenQuality { fps, ..q }, cx);
-        }))
+        .child(row(
+            cx,
+            "Resolution",
+            "screen-res",
+            resolutions,
+            move |this, r, cx| {
+                let q = this.calls.screen_quality;
+                this.choose_screen_quality(ScreenQuality { resolution: r, ..q }, cx);
+            },
+        ))
+        .child(row(
+            cx,
+            "Frame rate",
+            "screen-fps",
+            rates,
+            move |this, fps, cx| {
+                let q = this.calls.screen_quality;
+                this.choose_screen_quality(ScreenQuality { fps, ..q }, cx);
+            },
+        ))
         .child(sound_switch(quality.audio, cx))
         .child(
             div()
@@ -243,8 +287,14 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElement> {
         .left_0()
         .size_full()
         .occlude()
-        .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| this.close_screen_quality(cx)))
-        .on_mouse_down(MouseButton::Right, cx.listener(|this, _, _, cx| this.close_screen_quality(cx)))
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(|this, _, _, cx| this.close_screen_quality(cx)),
+        )
+        .on_mouse_down(
+            MouseButton::Right,
+            cx.listener(|this, _, _, cx| this.close_screen_quality(cx)),
+        )
         .child(
             anchored()
                 .position(at)

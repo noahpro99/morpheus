@@ -8,8 +8,9 @@
 use std::{cell::Cell, rc::Rc};
 
 use gpui::{
-    AnyElement, ClickEvent, Context, FocusHandle, FontWeight, IntoElement, MouseButton, Pixels, Point,
-    ScrollHandle, Window, anchored, canvas, deferred, div, prelude::*, px, relative, rgb, rgba,
+    AnyElement, ClickEvent, Context, FocusHandle, FontWeight, IntoElement, MouseButton, Pixels,
+    Point, ScrollHandle, Window, anchored, canvas, deferred, div, prelude::*, px, relative, rgb,
+    rgba,
 };
 
 use crate::{
@@ -130,7 +131,11 @@ impl Shell {
 }
 
 /// The menu over the window, if one is open.
-pub fn render(shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>) -> Option<AnyElement> {
+pub fn render(
+    shell: &mut Shell,
+    window: &mut Window,
+    cx: &mut Context<Shell>,
+) -> Option<AnyElement> {
     shell.menu.as_ref()?;
     let focus = shell.menu_focus(cx);
     let viewport = window.viewport_size();
@@ -139,15 +144,28 @@ pub fn render(shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>) -
         window.focus(&focus);
     }
     let at = menu.at;
-    let panel = panel(menu, &focus, f32::from(viewport.width), f32::from(viewport.height), cx, false);
+    let panel = panel(
+        menu,
+        &focus,
+        f32::from(viewport.width),
+        f32::from(viewport.height),
+        cx,
+        false,
+    );
     let backdrop = div()
         .absolute()
         .top_0()
         .left_0()
         .size_full()
         .occlude()
-        .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| this.close_menu(cx)))
-        .on_mouse_down(MouseButton::Right, cx.listener(|this, _, _, cx| this.close_menu(cx)))
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(|this, _, _, cx| this.close_menu(cx)),
+        )
+        .on_mouse_down(
+            MouseButton::Right,
+            cx.listener(|this, _, _, cx| this.close_menu(cx)),
+        )
         .child(
             anchored()
                 .position(at)
@@ -203,7 +221,9 @@ fn panel(
                 .border_color(rgb(theme::bg_elevated()))
                 .children(QUICK_REACTIONS.into_iter().map(|key| {
                     div()
-                        .id(gpui::ElementId::from(gpui::SharedString::from(format!("react-{key}"))))
+                        .id(gpui::ElementId::from(gpui::SharedString::from(format!(
+                            "react-{key}"
+                        ))))
                         .px(px(8.0))
                         .py(px(4.0))
                         .rounded(px(theme::RADIUS_SM))
@@ -299,7 +319,11 @@ fn item_el(
         }));
     el = if in_grid {
         // Emoji in a grid: a square cell, centred.
-        el.w(px(36.0)).px(px(0.0)).py(px(6.0)).justify_center().text_size(px(1.1 * theme::REM))
+        el.w(px(36.0))
+            .px(px(0.0))
+            .py(px(6.0))
+            .justify_center()
+            .text_size(px(1.1 * theme::REM))
     } else if iconless {
         el.pl(px(36.0)).pr(px(10.0))
     } else {
@@ -378,7 +402,11 @@ fn flyout(
         px(if item.grid { 236.0 } else { 188.0 }),
         px((item.children.len() as f32 * 35.0 + 14.0).min(0.6 * height)),
     );
-    let measured = menu.flyout_size.get().filter(|(r, _)| *r == row).map(|(_, s)| s);
+    let measured = menu
+        .flyout_size
+        .get()
+        .filter(|(r, _)| *r == row)
+        .map(|(_, s)| s);
     let size = measured.unwrap_or(guess);
     let frame = menu.row_frame.get();
     let (x, y) = place_flyout(
@@ -421,7 +449,11 @@ fn flyout(
         canvas(
             move |bounds, window, _| {
                 let now = Some((row, bounds.size));
-                if size_cell.get().is_none_or(|(r, s)| r != row || (s.width - bounds.size.width).abs() > px(0.5) || (s.height - bounds.size.height).abs() > px(0.5)) {
+                if size_cell.get().is_none_or(|(r, s)| {
+                    r != row
+                        || (s.width - bounds.size.width).abs() > px(0.5)
+                        || (s.height - bounds.size.height).abs() > px(0.5)
+                }) {
                     size_cell.set(now);
                     window.refresh();
                 }
@@ -478,7 +510,9 @@ fn menu_slider_el(
 
     let label_str = label.to_owned();
     div()
-        .id(gpui::ElementId::from(gpui::SharedString::from(format!("ctx-slider-{row}"))))
+        .id(gpui::ElementId::from(gpui::SharedString::from(format!(
+            "ctx-slider-{row}"
+        ))))
         .relative()
         .flex()
         .flex_col()
@@ -500,11 +534,17 @@ fn menu_slider_el(
                 .text_size(px(0.8 * theme::REM))
                 .text_color(rgb(theme::text_muted()))
                 .child(label_str)
-                .child(div().child(format!("{percent}%")).e2e("span", "slider-percent")),
+                .child(
+                    div()
+                        .child(format!("{percent}%"))
+                        .e2e("span", "slider-percent"),
+                ),
         )
         .child(
             div()
-                .id(gpui::ElementId::from(gpui::SharedString::from(format!("ctx-bar-{row}"))))
+                .id(gpui::ElementId::from(gpui::SharedString::from(format!(
+                    "ctx-bar-{row}"
+                ))))
                 .relative()
                 .w_full()
                 .h(px(14.0))
@@ -515,7 +555,11 @@ fn menu_slider_el(
                     MouseButton::Left,
                     cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
                         cx.stop_propagation();
-                        if let Some(vol) = (if event.click_count >= 2 { Some(1.0) } else { down_set(event.position.x) }) {
+                        if let Some(vol) = (if event.click_count >= 2 {
+                            Some(1.0)
+                        } else {
+                            down_set(event.position.x)
+                        }) {
                             match &down_kind {
                                 crate::view_model::menu::MenuSlider::InputVolume(_) => {
                                     this.set_input_volume(vol, cx);
@@ -530,25 +574,31 @@ fn menu_slider_el(
                         }
                     }),
                 )
-                .on_mouse_move(cx.listener(move |this, event: &gpui::MouseMoveEvent, _, cx| {
-                    if event.pressed_button == Some(MouseButton::Left)
-                        && let Some(vol) = move_set(event.position.x)
-                    {
-                        match &move_kind {
-                            crate::view_model::menu::MenuSlider::InputVolume(_) => {
-                                this.set_input_volume(vol, cx);
-                            }
-                            crate::view_model::menu::MenuSlider::OutputVolume(_) => {
-                                this.set_output_volume(vol, cx);
-                            }
-                            crate::view_model::menu::MenuSlider::UserVolume(user, _) => {
-                                this.set_user_volume(user, vol, cx);
+                .on_mouse_move(
+                    cx.listener(move |this, event: &gpui::MouseMoveEvent, _, cx| {
+                        if event.pressed_button == Some(MouseButton::Left)
+                            && let Some(vol) = move_set(event.position.x)
+                        {
+                            match &move_kind {
+                                crate::view_model::menu::MenuSlider::InputVolume(_) => {
+                                    this.set_input_volume(vol, cx);
+                                }
+                                crate::view_model::menu::MenuSlider::OutputVolume(_) => {
+                                    this.set_output_volume(vol, cx);
+                                }
+                                crate::view_model::menu::MenuSlider::UserVolume(user, _) => {
+                                    this.set_user_volume(user, vol, cx);
+                                }
                             }
                         }
-                    }
-                }))
+                    }),
+                )
                 .on_click(|_, _, cx| cx.stop_propagation())
-                .child(canvas(move |bounds, _, _| bar.set(bounds), |_, _, _, _| {}).absolute().inset_0())
+                .child(
+                    canvas(move |bounds, _, _| bar.set(bounds), |_, _, _, _| {})
+                        .absolute()
+                        .inset_0(),
+                )
                 .child(
                     div()
                         .relative()

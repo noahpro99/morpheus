@@ -98,7 +98,11 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                 speakers: bool,
                 arrow_title: &'static str,
                 cx: &mut Context<Shell>| {
-        let colour = if active { theme::danger() } else { theme::text_muted() };
+        let colour = if active {
+            theme::danger()
+        } else {
+            theme::text_muted()
+        };
         let tint = |alpha: u32| gpui::rgba((theme::danger() << 8) | alpha);
         let main = div()
             .id(id)
@@ -110,7 +114,13 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             .rounded_l(px(theme::RADIUS_SM))
             .cursor_pointer()
             .when(active, |d| d.bg(tint(0x2e)))
-            .hover(|s| if active { s.bg(tint(0x47)) } else { s.bg(gpui::rgba(theme::bg_hover())) })
+            .hover(|s| {
+                if active {
+                    s.bg(tint(0x47))
+                } else {
+                    s.bg(gpui::rgba(theme::bg_hover()))
+                }
+            })
             .child(icon(glyph, 18.0).text_color(rgb(colour)))
             .on_click(cx.listener(move |this, _, _, cx| toggle(this, cx)))
             .on_mouse_down(
@@ -135,7 +145,13 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             .rounded_r(px(theme::RADIUS_SM))
             .cursor_pointer()
             .when(active, |d| d.bg(tint(0x2e)))
-            .hover(|s| if active { s.bg(tint(0x47)) } else { s.bg(gpui::rgba(theme::bg_hover())) })
+            .hover(|s| {
+                if active {
+                    s.bg(tint(0x47))
+                } else {
+                    s.bg(gpui::rgba(theme::bg_hover()))
+                }
+            })
             .child(icon("chevron-down", 12.0).text_color(rgb(colour)))
             .on_click(cx.listener(move |this, event: &gpui::ClickEvent, _, cx| {
                 this.open_audio_menu(speakers, event.position(), cx)
@@ -144,18 +160,24 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             .attr("data-color", if active { "#ff6b6b" } else { "#8a90a2" })
             .attr("data-bg", if active { "#ff6b6b2e" } else { "" })
             .attr("title", arrow_title);
-        div()
-            .flex()
-            .gap(px(1.0))
-            .child(main)
-            .child(arrow)
-            .e2e("div", if active { "device-pair active" } else { "device-pair" })
+        div().flex().gap(px(1.0)).child(main).child(arrow).e2e(
+            "div",
+            if active {
+                "device-pair active"
+            } else {
+                "device-pair"
+            },
+        )
     };
     let mute = pair(
         "mute",
         if voice.mic_off() { "mic-off" } else { "mic" },
         voice.mute_title(),
-        if voice.mic_off() { "ghost mute-button active" } else { "ghost mute-button" },
+        if voice.mic_off() {
+            "ghost mute-button active"
+        } else {
+            "ghost mute-button"
+        },
         voice.mic_off(),
         Shell::toggle_mute,
         false,
@@ -164,9 +186,17 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
     );
     let deafen = pair(
         "deafen",
-        if voice.deafened { "headphone-off" } else { "headphones" },
+        if voice.deafened {
+            "headphone-off"
+        } else {
+            "headphones"
+        },
         voice.deafen_title(),
-        if voice.deafened { "ghost deafen-button active" } else { "ghost deafen-button" },
+        if voice.deafened {
+            "ghost deafen-button active"
+        } else {
+            "ghost deafen-button"
+        },
         voice.deafened,
         Shell::toggle_deafen,
         true,
@@ -238,7 +268,10 @@ impl Shell {
             return;
         };
         let items = account_menu(&own, &self.accounts);
-        self.open_menu(crate::menu::OpenMenu::new(at, items, false, MenuTarget::Other), cx);
+        self.open_menu(
+            crate::menu::OpenMenu::new(at, items, false, MenuTarget::Other),
+            cx,
+        );
     }
 
     /// Reads your own name, picture and status again (they were edited).

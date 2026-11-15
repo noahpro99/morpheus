@@ -6,7 +6,10 @@
 //! (a Matrix invite, a message with a link) and reports back with
 //! `set_state`. What matches the filter is `view_model::friends`.
 
-use std::{collections::{HashMap, HashSet}, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use gpui::{
     AnyElement, Context, ElementId, Entity, EventEmitter, FontWeight, Image, IntoElement, Render,
@@ -98,7 +101,12 @@ impl FriendPicker {
 
     /// Say what became of the action for `user` (`None`: nothing, again
     /// clickable).
-    pub fn set_state(&mut self, user: &OwnedUserId, state: Option<RowState>, cx: &mut Context<Self>) {
+    pub fn set_state(
+        &mut self,
+        user: &OwnedUserId,
+        state: Option<RowState>,
+        cx: &mut Context<Self>,
+    ) {
         match state {
             Some(state) => self.states.insert(user.to_string(), state),
             None => self.states.remove(user.as_str()),
@@ -191,7 +199,10 @@ impl FriendPicker {
     }
 
     fn row_el(&self, user: &OwnedUserId, row: FriendRow, cx: &mut Context<Self>) -> AnyElement {
-    let row = FriendRow { name: crate::streamer::name(&row.name), ..row };
+        let row = FriendRow {
+            name: crate::streamer::name(&row.name),
+            ..row
+        };
         let key = user.to_string();
         let state = self.states.get(&key);
         let (label, tag) = match state {
@@ -201,7 +212,11 @@ impl FriendPicker {
             Some(RowState::Failed(_)) => ("Failed, retry".to_owned(), "failed"),
         };
         let member = self.members.contains(&key);
-        let (label, tag) = if member { ("Already in".to_owned(), "member") } else { (label, tag) };
+        let (label, tag) = if member {
+            ("Already in".to_owned(), "member")
+        } else {
+            (label, tag)
+        };
         let clickable = !member && !matches!(state, Some(RowState::Working | RowState::Done));
         let target = user.clone();
         let mut el = div()
@@ -288,7 +303,10 @@ impl Render for FriendPicker {
         if let Ok(typed) = self.filter.trim().parse::<OwnedUserId>()
             && (!self.friends.contains(&typed) || self.members.contains(typed.as_str()))
         {
-            let row = FriendRow { name: typed.to_string(), subtitle: String::new() };
+            let row = FriendRow {
+                name: typed.to_string(),
+                subtitle: String::new(),
+            };
             rows.push(self.row_el(&typed, row, cx));
         }
         let empty = rows.is_empty();

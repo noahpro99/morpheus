@@ -16,8 +16,8 @@ use morpheus_core::{History, OwnedRoomId, Privacy, RoomSummary, Session};
 use crate::tab::Tabbable as _;
 use crate::{
     dialogs::{Closed, actions, dialog_box, heading, muted, overlay},
-    friend_picker::{FriendPicker, Picked, RowState},
     e2e::E2eExt as _,
+    friend_picker::{FriendPicker, Picked, RowState},
     icons::icon,
     input::{Submit, TextInput},
     model::{Scope, rooms_in_scope},
@@ -32,20 +32,35 @@ use crate::{
 /// What a dialog hands the shell when it did its job.
 pub enum Done {
     /// A room was made: where it is (a server, or none) and which one.
-    RoomCreated { room: OwnedRoomId, space: Option<OwnedRoomId> },
+    RoomCreated {
+        room: OwnedRoomId,
+        space: Option<OwnedRoomId>,
+    },
     /// A server or category was made (under `parent`, if a category).
-    SpaceCreated { space: OwnedRoomId, parent: Option<OwnedRoomId> },
+    SpaceCreated {
+        space: OwnedRoomId,
+        parent: Option<OwnedRoomId>,
+    },
     LeftServer,
     /// A nickname was saved (empty: cleared).
-    NicknameSaved { user: morpheus_core::OwnedUserId, nickname: String },
+    NicknameSaved {
+        user: morpheus_core::OwnedUserId,
+        nickname: String,
+    },
     /// A rail folder was renamed.
-    FolderRenamed { folder: String, name: String },
+    FolderRenamed {
+        folder: String,
+        name: String,
+    },
     /// Your per-server profile changed: member lists read again.
     ProfileSaved,
     /// Your own name, picture or status changed (the footer reads them again).
     OwnProfileChanged,
     /// A lock was set: the room and the hash of its password.
-    LockSet { room: OwnedRoomId, hash: String },
+    LockSet {
+        room: OwnedRoomId,
+        hash: String,
+    },
     /// A lock was taken off.
     LockRemoved(OwnedRoomId),
 }
@@ -97,7 +112,8 @@ impl RoomDialog {
         let current = |id: &OwnedRoomId| rooms.iter().find(|room| &room.id == id).cloned();
         let field = |cx: &mut Context<Self>, name: &'static str, placeholder: &str, value: &str| {
             let input = cx.new(|cx| TextInput::new(name, placeholder, false, value, cx).framed());
-            cx.subscribe(&input, |this, _, _: &Submit, cx| this.submit(cx)).detach();
+            cx.subscribe(&input, |this, _, _: &Submit, cx| this.submit(cx))
+                .detach();
             Some(input)
         };
         let (mut name, mut topic, mut user) = (None, None, None);
@@ -118,12 +134,18 @@ impl RoomDialog {
                     )
                 });
                 let input = picker.read(cx).input().clone();
-                cx.subscribe(&input, |this, _, _: &Submit, cx| this.submit(cx)).detach();
-                cx.subscribe(&picker, |this, _, picked: &Picked, cx| this.invite(picked.0.clone(), cx))
+                cx.subscribe(&input, |this, _, _: &Submit, cx| this.submit(cx))
                     .detach();
+                cx.subscribe(&picker, |this, _, picked: &Picked, cx| {
+                    this.invite(picked.0.clone(), cx)
+                })
+                .detach();
                 user = Some(input);
                 chooser = Some(picker);
-                roster = Some((session.members(room.clone()), session.invited_members(room.clone())));
+                roster = Some((
+                    session.members(room.clone()),
+                    session.invited_members(room.clone()),
+                ));
             }
             RoomDialogKind::Edit(id) => {
                 let room = current(id);
@@ -137,7 +159,9 @@ impl RoomDialog {
                     cx,
                     "topic",
                     "What is this room about?",
-                    room.as_ref().and_then(|r| r.topic.as_deref()).unwrap_or_default(),
+                    room.as_ref()
+                        .and_then(|r| r.topic.as_deref())
+                        .unwrap_or_default(),
                 );
             }
             RoomDialogKind::Create => {
@@ -156,7 +180,8 @@ impl RoomDialog {
             RoomDialogKind::LockSet(_) | RoomDialogKind::LockRemove(_) => {
                 let secret = |cx: &mut Context<Self>, name: &'static str| {
                     let input = cx.new(|cx| TextInput::new(name, "", true, "", cx).framed());
-                    cx.subscribe(&input, |this, _, _: &Submit, cx| this.submit(cx)).detach();
+                    cx.subscribe(&input, |this, _, _: &Submit, cx| this.submit(cx))
+                        .detach();
                     Some(input)
                 };
                 name = secret(cx, "password");
@@ -320,7 +345,11 @@ impl RoomDialog {
             }
             return;
         }
-        if self.picker.as_ref().is_some_and(|p| p.read(cx).is_member(&user)) {
+        if self
+            .picker
+            .as_ref()
+            .is_some_and(|p| p.read(cx).is_member(&user))
+        {
             self.note = Some(Note::error(format!("{user} is already in.")));
             cx.notify();
             return;
@@ -351,15 +380,13 @@ impl RoomDialog {
             return;
         }
         match self.kind.clone() {
-            RoomDialogKind::Invite(_) => {
-                match vm::parse_invitee(&self.text(&self.user, cx)) {
-                    Ok(user) => self.invite(user, cx),
-                    Err(note) => {
-                        self.note = Some(note);
-                        cx.notify();
-                    }
+            RoomDialogKind::Invite(_) => match vm::parse_invitee(&self.text(&self.user, cx)) {
+                Ok(user) => self.invite(user, cx),
+                Err(note) => {
+                    self.note = Some(note);
+                    cx.notify();
                 }
-            }
+            },
             RoomDialogKind::Edit(room) => {
                 let (name, topic) = (self.text(&self.name, cx), self.text(&self.topic, cx));
                 let saving = self.session.edit_room(room, Some(name), Some(topic));
@@ -377,7 +404,10 @@ impl RoomDialog {
                 }
                 let topic = self.text(&self.topic, cx);
                 let space = self.scope.space_id().cloned();
-                let category = self.category.checked_sub(1).and_then(|i| self.categories.get(i));
+                let category = self
+                    .category
+                    .checked_sub(1)
+                    .and_then(|i| self.categories.get(i));
                 let parent = vm::room_parent(category.map(|(id, _)| id), space.as_ref());
                 let creating = self.session.create_channel(name, topic, parent, self.voice);
                 self.run(creating, cx, move |this, result, cx| match result {
@@ -412,7 +442,9 @@ impl RoomDialog {
             RoomDialogKind::RoomProfile(room) => {
                 let name = self.text(&self.name, cx);
                 let targets = self.server_rooms(&room);
-                let saving = self.session.set_room_profile(targets, name, self.avatar.clone());
+                let saving = self
+                    .session
+                    .set_room_profile(targets, name, self.avatar.clone());
                 self.run(saving, cx, |this, result, cx| {
                     this.note = Some(match result {
                         Ok(()) => {
@@ -461,7 +493,9 @@ impl RoomDialog {
                 }
                 self.busy = true;
                 cx.notify();
-                let hashing = cx.background_executor().spawn(async move { vm_locks::hash_password(&password) });
+                let hashing = cx
+                    .background_executor()
+                    .spawn(async move { vm_locks::hash_password(&password) });
                 cx.spawn(async move |this, cx| {
                     let hashed = hashing.await;
                     this.update(cx, |this, cx| {
@@ -484,7 +518,9 @@ impl RoomDialog {
                 };
                 self.busy = true;
                 cx.notify();
-                let checking = cx.background_executor().spawn(async move { vm_locks::verify_password(&hash, &password) });
+                let checking = cx
+                    .background_executor()
+                    .spawn(async move { vm_locks::verify_password(&hash, &password) });
                 cx.spawn(async move |this, cx| {
                     let right = checking.await;
                     this.update(cx, |this, cx| {
@@ -629,7 +665,9 @@ pub(crate) fn button(
         .gap(px(6.0))
         .cursor_pointer()
         .rounded(px(if danger { 6.0 } else { theme::RADIUS }))
-        .when(danger, |d| d.bg(rgb(theme::danger())).px(px(14.0)).py(px(8.0)))
+        .when(danger, |d| {
+            d.bg(rgb(theme::danger())).px(px(14.0)).py(px(8.0))
+        })
         .when(!danger, |d| d.px(px(6.0)).py(px(1.0)))
         .when(busy, |d| d.opacity(0.6))
         .text_color(rgb(color))
@@ -699,14 +737,22 @@ fn choice(
         .justify_center()
         .rounded_full()
         .border_1()
-        .border_color(rgb(if checked { theme::accent() } else { theme::text_faint() }))
+        .border_color(rgb(if checked {
+            theme::accent()
+        } else {
+            theme::text_faint()
+        }))
         .when(checked, |d| {
             d.child(div().size(px(8.0)).rounded_full().bg(rgb(theme::accent())))
         })
         .e2e("input", "")
         .attr("type", "radio")
         .attr("name", group);
-    let circle = if checked { circle.attr("checked", "true") } else { circle };
+    let circle = if checked {
+        circle.attr("checked", "true")
+    } else {
+        circle
+    };
     div()
         .id(ElementId::from(SharedString::from(id)))
         .flex()
@@ -755,7 +801,12 @@ impl RoomDialog {
         )
     }
 
-    fn submit_button(&self, glyph: Option<&'static str>, label: &str, cx: &mut Context<Self>) -> AnyElement {
+    fn submit_button(
+        &self,
+        glyph: Option<&'static str>,
+        label: &str,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         button(
             "room-dialog-submit",
             glyph,
@@ -775,10 +826,16 @@ impl RoomDialog {
     /// options). The chosen one is a tinted card with the text unchanged
     /// (readable) and a filled radio.
     fn channel_types(&self, cx: &mut Context<Self>) -> AnyElement {
-        let option = |voice: bool, key: &'static str, glyph: &'static str, title: &'static str, about: &'static str| {
+        let option = |voice: bool,
+                      key: &'static str,
+                      glyph: &'static str,
+                      title: &'static str,
+                      about: &'static str| {
             let selected = self.voice == voice;
             div()
-                .id(ElementId::from(SharedString::from(format!("channel-type-{key}"))))
+                .id(ElementId::from(SharedString::from(format!(
+                    "channel-type-{key}"
+                ))))
                 .flex()
                 .items_center()
                 .gap(px(12.0))
@@ -786,7 +843,11 @@ impl RoomDialog {
                 .py(px(10.0))
                 .rounded(px(theme::RADIUS))
                 .border_1()
-                .border_color(rgb(if selected { theme::accent() } else { theme::bg_elevated() }))
+                .border_color(rgb(if selected {
+                    theme::accent()
+                } else {
+                    theme::bg_elevated()
+                }))
                 .bg(rgb(theme::bg_input()))
                 .when(selected, |d| d.bg(rgba(theme::bg_selected())))
                 .text_color(rgb(theme::text()))
@@ -814,14 +875,27 @@ impl RoomDialog {
                         .justify_center()
                         .rounded_full()
                         .border_1()
-                        .border_color(rgb(if selected { theme::accent() } else { theme::text_faint() }))
-                        .when(selected, |d| d.child(div().size(px(8.0)).rounded_full().bg(rgb(theme::accent())))),
+                        .border_color(rgb(if selected {
+                            theme::accent()
+                        } else {
+                            theme::text_faint()
+                        }))
+                        .when(selected, |d| {
+                            d.child(div().size(px(8.0)).rounded_full().bg(rgb(theme::accent())))
+                        }),
                 )
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.voice = voice;
                     cx.notify();
                 }))
-                .e2e("button", if selected { "channel-type selected" } else { "channel-type" })
+                .e2e(
+                    "button",
+                    if selected {
+                        "channel-type selected"
+                    } else {
+                        "channel-type"
+                    },
+                )
                 .attr("data-value", key)
                 .text(title)
         };
@@ -836,8 +910,20 @@ impl RoomDialog {
                     .text_color(rgb(theme::text_muted()))
                     .child("CHANNEL TYPE"),
             )
-            .child(option(false, "text", "hash", "Text", "Send messages, pictures and files"))
-            .child(option(true, "voice", "volume-2", "Voice", "Hang out with voice, video and screen share"))
+            .child(option(
+                false,
+                "text",
+                "hash",
+                "Text",
+                "Send messages, pictures and files",
+            ))
+            .child(option(
+                true,
+                "voice",
+                "volume-2",
+                "Voice",
+                "Hang out with voice, video and screen share",
+            ))
             .into_any_element()
     }
 
@@ -974,30 +1060,32 @@ impl RoomDialog {
             }
             Encryption::Confirming => {
                 parts.push(para(ENCRYPTION_WARNING, "warning", theme::warn()));
-                parts.push(actions(vec![
-                    button(
-                        "confirm-encryption",
-                        Some("lock"),
-                        "Turn on for good",
-                        "danger confirm-encryption",
-                        false,
-                        self.busy,
-                        cx.listener(|this, _, _, cx| this.turn_on_encryption(cx)),
-                    ),
-                    button(
-                        "cancel-encryption",
-                        None,
-                        "Cancel",
-                        "secondary",
-                        false,
-                        false,
-                        cx.listener(|this, _, _, cx| {
-                            this.confirming = false;
-                            cx.notify();
-                        }),
-                    ),
-                ])
-                .into_any_element());
+                parts.push(
+                    actions(vec![
+                        button(
+                            "confirm-encryption",
+                            Some("lock"),
+                            "Turn on for good",
+                            "danger confirm-encryption",
+                            false,
+                            self.busy,
+                            cx.listener(|this, _, _, cx| this.turn_on_encryption(cx)),
+                        ),
+                        button(
+                            "cancel-encryption",
+                            None,
+                            "Cancel",
+                            "secondary",
+                            false,
+                            false,
+                            cx.listener(|this, _, _, cx| {
+                                this.confirming = false;
+                                cx.notify();
+                            }),
+                        ),
+                    ])
+                    .into_any_element(),
+                );
             }
         }
         if let Some(err) = &self.encryption_error {
@@ -1069,7 +1157,10 @@ impl RoomDialog {
             RoomDialogKind::Create => {
                 parts.push(heading("Create room").into_any_element());
                 let space_name = self.scope.space_id().and_then(|id| self.name_of(id));
-                parts.push(muted(&vm::create_room_scope(space_name.as_deref()), "muted").into_any_element());
+                parts.push(
+                    muted(&vm::create_room_scope(space_name.as_deref()), "muted")
+                        .into_any_element(),
+                );
                 parts.push(self.channel_types(cx));
                 if let Some(name) = &self.name {
                     parts.push(field("Name", name));
@@ -1218,7 +1309,13 @@ impl RoomDialog {
             }
             RoomDialogKind::Nickname(_, current) => {
                 parts.push(heading("Nickname").into_any_element());
-                parts.push(muted(&crate::view_model::nicknames::nickname_blurb(&current), "muted").into_any_element());
+                parts.push(
+                    muted(
+                        &crate::view_model::nicknames::nickname_blurb(&current),
+                        "muted",
+                    )
+                    .into_any_element(),
+                );
                 if let Some(name) = &self.name {
                     parts.push(name.clone().into_any_element());
                 }

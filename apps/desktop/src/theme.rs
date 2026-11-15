@@ -14,7 +14,10 @@ static CURRENT: AtomicU8 = AtomicU8::new(0);
 
 /// Draw with `theme` from now on.
 pub fn set(theme: Theme) {
-    CURRENT.store(Theme::ALL.iter().position(|t| *t == theme).unwrap_or(0) as u8, Ordering::Relaxed);
+    CURRENT.store(
+        Theme::ALL.iter().position(|t| *t == theme).unwrap_or(0) as u8,
+        Ordering::Relaxed,
+    );
 }
 
 pub fn current() -> Theme {
@@ -45,8 +48,27 @@ macro_rules! colours {
 }
 
 colours!(
-    bg_rail, bg_sidebar, bg_chat, bg_input, bg_elevated, bg_hover, bg_selected, edge, ok, warn, text, text_muted,
-    text_faint, accent, accent_strong, accent_solid, danger, own, link, green, accent_tint,
+    bg_rail,
+    bg_sidebar,
+    bg_chat,
+    bg_input,
+    bg_elevated,
+    bg_hover,
+    bg_selected,
+    edge,
+    ok,
+    warn,
+    text,
+    text_muted,
+    text_faint,
+    accent,
+    accent_strong,
+    accent_solid,
+    danger,
+    own,
+    link,
+    green,
+    accent_tint,
 );
 
 /// `color` (0xRRGGBB) with alpha `a`, as 0xRRGGBBAA: a tint of a token.
@@ -105,7 +127,9 @@ mod source_tests {
                 if path.file_name().is_some_and(|n| n != "e2e") {
                     sources(&path, found);
                 }
-            } else if path.extension().is_some_and(|e| e == "rs") && path.file_name().is_some_and(|n| n != "theme.rs") {
+            } else if path.extension().is_some_and(|e| e == "rs")
+                && path.file_name().is_some_and(|n| n != "theme.rs")
+            {
                 found.push(path);
             }
         }
@@ -114,7 +138,10 @@ mod source_tests {
     #[test]
     fn no_hex_colours_outside_the_theme() {
         let mut files = Vec::new();
-        sources(&Path::new(env!("CARGO_MANIFEST_DIR")).join("src"), &mut files);
+        sources(
+            &Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+            &mut files,
+        );
         let mut stray = Vec::new();
         for file in files {
             let text = std::fs::read_to_string(&file).expect("source");
@@ -123,16 +150,25 @@ mod source_tests {
             for (n, line) in code.lines().enumerate() {
                 let mut rest = line;
                 while let Some(at) = rest.find("0x") {
-                    let digits: String = rest[at + 2..].chars().take_while(char::is_ascii_hexdigit).collect();
+                    let digits: String = rest[at + 2..]
+                        .chars()
+                        .take_while(char::is_ascii_hexdigit)
+                        .collect();
                     rest = &rest[at + 2 + digits.len()..];
                     let colour = matches!(digits.len(), 6 | 8);
-                    let fixed = digits.starts_with("ffffff") || digits.starts_with("000000") || digits == "2d3a9e";
+                    let fixed = digits.starts_with("ffffff")
+                        || digits.starts_with("000000")
+                        || digits == "2d3a9e";
                     if colour && !fixed {
                         stray.push(format!("{}:{}: 0x{digits}", file.display(), n + 1));
                     }
                 }
             }
         }
-        assert!(stray.is_empty(), "colours that should be tokens:\n{}", stray.join("\n"));
+        assert!(
+            stray.is_empty(),
+            "colours that should be tokens:\n{}",
+            stray.join("\n")
+        );
     }
 }

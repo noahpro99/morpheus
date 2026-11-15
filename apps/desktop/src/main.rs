@@ -22,54 +22,54 @@ mod friends;
 mod hotkeys;
 mod hover_underline;
 mod icons;
-mod invites;
-mod locks;
-mod message;
 mod input;
+mod instance;
+mod invites;
+mod last_place;
+mod lightbox;
+mod links;
+mod locks;
 mod login;
-mod members;
+mod mac_menu;
 mod media;
 mod member_actions;
+mod members;
 mod menu;
+mod message;
 mod mod_view;
-mod noise;
 mod model;
+mod noise;
 mod notify;
 mod pictures;
-mod press;
 mod prefs;
+mod press;
 mod profile;
 mod profile_actions;
 mod profile_sync;
 mod rail;
-mod last_place;
-mod lightbox;
-mod links;
-mod room_preview;
 mod room_dialogs;
 mod room_list;
 mod room_menus;
+mod room_preview;
 mod screen_quality;
 mod search;
 mod settings;
 mod shell;
 mod sounds;
 mod streamer;
-mod vim;
 mod switcher;
 mod tab;
+mod theme;
 mod thread;
-mod mac_menu;
+mod timeline;
+mod titlebar;
+mod tray;
+mod typing;
 mod update;
 mod update_self_test;
-mod instance;
-mod tray;
-mod titlebar;
-mod typing;
-mod timeline;
-mod theme;
 mod user_bar;
 mod video;
+mod vim;
 mod zoom;
 // The view-models live in their own crate; the old module path stays valid.
 use morpheus_view_model as view_model;
@@ -227,9 +227,12 @@ impl Root {
     /// does, for the same account.
     fn show_shell(&mut self, session: morpheus_core::Session, cx: &mut Context<Self>) {
         let shell = cx.new(|cx| Shell::new(session, cx));
-        cx.subscribe(&shell, |this: &mut Root, _, event: &shell::AccountEvent, cx| {
-            this.account_event(event.clone(), cx)
-        })
+        cx.subscribe(
+            &shell,
+            |this: &mut Root, _, event: &shell::AccountEvent, cx| {
+                this.account_event(event.clone(), cx)
+            },
+        )
         .detach();
         // The accounts on this device, for the account menu.
         let listing = self.core.accounts();
@@ -292,7 +295,11 @@ impl Root {
 }
 impl Root {
     /// Run `f` on the shell, when signed in.
-    fn with_shell(&mut self, cx: &mut Context<Self>, f: impl FnOnce(&mut Shell, &mut Context<Shell>)) {
+    fn with_shell(
+        &mut self,
+        cx: &mut Context<Self>,
+        f: impl FnOnce(&mut Shell, &mut Context<Shell>),
+    ) {
         if let Screen::Rooms(shell) = &self.screen {
             shell.update(cx, f);
         }
@@ -362,7 +369,14 @@ impl Render for Root {
             .e2e("body", "app")
             .attr("data-font", "Inter")
             .attr("data-bg", format!("{:06x}", theme::bg_chat()))
-            .attr("data-cursor", if cx.has_active_drag() { "grabbing" } else { "auto" }),
+            .attr(
+                "data-cursor",
+                if cx.has_active_drag() {
+                    "grabbing"
+                } else {
+                    "auto"
+                },
+            ),
         )
     }
 }
@@ -452,7 +466,6 @@ fn kept_session() -> Option<morpheus_core::Session> {
     SESSION.lock().ok()?.clone()
 }
 
-
 /// Whether no window is open (closed to the tray): what a window does is done
 /// by threads meanwhile.
 static HEADLESS: AtomicBool = AtomicBool::new(false);
@@ -529,13 +542,17 @@ fn run_command(command: Command, cx: &mut App) {
             show_window(cx);
             root.update(cx, |root, cx| root.open_link(link, cx));
         }
-        Command::Tray(action @ (tray::TrayAction::Acknowledgements | tray::TrayAction::CheckForUpdates)) => {
+        Command::Tray(
+            action @ (tray::TrayAction::Acknowledgements | tray::TrayAction::CheckForUpdates),
+        ) => {
             show_window(cx);
             root.update(cx, |root, cx| root.tray_action(action, cx));
         }
         Command::Tray(tray::TrayAction::Quit) | Command::Quit => quit(cx),
         Command::Redraw => {
-            root.update(cx, |root, cx| root.with_shell(cx, |shell, cx| shell.sync_notices(cx)));
+            root.update(cx, |root, cx| {
+                root.with_shell(cx, |shell, cx| shell.sync_notices(cx))
+            });
         }
     }
 }
@@ -554,7 +571,9 @@ pub(crate) fn quit(cx: &mut App) {
         return;
     }
     if let Some(root) = cx.try_global::<MainRoot>().map(|root| root.0.clone()) {
-        root.update(cx, |root, cx| root.with_shell(cx, |shell, _| shell.leave_before_quit()));
+        root.update(cx, |root, cx| {
+            root.with_shell(cx, |shell, _| shell.leave_before_quit())
+        });
     }
     std::process::exit(0);
 }
@@ -633,71 +652,76 @@ fn run_window(core: Core, commands: Commands, first: Option<Command>, start_hidd
         }
     });
     application.run(move |cx: &mut App| {
-            if let Err(e) = cx
-                .text_system()
-                .add_fonts(FONTS.iter().map(|f| Cow::Borrowed(*f)).collect())
+        if let Err(e) = cx
+            .text_system()
+            .add_fonts(FONTS.iter().map(|f| Cow::Borrowed(*f)).collect())
+        {
+            eprintln!("morpheus-desktop: loading fonts failed: {e}");
+        }
+        // macOS: the menu bar and its shortcuts.
+        mac_menu::install(cx);
+        // Windows and macOS: the tray icon, now that the event loop runs.
+        tray::install_native(Arc::new(|action| send_command(Command::Tray(action))));
+        let root = cx.new(|cx| Root::new(core, default_homeserver(), cx));
+        cx.set_global(MainRoot(root));
+        cx.on_window_closed(|cx| {
+            // No tray to close to: closing the window is quitting.
+            if cx.windows().is_empty()
+                && !gpui::KEEP_RUNNING_WITHOUT_WINDOWS.load(Ordering::Relaxed)
             {
-                eprintln!("morpheus-desktop: loading fonts failed: {e}");
+                eprintln!("morpheus-desktop: window closed, quitting");
+                quit(cx);
             }
-            // macOS: the menu bar and its shortcuts.
-            mac_menu::install(cx);
-            // Windows and macOS: the tray icon, now that the event loop runs.
-            tray::install_native(Arc::new(|action| send_command(Command::Tray(action))));
-            let root = cx.new(|cx| Root::new(core, default_homeserver(), cx));
-            cx.set_global(MainRoot(root));
-            cx.on_window_closed(|cx| {
-                // No tray to close to: closing the window is quitting.
-                if cx.windows().is_empty()
-                    && !gpui::KEEP_RUNNING_WITHOUT_WINDOWS.load(Ordering::Relaxed)
-                {
-                    eprintln!("morpheus-desktop: window closed, quitting");
-                    quit(cx);
-                }
-                if cx.windows().is_empty() {
-                    eprintln!("morpheus-desktop: window closed, app runs on");
-                    HEADLESS.store(true, Ordering::Relaxed);
-                    #[cfg(feature = "e2e")]
-                    e2e::run_ended();
-                }
-            })
-            .detach();
-            cx.spawn(async move |cx| {
-                loop {
-                    match next_command(&commands) {
-                        Some(command) => {
-                            cx.update(|cx| run_command(command, cx)).ok();
-                        }
-                        None => cx
-                            .background_executor()
+            if cx.windows().is_empty() {
+                eprintln!("morpheus-desktop: window closed, app runs on");
+                HEADLESS.store(true, Ordering::Relaxed);
+                #[cfg(feature = "e2e")]
+                e2e::run_ended();
+            }
+        })
+        .detach();
+        cx.spawn(async move |cx| {
+            loop {
+                match next_command(&commands) {
+                    Some(command) => {
+                        cx.update(|cx| run_command(command, cx)).ok();
+                    }
+                    None => {
+                        cx.background_executor()
                             .timer(std::time::Duration::from_millis(30))
-                            .await,
+                            .await
                     }
                 }
-            })
-            .detach();
-            if start_hidden {
-                // Started hidden in the tray (autostart): no window until asked.
-                gpui::KEEP_RUNNING_WITHOUT_WINDOWS.store(true, Ordering::Relaxed);
-                HEADLESS.store(true, Ordering::Relaxed);
-            } else {
-                open_main_window(cx);
             }
-            if let Some(command) = first {
-                run_command(command, cx);
-            }
-        });
+        })
+        .detach();
+        if start_hidden {
+            // Started hidden in the tray (autostart): no window until asked.
+            gpui::KEEP_RUNNING_WITHOUT_WINDOWS.store(true, Ordering::Relaxed);
+            HEADLESS.store(true, Ordering::Relaxed);
+        } else {
+            open_main_window(cx);
+        }
+        if let Some(command) = first {
+            run_command(command, cx);
+        }
+    });
 }
 
 /// The terminal, and a file in the data dir (`morpheus.log`, fresh each
 /// start) to read after something went wrong; Settings' "Report a bug"
 /// sends its end.
 fn init_logging() {
-    use tracing_subscriber::{EnvFilter, Layer as _, layer::SubscriberExt as _, util::SubscriberInitExt as _};
+    use tracing_subscriber::{
+        EnvFilter, Layer as _, layer::SubscriberExt as _, util::SubscriberInitExt as _,
+    };
     let filter = || {
         EnvFilter::try_from_default_env()
             // PulseAudio's client (cpal's, for the microphone) reports its
             // own closing as an error each time a stream stops.
-            .unwrap_or_else(|_| "morpheus=debug,livekit=info,pulseaudio::client::reactor=off,warn".into())
+            .unwrap_or_else(|_| {
+                "morpheus=debug,livekit=info,pulseaudio::client::reactor=off,warn".into()
+            })
     };
     let log_file = std::fs::create_dir_all(data_dir())
         .and_then(|()| std::fs::File::create(data_dir().join("morpheus.log")))
@@ -810,7 +834,8 @@ mod dioxus_data {
     }
 
     fn fixture_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("morpheus-dioxus-{name}-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("morpheus-dioxus-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("dir");
         dir
@@ -820,14 +845,23 @@ mod dioxus_data {
     fn files_written_by_the_dioxus_app_read_the_same() {
         let dir = fixture_dir("fixtures");
         let w = |name: &str, text: &str| std::fs::write(dir.join(name), text).expect("write");
-        w("last_place.json", r#"{"@a:x":{"room":"!r:x","chat":true},"@b:x":{"room":"!q:x","chat":false}}"#);
+        w(
+            "last_place.json",
+            r#"{"@a:x":{"room":"!r:x","chat":true},"@b:x":{"room":"!q:x","chat":false}}"#,
+        );
         w("emoji.json", r#"{"recent":["🚀","👍"],"tone":3}"#);
-        w("audio_devices.json", r#"{"microphone":"Mic","speaker":null,"camera":"cam0"}"#);
+        w(
+            "audio_devices.json",
+            r#"{"microphone":"Mic","speaker":null,"camera":"cam0"}"#,
+        );
         w("notification_content", "sender");
         w("notifications_off", "");
         assert_eq!(
             last_place::read(&dir, "@a:x"),
-            Some(last_place::LastPlace { room: "!r:x".into(), chat: true })
+            Some(last_place::LastPlace {
+                room: "!r:x".into(),
+                chat: true
+            })
         );
         let emoji = emoji_picker::Remembered::load(&dir);
         assert_eq!(emoji.recent, ["🚀", "👍"]);
@@ -836,7 +870,10 @@ mod dioxus_data {
         assert_eq!(devices.microphone.as_deref(), Some("Mic"));
         assert_eq!(devices.speaker, None);
         assert_eq!(devices.camera.as_deref(), Some("cam0"));
-        assert_eq!(settings::notification_content(&dir), settings::NotificationContent::Sender);
+        assert_eq!(
+            settings::notification_content(&dir),
+            settings::NotificationContent::Sender
+        );
         assert!(!settings::notifications_enabled(&dir));
         // No last_rooms.json or screen-quality.json before: empty, not an error.
         assert!(last_place::read_rooms(&dir, "@a:x").is_empty());
@@ -846,17 +883,40 @@ mod dioxus_data {
     #[test]
     fn a_file_that_does_not_parse_is_ignored_not_fatal() {
         let dir = fixture_dir("garbage");
-        for name in ["last_place.json", "last_rooms.json", "emoji.json", "audio_devices.json", "screen-quality.json"] {
+        for name in [
+            "last_place.json",
+            "last_rooms.json",
+            "emoji.json",
+            "audio_devices.json",
+            "screen-quality.json",
+        ] {
             std::fs::write(dir.join(name), "\u{0}{ not json [").expect("write");
         }
         std::fs::write(dir.join("notification_content"), "nonsense").expect("write");
         assert_eq!(last_place::read(&dir, "@a:x"), None);
         assert!(last_place::read_rooms(&dir, "@a:x").is_empty());
         assert!(emoji_picker::Remembered::load(&dir).recent.is_empty());
-        assert_eq!(calls::read_device_prefs(&dir), calls::DevicePrefs::default());
-        assert_eq!(morpheus_call::ScreenQuality::from_json("\u{0}{ not json ["), morpheus_call::ScreenQuality::default());
-        assert_eq!(settings::notification_content(&dir), settings::NotificationContent::Full);
-        last_place::write(&dir, "@a:x", &last_place::LastPlace { room: "!r:x".into(), chat: false }).expect("write");
+        assert_eq!(
+            calls::read_device_prefs(&dir),
+            calls::DevicePrefs::default()
+        );
+        assert_eq!(
+            morpheus_call::ScreenQuality::from_json("\u{0}{ not json ["),
+            morpheus_call::ScreenQuality::default()
+        );
+        assert_eq!(
+            settings::notification_content(&dir),
+            settings::NotificationContent::Full
+        );
+        last_place::write(
+            &dir,
+            "@a:x",
+            &last_place::LastPlace {
+                room: "!r:x".into(),
+                chat: false,
+            },
+        )
+        .expect("write");
         assert!(last_place::read(&dir, "@a:x").is_some());
         std::fs::remove_dir_all(&dir).ok();
     }

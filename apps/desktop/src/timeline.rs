@@ -18,29 +18,28 @@ use std::{
 
 use gpui::{
     AnyElement, App, Context, EventEmitter, FontWeight, Image, IntoElement, ListAlignment,
-    ListOffset, ListState, Pixels, Point, Render, Window, div, list, point, prelude::*, px, relative,
-    rgb,
+    ListOffset, ListState, Pixels, Point, Render, Window, div, list, point, prelude::*, px,
+    relative, rgb,
 };
 use morpheus_core::{
-    MediaRef, Message, MessageId, MessageKind, OpenTimeline, OwnedEventId, OwnedRoomId, OwnedUserId, Session,
-    TimelineEntry,
-    TimelineHandle,
-    Vector,
+    MediaRef, Message, MessageId, MessageKind, OpenTimeline, OwnedEventId, OwnedRoomId,
+    OwnedUserId, Session, TimelineEntry, TimelineHandle, Vector,
 };
 
 use crate::{
     e2e::{E2eExt as _, ScrollState, Scrollable},
+    icons::icon,
     media::{self, Avatars},
     message::{self, ActionHandler, LinkHandler, Pictures, RowAction},
     theme,
-    icons::icon,
     view_model::keys::{
-        BANNER_RECOVERY, BANNER_TEXT, BANNER_TITLE, BANNER_VERIFY, KeyAccess, SettingsFocus, show_banner,
-        undecryptable,
+        BANNER_RECOVERY, BANNER_TEXT, BANNER_TITLE, BANNER_VERIFY, KeyAccess, SettingsFocus,
+        show_banner, undecryptable,
     },
     view_model::nicknames::NickMap,
     view_model::rows::{
-        MessageRow, Row, anchor_row, changed_range, first_unread_after_marker, first_unread_since, group_rows,
+        MessageRow, Row, anchor_row, changed_range, first_unread_after_marker, first_unread_since,
+        group_rows,
     },
 };
 
@@ -320,7 +319,10 @@ impl TimelineView {
                     this.update(cx, |this, cx| {
                         this.people = members
                             .into_iter()
-                            .map(|m| crate::view_model::rich::Person { id: m.user_id.to_string(), name: m.name })
+                            .map(|m| crate::view_model::rich::Person {
+                                id: m.user_id.to_string(),
+                                name: m.name,
+                            })
                             .collect();
                         cx.notify();
                     })
@@ -412,9 +414,10 @@ impl TimelineView {
         // Sending a message means being caught up: drop the divider and move
         // the fully-read marker on.
         if !self.caught_up
-            && self.entries.iter().any(
-                |e| matches!(e, TimelineEntry::Message(m) if m.is_own && m.is_local_echo),
-            )
+            && self
+                .entries
+                .iter()
+                .any(|e| matches!(e, TimelineEntry::Message(m) if m.is_own && m.is_local_echo))
         {
             self.caught_up = true;
             self.new_marker = None;
@@ -449,7 +452,9 @@ impl TimelineView {
         self.echoed = sending.or(self.echoed.take());
         // Look again for a column the history does not fill yet, once updates settle.
         cx.spawn(async move |this, cx| {
-            cx.background_executor().timer(AUTO_FILL_SETTLE + Duration::from_millis(50)).await;
+            cx.background_executor()
+                .timer(AUTO_FILL_SETTLE + Duration::from_millis(50))
+                .await;
             this.update(cx, |_, cx| cx.notify()).ok();
         })
         .detach();
@@ -502,10 +507,9 @@ impl TimelineView {
     /// Where the selected message is on screen.
     pub fn vim_selection_bounds(&self) -> Option<gpui::Bounds<Pixels>> {
         let id = self.vim_selected.as_deref()?;
-        let ix = self
-            .rows
-            .iter()
-            .position(|row| matches!(row, Row::Message { row, .. } if row.message.unique_id == id))?;
+        let ix = self.rows.iter().position(
+            |row| matches!(row, Row::Message { row, .. } if row.message.unique_id == id),
+        )?;
         self.list.bounds_for_item(ix)
     }
 
@@ -543,10 +547,15 @@ impl TimelineView {
         cx.spawn(async move |this, cx| {
             let mut last = std::time::Instant::now();
             loop {
-                cx.background_executor().timer(Duration::from_millis(8)).await;
+                cx.background_executor()
+                    .timer(Duration::from_millis(8))
+                    .await;
                 let dt = last.elapsed();
                 last = std::time::Instant::now();
-                if !this.update(cx, |this, cx| this.page_step(dt, cx)).unwrap_or(false) {
+                if !this
+                    .update(cx, |this, cx| this.page_step(dt, cx))
+                    .unwrap_or(false)
+                {
                     break;
                 }
             }
@@ -596,7 +605,11 @@ impl TimelineView {
         .detach();
     }
 
-    pub fn set_ignored(&mut self, ignored: std::collections::HashSet<String>, cx: &mut Context<Self>) {
+    pub fn set_ignored(
+        &mut self,
+        ignored: std::collections::HashSet<String>,
+        cx: &mut Context<Self>,
+    ) {
         if self.ignored == ignored {
             return;
         }
@@ -641,7 +654,8 @@ impl TimelineView {
         self.keys = keys;
         if undecryptable(keys) != was {
             for (ix, row) in self.rows.iter().enumerate() {
-                if matches!(row, Row::Message { row, .. } if matches!(row.message.kind, MessageKind::UnableToDecrypt)) {
+                if matches!(row, Row::Message { row, .. } if matches!(row.message.kind, MessageKind::UnableToDecrypt))
+                {
                     self.list.splice(ix..ix + 1, 1);
                 }
             }
@@ -713,8 +727,15 @@ impl TimelineView {
         if removed > 0 || added > 0 {
             self.list.splice(start..start + removed, added);
             if let Some((was, now)) = anchor {
-                let offset_in_item = if was == top.item_ix { top.offset_in_item } else { px(0.0) };
-                self.list.scroll_to(ListOffset { item_ix: now, offset_in_item });
+                let offset_in_item = if was == top.item_ix {
+                    top.offset_in_item
+                } else {
+                    px(0.0)
+                };
+                self.list.scroll_to(ListOffset {
+                    item_ix: now,
+                    offset_in_item,
+                });
             }
         }
         self.rows = rows;
@@ -733,9 +754,13 @@ impl TimelineView {
             let result = loading.await;
             // Test builds can hold a page back, to look at the placeholders.
             if std::env::var_os("MORPHEUS_E2E_PORT").is_some()
-                && let Some(ms) = std::env::var("MORPHEUS_E2E_HISTORY_DELAY_MS").ok().and_then(|v| v.parse().ok())
+                && let Some(ms) = std::env::var("MORPHEUS_E2E_HISTORY_DELAY_MS")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
             {
-                cx.background_executor().timer(Duration::from_millis(ms)).await;
+                cx.background_executor()
+                    .timer(Duration::from_millis(ms))
+                    .await;
             }
             this.update(cx, |this, cx| {
                 this.paginating = false;
@@ -751,7 +776,11 @@ impl TimelineView {
                 // again once it has settled, nothing else will draw it.
                 if !this.reached_start {
                     let has_messages = this.rows.iter().any(|r| matches!(r, Row::Message { .. }));
-                    let delay = if has_messages { AUTO_FILL_SETTLE } else { Duration::from_millis(10) };
+                    let delay = if has_messages {
+                        AUTO_FILL_SETTLE
+                    } else {
+                        Duration::from_millis(10)
+                    };
                     cx.spawn(async move |this, cx| {
                         cx.background_executor().timer(delay).await;
                         this.update(cx, |this, cx| {
@@ -914,7 +943,8 @@ impl TimelineView {
         if self.people.is_empty() || row.blocks.is_empty() {
             return row;
         }
-        let Some((blocks, ids)) = crate::view_model::rich::name_mentions(&row.blocks, &self.people) else {
+        let Some((blocks, ids)) = crate::view_model::rich::name_mentions(&row.blocks, &self.people)
+        else {
             return row;
         };
         let mut message = row.message.clone();
@@ -922,7 +952,11 @@ impl TimelineView {
         if me.is_some_and(|me| ids.iter().any(|id| id == me.as_str())) && !message.is_own {
             message.mentions_me = true;
         }
-        Arc::new(MessageRow { message, blocks, time: row.time.clone() })
+        Arc::new(MessageRow {
+            message,
+            blocks,
+            time: row.time.clone(),
+        })
     }
 
     fn render_row(&mut self, ix: usize, cx: &mut Context<Self>) -> AnyElement {
@@ -954,7 +988,9 @@ impl TimelineView {
                 .py(px(4.0))
                 .child(
                     div()
-                        .id(gpui::SharedString::from(format!("ignored-fold-{unique_id}")))
+                        .id(gpui::SharedString::from(format!(
+                            "ignored-fold-{unique_id}"
+                        )))
                         .cursor_pointer()
                         .text_size(px(0.85 * theme::REM))
                         .text_color(rgb(theme::text_faint()))
@@ -980,9 +1016,15 @@ impl TimelineView {
         let mut row = self.with_name_mentions(row);
         if let Some((name, avatar)) = self.profiles.get(row.message.sender.as_str()) {
             let mut message = row.message.clone();
-            message.sender_name = name.clone().unwrap_or_else(|| message.sender.localpart().to_owned());
+            message.sender_name = name
+                .clone()
+                .unwrap_or_else(|| message.sender.localpart().to_owned());
             message.sender_avatar = avatar.clone();
-            row = Arc::new(MessageRow { message, blocks: row.blocks.clone(), time: row.time.clone() });
+            row = Arc::new(MessageRow {
+                message,
+                blocks: row.blocks.clone(),
+                time: row.time.clone(),
+            });
         }
         let mut pictures = Pictures {
             keys: self.keys,
@@ -1014,7 +1056,11 @@ impl TimelineView {
             } => {
                 let source = thumbnail.as_ref().unwrap_or(media).clone();
                 // Without a thumbnail, the picture comes from the player itself.
-                let thumb = if thumbnail.is_some() { self.picture(&source, (480, 320), cx) } else { None };
+                let thumb = if thumbnail.is_some() {
+                    self.picture(&source, (480, 320), cx)
+                } else {
+                    None
+                };
                 let player = match self.videos.get(&row.message.unique_id) {
                     Some(player) => player.clone(),
                     None => {
@@ -1022,15 +1068,21 @@ impl TimelineView {
                         let (media, body, width, height, duration) =
                             (media.clone(), body.clone(), *width, *height, *duration);
                         let player = cx.new(|cx| {
-                            crate::video::VideoPlayer::new(session, media, body, width, height, duration, cx)
+                            crate::video::VideoPlayer::new(
+                                session, media, body, width, height, duration, cx,
+                            )
                         });
-                        cx.subscribe(&player, |_, player, event: &crate::video::VideoEvent, cx| {
-                            if matches!(event, crate::video::VideoEvent::Fullscreen) {
-                                cx.emit(TimelineEvent::FullscreenVideo(player));
-                            }
-                        })
+                        cx.subscribe(
+                            &player,
+                            |_, player, event: &crate::video::VideoEvent, cx| {
+                                if matches!(event, crate::video::VideoEvent::Fullscreen) {
+                                    cx.emit(TimelineEvent::FullscreenVideo(player));
+                                }
+                            },
+                        )
                         .detach();
-                        self.videos.insert(row.message.unique_id.clone(), player.clone());
+                        self.videos
+                            .insert(row.message.unique_id.clone(), player.clone());
                         player
                     }
                 };
@@ -1056,7 +1108,13 @@ impl TimelineView {
             .iter()
             .filter_map(|row| match row {
                 Row::Message { row, .. } => match &row.message.kind {
-                    MessageKind::Image { media, body, width, height, .. } => Some((
+                    MessageKind::Image {
+                        media,
+                        body,
+                        width,
+                        height,
+                        ..
+                    } => Some((
                         row.message.unique_id.clone(),
                         crate::lightbox::GalleryImage {
                             media: media.clone(),
@@ -1091,20 +1149,26 @@ impl TimelineView {
                 Ok(path) => crate::message::Download::Saved(path.display().to_string()),
                 Err(err) => crate::message::Download::Failed(err.to_string()),
             };
-            this.update(cx, |this, cx| this.set_download(&id, Some(state), cx)).ok();
+            this.update(cx, |this, cx| this.set_download(&id, Some(state), cx))
+                .ok();
         })
         .detach();
     }
 
     /// Records a card's download state and has the row drawn again.
-    fn set_download(&mut self, unique_id: &str, state: Option<crate::message::Download>, cx: &mut Context<Self>) {
+    fn set_download(
+        &mut self,
+        unique_id: &str,
+        state: Option<crate::message::Download>,
+        cx: &mut Context<Self>,
+    ) {
         match state {
             Some(state) => self.downloads.insert(unique_id.to_owned(), state),
             None => self.downloads.remove(unique_id),
         };
-        if let Some(ix) = self.rows.iter().position(|row| {
-            matches!(row, Row::Message { row, .. } if row.message.unique_id == unique_id)
-        }) {
+        if let Some(ix) = self.rows.iter().position(
+            |row| matches!(row, Row::Message { row, .. } if row.message.unique_id == unique_id),
+        ) {
             self.list.splice(ix..ix + 1, 1);
         }
         cx.notify();
@@ -1146,7 +1210,10 @@ impl TimelineView {
             RowAction::OpenImage => {
                 let gallery = self.gallery();
                 if let Some(at) = gallery.iter().position(|(id, _)| id == unique_id) {
-                    cx.emit(TimelineEvent::OpenImage(gallery.into_iter().map(|(_, image)| image).collect(), at));
+                    cx.emit(TimelineEvent::OpenImage(
+                        gallery.into_iter().map(|(_, image)| image).collect(),
+                        at,
+                    ));
                 }
             }
         }
@@ -1158,8 +1225,10 @@ impl TimelineView {
         let toggling = handle.toggle_reaction(id, key);
         cx.spawn(async move |this, cx| {
             if let Err(err) = toggling.await {
-                this.update(cx, |_, cx| cx.emit(TimelineEvent::Failed("reaction", err.to_string())))
-                    .ok();
+                this.update(cx, |_, cx| {
+                    cx.emit(TimelineEvent::Failed("reaction", err.to_string()))
+                })
+                .ok();
             }
         })
         .detach();
@@ -1203,7 +1272,9 @@ impl TimelineView {
             }
             self.jump_to_present(cx);
             cx.spawn(async move |this, cx| {
-                cx.background_executor().timer(Duration::from_millis(50)).await;
+                cx.background_executor()
+                    .timer(Duration::from_millis(50))
+                    .await;
                 this.update(cx, |this, cx| {
                     this.check_history(cx);
                     cx.notify();
@@ -1250,13 +1321,17 @@ impl TimelineView {
         self.keep_unread = false;
         self.paging = None;
         let first_new = newest.and_then(|newest| {
-            let at = self.entries.iter().position(
-                |e| matches!(e, TimelineEntry::Message(m) if m.unique_id == newest),
-            )?;
-            self.entries.iter().skip(at + 1).find_map(|entry| match entry {
-                TimelineEntry::Message(m) if !m.is_own => Some(m.unique_id.clone()),
-                _ => None,
-            })
+            let at = self
+                .entries
+                .iter()
+                .position(|e| matches!(e, TimelineEntry::Message(m) if m.unique_id == newest))?;
+            self.entries
+                .iter()
+                .skip(at + 1)
+                .find_map(|entry| match entry {
+                    TimelineEntry::Message(m) if !m.is_own => Some(m.unique_id.clone()),
+                    _ => None,
+                })
         });
         self.caught_up = first_new.is_none();
         self.new_marker = first_new;
@@ -1399,10 +1474,13 @@ impl Render for TimelineView {
         }
         let timeline = timeline
             .e2e("section", "timeline")
-            .attr("data-history-requests", morpheus_core::history_requests().to_string())
+            .attr(
+                "data-history-requests",
+                morpheus_core::history_requests().to_string(),
+            )
             .scrollable(Rc::new(ListProbe(self.list.clone())));
-        let banner = self.thread_root.is_none()
-            && show_banner(true, self.keys, self.has_undecryptable());
+        let banner =
+            self.thread_root.is_none() && show_banner(true, self.keys, self.has_undecryptable());
         div()
             .flex()
             .flex_col()
@@ -1416,7 +1494,12 @@ impl Render for TimelineView {
 
 /// The notice above a chat with messages this device cannot read.
 fn key_banner(cx: &mut Context<TimelineView>) -> impl IntoElement {
-    let action = |id: &'static str, label: &'static str, glyph: &'static str, primary: bool, focus: SettingsFocus, cx: &mut Context<TimelineView>| {
+    let action = |id: &'static str,
+                  label: &'static str,
+                  glyph: &'static str,
+                  primary: bool,
+                  focus: SettingsFocus,
+                  cx: &mut Context<TimelineView>| {
         div()
             .id(id)
             .flex()
@@ -1431,8 +1514,16 @@ fn key_banner(cx: &mut Context<TimelineView>) -> impl IntoElement {
             } else {
                 gpui::rgba(theme::bg_hover()).into()
             })
-            .text_color(if primary { rgb(0xffffff) } else { rgb(theme::text()) })
-            .child(icon(glyph, 16.0).text_color(if primary { rgb(0xffffff) } else { rgb(theme::text()) }))
+            .text_color(if primary {
+                rgb(0xffffff)
+            } else {
+                rgb(theme::text())
+            })
+            .child(icon(glyph, 16.0).text_color(if primary {
+                rgb(0xffffff)
+            } else {
+                rgb(theme::text())
+            }))
             .child(label)
             .on_click(cx.listener(move |_, _, _, cx| cx.emit(TimelineEvent::OpenSettings(focus))))
             .e2e("button", if primary { "primary" } else { "secondary" })
@@ -1513,8 +1604,8 @@ fn key_banner(cx: &mut Context<TimelineView>) -> impl IntoElement {
 mod widget_tests {
     use super::*;
     use crate::e2e::{self, query};
-    use gpui::{Entity, TestAppContext, VisualTestContext};
     use crate::view_model::keys::{BANNER_RECOVERY, BANNER_VERIFY, LOCKED_TEXT};
+    use gpui::{Entity, TestAppContext, VisualTestContext};
     use morpheus_core::{Message, MessageId, OwnedEventId, OwnedUserId, VectorDiff};
 
     struct Harness(Entity<TimelineView>);
@@ -1537,7 +1628,12 @@ mod widget_tests {
             unique_id: format!("u{id}"),
             id: MessageId::Event(OwnedEventId::try_from(format!("$e{id}")).expect("event id")),
             sender: OwnedUserId::try_from(sender).expect("user id"),
-            sender_name: sender.trim_start_matches('@').split(':').next().unwrap_or("").into(),
+            sender_name: sender
+                .trim_start_matches('@')
+                .split(':')
+                .next()
+                .unwrap_or("")
+                .into(),
             sender_avatar: None,
             timestamp_ms: at,
             is_own: false,
@@ -1563,24 +1659,22 @@ mod widget_tests {
         }
     }
 
-    fn open(
-        cx: &mut TestAppContext,
-    ) -> (Entity<TimelineView>, &mut VisualTestContext) {
+    fn open(cx: &mut TestAppContext) -> (Entity<TimelineView>, &mut VisualTestContext) {
         let room = OwnedRoomId::try_from("!r:x").expect("room id");
-        let (harness, cx) = cx.add_window_view(|_, cx| {
-            Harness(cx.new(|cx| TimelineView::new(None, room, cx)))
-        });
+        let (harness, cx) =
+            cx.add_window_view(|_, cx| Harness(cx.new(|cx| TimelineView::new(None, room, cx))));
         let view = harness.read_with(cx, |h, _| h.0.clone());
         (view, cx)
     }
 
-    fn feed(
-        view: &Entity<TimelineView>,
-        cx: &mut VisualTestContext,
-        entries: Vec<TimelineEntry>,
-    ) {
+    fn feed(view: &Entity<TimelineView>, cx: &mut VisualTestContext, entries: Vec<TimelineEntry>) {
         view.update(cx, |t, cx| {
-            t.apply(vec![VectorDiff::Append { values: entries.into_iter().collect() }], cx)
+            t.apply(
+                vec![VectorDiff::Append {
+                    values: entries.into_iter().collect(),
+                }],
+                cx,
+            )
         });
         cx.run_until_parked();
         cx.draw(
@@ -1604,7 +1698,11 @@ mod widget_tests {
 
     fn redraw(cx: &mut VisualTestContext) {
         cx.run_until_parked();
-        cx.draw(point(px(0.0), px(0.0)), gpui::size(px(700.0), px(500.0)), |_, _| div());
+        cx.draw(
+            point(px(0.0), px(0.0)),
+            gpui::size(px(700.0), px(500.0)),
+            |_, _| div(),
+        );
         cx.run_until_parked();
     }
 
@@ -1622,7 +1720,10 @@ mod widget_tests {
             assert!(row.w >= 300.0, "a placeholder row's lines are {row:?}");
         }
         for line in lines {
-            assert!(line.w >= 60.0 && line.h > 0.0, "a placeholder line is {line:?}");
+            assert!(
+                line.w >= 60.0 && line.h > 0.0,
+                "a placeholder line is {line:?}"
+            );
         }
     }
 
@@ -1644,7 +1745,10 @@ mod widget_tests {
             t.rebuild();
         });
         redraw(cx);
-        assert!(!texts(".timeline-start").is_empty(), "beginning of room should show");
+        assert!(
+            !texts(".timeline-start").is_empty(),
+            "beginning of room should show"
+        );
     }
 
     #[gpui::test]
@@ -1668,13 +1772,19 @@ mod widget_tests {
         redraw(cx);
         assert!(query(".undecrypted.skeleton").is_empty());
         assert_eq!(texts(".message .undecrypted.locked"), [LOCKED_TEXT]);
-        assert_eq!(texts(".key-banner button"), [BANNER_VERIFY, BANNER_RECOVERY]);
+        assert_eq!(
+            texts(".key-banner button"),
+            [BANNER_VERIFY, BANNER_RECOVERY]
+        );
         assert_eq!(texts(".message .body:not(.undecrypted)"), ["readable"]);
 
         // The message is decrypted later: the row becomes it, the banner goes.
         view.update(cx, |t, cx| {
             t.apply(
-                vec![VectorDiff::Set { index: 0, value: entry(1, "@bob:x", 0, text("now readable")) }],
+                vec![VectorDiff::Set {
+                    index: 0,
+                    value: entry(1, "@bob:x", 0, text("now readable")),
+                }],
                 cx,
             )
         });
@@ -1698,7 +1808,11 @@ mod widget_tests {
             })
             .detach();
         });
-        feed(&view, cx, vec![entry(1, "@bob:x", 0, MessageKind::UnableToDecrypt)]);
+        feed(
+            &view,
+            cx,
+            vec![entry(1, "@bob:x", 0, MessageKind::UnableToDecrypt)],
+        );
         view.update(cx, |t, cx| t.set_keys(locked(), cx));
         redraw(cx);
         for label in [BANNER_VERIFY, BANNER_RECOVERY] {
@@ -1739,14 +1853,23 @@ mod widget_tests {
         view.update(cx, |t, cx| {
             t.apply(
                 vec![
-                    VectorDiff::Set { index: 0, value: entry(1, "@bob:x", 0, text("one, edited")) },
-                    VectorDiff::PushBack { value: entry(2, "@bob:x", 10, text("two")) },
+                    VectorDiff::Set {
+                        index: 0,
+                        value: entry(1, "@bob:x", 0, text("one, edited")),
+                    },
+                    VectorDiff::PushBack {
+                        value: entry(2, "@bob:x", 10, text("two")),
+                    },
                 ],
                 cx,
             )
         });
         cx.run_until_parked();
-        cx.draw(point(px(0.0), px(0.0)), gpui::size(px(700.0), px(500.0)), |_, _| div());
+        cx.draw(
+            point(px(0.0), px(0.0)),
+            gpui::size(px(700.0), px(500.0)),
+            |_, _| div(),
+        );
         assert_eq!(texts(".message .body"), ["one, edited", "two"]);
         view.read_with(cx, |t, _| assert_eq!(t.rows().len(), 2));
     }
@@ -1774,8 +1897,14 @@ mod widget_tests {
             ],
         );
         assert_eq!(texts(".message .body.rich"), ["bold and a linkx"]);
-        assert_eq!(texts(".message .body a[href=\"https://example.org/a\"]"), ["a link"]);
-        assert_eq!(texts(".message .body a[href=\"https://example.org/b\"]"), ["https://example.org/b"]);
+        assert_eq!(
+            texts(".message .body a[href=\"https://example.org/a\"]"),
+            ["a link"]
+        );
+        assert_eq!(
+            texts(".message .body a[href=\"https://example.org/b\"]"),
+            ["https://example.org/b"]
+        );
     }
 
     #[gpui::test]
@@ -1786,14 +1915,27 @@ mod widget_tests {
             cx,
             vec![
                 TimelineEntry::TimelineStart,
-                TimelineEntry::DateDivider { timestamp_ms: 86_400_000 * 3 },
+                TimelineEntry::DateDivider {
+                    timestamp_ms: 86_400_000 * 3,
+                },
                 entry(1, "@bob:x", 86_400_000 * 3, text("hi")),
-                entry(2, "@bob:x", 86_400_000 * 3, MessageKind::State("bob joined the room".into())),
+                entry(
+                    2,
+                    "@bob:x",
+                    86_400_000 * 3,
+                    MessageKind::State("bob joined the room".into()),
+                ),
             ],
         );
-        assert_eq!(texts(".timeline-start"), ["This is the beginning of the room."]);
+        assert_eq!(
+            texts(".timeline-start"),
+            ["This is the beginning of the room."]
+        );
         assert_eq!(query(".date-divider").len(), 1);
-        assert_eq!(texts(".message.system .system-text"), ["bob joined the room"]);
+        assert_eq!(
+            texts(".message.system .system-text"),
+            ["bob joined the room"]
+        );
     }
 
     /// The space above the date divider equals the space below it, measured to
@@ -1802,22 +1944,46 @@ mod widget_tests {
     #[gpui::test]
     fn the_date_divider_has_equal_space_above_and_below(cx: &mut TestAppContext) {
         let day = 86_400_000;
-        let state = |id, at| entry(id, "@bob:x", at, MessageKind::State("bob joined the room".into()));
-        let divider = || TimelineEntry::DateDivider { timestamp_ms: day * 3 };
+        let state = |id, at| {
+            entry(
+                id,
+                "@bob:x",
+                at,
+                MessageKind::State("bob joined the room".into()),
+            )
+        };
+        let divider = || TimelineEntry::DateDivider {
+            timestamp_ms: day * 3,
+        };
         let cases: [(&str, Vec<TimelineEntry>); 4] = [
             (
                 "message, message",
-                vec![entry(1, "@bob:x", 0, text("before")), divider(), entry(2, "@carol:x", day * 3, text("after"))],
+                vec![
+                    entry(1, "@bob:x", 0, text("before")),
+                    divider(),
+                    entry(2, "@carol:x", day * 3, text("after")),
+                ],
             ),
             (
                 "message, state line",
-                vec![entry(1, "@bob:x", 0, text("before")), divider(), state(2, day * 3)],
+                vec![
+                    entry(1, "@bob:x", 0, text("before")),
+                    divider(),
+                    state(2, day * 3),
+                ],
             ),
             (
                 "state line, message",
-                vec![state(1, 0), divider(), entry(2, "@carol:x", day * 3, text("after"))],
+                vec![
+                    state(1, 0),
+                    divider(),
+                    entry(2, "@carol:x", day * 3, text("after")),
+                ],
             ),
-            ("state line, state line", vec![state(1, 0), divider(), state(2, day * 3)]),
+            (
+                "state line, state line",
+                vec![state(1, 0), divider(), state(2, day * 3)],
+            ),
         ];
         for (what, entries) in cases {
             let (view, cx) = open(cx);
@@ -1828,7 +1994,9 @@ mod widget_tests {
             let (above, below) = (rows[0], rows[1]);
             let gap_above = divider.y - (above.y + above.h);
             let gap_below = below.y - (divider.y + divider.h);
-            eprintln!("{what}: above {gap_above} below {gap_below} divider {divider:?} rows {rows:?}");
+            eprintln!(
+                "{what}: above {gap_above} below {gap_below} divider {divider:?} rows {rows:?}"
+            );
             assert!(
                 (gap_above - gap_below).abs() <= 1.0,
                 "{what}: {gap_above} px above the divider, {gap_below} px below"
@@ -1867,11 +2035,21 @@ mod widget_tests {
     fn a_long_room_paints_only_the_rows_in_view(cx: &mut TestAppContext) {
         let (view, cx) = open(cx);
         let entries = (0..2000)
-            .map(|n| entry(n, "@bob:x", n as u64 * 1_000_000, text(&format!("message {n}"))))
+            .map(|n| {
+                entry(
+                    n,
+                    "@bob:x",
+                    n as u64 * 1_000_000,
+                    text(&format!("message {n}")),
+                )
+            })
             .collect();
         feed(&view, cx, entries);
         let painted = query(".message").len();
-        assert!(painted > 3 && painted < 60, "{painted} rows painted of 2000");
+        assert!(
+            painted > 3 && painted < 60,
+            "{painted} rows painted of 2000"
+        );
         assert!(texts(".message .body").contains(&"message 1999".to_owned()));
     }
 }

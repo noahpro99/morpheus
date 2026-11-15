@@ -17,7 +17,11 @@ fn main() {
     match std::env::var("CARGO_CFG_TARGET_OS").as_deref() {
         Ok("macos" | "ios") => println!("cargo:rustc-link-arg=-ObjC"),
         Ok("windows") => {
-            let rc = if cfg!(windows) { "windows/icon.rc" } else { "windows/icon-manifest.rc" };
+            let rc = if cfg!(windows) {
+                "windows/icon.rc"
+            } else {
+                "windows/icon-manifest.rc"
+            };
             embed_resource::compile(rc, embed_resource::NONE)
                 .manifest_required()
                 .unwrap_or_else(|err| panic!("embedding the Windows resources failed: {err}"));

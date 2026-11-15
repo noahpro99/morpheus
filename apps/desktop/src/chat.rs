@@ -11,24 +11,27 @@ use crate::{
 };
 
 pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> impl IntoElement {
-    let friends = shell
-        .friends_page
-        .clone()
-        .filter(|_| shell.friends_open);
+    let friends = shell.friends_page.clone().filter(|_| shell.friends_open);
     let body = match shell.current().filter(|_| friends.is_none()) {
-        _ if friends.is_some() => friends.into_iter().next().map_or_else(
-            || div().into_any_element(),
-            |page| page.into_any_element(),
-        ),
+        _ if friends.is_some() => friends
+            .into_iter()
+            .next()
+            .map_or_else(|| div().into_any_element(), |page| page.into_any_element()),
         Some(room) if room.invited => crate::invites::invite_card(shell, cx, room),
-        None if shell.preview.as_ref().is_some_and(|p| Some(&p.id) == shell.selected.as_ref()) => {
+        None if shell
+            .preview
+            .as_ref()
+            .is_some_and(|p| Some(&p.id) == shell.selected.as_ref()) =>
+        {
             match &shell.preview {
                 Some(room) => crate::invites::join_card(shell, cx, room),
                 None => div().into_any_element(),
             }
         }
         // A locked room: a lock screen, nothing of its content.
-        Some(room) if crate::locks::is_locked(&room.id) => crate::locks::lock_screen(shell, cx, room),
+        Some(room) if crate::locks::is_locked(&room.id) => {
+            crate::locks::lock_screen(shell, cx, room)
+        }
         // A server's voice channel is all call: no top bar, only its chat
         // button in the corner.
         Some(room) if room.is_voice && !room.is_dm => {
@@ -64,7 +67,8 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                 .flex()
                 .items_center()
                 .gap(px(8.0))
-                .pl(px(6.0)).pr(px(16.0))
+                .pl(px(6.0))
+                .pr(px(16.0))
                 .border_b_1()
                 .border_color(gpui::rgba(0x0000004d));
             let title = crate::streamer::room_title(&shell.nicknames, room);
@@ -131,7 +135,9 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                 div()
                     .id("e2e-badge")
                     .px(px(8.0))
-                    .h(px(28.0)).flex().items_center()
+                    .h(px(28.0))
+                    .flex()
+                    .items_center()
                     .rounded(px(theme::RADIUS_SM))
                     .cursor_pointer()
                     .on_hover(bar_hover(cx, "e2e-badge"))
@@ -141,15 +147,17 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                             this.open_room_dialog(RoomDialogKind::Privacy(id.clone()), cx)
                         })
                     })
-                    .child(icon(
-                        if room.is_encrypted {
-                            "lock"
-                        } else {
-                            "lock-open"
-                        },
-                        14.0,
+                    .child(
+                        icon(
+                            if room.is_encrypted {
+                                "lock"
+                            } else {
+                                "lock-open"
+                            },
+                            14.0,
+                        )
+                        .text_color(rgb(lock_colour)),
                     )
-                    .text_color(rgb(lock_colour)))
                     .e2e(
                         "button",
                         if room.is_encrypted {
@@ -190,7 +198,11 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
             header = header.child(div().flex_1());
             let count = room.member_count.to_string();
             let open = shell.members_open;
-            let members_colour = if open { theme::text() } else { bar_colour(shell, "member-toggle", theme::text_muted()) };
+            let members_colour = if open {
+                theme::text()
+            } else {
+                bar_colour(shell, "member-toggle", theme::text_muted())
+            };
             header = header.child(
                 div()
                     .id("member-toggle")
@@ -265,7 +277,11 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                 let target_input = input.clone();
                 let clear_colour = bar_colour(shell, "search-clear", theme::text_muted());
                 let mut bar = div()
-                    .id(if wide { "search-bar-wide" } else { "search-bar" })
+                    .id(if wide {
+                        "search-bar-wide"
+                    } else {
+                        "search-bar"
+                    })
                     .flex()
                     .flex_none()
                     .items_center()
@@ -285,7 +301,9 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                     })
                     .child(div().flex_1().min_w_0().child(input.clone()))
                     .child(if text.is_empty() {
-                        icon("search", 16.0).text_color(rgb(theme::text_muted())).into_any_element()
+                        icon("search", 16.0)
+                            .text_color(rgb(theme::text_muted()))
+                            .into_any_element()
                     } else {
                         div()
                             .id("search-clear")
@@ -311,9 +329,13 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                             .into_any_element()
                     });
                 header = header.child(if was_wide == wide && !wide {
-                    bar.w(px(REST_W)).e2e("div", "search-bar").into_any_element()
+                    bar.w(px(REST_W))
+                        .e2e("div", "search-bar")
+                        .into_any_element()
                 } else if was_wide == wide {
-                    bar.w(px(WIDE_W)).e2e("div", "search-bar").into_any_element()
+                    bar.w(px(WIDE_W))
+                        .e2e("div", "search-bar")
+                        .into_any_element()
                 } else {
                     use gpui::{Animation, AnimationExt as _};
                     bar = bar.w(px(from));
@@ -345,13 +367,15 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                 {
                     content = content.child(typing.clone());
                 } else {
-                    content = content.child(div().h(px(8.0)).flex_none().e2e("div", "typing empty"));
+                    content =
+                        content.child(div().h(px(8.0)).flex_none().e2e("div", "typing empty"));
                 }
                 content = content.child(composer.clone());
             }
             let mut body = div().flex().flex_1().min_h_0().child(content);
             // The side column: an open thread, else the member list.
-            let searching = shell.thread.is_none() && shell.search.as_ref().is_some_and(|(id, _)| id == &room.id);
+            let searching = shell.thread.is_none()
+                && shell.search.as_ref().is_some_and(|(id, _)| id == &room.id);
             let side = if let Some((id, thread)) = &shell.thread
                 && id == &room.id
             {
@@ -371,7 +395,11 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
             if let Some(side) = side {
                 body = body.child(
                     div()
-                        .w(px(if searching { theme::SEARCH_W } else { theme::MEMBERS_W }))
+                        .w(px(if searching {
+                            theme::SEARCH_W
+                        } else {
+                            theme::MEMBERS_W
+                        }))
                         .flex_none()
                         .flex()
                         .flex_col()
@@ -447,7 +475,11 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
 /// A top-bar button's colour: the normal text colour while the pointer is
 /// over it, else `rest`. Top-bar buttons never paint a background.
 pub fn bar_colour(shell: &Shell, key: &'static str, rest: u32) -> u32 {
-    if shell.bar_hover == Some(key) { theme::text() } else { rest }
+    if shell.bar_hover == Some(key) {
+        theme::text()
+    } else {
+        rest
+    }
 }
 
 /// An `on_hover` handler that remembers which top-bar button the pointer is over.

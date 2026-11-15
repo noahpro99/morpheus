@@ -96,7 +96,9 @@ impl ModView {
             .ok();
             // The change reaches the room state with the next sync: look again.
             for wait in [1u64, 3] {
-                cx.background_executor().timer(std::time::Duration::from_secs(wait)).await;
+                cx.background_executor()
+                    .timer(std::time::Duration::from_secs(wait))
+                    .await;
                 this.update(cx, |this, cx| this.load(cx)).ok();
             }
         })
@@ -128,7 +130,9 @@ impl ModView {
             .rounded(px(theme::RADIUS_SM))
             .cursor_pointer()
             .when(busy, |d| d.opacity(0.6))
-            .when(danger, |d| d.bg(rgb(theme::danger())).text_color(rgb(0xffffff)))
+            .when(danger, |d| {
+                d.bg(rgb(theme::danger())).text_color(rgb(0xffffff))
+            })
             .when(!danger, |d| d.text_color(rgb(theme::text())))
             .child(icon(glyph, 16.0).text_color(rgb(if danger { 0xffffff } else { theme::text() })))
             .child(label)
@@ -139,7 +143,13 @@ impl ModView {
             .into_any_element()
     }
 
-    fn role_select(&self, room: &ModRoom, roles: &[(MemberRole, &'static str)], current: MemberRole, cx: &mut Context<Self>) -> AnyElement {
+    fn role_select(
+        &self,
+        room: &ModRoom,
+        roles: &[(MemberRole, &'static str)],
+        current: MemberRole,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let id = room.room_id.clone();
         let open = self.open_roles.as_ref() == Some(&id);
         let shown = roles
@@ -165,7 +175,11 @@ impl ModView {
             .on_click({
                 let id = id.clone();
                 cx.listener(move |this, _, _, cx| {
-                    this.open_roles = if this.open_roles.as_ref() == Some(&id) { None } else { Some(id.clone()) };
+                    this.open_roles = if this.open_roles.as_ref() == Some(&id) {
+                        None
+                    } else {
+                        Some(id.clone())
+                    };
                     cx.notify();
                 })
             });
@@ -181,7 +195,9 @@ impl ModView {
                 .children(roles.iter().map(|(role, label)| {
                     let (role, room_id) = (*role, id.clone());
                     div()
-                        .id(ElementId::from(SharedString::from(format!("role-{room_id}-{label}"))))
+                        .id(ElementId::from(SharedString::from(format!(
+                            "role-{room_id}-{label}"
+                        ))))
                         .px(px(10.0))
                         .py(px(6.0))
                         .cursor_pointer()
@@ -213,7 +229,11 @@ impl ModView {
             Some((roles, current)) => self.role_select(room, roles, *current, cx),
             None => div()
                 .text_size(px(0.8 * theme::REM))
-                .text_color(rgb(if view.state == "Banned" { theme::danger() } else { theme::text_muted() }))
+                .text_color(rgb(if view.state == "Banned" {
+                    theme::danger()
+                } else {
+                    theme::text_muted()
+                }))
                 .child(view.state)
                 .e2e("span", "mod-state")
                 .text(view.state)
@@ -223,26 +243,47 @@ impl ModView {
         let (id, user) = (room.room_id.clone(), self.user.clone());
         if view.kick {
             let (id, user) = (id.clone(), user.clone());
-            buttons.push(self.small_button(format!("kick-{id}"), "user-x", "Kick", "secondary mod-kick", busy, cx.listener(move |this, _, _, cx| {
-                let reason = this.reason(cx);
-                let kicking = this.session.kick(id.clone(), user.clone(), reason);
-                this.act(id.clone(), "kicking", kicking, cx);
-            })));
+            buttons.push(self.small_button(
+                format!("kick-{id}"),
+                "user-x",
+                "Kick",
+                "secondary mod-kick",
+                busy,
+                cx.listener(move |this, _, _, cx| {
+                    let reason = this.reason(cx);
+                    let kicking = this.session.kick(id.clone(), user.clone(), reason);
+                    this.act(id.clone(), "kicking", kicking, cx);
+                }),
+            ));
         }
         if view.unban {
             let (id, user) = (id.clone(), user.clone());
-            buttons.push(self.small_button(format!("unban-{id}"), "circle-minus", "Unban", "secondary mod-unban", busy, cx.listener(move |this, _, _, cx| {
-                let unbanning = this.session.unban(id.clone(), user.clone());
-                this.act(id.clone(), "unbanning", unbanning, cx);
-            })));
+            buttons.push(self.small_button(
+                format!("unban-{id}"),
+                "circle-minus",
+                "Unban",
+                "secondary mod-unban",
+                busy,
+                cx.listener(move |this, _, _, cx| {
+                    let unbanning = this.session.unban(id.clone(), user.clone());
+                    this.act(id.clone(), "unbanning", unbanning, cx);
+                }),
+            ));
         }
         if view.ban {
             let (id, user) = (id.clone(), user.clone());
-            buttons.push(self.small_button(format!("ban-{id}"), "ban", "Ban", "danger mod-ban", busy, cx.listener(move |this, _, _, cx| {
-                let reason = this.reason(cx);
-                let banning = this.session.ban(id.clone(), user.clone(), reason);
-                this.act(id.clone(), "banning", banning, cx);
-            })));
+            buttons.push(self.small_button(
+                format!("ban-{id}"),
+                "ban",
+                "Ban",
+                "danger mod-ban",
+                busy,
+                cx.listener(move |this, _, _, cx| {
+                    let reason = this.reason(cx);
+                    let banning = this.session.ban(id.clone(), user.clone(), reason);
+                    this.act(id.clone(), "banning", banning, cx);
+                }),
+            ));
         }
         let name = format!("# {}", room.name);
         div()
@@ -272,7 +313,14 @@ impl ModView {
                     )
                     .child(info_tail),
             )
-            .child(div().flex().flex_none().gap(px(6.0)).children(buttons).e2e("div", "mod-actions"))
+            .child(
+                div()
+                    .flex()
+                    .flex_none()
+                    .gap(px(6.0))
+                    .children(buttons)
+                    .e2e("div", "mod-actions"),
+            )
             .e2e("div", if busy { "mod-room busy" } else { "mod-room" })
             .attr("data-name", room.name.clone())
             .attr("data-standing", view.state)
@@ -286,9 +334,30 @@ impl Render for ModView {
             window.focus(&self.focus);
         }
         let rows: Vec<AnyElement> = match &self.rooms {
-            None => vec![div().text_color(rgb(theme::text_muted())).child(LOOKING).e2e("p", "muted").text(LOOKING).into_any_element()],
-            Some(Err(err)) => vec![div().text_color(rgb(theme::danger())).child(err.clone()).e2e("p", "error").text(err.clone()).into_any_element()],
-            Some(Ok(list)) if list.is_empty() => vec![div().text_color(rgb(theme::text_muted())).child(NO_ROOMS).e2e("p", "muted").text(NO_ROOMS).into_any_element()],
+            None => vec![
+                div()
+                    .text_color(rgb(theme::text_muted()))
+                    .child(LOOKING)
+                    .e2e("p", "muted")
+                    .text(LOOKING)
+                    .into_any_element(),
+            ],
+            Some(Err(err)) => vec![
+                div()
+                    .text_color(rgb(theme::danger()))
+                    .child(err.clone())
+                    .e2e("p", "error")
+                    .text(err.clone())
+                    .into_any_element(),
+            ],
+            Some(Ok(list)) if list.is_empty() => vec![
+                div()
+                    .text_color(rgb(theme::text_muted()))
+                    .child(NO_ROOMS)
+                    .e2e("p", "muted")
+                    .text(NO_ROOMS)
+                    .into_any_element(),
+            ],
             Some(Ok(list)) => list.iter().map(|room| self.room_row(room, cx)).collect(),
         };
         let header = div()

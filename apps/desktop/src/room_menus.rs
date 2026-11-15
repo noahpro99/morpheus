@@ -11,18 +11,18 @@ use morpheus_core::{NotifyMode, OwnedRoomId, RoomSummary, marks};
 use crate::{
     dialogs::{Closed, Dialog, PendingUndo},
     locks::{has_lock, is_locked},
-    room_dialogs::{Done, RoomDialog},
     menu::OpenMenu,
     model::{Scope, rooms_in_scope},
+    room_dialogs::{Done, RoomDialog},
     shell::Shell,
     view_model::{
         menu::{MenuAction, MenuTarget},
+        nicknames::with_nickname,
+        room_dialogs::RoomDialogKind,
         room_menu::{
             DmState, available_invite_targets, dm_menu, lock_items, room_menu, space_menu,
             with_lock_items,
         },
-        nicknames::with_nickname,
-        room_dialogs::RoomDialogKind,
     },
 };
 
@@ -64,8 +64,10 @@ impl Shell {
                     .ok();
                 }
                 Err(err) => {
-                    this.update(cx, |this, cx| this.fail("loading your marks", &err.to_string(), cx))
-                        .ok();
+                    this.update(cx, |this, cx| {
+                        this.fail("loading your marks", &err.to_string(), cx)
+                    })
+                    .ok();
                 }
             })
             .detach();
@@ -113,7 +115,12 @@ impl Shell {
 
     /// Adds or removes a friend: saved in the account, then the list is read
     /// again.
-    pub fn set_friend(&mut self, user: morpheus_core::OwnedUserId, friend: bool, cx: &mut Context<Self>) {
+    pub fn set_friend(
+        &mut self,
+        user: morpheus_core::OwnedUserId,
+        friend: bool,
+        cx: &mut Context<Self>,
+    ) {
         let Some(session) = self.session.clone() else {
             return;
         };
@@ -160,7 +167,13 @@ impl Shell {
     }
 
     /// Sets or clears one mark: here at once, and in the account.
-    pub fn set_mark(&mut self, kind: &'static str, key: String, at: Option<i64>, cx: &mut Context<Self>) {
+    pub fn set_mark(
+        &mut self,
+        kind: &'static str,
+        key: String,
+        at: Option<i64>,
+        cx: &mut Context<Self>,
+    ) {
         self.marks.set(kind, &key, at);
         if kind == marks::IGNORED {
             self.push_nicknames(cx);
@@ -216,7 +229,10 @@ impl Shell {
                             user,
                         };
                         let items = dm_menu(&room, &state);
-                        let items = with_lock_items(items, lock_items(&room.id, has_lock(&room.id), is_locked(&room.id)));
+                        let items = with_lock_items(
+                            items,
+                            lock_items(&room.id, has_lock(&room.id), is_locked(&room.id)),
+                        );
                         this.open_menu(OpenMenu::new(at, items, false, MenuTarget::Other), cx);
                     })
                     .ok();
@@ -229,7 +245,10 @@ impl Shell {
                     let mode = mode.await.ok();
                     this.update(cx, |this, cx| {
                         let items = room_menu(&room, mode);
-                        let items = with_lock_items(items, lock_items(&room.id, has_lock(&room.id), is_locked(&room.id)));
+                        let items = with_lock_items(
+                            items,
+                            lock_items(&room.id, has_lock(&room.id), is_locked(&room.id)),
+                        );
                         this.open_menu(OpenMenu::new(at, items, false, MenuTarget::Other), cx);
                     })
                     .ok();
@@ -240,7 +259,12 @@ impl Shell {
     }
 
     /// The menu of a server: its name clicked, or its badge right-clicked.
-    pub fn open_space_menu(&mut self, space: &OwnedRoomId, at: Point<Pixels>, cx: &mut Context<Self>) {
+    pub fn open_space_menu(
+        &mut self,
+        space: &OwnedRoomId,
+        at: Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
         let Some(space) = self.rooms.iter().find(|r| &r.id == space).cloned() else {
             return;
         };
@@ -344,23 +368,21 @@ impl Shell {
             MenuAction::Invite(room, user) => {
                 if let Some(session) = session {
                     let inviting = session.invite(room, user);
-                    cx.spawn(async move |this, cx| {
-                        match inviting.await {
-                            Ok(()) => {
-                                this.update(cx, |this, cx| this.toast("Invite sent", cx))
-                                    .ok();
-                            }
-                            Err(err) => {
-                                let msg = err.to_string();
-                                this.update(cx, |this, cx| {
-                                    if msg.to_lowercase().contains("already in the room") {
-                                        this.toast("Already in the server", cx);
-                                    } else {
-                                        this.fail("invite", &msg, cx);
-                                    }
-                                })
+                    cx.spawn(async move |this, cx| match inviting.await {
+                        Ok(()) => {
+                            this.update(cx, |this, cx| this.toast("Invite sent", cx))
                                 .ok();
-                            }
+                        }
+                        Err(err) => {
+                            let msg = err.to_string();
+                            this.update(cx, |this, cx| {
+                                if msg.to_lowercase().contains("already in the room") {
+                                    this.toast("Already in the server", cx);
+                                } else {
+                                    this.fail("invite", &msg, cx);
+                                }
+                            })
+                            .ok();
                         }
                     })
                     .detach();
@@ -468,11 +490,14 @@ impl Shell {
         let scope = self.scope.clone();
         let nicknames = self.nicknames.clone();
         let friends = self.friends.clone();
-        let dialog = cx.new(|cx| RoomDialog::new(kind, session, rooms, scope, &nicknames, friends, cx));
+        let dialog =
+            cx.new(|cx| RoomDialog::new(kind, session, rooms, scope, &nicknames, friends, cx));
         cx.subscribe(&dialog, |this, _, _: &Closed, cx| this.dialog_close(cx))
             .detach();
-        cx.subscribe(&dialog, |this, _, done: &Done, cx| this.room_dialog_done(done, cx))
-            .detach();
+        cx.subscribe(&dialog, |this, _, done: &Done, cx| {
+            this.room_dialog_done(done, cx)
+        })
+        .detach();
         self.dialog_open(Dialog::Room(dialog), cx);
     }
 
@@ -481,11 +506,18 @@ impl Shell {
         match done {
             Done::RoomCreated { room, space } => {
                 self.dialog_close(cx);
-                self.open_room_in(space.clone().map_or(Scope::Rooms, Scope::Space), room.clone(), cx);
+                self.open_room_in(
+                    space.clone().map_or(Scope::Rooms, Scope::Space),
+                    room.clone(),
+                    cx,
+                );
             }
             Done::SpaceCreated { space, parent } => {
                 self.dialog_close(cx);
-                self.set_scope(Scope::Space(parent.clone().unwrap_or_else(|| space.clone())), cx);
+                self.set_scope(
+                    Scope::Space(parent.clone().unwrap_or_else(|| space.clone())),
+                    cx,
+                );
             }
             Done::LeftServer => {
                 self.dialog_close(cx);
@@ -517,7 +549,8 @@ impl Shell {
     pub fn push_nicknames(&mut self, cx: &mut Context<Self>) {
         self.refresh_switcher(cx);
         let names = self.nicknames.clone();
-        let ignored: std::collections::HashSet<String> = self.marks.ignored.keys().cloned().collect();
+        let ignored: std::collections::HashSet<String> =
+            self.marks.ignored.keys().cloned().collect();
         if let Some((_, timeline)) = &self.timeline {
             timeline.update(cx, |timeline, cx| timeline.set_ignored(ignored, cx));
         }
@@ -582,7 +615,8 @@ impl Shell {
         };
         let spaces = crate::model::top_spaces(&self.rooms);
         let entries = crate::model::layout(&self.prefs, &spaces);
-        self.prefs.drop_badge(entries, &moved, drop.index, drop.onto, now_ms());
+        self.prefs
+            .drop_badge(entries, &moved, drop.index, drop.onto, now_ms());
         self.save_prefs(cx);
         cx.notify();
     }
@@ -594,7 +628,9 @@ impl Shell {
             .rail
             .iter()
             .find_map(|entry| match entry {
-                crate::prefs::RailEntry::Folder { id, name, .. } if id == folder => Some(name.clone()),
+                crate::prefs::RailEntry::Folder { id, name, .. } if id == folder => {
+                    Some(name.clone())
+                }
                 _ => None,
             })
             .unwrap_or_default();

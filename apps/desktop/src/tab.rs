@@ -5,7 +5,8 @@
 //! leaving for the window behind.
 
 use gpui::{
-    App, BoxShadow, Div, FocusHandle, Global, InteractiveElement as _, KeyDownEvent, Stateful, Window, point, px,
+    App, BoxShadow, Div, FocusHandle, Global, InteractiveElement as _, KeyDownEvent, Stateful,
+    Window, point, px,
 };
 
 use crate::theme;
@@ -48,9 +49,18 @@ pub fn trap(cx: &mut App) -> FocusHandle {
 /// Tab (Shift+Tab backwards): to the next tab stop. With `within`, only
 /// stops inside it count, wrapping at its ends. Returns whether `event` was
 /// a Tab.
-pub fn on_key(event: &KeyDownEvent, within: Option<&FocusHandle>, window: &mut Window, cx: &mut App) -> bool {
+pub fn on_key(
+    event: &KeyDownEvent,
+    within: Option<&FocusHandle>,
+    window: &mut Window,
+    cx: &mut App,
+) -> bool {
     let keystroke = &event.keystroke;
-    if keystroke.key != "tab" || keystroke.modifiers.control || keystroke.modifiers.alt || keystroke.modifiers.platform {
+    if keystroke.key != "tab"
+        || keystroke.modifiers.control
+        || keystroke.modifiers.alt
+        || keystroke.modifiers.platform
+    {
         return false;
     }
     let back = keystroke.modifiers.shift;

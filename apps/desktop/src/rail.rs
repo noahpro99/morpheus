@@ -8,12 +8,12 @@
 use std::{rc::Rc, sync::Arc};
 
 use gpui::{
-    Context, Div, IntoElement, MouseButton, Pixels, Point, Stateful, div, prelude::*, px, rgb, rgba, svg,
+    Context, Div, IntoElement, MouseButton, Pixels, Point, Stateful, div, prelude::*, px, rgb,
+    rgba, svg,
 };
 use morpheus_core::{OwnedRoomId, RoomSummary};
 
 use crate::{
-    view_model::{rail_drag, room_dialogs::RoomDialogKind},
     e2e::E2eExt as _,
     icons::icon,
     media::avatar,
@@ -21,6 +21,7 @@ use crate::{
     prefs::RailEntry,
     shell::Shell,
     theme,
+    view_model::{rail_drag, room_dialogs::RoomDialogKind},
 };
 
 /// A badge: round-cornered square, the bar `pill` at its left edge.
@@ -60,9 +61,12 @@ struct BadgeGhost(DraggedBadge);
 impl gpui::Render for BadgeGhost {
     fn render(&mut self, _: &mut gpui::Window, _: &mut Context<Self>) -> impl IntoElement {
         let badge = &self.0;
-        div()
-            .opacity(0.85)
-            .child(avatar(badge.picture.clone(), &badge.name, badge.size, Some(theme::RADIUS_XL)))
+        div().opacity(0.85).child(avatar(
+            badge.picture.clone(),
+            &badge.name,
+            badge.size,
+            Some(theme::RADIUS_XL),
+        ))
     }
 }
 
@@ -156,12 +160,15 @@ impl Badge {
                 } else if folder {
                     s.bg(rgba(theme::alpha(theme::accent(), 0x33)))
                 } else {
-                    s.bg(rgb(theme::accent_strong())).text_color(rgb(theme::text()))
+                    s.bg(rgb(theme::accent_strong()))
+                        .text_color(rgb(theme::text()))
                 }
             })
             .on_click(move |_, window, cx| on_click(window, cx));
         if let Some(dragged) = drag {
-            button = button.on_drag(dragged, |dragged, _, _, cx| cx.new(|_| BadgeGhost(dragged.clone())));
+            button = button.on_drag(dragged, |dragged, _, _, cx| {
+                cx.new(|_| BadgeGhost(dragged.clone()))
+            });
         }
         button = crate::press::press(button, &self.id, self.size, self.on_hover.clone());
         if let Some(context) = self.context.clone() {
@@ -214,11 +221,22 @@ impl Badge {
                             .items_center()
                             .justify_center()
                             .rounded_full()
-                            .bg(rgb(if self.in_call { theme::green() } else { 0x000000 }))
+                            .bg(rgb(if self.in_call {
+                                theme::green()
+                            } else {
+                                0x000000
+                            }))
                             .child(icon("volume-2", 10.0).text_color(rgb(0xffffff))),
                     )
                     .e2e("span", "rail-call-badge")
-                    .attr("title", if self.in_call { "In this call" } else { "In a call" }),
+                    .attr(
+                        "title",
+                        if self.in_call {
+                            "In this call"
+                        } else {
+                            "In a call"
+                        },
+                    ),
             );
         }
         let mut tagged = button
@@ -278,7 +296,9 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
     let unread_in = |scope: &Scope| scope_has_unread(rooms, scope);
     let unread_dms = rooms
         .iter()
-        .filter(|r| r.invited || (r.is_dm && r.highlight_count > 0 && !crate::locks::is_locked(&r.id)))
+        .filter(|r| {
+            r.invited || (r.is_dm && r.highlight_count > 0 && !crate::locks::is_locked(&r.id))
+        })
         .count();
     let has_favorites = rooms.iter().any(|r| r.favorite && !r.invited);
     let spaces = top_spaces(rooms);
@@ -297,7 +317,11 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
 
     // Direct messages: the logo; its count of unread conversations.
     let dms_selected = *current == Scope::Dms;
-    let logo_color = if dms_selected { 0xffffff } else { theme::text() };
+    let logo_color = if dms_selected {
+        0xffffff
+    } else {
+        theme::text()
+    };
     let dms = Badge::new(
         "rail-dms".into(),
         "Direct messages",
@@ -305,7 +329,8 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         48.0,
         dms_selected,
         !dms_selected && (unread_dms > 0 || unread_in(&Scope::Dms)),
-).track(shell, cx);
+    )
+    .track(shell, cx);
     let in_call = in_call_in_scope(shell, &Scope::Dms);
     let dms = Badge {
         call: in_call || scope_has_call(rooms, &Scope::Dms),
@@ -361,7 +386,8 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             48.0,
             rooms_selected,
             !rooms_selected && unread_in(&Scope::Rooms),
-        ).track(shell, cx)
+        )
+        .track(shell, cx)
         .build(div().child("#").e2e("span", "").text("#"), false, {
             let view = cx.entity();
             move |_, cx| view.update(cx, |s, cx| s.pick_scope(Scope::Rooms, cx))
@@ -378,7 +404,8 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                 48.0,
                 selected,
                 !selected && unread_in(&Scope::Favorites),
-            ).track(shell, cx)
+            )
+            .track(shell, cx)
             .build(icon("star", 20.0), false, {
                 let view = cx.entity();
                 move |_, cx| view.update(cx, |s, cx| s.pick_scope(Scope::Favorites, cx))
@@ -449,12 +476,20 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                     48.0,
                     contains_current && !open,
                     !contains_current && folder_unread,
-                ).track(shell, cx);
-                badge.in_call = members.iter().any(|s| in_call_in_scope(shell, &Scope::Space(s.id.clone())));
-                badge.call = badge.in_call || members.iter().any(|s| scope_has_call(rooms, &Scope::Space(s.id.clone())));
+                )
+                .track(shell, cx);
+                badge.in_call = members
+                    .iter()
+                    .any(|s| in_call_in_scope(shell, &Scope::Space(s.id.clone())));
+                badge.call = badge.in_call
+                    || members
+                        .iter()
+                        .any(|s| scope_has_call(rooms, &Scope::Space(s.id.clone())));
                 badge.context = Some({
                     let (view, id) = (cx.entity(), id.clone());
-                    Rc::new(move |at, _, cx| view.update(cx, |s, cx| s.open_folder_menu(&id, at, cx)))
+                    Rc::new(move |at, _, cx| {
+                        view.update(cx, |s, cx| s.open_folder_menu(&id, at, cx))
+                    })
                 });
                 let badge = badge.build(content, true, {
                     let (view, id) = (cx.entity(), id.clone());
@@ -528,12 +563,14 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             .e2e("button", "rail-item rail-add")
             .attr("title", "Create a server"),
     )
-    .on_drag_move::<DraggedBadge>(cx.listener(|this, event: &gpui::DragMoveEvent<DraggedBadge>, _, cx| {
-        // Out of the rail: nothing to drop on.
-        if !event.bounds.contains(&event.event.position) && this.rail_drop.take().is_some() {
-            cx.notify();
-        }
-    }))
+    .on_drag_move::<DraggedBadge>(cx.listener(
+        |this, event: &gpui::DragMoveEvent<DraggedBadge>, _, cx| {
+            // Out of the rail: nothing to drop on.
+            if !event.bounds.contains(&event.event.position) && this.rail_drop.take().is_some() {
+                cx.notify();
+            }
+        },
+    ))
     .e2e("nav", "rail")
 }
 
@@ -561,9 +598,13 @@ fn entry_slot(
             .h(px(2.0))
             .rounded(px(1.0))
             .bg(rgb(0xffffff));
-        (if at_top { base.top(px(-1.0)) } else { base.bottom(px(-1.0)) })
-            .e2e("div", "rail-drop-line")
-            .attr("data-bg", "#ffffff")
+        (if at_top {
+            base.top(px(-1.0))
+        } else {
+            base.bottom(px(-1.0))
+        })
+        .e2e("div", "rail-drop-line")
+        .attr("data-bg", "#ffffff")
     };
     div()
         .relative()
@@ -574,13 +615,19 @@ fn entry_slot(
         .py(px(GAP))
         .my(px(-GAP))
         .when(drop == Some(rail_drag::Drop { index, onto: true }), |d| {
-            d.rounded(px(theme::RADIUS_XL)).bg(rgba(theme::alpha(theme::accent(), 0x33)))
+            d.rounded(px(theme::RADIUS_XL))
+                .bg(rgba(theme::alpha(theme::accent(), 0x33)))
         })
         .when(drop == Some(rail_drag::Drop { index, onto: false }), |d| {
             d.child(line(true))
         })
         .when(
-            index + 1 == count && drop == Some(rail_drag::Drop { index: count, onto: false }),
+            index + 1 == count
+                && drop
+                    == Some(rail_drag::Drop {
+                        index: count,
+                        onto: false,
+                    }),
             |d| d.child(line(false)),
         )
         .child(entry)
@@ -624,7 +671,8 @@ fn space_badge(
         size,
         selected,
         unread,
-).track(shell, cx);
+    )
+    .track(shell, cx);
     badge.in_call = in_call_in_scope(shell, &Scope::Space(space.id.clone()));
     badge.call = badge.in_call || scope_has_call(&shell.rooms, &Scope::Space(space.id.clone()));
     badge.extra.push(("data-space", space.id.to_string()));
@@ -644,10 +692,11 @@ fn space_badge(
         let (view, id) = (view.clone(), id.clone());
         Rc::new(move |at, _, cx| view.update(cx, |s, cx| s.open_space_menu(&id, at, cx)))
     });
-    badge.build(
-        avatar(picture, &space.name, size, Some(theme::RADIUS_XL)),
-        false,
-        move |_, cx| view.update(cx, |s, cx| s.pick_scope(Scope::Space(id.clone()), cx)),
-    )
-    .into_any_element()
+    badge
+        .build(
+            avatar(picture, &space.name, size, Some(theme::RADIUS_XL)),
+            false,
+            move |_, cx| view.update(cx, |s, cx| s.pick_scope(Scope::Space(id.clone()), cx)),
+        )
+        .into_any_element()
 }

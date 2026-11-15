@@ -234,9 +234,13 @@ pub fn scope_has_call(rooms: &[RoomSummary], scope: &Scope) -> bool {
                     return true;
                 }
             }
-            rooms_in_scope(rooms, scope).iter().any(|room| !room.call_participants.is_empty())
+            rooms_in_scope(rooms, scope)
+                .iter()
+                .any(|room| !room.call_participants.is_empty())
         }
-        _ => rooms_in_scope(rooms, scope).iter().any(|room| !room.call_participants.is_empty()),
+        _ => rooms_in_scope(rooms, scope)
+            .iter()
+            .any(|room| !room.call_participants.is_empty()),
     }
 }
 
@@ -368,7 +372,9 @@ pub mod tests {
         let scope = Scope::Space(space.id.clone());
 
         assert!(!scope_has_call(&[space.clone(), channel.clone()], &scope));
-        channel.call_participants.push(morpheus_core::OwnedUserId::try_from("@bob:x").unwrap());
+        channel
+            .call_participants
+            .push(morpheus_core::OwnedUserId::try_from("@bob:x").unwrap());
         assert!(scope_has_call(&[space, channel], &scope));
     }
 }

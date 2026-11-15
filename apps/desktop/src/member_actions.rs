@@ -129,7 +129,12 @@ impl Shell {
     /// The member menu for whoever sent a message: the member and our
     /// powers are looked up first, so the menu opens where the pointer was
     /// once they arrive.
-    pub fn open_sender_menu(&mut self, message: &Message, at: Point<Pixels>, cx: &mut Context<Self>) {
+    pub fn open_sender_menu(
+        &mut self,
+        message: &Message,
+        at: Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
         let Some(room) = self.selected.clone() else {
             return;
         };
@@ -232,7 +237,12 @@ impl Shell {
 impl Shell {
     /// The full emoji picker beside the hover bar's "more" button; what is
     /// chosen reacts to `message`.
-    pub fn open_picker(&mut self, message: morpheus_core::MessageId, at: Point<Pixels>, cx: &mut Context<Self>) {
+    pub fn open_picker(
+        &mut self,
+        message: morpheus_core::MessageId,
+        at: Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
         use crate::emoji_picker::{EmojiPicker, PickerEvent};
         use gpui::AppContext as _;
         let picker = cx.new(|cx| EmojiPicker::new(at, cx));
@@ -243,7 +253,9 @@ impl Shell {
             if let PickerEvent::Picked(emoji) = event
                 && let Some((timeline, _)) = this.active_timeline(cx)
             {
-                timeline.update(cx, |timeline, cx| timeline.react(message, emoji.clone(), cx));
+                timeline.update(cx, |timeline, cx| {
+                    timeline.react(message, emoji.clone(), cx)
+                });
             }
             cx.notify();
         })

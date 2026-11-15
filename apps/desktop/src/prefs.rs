@@ -34,8 +34,9 @@ impl Prefs {
                 spaces.retain(|id| id != space);
             }
         }
-        self.rail
-            .retain(|entry| !matches!(entry, RailEntry::Folder { spaces, .. } if spaces.is_empty()));
+        self.rail.retain(
+            |entry| !matches!(entry, RailEntry::Folder { spaces, .. } if spaces.is_empty()),
+        );
     }
 
     /// Puts a space in an existing folder.
@@ -72,8 +73,6 @@ impl Prefs {
         self.rail.push(RailEntry::Space(space.clone()));
     }
 
-
-
     /// Puts `moved` where it was dropped in the drawn layout `entries`
     /// (`crate::model::layout`): onto another server (a new folder of the two,
     /// as in Discord), onto a folder (into it), or before the entry at
@@ -86,7 +85,11 @@ impl Prefs {
         onto: bool,
         now_ms: i64,
     ) {
-        let target = if onto { entries.get(before).cloned() } else { None };
+        let target = if onto {
+            entries.get(before).cloned()
+        } else {
+            None
+        };
         // Taken out first: a server moved down lands one place higher.
         let was = entries
             .iter()
@@ -324,8 +327,6 @@ mod tests {
         );
     }
 
-
-
     #[test]
     fn dropping_a_badge_reorders_makes_folders_and_ungroups() {
         let id = |s: &str| OwnedRoomId::try_from(s).expect("room id");
@@ -340,14 +341,22 @@ mod tests {
         prefs.drop_badge(drawn.clone(), &c, 0, false, 1);
         assert_eq!(
             prefs.rail,
-            [RailEntry::Space(c.clone()), RailEntry::Space(a.clone()), RailEntry::Space(b.clone())]
+            [
+                RailEntry::Space(c.clone()),
+                RailEntry::Space(a.clone()),
+                RailEntry::Space(b.clone())
+            ]
         );
         // a below b (before the entry after it): a lands one place higher.
         let mut prefs = Prefs::default();
         prefs.drop_badge(drawn.clone(), &a, 2, false, 1);
         assert_eq!(
             prefs.rail,
-            [RailEntry::Space(b.clone()), RailEntry::Space(a.clone()), RailEntry::Space(c.clone())]
+            [
+                RailEntry::Space(b.clone()),
+                RailEntry::Space(a.clone()),
+                RailEntry::Space(c.clone())
+            ]
         );
         // b onto a: a folder of the two where a was.
         let mut prefs = Prefs::default();
@@ -373,7 +382,11 @@ mod tests {
         prefs.ungroup("folder-9-0");
         assert_eq!(
             prefs.rail,
-            [RailEntry::Space(a), RailEntry::Space(b), RailEntry::Space(c)]
+            [
+                RailEntry::Space(a),
+                RailEntry::Space(b),
+                RailEntry::Space(c)
+            ]
         );
     }
 

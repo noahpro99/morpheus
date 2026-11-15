@@ -12,7 +12,6 @@ use gpui::{Context, FontWeight, IntoElement, MouseButton, div, prelude::*, px, r
 use morpheus_core::{OwnedRoomId, RoomSummary, SpaceRoom};
 
 use crate::{
-    view_model::room_dialogs::RoomDialogKind,
     e2e::E2eExt as _,
     icons::icon,
     media::avatar,
@@ -20,6 +19,7 @@ use crate::{
     shell::Shell,
     theme,
     view_model::marks::Marks,
+    view_model::room_dialogs::RoomDialogKind,
 };
 
 /// The sidebar's rows, in the order they are drawn.
@@ -130,9 +130,18 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
     );
     // Who may reorder a server's channels can drag them (onto another one).
     let reorder = match scope {
-        Scope::Space(space) if shell.rooms.iter().any(|r| &r.id == space && r.can_edit_children) => {
+        Scope::Space(space)
+            if shell
+                .rooms
+                .iter()
+                .any(|r| &r.id == space && r.can_edit_children) =>
+        {
             Some(std::rc::Rc::new(
-                found.channels.iter().map(|r| r.id.clone()).collect::<Vec<_>>(),
+                found
+                    .channels
+                    .iter()
+                    .map(|r| r.id.clone())
+                    .collect::<Vec<_>>(),
             ))
         }
         _ => None,
@@ -169,11 +178,11 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             .cursor_pointer()
             .on_hover(crate::chat::bar_hover(cx, "server-name"))
             .on_click(cx.listener({
-            let space_id = space_id.clone();
-            move |this, event: &gpui::ClickEvent, _, cx| {
-                this.open_space_menu(&space_id, event.position(), cx)
-            }
-        }));
+                let space_id = space_id.clone();
+                move |this, event: &gpui::ClickEvent, _, cx| {
+                    this.open_space_menu(&space_id, event.position(), cx)
+                }
+            }));
         name = name.on_mouse_down(
             MouseButton::Right,
             cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
@@ -221,7 +230,9 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                 .on_hover(crate::chat::bar_hover(cx, "create-room"))
                 .cursor_pointer()
                 .child(icon("plus", 18.0).text_color(rgb(plus_colour)))
-                .on_click(cx.listener(|this, _, _, cx| this.open_room_dialog(RoomDialogKind::Create, cx)))
+                .on_click(
+                    cx.listener(|this, _, _, cx| this.open_room_dialog(RoomDialogKind::Create, cx)),
+                )
                 .e2e("button", "ghost create-room-button")
                 .attr("data-color", format!("{plus_colour:06x}"))
                 .attr("data-bg", "")
@@ -364,7 +375,11 @@ fn friends_row(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         .min_h(px(42.0))
         .rounded(px(theme::RADIUS_SM))
         .cursor_pointer()
-        .text_color(rgb(if selected { theme::text() } else { theme::text_muted() }))
+        .text_color(rgb(if selected {
+            theme::text()
+        } else {
+            theme::text_muted()
+        }))
         .when(selected, |d| d.bg(gpui::rgba(theme::bg_selected())))
         .when(!selected, |d| {
             d.hover(|s| {
@@ -373,18 +388,13 @@ fn friends_row(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             })
         })
         .on_click(cx.listener(|this, _, _, cx| this.open_friends(cx)))
-        .child(
-            div()
-                .w(px(32.0))
-                .flex_none()
-                .flex()
-                .items_center()
-                .child(icon("users", 22.0).text_color(rgb(if selected {
-                    theme::text()
-                } else {
-                    theme::text_muted()
-                }))),
-        )
+        .child(div().w(px(32.0)).flex_none().flex().items_center().child(
+            icon("users", 22.0).text_color(rgb(if selected {
+                theme::text()
+            } else {
+                theme::text_muted()
+            })),
+        ))
         .child(
             div()
                 .flex_1()
@@ -470,7 +480,11 @@ fn room_button(
         .when(room.is_dm, |d| d.min_h(px(42.0)))
         .rounded(px(theme::RADIUS_SM))
         .cursor_pointer()
-        .text_color(rgb(if lit { theme::text() } else { theme::text_muted() }))
+        .text_color(rgb(if lit {
+            theme::text()
+        } else {
+            theme::text_muted()
+        }))
         .when(unread, |d| d.font_weight(FontWeight::SEMIBOLD))
         .when(selected, |d| d.bg(gpui::rgba(theme::bg_selected())))
         .when(!selected, |d| {
@@ -518,14 +532,13 @@ fn room_button(
     }
     let title = crate::streamer::room_title(&shell.nicknames, room);
     button = if room.is_dm {
-        button.child(avatar(
-            shell.picture(&room.avatar, 32),
-            &title,
-            32.0,
-            None,
-        ))
+        button.child(avatar(shell.picture(&room.avatar, 32), &title, 32.0, None))
     } else if room.is_voice {
-        button.child(icon("volume-2", 18.0).text_color(rgb(theme::text_faint())).e2e("svg", "voice-icon"))
+        button.child(
+            icon("volume-2", 18.0)
+                .text_color(rgb(theme::text_faint()))
+                .e2e("svg", "voice-icon"),
+        )
     } else {
         button.child(
             div()
@@ -550,10 +563,19 @@ fn room_button(
     }
     if locked {
         // A lock hides how many: a dot says there is something.
-        button = button.child(icon("lock", 12.0).text_color(rgb(theme::text_faint())).e2e("svg", "lock-icon"));
+        button = button.child(
+            icon("lock", 12.0)
+                .text_color(rgb(theme::text_faint()))
+                .e2e("svg", "lock-icon"),
+        );
         if unread || room.highlight_count > 0 {
             button = button.child(
-                div().size(px(8.0)).flex_none().rounded_full().bg(rgb(theme::danger())).e2e("span", "lock-dot"),
+                div()
+                    .size(px(8.0))
+                    .flex_none()
+                    .rounded_full()
+                    .bg(rgb(theme::danger()))
+                    .e2e("span", "lock-dot"),
             );
         }
     } else if room.highlight_count > 0 {
@@ -688,7 +710,9 @@ impl Shell {
             .find(|r| r.id == space)
             .map(|r| r.space_children.clone())
             .unwrap_or_default();
-        if let Some(order) = crate::view_model::reorder::dropped_before(&order, listed, &from, &target) {
+        if let Some(order) =
+            crate::view_model::reorder::dropped_before(&order, listed, &from, &target)
+        {
             let ordering = session.set_space_order(space, order);
             self.run_in_background("reorder channels", ordering, cx);
         }
@@ -740,7 +764,12 @@ mod tests {
         assert_eq!(names(&found.channels), ["general", "news"]);
         assert_eq!(found.unjoined.len(), 1);
         // Joined ones are not listed twice.
-        let again = sections(&all, &Scope::Space(server.id), &[archive], &filters(false, None));
+        let again = sections(
+            &all,
+            &Scope::Space(server.id),
+            &[archive],
+            &filters(false, None),
+        );
         assert_eq!(again.unjoined[0].name, "archive");
     }
 
@@ -807,7 +836,11 @@ fn dimmed(colour: u32) -> u32 {
 
 /// The shortcut that opens the palette, as the platform writes it.
 fn palette_shortcut() -> &'static str {
-    if cfg!(target_os = "macos") { "⌘K" } else { "Ctrl+K" }
+    if cfg!(target_os = "macos") {
+        "⌘K"
+    } else {
+        "Ctrl+K"
+    }
 }
 
 /// The top of the DMs: an inset, lighter button that opens the command palette.

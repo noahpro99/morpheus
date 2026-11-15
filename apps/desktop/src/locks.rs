@@ -32,7 +32,9 @@ fn locks() -> &'static Mutex<Locks> {
         let mut locks = Locks::load(&crate::data_dir());
         // Tests shorten the timeout (a number of seconds).
         if std::env::var_os("MORPHEUS_E2E_PORT").is_some()
-            && let Some(secs) = std::env::var("MORPHEUS_E2E_LOCK_SECS").ok().and_then(|s| s.parse::<f64>().ok())
+            && let Some(secs) = std::env::var("MORPHEUS_E2E_LOCK_SECS")
+                .ok()
+                .and_then(|s| s.parse::<f64>().ok())
         {
             locks.override_timeout(Duration::from_secs_f64(secs));
         }
@@ -70,7 +72,13 @@ pub fn hash_of(room: &OwnedRoomId) -> Option<String> {
 
 /// The rooms that are not locked (what counts and lists may use).
 pub fn unlocked(rooms: &[RoomSummary]) -> Vec<RoomSummary> {
-    with(|locks| rooms.iter().filter(|r| !locks.is_locked(r.id.as_str())).cloned().collect())
+    with(|locks| {
+        rooms
+            .iter()
+            .filter(|r| !locks.is_locked(r.id.as_str()))
+            .cloned()
+            .collect()
+    })
 }
 
 /// Signing out: no lock outlives the account it was made in.
@@ -111,7 +119,11 @@ impl Shell {
             .first()
             .and_then(|w| w.update(cx, |_, window, _| window.is_window_active()).ok())
             .unwrap_or(false);
-        let watching = self.selected.clone().filter(|_| active).map(|id| id.to_string());
+        let watching = self
+            .selected
+            .clone()
+            .filter(|_| active)
+            .map(|id| id.to_string());
         let closed = with(|locks| locks.tick(Instant::now(), watching.as_deref()));
         for room in closed {
             if let Ok(room) = OwnedRoomId::try_from(room) {
@@ -178,7 +190,8 @@ impl Shell {
             return;
         }
         let input = cx.new(|cx| TextInput::new("password", "Password", true, "", cx).framed());
-        cx.subscribe(&input, |this, _, _: &Submit, cx| this.try_unlock(cx)).detach();
+        cx.subscribe(&input, |this, _, _: &Submit, cx| this.try_unlock(cx))
+            .detach();
         self.lock_input = Some((room.clone(), input));
         self.lock_error = None;
         self.lock_busy = false;
@@ -226,7 +239,9 @@ impl Shell {
         };
         self.lock_busy = true;
         cx.notify();
-        let checking = cx.background_executor().spawn(async move { vm::verify_password(&hash, &password) });
+        let checking = cx
+            .background_executor()
+            .spawn(async move { vm::verify_password(&hash, &password) });
         cx.spawn(async move |this, cx| {
             let right = checking.await;
             this.update(cx, |this, cx| {
@@ -257,7 +272,12 @@ pub fn lock_screen(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -
     let icon_el = if room.is_dm {
         avatar(shell.picture(&room.avatar, 24), &title, 24.0, None).into_any_element()
     } else {
-        div().font_weight(FontWeight::SEMIBOLD).child("#").e2e("span", "hash").text("#").into_any_element()
+        div()
+            .font_weight(FontWeight::SEMIBOLD)
+            .child("#")
+            .e2e("span", "hash")
+            .text("#")
+            .into_any_element()
     };
     let header = div()
         .h(px(48.0))

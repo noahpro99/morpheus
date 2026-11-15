@@ -16,7 +16,10 @@ pub struct ZoomPan {
 
 impl Default for ZoomPan {
     fn default() -> Self {
-        Self { zoom: 1.0, offset: (0.0, 0.0) }
+        Self {
+            zoom: 1.0,
+            offset: (0.0, 0.0),
+        }
     }
 }
 
