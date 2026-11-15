@@ -5,6 +5,8 @@
 //! `view_model::menu`; this draws it and hands the chosen action to the
 //! shell (`Shell::run_menu_action`).
 
+use std::{cell::Cell, rc::Rc};
+
 use gpui::{
     AnyElement, ClickEvent, Context, FocusHandle, FontWeight, IntoElement, MouseButton, Pixels, Point,
     ScrollHandle, Window, anchored, canvas, deferred, div, prelude::*, px, relative, rgb, rgba,
@@ -15,7 +17,7 @@ use crate::{
     icons::icon,
     shell::Shell,
     theme,
-    view_model::menu::{MenuAction, MenuItem, MenuTarget, QUICK_REACTIONS},
+    view_model::menu::{Frame, MenuAction, MenuItem, MenuTarget, QUICK_REACTIONS, place_flyout},
 };
 
 /// The open menu.
@@ -33,6 +35,10 @@ pub struct OpenMenu {
     pub take_focus: bool,
     /// A long flyout scrolls.
     pub flyout_scroll: ScrollHandle,
+    /// Where the open row was drawn last frame, and the size its flyout had (with
+    /// the row it belongs to), so the flyout can be placed inside the window.
+    pub row_frame: Rc<Cell<gpui::Bounds<Pixels>>>,
+    pub flyout_size: Rc<Cell<Option<(usize, gpui::Size<Pixels>)>>>,
 }
 
 impl OpenMenu {
@@ -46,6 +52,8 @@ impl OpenMenu {
             hover: None,
             take_focus: true,
             flyout_scroll: ScrollHandle::new(),
+            row_frame: Rc::default(),
+            flyout_size: Rc::default(),
         }
     }
 
@@ -274,7 +282,7 @@ fn item_el(
         .flex()
         .items_center()
         .gap(px(10.0))
-        .w_full()
+        .when(sub.is_none(), |d| d.w_full())
         .py(px(7.0))
         .rounded(px(theme::RADIUS_SM))
         .cursor_pointer()
@@ -333,6 +341,20 @@ fn item_el(
             theme::text_faint()
         })));
         if menu.open == Some(row) {
+            let cell = menu.row_frame.clone();
+            el = el.child(
+                canvas(
+                    move |bounds, window, _| {
+                        if cell.get() != bounds {
+                            cell.set(bounds);
+                            window.refresh();
+                        }
+                    },
+                    |_, _, _, _| {},
+                )
+                .absolute()
+                .inset_0(),
+            );
             el = el.child(flyout(menu, row, item, width, height, cx));
         }
     }
@@ -351,12 +373,32 @@ fn flyout(
     height: f32,
     cx: &mut Context<Shell>,
 ) -> AnyElement {
-    let flyout_width = if item.grid { 236.0 } else { 188.0 };
-    let flip = f32::from(menu.at.x) + 188.0 + flyout_width + 12.0 > width;
+    // Placed from where the row and the flyout were last drawn (a guess until then).
+    let guess = gpui::size(
+        px(if item.grid { 236.0 } else { 188.0 }),
+        px((item.children.len() as f32 * 35.0 + 14.0).min(0.6 * height)),
+    );
+    let measured = menu.flyout_size.get().filter(|(r, _)| *r == row).map(|(_, s)| s);
+    let size = measured.unwrap_or(guess);
+    let frame = menu.row_frame.get();
+    let (x, y) = place_flyout(
+        Frame {
+            x: f32::from(frame.origin.x),
+            y: f32::from(frame.origin.y),
+            w: f32::from(frame.size.width),
+            h: f32::from(frame.size.height),
+        },
+        (f32::from(size.width), f32::from(size.height)),
+        (width, height),
+        8.0,
+    );
+    let (dx, dy) = (x - f32::from(frame.origin.x), y - f32::from(frame.origin.y));
+    let size_cell = menu.flyout_size.clone();
     let mut list = div()
         .id("context-flyout")
         .absolute()
-        .top(px(-6.0))
+        .left(px(dx))
+        .top(px(dy))
         .flex()
         .gap(px(2.0))
         .min_w(px(188.0))
@@ -371,11 +413,24 @@ fn flyout(
         .track_scroll(&menu.flyout_scroll)
         .occlude()
         .font_weight(FontWeight::NORMAL);
-    list = if flip {
-        list.right(relative(1.0)).mr(px(2.0))
-    } else {
-        list.left(relative(1.0)).ml(px(2.0))
-    };
+    // Hidden until measured, then placed on the next frame.
+    if measured.is_none() {
+        list = list.opacity(0.0);
+    }
+    list = list.child(
+        canvas(
+            move |bounds, window, _| {
+                let now = Some((row, bounds.size));
+                if size_cell.get().is_none_or(|(r, s)| r != row || (s.width - bounds.size.width).abs() > px(0.5) || (s.height - bounds.size.height).abs() > px(0.5)) {
+                    size_cell.set(now);
+                    window.refresh();
+                }
+            },
+            |_, _, _, _| {},
+        )
+        .absolute()
+        .inset_0(),
+    );
     list = if item.grid {
         list.flex_row().flex_wrap().w(px(236.0))
     } else {
