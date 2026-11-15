@@ -97,6 +97,16 @@ pub struct Calls {
     pub mic_test_before: Option<VoiceFlags>,
     /// A redraw for the mic's meter or processing is on its way.
     pub mic_refresh: std::cell::Cell<bool>,
+    /// The last join that did not come off (shown with a way to try again).
+    pub join_error: Option<JoinError>,
+}
+
+/// A join that failed: which call, and why in plain words.
+#[derive(Debug, Clone)]
+pub struct JoinError {
+    pub room_id: OwnedRoomId,
+    pub room_name: String,
+    pub message: String,
 }
 
 impl Calls {
@@ -366,6 +376,7 @@ impl Shell {
         if self.calls.in_call(&room_id) {
             return;
         }
+        self.calls.join_error = None;
         // This call's number: its events stop counting once another call (or
         // a hang-up) has come since.
         let generation = GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
@@ -398,6 +409,7 @@ impl Shell {
             self.calls.voice = before;
         }
         GENERATION.fetch_add(1, Ordering::SeqCst);
+        self.calls.join_error = None;
         let call = self.calls.media.take();
         let room = self.calls.state.take().map(|state| state.room_id);
         self.calls.screen_audio.clear();
@@ -844,13 +856,24 @@ async fn run_call(
         this.read_with(cx, |this, _| this.calls.in_call(&wanted))
             .unwrap_or(false)
     };
-    // Gives the call up (still the one asked for): hung up in state.
+    // Gives the call up (still the one asked for): hung up in state, and
+    // why shown where the call's controls were, with a way to try again.
     let give_up = |this: &WeakEntity<Shell>, cx: &mut AsyncApp, what: &str, err: String| {
         let wanted = room_id.clone();
         this.update(cx, |this, cx| {
-            this.fail(what, &err, cx);
+            eprintln!("morpheus-desktop: {what}: {err}");
             if this.calls.in_call(&wanted) {
-                this.calls.state = None;
+                let room_name = this
+                    .calls
+                    .state
+                    .take()
+                    .map(|state| state.room_name)
+                    .unwrap_or_default();
+                this.calls.join_error = Some(JoinError {
+                    room_id: wanted,
+                    room_name,
+                    message: crate::view_model::toast::failure_text(what, &err),
+                });
                 cx.notify();
             }
         })

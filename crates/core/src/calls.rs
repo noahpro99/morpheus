@@ -78,7 +78,21 @@ impl Session {
             let user_id = client.user_id().ok_or(Error::NoSession)?.to_owned();
             let device_id = client.device_id().ok_or(Error::NoSession)?.to_owned();
 
-            let services = livekit_services_cached(&client).await;
+            let mut services = livekit_services_cached(&client).await;
+            if services.is_empty() {
+                // The well-known may have timed out: once more, before giving up.
+                crate::rt::sleep(TOKEN_RETRY[0]).await;
+                services = livekit_services_cached(&client).await;
+            }
+            // Then the services the people already in the call use (tests
+            // name the one service to use).
+            if std::env::var_os("MORPHEUS_LIVEKIT_SERVICE").is_none() {
+                for service in room_services(&room, &user_id, device_id.as_str()).await {
+                    if !services.contains(&service) {
+                        services.push(service);
+                    }
+                }
+            }
             let Some(first_service) = services.first().cloned() else {
                 return Err(Error::Other(
                     "this homeserver has no call service (LiveKit) set up".into(),
@@ -91,28 +105,15 @@ impl Session {
                 .unwrap_or(false);
             let state_key = member_state_key(user_id.clone(), device_id.as_str());
 
-            // The token, and the membership (with its scheduled leave), at once.
-            let token = async {
-                let mut last_err = None;
-                for service in &services {
-                    match livekit_token_cached(
-                        &client,
-                        &room_id,
-                        &user_id,
-                        device_id.as_str(),
-                        service,
-                    )
-                    .await
-                    {
-                        Ok(found) => return Ok(found),
-                        Err(err) => {
-                            debug!(%service, %err, "call service refused a token");
-                            last_err = Some(err);
-                        }
-                    }
+            // The token, and the membership (with its scheduled leave), at
+            // once. A service that is down for a moment (matrix.org's has
+            // answered 503) is asked again a few times before the join fails.
+            let token = first_token(&services, &TOKEN_RETRY, |service| {
+                let (client, room_id, user_id, device_id) = (&client, &room_id, &user_id, &device_id);
+                async move {
+                    livekit_token_cached(client, room_id, user_id, device_id.as_str(), &service).await
                 }
-                Err(last_err.unwrap_or_else(|| Error::Other("no call service answered".into())))
-            };
+            });
             let membership = async {
                 ensure_calls_allowed(&room, &user_id).await?;
                 // If this device vanishes (crash, battery, network), the
@@ -146,7 +147,7 @@ impl Session {
                         let _ = leave_now(&session, &room, &client, &user_id, &device_id).await;
                     }
                     return match credentials {
-                        Err(err) => Err(Error::Other(err.to_string())),
+                        Err(err) => Err(Error::Other(err.message.clone())),
                         Ok(_) => Err(membership.err().unwrap_or(Error::NoSession)),
                     };
                 }
@@ -293,6 +294,142 @@ async fn get_json(request: matrix_sdk::reqwest::RequestBuilder) -> Option<Value>
     serde_json::from_str(&response.text().await.ok()?).ok()
 }
 
+/// Why a call service gave no token: `transient` when asking again later
+/// may work (5xx, 429, a timeout, no connection), else it refused.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ServiceError {
+    transient: bool,
+    /// Plain words for people, naming the service (never its error page).
+    message: String,
+}
+
+impl ServiceError {
+    fn transient(message: String) -> Self {
+        Self { transient: true, message }
+    }
+}
+
+impl From<ServiceError> for Error {
+    fn from(err: ServiceError) -> Self {
+        Error::Other(err.message)
+    }
+}
+
+/// A call service as people know it: its host.
+fn service_name(service: &str) -> &str {
+    let rest = service.split_once("://").map_or(service, |(_, rest)| rest);
+    rest.split('/').next().unwrap_or(rest)
+}
+
+/// What a token service's answer `status` (with body `text`) means.
+fn service_refusal(service: &str, status: u16, reason: &str, text: &str) -> ServiceError {
+    let name = service_name(service);
+    // A JSON error says why; an HTML page (nginx, a proxy) only repeats the status.
+    let why = serde_json::from_str::<Value>(text)
+        .ok()
+        .and_then(|v| v.get("error").and_then(Value::as_str).map(str::to_owned))
+        .filter(|why| !why.contains('<'))
+        .map(|why| format!(": {why}"))
+        .unwrap_or_default();
+    let transient = status >= 500 || status == 429 || status == 408;
+    let message = if transient {
+        format!("the call service ({name}) is unavailable right now ({status} {reason}){why}")
+    } else {
+        format!("the call service ({name}) refused this call ({status} {reason}){why}")
+    };
+    ServiceError { transient, message }
+}
+
+/// How long a join waits before asking the call services again, after each
+/// round in which none gave a token for a reason that may pass.
+const TOKEN_RETRY: [Duration; 3] = [
+    Duration::from_millis(500),
+    Duration::from_millis(1500),
+    Duration::from_secs(3),
+];
+
+/// The first token any of `services` gives (`fetch` asks one), trying them
+/// in order and, while some failure may pass (an outage, a timeout), again
+/// after each of `delays`. A service that refused outright is not asked
+/// again. The error is the last service's, in plain words.
+async fn first_token<F, Fut>(
+    services: &[String],
+    delays: &[Duration],
+    mut fetch: F,
+) -> Result<CallCredentials, ServiceError>
+where
+    F: FnMut(String) -> Fut,
+    Fut: std::future::Future<Output = Result<CallCredentials, ServiceError>>,
+{
+    let mut refused: Vec<&String> = Vec::new();
+    let mut last = None;
+    for round in 0..=delays.len() {
+        for service in services {
+            if refused.contains(&service) {
+                continue;
+            }
+            match fetch(service.clone()).await {
+                Ok(found) => return Ok(found),
+                Err(err) => {
+                    debug!(%service, err = %err.message, round, "call service gave no token");
+                    if !err.transient {
+                        refused.push(service);
+                    }
+                    last = Some(err);
+                }
+            }
+        }
+        if refused.len() == services.len() {
+            break;
+        }
+        if let Some(delay) = delays.get(round) {
+            crate::rt::sleep(*delay).await;
+        }
+    }
+    Err(last.unwrap_or_else(|| {
+        ServiceError::transient("this homeserver has no call service (LiveKit) set up".into())
+    }))
+}
+
+/// The call services the people already in `room`'s call use (their
+/// memberships' preferred foci), other than this device's.
+async fn room_services(
+    room: &matrix_sdk::Room,
+    user_id: &OwnedUserId,
+    device_id: &str,
+) -> Vec<String> {
+    use matrix_sdk::deserialized_responses::RawAnySyncOrStrippedState;
+    let Ok(events) = room.get_state_events(StateEventType::CallMember).await else {
+        return Vec::new();
+    };
+    let mut found = Vec::new();
+    for raw in events {
+        let RawAnySyncOrStrippedState::Sync(raw) = raw else {
+            continue;
+        };
+        let Ok(event) = raw.deserialize_as::<Value>() else {
+            continue;
+        };
+        let content = &event["content"];
+        match content.get("device_id").and_then(Value::as_str) {
+            // Left (an empty membership), or this device's own.
+            None => continue,
+            Some(device)
+                if device == device_id && event["sender"].as_str() == Some(user_id.as_str()) =>
+            {
+                continue;
+            }
+            Some(_) => {}
+        }
+        for url in services_in(content.get("foci_preferred")) {
+            if !found.contains(&url) {
+                found.push(url);
+            }
+        }
+    }
+    found
+}
+
 /// Swap an OpenID token for a LiveKit one at `service` (`/get_token`, or the
 /// older `/sfu/get` for services that predate it).
 async fn livekit_token(
@@ -301,10 +438,16 @@ async fn livekit_token(
     user_id: &OwnedUserId,
     device_id: &str,
     service: &str,
-) -> crate::Result<CallCredentials> {
+) -> Result<CallCredentials, ServiceError> {
+    let name = service_name(service);
     let openid = client
         .send(request_openid_token::v3::Request::new(user_id.clone()))
-        .await?;
+        .await
+        .map_err(|err| {
+            ServiceError::transient(format!(
+                "the homeserver gave no sign-in token for the call service: {err}"
+            ))
+        })?;
     let openid = json!({
         "access_token": openid.access_token,
         "token_type": openid.token_type.to_string(),
@@ -331,25 +474,37 @@ async fn livekit_token(
         ),
     ];
     let http = client.http_client();
-    let mut last = String::new();
+    let mut last = ServiceError::transient(format!("the call service ({name}) did not answer"));
     for (path, body) in attempts {
         let response = http
             .post(format!("{service}/{path}"))
             .header("Content-Type", "application/json")
             .body(body.to_string())
-            .timeout(Duration::from_secs(15))
+            .timeout(Duration::from_secs(10))
             .send()
             .await
-            .map_err(|err| Error::Other(format!("call service unreachable: {err}")))?;
+            .map_err(|err| {
+                let what = if err.is_timeout() {
+                    "did not answer in time"
+                } else {
+                    "could not be reached"
+                };
+                debug!(%service, %err, "call service unreachable");
+                ServiceError::transient(format!("the call service ({name}) {what}"))
+            })?;
         let status = response.status();
         let text = response.text().await.unwrap_or_default();
         if status.is_success() {
-            let body: Value = serde_json::from_str(&text)?;
-            let field = |name: &str| {
-                body.get(name)
+            let lacking = |what: &str| ServiceError {
+                transient: false,
+                message: format!("the call service ({name}) gave an answer without {what}"),
+            };
+            let body: Value = serde_json::from_str(&text).map_err(|_| lacking("a token"))?;
+            let field = |field: &str| {
+                body.get(field)
                     .and_then(Value::as_str)
                     .map(str::to_owned)
-                    .ok_or_else(|| Error::Other(format!("call service answer lacks `{name}`")))
+                    .ok_or_else(|| lacking(&format!("`{field}`")))
             };
             return Ok(CallCredentials {
                 livekit_url: field("url")?,
@@ -358,13 +513,19 @@ async fn livekit_token(
                 media_key: None,
             });
         }
-        last = format!("call service said {status}: {text}");
+        debug!(%service, %status, body = %text, "call service refused a token");
+        last = service_refusal(
+            service,
+            status.as_u16(),
+            status.canonical_reason().unwrap_or(""),
+            &text,
+        );
         // Only a missing endpoint is worth the older one.
         if status.as_u16() != 404 && status.as_u16() != 405 {
             break;
         }
     }
-    Err(Error::Other(last))
+    Err(last)
 }
 
 /// How long after this device stops checking in the homeserver hangs up for it.
@@ -587,6 +748,99 @@ mod tests {
         let ids = livekit_identities(&user, "DEV1");
         assert_eq!(ids[1], "@alice:localhost:DEV1");
         assert_eq!(ids[0], "mZs3Bdzfyu9aKeiedvidIcX5EmK9NtRPyMb9gc3ISa8");
+    }
+
+    fn token(service: &str) -> CallCredentials {
+        CallCredentials {
+            livekit_url: "ws://sfu".into(),
+            jwt: "jwt".into(),
+            service_url: service.into(),
+            media_key: None,
+        }
+    }
+
+    const NGINX_503: &str = "<html>\r\n<head><title>503 Service Temporarily Unavailable</title></head>\r\n<body>\r\n<center><h1>503 Service Temporarily Unavailable</h1></center>\r\n<hr><center>nginx</center>\r\n</body>\r\n</html>\r\n";
+
+    /// A fake call service: fails its first `failures` requests with
+    /// `failure`, then gives a token. Counts what it was asked.
+    fn fake(
+        failures: usize,
+        failure: ServiceError,
+    ) -> (
+        Arc<Mutex<Vec<String>>>,
+        impl FnMut(String) -> std::future::Ready<Result<CallCredentials, ServiceError>>,
+    ) {
+        let asked = Arc::new(Mutex::new(Vec::new()));
+        let seen = asked.clone();
+        let fetch = move |service: String| {
+            let mut seen = seen.lock().expect("lock");
+            seen.push(service.clone());
+            std::future::ready(if seen.len() <= failures {
+                Err(failure.clone())
+            } else {
+                Ok(token(&service))
+            })
+        };
+        (asked, fetch)
+    }
+
+    const QUICK: [Duration; 3] = [Duration::from_millis(1); 3];
+
+    #[tokio::test]
+    async fn a_service_down_for_a_moment_is_asked_again() {
+        let services = vec!["https://livekit-jwt.call.matrix.org".to_owned()];
+        let down = service_refusal(&services[0], 503, "Service Unavailable", NGINX_503);
+        let (asked, fetch) = fake(2, down);
+        let found = first_token(&services, &QUICK, fetch).await.expect("a token");
+        assert_eq!(found.service_url, services[0]);
+        assert_eq!(asked.lock().expect("lock").len(), 3, "two failures, then the token");
+    }
+
+    #[tokio::test]
+    async fn a_long_outage_ends_in_plain_words_after_a_few_tries() {
+        let services = vec!["https://livekit-jwt.call.matrix.org".to_owned()];
+        let down = service_refusal(&services[0], 503, "Service Unavailable", NGINX_503);
+        let (asked, fetch) = fake(usize::MAX, down);
+        let err = first_token(&services, &QUICK, fetch).await.expect_err("down");
+        assert!(err.transient);
+        assert_eq!(asked.lock().expect("lock").len(), QUICK.len() + 1);
+        assert_eq!(
+            err.message,
+            "the call service (livekit-jwt.call.matrix.org) is unavailable right now (503 Service Unavailable)"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_refusal_is_not_asked_again_but_the_next_service_is() {
+        let services = vec!["https://a.example".to_owned(), "https://b.example".to_owned()];
+        let refused = service_refusal(
+            &services[0],
+            403,
+            "Forbidden",
+            r#"{"errcode":"M_FORBIDDEN","error":"not a member of this room"}"#,
+        );
+        assert!(!refused.transient);
+        assert_eq!(
+            refused.message,
+            "the call service (a.example) refused this call (403 Forbidden): not a member of this room"
+        );
+        let (asked, fetch) = fake(1, refused.clone());
+        let found = first_token(&services, &QUICK, fetch).await.expect("b's token");
+        assert_eq!(found.service_url, "https://b.example");
+        // Refused everywhere: one try each, no waiting.
+        let (asked_all, fetch) = fake(usize::MAX, refused);
+        let err = first_token(&services, &QUICK, fetch).await.expect_err("refused");
+        assert!(!err.transient);
+        assert_eq!(*asked.lock().expect("lock"), services);
+        assert_eq!(*asked_all.lock().expect("lock"), services);
+    }
+
+    #[test]
+    fn unreachable_and_rate_limited_services_count_as_passing() {
+        assert!(service_refusal("https://x", 429, "Too Many Requests", "").transient);
+        assert!(service_refusal("https://x", 502, "Bad Gateway", NGINX_503).transient);
+        assert!(!service_refusal("https://x", 401, "Unauthorized", "").transient);
+        assert_eq!(service_name("https://livekit-jwt.call.matrix.org/livekit/jwt"), "livekit-jwt.call.matrix.org");
     }
 }
 
@@ -1225,7 +1479,7 @@ async fn livekit_token_cached(
     user_id: &OwnedUserId,
     device_id: &str,
     service: &str,
-) -> crate::Result<CallCredentials> {
+) -> Result<CallCredentials, ServiceError> {
     let key: TokenKey = (
         room_id.clone(),
         user_id.clone(),
@@ -1342,7 +1596,7 @@ impl Session {
                     livekit_token_cached(&client, &room_id, &user_id, device_id.as_str(), service)
                         .await
             {
-                debug!(%err, "no call token ahead of a call");
+                debug!(err = %err.message, "no call token ahead of a call");
             }
             Ok(())
         })

@@ -208,6 +208,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         .flex_col()
         .rounded(px(theme::RADIUS_LG))
         .bg(rgb(theme::bg_elevated()))
+        .children(crate::call_ui::join_error(shell, cx))
         .children(crate::call_ui::voice_panel(shell, cx))
         .child(row)
         .e2e("div", "user-pill");
