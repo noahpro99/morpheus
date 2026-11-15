@@ -1068,13 +1068,13 @@ impl SettingsView {
             .items_center()
             .gap(px(12.0))
             .child(crate::media::avatar(
-                self.picked.as_ref().map(|(_, image)| image.clone()),
-                "?",
+                self.picked.as_ref().map(|(_, image)| image.clone()).or_else(|| self.own.1.clone()),
+                &self.own.0,
                 72.0,
                 None,
             ))
             .child(muted(
-                if self.picked.is_some() { "Preview" } else { "Pick a picture to preview it" },
+                if self.picked.is_some() { "Preview" } else { "Your current picture" },
                 "muted",
             ))
             .e2e("div", "profile-preview")
@@ -1097,6 +1097,14 @@ impl SettingsView {
             .on_click(cx.listener(|this, _, _, cx| this.remove_picture(cx)))
             .e2e("button", "danger")
             .text("Remove picture");
+        let cancel = button("cancel-picture", "Cancel", Kind::Secondary, "")
+            .child("Cancel")
+            .on_click(cx.listener(|this, _, _, cx| {
+                this.picked = None;
+                cx.notify();
+            }))
+            .e2e("button", "secondary")
+            .text("Cancel");
         vec![
             section("Display name", "profile-name", vec![name_box, save], self.hl("profile-name"))
                 .into_any_element(),
@@ -1110,6 +1118,7 @@ impl SettingsView {
                         .gap(px(8.0))
                         .child(pick)
                         .child(set)
+                        .when(self.picked.is_some(), |d| d.child(cancel))
                         .child(remove)
                         .into_any_element(),
                 ],
