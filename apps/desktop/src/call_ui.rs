@@ -1041,22 +1041,8 @@ fn person_card(
     })
     .cursor_pointer()
     .on_click(cx.listener(move |this, _, _, cx| this.toggle_focus(&click_key, cx)))
-    .child(
-        div()
-            .rounded_full()
-            .border_3()
-            .border_color(if speaking {
-                gpui::Hsla::from(rgb(theme::green()))
-            } else {
-                gpui::Hsla::from(gpui::transparent_black())
-            })
-            .child(avatar(
-                picture_of(shell, user, 72),
-                &name,
-                size,
-                None,
-            )),
-    )
+    // The ring is the card's; the picture inside has none of its own.
+    .child(avatar(picture_of(shell, user, 72), &name, size, None))
     .child(focus_button(shell, cx, &key, &group))
     .child(name_label(name));
     if let Some(marks) = card_marks(flags) {
