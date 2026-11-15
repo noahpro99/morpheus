@@ -130,3 +130,65 @@ async fn manage_account_is_hidden_when_the_server_has_no_account_page() {
         "the local homeserver has no account management page, so no button"
     );
 }
+
+#[tokio::test]
+async fn the_picture_preview_shows_the_current_avatar_until_a_file_is_chosen() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let _restore = ProfileGuard::new(&hs, "carol").expect("carol's profile");
+    let mut app = App::launch_with_env(&hs, &[("MORPHEUS_E2E_PICK", PICTURE)])
+        .await
+        .expect("launch app");
+    login(&mut app, "carol", "carol-password").await;
+    app.wait_for(".sidebar-footer img.avatar", DEFAULT_WAIT)
+        .await
+        .expect("carol has a picture");
+    open_edit_profile(&mut app).await;
+
+    // Before choosing anything the preview is the current picture.
+    let preview = ".settings-page .profile-preview img.avatar";
+    app.wait_for(preview, DEFAULT_WAIT)
+        .await
+        .expect("the preview shows the current avatar");
+    let current = app.attr(preview, "src").await.expect("attr").expect("src");
+
+    // A chosen file replaces it; Cancel goes back to the current one.
+    app.click_text(".settings-page button", "Choose picture")
+        .await
+        .expect("choose");
+    wait_preview_not(&mut app, &current).await;
+    app.click_text(".settings-page button", "Cancel").await.expect("cancel");
+    let started = std::time::Instant::now();
+    loop {
+        let now = app.attr(preview, "src").await.expect("attr");
+        if now.as_deref() == Some(current.as_str()) {
+            break;
+        }
+        assert!(started.elapsed() < DEFAULT_WAIT, "Cancel did not bring back the current avatar");
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+
+    // Removing the picture shows the initials placeholder.
+    app.click_text(".settings-page button", "Remove picture")
+        .await
+        .expect("remove");
+    app.wait_for(".settings-page .profile-preview div.avatar", DEFAULT_WAIT)
+        .await
+        .expect("the preview shows the placeholder");
+    assert_eq!(app.count(preview).await.expect("count"), 0);
+}
+
+async fn wait_preview_not(app: &mut App, src: &str) {
+    let preview = ".settings-page .profile-preview img.avatar";
+    let started = std::time::Instant::now();
+    loop {
+        let now = app.attr(preview, "src").await.expect("attr");
+        if now.as_deref().is_some_and(|now| now != src) {
+            return;
+        }
+        assert!(started.elapsed() < DEFAULT_WAIT, "the chosen file did not replace the preview");
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+}

@@ -1007,6 +1007,7 @@ impl Shell {
                 .and_then(|p| p.avatar.clone())
                 .map(|m| (m, 34)),
         );
+        wanted.extend(self.profile.as_ref().and_then(|p| p.avatar.clone()).map(|m| (m, 72)));
         wanted.extend(
             self.rooms
                 .iter()
@@ -1335,7 +1336,13 @@ impl Render for Shell {
             .when(show_backup_prompt(self.keys, self.backup_later), |d| {
                 d.child(backup_prompt(cx))
             })
-            .children(self.settings.clone())
+            .children(self.settings.clone().inspect(|settings| {
+                let own = match &self.profile {
+                    Some(p) => (p.name.clone(), p.avatar.as_ref().and_then(|m| self.avatars.get(m, 72))),
+                    None => (String::new(), None),
+                };
+                settings.update(cx, |settings, _| settings.own = own);
+            }))
             .children(inbox)
             .children(incoming)
             .children(self.switcher.clone())

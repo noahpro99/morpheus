@@ -166,6 +166,8 @@ pub struct SettingsView {
     profile_busy: bool,
     /// Where the server lets the account be managed (its OIDC account page), if it says.
     manage_url: Option<String>,
+    /// Your display name and current picture (the shell keeps them here).
+    pub own: (String, Option<std::sync::Arc<gpui::Image>>),
 }
 
 impl SettingsView {
@@ -251,6 +253,7 @@ impl SettingsView {
             profile_note: None,
             profile_busy: false,
             manage_url: None,
+            own: (String::new(), None),
         }
     }
 
