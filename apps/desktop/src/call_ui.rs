@@ -232,7 +232,7 @@ pub fn room_call(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -> 
     )
 }
 
-/// A round button of the call (mute, deafen, camera, screen, leave).
+/// A squircle button of the call (mute, deafen, camera, screen, leave).
 struct Control {
     id: &'static str,
     classes: String,
@@ -275,7 +275,7 @@ fn control_button(
         .flex()
         .items_center()
         .justify_center()
-        .rounded_full()
+        .rounded(px(theme::RADIUS_XL))
         .bg(bg)
         .when(!enabled, |d| d.opacity(0.4))
         .when(pending, |d| d.opacity(0.7))
@@ -289,7 +289,8 @@ fn control_button(
     let tagged = button
         .e2e("button", &classes)
         .attr("title", title)
-        .attr("data-bg", if hang || (mute && active) { "#ff6b6b" } else { "" });
+        .attr("data-bg", if hang || (mute && active) { "#ff6b6b" } else { "" })
+        .attr("data-radius", theme::RADIUS_XL.to_string());
     if enabled {
         tagged.into_any_element()
     } else {

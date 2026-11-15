@@ -5490,3 +5490,41 @@ async fn double_clicking_a_listed_person_focuses_their_screen_or_card_in_the_cal
     bob.click(".call-stage .call-controls .hang-up").await.expect("bob leaves");
     alice.click(".call-stage .call-controls .hang-up").await.expect("alice leaves");
 }
+
+#[tokio::test]
+async fn the_call_controls_are_squircles_like_the_rail_icons() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    join_hangout(&mut alice, "alice").await;
+    alice
+        .wait_for(".call-stage .call-controls .hang-up", DEFAULT_WAIT)
+        .await
+        .expect("the controls");
+    let rail: f64 = alice
+        .attr(".rail > .rail-item", "data-radius")
+        .await
+        .expect("attr")
+        .expect("the rail icons note their corner radius")
+        .parse()
+        .expect("a number");
+    for control in [".mute-button", ".deafen-button", ".camera-button", ".screen-button", ".hang-up"] {
+        let selector = format!(".call-stage .call-controls {control}");
+        let radius: f64 = alice
+            .attr(&selector, "data-radius")
+            .await
+            .expect("attr")
+            .unwrap_or_else(|| panic!("{control} notes its corner radius"))
+            .parse()
+            .expect("a number");
+        let size = alice.bounds(&selector).await.expect("bounds").expect("box");
+        assert!(
+            radius >= size.w * 0.2 && radius < size.w * 0.45,
+            "{control} is a rounded square, not a circle: radius {radius} on {}",
+            size.w
+        );
+        assert!((radius - rail).abs() < 0.5, "{control} has the rail icons' corners: {radius} against {rail}");
+    }
+}
