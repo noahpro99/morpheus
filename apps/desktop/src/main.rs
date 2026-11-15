@@ -70,6 +70,7 @@ mod update;
 mod update_self_test;
 mod user_bar;
 mod video;
+mod welcome;
 mod vim;
 mod zoom;
 // The view-models live in their own crate; the old module path stays valid.

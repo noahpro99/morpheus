@@ -12,7 +12,16 @@ use crate::{
 
 pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> impl IntoElement {
     let friends = shell.friends_page.clone().filter(|_| shell.friends_open);
+    let welcome = shell
+        .welcome
+        .as_ref()
+        .and_then(|id| shell.rooms.iter().find(|r| &r.id == id))
+        .cloned();
     let body = match shell.current().filter(|_| friends.is_none()) {
+        _ if welcome.is_some() => match &welcome {
+            Some(space) => crate::welcome::render(shell, cx, space),
+            None => div().into_any_element(),
+        },
         _ if friends.is_some() => friends
             .into_iter()
             .next()

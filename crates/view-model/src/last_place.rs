@@ -146,3 +146,38 @@ mod tests {
         assert!(ready(&place("!c:x"), &[invited]).is_none());
     }
 }
+
+/// The servers each account has been welcomed to (the welcome screen shows
+/// the first time one is opened): `{user: [space id]}`.
+pub const WELCOMED: &str = "welcomed_servers.json";
+
+fn all_welcomed(data_dir: &Path) -> serde_json::Map<String, serde_json::Value> {
+    std::fs::read(data_dir.join(WELCOMED))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default()
+}
+
+/// Whether `space` has been welcomed (or opened) already by `user`.
+pub fn is_welcomed(data_dir: &Path, user: &str, space: &str) -> bool {
+    all_welcomed(data_dir)
+        .get(user)
+        .and_then(|v| v.as_array())
+        .is_some_and(|spaces| spaces.iter().any(|s| s.as_str() == Some(space)))
+}
+
+/// Remembers that `user` has been welcomed to `space`.
+pub fn mark_welcomed(data_dir: &Path, user: &str, space: &str) -> std::io::Result<()> {
+    if is_welcomed(data_dir, user, space) {
+        return Ok(());
+    }
+    let mut all = all_welcomed(data_dir);
+    let mut spaces = all
+        .get(user)
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    spaces.push(serde_json::json!(space));
+    all.insert(user.to_owned(), serde_json::Value::Array(spaces));
+    std::fs::write(data_dir.join(WELCOMED), serde_json::Value::Object(all).to_string())
+}

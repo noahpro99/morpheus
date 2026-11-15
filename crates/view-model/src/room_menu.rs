@@ -288,6 +288,7 @@ pub fn space_menu(
     let ids: Vec<OwnedRoomId> = children.iter().map(|r| r.id.clone()).collect();
     let all_muted = !children.is_empty() && children.iter().all(|r| r.muted);
     let mut items = vec![
+        MenuItem::new("Server overview", MenuAction::ServerOverview(space.id.clone())).icon("info"),
         MenuItem::new("Mark as read", MenuAction::MarkRead(ids.clone())),
         MenuItem::new("Invite to server", MenuAction::RoomDialog(RoomDialogKind::Invite(space.id.clone())))
             .icon("user-plus"),

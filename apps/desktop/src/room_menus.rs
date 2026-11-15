@@ -388,6 +388,7 @@ impl Shell {
                     .detach();
                 }
             }
+            MenuAction::ServerOverview(space) => self.show_welcome(space, cx),
             MenuAction::ToggleHideMuted => {
                 self.prefs.hide_muted = !self.prefs.hide_muted;
                 self.save_prefs(cx);
@@ -519,6 +520,7 @@ impl Shell {
             }
             Done::SpaceCreated { space, parent } => {
                 self.dialog_close(cx);
+                self.mark_welcomed(space);
                 self.set_scope(
                     Scope::Space(parent.clone().unwrap_or_else(|| space.clone())),
                     cx,

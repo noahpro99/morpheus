@@ -72,6 +72,7 @@ impl Shell {
 
     /// A channel of the server that you are not in: its join card.
     pub fn open_unjoined(&mut self, room: SpaceRoom, cx: &mut Context<Self>) {
+        self.welcome = None;
         self.friends_open = false;
         self.stash_timeline(cx);
         self.composer = None;
@@ -256,7 +257,7 @@ pub fn invite_row(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) ->
         .into_any_element()
 }
 
-fn card_button(id: &'static str, label: &'static str, primary: bool) -> gpui::Stateful<gpui::Div> {
+pub(crate) fn card_button(id: &'static str, label: &'static str, primary: bool) -> gpui::Stateful<gpui::Div> {
     div()
         .id(id)
         .px(px(16.0))

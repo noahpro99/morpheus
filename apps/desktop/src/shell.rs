@@ -186,6 +186,8 @@ pub struct Shell {
     /// Whether the box has been wide, so a first render does not animate.
     pub search_was_wide: std::cell::Cell<bool>,
     /// Whether the Friends page fills the chat area, and the page itself.
+    /// The server whose welcome screen fills the chat area.
+    pub welcome: Option<OwnedRoomId>,
     pub friends_open: bool,
     pub friends_page: Option<Entity<FriendsPage>>,
     /// A direct message just made, to open once the room list has it.
@@ -440,6 +442,7 @@ impl Shell {
             search_input: None,
             search_was_wide: std::cell::Cell::new(false),
             friends_open: false,
+            welcome: None,
             friends_page: None,
             pending_dm: None,
             inbox_open: false,
@@ -779,6 +782,9 @@ impl Shell {
 
     /// What a rail badge does: list another scope.
     pub fn set_scope(&mut self, scope: Scope, cx: &mut Context<Self>) {
+        if self.welcome.as_ref().map(|w| Scope::Space(w.clone())).as_ref() != Some(&scope) {
+            self.welcome = None;
+        }
         if scope != Scope::Dms {
             self.last_server = scope.clone();
         }
@@ -812,6 +818,16 @@ impl Shell {
                 .iter()
                 .any(|r| &r.id == room)
         });
+        // A server never opened before welcomes you first.
+        if let Scope::Space(space) = &scope
+            && self.rooms.iter().any(|r| &r.id == space)
+            && !self.is_welcomed(space)
+        {
+            if remembered.is_none() {
+                return self.show_welcome(space.clone(), cx);
+            }
+            self.mark_welcomed(space);
+        }
         let target = remembered.or_else(|| match scope {
             Scope::Space(_) => crate::room_list::sidebar_order(self, &scope)
                 .into_iter()
@@ -839,6 +855,7 @@ impl Shell {
         self.prepare_call(Some(id.clone()), cx);
         // Remembered below, once the room is set.
         // Going to a room leaves the Friends page.
+        self.welcome = None;
         self.friends_open = false;
         // An invite (or a channel not joined) has no timeline: its card shows.
         self.preview = None;
