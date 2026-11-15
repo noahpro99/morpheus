@@ -88,9 +88,8 @@ pub struct VideoPlayer {
     /// A short silent clip: plays by itself, muted, looping.
     gif: bool,
     status: Status,
-    image: Option<Arc<RenderImage>>,
-    /// Pictures replaced, to take out of the atlas on the next frame.
-    stale: Vec<Arc<RenderImage>>,
+    /// The picture shown, and those replaced that wait to leave the atlas.
+    pictures: crate::pictures::Pictures,
     frame_index: u64,
     frame_pts: Duration,
     focus: FocusHandle,
@@ -137,8 +136,7 @@ impl VideoPlayer {
             player: None,
             gif: false,
             status: Status::default(),
-            image: None,
-            stale: Vec::new(),
+            pictures: Default::default(),
             frame_index: 0,
             frame_pts: Duration::ZERO,
             focus: cx.focus_handle(),
@@ -448,9 +446,7 @@ impl VideoPlayer {
             // The pixels are B, G, R, A: what GPUI's images are made of.
             if let Some(buffer) = image::RgbaImage::from_raw(frame.width, frame.height, frame.bgra) {
                 let image = Arc::new(RenderImage::new(vec![image::Frame::new(buffer)]));
-                if let Some(old) = self.image.replace(image) {
-                    self.stale.push(old);
-                }
+                self.pictures.show(image);
             }
             changed = true;
         }
@@ -518,7 +514,7 @@ impl VideoPlayer {
         let (w, h) = match (self.width, self.height, self.info()) {
             (Some(w), Some(h), _) => (Some(w), Some(h)),
             (_, _, Some(info)) => (Some(info.width), Some(info.height)),
-            _ => match &self.image {
+            _ => match self.pictures.image() {
                 Some(image) => {
                     let size = image.size(0);
                     (u32::try_from(size.width.0).ok(), u32::try_from(size.height.0).ok())
@@ -534,7 +530,7 @@ impl VideoPlayer {
     /// picture leaves the focus where it is.
     fn surface(&mut self, viewer: Option<&FocusHandle>, cx: &mut Context<Self>) -> AnyElement {
         let big = viewer.is_some();
-        let image = self.image.clone();
+        let image = self.pictures.to_paint();
         let radius = if big { 6.0 } else { theme::RADIUS };
         let id = SharedString::from(format!("video-surface-{}-{big}", self.id));
         let mut surface = div()
@@ -557,11 +553,12 @@ impl VideoPlayer {
                     }
                 }));
         }
-        if let Some(image) = image {
+        if let Some((image, painted)) = image {
             surface = surface.child(
                 canvas(
                     |_, _, _| (),
                     move |bounds, (), window, _| {
+                        painted.set(true);
                         let fitted = ObjectFit::Contain.get_bounds(bounds, image.size(0));
                         let _ = window.paint_image(fitted, gpui::Corners::all(px(radius)), image.clone(), 0, false);
                     },
@@ -887,9 +884,7 @@ impl VideoPlayer {
 
     /// The player at `w` x `h` for the full-window viewer.
     pub fn big(&mut self, w: f32, h: f32, focus: &FocusHandle, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
-        for old in self.stale.drain(..) {
-            let _ = window.drop_image(old);
-        }
+        self.pictures.drop_stale(window);
         let mut card = div()
             .id(SharedString::from(format!("video-big-{}", self.id)))
             .relative()
@@ -909,7 +904,7 @@ impl VideoPlayer {
 
     /// Size of the full-window player: the video's shape, fitted.
     pub fn shape(&self) -> (f32, f32) {
-        let (w, h) = match &self.image {
+        let (w, h) = match self.pictures.image() {
             Some(image) => {
                 let s = image.size(0);
                 (s.width.0 as f32, s.height.0 as f32)
@@ -940,9 +935,7 @@ impl VideoPlayer {
 
 impl Render for VideoPlayer {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        for old in self.stale.drain(..) {
-            let _ = window.drop_image(old);
-        }
+        self.pictures.drop_stale(window);
         if self.worth_probing() && matches!(self.load, Load::Idle) {
             self.fetch(cx);
         }
@@ -974,7 +967,7 @@ impl Render for VideoPlayer {
                 cx.listener(|this, _: &MouseUpEvent, _, cx| this.end_drag(None, cx)),
             )
             .child(self.paint_marker());
-        let playing_here = self.player.is_some() && self.image.is_some();
+        let playing_here = self.player.is_some() && self.pictures.image().is_some();
         if playing_here {
             card = card.child(self.surface(None, cx));
             if self.gif {

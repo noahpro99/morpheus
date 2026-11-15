@@ -99,6 +99,11 @@ pub fn latest_frame(key: &str) -> Option<Frame> {
     FRAMES.lock().ok()?.as_ref()?.get(key).cloned()
 }
 
+/// How many pictures are kept (one per video shown).
+pub(crate) fn frames_kept() -> usize {
+    FRAMES.lock().ok().and_then(|f| f.as_ref().map(|f| f.len())).unwrap_or(0)
+}
+
 pub(crate) fn forget(key: &str) {
     if let Ok(mut frames) = FRAMES.lock()
         && let Some(frames) = frames.as_mut()
@@ -115,6 +120,13 @@ pub(crate) fn keep(key: &str, buffer: &dyn VideoBuffer) {
 /// [`keep`], turned `degrees` clockwise (0, 90, 180, 270) to stand upright:
 /// a phone's camera sensor is mounted turned, and its frames say so.
 pub(crate) fn keep_turned(key: &str, buffer: &dyn VideoBuffer, degrees: u32) {
+    // A decoded frame on macOS is a CVPixelBuffer behind Objective-C, and
+    // this runs on a Tokio worker, which has no autorelease pool: what the
+    // conversion autoreleases goes when this returns (see autorelease.rs).
+    crate::imp::autorelease::pool(|| keep_turned_now(key, buffer, degrees));
+}
+
+fn keep_turned_now(key: &str, buffer: &dyn VideoBuffer, degrees: u32) {
     let (mut width, mut height) = (buffer.width(), buffer.height());
     if width == 0 || height == 0 {
         return;

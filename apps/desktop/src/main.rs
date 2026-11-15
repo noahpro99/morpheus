@@ -35,6 +35,7 @@ mod mod_view;
 mod noise;
 mod model;
 mod notify;
+mod pictures;
 mod prefs;
 mod profile;
 mod profile_actions;

@@ -981,6 +981,13 @@ impl App {
         Ok((0..draw.len()).map(|i| [draw[i], present[i], prepaint[i], paint[i]]).collect())
     }
 
+    /// How many pictures the GPUI app's live videos hold for drawing (each
+    /// a full frame of pixels): a few per video, however long they play.
+    pub async fn video_pictures(&mut self) -> Result<u64> {
+        let value = self.op("video_pictures", "", json!({})).await?;
+        value.as_u64().context("a count")
+    }
+
     /// Turns the GPUI app's element tagging off or on: with it off, frames
     /// cost what a build without the e2e feature would (the tree a test sees
     /// stops updating).

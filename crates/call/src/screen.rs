@@ -24,7 +24,10 @@ use tokio::sync::oneshot;
 use tracing::{info, warn};
 
 use crate::{
-    imp::video::{self, LOCAL_SCREEN},
+    imp::{
+        autorelease,
+        video::{self, LOCAL_SCREEN},
+    },
     quality::ScreenQuality,
 };
 
@@ -78,7 +81,10 @@ pub(crate) fn run(
             let kind = DesktopCaptureSourceType::Screen;
             let mut options = DesktopCapturerOptions::new(kind);
             options.set_include_cursor(true);
-            let Some(mut capturer) = DesktopCapturer::new(options) else {
+            // libwebrtc's macOS capturers are Objective-C: every call from this
+            // thread goes in an autorelease pool (none of its own; see
+            // autorelease.rs).
+            let Some(mut capturer) = autorelease::pool(|| DesktopCapturer::new(options)) else {
                 let _ = started.send(Err("screen capture is not available here".into()));
                 return;
             };
@@ -86,7 +92,7 @@ pub(crate) fn run(
             let chosen = if cfg!(target_os = "linux") {
                 None
             } else {
-                capturer.get_source_list().into_iter().next()
+                autorelease::pool(|| capturer.get_source_list().into_iter().next())
             };
             let mut started = Some(started);
             let failed = Arc::new(AtomicBool::new(false));
@@ -109,7 +115,7 @@ pub(crate) fn run(
             let (pictures_in, temporary_in) = (pictures.clone(), temporary.clone());
             let sent_first = Arc::new(AtomicBool::new(false));
             let sent_first_in = sent_first.clone();
-            capturer.start_capture(chosen, move |result: Result<DesktopFrame, CaptureError>| {
+            let on_frame = move |result: Result<DesktopFrame, CaptureError>| {
                 match result {
                     Ok(frame) => {
                         let Some(buffer) = to_i420(&frame, quality) else {
@@ -162,13 +168,18 @@ pub(crate) fn run(
                         let _ = tx.send(Err("screen sharing was cancelled".into()));
                     }
                 }
-            });
+            };
+            autorelease::pool(|| capturer.start_capture(chosen, on_frame));
             info!("screen capture started");
             let began = Instant::now();
             let mut resent = Instant::now();
             let mut warned = false;
+            let mut logged = Instant::now();
             while !stop.load(Ordering::Relaxed) {
-                capturer.capture_frame();
+                // The frame callback runs inside, on this thread: its pictures,
+                // IOSurfaces and whatever the capturer autoreleases go when
+                // the pool drains, each time round.
+                autorelease::pool(|| capturer.capture_frame());
                 if !warned && began.elapsed() >= Duration::from_secs(5) && pictures.load(Ordering::Relaxed) == 0 {
                     warned = true;
                     info!(
@@ -185,8 +196,18 @@ pub(crate) fn run(
                         && let Ok(kept) = last.lock()
                         && let Some(frame) = kept.as_ref()
                     {
-                        source.capture_frame(frame);
+                        autorelease::pool(|| source.capture_frame(frame));
                     }
+                }
+                // Now and then, how it goes: a log from a long share shows
+                // whether pictures keep coming and memory stays put.
+                if logged.elapsed() >= Duration::from_secs(60) {
+                    logged = Instant::now();
+                    info!(
+                        pictures = pictures.load(Ordering::Relaxed),
+                        shown = video::frames_kept(),
+                        "screen capture: still sharing"
+                    );
                 }
                 if let Ok(first) = rx.try_recv()
                     && let Some(started) = started.take()
@@ -202,6 +223,8 @@ pub(crate) fn run(
                     "screen sharing stopped".into()
                 }));
             }
+            // Stopping it is Objective-C too.
+            autorelease::pool(move || drop(capturer));
             video::forget(LOCAL_SCREEN);
         });
     if let Err(err) = spawned {

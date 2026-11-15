@@ -951,6 +951,68 @@ fn shows_screen_pattern(user: &str) -> String {
     )
 }
 
+/// Issue #20: sharing the screen while its tile is not drawn (the call out
+/// of view here; on macOS also a window covered by the app being shared)
+/// held every frame given to the tile, a full 2560 px picture 30 times a
+/// second, until the tile was drawn again (34 GB). Held pictures stay a few.
+#[tokio::test]
+async fn a_screen_shared_out_of_view_holds_only_a_few_pictures() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    if !alice.is_gpui() {
+        eprintln!("the picture count is the GPUI app's; skipping");
+        return;
+    }
+    login_and_open(&mut alice, "alice", "hangout").await;
+    alice.click(CALL_BUTTON).await.expect("call");
+    alice
+        .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("alice connected");
+    start_share(&mut alice, ".voice-panel .screen-button").await;
+    wait_screen_pattern(&mut alice, "@alice:localhost")
+        .await
+        .expect("alice sees what she shares");
+    let drawn = alice.video_pictures().await.expect("count");
+    eprintln!("[pictures] {drawn} held with the call in view");
+
+    // Another room: the call's tiles are not drawn, the screen goes on.
+    // (Streamer mode asks before leaving a shared screen's channel: Open.)
+    alice
+        .click_text(".room .room-name", "general")
+        .await
+        .expect("general");
+    alice
+        .wait_for(".confirm-dialog .confirm-go", DEFAULT_WAIT)
+        .await
+        .expect("streamer mode asks");
+    alice
+        .click(".confirm-dialog .confirm-go")
+        .await
+        .expect("open it");
+    alice
+        .wait_for_text(".chat-header h2", "general", DEFAULT_WAIT)
+        .await
+        .expect("in general");
+    alice
+        .wait_for(".voice-panel .screen-button.active", DEFAULT_WAIT)
+        .await
+        .expect("still sharing");
+    assert_eq!(alice.count(".call-stage").await.expect("count"), 0, "the call is out of view");
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+    let held = alice.video_pictures().await.expect("count");
+    eprintln!("[pictures] {held} held after 3 s out of view");
+    assert!(held <= 4, "{held} pictures held for a screen not drawn (at most a few)");
+
+    alice
+        .click(".voice-panel .hang-up")
+        .await
+        .expect("hang up");
+}
+
 #[tokio::test]
 async fn a_shared_screen_shows_to_everyone_in_the_call_until_stopped() {
     let Some(hs) = homeserver() else {

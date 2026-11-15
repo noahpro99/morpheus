@@ -1837,9 +1837,8 @@ pub struct VideoFrame {
     key: String,
     screen: bool,
     seen: u64,
-    image: Option<Arc<RenderImage>>,
-    /// Pictures replaced, to take out of the atlas on the next frame.
-    stale: Vec<Arc<RenderImage>>,
+    /// The picture shown, and those replaced that wait to leave the atlas.
+    pictures: crate::pictures::Pictures,
     /// What the pictures look like, for tests: pixel colours left and right.
     sample: (String, String),
     pub dim: (u32, u32),
@@ -1898,8 +1897,7 @@ impl VideoFrame {
             key,
             screen,
             seen: 0,
-            image: None,
-            stale: Vec::new(),
+            pictures: Default::default(),
             sample: (String::new(), String::new()),
             dim: (0, 0),
             on_resize,
@@ -2037,9 +2035,7 @@ impl VideoFrame {
             return;
         };
         let image = Arc::new(RenderImage::new(vec![image::Frame::new(buffer)]));
-        if let Some(old) = self.image.replace(image) {
-            self.stale.push(old);
-        }
+        self.pictures.show(image);
         cx.notify();
     }
 }
@@ -2048,19 +2044,16 @@ impl gpui::Render for VideoFrame {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let me = cx.entity();
         let panning = self.panning.is_some();
-        for old in self.stale.drain(..) {
-            let _ = window.drop_image(old);
-        }
-        let shown = self.image.is_some();
+        self.pictures.drop_stale(window);
+        let shown = self.pictures.image().is_some();
         let view = self.view;
         let area = self.area.clone();
         // Pinned to the card by its edges: a percentage height under a
         // flex-sized card is indefinite, and the image then took its own
         // shape from the width, taller than the card and cut off by it.
         let base = div().absolute().inset_0();
-        match &self.image {
-            Some(image) => {
-                let image = image.clone();
+        match self.pictures.to_paint() {
+            Some((image, painted)) => {
                 base.child(
                     gpui::canvas(
                         |_, _, _| (),
@@ -2090,6 +2083,7 @@ impl gpui::Render for VideoFrame {
                             let radius = px(theme::RADIUS_LG)
                                 .min(fitted.size.width / 2.0)
                                 .min(fitted.size.height / 2.0);
+                            painted.set(true);
                             let _ = window.paint_image(
                                 fitted,
                                 gpui::Corners::all(radius),

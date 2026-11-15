@@ -254,6 +254,8 @@ async fn handle(request: &Request, cx: &mut AsyncApp) -> Reply {
                 "paint": frames.iter().map(|f| f.paint).collect::<Vec<_>>(),
             }))
         }
+        // Pictures all live videos hold for drawing (shown, waiting to leave the atlas).
+        "video_pictures" => Ok(json!(crate::pictures::held())),
         // Stop (or resume) elements recording themselves, to time frames without it.
         "tagging" => {
             super::tag::TAGGING.store(request.enabled.unwrap_or(true), std::sync::atomic::Ordering::Relaxed);
