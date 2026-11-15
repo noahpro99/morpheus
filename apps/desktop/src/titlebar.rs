@@ -63,20 +63,35 @@ fn bar_button(
     )
 }
 
-/// The streamer mode pill: there only while the mode is on (by hand or
-/// while sharing); clicking it turns the mode off.
+/// The streamer mode control: shown while the auto-on-share setting is on or
+/// the mode is on. The pill when the mode is on (click turns it off); an
+/// eye-off icon when off (click turns it on, clearing a share's override).
 fn streamer_button(shell: &Shell, cx: &mut Context<Shell>) -> Option<impl IntoElement> {
-    if !crate::streamer::active() {
+    let on = crate::streamer::active();
+    if !on && !crate::streamer::settings().auto {
         return None;
     }
-    let toggle = cx.listener(|this, _, _, cx| {
-        let settings = crate::streamer::turn_off();
+    let toggle = cx.listener(move |this, _, _, cx| {
+        let settings = if on {
+            crate::streamer::turn_off()
+        } else {
+            crate::streamer::turn_on()
+        };
         if let Err(err) = settings.save(&crate::data_dir()) {
             eprintln!("morpheus-desktop: saving the streamer mode setting: {err}");
         }
         crate::streamer::set_settings(settings);
         this.streamer_changed(cx);
     });
+    if !on {
+        return Some(
+            bar_button(shell, cx, "streamer-button")
+                .child(icon("eye-off", 18.0))
+                .on_click(toggle)
+                .e2e("button", "ghost streamer-button")
+                .attr("title", "Turn on streamer mode"),
+        );
+    }
     Some(
         bar_button(shell, cx, "streamer-button")
             .w_auto()
