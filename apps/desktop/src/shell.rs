@@ -831,6 +831,7 @@ impl Shell {
                 .find(|r| r.id == id)
                 .map(|r| (r.name.clone(), r.is_dm))
                 .unwrap_or_default();
+            timeline.update(cx, |t, cx| t.set_direct(is_dm, cx));
             let composer = cx.new(|cx| Composer::new(self.session.clone(), room.clone(), name, is_dm, cx));
             let target = composer.clone();
             self.composer_link = Some(cx.subscribe(&timeline, move |_, _, event: &TimelineEvent, cx| {

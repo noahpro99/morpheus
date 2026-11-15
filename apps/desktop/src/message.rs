@@ -1680,6 +1680,33 @@ pub fn message_el(
     }
 }
 
+/// The start of an empty direct message: the line, and a button that greets them.
+pub fn say_hi_row(on_click: impl Fn(&mut gpui::App) + 'static) -> AnyElement {
+    div()
+        .py(px(16.0))
+        .flex()
+        .flex_col()
+        .items_center()
+        .gap(px(12.0))
+        .child(other_row(&Row::Start))
+        .child(
+            div()
+                .id("say-hi")
+                .px(px(16.0))
+                .py(px(8.0))
+                .rounded(px(theme::RADIUS_SM))
+                .bg(rgb(theme::bg_input()))
+                .text_color(rgb(theme::text()))
+                .font_weight(FontWeight::SEMIBOLD)
+                .cursor_pointer()
+                .child("Say hi! 👋")
+                .on_click(move |_, _, cx| on_click(cx))
+                .e2e("button", "say-hi")
+                .text("Say hi! 👋"),
+        )
+        .into_any_element()
+}
+
 /// A row that is not a message.
 pub fn other_row(row: &Row) -> AnyElement {
     match row {
