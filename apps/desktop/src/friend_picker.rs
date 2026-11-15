@@ -176,11 +176,7 @@ impl FriendPicker {
                         .update(cx, |this, _| this.avatars.begin(&media, 32))
                         .unwrap_or(false);
                     if begun {
-                        let image = fetching
-                            .await
-                            .ok()
-                            .flatten()
-                            .and_then(|bytes| media::decode(&bytes));
+                        let image = media::fetched(cx, fetching, (64, 64), false).await;
                         this.update(cx, |this, cx| {
                             this.avatars.finish(&media, 32, image);
                             cx.notify();

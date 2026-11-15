@@ -45,13 +45,15 @@ use crate::{
 
 /// How often the lock state is re-read.
 const KEYS_RECHECK: std::time::Duration = std::time::Duration::from_secs(30);
-/// What is kept of rooms just left: the last 20, and at most 6000 entries (plus
+/// What is kept of rooms just left: the last 8, and at most 3000 entries (plus
 /// pictures) between them. A timeline costs about 2-4 KB an entry (message,
-/// rows, measured heights), so the budget is some 25 MB at most; a usual room is
-/// 40-150 entries, so 20 rooms are around 5 MB.
+/// rows, measured heights) and its pictures, so the budget is some 12 MB at
+/// most; a usual room is 40-150 entries. A room further back opens again from
+/// the SDK's event cache on disk, as on a first visit (issue #10: it was 20
+/// rooms, and their pictures stayed decoded with them).
 const TIMELINE_CACHE: crate::view_model::lru::Budget = crate::view_model::lru::Budget {
-    max_items: 20,
-    max_weight: 6000,
+    max_items: 8,
+    max_weight: 3000,
 };
 
 /// The shell root's focus handle: holding it is holding nothing in particular.
@@ -322,12 +324,15 @@ impl Shell {
             this.refresh_keys(cx)
         })
         .detach();
-        cx.subscribe(&settings, |this, _, chosen: &crate::settings::CustomColourChosen, cx| {
-            crate::theme::set_custom(Some(chosen.0));
-            cx.refresh_windows();
-            this.prefs.set_custom_colour(Some(chosen.0));
-            this.save_prefs(cx);
-        })
+        cx.subscribe(
+            &settings,
+            |this, _, chosen: &crate::settings::CustomColourChosen, cx| {
+                crate::theme::set_custom(Some(chosen.0));
+                cx.refresh_windows();
+                this.prefs.set_custom_colour(Some(chosen.0));
+                this.save_prefs(cx);
+            },
+        )
         .detach();
         cx.subscribe(&settings, |this, _, chosen: &ThemeChosen, cx| {
             crate::theme::set(chosen.0);
@@ -782,7 +787,13 @@ impl Shell {
 
     /// What a rail badge does: list another scope.
     pub fn set_scope(&mut self, scope: Scope, cx: &mut Context<Self>) {
-        if self.welcome.as_ref().map(|w| Scope::Space(w.clone())).as_ref() != Some(&scope) {
+        if self
+            .welcome
+            .as_ref()
+            .map(|w| Scope::Space(w.clone()))
+            .as_ref()
+            != Some(&scope)
+        {
             self.welcome = None;
         }
         if scope != Scope::Dms {
@@ -1058,6 +1069,16 @@ impl Shell {
         drop(self.timeline_cache.insert(room, timeline, weight));
     }
 
+    /// Tells the memory report how many timelines are kept.
+    pub(crate) fn note_timelines(&self) {
+        use std::sync::atomic::Ordering;
+        crate::memory::TIMELINES.store(
+            self.timeline_cache.len() + usize::from(self.timeline.is_some()),
+            Ordering::Relaxed,
+        );
+        crate::memory::TIMELINE_WEIGHT.store(self.timeline_cache.weight(), Ordering::Relaxed);
+    }
+
     /// A link in a message: Matrix links open in the app,
     /// others in the browser; test runs only log the hand-off.
     pub(crate) fn link_clicked(&mut self, url: &str, cx: &mut Context<Self>) {
@@ -1171,11 +1192,7 @@ impl Shell {
             let person = people.get(media.key()).cloned();
             let fetching = media::fetch_picture(&session, person, &media, size * 2, size * 2);
             cx.spawn(async move |this, cx| {
-                let image = fetching
-                    .await
-                    .ok()
-                    .flatten()
-                    .and_then(|bytes| media::decode_avatar(&bytes));
+                let image = media::fetched(cx, fetching, (size * 2, size * 2), true).await;
                 this.update(cx, |this, cx| {
                     this.avatars.finish(&media, size, image);
                     cx.notify();
@@ -1321,6 +1338,9 @@ pub fn apply(rooms: &mut Vec<RoomSummary>, diff: VectorDiff<RoomSummary>) {
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         crate::pictures::drop_orphans(window);
+        crate::media::sweep(window, cx);
+        self.note_timelines();
+        crate::memory::log_now_and_then(window, cx);
         let covered = self.chat_covered();
         crate::notify::set_looking(
             window.is_window_active(),

@@ -2003,6 +2003,30 @@ impl App {
         self.loading_assets.remove(&asset_id);
     }
 
+    /// Morpheus patch: takes an asset out of GPUI's cache, returning what it
+    /// had loaded (`None` when it was not there or still loading).
+    pub fn take_asset<A: Asset>(&mut self, source: &A::Source) -> Option<A::Output> {
+        let asset_id = (TypeId::of::<A>(), hash(source));
+        let boxed = self.loading_assets.remove(&asset_id)?;
+        let task = boxed.downcast::<Shared<Task<A::Output>>>().ok()?;
+        task.peek().cloned()
+    }
+
+    /// Morpheus patch: what every loaded asset of kind `A` in GPUI's cache holds.
+    pub fn loaded_assets<A: Asset>(&self) -> Vec<A::Output> {
+        let kind = TypeId::of::<A>();
+        self.loading_assets
+            .iter()
+            .filter(|((id, _), _)| *id == kind)
+            .filter_map(|(_, boxed)| {
+                boxed
+                    .downcast_ref::<Shared<Task<A::Output>>>()?
+                    .peek()
+                    .cloned()
+            })
+            .collect()
+    }
+
     /// Asynchronously load an asset, if the asset hasn't finished loading this will return None.
     ///
     /// Note that the multiple calls to this method will only result in one `Asset::load` call at a

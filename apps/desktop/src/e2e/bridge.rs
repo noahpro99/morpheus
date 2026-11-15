@@ -257,6 +257,15 @@ async fn handle(request: &Request, cx: &mut AsyncApp) -> Reply {
         }
         // Pictures all live videos hold for drawing (shown, waiting to leave the atlas).
         "video_pictures" => Ok(json!(crate::pictures::held())),
+        // What the app holds in memory, cache by cache (crate::memory).
+        "memory" => {
+            let window = cx
+                .update(|cx| cx.windows().first().copied())
+                .map_err(|err| err.to_string())?
+                .ok_or("the app has no window")?;
+            cx.update_window(window, |_, window, cx| crate::memory::report(window, cx).json())
+                .map_err(|err| err.to_string())
+        }
         // Stop (or resume) elements recording themselves, to time frames without it.
         "tagging" => {
             super::tag::TAGGING.store(

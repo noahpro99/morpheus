@@ -105,6 +105,7 @@ pub enum TimelineEvent {
 impl EventEmitter<TimelineEvent> for TimelineView {}
 
 pub struct TimelineView {
+    _alive: crate::memory::Alive,
     #[allow(dead_code)]
     room_id: OwnedRoomId,
     session: Option<Session>,
@@ -275,6 +276,7 @@ impl TimelineView {
             caught_up: false,
             read_at: None,
             images: Avatars::default(),
+            _alive: crate::memory::Alive::new(&crate::memory::TIMELINE_VIEWS),
             links,
             actions,
             last_own: None,
@@ -913,11 +915,7 @@ impl TimelineView {
             let fetching = media::fetch_picture(&session, person, media, w, h);
             let media = media.clone();
             cx.spawn(async move |this, cx| {
-                let image = fetching
-                    .await
-                    .ok()
-                    .flatten()
-                    .and_then(|bytes| media::decode(&bytes));
+                let image = media::fetched(cx, fetching, (w, h), false).await;
                 this.update(cx, |this, cx| {
                     this.images.finish(&media, w, image);
                     cx.notify();

@@ -1080,6 +1080,13 @@ impl App {
         value.as_u64().context("a count")
     }
 
+    /// What the GPUI app holds in memory, cache by cache (its `memory`
+    /// report: `rss_kb`, `gpui_decoded`, `atlas`, `any_size`, `squared`,
+    /// `timelines`, ...; counts with `entries` and `bytes`).
+    pub async fn memory(&mut self) -> Result<Value> {
+        self.op("memory", "", json!({})).await
+    }
+
     /// Turns the GPUI app's element tagging off or on: with it off, frames
     /// cost what a build without the e2e feature would (the tree a test sees
     /// stops updating).

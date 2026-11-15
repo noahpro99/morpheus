@@ -768,6 +768,24 @@ pub(crate) trait PlatformAtlas: Send + Sync {
         build: &mut dyn FnMut() -> Result<Option<(Size<DevicePixels>, Cow<'a, [u8]>)>>,
     ) -> Result<Option<AtlasTile>>;
     fn remove(&self, key: &AtlasKey);
+    /// Morpheus patch: what the atlas holds (for memory reports).
+    fn stats(&self) -> AtlasStats {
+        AtlasStats::default()
+    }
+}
+
+/// Morpheus patch: what a window's sprite atlas holds: tiles (glyphs, icons,
+/// pictures), the textures they are packed in, and those textures' bytes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct AtlasStats {
+    /// Tiles (one per glyph, icon or picture frame).
+    pub tiles: usize,
+    /// Tiles of pictures and emoji (colour).
+    pub colour_tiles: usize,
+    /// Textures (headless: one per tile).
+    pub textures: usize,
+    /// Bytes of the textures (headless: of the tiles).
+    pub bytes: usize,
 }
 
 struct AtlasTextureList<T> {

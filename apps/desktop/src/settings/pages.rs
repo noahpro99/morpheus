@@ -1290,7 +1290,7 @@ impl SettingsView {
             .bg(rgb(0x000000))
             .cursor_pointer()
             .child(
-                gpui::img(picked.image.clone())
+                gpui::img(crate::media::drawn(picked.image.clone()))
                     .absolute()
                     .left(px(left))
                     .top(px(top))

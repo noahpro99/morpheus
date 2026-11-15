@@ -154,11 +154,7 @@ impl ThreadPanel {
         if self.avatars.begin(&media, 80) {
             let fetching = session.thumbnail(media.clone(), 80, 80);
             cx.spawn(async move |this, cx| {
-                let image = fetching
-                    .await
-                    .ok()
-                    .flatten()
-                    .and_then(|bytes| media::decode(&bytes));
+                let image = media::fetched(cx, fetching, (80, 80), false).await;
                 this.update(cx, |this, cx| {
                     this.avatars.finish(&media, 80, image);
                     cx.notify();
