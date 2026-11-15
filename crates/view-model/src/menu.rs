@@ -521,6 +521,63 @@ pub fn confirm_sign_out() -> Confirm {
     }
 }
 
+/// A box in window pixels: where it is and how big.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Frame {
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+}
+
+impl Frame {
+    pub fn right(&self) -> f32 {
+        self.x + self.w
+    }
+    pub fn bottom(&self) -> f32 {
+        self.y + self.h
+    }
+}
+
+/// Where a flyout of `size` (w, h) goes beside its `row`, inside a window of
+/// `window` (w, h) kept `margin` from the edges. It opens to the right of the
+/// row, on its left when the right has no room, and lines its top with the
+/// row's; when it would run off the bottom it moves up (its bottom lines with
+/// the row's), and is clamped inside the window as a last resort. Returns the
+/// flyout's top-left.
+pub fn place_flyout(row: Frame, size: (f32, f32), window: (f32, f32), margin: f32) -> (f32, f32) {
+    const GAP: f32 = 2.0;
+    const LIFT: f32 = 6.0;
+    let (w, h) = size;
+    let right = row.right() + GAP;
+    let left = row.x - GAP - w;
+    let x = if right + w + margin <= window.0 || left < margin {
+        right
+    } else {
+        left
+    };
+    let mut y = row.y - LIFT;
+    if y + h + margin > window.1 {
+        y = row.bottom() + LIFT - h;
+    }
+    (clamp_into(x, w, window.0, margin), clamp_into(y, h, window.1, margin))
+}
+
+/// Where a menu of `size` goes when opened at the pointer `at`: right of and
+/// below it, flipped to its left and above when there is no room, then
+/// clamped inside the window.
+pub fn place_menu(at: (f32, f32), size: (f32, f32), window: (f32, f32), margin: f32) -> (f32, f32) {
+    let x = if at.0 + size.0 + margin > window.0 { at.0 - size.0 } else { at.0 };
+    let y = if at.1 + size.1 + margin > window.1 { at.1 - size.1 } else { at.1 };
+    (clamp_into(x, size.0, window.0, margin), clamp_into(y, size.1, window.1, margin))
+}
+
+/// `pos` moved so a span of `len` fits in `0..limit` with `margin` to spare
+/// (the start edge wins when it cannot).
+fn clamp_into(pos: f32, len: f32, limit: f32, margin: f32) -> f32 {
+    pos.min(limit - margin - len).max(margin)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -724,5 +781,64 @@ mod tests {
         assert!(!switch[0].checked && switch[1].checked);
         assert_eq!(switch[2].label, "Add an account");
         assert!(items[4].danger);
+    }
+
+    const WIN: (f32, f32) = (800.0, 600.0);
+
+    fn inside(at: (f32, f32), size: (f32, f32)) -> bool {
+        at.0 >= 8.0 && at.1 >= 8.0 && at.0 + size.0 <= WIN.0 - 8.0 && at.1 + size.1 <= WIN.1 - 8.0
+    }
+
+    #[test]
+    fn a_flyout_opens_right_of_its_row_when_there_is_room() {
+        let row = Frame {
+            x: 100.0,
+            y: 100.0,
+            w: 188.0,
+            h: 33.0,
+        };
+        assert_eq!(place_flyout(row, (188.0, 100.0), WIN, 8.0), (290.0, 94.0));
+    }
+
+    #[test]
+    fn a_flyout_flips_left_and_up_at_the_corner() {
+        let row = Frame {
+            x: 600.0,
+            y: 540.0,
+            w: 188.0,
+            h: 33.0,
+        };
+        let (x, y) = place_flyout(row, (236.0, 200.0), WIN, 8.0);
+        assert!(x + 236.0 <= row.x, "left of the row: {x}");
+        assert!(
+            y + 200.0 <= row.bottom() + 6.0 + 0.1 && y < row.y,
+            "above: {y}"
+        );
+        assert!(inside((x, y), (236.0, 200.0)));
+    }
+
+    #[test]
+    fn a_flyout_with_no_room_either_side_is_clamped_inside() {
+        let row = Frame {
+            x: 5.0,
+            y: 590.0,
+            w: 780.0,
+            h: 33.0,
+        };
+        let at = place_flyout(row, (300.0, 590.0 - 8.0), (800.0, 600.0), 8.0);
+        assert!(inside(at, (300.0, 582.0)), "{at:?}");
+    }
+
+    #[test]
+    fn a_menu_flips_to_the_pointers_left_and_above_and_stays_inside() {
+        assert_eq!(
+            place_menu((100.0, 100.0), (188.0, 200.0), WIN, 8.0),
+            (100.0, 100.0)
+        );
+        let at = place_menu((790.0, 590.0), (188.0, 200.0), WIN, 8.0);
+        assert_eq!(at, (602.0, 390.0));
+        let at = place_menu((5.0, 5.0), (188.0, 700.0), WIN, 8.0);
+        assert_eq!(at.0, 8.0);
+        assert_eq!(at.1, 8.0);
     }
 }
