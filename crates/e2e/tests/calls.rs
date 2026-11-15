@@ -5301,3 +5301,47 @@ async fn sharing_the_screen_without_its_sound_sends_none_and_is_remembered() {
     );
     alice.press("body", "Escape").await.expect("close");
 }
+
+/// The green ring is on the call card only: the avatar inside a speaking
+/// person's card has no ring of its own.
+#[tokio::test]
+async fn a_speaking_avatar_card_rings_the_card_not_the_avatar_inside() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    if !alice.is_gpui() {
+        return;
+    }
+    let channel = fresh_voice_channel(&hs);
+    login_and_open(&mut alice, "alice", "general").await;
+    open_without_joining(&mut alice, &channel).await;
+    alice.click(CALL_BUTTON).await.expect("alice joins");
+    alice
+        .wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("alice connected");
+    let mut bob = App::launch(&hs).await.expect("launch bob");
+    login_and_open(&mut bob, "bob", "general").await;
+    open_without_joining(&mut bob, &channel).await;
+    bob.click(CALL_BUTTON).await.expect("bob joins");
+    bob.wait_for_text(".voice-panel", "Voice connected", DEFAULT_WAIT)
+        .await
+        .expect("bob connected");
+
+    // Cameras are off: bob is an avatar card on alice's screen, ringed while he speaks.
+    let card = ".call-stage .call-tile[data-user=\"@bob:localhost\"]";
+    alice
+        .wait_for(&format!("{card}.speaking"), DEFAULT_WAIT)
+        .await
+        .expect("the card rings while he speaks");
+    assert_eq!(
+        alice
+            .count(&format!("{card} .avatar-ring"))
+            .await
+            .expect("count"),
+        0,
+        "the avatar inside the speaking card has no ring of its own"
+    );
+}
