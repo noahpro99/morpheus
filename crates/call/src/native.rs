@@ -60,6 +60,11 @@ mod platform_camera;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 #[path = "screen.rs"]
 mod screen;
+#[cfg(target_os = "windows")]
+#[path = "screen_sources_win.rs"]
+mod screen_sources_win;
+#[cfg(target_os = "windows")]
+pub(crate) use screen_sources_win::WindowsSources;
 pub use platform_camera::{PlatformCamera, camera_frame, set_platform_camera};
 #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 #[path = "denoise.rs"]
@@ -603,7 +608,7 @@ impl Call {
     /// Turn the camera on (or off). What it sends shows under
     /// [`LOCAL_CAMERA`] too.
     pub fn set_camera(&self, on: bool) -> impl Future<Output = Result<()>> + 'static {
-        self.set_video(VideoKind::Camera, on, ScreenQuality::default())
+        self.set_video(VideoKind::Camera, on, ScreenQuality::default(), None)
     }
 
     /// Share this device's screen (or stop). Where the desktop asks which
@@ -620,7 +625,19 @@ impl Call {
         on: bool,
         quality: ScreenQuality,
     ) -> impl Future<Output = Result<()>> + 'static {
-        self.set_video(VideoKind::Screen, on, quality)
+        self.set_screen_share_from(on, quality, None)
+    }
+
+    /// [`Self::set_screen_share_with`] from `source`, picked in the app
+    /// ([`crate::ScreenSourceProvider`]); `None` is the system's picker
+    /// (Wayland's portal, macOS's) or, without one, the first screen.
+    pub fn set_screen_share_from(
+        &self,
+        on: bool,
+        quality: ScreenQuality,
+        source: Option<crate::ScreenSource>,
+    ) -> impl Future<Output = Result<()>> + 'static {
+        self.set_video(VideoKind::Screen, on, quality, source)
     }
 
     fn set_video(
@@ -628,6 +645,7 @@ impl Call {
         kind: VideoKind,
         on: bool,
         quality: ScreenQuality,
+        source: Option<crate::ScreenSource>,
     ) -> impl Future<Output = Result<()>> + 'static {
         let (room, video, mode) = (self.room.clone(), self.outgoing(kind).clone(), self.mode);
         let encrypted = self.keys.is_some();
@@ -638,8 +656,10 @@ impl Call {
                     match (on, video.take()) {
                         (true, Some(running)) => *video = Some(running),
                         (true, None) => {
-                            *video =
-                                Some(Outgoing::start(&room, kind, mode, encrypted, quality).await?)
+                            *video = Some(
+                                Outgoing::start(&room, kind, mode, encrypted, quality, source)
+                                    .await?,
+                            )
                         }
                         (false, Some(running)) => running.stop(&room).await,
                         (false, None) => {}
@@ -691,6 +711,7 @@ impl Drop for Call {
         video::forget(LOCAL_CAMERA);
         video::forget(LOCAL_SCREEN);
         crate::screen_audio::note_sent(None);
+        crate::screen_sources::note_shared(None);
     }
 }
 
@@ -755,6 +776,7 @@ impl Outgoing {
         mode: AudioMode,
         encrypted: bool,
         quality: ScreenQuality,
+        picked: Option<crate::ScreenSource>,
     ) -> Result<Self> {
         let stop = Arc::new(AtomicBool::new(false));
         let screen = kind == VideoKind::Screen;
@@ -817,7 +839,7 @@ impl Outgoing {
                 // capture sends to it once the track is up.
                 let sink: Arc<OnceLock<NativeVideoSource>> = Arc::default();
                 let (started, first) = tokio::sync::oneshot::channel();
-                screen::run(sink.clone(), quality, stop.clone(), started);
+                screen::run(sink.clone(), quality, picked.clone(), stop.clone(), started);
                 let first = tokio::time::timeout(PICKER_TIMEOUT, first).await;
                 let (width, height) = match first {
                     Ok(Ok(Ok(size))) => size,
@@ -967,6 +989,10 @@ impl Outgoing {
                 let _ = sink.set(source.clone());
             }
         }
+        // What was picked in the app, for the interface and tests.
+        if screen {
+            crate::screen_sources::note_shared(picked);
+        }
         // The screen's sound, when wanted: the share goes on without it if
         // there is none to be had.
         // (Not even tried where the platform has no way: macOS.)
@@ -1007,6 +1033,7 @@ impl Outgoing {
         }
         if self.kind == VideoKind::Screen {
             crate::screen_audio::note_sent(None);
+            crate::screen_sources::note_shared(None);
         }
         if let Err(err) = room
             .local_participant()

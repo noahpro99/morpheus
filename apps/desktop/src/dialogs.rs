@@ -49,6 +49,8 @@ pub enum Dialog {
     Room(Entity<crate::room_dialogs::RoomDialog>),
     /// Invite a friend to the call you are alone in.
     CallInvite(Entity<crate::call_invite::CallInvite>),
+    /// Go Live's choice of screen or window, where the app asks (Windows).
+    ScreenPicker(Entity<crate::screen_picker::ScreenPicker>),
     ModView(Entity<crate::mod_view::ModView>),
     /// Ctrl+/: the list of shortcuts.
     Help,
@@ -698,6 +700,7 @@ pub fn render_dialog(
         Dialog::Pinned(entity) => Some(entity.clone().into_any_element()),
         Dialog::Room(entity) => Some(entity.clone().into_any_element()),
         Dialog::CallInvite(entity) => Some(entity.clone().into_any_element()),
+        Dialog::ScreenPicker(entity) => Some(entity.clone().into_any_element()),
         Dialog::ModView(entity) => Some(entity.clone().into_any_element()),
         Dialog::Help => {
             let boxed = dialog_box()

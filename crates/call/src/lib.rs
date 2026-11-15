@@ -52,3 +52,10 @@ mod screen_audio;
 pub use screen_audio::{
     MAX_SCREEN_VOLUME, ScreenAudio, screen_audio, screen_volume, sent_screen_audio,
 };
+
+#[path = "screen_sources.rs"]
+mod screen_sources;
+pub use screen_sources::{
+    ScreenSource, ScreenSourceKind, ScreenSourceProvider, Thumbnail, fit_thumbnail,
+    platform_source_provider, shared_screen_source,
+};

@@ -543,6 +543,21 @@ impl Shell {
         }
     }
 
+    /// Share `source` (picked in the app), or with `None` what the system's
+    /// picker says (Wayland's portal, macOS's).
+    pub fn share_screen_from(
+        &mut self,
+        source: Option<morpheus_call::ScreenSource>,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(room) = self.calls.state.as_ref().map(|c| c.room_id.clone())
+            && self.selected.as_ref() != Some(&room)
+        {
+            self.open_room_now(room, cx);
+        }
+        self.set_video_from(true, true, source, cx);
+    }
+
     /// Share this device's screen in the call going, or stop.
     pub fn set_screen_share(&mut self, on: bool, cx: &mut Context<Self>) {
         // The picture shows in the call's view: go there from another room.
@@ -556,11 +571,21 @@ impl Shell {
     }
 
     fn set_video(&mut self, screen: bool, on: bool, cx: &mut Context<Self>) {
+        self.set_video_from(screen, on, None, cx);
+    }
+
+    fn set_video_from(
+        &mut self,
+        screen: bool,
+        on: bool,
+        source: Option<morpheus_call::ScreenSource>,
+        cx: &mut Context<Self>,
+    ) {
         type Switch = Pin<Box<dyn std::future::Future<Output = morpheus_call::Result<()>>>>;
         let quality = self.calls.screen_quality;
         let Some(switch) = self.calls.media.as_ref().map(|call| -> Switch {
             if screen {
-                Box::pin(call.set_screen_share_with(on, quality))
+                Box::pin(call.set_screen_share_from(on, quality, source))
             } else {
                 Box::pin(call.set_camera(on))
             }

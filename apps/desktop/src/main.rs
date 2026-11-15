@@ -51,6 +51,7 @@ mod room_dialogs;
 mod room_list;
 mod room_menus;
 mod room_preview;
+mod screen_picker;
 mod screen_quality;
 mod search;
 mod settings;

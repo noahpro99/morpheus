@@ -38,16 +38,19 @@ impl Shell {
         }
     }
 
-    fn choose_screen_quality(&mut self, quality: ScreenQuality, cx: &mut Context<Self>) {
+    pub(crate) fn choose_screen_quality(&mut self, quality: ScreenQuality, cx: &mut Context<Self>) {
         self.calls.screen_quality = quality;
         write(quality);
         cx.notify();
     }
 
-    /// Go Live: share, at the quality chosen.
+    /// Go Live: share, at the quality chosen; where the app picks what to
+    /// share (Windows), it asks which screen or window first.
     fn go_live(&mut self, cx: &mut Context<Self>) {
         self.calls.screen_popover = None;
-        self.set_screen_share(true, cx);
+        if !self.ask_screen_source(cx) {
+            self.set_screen_share(true, cx);
+        }
     }
 }
 
@@ -126,8 +129,13 @@ fn row<T: Copy + 'static>(
 }
 
 /// "Share your computer's sound", a switch (on unless turned off, as in
-/// Discord); where this platform cannot, off and greyed with why.
-fn sound_switch(on: bool, cx: &mut Context<Shell>) -> AnyElement {
+/// Discord); where this platform cannot, off and greyed with why. `toggle`
+/// turns it over (the popover's and the screen picker's).
+pub(crate) fn sound_switch<V: 'static>(
+    on: bool,
+    toggle: impl Fn(&mut V, &mut Context<V>) + 'static,
+    cx: &mut Context<V>,
+) -> AnyElement {
     let unavailable = morpheus_call::screen_audio_unavailable();
     let on = on && unavailable.is_none();
     let knob = div()
@@ -162,16 +170,7 @@ fn sound_switch(on: bool, cx: &mut Context<Shell>) -> AnyElement {
     if unavailable.is_none() {
         button = button
             .cursor_pointer()
-            .on_click(cx.listener(|this, _, _, cx| {
-                let q = this.calls.screen_quality;
-                this.choose_screen_quality(
-                    ScreenQuality {
-                        audio: !q.audio,
-                        ..q
-                    },
-                    cx,
-                );
-            }));
+            .on_click(cx.listener(move |this, _, _, cx| toggle(this, cx)));
     } else {
         button = button.opacity(0.5);
     }
@@ -262,7 +261,23 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElement> {
                 this.choose_screen_quality(ScreenQuality { fps, ..q }, cx);
             },
         ))
-        .child(sound_switch(quality.audio, cx))
+        // Where the app asks what to share, the switch is asked there.
+        .when(crate::screen_picker::provider().is_none(), |d| {
+            d.child(sound_switch(
+                quality.audio,
+                |this: &mut Shell, cx| {
+                    let q = this.calls.screen_quality;
+                    this.choose_screen_quality(
+                        ScreenQuality {
+                            audio: !q.audio,
+                            ..q
+                        },
+                        cx,
+                    );
+                },
+                cx,
+            ))
+        })
         .child(
             div()
                 .id("screen-go")
