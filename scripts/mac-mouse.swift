@@ -19,9 +19,14 @@ func number(_ i: Int) -> Double {
 // Each event carries its movement from the last, as a real mouse's do (a
 // drag by the system's title bar may move the window by those, not by the
 // positions).
+//
+// From the HID system state, as a real mouse's events are (MAC_MOUSE_SOURCE=none
+// posts them with no source, as before #68).
+let source = ProcessInfo.processInfo.environment["MAC_MOUSE_SOURCE"] == "none"
+    ? nil : CGEventSource(stateID: .hidSystemState)
 var last: CGPoint? = nil
 func post(_ type: CGEventType, _ at: CGPoint, clicks: Int64 = 1) {
-    guard let event = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: at, mouseButton: .left) else {
+    guard let event = CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: at, mouseButton: .left) else {
         FileHandle.standardError.write("could not make a mouse event\n".data(using: .utf8)!)
         exit(1)
     }
@@ -60,3 +65,6 @@ default:
     _ = number(99)
 }
 usleep(500_000)
+if let at = CGEvent(source: nil)?.location {
+    print("mouse at \(Int(at.x)),\(Int(at.y))")
+}
