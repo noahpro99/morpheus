@@ -65,20 +65,22 @@ fn bar_button(shell: &Shell, cx: &mut Context<Shell>, id: &'static str) -> gpui:
     )
 }
 
-/// The streamer mode button: always there; clicking it turns the mode on or
-/// off. While the mode is on it reads "Streamer mode" (the badge).
-fn streamer_button(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
-    let on = crate::streamer::active();
+/// The streamer mode pill: there only while the mode is on (by hand or
+/// while sharing); clicking it turns the mode off.
+fn streamer_button(shell: &Shell, cx: &mut Context<Shell>) -> Option<impl IntoElement> {
+    if !crate::streamer::active() {
+        return None;
+    }
     let toggle = cx.listener(|this, _, _, cx| {
         let mut settings = crate::streamer::settings();
-        settings.now = !crate::streamer::active();
+        settings.now = false;
         if let Err(err) = settings.save(&crate::data_dir()) {
             eprintln!("morpheus-desktop: saving the streamer mode setting: {err}");
         }
         crate::streamer::set_settings(settings);
         this.streamer_changed(cx);
     });
-    if on {
+    Some(
         bar_button(shell, cx, "streamer-button")
             .w_auto()
             .px(px(8.0))
@@ -93,16 +95,8 @@ fn streamer_button(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             .on_click(toggle)
             .e2e("button", "streamer-badge streamer-button")
             .attr("title", "Streamer mode is on: names and IDs are hidden. Click to turn off")
-            .text("Streamer mode")
-    } else {
-        bar_button(shell, cx, "streamer-button")
-            .child(icon("eye-off", 16.0))
-            .on_click(toggle)
-            .e2e("button", "ghost titlebar-button streamer-button")
-            .attr("title", "Turn on streamer mode")
-            .attr("data-color", format!("{:06x}", crate::chat::bar_colour(shell, "streamer-button", theme::text_muted())))
-            .attr("data-bg", "")
-    }
+            .text("Streamer mode"),
+    )
 }
 
 pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
@@ -217,7 +211,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                     .justify_end()
                     .items_center()
                     .gap(px(2.0))
-                    .child(streamer_button(shell, cx))
+                    .children(streamer_button(shell, cx))
                     .children(crate::update::topbar_button(shell, cx))
                     .child(
                         inbox.e2e("button", "ghost titlebar-button inbox-button")

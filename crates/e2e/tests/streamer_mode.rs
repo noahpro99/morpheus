@@ -542,8 +542,8 @@ async fn streamer_mode_hides_every_name_in_every_view() {
     assert!(found.is_empty(), "streamer mode leaks:\n{}", found.into_iter().collect::<Vec<_>>().join("\n"));
 }
 
-/// The title bar's streamer mode button turns the mode on, and clicking it
-/// again turns it off (the button stays while the mode is on).
+/// The title bar's streamer mode button exists only while the mode is on
+/// (the pill); clicking it turns the mode off and it goes away.
 #[tokio::test]
 async fn title_bar_streamer_button_toggles_streamer_mode() {
     let Some(hs) = homeserver() else {
@@ -555,11 +555,12 @@ async fn title_bar_streamer_button_toggles_streamer_mode() {
         eprintln!("streamer mode is in the GPUI app only; skipping");
         return;
     }
+    assert_eq!(app.count(".titlebar .streamer-button").await.expect("count"), 0, "no button when off");
     assert_eq!(app.count(".titlebar .streamer-badge").await.expect("count"), 0);
-    app.click(".titlebar .streamer-button").await.expect("click the button");
-    app.wait_for(".titlebar .streamer-badge", DEFAULT_WAIT).await.expect("on");
+    flip_now(&mut app).await;
+    app.wait_for(".titlebar .streamer-badge", DEFAULT_WAIT).await.expect("the pill");
     assert_eq!(app.count(".titlebar .streamer-button").await.expect("count"), 1);
-    app.click(".titlebar .streamer-button").await.expect("click again");
+    app.click(".titlebar .streamer-button").await.expect("click the pill");
     app.wait_for_count(".titlebar .streamer-badge", 0, DEFAULT_WAIT).await.expect("off");
-    assert_eq!(app.count(".titlebar .streamer-button").await.expect("count"), 1);
+    app.wait_for_count(".titlebar .streamer-button", 0, DEFAULT_WAIT).await.expect("button gone");
 }
