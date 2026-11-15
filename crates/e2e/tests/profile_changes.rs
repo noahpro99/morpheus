@@ -9,7 +9,7 @@ mod common;
 use std::time::{Duration, Instant};
 
 use common::login;
-use morpheus_e2e::{App, DEFAULT_WAIT, ProfileGuard};
+use morpheus_e2e::{App, DEFAULT_WAIT, ProfileGuard, api_as};
 
 fn homeserver() -> Option<String> {
     std::env::var("MORPHEUS_TEST_HOMESERVER").ok()
@@ -60,6 +60,7 @@ async fn someone_elses_new_name_and_picture_show_everywhere_without_a_restart() 
         return;
     };
     let _restore = ProfileGuard::new(&hs, "alice").expect("alice's profile");
+    alice_speaks_last_in_general(&hs);
     // Alice starts with the picture the seed gave her (or none): give her a known one.
     let mut app = App::launch(&hs).await.expect("launch app");
     login(&mut app, "bob", "bob-password").await;
@@ -142,6 +143,7 @@ async fn your_own_new_name_and_picture_show_everywhere_at_once() {
         return;
     };
     let _restore = ProfileGuard::new(&hs, "alice").expect("alice's profile");
+    alice_speaks_last_in_general(&hs);
     let mut app = App::launch_with_env(&hs, &[("MORPHEUS_E2E_PICK", PICTURE)])
         .await
         .expect("launch app");
@@ -205,4 +207,27 @@ async fn your_own_new_name_and_picture_show_everywhere_at_once() {
         },
     )
     .await;
+}
+
+/// The timeline shows the end of #general: alice needs a message there (other
+/// tests leave only other people's last), or no sender name of hers is on screen.
+fn alice_speaks_last_in_general(hs: &str) {
+    let general = api_as(
+        hs,
+        "alice",
+        "GET",
+        "directory/room/%23general:localhost",
+        None,
+    )
+    .expect("general's id")["room_id"]
+        .as_str()
+        .expect("id")
+        .to_owned();
+    morpheus_e2e::send_as(
+        hs,
+        "alice",
+        &general,
+        &format!("alice was here {}", std::process::id()),
+    )
+    .expect("alice's message");
 }

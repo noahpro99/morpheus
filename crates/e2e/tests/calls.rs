@@ -2615,8 +2615,32 @@ async fn quick_device_menus_on_the_mic_headphones_and_camera() {
     wait_menu_has(&mut alice, &["Test microphone 1", "Test microphone 2"])
         .await
         .expect("microphones listed");
+    // The flyout is placed beside its row a frame or two after it opens; until then it
+    // overlaps the menu, and a click on it lands on the wrong row.
+    let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+    loop {
+        let menu = alice.bounds(".context-menu").await.expect("bounds");
+        let row = alice
+            .bounds(".context-menu .context-item:not(.has-submenu)")
+            .await
+            .expect("bounds");
+        if let (Some(menu), Some(row)) = (menu, row)
+            && row.x >= menu.x + menu.w
+        {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the flyout was never placed beside its menu"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
     alice
-        .click_text(".context-menu .context-item", "Test microphone 2")
+        // The device rows themselves: "Input Device" holds them in its flyout, so its text has theirs too.
+        .click_text(
+            ".context-menu .context-item:not(.has-submenu)",
+            "Test microphone 2",
+        )
         .await
         .expect("pick");
     alice
