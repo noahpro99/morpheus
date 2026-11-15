@@ -6125,29 +6125,18 @@ async fn a_speaking_avatar_card_rings_the_card_not_the_avatar_inside() {
     );
 }
 
-/// Bob's profile picture, solid red, until dropped; then no picture again.
-struct RedAvatar(String);
+/// Bob's profile picture, solid red, until dropped; then his profile as it was (the seed's picture).
+struct RedAvatar(#[allow(dead_code)] morpheus_e2e::ProfileGuard);
 
 impl RedAvatar {
     fn set(hs: &str) -> Self {
+        let guard = morpheus_e2e::ProfileGuard::new(hs, "bob").expect("bob's profile");
         let mut png = std::io::Cursor::new(Vec::new());
         image::RgbaImage::from_pixel(64, 64, image::Rgba([230, 20, 20, 255]))
             .write_to(&mut png, image::ImageFormat::Png)
             .expect("png");
         morpheus_e2e::set_avatar_as(hs, "bob", &png.into_inner()).expect("an avatar");
-        Self(hs.to_owned())
-    }
-}
-
-impl Drop for RedAvatar {
-    fn drop(&mut self) {
-        let _ = morpheus_e2e::api_as(
-            &self.0,
-            "bob",
-            "PUT",
-            "profile/%40bob%3Alocalhost/avatar_url",
-            Some(serde_json::json!({ "avatar_url": "" })),
-        );
+        Self(guard)
     }
 }
 
