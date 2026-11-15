@@ -5550,3 +5550,74 @@ async fn the_call_controls_shrink_while_pressed_and_spring_back() {
     let back = alice.bounds(button).await.expect("bounds").expect("box").w;
     assert!((back - rest).abs() < 0.5, "back to {rest} after the pointer left, not {back}");
 }
+
+/// Right-clicking someone's card in a call opens the user menu used elsewhere
+/// (profile, message, mention, copy ID) with call items on top: their volume
+/// for you, mute for me, and focus / unfocus. Your own card has no volume.
+#[tokio::test]
+async fn right_clicking_a_card_in_a_call_opens_the_user_menu_with_call_items() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut alice = App::launch(&hs).await.expect("launch alice");
+    if alice.is_phone() {
+        return;
+    }
+    join_hangout(&mut alice, "alice").await;
+    let mut bob = App::launch(&hs).await.expect("launch bob");
+    join_hangout(&mut bob, "bob").await;
+    let card = ".call-stage [data-user=\"@bob:localhost\"]";
+    alice.wait_for(card, DEFAULT_WAIT).await.expect("bob's card");
+
+    alice.right_click(card).await.expect("right-click bob's card");
+    wait_menu_has(
+        &mut alice,
+        &["Profile", "Message", "Mention", "Copy user ID", "Mute for me", "Focus"],
+    )
+    .await
+    .expect("the user menu with call items");
+    assert_eq!(
+        alice.count(".context-menu .menu-slider.user-volume").await.expect("count"),
+        1,
+        "a volume slider for bob"
+    );
+
+    // Mute for me: the next menu offers to undo it.
+    alice.click_text(".context-menu .context-item", "Mute for me").await.expect("mute");
+    alice.wait_for_count(".context-menu", 0, DEFAULT_WAIT).await.expect("closed");
+    alice.right_click(card).await.expect("again");
+    wait_menu_has(&mut alice, &["Unmute for me"]).await.expect("muted for me");
+    alice.click_text(".context-menu .context-item", "Unmute for me").await.expect("unmute");
+    alice.wait_for_count(".context-menu", 0, DEFAULT_WAIT).await.expect("closed");
+
+    // Focus, then unfocus, from the same menu.
+    alice.right_click(card).await.expect("again");
+    wait_menu_has(&mut alice, &["Focus"]).await.expect("menu");
+    alice.click_text(".context-menu .context-item", "Focus").await.expect("focus");
+    alice.wait_for(".call-stage .call-cards.focused", DEFAULT_WAIT).await.expect("focused");
+    alice
+        .right_click(".call-focus-main [data-user=\"@bob:localhost\"]")
+        .await
+        .expect("on the focused card");
+    wait_menu_has(&mut alice, &["Unfocus"]).await.expect("unfocus offered");
+    alice.click_text(".context-menu .context-item", "Unfocus").await.expect("unfocus");
+    alice
+        .wait_for_count(".call-cards.focused", 0, DEFAULT_WAIT)
+        .await
+        .expect("back to the grid");
+
+    // Your own card: the user menu, but nobody to turn down.
+    alice
+        .right_click(".call-stage [data-user=\"@alice:localhost\"]")
+        .await
+        .expect("own card");
+    wait_menu_has(&mut alice, &["Profile", "Copy user ID"]).await.expect("menu");
+    assert_eq!(alice.count(".context-menu .menu-slider").await.expect("count"), 0, "a volume for yourself");
+    let labels = alice.texts(".context-menu .context-item").await.expect("labels");
+    assert!(!labels.iter().any(|l| l.contains("Mute for me")), "{labels:?}");
+    alice.press("body", "Escape").await.expect("close");
+
+    bob.click(".voice-panel .hang-up").await.expect("bob leaves");
+    alice.click(".voice-panel .hang-up").await.expect("alice leaves");
+}

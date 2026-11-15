@@ -112,6 +112,10 @@ impl Call {
 
     pub fn set_output_volume(&self, _volume: f32) {}
 
+    pub fn set_user_volume(&self, user: &str, volume: f32) {
+        crate::set_user_volume(user, volume);
+    }
+
     pub fn set_screen_volume(&self, identity: &str, volume: f32) {
         let _ = (identity, volume);
     }

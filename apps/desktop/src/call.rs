@@ -86,6 +86,10 @@ pub struct Calls {
     /// The volume given to each person's screen sound (1 as sent; up to
     /// [`morpheus_call::MAX_SCREEN_VOLUME`]), for as long as the app runs.
     pub screen_volumes: HashMap<OwnedUserId, f32>,
+    /// The volume given to each person's voice (1 as sent) and who is muted
+    /// for you, for as long as the app runs.
+    pub user_volumes: HashMap<OwnedUserId, f32>,
+    pub muted_for_me: std::collections::HashSet<OwnedUserId>,
     /// Share screen's question is open, over this point.
     pub screen_popover: Option<gpui::Point<gpui::Pixels>>,
     /// The noise suppression card is open, above this point (the button's
@@ -584,6 +588,46 @@ impl Shell {
             call.set_screen_volume(identity, volume);
         }
         cx.notify();
+    }
+
+    /// How loud `user`'s voice plays here (1 as sent), unless muted for you.
+    pub fn set_user_volume(&mut self, user: &OwnedUserId, volume: f32, cx: &mut Context<Self>) {
+        let volume = volume.clamp(0.0, morpheus_call::MAX_VOLUME);
+        self.calls.user_volumes.insert(user.clone(), volume);
+        self.apply_user_volume(user);
+        if let Some(menu) = &mut self.menu {
+            for item in &mut menu.items {
+                if let Some(crate::view_model::menu::MenuSlider::UserVolume(who, v)) = &mut item.slider
+                    && who == user
+                {
+                    *v = volume;
+                }
+            }
+        }
+        cx.notify();
+    }
+
+    /// Silences `user` for you alone, or brings them back at their volume.
+    pub fn set_user_muted(&mut self, user: &OwnedUserId, muted: bool, cx: &mut Context<Self>) {
+        if muted {
+            self.calls.muted_for_me.insert(user.clone());
+        } else {
+            self.calls.muted_for_me.remove(user);
+        }
+        self.apply_user_volume(user);
+        cx.notify();
+    }
+
+    fn apply_user_volume(&self, user: &OwnedUserId) {
+        let volume = if self.calls.muted_for_me.contains(user) {
+            0.0
+        } else {
+            self.calls.user_volumes.get(user).copied().unwrap_or(1.0)
+        };
+        match &self.calls.media {
+            Some(call) => call.set_user_volume(user.as_str(), volume),
+            None => morpheus_call::set_user_volume(user.as_str(), volume),
+        }
     }
 
     /// Sets input (microphone) volume multiplier (0.0 to 2.0).
