@@ -17,7 +17,23 @@ unset ZIP ZIPOPT
 zip=$(cd "$(dirname "$1")" && pwd)/$(basename "$1")
 work=$(mktemp -d)
 server=""
-cleanup() { [ -n "$server" ] && kill "$server" 2>/dev/null || true; rm -rf "$work"; }
+cleanup() {
+    # Stop the file server and wait for it to exit first: on Windows it holds
+    # its folder open, so removing the folder under it fails. Then retry the rm,
+    # and never let cleanup alone fail the test.
+    if [ -n "$server" ]; then
+        kill "$server" 2>/dev/null || true
+        wait "$server" 2>/dev/null || true
+    fi
+    cd / 2>/dev/null || true
+    for _ in 1 2 3 4 5 6; do
+        rm -rf "$work" 2>/dev/null
+        [ -e "$work" ] || break
+        sleep 1
+    done
+    [ -e "$work" ] && echo "note: could not remove $work" >&2
+    return 0
+}
 trap cleanup EXIT
 mkdir "$work/old" "$work/new" "$work/serve" "$work/data"
 
