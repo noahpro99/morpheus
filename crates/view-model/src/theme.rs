@@ -210,35 +210,148 @@ pub fn from_hsl(h: f32, s: f32, l: f32) -> u32 {
     pack([(r + m) * 255.0, (g + m) * 255.0, (b + m) * 255.0])
 }
 
+/// `0xRRGGBBAA` laid over the opaque `bg`: what shows where a translucent wash is drawn.
+pub fn over(rgba: u32, bg: u32) -> u32 {
+    mix(bg, rgba >> 8, (rgba & 0xff) as f32 / 255.0)
+}
+
+/// Black or white, whichever reads better on `bg` (for text on any colour: a swatch,
+/// a badge, a button).
+pub fn on_colour(bg: u32) -> u32 {
+    if contrast(0xffffff, bg) >= contrast(0x000000, bg) { 0xffffff } else { 0x000000 }
+}
+
+/// `start` with its lightness moved toward white (`lighter`) or black, hue and saturation
+/// kept, until `passes` accepts it; at the end of the scale, the white or black itself.
+fn nudge(start: u32, lighter: bool, passes: impl Fn(u32) -> bool) -> u32 {
+    let (h, s, l) = to_hsl(start);
+    let mut l = l;
+    loop {
+        let c = from_hsl(h, s, l);
+        if passes(c) {
+            return c;
+        }
+        l += if lighter { 0.01 } else { -0.01 };
+        if !(0.0..=1.0).contains(&l) {
+            return if lighter { 0xffffff } else { 0x000000 };
+        }
+    }
+}
+
+/// `start` mixed toward `fg` until `passes` accepts it (muted and faint text: grey that
+/// gets as strong as it needs to).
+fn strengthen(start: u32, fg: u32, passes: impl Fn(u32) -> bool) -> u32 {
+    let mut t = 0.0;
+    loop {
+        let c = mix(start, fg, t);
+        if passes(c) || t >= 1.0 {
+            return c;
+        }
+        t += 0.02;
+    }
+}
+
+impl Palette {
+    /// Every background text is drawn on: each surface, bare and under the hover and
+    /// selected washes and the accent tint (flattened, as they show).
+    pub fn text_backgrounds(&self) -> Vec<u32> {
+        [self.bg_rail, self.bg_sidebar, self.bg_chat, self.bg_members, self.bg_elevated, self.bg_input]
+            .into_iter()
+            .flat_map(|s| [s, over(self.bg_hover, s), over(self.bg_selected, s), over(self.accent_tint, s)])
+            .collect()
+    }
+
+    /// Every (name, text, background) pair of a custom palette that must read (a contrast
+    /// of 4.5 or more): each kind of text on every surface, the text on a selected rail
+    /// item (`accent_strong`), and white on `accent_solid`, a button's fill.
+    pub fn text_pairs(&self) -> Vec<(&'static str, u32, u32)> {
+        let mut pairs = Vec::new();
+        for (name, fg) in [
+            ("text", self.text),
+            ("text_muted", self.text_muted),
+            ("text_faint", self.text_faint),
+            ("accent", self.accent),
+            ("link", self.link),
+            ("own", self.own),
+            ("moon", self.moon),
+            ("danger", self.danger),
+            ("ok", self.ok),
+            ("warn", self.warn),
+        ] {
+            pairs.extend(self.text_backgrounds().into_iter().map(|bg| (name, fg, bg)));
+        }
+        pairs.push(("text on accent_strong", self.text, self.accent_strong));
+        pairs.push(("white on accent_solid", 0xffffff, self.accent_solid));
+        pairs
+    }
+}
+
 /// The whole palette from one colour: the chat is the colour, the rail, sidebar and inputs
 /// darker shades of it, panels a step lighter (darker, on a light colour). Text is white
-/// unless white would fail WCAG contrast (4.5) against a background, then black (muted
-/// text dark grey). Washes, borders and the accent follow the text's side.
+/// unless white would fail WCAG contrast (4.5) against the colour, then black. Everything
+/// drawn as text (muted and faint text, the accent, links, names, warnings) is nudged in
+/// lightness, its hue kept, until it reads (4.5) on every surface it can be on, washes and
+/// tint included (see [`Palette::text_pairs`]); surfaces that would not hold the text
+/// are moved away from it.
 pub fn derive(base: u32) -> Palette {
     const BLACK: u32 = 0x000000;
     const WHITE: u32 = 0xffffff;
-    let (bg_rail, bg_sidebar, bg_input) = (
-        mix(base, BLACK, 0.45),
-        mix(base, BLACK, 0.22),
-        mix(base, BLACK, 0.32),
-    );
-    let lighter = mix(base, WHITE, 0.08);
-    let white_text = [bg_rail, bg_sidebar, bg_input, base, lighter]
-        .into_iter()
-        .all(|bg| contrast(WHITE, bg) >= 4.5);
-    let bg_elevated = if white_text { lighter } else { mix(base, BLACK, 0.10) };
+    const NEEDED: f32 = 4.5;
+    let reads = |fg: u32, bg: u32| contrast(fg, bg) >= NEEDED;
+    let white_text = reads(WHITE, base);
+    let (fg, away) = if white_text { (WHITE, BLACK) } else { (BLACK, WHITE) };
+    // The washes go the usual way (white on dark, black on light) unless that would
+    // put the text under its minimum on the colour itself.
+    let mut wash = if white_text { WHITE } else { BLACK };
+    if !reads(fg, over(wash << 8 | 0x14, base)) {
+        wash = away;
+    }
+    let (hover, selected) = (wash << 8 | 0x0a, wash << 8 | 0x14);
+    // A surface the text reads on, bare and under both washes.
+    let holds = |s: u32| reads(fg, s) && reads(fg, over(hover, s)) && reads(fg, over(selected, s));
+    let fit = |mut s: u32| {
+        let from = s;
+        let mut t = 0.0;
+        while !holds(s) && t < 1.0 {
+            t += 0.02;
+            s = mix(from, away, t);
+        }
+        s
+    };
+    let bg_rail = fit(mix(base, BLACK, 0.45));
+    let bg_sidebar = fit(mix(base, BLACK, 0.22));
+    let bg_input = fit(mix(base, BLACK, 0.32));
+    let bg_elevated = fit(if white_text { mix(base, WHITE, 0.08) } else { mix(base, BLACK, 0.10) });
+    let surfaces = [bg_rail, bg_sidebar, base, bg_input, bg_elevated];
+
     let (hue, sat, _) = to_hsl(base);
     let sat = sat.clamp(0.55, 0.9);
-    let (wash, edge) = if white_text { (0xffffff00, 0xffffff0f) } else { (0x00000000, 0x0000000f) };
-    let accent = from_hsl(hue, sat, if white_text { 0.70 } else { 0.38 });
-    // A chosen option's fill: white text on it must pass too.
-    let mut solid_l = 0.45;
-    let mut accent_solid = from_hsl(hue, sat, solid_l);
-    while contrast(WHITE, accent_solid) < 4.5 && solid_l > 0.05 {
-        solid_l -= 0.02;
-        accent_solid = from_hsl(hue, sat, solid_l);
+    let edge = if white_text { 0xffffff0f } else { 0x0000000f };
+    // What a colour must read on, with a tint of `alpha` of `tint_colour` under it.
+    let backgrounds = |tint_colour: u32, alpha: u32| -> Vec<u32> {
+        surfaces
+            .into_iter()
+            .flat_map(|s| [s, over(hover, s), over(selected, s), over(tint_colour << 8 | alpha, s)])
+            .collect()
+    };
+    let readable = |c: u32, bgs: &[u32]| bgs.iter().all(|bg| reads(c, *bg));
+    let accent = nudge(from_hsl(hue, sat, if white_text { 0.70 } else { 0.38 }), white_text, |c| {
+        readable(c, &backgrounds(c, 0x26))
+    });
+    // The tint is as strong as it can be while the text still reads on it.
+    let mut alpha = 0x26;
+    while alpha > 0 && !readable(fg, &backgrounds(accent, alpha)) {
+        alpha -= 2;
     }
-    let (_, _, accent_l) = to_hsl(accent);
+    let bgs = backgrounds(accent, alpha);
+    let text_muted = strengthen(if white_text { 0xc2c6d2 } else { 0x444444 }, fg, |c| readable(c, &bgs));
+    let text_faint = strengthen(if white_text { 0x9096a8 } else { 0x666666 }, fg, |c| readable(c, &bgs));
+    let tone = |c: u32| nudge(c, white_text, |n| readable(n, &bgs));
+    let own = nudge(from_hsl(hue, sat, if white_text { 0.82 } else { 0.30 }), white_text, |c| readable(c, &bgs));
+    // The fill of a selected rail item: the text reads on it.
+    let accent_strong = nudge(accent, !white_text, |c| reads(fg, c));
+    // A chosen option's fill: white text on it must pass too.
+    let accent_solid = nudge(from_hsl(hue, sat, 0.45), false, |c| reads(WHITE, c));
     Palette {
         bg_rail,
         bg_sidebar,
@@ -246,18 +359,22 @@ pub fn derive(base: u32) -> Palette {
         bg_members: bg_sidebar,
         bg_elevated,
         bg_input,
-        bg_hover: wash | 0x0a,
-        bg_selected: wash | 0x14,
-        text: if white_text { WHITE } else { BLACK },
-        text_muted: if white_text { 0xc2c6d2 } else { 0x444444 },
-        text_faint: if white_text { 0x9096a8 } else { 0x666666 },
+        bg_hover: hover,
+        bg_selected: selected,
+        text: fg,
+        text_muted,
+        text_faint,
         accent,
-        accent_strong: from_hsl(hue, sat, if white_text { accent_l - 0.08 } else { accent_l - 0.06 }),
+        accent_strong,
         accent_solid,
-        own: from_hsl(hue, sat, if white_text { 0.82 } else { 0.30 }),
+        danger: tone(DARK.danger),
+        own,
+        moon: own,
         link: accent,
+        ok: tone(DARK.ok),
+        warn: tone(DARK.warn),
         edge,
-        accent_tint: (accent << 8) | 0x26,
+        accent_tint: (accent << 8) | alpha,
         ..DARK
     }
 }
@@ -338,12 +455,52 @@ mod tests {
         for light in [0xffffff, 0xf2e9c9, 0xcfe8ff, 0xffe066] {
             let p = derive(light);
             assert_eq!(p.text, 0x000000, "{light:06x}");
-            assert_eq!(p.text_muted, 0x444444);
+            assert!(contrast(p.text_muted, p.bg_chat) >= 4.5, "{light:06x}");
             assert!(contrast(p.text, p.bg_chat) >= 4.5, "{light:06x}");
             assert_eq!(p.bg_hover >> 8, 0x000000);
         }
     }
 
+
+    /// Hues, lightnesses and the awkward colours: pure yellow, cyan, white, black, greys.
+    fn sweep() -> Vec<u32> {
+        let mut colours = vec![
+            0xffff00, 0x00ffff, 0xffffff, 0x000000, 0x808080, 0x777777, 0x767676, 0x7f7f7f,
+            0x999999, 0x555555, 0xff00ff, 0x00ff00, 0xff0000, 0x0000ff,
+        ];
+        for h in (0..360).step_by(15) {
+            for l in [0.05, 0.15, 0.25, 0.35, 0.45, 0.5, 0.55, 0.65, 0.75, 0.85, 0.95] {
+                for s in [0.2, 0.6, 1.0] {
+                    colours.push(from_hsl(h as f32, s, l));
+                }
+            }
+        }
+        colours
+    }
+
+    #[test]
+    fn every_text_reads_on_every_surface_of_a_custom_palette() {
+        for base in sweep() {
+            let p = derive(base);
+            for (name, fg, bg) in p.text_pairs() {
+                let ratio = contrast(fg, bg);
+                assert!(
+                    ratio >= 4.5,
+                    "{base:06x}: {name} {fg:06x} on {bg:06x} is {ratio:.2}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn coloured_text_keeps_its_hue_and_translucent_washes_are_flattened() {
+        let p = derive(0x2a4d8f);
+        assert!((to_hsl(p.own).0 - to_hsl(0x2a4d8f).0).abs() < 6.0);
+        // 10% white over black is #1a1a1a, not black.
+        assert_eq!(over(0xffffff1a, 0x000000), 0x1a1a1a);
+        assert_eq!(on_colour(0xffff00), 0x000000);
+        assert_eq!(on_colour(0x000080), 0xffffff);
+    }
     #[test]
     fn the_accent_fill_always_holds_white_text() {
         for c in [0x000000, 0xffffff, 0xffff00, 0x00ff00, 0x2a4d8f, 0xf2e9c9, 0x808080] {

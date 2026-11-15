@@ -13,7 +13,9 @@ fn homeserver() -> Option<String> {
 async fn open_appearance(app: &mut App) {
     app.wait_for(".room", DEFAULT_WAIT).await.expect("rooms");
     app.click(".settings-button").await.expect("gear");
-    app.wait_for(".settings", DEFAULT_WAIT).await.expect("settings");
+    app.wait_for(".settings", DEFAULT_WAIT)
+        .await
+        .expect("settings");
     app.click_text(".settings-nav button", "Appearance")
         .await
         .expect("Appearance");
@@ -53,7 +55,9 @@ async fn a_custom_colour_themes_the_whole_app_and_is_kept() {
         return;
     };
     let mut app = App::launch_desktop(&hs).await.expect("launch app");
-    app.wait_for("form.login", DEFAULT_WAIT).await.expect("login");
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login");
     app.type_into("form.login input[name=username]", "carol")
         .await
         .expect("username");
@@ -68,17 +72,28 @@ async fn a_custom_colour_themes_the_whole_app_and_is_kept() {
         .await
         .expect("type a colour");
     wait_attr(&mut app, ".app", "data-bg", "2a4d8f").await;
-    let rail = app.attr(".rail", "data-bg").await.expect("rail").expect("rail bg");
+    let rail = app
+        .attr(".rail", "data-bg")
+        .await
+        .expect("rail")
+        .expect("rail bg");
     let side = app
         .attr(".sidebar", "data-bg")
         .await
         .expect("sidebar")
         .expect("sidebar bg");
-    assert!(sum(&rail) < sum(&side) && sum(&side) < sum("2a4d8f"), "{rail} {side}");
+    assert!(
+        sum(&rail) < sum(&side) && sum(&side) < sum("2a4d8f"),
+        "{rail} {side}"
+    );
     wait_attr(&mut app, ".app", "data-color", "ffffff").await;
 
     // The preview: a room item and message rows, one in a thread, in the same colours.
-    for part in [".custom-preview .preview-room", ".custom-preview .preview-message", ".custom-preview .preview-thread"] {
+    for part in [
+        ".custom-preview .preview-room",
+        ".custom-preview .preview-message",
+        ".custom-preview .preview-thread",
+    ] {
         app.wait_for(part, DEFAULT_WAIT).await.expect(part);
     }
     wait_attr(&mut app, ".custom-preview", "data-bg", "2a4d8f").await;
@@ -92,7 +107,9 @@ async fn a_custom_colour_themes_the_whole_app_and_is_kept() {
     wait_attr(&mut app, ".custom-preview", "data-color", "000000").await;
 
     // Picking from the grid sets the colour too.
-    app.click(".custom-colour .colour-swatch").await.expect("pick");
+    app.click(".custom-colour .colour-swatch")
+        .await
+        .expect("pick");
     let picked = app
         .attr(".custom-colour .colour-swatch", "data-colour")
         .await
@@ -112,6 +129,92 @@ async fn a_custom_colour_themes_the_whole_app_and_is_kept() {
 
     // Put Dark back for other tests.
     open_appearance(&mut app).await;
+    app.click_text(".theme-option", "Dark").await.expect("Dark");
+    wait_attr(&mut app, ".app", "data-bg", "1a1e29").await;
+}
+
+/// WCAG contrast of two `rrggbb` colours.
+fn contrast(a: &str, b: &str) -> f64 {
+    let lum = |hex: &str| {
+        let v = u32::from_str_radix(hex, 16).expect("hex");
+        let lin = |c: u32| {
+            let c = f64::from(c) / 255.0;
+            if c <= 0.03928 {
+                c / 12.92
+            } else {
+                ((c + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        0.2126 * lin(v >> 16) + 0.7152 * lin((v >> 8) & 0xff) + 0.0722 * lin(v & 0xff)
+    };
+    let (la, lb) = (lum(a), lum(b));
+    (la.max(lb) + 0.05) / (la.min(lb) + 0.05)
+}
+
+/// The colour picker's own labels stay readable on a light and a dark custom colour (and
+/// the awkward ones in between): its heading, its description, what is typed in the hex box.
+#[tokio::test]
+async fn the_pickers_labels_read_on_light_and_dark_custom_colours() {
+    if !morpheus_e2e::gpui() {
+        eprintln!("custom theme colour: GPUI desktop only; skipping");
+        return;
+    }
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    let mut app = App::launch_desktop(&hs).await.expect("launch app");
+    app.wait_for("form.login", DEFAULT_WAIT)
+        .await
+        .expect("login");
+    app.type_into("form.login input[name=username]", "carol")
+        .await
+        .expect("username");
+    app.type_into("form.login input[name=password]", "carol-password")
+        .await
+        .expect("password");
+    app.submit("form.login").await.expect("submit");
+    open_appearance(&mut app).await;
+    for colour in ["f2e9c9", "ffff00", "1a2b4c", "808080", "000000", "ffffff"] {
+        app.type_into(".custom-colour input", &format!("#{colour}"))
+            .await
+            .expect("type a colour");
+        wait_attr(&mut app, ".app", "data-bg", colour).await;
+        // The boxes repaint a frame or two after the colour is applied.
+        let deadline = std::time::Instant::now() + DEFAULT_WAIT;
+        loop {
+            let mut failure = None;
+            for (label, selector) in [
+                (
+                    "heading",
+                    ".settings-section[data-setting=custom-colour] h3",
+                ),
+                ("description", ".custom-colour p.muted"),
+                ("hex box", ".custom-colour input"),
+            ] {
+                let fg = app
+                    .attr(selector, "data-color")
+                    .await
+                    .expect("attr")
+                    .unwrap_or_else(|| panic!("{colour}: the {label} has no colour"));
+                let bg = app
+                    .attr(selector, "data-bg")
+                    .await
+                    .expect("attr")
+                    .unwrap_or_else(|| panic!("{colour}: the {label} has no background"));
+                let ratio = contrast(&fg, &bg);
+                if ratio < 4.5 {
+                    failure = Some(format!(
+                        "{colour}: the {label} is {fg} on {bg}, a contrast of {ratio:.2}"
+                    ));
+                }
+            }
+            let Some(failure) = failure else { break };
+            assert!(std::time::Instant::now() < deadline, "{failure}");
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+    }
+    // Put Dark back for other tests.
     app.click_text(".theme-option", "Dark").await.expect("Dark");
     wait_attr(&mut app, ".app", "data-bg", "1a1e29").await;
 }
