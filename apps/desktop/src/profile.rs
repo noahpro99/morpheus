@@ -64,6 +64,9 @@ pub struct ProfileCard {
     pub nickname: Option<String>,
     /// Whether a room was open where it was opened (the mod view needs one).
     in_room: bool,
+    /// The room it was opened in: a picture gone from the profile falls back
+    /// to the one of their member event there.
+    room: Option<OwnedRoomId>,
     /// "Report user profile": the inline form, its reason and answer.
     reporting: bool,
     report_reason: Entity<TextInput>,
@@ -134,6 +137,7 @@ impl ProfileCard {
             seen,
             nickname: None,
             in_room: open_in.is_some(),
+            room: open_in.clone(),
             reporting: false,
             report_reason,
             report_note: None,
@@ -291,7 +295,7 @@ impl ProfileCard {
         }
         let session = self.session.clone()?;
         if self.images.begin(&media, size) {
-            let fetching = session.thumbnail(media.clone(), size, size);
+            let fetching = media::fetch_picture(&session, Some((self.user.clone(), self.room.clone())), &media, size, size);
             let fetched_media = media.clone();
             cx.spawn(async move |this, cx| {
                 let image = fetching.await.ok().flatten().and_then(|bytes| media::decode_avatar(&bytes));

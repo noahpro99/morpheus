@@ -20,20 +20,22 @@ use crate::{
 static ANY_SIZE: std::sync::LazyLock<std::sync::Mutex<HashMap<String, (u32, Arc<Image>)>>> =
     std::sync::LazyLock::new(Default::default);
 
-/// Thumbnails fetched so far, by media and size. `None` remembers a failed
-/// fetch so dead media is not retried on every frame.
+/// Thumbnails fetched so far, by media and size. A failed fetch is not
+/// tried again on every frame, but it is after [`RETRY_AFTER`] (a server
+/// that was down, a picture put back).
 #[derive(Default)]
 pub struct Avatars {
-    images: HashMap<(String, u32), Option<Arc<Image>>>,
+    images: HashMap<(String, u32), Arc<Image>>,
     pending: HashSet<(String, u32)>,
+    failed: HashMap<(String, u32), std::time::Instant>,
 }
+
+/// How long a picture that could not be had is left before it is asked for again.
+const RETRY_AFTER: std::time::Duration = std::time::Duration::from_secs(60);
 
 impl Avatars {
     pub fn get(&self, media: &MediaRef, size: u32) -> Option<Arc<Image>> {
-        self.images
-            .get(&(media.key().to_owned(), size))
-            .cloned()
-            .flatten()
+        self.images.get(&(media.key().to_owned(), size)).cloned()
     }
 
     /// The copy of the size wanted, else the biggest one fetched anywhere
@@ -50,7 +52,7 @@ impl Avatars {
 
     /// Drops this view's pictures from the shared copies (not from itself).
     pub fn forget_shared(&self) {
-        let ids: Vec<u64> = self.images.values().flatten().map(|image| image.id()).collect();
+        let ids: Vec<u64> = self.images.values().map(|image| image.id()).collect();
         forget(&self.keys(), &ids);
     }
 
@@ -59,21 +61,49 @@ impl Avatars {
         self.images.len()
     }
 
-    /// Marks `media` as being fetched; false when it already was or is here.
+    /// Marks `media` as being fetched; false when it is here, on its way, or
+    /// failed a moment ago.
     pub fn begin(&mut self, media: &MediaRef, size: u32) -> bool {
         let key = (media.key().to_owned(), size);
-        !self.images.contains_key(&key) && self.pending.insert(key)
+        if self.images.contains_key(&key)
+            || self.failed.get(&key).is_some_and(|at| at.elapsed() < RETRY_AFTER)
+        {
+            return false;
+        }
+        self.failed.remove(&key);
+        self.pending.insert(key)
     }
 
     pub fn finish(&mut self, media: &MediaRef, size: u32, image: Option<Arc<Image>>) {
         let key = (media.key().to_owned(), size);
         self.pending.remove(&key);
-        if let (Some(image), Ok(mut any)) = (&image, ANY_SIZE.lock()) {
-            if any.get(media.key()).is_none_or(|(had, _)| *had < size) {
-                any.insert(media.key().to_owned(), (size, image.clone()));
-            }
+        let Some(image) = image else {
+            self.failed.insert(key, std::time::Instant::now());
+            return;
+        };
+        if let Ok(mut any) = ANY_SIZE.lock()
+            && any.get(media.key()).is_none_or(|(had, _)| *had < size)
+        {
+            any.insert(media.key().to_owned(), (size, image.clone()));
         }
         self.images.insert(key, image);
+    }
+}
+
+/// The fetch of a picture: a person's (`person`, with the room it shows in)
+/// goes through the core's one lookup for people's pictures, which falls
+/// back to their other picture when this one is gone; anything else is a
+/// plain thumbnail.
+pub fn fetch_picture(
+    session: &morpheus_core::Session,
+    person: Option<(morpheus_core::OwnedUserId, Option<morpheus_core::OwnedRoomId>)>,
+    media: &MediaRef,
+    width: u32,
+    height: u32,
+) -> morpheus_core::CoreFuture<Option<morpheus_core::Media>> {
+    match person {
+        Some((user, room)) => session.user_avatar(user, room, media.clone(), width, height),
+        None => session.thumbnail(media.clone(), width, height),
     }
 }
 

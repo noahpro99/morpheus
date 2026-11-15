@@ -746,3 +746,125 @@ async fn the_card_does_not_shift_when_the_role_arrives() {
         after.y
     );
 }
+
+/// A direct message between `owner` and `guest`, marked as one in the
+/// owner's account data (as a client does).
+fn dm_of(hs: &str, owner: &str, guest: &str) -> String {
+    let made = api_as(
+        hs,
+        owner,
+        "POST",
+        "createRoom",
+        Some(serde_json::json!({ "invite": [format!("@{guest}:localhost")], "is_direct": true, "preset": "trusted_private_chat" })),
+    )
+    .expect("a DM");
+    let room = made["room_id"].as_str().expect("room id").to_owned();
+    api_as(hs, guest, "POST", &format!("join/{}", escaped(&room)), Some(serde_json::json!({})))
+        .expect("join");
+    room
+}
+
+fn escaped(id: &str) -> String {
+    id.replace('!', "%21").replace('@', "%40").replace(':', "%3A")
+}
+
+/// `user`'s membership in `room`, with `avatar` as its picture (as a
+/// per-room picture is set), leaving their global profile as it is.
+fn set_member_avatar(hs: &str, user: &str, room: &str, avatar: &str) {
+    let state = format!("rooms/{}/state/m.room.member/{}", escaped(room), escaped(&format!("@{user}:localhost")));
+    // A profile change reaches the room's member events after a moment: set
+    // this one once that has happened, so it is not overwritten.
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        let global = morpheus_e2e::profile_of(hs, user).expect("profile")["avatar_url"].clone();
+        let current = api_as(hs, user, "GET", &state, None).expect("member event");
+        if current["avatar_url"] == global || std::time::Instant::now() > deadline {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    api_as(
+        hs,
+        user,
+        "PUT",
+        &state,
+        Some(serde_json::json!({ "membership": "join", "displayname": user, "avatar_url": avatar })),
+    )
+    .expect("member avatar");
+}
+
+/// A person's picture is kept twice, in their global profile and in their
+/// member event of each room, and either can point at a file its server no
+/// longer has (404). Wherever they show (the DM list, the member list, the
+/// profile card) the one that loads is used: ben's global picture is gone
+/// but his member event's is fine; cal's member event's is gone but his
+/// global picture is fine.
+#[tokio::test]
+async fn a_picture_gone_from_its_server_falls_back_to_the_persons_other_one() {
+    let Some(hs) = homeserver() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping e2e test");
+        return;
+    };
+    // Fresh accounts: the seeded users' profiles are left alone.
+    let ann = new_account(&hs, "avfann").expect("account");
+    let ben = new_account(&hs, "avfben").expect("account");
+    let cal = new_account(&hs, "avfcal").expect("account");
+    let with_ben = dm_of(&hs, &ann, &ben);
+    let with_cal = dm_of(&hs, &ann, &cal);
+    api_as(
+        &hs,
+        &ann,
+        "PUT",
+        &format!("user/%40{ann}%3Alocalhost/account_data/m.direct"),
+        Some(serde_json::json!({
+            format!("@{ben}:localhost"): [with_ben.clone()],
+            format!("@{cal}:localhost"): [with_cal.clone()],
+        })),
+    )
+    .expect("m.direct");
+    let picture = include_bytes!("../fixtures/framed.png");
+    let gone = |who: &str| format!("mxc://localhost/gone{who}");
+
+    // Ben: a good picture in the DM, a dead one in his profile.
+    morpheus_e2e::set_avatar_as(&hs, &ben, picture).expect("ben's picture");
+    let good = morpheus_e2e::profile_of(&hs, &ben).expect("profile")["avatar_url"]
+        .as_str()
+        .expect("an avatar")
+        .to_owned();
+    api_as(
+        &hs,
+        &ben,
+        "PUT",
+        &format!("profile/{}/avatar_url", escaped(&format!("@{ben}:localhost"))),
+        Some(serde_json::json!({ "avatar_url": gone(&ben) })),
+    )
+    .expect("dead global picture");
+    set_member_avatar(&hs, &ben, &with_ben, &good);
+    // Cal: a good picture in his profile, a dead one in the DM.
+    morpheus_e2e::set_avatar_as(&hs, &cal, picture).expect("cal's picture");
+    set_member_avatar(&hs, &cal, &with_cal, &gone(&cal));
+
+    let mut app = App::launch(&hs).await.expect("launch");
+    app.wait_for("form.login", DEFAULT_WAIT).await.expect("login form");
+    app.type_into("form.login input[name=username]", &ann).await.expect("username");
+    app.type_into("form.login input[name=password]", &format!("{ann}-password")).await.expect("password");
+    app.submit("form.login").await.expect("submit");
+    app.wait_for(".rail-dms", DEFAULT_WAIT).await.expect("signed in");
+    app.click(".rail-dms").await.expect("the DMs");
+    for (who, room) in [(&ben, &with_ben), (&cal, &with_cal)] {
+        app.wait_for(&format!(".room.dm[data-room=\"{room}\"] img.avatar"), DEFAULT_WAIT)
+            .await
+            .unwrap_or_else(|e| panic!("{who}'s picture in the DM list: {e}"));
+        app.click(&format!(".room.dm[data-room=\"{room}\"]")).await.expect("open the DM");
+        let member = format!(".members .member[title=\"@{who}:localhost\"]");
+        app.wait_for(&format!("{member} img.avatar"), DEFAULT_WAIT)
+            .await
+            .unwrap_or_else(|e| panic!("{who}'s picture in the member list: {e}"));
+        app.click(&member).await.expect("open the card");
+        app.wait_for(".profile-card img.avatar", DEFAULT_WAIT)
+            .await
+            .unwrap_or_else(|e| panic!("{who}'s picture on the profile card: {e}"));
+        app.press("body", "Escape").await.expect("close the card");
+        app.wait_for_count(".profile-card", 0, DEFAULT_WAIT).await.expect("card closed");
+    }
+}
