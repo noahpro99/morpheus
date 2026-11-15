@@ -569,6 +569,12 @@ impl Render for ProfileCard {
                     .e2e("p", "profile-status")
                     .text(status),
             );
+        } else if self.session.is_some() && !self.loaded {
+            // Until the profile arrives, a line-sized skeleton holds the status's place.
+            body = body.child(
+                skeleton(120.0, theme::REM * theme::LINE_HEIGHT)
+                    .e2e("p", "profile-status skeleton"),
+            );
         }
         // The row is always as tall as a tag, so the role arriving late (or
         // never) moves nothing; a pill-shaped skeleton holds its place.
@@ -593,7 +599,14 @@ impl Render for ProfileCard {
             );
         }
         body = body.child(tags.e2e("div", "card-tags"));
-        if !self.own {
+        if !self.own && self.session.is_some() && !self.loaded {
+            // The count is not known yet: a skeleton the size of the line, not "0".
+            body = body.child(
+                skeleton(130.0, 0.85 * theme::REM * theme::LINE_HEIGHT)
+                    .mt(px(8.0))
+                    .e2e("button", "mutual-servers skeleton"),
+            );
+        } else if !self.own {
             let count = shared_servers(&self.servers, &self.mutual).len();
             let label = mutual_servers_label(count);
             body = body.child(
@@ -1064,4 +1077,14 @@ impl ProfileCard {
         }
         None
     }
+}
+
+/// A pill-shaped placeholder `w` by `h` pixels for something still loading.
+fn skeleton(w: f32, h: f32) -> gpui::Div {
+    div()
+        .w(px(w))
+        .h(px(h))
+        .flex_none()
+        .rounded(px(h / 2.0))
+        .bg(rgba(theme::bg_elevated() << 8 | 0xff))
 }
