@@ -103,6 +103,8 @@ pub enum MenuAction {
     // On the call devices' quick lists (`calls::device_menu`).
     /// Use this device (`None`: the system default) for calls.
     Device(DeviceKind, Option<String>),
+    /// Noise suppression mode, by its key (off, standard, strong).
+    Noise(String),
     /// Opens Settings on Voice & Video.
     VoiceSettings,
 
