@@ -1,7 +1,7 @@
 //! The press feedback of round and squircle icon buttons (the rail, the
-//! call's controls): the button scales to `SCALE` while the pointer holds it
-//! down and springs back on release or when the pointer leaves, over a short
-//! ease. The button keeps the room it had: the shrinking is margin.
+//! call's controls): the button sinks `DEPTH` pixels while the pointer holds it
+//! down and comes back on release or when the pointer leaves, over a short
+//! ease. Its size and place in the layout are unchanged: it is drawn lower.
 
 use std::{
     collections::HashMap,
@@ -15,9 +15,9 @@ use gpui::{
     Window, px,
 };
 
-/// The scale of a pressed button.
-pub const SCALE: f32 = 0.95;
-/// How long the scale takes to change.
+/// How far a pressed button sinks, in pixels.
+pub const DEPTH: f32 = 1.5;
+/// How long the move takes to change.
 const SPAN: Duration = Duration::from_millis(90);
 /// The frames drawn while it changes.
 const FRAME: Duration = Duration::from_millis(12);
@@ -25,28 +25,28 @@ const FRAME: Duration = Duration::from_millis(12);
 #[derive(Clone, Copy)]
 struct State {
     pressed: bool,
-    /// The scale when the last change began.
+    /// The offset when the last change began.
     from: f32,
     since: Instant,
 }
 
 static STATES: Mutex<Option<HashMap<String, State>>> = Mutex::new(None);
 
-/// The scale at `now`: from where the last change began to its target, eased out.
-fn scale_at(state: State, now: Instant) -> f32 {
-    let target = if state.pressed { SCALE } else { 1.0 };
+/// The offset at `now`: from where the last change began to its target, eased out.
+fn offset_at(state: State, now: Instant) -> f32 {
+    let target = if state.pressed { DEPTH } else { 0.0 };
     let t =
         (now.saturating_duration_since(state.since).as_secs_f32() / SPAN.as_secs_f32()).min(1.0);
     let eased = 1.0 - (1.0 - t) * (1.0 - t);
     state.from + (target - state.from) * eased
 }
 
-fn scale_of(key: &str) -> f32 {
+fn offset_of(key: &str) -> f32 {
     let states = STATES.lock().ok();
     states
         .as_ref()
         .and_then(|s| s.as_ref()?.get(key).copied())
-        .map_or(1.0, |state| scale_at(state, Instant::now()))
+        .map_or(0.0, |state| offset_at(state, Instant::now()))
 }
 
 /// Presses or lets go of `key`, and draws frames until the change is done.
@@ -61,7 +61,7 @@ fn set(key: &str, pressed: bool, window: &mut Window, cx: &App) {
         if was.map_or(!pressed, |s| s.pressed == pressed) {
             return;
         }
-        let from = was.map_or(1.0, |s| scale_at(s, now));
+        let from = was.map_or(0.0, |s| offset_at(s, now));
         states.insert(
             key.to_owned(),
             State {
@@ -125,15 +125,13 @@ fn watch(key: String, window: &mut Window, cx: &App) {
         .detach();
 }
 
-/// Gives `button` (`side` pixels square, identified by `key`) the press
+/// Gives `button` (identified by `key`) the press
 /// feedback. `on_hover` hears the pointer coming and going, as the button's
 /// own hover listener would (a button has only one).
-pub fn press<E>(button: E, key: &str, side: f32, on_hover: Option<Rc<dyn Fn(bool, &mut App)>>) -> E
+pub fn press<E>(button: E, key: &str, on_hover: Option<Rc<dyn Fn(bool, &mut App)>>) -> E
 where
     E: Styled + InteractiveElement + StatefulInteractiveElement + ParentElement,
 {
-    let scale = scale_of(key);
-    let size = side * scale;
     let (down, up, up_out, seen) = (
         key.to_owned(),
         key.to_owned(),
@@ -141,8 +139,8 @@ where
         key.to_owned(),
     );
     let button = button
-        .size(px(size))
-        .m(px((side - size) / 2.0))
+        .relative()
+        .top(px(offset_of(key)))
         .child(
             gpui::canvas(
                 move |bounds, _, _| {
@@ -177,22 +175,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_scale_eases_to_the_target_and_back() {
+    fn the_offset_eases_to_the_target_and_back() {
         let start = Instant::now();
         let down = State {
             pressed: true,
-            from: 1.0,
+            from: 0.0,
             since: start,
         };
-        assert_eq!(scale_at(down, start), 1.0);
-        let mid = scale_at(down, start + SPAN / 2);
-        assert!(mid < 1.0 && mid > SCALE, "{mid}");
-        assert_eq!(scale_at(down, start + SPAN * 2), SCALE);
+        assert_eq!(offset_at(down, start), 0.0);
+        let mid = offset_at(down, start + SPAN / 2);
+        assert!(mid > 0.0 && mid < DEPTH, "{mid}");
+        assert_eq!(offset_at(down, start + SPAN * 2), DEPTH);
         let up = State {
             pressed: false,
-            from: SCALE,
+            from: DEPTH,
             since: start,
         };
-        assert_eq!(scale_at(up, start + SPAN * 2), 1.0);
+        assert_eq!(offset_at(up, start + SPAN * 2), 0.0);
     }
 }
