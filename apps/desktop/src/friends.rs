@@ -47,6 +47,8 @@ pub struct FriendsPage {
     /// it failed).
     profiles: HashMap<String, Option<Profile>>,
     avatars: Avatars,
+    /// The profile link was just copied (the button says so for a moment).
+    copied: bool,
 }
 
 impl FriendsPage {
@@ -77,6 +79,7 @@ impl FriendsPage {
             input,
             profiles: HashMap::new(),
             avatars: Avatars::default(),
+            copied: false,
         }
     }
 
@@ -91,6 +94,25 @@ impl FriendsPage {
     pub fn set_nicknames(&mut self, nicknames: NickMap, cx: &mut Context<Self>) {
         self.nicknames = nicknames;
         cx.notify();
+    }
+
+    /// Puts the link to your profile on the clipboard and says so for two seconds.
+    fn copy_profile_link(&mut self, cx: &mut Context<Self>) {
+        let Some(user) = self.session.as_ref().and_then(|s| s.user_id()) else {
+            return;
+        };
+        cx.write_to_clipboard(gpui::ClipboardItem::new_string(format!("https://matrix.to/#/{user}")));
+        self.copied = true;
+        cx.notify();
+        cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(std::time::Duration::from_secs(2)).await;
+            this.update(cx, |this, cx| {
+                this.copied = false;
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
     }
 
     /// Enter or the Message button: find who was typed, make or find the DM.
@@ -310,7 +332,30 @@ impl FriendsPage {
                     .e2e("p", "muted")
                     .text(friends::NEW_MESSAGE_HINT),
             )
-            .child(form);
+            .child(form)
+            .child(
+                {
+                    let label = if self.copied { "Copied" } else { "Copy link to your profile" };
+                    div().flex().child(div()
+                        .id("copy-profile-link")
+                        .mt(px(12.0))
+                        .flex()
+                        .items_center()
+                        .gap(px(6.0))
+                        .px(px(12.0))
+                        .py(px(6.0))
+                        .rounded(px(theme::RADIUS_SM))
+                        .cursor_pointer()
+                        .bg(rgba(theme::bg_hover()))
+                        .hover(|s| s.bg(rgba(theme::bg_selected())))
+                        .child(icon(if self.copied { "check" } else { "link" }, 16.0).text_color(rgb(theme::text())))
+                        .child(label)
+                        .on_click(cx.listener(|this, _, _, cx| this.copy_profile_link(cx)))
+                        .e2e("button", "secondary copy-profile-link")
+                        .text(label)
+                    )
+                },
+            );
         if let Some(reason) = &self.form.failed {
             panel = panel.child(
                 div()
