@@ -1158,21 +1158,66 @@ impl Render for SettingsView {
             .rounded_tl(px(theme::RADIUS_XL))
             .rounded_bl(px(theme::RADIUS_XL))
             .bg(rgb(theme::bg_sidebar()))
-            .child(
+            .child({
+                let (name, image) = self.own.clone();
+                let name = if name.is_empty() {
+                    self.session
+                        .as_ref()
+                        .and_then(|s| s.user_id())
+                        .map(|id| id.localpart().to_owned())
+                        .unwrap_or_default()
+                } else {
+                    name
+                };
+                let name = crate::streamer::name(&name);
                 div()
+                    .id("settings-profile")
+                    .flex()
+                    .items_center()
+                    .gap(px(10.0))
                     .px(px(10.0))
                     .pt(px(6.0))
                     .pb(px(10.0))
-                    .text_size(px(0.75 * theme::REM))
-                    .font_weight(FontWeight::BOLD)
-                    .text_color(rgb(theme::text_muted()))
-                    .child("SETTINGS")
-                    .e2e("h2", "")
-                    .text("Settings"),
-            )
+                    .rounded(px(theme::RADIUS_SM))
+                    .cursor_pointer()
+                    .hover(|s| s.bg(rgba(theme::bg_hover())))
+                    .child(crate::media::avatar(image, &name, 40.0, None))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .min_w_0()
+                            .child(
+                                div()
+                                    .truncate()
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .child(name.clone())
+                                    .e2e("span", "settings-profile-name")
+                                    .text(name.clone()),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(4.0))
+                                    .text_size(px(0.75 * theme::REM))
+                                    .text_color(rgb(theme::text_muted()))
+                                    .child(icon("pencil", 12.0).text_color(rgb(theme::text_muted())))
+                                    .child("Edit profile")
+                                    .e2e("span", "settings-profile-edit")
+                                    .text("Edit profile"),
+                            ),
+                    )
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.stop_video(cx);
+                        this.page = SettingsPage::Account;
+                        cx.notify();
+                    }))
+                    .e2e("button", "settings-profile")
+            })
             .child(div().mb(px(8.0)).child(self.search.clone()))
             .children(results)
-            .children(SettingsPage::listed(true).into_iter().filter(|_| !searching).map(|item| {
+            .children(SettingsPage::listed(true).into_iter().filter(|item| !searching && *item != SettingsPage::Account).map(|item| {
                 let selected = item == page;
                 div()
                     .id(ElementId::from(SharedString::from(format!("nav-{}", item.label()))))
