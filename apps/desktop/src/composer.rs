@@ -189,6 +189,11 @@ impl Composer {
         self.input.read(cx).focus(window);
     }
 
+    /// Whether the caret is in the box.
+    pub fn input_focused(&self, window: &Window, cx: &gpui::App) -> bool {
+        self.input.read(cx).is_focused(window)
+    }
+
     /// "Reply" on a message.
     pub fn reply_to(&mut self, message: &Message, cx: &mut Context<Self>) {
         if self.state.start_reply(message) {
