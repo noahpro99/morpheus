@@ -102,3 +102,166 @@ mod zone_tests {
         assert_eq!(calendar_date_in(early, &TimeZone::UTC), "2026-10-19");
     }
 }
+
+/// Now, as Unix milliseconds.
+pub fn now_ms() -> u64 {
+    u64::try_from(Timestamp::now().as_millisecond()).unwrap_or(0)
+}
+
+/// When a message was sent, for beside its name. Under a minute "just now",
+/// under an hour "N min ago", under six hours "N hr ago", otherwise the
+/// clock time on a day word: "Today at 14:05", "Yesterday at 14:05", "Mar 3
+/// at 14:05" (with the year when it is not this year's).
+pub fn message_time(timestamp_ms: u64, now_ms: u64) -> String {
+    message_time_in(timestamp_ms, now_ms, &TimeZone::system())
+}
+
+/// The full date and time, for a hover hint: "Monday, March 3, 2026 at 14:05".
+pub fn full_time(timestamp_ms: u64) -> String {
+    full_time_in(timestamp_ms, &TimeZone::system())
+}
+
+/// A date divider's label: "Today", "Yesterday", else `YYYY-MM-DD`.
+pub fn day_label(timestamp_ms: u64, now_ms: u64) -> String {
+    day_label_in(timestamp_ms, now_ms, &TimeZone::system())
+}
+
+const MINUTE_MS: u64 = 60_000;
+const HOUR_MS: u64 = 3_600_000;
+/// Relative times ("3 hr ago") are used up to this age.
+const RELATIVE_LIMIT_MS: u64 = 6 * HOUR_MS;
+
+pub(crate) fn message_time_in(timestamp_ms: u64, now_ms: u64, zone: &TimeZone) -> String {
+    let age = now_ms.saturating_sub(timestamp_ms);
+    if age < MINUTE_MS {
+        return "just now".into();
+    }
+    if age < HOUR_MS {
+        return format!("{} min ago", age / MINUTE_MS);
+    }
+    if age < RELATIVE_LIMIT_MS {
+        return format!("{} hr ago", age / HOUR_MS);
+    }
+    let (Some(at), Some(now)) = (zoned(timestamp_ms, zone), zoned(now_ms, zone)) else {
+        return String::new();
+    };
+    let clock = at.strftime("%H:%M");
+    let day = if at.date() == now.date() {
+        "Today".to_owned()
+    } else if now.date().yesterday().is_ok_and(|y| y == at.date()) {
+        "Yesterday".to_owned()
+    } else if at.year() == now.year() {
+        at.strftime("%b %-d").to_string()
+    } else {
+        at.strftime("%b %-d, %Y").to_string()
+    };
+    format!("{day} at {clock}")
+}
+
+pub(crate) fn full_time_in(timestamp_ms: u64, zone: &TimeZone) -> String {
+    zoned(timestamp_ms, zone).map_or_else(String::new, |at| {
+        at.strftime("%A, %B %-d, %Y at %H:%M").to_string()
+    })
+}
+
+pub(crate) fn day_label_in(timestamp_ms: u64, now_ms: u64, zone: &TimeZone) -> String {
+    let (Some(at), Some(now)) = (zoned(timestamp_ms, zone), zoned(now_ms, zone)) else {
+        return String::new();
+    };
+    if at.date() == now.date() {
+        "Today".into()
+    } else if now.date().yesterday().is_ok_and(|y| y == at.date()) {
+        "Yesterday".into()
+    } else {
+        calendar_date_in(timestamp_ms, zone)
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod relative_tests {
+    use super::{day_label_in, full_time_in, message_time_in};
+    use jiff::{civil::date, tz::TimeZone};
+
+    const UTC: &TimeZone = &TimeZone::UTC;
+
+    fn ms(y: i16, mo: i8, d: i8, h: i8, mi: i8, s: i8) -> u64 {
+        let at = date(y, mo, d).at(h, mi, s, 0).to_zoned(TimeZone::UTC).expect("zoned");
+        u64::try_from(at.timestamp().as_millisecond()).expect("positive")
+    }
+
+    // "Now" is Tuesday 2026-03-10, 15:30:00 UTC.
+    fn now() -> u64 {
+        ms(2026, 3, 10, 15, 30, 0)
+    }
+
+    fn at(then: u64) -> String {
+        message_time_in(then, now(), UTC)
+    }
+
+    #[test]
+    fn under_a_minute_is_just_now() {
+        assert_eq!(at(now()), "just now");
+        assert_eq!(at(now() - 59_000), "just now");
+        // A clock a little ahead of ours is still "just now".
+        assert_eq!(at(now() + 5_000), "just now");
+    }
+
+    #[test]
+    fn under_an_hour_counts_minutes() {
+        assert_eq!(at(now() - 60_000), "1 min ago");
+        assert_eq!(at(now() - 5 * 60_000 - 30_000), "5 min ago");
+        assert_eq!(at(now() - 59 * 60_000 - 59_000), "59 min ago");
+    }
+
+    #[test]
+    fn under_six_hours_counts_hours() {
+        assert_eq!(at(now() - 3_600_000), "1 hr ago");
+        assert_eq!(at(now() - 2 * 3_600_000 - 59 * 60_000), "2 hr ago");
+        assert_eq!(at(now() - 6 * 3_600_000 + 1), "5 hr ago");
+    }
+
+    #[test]
+    fn relative_times_run_across_midnight() {
+        // 01:00 now, a message at 22:00 yesterday: 3 hours, not "Yesterday".
+        let now = ms(2026, 3, 10, 1, 0, 0);
+        assert_eq!(message_time_in(ms(2026, 3, 9, 22, 0, 0), now, UTC), "3 hr ago");
+    }
+
+    #[test]
+    fn older_today_names_the_day_and_clock() {
+        assert_eq!(at(ms(2026, 3, 10, 9, 5, 0)), "Today at 09:05");
+        assert_eq!(at(now() - 6 * 3_600_000), "Today at 09:30");
+    }
+
+    #[test]
+    fn yesterday_and_older_days() {
+        assert_eq!(at(ms(2026, 3, 9, 14, 5, 0)), "Yesterday at 14:05");
+        assert_eq!(at(ms(2026, 3, 3, 14, 5, 0)), "Mar 3 at 14:05");
+        assert_eq!(at(ms(2026, 1, 20, 8, 0, 0)), "Jan 20 at 08:00");
+        assert_eq!(at(ms(2025, 12, 31, 23, 59, 0)), "Dec 31, 2025 at 23:59");
+    }
+
+    #[test]
+    fn days_follow_the_local_zone() {
+        let ny = TimeZone::get("America/New_York").expect("zone");
+        // 02:00 UTC on the 10th is the evening of the 9th in New York (EDT, UTC-4).
+        let then = ms(2026, 3, 10, 2, 0, 0);
+        let later = ms(2026, 3, 10, 20, 0, 0);
+        assert_eq!(message_time_in(then, later, UTC), "Today at 02:00");
+        assert_eq!(message_time_in(then, later, &ny), "Yesterday at 22:00");
+    }
+
+    #[test]
+    fn the_hover_text_is_the_full_date() {
+        assert_eq!(full_time_in(ms(2026, 3, 3, 14, 5, 0), UTC), "Tuesday, March 3, 2026 at 14:05");
+    }
+
+    #[test]
+    fn dividers_say_today_and_yesterday() {
+        let label = |then| day_label_in(then, now(), UTC);
+        assert_eq!(label(ms(2026, 3, 10, 0, 1, 0)), "Today");
+        assert_eq!(label(ms(2026, 3, 9, 23, 0, 0)), "Yesterday");
+        assert_eq!(label(ms(2026, 3, 8, 12, 0, 0)), "2026-03-08");
+    }
+}

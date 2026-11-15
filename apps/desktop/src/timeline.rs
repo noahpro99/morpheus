@@ -44,6 +44,9 @@ use crate::{
     },
 };
 
+/// How often the relative times (and the date dividers) are drawn again.
+const CLOCK_REFRESH: Duration = Duration::from_secs(15);
+
 /// Start loading older history when the first row in view is this close to the top.
 const NEAR_TOP_ROWS: usize = 8;
 /// ... or when what is loaded is shorter than the view plus this (px).
@@ -293,6 +296,16 @@ impl TimelineView {
             videos: HashMap::new(),
             people: Vec::new(),
         };
+        // "5 min ago" and "Today" keep up with the clock: draw again now and then.
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor().timer(CLOCK_REFRESH).await;
+                if this.update(cx, |_, cx| cx.notify()).is_err() {
+                    break;
+                }
+            }
+        })
+        .detach();
         if let Some(session) = session.clone()
             && thread_root.is_none()
         {

@@ -17,7 +17,7 @@ use morpheus_core::{Message, MessageKind, Reaction, ThreadSummary};
 use crate::hover_underline::underline_on_hover;
 use crate::{
     e2e::{self, E2eExt as _},
-    view_model::format::{human_duration, human_size},
+    view_model::format::{day_label, full_time, human_duration, human_size, message_time, now_ms},
     view_model::keys::{
         KeyAccess, LOCKED_HINT, LOCKED_TEXT, Undecryptable, WAITING_HINT, undecryptable,
     },
@@ -1449,9 +1449,10 @@ pub fn message_el(
                         div()
                             .text_size(rem(0.75))
                             .text_color(rgb(theme::text_faint()))
-                            .child(row.time.clone())
+                            .child(when(&row))
                             .e2e("span", "time")
-                            .text(row.time.clone()),
+                            .attr("title", full_time(row.message.timestamp_ms))
+                            .text(when(&row)),
                     ),
             )
             .e2e("div", "message system")
@@ -1493,9 +1494,10 @@ pub fn message_el(
                     div()
                         .text_size(rem(0.75))
                         .text_color(rgb(theme::text_faint()))
-                        .child(row.time.clone())
+                        .child(when(&row))
                         .e2e("span", "time")
-                        .text(row.time.clone()),
+                        .attr("title", full_time(row.message.timestamp_ms))
+                        .text(when(&row)),
                 )
                 .e2e("div", "message-meta"),
         );
@@ -1593,9 +1595,10 @@ pub fn message_el(
                 .text_color(rgb(theme::text_faint()))
                 .opacity(0.0)
                 .group_hover(group.clone(), |s| s.opacity(1.0))
-                .child(row.time.clone())
+                .child(when(&row))
                 .e2e("span", "time gutter")
-                .text(row.time.clone()),
+                .attr("title", full_time(row.message.timestamp_ms))
+                .text(when(&row)),
         )
     };
     let mut classes = String::from("message");
@@ -1707,12 +1710,17 @@ pub fn say_hi_row(on_click: impl Fn(&mut gpui::App) + 'static) -> AnyElement {
         .into_any_element()
 }
 
+/// When the message was sent, in words (read at draw time, so it keeps up).
+fn when(row: &MessageRow) -> String {
+    message_time(row.message.timestamp_ms, now_ms())
+}
+
 /// A row that is not a message.
 pub fn other_row(row: &Row) -> AnyElement {
     match row {
         // The same space above and below (to the rows' highlights): padding of
         // a wrapper, as a list item's own margins are not part of its row.
-        Row::Date(label, _) => div()
+        Row::Date(_, at) => div()
             .w_full()
             .py(px(16.0))
             .child(
@@ -1726,7 +1734,7 @@ pub fn other_row(row: &Row) -> AnyElement {
                     .text_size(rem(0.75))
                     .font_weight(FontWeight::SEMIBOLD)
                     .child(div().flex_1().h(px(1.0)).bg(rgb(theme::bg_elevated())))
-                    .child(div().child(label.clone()).e2e("span", "").text(label.clone()))
+                    .child(div().child(day_label(*at, now_ms())).e2e("span", "").text(day_label(*at, now_ms())))
                     .child(div().flex_1().h(px(1.0)).bg(rgb(theme::bg_elevated())))
                     .e2e("div", "date-divider"),
             )
