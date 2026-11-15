@@ -35,6 +35,26 @@ async fn login_and_open(app: &mut App, user: &str, room: &str) {
         .expect("composer ready");
 }
 
+/// `who` writes a message that starts a new group (someone else writes just
+/// before it, so it has a header and avatar even when `who` wrote last in an
+/// earlier run) and its avatar is clicked. Tests of this file share rooms and
+/// run side by side, so another's message can land between the two: then the
+/// message is written again.
+async fn open_card_from_new_message(app: &mut App, hs: &str, room_id: &str, who: &str, text: &str) {
+    for attempt in 0..5 {
+        let text = format!("{text} #{attempt}");
+        morpheus_e2e::send_as(hs, "alice", room_id, "break between speakers").expect("a break");
+        morpheus_e2e::send_as(hs, who, room_id, &text).expect("they write");
+        app.wait_for_text(".message .body", &text, DEFAULT_WAIT)
+            .await
+            .expect("their message");
+        if app.click_in_message(&text, ".avatar-button").await.is_ok() {
+            return;
+        }
+    }
+    panic!("no message of {who} started a group");
+}
+
 async fn open_card_for(app: &mut App, name: &str) {
     app.click_text(".members .member", name)
         .await
@@ -468,13 +488,7 @@ async fn the_card_stays_on_screen_as_it_fills_in() {
         .expect("room id")
         .expect("a selected room");
     let text = format!("lowest picture {}", std::process::id());
-    morpheus_e2e::send_as(&hs, "carol", &room_id, &text).expect("carol writes");
-    app.wait_for_text(".message .body", &text, DEFAULT_WAIT)
-        .await
-        .expect("her message");
-    app.click_in_message(&text, ".avatar-button")
-        .await
-        .expect("open a card low down");
+    open_card_from_new_message(&mut app, &hs, &room_id, "carol", &text).await;
     app.wait_for(".profile-card .mutual-servers", DEFAULT_WAIT)
         .await
         .expect("filled in");
@@ -1157,13 +1171,7 @@ async fn the_card_does_not_move_or_resize_when_it_finishes_loading() {
     for (who, has_status) in [("carol", true), ("bob", false)] {
         // Their message is the lowest, so the card opens near the window's bottom.
         let text = format!("low {who} {}", std::process::id());
-        morpheus_e2e::send_as(&hs, who, &room_id, &text).expect("they write");
-        app.wait_for_text(".message .body", &text, DEFAULT_WAIT)
-            .await
-            .expect("their message");
-        app.click_in_message(&text, ".avatar-button")
-            .await
-            .expect("open the card");
+        open_card_from_new_message(&mut app, &hs, &room_id, who, &text).await;
         app.wait_for(".profile-card .mutual-servers.skeleton", DEFAULT_WAIT)
             .await
             .expect("the card is still loading");
