@@ -84,7 +84,14 @@ for down in 14 30 14; do
     mouse drag $((x0 + 220)) $((y0 + down)) 100 60
     sleep 1
     read -r x1 y1 <<< "$(ui "get position of window 1" | xy)"
-    echo "the app's own drag started $(( $(grep -c "start_window_move" "$data/log.txt") - moves0 )) time(s): $(grep "start_window_move" "$data/log.txt" | tail -1)"
+    # The whole bar drags one way, the app's (#68): a press in the system
+    # bar's height left to the window server moved the window sideways only.
+    moves=$(( $(grep -c "start_window_move" "$data/log.txt") - moves0 ))
+    if [ "$moves" = 1 ]; then
+        echo "ok: the app's own drag moved it from ${down} px down ($(grep "start_window_move" "$data/log.txt" | tail -1))"
+    else
+        fail "the app's own drag started $moves times for one drag ${down} px down"
+    fi
     if [ $((x1 - x0)) -ge 90 ] && [ $((x1 - x0)) -le 110 ] && [ $((y1 - y0)) -ge 50 ] && [ $((y1 - y0)) -le 70 ]; then
         echo "ok: dragging the bar ${down} px down moved the window ($x0,$y0 → $x1,$y1)"
     else
