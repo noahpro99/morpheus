@@ -196,6 +196,7 @@ impl Shell {
         morpheus_call::set_input_volume(prefs.input_volume);
         morpheus_call::set_output_volume(prefs.output_volume);
         morpheus_call::set_noise_suppression(crate::noise::read());
+        morpheus_call::set_noise_tuning(crate::noise::read_tuning());
         self.calls.devices = prefs;
         self.calls.screen_quality = crate::screen_quality::read();
         // The frames are drawn here as raw pixels: no JPEGs for nobody.

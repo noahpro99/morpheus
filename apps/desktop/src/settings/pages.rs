@@ -508,11 +508,19 @@ impl SettingsView {
                 );
             }
         }
-        let noise = crate::noise::controls(
+        let mut noise = crate::noise::controls(
             cx,
             |_: &mut Self, mode, cx| cx.emit(super::NoiseChosen(mode)),
             |_: &mut Self, on, cx| cx.emit(super::MicTest(on)),
         );
+        noise.extend(crate::noise::advanced(
+            cx,
+            self.noise_advanced,
+            |this: &mut Self, cx| {
+                this.noise_advanced = !this.noise_advanced;
+                cx.notify();
+            },
+        ));
         let video = self.video_section(cx);
         vec![
             section_classed(
