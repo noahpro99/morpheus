@@ -1,109 +1,82 @@
 //! The colour of a call card for someone without video: the dominant colour
-//! of their profile picture, darkened and desaturated so white text and the
-//! picture itself stay readable on it.
+//! of their profile picture (Color Thief's MMCQ palette, scored for
+//! colourfulness), kept vivid but dark enough for white text on it.
 
 /// Most samples looked at: a strided pick over the picture (about 32x32).
 const MAX_SAMPLES: usize = 1024;
-const CLUSTERS: usize = 4;
-const ITERATIONS: usize = 6;
+/// Swatches asked of Color Thief.
+const PALETTE: u8 = 6;
 
-fn to_oklab([r, g, b]: [u8; 3]) -> [f32; 3] {
-    let lin = |c: u8| {
-        let c = f32::from(c) / 255.0;
-        if c <= 0.04045 {
-            c / 12.92
-        } else {
-            ((c + 0.055) / 1.055).powf(2.4)
-        }
-    };
-    let (r, g, b) = (lin(r), lin(g), lin(b));
-    let l = (0.412_221_47 * r + 0.536_332_55 * g + 0.051_445_995 * b).cbrt();
-    let m = (0.211_903_5 * r + 0.680_699_5 * g + 0.107_396_96 * b).cbrt();
-    let s = (0.088_302_46 * r + 0.281_718_85 * g + 0.629_978_7 * b).cbrt();
-    [
-        0.210_454_26 * l + 0.793_617_8 * m - 0.004_072_047 * s,
-        1.977_998_5 * l - 2.428_592_2 * m + 0.450_593_7 * s,
-        0.025_904_037 * l + 0.782_771_77 * m - 0.808_675_77 * s,
-    ]
+/// HSV saturation of an RGB colour, 0 to 1.
+fn hsv_saturation([r, g, b]: [u8; 3]) -> f32 {
+    let max = r.max(g).max(b);
+    if max == 0 {
+        return 0.0;
+    }
+    f32::from(max - r.min(g).min(b)) / f32::from(max)
 }
 
-fn dist2(a: [f32; 3], b: [f32; 3]) -> f32 {
-    (0..3).map(|i| (a[i] - b[i]) * (a[i] - b[i])).sum()
+fn dist2(a: [u8; 3], b: [u8; 3]) -> i32 {
+    (0..3)
+        .map(|i| {
+            let d = i32::from(a[i]) - i32::from(b[i]);
+            d * d
+        })
+        .sum()
 }
 
 /// The dominant colour of RGBA pixels (4 bytes each): a strided sample of
-/// the opaque pixels is clustered (k-means in Oklab, seeded
-/// deterministically), and the cluster that is big, colourful and neither
-/// near-white nor near-black wins; its pixels' mean is returned. `None`
-/// for no pixels or only transparent ones.
+/// the opaque pixels, without the near-white and near-black ones (unless
+/// that leaves almost nothing, so a black-and-white picture still gets a
+/// colour), goes through Color Thief for a palette of swatches. Each swatch
+/// scores population times saturation squared (plus a small epsilon, so an
+/// all-grey picture picks its most common grey) and the winner's pixels'
+/// mean is returned. `None` for no pixels or only transparent ones.
 pub fn dominant_rgba(pixels: &[u8]) -> Option<[u8; 3]> {
     let count = pixels.len() / 4;
     let stride = count.div_ceil(MAX_SAMPLES).max(1);
-    let samples: Vec<([u8; 3], [f32; 3])> = pixels
+    let opaque: Vec<[u8; 3]> = pixels
         .chunks_exact(4)
         .step_by(stride)
         .filter(|p| p[3] >= 128)
-        .map(|p| {
-            let rgb = [p[0], p[1], p[2]];
-            (rgb, to_oklab(rgb))
-        })
+        .map(|p| [p[0], p[1], p[2]])
         .collect();
-    if samples.is_empty() {
+    if opaque.is_empty() {
         return None;
     }
-    // Farthest-point seeding from the first sample: deterministic.
-    let mut centres = vec![samples[0].1];
-    while centres.len() < CLUSTERS {
-        let mut far = (0.0f32, None);
-        for (_, lab) in &samples {
-            let d = centres
-                .iter()
-                .map(|c| dist2(*c, *lab))
-                .fold(f32::MAX, f32::min);
-            if d > far.0 {
-                far = (d, Some(*lab));
-            }
-        }
-        match far {
-            (d, Some(c)) if d > 1e-4 => centres.push(c),
-            _ => break,
-        }
+    let coloured: Vec<[u8; 3]> = opaque
+        .iter()
+        .copied()
+        .filter(|c| !c.iter().all(|&v| v > 240) && !c.iter().all(|&v| v < 15))
+        .collect();
+    let samples = if coloured.len() * 20 < opaque.len() {
+        opaque
+    } else {
+        coloured
+    };
+    let buffer: Vec<u8> = samples.iter().flatten().copied().collect();
+    let mut swatches: Vec<[u8; 3]> =
+        color_thief::get_palette(&buffer, color_thief::ColorFormat::Rgb, 1, PALETTE)
+            .map(|p| p.iter().map(|c| [c.r, c.g, c.b]).collect())
+            .unwrap_or_default();
+    if swatches.is_empty() {
+        swatches.push(samples[0]);
     }
-    let mut assign = vec![0usize; samples.len()];
-    for _ in 0..ITERATIONS {
-        for (slot, (_, lab)) in assign.iter_mut().zip(&samples) {
-            *slot = (0..centres.len())
-                .min_by(|&a, &b| dist2(centres[a], *lab).total_cmp(&dist2(centres[b], *lab)))
-                .unwrap_or(0);
-        }
-        for (k, centre) in centres.iter_mut().enumerate() {
-            let (mut sum, mut n) = ([0.0f32; 3], 0.0f32);
-            for ((_, lab), _) in samples.iter().zip(&assign).filter(|(_, a)| **a == k) {
-                (0..3).for_each(|i| sum[i] += lab[i]);
-                n += 1.0;
-            }
-            if n > 0.0 {
-                *centre = sum.map(|v| v / n);
-            }
-        }
+    // Populations: Color Thief does not return them, so assign each sample
+    // to its nearest swatch and keep the mean of what each one gets.
+    let mut sums = vec![([0u32; 3], 0u32); swatches.len()];
+    for c in &samples {
+        let k = (0..swatches.len())
+            .min_by_key(|&k| dist2(swatches[k], *c))
+            .unwrap_or(0);
+        (0..3).for_each(|i| sums[k].0[i] += u32::from(c[i]));
+        sums[k].1 += 1;
     }
-    let total = samples.len() as f32;
     let mut best: Option<(f32, [u8; 3])> = None;
-    for (k, centre) in centres.iter().enumerate() {
-        let (mut rgb, mut n) = ([0u32; 3], 0u32);
-        for ((c, _), _) in samples.iter().zip(&assign).filter(|(_, a)| **a == k) {
-            (0..3).for_each(|i| rgb[i] += u32::from(c[i]));
-            n += 1;
-        }
-        if n == 0 {
-            continue;
-        }
-        let chroma = centre[1].hypot(centre[2]);
-        let mut score = n as f32 / total * (1.0 + 3.0 * chroma);
-        if centre[0] > 0.92 || centre[0] < 0.15 {
-            score *= 0.3;
-        }
-        let mean = rgb.map(|c| ((c + n / 2) / n) as u8);
+    for (sum, n) in sums.into_iter().filter(|(_, n)| *n > 0) {
+        let mean = sum.map(|c| ((c + n / 2) / n) as u8);
+        let saturation = hsv_saturation(mean);
+        let score = n as f32 * (saturation * saturation + 0.01);
         if best.is_none_or(|(s, _)| score > s) {
             best = Some((score, mean));
         }
@@ -111,10 +84,11 @@ pub fn dominant_rgba(pixels: &[u8]) -> Option<[u8; 3]> {
     best.map(|(_, c)| c)
 }
 
-/// The card colour (RRGGBB) for a picture whose dominant colour is `average`: the
-/// same hue, less saturated, and dark whatever the picture's brightness
-/// (lightness 12% to 30%, so white text has a contrast of 7 or more and a
-/// picture lighter than its card shows against it).
+/// The card colour (RRGGBB) for a picture whose dominant colour is
+/// `average`: the same hue and (up to 85%) the same saturation, so a
+/// colourful picture gets a vivid card, at a lightness of 28% to 40% (a
+/// lighter picture a lighter card), darkened until white text on it has a
+/// WCAG contrast of at least 4.5 (the AA level for text).
 pub fn card_color(average: [u8; 3]) -> u32 {
     let [r, g, b] = average.map(|c| f64::from(c) / 255.0);
     let max = r.max(g).max(b);
@@ -135,8 +109,18 @@ pub fn card_color(average: [u8; 3]) -> u32 {
     } else {
         (r - g) / delta + 4.0
     };
-    let saturation = (saturation * 0.6).min(0.5);
-    let lightness = 0.12 + 0.18 * lightness;
+    let saturation = saturation.min(0.85);
+    let mut lightness = 0.28 + 0.12 * lightness;
+    loop {
+        let rgb = hsl_to_rgb(hue, saturation, lightness);
+        if lightness <= 0.0 || contrast_with_white(rgb) >= 4.5 {
+            return rgb;
+        }
+        lightness -= 0.005;
+    }
+}
+
+fn hsl_to_rgb(hue: f64, saturation: f64, lightness: f64) -> u32 {
     let chroma = (1.0 - (2.0 * lightness - 1.0).abs()) * saturation;
     let x = chroma * (1.0 - (hue % 2.0 - 1.0).abs());
     let (r, g, b) = match hue as u32 {
@@ -150,6 +134,20 @@ pub fn card_color(average: [u8; 3]) -> u32 {
     let m = lightness - chroma / 2.0;
     let byte = |c: f64| ((c + m) * 255.0).round().clamp(0.0, 255.0) as u32;
     byte(r) << 16 | byte(g) << 8 | byte(b)
+}
+
+/// WCAG contrast of white text on `rgb`.
+fn contrast_with_white(rgb: u32) -> f64 {
+    let lin = |c: u32| {
+        let c = f64::from(c as u8) / 255.0;
+        if c <= 0.03928 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    let l = 0.2126 * lin(rgb >> 16) + 0.7152 * lin(rgb >> 8) + 0.0722 * lin(rgb);
+    1.05 / (l + 0.05)
 }
 
 #[cfg(test)]
@@ -247,39 +245,81 @@ mod tests {
             [255, 0, 0],
             [0, 0, 0],
             [0, 255, 0],
+            [0, 0, 255],
+            [255, 128, 0],
+            [128, 128, 128],
         ] {
             let card = card_color(average);
             assert!(
-                contrast_with_white(card) >= 7.0,
+                contrast_with_white(card) >= 4.5,
                 "{average:?} -> {card:06x}"
             );
         }
     }
 
+    fn hsl_saturation(rgb: u32) -> f64 {
+        let [r, g, b] = channels(rgb).map(|c| c / 255.0);
+        let (max, min) = (r.max(g).max(b), r.min(g).min(b));
+        if max == min {
+            return 0.0;
+        }
+        (max - min) / (1.0 - (max + min - 1.0).abs())
+    }
+
     #[test]
-    fn the_card_keeps_the_pictures_hue_but_not_all_its_colour() {
+    fn saturated_pictures_give_vivid_cards() {
+        for (average, dominant) in [
+            ([220, 20, 20], 0usize),
+            ([20, 200, 40], 1),
+            ([20, 40, 230], 2),
+        ] {
+            let pixels = solid(average, 100);
+            let card = card_color(dominant_rgba(&pixels).unwrap());
+            assert!(hsl_saturation(card) >= 0.6, "{average:?} -> {card:06x}");
+            let ch = channels(card);
+            assert!(
+                ch[dominant] > ch[(dominant + 1) % 3] && ch[dominant] > ch[(dominant + 2) % 3],
+                "{card:06x}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_white_background_with_a_red_subject_gives_a_red_card() {
+        let mut pixels = solid([255, 255, 255], 70);
+        pixels.extend(solid([220, 20, 20], 30));
+        let ch = channels(card_color(dominant_rgba(&pixels).unwrap()));
+        assert!(ch[0] > ch[1] + 60.0 && ch[0] > ch[2] + 60.0, "{ch:?}");
+    }
+
+    #[test]
+    fn a_greyscale_picture_gives_a_grey_card() {
+        let mut pixels = solid([200, 200, 200], 40);
+        pixels.extend(solid([90, 90, 90], 60));
+        let card = card_color(dominant_rgba(&pixels).unwrap());
+        assert!(hsl_saturation(card) < 0.05, "{card:06x}");
+    }
+
+    #[test]
+    fn a_black_and_white_picture_still_gets_a_colour() {
+        let mut pixels = solid([255, 255, 255], 50);
+        pixels.extend(solid([0, 0, 0], 50));
+        assert!(dominant_rgba(&pixels).is_some());
+    }
+
+    #[test]
+    fn the_card_keeps_the_pictures_hue() {
         let red = channels(card_color([230, 30, 30]));
-        assert!(
-            red[0] > red[1] + 15.0 && red[0] > red[2] + 15.0,
-            "reddish: {red:?}"
-        );
+        assert!(red[0] > red[1] + 15.0 && red[0] > red[2] + 15.0, "{red:?}");
         let blue = channels(card_color([30, 40, 230]));
-        assert!(
-            blue[2] > blue[0] + 15.0 && blue[2] > blue[1] + 15.0,
-            "bluish: {blue:?}"
-        );
-        // Less saturated than the picture's own colour.
-        let spread = |c: [f64; 3]| {
-            c.iter().cloned().fold(0.0, f64::max) - c.iter().cloned().fold(255.0, f64::min)
-        };
-        assert!(spread(red) < 230.0 - 30.0);
+        assert!(blue[2] > blue[0] + 15.0 && blue[2] > blue[1] + 15.0, "{blue:?}");
     }
 
     #[test]
     fn a_picture_brighter_than_its_card_stays_distinct() {
         // A light picture is drawn on a clearly darker card, so it shows.
         let card = card_color([240, 240, 240]);
-        assert!(luminance(card) < 0.1, "{card:06x}");
+        assert!(luminance(card) < 0.15, "{card:06x}");
         assert_ne!(card_color([240, 240, 240]), card_color([20, 20, 20]));
     }
 }

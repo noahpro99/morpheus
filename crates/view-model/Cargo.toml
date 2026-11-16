@@ -10,6 +10,7 @@ morpheus-core = { workspace = true }
 serde_json = { workspace = true }
 ruma-html = { workspace = true }
 jiff = "0.2"
+color-thief = "0.2.2"
 emojis = "0.9.1"
 argon2 = "0.5"
 
