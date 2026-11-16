@@ -34,9 +34,10 @@ struct Speaker {
 ///   their camera);
 /// - otherwise someone with their camera on who is speaking (not you), held
 ///   [`SPEAKER_HOLD_MS`] after they stop;
-/// - otherwise the default: a shared screen (someone else's first), else a
-///   camera (someone else's first);
-/// - no feed at all: nothing, the window closes.
+/// - otherwise the default: someone else's shared screen, else their camera;
+/// - never your own share; your own camera only when nothing else is on
+///   (a focus on it included);
+/// - no feed left: nothing, the window closes.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MiniPick {
     speaker: Option<Speaker>,
@@ -53,6 +54,17 @@ impl MiniPick {
         me: Option<&OwnedUserId>,
         now_ms: u64,
     ) -> Option<String> {
+        // Never your own share (sharing the whole screen, the window would
+        // show the app inside itself, and streamer mode is about what the
+        // share shows); your own camera only when nothing else is on.
+        let mine = |f: &VideoFeed| Some(&f.user) == me;
+        let others: Vec<VideoFeed> = feeds.iter().filter(|f| !mine(f)).cloned().collect();
+        let feeds: Vec<VideoFeed> = if others.is_empty() {
+            feeds.iter().filter(|f| !f.screen).cloned().collect()
+        } else {
+            others
+        };
+        let feeds = feeds.as_slice();
         if feeds.is_empty() {
             self.speaker = None;
             return None;
@@ -327,6 +339,44 @@ mod tests {
         // Only yours: yours.
         let feeds = [camera("alice")];
         assert_eq!(pick.pick(None, &feeds, &[], Some(&me), 0).as_deref(), Some("alice-camera"));
+    }
+
+    #[test]
+    fn your_own_share_is_never_shown() {
+        let me = user("alice");
+        let mut pick = MiniPick::default();
+        // Your share alone: no window (it would show the app inside itself).
+        assert_eq!(pick.pick(None, &[screen("alice")], &[], Some(&me), 0), None);
+        assert_eq!(pick.pick(Some("alice-screen"), &[screen("alice")], &[], Some(&me), 0), None);
+        // Focused in the call view: not here either.
+        let feeds = [screen("alice"), camera("bob")];
+        assert_eq!(
+            pick.pick(Some("alice-screen"), &feeds, &[], Some(&me), 0).as_deref(),
+            Some("bob-camera")
+        );
+        // With your camera: the camera.
+        let feeds = [screen("alice"), camera("alice")];
+        assert_eq!(pick.pick(None, &feeds, &[], Some(&me), 0).as_deref(), Some("alice-camera"));
+    }
+
+    #[test]
+    fn your_own_camera_shows_only_when_nothing_else_is_on() {
+        let me = user("alice");
+        let mut pick = MiniPick::default();
+        let feeds = [camera("alice"), camera("bob")];
+        assert_eq!(
+            pick.pick(Some("alice-camera"), &feeds, &[], Some(&me), 0).as_deref(),
+            Some("bob-camera")
+        );
+        assert_eq!(
+            pick.pick(Some("@alice:x"), &feeds, &[], Some(&me), 0).as_deref(),
+            Some("bob-camera")
+        );
+        let feeds = [camera("alice")];
+        assert_eq!(
+            pick.pick(Some("alice-camera"), &feeds, &[], Some(&me), 0).as_deref(),
+            Some("alice-camera")
+        );
     }
 
     #[test]
