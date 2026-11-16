@@ -443,6 +443,7 @@ impl SettingsView {
             )
             .into_any_element(),
             self.custom_colour_section(cx).into_any_element(),
+            self.history_section(cx).into_any_element(),
             keyboard.into_any_element(),
         ];
         // Linux draws with Vulkan on the GPU picked at start (macOS: Metal's).
@@ -1808,6 +1809,104 @@ impl SettingsView {
             .child(self.hsv_slider(1, "sat", "Saturation", s, format!("{}%", (s * 100.0).round() as i32), saturation, cx))
             .child(self.hsv_slider(2, "val", "Value", v, format!("{}%", (v * 100.0).round() as i32), value, cx))
             .into_any_element()
+    }
+
+    /// Appearance's history: the looks used lately, to restore or pin.
+    fn history_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let items = self.history.iter().map(|entry| {
+            let look = entry.look;
+            let (side, chat) = match look.colour {
+                Some(c) => {
+                    let p = crate::view_model::theme::derive(c);
+                    (p.bg_sidebar, p.bg_chat)
+                }
+                None => theme::swatch_of(look.theme),
+            };
+            let key = look
+                .colour
+                .map(|c| format!("{c:06x}"))
+                .unwrap_or_else(|| look.theme.key().to_owned());
+            let swatch = div()
+                .flex()
+                .w(px(72.0))
+                .h(px(44.0))
+                .rounded(px(theme::RADIUS_SM))
+                .overflow_hidden()
+                .child(div().w(relative_36()).h_full().bg(rgb(side)))
+                .child(div().flex_1().h_full().bg(rgb(chat)));
+            let pin_label = if entry.pinned { "Pinned" } else { "Pin" };
+            let pin = div()
+                .id(ElementId::from(SharedString::from(format!("history-pin-{key}"))))
+                .px(px(6.0))
+                .rounded(px(theme::RADIUS_SM))
+                .text_size(px(11.0))
+                .cursor_pointer()
+                .text_color(rgb(if entry.pinned {
+                    theme::accent()
+                } else {
+                    theme::text_muted()
+                }))
+                .child(pin_label)
+                .on_click(cx.listener(move |_, _, _, cx| {
+                    cx.emit(super::HistoryPin(look));
+                    cx.stop_propagation();
+                }))
+                .e2e("button", "history-pin")
+                .text(pin_label);
+            div()
+                .id(ElementId::from(SharedString::from(format!("history-{key}"))))
+                .flex()
+                .flex_col()
+                .items_center()
+                .gap(px(4.0))
+                .p(px(6.0))
+                .rounded(px(theme::RADIUS))
+                .border_2()
+                .border_color(if entry.pinned {
+                    rgb(theme::accent())
+                } else {
+                    rgb(theme::bg_elevated())
+                })
+                .bg(rgb(theme::bg_elevated()))
+                .cursor_pointer()
+                .child(swatch)
+                .child(pin)
+                .on_click(cx.listener(move |_, _, _, cx| cx.emit(super::HistoryRestore(look))))
+                .e2e(
+                    "button",
+                    if entry.pinned {
+                        "history-item pinned"
+                    } else {
+                        "history-item"
+                    },
+                )
+                .attr("data-colour", key)
+                .attr("data-theme", look.theme.key())
+        });
+        let body: AnyElement = if self.history.is_empty() {
+            muted("Themes and colours you use show up here.", "muted").into_any_element()
+        } else {
+            div()
+                .flex()
+                .flex_wrap()
+                .gap(px(10.0))
+                .children(items)
+                .e2e("div", "history-items")
+                .into_any_element()
+        };
+        section(
+            "Recently used",
+            "theme-history",
+            vec![
+                muted(
+                    "The last ten themes and colours you have used, so a tweak does not lose one you liked. Click one to bring it back; pin the ones to keep.",
+                    "muted",
+                )
+                .into_any_element(),
+                body,
+            ],
+            false,
+        )
     }
 
     /// Appearance's custom colour: a hex box, a grid to pick from and the preview.

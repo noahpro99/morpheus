@@ -478,6 +478,50 @@ impl Shell {
         cx.notify();
     }
 
+    /// The theme or colour in use now goes in the history (when it is new or
+    /// not first there), and the open settings show it.
+    pub fn record_look(&mut self, cx: &mut Context<Self>) {
+        let look = crate::view_model::theme_history::Look {
+            theme: self.prefs.theme(),
+            colour: self.prefs.custom_colour(),
+        };
+        let mut history = self.prefs.theme_history();
+        if history.record(look) {
+            self.prefs.set_theme_history(&history);
+            self.save_prefs(cx);
+        }
+        self.show_history(cx);
+    }
+
+    /// The look just changed: it counts as used once it has stayed for a moment
+    /// (not every slider tick).
+    pub fn look_changed(&mut self, cx: &mut Context<Self>) {
+        self.look_generation += 1;
+        let generation = self.look_generation;
+        cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(std::time::Duration::from_secs(2))
+                .await;
+            this.update(cx, |this, cx| {
+                if this.look_generation == generation {
+                    this.record_look(cx);
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    pub fn show_history(&mut self, cx: &mut Context<Self>) {
+        let shown = self.prefs.theme_history().shown();
+        if let Some(settings) = &self.settings {
+            settings.update(cx, |settings, cx| {
+                settings.history = shown;
+                cx.notify();
+            });
+        }
+    }
+
     /// The layout preferences, kept in the account.
     pub fn save_prefs(&mut self, cx: &mut Context<Self>) {
         if let Some(session) = self.session.clone() {

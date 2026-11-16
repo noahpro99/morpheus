@@ -102,6 +102,8 @@ pub struct Shell {
     pub last_room_in: std::collections::HashMap<Scope, OwnedRoomId>,
     pub selected: Option<OwnedRoomId>,
     pub prefs: Prefs,
+    /// Counts theme changes, so only the last one in a moment is recorded.
+    pub look_generation: u64,
     pub open_folders: Vec<String>,
     /// Where a server dragged on the rail would land now.
     pub rail_drop: Option<crate::view_model::rail_drag::Drop>,
@@ -302,6 +304,8 @@ impl Shell {
                     crate::theme::set(theme);
                     crate::theme::set_custom(this.prefs.custom_colour());
                     cx.refresh_windows();
+                    // What the account has been using counts as used.
+                    this.record_look(cx);
                     if let Some(settings) = &this.settings {
                         let custom = this.prefs.custom_colour();
                         settings.update(cx, |settings, cx| {
@@ -347,6 +351,7 @@ impl Shell {
                 cx.refresh_windows();
                 this.prefs.set_custom_colour(Some(chosen.0));
                 this.save_prefs(cx);
+                this.look_changed(cx);
             },
         )
         .detach();
@@ -357,7 +362,40 @@ impl Shell {
             crate::theme::set_custom(None);
             this.prefs.set_custom_colour(None);
             this.save_prefs(cx);
+            this.look_changed(cx);
         })
+        .detach();
+        cx.subscribe(
+            &settings,
+            |this, _, restore: &crate::settings::HistoryRestore, cx| {
+                let look = restore.0;
+                crate::theme::set(look.theme);
+                crate::theme::set_custom(look.colour);
+                cx.refresh_windows();
+                this.prefs.set_theme(look.theme);
+                this.prefs.set_custom_colour(look.colour);
+                this.save_prefs(cx);
+                if let Some(settings) = &this.settings {
+                    settings.update(cx, |settings, cx| {
+                        settings.theme = look.theme;
+                        settings.set_custom_shown(look.colour, cx);
+                    });
+                }
+                this.look_changed(cx);
+            },
+        )
+        .detach();
+        cx.subscribe(
+            &settings,
+            |this, _, pin: &crate::settings::HistoryPin, cx| {
+                let mut history = this.prefs.theme_history();
+                if history.toggle_pin(pin.0) {
+                    this.prefs.set_theme_history(&history);
+                    this.save_prefs(cx);
+                    this.show_history(cx);
+                }
+            },
+        )
         .detach();
         cx.subscribe(
             &settings,
@@ -418,6 +456,7 @@ impl Shell {
             last_room_in: Default::default(),
             selected: None,
             prefs: Prefs::default(),
+            look_generation: 0,
             open_folders: Vec::new(),
             rail_drop: None,
             rail_hover: None,

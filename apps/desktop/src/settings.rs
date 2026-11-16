@@ -65,6 +65,16 @@ pub struct CustomColourLive(pub u32);
 
 impl EventEmitter<CustomColourLive> for SettingsView {}
 
+/// A look from the theme history was clicked: the shell applies it.
+pub struct HistoryRestore(pub crate::view_model::theme_history::Look);
+
+impl EventEmitter<HistoryRestore> for SettingsView {}
+
+/// A look's pin in the theme history was toggled.
+pub struct HistoryPin(pub crate::view_model::theme_history::Look);
+
+impl EventEmitter<HistoryPin> for SettingsView {}
+
 /// A streamer mode choice was kept: the shell draws again.
 pub struct StreamerChanged;
 
@@ -165,6 +175,8 @@ pub struct SettingsView {
     pub theme: Theme,
     /// The custom colour in use, and the box it is typed in.
     pub custom: Option<u32>,
+    /// The looks used lately, as shown (the shell tells us).
+    pub history: Vec<crate::view_model::theme_history::Entry>,
     /// The custom colour as hue, saturation and value: kept apart so a grey keeps its hue
     /// while the sliders move.
     hsv: (f32, f32, f32),
@@ -364,6 +376,7 @@ impl SettingsView {
             startup_note: None,
             theme: Theme::Dark,
             custom: None,
+            history: Vec::new(),
             hsv: crate::view_model::theme::to_hsv(crate::view_model::theme::DARK.bg_chat),
             hsv_dragging: false,
             colour_input,

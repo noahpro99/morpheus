@@ -214,6 +214,15 @@ impl Prefs {
         }
     }
 
+    /// The looks used lately (`theme_history`).
+    pub fn theme_history(&self) -> crate::view_model::theme_history::ThemeHistory {
+        crate::view_model::theme_history::ThemeHistory::from_json(self.extra.get("theme_history"))
+    }
+
+    pub fn set_theme_history(&mut self, history: &crate::view_model::theme_history::ThemeHistory) {
+        self.extra.insert("theme_history".into(), history.to_json());
+    }
+
     pub fn to_json(&self) -> serde_json::Value {
         let rail: Vec<serde_json::Value> = self
             .rail
