@@ -69,6 +69,106 @@ impl Layout {
     fn bytes_per_sample(&self) -> usize {
         if self.float { 4 } else { 2 }
     }
+
+    /// The buffers a sample of this layout comes in: one interleaved, or one
+    /// a channel.
+    pub(crate) fn buffers(&self) -> usize {
+        if self.interleaved {
+            1
+        } else {
+            self.channels.max(1)
+        }
+    }
+
+    /// The frames in `buffers` of these lengths: as reported where it says
+    /// (`reported` > 0), else as many as the shortest buffer holds.
+    pub(crate) fn frames_in(&self, reported: usize, buffers: &[usize]) -> usize {
+        if reported > 0 {
+            return reported;
+        }
+        let per_frame = self.bytes_per_sample() * if self.interleaved { self.channels } else { 1 };
+        buffers
+            .iter()
+            .take(self.buffers())
+            .map(|len| len / per_frame.max(1))
+            .min()
+            .unwrap_or(0)
+    }
+
+    /// Where each buffer is in one block of `len` bytes of `frames` frames
+    /// (0 if not known): the whole block if interleaved, else channel after
+    /// channel, as OBS reads ScreenCaptureKit's sound from its data buffer.
+    /// For when CoreMedia's buffer list cannot be had.
+    pub(crate) fn split_block(&self, frames: usize, len: usize) -> Vec<std::ops::Range<usize>> {
+        if self.interleaved {
+            return std::iter::once(0..len).collect();
+        }
+        let width = self.bytes_per_sample();
+        let channels = self.channels.max(1);
+        let fits = len / channels / width * width;
+        let stride = if frames > 0 {
+            (frames * width).min(fits)
+        } else {
+            fits
+        };
+        (0..channels)
+            .map(|c| c * stride..(c + 1) * stride)
+            .collect()
+    }
+}
+
+/// CoreAudio's `AudioBufferList` on 64-bit Apple platforms: a `u32` count
+/// (padded to 8) and then `AudioBuffer`s of 16 bytes (two `u32`s, a pointer).
+/// `system_audio_sck.rs` checks these against the real types.
+pub(crate) const LIST_HEADER: usize = 8;
+pub(crate) const LIST_ENTRY: usize = 16;
+
+/// The bytes of a list of `buffers` buffers (at least the one the type
+/// declares), in whole 16-byte units.
+pub(crate) fn list_bytes(buffers: usize) -> usize {
+    (LIST_HEADER + LIST_ENTRY * buffers.max(1)).next_multiple_of(16)
+}
+
+/// How many buffers a list of `bytes` bytes has room for.
+pub(crate) fn list_room(bytes: usize) -> usize {
+    bytes.saturating_sub(LIST_HEADER) / LIST_ENTRY
+}
+
+/// The list to hand CoreMedia: the size it asked for (if it answered), at
+/// least room for the layout's buffers, in whole 16-byte units.
+pub(crate) fn list_size(asked: Option<usize>, layout: &Layout) -> usize {
+    asked
+        .unwrap_or(0)
+        .max(list_bytes(layout.buffers()))
+        .next_multiple_of(16)
+}
+
+/// Failures to read captured sound: all counted, logged the first time and
+/// then at most every [`Failures::EVERY`], with how many since.
+#[derive(Debug, Default)]
+pub(crate) struct Failures {
+    pub(crate) count: u64,
+    unlogged: u64,
+    logged: Option<std::time::Instant>,
+}
+
+impl Failures {
+    pub(crate) const EVERY: std::time::Duration = std::time::Duration::from_secs(10);
+
+    /// One more at `now`: `Some(failures since the last log)` when it is
+    /// time to log.
+    pub(crate) fn note(&mut self, now: std::time::Instant) -> Option<u64> {
+        self.count += 1;
+        self.unlogged += 1;
+        if self
+            .logged
+            .is_some_and(|at| now.saturating_duration_since(at) < Self::EVERY)
+        {
+            return None;
+        }
+        self.logged = Some(now);
+        Some(std::mem::take(&mut self.unlogged))
+    }
 }
 
 /// Turns captured sound into 10 ms frames for [`Out`], keeping what is left
@@ -344,5 +444,99 @@ mod tests {
         let got = got.lock().expect("lock");
         assert_eq!(got[0][2 * 5 + 1], 0);
         assert_eq!(got[0][2 * 5], 16384);
+    }
+
+    const INTERLEAVED_I16: Layout = Layout {
+        rate: 44_100.0,
+        channels: 2,
+        float: false,
+        interleaved: true,
+    };
+
+    #[test]
+    fn the_buffer_list_has_room_for_every_buffer_of_the_layout() {
+        // CoreMedia's -12737 (array too small) came from a list too small:
+        // whatever it asks for, the list holds the layout's buffers, in
+        // 16-byte units, and room is counted from the list's real size.
+        assert_eq!(list_bytes(0), 32);
+        assert_eq!(list_bytes(1), 32);
+        assert_eq!(list_bytes(2), 48);
+        assert_eq!(list_room(list_bytes(2)), 2);
+        assert_eq!(list_room(list_bytes(8)), 8);
+        assert_eq!(list_room(4), 0);
+        for (asked, layout, at_least) in [
+            (None, PLANAR_FLOAT, 2),
+            (Some(24), PLANAR_FLOAT, 2),
+            (Some(40), PLANAR_FLOAT, 2),
+            (Some(200), PLANAR_FLOAT, 12),
+            (None, INTERLEAVED_I16, 1),
+            (
+                None,
+                Layout {
+                    channels: 6,
+                    ..PLANAR_FLOAT
+                },
+                6,
+            ),
+        ] {
+            let size = list_size(asked, &layout);
+            assert_eq!(size % 16, 0, "{size} for {asked:?}");
+            assert!(size >= asked.unwrap_or(0), "{size} < {asked:?}");
+            assert!(
+                list_room(size) >= at_least,
+                "{size} for {asked:?} {layout:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn frames_come_from_the_count_or_else_the_buffers() {
+        assert_eq!(PLANAR_FLOAT.buffers(), 2);
+        assert_eq!(INTERLEAVED_I16.buffers(), 1);
+        assert_eq!(PLANAR_FLOAT.frames_in(480, &[100, 100]), 480);
+        assert_eq!(PLANAR_FLOAT.frames_in(0, &[1920, 1916]), 479);
+        assert_eq!(INTERLEAVED_I16.frames_in(0, &[1920]), 480);
+        assert_eq!(PLANAR_FLOAT.frames_in(0, &[]), 0);
+    }
+
+    #[test]
+    fn a_block_of_planar_sound_splits_channel_after_channel() {
+        assert_eq!(
+            PLANAR_FLOAT.split_block(480, 3840),
+            vec![0..1920, 1920..3840]
+        );
+        // A count larger than the block: what is there, evenly.
+        assert_eq!(
+            PLANAR_FLOAT.split_block(1000, 3840),
+            vec![0..1920, 1920..3840]
+        );
+        // No count: the block in halves, whole samples.
+        assert_eq!(PLANAR_FLOAT.split_block(0, 3842), vec![0..1920, 1920..3840]);
+        // Padding after each channel (16-byte alignment) is skipped by the
+        // count.
+        assert_eq!(PLANAR_FLOAT.split_block(2, 64), vec![0..8, 8..16]);
+        assert_eq!(INTERLEAVED_I16.split_block(480, 1920), vec![0..1920]);
+
+        let (mut framer, got) = collecting();
+        let block: Vec<u8> =
+            f32_bytes(std::iter::repeat_n(0.5, FRAME).chain(std::iter::repeat_n(-0.25, FRAME)));
+        let ranges = PLANAR_FLOAT.split_block(FRAME, block.len());
+        let buffers: Vec<&[u8]> = ranges.iter().map(|r| &block[r.clone()]).collect();
+        assert_eq!(framer.push(&PLANAR_FLOAT, &buffers, FRAME), 1);
+        let got = got.lock().expect("lock");
+        assert_eq!(&got[0][..2], &[16384, -8192]);
+    }
+
+    #[test]
+    fn read_failures_are_all_counted_but_logged_now_and_then() {
+        let start = std::time::Instant::now();
+        let mut failures = Failures::default();
+        assert_eq!(failures.note(start), Some(1));
+        let soon = start + std::time::Duration::from_secs(1);
+        for _ in 0..99 {
+            assert_eq!(failures.note(soon), None);
+        }
+        assert_eq!(failures.note(start + Failures::EVERY), Some(100));
+        assert_eq!(failures.count, 101);
     }
 }

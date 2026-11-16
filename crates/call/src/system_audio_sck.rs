@@ -17,7 +17,9 @@
 //!   needs the Screen Recording permission (sharing the screen asked for it
 //!   already on macOS 13).
 //!
-//! The sound comes as 32-bit float, one buffer per channel, converted by
+//! The sound comes as 32-bit float, one buffer per channel (read through
+//! CoreMedia's buffer list of the size it asks for, or else its data buffer;
+//! a buffer that cannot be read is counted and skipped), converted by
 //! `system_audio_frames.rs`. Objective-C through raw calls: this module alone
 //! may use `unsafe`.
 #![allow(unsafe_code)]
@@ -30,7 +32,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
         mpsc::{self, Sender},
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use block2::RcBlock;
@@ -54,8 +56,10 @@ use tracing::{info, warn};
 
 use super::{
     autorelease,
-    system_audio::{CHANNELS, Out, RATE},
-    system_audio_frames::{Framer, Layout},
+    system_audio::{CHANNELS, Out, RATE, UNREADABLE},
+    system_audio_frames::{
+        Failures, Framer, LIST_ENTRY, LIST_HEADER, Layout, list_room, list_size,
+    },
 };
 
 /// An Objective-C object handed between threads. Only immutable objects
@@ -155,8 +159,10 @@ impl PickerObserver {
 /// What the sound stream's callback keeps.
 struct OutputState {
     framer: Framer,
-    /// Buffers that could not be read (logged once).
-    unreadable: u64,
+    /// Buffers that could not be read (all counted, logged now and then).
+    unreadable: Failures,
+    /// Buffers read from the data buffer as the list failed (the same).
+    fell_back: Failures,
     /// Whether the first readable buffer was logged.
     told: bool,
 }
@@ -188,15 +194,24 @@ define_class!(
                 // SAFETY: a sample buffer ScreenCaptureKit handed over, used
                 // only during this call.
                 match unsafe { read(sample, &mut state.framer) } {
-                    Ok(layout) if !state.told => {
-                        state.told = true;
-                        info!(?layout, "screen audio: the first sound arrived");
+                    Ok(read) => {
+                        if !state.told {
+                            state.told = true;
+                            info!(layout = ?read.layout, via = ?read.via, "screen audio: the first sound arrived");
+                        }
+                        if let Some(why) = read.list_failed
+                            && let Some(since) = state.fell_back.note(Instant::now())
+                        {
+                            let total = state.fell_back.count;
+                            warn!(%why, via = ?read.via, since, total, "screen audio: CoreMedia's buffer list needed another try (read anyway)");
+                        }
                     }
-                    Ok(_) => {}
+                    // Counted, logged now and then, and on to the next.
                     Err(why) => {
-                        state.unreadable += 1;
-                        if state.unreadable == 1 {
-                            warn!(%why, "screen audio: a buffer could not be read");
+                        UNREADABLE.fetch_add(1, Ordering::Relaxed);
+                        if let Some(since) = state.unreadable.note(Instant::now()) {
+                            let total = state.unreadable.count;
+                            warn!(%why, since, total, "screen audio: a buffer could not be read");
                         }
                     }
                 }
@@ -216,7 +231,8 @@ impl Output {
     fn new(out: Out) -> Retained<Self> {
         let this = Self::alloc().set_ivars(Mutex::new(OutputState {
             framer: Framer::new(out),
-            unreadable: 0,
+            unreadable: Failures::default(),
+            fell_back: Failures::default(),
             told: false,
         }));
         // SAFETY: NSObject's init.
@@ -224,20 +240,70 @@ impl Output {
     }
 }
 
-/// One audio sample buffer into `framer`: its format, then its buffers.
+/// `OSStatus` kCMSampleBufferError_ArrayTooSmall: the list handed over has
+/// too few buffers.
+const ARRAY_TOO_SMALL: i32 = -12737;
+
+// The list's layout as `system_audio_frames.rs` counts it.
+const _: () = assert!(offset_of!(AudioBufferList, mBuffers) == LIST_HEADER);
+const _: () = assert!(size_of::<AudioBuffer>() == LIST_ENTRY);
+
+/// 16 bytes, 16-aligned: what a buffer list is allocated in.
+#[derive(Clone, Copy)]
+#[repr(C, align(16))]
+struct Chunk([u8; 16]);
+
+/// How a sample buffer was read, for the log.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Via {
+    /// CoreMedia's buffer list, of this many bytes.
+    List(usize),
+    /// Its data buffer, split by the layout (the list could not be had).
+    Block,
+}
+
+/// A sample buffer read: its layout, how, and why the list failed if it did.
+struct Read {
+    layout: Layout,
+    via: Via,
+    list_failed: Option<String>,
+}
+
+/// One audio sample buffer into `framer`: its format, then its buffers, by
+/// CoreMedia's buffer list (its size asked first, as Apple documents and
+/// screencapturekit-rs does), or else its data buffer split by the format
+/// (as OBS's mac-sck-audio reads it).
 ///
 /// # Safety
 /// `sample` is a live CMSampleBuffer.
-unsafe fn read(sample: &CMSampleBuffer, framer: &mut Framer) -> Result<Layout, String> {
+unsafe fn read(sample: &CMSampleBuffer, framer: &mut Framer) -> Result<Read, String> {
     // SAFETY: plain CoreMedia getters on a live buffer; the buffer list is
-    // ours, of the size CoreMedia asked for, and its data is held by the
-    // retained block buffer until the end of this function.
+    // ours, at least of the size CoreMedia asked for, and the data it points
+    // at is held by the retained block buffer until the end of this function.
     unsafe {
-        let frames = usize::try_from(sample.num_samples()).unwrap_or(0);
+        if !sample.is_valid() {
+            return Err("an invalid sample buffer".into());
+        }
+        if !sample.data_is_ready() {
+            let status = sample.make_data_ready();
+            if status != 0 {
+                return Err(format!("its data was not ready: OSStatus {status}"));
+            }
+        }
+        let reported = usize::try_from(sample.num_samples()).unwrap_or(0);
         let format = sample.format_description().ok_or("no format")?;
         let basic = CMAudioFormatDescriptionGetStreamBasicDescription(&format);
         let Some(basic) = basic.as_ref() else {
             return Err("not sound".into());
+        };
+        let what = || {
+            format!(
+                "{reported} frames, {} Hz, {} channels, {} bits, flags {:#x}",
+                basic.mSampleRate,
+                basic.mChannelsPerFrame,
+                basic.mBitsPerChannel,
+                basic.mFormatFlags
+            )
         };
         let layout = Layout::from_core_audio(
             basic.mSampleRate,
@@ -246,60 +312,109 @@ unsafe fn read(sample: &CMSampleBuffer, framer: &mut Framer) -> Result<Layout, S
             basic.mBitsPerChannel,
             basic.mChannelsPerFrame,
         )?;
-        let what = || {
-            format!(
-                "{frames} frames, {} Hz, {} channels, {} bits, flags {:#x}",
-                basic.mSampleRate, basic.mChannelsPerFrame, basic.mBitsPerChannel, basic.mFormatFlags
-            )
-        };
-        let flags = kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment;
+        let aligned = kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment;
         // The list's size, asked first (it depends on the buffers and flags).
-        let mut needed = 0usize;
+        let mut asked = 0usize;
         let status = sample.audio_buffer_list_with_retained_block_buffer(
-            &mut needed,
+            &mut asked,
             std::ptr::null_mut(),
             0,
             None,
             None,
-            flags,
+            aligned,
             std::ptr::null_mut(),
         );
-        if status != 0 || needed < size_of::<AudioBufferList>() {
-            return Err(format!("its buffers' size: OSStatus {status} ({})", what()));
-        }
-        // 8-byte words, as aligned as an AudioBufferList.
-        let mut words = vec![0u64; needed.div_ceil(8)];
-        let list = words.as_mut_ptr().cast::<AudioBufferList>();
-        let mut block: *mut CMBlockBuffer = std::ptr::null_mut();
-        let status = sample.audio_buffer_list_with_retained_block_buffer(
-            std::ptr::null_mut(),
-            list,
-            words.len() * 8,
-            None,
-            None,
-            flags,
-            &mut block,
-        );
-        // Released when this returns.
-        let _block = NonNull::new(block).map(|b| CFRetained::from_raw(b));
-        if status != 0 {
-            return Err(format!("its buffers: OSStatus {status} ({}, list {needed} bytes)", what()));
-        }
-        let room = (needed - offset_of!(AudioBufferList, mBuffers)) / size_of::<AudioBuffer>();
-        let count = ((*list).mNumberBuffers as usize).min(room);
-        let first = (&raw const (*list).mBuffers).cast::<AudioBuffer>();
-        let buffers: Vec<&[u8]> = (0..count)
-            .map(|i| {
-                let b = *first.add(i);
-                if b.mData.is_null() {
-                    &[][..]
-                } else {
-                    std::slice::from_raw_parts(b.mData.cast::<u8>(), b.mDataByteSize as usize)
+        let asked = (status == 0 && asked >= LIST_HEADER + LIST_ENTRY).then_some(asked);
+        let first = list_size(asked, &layout);
+        // That size; four times it if CoreMedia still says too small; then
+        // without asking for 16-byte aligned data.
+        let mut why = match asked {
+            Some(_) => None,
+            None => Some(format!("its list's size: OSStatus {status}")),
+        };
+        for (size, flags) in [(first, aligned), (first * 4, aligned), (first * 4, 0)] {
+            let mut chunks = vec![Chunk([0; 16]); size / 16];
+            let list = chunks.as_mut_ptr().cast::<AudioBufferList>();
+            let mut block: *mut CMBlockBuffer = std::ptr::null_mut();
+            let status = sample.audio_buffer_list_with_retained_block_buffer(
+                std::ptr::null_mut(),
+                list,
+                size,
+                None,
+                None,
+                flags,
+                &mut block,
+            );
+            // Released when this iteration ends.
+            let _block = NonNull::new(block).map(|b| CFRetained::from_raw(b));
+            if status != 0 {
+                why = Some(format!(
+                    "its list ({size} bytes, flags {flags}): OSStatus {status}"
+                ));
+                if status == ARRAY_TOO_SMALL {
+                    continue;
                 }
-            })
-            .collect();
-        framer.push(&layout, &buffers, frames);
-        Ok(layout)
+                break;
+            }
+            let count = ((*list).mNumberBuffers as usize).min(list_room(size));
+            let entries = (&raw const (*list).mBuffers).cast::<AudioBuffer>();
+            let buffers: Vec<&[u8]> = (0..count)
+                .map(|i| {
+                    let b = *entries.add(i);
+                    if b.mData.is_null() {
+                        &[][..]
+                    } else {
+                        std::slice::from_raw_parts(b.mData.cast::<u8>(), b.mDataByteSize as usize)
+                    }
+                })
+                .collect();
+            if buffers.len() < layout.buffers() {
+                why = Some(format!(
+                    "its list had {} buffers for {} channels ({})",
+                    buffers.len(),
+                    layout.channels,
+                    if layout.interleaved {
+                        "interleaved"
+                    } else {
+                        "planar"
+                    }
+                ));
+                break;
+            }
+            let lens: Vec<usize> = buffers.iter().map(|b| b.len()).collect();
+            framer.push(&layout, &buffers, layout.frames_in(reported, &lens));
+            return Ok(Read {
+                layout,
+                via: Via::List(size),
+                list_failed: why,
+            });
+        }
+        // The data buffer, copied out whole (it may be in pieces) and split.
+        let why = why.unwrap_or_default();
+        let data = sample
+            .data_buffer()
+            .ok_or_else(|| format!("{why}; and no data buffer ({})", what()))?;
+        let len = data.data_length();
+        if len == 0 {
+            return Err(format!("{why}; and an empty data buffer ({})", what()));
+        }
+        let mut bytes = vec![0u8; len];
+        let status = data.copy_data_bytes(0, len, NonNull::from(&mut bytes[..]).cast());
+        if status != 0 {
+            return Err(format!(
+                "{why}; and its data: OSStatus {status} ({})",
+                what()
+            ));
+        }
+        let ranges = layout.split_block(reported, len);
+        let buffers: Vec<&[u8]> = ranges.iter().map(|r| &bytes[r.clone()]).collect();
+        let lens: Vec<usize> = buffers.iter().map(|b| b.len()).collect();
+        framer.push(&layout, &buffers, layout.frames_in(reported, &lens));
+        Ok(Read {
+            layout,
+            via: Via::Block,
+            list_failed: Some(format!("{why} ({})", what())),
+        })
     }
 }
 

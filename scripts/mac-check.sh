@@ -22,25 +22,44 @@ else
 fi
 
 # The shared screen's sound (#36): the app's ScreenCaptureKit stream of what
-# this Mac plays (less the app itself) starts and hears a sound played
-# meanwhile; where the runner has no Screen Recording permission or no audio
-# device, it says why rather than hanging or crashing.
+# this Mac plays (less the app itself) starts and hears the sound afplay plays
+# meanwhile, every buffer read. It fails when it started but read no sound,
+# heard silence or could not read a buffer; not starting passes only when it
+# says it lacks the permission or a device, rather than hanging or crashing.
 ( for _ in 1 2 3 4 5 6 7 8 9 10; do afplay /System/Library/Sounds/Submarine.aiff; done ) >/dev/null 2>&1 &
 tone=$!
+sleep 0.5
+playing=0
+kill -0 "$tone" 2>/dev/null && pgrep -q afplay && playing=1
 sound=$(MORPHEUS_SCREEN_AUDIO_SELF_TEST=4 MORPHEUS_DATA_DIR="$(mktemp -d)" \
     perl -e "alarm 60; exec @ARGV" "$app/Contents/MacOS/morpheus-desktop" 2>&1)
 sound_status=$?
 kill "$tone" 2>/dev/null
-echo "$sound" | grep "screen audio" | head -8
+pkill afplay 2>/dev/null
+echo "$sound" | grep "screen audio" | head -12
 report=$(echo "$sound" | grep -m1 "screen audio self-test:")
+frames=$(echo "$report" | sed -n 's/.*; \([0-9][0-9]*\) frames.*/\1/p')
+unreadable=$(echo "$report" | sed -n 's/.*; \([0-9][0-9]*\) unreadable.*/\1/p')
 if echo "$sound" | grep -q "a buffer could not be read"; then
-    fail "the screen's sound came but could not be read"
+    fail "the screen's sound came but a buffer could not be read"
 fi
 case "$report" in
-    *"self-test: ok:"*"; 0 frames"*) echo "ok: the screen's sound started, but no sound came here (no audio device?)" ;;
-    *"self-test: ok:"*"peak 0.000"*) echo "ok: the screen's sound started, but heard silence here (no audio device?)" ;;
-    *"self-test: ok:"*) echo "ok: the screen's sound started and heard the tone" ;;
-    *"self-test: failed:"*) echo "ok: the screen's sound did not start here, and said why" ;;
+    *"self-test: ok:"*)
+        if [ "${unreadable:-0}" != 0 ]; then
+            fail "the screen's sound: $unreadable buffers could not be read"
+        elif [ "${frames:-0}" = 0 ] && [ "$playing" = 1 ]; then
+            fail "the screen's sound started but read no sound while afplay played"
+        elif [ "${frames:-0}" = 0 ]; then
+            echo "ok: the screen's sound started; afplay did not play here, so no sound to read"
+        elif echo "$report" | grep -q "peak 0.000" && [ "$playing" = 1 ]; then
+            fail "the screen's sound read $frames frames of silence while afplay played"
+        else
+            echo "ok: the screen's sound started and read $frames frames of the tone"
+        fi
+        ;;
+    *"self-test: failed:"*"may not record"*|*"self-test: failed:"*"ermission"*|*"self-test: failed:"*"no display"*|*"self-test: failed:"*"needs macOS"*|*"self-test: failed:"*"-3801"*)
+        echo "ok: the screen's sound did not start here, for want of a permission or a device" ;;
+    *"self-test: failed:"*) fail "the screen's sound did not start: ${report#*failed: }" ;;
     *) fail "the screen's sound self-test did not report (exit $sound_status)"; echo "$sound" | tail -20 ;;
 esac
 

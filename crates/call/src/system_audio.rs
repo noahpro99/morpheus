@@ -20,7 +20,7 @@
 use std::{
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -33,6 +33,11 @@ pub(crate) const RATE: u32 = 48_000;
 pub(crate) const FRAME: usize = (RATE / 100) as usize;
 /// Channels: stereo.
 pub(crate) const CHANNELS: usize = 2;
+
+/// Captured sound buffers that could not be read (ScreenCaptureKit's), for
+/// the self-test's report.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub(crate) static UNREADABLE: AtomicU64 = AtomicU64::new(0);
 
 /// The test runs' screen sound, left and right (the voice's tone is 440 Hz).
 pub const TONE_LEFT: f32 = 660.0;
@@ -151,6 +156,7 @@ pub(crate) fn start(mode: AudioMode, out: Out) -> Result<Capture, String> {
 /// came and how loud the loudest was, or why it did not start.
 pub fn screen_audio_self_test(seconds: f32) -> Result<String, String> {
     let seen = Arc::new(std::sync::Mutex::new((0u64, 0i32)));
+    UNREADABLE.store(0, Ordering::Relaxed);
     let into = seen.clone();
     let began = Instant::now();
     let capture = start(
@@ -168,10 +174,11 @@ pub fn screen_audio_self_test(seconds: f32) -> Result<String, String> {
     drop(capture);
     let (frames, peak) = seen.lock().map(|s| *s).unwrap_or_default();
     Ok(format!(
-        "started in {} ms; {frames} frames ({:.1} s of sound) in {seconds} s; peak {:.3}",
+        "started in {} ms; {frames} frames ({:.1} s of sound) in {seconds} s; peak {:.3}; {} unreadable",
         took.as_millis(),
         frames as f32 / 100.0,
-        peak as f32 / 32768.0
+        peak as f32 / 32768.0,
+        UNREADABLE.load(Ordering::Relaxed)
     ))
 }
 
