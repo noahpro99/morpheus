@@ -114,7 +114,8 @@ impl Session {
             let token = first_token(&services, &TOKEN_RETRY, |service| {
                 let (client, room_id, user_id, device_id) = (&client, &room_id, &user_id, &device_id);
                 async move {
-                    livekit_token_cached(client, room_id, user_id, device_id.as_str(), &service).await
+                    livekit_token_cached(client, room_id, user_id, device_id.as_str(), &service, Role::Publisher)
+                        .await
                 }
             });
             let membership = async {
@@ -473,6 +474,7 @@ async fn livekit_token(
     user_id: &OwnedUserId,
     device_id: &str,
     service: &str,
+    role: Role,
 ) -> Result<CallCredentials, ServiceError> {
     let name = service_name(service);
     let openid = client
@@ -489,7 +491,10 @@ async fn livekit_token(
         "matrix_server_name": openid.matrix_server_name.to_string(),
         "expires_in": openid.expires_in.as_secs(),
     });
-    let attempts = token_requests(room_id, user_id, device_id, &openid);
+    let mut attempts = token_requests(room_id, user_id, device_id, &openid);
+    if role == Role::Subscriber {
+        attempts.reverse();
+    }
     let http = client.http_client();
     let mut last = ServiceError::transient(format!("the call service ({name}) did not answer"));
     for (path, body) in attempts {
@@ -692,6 +697,10 @@ pub struct CallMember {
     /// service derives them from the user and device), for matching
     /// LiveKit's speaking reports to people.
     pub livekit_identities: Vec<String>,
+    /// The call service (its focus: the SFU behind it) this device
+    /// publishes on, its membership's first preferred focus, as Element
+    /// Call's `multi_sfu` reads it. `None` for a focus that is not LiveKit.
+    pub service: Option<String>,
 }
 
 impl Session {
@@ -727,7 +736,15 @@ impl Session {
                 {
                     let device_id = membership.device_id().to_string();
                     let user_id = original.state_key.user_id().to_owned();
+                    #[allow(unreachable_patterns)]
+                    let service = membership.foci_preferred().iter().find_map(|focus| match focus {
+                        Focus::Livekit(focus) => {
+                            Some(focus.service_url.trim_end_matches('/').to_owned())
+                        }
+                        _ => None,
+                    });
                     members.push(CallMember {
+                        service,
                         livekit_identities: livekit_identities(&user_id, &device_id),
                         user_id,
                         device_id,
@@ -735,6 +752,68 @@ impl Session {
                 }
             }
             Ok(members)
+        })
+    }
+}
+
+/// Which way a LiveKit connection goes: this device publishes on its own
+/// homeserver's focus, and only listens on everyone else's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Role {
+    Publisher,
+    Subscriber,
+}
+
+/// The foci (call services) to listen on besides `own_service`, the one this
+/// device publishes on: every other service someone in the call publishes
+/// on, each once, in the order the members come. As Element Call
+/// (`multi_sfu`): each person publishes on their own homeserver's SFU, and
+/// everyone subscribes to all of them. A focus is told apart by its service
+/// URL (its LiveKit room alias is the room's, the same for everyone).
+pub fn foci_to_subscribe(
+    members: &[CallMember],
+    own_service: &str,
+    me: (&OwnedUserId, &str),
+) -> Vec<String> {
+    let own = own_service.trim_end_matches('/');
+    let mut found: Vec<String> = Vec::new();
+    for member in members {
+        if (&member.user_id, member.device_id.as_str()) == me {
+            continue;
+        }
+        if let Some(service) = &member.service
+            && service != own
+            && !found.contains(service)
+        {
+            found.push(service.clone());
+        }
+    }
+    found
+}
+
+impl Session {
+    /// LiveKit credentials to listen on another focus of `room_id`'s call
+    /// (someone else's homeserver's call service, [`foci_to_subscribe`]):
+    /// `/get_token` first, as Element Call's subscriber asks, `/sfu/get`
+    /// where that is missing. Nothing is published there.
+    pub fn call_focus_token(
+        &self,
+        room_id: OwnedRoomId,
+        service: String,
+    ) -> CoreFuture<CallCredentials> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            let user_id = client.user_id().ok_or(Error::NoSession)?.to_owned();
+            let device_id = client.device_id().ok_or(Error::NoSession)?.to_owned();
+            Ok(livekit_token_cached(
+                &client,
+                &room_id,
+                &user_id,
+                device_id.as_str(),
+                &service,
+                Role::Subscriber,
+            )
+            .await?)
         })
     }
 }
@@ -850,6 +929,39 @@ mod tests {
         assert!(!err.transient);
         assert_eq!(*asked.lock().expect("lock"), services);
         assert_eq!(*asked_all.lock().expect("lock"), services);
+    }
+
+    fn member(user: &str, device: &str, service: Option<&str>) -> CallMember {
+        let user_id: OwnedUserId = user.try_into().expect("user id");
+        CallMember {
+            livekit_identities: livekit_identities(&user_id, device),
+            user_id,
+            device_id: device.into(),
+            service: service.map(str::to_owned),
+        }
+    }
+
+    #[test]
+    fn every_other_focus_in_the_call_is_listened_on_once() {
+        let me: OwnedUserId = "@alice:a.example".try_into().expect("user id");
+        let own = "https://jwt.a.example";
+        let members = [
+            member("@alice:a.example", "PHONE", Some(own)),
+            // This device: its own focus, however it is written.
+            member("@alice:a.example", "DESK", Some("https://jwt.a.example")),
+            member("@bob:b.example", "B1", Some("https://jwt.b.example")),
+            member("@bob:b.example", "B2", Some("https://jwt.b.example")),
+            member("@carol:a.example", "C1", Some(own)),
+            member("@dan:c.example", "D1", Some("https://jwt.c.example")),
+            member("@erin:x.example", "E1", None),
+        ];
+        assert_eq!(
+            foci_to_subscribe(&members, &format!("{own}/"), (&me, "DESK")),
+            ["https://jwt.b.example", "https://jwt.c.example"],
+        );
+        // Everyone on one focus (most calls): nothing more than today.
+        assert!(foci_to_subscribe(&members[..2], own, (&me, "DESK")).is_empty());
+        assert!(foci_to_subscribe(&members[4..5], own, (&me, "DESK")).is_empty());
     }
 
     #[test]
@@ -1763,12 +1875,16 @@ async fn livekit_token_cached(
     user_id: &OwnedUserId,
     device_id: &str,
     service: &str,
+    role: Role,
 ) -> Result<CallCredentials, ServiceError> {
     let key: TokenKey = (
         room_id.clone(),
         user_id.clone(),
         device_id.to_owned(),
-        service.to_owned(),
+        match role {
+            Role::Publisher => service.to_owned(),
+            Role::Subscriber => format!("{service} (subscriber)"),
+        },
     );
     if let Ok(kept) = cached_tokens().lock()
         && let Some((until, credentials)) = kept.get(&key)
@@ -1776,7 +1892,7 @@ async fn livekit_token_cached(
     {
         return Ok(credentials.clone());
     }
-    let found = livekit_token(client, room_id, user_id, device_id, service).await?;
+    let found = livekit_token(client, room_id, user_id, device_id, service, role).await?;
     let left = jwt_expiry(&found.jwt)
         .and_then(|exp| exp.duration_since(std::time::SystemTime::now()).ok())
         .unwrap_or_default();
@@ -1882,7 +1998,14 @@ impl Session {
             if let (Some(room_id), Some(service), Some(device_id)) =
                 (room_id, services.first(), client.device_id())
                 && let Err(err) =
-                    livekit_token_cached(&client, &room_id, &user_id, device_id.as_str(), service)
+                    livekit_token_cached(
+                        &client,
+                        &room_id,
+                        &user_id,
+                        device_id.as_str(),
+                        service,
+                        Role::Publisher,
+                    )
                         .await
             {
                 debug!(err = %err.message, "no call token ahead of a call");

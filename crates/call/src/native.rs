@@ -280,6 +280,45 @@ pub struct Call {
     /// The shared screen, while it is.
     screen: Arc<tokio::sync::Mutex<Option<Outgoing>>>,
     tasks: Vec<tokio::task::JoinHandle<()>>,
+    /// The call's events, for the other SFUs' connections too.
+    events: UnboundedSender<CallEvent>,
+    /// The other SFUs listened on, by call service ([`Call::subscribe`]).
+    others: Others,
+    /// Hung up: a connection to another SFU that comes too late is left at once.
+    closed: Arc<AtomicBool>,
+}
+
+/// The connections to SFUs this device only listens on, by call service.
+type Others = Arc<Mutex<HashMap<String, Listening>>>;
+
+/// A connection to someone else's SFU: their media comes in, nothing goes out.
+struct Listening {
+    room: Arc<Room>,
+    tasks: Vec<tokio::task::JoinHandle<()>>,
+    /// The call's events: what came from this SFU is said gone in them.
+    events: UnboundedSender<CallEvent>,
+}
+
+impl Drop for Listening {
+    fn drop(&mut self) {
+        for task in &self.tasks {
+            task.abort();
+        }
+    }
+}
+
+impl Listening {
+    fn live(&self) -> bool {
+        self.room.connection_state() != ConnectionState::Disconnected
+    }
+}
+
+/// Which connection something happened on: the one this device publishes
+/// on, or another SFU's (by call service).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum Source {
+    Own,
+    Other(String),
 }
 
 impl Call {
@@ -433,10 +472,11 @@ impl Call {
         )));
         tasks.push(tokio::spawn(forward_events(
             room_events,
-            tx,
+            tx.clone(),
             speech.clone(),
             mode,
             deafened.clone(),
+            Source::Own,
         )));
         Ok((
             Self {
@@ -452,18 +492,125 @@ impl Call {
                 camera: Arc::default(),
                 screen: Arc::default(),
                 tasks,
+                events: tx,
+                others: Arc::default(),
+                closed: Arc::default(),
             },
             rx,
         ))
     }
 
-    /// Everyone else in the call (LiveKit identities).
+    /// Everyone else in the call (LiveKit identities), on every SFU it is
+    /// on, each name once.
     pub fn participants(&self) -> Vec<String> {
-        self.room
-            .remote_participants()
-            .into_keys()
-            .map(|id| id.to_string())
-            .collect()
+        let mut found: Vec<String> = Vec::new();
+        for participant in self.remote_participants() {
+            let identity = participant.identity().to_string();
+            if !found.contains(&identity) {
+                found.push(identity);
+            }
+        }
+        found
+    }
+
+    /// The other participants of every connection: the own SFU's, then
+    /// the others'.
+    fn remote_participants(&self) -> Vec<RemoteParticipant> {
+        let mut all: Vec<RemoteParticipant> =
+            self.room.remote_participants().into_values().collect();
+        if let Ok(others) = self.others.lock() {
+            for other in others.values() {
+                all.extend(other.room.remote_participants().into_values());
+            }
+        }
+        all
+    }
+
+    /// Listen on another SFU of the call too: the one behind `service`
+    /// (someone else's homeserver's), at `url` with `token`. Their media
+    /// comes in as this connection's does, decrypted with the same keys
+    /// ([`Call::set_key`]) and played at the same volumes; nothing is sent
+    /// there. Its events come with the call's; its dropping does not end
+    /// the call (it is gone from [`Call::listening`], to be connected again).
+    pub fn subscribe(
+        &self,
+        service: &str,
+        url: &str,
+        token: &str,
+    ) -> impl Future<Output = Result<()>> + use<> {
+        let (service, url, token) = (service.to_owned(), url.to_owned(), token.to_owned());
+        let keys = self.keys.clone();
+        let (events, speech, mode) = (self.events.clone(), self.speech.clone(), self.mode);
+        let (deafened, others) = (self.deafened.clone(), self.others.clone());
+        let closed = self.closed.clone();
+        async move {
+            runtime()
+                .spawn(async move {
+                    let mut options = RoomOptions::default();
+                    options.encryption = keys.map(|key_provider| E2eeOptions {
+                        encryption_type: EncryptionType::Gcm,
+                        key_provider,
+                    });
+                    let (room, room_events) = Room::connect(&url, &token, options)
+                        .await
+                        .map_err(|err| Error::Connect(err.to_string()))?;
+                    let room = Arc::new(room);
+                    if closed.load(Ordering::SeqCst) {
+                        let _ = room.close().await;
+                        return Ok(());
+                    }
+                    let shown = crate::diag::bare_url(&url);
+                    info!(%service, url = %shown, "listening on another SFU");
+                    let tasks = vec![
+                        tokio::spawn(forward_events(
+                            room_events,
+                            events.clone(),
+                            speech.clone(),
+                            mode,
+                            deafened,
+                            Source::Other(service.clone()),
+                        )),
+                        tokio::spawn(watch_other(Arc::downgrade(&room), service.clone(), url)),
+                    ];
+                    let listening = Listening { room, tasks, events };
+                    let before = others
+                        .lock()
+                        .ok()
+                        .and_then(|mut others| others.insert(service.clone(), listening));
+                    if let Some(before) = before {
+                        stop_listening(before, &service, &speech).await;
+                    }
+                    Ok(())
+                })
+                .await?
+        }
+    }
+
+    /// Stop listening on the SFU behind `service`: what came from it is gone.
+    pub fn unsubscribe(&self, service: &str) -> impl Future<Output = ()> + use<> {
+        let gone = self.others.lock().ok().and_then(|mut o| o.remove(service));
+        let (service, speech) = (service.to_owned(), self.speech.clone());
+        async move {
+            if let Some(gone) = gone {
+                let _ = runtime()
+                    .spawn(async move { stop_listening(gone, &service, &speech).await })
+                    .await;
+            }
+        }
+    }
+
+    /// The call services of the other SFUs listened on, and whether each
+    /// is still connected (one that dropped is to be connected again).
+    pub fn listening(&self) -> Vec<(String, bool)> {
+        self.others
+            .lock()
+            .map(|others| {
+                others
+                    .iter()
+                    .map(|(service, other)| (service.clone(), other.live()))
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// This device's LiveKit identity.
@@ -523,7 +670,7 @@ impl Call {
         if let Ok(mut flag) = self.deafened.lock() {
             *flag = deafened;
         }
-        for participant in self.room.remote_participants().values() {
+        for participant in &self.remote_participants() {
             for publication in participant.track_publications().values() {
                 if let Some(RemoteTrack::Audio(track)) = publication.track() {
                     if deafened {
@@ -541,7 +688,7 @@ impl Call {
     pub fn set_screen_volume(&self, identity: &str, volume: f32) {
         let _enter = runtime().enter();
         let volume = crate::screen_audio::note_volume(identity, volume);
-        for participant in self.room.remote_participants().values() {
+        for participant in &self.remote_participants() {
             if participant.identity().as_str() != identity {
                 continue;
             }
@@ -560,7 +707,7 @@ impl Call {
     pub fn set_user_volume(&self, user: &str, volume: f32) {
         let _enter = runtime().enter();
         crate::set_user_volume(user, volume);
-        for participant in self.room.remote_participants().values() {
+        for participant in &self.remote_participants() {
             let identity = participant.identity().to_string();
             if !crate::voice_belongs_to(&identity, user) {
                 continue;
@@ -581,7 +728,7 @@ impl Call {
     pub fn set_output_volume(&self, volume: f32) {
         let _enter = runtime().enter();
         crate::set_output_volume(volume);
-        for participant in self.room.remote_participants().values() {
+        for participant in &self.remote_participants() {
             let vol = crate::voice_gain(participant.identity().as_str());
             for publication in participant.track_publications().values() {
                 if publication.source() != TrackSource::ScreenshareAudio
@@ -684,11 +831,26 @@ impl Call {
     /// Hang up.
     pub async fn leave(self) {
         let room = self.room.clone();
+        self.closed.store(true, Ordering::SeqCst);
+        // Every SFU at once: a quit waits for this (#47).
+        let others: Vec<Arc<Room>> = self
+            .others
+            .lock()
+            .map(|mut others| {
+                others
+                    .drain()
+                    .map(|(_, other)| other.room.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
         let _ = runtime()
             .spawn(async move {
-                if let Err(err) = room.close().await {
-                    debug!(%err, "closing the call");
-                }
+                let closing = std::iter::once(room).chain(others).map(|room| async move {
+                    if let Err(err) = room.close().await {
+                        debug!(%err, "closing the call");
+                    }
+                });
+                futures_util::future::join_all(closing).await;
             })
             .await;
         // `self` drops here: the tasks stop and the devices close.
@@ -697,9 +859,17 @@ impl Call {
 
 impl Drop for Call {
     fn drop(&mut self) {
+        self.closed.store(true, Ordering::SeqCst);
         crate::diag::end();
         for task in &self.tasks {
             task.abort();
+        }
+        if let Ok(mut others) = self.others.lock() {
+            for (_, other) in others.drain() {
+                for task in &other.tasks {
+                    task.abort();
+                }
+            }
         }
         // The last user lets go of WebRTC's device module: its playout (a
         // communications stream, which Windows ducks other apps for) stops.
@@ -724,6 +894,64 @@ impl Drop for Call {
         video::forget(LOCAL_SCREEN);
         crate::screen_audio::note_sent(None);
         crate::screen_sources::note_shared(None);
+    }
+}
+
+/// Let go of another SFU: its tasks stop, and what came from it (pictures,
+/// a screen's sound, who spoke) is said gone, then it is left.
+async fn stop_listening(gone: Listening, service: &str, speech: &UnboundedSender<Speech>) {
+    for task in &gone.tasks {
+        task.abort();
+    }
+    for participant in gone.room.remote_participants().into_values() {
+        let identity = participant.identity().to_string();
+        for publication in participant.track_publications().into_values() {
+            match publication.track() {
+                Some(RemoteTrack::Video(track)) => {
+                    let key = format!("{identity}/{}", track.sid());
+                    video::forget(&key);
+                    let _ = gone.events.send(CallEvent::Video {
+                        identity: identity.clone(),
+                        key,
+                        screen: publication.source() == TrackSource::Screenshare,
+                        on: false,
+                    });
+                }
+                Some(RemoteTrack::Audio(_))
+                    if publication.source() == TrackSource::ScreenshareAudio =>
+                {
+                    crate::screen_audio::forget_heard(&identity);
+                    let _ = gone.events.send(CallEvent::ScreenAudio {
+                        identity: identity.clone(),
+                        on: false,
+                    });
+                }
+                _ => {}
+            }
+        }
+        #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+        mic::far_end_gone(&identity);
+        let _ = speech.send(Speech::Gone(identity));
+    }
+    let _ = speech.send(Speech::Server(Source::Other(service.to_owned()), Vec::new()));
+    crate::diag::forget_other(service);
+    if let Err(err) = gone.room.close().await {
+        debug!(%err, service, "leaving another SFU");
+    }
+}
+
+/// Keep the diagnostics' line for another SFU up to date.
+async fn watch_other(room: std::sync::Weak<Room>, service: String, url: String) {
+    let url = crate::diag::bare_url(&url);
+    while let Some(room) = room.upgrade() {
+        let state = format!("{:?}", room.connection_state()).to_lowercase();
+        crate::diag::note_other(crate::diag::OtherSfu {
+            service: service.clone(),
+            url: url.clone(),
+            state,
+        });
+        drop(room);
+        tokio::time::sleep(Duration::from_secs(1)).await;
     }
 }
 
@@ -1448,7 +1676,11 @@ async fn forward_events(
     speech: UnboundedSender<Speech>,
     mode: AudioMode,
     deafened: Arc<Mutex<bool>>,
+    source: Source,
 ) {
+    // Everyone in the call is on this device's own SFU too (to listen, if
+    // not to publish): who comes and goes is said from there alone, once.
+    let own = source == Source::Own;
     let mut voice_tasks: HashMap<String, tokio::task::JoinHandle<()>> = HashMap::new();
     let mut measure_tasks: HashMap<String, tokio::task::JoinHandle<()>> = HashMap::new();
     while let Some(event) = events.recv().await {
@@ -1457,12 +1689,15 @@ async fn forward_events(
         // whether it decrypted.
         let out = match event {
             RoomEvent::ParticipantConnected(p) => {
-                info!(who = %p.identity(), "joined the call");
+                info!(who = %p.identity(), ?source, "joined the call");
+                if !own {
+                    continue;
+                }
                 CallEvent::Joined(p.identity().to_string())
             }
             RoomEvent::ParticipantDisconnected(p) => {
                 let identity = p.identity().to_string();
-                info!(who = %identity, "left the call");
+                info!(who = %identity, ?source, "left the call");
                 if let Some(task) = voice_tasks.remove(&identity) {
                     task.abort();
                 }
@@ -1472,6 +1707,9 @@ async fn forward_events(
                 #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
                 mic::far_end_gone(&identity);
                 let _ = speech.send(Speech::Gone(identity.clone()));
+                if !own {
+                    continue;
+                }
                 CallEvent::Left(identity)
             }
             RoomEvent::E2eeStateChanged { participant, state } => {
@@ -1480,6 +1718,7 @@ async fn forward_events(
             }
             RoomEvent::ActiveSpeakersChanged { speakers } => {
                 let _ = speech.send(Speech::Server(
+                    source.clone(),
                     speakers.iter().map(|p| p.identity().to_string()).collect(),
                 ));
                 continue;
@@ -1621,6 +1860,11 @@ async fn forward_events(
                     on: false,
                 }
             }
+            // Another SFU dropping is not the call ending: it is connected again.
+            RoomEvent::Disconnected { reason } if !own => {
+                warn!(?source, ?reason, "another SFU dropped");
+                continue;
+            }
             RoomEvent::Disconnected { reason } => CallEvent::Disconnected(format!("{reason:?}")),
             _ => continue,
         };
@@ -1758,8 +2002,8 @@ impl Gate {
 
 /// What the measuring tasks and the server tell the aggregator.
 enum Speech {
-    /// The server's list (the fallback).
-    Server(Vec<String>),
+    /// A server's list (the fallback), from the connection it came on.
+    Server(Source, Vec<String>),
     /// A measured state (and level, to order by) for `who`.
     Measured {
         who: String,
@@ -1779,12 +2023,14 @@ enum Speech {
 async fn aggregate(mut input: UnboundedReceiver<Speech>, out: UnboundedSender<CallEvent>) {
     use std::collections::{HashMap, HashSet};
     let mut measured: HashMap<String, (bool, f32)> = HashMap::new();
-    let mut server: Vec<String> = Vec::new();
+    let mut servers: HashMap<Source, Vec<String>> = HashMap::new();
     let mut muted: HashSet<String> = HashSet::new();
     let mut last: Vec<String> = Vec::new();
     while let Some(item) = input.recv().await {
         match item {
-            Speech::Server(list) => server = list,
+            Speech::Server(source, list) => {
+                servers.insert(source, list);
+            }
             Speech::Measured {
                 who,
                 speaking,
@@ -1804,9 +2050,14 @@ async fn aggregate(mut input: UnboundedReceiver<Speech>, out: UnboundedSender<Ca
             Speech::Gone(who) => {
                 measured.remove(&who);
                 muted.remove(&who);
-                server.retain(|s| *s != who);
+                for server in servers.values_mut() {
+                    server.retain(|s| *s != who);
+                }
             }
         }
+        let mut server: Vec<String> = servers.values().flatten().cloned().collect();
+        server.sort();
+        server.dedup();
         debug!(?measured, ?server, ?muted, "speech inputs");
         let mut now: Vec<(String, f32)> = measured
             .iter()

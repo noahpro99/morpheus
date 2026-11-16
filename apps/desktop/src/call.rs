@@ -1068,6 +1068,8 @@ fn show_learned(
 enum Next {
     Event(Option<CallEvent>),
     Key(Option<morpheus_core::CallKey>),
+    /// A token for another SFU of the call, or why there is none.
+    Focus(String, Result<morpheus_core::CallCredentials, String>),
     Tick,
 }
 
@@ -1219,11 +1221,73 @@ async fn run_call(
     // The devices in the call our key went to. Element Call takes keys only
     // sent to its device, and its membership can arrive after its LiveKit
     // join: a device seen in the call for the first time gets the key too.
-    let members_now = async || -> Option<HashSet<(OwnedUserId, String)>> {
-        let members = session.call_members(room_id.clone()).await.ok()?;
-        Some(members.into_iter().map(|m| (m.user_id, m.device_id)).collect())
+    let devices_of = |members: &[morpheus_core::CallMember]| -> HashSet<(OwnedUserId, String)> {
+        members
+            .iter()
+            .map(|m| (m.user_id.clone(), m.device_id.clone()))
+            .collect()
     };
-    let mut keyed = members_now().await.unwrap_or_default();
+    // People on other homeservers publish on their own SFUs (#91): this
+    // device listens on each of them too, and its own stays the one it
+    // publishes on. Their tokens come back here to connect.
+    let (focus_tx, mut focus_rx) = futures::channel::mpsc::unbounded::<(
+        String,
+        Result<morpheus_core::CallCredentials, String>,
+    )>();
+    let mut focus_asked: HashMap<String, std::time::Instant> = HashMap::new();
+    let me_device = session.device_id().unwrap_or_default();
+    let me_user = session.user_id();
+    let sync_foci = |this: &WeakEntity<Shell>,
+                     cx: &mut AsyncApp,
+                     members: &[morpheus_core::CallMember],
+                     asked: &mut HashMap<String, std::time::Instant>| {
+        let Some(me) = me_user.as_ref() else {
+            return;
+        };
+        let wanted =
+            morpheus_core::foci_to_subscribe(members, &credentials.service_url, (me, &me_device));
+        let listening = this
+            .read_with(cx, |this, _| {
+                this.calls.media.as_ref().map(Call::listening).unwrap_or_default()
+            })
+            .unwrap_or_default();
+        for (service, _) in listening.iter().filter(|(s, _)| !wanted.contains(s)) {
+            eprintln!("morpheus-desktop: nobody publishes on {service} any more: left");
+            let leaving = this
+                .read_with(cx, |this, _| {
+                    this.calls.media.as_ref().map(|call| call.unsubscribe(service))
+                })
+                .ok()
+                .flatten();
+            if let Some(leaving) = leaving {
+                cx.background_executor().spawn(leaving).detach();
+            }
+        }
+        asked.retain(|service, _| wanted.contains(service));
+        for service in wanted {
+            if listening.iter().any(|(s, live)| *s == service && *live) {
+                continue;
+            }
+            // Asked lately (or connecting now): not again yet.
+            if asked
+                .get(&service)
+                .is_some_and(|at| at.elapsed() < Duration::from_secs(5))
+            {
+                continue;
+            }
+            asked.insert(service.clone(), std::time::Instant::now());
+            let token = session.call_focus_token(room_id.clone(), service.clone());
+            let tx = focus_tx.clone();
+            cx.background_executor()
+                .spawn(async move {
+                    let _ = tx.unbounded_send((service, token.await.map_err(|e| e.to_string())));
+                })
+                .detach();
+        }
+    };
+    let members = session.call_members(room_id.clone()).await.unwrap_or_default();
+    let mut keyed = devices_of(&members);
+    sync_foci(&this, cx, &members, &mut focus_asked);
     let mut members_checked = std::time::Instant::now();
 
     // A key that reaches someone before the room key it is encrypted with is
@@ -1239,31 +1303,67 @@ async fn run_call(
                 }
             }
             .fuse();
+            let focus = futures::StreamExt::next(&mut focus_rx).fuse();
             let tick = cx
                 .background_executor()
                 .timer(Duration::from_secs(1))
                 .fuse();
-            futures::pin_mut!(event, key, tick);
+            futures::pin_mut!(event, key, focus, tick);
             futures::select_biased! {
                 event = event => Next::Event(event),
                 key = key => Next::Key(key),
+                focus = focus => match focus {
+                    Some((service, token)) => Next::Focus(service, token),
+                    None => Next::Tick,
+                },
                 _ = tick => Next::Tick,
             }
         };
         if !current() || !still_wanted(&this, cx) {
             return;
         }
-        if credentials.media_key.is_some() && members_checked.elapsed() >= Duration::from_secs(2)
-        {
+        if members_checked.elapsed() >= Duration::from_secs(2) {
             members_checked = std::time::Instant::now();
-            if let Some(devices) = members_now().await {
-                if devices.iter().any(|device| !keyed.contains(device)) {
+            if let Ok(members) = session.call_members(room_id.clone()).await {
+                let devices = devices_of(&members);
+                if credentials.media_key.is_some()
+                    && devices.iter().any(|device| !keyed.contains(device))
+                {
                     cx.background_executor().spawn(share_key()).detach();
                 }
                 keyed = devices;
+                sync_foci(&this, cx, &members, &mut focus_asked);
             }
         }
         let event = match next {
+            Next::Focus(service, Err(err)) => {
+                eprintln!("morpheus-desktop: no token to listen on {service}: {err}");
+                continue;
+            }
+            Next::Focus(service, Ok(token)) => {
+                let connecting = this
+                    .read_with(cx, |this, _| {
+                        this.calls
+                            .media
+                            .as_ref()
+                            .map(|call| call.subscribe(&service, &token.livekit_url, &token.jwt))
+                    })
+                    .ok()
+                    .flatten();
+                if let Some(connecting) = connecting {
+                    cx.background_executor()
+                        .spawn(async move {
+                            match connecting.await {
+                                Ok(()) => eprintln!("morpheus-desktop: listening on {service} too"),
+                                Err(err) => eprintln!(
+                                    "morpheus-desktop: could not listen on {service}: {err}"
+                                ),
+                            }
+                        })
+                        .detach();
+                }
+                continue;
+            }
             // A screen's sound: its figures on its card, once a second.
             Next::Tick => {
                 this.update(cx, |this, cx| {

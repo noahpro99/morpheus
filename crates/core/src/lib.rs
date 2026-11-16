@@ -51,7 +51,7 @@ pub use accounts::SavedAccount;
 pub use blur::placeholder as blur_placeholder;
 pub use calls::{
     CallCredentials, CallKey, CallKeyUpdates, CallMedia, CallMember, IncomingCall, RING_FOR_MS,
-    RingUpdates, Ringing,
+    RingUpdates, Ringing, Role as CallRole, foci_to_subscribe,
 };
 pub use links::{LinkedRoom, MatrixLink, parse_matrix_link};
 pub use media::{Media, MediaRef};

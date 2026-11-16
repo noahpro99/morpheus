@@ -300,6 +300,17 @@ fn call_sections(report: &mut Report, hidden: bool) {
     let service = CALL_SERVICE.lock().map(|s| s.clone()).unwrap_or_default();
     section.line("JWT service", if hidden { HIDDEN.to_owned() } else { service });
     section.line("Connection", call.state.clone());
+    // The SFUs of people on other homeservers, listened on (#91).
+    for other in &call.others {
+        section.line(
+            "Other SFU",
+            if hidden {
+                HIDDEN.to_owned()
+            } else {
+                format!("{} ({}, via {})", other.url, other.state, other.service)
+            },
+        );
+    }
     link_lines(section, &call);
     codec_lines(section, &call);
     for track in &call.tracks {
@@ -365,6 +376,7 @@ pub fn overlay(window: &Window, cx: &App) -> Report {
     let atlas = window.sprite_atlas_stats();
     section.line("Atlas", vm::bytes(atlas.bytes as u64));
     if let Some(call) = morpheus_call::call_diag() {
+        section.line("SFUs", (1 + call.others.len()).to_string());
         codec_lines(section, &call);
         link_lines(section, &call);
         for track in &call.tracks {

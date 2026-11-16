@@ -48,12 +48,32 @@ homeserver's `/rtc/transports` or `.well-known` `org.matrix.msc4143.rtc_foci`)
 and every client **subscribes to each distinct transport** in the call
 (transport identity = the transport JSON with sorted keys).
 
-Morpheus publishes on its homeserver's first service (falling back to the
-services in others' memberships), and connects to that one LiveKit room
-only. On one homeserver (one SFU) that is the same room as Element's. With
-people on different homeservers/SFUs, Morpheus does not see those who
-publish elsewhere (Element does see Morpheus, by subscribing to its SFU).
-Not fixed: it needs one LiveKit connection per transport.
+Element's rule (`discoverLocalTransport`, `TransportAutoDiscovery`): the
+host's override, else the homeserver's first `/rtc/transports` entry of the
+type, else a fallback. A member's publishing transport is
+`CallMembership.getTransport()`: `foci_preferred[0]` (or
+`transports.published[0]` for `m.rtc.member`). `LivekitBackend` keeps one
+LiveKit room per distinct transport: the local one as publisher (token from
+`/sfu/get`), every other one as subscriber (token from `/get_token`).
+
+Morpheus does the same (#91). It publishes on its homeserver's first service
+(falling back to the services in others' memberships only when that gives
+no token) and, while in the call, connects as a subscriber to every other
+service in the memberships (`calls::foci_to_subscribe`, grouped by service
+URL; the LiveKit alias is the room's for everyone), asking `/get_token`
+first there. The connections share one key provider, so a member's key
+decrypts them on any SFU. Their media, speaking and screen sound come in
+with the call's own; a dropped one is connected again, one nobody publishes
+on any more is left (its pictures and sound said gone). Who joins and leaves
+is taken from the own SFU only: everyone in the call is on it, as publisher
+or subscriber, so nobody is counted twice. With everyone on one SFU (most
+calls) there is no second connection at all. The diagnostics list the other
+SFUs ("Other SFU" lines, "SFUs" in the F3 overlay).
+
+The dev setup has a second SFU and token service (`livekit-b` on 7980,
+`lk-jwt-b` on 8081) standing in for another homeserver's; the e2e
+`people_on_different_sfus_see_and_hear_each_other` points bob at it with
+`MORPHEUS_LIVEKIT_SERVICE`.
 
 ## JWT service and LiveKit names
 

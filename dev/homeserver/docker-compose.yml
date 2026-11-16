@@ -47,3 +47,38 @@ services:
       LIVEKIT_FULL_ACCESS_HOMESERVERS: localhost
       # Synapse's federation certificate is self-signed.
       LIVEKIT_INSECURE_SKIP_VERIFY_TLS: YES_I_KNOW_WHAT_I_AM_DOING
+
+  # A second SFU and token service, standing in for another homeserver's
+  # (calls across homeservers, #91: each person publishes on their own
+  # homeserver's SFU and subscribes to everyone else's). Tests point one
+  # side at it with MORPHEUS_LIVEKIT_SERVICE=http://localhost:8081.
+  livekit-b:
+    image: livekit/livekit-server:latest
+    container_name: morpheus-livekit-b
+    restart: unless-stopped
+    network_mode: host
+    command:
+      - --dev
+      - --bind
+      - 0.0.0.0
+      - --config-body
+      - |
+        port: 7980
+        rtc:
+          tcp_port: 7981
+          udp_port: 7982
+        keys:
+          devkey: secret
+
+  lk-jwt-b:
+    image: ghcr.io/element-hq/lk-jwt-service:latest
+    container_name: morpheus-lk-jwt-b
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      LIVEKIT_URL: ws://localhost:7980
+      LIVEKIT_KEY: devkey
+      LIVEKIT_SECRET: secret
+      LIVEKIT_JWT_BIND: ":8081"
+      LIVEKIT_FULL_ACCESS_HOMESERVERS: localhost
+      LIVEKIT_INSECURE_SKIP_VERIFY_TLS: YES_I_KNOW_WHAT_I_AM_DOING

@@ -37,6 +37,19 @@ pub struct CallDiag {
     /// What our voice is sent at, bits per second.
     pub audio_bitrate: Option<f64>,
     pub tracks: Vec<TrackDiag>,
+    /// The other SFUs listened on (people on other homeservers publish
+    /// there), each with its connection state.
+    pub others: Vec<OtherSfu>,
+}
+
+/// An SFU this device only listens on.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct OtherSfu {
+    /// Its call service, as memberships name it.
+    pub service: String,
+    /// The LiveKit server, without its query.
+    pub url: String,
+    pub state: String,
 }
 
 static DIAG: Mutex<Option<CallDiag>> = Mutex::new(None);
@@ -48,7 +61,7 @@ pub fn call_diag() -> Option<CallDiag> {
 
 /// A call to `url` begins; the token a URL may carry is dropped.
 pub(crate) fn begin(url: &str) {
-    let url = url.split(['?', '#']).next().unwrap_or_default().to_owned();
+    let url = bare_url(url);
     if let Ok(mut diag) = DIAG.lock() {
         *diag = Some(CallDiag { url, state: "connecting".into(), ..CallDiag::default() });
     }
@@ -74,6 +87,23 @@ pub(crate) fn note_track(track: TrackDiag) {
         Some(known) => *known = track,
         None => diag.tracks.push(track),
     });
+}
+
+/// Note an SFU listened on (replacing what was known of it).
+pub(crate) fn note_other(other: OtherSfu) {
+    update(|diag| match diag.others.iter_mut().find(|o| o.service == other.service) {
+        Some(known) => *known = other,
+        None => diag.others.push(other),
+    });
+}
+
+pub(crate) fn forget_other(service: &str) {
+    update(|diag| diag.others.retain(|o| o.service != service));
+}
+
+/// A LiveKit URL as shown: without its query (which may carry a token).
+pub(crate) fn bare_url(url: &str) -> String {
+    url.split(['?', '#']).next().unwrap_or_default().to_owned()
 }
 
 pub(crate) fn forget_track(label: &str) {
