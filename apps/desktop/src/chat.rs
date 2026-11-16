@@ -94,6 +94,28 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                     .text("#")
                     .into_any_element()
             };
+            // A channel of a server: the server's icon first, a small squircle in the
+            // rail's corner style (its initials without a picture).
+            let server_icon = if room.is_dm {
+                None
+            } else {
+                crate::model::server_of(&shell.rooms, room).map(|space| {
+                    let size = 20.0;
+                    let picture = shell.picture(&space.avatar, 40);
+                    let el = div()
+                        .size(px(size))
+                        .flex_none()
+                        .child(avatar(
+                            picture.clone(),
+                            &space.name,
+                            size,
+                            Some(size * theme::RADIUS_XL / 48.0),
+                        ))
+                        .e2e("div", "server-icon")
+                        .attr("data-radius", theme::RADIUS_XL.to_string());
+                    el.into_any_element()
+                })
+            };
             let head_colour = bar_colour(shell, "room-head", theme::text_muted());
             let anchor = shell.title_bounds.clone();
             let menu_room = room.clone();
@@ -110,6 +132,7 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                     .cursor_pointer()
                     .text_color(rgb(head_colour))
                     .on_hover(bar_hover(cx, "room-head"))
+                    .children(server_icon)
                     .child(icon_el)
                     .child(
                         div()
