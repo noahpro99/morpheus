@@ -93,6 +93,51 @@ impl Session {
         })
     }
 
+    /// The recovery key is lost and this device does not hold the account's
+    /// secrets: reset the account's encryption identity and backup, then
+    /// make a new recovery key. Old history that only the old backup held is
+    /// gone, and the account's other devices need verifying again. The
+    /// server may ask for the account `password`; a single-sign-on account
+    /// approves in the browser instead (the error carries the address).
+    pub fn reset_lost_recovery(&self, password: Option<String>) -> CoreFuture<String> {
+        use matrix_sdk::encryption::CrossSigningResetAuthType;
+        use matrix_sdk::ruma::api::client::uiaa;
+        let client = self.client.clone();
+        self.core.run(async move {
+            let recovery = client.encryption().recovery();
+            if let Some(handle) = recovery.reset_identity().await? {
+                match handle.auth_type() {
+                    CrossSigningResetAuthType::Uiaa(info) => {
+                        let (Some(password), Some(user_id)) = (password, client.user_id()) else {
+                            handle.cancel().await;
+                            return Err(crate::Error::Other(
+                                "Enter your account password to reset the recovery key".into(),
+                            ));
+                        };
+                        let mut auth = uiaa::Password::new(
+                            uiaa::UserIdentifier::Matrix(uiaa::MatrixUserIdentifier::new(
+                                user_id.to_string(),
+                            )),
+                            password,
+                        );
+                        auth.session = info.session.clone();
+                        handle.reset(Some(uiaa::AuthData::Password(auth))).await?;
+                    }
+                    CrossSigningResetAuthType::OAuth(oauth) => {
+                        handle.reset(None).await.map_err(|err| {
+                            crate::Error::Other(format!(
+                                "Approve the reset at {} and try again ({err})",
+                                oauth.approval_url
+                            ))
+                        })?;
+                    }
+                }
+            }
+            let key = recovery.enable().wait_for_backups_to_upload().await?;
+            Ok(key)
+        })
+    }
+
     /// Restore cross-signing and room keys with a recovery key (or passphrase).
     /// Encrypted history becomes readable as keys are downloaded.
     pub fn recover(&self, recovery_key: String) -> CoreFuture<()> {

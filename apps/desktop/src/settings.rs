@@ -131,6 +131,10 @@ pub struct SettingsView {
     status_rereads: u32,
     devices: Option<Result<Vec<Device>, String>>,
     form: RecoveryForm,
+    /// A new recovery key is asked about first: false for a change from this
+    /// device, true for a reset of a lost key.
+    confirming: Option<bool>,
+    password_input: Entity<TextInput>,
     key_input: Entity<TextInput>,
     flow: Option<Entity<Flow>>,
     flow_watch: Option<Subscription>,
@@ -275,6 +279,8 @@ impl SettingsView {
             cx.new(|cx| TextInput::new("recovery-key", keys::RECOVERY_PLACEHOLDER, true, "", cx));
         cx.subscribe(&key_input, |this, _, _: &Submit, cx| this.submit_key(cx))
             .detach();
+        let password_input =
+            cx.new(|cx| TextInput::new("reset-password", "Account password", true, "", cx));
         let search = cx.new(|cx| {
             TextInput::new("settings-search", "Search settings", false, "", cx)
                 .with_class("settings-search")
@@ -336,6 +342,8 @@ impl SettingsView {
             status_rereads: 0,
             devices: None,
             form: RecoveryForm::default(),
+            confirming: None,
+            password_input,
             key_input,
             flow: None,
             flow_watch: None,
@@ -385,6 +393,7 @@ impl SettingsView {
     /// Show the window, on the page `focus` asks for.
     pub fn open(&mut self, focus: SettingsFocus, cx: &mut Context<Self>) {
         self.open = true;
+        self.confirming = None;
         self.form = RecoveryForm::default();
         self.key_input
             .update(cx, |input, cx| input.set_value("", cx));
@@ -491,6 +500,7 @@ impl SettingsView {
             this.update(cx, |this, cx| {
                 match made {
                     Ok(key) => {
+                        this.confirming = None;
                         this.form.made(key);
                         this.keys_changed(cx);
                     }
@@ -503,15 +513,41 @@ impl SettingsView {
         .detach();
     }
 
-    /// "Change recovery key": a new one; the old one stops working.
+    /// "Change recovery key" and "Reset recovery key" ask first (the old key
+    /// stops working).
+    fn ask_new_key(&mut self, reset: bool, cx: &mut Context<Self>) {
+        if self.form.busy {
+            return;
+        }
+        self.confirming = Some(reset);
+        self.form.message = None;
+        self.password_input
+            .update(cx, |input, cx| input.set_value("", cx));
+        cx.notify();
+    }
+
+    fn cancel_new_key(&mut self, cx: &mut Context<Self>) {
+        self.confirming = None;
+        cx.notify();
+    }
+
+    /// Confirmed: a new key; the old one stops working.
     fn change_key(&mut self, cx: &mut Context<Self>) {
         let Some(session) = self.session.clone() else {
             return;
         };
+        let Some(reset) = self.confirming else {
+            return;
+        };
+        let password = self.password_input.read(cx).value().to_owned();
         if !self.form.begin() {
             return;
         }
-        let making = session.change_recovery_key();
+        let making = if reset {
+            session.reset_lost_recovery((!password.is_empty()).then_some(password))
+        } else {
+            session.change_recovery_key()
+        };
         cx.spawn(async move |this, cx| {
             let made = making.await;
             this.update(cx, |this, cx| {
@@ -952,6 +988,11 @@ impl SettingsView {
             self.status.as_ref().and_then(|s| s.as_ref().ok()),
             self.form.new_key.is_some(),
         );
+        let offer = if self.confirming.is_some() && offer != RecoveryOffer::NewKey {
+            RecoveryOffer::None
+        } else {
+            offer
+        };
         match offer {
             RecoveryOffer::NewKey => {
                 let key = self.form.new_key.clone().unwrap_or_default();
@@ -1026,7 +1067,7 @@ impl SettingsView {
                             .when(busy, |d| d.opacity(0.6))
                             .child(icon("refresh-cw", 16.0).text_color(rgb(theme::text())))
                             .child("Change recovery key")
-                            .on_click(cx.listener(|this, _, _, cx| this.change_key(cx)))
+                            .on_click(cx.listener(|this, _, _, cx| this.ask_new_key(false, cx)))
                             .e2e("button", "secondary change-recovery-key")
                             .text("Change recovery key"),
                     )
@@ -1034,8 +1075,81 @@ impl SettingsView {
                     .e2e("div", "settings-actions")
                     .into_any_element(),
             ),
+            RecoveryOffer::Reset => encryption.push(
+                div()
+                    .flex()
+                    .flex_col()
+                    .items_start()
+                    .gap(px(8.0))
+                    .my(px(12.0))
+                    .child(
+                        button("reset-key", "Reset recovery key", Kind::Secondary, "")
+                            .when(busy, |d| d.opacity(0.6))
+                            .child(icon("refresh-cw", 16.0).text_color(rgb(theme::text())))
+                            .child("Reset recovery key")
+                            .on_click(cx.listener(|this, _, _, cx| this.ask_new_key(true, cx)))
+                            .e2e("button", "secondary reset-recovery-key")
+                            .text("Reset recovery key"),
+                    )
+                    .child(muted(keys::RECOVERY_RESET_NOTE, "muted"))
+                    .e2e("div", "settings-actions")
+                    .into_any_element(),
+            ),
             RecoveryOffer::None => {}
         }
+        if let Some(reset) = self.confirming.filter(|_| self.form.new_key.is_none()) {
+            let warning = if reset {
+                keys::CONFIRM_RESET_WARNING
+            } else {
+                keys::CONFIRM_CHANGE_WARNING
+            };
+            encryption.push(
+                div()
+                    .flex()
+                    .flex_col()
+                    .items_start()
+                    .gap(px(8.0))
+                    .my(px(12.0))
+                    .p(px(12.0))
+                    .rounded(px(theme::RADIUS_LG))
+                    .bg(rgb(theme::bg_elevated()))
+                    .child(muted(warning, "muted"))
+                    .when(reset, |d| {
+                        d.child(
+                            div()
+                                .w_full()
+                                .text_size(px(theme::REM))
+                                .text_color(rgb(theme::text()))
+                                .child(self.password_input.clone()),
+                        )
+                    })
+                    .child(
+                        div()
+                            .flex()
+                            .gap(px(8.0))
+                            .child(
+                                button("confirm-new-key", "Create new key", Kind::Primary, "")
+                                    .when(busy, |d| d.opacity(0.6))
+                                    .child("Create new key")
+                                    .on_click(cx.listener(|this, _, _, cx| this.change_key(cx)))
+                                    .e2e("button", "primary confirm-new-key")
+                                    .text("Create new key"),
+                            )
+                            .child(
+                                button("cancel-new-key", "Cancel", Kind::Secondary, "")
+                                    .child("Cancel")
+                                    .on_click(
+                                        cx.listener(|this, _, _, cx| this.cancel_new_key(cx)),
+                                    )
+                                    .e2e("button", "secondary cancel-key-reset")
+                                    .text("Cancel"),
+                            ),
+                    )
+                    .e2e("div", "confirm-key-reset")
+                    .into_any_element(),
+            );
+        }
+
 
         if let Some(flow) = self.flow.clone() {
             encryption.push(self.flow_panel(&flow, cx));

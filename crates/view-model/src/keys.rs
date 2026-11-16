@@ -127,6 +127,8 @@ pub enum RecoveryOffer {
     SetUp,
     /// This device has the keys: a new key can replace the old one.
     Change,
+    /// The key is lost and this device cannot read the backup: reset it.
+    Reset,
     None,
 }
 
@@ -137,6 +139,7 @@ pub fn recovery_offer(status: Option<&EncryptionStatus>, has_new_key: bool) -> R
     match status.map(|s| s.recovery) {
         Some(RecoveryAvailability::Disabled) => RecoveryOffer::SetUp,
         Some(RecoveryAvailability::Enabled) => RecoveryOffer::Change,
+        Some(RecoveryAvailability::NeedsKey) => RecoveryOffer::Reset,
         _ => RecoveryOffer::None,
     }
 }
@@ -146,6 +149,10 @@ pub const RECOVERY_ACCEPTED: &str =
 pub const RECOVERY_SAVE_NOTE: &str = "Save it somewhere safe, like a password manager. With it, any new device can read your encrypted history; without it, history is lost if you lose all your signed-in devices.";
 pub const RECOVERY_CHANGE_NOTE: &str =
     "Lost your recovery key? Make a new one here; the old one stops working.";
+pub const RECOVERY_RESET_NOTE: &str =
+    "Lost your recovery key and have no other signed-in device? Reset it here.";
+pub const CONFIRM_CHANGE_WARNING: &str = "Your old key stops working: devices you sign in to later need the new key to read your encrypted history. Make a new key?";
+pub const CONFIRM_RESET_WARNING: &str = "Your old key stops working, and your encryption identity is reset: your other devices must be verified again, and history that only the old backup held may be unreadable. Enter your account password to continue.";
 pub const RECOVERY_PLACEHOLDER: &str = "EsTx xxxx xxxx …";
 
 /// A recovery key as the user pasted or typed it: spaces around and inside
@@ -305,6 +312,8 @@ mod tests {
         assert_eq!(recovery_offer(Some(&enabled), false), RecoveryOffer::Change);
         assert_eq!(recovery_offer(Some(&enabled), true), RecoveryOffer::NewKey);
         assert_eq!(recovery_offer(None, false), RecoveryOffer::None);
+        let lost = status(false, RecoveryAvailability::NeedsKey);
+        assert_eq!(recovery_offer(Some(&lost), false), RecoveryOffer::Reset);
     }
 
     #[test]
