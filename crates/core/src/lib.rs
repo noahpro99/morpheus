@@ -54,9 +54,10 @@ pub use calls::{
     RingUpdates, Ringing, Role as CallRole, foci_to_subscribe,
 };
 pub use links::{LinkedRoom, MatrixLink, parse_matrix_link};
-pub use media::{Media, MediaRef};
+pub use media::{AVATAR_FULL_MAX, AvatarStats, Media, MediaRef, avatar_stats};
 pub use members::{
-    Member, MemberPermissions, MemberRole, ModRoom, ProfileChange, ProfileUpdates, Standing,
+    KnownMembers, Member, MemberPermissions, MemberRole, ModRoom, ProfileChange, ProfileUpdates,
+    Standing,
 };
 pub use messages::PinnedMessage;
 pub use notifications::{Notification, NotificationUpdates};

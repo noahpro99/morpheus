@@ -100,15 +100,32 @@ impl Core {
             site.file().rsplit('/').next().unwrap_or(site.file()),
             site.line()
         );
-        let join = self.spawn(fut);
-        rt::boxed(async move {
+        // Timed on both sides (#115). `waited`: from the call to the caller
+        // having the result. Of that, `queued` is before the core runtime
+        // started it (a busy runtime), `took` is the work itself, and the
+        // rest (`late`) is the result waiting for its caller to look: a
+        // caller polled from a busy thread (the window's, while it draws)
+        // gets it late. Before, only `waited` was logged, as the op's time,
+        // so a stuck window made every op look slow.
+        let asked = rt::Instant::now();
+        let join = self.spawn(async move {
             let started = rt::Instant::now();
-            let result = join.await?;
-            let elapsed = started.elapsed();
-            if elapsed > SLOW_OP {
-                tracing::warn!(%op, ?elapsed, "slow core operation");
+            let result = fut.await;
+            (result, started, started.elapsed())
+        });
+        rt::boxed(async move {
+            let (result, started, took) = join.await?;
+            let waited = asked.elapsed();
+            let queued = started.saturating_duration_since(asked);
+            let late = waited.saturating_sub(queued + took);
+            if took > SLOW_OP {
+                tracing::warn!(%op, ?took, ?waited, ?queued, "slow core operation");
+            } else if queued > SLOW_OP {
+                tracing::warn!(%op, ?took, ?waited, ?queued, "core operation started late: the core runtime was busy");
+            } else if late > SLOW_OP {
+                tracing::warn!(%op, ?took, ?waited, ?late, "core result picked up late: its caller was busy (its thread blocked, or it awaited other work first)");
             } else {
-                tracing::trace!(%op, ?elapsed, "core operation");
+                tracing::trace!(%op, ?took, ?waited, "core operation");
             }
             result
         })

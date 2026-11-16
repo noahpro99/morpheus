@@ -315,11 +315,15 @@ impl TimelineView {
         if let Some(session) = session.clone()
             && thread_root.is_none()
         {
-            let asking = session.members(room_id.clone());
+            let known = session.members_known(room_id.clone());
+            let room = room_id.clone();
             cx.spawn(async move |this, cx| {
-                if let Ok(members) = asking.await {
-                    // Indexed once, off the window's thread: a big room has
-                    // thousands of members, and every row drawn is matched.
+                // The members known at once, then (unless that was everyone)
+                // the whole list when it is in (#115), each indexed off the
+                // window's thread: a big room has thousands of members, and
+                // every row drawn is matched.
+                let index = async |members: Vec<morpheus_core::Member>,
+                                   cx: &mut gpui::AsyncApp| {
                     let people = cx
                         .background_executor()
                         .spawn(async move {
@@ -338,7 +342,20 @@ impl TimelineView {
                         this.people = people;
                         cx.notify();
                     })
-                    .ok();
+                    .is_ok()
+                };
+                let complete = match known.await {
+                    Ok(known) => {
+                        let complete = known.complete;
+                        if !index(known.members, cx).await {
+                            return;
+                        }
+                        complete
+                    }
+                    Err(_) => false,
+                };
+                if !complete && let Ok(members) = session.members(room).await {
+                    index(members, cx).await;
                 }
             })
             .detach();

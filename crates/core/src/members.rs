@@ -107,33 +107,65 @@ pub enum Standing {
     Gone,
 }
 
+/// The joined members known without asking the server, and whether that is
+/// all of them (see [`Session::members_known`]).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct KnownMembers {
+    pub members: Vec<Member>,
+    /// The room's whole member list has been fetched: these are everyone.
+    pub complete: bool,
+}
+
+/// Our members from the SDK's, admins first, then alphabetical.
+fn sorted(members: Vec<matrix_sdk::room::RoomMember>) -> Vec<Member> {
+    let mut members: Vec<Member> = members
+        .into_iter()
+        .map(|member| Member {
+            user_id: member.user_id().to_owned(),
+            name: member.name().to_owned(),
+            avatar: member
+                .avatar_url()
+                .map(|uri| MediaRef::from_mxc(uri.to_owned())),
+            role: MemberRole::from_sdk(member.suggested_role_for_power_level()),
+            power_level: power_level_of(&member),
+            is_ignored: member.is_ignored(),
+        })
+        .collect();
+    // Each name lower-cased once, not on every comparison: big public
+    // rooms have tens of thousands of members.
+    members.sort_by_cached_key(|m| (m.role, m.name.to_lowercase()));
+    members
+}
+
 impl Session {
-    /// Joined members of a room, admins first, then alphabetical.
+    /// Joined members of a room, admins first, then alphabetical. The first
+    /// call for a room fetches its whole member list from the server (one
+    /// request: the API has no pages), which in a room of thousands takes
+    /// seconds; [`Session::members_known`] answers at once meanwhile.
     pub fn members(&self, room_id: OwnedRoomId) -> CoreFuture<Vec<Member>> {
         let client = self.client.clone();
         self.core.run(async move {
             let room = client
                 .get_room(&room_id)
                 .ok_or_else(|| Error::UnknownRoom(room_id.clone()))?;
-            let mut members: Vec<Member> = room
-                .members(RoomMemberships::JOIN)
-                .await?
-                .into_iter()
-                .map(|member| Member {
-                    user_id: member.user_id().to_owned(),
-                    name: member.name().to_owned(),
-                    avatar: member
-                        .avatar_url()
-                        .map(|uri| MediaRef::from_mxc(uri.to_owned())),
-                    role: MemberRole::from_sdk(member.suggested_role_for_power_level()),
-                    power_level: power_level_of(&member),
-                    is_ignored: member.is_ignored(),
-                })
-                .collect();
-            // Each name lower-cased once, not on every comparison: big public
-            // rooms have tens of thousands of members.
-            members.sort_by_cached_key(|m| (m.role, m.name.to_lowercase()));
-            Ok(members)
+            Ok(sorted(room.members(RoomMemberships::JOIN).await?))
+        })
+    }
+
+    /// Joined members as far as they are known without asking the server
+    /// (what sync brought: the people who spoke lately, the room's heroes,
+    /// you), in [`Session::members`]' order, and whether that is everyone
+    /// (the whole list was fetched before). A member list shows these at
+    /// once and the whole list when [`Session::members`] has it (#115).
+    pub fn members_known(&self, room_id: OwnedRoomId) -> CoreFuture<KnownMembers> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            let room = client
+                .get_room(&room_id)
+                .ok_or_else(|| Error::UnknownRoom(room_id.clone()))?;
+            let complete = room.are_members_synced();
+            let members = sorted(room.members_no_sync(RoomMemberships::JOIN).await?);
+            Ok(KnownMembers { members, complete })
         })
     }
 

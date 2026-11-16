@@ -147,6 +147,263 @@ pub(crate) async fn fetch_thumbnail(
 }
 
 
+/// The most of a person's picture fetched as its whole file, when its server
+/// makes no thumbnail of it (#115). A picture in a room of thousands is
+/// drawn 32 px wide: past this its file is not fetched, and the person
+/// shows with their initials.
+pub const AVATAR_FULL_MAX: u64 = 1024 * 1024;
+
+/// How long a server that answered "no thumbnails" is not asked for one.
+const NO_THUMBNAILS_FOR: std::time::Duration = std::time::Duration::from_secs(30 * 60);
+
+/// What fetching people's pictures has cost so far (the e2e bridge's memory
+/// report, #115).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct AvatarStats {
+    /// Profile lookups to find a person's other picture.
+    pub profile_lookups: u64,
+    /// Whole files fetched because no thumbnail could be had.
+    pub full_fetches: u64,
+    /// Of those, stopped at [`AVATAR_FULL_MAX`] (or not started: the
+    /// server said the file is bigger).
+    pub full_cut: u64,
+    /// The most bytes received for one whole file.
+    pub full_largest: u64,
+}
+
+mod stats {
+    use std::sync::atomic::AtomicU64;
+    pub static PROFILE_LOOKUPS: AtomicU64 = AtomicU64::new(0);
+    pub static FULL_FETCHES: AtomicU64 = AtomicU64::new(0);
+    pub static FULL_CUT: AtomicU64 = AtomicU64::new(0);
+    pub static FULL_LARGEST: AtomicU64 = AtomicU64::new(0);
+}
+
+/// See [`AvatarStats`].
+pub fn avatar_stats() -> AvatarStats {
+    use std::sync::atomic::Ordering::Relaxed;
+    AvatarStats {
+        profile_lookups: stats::PROFILE_LOOKUPS.load(Relaxed),
+        full_fetches: stats::FULL_FETCHES.load(Relaxed),
+        full_cut: stats::FULL_CUT.load(Relaxed),
+        full_largest: stats::FULL_LARGEST.load(Relaxed),
+    }
+}
+
+/// Test builds can stand in for a server that makes no thumbnails (the
+/// local test server makes them): every thumbnail is answered as with 400
+/// "Dynamic thumbnails are disabled".
+fn pretend_no_thumbnails() -> bool {
+    static PRETEND: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *PRETEND.get_or_init(|| {
+        std::env::var_os("MORPHEUS_E2E_PORT").is_some()
+            && std::env::var_os("MORPHEUS_E2E_NO_THUMBNAILS").is_some()
+    })
+}
+
+/// A server's answer that it makes no thumbnails at all (Conduit and its
+/// forks: 400 "Dynamic thumbnails are disabled"), as opposed to none of this
+/// one (a 404, or a file it cannot shrink).
+fn says_no_thumbnails(err: &matrix_sdk::Error) -> bool {
+    err.as_client_api_error()
+        .is_some_and(|e| no_thumbnails_answer(e.status_code.as_u16(), &e.to_string()))
+}
+
+/// [`says_no_thumbnails`] on a status and an error's text.
+fn no_thumbnails_answer(status: u16, text: &str) -> bool {
+    status == 400 && text.to_lowercase().contains("thumbnails are disabled")
+}
+
+/// Servers that said they make no thumbnails, and since when: their
+/// people's pictures go straight to their (capped) whole files.
+fn thumbless() -> &'static std::sync::Mutex<std::collections::HashMap<String, crate::rt::Instant>> {
+    static THUMBLESS: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<String, crate::rt::Instant>>,
+    > = std::sync::OnceLock::new();
+    THUMBLESS.get_or_init(Default::default)
+}
+
+/// Pictures whose whole file is over [`AVATAR_FULL_MAX`], by media key: a
+/// file's size never changes, so this holds for the run.
+fn too_big() -> &'static std::sync::Mutex<std::collections::HashSet<String>> {
+    static TOO_BIG: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<String>>> =
+        std::sync::OnceLock::new();
+    TOO_BIG.get_or_init(Default::default)
+}
+
+/// A person's picture: its thumbnail, else (the server makes none of it, or
+/// none at all) its whole file when that is at most [`AVATAR_FULL_MAX`].
+/// Unlike [`fetch_thumbnail`], never a whole file of any size.
+async fn fetch_avatar(
+    client: &matrix_sdk::Client,
+    media: &MediaRef,
+    width: u32,
+    height: u32,
+) -> Option<Media> {
+    let MediaSource::Plain(uri) = &media.source else {
+        // People's pictures are never encrypted.
+        return fetch_thumbnail(client, media.clone(), width, height).await;
+    };
+    let server = uri.server_name().map(|s| s.to_string()).unwrap_or_default();
+    let skip_thumbnail = pretend_no_thumbnails()
+        || thumbless().lock().is_ok_and(|known| {
+            known
+                .get(&server)
+                .is_some_and(|at| at.elapsed() < NO_THUMBNAILS_FOR)
+        });
+    if !skip_thumbnail {
+        let thumbnail = MediaRequestParameters {
+            source: media.source.clone(),
+            format: MediaFormat::Thumbnail(MediaThumbnailSettings::new(
+                UInt::from(width),
+                UInt::from(height),
+            )),
+        };
+        match client.media().get_media_content(&thumbnail, true).await {
+            Ok(bytes) => return Some(Media { bytes }),
+            // Not on its server: the full file is not there either.
+            Err(err)
+                if err
+                    .as_client_api_error()
+                    .is_some_and(|e| e.status_code.as_u16() == 404) =>
+            {
+                debug!(%err, key = media.key, "picture not found");
+                return None;
+            }
+            Err(err) if says_no_thumbnails(&err) => {
+                debug!(%err, server, "the server makes no thumbnails; its pictures' files are fetched when small");
+                if let Ok(mut known) = thumbless().lock() {
+                    known.insert(server.clone(), crate::rt::Instant::now());
+                }
+            }
+            Err(err) => debug!(%err, key = media.key, "no thumbnail of the picture; fetching its file if small"),
+        }
+    }
+    capped_file(client, media, uri, AVATAR_FULL_MAX).await
+}
+
+/// The whole file of `media` if it is at most `cap` bytes: read from the
+/// media cache, else fetched, stopping as soon as the server's size or the
+/// bytes received pass `cap` (the SDK's own fetch reads any size whole).
+/// A file over `cap` is remembered ([`too_big`]); one that fits is cached
+/// like the SDK caches media.
+async fn capped_file(
+    client: &matrix_sdk::Client,
+    media: &MediaRef,
+    uri: &matrix_sdk::ruma::MxcUri,
+    cap: u64,
+) -> Option<Media> {
+    use matrix_sdk::media::store::IgnoreMediaRetentionPolicy;
+    use std::sync::atomic::Ordering::Relaxed;
+    if too_big().lock().is_ok_and(|big| big.contains(&media.key)) {
+        return None;
+    }
+    let request_key = MediaRequestParameters {
+        source: media.source.clone(),
+        format: MediaFormat::File,
+    };
+    if let Ok(store) = client.media_store().lock().await
+        && let Ok(Some(bytes)) = store.get_media_content(&request_key).await
+    {
+        return (bytes.len() as u64 <= cap).then_some(Media { bytes });
+    }
+    let cut = |received: u64| {
+        stats::FULL_CUT.fetch_add(1, Relaxed);
+        stats::FULL_LARGEST.fetch_max(received, Relaxed);
+        if let Ok(mut big) = too_big().lock() {
+            big.insert(media.key.clone());
+        }
+        debug!(key = media.key, cap, "picture's file too big to fetch whole; initials instead");
+        None
+    };
+    stats::FULL_FETCHES.fetch_add(1, Relaxed);
+    let (url, authenticated) = download_url(client, uri).await?;
+    let mut request = client.http_client().get(url);
+    if authenticated && let Some(token) = client.access_token() {
+        request = request.bearer_auth(token);
+    }
+    let response = match request.send().await {
+        Ok(response) if response.status().is_success() => response,
+        Ok(response) => {
+            debug!(status = %response.status(), key = media.key, "picture's file not fetched");
+            return None;
+        }
+        Err(err) => {
+            debug!(%err, key = media.key, "picture's file not fetched");
+            return None;
+        }
+    };
+    if response.content_length().is_some_and(|size| size > cap) {
+        return cut(0);
+    }
+    // A browser's fetch gives the body whole: only when its size is known.
+    #[cfg(target_arch = "wasm32")]
+    let bytes = match response.content_length() {
+        Some(_) => match response.bytes().await {
+            Ok(bytes) => bytes.to_vec(),
+            Err(err) => {
+                debug!(%err, key = media.key, "picture's file fetch failed");
+                return None;
+            }
+        },
+        None => return cut(0),
+    };
+    #[cfg(not(target_arch = "wasm32"))]
+    let mut body = response.bytes_stream();
+    #[cfg(not(target_arch = "wasm32"))]
+    let mut bytes = Vec::new();
+    #[cfg(not(target_arch = "wasm32"))]
+    while let Some(chunk) = futures_util::StreamExt::next(&mut body).await {
+        let chunk = match chunk {
+            Ok(chunk) => chunk,
+            Err(err) => {
+                debug!(%err, key = media.key, "picture's file fetch failed");
+                return None;
+            }
+        };
+        if (bytes.len() + chunk.len()) as u64 > cap {
+            // Dropping the body ends the download.
+            return cut((bytes.len() + chunk.len()) as u64);
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    stats::FULL_LARGEST.fetch_max(bytes.len() as u64, Relaxed);
+    if let Ok(store) = client.media_store().lock().await
+        && let Err(err) = store
+            .add_media_content(&request_key, bytes.clone(), IgnoreMediaRetentionPolicy::No)
+            .await
+    {
+        debug!(%err, "caching a picture's file failed");
+    }
+    Some(Media { bytes })
+}
+
+/// Where `uri`'s whole file is fetched from, and whether with the access
+/// token: the authenticated endpoint when the server has it, else the old one.
+async fn download_url(
+    client: &matrix_sdk::Client,
+    uri: &matrix_sdk::ruma::MxcUri,
+) -> Option<(url::Url, bool)> {
+    use matrix_sdk::ruma::api::{Metadata as _, client::authenticated_media::get_content};
+    let (server, id) = uri.parts().ok()?;
+    let authenticated = client
+        .supported_versions()
+        .await
+        .is_ok_and(|versions| get_content::v1::Request::PATH_BUILDER.is_supported(&versions));
+    let mut url = client.homeserver();
+    {
+        let mut path = url.path_segments_mut().ok()?;
+        path.pop_if_empty();
+        if authenticated {
+            path.extend(["_matrix", "client", "v1", "media", "download"]);
+        } else {
+            path.extend(["_matrix", "media", "v3", "download"]);
+        }
+        path.extend([server.as_str(), id]);
+    }
+    Some((url, authenticated))
+}
+
 /// How long a person's picture that could not be had is not asked for again
 /// (it is retried after that: a server may have been down).
 const BROKEN_FOR: std::time::Duration = std::time::Duration::from_secs(5 * 60);
@@ -157,6 +414,16 @@ fn broken() -> &'static std::sync::Mutex<std::collections::HashMap<String, crate
     static BROKEN: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, crate::rt::Instant>>> =
         std::sync::OnceLock::new();
     BROKEN.get_or_init(Default::default)
+}
+
+/// The other picture shown for a person whose own one could not be had (by
+/// the same key as [`broken`]'s faceless people), and since when: it is used
+/// again without looking them up again, for [`BROKEN_FOR`] (#115).
+fn substitutes()
+-> &'static std::sync::Mutex<std::collections::HashMap<String, (crate::rt::Instant, MediaRef)>> {
+    type Known = std::collections::HashMap<String, (crate::rt::Instant, MediaRef)>;
+    static SUBSTITUTES: std::sync::OnceLock<std::sync::Mutex<Known>> = std::sync::OnceLock::new();
+    SUBSTITUTES.get_or_init(Default::default)
 }
 
 /// People's pictures fetched at once, at most. A big room's member list and
@@ -189,7 +456,7 @@ async fn avatar_picture(client: &matrix_sdk::Client, media: &MediaRef, width: u3
     if known_broken().is_some() {
         return None;
     }
-    let found = fetch_thumbnail(client, media.clone(), width, height)
+    let found = fetch_avatar(client, media, width, height)
         .await
         .filter(|found| found.mime().starts_with("image/"));
     if found.is_none()
@@ -227,6 +494,20 @@ impl Session {
             {
                 return Ok(None);
             }
+            // Their other picture stood in lately: straight to it, without
+            // looking them up again (#115).
+            let stand_in = substitutes().lock().ok().and_then(|known| {
+                let (at, other) = known.get(&faceless)?;
+                (at.elapsed() < BROKEN_FOR).then(|| other.clone())
+            });
+            if let Some(other) = stand_in {
+                if let Some(found) = avatar_picture(&client, &other, width, height).await {
+                    return Ok(Some(found));
+                }
+                if let Ok(mut known) = substitutes().lock() {
+                    known.remove(&faceless);
+                }
+            }
             if let Some(found) = avatar_picture(&client, &media, width, height).await {
                 return Ok(Some(found));
             }
@@ -239,7 +520,17 @@ impl Session {
             {
                 known.push(("room member", MediaRef::from_mxc(url.to_owned())));
             }
-            if let Ok(profile) = client.account().fetch_user_profile_of(&user_id).await
+            stats::PROFILE_LOOKUPS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            // A lookup that failed (refused for now, 429) says nothing about
+            // their pictures: they are not taken for faceless then.
+            let profile = client.account().fetch_user_profile_of(&user_id).await;
+            let looked_up = match &profile {
+                Ok(_) => true,
+                Err(err) => err
+                    .as_client_api_error()
+                    .is_some_and(|e| e.status_code.as_u16() == 404),
+            };
+            if let Ok(profile) = profile
                 && let Some(url) = profile.data.get_static::<AvatarUrl>().ok().flatten()
             {
                 known.push(("global profile", MediaRef::from_mxc(url)));
@@ -251,11 +542,14 @@ impl Session {
             for (source, other) in known.iter().filter(|(_, other)| *other != media) {
                 if let Some(found) = avatar_picture(&client, other, width, height).await {
                     info!(user = %user_id, failed = media.key, failed_source, used = other.key, used_source = source, "avatar unavailable; using the person's other picture");
+                    if let Ok(mut known) = substitutes().lock() {
+                        known.insert(faceless, (crate::rt::Instant::now(), other.clone()));
+                    }
                     return Ok(Some(found));
                 }
             }
-            info!(user = %user_id, failed = media.key, failed_source, "avatar unavailable, and no other picture of the person loads");
-            if let Ok(mut known) = broken().lock() {
+            info!(user = %user_id, failed = media.key, failed_source, looked_up, "avatar unavailable, and no other picture of the person loads");
+            if looked_up && let Ok(mut known) = broken().lock() {
                 known.insert(faceless, crate::rt::Instant::now());
             }
             Ok(None)
@@ -426,6 +720,18 @@ mod tests {
         assert_eq!(path, dir.join("passwd"));
 
         let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    /// Only a server's "no thumbnails at all" makes its pictures skip
+    /// thumbnails (#115); a 400 about one file, or a 404, does not.
+    #[test]
+    fn only_no_thumbnails_at_all_is_remembered_for_the_server() {
+        assert!(no_thumbnails_answer(
+            400,
+            "[400 / M_UNKNOWN] Dynamic thumbnails are disabled on this server"
+        ));
+        assert!(!no_thumbnails_answer(400, "[400 / M_UNKNOWN] Cannot find any thumbnails for the requested media"));
+        assert!(!no_thumbnails_answer(404, "Dynamic thumbnails are disabled"));
     }
 
     fn uuid() -> u128 {

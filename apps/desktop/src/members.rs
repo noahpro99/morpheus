@@ -3,24 +3,35 @@
 //! profile and a right click for their menu. What the groups are and what
 //! the menu offers is `view_model::members`; this fetches the list and
 //! draws it.
+//!
+//! A room of thousands (#115): the members already known show at once and
+//! the whole list replaces them when it is in, and only the rows on screen
+//! are drawn and have their pictures fetched (a uniform list: every row is
+//! [`ROW`] high, headings too).
 
-use std::sync::Arc;
+use std::{collections::HashSet, ops::Range, sync::Arc};
 
 use gpui::{
     Context, EventEmitter, FontWeight, Image, IntoElement, MouseButton, Pixels, Point, Render,
-    ScrollHandle, Window, div, prelude::*, px, rgb, rgba,
+    UniformListScrollHandle, Window, div, prelude::*, px, rgb, rgba, uniform_list,
 };
-use morpheus_core::{MediaRef, Member, MemberPermissions, OwnedRoomId, OwnedUserId, Session};
+use morpheus_core::{
+    MediaRef, Member, MemberPermissions, MemberRole, OwnedRoomId, OwnedUserId, Session,
+};
 
 use crate::{
     e2e::{E2eExt as _, HandleProbe},
     media::{self, Avatars, avatar},
     theme,
     view_model::{
-        members::{PAGE, groups, show_more_label},
+        members::{Row, rows},
         nicknames::{NickMap, shown_name},
     },
 };
+
+/// Every row's height, a heading's as a member's: the list draws only what
+/// is on screen, which needs rows of one height.
+const ROW: f32 = 40.0;
 
 /// What the member list tells the shell.
 pub enum MemberEvent {
@@ -32,12 +43,14 @@ pub enum MemberEvent {
 
 impl EventEmitter<MemberEvent> for MembersView {}
 
+/// A list read, and whether it is everyone (else what was known then).
+type Kept = (Arc<[Member]>, bool);
+
 /// Lists already read, so a room opened again shows its members at once
 /// (the skeleton is for the first read only); newest rooms kept.
-fn cache()
--> &'static std::sync::Mutex<std::collections::HashMap<(String, OwnedRoomId), Arc<[Member]>>> {
+fn cache() -> &'static std::sync::Mutex<std::collections::HashMap<(String, OwnedRoomId), Kept>> {
     static CACHE: std::sync::OnceLock<
-        std::sync::Mutex<std::collections::HashMap<(String, OwnedRoomId), Arc<[Member]>>>,
+        std::sync::Mutex<std::collections::HashMap<(String, OwnedRoomId), Kept>>,
     > = std::sync::OnceLock::new();
     CACHE.get_or_init(Default::default)
 }
@@ -55,13 +68,17 @@ pub struct MembersView {
     room: OwnedRoomId,
     /// Shared, not copied: drawn every frame, and big rooms have thousands.
     members: Option<Result<Arc<[Member]>, String>>,
+    /// The list's rows (headings and members), worked out once per list.
+    rows: Arc<[Row]>,
+    /// `members` is everyone, not only those known before the list came.
+    complete: bool,
     /// Your nicknames for people, shown over their names.
     nicknames: NickMap,
     permissions: MemberPermissions,
-    /// How many rows show (the list grows by a page on request).
-    shown: usize,
     images: Avatars,
-    scroll: ScrollHandle,
+    /// People whose picture this list wanted (their row was drawn).
+    asked: HashSet<OwnedUserId>,
+    scroll: UniformListScrollHandle,
 }
 
 impl MembersView {
@@ -81,14 +98,19 @@ impl MembersView {
         let mut this = Self {
             session,
             room,
-            members: known.map(Ok),
+            members: None,
+            rows: Arc::from([]),
+            complete: false,
             nicknames: NickMap::new(),
             permissions: MemberPermissions::default(),
-            shown: PAGE,
             images: Avatars::default(),
+            asked: HashSet::new(),
             _alive: crate::memory::Alive::new(&crate::memory::MEMBER_VIEWS),
-            scroll: ScrollHandle::new(),
+            scroll: UniformListScrollHandle::new(),
         };
+        if let Some((list, complete)) = known {
+            this.show(list, complete, cx);
+        }
         this.refresh(cx);
         this
     }
@@ -100,16 +122,38 @@ impl MembersView {
         }
     }
 
+    /// `list` is shown (and kept for the room), unless it is only the
+    /// members known so far and everyone is shown already.
+    fn show(&mut self, list: Arc<[Member]>, complete: bool, cx: &mut Context<Self>) {
+        if self.complete && !complete {
+            return;
+        }
+        if let Some(user) = self.session.as_ref().and_then(|s| s.user_id())
+            && let Ok(mut cache) = cache().lock()
+        {
+            if cache.len() >= 40 {
+                cache.clear();
+            }
+            cache.insert((user.to_string(), self.room.clone()), (list.clone(), complete));
+        }
+        self.rows = rows(&list).into();
+        self.members = Some(Ok(list));
+        self.complete = complete;
+        cx.notify();
+    }
+
     /// Reads the list and our powers again (someone joined or left, or a
-    /// moderation action ran).
+    /// moderation action ran): the members known at once, then, unless
+    /// that was everyone, the whole list (a request to the server the
+    /// first time, seconds in a room of thousands).
     pub fn refresh(&mut self, cx: &mut Context<Self>) {
         let Some(session) = self.session.clone() else {
             return;
         };
-        let members = session.members(self.room.clone());
+        let known = session.members_known(self.room.clone());
         let permissions = session.my_permissions(self.room.clone());
         let first = self.members.is_none();
-        let (user, room) = (session.user_id().map(|u| u.to_string()), self.room.clone());
+        let room = self.room.clone();
         cx.spawn(async move |this, cx| {
             // Test builds can hold the first read back, to look at the skeleton.
             if first
@@ -122,23 +166,39 @@ impl MembersView {
                     .timer(std::time::Duration::from_millis(ms))
                     .await;
             }
-            let list = members
-                .await
-                .map(Arc::<[Member]>::from)
-                .map_err(|err| err.to_string());
-            if let (Some(user), Ok(list)) = (user, &list)
-                && let Ok(mut cache) = cache().lock()
-            {
-                if cache.len() >= 40 {
-                    cache.clear();
+            let complete = match known.await {
+                Ok(known) => {
+                    let complete = known.complete;
+                    // Nobody known yet (not even you): the skeleton stays
+                    // until the list comes.
+                    if !known.members.is_empty() || complete {
+                        this.update(cx, |this, cx| {
+                            this.show(known.members.into(), complete, cx)
+                        })
+                        .ok();
+                    }
+                    complete
                 }
-                cache.insert((user, room), list.clone());
-            }
+                Err(_) => false,
+            };
             let permissions = permissions.await.unwrap_or_default();
             this.update(cx, |this, cx| {
-                this.members = Some(list);
                 this.permissions = permissions;
                 cx.notify();
+            })
+            .ok();
+            if complete {
+                return;
+            }
+            let whole = session.members(room).await;
+            this.update(cx, |this, cx| match whole {
+                Ok(list) => this.show(list.into(), true, cx),
+                // An error shows only over nothing: a partial list is better.
+                Err(err) if this.members.is_none() => {
+                    this.members = Some(Err(err.to_string()));
+                    cx.notify();
+                }
+                Err(err) => tracing::debug!(%err, "the room's whole member list failed"),
             })
             .ok();
         })
@@ -153,6 +213,10 @@ impl MembersView {
         cx: &mut Context<Self>,
     ) -> Option<Arc<Image>> {
         const SIZE: u32 = 64;
+        if self.asked.insert(user.clone()) {
+            crate::memory::MEMBER_PICTURES_ASKED
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
         if let Some(image) = self.images.get(media, SIZE) {
             return Some(image);
         }
@@ -178,6 +242,35 @@ impl MembersView {
         }
         None
     }
+
+    /// The rows in `range`, drawn (only those on screen are asked for).
+    fn draw_rows(
+        &mut self,
+        list: &[Member],
+        rows: &[Row],
+        range: Range<usize>,
+        cx: &mut Context<Self>,
+    ) -> Vec<gpui::AnyElement> {
+        range
+            .filter_map(|ix| rows.get(ix).copied())
+            .filter_map(|row| match row {
+                Row::Heading { role, total } => Some(heading(role, total).into_any_element()),
+                Row::Member(i) => {
+                    let member = list.get(i)?;
+                    let picture = member
+                        .avatar
+                        .clone()
+                        .and_then(|m| self.picture(&member.user_id, &m, cx));
+                    let shown = crate::streamer::name(&shown_name(
+                        &self.nicknames,
+                        member.user_id.as_str(),
+                        &member.name,
+                    ));
+                    Some(member_row(member, shown, picture, cx).into_any_element())
+                }
+            })
+            .collect()
+    }
 }
 
 impl Render for MembersView {
@@ -188,8 +281,6 @@ impl Render for MembersView {
             .flex_col()
             .flex_1()
             .min_h_0()
-            .overflow_y_scroll()
-            .track_scroll(&self.scroll)
             .line_height(gpui::relative(theme::LINE_HEIGHT));
         match self.members.clone() {
             None => {
@@ -214,65 +305,49 @@ impl Render for MembersView {
                 );
             }
             Some(Ok(list)) => {
-                let (groups, hidden) = groups(&list, self.shown);
-                for group in groups {
-                    let heading = group.heading();
-                    panel = panel.child(
-                        div()
-                            .px(px(16.0))
-                            .pt(px(16.0))
-                            .pb(px(4.0))
-                            .child(
-                                div()
-                                    .text_size(px(0.75 * theme::REM))
-                                    .font_weight(FontWeight::BOLD)
-                                    .text_color(rgb(theme::text_muted()))
-                                    .child(heading.to_uppercase())
-                                    .e2e("h3", "")
-                                    .text(heading),
-                            )
-                            .e2e("header", "members-header"),
-                    );
-                    for member in group.members {
-                        let picture = member
-                            .avatar
-                            .clone()
-                            .and_then(|m| self.picture(&member.user_id, &m, cx));
-                        let shown = crate::streamer::name(&shown_name(
-                            &self.nicknames,
-                            member.user_id.as_str(),
-                            &member.name,
-                        ));
-                        panel = panel.child(member_row(&member, shown, picture, cx));
-                    }
-                }
-                if hidden > 0 {
-                    let label = show_more_label(hidden);
-                    panel = panel.child(
-                        div()
-                            .id("show-more-members")
-                            .mx(px(16.0))
-                            .mt(px(8.0))
-                            .mb(px(16.0))
-                            .text_size(px(0.85 * theme::REM))
-                            .text_color(rgb(theme::text_muted()))
-                            .cursor_pointer()
-                            .hover(|s| s.text_color(rgb(theme::text())))
-                            .child(label.clone())
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.shown += PAGE;
-                                cx.notify();
-                            }))
-                            .e2e("button", "ghost show-more-members")
-                            .text(label),
-                    );
-                }
+                let rows = self.rows.clone();
+                panel = panel.child(
+                    uniform_list(
+                        "member-rows",
+                        rows.len(),
+                        cx.processor(move |this, range: Range<usize>, _window, cx| {
+                            this.draw_rows(&list, &rows, range, cx)
+                        }),
+                    )
+                    .track_scroll(self.scroll.clone())
+                    .flex_1()
+                    .min_h_0()
+                    .pb(px(8.0)),
+                );
             }
         }
+        let probe = HandleProbe(self.scroll.0.borrow().base_handle.clone());
         panel
             .e2e("aside", "members")
-            .scrollable(std::rc::Rc::new(HandleProbe(self.scroll.clone())))
+            .scrollable(std::rc::Rc::new(probe))
     }
+}
+
+/// A role's heading: "ADMINS — 2", at the foot of its row.
+fn heading(role: MemberRole, total: usize) -> impl IntoElement {
+    let heading = Row::heading(role, total);
+    div()
+        .h(px(ROW))
+        .flex()
+        .flex_col()
+        .justify_end()
+        .px(px(16.0))
+        .pb(px(4.0))
+        .child(
+            div()
+                .text_size(px(0.75 * theme::REM))
+                .font_weight(FontWeight::BOLD)
+                .text_color(rgb(theme::text_muted()))
+                .child(heading.to_uppercase())
+                .e2e("h3", "")
+                .text(heading),
+        )
+        .e2e("header", "members-header")
 }
 
 /// One member: picture, name, "blocked" when you blocked them.
@@ -292,9 +367,10 @@ fn member_row(
         .flex()
         .items_center()
         .gap(px(10.0))
+        .h(px(ROW))
+        .flex_none()
         .mx(px(8.0))
         .px(px(8.0))
-        .py(px(4.0))
         .rounded(px(theme::RADIUS_SM))
         .text_color(rgb(theme::text_muted()))
         .cursor_pointer()

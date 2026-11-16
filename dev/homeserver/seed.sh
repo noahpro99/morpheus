@@ -472,6 +472,29 @@ if [[ ! -f "$HS_DIR/.seeded-multitude" ]]; then
   echo "  + 3000 members joined #multitude, 30 messages"
 fi
 
+# Two more #multitude members with odd pictures (#115): one of 3 MB (never
+# fetched whole when a server makes no thumbnails), and one whose picture in
+# the room is gone while their profile's loads (the substitute is remembered).
+if [[ ! -f "$HS_DIR/.seeded-multitude-pictures" ]]; then
+  echo "multitude pictures:"
+  MULTITUDE=$(ensure_room multitude "multitude" "3000 members")
+  BIG=$( { printf '\x89PNG\r\n\x1a\n'; head -c 3000000 /dev/urandom; } |
+    curl -fsS -X POST "$HS_URL/_matrix/media/v3/upload?filename=big.png" \
+      -H "Authorization: Bearer $ALICE" -H 'Content-Type: image/png' --data-binary @- | jq -r .content_uri)
+  FACE=$(upload "$ALICE" "$PNG_CAROL")
+  for spec in "multibig|A big picture|$BIG" "multisub|A substitute picture|$FACE"; do
+    IFS='|' read -r who name pic <<<"$spec"
+    api "$ALICE" PUT "/_synapse/admin/v2/users/@$who:localhost" \
+      "$(jq -nc --arg d "$name" --arg p "$pic" '{password:"multi-password", displayname:$d, avatar_url:$p}')" >/dev/null
+    api "$ALICE" POST "/_synapse/admin/v1/join/$MULTITUDE" "$(jq -nc --arg u "@$who:localhost" '{user_id:$u}')" >/dev/null
+  done
+  SUB=$(api "$ALICE" POST "/_synapse/admin/v1/users/@multisub:localhost/login" '{}' | jq -r .access_token)
+  api "$SUB" PUT "/_matrix/client/v3/rooms/$MULTITUDE/state/m.room.member/@multisub:localhost" \
+    '{"membership":"join","displayname":"A substitute picture","avatar_url":"mxc://localhost/gonesub"}' >/dev/null
+  touch "$HS_DIR/.seeded-multitude-pictures"
+  echo "  + a 3 MB picture and a substitute picture in #multitude"
+fi
+
 # Every test login leaves a device behind (alice had 1300+), and each one
 # adds key queries to every sync and fans out verification requests. Last
 # step, since it also signs out the tokens this script used.

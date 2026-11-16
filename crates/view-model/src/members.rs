@@ -1,6 +1,6 @@
 //! The member list (`crates/ui/src/components/members.rs`): joined members
 //! grouped by power level (admins, moderators, members) with a count per
-//! group, how many show at first, and the menu a member's row offers
+//! group as the rows the list draws, and the menu a member's row offers
 //! (gated by what the signed-in user may do in the room). The front end
 //! draws the groups and fetches the list.
 
@@ -11,10 +11,6 @@ use super::{
     room_dialogs::RoomDialogKind,
 };
 
-/// Rows shown at first. Big rooms have thousands of members, and every
-/// shown row fetches a picture, so the list grows only on request.
-pub const PAGE: usize = 100;
-
 /// A role's name in a menu ("Admin").
 pub fn role_name(role: MemberRole) -> &'static str {
     match role {
@@ -24,48 +20,43 @@ pub fn role_name(role: MemberRole) -> &'static str {
     }
 }
 
-/// One group of the list: a role, how many have it, and those shown.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Group {
-    pub role: MemberRole,
-    /// "Admins".
-    pub label: &'static str,
-    /// Everyone in the room with the role, shown or not.
-    pub total: usize,
-    pub members: Vec<Member>,
+/// One row of the list as drawn: a role's heading, or a member (by their
+/// place in the list). The list draws only the rows on screen, so a room of
+/// thousands costs a screenful (#115).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Row {
+    /// "Admins — 2": the role and how many have it.
+    Heading { role: MemberRole, total: usize },
+    Member(usize),
 }
 
-impl Group {
-    /// The group's heading: "Admins — 2".
-    pub fn heading(&self) -> String {
-        format!("{} — {}", self.label, self.total)
+impl Row {
+    /// A heading's text: "Admins — 2".
+    pub fn heading(role: MemberRole, total: usize) -> String {
+        format!("{} — {total}", role.label())
     }
 }
 
-/// The list as drawn: groups in order admins, moderators, members (empty
-/// ones left out) and how many members are not shown yet. `list` is in the
-/// core's order (by role, then name); the first `shown` rows of it show.
-pub fn groups(list: &[Member], shown: usize) -> (Vec<Group>, usize) {
-    let visible = &list[..list.len().min(shown)];
-    let hidden = list.len() - visible.len();
-    let groups = [MemberRole::Admin, MemberRole::Moderator, MemberRole::Member]
-        .into_iter()
-        .filter_map(|role| {
-            let total = list.iter().filter(|m| m.role == role).count();
-            (total > 0).then(|| Group {
-                role,
-                label: role.label(),
-                total,
-                members: visible.iter().filter(|m| m.role == role).cloned().collect(),
-            })
-        })
-        .collect();
-    (groups, hidden)
-}
-
-/// "Show 100 more (250 hidden)".
-pub fn show_more_label(hidden: usize) -> String {
-    format!("Show {} more ({hidden} hidden)", hidden.min(PAGE))
+/// The list's rows: each role in order admins, moderators, members (empty
+/// ones left out) under its heading, its members in `list`'s order (the
+/// core's: by name). Worked out once per list, not per frame; as more of a
+/// room's members arrive the list is a new one, and so are its rows.
+pub fn rows(list: &[Member]) -> Vec<Row> {
+    let mut rows = Vec::with_capacity(list.len() + 3);
+    for role in [MemberRole::Admin, MemberRole::Moderator, MemberRole::Member] {
+        let at = rows.len();
+        rows.extend(
+            list.iter()
+                .enumerate()
+                .filter(|(_, m)| m.role == role)
+                .map(|(i, _)| Row::Member(i)),
+        );
+        let total = rows.len() - at;
+        if total > 0 {
+            rows.insert(at, Row::Heading { role, total });
+        }
+    }
+    rows
 }
 
 /// What a member's menu depends on besides the member.
@@ -221,28 +212,44 @@ mod tests {
     }
 
     #[test]
-    fn groups_run_admins_moderators_members_with_counts_and_no_empty_ones() {
-        let (groups, hidden) = groups(&list(), PAGE);
-        assert_eq!(hidden, 0);
-        let headings: Vec<_> = groups.iter().map(Group::heading).collect();
-        assert_eq!(headings, ["Admins — 1", "Moderators — 1", "Members — 2"]);
+    fn rows_run_admins_moderators_members_under_counted_headings() {
+        let rows = rows(&list());
+        assert_eq!(
+            rows,
+            [
+                Row::Heading { role: MemberRole::Admin, total: 1 },
+                Row::Member(0),
+                Row::Heading { role: MemberRole::Moderator, total: 1 },
+                Row::Member(1),
+                Row::Heading { role: MemberRole::Member, total: 2 },
+                Row::Member(2),
+                Row::Member(3),
+            ]
+        );
+        assert_eq!(Row::heading(MemberRole::Member, 2), "Members — 2");
         let only_members = [member("bob", MemberRole::Member, 0)];
-        let (groups, _) = super::groups(&only_members, PAGE);
-        assert_eq!(groups.len(), 1);
-        assert_eq!(groups[0].role, MemberRole::Member);
+        assert_eq!(
+            super::rows(&only_members),
+            [Row::Heading { role: MemberRole::Member, total: 1 }, Row::Member(0)],
+            "no heading for a role nobody has"
+        );
+        assert!(super::rows(&[]).is_empty());
     }
 
     #[test]
-    fn a_long_list_shows_a_prefix_and_counts_what_is_hidden() {
-        let mut many = vec![member("boss", MemberRole::Admin, 100)];
-        many.extend((0..250).map(|i| member(&format!("m{i:03}"), MemberRole::Member, 0)));
-        let (shown, hidden) = groups(&many, PAGE);
-        assert_eq!(hidden, 151);
-        assert_eq!(shown[0].members.len(), 1);
-        assert_eq!(shown[1].members.len(), PAGE - 1);
-        assert_eq!(shown[1].total, 250, "the count is of everyone");
-        assert_eq!(show_more_label(hidden), "Show 100 more (151 hidden)");
-        assert_eq!(show_more_label(7), "Show 7 more (7 hidden)");
+    fn every_member_of_a_big_list_has_a_row_in_its_group() {
+        let mut many: Vec<Member> = (0..3000)
+            .map(|i| member(&format!("m{i:04}"), MemberRole::Member, 0))
+            .collect();
+        // Out of role order: a moderator among the members.
+        many.insert(1500, member("mod", MemberRole::Moderator, 50));
+        let rows = rows(&many);
+        assert_eq!(rows.len(), 3001 + 2);
+        assert_eq!(rows[0], Row::Heading { role: MemberRole::Moderator, total: 1 });
+        assert_eq!(rows[1], Row::Member(1500));
+        assert_eq!(rows[2], Row::Heading { role: MemberRole::Member, total: 3000 });
+        assert_eq!(rows[3], Row::Member(0));
+        assert_eq!(rows[3002], Row::Member(3000), "the last one last");
     }
 
     #[test]

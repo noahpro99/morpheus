@@ -53,6 +53,10 @@ pub struct Report {
     /// Timeline and member list views alive.
     pub timeline_views: usize,
     pub member_views: usize,
+    /// What fetching people's pictures cost (#115), and how many people's
+    /// pictures member lists wanted (one per row drawn).
+    pub avatars: morpheus_core::AvatarStats,
+    pub member_pictures_asked: usize,
 }
 
 /// What is held now; `window` is the main window (for its atlas).
@@ -79,6 +83,8 @@ pub fn report(window: &Window, cx: &App) -> Report {
         video_pictures: crate::pictures::held(),
         timeline_views: TIMELINE_VIEWS.load(Ordering::Relaxed),
         member_views: MEMBER_VIEWS.load(Ordering::Relaxed),
+        avatars: morpheus_core::avatar_stats(),
+        member_pictures_asked: MEMBER_PICTURES_ASKED.load(Ordering::Relaxed),
     }
 }
 
@@ -124,7 +130,8 @@ impl std::fmt::Display for Report {
             "rss {:.0} MB (anon {:.0}, lazily freed {:.0}); gpui decoded pictures {} / {:.1} MB; \
              atlas {} textures / {:.1} MB ({} tiles, {} colour, {} retired); drawn {} / {:.1} MB; \
              shared pictures {} / {:.1} MB; cut pictures {} / {:.1} MB; card colours {}; \
-             blurs {}; timelines {} (weight {}); video pictures {}; views: {} timelines, {} member lists",
+             blurs {}; timelines {} (weight {}); video pictures {}; views: {} timelines, {} member lists; \
+             people's pictures: {} asked by member lists, {} profile lookups, {} whole files ({} cut, largest {} KB)",
             self.rss_kb as f64 / 1024.0,
             self.anon_kb as f64 / 1024.0,
             self.lazy_free_kb as f64 / 1024.0,
@@ -148,6 +155,11 @@ impl std::fmt::Display for Report {
             self.video_pictures,
             self.timeline_views,
             self.member_views,
+            self.member_pictures_asked,
+            self.avatars.profile_lookups,
+            self.avatars.full_fetches,
+            self.avatars.full_cut,
+            self.avatars.full_largest / 1024,
         )
     }
 }
@@ -177,6 +189,13 @@ impl Report {
             "video_pictures": self.video_pictures,
             "timeline_views": self.timeline_views,
             "member_views": self.member_views,
+            "avatars": {
+                "member_pictures_asked": self.member_pictures_asked,
+                "profile_lookups": self.avatars.profile_lookups,
+                "full_fetches": self.avatars.full_fetches,
+                "full_cut": self.avatars.full_cut,
+                "full_largest": self.avatars.full_largest,
+            },
         })
     }
 }
@@ -208,6 +227,8 @@ pub fn log_now_and_then(window: &Window, cx: &App) {
 /// Views alive (to see that those of rooms left go).
 pub static TIMELINE_VIEWS: AtomicUsize = AtomicUsize::new(0);
 pub static MEMBER_VIEWS: AtomicUsize = AtomicUsize::new(0);
+/// People whose picture a member list wanted (each list counts each person once).
+pub static MEMBER_PICTURES_ASKED: AtomicUsize = AtomicUsize::new(0);
 
 /// Counts itself in a counter while it lives.
 pub struct Alive(&'static AtomicUsize);

@@ -91,7 +91,7 @@ impl<S> tracing_subscriber::layer::Filter<S> for QuietExpected {
         _: &tracing_subscriber::layer::Context<'_, S>,
     ) -> bool {
         let meta = event.metadata();
-        if meta.target() != "matrix_sdk::http_client" || *meta.level() != tracing::Level::ERROR {
+        if *meta.level() != tracing::Level::ERROR || !meta.target().starts_with("matrix_sdk::") {
             return true;
         }
         struct Message(String);
@@ -104,7 +104,24 @@ impl<S> tracing_subscriber::layer::Filter<S> for QuietExpected {
         }
         let mut message = Message(String::new());
         event.record(&mut message);
-        !expected_failure(&message.0)
+        !expected_error(meta.target(), &message.0)
+    }
+}
+
+/// matrix-sdk's error-level logs that are no error: a request's answer (see
+/// [`expected_failure`]), and latest_events' "Room is unknown" (#115). That
+/// one comes for every room a sync brings that the client has not stored
+/// yet (all of them on the first sync after logging in, a room just joined
+/// later): matrix-sdk 0.19 registers a sync's rooms for their latest events
+/// (`subscribe_to_room_latest_events`) before it processes the sync into
+/// its store, and the first computation runs in that gap. It computes them
+/// again once the events are in (the event cache's update), so nothing is
+/// lost. (It also comes after logging out: the client is gone.)
+fn expected_error(target: &str, message: &str) -> bool {
+    match target {
+        "matrix_sdk::http_client" => expected_failure(message),
+        "matrix_sdk::latest_events::room_latest_events" => message == "Room is unknown",
+        _ => false,
     }
 }
 
@@ -169,6 +186,25 @@ mod tests {
             Some("before\nPANIC: boom\nafter\n")
         );
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// latest_events' "Room is unknown" before a new room is stored is left
+    /// out; its other errors, and other crates' errors, stay (#115).
+    #[test]
+    fn latest_events_unknown_room_is_quiet() {
+        assert!(expected_error(
+            "matrix_sdk::latest_events::room_latest_events",
+            "Room is unknown"
+        ));
+        assert!(!expected_error(
+            "matrix_sdk::latest_events::room_latest_events",
+            "Failed to fetch the `RoomEventCache`"
+        ));
+        assert!(!expected_error("matrix_sdk::sliding_sync", "Room is unknown"));
+        assert!(expected_error(
+            "matrix_sdk::http_client",
+            r#"Error while sending request: Api(Server(MatrixError(Error { status_code: 404, body: Json("") })))"#
+        ));
     }
 
     /// matrix-sdk's not-found and no-thumbnail answers are left out of the
