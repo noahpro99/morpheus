@@ -1437,7 +1437,15 @@ impl Render for Shell {
             // root would otherwise take it from a text box).
             .on_mouse_down(
                 gpui::MouseButton::Left,
-                cx.listener(|this, _, window, cx| {
+                cx.listener(|this, event: &gpui::MouseDownEvent, window, cx| {
+                    // Windows: a press on the bar's caption is the system's
+                    // (drag, snap, double-click maximise); handling it here
+                    // would stop that.
+                    if crate::chrome::Layout::this_os()
+                        .press_is_systems(f32::from(event.position.y))
+                    {
+                        return;
+                    }
                     window.prevent_default();
                     // A click that got here landed on nothing that takes the
                     // caret (a text box would have, first): the search box lets go.

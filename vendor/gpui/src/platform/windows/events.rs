@@ -853,6 +853,16 @@ impl WindowsWindowInner {
             return None;
         }
 
+        // Morpheus: the resize borders come before the app's window control
+        // areas, so a caption (`WindowControlArea::Drag`) along the window's
+        // top still resizes from its top edge, and a hit test outside the
+        // client area does not answer from the app's last mouse position.
+        if self.hide_title_bar
+            && let Some(hit) = self.hit_test_resize_border(handle, msg, wparam, lparam)
+        {
+            return Some(hit);
+        }
+
         let mut lock = self.state.borrow_mut();
         if let Some(mut callback) = lock.callbacks.hit_test_window_control.take() {
             drop(lock);
@@ -875,6 +885,18 @@ impl WindowsWindowInner {
             return None;
         }
 
+        Some(HTCLIENT as _)
+    }
+
+    /// With the title bar hidden: the system's resize borders (outside the
+    /// client area) and the top resize strip inside it.
+    fn hit_test_resize_border(
+        &self,
+        handle: HWND,
+        msg: u32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+    ) -> Option<isize> {
         // default handler for resize areas
         let hit = unsafe { DefWindowProcW(handle, msg, wparam, lparam) };
         if matches!(
@@ -892,10 +914,6 @@ impl WindowsWindowInner {
             return Some(hit.0);
         }
 
-        if self.state.borrow().is_fullscreen() {
-            return Some(HTCLIENT as _);
-        }
-
         let dpi = unsafe { GetDpiForWindow(handle) };
         let frame_y = unsafe { GetSystemMetricsForDpi(SM_CYFRAME, dpi) };
 
@@ -907,8 +925,7 @@ impl WindowsWindowInner {
         if !self.state.borrow().is_maximized() && cursor_point.y >= 0 && cursor_point.y <= frame_y {
             return Some(HTTOP as _);
         }
-
-        Some(HTCLIENT as _)
+        None
     }
 
     fn handle_nc_mouse_move_msg(&self, handle: HWND, lparam: LPARAM) -> Option<isize> {

@@ -489,14 +489,15 @@ fn window_options(cx: &App) -> WindowOptions {
     let bounds = Bounds::centered(None, window_size(), cx);
     WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(bounds)),
-        // macOS: the system bar transparent, its traffic lights on ours.
+        // macOS: the system bar transparent, its traffic lights on ours;
+        // Windows: no system caption, ours is the only title bar.
         titlebar: Some(
             chrome::Layout::for_os(chrome::Os::current(), false)
                 .titlebar_options(SharedString::from(TITLE)),
         ),
         app_id: Some("morpheus-desktop".into()),
-        // The app draws its own bar, buttons and resize edges (Linux and
-        // Windows; macOS ignores this).
+        // The app draws its own bar, buttons and resize edges (Linux;
+        // macOS and Windows ignore this).
         window_decorations: Some(gpui::WindowDecorations::Client),
         ..Default::default()
     }

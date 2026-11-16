@@ -57,6 +57,13 @@ jobs:
       - name: Build
         run: cargo build --release -p morpheus-desktop --locked --target x86_64-pc-windows-msvc
 
+      # One title bar (#97): no system caption above the app's, its buttons
+      # the caption's (snap layouts), the bar the caption, maximised on the
+      # work area exactly.
+      - name: Window chrome
+        shell: pwsh
+        run: scripts/windows-chrome-check.ps1 target/x86_64-pc-windows-msvc/release/morpheus-desktop.exe
+
       - name: Package
         run: echo "RELEASE_ZIP=$(scripts/package-windows.sh | tail -1)" >> "$GITHUB_ENV"
 

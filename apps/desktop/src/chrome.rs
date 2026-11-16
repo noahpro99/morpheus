@@ -4,7 +4,12 @@
 //! (`WindowBar` in `crates/ui/src/components/titlebar.rs`). On macOS the
 //! system's title bar is transparent and the bar is the app's: the native
 //! traffic lights sit at its left (`Layout::for_os`), and the app draws no
-//! window buttons or resize edges of its own.
+//! window buttons or resize edges of its own. On Windows the system's caption
+//! is hidden too (GPUI's `appears_transparent`: WM_NCCALCSIZE gives the
+//! caption to the client area, keeping the resize borders) and the app's bar
+//! and buttons answer WM_NCHITTEST as the caption and its buttons, so the
+//! system still drags, snaps (Aero snap, Win+arrows, the snap layouts over
+//! the maximise button), maximises on a double click and resizes.
 
 use gpui::{
     AnyElement, App, CursorStyle, FontWeight, IntoElement, MouseButton, ResizeEdge, Window, div,
@@ -50,6 +55,23 @@ pub struct Layout {
     pub traffic_lights: Option<(f32, f32)>,
     /// The bar's left padding: room for the traffic lights on macOS.
     pub left_padding: f32,
+    /// No system caption above the app's bar: macOS's is transparent under
+    /// it, Windows's is taken into the client area
+    /// (`TitlebarOptions::appears_transparent`).
+    pub hide_system_caption: bool,
+    /// Windows: the bar tells the system it is the caption (WM_NCHITTEST
+    /// HTCAPTION, `WindowControlArea::Drag`) and the buttons are its
+    /// minimise, maximise and close (HTMINBUTTON...), so the system drags,
+    /// snaps and maximises; elsewhere the app starts the drag itself.
+    pub system_hit_test: bool,
+}
+
+/// The app's window buttons.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WindowButton {
+    Minimize,
+    Maximize,
+    Close,
 }
 
 /// The bar's padding at each end where nothing else is there.
@@ -75,14 +97,62 @@ impl Layout {
                 } else {
                     TRAFFIC_LIGHTS_INSET
                 },
+                hide_system_caption: true,
+                system_hit_test: false,
             },
-            Os::Linux | Os::Windows => Layout {
+            Os::Linux => Layout {
                 app_buttons: true,
                 app_resize_edges: true,
                 traffic_lights: None,
                 left_padding: BAR_PADDING,
+                hide_system_caption: false,
+                system_hit_test: false,
+            },
+            // The system keeps its (invisible) resize borders: no app edges.
+            Os::Windows => Layout {
+                app_buttons: true,
+                app_resize_edges: false,
+                traffic_lights: None,
+                left_padding: BAR_PADDING,
+                hide_system_caption: true,
+                system_hit_test: true,
             },
         }
+    }
+
+    /// This build's system, not in full screen: for what does not depend on it.
+    pub fn this_os() -> Layout {
+        Layout::for_os(Os::current(), false)
+    }
+
+    /// What the bar is to the system's hit test: the caption on Windows.
+    pub fn bar_area(self) -> Option<gpui::WindowControlArea> {
+        self.system_hit_test
+            .then_some(gpui::WindowControlArea::Drag)
+    }
+
+    /// What a window button is to the system's hit test: on Windows its own
+    /// button (HTMAXBUTTON over maximise brings Windows 11's snap layouts).
+    pub fn button_area(self, button: WindowButton) -> Option<gpui::WindowControlArea> {
+        self.system_hit_test.then_some(match button {
+            WindowButton::Minimize => gpui::WindowControlArea::Min,
+            WindowButton::Maximize => gpui::WindowControlArea::Max,
+            WindowButton::Close => gpui::WindowControlArea::Close,
+        })
+    }
+
+    /// Whether the app acts on a click of a window button. On Windows the
+    /// system minimises, maximises and restores from its own button areas;
+    /// closing stays the app's (it hides the window when there is a tray).
+    pub fn app_clicks(self, button: WindowButton) -> bool {
+        !self.system_hit_test || button == WindowButton::Close
+    }
+
+    /// Whether a press at `y` (from the window's top) on nothing else of the
+    /// bar must be left unhandled for the system (drag, double-click
+    /// maximise): a handled press of the caption stops the system's.
+    pub fn press_is_systems(self, y: f32) -> bool {
+        self.system_hit_test && (0.0..BAR_HEIGHT).contains(&y)
     }
 
     /// The layout of this build's system for `window`.
@@ -91,11 +161,12 @@ impl Layout {
     }
 
     /// The window's title bar options: a transparent system bar with the
-    /// traffic lights placed on macOS, the plain one elsewhere.
+    /// traffic lights placed on macOS, no system caption on Windows, the
+    /// plain one on Linux (client decorations instead).
     pub fn titlebar_options(self, title: gpui::SharedString) -> gpui::TitlebarOptions {
         gpui::TitlebarOptions {
             title: Some(title),
-            appears_transparent: self.traffic_lights.is_some(),
+            appears_transparent: self.hide_system_caption,
             traffic_light_position: self.traffic_lights.map(|(x, y)| gpui::point(px(x), px(y))),
         }
     }
@@ -124,8 +195,12 @@ pub fn close_window(window: &mut Window, cx: &mut App) {
 
 /// A bar's mouse handling: a press anywhere that is not a button drags the
 /// window; a double click maximises it (or puts it back), on macOS doing
-/// what the system's setting for a title bar's double click says.
+/// what the system's setting for a title bar's double click says. On
+/// Windows the bar is the system's caption, which does all that itself.
 pub fn draggable<E: gpui::InteractiveElement + gpui::StatefulInteractiveElement>(bar: E) -> E {
+    if let Some(area) = Layout::this_os().bar_area() {
+        return bar.window_control_area(area);
+    }
     bar.on_mouse_down(MouseButton::Left, |event, window, _| {
         if event.click_count == 2 {
             if Os::current() == Os::Mac {
@@ -139,18 +214,31 @@ pub fn draggable<E: gpui::InteractiveElement + gpui::StatefulInteractiveElement>
     })
 }
 
-/// A button that does not start a drag when it is pressed.
+/// A button that does not start a drag when it is pressed. On Windows it
+/// also hides the bar behind it from the system's hit test (it is client
+/// area, not caption).
 pub fn no_drag<E: gpui::InteractiveElement>(button: E) -> E {
+    let button = if Layout::this_os().system_hit_test {
+        button.occlude()
+    } else {
+        button
+    };
     button.on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
 }
 
 /// Minimise, maximise and close: nothing where the system's own buttons are
 /// on the bar (macOS).
 pub fn window_controls(window: &Window) -> AnyElement {
-    if !Layout::current(window).app_buttons {
+    let layout = Layout::current(window);
+    if !layout.app_buttons {
         return div().into_any_element();
     }
     let button = |id: &'static str, title: &'static str, glyph: &'static str, size: f32| {
+        let which = match title {
+            "Minimize" => WindowButton::Minimize,
+            "Maximize" => WindowButton::Maximize,
+            _ => WindowButton::Close,
+        };
         let mut b = div()
             .id(id)
             .px(px(9.0))
@@ -167,21 +255,27 @@ pub fn window_controls(window: &Window) -> AnyElement {
         } else {
             b.hover(|s| s.bg(rgba(theme::bg_hover())).text_color(rgb(theme::text())))
         };
-        no_drag(b)
-            .on_click(move |_, window, cx| match title {
-                "Minimize" => window.minimize_window(),
-                "Maximize" => window.zoom_window(),
-                _ => close_window(window, cx),
-            })
-            .e2e(
-                "button",
-                if title == "Close" {
-                    "ghost close"
-                } else {
-                    "ghost"
-                },
-            )
-            .attr("title", title)
+        // Windows: the system's own button there (hovering maximise shows
+        // the snap layouts); the system minimises, maximises and restores.
+        if let Some(area) = layout.button_area(which) {
+            b = b.window_control_area(area).occlude();
+        }
+        if layout.app_clicks(which) {
+            b = no_drag(b).on_click(move |_, window, cx| match which {
+                WindowButton::Minimize => window.minimize_window(),
+                WindowButton::Maximize => window.zoom_window(),
+                WindowButton::Close => close_window(window, cx),
+            });
+        }
+        b.e2e(
+            "button",
+            if title == "Close" {
+                "ghost close"
+            } else {
+                "ghost"
+            },
+        )
+        .attr("title", title)
     };
     div()
         .flex()
@@ -368,19 +462,74 @@ mod layout_tests {
         assert_eq!(Layout::for_os(Os::Mac, true).left_padding, BAR_PADDING);
     }
 
+    const BUTTONS: [WindowButton; 3] = [
+        WindowButton::Minimize,
+        WindowButton::Maximize,
+        WindowButton::Close,
+    ];
+
     #[test]
-    fn linux_and_windows_draw_their_own_buttons_and_edges_as_before() {
-        for os in [Os::Linux, Os::Windows] {
-            for fullscreen in [false, true] {
-                let layout = Layout::for_os(os, fullscreen);
-                assert!(layout.app_buttons && layout.app_resize_edges, "{os:?}");
-                assert_eq!(layout.traffic_lights, None);
-                assert_eq!(layout.left_padding, BAR_PADDING);
-                let options = layout.titlebar_options("Morpheus".into());
-                assert!(!options.appears_transparent);
-                assert_eq!(options.traffic_light_position, None);
-                assert_eq!(layout.buttons(), "app");
+    fn linux_draws_its_own_buttons_and_edges_as_before() {
+        for fullscreen in [false, true] {
+            let layout = Layout::for_os(Os::Linux, fullscreen);
+            assert!(layout.app_buttons && layout.app_resize_edges);
+            assert_eq!(layout.traffic_lights, None);
+            assert_eq!(layout.left_padding, BAR_PADDING);
+            let options = layout.titlebar_options("Morpheus".into());
+            assert!(!options.appears_transparent);
+            assert_eq!(options.traffic_light_position, None);
+            assert_eq!(layout.buttons(), "app");
+            // The app drags, maximises and minimises itself.
+            assert_eq!(layout.bar_area(), None);
+            for b in BUTTONS {
+                assert_eq!(layout.button_area(b), None);
+                assert!(layout.app_clicks(b));
             }
+            assert!(!layout.press_is_systems(10.0));
+        }
+    }
+
+    #[test]
+    fn macos_leaves_the_bar_to_the_app() {
+        let mac = Layout::for_os(Os::Mac, false);
+        assert_eq!(mac.bar_area(), None);
+        for b in BUTTONS {
+            assert_eq!(mac.button_area(b), None);
+        }
+        assert!(!mac.press_is_systems(10.0));
+    }
+
+    #[test]
+    fn windows_has_no_system_caption_and_the_bar_is_the_systems_caption() {
+        use gpui::WindowControlArea as Area;
+        for fullscreen in [false, true] {
+            let win = Layout::for_os(Os::Windows, fullscreen);
+            // The only title bar is the app's, its buttons at the right.
+            assert!(win.app_buttons);
+            assert_eq!(win.buttons(), "app");
+            assert_eq!(win.traffic_lights, None);
+            assert_eq!(win.left_padding, BAR_PADDING);
+            let options = win.titlebar_options("Morpheus".into());
+            assert!(options.appears_transparent, "no system caption");
+            assert_eq!(options.traffic_light_position, None);
+            // The system's resize borders stay: no app strips over them.
+            assert!(!win.app_resize_edges);
+            // The bar is the caption: drag, Aero snap, double-click maximise.
+            assert_eq!(win.bar_area(), Some(Area::Drag));
+            // The buttons are the caption's: snap layouts over maximise.
+            assert_eq!(win.button_area(WindowButton::Minimize), Some(Area::Min));
+            assert_eq!(win.button_area(WindowButton::Maximize), Some(Area::Max));
+            assert_eq!(win.button_area(WindowButton::Close), Some(Area::Close));
+            // The system minimises, maximises and restores; the app closes
+            // (to the tray).
+            assert!(!win.app_clicks(WindowButton::Minimize));
+            assert!(!win.app_clicks(WindowButton::Maximize));
+            assert!(win.app_clicks(WindowButton::Close));
+            // A press in the bar is left to the system; below it, the app's.
+            assert!(win.press_is_systems(0.0));
+            assert!(win.press_is_systems(BAR_HEIGHT - 1.0));
+            assert!(!win.press_is_systems(BAR_HEIGHT));
+            assert!(!win.press_is_systems(200.0));
         }
     }
 }
