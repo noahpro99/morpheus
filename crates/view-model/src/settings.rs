@@ -399,10 +399,71 @@ pub const HIDDEN_FLAG: &str = "--hidden";
 
 pub const STARTUP_UNAVAILABLE: &str = "Starting with your computer isn't available on this system yet.";
 
-fn autostart_path() -> Option<PathBuf> {
-    if !cfg!(target_os = "linux") {
-        return None;
+/// Whether this system has an autostart mechanism wired up: an XDG autostart
+/// entry (Linux), the Run registry key (Windows), a LaunchAgent (macOS).
+const AUTOSTART_SUPPORTED: bool = cfg!(any(
+    target_os = "linux",
+    target_os = "windows",
+    target_os = "macos"
+));
+
+/// The command line that starts the app at `exe` at login: the quoted path
+/// (it may hold spaces) and the hidden flag if asked. This is the Windows Run
+/// value and the XDG entry's `Exec` line.
+pub fn run_command(exe: &Path, hidden: bool) -> String {
+    let mut command = format!("\"{}\"", exe.display().to_string().replace('"', "\\\""));
+    if hidden {
+        command.push(' ');
+        command.push_str(HIDDEN_FLAG);
     }
+    command
+}
+
+/// The program a command line from [`run_command`] starts: the quoted path,
+/// or the first word of an unquoted one.
+pub fn command_exe(command: &str) -> Option<PathBuf> {
+    let command = command.trim();
+    let exe = match command.strip_prefix('"') {
+        Some(rest) => rest.split('"').next()?.replace("\\\"", "\""),
+        None => command.split_whitespace().next()?.to_owned(),
+    };
+    (!exe.is_empty()).then(|| PathBuf::from(exe))
+}
+
+/// Whether a command line asks for the app to start hidden.
+pub fn command_hidden(command: &str) -> bool {
+    command.split_whitespace().any(|word| word == HIDDEN_FLAG)
+}
+
+/// The command line to store instead of `command` when the app now lives at
+/// `exe` (an in-place update moved it), keeping the hidden choice; `None`
+/// when it already points there.
+pub fn moved_command(command: &str, exe: &Path) -> Option<String> {
+    let old = command_exe(command)?;
+    (old != exe).then(|| run_command(exe, command_hidden(command)))
+}
+
+/// A macOS LaunchAgent that runs the app at `exe` when the user logs in.
+pub fn launch_agent_plist(exe: &Path, hidden: bool) -> String {
+    let escape = |s: &str| {
+        s.replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+    };
+    let mut args = format!("    <string>{}</string>\n", escape(&exe.display().to_string()));
+    if hidden {
+        args.push_str(&format!("    <string>{HIDDEN_FLAG}</string>\n"));
+    }
+    format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\">\n<dict>\n  <key>Label</key>\n  <string>{LAUNCH_AGENT_LABEL}</string>\n  <key>ProgramArguments</key>\n  <array>\n{args}  </array>\n  <key>RunAtLoad</key>\n  <true/>\n</dict>\n</plist>\n"
+    )
+}
+
+/// The LaunchAgent's label, and its file's name without `.plist`.
+pub const LAUNCH_AGENT_LABEL: &str = "dev.morpheus.Morpheus";
+
+#[cfg(target_os = "linux")]
+fn autostart_path() -> Option<PathBuf> {
     let config = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .filter(|dir| dir.is_absolute())
@@ -410,42 +471,169 @@ fn autostart_path() -> Option<PathBuf> {
     Some(config.join("autostart").join("morpheus.desktop"))
 }
 
+#[cfg(target_os = "macos")]
+fn autostart_path() -> Option<PathBuf> {
+    let home = std::env::var_os("HOME")?;
+    Some(
+        PathBuf::from(home)
+            .join("Library")
+            .join("LaunchAgents")
+            .join(format!("{LAUNCH_AGENT_LABEL}.plist")),
+    )
+}
+
 /// The entry's text for `wanted` (the app at `exe`).
 pub fn autostart_entry(exe: &Path, wanted: Autostart) -> String {
-    let mut exec = format!("\"{}\"", exe.display().to_string().replace('"', "\\\""));
-    if wanted.hidden {
-        exec.push(' ');
-        exec.push_str(HIDDEN_FLAG);
-    }
+    let exec = run_command(exe, wanted.hidden);
     format!(
         "[Desktop Entry]\nType=Application\nName=Morpheus\nComment=Matrix chat\nExec={exec}\nIcon=morpheus\nTerminal=false\nX-GNOME-Autostart-enabled=true\n"
     )
 }
 
+/// The `Exec` command of an autostart entry's text.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn entry_exec(text: &str) -> Option<&str> {
+    text.lines().find_map(|line| line.strip_prefix("Exec="))
+}
+
+#[cfg(target_os = "windows")]
+const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
+#[cfg(target_os = "windows")]
+const RUN_VALUE: &str = "Morpheus";
+
 /// What the entry says; `None` where autostart is not supported yet.
 pub fn read_autostart() -> Option<Autostart> {
-    let path = autostart_path()?;
-    Some(match std::fs::read_to_string(path) {
-        Ok(text) => Autostart {
-            enabled: true,
-            hidden: text.contains(HIDDEN_FLAG),
-        },
-        Err(_) => Autostart::default(),
-    })
+    if !AUTOSTART_SUPPORTED {
+        return None;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let value = windows_registry::CURRENT_USER
+            .open(RUN_KEY)
+            .and_then(|key| key.get_string(RUN_VALUE))
+            .ok();
+        Some(match value {
+            Some(command) => Autostart {
+                enabled: true,
+                hidden: command_hidden(&command),
+            },
+            None => Autostart::default(),
+        })
+    }
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    {
+        let path = autostart_path()?;
+        Some(match std::fs::read_to_string(path) {
+            Ok(text) => Autostart {
+                enabled: true,
+                hidden: text.contains(HIDDEN_FLAG),
+            },
+            Err(_) => Autostart::default(),
+        })
+    }
 }
 
 /// Writes (or removes) the entry to match `wanted`.
 pub fn write_autostart(wanted: Autostart) -> std::io::Result<()> {
-    let Some(path) = autostart_path() else {
-        return Err(std::io::Error::other("autostart is not supported here yet"));
+    #[cfg(target_os = "windows")]
+    {
+        let key = windows_registry::CURRENT_USER
+            .create(RUN_KEY)
+            .map_err(std::io::Error::other)?;
+        if wanted.enabled {
+            let command = run_command(&std::env::current_exe()?, wanted.hidden);
+            return key
+                .set_string(RUN_VALUE, command)
+                .map_err(std::io::Error::other);
+        }
+        // Removing a value that is not there is fine.
+        let _ = key.remove_value(RUN_VALUE);
+        Ok(())
+    }
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    {
+        let Some(path) = autostart_path() else {
+            return Err(std::io::Error::other("autostart is not supported here yet"));
+        };
+        if !wanted.enabled {
+            return remove_if_there(&path);
+        }
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        let exe = std::env::current_exe()?;
+        #[cfg(target_os = "macos")]
+        let text = launch_agent_plist(&exe, wanted.hidden);
+        #[cfg(target_os = "linux")]
+        let text = autostart_entry(&exe, wanted);
+        std::fs::write(&path, text)
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+    {
+        let _ = wanted;
+        Err(std::io::Error::other("autostart is not supported here yet"))
+    }
+}
+
+/// The program a LaunchAgent's text runs (its first program argument).
+pub fn launch_agent_exe(plist: &str) -> Option<PathBuf> {
+    let rest = &plist[plist.find("<key>ProgramArguments</key>")?..];
+    let rest = &rest[rest.find("<string>")? + "<string>".len()..];
+    let text = &rest[..rest.find("</string>")?];
+    Some(PathBuf::from(
+        text.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&"),
+    ))
+}
+
+/// Whether an autostart entry that starts `old` should be pointed at `exe`:
+/// the app moved, so `old` is gone. (A dev build or a second copy running
+/// beside a live install leaves the entry alone.)
+fn entry_is_stale(old: Option<PathBuf>, exe: &Path) -> bool {
+    old.is_some_and(|old| old != exe && !old.exists())
+}
+
+/// At startup: if start-on-login is on but points at a place the app has left
+/// (an in-place update moved it), point it at this executable again.
+pub fn refresh_autostart() {
+    // Test runs must not touch the user's real entry.
+    if !AUTOSTART_SUPPORTED || std::env::var_os("MORPHEUS_E2E_PORT").is_some() {
+        return;
+    }
+    let Ok(exe) = std::env::current_exe() else {
+        return;
     };
-    if !wanted.enabled {
-        return remove_if_there(&path);
+    #[cfg(target_os = "windows")]
+    {
+        let Ok(key) = windows_registry::CURRENT_USER.open(RUN_KEY) else {
+            return;
+        };
+        if let Ok(command) = key.get_string(RUN_VALUE)
+            && entry_is_stale(command_exe(&command), &exe)
+            && let Some(new) = moved_command(&command, &exe)
+        {
+            let _ = key.set_string(RUN_VALUE, new);
+        }
     }
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    {
+        let Some(path) = autostart_path() else {
+            return;
+        };
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            return;
+        };
+        let hidden = text.contains(HIDDEN_FLAG);
+        #[cfg(target_os = "linux")]
+        let (old, new) = (
+            entry_exec(&text).and_then(command_exe),
+            autostart_entry(&exe, Autostart { enabled: true, hidden }),
+        );
+        #[cfg(target_os = "macos")]
+        let (old, new) = (launch_agent_exe(&text), launch_agent_plist(&exe, hidden));
+        if entry_is_stale(old, &exe) {
+            let _ = std::fs::write(&path, new);
+        }
     }
-    std::fs::write(&path, autostart_entry(&std::env::current_exe()?, wanted))
 }
 
 // ---- help -------------------------------------------------------------------------
@@ -553,6 +741,60 @@ mod tests {
         assert!(hidden.contains("Exec=\"/opt/morpheus gpui\" --hidden\n"));
         assert!(Autostart { enabled: true, hidden: false }.hidden_selectable());
         assert!(!Autostart::default().hidden_selectable());
+    }
+
+    #[test]
+    fn the_run_command_quotes_the_path_and_adds_the_hidden_flag() {
+        let exe = Path::new(r"C:\Users\Jo Doe\AppData\Local\Morpheus\morpheus-desktop.exe");
+        assert_eq!(
+            run_command(exe, false),
+            r#""C:\Users\Jo Doe\AppData\Local\Morpheus\morpheus-desktop.exe""#
+        );
+        let hidden = run_command(exe, true);
+        assert!(hidden.ends_with(r#".exe" --hidden"#));
+        assert_eq!(command_exe(&hidden), Some(PathBuf::from(exe)));
+        assert!(command_hidden(&hidden));
+        assert!(!command_hidden(&run_command(exe, false)));
+        assert_eq!(command_exe("C:\\x\\a.exe --hidden"), Some(PathBuf::from("C:\\x\\a.exe")));
+        assert_eq!(command_exe("  "), None);
+    }
+
+    #[test]
+    fn a_moved_app_updates_its_run_command_and_keeps_the_hidden_choice() {
+        let old = run_command(Path::new("/old/place/morpheus"), true);
+        let new_exe = Path::new("/new place/morpheus");
+        assert_eq!(
+            moved_command(&old, new_exe),
+            Some(run_command(new_exe, true))
+        );
+        let plain = run_command(Path::new("/old/place/morpheus"), false);
+        assert_eq!(moved_command(&plain, new_exe), Some(run_command(new_exe, false)));
+        // Already pointing here: nothing to change.
+        assert_eq!(moved_command(&run_command(new_exe, true), new_exe), None);
+        assert_eq!(moved_command("", new_exe), None);
+    }
+
+    #[test]
+    fn the_autostart_exec_line_is_found_and_the_launch_agent_names_the_app() {
+        let exe = Path::new("/Applications/Morpheus.app/Contents/MacOS/morpheus-desktop");
+        let entry = autostart_entry(exe, Autostart { enabled: true, hidden: true });
+        assert_eq!(entry_exec(&entry), Some(run_command(exe, true).as_str()));
+        let plist = launch_agent_plist(exe, true);
+        assert!(plist.contains("<key>RunAtLoad</key>\n  <true/>"));
+        assert!(plist.contains("<string>--hidden</string>"));
+        assert_eq!(launch_agent_exe(&plist).as_deref(), Some(exe));
+        assert!(!launch_agent_plist(exe, false).contains("--hidden"));
+    }
+
+    #[test]
+    fn only_an_entry_for_a_place_the_app_left_is_stale() {
+        let here = Path::new("/new/morpheus");
+        assert!(entry_is_stale(Some(PathBuf::from("/no/such/dir/morpheus")), here));
+        // Same place, or an old copy that still exists (a dev build beside an install): left alone.
+        assert!(!entry_is_stale(Some(here.to_owned()), here));
+        let live = std::env::current_exe().unwrap();
+        assert!(!entry_is_stale(Some(live), here));
+        assert!(!entry_is_stale(None, here));
     }
 
     #[test]
