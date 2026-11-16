@@ -63,12 +63,12 @@ fn bar_button(
     )
 }
 
-/// The streamer mode control: shown while the auto-on-share setting is on or
-/// the mode is on. The pill when the mode is on (click turns it off); an
+/// The streamer mode control: shown only while the mode is on or the screen is
+/// shared. The pill when the mode is on (click turns it off); an
 /// eye-off icon when off (click turns it on, clearing a share's override).
 fn streamer_button(shell: &Shell, cx: &mut Context<Shell>) -> Option<impl IntoElement> {
     let on = crate::streamer::active();
-    if !on && !crate::streamer::settings().auto {
+    if !on && !crate::streamer::sharing() {
         return None;
     }
     let toggle = cx.listener(move |this, _, _, cx| {
