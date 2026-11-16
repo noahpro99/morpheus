@@ -1629,6 +1629,9 @@ pub fn message_el(
         main = main.child(reply_quote(reply));
     }
     main = main.child(body_el(row, &m.unique_id, pics, download, links, actions));
+    if let Some(card) = invite_embed(row, links) {
+        main = main.child(card);
+    }
     if !m.reactions.is_empty() {
         main = main.child(reactions_el(&m.reactions, &m.unique_id, actions));
     }
@@ -1960,4 +1963,65 @@ mod tests {
         assert_eq!(image_size(Some(400), Some(1000)), (144.0, 360.0));
         assert_eq!(image_size(None, Some(10)), (320.0, 240.0));
     }
+}
+
+/// A message that links to a room or a server (matrix.to) shows it as an
+/// invite card under its text, like Discord's: the link's name and Join.
+fn invite_embed(row: &MessageRow, links: &LinkHandler) -> Option<AnyElement> {
+    if !matches!(row.message.kind, MessageKind::Text { .. }) {
+        return None;
+    }
+    let (name, url) = row.blocks.iter().find_map(|block| match block {
+        Block::Para(para) => para.links().into_iter().find_map(|(range, url)| {
+            match morpheus_core::parse_matrix_link(&url) {
+                Some(morpheus_core::MatrixLink::Room { event: None, .. }) => {
+                    Some((para.text[range].to_owned(), url))
+                }
+                _ => None,
+            }
+        }),
+        _ => None,
+    })?;
+    let open = links.clone();
+    let target = url.to_string();
+    Some(
+        div()
+            .flex()
+            .items_center()
+            .gap(px(12.0))
+            .mt(px(6.0))
+            .px(px(12.0))
+            .py(px(10.0))
+            .max_w(px(420.0))
+            .rounded(px(theme::RADIUS))
+            .bg(rgb(theme::bg_elevated()))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(rgb(theme::text()))
+                    .child(name.clone())
+                    .e2e("span", "invite-embed-name")
+                    .text(name),
+            )
+            .child(
+                div()
+                    .id("invite-embed-join")
+                    .flex_none()
+                    .px(px(14.0))
+                    .py(px(6.0))
+                    .rounded(px(theme::RADIUS_SM))
+                    .bg(rgb(theme::accent()))
+                    .text_color(rgb(0xffffff))
+                    .cursor_pointer()
+                    .on_click(move |_, _, cx| open(&target, cx))
+                    .child("Join")
+                    .e2e("button", "invite-embed-join")
+                    .text("Join"),
+            )
+            .e2e("div", "invite-embed")
+            .into_any_element(),
+    )
 }

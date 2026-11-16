@@ -205,7 +205,6 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
             // The rest of the header sits at the right: the room's menu, the
             // member list's toggle, the pinned messages.
             header = header.child(div().flex_1());
-            let count = room.member_count.to_string();
             let open = shell.members_open;
             let members_colour = if open {
                 theme::text()
@@ -226,7 +225,6 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                     .cursor_pointer()
                     .on_hover(bar_hover(cx, "member-toggle"))
                     .child(icon("users", 16.0).text_color(rgb(members_colour)))
-                    .child(count.clone())
                     .on_click(cx.listener(|this, _, _, cx| this.toggle_members(cx)))
                     .e2e(
                         "button",
@@ -238,14 +236,12 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                     )
                     .attr("title", "Member list (Ctrl+U)")
                     .attr("data-color", format!("{members_colour:06x}"))
-                    .attr("data-bg", "")
-                    .text(count),
+                    .attr("data-bg", ""),
             );
             // Calls belong to DMs and voice channels, as in Discord.
             if room.is_dm {
                 header = header.child(crate::call_ui::header_call_button(shell, cx, room));
             }
-            let pins = shell.pinned.len();
             let pins_colour = bar_colour(shell, "pin-toggle", theme::text_muted());
             header = header.child(
                 div()
@@ -261,13 +257,11 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                     .cursor_pointer()
                     .on_hover(bar_hover(cx, "pin-toggle"))
                     .child(icon("pin", 16.0).text_color(rgb(pins_colour)))
-                    .child(pins.to_string())
                     .on_click(cx.listener(|this, _, _, cx| this.open_pinned(cx)))
                     .e2e("button", "ghost pin-toggle")
                     .attr("title", "Pinned messages (Ctrl+P)")
                     .attr("data-color", format!("{pins_colour:06x}"))
-                    .attr("data-bg", "")
-                    .text(pins.to_string()),
+                    .attr("data-bg", ""),
             );
             // The search box at the right end: it widens in place while it
             // has the caret or text; Enter shows the results in the side
@@ -414,7 +408,7 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                         .flex_col()
                         .pt(px(8.0))
                         .pr(px(8.0))
-                        .pb(px(8.0))
+                        .pb(px(theme::BOTTOM_GAP))
                         .child(
                             div()
                                 .flex()

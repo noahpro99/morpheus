@@ -354,6 +354,13 @@ impl RoomDialog {
             cx.notify();
             return;
         }
+        // A server's invite also lands in your DM with them as a card.
+        let server = self
+            .rooms
+            .iter()
+            .find(|r| r.id == room && r.is_space)
+            .map(|r| (r.name.clone(), room.clone()));
+        let session = self.session.clone();
         let inviting = self.session.invite(room, user.clone());
         self.run(inviting, cx, move |this, result, cx| {
             let state = match &result {
@@ -362,6 +369,22 @@ impl RoomDialog {
             };
             if let Some(picker) = &this.picker {
                 picker.update(cx, |picker, cx| picker.set_state(&user, Some(state), cx));
+            }
+            if let (Ok(()), Some((name, space))) = (&result, server) {
+                let dm_user = user.clone();
+                let home = session.user_id().map(|u| u.server_name().to_string());
+                cx.spawn(async move |_, _| {
+                    let sent = async {
+                        let dm = session.dm_with(dm_user).await?;
+                        let link = crate::call_invite::channel_link(&space, home.as_deref());
+                        session.say(dm, format!("Join me in [{name}]({link})")).await
+                    }
+                    .await;
+                    if let Err(err) = sent {
+                        eprintln!("morpheus-desktop: server invite card not sent: {err}");
+                    }
+                })
+                .detach();
             }
             this.note = Some(match result {
                 Ok(()) => {

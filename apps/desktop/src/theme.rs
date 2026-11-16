@@ -182,7 +182,9 @@ pub const RADIUS_XL: f32 = 16.0;
 pub const RAIL_W: f32 = 72.0;
 pub const SIDEBAR_W: f32 = 248.0;
 pub const BOTTOM_H: f32 = 50.0;
-pub const BOTTOM_GAP: f32 = 12.0;
+/// The gap under the message box, the user panel and the member list: one
+/// shared bottom edge.
+pub const BOTTOM_GAP: f32 = 8.0;
 /// `--mono`.
 /// Text on the F3 stats overlay, which always sits on a dark translucent panel
 /// whatever the theme.
