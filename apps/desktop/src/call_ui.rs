@@ -116,10 +116,7 @@ pub fn room_call(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -> 
     let in_this = shell.calls.in_call(&room.id);
     let me = shell.session.as_ref().and_then(|s| s.user_id());
     // Just hung up: the server has not said so yet, the list already does.
-    let mut participants = room.call_participants.clone();
-    if !in_this && shell.calls.just_left(&room.id) {
-        participants.retain(|user| Some(user) != me.as_ref());
-    }
+    let participants = shell.call_shown(room);
     if participants.is_empty() && !in_this {
         return None;
     }

@@ -129,6 +129,7 @@ impl Session {
                 // If this device vanishes (crash, battery, network), the
                 // homeserver hangs up for it: a leave is scheduled now and
                 // postponed for as long as the app keeps checking in.
+                let _writing = membership_writes(&user_id, &room_id).lock_owned().await;
                 stop_heartbeat(&user_id, &room_id);
                 let content = member_content(&room_id, &device_id, &first_service);
                 // Kept, so the media state can be added to it later.
@@ -172,15 +173,22 @@ impl Session {
             if credentials.service_url != first_service {
                 // The first service refused: the membership names the one that answered.
                 let content = member_content(&room_id, &device_id, &credentials.service_url);
-                if let (Ok(value), Ok(mut kept)) =
-                    (serde_json::to_value(&content), memberships().lock())
-                {
-                    kept.insert(
-                        (user_id.clone(), room_id.clone()),
-                        (state_key.as_ref().to_owned(), value),
-                    );
+                let _writing = membership_writes(&user_id, &room_id).lock_owned().await;
+                // Not if a hang-up came meanwhile (it took the membership):
+                // that would put this device back in the call.
+                let still_in = memberships().lock().is_ok_and(|mut kept| {
+                    let key = (user_id.clone(), room_id.clone());
+                    if !kept.contains_key(&key) {
+                        return false;
+                    }
+                    if let Ok(value) = serde_json::to_value(&content) {
+                        kept.insert(key, (state_key.as_ref().to_owned(), value));
+                    }
+                    true
+                });
+                if still_in {
+                    room.send_state_event_for_key(&state_key, content).await?;
                 }
-                room.send_state_event_for_key(&state_key, content).await?;
             }
             if encrypted {
                 use rand::RngCore as _;
@@ -211,6 +219,10 @@ impl Session {
             if let Ok(mut kept) = memberships().lock() {
                 kept.remove(&(user_id.clone(), room_id.clone()));
             }
+            // After any membership write already on its way (a media state
+            // update sent just before hanging up must not land after the
+            // leave, putting this device back in the call for hours).
+            let _writing = membership_writes(&user_id, &room_id).lock_owned().await;
             // The scheduled leave, sent now: one request, so nothing is lost if
             // the app dies right after (cancelling it and then sending a leave
             // could leave a ghost for hours).
@@ -1721,6 +1733,26 @@ fn memberships() -> &'static Memberships {
     MEMBERSHIPS.get_or_init(Default::default)
 }
 
+type MembershipWrites =
+    Mutex<HashMap<(OwnedUserId, OwnedRoomId), Arc<tokio::sync::Mutex<()>>>>;
+
+/// This device's membership in a room's call is written one request at a
+/// time, in the order asked (tokio's lock is first come, first served): the
+/// join, media state updates, the leave. Sent side by side, a media state
+/// update from just before a hang-up could reach the homeserver after the
+/// leave and put this device back in the call until it expires (#110).
+fn membership_writes(user_id: &OwnedUserId, room_id: &OwnedRoomId) -> Arc<tokio::sync::Mutex<()>> {
+    static WRITES: OnceLock<MembershipWrites> = OnceLock::new();
+    let mut writes = WRITES
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    writes
+        .entry((user_id.clone(), room_id.clone()))
+        .or_default()
+        .clone()
+}
+
 /// Each person in a room's call with the media state they publish (a person
 /// on several devices: any device's camera or screen; muted only if all are).
 pub(crate) async fn call_media(room: &matrix_sdk::Room) -> Vec<(OwnedUserId, CallMedia)> {
@@ -1770,6 +1802,9 @@ impl Session {
         self.core.run(async move {
             let room = session.room(&room_id)?;
             let user_id = session.client.user_id().ok_or(Error::NoSession)?.to_owned();
+            // In turn with the join and the leave; read under it, so nothing
+            // goes out once this device has hung up.
+            let _writing = membership_writes(&user_id, &room_id).lock_owned().await;
             let kept = memberships()
                 .lock()
                 .ok()
@@ -2041,6 +2076,9 @@ async fn leave_now(
     if let Ok(mut kept) = memberships().lock() {
         kept.remove(&(user_id.clone(), room.room_id().to_owned()));
     }
+    let _writing = membership_writes(user_id, &room.room_id().to_owned())
+        .lock_owned()
+        .await;
     if let Some(delay_id) = stop_heartbeat(user_id, &room.room_id().to_owned())
         && update_delay(client, delay_id, UpdateAction::Send).await.is_ok()
     {

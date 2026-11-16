@@ -240,24 +240,29 @@ pub fn scope_has_unread(rooms: &[RoomSummary], scope: &Scope) -> bool {
 }
 
 /// Whether someone is in a call in a scope's voice channels (or DMs): the
-/// speaker badge on its rail icon.
-pub fn scope_has_call(rooms: &[RoomSummary], scope: &Scope) -> bool {
+/// speaker badge on its rail icon. `has_call` says whether a room has one
+/// to show (`Shell::has_call_shown`: a call just hung up is gone at once).
+pub fn scope_has_call(
+    rooms: &[RoomSummary],
+    scope: &Scope,
+    has_call: impl Fn(&RoomSummary) -> bool,
+) -> bool {
     match scope {
         Scope::Space(space_id) => {
             if let Some(space_room) = rooms.iter().find(|r| &r.id == space_id) {
                 if rooms.iter().any(|r| {
-                    space_room.space_children.contains(&r.id) && !r.call_participants.is_empty()
+                    space_room.space_children.contains(&r.id) && has_call(r)
                 }) {
                     return true;
                 }
             }
             rooms_in_scope(rooms, scope)
                 .iter()
-                .any(|room| !room.call_participants.is_empty())
+                .any(|room| has_call(room))
         }
         _ => rooms_in_scope(rooms, scope)
             .iter()
-            .any(|room| !room.call_participants.is_empty()),
+            .any(|room| has_call(room)),
     }
 }
 
@@ -388,10 +393,11 @@ pub mod tests {
         space.space_children = vec![channel.id.clone()];
         let scope = Scope::Space(space.id.clone());
 
-        assert!(!scope_has_call(&[space.clone(), channel.clone()], &scope));
+        let has_call = |r: &RoomSummary| !r.call_participants.is_empty();
+        assert!(!scope_has_call(&[space.clone(), channel.clone()], &scope, has_call));
         channel
             .call_participants
             .push(morpheus_core::OwnedUserId::try_from("@bob:x").unwrap());
-        assert!(scope_has_call(&[space, channel], &scope));
+        assert!(scope_has_call(&[space, channel], &scope, has_call));
     }
 }

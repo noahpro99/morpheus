@@ -17,7 +17,7 @@ use futures::FutureExt as _;
 use gpui::{AsyncApp, Context, WeakEntity};
 use morpheus_call::{AudioMode, Call, CallEvent, LOCAL_CAMERA, LOCAL_SCREEN};
 use morpheus_core::{
-    CallMedia, IncomingCall, MediaRef, OwnedRoomId, OwnedUserId, Ringing, Session,
+    CallMedia, IncomingCall, MediaRef, OwnedRoomId, OwnedUserId, Ringing, RoomSummary, Session,
 };
 
 use crate::{
@@ -143,6 +143,36 @@ impl Calls {
 }
 
 impl Shell {
+    /// Who `room`'s call shows: the server's list, less this account right
+    /// after it hung up there (the list, and the badges on the rail).
+    pub fn call_shown(&self, room: &RoomSummary) -> Vec<OwnedUserId> {
+        let me = self.session.as_ref().and_then(|s| s.user_id());
+        crate::view_model::calls::shown_participants(
+            room,
+            me.as_ref(),
+            self.calls.in_call(&room.id),
+            self.calls.just_left(&room.id),
+        )
+    }
+
+    /// The server has said this account left: its call lists go by the
+    /// server again (so another device of yours joining shows at once).
+    pub fn forget_confirmed_leaves(&mut self) {
+        let me = self.session.as_ref().and_then(|s| s.user_id());
+        let rooms = &self.rooms;
+        self.calls.left.retain(|(left, _)| {
+            rooms
+                .iter()
+                .find(|r| &r.id == left)
+                .is_some_and(|r| me.as_ref().is_some_and(|me| r.call_participants.contains(me)))
+        });
+    }
+
+    /// Whether `room` has a call to show (see [`Self::call_shown`]).
+    pub fn has_call_shown(&self, room: &RoomSummary) -> bool {
+        !room.call_participants.is_empty() && !self.call_shown(room).is_empty()
+    }
+
     /// A sound: noted, and played where there is sound.
     pub fn chime(&mut self, sound: Sound) {
         self.calls.sounds.push(sound.key());
@@ -891,8 +921,10 @@ async fn leave_media(session: &Session, room: OwnedRoomId, call: Option<Call>) {
     }
 }
 
-/// How long a hung-up room's list hides this account while the server catches up.
-const LEFT_FOR_MS: u64 = 10_000;
+/// How long a hung-up room's list and badges hide this account at most while
+/// the server catches up: until its sync says so ([`Shell::forget_confirmed_leaves`]),
+/// which on a busy homeserver (matrix.org) can take well over ten seconds.
+const LEFT_FOR_MS: u64 = 60_000;
 
 /// How long quitting waits to hang up cleanly before it ends the app anyway.
 const QUIT_LEAVE_FOR: Duration = Duration::from_secs(2);

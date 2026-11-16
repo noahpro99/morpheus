@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use futures_util::{StreamExt, pin_mut};
 use matrix_sdk_ui::timeline::RoomExt as _;
 
@@ -27,6 +29,24 @@ const VOICE_ROOM_TYPES: [&str; 2] = ["org.matrix.msc3417.call", "io.element.vide
 
 /// How many rooms the room list fetches at a time (more pages follow while it is full).
 const PAGE_SIZE: usize = 200;
+
+/// How often the room list looks for call memberships that ran out.
+const CALL_EXPIRY_CHECK: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Remember who the call of each room in `diff` lists.
+fn note_calls(diff: &VectorDiff<RoomSummary>, in_calls: &mut HashMap<OwnedRoomId, Vec<OwnedUserId>>) {
+    let mut note = |room: &RoomSummary| {
+        in_calls.insert(room.id.clone(), room.call_participants.clone());
+    };
+    match diff {
+        VectorDiff::Append { values } | VectorDiff::Reset { values } => values.iter().for_each(note),
+        VectorDiff::PushFront { value }
+        | VectorDiff::PushBack { value }
+        | VectorDiff::Insert { value, .. }
+        | VectorDiff::Set { value, .. } => note(value),
+        _ => {}
+    }
+}
 
 /// A UI-friendly snapshot of one room in the list.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -319,8 +339,46 @@ impl Session {
                 // keep asking while it is full, so every room is listed.
                 let mut len = 0usize;
                 let mut limit = PAGE_SIZE;
+                // The rooms as listed, and who each one's call listed: a
+                // call membership runs out (a device that vanished without
+                // hanging up, on a homeserver without delayed leaves) with
+                // nothing from the server to say so, so calls are looked
+                // at again now and then and the room's entry redone.
+                let mut shown: imbl::Vector<Room> = imbl::Vector::new();
+                let mut in_calls: HashMap<OwnedRoomId, Vec<OwnedUserId>> = HashMap::new();
+                let mut next_check = crate::rt::Instant::now() + CALL_EXPIRY_CHECK;
 
-                while let Some(diffs) = stream.next().await {
+                loop {
+                    let wait = next_check.saturating_duration_since(crate::rt::Instant::now());
+                    let diffs = tokio::select! {
+                        diffs = stream.next() => match diffs {
+                            Some(diffs) => diffs,
+                            None => break,
+                        },
+                        () = crate::rt::sleep(wait) => {
+                            next_check = crate::rt::Instant::now() + CALL_EXPIRY_CHECK;
+                            let mut redone = Vec::new();
+                            for (index, room) in shown.iter().enumerate() {
+                                let listed = in_calls.get(room.room_id());
+                                if listed.is_none_or(Vec::is_empty)
+                                    || listed == Some(&crate::calls::call_participants(room))
+                                {
+                                    continue;
+                                }
+                                let settings = client.notification_settings().await;
+                                let value = RoomSummary::from_room(room.clone(), &settings).await;
+                                in_calls.insert(value.id.clone(), value.call_participants.clone());
+                                redone.push(VectorDiff::Set { index, value });
+                            }
+                            if !redone.is_empty() && tx.send(redone).is_err() {
+                                break;
+                            }
+                            continue;
+                        }
+                    };
+                    for diff in &diffs {
+                        diff.clone().map(|item| item.into_inner()).apply(&mut shown);
+                    }
                     for diff in &diffs {
                         len = match diff {
                             VectorDiff::Append { values } => len + values.len(),
@@ -350,6 +408,9 @@ impl Session {
                             })
                             .await,
                         );
+                    }
+                    for diff in &mapped {
+                        note_calls(diff, &mut in_calls);
                     }
                     if tx.send(mapped).is_err() {
                         debug!("room list consumer dropped, stopping");

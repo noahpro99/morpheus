@@ -333,7 +333,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
     .track(shell, cx);
     let in_call = in_call_in_scope(shell, &Scope::Dms);
     let dms = Badge {
-        call: in_call || scope_has_call(rooms, &Scope::Dms),
+        call: in_call || scope_has_call(rooms, &Scope::Dms, |r| shell.has_call_shown(r)),
         in_call,
         ..dms
     };
@@ -484,7 +484,11 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                 badge.call = badge.in_call
                     || members
                         .iter()
-                        .any(|s| scope_has_call(rooms, &Scope::Space(s.id.clone())));
+                        .any(|s| {
+                            scope_has_call(rooms, &Scope::Space(s.id.clone()), |r| {
+                                shell.has_call_shown(r)
+                            })
+                        });
                 badge.context = Some({
                     let (view, id) = (cx.entity(), id.clone());
                     Rc::new(move |at, _, cx| {
@@ -675,7 +679,10 @@ fn space_badge(
     )
     .track(shell, cx);
     badge.in_call = in_call_in_scope(shell, &Scope::Space(space.id.clone()));
-    badge.call = badge.in_call || scope_has_call(&shell.rooms, &Scope::Space(space.id.clone()));
+    badge.call = badge.in_call
+        || scope_has_call(&shell.rooms, &Scope::Space(space.id.clone()), |r| {
+            shell.has_call_shown(r)
+        });
     badge.extra.push(("data-space", space.id.to_string()));
     if let Some(index) = index {
         badge.extra.push(("data-index", index.to_string()));

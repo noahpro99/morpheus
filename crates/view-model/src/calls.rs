@@ -436,6 +436,24 @@ pub fn ringing_out(call: Option<&CallState>, rooms: &[RoomSummary], me: Option<&
     })
 }
 
+/// Who a room's call shows: what the server last said, less this account
+/// where it has just hung up (`just_left`, and not back in it: `in_this`).
+/// The leave reaches the server at once, but the sync saying so comes a
+/// round trip or more later; until then the list and the badges on the
+/// rail already go by the hang-up (#110).
+pub fn shown_participants(
+    room: &RoomSummary,
+    me: Option<&OwnedUserId>,
+    in_this: bool,
+    just_left: bool,
+) -> Vec<OwnedUserId> {
+    let mut shown = room.call_participants.clone();
+    if just_left && !in_this {
+        shown.retain(|user| Some(user) != me);
+    }
+    shown
+}
+
 /// The call button in a room's header: what its tooltip says.
 pub fn call_button_title(in_this_call: bool, someone_there: bool) -> &'static str {
     if in_this_call {
@@ -864,6 +882,27 @@ mod tests {
             .map(|u| OwnedUserId::try_from(*u).expect("user id"))
             .collect();
         r
+    }
+
+    #[test]
+    fn a_hang_up_shows_at_once_before_the_server_says_so() {
+        let me = OwnedUserId::try_from("@me:x").expect("user id");
+        let mut voice = room("!v:x", "voice");
+        voice.call_participants = vec![me.clone(), user("bob")];
+        // In the call: as the server says.
+        assert_eq!(shown_participants(&voice, Some(&me), true, false).len(), 2);
+        // Just hung up: gone at once, bob still there.
+        assert_eq!(
+            shown_participants(&voice, Some(&me), false, true),
+            [user("bob")]
+        );
+        // Alone in it: no call left to show (the server's badge goes too).
+        voice.call_participants = vec![me.clone()];
+        assert!(shown_participants(&voice, Some(&me), false, true).is_empty());
+        // Back in it: shown again.
+        assert_eq!(shown_participants(&voice, Some(&me), true, true), [me.clone()]);
+        // Not hung up here (another device of mine is in it): shown.
+        assert_eq!(shown_participants(&voice, Some(&me), false, false), [me]);
     }
 
     #[test]

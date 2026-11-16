@@ -264,6 +264,7 @@ impl Shell {
                             apply(&mut this.rooms, diff);
                         }
                         crate::model::adopt_children(&mut this.rooms);
+                        this.forget_confirmed_leaves();
                         this.share_servers_with_card(cx);
                         this.keep_joined_here();
                         this.reopen_closed(cx);
