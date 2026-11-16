@@ -163,7 +163,7 @@ try {
         if ((Near $c.Left $work.Left 1) -and (Near $c.Top $work.Top 1) -and (Near $c.Right $work.Right 1) -and (Near $c.Bottom $work.Bottom 1)) {
             Ok "$how maximises onto the work area exactly (no overflow by the frame)"
         } else {
-            Fail "$how: the maximised client area is not the work area"
+            Fail "${how}: the maximised client area is not the work area"
         }
     }
 
