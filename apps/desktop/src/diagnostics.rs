@@ -471,7 +471,7 @@ impl Shell {
             .sections
             .iter()
             .flat_map(|s| s.lines.iter())
-            .map(|(label, value)| line_element(label, value, 0xf2f3f5))
+            .map(|(label, value)| line_element(label, value, theme::OVERLAY_TEXT))
             .collect::<Vec<_>>();
         Some(
             div()

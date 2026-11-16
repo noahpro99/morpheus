@@ -184,6 +184,10 @@ pub const SIDEBAR_W: f32 = 248.0;
 pub const BOTTOM_H: f32 = 50.0;
 pub const BOTTOM_GAP: f32 = 12.0;
 /// `--mono`.
+/// Text on the F3 stats overlay, which always sits on a dark translucent panel
+/// whatever the theme.
+pub const OVERLAY_TEXT: u32 = 0xf2f3f5;
+
 pub const MONO: &str = "JetBrains Mono";
 /// What body text is: Inter at `html { font-size: 15px; line-height: 1.4 }`.
 pub const LINE_HEIGHT: f32 = 1.4;
