@@ -59,6 +59,12 @@ pub struct CustomColourChosen(pub u32);
 
 impl EventEmitter<CustomColourChosen> for SettingsView {}
 
+/// A custom colour is being dragged to: the shell shows it now and keeps it on release
+/// (as [`CustomColourChosen`]).
+pub struct CustomColourLive(pub u32);
+
+impl EventEmitter<CustomColourLive> for SettingsView {}
+
 /// A streamer mode choice was kept: the shell draws again.
 pub struct StreamerChanged;
 
@@ -155,6 +161,11 @@ pub struct SettingsView {
     pub theme: Theme,
     /// The custom colour in use, and the box it is typed in.
     pub custom: Option<u32>,
+    /// The custom colour as hue, saturation and value: kept apart so a grey keeps its hue
+    /// while the sliders move.
+    hsv: (f32, f32, f32),
+    /// A slider is being dragged (the colour is shown, not yet kept).
+    hsv_dragging: bool,
     colour_input: Entity<TextInput>,
     data_dir: std::path::PathBuf,
     /// The devices to pick from (None while looking), what is chosen, and
@@ -195,9 +206,61 @@ impl SettingsView {
     /// Show the custom colour the account has (the shell tells us).
     pub fn set_custom_shown(&mut self, colour: Option<u32>, cx: &mut Context<Self>) {
         self.custom = colour;
+        if let Some(colour) = colour {
+            self.sync_hsv(colour);
+        }
         let text = colour.map(crate::view_model::theme::hex).unwrap_or_default();
         self.colour_input.update(cx, |input, cx| input.set_value(&text, cx));
         self.redraw_inputs(cx);
+    }
+
+    /// Keep the sliders' hue and saturation when `colour` is what they already make
+    /// (a grey has no hue of its own), else read them from it.
+    fn sync_hsv(&mut self, colour: u32) {
+        use crate::view_model::theme::{from_hsv, to_hsv};
+        let (h, s, v) = self.hsv;
+        if from_hsv(h, s, v) != colour {
+            self.hsv = to_hsv(colour);
+        }
+    }
+
+    /// A slider (0 hue, 1 saturation, 2 value) dragged to `fraction` of its track: the
+    /// colour shows at once, and is kept when `commit` (the button let go).
+    pub(crate) fn drag_hsv(&mut self, which: usize, fraction: Option<f32>, commit: bool, cx: &mut Context<Self>) {
+        use crate::view_model::theme::{DARK, from_hsv, hex, to_hsv};
+        let fraction = fraction.map(|f| f.clamp(0.0, 1.0));
+        let mut hsv = self.hsv;
+        match (which, fraction) {
+            (0, Some(f)) => hsv.0 = f * 360.0,
+            (1, Some(f)) => hsv.1 = f,
+            (_, Some(f)) => hsv.2 = f,
+            // No position: back to the default theme's value for this slider.
+            (0, None) => hsv.0 = to_hsv(DARK.bg_chat).0,
+            (1, None) => hsv.1 = to_hsv(DARK.bg_chat).1,
+            (_, None) => hsv.2 = to_hsv(DARK.bg_chat).2,
+        }
+        self.hsv = hsv;
+        self.hsv_dragging = !commit;
+        let colour = from_hsv(hsv.0, hsv.1, hsv.2);
+        self.custom = Some(colour);
+        let text = hex(colour);
+        self.colour_input.update(cx, |input, cx| input.set_value(&text, cx));
+        self.redraw_inputs(cx);
+        if commit {
+            cx.emit(CustomColourChosen(colour));
+        } else {
+            cx.emit(CustomColourLive(colour));
+        }
+        cx.notify();
+    }
+
+    /// The button came up after a slider drag: keep the colour shown.
+    pub(crate) fn keep_custom(&mut self, cx: &mut Context<Self>) {
+        if std::mem::take(&mut self.hsv_dragging)
+            && let Some(colour) = self.custom
+        {
+            cx.emit(CustomColourChosen(colour));
+        }
     }
 
     /// A colour picked from the grid (or typed): apply it.
@@ -235,6 +298,7 @@ impl SettingsView {
                 && this.custom != Some(colour)
             {
                 this.custom = Some(colour);
+                this.sync_hsv(colour);
                 cx.emit(CustomColourChosen(colour));
                 this.redraw_inputs(cx);
                 cx.notify();
@@ -292,6 +356,8 @@ impl SettingsView {
             startup_note: None,
             theme: Theme::Dark,
             custom: None,
+            hsv: crate::view_model::theme::to_hsv(crate::view_model::theme::DARK.bg_chat),
+            hsv_dragging: false,
             colour_input,
             data_dir,
             voice: None,

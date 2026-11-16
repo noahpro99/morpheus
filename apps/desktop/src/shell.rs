@@ -330,6 +330,14 @@ impl Shell {
         .detach();
         cx.subscribe(
             &settings,
+            |_, _, live: &crate::settings::CustomColourLive, cx| {
+                crate::theme::set_custom(Some(live.0));
+                cx.refresh_windows();
+            },
+        )
+        .detach();
+        cx.subscribe(
+            &settings,
             |this, _, chosen: &crate::settings::CustomColourChosen, cx| {
                 crate::theme::set_custom(Some(chosen.0));
                 cx.refresh_windows();

@@ -210,6 +210,41 @@ pub fn from_hsl(h: f32, s: f32, l: f32) -> u32 {
     pack([(r + m) * 255.0, (g + m) * 255.0, (b + m) * 255.0])
 }
 
+/// A colour as hue (degrees, 0 up to 360), saturation and value (0 to 1).
+pub fn to_hsv(c: u32) -> (f32, f32, f32) {
+    let [r, g, b] = channels(c).map(|v| v / 255.0);
+    let (max, min) = (r.max(g).max(b), r.min(g).min(b));
+    let d = max - min;
+    if d == 0.0 {
+        return (0.0, 0.0, max);
+    }
+    let h = if max == r {
+        ((g - b) / d).rem_euclid(6.0)
+    } else if max == g {
+        (b - r) / d + 2.0
+    } else {
+        (r - g) / d + 4.0
+    };
+    (h * 60.0, d / max, max)
+}
+
+/// A colour from hue (degrees; 360 is 0), saturation and value (0 to 1, clamped).
+pub fn from_hsv(h: f32, s: f32, v: f32) -> u32 {
+    let (s, v) = (s.clamp(0.0, 1.0), v.clamp(0.0, 1.0));
+    let c = v * s;
+    let x = c * (1.0 - ((h / 60.0).rem_euclid(2.0) - 1.0).abs());
+    let m = v - c;
+    let (r, g, b) = match (h.rem_euclid(360.0) / 60.0) as u32 {
+        0 => (c, x, 0.0),
+        1 => (x, c, 0.0),
+        2 => (0.0, c, x),
+        3 => (0.0, x, c),
+        4 => (x, 0.0, c),
+        _ => (c, 0.0, x),
+    };
+    pack([(r + m) * 255.0, (g + m) * 255.0, (b + m) * 255.0])
+}
+
 /// `0xRRGGBBAA` laid over the opaque `bg`: what shows where a translucent wash is drawn.
 pub fn over(rgba: u32, bg: u32) -> u32 {
     mix(bg, rgba >> 8, (rgba & 0xff) as f32 / 255.0)
@@ -386,6 +421,37 @@ mod tests {
     fn luminance(rgb: u32) -> u32 {
         let (r, g, b) = ((rgb >> 16) & 0xff, (rgb >> 8) & 0xff, rgb & 0xff);
         r + g + b
+    }
+
+    #[test]
+    fn hsv_converts_primaries_greys_and_the_ends_of_the_hue() {
+        assert_eq!(from_hsv(0.0, 1.0, 1.0), 0xff0000);
+        assert_eq!(from_hsv(120.0, 1.0, 1.0), 0x00ff00);
+        assert_eq!(from_hsv(240.0, 1.0, 1.0), 0x0000ff);
+        assert_eq!(from_hsv(360.0, 1.0, 1.0), from_hsv(0.0, 1.0, 1.0));
+        assert_eq!(from_hsv(77.0, 0.0, 0.5), 0x808080);
+        assert_eq!(from_hsv(10.0, 1.0, 0.0), 0x000000);
+        assert_eq!(to_hsv(0xff0000), (0.0, 1.0, 1.0));
+        assert_eq!(to_hsv(0x808080).1, 0.0);
+        assert_eq!(to_hsv(0x000000), (0.0, 0.0, 0.0));
+        assert_eq!(to_hsv(0xffffff), (0.0, 0.0, 1.0));
+        assert_eq!(to_hsv(0x0000ff), (240.0, 1.0, 1.0));
+        // Out of range is clamped.
+        assert_eq!(from_hsv(0.0, 2.0, 3.0), 0xff0000);
+    }
+
+    #[test]
+    fn hsv_round_trips_every_colour_on_a_sweep() {
+        for r in (0..=255u32).step_by(15) {
+            for g in (0..=255u32).step_by(15) {
+                for b in (0..=255u32).step_by(15) {
+                    let c = (r << 16) | (g << 8) | b;
+                    let (h, s, v) = to_hsv(c);
+                    assert!((0.0..360.0).contains(&h), "{c:06x} hue {h}");
+                    assert_eq!(from_hsv(h, s, v), c, "{c:06x}");
+                }
+            }
+        }
     }
 
     #[test]

@@ -1672,6 +1672,144 @@ fn colour_grid() -> Vec<Vec<u32>> {
 }
 
 impl SettingsView {
+    /// One of Appearance's colour sliders (`which` 0 hue, 1 saturation, 2 value): a
+    /// gradient `track`, a handle at `fraction`, dragged to change the colour live
+    /// (kept on release) and reset by a double click.
+    fn hsv_slider(
+        &self,
+        which: usize,
+        name: &'static str,
+        label: &'static str,
+        fraction: f32,
+        shown: String,
+        track: AnyElement,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        use std::rc::Rc;
+        let bar: Rc<std::cell::Cell<gpui::Bounds<gpui::Pixels>>> = Rc::default();
+        let at = {
+            let bar = bar.clone();
+            move |x: gpui::Pixels| -> Option<f32> {
+                let bounds = bar.get();
+                let width = f32::from(bounds.size.width);
+                (width > 0.0).then(|| f32::from(x - bounds.origin.x) / width)
+            }
+        };
+        let move_at = at.clone();
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(4.0))
+            .w_full()
+            .child(
+                div()
+                    .flex()
+                    .justify_between()
+                    .text_size(px(0.85 * theme::REM))
+                    .text_color(rgb(theme::text_muted()))
+                    .child(label)
+                    .child(div().text_color(rgb(theme::text_faint())).child(shown)),
+            )
+            .child(
+                div()
+                    .relative()
+                    .w_full()
+                    .h(px(20.0))
+                    .flex()
+                    .items_center()
+                    .cursor_pointer()
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+                            cx.stop_propagation();
+                            if event.click_count >= 2 {
+                                this.drag_hsv(which, None, true, cx);
+                            } else if let Some(f) = at(event.position.x) {
+                                this.drag_hsv(which, Some(f), false, cx);
+                            }
+                        }),
+                    )
+                    .on_mouse_move(
+                        cx.listener(move |this, event: &gpui::MouseMoveEvent, _, cx| {
+                            if event.pressed_button == Some(MouseButton::Left)
+                                && let Some(f) = move_at(event.position.x)
+                            {
+                                this.drag_hsv(which, Some(f), false, cx);
+                            }
+                        }),
+                    )
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(move |this, _: &gpui::MouseUpEvent, _, cx| this.keep_custom(cx)),
+                    )
+                    .on_mouse_up_out(
+                        MouseButton::Left,
+                        cx.listener(move |this, _: &gpui::MouseUpEvent, _, cx| this.keep_custom(cx)),
+                    )
+                    .child(
+                        canvas(move |bounds, _, _| bar.set(bounds), |_, _, _, _| {})
+                            .absolute()
+                            .inset_0(),
+                    )
+                    .child(
+                        div()
+                            .relative()
+                            .w_full()
+                            .h(px(10.0))
+                            .child(track)
+                            .child(crate::menu::slider_handle(fraction, 1.0)),
+                    )
+                    .e2e("div", &format!("hsv-slider {name}"))
+                    .attr("data-value", {
+                        let scale = if which == 0 { 360.0 } else { 100.0 };
+                        ((fraction * scale).round() as i32).to_string()
+                    }),
+            )
+            .into_any_element()
+    }
+
+    /// The three HSV sliders for the colour being made.
+    fn hsv_sliders(&self, cx: &mut Context<Self>) -> AnyElement {
+        use crate::view_model::theme::from_hsv;
+        let (h, s, v) = self.hsv;
+        let track = |stops: Vec<(u32, u32)>| -> AnyElement {
+            div()
+                .absolute()
+                .inset_0()
+                .flex()
+                .rounded_full()
+                .overflow_hidden()
+                .children(stops.into_iter().map(|(from, to)| {
+                    div().h_full().flex_1().bg(gpui::linear_gradient(
+                        90.0,
+                        gpui::linear_color_stop(rgb(from), 0.0),
+                        gpui::linear_color_stop(rgb(to), 1.0),
+                    ))
+                }))
+                .into_any_element()
+        };
+        let rainbow = track(
+            (0..6)
+                .map(|i| {
+                    (
+                        from_hsv(i as f32 * 60.0, 1.0, 1.0),
+                        from_hsv((i + 1) as f32 * 60.0, 1.0, 1.0),
+                    )
+                })
+                .collect(),
+        );
+        let saturation = track(vec![(from_hsv(h, 0.0, v), from_hsv(h, 1.0, v))]);
+        let value = track(vec![(0x000000, from_hsv(h, s, 1.0))]);
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(6.0))
+            .child(self.hsv_slider(0, "hue", "Hue", h / 360.0, format!("{}", h.round() as i32), rainbow, cx))
+            .child(self.hsv_slider(1, "sat", "Saturation", s, format!("{}%", (s * 100.0).round() as i32), saturation, cx))
+            .child(self.hsv_slider(2, "val", "Value", v, format!("{}%", (v * 100.0).round() as i32), value, cx))
+            .into_any_element()
+    }
+
     /// Appearance's custom colour: a hex box, a grid to pick from and the preview.
     fn custom_colour_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = self
@@ -1700,6 +1838,7 @@ impl SettingsView {
                 "muted",
             ))
             .child(div().w(px(180.0)).child(self.colour_input.clone()))
+            .child(self.hsv_sliders(cx))
             .child(grid)
             .e2e("div", "custom-colour");
         section(
