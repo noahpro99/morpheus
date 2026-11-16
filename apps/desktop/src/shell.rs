@@ -668,11 +668,17 @@ impl Shell {
                 |this: &mut Self, _, event: &FriendsEvent, cx| match event {
                     FriendsEvent::OpenDm(id) => this.open_dm_when_listed(id.clone(), cx),
                     FriendsEvent::Remove(user) => this.set_friend(user.clone(), false, cx),
+                    FriendsEvent::Add(user) => this.set_friend(user.clone(), true, cx),
                     FriendsEvent::Failed(what, err) => this.fail(what, err, cx),
                 },
             )
             .detach();
             self.friends_page = Some(page);
+        } else if !self.friends_open
+            && let Some(page) = &self.friends_page
+        {
+            // Back after leaving: the rows removed before are gone.
+            page.update(cx, |page, cx| page.clear_removed(cx));
         }
         self.friends_open = true;
         cx.notify();

@@ -30,6 +30,8 @@ pub enum FriendsEvent {
     OpenDm(OwnedRoomId),
     /// Take someone off the list.
     Remove(OwnedUserId),
+    /// Put someone back on the list (Undo).
+    Add(OwnedUserId),
     /// A background action failed: what it was, and why.
     Failed(&'static str, String),
 }
@@ -49,7 +51,14 @@ pub struct FriendsPage {
     avatars: Avatars,
     /// The profile link was just copied (the button says so for a moment).
     copied: bool,
+    /// Rows just removed, still shown as "Removed" with Undo: where each
+    /// was, who, and a number for its ten-second timer.
+    removed: Vec<(usize, OwnedUserId, u64)>,
+    removed_count: u64,
 }
+
+/// How long a removed row stays, with its Undo.
+const UNDO_FOR: std::time::Duration = std::time::Duration::from_secs(10);
 
 impl FriendsPage {
     pub fn new(
@@ -86,7 +95,58 @@ impl FriendsPage {
             profiles: HashMap::new(),
             avatars: Avatars::default(),
             copied: false,
+            removed: Vec::new(),
+            removed_count: 0,
         }
+    }
+
+    /// The rows shown: the friends, with the just-removed ones back at their places.
+    fn rows(&self) -> Vec<(OwnedUserId, bool)> {
+        let mut rows: Vec<(OwnedUserId, bool)> =
+            self.friends.iter().map(|u| (u.clone(), false)).collect();
+        let mut gone: Vec<_> = self
+            .removed
+            .iter()
+            .filter(|(_, u, _)| !self.friends.contains(u))
+            .collect();
+        gone.sort_by_key(|(ix, _, _)| *ix);
+        for (ix, user, _) in gone {
+            rows.insert((*ix).min(rows.len()), (user.clone(), true));
+        }
+        rows
+    }
+
+    /// The page is left: the removed rows go.
+    pub fn clear_removed(&mut self, cx: &mut Context<Self>) {
+        if !self.removed.is_empty() {
+            self.removed.clear();
+            cx.notify();
+        }
+    }
+
+    /// Remove: the friend goes from the list at once; the row stays as
+    /// "Removed" with Undo for ten seconds.
+    fn remove(&mut self, ix: usize, user_id: OwnedUserId, cx: &mut Context<Self>) {
+        self.removed_count += 1;
+        let token = self.removed_count;
+        self.removed.push((ix, user_id.clone(), token));
+        cx.emit(FriendsEvent::Remove(user_id));
+        cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(UNDO_FOR).await;
+            this.update(cx, |this, cx| {
+                this.removed.retain(|(_, _, t)| *t != token);
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+        cx.notify();
+    }
+
+    fn undo(&mut self, user_id: OwnedUserId, cx: &mut Context<Self>) {
+        self.removed.retain(|(_, u, _)| *u != user_id);
+        cx.emit(FriendsEvent::Add(user_id));
+        cx.notify();
     }
 
     /// The list changed (added from a menu, removed here).
@@ -185,7 +245,7 @@ impl FriendsPage {
         let Some(session) = self.session.clone() else {
             return;
         };
-        for user_id in self.friends.clone() {
+        for (user_id, _) in self.rows() {
             let key = user_id.to_string();
             if !self.profiles.contains_key(&key) {
                 self.profiles.insert(key.clone(), None);
@@ -386,7 +446,8 @@ impl FriendsPage {
     }
 
     fn list_el(&self, cx: &mut Context<Self>) -> AnyElement {
-        if self.friends.is_empty() {
+        let rows = self.rows();
+        if rows.is_empty() {
             return div()
                 .flex_1()
                 .flex()
@@ -421,7 +482,8 @@ impl FriendsPage {
             .py(px(8.0))
             .min_h_0()
             .overflow_y_scroll();
-        for (ix, user_id) in self.friends.iter().enumerate() {
+        for (ix, (user_id, removed)) in rows.iter().enumerate() {
+            let removed = *removed;
             let key = user_id.to_string();
             let profile = self.profiles.get(&key).and_then(|p| p.as_ref());
             let row = friends::friend_row(
@@ -438,6 +500,71 @@ impl FriendsPage {
                 name: crate::streamer::name(&row.name),
             };
             let (open, remove, talk) = (user_id.clone(), user_id.clone(), user_id.clone());
+            if removed {
+                let undo = user_id.clone();
+                let mut item = div()
+                    .id(ElementId::Name(format!("friend-{key}").into()))
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .gap(px(12.0))
+                    .px(px(8.0))
+                    .py(px(10.0))
+                    .rounded(px(theme::RADIUS));
+                if ix > 0 {
+                    item = item.border_t_1().border_color(rgb(theme::bg_elevated()));
+                }
+                list = list.child(
+                    item.child(avatar(self.picture(&key), &row.name, 40.0, None))
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .flex_1()
+                                .min_w_0()
+                                .child(
+                                    div()
+                                        .font_weight(FontWeight::SEMIBOLD)
+                                        .text_color(rgb(theme::text_muted()))
+                                        .child(row.name.clone())
+                                        .e2e("span", "friend-name")
+                                        .text(row.name.clone()),
+                                )
+                                .child(
+                                    div()
+                                        .text_size(px(0.85 * theme::REM))
+                                        .text_color(rgb(theme::text_muted()))
+                                        .child("Removed")
+                                        .e2e("span", "friend-status friend-removed muted")
+                                        .text("Removed"),
+                                )
+                                .e2e("div", "friend-text"),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .gap(px(6.0))
+                                .child(
+                                    div()
+                                        .id(ElementId::Name(format!("undo-{key}").into()))
+                                        .px(px(12.0))
+                                        .py(px(6.0))
+                                        .rounded(px(theme::RADIUS))
+                                        .bg(rgb(theme::bg_elevated()))
+                                        .cursor_pointer()
+                                        .child("Undo")
+                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                            this.undo(undo.clone(), cx)
+                                        }))
+                                        .e2e("button", "secondary")
+                                        .text("Undo"),
+                                )
+                                .e2e("div", "friend-actions"),
+                        )
+                        .e2e("li", "friend removed"),
+                );
+                continue;
+            }
             let mut item = div()
                 .id(ElementId::Name(format!("friend-{key}").into()))
                 .flex_none()
@@ -508,10 +635,10 @@ impl FriendsPage {
                                     .text_color(rgb(theme::text_muted()))
                                     .hover(|s| s.text_color(rgb(theme::text())))
                                     .child("Remove")
-                                    .on_click(cx.listener(move |_, _, _, cx| {
+                                    .on_click(cx.listener(move |this, _, _, cx| {
                                         // Not also the row's click.
                                         cx.stop_propagation();
-                                        cx.emit(FriendsEvent::Remove(remove.clone()))
+                                        this.remove(ix, remove.clone(), cx)
                                     }))
                                     .e2e("button", "ghost")
                                     .text("Remove"),
@@ -546,7 +673,7 @@ impl FriendsPage {
 impl Render for FriendsPage {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.fetch(cx);
-        let tab = friends::effective_tab(self.picked, self.friends.len());
+        let tab = friends::effective_tab(self.picked, self.rows().len());
         let header = div()
             .h(px(48.0))
             .flex_none()
