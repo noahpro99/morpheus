@@ -130,11 +130,9 @@ impl Session {
                     is_ignored: member.is_ignored(),
                 })
                 .collect();
-            members.sort_by(|a, b| {
-                a.role
-                    .cmp(&b.role)
-                    .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
-            });
+            // Each name lower-cased once, not on every comparison: big public
+            // rooms have tens of thousands of members.
+            members.sort_by_cached_key(|m| (m.role, m.name.to_lowercase()));
             Ok(members)
         })
     }

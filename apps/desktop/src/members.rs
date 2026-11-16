@@ -35,9 +35,9 @@ impl EventEmitter<MemberEvent> for MembersView {}
 /// Lists already read, so a room opened again shows its members at once
 /// (the skeleton is for the first read only); newest rooms kept.
 fn cache()
--> &'static std::sync::Mutex<std::collections::HashMap<(String, OwnedRoomId), Vec<Member>>> {
+-> &'static std::sync::Mutex<std::collections::HashMap<(String, OwnedRoomId), Arc<[Member]>>> {
     static CACHE: std::sync::OnceLock<
-        std::sync::Mutex<std::collections::HashMap<(String, OwnedRoomId), Vec<Member>>>,
+        std::sync::Mutex<std::collections::HashMap<(String, OwnedRoomId), Arc<[Member]>>>,
     > = std::sync::OnceLock::new();
     CACHE.get_or_init(Default::default)
 }
@@ -53,7 +53,8 @@ pub struct MembersView {
     _alive: crate::memory::Alive,
     session: Option<Session>,
     room: OwnedRoomId,
-    members: Option<Result<Vec<Member>, String>>,
+    /// Shared, not copied: drawn every frame, and big rooms have thousands.
+    members: Option<Result<Arc<[Member]>, String>>,
     /// Your nicknames for people, shown over their names.
     nicknames: NickMap,
     permissions: MemberPermissions,
@@ -121,7 +122,10 @@ impl MembersView {
                     .timer(std::time::Duration::from_millis(ms))
                     .await;
             }
-            let list = members.await.map_err(|err| err.to_string());
+            let list = members
+                .await
+                .map(Arc::<[Member]>::from)
+                .map_err(|err| err.to_string());
             if let (Some(user), Ok(list)) = (user, &list)
                 && let Ok(mut cache) = cache().lock()
             {

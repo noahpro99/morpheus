@@ -119,6 +119,15 @@ pub(crate) async fn fetch_thumbnail(
 
     let bytes = match media_client.get_media_content(&thumbnail, true).await {
         Ok(bytes) => bytes,
+        // Not on its server: the full file is not there either.
+        Err(err)
+            if err
+                .as_client_api_error()
+                .is_some_and(|e| e.status_code.as_u16() == 404) =>
+        {
+            debug!(%err, key = media.key, "media not found");
+            return None;
+        }
         Err(err) => {
             debug!(%err, key = media.key, "thumbnail unavailable, fetching full file");
             let full = MediaRequestParameters {
@@ -150,16 +159,35 @@ fn broken() -> &'static std::sync::Mutex<std::collections::HashMap<String, crate
     BROKEN.get_or_init(Default::default)
 }
 
+/// People's pictures fetched at once, at most. A big room's member list and
+/// timeline ask for dozens together; past this many they wait their turn
+/// instead of all crowding the connection (#112).
+const AVATAR_FETCHES: usize = 6;
+
+fn avatar_turns() -> &'static tokio::sync::Semaphore {
+    static TURNS: std::sync::OnceLock<tokio::sync::Semaphore> = std::sync::OnceLock::new();
+    TURNS.get_or_init(|| tokio::sync::Semaphore::new(AVATAR_FETCHES))
+}
+
 /// `media` as a picture, unless it failed lately or fails now (fetching it,
 /// or it is no picture at all), which is remembered for [`BROKEN_FOR`].
 async fn avatar_picture(client: &matrix_sdk::Client, media: &MediaRef, width: u32, height: u32) -> Option<Media> {
-    if let Ok(mut known) = broken().lock()
-        && let Some(at) = known.get(&media.key)
-    {
+    let known_broken = || {
+        let mut known = broken().lock().ok()?;
+        let at = *known.get(&media.key)?;
         if at.elapsed() < BROKEN_FOR {
-            return None;
+            return Some(());
         }
         known.remove(&media.key);
+        None
+    };
+    if known_broken().is_some() {
+        return None;
+    }
+    // A turn first; one that failed while this one waited is not asked again.
+    let _turn = avatar_turns().acquire().await.ok()?;
+    if known_broken().is_some() {
+        return None;
     }
     let found = fetch_thumbnail(client, media.clone(), width, height)
         .await
@@ -191,6 +219,14 @@ impl Session {
     ) -> CoreFuture<Option<Media>> {
         let client = self.client.clone();
         self.core.run(async move {
+            // Nothing of theirs loaded lately: not looked up again (their
+            // profile is a request each time) until it is retried.
+            let faceless = format!("{user_id} {}", media.key);
+            if let Ok(known) = broken().lock()
+                && known.get(&faceless).is_some_and(|at| at.elapsed() < BROKEN_FOR)
+            {
+                return Ok(None);
+            }
             if let Some(found) = avatar_picture(&client, &media, width, height).await {
                 return Ok(Some(found));
             }
@@ -219,6 +255,9 @@ impl Session {
                 }
             }
             info!(user = %user_id, failed = media.key, failed_source, "avatar unavailable, and no other picture of the person loads");
+            if let Ok(mut known) = broken().lock() {
+                known.insert(faceless, crate::rt::Instant::now());
+            }
             Ok(None)
         })
     }

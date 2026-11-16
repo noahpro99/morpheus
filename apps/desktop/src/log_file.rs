@@ -69,6 +69,51 @@ fn write_panic(log: &Path, entry: &str) -> io::Result<()> {
     file.flush()
 }
 
+/// matrix-sdk logs every failed request at error level, the ones that are
+/// answers too: account data never set, a picture gone from its server, a
+/// server that makes no thumbnails. In a big room those were most of the
+/// log (#112). This leaves them out; the callers handle them (and log what
+/// they did at debug), and other failures still show.
+pub struct QuietExpected;
+
+impl<S> tracing_subscriber::layer::Filter<S> for QuietExpected {
+    fn enabled(
+        &self,
+        _: &tracing::Metadata<'_>,
+        _: &tracing_subscriber::layer::Context<'_, S>,
+    ) -> bool {
+        true
+    }
+
+    fn event_enabled(
+        &self,
+        event: &tracing::Event<'_>,
+        _: &tracing_subscriber::layer::Context<'_, S>,
+    ) -> bool {
+        let meta = event.metadata();
+        if meta.target() != "matrix_sdk::http_client" || *meta.level() != tracing::Level::ERROR {
+            return true;
+        }
+        struct Message(String);
+        impl tracing::field::Visit for Message {
+            fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+                if field.name() == "message" {
+                    self.0 = format!("{value:?}");
+                }
+            }
+        }
+        let mut message = Message(String::new());
+        event.record(&mut message);
+        !expected_failure(&message.0)
+    }
+}
+
+/// A request's failure that is an answer: not found, or no thumbnail.
+fn expected_failure(message: &str) -> bool {
+    message.contains("status_code: 404")
+        || (message.contains("status_code: 400") && message.contains("thumbnail"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -124,5 +169,24 @@ mod tests {
             Some("before\nPANIC: boom\nafter\n")
         );
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// matrix-sdk's not-found and no-thumbnail answers are left out of the
+    /// log; its other failures stay (#112).
+    #[test]
+    fn expected_request_failures_are_quiet() {
+        assert!(expected_failure(
+            r#"Error while sending request: Api(Server(MatrixError(Error { status_code: 404, body: Standard(StandardErrorBody { kind: NotFound, message: "Account data not found" }) })))"#
+        ));
+        assert!(expected_failure(
+            r#"Error while sending request: Api(Server(MatrixError(Error { status_code: 400, body: Standard(StandardErrorBody { kind: Unknown, message: "Dynamic thumbnails are disabled on this server" }) })))"#
+        ));
+        assert!(!expected_failure(
+            r#"Error while sending request: Api(Server(MatrixError(Error { status_code: 400, body: Standard(StandardErrorBody { kind: BadJson, message: "bad" }) })))"#
+        ));
+        assert!(!expected_failure(
+            r#"Error while sending request: Api(Server(MatrixError(Error { status_code: 502, body: Json("") })))"#
+        ));
+        assert!(!expected_failure("Error while sending request: Reqwest(timed out)"));
     }
 }

@@ -751,7 +751,8 @@ fn run_window(core: Core, commands: Commands, first: Option<Command>, start_hidd
 /// Panics are written to it too.
 fn init_logging() {
     use tracing_subscriber::{
-        EnvFilter, Layer as _, layer::SubscriberExt as _, util::SubscriberInitExt as _,
+        EnvFilter, Layer as _, filter::FilterExt as _, layer::SubscriberExt as _,
+        util::SubscriberInitExt as _,
     };
     let filter = || {
         EnvFilter::try_from_default_env()
@@ -766,12 +767,12 @@ fn init_logging() {
         log_file::log_panics(log_file::path(&data_dir(), 0));
     }
     let _ = tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer().with_filter(filter()))
+        .with(tracing_subscriber::fmt::layer().with_filter(filter().and(log_file::QuietExpected)))
         .with(log_file.map(|file| {
             tracing_subscriber::fmt::layer()
                 .with_ansi(false)
                 .with_writer(std::sync::Mutex::new(file))
-                .with_filter(filter())
+                .with_filter(filter().and(log_file::QuietExpected))
         }))
         .try_init();
 }

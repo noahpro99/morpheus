@@ -450,6 +450,28 @@ if [[ ! -f "$HS_DIR/.seeded-deep" ]]; then
   echo "  + 3000 messages"
 fi
 
+# A big public room (3000 members, like a public room on matrix.org) for
+# the big-room stalls (#112): most members have a picture, every tenth one
+# that is gone from the server. Admin API, no logins, 16 at a time.
+if [[ ! -f "$HS_DIR/.seeded-multitude" ]]; then
+  echo "multitude:"
+  MULTITUDE=$(ensure_room multitude "multitude" "3000 members")
+  FACE=$(upload "$ALICE" "$PNG_BOB")
+  export HS_URL ALICE MULTITUDE FACE
+  seq -w 1 3000 | xargs -P 16 -I{} bash -c '
+    i={}
+    if (( 10#$i % 10 == 0 )); then pic="mxc://localhost/gone$i"; else pic="$FACE"; fi
+    curl -fsS -o /dev/null -X PUT "$HS_URL/_synapse/admin/v2/users/@multi$i:localhost" \
+      -H "Authorization: Bearer $ALICE" -H "Content-Type: application/json" \
+      -d "{\"password\":\"multi-password\",\"displayname\":\"Multi $i\",\"avatar_url\":\"$pic\"}" &&
+    curl -fsS -o /dev/null -X POST "$HS_URL/_synapse/admin/v1/join/$MULTITUDE" \
+      -H "Authorization: Bearer $ALICE" -H "Content-Type: application/json" \
+      -d "{\"user_id\":\"@multi$i:localhost\"}"'
+  for i in $(seq 1 30); do say "$BOB" "$MULTITUDE" "multitude message $i for @multi0$(printf %03d "$i")"; done
+  touch "$HS_DIR/.seeded-multitude"
+  echo "  + 3000 members joined #multitude, 30 messages"
+fi
+
 # Every test login leaves a device behind (alice had 1300+), and each one
 # adds key queries to every sync and fans out verification requests. Last
 # step, since it also signs out the tokens this script used.

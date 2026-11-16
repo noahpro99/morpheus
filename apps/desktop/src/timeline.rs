@@ -181,7 +181,7 @@ pub struct TimelineView {
     /// view lives, so a video scrolled away and back is where it was).
     videos: HashMap<String, gpui::Entity<crate::video::VideoPlayer>>,
     /// The room's members, to turn a typed "" into a mention pill.
-    people: Vec<crate::view_model::rich::Person>,
+    people: crate::view_model::rich::Mentions,
 }
 
 /// Where vim mode's selection goes.
@@ -300,7 +300,7 @@ impl TimelineView {
             pressed_avatar: None,
             left_at: None,
             videos: HashMap::new(),
-            people: Vec::new(),
+            people: Default::default(),
         };
         // "5 min ago" and "Today" keep up with the clock: draw again now and then.
         cx.spawn(async move |this, cx| {
@@ -318,14 +318,24 @@ impl TimelineView {
             let asking = session.members(room_id.clone());
             cx.spawn(async move |this, cx| {
                 if let Ok(members) = asking.await {
+                    // Indexed once, off the window's thread: a big room has
+                    // thousands of members, and every row drawn is matched.
+                    let people = cx
+                        .background_executor()
+                        .spawn(async move {
+                            crate::view_model::rich::Mentions::new(
+                                members
+                                    .into_iter()
+                                    .map(|m| crate::view_model::rich::Person {
+                                        id: m.user_id.to_string(),
+                                        name: m.name,
+                                    })
+                                    .collect(),
+                            )
+                        })
+                        .await;
                     this.update(cx, |this, cx| {
-                        this.people = members
-                            .into_iter()
-                            .map(|m| crate::view_model::rich::Person {
-                                id: m.user_id.to_string(),
-                                name: m.name,
-                            })
-                            .collect();
+                        this.people = people;
                         cx.notify();
                     })
                     .ok();

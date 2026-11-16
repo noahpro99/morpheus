@@ -50,6 +50,7 @@ tokio = { workspace = true }
 # Returns freed memory to the system (glibc's malloc kept ~130 MB freed after scrolling a big room).
 mimalloc = { version = "0.1", default-features = false }
 tracing-subscriber = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
 gpui = { version = "0.2", features = ["test-support"] }
