@@ -889,6 +889,7 @@ impl SettingsView {
 
     pub(super) fn startup_page(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let mut children: Vec<AnyElement> = Vec::new();
+        let keep = crate::tray::keeps_running();
         match self.autostart {
             None => children.push(muted(vm::STARTUP_UNAVAILABLE, "muted").into_any_element()),
             Some(state) => {
@@ -917,7 +918,7 @@ impl SettingsView {
                     "Start hidden in the tray",
                     state.hidden,
                     true,
-                    !state.hidden_selectable(),
+                    !state.hidden_selectable_with(keep),
                     cx.listener(move |this, _, _, cx| {
                         this.set_autostart(
                             Autostart {
@@ -933,7 +934,33 @@ impl SettingsView {
         if let Some(text) = &self.startup_note {
             children.push(note(text, "error", theme::danger()).into_any_element());
         }
+        if !keep && self.autostart.is_some() {
+            children.push(muted(vm::START_HIDDEN_NEEDS_BACKGROUND, "muted").into_any_element());
+        }
+        let background = section(
+            "In the background",
+            "background",
+            vec![
+                choice(
+                    "keep-running".into(),
+                    "keep-running",
+                    "",
+                    "Keep running in the background",
+                    keep,
+                    true,
+                    false,
+                    cx.listener(move |this, _, _, cx| {
+                        crate::tray::set_keep_running(&this.data_dir, !keep);
+                        cx.notify();
+                    }),
+                ),
+                muted(vm::KEEP_RUNNING_HINT, "muted").into_any_element(),
+            ],
+            self.hl("background"),
+        )
+        .into_any_element();
         vec![
+            background,
             section(
                 "When you sign in to your computer",
                 "startup",

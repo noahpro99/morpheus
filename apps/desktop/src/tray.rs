@@ -46,7 +46,25 @@ pub type Handler = Arc<dyn Fn(TrayAction) + Send + Sync>;
 static HIDES_ON_CLOSE: AtomicBool = AtomicBool::new(false);
 
 pub fn hides_on_close() -> bool {
-    HIDES_ON_CLOSE.load(Ordering::Relaxed)
+    HIDES_ON_CLOSE.load(Ordering::Relaxed) && keeps_running()
+}
+
+/// The "Keep running in the background" setting (on unless turned off): when
+/// off, closing the window quits even with a tray.
+static KEEP_RUNNING: AtomicBool = AtomicBool::new(true);
+
+pub fn keeps_running() -> bool {
+    KEEP_RUNNING.load(Ordering::Relaxed)
+}
+
+/// Turn the setting on or off and keep the choice with the device's settings.
+/// The window system's own closes (Alt+F4, the taskbar) follow it at once.
+pub fn set_keep_running(dir: &std::path::Path, on: bool) {
+    KEEP_RUNNING.store(on, Ordering::Relaxed);
+    gpui::KEEP_RUNNING_WITHOUT_WINDOWS.store(hides_on_close(), Ordering::Relaxed);
+    if let Err(err) = crate::view_model::settings::save_keep_running(dir, on) {
+        eprintln!("morpheus-desktop: saving the keep-running setting: {err}");
+    }
 }
 
 /// Whether this run puts up a tray icon: always, except that test runs (which
@@ -386,6 +404,10 @@ mod native {
 /// Put up the tray icon, if this run wants one. Without a tray host the
 /// window's close button ends the app instead of hiding it for good.
 pub fn install(handler: Handler) {
+    KEEP_RUNNING.store(
+        crate::view_model::settings::load_keep_running(&crate::data_dir()),
+        Ordering::Relaxed,
+    );
     if !wanted() {
         // A test run closes the window to see what keeps running.
         HIDES_ON_CLOSE.store(

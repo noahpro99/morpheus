@@ -103,6 +103,10 @@ pub fn install(cx: &mut App) {
         cx.defer(|cx| {
             // The key window, else the only one.
             if let Some(window) = cx.active_window().or_else(|| cx.windows().first().copied()) {
+                if !crate::tray::keeps_running() {
+                    crate::quit(cx);
+                    return;
+                }
                 window
                     .update(cx, |_, window, _| {
                         crate::notify::set_looking(false, None);

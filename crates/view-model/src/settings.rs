@@ -184,6 +184,12 @@ pub const SETTINGS_INDEX: &[SettingEntry] = &[
         "streamer",
     ),
     entry(
+        "Keep running in the background",
+        "startup background tray close window quit exit notifications calls hidden",
+        SettingsPage::Startup,
+        "background",
+    ),
+    entry(
         "Open at sign-in",
         "startup autostart login tray hidden",
         SettingsPage::Startup,
@@ -398,10 +404,39 @@ impl Autostart {
     pub fn hidden_selectable(self) -> bool {
         self.enabled
     }
+    /// The "Start hidden" box only works with autostart on, and with the app
+    /// keeping running in the background (a hidden start has no window to close).
+    pub fn hidden_selectable_with(self, keep_running: bool) -> bool {
+        self.enabled && keep_running
+    }
 }
 
 /// The flag the desktop app reads to start hidden in the tray.
 pub const HIDDEN_FLAG: &str = "--hidden";
+
+/// Whether closing the window keeps the app running in the tray (a device
+/// setting, kept in the data directory; on unless turned off).
+const BACKGROUND_FILE: &str = "keep-running.json";
+
+pub const KEEP_RUNNING_HINT: &str =
+    "Closing the window keeps Morpheus in the tray for notifications and calls.";
+pub const START_HIDDEN_NEEDS_BACKGROUND: &str =
+    "Start hidden needs Keep running in the background.";
+
+pub fn load_keep_running(dir: &Path) -> bool {
+    std::fs::read_to_string(dir.join(BACKGROUND_FILE))
+        .ok()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+        .and_then(|v| v.get("enabled").and_then(serde_json::Value::as_bool))
+        .unwrap_or(true)
+}
+
+pub fn save_keep_running(dir: &Path, on: bool) -> std::io::Result<()> {
+    std::fs::write(
+        dir.join(BACKGROUND_FILE),
+        serde_json::json!({ "enabled": on }).to_string(),
+    )
+}
 
 pub const STARTUP_UNAVAILABLE: &str = "Starting with your computer isn't available on this system yet.";
 
@@ -810,5 +845,40 @@ mod tests {
         assert_eq!(NOTIFY_DEFAULT_CHOICES[1].1, "mentions");
         assert_eq!(NotificationContent::Sender.label(), "Name only");
         assert!(version_line().starts_with("Morpheus "));
+    }
+
+    #[test]
+    fn keeping_running_in_the_background_is_on_unless_turned_off_and_is_kept() {
+        let dir = std::env::temp_dir().join(format!("morpheus-bg-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("dir");
+        let _ = std::fs::remove_file(dir.join(BACKGROUND_FILE));
+        assert!(load_keep_running(&dir), "on by default");
+        save_keep_running(&dir, false).expect("save");
+        assert!(!load_keep_running(&dir));
+        save_keep_running(&dir, true).expect("save");
+        assert!(load_keep_running(&dir));
+        std::fs::write(dir.join(BACKGROUND_FILE), "not json").expect("write");
+        assert!(load_keep_running(&dir), "unreadable means the default");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn start_hidden_needs_autostart_and_running_in_the_background() {
+        let on = Autostart { enabled: true, hidden: false };
+        assert!(on.hidden_selectable_with(true));
+        assert!(!on.hidden_selectable_with(false));
+        assert!(!Autostart::default().hidden_selectable_with(true));
+    }
+
+    #[test]
+    fn the_search_finds_running_in_the_background() {
+        for word in ["background", "tray", "close"] {
+            let found = find_settings(word, true);
+            assert!(
+                found.iter().any(|e| e.anchor == "background"),
+                "{word} finds it"
+            );
+        }
+        assert!(find_settings("background", false).iter().all(|e| e.anchor != "background"));
     }
 }
