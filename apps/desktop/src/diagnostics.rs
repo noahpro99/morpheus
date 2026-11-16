@@ -335,7 +335,33 @@ fn call_sections(report: &mut Report, hidden: bool) {
     section
         .line("Echo cancellation", opt(echo, yes_no))
         .line("Auto gain", opt(gain, yes_no))
-        .line("Dropped as late", audio.stale.to_string());
+        // What cleaning each 10 ms frame takes here, lately (#101): near
+        // 10 ms, this CPU cannot keep Strong up.
+        .line(
+            "Processing per 10 ms frame",
+            if audio.processing_p50.is_zero() {
+                UNKNOWN.to_owned()
+            } else {
+                format!(
+                    "{} median, {} p99",
+                    vm::millis(audio.processing_p50.as_secs_f64() * 1000.0),
+                    vm::millis(audio.processing_p99.as_secs_f64() * 1000.0)
+                )
+            },
+        )
+        .line(
+            "Microphone callback",
+            if audio.callback.is_zero() {
+                UNKNOWN.to_owned()
+            } else {
+                vm::millis(audio.callback.as_secs_f64() * 1000.0)
+            },
+        )
+        .line("Frames without DeepFilterNet", audio.skipped.to_string())
+        .line("Dropped as late", vm::millis(audio.stale as f64 / 48.0));
+    if let Some(why) = morpheus_call::strong_too_slow() {
+        section.line("Strong too slow, using Standard", why);
+    }
     if crate::streamer::sharing() {
         let section = report.section("Screen share");
         let (video, audio) = if cfg!(target_os = "linux") {

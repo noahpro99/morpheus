@@ -27,6 +27,10 @@ const FLOOR_RISE_DB: f32 = 0.03;
 /// 10 ms at 48 kHz.
 pub const FRAME: usize = 480;
 
+/// After frames it missed, the model's next [`DELAY`] of output is of the
+/// frames before them (its look-ahead): not used.
+const WARM_UP: usize = DELAY / FRAME;
+
 /// The suppressor, with its state (it follows the voice over time).
 pub struct Denoiser {
     model: df::tract::DfTract,
@@ -41,6 +45,8 @@ pub struct Denoiser {
     gain: f32,
     /// The noise floor: the quietest frame energy lately (rises 3 dB/s).
     noise: f32,
+    /// Frames the model has cleaned in a row (since [`Denoiser::pass`]).
+    run: usize,
 }
 
 impl Denoiser {
@@ -62,6 +68,7 @@ impl Denoiser {
             history: std::iter::repeat_n(0.0, DELAY).collect(),
             gain: 1.0,
             noise: 0.0,
+            run: WARM_UP + 1,
             tuning: *tuning,
         };
         denoiser.tune(tuning);
@@ -119,26 +126,22 @@ impl Denoiser {
         {
             return;
         }
+        self.run += 1;
+        let before = energy(&came);
+        self.follow_noise(before);
+        if self.run <= WARM_UP {
+            // The model's output is still of frames from before the gap.
+            self.hold(frame, &came, before);
+            return;
+        }
         // The model's gain for the frame, then the least it may have.
-        let energy = |x: &mut dyn Iterator<Item = f32>| x.map(|s| s * s).sum::<f32>();
-        let before = energy(&mut came.iter().copied());
-        let after = energy(&mut self.output.iter().copied());
+        let after = energy(self.output.as_slice().unwrap_or_default());
         let gain = if before > 1e-9 {
             (after / before).sqrt().min(1.0)
         } else {
             1.0
         };
-        if before > 1e-9 && (self.noise == 0.0 || before < self.noise) {
-            self.noise = before;
-        } else {
-            self.noise *= 10f32.powf(FLOOR_RISE_DB / 10.0);
-        }
-        let speech = if before > 1e-9 {
-            (1.0 - SPEECH_OVER * self.noise / before).max(0.0).sqrt() * self.keep()
-        } else {
-            0.0
-        };
-        let least = (self.gain * 10f32.powf(-self.tuning.max_fall_db / 20.0)).max(speech);
+        let least = (self.gain * self.fall()).max(self.speech(before) * self.keep());
         let mix = (least - gain).max(0.0);
         self.gain = gain.max(least);
         frame
@@ -146,6 +149,64 @@ impl Denoiser {
             .zip(self.output.iter().zip(&came))
             .for_each(|(s, (o, c))| *s = (o + mix * c).clamp(-1.0, 1.0));
     }
+
+    /// One frame without the model, when the capture is behind and must
+    /// catch up (#101): as late as the model's frames, so nothing repeats
+    /// or jumps, and kept as speech or lowered as noise by its energy over
+    /// the noise floor alone. The model misses the frame, so the next
+    /// [`WARM_UP`] frames it cleans (its output is still of frames before
+    /// the gap) go out this way too.
+    pub fn pass(&mut self, frame: &mut [f32]) {
+        if frame.len() != FRAME {
+            return;
+        }
+        self.history.extend(frame.iter());
+        let came: Vec<f32> = self.history.drain(..FRAME).collect();
+        let before = energy(&came);
+        self.follow_noise(before);
+        self.run = 0;
+        self.hold(frame, &came, before);
+    }
+
+    /// `came` out as `frame`, at the gain its energy over the noise floor
+    /// gives (a voice keeps all of itself, noise goes down to the limit),
+    /// falling no faster than the fall rate.
+    fn hold(&mut self, frame: &mut [f32], came: &[f32], before: f32) {
+        let limit = 10f32.powf(-self.tuning.atten_limit_db / 20.0);
+        self.gain = (self.gain * self.fall()).max(self.speech(before)).max(limit).min(1.0);
+        frame
+            .iter_mut()
+            .zip(came)
+            .for_each(|(s, c)| *s = (c * self.gain).clamp(-1.0, 1.0));
+    }
+
+    /// The noise floor follows the quietest frame lately.
+    fn follow_noise(&mut self, before: f32) {
+        if before > 1e-9 && (self.noise == 0.0 || before < self.noise) {
+            self.noise = before;
+        } else {
+            self.noise *= 10f32.powf(FLOOR_RISE_DB / 10.0);
+        }
+    }
+
+    /// How much of a frame of energy `before` is above the noise floor
+    /// (amplitude; 0 for noise).
+    fn speech(&self, before: f32) -> f32 {
+        if before > 1e-9 {
+            (1.0 - SPEECH_OVER * self.noise / before).max(0.0).sqrt()
+        } else {
+            0.0
+        }
+    }
+
+    /// The most the gain falls per frame (amplitude).
+    fn fall(&self) -> f32 {
+        10f32.powf(-self.tuning.max_fall_db / 20.0)
+    }
+}
+
+fn energy(x: &[f32]) -> f32 {
+    x.iter().map(|s| s * s).sum()
 }
 
 #[cfg(test)]
@@ -170,5 +231,47 @@ mod tests {
             "noise between phrases only {pauses:.1} dB down"
         );
         assert!(voice >= -3.0, "the voice lost {voice:.1} dB (over half)");
+    }
+
+    /// Frames passed without the model (the capture catching up, #101) keep
+    /// the voice, as late as the model's frames, and the frames after them
+    /// do not replay audio from before the gap: every frame of speech out
+    /// matches the speech that went in [`DELAY`] earlier.
+    #[test]
+    fn frames_passed_without_the_model_keep_the_voice_in_time() {
+        let speech = noisy_speech(10, 0.05, 0.03);
+        let mix = speech.mix();
+        let mut denoiser = Denoiser::new(&NoiseTuning::default()).expect("model");
+        let mut out = mix.clone();
+        for (i, frame) in out.chunks_exact_mut(FRAME).enumerate() {
+            // 5 of every 40 frames passed, in a row.
+            if i % 40 >= 35 {
+                denoiser.pass(frame);
+            } else {
+                denoiser.process(frame);
+            }
+        }
+        let voice = change_db(&mix, &out, &speech.speech, DELAY);
+        let pauses = change_db(&mix, &out, &speech.pause, DELAY);
+        eprintln!("with passes: pauses {pauses:.1} dB, voice {voice:.1} dB");
+        assert!(voice >= -3.0, "the voice lost {voice:.1} dB");
+        assert!(pauses <= -6.0, "noise between phrases only {pauses:.1} dB down");
+        // Each frame out is the frame that came DELAY before it, the ones
+        // just after the passes (the model starting again) too: compared
+        // where the voice is loud.
+        let loud = 4.0 * energy(&speech.noise[..FRAME]) + 0.1;
+        let mut worst = (1.0f32, 0);
+        for f in DELAY / FRAME..out.len() / FRAME {
+            let start = f * FRAME;
+            let o = &out[start..start + FRAME];
+            let i = &mix[start - DELAY..start - DELAY + FRAME];
+            let dot: f32 = o.iter().zip(i).map(|(a, b)| a * b).sum();
+            let norm = (energy(o) * energy(i)).sqrt();
+            if energy(i) > loud && norm > 0.0 && dot / norm < worst.0 {
+                worst = (dot / norm, f);
+            }
+        }
+        eprintln!("worst {worst:?}");
+        assert!(worst.0 > 0.6, "frame {} out matches what came only {:.2}", worst.1, worst.0);
     }
 }

@@ -80,7 +80,26 @@ static CHOSEN: AtomicU8 = AtomicU8::new(0);
 
 /// Calls and the mic test use `mode` from now on (one going switches now).
 pub fn set_noise_suppression(mode: NoiseSuppression) {
-    CHOSEN.store(mode.code(), Ordering::Relaxed);
+    if CHOSEN.swap(mode.code(), Ordering::Relaxed) != mode.code() {
+        note_too_slow(None);
+    }
+}
+
+/// Why Strong gave way to Standard on this computer (DeepFilterNet could
+/// not keep up with real time, #101), until another mode is chosen or a
+/// capture starts again (which tries Strong again).
+static TOO_SLOW: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+pub(crate) fn note_too_slow(why: Option<String>) {
+    if let Ok(mut slow) = TOO_SLOW.lock() {
+        *slow = why;
+    }
+}
+
+/// Strong was chosen but is too slow here, so the microphone gets
+/// Standard: why (for a notice), else `None`.
+pub fn strong_too_slow() -> Option<String> {
+    TOO_SLOW.lock().ok()?.clone()
 }
 
 /// The mode chosen ([`NoiseSuppression::Strong`] unless set).

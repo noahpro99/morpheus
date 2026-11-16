@@ -41,7 +41,8 @@ use crate::{
         AudioMode, SAMPLE_RATE,
         denoise::{Denoiser, FRAME},
     },
-    noise::{note_applied, note_applied_tuning},
+    imp::mic_pace::{Pace, Timing},
+    noise::{note_applied, note_applied_tuning, note_too_slow},
     noise_suppression, noise_tuning,
 };
 
@@ -167,21 +168,33 @@ impl Processor {
     }
 
     /// The microphone's next 10 ms, cleaned in place.
+    #[cfg(test)]
     pub fn process(&mut self, frame: &mut [i16]) {
+        self.process_paced(frame, true);
+    }
+
+    /// [`Processor::process`], with the neural model only if `neural`: a
+    /// frame without it (the capture catching up, #101) is as late and
+    /// keeps the voice ([`Denoiser::pass`]). Whether the model ran.
+    pub fn process_paced(&mut self, frame: &mut [i16], neural: bool) -> bool {
         if frame.len() != FRAME {
-            return;
+            return false;
         }
         let _ = self.apm.process_stream(frame, SAMPLE_RATE as i32, 1);
         if self.mode != NoiseSuppression::Strong {
-            return;
+            return false;
         }
         let Some(denoiser) = self.denoiser.as_mut() else {
-            return;
+            return false;
         };
         for (f, s) in self.scratch.iter_mut().zip(frame.iter()) {
             *f = f32::from(*s) / 32768.0;
         }
-        denoiser.process(&mut self.scratch);
+        if neural {
+            denoiser.process(&mut self.scratch);
+        } else {
+            denoiser.pass(&mut self.scratch);
+        }
         for (s, f) in frame.iter_mut().zip(&self.scratch) {
             *s = (f * 32767.0) as i16;
         }
@@ -191,6 +204,7 @@ impl Processor {
                 *s = (f32::from(*s) * volume).clamp(-32768.0, 32767.0) as i16;
             }
         }
+        neural
     }
 }
 
@@ -258,8 +272,20 @@ struct Counters {
     /// heard (as the host reports it), summed in µs, and how many.
     output_latency: AtomicU64,
     output_latencies: AtomicU64,
-    /// Microphone samples thrown away for being late (after a stall).
+    /// Microphone samples (as 48 kHz mono) thrown away for being late (a
+    /// stall of over a second).
     stale: AtomicU64,
+    /// Frames that went without DeepFilterNet to catch up ([`super::mic_pace::Pace`]).
+    skipped: AtomicU64,
+    /// How long a frame took to clean lately (the last 5 s), the median
+    /// and 99th percentile, in µs.
+    processing_p50: AtomicU64,
+    processing_p99: AtomicU64,
+    /// The microphone callbacks' length, summed in µs (for the average),
+    /// and the shortest and longest since the last log line.
+    callback_micros: AtomicU64,
+    shortest_callback: AtomicU64,
+    longest_callback: AtomicU64,
     /// The suppressor's own delay now, in samples.
     algorithmic: AtomicU64,
 }
@@ -306,6 +332,12 @@ impl Counters {
                 get(&self.output_latency) / get(&self.output_latencies).max(1),
             ),
             stale: get(&self.stale),
+            skipped: get(&self.skipped),
+            processing_p50: Duration::from_micros(get(&self.processing_p50)),
+            processing_p99: Duration::from_micros(get(&self.processing_p99)),
+            callback: Duration::from_micros(
+                get(&self.callback_micros) / get(&self.callbacks).max(1),
+            ),
         }
     }
 
@@ -333,6 +365,12 @@ impl Counters {
             &self.output_latency,
             &self.output_latencies,
             &self.stale,
+            &self.skipped,
+            &self.processing_p50,
+            &self.processing_p99,
+            &self.callback_micros,
+            &self.shortest_callback,
+            &self.longest_callback,
         ] {
             a.store(0, Ordering::Relaxed);
         }
@@ -365,7 +403,17 @@ pub struct AudioStats {
     pub loop_queue: Duration,
     /// The speaker's own latency (the host's figure), on average.
     pub output_latency: Duration,
+    /// Microphone samples (48 kHz mono) dropped as late: only after the
+    /// capture stalled for over a second.
     pub stale: u64,
+    /// Frames sent without DeepFilterNet, to catch up after a stall.
+    pub skipped: u64,
+    /// What cleaning a 10 ms frame takes lately (the median and 99th
+    /// percentile of the last 5 s).
+    pub processing_p50: Duration,
+    pub processing_p99: Duration,
+    /// How much one microphone callback brings, on average.
+    pub callback: Duration,
 }
 
 impl AudioStats {
@@ -570,6 +618,17 @@ fn capture(shared: &Shared, mode: AudioMode) {
     // From silence, at the start and after any break in the signal (#30).
     let mut fade = FadeIn::new();
     let mut last_frame = Instant::now();
+    // Windows: this thread as MMCSS "Pro Audio", for as long as it runs.
+    #[cfg(target_os = "windows")]
+    let _pro_audio = super::mmcss::ProAudio::join();
+    let mut pace = Pace::new();
+    let mut timing = Timing::default();
+    let mut report = Report::default();
+    let mut last_report = Instant::now();
+    let mut chosen = noise_suppression();
+    // DeepFilterNet could not keep up: Standard while Strong is chosen.
+    let mut too_slow = false;
+    note_too_slow(None);
     info!(live, "microphone capture started");
     while !shared.stop.load(Ordering::Relaxed) {
         if shared.reopen.swap(false, Ordering::Relaxed) {
@@ -577,13 +636,25 @@ fn capture(shared: &Shared, mode: AudioMode) {
             output = None;
             fade.restart();
         }
-        processor.set_mode(noise_suppression());
+        let wanted = noise_suppression();
+        if wanted != chosen {
+            // Another mode chosen: Strong (again) is tried afresh.
+            chosen = wanted;
+            too_slow = false;
+            pace.reset();
+        }
+        processor.set_mode(if too_slow && wanted == NoiseSuppression::Strong {
+            NoiseSuppression::Standard
+        } else {
+            wanted
+        });
         processor.set_tuning(noise_tuning());
         if processor.needs_model() {
             // Strong chosen during the capture: ~0.2 s on this thread; the
-            // microphone's backlog meanwhile is dropped (`Device::next`)
-            // rather than sent late.
+            // microphone's backlog meanwhile is worked off after it,
+            // without DeepFilterNet ([`Pace`]).
             processor.load_model();
+            pace.reset();
         }
         note_applied(Some(processor.applied()));
         note_applied_tuning(Some(processor.tuning()));
@@ -605,11 +676,37 @@ fn capture(shared: &Shared, mode: AudioMode) {
             fade.restart();
         }
         last_frame = Instant::now();
+        // Far behind (a burst after a stall) and DeepFilterNet would take
+        // long to work it off: this frame goes without it (#101).
+        let neural = pace.neural(input.behind_ms());
+        let started = Instant::now();
         if live {
             let mut far = far_frame(shared);
             processor.far_end(&mut far);
         }
-        processor.process(&mut frame);
+        let ran = processor.process_paced(&mut frame, neural);
+        let took = started.elapsed();
+        if processor.applied() == NoiseSuppression::Strong {
+            pace.note(ran, took);
+            if !ran {
+                counters.skipped.fetch_add(1, Ordering::Relaxed);
+            }
+            if let Some(why) = pace.too_slow() {
+                warn!(%why, "Strong noise suppression cannot keep up here: using Standard");
+                note_too_slow(Some(why));
+                too_slow = true;
+                pace.reset();
+            }
+        }
+        if let Some((p50, p99)) = timing.note(took) {
+            let micros = |ms: f64| (ms * 1000.0) as u64;
+            counters.processing_p50.store(micros(p50), Ordering::Relaxed);
+            counters.processing_p99.store(micros(p99), Ordering::Relaxed);
+        }
+        if last_report.elapsed() >= REPORT_EVERY {
+            last_report = Instant::now();
+            report.log(&counters, &mut timing, processor.applied());
+        }
         if !live {
             add_tone(&mut frame, &mut tone);
             let volume = crate::input_volume();
@@ -667,17 +764,64 @@ fn capture(shared: &Shared, mode: AudioMode) {
     note_applied_tuning(None);
     shared.level.store(0, Ordering::Relaxed);
     shared.looping.store(false, Ordering::Relaxed);
+    report.log(&counters, &mut timing, processor.applied());
     let stats = counters.snapshot();
     info!(
         callbacks = stats.callbacks,
         samples_per_callback = stats.callback_samples / stats.callbacks.max(1),
+        callback_ms = %format!("{:.1}", ms(stats.callback)),
         max_callback_gap_ms = stats.max_callback_gap.as_millis() as u64,
         sent = stats.sent,
         max_send_gap_ms = stats.max_send_gap.as_millis() as u64,
         loopback_underruns = stats.underruns,
-        dropped_as_late = stats.stale,
+        dropped_as_late_ms = stats.stale / 48,
+        without_dfn = stats.skipped,
         "microphone capture stopped"
     );
+}
+
+/// How often the capture's timing goes in the log.
+const REPORT_EVERY: Duration = Duration::from_secs(30);
+
+fn ms(d: Duration) -> f64 {
+    d.as_secs_f64() * 1000.0
+}
+
+/// The capture's timing in the log, every [`REPORT_EVERY`] and when it
+/// stops (#101): what cleaning a frame took (median, 99th percentile, most),
+/// the shortest and longest microphone callback, and what was dropped as
+/// late or went without DeepFilterNet, since the last line.
+#[derive(Default)]
+struct Report {
+    stale: u64,
+    skipped: u64,
+}
+
+impl Report {
+    fn log(&mut self, counters: &Counters, timing: &mut Timing, mode: NoiseSuppression) {
+        let (frames, p50, p99, most) = timing.report();
+        let ms = |micros: u64| format!("{:.1}", micros as f64 / 1000.0);
+        let stale = counters.stale.load(Ordering::Relaxed);
+        let skipped = counters.skipped.load(Ordering::Relaxed);
+        info!(
+            ?mode,
+            frames,
+            processing_p50_ms = %format!("{p50:.2}"),
+            processing_p99_ms = %format!("{p99:.2}"),
+            processing_max_ms = %format!("{most:.2}"),
+            shortest_callback_ms = %ms(match counters.shortest_callback.swap(0, Ordering::Relaxed) {
+                0 => 0,
+                kept => u64::MAX - kept,
+            }),
+            longest_callback_ms = %ms(counters.longest_callback.swap(0, Ordering::Relaxed)),
+            max_callback_gap_ms = counters.max_callback_gap.load(Ordering::Relaxed) / 1000,
+            dropped_as_late_ms = stale.saturating_sub(self.stale) / 48,
+            without_dfn = skipped.saturating_sub(self.skipped),
+            "microphone timing"
+        );
+        self.stale = stale;
+        self.skipped = skipped;
+    }
 }
 
 /// The test tone (440 Hz, 8000 of 32768), the "voice" of test runs.
@@ -752,10 +896,31 @@ impl Input {
             }
         }
     }
+
+    /// How far behind the device the frame just taken is (ms): what waits
+    /// beyond a callback's worth.
+    fn behind_ms(&self) -> f64 {
+        match self {
+            Self::Device(device) => {
+                device.chunker.behind() as f64 * 1000.0
+                    / (f64::from(device.rate) * device.channels as f64)
+            }
+            _ => 0.0,
+        }
+    }
 }
 
-/// A microphone callback with `samples` (all channels) came.
-fn counted(counters: &Counters, samples: usize, info: &cpal::InputCallbackInfo) {
+/// A microphone callback with `samples` (all channels) came, of a stream
+/// bringing `per_second` samples a second (all channels).
+fn counted(counters: &Counters, samples: usize, per_second: u64, info: &cpal::InputCallbackInfo) {
+    let micros = samples as u64 * 1_000_000 / per_second.max(1);
+    counters.callback_micros.fetch_add(micros, Ordering::Relaxed);
+    counters.longest_callback.fetch_max(micros, Ordering::Relaxed);
+    // Kept as u64::MAX less it, so 0 (reset) is none yet and the shortest
+    // is the largest kept.
+    counters
+        .shortest_callback
+        .fetch_max(u64::MAX - micros, Ordering::Relaxed);
     let at = info.timestamp();
     counters.input_latency.fetch_add(
         at.callback.duration_since(at.capture).as_micros() as u64,
@@ -794,9 +959,12 @@ struct Device {
     resampler: AudioResampler,
 }
 
+/// A backlog of more chunks (10 ms) than this is a stall, and dropped.
+pub(super) const STALL_CHUNKS: usize = 100;
+
 /// Cuts samples, as a device's callbacks bring them (any number at a time),
 /// into chunks of one size, in order: nothing dropped, padded or repeated.
-struct Chunker {
+pub(super) struct Chunker {
     chunk: usize,
     pending: VecDeque<i16>,
     /// The most samples one callback has brought.
@@ -804,7 +972,7 @@ struct Chunker {
 }
 
 impl Chunker {
-    fn new(chunk: usize) -> Self {
+    pub(super) fn new(chunk: usize) -> Self {
         Self {
             chunk,
             pending: VecDeque::with_capacity(chunk * 4),
@@ -812,23 +980,36 @@ impl Chunker {
         }
     }
 
-    fn push(&mut self, samples: &[i16]) {
+    pub(super) fn push(&mut self, samples: &[i16]) {
         self.largest = self.largest.max(samples.len());
         self.pending.extend(samples);
     }
 
     /// The next whole chunk, if one has come.
-    fn next(&mut self) -> Option<Vec<i16>> {
+    pub(super) fn next(&mut self) -> Option<Vec<i16>> {
         (self.pending.len() >= self.chunk).then(|| self.pending.drain(..self.chunk).collect())
     }
 
-    /// More waiting than ~80 ms, or than two callback buffers plus jitter
-    /// margin: the thread stalled (e.g. a model loading), so all but the
-    /// newest chunk is dropped and the call does not stay that much late.
-    /// How many samples went.
-    fn drop_stale(&mut self) -> usize {
+    /// What waits beyond a callback's worth (the most one brought, up to
+    /// 100 ms): how far the frames taken are behind the device. A device's
+    /// callback leaves up to that much waiting without anything being late.
+    pub(super) fn behind(&self) -> usize {
+        self.pending
+            .len()
+            .saturating_sub(self.largest.min(10 * self.chunk))
+    }
+
+    /// More than [`STALL_CHUNKS`] (1 s) waiting, beyond two callbacks: the
+    /// capture thread stalled far beyond anything a device delivers, so all
+    /// but the newest chunk is dropped and the call does not stay that late.
+    /// Anything less is worked off instead ([`super::mic_pace::Pace`] skips
+    /// DeepFilterNet for frames to catch up): a burst after a 50-200 ms
+    /// stall, a Windows driver's 40 ms callbacks, a slow frame now and then
+    /// are all kept (#101: 80 ms was cut, and heard as gaps). How many
+    /// samples went.
+    pub(super) fn drop_stale(&mut self) -> usize {
         let callback = self.largest.min(10 * self.chunk);
-        let max_queued = (8 * self.chunk).max(2 * callback + 2 * self.chunk);
+        let max_queued = (STALL_CHUNKS * self.chunk).max(2 * callback + 2 * self.chunk);
         if self.pending.len() <= max_queued {
             return 0;
         }
@@ -974,11 +1155,12 @@ fn input_stream(
 ) -> Result<cpal::Stream, String> {
     use cpal::traits::DeviceTrait as _;
     let failed = |err: cpal::Error| warn!(%err, "microphone stream");
+    let per_second = u64::from(config.sample_rate) * u64::from(config.channels);
     match format {
         cpal::SampleFormat::F32 => device.build_input_stream(
             config,
             move |data: &[f32], info: &cpal::InputCallbackInfo| {
-                counted(&counters, data.len(), info);
+                counted(&counters, data.len(), per_second, info);
                 let _ = tx.send((
                     data.iter()
                         .map(|s| (s.clamp(-1.0, 1.0) * 32767.0) as i16)
@@ -992,7 +1174,7 @@ fn input_stream(
         cpal::SampleFormat::I16 => device.build_input_stream(
             config,
             move |data: &[i16], info: &cpal::InputCallbackInfo| {
-                counted(&counters, data.len(), info);
+                counted(&counters, data.len(), per_second, info);
                 let _ = tx.send((data.to_vec(), Instant::now()));
             },
             failed,
@@ -1066,7 +1248,10 @@ impl Device {
         }
         let late = self.chunker.drop_stale();
         if late > 0 {
-            self.counters.stale.fetch_add(late as u64, Ordering::Relaxed);
+            // As 48 kHz mono, whatever the device runs at.
+            let late = late as u64 * u64::from(SAMPLE_RATE) / u64::from(self.rate) / self.channels as u64;
+            warn!(late_ms = late / 48, "microphone: the capture stalled; its backlog dropped");
+            self.counters.stale.fetch_add(late, Ordering::Relaxed);
         }
         let raw = loop {
             if let Some(raw) = self.chunker.next() {
@@ -1859,8 +2044,8 @@ mod flow {
 
     /// A device that calls back with 40 ms at a time (a Windows driver
     /// whose shared-mode period is longer than the 10 ms asked for, a
-    /// Bluetooth headset) loses nothing: only a backlog longer than a
-    /// callback and a chunk is dropped as late (the capture thread stalled).
+    /// Bluetooth headset) loses nothing, nor does a 200 ms burst after a
+    /// stall (#101): only a backlog of over a second is dropped as late.
     #[test]
     fn large_callbacks_are_not_dropped_as_late() {
         let mut chunker = Chunker::new(FRAME);
@@ -1873,20 +2058,25 @@ mod flow {
             }
         }
         assert_eq!((taken, dropped), (400, 0));
-        // A stall: 200 ms waiting, of which all but the newest 10 ms go.
+        // A burst: 200 ms waiting is kept.
         for _ in 0..5 {
             chunker.push(&[1; 4 * FRAME]);
         }
-        assert_eq!(chunker.drop_stale(), 19 * FRAME);
+        assert_eq!(chunker.drop_stale(), 0);
+        // A stall: 1.2 s waiting, of which all but the newest 10 ms go.
+        for _ in 0..25 {
+            chunker.push(&[1; 4 * FRAME]);
+        }
+        assert_eq!(chunker.drop_stale(), 119 * FRAME);
         assert_eq!(chunker.pending.len(), FRAME);
-        // 10 ms callbacks: more than 80 ms waiting is late.
+        // 10 ms callbacks: more than 1 s waiting is late.
         let mut small = Chunker::new(FRAME);
-        for _ in 0..8 {
+        for _ in 0..STALL_CHUNKS {
             small.push(&[1; FRAME]);
         }
         assert_eq!(small.drop_stale(), 0);
         small.push(&[1; FRAME]);
-        assert_eq!(small.drop_stale(), 8 * FRAME);
+        assert_eq!(small.drop_stale(), STALL_CHUNKS * FRAME);
     }
 
     /// CoreAudio calls back with 512 or 1024 samples (10.7 or 21.3 ms): a

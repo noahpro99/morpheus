@@ -133,7 +133,9 @@ impl Shell {
         let in_call = self.calls.state.as_ref().is_some_and(|c| c.connected);
         let testing = morpheus_call::mic_test_running();
         let expected = (in_call || testing).then(morpheus_call::noise_suppression);
-        let settled = morpheus_call::applied_noise_suppression() == expected;
+        // Strong given way to Standard (too slow here) is settled too.
+        let settled = morpheus_call::applied_noise_suppression() == expected
+            || morpheus_call::strong_too_slow().is_some();
         if (testing || !settled) && !self.calls.mic_refresh.replace(true) {
             cx.spawn(async move |this, cx| {
                 cx.background_executor()
@@ -277,6 +279,20 @@ pub fn controls<V: 'static>(
         .text_color(rgb(theme::text_muted()))
         .child(current.about())
         .into_any_element();
+    // DeepFilterNet could not keep up on this computer, so the microphone
+    // gets Standard (#101).
+    let too_slow = morpheus_call::strong_too_slow()
+        .filter(|_| current == NoiseSuppression::Strong)
+        .map(|why| {
+            let text = format!("Strong is too slow on this computer ({why}), so Standard is used.");
+            div()
+                .text_size(px(0.8 * theme::REM))
+                .text_color(rgb(theme::danger()))
+                .child(text.clone())
+                .e2e("div", "noise-too-slow")
+                .text(&text)
+                .into_any_element()
+        });
     let testing = morpheus_call::mic_test_running();
     let level = morpheus_call::mic_level();
     let looping = morpheus_call::mic_loopback();
@@ -351,9 +367,12 @@ pub fn controls<V: 'static>(
             "Hear how you sound, after noise suppression."
         })
         .into_any_element();
-    vec![
+    let mut controls = vec![
         div().flex().gap(px(6.0)).children(modes).into_any_element(),
         about,
+    ];
+    controls.extend(too_slow);
+    controls.extend([
         div()
             .flex()
             .items_center()
@@ -362,7 +381,8 @@ pub fn controls<V: 'static>(
             .child(meter)
             .into_any_element(),
         note,
-    ]
+    ]);
+    controls
 }
 
 /// The card above the noise button, over everything, while it is open.

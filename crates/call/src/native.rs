@@ -75,6 +75,12 @@ mod ducking;
 #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 #[path = "mic.rs"]
 mod mic;
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+#[path = "mic_pace.rs"]
+mod mic_pace;
+#[cfg(target_os = "windows")]
+#[path = "mmcss.rs"]
+mod mmcss;
 #[path = "system_audio.rs"]
 #[cfg_attr(
     not(any(target_os = "linux", target_os = "windows", target_os = "macos")),
