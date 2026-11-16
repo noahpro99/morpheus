@@ -107,3 +107,11 @@ GitHub milestones name releases: the milestone `0.2.4` holds the issues
 planned for `v0.2.4`, and closing it means the release is out. `gh issue list
 --milestone 0.2.4` is the release's to-do list. New issues without a
 milestone are the backlog.
+
+## End-to-end tests
+
+The end-to-end tests are not in this repo: they live in the private
+`noahpro99/morpheus-e2e`, checked out as `../morpheus-e2e`. Release builds
+never need it (the test bridge compiles only with the `e2e` feature). Before a
+release, run `just e2e <file>` for the files you care about, or its headless
+workflow (Actions > "e2e (headless)" in that repo).

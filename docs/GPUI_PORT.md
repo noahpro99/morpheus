@@ -28,13 +28,13 @@ port was done, task by task, is in
 - `crates/core` (Matrix: sessions, rooms, timelines) and `crates/call`
   (LiveKit calls, audio, noise suppression, screen capture) are shared with
   the phone and web apps.
-- `crates/video` plays video; `crates/e2e` is the test driver and the tests.
+- `crates/video` plays video; the e2e test driver and the tests are in the private repo `noahpro99/morpheus-e2e` (see "Tests are the spec").
 - `vendor/` holds patched crates (gpui, livekit, libwebrtc, webrtc-sys);
   patches are marked "Morpheus patch".
 
 ## Tests are the spec
 
-The e2e tests in `crates/e2e/tests` talk to the app through a loopback
+The e2e tests (private repo `noahpro99/morpheus-e2e`, `tests/`; check it out next to this repo as `../morpheus-e2e`, or set `MORPHEUS_E2E_DIR`; `just e2e` says so when it is missing) talk to the app through a loopback
 bridge (`MORPHEUS_E2E_PORT`) using CSS selectors such as
 `form.login input[name=username]`, `.room`, `.context-item`. About 2,200
 test calls go through selector methods (`wait_for`, `wait_for_text`,
@@ -57,7 +57,7 @@ instead of JavaScript:
   `press` (key name, with modifiers), `submit`, `bounds`. Clicks and keys
   are dispatched as real GPUI input at the element's centre, so they test
   hit-testing too.
-- `crates/e2e/src/lib.rs`: for the desktop app (`MORPHEUS_E2E_UI=gpui`, the default), the `App` methods
+- `morpheus-e2e/src/lib.rs` (the private repo): for the desktop app (`MORPHEUS_E2E_UI=gpui`, the default), the `App` methods
   send these structured requests instead of JavaScript. `eval` and
   `wait_for_js` return an error saying the test needs porting. The binary
   comes from `MORPHEUS_E2E_BIN` (already supported).
@@ -78,7 +78,7 @@ instead of JavaScript:
   (`just sweep` / `scripts/prune-target.sh` keep it down).
 - One build at a time, in the foreground. No background builds, no
   `--release`, no parallel test runs. Run single tests with filters
-  (`just e2e <file> [test]`, or `cargo test -p morpheus-e2e --test account
+  (`just e2e <file> [test]`, or `scripts/e2e-cargo.sh --test account
   <name>`), not the whole suite; the full suite only at milestones.
 - Run cargo inside the dev shell: `nix develop -c cargo ...` (the flake shell
   has the GUI libraries).

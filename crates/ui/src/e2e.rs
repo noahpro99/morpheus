@@ -3,7 +3,7 @@
 //! When `MORPHEUS_E2E_PORT` is set, the app listens on that loopback port for
 //! newline-delimited JSON requests `{"id": n, "js": "..."}` and answers each
 //! with `{"id": n, "ok": bool, "value": ..., "error": ...}` after evaluating
-//! the JavaScript inside the webview. `crates/e2e` wraps this in a
+//! the JavaScript inside the webview. the private morpheus-e2e repo wraps this in a
 //! Playwright-style driver. Never enable the feature in release builds.
 
 use dioxus::prelude::*;

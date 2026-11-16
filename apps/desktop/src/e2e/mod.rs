@@ -1,4 +1,4 @@
-//! End-to-end test support. With the `e2e` feature, views tag the elements
+//! End-to-end test support (the bridge is in the private morpheus-e2e repo). With the `e2e` feature, views tag the elements
 //! tests touch ([`E2eExt::e2e`]); each frame's tagged tree answers the
 //! selector requests of the bridge (`MORPHEUS_E2E_PORT`), which also injects
 //! clicks and keys. Without the feature, [`Tagged`] is a transparent
@@ -21,13 +21,23 @@
 //! - Elements painted later through `deferred` (menus, popovers) are not
 //!   attached to their logical parent yet: they have no parent in the tree.
 
+// The bridge itself (the tagged tree, selectors, the TCP server, the fake screen
+// sources) lives in the private morpheus-e2e repo, checked out next to this one.
+// Only builds with the `e2e` feature read it; every other build never opens the path.
 #[cfg(feature = "e2e")]
+#[path = "../../../../../morpheus-e2e/bridge/bridge.rs"]
 mod bridge;
 #[cfg(feature = "e2e")]
+#[path = "../../../../../morpheus-e2e/bridge/selector.rs"]
 mod selector;
 #[cfg(feature = "e2e")]
+#[path = "../../../../../morpheus-e2e/bridge/sources.rs"]
+pub mod sources;
+#[cfg(feature = "e2e")]
+#[path = "../../../../../morpheus-e2e/bridge/tag.rs"]
 mod tag;
 #[cfg(feature = "e2e")]
+#[path = "../../../../../morpheus-e2e/bridge/tree.rs"]
 mod tree;
 
 /// How far a scrolling element is scrolled, in pixels: `from_bottom` (0 at

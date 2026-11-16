@@ -85,8 +85,12 @@ Log in to the desktop app with `alice` / `alice-password` and the homeserver
 
 ### End-to-end tests
 
-`crates/e2e` holds the tests (`crates/e2e/tests/<feature>.rs`) and a small
-Playwright-style driver. `just e2e` builds the desktop app with the `e2e`
+The end-to-end tests are in a private repo, `noahpro99/morpheus-e2e`
+(`tests/<feature>.rs`, plus a small Playwright-style driver and the desktop
+bridge, `bridge/`). Check it out next to this repo (`../morpheus-e2e`, or set
+`MORPHEUS_E2E_DIR`; the bridge is read from `../morpheus-e2e/bridge`) to run
+them; without it the app builds and unit-tests as usual, only the `e2e` feature
+and `just e2e*` need it. `just e2e` builds the desktop app with the `e2e`
 feature as its own binary, `morpheus-desktop-e2e`, which opens a loopback
 control socket answering selector requests (the phone and web apps evaluate
 JavaScript in their page instead):
@@ -103,7 +107,7 @@ app.wait_for_text(".message .body", "sliding sync is working", DEFAULT_WAIT).awa
 - **Headless** (`just e2e`, the default): the app runs on gpui's headless
   platform (offscreen windows with real layout and input, no pixels), so it
   works with the screen locked, over SSH and in CI
-  (`.github/workflows/e2e-headless.yml`). A check that needs real pixels or a
+  (the private repo's e2e-headless workflow). A check that needs real pixels or a
   window manager prints `SKIPPED (needs a display)` and is counted at the end.
 - **With a display** (`just e2e-display`): real windows, titled "Morpheus (test)", on the hidden Hyprland
   monitor, unfocused (the driver adds `nofocus` rules for that title; undo with a config reload).
@@ -124,7 +128,7 @@ app.wait_for_text(".message .body", "sliding sync is working", DEFAULT_WAIT).awa
 
 The crates: `crates/core` (matrix-rust-sdk: sessions, room list, timelines, no UI), `crates/view-model`
 (the logic behind the screens, no UI toolkit), `crates/call` (calls, audio, noise suppression, screen
-capture), `crates/ui` (shared Dioxus components for phone and web), `crates/video`, `crates/e2e`.
+capture), `crates/ui` (shared Dioxus components for phone and web), `crates/video`. The end-to-end tests are in a separate private repo (below).
 
 ## Storage
 

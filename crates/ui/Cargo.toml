@@ -9,7 +9,7 @@ license.workspace = true
 # Test bridge that evaluates JavaScript in the webview on request. See src/e2e.rs.
 e2e = ["dep:serde", "tokio/net", "tokio/io-util"]
 # The same for the web app: the page asks the test relay for scripts (see
-# src/e2e_web.rs and crates/e2e/src/web.rs).
+# src/e2e_web.rs and morpheus-e2e/src/web.rs).
 web-e2e = []
 
 [dependencies]

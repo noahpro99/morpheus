@@ -39,7 +39,7 @@ pub fn provider() -> Option<Arc<dyn ScreenSourceProvider>> {
     PROVIDER
         .get_or_init(|| {
             #[cfg(feature = "e2e")]
-            if let Some(test) = TestSources::from_env() {
+            if let Some(test) = crate::e2e::sources::TestSources::from_env() {
                 return Some(Arc::new(test) as Arc<dyn ScreenSourceProvider>);
             }
             morpheus_call::platform_source_provider()
@@ -448,76 +448,5 @@ impl Shell {
         .detach();
         self.dialog_open(crate::dialogs::Dialog::ScreenPicker(picker), cx);
         true
-    }
-}
-
-/// A test's screens and windows, from MORPHEUS_E2E_SCREEN_SOURCES:
-/// `kind:id:name` separated by `;` (`screen:1:Built-in Display;window:7:Notes`).
-/// Each picture is a colour of its own with a bar that moves along each
-/// time, so a test can see them change.
-#[cfg(feature = "e2e")]
-pub struct TestSources {
-    sources: Vec<ScreenSource>,
-    taken: std::sync::atomic::AtomicU32,
-}
-
-#[cfg(feature = "e2e")]
-impl TestSources {
-    pub fn from_env() -> Option<Self> {
-        let spec = std::env::var("MORPHEUS_E2E_SCREEN_SOURCES").ok()?;
-        let sources = spec
-            .split(';')
-            .filter_map(|one| {
-                let mut parts = one.splitn(3, ':');
-                let kind = ScreenSourceKind::from_key(parts.next()?.trim())?;
-                let id = parts.next()?.trim().parse().ok()?;
-                let name = parts.next()?.trim().to_owned();
-                Some(ScreenSource { kind, id, name })
-            })
-            .collect();
-        Some(Self {
-            sources,
-            taken: Default::default(),
-        })
-    }
-}
-
-#[cfg(feature = "e2e")]
-impl ScreenSourceProvider for TestSources {
-    fn sources(&self) -> Vec<ScreenSource> {
-        let mut sources = self.sources.clone();
-        // Screens first, as the platform's are.
-        sources.sort_by_key(|s| s.kind != ScreenSourceKind::Screen);
-        sources
-    }
-
-    fn thumbnail(
-        &self,
-        source: &ScreenSource,
-        max_width: u32,
-        max_height: u32,
-    ) -> Option<morpheus_call::Thumbnail> {
-        let (width, height) = morpheus_call::fit_thumbnail(1920, 1080, max_width, max_height);
-        let n = self
-            .taken
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let hue = (source.id as u32).wrapping_mul(0x9e37_79b9);
-        let colour = [(hue >> 8) as u8, (hue >> 16) as u8, (hue >> 24) as u8, 255];
-        let bar = (n * 16) % width;
-        let mut bgra = Vec::with_capacity((width * height * 4) as usize);
-        for _ in 0..height {
-            for x in 0..width {
-                if x >= bar && x < bar + 8 {
-                    bgra.extend_from_slice(&[255, 255, 255, 255]);
-                } else {
-                    bgra.extend_from_slice(&colour);
-                }
-            }
-        }
-        Some(morpheus_call::Thumbnail {
-            width,
-            height,
-            bgra,
-        })
     }
 }

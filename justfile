@@ -42,6 +42,7 @@ test-live:
 # target/debug/morpheus-desktop, which you may be running (`cargo r`); that one has no
 # bridge and opens on your screen.
 e2e-build:
+    @test -d "${MORPHEUS_E2E_DIR:-../morpheus-e2e}/bridge" || { echo "The test bridge is in the private repo noahpro99/morpheus-e2e; check it out at ../morpheus-e2e (or set MORPHEUS_E2E_DIR)." >&2; exit 1; }
     cargo build -p morpheus-desktop --bin morpheus-desktop-e2e --features e2e
 
 # Needs `just hs-up hs-seed`. Checks that need a display are skipped and counted;
@@ -52,7 +53,7 @@ e2e file="" name="": (e2e-headless file name)
 # Pixel checks need the session unlocked.
 # Desktop e2e tests in real windows on the hidden Hyprland test monitor (pixel checks too)
 e2e-display file="" name="": e2e-build hs-seed
-    MORPHEUS_E2E_BIN=$PWD/target/debug/morpheus-desktop-e2e MORPHEUS_TEST_HOMESERVER={{hs}} cargo test -p morpheus-e2e {{ if file == "" { "" } else { "--test " + file } }} {{name}} -- --nocapture --test-threads=1 ${E2E_TEST_ARGS:-}
+    MORPHEUS_E2E_BIN=$PWD/target/debug/morpheus-desktop-e2e MORPHEUS_TEST_HOMESERVER={{hs}} scripts/e2e-cargo.sh {{ if file == "" { "" } else { "--test " + file } }} {{name}} -- --nocapture --test-threads=1 ${E2E_TEST_ARGS:-}
 
 # The app runs on gpui's headless platform (offscreen windows: real layout and
 # input, no pixels), so it works with the screen locked, in CI, and touches no
@@ -66,7 +67,7 @@ e2e-headless file="" name="": e2e-build hs-seed
     mkdir -p target/e2e && rm -f "$skips"
     env -u WAYLAND_DISPLAY -u DISPLAY -u HYPRLAND_INSTANCE_SIGNATURE MORPHEUS_E2E_HEADLESS=1 \
         MORPHEUS_E2E_BIN=$PWD/target/debug/morpheus-desktop-e2e MORPHEUS_TEST_HOMESERVER={{hs}} \
-        cargo test -p morpheus-e2e {{ if file == "" { "" } else { "--test " + file } }} {{name}} -- --nocapture --test-threads=1 ${E2E_TEST_ARGS:-}
+        scripts/e2e-cargo.sh {{ if file == "" { "" } else { "--test " + file } }} {{name}} -- --nocapture --test-threads=1 ${E2E_TEST_ARGS:-}
     status=$?
     if [ -s "$skips" ]; then
         echo "headless: $(cut -f1 "$skips" | sort -u | wc -l) test(s) skipped a check that needs a display (run them with \`just e2e-display\`):"
@@ -82,7 +83,7 @@ gpui-e2e file="" name="": (e2e file name)
 # One e2e test file with per-step timings, e.g. `just e2e-one perf` (rebuilds the test copy first).
 # Reseeds first: the moderation tests kick and ban users and the seed puts them back.
 e2e-one file: e2e-build hs-seed
-    MORPHEUS_E2E_BIN=$PWD/target/debug/morpheus-desktop-e2e MORPHEUS_TEST_HOMESERVER={{hs}} MORPHEUS_E2E_TIMINGS=1 cargo test -p morpheus-e2e --test {{file}} -- --nocapture --test-threads=1
+    MORPHEUS_E2E_BIN=$PWD/target/debug/morpheus-desktop-e2e MORPHEUS_TEST_HOMESERVER={{hs}} MORPHEUS_E2E_TIMINGS=1 scripts/e2e-cargo.sh --test {{file}} -- --nocapture --test-threads=1
 
 # The web app (app.morpheuschat.org) at http://localhost:8080, rebuilt on save
 web:
@@ -99,7 +100,7 @@ e2e-web-build: sweep
 # The e2e tests against the web app in a headless Chromium, e.g.
 # `just e2e-web web` (one file) or `just e2e-web` (all of them)
 e2e-web file="": e2e-web-build hs-seed
-    nix develop .#web -c bash -c 'MORPHEUS_E2E_WEB=1 MORPHEUS_TEST_HOMESERVER={{hs}} cargo test -p morpheus-e2e {{ if file == "" { "" } else { "--test " + file } }} -- --nocapture --test-threads=1'
+    nix develop .#web -c bash -c 'MORPHEUS_E2E_WEB=1 MORPHEUS_TEST_HOMESERVER={{hs}} scripts/e2e-cargo.sh {{ if file == "" { "" } else { "--test " + file } }} -- --nocapture --test-threads=1'
 
 # Everything CI would run
 ci: fmt lint test
@@ -187,15 +188,15 @@ e2e-android-build: sweep
 
 # Drive the app on the virtual phone (`just android-emulator` and `just e2e-android-build` first)
 e2e-android: hs-seed
-    nix develop .#android-emulator -c env MORPHEUS_E2E_ANDROID=1 ANDROID_SERIAL="${ANDROID_SERIAL:-emulator-5554}" cargo test -p morpheus-e2e --test android -- --nocapture --test-threads=1
+    nix develop .#android-emulator -c env MORPHEUS_E2E_ANDROID=1 ANDROID_SERIAL="${ANDROID_SERIAL:-emulator-5554}" scripts/e2e-cargo.sh --test android -- --nocapture --test-threads=1
 
 # Push notifications end to end on the virtual phone: needs Sunup installed and opened once on it, and internet
 e2e-android-push: hs-seed
-    nix develop .#android-emulator -c env MORPHEUS_E2E_ANDROID=1 MORPHEUS_E2E_PUSH=1 ANDROID_SERIAL="${ANDROID_SERIAL:-emulator-5554}" MORPHEUS_TEST_HOMESERVER={{hs}} cargo test -p morpheus-e2e --test android push -- --nocapture
+    nix develop .#android-emulator -c env MORPHEUS_E2E_ANDROID=1 MORPHEUS_E2E_PUSH=1 ANDROID_SERIAL="${ANDROID_SERIAL:-emulator-5554}" MORPHEUS_TEST_HOMESERVER={{hs}} scripts/e2e-cargo.sh --test android push -- --nocapture
 
 # The whole e2e suite with the phone standing in for the first app of each test (other users run on desktop)
 e2e-android-all: hs-seed
-    nix develop .#android-emulator -c env MORPHEUS_E2E_ANDROID=1 ANDROID_SERIAL="${ANDROID_SERIAL:-emulator-5554}" MORPHEUS_TEST_HOMESERVER={{hs}} cargo test -p morpheus-e2e --no-fail-fast -- --test-threads=1
+    nix develop .#android-emulator -c env MORPHEUS_E2E_ANDROID=1 ANDROID_SERIAL="${ANDROID_SERIAL:-emulator-5554}" MORPHEUS_TEST_HOMESERVER={{hs}} scripts/e2e-cargo.sh --no-fail-fast -- --test-threads=1
 
 # Type-check the mobile crate for Android without an emulator (needs `nix develop .#android`, or runs it)
 android-check:

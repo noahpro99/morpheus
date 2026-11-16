@@ -1,5 +1,5 @@
 //! The web app's side of the test bridge (`web-e2e` feature only): the page
-//! cannot listen on a port, so it asks the test relay (crates/e2e/src/web.rs)
+//! cannot listen on a port, so it asks the test relay (morpheus-e2e/src/web.rs, private repo)
 //! for the next script, runs it, and posts back what it returned, in the
 //! desktop bridge's request and answer shapes. Only on a page opened with
 //! `?e2e=1`. Never enable the feature in release builds.
