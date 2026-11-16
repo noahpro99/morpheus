@@ -257,7 +257,7 @@ pub fn invite_row(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) ->
         .into_any_element()
 }
 
-pub(crate) fn card_button(id: &'static str, label: &'static str, primary: bool) -> gpui::Stateful<gpui::Div> {
+pub(crate) fn card_button(id: impl Into<gpui::ElementId>, label: &'static str, primary: bool) -> gpui::Stateful<gpui::Div> {
     div()
         .id(id)
         .px(px(16.0))

@@ -212,6 +212,16 @@ pub fn icon(name: &str, size: f32) -> Icon {
 /// element tree (so a test can tell a button has one).
 pub struct Icon(Svg);
 
+impl Icon {
+    /// Turned `turns` of a full turn (a spinner's animation).
+    pub fn rotated(self, turns: f32) -> Self {
+        Icon(
+            self.0
+                .with_transformation(gpui::Transformation::rotate(gpui::percentage(turns))),
+        )
+    }
+}
+
 impl gpui::Styled for Icon {
     fn style(&mut self) -> &mut gpui::StyleRefinement {
         self.0.style()

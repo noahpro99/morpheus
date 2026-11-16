@@ -20,7 +20,43 @@ use crate::{
     view_model::{invites as vm_invites, last_place},
 };
 
+/// A channel being joined from the overview.
+#[derive(Clone, Debug, PartialEq)]
+pub enum JoinState {
+    Joining,
+    Joined,
+    Failed(String),
+}
+
 impl Shell {
+    /// Joins a channel from the overview, in place: the overview stays and the row
+    /// shows the progress, then "Joined" (or why it could not).
+    fn join_from_welcome(&mut self, room: SpaceRoom, cx: &mut Context<Self>) {
+        let Some(session) = self.session.clone() else {
+            return;
+        };
+        if self.welcome_join.get(&room.id) == Some(&JoinState::Joining) {
+            return;
+        }
+        let id = room.id.clone();
+        self.welcome_join.insert(id.clone(), JoinState::Joining);
+        let joining = session.join_room_via(room.id, room.via);
+        cx.spawn(async move |this, cx| {
+            let result = joining.await;
+            this.update(cx, |this, cx| {
+                let state = match result {
+                    Ok(()) => JoinState::Joined,
+                    Err(err) => JoinState::Failed(err.to_string()),
+                };
+                this.welcome_join.insert(id, state);
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+        cx.notify();
+    }
+
     pub fn is_welcomed(&self, space: &OwnedRoomId) -> bool {
         self.place_user.is_empty()
             || last_place::is_welcomed(&crate::data_dir(), &self.place_user, space.as_str())
@@ -69,6 +105,8 @@ fn row(
     voice: bool,
     name: &str,
     topic: Option<&str>,
+    status: AnyElement,
+    error: Option<String>,
     on_click: impl Fn(&mut Shell, &mut Context<Shell>) + 'static,
 ) -> AnyElement {
     let mut label = div().flex().flex_col().min_w_0().child(
@@ -82,6 +120,16 @@ fn row(
                 .text_size(px(0.85 * theme::REM))
                 .text_color(rgb(theme::text_muted()))
                 .child(topic.to_owned()),
+        );
+    }
+    if let Some(error) = error {
+        label = label.child(
+            div()
+                .text_size(px(0.85 * theme::REM))
+                .text_color(rgb(theme::danger()))
+                .child(error.clone())
+                .e2e("div", "welcome-error")
+                .text(error),
         );
     }
     div()
@@ -106,7 +154,8 @@ fn row(
                 .child("#")
                 .into_any_element()
         })
-        .child(label)
+        .child(div().flex_1().min_w_0().child(label))
+        .child(status)
         .e2e("div", if voice { "welcome-channel voice" } else { "welcome-channel" })
         .text(name.to_owned())
         .into_any_element()
@@ -116,6 +165,27 @@ fn row(
 pub fn render(shell: &Shell, cx: &mut Context<Shell>, space: &RoomSummary) -> AnyElement {
     let (joined, unjoined) = welcome_channels(shell, &space.id);
     let mut channels = div().flex().flex_col().gap(px(6.0)).w_full();
+    let pending: Vec<SpaceRoom> = unjoined
+        .iter()
+        .filter(|r| {
+            !matches!(
+                shell.welcome_join.get(&r.id),
+                Some(JoinState::Joining | JoinState::Joined)
+            )
+        })
+        .cloned()
+        .collect();
+    if pending.len() >= 2 {
+        let all = card_button("welcome-join-all", "Join all", false)
+            .on_click(cx.listener(move |this, _, _, cx| {
+                for room in pending.clone() {
+                    this.join_from_welcome(room, cx);
+                }
+            }))
+            .e2e("button", "welcome-join-all")
+            .text("Join all");
+        channels = channels.child(div().flex().justify_end().child(all));
+    }
     for room in joined {
         let (id, scope) = (room.id.clone(), Scope::Space(space.id.clone()));
         channels = channels.child(row(
@@ -124,17 +194,46 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>, space: &RoomSummary) -> An
             room.is_voice,
             &room.name,
             room.topic.as_deref(),
+            joined_mark(),
+            None,
             move |this, cx| this.open_room_in(scope.clone(), id.clone(), cx),
         ));
     }
     for room in unjoined {
         let target: SpaceRoom = room.clone();
+        let state = shell.welcome_join.get(&room.id).cloned();
+        let (status, error) = match state {
+            Some(JoinState::Joined) => (joined_mark(), None),
+            Some(JoinState::Joining) => (joining_mark(), None),
+            other => {
+                let error = match other {
+                    Some(JoinState::Failed(why)) => Some(why),
+                    _ => None,
+                };
+                let join_target = target.clone();
+                let button = card_button(
+                    gpui::SharedString::from(format!("welcome-join-{}", room.id)),
+                    "Join",
+                    true,
+                )
+                .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    cx.stop_propagation();
+                    this.join_from_welcome(join_target.clone(), cx)
+                }))
+                .e2e("button", "welcome-join")
+                .text("Join");
+                (button.into_any_element(), error)
+            }
+        };
         channels = channels.child(row(
             cx,
             room.id.to_string(),
             room.is_voice,
             &room.name,
             room.topic.as_deref(),
+            status,
+            error,
             move |this, cx| this.open_unjoined(target.clone(), cx),
         ));
     }
@@ -203,5 +302,40 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>, space: &RoomSummary) -> An
             .child(div().mt(px(12.0)).child(start))
             .e2e("section", "server-welcome"),
         )
+        .into_any_element()
+}
+
+/// "Joined" with a check: the status of a channel you are in.
+fn joined_mark() -> AnyElement {
+    div()
+        .flex()
+        .items_center()
+        .gap(px(4.0))
+        .text_size(px(0.85 * theme::REM))
+        .text_color(rgb(theme::text_muted()))
+        .child(icon("check", 14.0))
+        .child("Joined")
+        .e2e("div", "welcome-joined")
+        .text("Joined")
+        .into_any_element()
+}
+
+/// A turning arrow and "Joining…": the status of a channel being joined.
+fn joining_mark() -> AnyElement {
+    use gpui::{Animation, AnimationExt as _};
+    div()
+        .flex()
+        .items_center()
+        .gap(px(4.0))
+        .text_size(px(0.85 * theme::REM))
+        .text_color(rgb(theme::text_muted()))
+        .child(icon("refresh-cw", 14.0).with_animation(
+            "welcome-joining-spinner",
+            Animation::new(std::time::Duration::from_millis(900)).repeat(),
+            |icon, delta| icon.rotated(delta),
+        ))
+        .child("Joining…")
+        .e2e("div", "welcome-joining")
+        .text("Joining…")
         .into_any_element()
 }

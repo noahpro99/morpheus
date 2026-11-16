@@ -193,6 +193,8 @@ pub struct Shell {
     /// Whether the Friends page fills the chat area, and the page itself.
     /// The server whose welcome screen fills the chat area.
     pub welcome: Option<OwnedRoomId>,
+    /// Channels joined from the overview: joining, joined or why not.
+    pub welcome_join: std::collections::HashMap<OwnedRoomId, crate::welcome::JoinState>,
     pub friends_open: bool,
     pub friends_page: Option<Entity<FriendsPage>>,
     /// A direct message just made, to open once the room list has it.
@@ -462,6 +464,7 @@ impl Shell {
             search_was_wide: std::cell::Cell::new(false),
             friends_open: false,
             welcome: None,
+            welcome_join: std::collections::HashMap::new(),
             friends_page: None,
             pending_dm: None,
             inbox_open: false,
