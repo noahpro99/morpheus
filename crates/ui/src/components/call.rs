@@ -450,7 +450,7 @@ pub fn join_call(session: Session, room_id: OwnedRoomId, room_name: String) {
                     }
                     if let Some(call) = media.0.borrow().as_ref() {
                         for identity in &key.livekit_identities {
-                            call.set_key(identity, key.key.clone());
+                            call.set_key(identity, key.index, key.key.clone());
                         }
                     }
                     continue;
