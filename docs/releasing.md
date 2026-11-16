@@ -65,6 +65,12 @@ offer it, so it is published only when all six assets are there.
    git push origin vX.Y.Z
    ```
 
+   Shortcut: if step 2's hand runs built this exact commit (the version bump
+   included), their artifacts are the release files. Download them (`gh run
+   download <id> -n windows-x86_64`, `linux-x86_64`, `macos-arm64`,
+   `macos-x86_64`), `gh release upload vX.Y.Z <files> --clobber`, and cancel
+   the tag's runs instead of building everything twice.
+
    The push starts `linux.yml`, `apple.yml` and `windows.yml`; each attaches
    its zips (and dmgs) to the draft release named by the tag. To attach
    again after a fix, dispatch the workflow with `-f tag=vX.Y.Z` (it uses
