@@ -19,6 +19,51 @@ use crate::{
 /// The bar's height.
 pub const HEIGHT: f32 = chrome::BAR_HEIGHT;
 
+/// The title's font size (the bar's 0.8 rem) and Inter's cap height (the
+/// font's OS/2 `sCapHeight` 1490 of 2048 units): the mark before the title is
+/// as tall as the capitals, top and bottom. Inter's ascent and descent
+/// (1984, 494) put the capitals' middle at the line's middle.
+pub const TITLE_SIZE: f32 = 0.8 * theme::REM;
+pub const CAP_HEIGHT: f32 = TITLE_SIZE * 1490.0 / 2048.0;
+
+/// What comes before the title: the server's icon (a squircle in the rail's
+/// corner style, initials without a picture) in a server, the Morpheus glasses
+/// anywhere else. Both are `CAP_HEIGHT` tall, so the title stays put when the
+/// scope changes. Not a window control: it is part of the caption.
+fn title_mark(shell: &Shell) -> gpui::AnyElement {
+    let size = CAP_HEIGHT;
+    let server = match &shell.scope {
+        crate::model::Scope::Space(id) => shell.rooms.iter().find(|r| &r.id == id),
+        _ => None,
+    };
+    match server {
+        Some(space) => div()
+            .size(px(size))
+            .flex_none()
+            .child(crate::media::avatar(
+                shell.picture(&space.avatar, 40),
+                &space.name,
+                size,
+                Some(size * theme::RADIUS_XL / 48.0),
+            ))
+            .e2e("div", "server-icon")
+            .attr("data-radius", theme::RADIUS_XL.to_string())
+            .attr("data-height", format!("{size:.3}"))
+            .into_any_element(),
+        None => gpui::svg()
+            .path("logo-tight.svg")
+            .h(px(size))
+            .w(px(size * 416.0 / 154.0))
+            .flex_none()
+            .text_color(rgb(theme::own()))
+            .e2e("svg", "mark")
+            .attr("viewBox", "48 182 416 154")
+            .attr("data-color", format!("{:06x}", theme::own()))
+            .attr("data-height", format!("{size:.3}"))
+            .into_any_element(),
+    }
+}
+
 impl Shell {
     /// Back (`-1`) or forward (`1`) through the rooms visited: the scope first,
     /// then the room, as the Dioxus bar does.
@@ -118,6 +163,7 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
     let layout = chrome::Layout::current(window);
     let unread = unread_count(&crate::locks::unlocked(&shell.rooms));
     let title = header_title(&shell.rooms, &shell.scope);
+    let mark = title_mark(shell);
     let colour_of = |id: &'static str| {
         format!(
             "{:06x}",
@@ -223,15 +269,16 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                     .gap(px(8.0))
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(rgb(theme::text()))
+                    .child(mark)
                     .child(
-                        gpui::svg()
-                            .path("logo.svg")
-                            .size(px(16.0))
-                            .flex_none()
-                            .text_color(rgb(theme::accent())),
+                        div()
+                            .child(title.clone())
+                            .e2e("span", "title-text")
+                            .text(title.clone()),
                     )
-                    .child(title.clone())
                     .e2e("div", "titlebar-title")
+                    .attr("data-font-size", TITLE_SIZE.to_string())
+                    .attr("data-cap-height", format!("{CAP_HEIGHT:.3}"))
                     .text(title),
             )
             .child(

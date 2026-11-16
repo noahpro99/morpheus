@@ -147,23 +147,6 @@ pub fn adopt_children(list: &mut [RoomSummary]) {
     }
 }
 
-/// The server (top-level space) a room belongs to, climbing through nested spaces.
-pub fn server_of<'a>(rooms: &'a [RoomSummary], room: &RoomSummary) -> Option<&'a RoomSummary> {
-    let mut current = room;
-    // The depth is bounded so a loop of spaces ends.
-    for _ in 0..16 {
-        let parent = current
-            .parent_spaces
-            .iter()
-            .find_map(|id| rooms.iter().find(|r| r.is_space && &r.id == id && !r.invited))?;
-        if parent.parent_spaces.is_empty() {
-            return Some(parent);
-        }
-        current = parent;
-    }
-    None
-}
-
 /// Top-level spaces, the ones with a badge.
 pub fn top_spaces(rooms: &[RoomSummary]) -> Vec<RoomSummary> {
     rooms
