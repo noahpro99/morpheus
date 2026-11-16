@@ -688,7 +688,7 @@ fn run_window(core: Core, commands: Commands, first: Option<Command>, start_hidd
         // macOS: the menu bar and its shortcuts.
         mac_menu::install(cx);
         // Windows and macOS: the tray icon, now that the event loop runs.
-        tray::install_native(Arc::new(|action| send_command(Command::Tray(action))));
+        tray::install_native(Arc::new(|action| send_command(Command::Tray(action))), cx);
         let root = cx.new(|cx| Root::new(core, default_homeserver(), cx));
         cx.set_global(MainRoot(root));
         cx.on_window_closed(|cx| {

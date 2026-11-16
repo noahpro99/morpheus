@@ -56,11 +56,22 @@ pub fn wanted() -> bool {
         || std::env::var_os("MORPHEUS_E2E_TRAY").is_some()
 }
 
-/// The white logo as 64x64 RGBA (`apps/desktop/assets/tray.png`).
-fn logo_rgba() -> Result<(Vec<u8>, u32, u32), String> {
-    let decoder = png::Decoder::new(std::io::Cursor::new(
-        include_bytes!("../assets/tray.png").as_slice(),
-    ));
+/// The windows taskbar theme (`SystemUsesLightTheme`) to the icon it needs:
+/// a light taskbar wants the dark logo; a dark one, or no answer, the white.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn dark_icon_wanted(system_uses_light_theme: Option<u32>) -> bool {
+    system_uses_light_theme == Some(1)
+}
+
+/// The logo as 64x64 RGBA: white (`apps/desktop/assets/tray.png`) or, for a
+/// light taskbar, dark (`tray-dark.png`, the same shape in near black).
+fn logo_rgba(dark: bool) -> Result<(Vec<u8>, u32, u32), String> {
+    let bytes: &[u8] = if dark {
+        include_bytes!("../assets/tray-dark.png")
+    } else {
+        include_bytes!("../assets/tray.png")
+    };
+    let decoder = png::Decoder::new(std::io::Cursor::new(bytes));
     let mut reader = decoder.read_info().map_err(|e| e.to_string())?;
     let mut buf = vec![0; reader.output_buffer_size()];
     let info = reader.next_frame(&mut buf).map_err(|e| e.to_string())?;
@@ -136,7 +147,7 @@ mod linux {
     /// Register with the desktop's tray host; `false` without one (no
     /// StatusNotifierWatcher on the session bus).
     pub fn install(handler: Handler) -> bool {
-        let icon = match logo_rgba() {
+        let icon = match logo_rgba(false) {
             Ok((rgba, width, height)) => vec![ksni::Icon {
                 width: width as i32,
                 height: height as i32,
@@ -176,11 +187,54 @@ mod linux {
 #[cfg(any(target_os = "windows", target_os = "macos"))]
 mod native {
     use tray_icon::{
-        Icon, MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent,
+        Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent,
         menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem},
     };
 
-    use super::{Handler, TrayAction, logo_rgba};
+    use std::cell::RefCell;
+
+    use super::{Handler, TrayAction, dark_icon_wanted, logo_rgba};
+
+    thread_local! {
+        /// The icon and whether it is the dark one: kept (dropping removes the
+        /// icon) on the main thread, where it was made and where it is changed.
+        static ICON: RefCell<Option<(TrayIcon, bool)>> = const { RefCell::new(None) };
+    }
+
+    /// Whether the taskbar is light (Windows; the menu bar on macOS adapts to
+    /// the template on its own).
+    pub(super) fn taskbar_is_light() -> bool {
+        #[cfg(target_os = "windows")]
+        {
+            let value = windows_registry::CURRENT_USER
+                .open(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")
+                .and_then(|key| key.get_u32("SystemUsesLightTheme"))
+                .ok();
+            dark_icon_wanted(value)
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let _ = dark_icon_wanted;
+            false
+        }
+    }
+
+    /// Show the icon that fits the taskbar now; called every few seconds on
+    /// Windows (the theme can change while running: WM_SETTINGCHANGE reaches
+    /// the window GPUI owns, not this crate, so it is polled instead).
+    pub fn refresh_theme() {
+        let dark = taskbar_is_light();
+        ICON.with_borrow_mut(|slot| {
+            if let Some((icon, shown_dark)) = slot
+                && *shown_dark != dark
+                && let Ok((rgba, w, h)) = logo_rgba(dark)
+                && let Ok(new) = Icon::from_rgba(rgba, w, h)
+                && icon.set_icon(Some(new)).is_ok()
+            {
+                *shown_dark = dark;
+            }
+        });
+    }
 
     /// The menu item id of an action: its place in the menu order.
     fn id_of(action: TrayAction) -> String {
@@ -226,7 +280,8 @@ mod native {
             // Left click opens Morpheus (as Discord's does), right click the menu.
             .with_menu_on_left_click(false)
             .with_tooltip("Morpheus");
-        match logo_rgba()
+        let dark = taskbar_is_light();
+        match logo_rgba(dark)
             .and_then(|(rgba, w, h)| Icon::from_rgba(rgba, w, h).map_err(|e| e.to_string()))
         {
             // macOS tints a template (the white logo's shape) for a light or dark menu bar.
@@ -247,7 +302,7 @@ mod native {
         match builder.build() {
             // Dropping the icon removes it: it stays for the life of the app.
             Ok(icon) => {
-                std::mem::forget(icon);
+                ICON.with_borrow_mut(|slot| *slot = Some((icon, dark)));
                 true
             }
             Err(err) => {
@@ -303,14 +358,56 @@ pub fn install(handler: Handler) {
 /// Windows and macOS: create the icon, from inside `Application::run` (on the
 /// main thread, with the event loop going). Without one the close button ends
 /// the app again. Elsewhere does nothing.
-pub fn install_native(handler: Handler) {
+pub fn install_native(handler: Handler, cx: &mut gpui::App) {
     #[cfg(any(target_os = "windows", target_os = "macos"))]
-    if wanted() && !native::install(handler) {
-        HIDES_ON_CLOSE.store(
-            std::env::var_os("MORPHEUS_E2E_PORT").is_some(),
-            Ordering::Relaxed,
-        );
+    if wanted() {
+        if native::install(handler) {
+            // Windows: follow the taskbar between light and dark.
+            #[cfg(target_os = "windows")]
+            cx.spawn(async move |cx| {
+                loop {
+                    cx.background_executor()
+                        .timer(std::time::Duration::from_secs(3))
+                        .await;
+                    native::refresh_theme();
+                }
+            })
+            .detach();
+        } else {
+            HIDES_ON_CLOSE.store(
+                std::env::var_os("MORPHEUS_E2E_PORT").is_some(),
+                Ordering::Relaxed,
+            );
+        }
     }
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     let _ = handler;
+    let _ = cx;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_light_taskbar_gets_the_dark_icon() {
+        assert!(dark_icon_wanted(Some(1)));
+        assert!(!dark_icon_wanted(Some(0)));
+        // Older Windows has no such value: the taskbar is dark.
+        assert!(!dark_icon_wanted(None));
+    }
+
+    #[test]
+    fn both_icons_decode_and_the_dark_one_is_the_same_shape() {
+        let (white, w, h) = logo_rgba(false).unwrap();
+        let (dark, dw, dh) = logo_rgba(true).unwrap();
+        assert_eq!((w, h), (dw, dh));
+        for (a, b) in white.chunks(4).zip(dark.chunks(4)) {
+            assert_eq!(a[3], b[3], "alpha (the shape) is shared");
+            if a[3] > 0 {
+                assert!(a[0] > 200, "the white logo is light");
+                assert!(b[0] < 60, "the dark logo is dark");
+            }
+        }
+    }
 }

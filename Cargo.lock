@@ -7456,6 +7456,7 @@ dependencies = [
  "tokio",
  "tracing-subscriber",
  "tray-icon",
+ "windows-registry 0.5.3",
 ]
 
 [[package]]
