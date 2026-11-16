@@ -26,18 +26,23 @@ pub const HEIGHT: f32 = chrome::BAR_HEIGHT;
 pub const TITLE_SIZE: f32 = 0.8 * theme::REM;
 pub const CAP_HEIGHT: f32 = TITLE_SIZE * 1490.0 / 2048.0;
 
+/// The server icon's side: readable, unlike the capitals' height, and centred on the title.
+pub const SERVER_ICON: f32 = 16.0;
+
 /// What comes before the title: the server's icon (a squircle in the rail's
 /// corner style, initials without a picture) in a server, the Morpheus glasses
-/// anywhere else. Both are `CAP_HEIGHT` tall, so the title stays put when the
-/// scope changes. Not a window control: it is part of the caption.
+/// anywhere else. The glasses are `CAP_HEIGHT` tall, the icon `SERVER_ICON`; the title's row has a fixed
+/// height, so the title stays put when the scope changes. Not a window control: it is part of the caption.
 fn title_mark(shell: &Shell) -> gpui::AnyElement {
-    let size = CAP_HEIGHT;
+    let logo = CAP_HEIGHT;
     let server = match &shell.scope {
         crate::model::Scope::Space(id) => shell.rooms.iter().find(|r| &r.id == id),
         _ => None,
     };
     match server {
-        Some(space) => div()
+        Some(space) => {
+            let size = SERVER_ICON;
+            div()
             .size(px(size))
             .flex_none()
             .child(crate::media::avatar(
@@ -49,17 +54,18 @@ fn title_mark(shell: &Shell) -> gpui::AnyElement {
             .e2e("div", "server-icon")
             .attr("data-radius", theme::RADIUS_XL.to_string())
             .attr("data-height", format!("{size:.3}"))
-            .into_any_element(),
+            .into_any_element()
+        }
         None => gpui::svg()
             .path("logo-tight.svg")
-            .h(px(size))
-            .w(px(size * 416.0 / 154.0))
+            .h(px(logo))
+            .w(px(logo * 416.0 / 154.0))
             .flex_none()
             .text_color(rgb(theme::own()))
             .e2e("svg", "mark")
             .attr("viewBox", "48 182 416 154")
             .attr("data-color", format!("{:06x}", theme::own()))
-            .attr("data-height", format!("{size:.3}"))
+            .attr("data-height", format!("{logo:.3}"))
             .into_any_element(),
     }
 }
@@ -265,6 +271,7 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
             .child(
                 div()
                     .flex()
+                    .h(px(24.0))
                     .items_center()
                     .gap(px(8.0))
                     .font_weight(FontWeight::SEMIBOLD)
