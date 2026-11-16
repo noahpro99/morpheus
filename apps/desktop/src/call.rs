@@ -94,6 +94,8 @@ pub struct Calls {
     pub muted_for_me: std::collections::HashSet<OwnedUserId>,
     /// Whose shared screen's sound is muted for you (apart from their voice).
     pub stream_muted: std::collections::HashSet<OwnedUserId>,
+    /// The signed-in account, whose per-person volumes are kept (`person-volumes.json`).
+    pub account: Option<OwnedUserId>,
     /// Share screen's question is open, over this point.
     pub screen_popover: Option<gpui::Point<gpui::Pixels>>,
     /// The noise suppression card is open, above this point (the button's
@@ -200,6 +202,8 @@ impl Shell {
         morpheus_call::set_noise_suppression(crate::noise::read());
         morpheus_call::set_noise_tuning(crate::noise::read_tuning());
         self.calls.devices = prefs;
+        self.calls.account = session.user_id();
+        self.load_person_volumes();
         self.calls.screen_quality = crate::screen_quality::read();
         // The frames are drawn here as raw pixels: no JPEGs for nobody.
         morpheus_call::skip_jpeg_frames();
@@ -648,6 +652,7 @@ impl Shell {
         let volume = volume.clamp(0.0, morpheus_call::MAX_SCREEN_VOLUME);
         self.calls.screen_volumes.insert(user.clone(), volume);
         self.apply_stream_volume(user);
+        self.save_person_volume(user);
         if let Some(menu) = &mut self.menu {
             for item in &mut menu.items {
                 if let Some(crate::view_model::menu::MenuSlider::StreamVolume(who, v)) =
@@ -670,7 +675,53 @@ impl Shell {
             self.calls.stream_muted.remove(user);
         }
         self.apply_stream_volume(user);
+        self.save_person_volume(user);
         cx.notify();
+    }
+
+    /// The volumes kept for the signed-in account: applied now, so they hold
+    /// when that person's tracks appear.
+    fn load_person_volumes(&mut self) {
+        let Some(account) = self.calls.account.clone() else {
+            return;
+        };
+        let all = crate::view_model::calls::read_person_volumes(&crate::data_dir(), account.as_str());
+        for (user, v) in all {
+            let Ok(user) = OwnedUserId::try_from(user) else {
+                continue;
+            };
+            self.calls.user_volumes.insert(user.clone(), v.voice);
+            self.calls.screen_volumes.insert(user.clone(), v.stream);
+            if v.voice_muted {
+                self.calls.muted_for_me.insert(user.clone());
+            }
+            if v.stream_muted {
+                self.calls.stream_muted.insert(user.clone());
+            }
+            self.apply_user_volume(&user);
+            self.apply_stream_volume(&user);
+        }
+    }
+
+    /// Keeps what is now chosen for `user` (the defaults are not kept).
+    fn save_person_volume(&self, user: &OwnedUserId) {
+        let Some(account) = &self.calls.account else {
+            return;
+        };
+        let volume = crate::view_model::calls::PersonVolume {
+            voice: self.calls.user_volumes.get(user).copied().unwrap_or(1.0),
+            voice_muted: self.calls.muted_for_me.contains(user),
+            stream: self.calls.screen_volumes.get(user).copied().unwrap_or(1.0),
+            stream_muted: self.calls.stream_muted.contains(user),
+        };
+        if let Err(err) = crate::view_model::calls::write_person_volume(
+            &crate::data_dir(),
+            account.as_str(),
+            user.as_str(),
+            volume,
+        ) {
+            eprintln!("morpheus-desktop: saving volumes: {err}");
+        }
     }
 
     pub(crate) fn apply_stream_volume(&self, user: &OwnedUserId) {
@@ -695,6 +746,7 @@ impl Shell {
         let volume = volume.clamp(0.0, morpheus_call::MAX_VOLUME);
         self.calls.user_volumes.insert(user.clone(), volume);
         self.apply_user_volume(user);
+        self.save_person_volume(user);
         if let Some(menu) = &mut self.menu {
             for item in &mut menu.items {
                 if let Some(crate::view_model::menu::MenuSlider::UserVolume(who, v)) =
@@ -716,6 +768,7 @@ impl Shell {
             self.calls.muted_for_me.remove(user);
         }
         self.apply_user_volume(user);
+        self.save_person_volume(user);
         cx.notify();
     }
 

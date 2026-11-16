@@ -642,6 +642,135 @@ pub fn write_device_prefs(data_dir: &std::path::Path, prefs: &DevicePrefs) -> st
     std::fs::write(data_dir.join(AUDIO_DEVICES), json.to_string())
 }
 
+/// Where the per-person volumes are kept (by account, then by person).
+pub const PERSON_VOLUMES: &str = "person-volumes.json";
+
+/// What one account chose for one person: their voice's and their shared
+/// screen's volume (1 as sent) and whether each is muted for them.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PersonVolume {
+    pub voice: f32,
+    pub voice_muted: bool,
+    pub stream: f32,
+    pub stream_muted: bool,
+}
+
+impl Default for PersonVolume {
+    fn default() -> Self {
+        Self {
+            voice: 1.0,
+            voice_muted: false,
+            stream: 1.0,
+            stream_muted: false,
+        }
+    }
+}
+
+fn read_person_file(data_dir: &std::path::Path) -> serde_json::Value {
+    std::fs::read(data_dir.join(PERSON_VOLUMES))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default()
+}
+
+/// The volumes `account` gave each person, by their Matrix user ID (people at
+/// the defaults are not in the file).
+pub fn read_person_volumes(
+    data_dir: &std::path::Path,
+    account: &str,
+) -> std::collections::HashMap<String, PersonVolume> {
+    let file = read_person_file(data_dir);
+    let mut all = std::collections::HashMap::new();
+    let Some(people) = file.get(account).and_then(|v| v.as_object()) else {
+        return all;
+    };
+    for (user, entry) in people {
+        let gain = |key: &str| {
+            entry
+                .get(key)
+                .and_then(|v| v.as_f64())
+                .map_or(1.0, |v| (v as f32).clamp(0.0, 2.0))
+        };
+        let flag = |key: &str| entry.get(key).and_then(|v| v.as_bool()).unwrap_or(false);
+        all.insert(
+            user.clone(),
+            PersonVolume {
+                voice: gain("voice"),
+                voice_muted: flag("voice_muted"),
+                stream: gain("stream"),
+                stream_muted: flag("stream_muted"),
+            },
+        );
+    }
+    all
+}
+
+/// Keeps what `account` chose for `user`; the defaults are dropped from the
+/// file, so only what was changed is kept.
+pub fn write_person_volume(
+    data_dir: &std::path::Path,
+    account: &str,
+    user: &str,
+    volume: PersonVolume,
+) -> std::io::Result<()> {
+    let mut file = read_person_file(data_dir);
+    if !file.is_object() {
+        file = serde_json::json!({});
+    }
+    let mine = file
+        .as_object_mut()
+        .expect("an object")
+        .entry(account.to_owned())
+        .or_insert_with(|| serde_json::json!({}));
+    if !mine.is_object() {
+        *mine = serde_json::json!({});
+    }
+    let people = mine.as_object_mut().expect("an object");
+    if volume == PersonVolume::default() {
+        people.remove(user);
+    } else {
+        people.insert(
+            user.to_owned(),
+            serde_json::json!({
+                "voice": volume.voice,
+                "voice_muted": volume.voice_muted,
+                "stream": volume.stream,
+                "stream_muted": volume.stream_muted,
+            }),
+        );
+    }
+    std::fs::write(data_dir.join(PERSON_VOLUMES), file.to_string())
+}
+
+#[cfg(test)]
+mod person_volume_tests {
+    use super::*;
+
+    #[test]
+    fn person_volumes_round_trip_per_account_and_defaults_are_not_stored() {
+        let dir = std::env::temp_dir().join(format!("morpheus-pv-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("dir");
+        let _ = std::fs::remove_file(dir.join(PERSON_VOLUMES));
+        assert!(read_person_volumes(&dir, "@a:x").is_empty());
+        let chosen = PersonVolume {
+            voice: 1.0,
+            voice_muted: true,
+            stream: 0.3,
+            stream_muted: false,
+        };
+        write_person_volume(&dir, "@a:x", "@bob:x", chosen).expect("write");
+        write_person_volume(&dir, "@b:x", "@bob:x", PersonVolume::default()).expect("write");
+        write_person_volume(&dir, "@a:x", "@cy:x", PersonVolume::default()).expect("write");
+        let read = read_person_volumes(&dir, "@a:x");
+        assert_eq!(read.len(), 1, "defaults are not kept: {read:?}");
+        assert_eq!(read["@bob:x"], chosen);
+        assert!(read_person_volumes(&dir, "@b:x").is_empty(), "per account");
+        write_person_volume(&dir, "@a:x", "@bob:x", PersonVolume::default()).expect("reset");
+        assert!(read_person_volumes(&dir, "@a:x").is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
 /// The quick list of microphones, speakers or cameras behind the profile
 /// card's arrows and right-clicks, and the camera button's: the one in use
 /// ticked, a pick switches to it, and the full settings below. A camera list
