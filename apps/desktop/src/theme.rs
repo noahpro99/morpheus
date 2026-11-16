@@ -12,15 +12,87 @@ use crate::view_model::{
 
 static CURRENT: AtomicU8 = AtomicU8::new(0);
 
-/// Draw with `theme` from now on.
-pub fn set(theme: Theme) {
+/// The theme and custom colour as last chosen, kept in the data folder
+/// (`theme.json`) because the account's copy arrives with the session, after
+/// the first frame: read once, before anything is drawn, so the window opens
+/// in the saved colours.
+const CACHE_FILE: &str = "theme.json";
+#[cfg(not(test))]
+static LOADED: std::sync::Once = std::sync::Once::new();
+
+/// What `theme.json` holds: the theme and the custom colour, if any.
+pub fn parse_cache(text: &str) -> (Theme, Option<u32>) {
+    let value: serde_json::Value = serde_json::from_str(text).unwrap_or_default();
+    let theme = value
+        .get("theme")
+        .and_then(|v| v.as_str())
+        .map(Theme::from_key)
+        .unwrap_or_default();
+    let custom = value
+        .get("custom_colour")
+        .and_then(|v| v.as_str())
+        .and_then(crate::view_model::theme::parse_hex);
+    (theme, custom)
+}
+
+fn cache_text(theme: Theme, custom: Option<u32>) -> String {
+    let mut value = serde_json::json!({ "theme": theme.key() });
+    if let Some(c) = custom {
+        value["custom_colour"] = crate::view_model::theme::hex(c).into();
+    }
+    value.to_string()
+}
+
+/// Install the cached theme from `dir` (synchronously: a small local file).
+fn install_cache(dir: &std::path::Path) {
+    if let Ok(text) = std::fs::read_to_string(dir.join(CACHE_FILE)) {
+        let (theme, custom) = parse_cache(&text);
+        store_theme(theme);
+        store_custom(custom);
+    }
+}
+
+fn ensure_loaded() {
+    // Unit tests draw with whatever they set, not the machine's choice.
+    #[cfg(not(test))]
+    LOADED.call_once(|| install_cache(&crate::data_dir()));
+}
+
+fn remember() {
+    #[cfg(not(test))]
+    {
+        let text = cache_text(current(), custom());
+        let dir = crate::data_dir();
+        let path = dir.join(CACHE_FILE);
+        if std::fs::read_to_string(&path).ok().as_deref() != Some(text.as_str()) {
+            std::fs::create_dir_all(&dir).ok();
+            std::fs::write(path, text).ok();
+        }
+    }
+}
+
+fn store_theme(theme: Theme) {
     CURRENT.store(
         Theme::ALL.iter().position(|t| *t == theme).unwrap_or(0) as u8,
         Ordering::Relaxed,
     );
 }
 
+fn store_custom(colour: Option<u32>) {
+    if let Ok(mut custom) = CUSTOM.write() {
+        *custom = colour.map(|c| (c, crate::view_model::theme::derive(c)));
+    }
+}
+
+/// Draw with `theme` from now on.
+pub fn set(theme: Theme) {
+    ensure_loaded();
+    store_theme(theme);
+    remember();
+}
+
 pub fn current() -> Theme {
+    ensure_loaded();
     Theme::ALL
         .get(usize::from(CURRENT.load(Ordering::Relaxed)))
         .copied()
@@ -33,17 +105,19 @@ static CUSTOM: std::sync::RwLock<Option<(u32, Palette)>> = std::sync::RwLock::ne
 /// Draw with a palette derived from `colour` (0xRRGGBB) instead of the theme, or, with
 /// `None`, with the theme.
 pub fn set_custom(colour: Option<u32>) {
-    if let Ok(mut custom) = CUSTOM.write() {
-        *custom = colour.map(|c| (c, crate::view_model::theme::derive(c)));
-    }
+    ensure_loaded();
+    store_custom(colour);
+    remember();
 }
 
 pub fn custom() -> Option<u32> {
+    ensure_loaded();
     CUSTOM.read().ok().and_then(|c| c.map(|(base, _)| base))
 }
 
 /// The palette in use.
 pub fn palette() -> Palette {
+    ensure_loaded();
     if let Ok(custom) = CUSTOM.read()
         && let Some((_, palette)) = *custom
     {
@@ -120,6 +194,24 @@ pub const SEARCH_W: f32 = 440.0;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_saved_theme_is_installed_from_the_data_folder_before_drawing() {
+        let dir = std::env::temp_dir().join(format!("morpheus-theme-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join(CACHE_FILE),
+            cache_text(Theme::Midnight, Some(0x336699)),
+        )
+        .unwrap();
+        install_cache(&dir);
+        assert_eq!(current(), Theme::Midnight);
+        assert_eq!(custom(), Some(0x336699));
+        assert_eq!(parse_cache("garbage"), (Theme::default(), None));
+        set_custom(None);
+        set(Theme::Dark);
+        std::fs::remove_dir_all(&dir).ok();
+    }
 
     #[test]
     fn choosing_a_theme_changes_the_colours_read_next() {
