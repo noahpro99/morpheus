@@ -170,6 +170,9 @@ fn main() {
                 //.file("src/vaapi/vaapi_h264_encoder_wrapper.cpp")
                 //.file("src/vaapi/vaapi_encoder_factory.cpp")
                 //.file("src/vaapi/h264_encoder_impl.cpp")
+                // Morpheus patch: hardware H.264 through Media Foundation.
+                .file("src/mf/mf_h264_encoder.cpp")
+                .flag("-DUSE_MEDIA_FOUNDATION_VIDEO_CODEC=1")
                 .flag("/std:c++20")
                 //.flag("/wd4819")
                 //.flag("/wd4068")

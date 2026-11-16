@@ -47,7 +47,7 @@ pub use volume::{
 mod quality;
 pub use quality::{
     PublishedVideo, SCREEN_FPS, ScreenQuality, ScreenResolution, bitrate_for, camera_bitrate,
-    codec_backend, published_video,
+    codec_backend, hardware_video, hardware_video_allowed, published_video, set_hardware_video,
 };
 
 #[path = "screen_audio.rs"]

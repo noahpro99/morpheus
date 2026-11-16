@@ -838,6 +838,16 @@ fn main() {
         }
         std::process::exit(code);
     }
+    // The video encoders without a call (#102; windows.yml, or by hand on a
+    // laptop): which hardware encoder was found and, on Windows, pictures
+    // through Media Foundation's. To a file (no console on Windows).
+    if let Some(out) = std::env::var_os("MORPHEUS_VIDEO_ENCODER_SELF_TEST") {
+        init_logging();
+        let text = morpheus_call::video_encoder_self_test();
+        eprint!("{text}");
+        let _ = std::fs::write(out, &text);
+        std::process::exit(if text.contains(": error:") { 1 } else { 0 });
+    }
     // The report's parts that need no window, to a file (windows.yml: a
     // release build on Windows has no console).
     if let Some(out) = std::env::var_os("MORPHEUS_DIAGNOSTICS_SELF_TEST") {

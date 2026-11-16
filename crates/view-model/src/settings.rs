@@ -166,6 +166,12 @@ pub const SETTINGS_INDEX: &[SettingEntry] = &[
         "graphics",
     ),
     entry(
+        "Hardware video acceleration",
+        "video gpu graphics card encoder decoder h264 vp8 nvenc vaapi videotoolbox media foundation quick sync camera screen share",
+        SettingsPage::VoiceVideo,
+        "video-preview",
+    ),
+    entry(
         "Microphone and speaker",
         "voice video audio input output devices calls",
         SettingsPage::VoiceVideo,

@@ -229,6 +229,7 @@ impl Shell {
         morpheus_call::choose_camera(prefs.camera.clone());
         morpheus_call::set_input_volume(prefs.input_volume);
         morpheus_call::set_output_volume(prefs.output_volume);
+        morpheus_call::set_hardware_video(prefs.hardware_video);
         morpheus_call::set_noise_suppression(crate::noise::read());
         morpheus_call::set_noise_tuning(crate::noise::read_tuning());
         self.calls.devices = prefs;

@@ -93,10 +93,11 @@ impl SettingsView {
             .attr("data-camera", device)
             .attr("data-state", if running { "on" } else { "off" })
             .into_any_element();
+        let hardware = self.hardware_video_row(cx);
         section_classed(
             "Video",
             "video-preview",
-            vec![body, note],
+            vec![body, note, hardware],
             self.hl("video-preview"),
             "voice-video",
         )
@@ -195,6 +196,77 @@ impl SettingsView {
             this.update(cx, |_, cx| cx.notify()).ok();
         })
         .detach();
+        cx.notify();
+    }
+}
+
+impl SettingsView {
+    /// "Hardware video acceleration": the graphics card encodes the camera
+    /// and screen (H.264) where it can; off, VP8 in software. Kept with the
+    /// devices; a camera or screen already sent keeps its encoder.
+    fn hardware_video_row(&self, cx: &mut Context<Self>) -> AnyElement {
+        let on = self.voice_prefs.hardware_video;
+        let switch = div()
+            .id("hw-video-switch")
+            .flex_none()
+            .w(px(38.0))
+            .h(px(20.0))
+            .rounded_full()
+            .p(px(2.0))
+            .flex()
+            .when(on, |d| d.justify_end())
+            .bg(if on {
+                rgb(theme::accent_solid())
+            } else {
+                rgb(theme::bg_input())
+            })
+            .cursor_pointer()
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .on_click(cx.listener(move |this, _, _, cx| this.set_hardware_video(!on, cx)))
+            .child(div().size(px(16.0)).rounded_full().bg(rgb(0xffffff)))
+            .e2e("button", "hw-video-switch")
+            .attr("data-on", on.to_string());
+        div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap(px(12.0))
+            .mt(px(6.0))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(2.0))
+                    .min_w_0()
+                    .child(div().child(crate::view_model::calls::HARDWARE_VIDEO_LABEL))
+                    .child(
+                        div()
+                            .text_size(px(0.75 * theme::REM))
+                            .text_color(rgb(theme::text_muted()))
+                            .child(crate::view_model::calls::HARDWARE_VIDEO_HINT),
+                    ),
+            )
+            .child(switch)
+            .e2e("div", "hw-video")
+            .text(format!(
+                "{} {}",
+                crate::view_model::calls::HARDWARE_VIDEO_LABEL,
+                crate::view_model::calls::HARDWARE_VIDEO_HINT
+            ))
+            .into_any_element()
+    }
+
+    fn set_hardware_video(&mut self, on: bool, cx: &mut Context<Self>) {
+        self.voice_prefs.hardware_video = on;
+        morpheus_call::set_hardware_video(on);
+        if let Err(err) =
+            crate::view_model::calls::write_device_prefs(&self.data_dir, &self.voice_prefs)
+        {
+            eprintln!("morpheus-desktop: saving the video setting: {err}");
+        }
+        // The shell keeps its own copy of the devices file: have it read
+        // this one (a camera choice, so no audio device is switched).
+        cx.emit(super::DevicesChosen(crate::view_model::menu::DeviceKind::Camera));
         cx.notify();
     }
 }

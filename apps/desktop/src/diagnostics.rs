@@ -327,6 +327,7 @@ fn call_sections(report: &mut Report, hidden: bool) {
     let service = CALL_SERVICE.lock().map(|s| s.clone()).unwrap_or_default();
     section.line("JWT service", if hidden { HIDDEN.to_owned() } else { service });
     section.line("Connection", call.state.clone());
+    section.line("Hardware video", hardware_video_line());
     // The SFUs of people on other homeservers, listened on (#91).
     for other in &call.others {
         section.line(
@@ -525,8 +526,19 @@ impl Shell {
     }
 }
 
+/// Settings' switch, the env override and the encoder found, as one line.
+fn hardware_video_line() -> String {
+    let env_off = !morpheus_call::hardware_video_allowed(
+        true,
+        std::env::var("MORPHEUS_HW_VIDEO").ok().as_deref(),
+    );
+    let setting = crate::view_model::calls::read_device_prefs(&crate::data_dir()).hardware_video;
+    vm::hardware_video_line(setting, env_off, morpheus_call::hardware_encoder().as_deref())
+}
+
 /// The parts of the report that need no window (`MORPHEUS_DIAGNOSTICS_SELF_TEST`,
-/// windows.yml): memory, kernel, window system, matrix-sdk, as lines.
+/// windows.yml): memory, kernel, window system, matrix-sdk, hardware
+/// video, as lines.
 pub fn self_test_text() -> String {
     let (rss, private) = {
         let m = crate::memory::resident_kb();
@@ -548,7 +560,8 @@ pub fn self_test_text() -> String {
         UNKNOWN.to_owned(),
     );
     format!(
-        "{RSS_LABEL}: {rss}\n{ANON_LABEL}: {private}\nKernel: {kernel}\nWindow system: {system}\nRefresh rate: {refresh}\nmatrix-sdk: {}\n",
-        env!("MORPHEUS_MATRIX_SDK")
+        "{RSS_LABEL}: {rss}\n{ANON_LABEL}: {private}\nKernel: {kernel}\nWindow system: {system}\nRefresh rate: {refresh}\nmatrix-sdk: {}\nHardware video: {}\n",
+        env!("MORPHEUS_MATRIX_SDK"),
+        hardware_video_line()
     )
 }

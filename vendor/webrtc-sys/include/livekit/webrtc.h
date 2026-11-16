@@ -117,4 +117,10 @@ rust::String create_random_uuid();
 
 rust::Vec<VideoEncoderBackend> video_encoder_backend_list();
 
+// Morpheus patch: Windows' Media Foundation H.264 encoder (empty / "unavailable"
+// elsewhere), and whether decoders may use the GPU (Settings' switch).
+rust::String media_foundation_h264_encoder_name();
+rust::String media_foundation_h264_self_test(bool software, uint32_t frames);
+void set_hardware_video_decoding(bool on);
+
 }  // namespace livekit_ffi

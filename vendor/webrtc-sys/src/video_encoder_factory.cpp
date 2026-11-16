@@ -64,6 +64,11 @@
 #include "jetson/jetson_encoder_factory.h"
 #endif
 
+// Morpheus patch: Windows' hardware H.264 encoders (Media Foundation).
+#if defined(USE_MEDIA_FOUNDATION_VIDEO_CODEC)
+#include "mf/mf_h264_encoder.h"
+#endif
+
 namespace livekit_ffi {
 
 namespace {
@@ -340,6 +345,12 @@ rust::Vec<VideoEncoderBackend> video_encoder_backend_list() {
   }
 #endif
 
+#if defined(USE_MEDIA_FOUNDATION_VIDEO_CODEC)
+  if (MediaFoundationVideoEncoderFactory::IsSupported()) {
+    has_hardware_backend = true;
+  }
+#endif
+
   if (has_hardware_backend && !hardware_backend_listed) {
     backends.push_back(VideoEncoderBackend::Hardware);
   }
@@ -368,6 +379,13 @@ VideoEncoderFactory::InternalFactory::InternalFactory() {
 #endif
 
   AddJetsonFactory(factories_);
+
+#if defined(USE_MEDIA_FOUNDATION_VIDEO_CODEC)
+  if (MediaFoundationVideoEncoderFactory::IsSupported()) {
+    AddBackendFactory(factories_, VideoEncoderBackend::Hardware,
+                      std::make_unique<MediaFoundationVideoEncoderFactory>());
+  }
+#endif
 
   const PreferredHwEncoderConfig preferred_hw_encoder =
       GetPreferredHwEncoderConfig();
@@ -699,6 +717,31 @@ std::unique_ptr<webrtc::VideoEncoder> VideoEncoderFactory::Create(
   }
 
   return encoder;
+}
+
+}  // namespace livekit_ffi
+
+namespace livekit_ffi {
+
+// Morpheus patch: the Media Foundation encoder's name, and its self-test
+// (Windows; elsewhere there is none).
+rust::String media_foundation_h264_encoder_name() {
+#if defined(USE_MEDIA_FOUNDATION_VIDEO_CODEC)
+  return rust::String(MediaFoundationVideoEncoderFactory::EncoderName());
+#else
+  return rust::String();
+#endif
+}
+
+rust::String media_foundation_h264_self_test(bool software, uint32_t frames) {
+#if defined(USE_MEDIA_FOUNDATION_VIDEO_CODEC)
+  return rust::String(
+      MediaFoundationH264SelfTest(software, static_cast<int>(frames)));
+#else
+  (void)software;
+  (void)frames;
+  return rust::String("unavailable: not Windows");
+#endif
 }
 
 }  // namespace livekit_ffi

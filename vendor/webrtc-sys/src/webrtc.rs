@@ -73,6 +73,11 @@ pub mod ffi {
 
         fn create_random_uuid() -> String;
         fn video_encoder_backend_list() -> Vec<VideoEncoderBackend>;
+        // Morpheus patch: the Media Foundation encoder (Windows) and the
+        // hardware decoding switch.
+        fn media_foundation_h264_encoder_name() -> String;
+        fn media_foundation_h264_self_test(software: bool, frames: u32) -> String;
+        fn set_hardware_video_decoding(on: bool);
         fn new_log_sink(fnc: fn(String, LoggingSeverity)) -> UniquePtr<LogSink>;
     }
 }

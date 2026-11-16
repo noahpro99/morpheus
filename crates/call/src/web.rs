@@ -27,6 +27,11 @@ pub fn can_send_video() -> bool {
     false
 }
 
+/// No hardware video encoder in a browser build.
+pub fn hardware_encoder() -> Option<String> {
+    None
+}
+
 pub fn can_share_screen() -> bool {
     false
 }

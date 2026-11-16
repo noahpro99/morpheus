@@ -16,6 +16,10 @@
 
 #include "livekit/video_decoder_factory.h"
 
+#include <atomic>
+
+#include "livekit/webrtc.h"
+
 #include <modules/video_coding/codecs/av1/av1_svc_config.h>
 #include "api/environment/environment.h"
 #include "api/video_codecs/av1_profile.h"
@@ -42,6 +46,11 @@
 namespace livekit_ffi {
 
 namespace {
+// Morpheus patch: Settings' "Hardware video acceleration". Off, a new
+// decoder is a software one where there is one for the codec (the
+// platform's otherwise, e.g. VideoToolbox for H.264 when FFmpeg has none).
+std::atomic<bool> g_hardware_decoding{true};
+
 // H264Decoder::IsSupported() only reflects the WEBRTC_USE_H264 build flag;
 // desktop prebuilts link an FFmpeg without the H.264 codec, which only
 // surfaces when Configure() fails at runtime ("FFmpeg H.264 decoder not
@@ -136,6 +145,16 @@ VideoDecoderFactory::CodecSupport VideoDecoderFactory::QueryCodecSupport(
 
 std::unique_ptr<webrtc::VideoDecoder> VideoDecoderFactory::Create(
     const webrtc::Environment& env, const webrtc::SdpVideoFormat& format) {
+  if (!g_hardware_decoding.load()) {
+    if (absl::EqualsIgnoreCase(format.name, webrtc::kVp8CodecName))
+      return webrtc::CreateVp8Decoder(env);
+    if (absl::EqualsIgnoreCase(format.name, webrtc::kVp9CodecName))
+      return webrtc::VP9Decoder::Create();
+    if (absl::EqualsIgnoreCase(format.name, webrtc::kH264CodecName) &&
+        internal_h264_decoder_works_)
+      return webrtc::H264Decoder::Create();
+  }
+
   for (const auto& factory : factories_) {
     for (const auto& supported_format : factory->GetSupportedFormats()) {
       if (supported_format.IsSameCodec(format))
@@ -182,6 +201,10 @@ std::unique_ptr<webrtc::VideoDecoder> VideoDecoderFactory::Create(
 
   RTC_LOG(LS_ERROR) << "No VideoDecoder found for " << format.name;
   return nullptr;
+}
+
+void set_hardware_video_decoding(bool on) {
+  g_hardware_decoding.store(on);
 }
 
 }  // namespace livekit_ffi

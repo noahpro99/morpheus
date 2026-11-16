@@ -140,9 +140,44 @@ pub fn lock_version(lock: &str, package: &str) -> Option<String> {
     None
 }
 
+/// Diagnostics' "Hardware video" line: Settings' switch (`setting`),
+/// whether `MORPHEUS_HW_VIDEO=0` turned it off, and whether libwebrtc found
+/// a hardware encoder (`found`, e.g. "Media Foundation: Intel Quick Sync
+/// Video H.264 Encoder MFT"; `None` when there is none).
+pub fn hardware_video_line(setting: bool, env_off: bool, found: Option<&str>) -> String {
+    let sent = match found {
+        Some(found) => format!("hardware encoder: {found}"),
+        None => "no hardware encoder found".to_owned(),
+    };
+    if !setting {
+        format!("off in Settings (VP8 in software; {sent})")
+    } else if env_off {
+        format!("off (MORPHEUS_HW_VIDEO=0; VP8 in software; {sent})")
+    } else if found.is_some() {
+        format!("on (H.264, {sent})")
+    } else {
+        format!("on, {sent} (VP8 in software)")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_hardware_video_line_says_what_sends_video_and_why() {
+        let mf = Some("Media Foundation: Intel Quick Sync Video H.264 Encoder MFT");
+        assert_eq!(
+            hardware_video_line(true, false, mf),
+            "on (H.264, hardware encoder: Media Foundation: Intel Quick Sync Video H.264 Encoder MFT)"
+        );
+        assert_eq!(
+            hardware_video_line(true, false, None),
+            "on, no hardware encoder found (VP8 in software)"
+        );
+        assert!(hardware_video_line(false, false, mf).starts_with("off in Settings (VP8 in software"));
+        assert!(hardware_video_line(true, true, mf).starts_with("off (MORPHEUS_HW_VIDEO=0"));
+    }
 
     fn sample() -> Report {
         let mut report = Report::default();

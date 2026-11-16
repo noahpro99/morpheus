@@ -1023,27 +1023,76 @@ enum Feed {
 }
 
 /// The codec video is sent in: H.264 where this computer has a hardware
-/// encoder for it (Linux: VAAPI on Intel and AMD, NVENC on NVIDIA, which
-/// are H.264 encoders), VP8 in software otherwise. If the hardware encoder
-/// fails to start, libwebrtc encodes H.264 in software (OpenH264) instead.
-/// `MORPHEUS_HW_VIDEO=0` keeps to VP8 in software.
+/// encoder for it (Linux: VAAPI on Intel and AMD, NVENC on NVIDIA; Windows:
+/// the GPU's Media Foundation encoder; macOS: VideoToolbox), VP8 in
+/// software otherwise. If the hardware encoder fails to start, libwebrtc
+/// encodes H.264 in software (OpenH264) instead. Settings' "Hardware video
+/// acceleration" turned off, or `MORPHEUS_HW_VIDEO=0`, keeps to VP8 in
+/// software; read at each publish, so a change applies to the next one.
 fn video_codec() -> VideoCodec {
-    static CODEC: OnceLock<VideoCodec> = OnceLock::new();
-    *CODEC.get_or_init(|| {
-        let backends: Vec<_> = VideoEncoderBackend::list_available().into_iter().collect();
-        let hardware = cfg!(target_os = "linux")
-            && std::env::var("MORPHEUS_HW_VIDEO").as_deref() != Ok("0")
-            && backends
-                .iter()
-                .any(|b| matches!(b, VideoEncoderBackend::Nvenc | VideoEncoderBackend::Vaapi));
-        let codec = if hardware {
-            VideoCodec::H264
-        } else {
-            VideoCodec::VP8
-        };
-        info!(?backends, ?codec, "video encoders available");
-        codec
-    })
+    let desktop = cfg!(any(target_os = "linux", target_os = "windows", target_os = "macos"));
+    if desktop && crate::hardware_video() && hardware_encoder().is_some() {
+        VideoCodec::H264
+    } else {
+        VideoCodec::VP8
+    }
+}
+
+/// The hardware video encoders libwebrtc found here ("VAAPI", "NVENC",
+/// "VideoToolbox", "Media Foundation: <the GPU's encoder>"), looked for
+/// once; `None` when there is none.
+pub fn hardware_encoder() -> Option<String> {
+    static FOUND: OnceLock<Option<String>> = OnceLock::new();
+    FOUND
+        .get_or_init(|| {
+            let backends: Vec<_> = VideoEncoderBackend::list_available().into_iter().collect();
+            let mut names: Vec<String> = Vec::new();
+            for backend in &backends {
+                match backend {
+                    VideoEncoderBackend::Vaapi => names.push("VAAPI".into()),
+                    VideoEncoderBackend::Nvenc => names.push("NVENC".into()),
+                    VideoEncoderBackend::VideoToolbox => names.push("VideoToolbox".into()),
+                    _ => {}
+                }
+            }
+            // Windows' GPU encoders are Media Foundation ones, listed as
+            // "Hardware" alone.
+            #[cfg(target_os = "windows")]
+            if backends.contains(&VideoEncoderBackend::Hardware) {
+                let name = livekit::webrtc::native::media_foundation_h264_encoder_name();
+                names.push(format!("Media Foundation: {name}"));
+            }
+            let found = (!names.is_empty()).then(|| names.join(", "));
+            info!(?backends, ?found, "video encoders available");
+            found
+        })
+        .clone()
+}
+
+/// The video encoders, tried without a call (`MORPHEUS_VIDEO_ENCODER_SELF_TEST`;
+/// windows.yml, or by hand on a laptop): the hardware encoder libwebrtc
+/// found and, on Windows, 30 pictures through the GPU's Media Foundation
+/// encoder and through Microsoft's software one (which CI machines have).
+/// One line each; a failed encode says "error:".
+pub fn video_encoder_self_test() -> String {
+    #[cfg_attr(not(target_os = "windows"), allow(unused_mut))]
+    let mut lines = vec![format!(
+        "hardware encoder: {}",
+        hardware_encoder().unwrap_or_else(|| "none".into())
+    )];
+    #[cfg(target_os = "windows")]
+    {
+        use livekit::webrtc::native::media_foundation_h264_self_test;
+        lines.push(format!(
+            "media foundation hardware: {}",
+            media_foundation_h264_self_test(false, 30)
+        ));
+        lines.push(format!(
+            "media foundation software: {}",
+            media_foundation_h264_self_test(true, 30)
+        ));
+    }
+    lines.join("\n") + "\n"
 }
 
 /// Log which encoder sends a published video (`kind`: camera or screen),
@@ -1329,6 +1378,7 @@ impl Outgoing {
             } else {
                 "maintain-framerate"
             },
+            codec: options.video_codec.as_str(),
             encoder: None,
         };
         let options_codec = options.video_codec;

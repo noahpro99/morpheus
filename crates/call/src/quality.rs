@@ -183,6 +183,8 @@ pub struct PublishedVideo {
     pub layers: usize,
     pub hint: &'static str,
     pub degradation: &'static str,
+    /// The codec it is sent in: "h264" or "vp8".
+    pub codec: &'static str,
     /// What encodes it, once it is encoding: "vaapi", "nvenc" or "software".
     pub encoder: Option<&'static str>,
 }
@@ -196,6 +198,10 @@ pub fn codec_backend(implementation: &str, encoder: bool) -> &'static str {
         if encoder { "nvenc" } else { "nvdec" }
     } else if implementation.contains("VAAPI") {
         "vaapi"
+    } else if implementation.contains("VideoToolbox") {
+        "videotoolbox"
+    } else if implementation.contains("Media Foundation") {
+        "mediafoundation"
     } else {
         "software"
     }
@@ -215,11 +221,42 @@ impl std::fmt::Display for PublishedVideo {
             self.hint,
             self.degradation
         )?;
+        write!(f, " codec={}", self.codec)?;
         if let Some(encoder) = self.encoder {
             write!(f, " encoder={encoder}")?;
         }
         Ok(())
     }
+}
+
+/// Settings → Voice & Video → "Hardware video acceleration" (on unless
+/// turned off). Read when a camera or screen is published, so a change
+/// applies to the next one.
+static HARDWARE_VIDEO: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+/// Turns hardware video on or off for the camera or screen published next
+/// (off: VP8 in software) and the video received next (off: decoded in
+/// software where there is a software decoder for it). `MORPHEUS_HW_VIDEO=0` keeps it off whatever this
+/// says.
+pub fn set_hardware_video(on: bool) {
+    HARDWARE_VIDEO.store(on, std::sync::atomic::Ordering::Relaxed);
+    // Decoders made from now on too (a picture already shown keeps its own).
+    #[cfg(not(target_arch = "wasm32"))]
+    livekit::webrtc::native::set_hardware_video_decoding(hardware_video());
+}
+
+/// Whether video may go through the GPU: the setting, unless
+/// `MORPHEUS_HW_VIDEO=0`.
+pub fn hardware_video() -> bool {
+    hardware_video_allowed(
+        HARDWARE_VIDEO.load(std::sync::atomic::Ordering::Relaxed),
+        std::env::var("MORPHEUS_HW_VIDEO").ok().as_deref(),
+    )
+}
+
+/// The setting, overridden off by `MORPHEUS_HW_VIDEO=0` (for tests).
+pub fn hardware_video_allowed(setting: bool, env: Option<&str>) -> bool {
+    setting && env != Some("0")
 }
 
 static PUBLISHED: Mutex<Option<HashMap<String, PublishedVideo>>> = Mutex::new(None);
@@ -259,6 +296,15 @@ mod tests {
     use super::*;
 
     #[test]
+    fn hardware_video_follows_the_setting_and_the_env_can_only_turn_it_off() {
+        assert!(hardware_video_allowed(true, None));
+        assert!(hardware_video_allowed(true, Some("1")));
+        assert!(!hardware_video_allowed(true, Some("0")));
+        assert!(!hardware_video_allowed(false, None));
+        assert!(!hardware_video_allowed(false, Some("1")));
+    }
+
+    #[test]
     fn codec_backends_are_read_off_implementation_names() {
         assert_eq!(codec_backend("NVIDIA H264 Encoder", true), "nvenc");
         assert_eq!(
@@ -273,6 +319,12 @@ mod tests {
         assert_eq!(codec_backend("libvpx", true), "software");
         assert_eq!(codec_backend("OpenH264", true), "software");
         assert_eq!(codec_backend("FFmpeg", false), "software");
+        assert_eq!(codec_backend("VideoToolbox", true), "videotoolbox");
+        assert_eq!(codec_backend("VideoToolbox", false), "videotoolbox");
+        assert_eq!(
+            codec_backend("Media Foundation H264 Encoder (Intel Quick Sync Video H.264 Encoder MFT)", true),
+            "mediafoundation"
+        );
     }
 
     fn q(resolution: ScreenResolution, fps: u32) -> ScreenQuality {

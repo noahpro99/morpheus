@@ -69,6 +69,12 @@ pub mod video_track;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod native {
     pub use webrtc_sys::webrtc::ffi::create_random_uuid;
+    // Morpheus patch: the Media Foundation encoder (Windows) and the
+    // hardware decoding switch.
+    pub use webrtc_sys::webrtc::ffi::{
+        media_foundation_h264_encoder_name, media_foundation_h264_self_test,
+        set_hardware_video_decoding,
+    };
 
     pub use crate::imp::{
         apm, audio_mixer, audio_resampler, frame_cryptor, packet_trailer, yuv_helper,

@@ -600,6 +600,11 @@ pub fn camera_rows(cameras: &[(String, String)], current: Option<&str>) -> Vec<D
 }
 
 
+/// Settings → Voice & Video's switch for the GPU's video encoder.
+pub const HARDWARE_VIDEO_LABEL: &str = "Hardware video acceleration";
+/// What the switch does, and when.
+pub const HARDWARE_VIDEO_HINT: &str = "Sends your camera and screen through the graphics card (H.264) where it can; off sends VP8 in software. Applies the next time you turn on your camera or share your screen.";
+
 /// Where the devices chosen for calls are kept (the Dioxus app's file, so
 /// the two apps agree).
 pub const AUDIO_DEVICES: &str = "audio_devices.json";
@@ -613,6 +618,10 @@ pub struct DevicePrefs {
     pub camera: Option<String>,
     pub input_volume: f32,
     pub output_volume: f32,
+    /// Settings → Voice & Video → "Hardware video acceleration" (on unless
+    /// turned off): the GPU encodes video where it can (H.264), else VP8 in
+    /// software.
+    pub hardware_video: bool,
 }
 
 impl Default for DevicePrefs {
@@ -623,6 +632,7 @@ impl Default for DevicePrefs {
             camera: None,
             input_volume: 1.0,
             output_volume: 1.0,
+            hardware_video: true,
         }
     }
 }
@@ -646,6 +656,10 @@ pub fn read_device_prefs(data_dir: &std::path::Path) -> DevicePrefs {
         camera: field("camera"),
         input_volume: volume_field("input_volume"),
         output_volume: volume_field("output_volume"),
+        hardware_video: saved
+            .get("hardware_video")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true),
     }
 }
 
@@ -656,6 +670,7 @@ pub fn write_device_prefs(data_dir: &std::path::Path, prefs: &DevicePrefs) -> st
         "camera": prefs.camera,
         "input_volume": prefs.input_volume,
         "output_volume": prefs.output_volume,
+        "hardware_video": prefs.hardware_video,
     });
     std::fs::write(data_dir.join(AUDIO_DEVICES), json.to_string())
 }
@@ -1170,9 +1185,13 @@ mod tests {
             camera: Some("cam".into()),
             input_volume: 1.5,
             output_volume: 0.8,
+            hardware_video: false,
         };
         write_device_prefs(&dir, &chosen).expect("write");
         assert_eq!(read_device_prefs(&dir), chosen);
+        // A file from before the switch: hardware video stays on.
+        std::fs::write(dir.join(AUDIO_DEVICES), r#"{"microphone":"mic"}"#).expect("write");
+        assert!(read_device_prefs(&dir).hardware_video);
         std::fs::remove_dir_all(&dir).expect("clean");
     }
 
