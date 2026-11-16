@@ -180,8 +180,11 @@ jobs:
           name: ios
           path: ${{ env.IPA }}
 
+      # Phones are not released until they are rebuilt natively (Swift/Kotlin
+      # over UniFFI): the ipa is still built, so the shared code keeps
+      # compiling for iOS, but it is never attached to a release.
       - name: Attach to the release
-        if: startsWith(github.ref, 'refs/tags/') || inputs.tag != ''
+        if: false
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag || github.ref_name }}

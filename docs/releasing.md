@@ -1,16 +1,17 @@
 # Releasing
 
-A release is a GitHub release `vX.Y.Z` with eight files attached, named by a
-GitHub milestone (`X.Y.Z`; issues that go into the release are put in it).
-The version is the workspace `version` in `Cargo.toml` (and `Cargo.lock`); the
-Android version code is derived from it by `scripts/release-android.sh`
-(0.2.3 becomes 20003). The built-in updater reads the release's assets, so
-file names matter.
+A release is a GitHub release `vX.Y.Z` with six desktop files attached, named
+by a GitHub milestone (`X.Y.Z`; issues that go into the release are put in it).
+The version is the workspace `version` in `Cargo.toml` (and `Cargo.lock`). The
+built-in updater reads the release's assets, so file names matter.
+
+**No phone apps in releases** (from 0.2.4): Android and iOS are not released
+until they are rebuilt natively (Swift/Kotlin over UniFFI, see
+`docs/PLAN.md`). `apple.yml` still builds the iOS ipa so the shared code keeps
+compiling for iOS, but never attaches it; the APK is not built for releases.
 
 | Asset | Made by |
 | --- | --- |
-| `morpheus-X.Y.Z-android-arm64.apk` | locally, `scripts/release-android.sh` (signed with the key in `~/.config/morpheus/`) |
-| `morpheus-X.Y.Z-ios-arm64-unsigned.ipa` | `apple.yml` (job `ios`) |
 | `morpheus-X.Y.Z-linux-x86_64.zip` | `linux.yml` |
 | `morpheus-X.Y.Z-macos-arm64.zip` | `apple.yml` (macOS, arm64) |
 | `morpheus-X.Y.Z-macos-arm64.dmg` | `apple.yml` (macOS, arm64; the disk image for people, the updater uses the zip) |
@@ -21,7 +22,7 @@ file names matter.
 The desktop zips (and dmgs) are each built, run through the update self-test
 (`scripts/update-self-test.sh`) and attached by the workflow. A release is
 public the moment it is published, and clients that check for updates then
-offer it, so it is published only when all eight assets are there.
+offer it, so it is published only when all six assets are there.
 
 ## Steps
 
@@ -65,22 +66,22 @@ offer it, so it is published only when all eight assets are there.
    ```
 
    The push starts `linux.yml`, `apple.yml` and `windows.yml`; each attaches
-   its zip (or the ipa) to the draft release named by the tag. To attach
+   its zips (and dmgs) to the draft release named by the tag. To attach
    again after a fix, dispatch the workflow with `-f tag=vX.Y.Z` (it uses
    `--clobber`, replacing the old file). If the tag has to move, delete it
    on GitHub and push it again.
 
-5. **Android APK, locally.** CI does not build it (it needs the release key):
+5. **Tag the tests too.** Put the same tag on the matching commit of the
+   private `../morpheus-e2e` and push it, so every release can be lined up
+   with its tests (`git -C ../morpheus-e2e tag -a vX.Y.Z -m "Morpheus X.Y.Z"
+   && git -C ../morpheus-e2e push origin vX.Y.Z`). Push both repos together.
 
-   ```sh
-   nix develop .#android -c bash scripts/release-android.sh
-   gh release upload vX.Y.Z target/dist/morpheus-X.Y.Z-android-arm64.apk --clobber
-   ```
+   (Android, for when phones are released again: `nix develop .#android -c
+   bash scripts/release-android.sh`, then `gh release upload`; keep
+   `~/.config/morpheus/release.keystore`, Android only updates over an app
+   signed with the same key.)
 
-   Keep `~/.config/morpheus/release.keystore` and its password file: Android
-   installs an update only over an app signed with the same key.
-
-6. **Check, then publish.** All eight assets must be attached:
+6. **Check, then publish.** All six assets must be attached:
 
    ```sh
    gh release view vX.Y.Z --json assets -q '.assets[].name'
