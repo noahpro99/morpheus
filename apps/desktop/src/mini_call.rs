@@ -3,8 +3,8 @@
 //! a camera or a shared screen on. It shows one feed (which one is
 //! `view_model::mini_call::MiniPick`'s choice), is dragged by its body (and
 //! snaps to the left or right edge when let go), resized from its inner
-//! bottom corner, and goes back to the call view from its back button. On
-//! hover: mute, deafen, hang up. Its place is kept on this device.
+//! bottom corner, and goes back to the call view from its back button (its
+//! only button) or a double click. Its place is kept on this device.
 //!
 //! The picture is the call view's own [`crate::call_ui::VideoFrame`] entity
 //! for the feed (the call view is not drawn meanwhile), so a frame is turned
@@ -85,7 +85,6 @@ impl Shell {
         if !shows {
             self.calls.mini_pick = Default::default();
             self.calls.mini_drag = None;
-            self.calls.mini_hover = false;
             return None;
         }
         let call = self.calls.state.as_ref()?;
@@ -197,7 +196,6 @@ pub fn render(
     } else {
         name
     };
-    let hovered = shell.calls.mini_hover || shell.calls.mini_drag.is_some();
     let view = cx.entity();
     // While it is pressed, the pointer is followed wherever it goes (over
     // the window behind it too), and its release ends the press.
@@ -345,15 +343,17 @@ pub fn render(
         } else {
             gpui::CursorStyle::OpenHand
         })
-        .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
-            if this.calls.mini_hover != *hovered {
-                this.calls.mini_hover = *hovered;
-                cx.notify();
-            }
-        }))
-        .on_mouse_down(
-            MouseButton::Left,
+        .on_mouse_down(MouseButton::Left, {
+            let room = room.0.clone();
             cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+                // A double click goes back to the call, as the back button
+                // does; the first click's press moved nothing, so nothing
+                // snaps or is saved.
+                if event.click_count >= 2 {
+                    this.calls.mini_drag = None;
+                    this.open_room(room.clone(), cx);
+                    return;
+                }
                 let at = (
                     f32::from(event.position.x),
                     f32::from(event.position.y) - TITLEBAR_H,
@@ -365,16 +365,13 @@ pub fn render(
                     start: at,
                 });
                 cx.notify();
-            }),
-        )
+            })
+        })
         .child(follow);
     if let Some(frame) = frame {
         tile = tile.child(frame);
     }
     tile = tile.child(name_label).child(back).child(grip);
-    if hovered {
-        tile = tile.child(controls(shell, cx));
-    }
     Some(
         tile.e2e("div", "mini-call")
             .attr("data-feed", key)
@@ -385,89 +382,6 @@ pub fn render(
     )
 }
 
-/// One of the hover controls: a small round button over the picture. (No
-/// press-sink as the call view's have: drawn lower while held, a button over
-/// a moving picture would be pressed again by a test's click.)
-fn mini_button(
-    id: &'static str,
-    classes: &str,
-    title: &str,
-    glyph: &'static str,
-    red: bool,
-    on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
-) -> AnyElement {
-    div()
-        .id(id)
-        .flex_none()
-        .size(px(30.0))
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded_full()
-        .bg(if red {
-            gpui::Hsla::from(rgb(theme::danger()))
-        } else {
-            gpui::hsla(0.0, 0.0, 0.0, 0.6)
-        })
-        .hover(|s| s.opacity(0.85))
-        .cursor_pointer()
-        .child(icon(glyph, 15.0).text_color(rgb(0xffffff)))
-        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-        .on_click(on_click)
-        .e2e("button", classes)
-        .attr("title", title.to_owned())
-        .into_any_element()
-}
-
-/// Mute, deafen and hang up, along the top right while hovered.
-fn controls(shell: &Shell, cx: &mut Context<Shell>) -> AnyElement {
-    let flags = shell.calls.voice;
-    let muted = flags.mic_off();
-    div()
-        .absolute()
-        .top(px(8.0))
-        .right(px(8.0))
-        .flex()
-        .gap(px(6.0))
-        .child(mini_button(
-            "mini-mute",
-            if muted {
-                "call-control mute-button active"
-            } else {
-                "call-control mute-button"
-            },
-            flags.mute_title(),
-            if muted { "mic-off" } else { "mic" },
-            muted,
-            cx.listener(|this, _, _, cx| this.toggle_mute(cx)),
-        ))
-        .child(mini_button(
-            "mini-deafen",
-            if flags.deafened {
-                "call-control deafen-button active"
-            } else {
-                "call-control deafen-button"
-            },
-            flags.deafen_title(),
-            if flags.deafened {
-                "headphone-off"
-            } else {
-                "headphones"
-            },
-            flags.deafened,
-            cx.listener(|this, _, _, cx| this.toggle_deafen(cx)),
-        ))
-        .child(mini_button(
-            "mini-hang-up",
-            "call-control hang-up",
-            "Disconnect",
-            "phone-off",
-            true,
-            cx.listener(|this, _, _, cx| this.hang_up(cx)),
-        ))
-        .e2e("div", "mini-call-controls")
-        .into_any_element()
-}
 
 /// Widget tests: the shell on gpui's test platform with a call fed in by
 /// hand (no session: nothing reaches LiveKit or the server).
@@ -535,22 +449,14 @@ mod widget_tests {
     }
 
     #[gpui::test]
-    fn the_mini_window_shows_the_share_and_its_controls_work(cx: &mut TestAppContext) {
+    fn the_mini_window_shows_the_share_with_only_a_back_button(cx: &mut TestAppContext) {
         let (shell, cx) = open(cx);
         assert_eq!(query(".mini-call[data-feed=\"bob-screen\"]").len(), 1);
-        assert!(query(".mini-call .mini-call-controls").is_empty(), "controls on hover only");
         cx.simulate_mouse_move(centre(".mini-call"), None, Modifiers::none());
         redraw(cx);
-        assert_eq!(query(".mini-call .mini-call-controls .hang-up").len(), 1);
-        // Moving onto a control keeps them (they are in front of it).
-        cx.simulate_mouse_move(centre(".mini-call .mini-call-controls .mute-button"), None, Modifiers::none());
-        redraw(cx);
-        assert_eq!(query(".mini-call .mini-call-controls").len(), 1, "still hovered over a control");
-        cx.simulate_click(centre(".mini-call .mini-call-controls .mute-button"), Modifiers::none());
-        redraw(cx);
-        assert_eq!(query(".user-pill .mute-button.active").len(), 1, "muted from it");
-        assert!(shell.read_with(cx, |s, _| s.calls.mini_drag.is_none()));
-        // The call view open: no mini window.
+        assert_eq!(query(".mini-call button").len(), 1, "no call controls, on hover either");
+        assert_eq!(query(".mini-call .mini-call-back").len(), 1);
+        // The back button: the call view open, no mini window.
         cx.simulate_click(centre(".mini-call .mini-call-back"), Modifiers::none());
         redraw(cx);
         assert_eq!(
@@ -558,6 +464,38 @@ mod widget_tests {
             Some(OwnedRoomId::try_from("!lounge:x").expect("room"))
         );
         assert!(query(".mini-call").is_empty());
+    }
+
+    #[gpui::test]
+    fn a_double_click_goes_back_to_the_call_and_moves_nothing(cx: &mut TestAppContext) {
+        let (shell, cx) = open(cx);
+        let place = shell.read_with(cx, |s, _| s.calls.mini_place);
+        let at = centre(".mini-call .mini-call-name");
+        for clicks in 1..=2 {
+            cx.simulate_event(gpui::MouseDownEvent {
+                position: at,
+                modifiers: Modifiers::none(),
+                button: MouseButton::Left,
+                click_count: clicks,
+                first_mouse: false,
+            });
+            cx.simulate_event(gpui::MouseUpEvent {
+                position: at,
+                modifiers: Modifiers::none(),
+                button: MouseButton::Left,
+                click_count: clicks,
+            });
+        }
+        redraw(cx);
+        assert_eq!(
+            shell.read_with(cx, |s, _| s.selected.clone()),
+            Some(OwnedRoomId::try_from("!lounge:x").expect("room"))
+        );
+        assert!(query(".mini-call").is_empty());
+        shell.read_with(cx, |s, _| {
+            assert!(s.calls.mini_drag.is_none(), "no drag left going");
+            assert_eq!(s.calls.mini_place, place, "nothing moved or snapped");
+        });
     }
 
     #[gpui::test]

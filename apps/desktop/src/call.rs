@@ -110,12 +110,11 @@ pub struct Calls {
     /// The last join that did not come off (shown with a way to try again).
     pub join_error: Option<JoinError>,
     /// The mini call window (issue #86): which feed it shows over time,
-    /// where it sits (kept on this device), a press on it going on, whether
-    /// the pointer is over it, and when a redraw is due for a speaker's hold.
+    /// where it sits (kept on this device), a press on it going on, and
+    /// when a redraw is due for a speaker's hold.
     pub mini_pick: crate::view_model::mini_call::MiniPick,
     pub mini_place: crate::view_model::mini_call::MiniPlace,
     pub mini_drag: Option<crate::mini_call::MiniDrag>,
-    pub mini_hover: bool,
     pub mini_wake: Option<u64>,
 }
 
