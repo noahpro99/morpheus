@@ -109,6 +109,37 @@ pub fn millis(ms: f64) -> String {
     if ms < 10.0 { format!("{ms:.1} ms") } else { format!("{ms:.0} ms") }
 }
 
+/// "Windows 11 24H2 (build 26100)": Windows 11 is build 22000 and up (the
+/// registry's product name still says Windows 10 there). `display` is the
+/// registry's DisplayVersion ("24H2"), empty on old builds.
+pub fn windows_version(build: u32, display: &str) -> String {
+    if build == 0 {
+        return UNKNOWN.to_owned();
+    }
+    let name = if build >= 22000 { "Windows 11" } else { "Windows 10" };
+    let display = display.trim();
+    if display.is_empty() {
+        format!("{name} (build {build})")
+    } else {
+        format!("{name} {display} (build {build})")
+    }
+}
+
+/// The matrix-sdk version out of a Cargo.lock's text (any line ending).
+pub fn lock_version(lock: &str, package: &str) -> Option<String> {
+    let name = format!("name = \"{package}\"");
+    let mut lines = lock.lines().map(str::trim_end);
+    while let Some(line) = lines.next() {
+        if line == name {
+            return lines
+                .next()?
+                .strip_prefix("version = ")
+                .map(|v| v.trim_matches('"').to_owned());
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -150,5 +181,22 @@ mod tests {
         assert_eq!(bitrate(2_400_000.0), "2.40 Mbps");
         assert_eq!(millis(4.26), "4.3 ms");
         assert_eq!(millis(42.0), "42 ms");
+    }
+
+    #[test]
+    fn windows_builds_are_named() {
+        assert_eq!(windows_version(26100, "24H2"), "Windows 11 24H2 (build 26100)");
+        assert_eq!(windows_version(19045, "22H2"), "Windows 10 22H2 (build 19045)");
+        assert_eq!(windows_version(17763, ""), "Windows 10 (build 17763)");
+        assert_eq!(windows_version(0, ""), "unknown");
+    }
+
+    #[test]
+    fn a_lock_file_version_is_found_with_unix_or_windows_line_endings() {
+        let lock = "[[package]]\nname = \"matrix-sdk-base\"\nversion = \"0.1.0\"\n\n[[package]]\nname = \"matrix-sdk\"\nversion = \"0.19.0\"\n";
+        assert_eq!(lock_version(lock, "matrix-sdk").as_deref(), Some("0.19.0"));
+        let crlf = lock.replace('\n', "\r\n");
+        assert_eq!(lock_version(&crlf, "matrix-sdk").as_deref(), Some("0.19.0"));
+        assert_eq!(lock_version(lock, "nothing"), None);
     }
 }

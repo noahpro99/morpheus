@@ -92,10 +92,20 @@ fn app_section(report: &mut Report, hidden: bool) {
 fn system_section(window: &Window, cx: &App, report: &mut Report) {
     let section = report.section("System");
     section.line("OS", morpheus_core::device());
+    #[cfg(target_os = "windows")]
+    let kernel = {
+        let (build, display) = crate::win_sys::windows_build();
+        Some(vm::windows_version(build, &display))
+    };
+    #[cfg(not(target_os = "windows"))]
     let kernel = std::fs::read_to_string("/proc/sys/kernel/osrelease").ok();
     section.line("Kernel", kernel.map(|k| k.trim().to_owned()).unwrap_or_default());
     let env = |name: &str| std::env::var(name).ok().filter(|v| !v.is_empty());
-    let session = if env("WAYLAND_DISPLAY").is_some() {
+    let session = if cfg!(target_os = "windows") {
+        "Win32 (DWM)"
+    } else if cfg!(target_os = "macos") {
+        "AppKit"
+    } else if env("WAYLAND_DISPLAY").is_some() {
         "Wayland"
     } else if env("DISPLAY").is_some() {
         "X11"
@@ -112,11 +122,19 @@ fn system_section(window: &Window, cx: &App, report: &mut Report) {
         section.line("Displays", UNKNOWN);
     }
     for (n, display) in displays.iter().enumerate() {
+        #[cfg(target_os = "windows")]
+        let refresh = if n == 0 {
+            crate::win_sys::refresh_rate_hz().map_or(UNKNOWN.to_owned(), |hz| format!("{hz} Hz"))
+        } else {
+            UNKNOWN.to_owned()
+        };
+        #[cfg(not(target_os = "windows"))]
+        let refresh = UNKNOWN.to_owned();
         let bounds = display.bounds();
         section.line(
             &format!("Display {}", n + 1),
             format!(
-                "{}x{} logical, scale {scale:.2}, refresh rate {UNKNOWN}",
+                "{}x{} logical, scale {scale:.2}, refresh rate {refresh}",
                 f32::from(bounds.size.width) as i64,
                 f32::from(bounds.size.height) as i64
             ),
@@ -174,7 +192,7 @@ fn graphics_section(window: &Window, report: &mut Report) {
         "Validation",
         gpui::gpu_info().map(|i| yes_no(i.validation)).unwrap_or_default(),
     );
-    section.line("FPS", format!("{:.1}", fps()));
+    section.line("FPS (frames drawn)", format!("{:.1}", fps()));
     let (_, last) = gpui::frame_counter();
     section.line("Frame time", vm::millis(f64::from(last)));
     let atlas = window.sprite_atlas_stats();
@@ -190,14 +208,23 @@ fn graphics_section(window: &Window, report: &mut Report) {
     );
 }
 
+#[cfg(target_os = "windows")]
+const RSS_LABEL: &str = "Memory (working set)";
+#[cfg(target_os = "windows")]
+const ANON_LABEL: &str = "Private bytes (heap, GPU buffers)";
+#[cfg(not(target_os = "windows"))]
+const RSS_LABEL: &str = "Memory (RSS)";
+#[cfg(not(target_os = "windows"))]
+const ANON_LABEL: &str = "Anonymous (heap, GPU buffers)";
+
 fn memory_section(window: &Window, cx: &App, report: &mut Report) {
     let m = crate::memory::report(window, cx);
     let kb = |kb: u64| vm::bytes(kb * 1024);
     let held = |h: crate::memory::Held| format!("{} ({})", h.entries, vm::bytes(h.bytes as u64));
     let section = report.section("Memory");
     section
-        .line("Memory (RSS)", kb(m.rss_kb))
-        .line("Anonymous (heap, GPU buffers)", kb(m.anon_kb))
+        .line(RSS_LABEL, kb(m.rss_kb))
+        .line(ANON_LABEL, kb(m.anon_kb))
         .line("Lazily freed", kb(m.lazy_free_kb))
         .line("Decoded pictures (GPUI)", held(m.gpui_decoded))
         .line("Pictures drawn", held(m.drawn))
@@ -399,7 +426,7 @@ pub fn overlay(window: &Window, cx: &App) -> Report {
     let _ = cx;
     let mut report = Report::default();
     let section = report.section("Stats");
-    section.line("FPS", format!("{:.1}", fps()));
+    section.line("FPS (frames drawn)", format!("{:.1}", fps()));
     let (_, last) = gpui::frame_counter();
     section.line("Frame time", vm::millis(f64::from(last)));
     gpu_lines(section, true);
@@ -496,4 +523,32 @@ impl Shell {
                 .into_any_element(),
         )
     }
+}
+
+/// The parts of the report that need no window (`MORPHEUS_DIAGNOSTICS_SELF_TEST`,
+/// windows.yml): memory, kernel, window system, matrix-sdk, as lines.
+pub fn self_test_text() -> String {
+    let (rss, private) = {
+        let m = crate::memory::resident_kb();
+        (vm::bytes(m.0 * 1024), vm::bytes(m.1 * 1024))
+    };
+    #[cfg(target_os = "windows")]
+    let (kernel, system, refresh) = {
+        let (build, display) = crate::win_sys::windows_build();
+        (
+            vm::windows_version(build, &display),
+            "Win32 (DWM)".to_owned(),
+            crate::win_sys::refresh_rate_hz().map_or(UNKNOWN.to_owned(), |hz| format!("{hz} Hz")),
+        )
+    };
+    #[cfg(not(target_os = "windows"))]
+    let (kernel, system, refresh) = (
+        std::fs::read_to_string("/proc/sys/kernel/osrelease").unwrap_or_default().trim().to_owned(),
+        "other".to_owned(),
+        UNKNOWN.to_owned(),
+    );
+    format!(
+        "{RSS_LABEL}: {rss}\n{ANON_LABEL}: {private}\nKernel: {kernel}\nWindow system: {system}\nRefresh rate: {refresh}\nmatrix-sdk: {}\n",
+        env!("MORPHEUS_MATRIX_SDK")
+    )
 }

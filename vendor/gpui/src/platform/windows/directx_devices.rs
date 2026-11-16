@@ -80,6 +80,33 @@ impl DirectXDevices {
             (device, context.unwrap())
         };
 
+        // Morpheus patch: tell the app's diagnostics which adapter draws.
+        if let Ok(desc) = unsafe { adapter.GetDesc1() } {
+            let name = String::from_utf16_lossy(&desc.Description)
+                .trim_matches(char::from(0))
+                .to_string();
+            let software = (desc.Flags & windows::Win32::Graphics::Dxgi::DXGI_ADAPTER_FLAG_SOFTWARE.0 as u32) != 0;
+            let kind = if software { "software" } else { "hardware" };
+            let vendor = match desc.VendorId {
+                0x10DE => "NVIDIA",
+                0x1002 => "AMD",
+                0x8086 => "Intel",
+                0x1414 => "Microsoft",
+                _ => "unknown vendor",
+            };
+            crate::update_gpu_info(|info| {
+                info.drawing = Some((name.clone(), vendor.to_string(), String::new()));
+                info.validation = debug_layer_available;
+                info.devices = vec![crate::GpuDevice {
+                    name,
+                    vendor_id: desc.VendorId,
+                    device_id: desc.DeviceId,
+                    kind: kind.to_string(),
+                    presents: None,
+                }];
+            });
+        }
+
         Ok(Self {
             adapter,
             dxgi_factory,

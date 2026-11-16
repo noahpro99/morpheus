@@ -80,6 +80,20 @@ jobs:
           test "$code" -eq 0
           grep -q "^camera self-test: ok: Media Foundation: " "$out"
 
+      # Diagnostics (#103): what needs no window: memory read from the
+      # system, the Windows build, window system, matrix-sdk version.
+      - name: Diagnostics
+        run: |
+          out="$RUNNER_TEMP/diagnostics-self-test.txt"
+          MORPHEUS_DIAGNOSTICS_SELF_TEST="$out" \
+            target/x86_64-pc-windows-msvc/release/morpheus-desktop.exe
+          cat "$out"
+          ! grep -q "^Memory (working set): 0 B" "$out"
+          ! grep -q "^Kernel: unknown" "$out"
+          grep -q "^Kernel: Windows " "$out"
+          grep -q "^Window system: Win32" "$out"
+          ! grep -q "^matrix-sdk: unknown" "$out"
+
       - name: Package
         run: echo "RELEASE_ZIP=$(scripts/package-windows.sh | tail -1)" >> "$GITHUB_ENV"
 

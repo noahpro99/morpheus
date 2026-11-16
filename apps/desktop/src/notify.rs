@@ -139,6 +139,14 @@ pub fn set_looking(active: bool, room: Option<OwnedRoomId>) {
     }
 }
 
+/// Whether a new notice flashes the taskbar button: not while the window is
+/// in front (the person sees it), not with notifications off on this device.
+/// Notices of muted rooms never reach the notifier, so they do not flash.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub fn should_flash(window_in_front: bool, notifications_enabled: bool) -> bool {
+    !window_in_front && notifications_enabled
+}
+
 /// Start announcing `session`'s new messages. `redraw` is called after each
 /// is logged, so an open window shows it.
 pub fn spawn_notifier(session: Session, redraw: impl Fn() + Send + 'static) {
@@ -167,6 +175,13 @@ pub fn spawn_notifier(session: Session, redraw: impl Fn() + Send + 'static) {
                         continue;
                     }
                     let dir = crate::data_dir();
+                    #[cfg(target_os = "windows")]
+                    if should_flash(
+                        ACTIVE.load(Ordering::Relaxed),
+                        settings::notifications_enabled(&dir),
+                    ) {
+                        crate::win_sys::flash_taskbar();
+                    }
                     if !settings::notifications_enabled(&dir) {
                         eprintln!(
                             "morpheus-desktop: notifications are off on this device; not shown"
@@ -305,4 +320,17 @@ pub fn spawn_ring_watcher(session: Session) {
         })
         .map(drop)
         .unwrap_or_else(|err| eprintln!("morpheus-desktop: ring thread failed: {err}"));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_flash;
+
+    #[test]
+    fn the_taskbar_flashes_only_for_a_window_out_of_front_with_notifications_on() {
+        assert!(should_flash(false, true));
+        assert!(!should_flash(true, true));
+        assert!(!should_flash(false, false));
+        assert!(!should_flash(true, false));
+    }
 }

@@ -23,12 +23,19 @@ fn main() {
         .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_owned())
         .unwrap_or_else(|| "unknown".to_owned());
     println!("cargo:rustc-env=MORPHEUS_COMMIT={commit}");
+    // Line by line, trimmed: a Windows checkout has CRLF line endings, which
+    // made the old `name = "matrix-sdk"\n` match fail ("unknown" in CI builds).
     let lock = std::fs::read_to_string("../../Cargo.lock").unwrap_or_default();
-    let sdk = lock
-        .split("[[package]]")
-        .find(|package| package.contains("name = \"matrix-sdk\"\n"))
-        .and_then(|package| package.lines().find_map(|l| l.strip_prefix("version = ")))
-        .map_or("unknown", |v| v.trim_matches('"'));
+    let mut lines = lock.lines().map(str::trim_end);
+    let mut sdk = "unknown".to_owned();
+    while let Some(line) = lines.next() {
+        if line == "name = \"matrix-sdk\""
+            && let Some(v) = lines.next().and_then(|l| l.strip_prefix("version = "))
+        {
+            sdk = v.trim_matches('"').to_owned();
+            break;
+        }
+    }
     println!("cargo:rustc-env=MORPHEUS_MATRIX_SDK={sdk}");
     println!("cargo:rerun-if-changed=windows");
     println!("cargo:rerun-if-changed=icons/icon.ico");

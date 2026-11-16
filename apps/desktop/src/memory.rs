@@ -92,7 +92,15 @@ fn lazy_free() -> u64 {
         .unwrap_or(0)
 }
 
+/// The resident size and its private part of this process, in KB (Windows:
+/// working set and private bytes).
+#[cfg(target_os = "windows")]
+fn resident() -> (u64, u64) {
+    crate::win_sys::memory_kb()
+}
+
 /// VmRSS and RssAnon of this process, in KB (0 where /proc is not there).
+#[cfg(not(target_os = "windows"))]
 fn resident() -> (u64, u64) {
     let status = std::fs::read_to_string("/proc/self/status").unwrap_or_default();
     let field = |key: &str| {
@@ -215,4 +223,9 @@ impl Drop for Alive {
     fn drop(&mut self) {
         self.0.fetch_sub(1, Ordering::Relaxed);
     }
+}
+
+/// The resident size and its private part, in KB (for the self-test).
+pub fn resident_kb() -> (u64, u64) {
+    resident()
 }

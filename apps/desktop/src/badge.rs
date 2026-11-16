@@ -252,6 +252,7 @@ mod system {
             *APPLIED.lock().unwrap() = None;
             return;
         };
+        crate::win_sys::note_window(hwnd);
         let mut applied = APPLIED.lock().unwrap();
         if *applied == Some((hwnd, count)) {
             return;

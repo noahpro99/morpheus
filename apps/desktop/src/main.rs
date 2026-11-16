@@ -79,6 +79,8 @@ mod welcome;
 mod vim;
 #[cfg(target_os = "windows")]
 mod win_badge;
+#[cfg(target_os = "windows")]
+mod win_sys;
 mod zoom;
 // The view-models live in their own crate; the old module path stays valid.
 use morpheus_view_model as view_model;
@@ -835,6 +837,14 @@ fn main() {
             let _ = std::fs::write(out, format!("{line}\n"));
         }
         std::process::exit(code);
+    }
+    // The report's parts that need no window, to a file (windows.yml: a
+    // release build on Windows has no console).
+    if let Some(out) = std::env::var_os("MORPHEUS_DIAGNOSTICS_SELF_TEST") {
+        let text = diagnostics::self_test_text();
+        eprint!("{text}");
+        let _ = std::fs::write(out, text);
+        std::process::exit(0);
     }
     // A later launch hands over to the one running (its window shows, or the
     // Matrix link it was given opens) and ends.
