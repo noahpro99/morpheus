@@ -57,6 +57,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: macos-${{ matrix.target }}
+          # Only main saves: tags and hand runs read it, so the 10 GB limit holds one
+          # cache per platform.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # OpenH264 (videos): x86 assembly for the Intel build when nasm is
       # there (plain C otherwise); the Arm build uses its NEON code as is.
@@ -129,6 +132,9 @@ jobs:
   # signed for the device; AltStore or SideStore sign it with the
   # installer's own Apple ID).
   ios:
+    # A compile check of the shared code for iOS (phones are not released, and
+    # it keeps no cache): not on release tags.
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
     runs-on: macos-latest
     timeout-minutes: 120
     steps:
@@ -146,10 +152,6 @@ jobs:
           mkdir -p "$sysroot/lib/rustlib/$host/lib"
           for lib in "$sysroot"/lib/libLLVM*.dylib; do ln -sf "$lib" "$sysroot/lib/rustlib/$host/lib/libLLVM.dylib"; done
           ls -la "$sysroot/lib/rustlib/$host/lib/" | grep -i llvm || true
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: ios
 
       - uses: cargo-bins/cargo-binstall@main
       - name: Dioxus CLI

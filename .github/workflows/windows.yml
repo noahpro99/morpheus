@@ -40,6 +40,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: windows-x86_64
+          # Only main saves: tags and hand runs read it, so the 10 GB limit holds one
+          # cache per platform.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # OpenH264 (videos) uses its x86 assembly when nasm is on the PATH and
       # plain C otherwise; the runner does not have it.

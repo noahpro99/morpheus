@@ -54,6 +54,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: linux-x86_64
+          # Only main saves: tags and hand runs read it, so the 10 GB limit holds one
+          # cache per platform.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Build
         run: cargo build --release -p morpheus-desktop --locked
