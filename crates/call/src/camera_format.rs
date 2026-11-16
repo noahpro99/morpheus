@@ -253,27 +253,50 @@ fn i420_copy(data: &[u8], width: u32, height: u32, stride: u32) -> I420Buffer {
     out
 }
 
+/// How many whole rows of a `width` x `height` YUYV picture, `stride` bytes
+/// apart, are in `len` bytes (all of them in a frame that came whole).
+pub(crate) fn yuyv_rows(len: usize, width: u32, height: u32, stride: u32) -> u32 {
+    let (row, stride) = (width as usize * 2, stride as usize);
+    if row == 0 || stride < row || len < row {
+        return 0;
+    }
+    (((len - row) / stride + 1) as u32).min(height)
+}
+
 /// YUYV (4:2:2, packed `Y0 U Y1 V`) to I420 (4:2:0, planar): each chroma
 /// sample of the result averages the two rows it covers.
+///
+/// A frame cut short (a USB webcam losing packets: Video4Linux hands it over
+/// with its error flag, a few rows missing at the bottom; some do it on every
+/// frame, #117) keeps the rows that came, and the missing ones repeat the
+/// last whole row. Nothing at all is black, never the green of an empty
+/// buffer (Y, U and V all 0).
 pub(crate) fn yuyv_to_i420(yuyv: &[u8], width: u32, height: u32, stride: u32) -> I420Buffer {
     let mut out = I420Buffer::new(width, height);
     let (stride_y, stride_u, stride_v) = out.strides();
+    let rows = yuyv_rows(yuyv.len(), width, height, stride) as usize;
     let (y, u, v) = out.data_mut();
     let (width, height, stride) = (width as usize, height as usize, stride as usize);
     let (stride_y, stride_u, stride_v) = (stride_y as usize, stride_u as usize, stride_v as usize);
-    if yuyv.len() < stride * height {
+    if rows == 0 {
+        y.fill(16);
+        u.fill(128);
+        v.fill(128);
         return out;
     }
+    let line = |row: usize| {
+        let at = row.min(rows - 1) * stride;
+        &yuyv[at..at + width * 2]
+    };
     for row in 0..height {
-        let src = &yuyv[row * stride..row * stride + width * 2];
+        let src = line(row);
         let dst = &mut y[row * stride_y..row * stride_y + width];
         for (x, luma) in dst.iter_mut().enumerate() {
             *luma = src[x * 2];
         }
     }
     for row in 0..height / 2 {
-        let top = &yuyv[2 * row * stride..];
-        let bottom = &yuyv[(2 * row + 1) * stride..];
+        let (top, bottom) = (line(2 * row), line(2 * row + 1));
         for col in 0..width / 2 {
             let at = col * 4;
             u[row * stride_u + col] =
@@ -476,6 +499,35 @@ mod tests {
         // Through the dispatcher too.
         let i420 = to_i420(PixelFormat::Yuy2, &yuyv, 4, 2).expect("a picture");
         assert_eq!(&i420.data().1[..2], &[105, 125]);
+    }
+
+    #[test]
+    fn a_yuyv_frame_cut_short_keeps_its_picture_instead_of_going_green() {
+        // #117: a USB webcam whose every frame comes a few rows short (lost
+        // packets; the kernel flags it but hands it over). 4x4, each row's
+        // luma 10*(row+1), U 100 + row, V 200 + row; the last row is
+        // missing, and the one before it only half there.
+        let (width, height, stride) = (4u32, 4u32, 8usize);
+        let mut yuyv = Vec::new();
+        for row in 0..3u8 {
+            let l = 10 * (row + 1);
+            yuyv.extend_from_slice(&[l, 100 + row, l, 200 + row, l, 100 + row, l, 200 + row]);
+        }
+        yuyv.truncate(2 * stride + 4);
+        let i420 = yuyv_to_i420(&yuyv, width, height, stride as u32);
+        let (sy, su, _) = i420.strides();
+        let (y, u, v) = i420.data();
+        let luma = |row: usize| &y[row * sy as usize..row * sy as usize + 4];
+        // The rows that came are there as sent.
+        assert_eq!(luma(0), &[10, 10, 10, 10]);
+        assert_eq!(luma(1), &[20, 20, 20, 20]);
+        // The missing ones repeat the last whole row: no green, no black.
+        assert_eq!(luma(2), &[20, 20, 20, 20]);
+        assert_eq!(luma(3), &[20, 20, 20, 20]);
+        assert_eq!((u[0], v[0]), (100, 200));
+        let second = su as usize;
+        assert!(u[second] > 0 && v[second] > 0, "chroma of the missing rows is not zero");
+        assert_eq!(yuyv_rows(yuyv.len(), width, height, stride as u32), 2);
     }
 
     #[test]

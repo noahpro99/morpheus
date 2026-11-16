@@ -304,12 +304,13 @@ pub fn camera_self_test(seconds: f32) -> Result<String, String> {
     let key = started.map_err(|why| format!("{report}; the preview did not open: {why}"))?;
     let info = crate::diag::camera_info().unwrap_or_else(|| "no camera noted".to_owned());
     let deadline = Instant::now() + Duration::from_secs_f32(seconds.max(0.5));
-    let (mut first, mut last, mut size) = (None, 0, (0, 0));
+    let (mut first, mut last, mut size, mut latest) = (None, 0, (0, 0), None);
     while Instant::now() < deadline {
         if let Some(frame) = video::latest_frame(key) {
             first.get_or_insert(frame.seq);
             last = frame.seq;
             size = (frame.width, frame.height);
+            latest = Some(frame);
         }
         std::thread::sleep(Duration::from_millis(20));
     }
@@ -319,11 +320,31 @@ pub fn camera_self_test(seconds: f32) -> Result<String, String> {
         "{report}; open: {info}; {pictures} picture(s) shown, {}x{}",
         size.0, size.1
     );
+    // What the last picture looks like: an all-green one is an empty
+    // buffer (Y, U and V all 0), not the camera's view (#117).
+    let (green, report) = match &latest {
+        Some(frame) => {
+            let (r, g, b) = frame.mean_rgb();
+            if let Some(path) = std::env::var_os("MORPHEUS_CAMERA_SELF_TEST_PICTURE") {
+                let mut ppm = format!("P6\n{} {}\n255\n", frame.width, frame.height).into_bytes();
+                for pixel in frame.bgra.chunks_exact(4) {
+                    ppm.extend_from_slice(&[pixel[2], pixel[1], pixel[0]]);
+                }
+                let _ = std::fs::write(path, ppm);
+            }
+            let green = frame.looks_blank_green();
+            (green, format!("{report}; mean rgb {r:.0} {g:.0} {b:.0}"))
+        }
+        None => (false, report),
+    };
     if camera_opens().0 != 0 {
         return Err(format!("{report}; the camera was not let go"));
     }
     if pictures < 3 {
         return Err(format!("{report}; too few pictures"));
+    }
+    if green {
+        return Err(format!("{report}; the picture is blank green"));
     }
     Ok(format!("{report}; let go"))
 }

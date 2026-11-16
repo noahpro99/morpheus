@@ -83,6 +83,35 @@ pub struct Frame {
     pub height: u32,
 }
 
+impl Frame {
+    /// The mean red, green and blue of the picture (0-255), from its BGRA.
+    pub fn mean_rgb(&self) -> (f32, f32, f32) {
+        let mut sum = [0u64; 3];
+        let mut n = 0u64;
+        for pixel in self.bgra.chunks_exact(4) {
+            sum[0] += u64::from(pixel[2]);
+            sum[1] += u64::from(pixel[1]);
+            sum[2] += u64::from(pixel[0]);
+            n += 1;
+        }
+        let n = n.max(1) as f32;
+        (sum[0] as f32 / n, sum[1] as f32 / n, sum[2] as f32 / n)
+    }
+
+    /// Whether the picture is the flat green of an empty I420 buffer (Y, U
+    /// and V all 0 come out as about (0, 135, 0)): almost every pixel has
+    /// no red or blue and some green.
+    pub fn looks_blank_green(&self) -> bool {
+        let total = (self.bgra.len() / 4).max(1);
+        let green = self
+            .bgra
+            .chunks_exact(4)
+            .filter(|p| p[2] < 16 && p[0] < 16 && p[1] > 64)
+            .count();
+        green * 100 >= total * 95
+    }
+}
+
 /// Whether pictures are JPEG-encoded (a web view needs them).
 static JPEG: AtomicBool = AtomicBool::new(true);
 

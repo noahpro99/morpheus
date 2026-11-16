@@ -23,7 +23,7 @@ use livekit::webrtc::{
 use tracing::{info, warn};
 
 use crate::imp::{
-    camera_format::{Mode, pick_mode, yuyv_to_i420},
+    camera_format::{Mode, pick_mode, yuyv_rows, yuyv_to_i420},
     video::{self, LOCAL_CAMERA},
 };
 
@@ -165,12 +165,29 @@ impl Camera {
     ) {
         let every = video::show_every();
         let mut shown: Option<Instant> = None;
+        // Frames that came short (#117): some webcams lose a few rows of
+        // every frame; noted once, and one with under half its rows is
+        // skipped (a mostly repeated picture).
+        let mut short_noted = false;
         while !stop.load(Ordering::Relaxed) {
+            let (width, height, stride) = (self.width, self.height, self.stride);
             let frame = self.stream.dequeue(|buf| {
-                Ok(yuyv_to_i420(&buf, self.width, self.height, self.stride))
+                let rows = yuyv_rows(buf.len(), width, height, stride);
+                if rows < height && !short_noted {
+                    short_noted = true;
+                    warn!(
+                        rows,
+                        height,
+                        bytes = buf.len(),
+                        error = buf.is_error(),
+                        "camera frames arrive cut short (the USB connection loses data); missing rows repeat the last one"
+                    );
+                }
+                Ok((rows * 2 >= height).then(|| yuyv_to_i420(&buf, width, height, stride)))
             });
             let buffer = match frame {
-                Ok(buffer) => buffer,
+                Ok(Some(buffer)) => buffer,
+                Ok(None) => continue,
                 Err(err) => {
                     warn!(%err, "camera stopped");
                     break;

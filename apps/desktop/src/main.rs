@@ -830,6 +830,8 @@ fn main() {
     if let Some(seconds) = std::env::var_os("MORPHEUS_CAMERA_SELF_TEST") {
         init_logging();
         let seconds = seconds.to_string_lossy().parse().unwrap_or(3.0);
+        // As the window draws them: raw pixels, no JPEGs.
+        morpheus_call::skip_jpeg_frames();
         let (line, code) = match morpheus_call::camera_self_test(seconds) {
             Ok(report) => (format!("camera self-test: ok: {report}"), 0),
             Err(why) => (format!("camera self-test: failed: {why}"), 1),

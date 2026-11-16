@@ -396,10 +396,14 @@ int32_t NvidiaH264EncoderImpl::ProcessEncodedFrame(
 
   const auto result =
       encoded_image_callback_->OnEncodedImage(encoded_image_, &codecInfo);
+  // Morpheus patch (as upstream livekit/rust-sdks later did): the picture
+  // has been delivered, so a failed send (a layer not sending) is not an
+  // encode error. Reported as one, SimulcastEncoderAdapter takes back an RTP
+  // timestamp its callback already consumed: pop_back on an empty deque,
+  // and libc++ hardening aborts the app (#117).
   if (result.error != EncodedImageCallback::Result::OK) {
-    RTC_LOG(LS_ERROR) << "Encode m_encodedCompleteCallback failed "
-                      << result.error;
-    return WEBRTC_VIDEO_CODEC_ERROR;
+    RTC_LOG(LS_WARNING) << "Encode m_encodedCompleteCallback failed "
+                        << result.error;
   }
   return WEBRTC_VIDEO_CODEC_OK;
 }
