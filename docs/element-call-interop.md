@@ -95,6 +95,46 @@ users did not see or hear Morpheus, and filed its key under a name nobody
 had. Morpheus now asks `/sfu/get` first (as Element's publisher does) and
 `/get_token` only where that is missing.
 
+## Element X (#95)
+
+Element X (Android and iOS) runs Element Call **v0.28.2** embedded as a
+widget (the native MatrixRTC call is an experimental flag, off by default),
+so it is the Element Call above, with matrix-rust-sdk as its host:
+
+- Its own transport comes from the host (`get_rtc_transports`, MSC4515):
+  matrix-rust-sdk's `discover_rtc_transports` asks the **stable**
+  `GET /_matrix/client/v1/rtc/transports` and falls back to the well-known.
+  matrix.org advertises `org.matrix.msc4143.stable` and serves only the
+  stable path (the unstable one is 404). Morpheus now asks the stable path
+  first too, then the unstable one, then the well-known.
+- Its call intent: a ring or a call's memberships without `m.call.intent`
+  are taken for a **video** call (`TimelineEventToNotificationContentMapper`:
+  anything but `audio` is VIDEO; `RoomCallStatePresenter`). Element Call then
+  starts with the camera on and asks for camera and microphone in one
+  `getUserMedia` (`Publisher.start` → `enableCameraAndMicrophone`, error
+  swallowed): if the camera cannot be opened, the microphone is not
+  published either, and turning the camera on asks again and fails (or does
+  nothing while the first request is pending). That is what a user saw: the
+  Element X user heard and saw Morpheus, Morpheus heard nothing, and the
+  camera would not turn on; Morpheus's log showed them joining its LiveKit
+  room under their `/sfu/get` name (their publisher connection) and never a
+  track. Morpheus's calls are voice calls, so its membership and ring now say
+  `"m.call.intent": "audio"` (and the membership `video` while its camera is
+  on), as Element Call's do; Element X then publishes its microphone on its
+  own. Not confirmed against Element X's own log.
+- Element Call publishes only once its membership is "joined" (sent, and the
+  membership manager connected); before that a camera switch waits for a
+  publication that never comes.
+
+The log says, at INFO, what decides whether someone is heard (names as
+short ids, the same in core and call): each token (service, endpoint,
+role, `can_publish`, LiveKit room), the focus published on and every other
+one listened on, each SFU connected to (whether this device may publish,
+who is already there with their tracks), each participant connecting and
+leaving with the SFU, each remote track published, subscribed (source,
+codec, encryption), unsubscribed or failing to subscribe, and each change
+of a participant's media encryption state.
+
 ## Tracks
 
 Matched by `Track.Source`: `microphone`, `camera`, `screen_share`,

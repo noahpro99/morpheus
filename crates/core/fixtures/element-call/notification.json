@@ -1,0 +1,16 @@
+{
+  "type": "org.matrix.msc4075.rtc.notification",
+  "sender": "@ellie:localhost",
+  "event_id": "$element-call-ring",
+  "origin_server_ts": 1763200000000,
+  "content": {
+    "slot_id": "m.call#ROOM",
+    "m.mentions": { "user_ids": [], "room": true },
+    "notification_type": "ring",
+    "m.relates_to": { "event_id": "$element-call-membership", "rel_type": "m.reference" },
+    "sender_ts": 1763200000000,
+    "lifetime": 90000,
+    "msc4354_sticky_key": "m.call#ROOM",
+    "m.call.intent": "audio"
+  }
+}

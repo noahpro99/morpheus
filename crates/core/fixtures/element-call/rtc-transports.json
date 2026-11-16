@@ -1,0 +1,10 @@
+{
+  "rtc_transports": [
+    { "type": "m.livekit", "url": "wss://livekit.example.com" },
+    {
+      "type": "livekit",
+      "url": "wss://livekit.example.com",
+      "livekit_service_url": "https://matrix-rtc.example.com/livekit/jwt"
+    }
+  ]
+}

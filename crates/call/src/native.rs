@@ -370,6 +370,7 @@ impl Call {
             .await
             .map_err(|err| Error::Connect(err.to_string()))?;
         let room = Arc::new(room);
+        log_connected(&room, &Source::Own);
         if let (Some(keys), Some(own_key)) = (&keys, own_key) {
             keys.set_key(&room.local_participant().identity(), 0, own_key);
         }
@@ -561,6 +562,7 @@ impl Call {
                     }
                     let shown = crate::diag::bare_url(&url);
                     info!(%service, url = %shown, "listening on another SFU");
+                    log_connected(&room, &Source::Other(service.clone()));
                     let tasks = vec![
                         tokio::spawn(forward_events(
                             room_events,
@@ -1687,6 +1689,7 @@ async fn forward_events(
         // What happens in a call goes to the log: when someone cannot be
         // heard or seen, it says whether they arrived, sent anything, and
         // whether it decrypted.
+        log_event(&event, &source);
         let out = match event {
             RoomEvent::ParticipantConnected(p) => {
                 info!(who = %p.identity(), ?source, "joined the call");
@@ -1871,6 +1874,152 @@ async fn forward_events(
         if tx.send(out).is_err() {
             return;
         }
+    }
+}
+
+/// A short name for a LiveKit identity or room in the log, the same in
+/// every run and the same as `morpheus_core::short_id` gives (FNV-1a): a
+/// log can be shared without the names in it and still say who is who.
+pub fn short_id(name: &str) -> String {
+    let mut hash: u32 = 0x811c_9dc5;
+    for byte in name.bytes() {
+        hash ^= u32::from(byte);
+        hash = hash.wrapping_mul(0x0100_0193);
+    }
+    format!("{:06x}", hash & 0x00ff_ffff)
+}
+
+/// Which SFU connection something came over, for the log.
+fn sfu_name(source: &Source) -> Cow<'_, str> {
+    match source {
+        Source::Own => Cow::Borrowed("own"),
+        Source::Other(service) => {
+            let rest = service.split_once("://").map_or(service.as_str(), |(_, rest)| rest);
+            Cow::Borrowed(rest.split('/').next().unwrap_or(rest))
+        }
+    }
+}
+
+/// A remote participant's tracks, for the log: source, codec, muted, sid.
+fn tracks_of(participant: &RemoteParticipant) -> Vec<String> {
+    participant
+        .track_publications()
+        .values()
+        .map(|p| {
+            format!(
+                "{:?}/{}{}{}",
+                p.source(),
+                p.mime_type(),
+                if p.is_muted() { "/muted" } else { "" },
+                if p.is_subscribed() { "/subscribed" } else { "" },
+            )
+        })
+        .collect()
+}
+
+/// Everything about the others' tracks that decides whether they are heard
+/// and seen, at INFO: who connects and leaves on which SFU (and what they
+/// already publish), each track published, subscribed or failing to be,
+/// its codec, and each change of a participant's media encryption.
+fn log_event(event: &RoomEvent, source: &Source) {
+    let sfu = sfu_name(source);
+    match event {
+        RoomEvent::ParticipantConnected(p) => info!(
+            who = %short_id(p.identity().as_str()),
+            %sfu,
+            can_publish = ?p.permission().map(|perm| perm.can_publish),
+            tracks = ?tracks_of(p),
+            "participant connected"
+        ),
+        RoomEvent::ParticipantDisconnected(p) => info!(
+            who = %short_id(p.identity().as_str()),
+            %sfu,
+            "participant disconnected"
+        ),
+        RoomEvent::ParticipantPermissionChanged { participant, permission } => info!(
+            who = %short_id(participant.identity().as_str()),
+            %sfu,
+            can_publish = ?permission.as_ref().map(|perm| perm.can_publish),
+            "participant permission changed"
+        ),
+        RoomEvent::TrackPublished { publication, participant } => info!(
+            who = %short_id(participant.identity().as_str()),
+            %sfu,
+            source = ?publication.source(),
+            codec = %publication.mime_type(),
+            track = %publication.sid(),
+            encryption = ?publication.encryption_type(),
+            "remote track published"
+        ),
+        RoomEvent::TrackUnpublished { publication, participant } => info!(
+            who = %short_id(participant.identity().as_str()),
+            %sfu,
+            source = ?publication.source(),
+            track = %publication.sid(),
+            "remote track unpublished"
+        ),
+        RoomEvent::TrackSubscribed { publication, participant, .. } => info!(
+            who = %short_id(participant.identity().as_str()),
+            %sfu,
+            source = ?publication.source(),
+            codec = %publication.mime_type(),
+            track = %publication.sid(),
+            encryption = ?publication.encryption_type(),
+            "remote track subscribed"
+        ),
+        RoomEvent::TrackUnsubscribed { publication, participant, .. } => info!(
+            who = %short_id(participant.identity().as_str()),
+            %sfu,
+            source = ?publication.source(),
+            track = %publication.sid(),
+            "remote track unsubscribed"
+        ),
+        RoomEvent::TrackSubscriptionFailed { participant, error, track_sid } => warn!(
+            who = %short_id(participant.identity().as_str()),
+            %sfu,
+            track = %track_sid,
+            %error,
+            "remote track could not be subscribed"
+        ),
+        RoomEvent::E2eeStateChanged { participant, state } => {
+            let tracks = match participant {
+                Participant::Remote(p) => tracks_of(p),
+                Participant::Local(_) => Vec::new(),
+            };
+            info!(
+                who = %short_id(participant.identity().as_str()),
+                %sfu,
+                ?state,
+                ?tracks,
+                "media encryption state changed"
+            );
+        }
+        _ => {}
+    }
+}
+
+/// What is in a room just connected to, for the log: this device's name
+/// and whether it may publish, and everyone already there with their
+/// tracks (they come with no "connected" event).
+fn log_connected(room: &Room, source: &Source) {
+    let sfu = sfu_name(source);
+    let me = room.local_participant();
+    info!(
+        %sfu,
+        me = %short_id(me.identity().as_str()),
+        livekit_room = %short_id(room.name().as_str()),
+        can_publish = ?me.permission().map(|perm| perm.can_publish),
+        others = room.remote_participants().len(),
+        "connected to an SFU"
+    );
+    for p in room.remote_participants().values() {
+        info!(
+            who = %short_id(p.identity().as_str()),
+            %sfu,
+            can_publish = ?p.permission().map(|perm| perm.can_publish),
+            tracks = ?tracks_of(p),
+            "participant already in the call"
+        );
     }
 }
 
@@ -2310,6 +2459,12 @@ mod element_call_keys {
             .expand(&[0u8; 128], &mut out)
             .expect("hkdf");
         out
+    }
+
+    #[test]
+    fn short_ids_are_the_cores() {
+        // `morpheus_core::short_id` pins the same value.
+        assert_eq!(short_id("@me:localhost:DEV"), "8eae53");
     }
 
     #[test]

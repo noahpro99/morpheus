@@ -30,7 +30,7 @@ use matrix_sdk::ruma::{
         relation::Reference,
         rtc::{
             decline::RtcDeclineEventContent,
-            notification::{NotificationType, RtcNotificationEventContent},
+            notification::{CallIntent, NotificationType, RtcNotificationEventContent},
         },
     },
 };
@@ -40,14 +40,20 @@ use matrix_sdk::{
     ruma::events::AnySyncTimelineEvent,
 };
 use serde_json::{Value, json};
-use tracing::debug;
+use tracing::{debug, info};
 
 use crate::{CoreFuture, Error, Session};
 
 /// The MatrixRTC slot for a room's call (application `m.call`, room scope).
 const CALL_SLOT: &str = "m.call#ROOM";
 
-const TRANSPORTS_PATH: &str = "/_matrix/client/unstable/org.matrix.msc4143/rtc/transports";
+/// Where a homeserver lists its call services (MSC4143), in the order asked.
+/// The stable one first: matrix.org serves only it (`org.matrix.msc4143.stable`),
+/// and Element X (matrix-rust-sdk) asks it before the well-known.
+const TRANSPORTS_PATHS: [&str; 2] = [
+    "/_matrix/client/v1/rtc/transports",
+    "/_matrix/client/unstable/org.matrix.msc4143/rtc/transports",
+];
 
 /// What a device needs to connect to a room's call.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -157,6 +163,12 @@ impl Session {
                 }
             };
             let mut credentials = credentials?;
+            info!(
+                service = %service_name(&credentials.service_url),
+                can_publish = ?publish_rights(&credentials.jwt),
+                foci_known = services.len(),
+                "joining the call: publishing on this focus"
+            );
             if credentials.service_url != first_service {
                 // The first service refused: the membership names the one that answered.
                 let content = member_content(&room_id, &device_id, &credentials.service_url);
@@ -249,14 +261,13 @@ async fn livekit_services(client: &matrix_sdk::Client) -> Vec<String> {
     let homeserver = homeserver.trim_end_matches('/');
     let token = client.access_token().unwrap_or_default();
 
-    let transports = get_json(
-        http.get(format!("{homeserver}{TRANSPORTS_PATH}"))
-            .bearer_auth(&token),
-    )
-    .await;
-    let found = services_in(transports.as_ref().and_then(|v| v.get("rtc_transports")));
-    if !found.is_empty() {
-        return found;
+    for path in TRANSPORTS_PATHS {
+        let transports =
+            get_json(http.get(format!("{homeserver}{path}")).bearer_auth(&token)).await;
+        let found = services_in(transports.as_ref().and_then(|v| v.get("rtc_transports")));
+        if !found.is_empty() {
+            return found;
+        }
     }
 
     let mut well_knowns = Vec::new();
@@ -528,9 +539,24 @@ async fn livekit_token(
                     .map(str::to_owned)
                     .ok_or_else(|| lacking(&format!("`{field}`")))
             };
+            // Which service, asked how, and what it let this device do: the
+            // LiveKit room and name as short ids (they are hashes of the
+            // room and the person, or the person's id).
+            let jwt = field("jwt")?;
+            let claims = jwt_claims(&jwt).unwrap_or_default();
+            let short = |v: &Value| v.as_str().map(short_id).unwrap_or_default();
+            info!(
+                service = %service_name(service),
+                endpoint = path,
+                ?role,
+                can_publish = ?publish_rights(&jwt),
+                livekit_room = %short(&claims["video"]["room"]),
+                livekit_identity = %short(&claims["sub"]),
+                "call service gave a token"
+            );
             return Ok(CallCredentials {
                 livekit_url: field("url")?,
-                jwt: field("jwt")?,
+                jwt,
                 service_url: service.to_owned(),
                 media_key: None,
             });
@@ -805,6 +831,7 @@ impl Session {
         self.core.run(async move {
             let user_id = client.user_id().ok_or(Error::NoSession)?.to_owned();
             let device_id = client.device_id().ok_or(Error::NoSession)?.to_owned();
+            info!(service = %service_name(&service), "listening on another focus of the call");
             Ok(livekit_token_cached(
                 &client,
                 &room_id,
@@ -1531,22 +1558,30 @@ async fn ring_if_direct(
     if others_in_call || room.direct_targets_length() == 0 {
         return Ok(());
     }
-    let mut content = RtcNotificationEventContent::new(
-        MilliSecondsSinceUnixEpoch::now(),
-        RING_FOR,
-        NotificationType::Ring,
-    );
     let callee: Vec<OwnedUserId> = room
         .direct_targets()
         .into_iter()
         .filter_map(|target| target.into_user_id())
         .filter(|target| target != user_id)
         .collect();
-    content.mentions = Some(Mentions::with_user_ids(callee));
-    content.relates_to = Some(Reference::new(membership));
-    room.send(content).await?;
+    room.send(ring_content(callee, membership)).await?;
     debug!(room_id = %room.room_id(), "ringing");
     Ok(())
+}
+
+/// The ring for `callee`, about the membership event `membership`.
+fn ring_content(callee: Vec<OwnedUserId>, membership: OwnedEventId) -> RtcNotificationEventContent {
+    let mut content = RtcNotificationEventContent::new(
+        MilliSecondsSinceUnixEpoch::now(),
+        RING_FOR,
+        NotificationType::Ring,
+    );
+    // A voice call (the camera is off on joining): without the intent,
+    // Element X answers as a video call (see `member_content`).
+    content.call_intent = Some(CallIntent::Audio);
+    content.mentions = Some(Mentions::with_user_ids(callee));
+    content.relates_to = Some(Reference::new(membership));
+    content
 }
 
 impl Session {
@@ -1739,10 +1774,10 @@ impl Session {
                 .lock()
                 .ok()
                 .and_then(|kept| kept.get(&(user_id, room_id)).cloned());
-            let Some((state_key, mut content)) = kept else {
+            let Some((state_key, content)) = kept else {
                 return Ok(());
             };
-            content[MEDIA_KEY] = serde_json::to_value(media)?;
+            let content = with_media(content, media);
             room.send_state_event_raw(&StateEventType::CallMember.to_string(), &state_key, content)
                 .await?;
             Ok(())
@@ -1750,16 +1785,31 @@ impl Session {
     }
 }
 
+/// A membership's `content` with `media` in it, and the call's intent
+/// with it: a video call while the camera is on.
+fn with_media(mut content: Value, media: CallMedia) -> Value {
+    content[MEDIA_KEY] = serde_json::to_value(media).unwrap_or_default();
+    content["m.call.intent"] = json!(if media.camera { "video" } else { "audio" });
+    content
+}
+
 // ---- What joining remembers, and does together --------------------------
 
 /// The membership event's content for this device, naming `service`.
+/// A voice call (`m.call.intent` "audio"; "video" once the camera is on,
+/// [`with_media`]), as Element Call says it: Element X takes a call without
+/// an intent for a video call, starts it with the camera on, and asks for
+/// camera and microphone at once, so a camera it cannot open keeps the
+/// microphone off too (#95).
 fn member_content(
     room_id: &OwnedRoomId,
     device_id: &matrix_sdk::ruma::OwnedDeviceId,
     service: &str,
 ) -> CallMemberEventContent {
+    let mut application = CallApplicationContent::new(String::new(), CallScope::Room);
+    application.call_intent = Some(CallIntent::Audio);
     CallMemberEventContent::new(
-        Application::Call(CallApplicationContent::new(String::new(), CallScope::Room)),
+        Application::Call(application),
         device_id.clone(),
         ActiveFocus::Livekit(ActiveLivekitFocus::new()),
         vec![Focus::Livekit(LivekitFocus::new(
@@ -1857,14 +1907,39 @@ async fn openid_cached(
 
 /// When a LiveKit token (a JWT) stops being good: its `exp` claim.
 fn jwt_expiry(jwt: &str) -> Option<std::time::SystemTime> {
+    let claims = jwt_claims(jwt)?;
+    let exp = claims.get("exp")?.as_u64()?;
+    Some(std::time::UNIX_EPOCH + Duration::from_secs(exp))
+}
+
+/// Whether a LiveKit token lets its holder publish (`video.canPublish`;
+/// LiveKit allows it where the grant is not said). `None`: not a JWT.
+fn publish_rights(jwt: &str) -> Option<bool> {
+    let claims = jwt_claims(jwt)?;
+    let video = claims.get("video")?;
+    Some(video.get("canPublish").and_then(Value::as_bool).unwrap_or(true))
+}
+
+/// A JWT's claims (its payload), not checked.
+fn jwt_claims(jwt: &str) -> Option<Value> {
     use base64::Engine as _;
     let payload = jwt.split('.').nth(1)?;
     let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
         .decode(payload.trim_end_matches('='))
         .ok()?;
-    let claims: Value = serde_json::from_slice(&bytes).ok()?;
-    let exp = claims.get("exp")?.as_u64()?;
-    Some(std::time::UNIX_EPOCH + Duration::from_secs(exp))
+    serde_json::from_slice(&bytes).ok()
+}
+
+/// A short name for an identity or LiveKit room in the log, the same in
+/// every run (FNV-1a), so a log can be shared without the names in it and
+/// still say who is who. `morpheus_call` names participants the same way.
+pub fn short_id(name: &str) -> String {
+    let mut hash: u32 = 0x811c_9dc5;
+    for byte in name.bytes() {
+        hash ^= u32::from(byte);
+        hash = hash.wrapping_mul(0x0100_0193);
+    }
+    format!("{:06x}", hash & 0x00ff_ffff)
 }
 
 /// A LiveKit token for the room's call: the last one while it has well over
@@ -2042,6 +2117,8 @@ mod element_call_tests {
             "sfu-get" => include_str!("../fixtures/element-call/sfu-get-request.json"),
             "get-token" => include_str!("../fixtures/element-call/get-token-request.json"),
             "key" => include_str!("../fixtures/element-call/encryption-keys-to-device.json"),
+            "notification" => include_str!("../fixtures/element-call/notification.json"),
+            "transports" => include_str!("../fixtures/element-call/rtc-transports.json"),
             _ => unreachable!(),
         };
         serde_json::from_str(text).expect("fixture")
@@ -2187,6 +2264,76 @@ mod element_call_tests {
         let mut older = event["content"].clone();
         older.as_object_mut().expect("object").remove("media_key");
         assert_eq!(to_device_keys_in(&room, &sender, &older, &newest).len(), 1);
+    }
+
+    /// Element X's reading of a call's intent, from the ring it answers
+    /// (`TimelineEventToNotificationContentMapper`: anything but "audio" is
+    /// VIDEO) and from the memberships of a call it joins
+    /// (`RoomCallStatePresenter`): whether it opens the call as a voice
+    /// call. A video call starts with the camera on, and Element Call then
+    /// opens camera and microphone with one request
+    /// (`enableCameraAndMicrophone`): where the camera cannot be opened, the
+    /// microphone is not published either, and the camera switch hangs.
+    fn element_x_voice_call(content: &Value) -> bool {
+        content["m.call.intent"] == "audio"
+    }
+
+    #[test]
+    fn element_x_answers_a_morpheus_call_as_a_voice_call() {
+        // Element's own voice call rings so.
+        assert!(element_x_voice_call(&fixture("notification")["content"]));
+        let room: OwnedRoomId = "!call:localhost".try_into().expect("room");
+        let device: matrix_sdk::ruma::OwnedDeviceId = "MYDEVICE".into();
+        let callee: OwnedUserId = "@ellie:localhost".try_into().expect("user");
+        let membership: OwnedEventId = "$membership".try_into().expect("event");
+        let ring = serde_json::to_value(ring_content(vec![callee], membership)).expect("ring");
+        assert!(element_x_voice_call(&ring), "Element X answers {ring} as a video call");
+        let joined = serde_json::to_value(member_content(&room, &device, "http://localhost:8080"))
+            .expect("content");
+        assert!(element_x_voice_call(&joined), "Element X joins {joined} as a video call");
+        // With the camera on it is a video call, as Element Call's own is.
+        let camera = with_media(joined, CallMedia { camera: true, ..CallMedia::default() });
+        assert_eq!(camera["m.call.intent"], "video");
+        let off = with_media(camera, CallMedia::default());
+        assert_eq!(off["m.call.intent"], "audio");
+    }
+
+    #[test]
+    fn the_stable_transports_list_is_asked_first_as_element_x_asks() {
+        // matrix.org serves only `v1` (`org.matrix.msc4143.stable`); Element
+        // X (matrix-rust-sdk `discover_rtc_transports`) asks it before the
+        // well-known, so Morpheus must too, or the two may publish on
+        // different services.
+        assert_eq!(TRANSPORTS_PATHS[0], "/_matrix/client/v1/rtc/transports");
+        assert_eq!(
+            services_in(fixture("transports").get("rtc_transports")),
+            vec!["https://matrix-rtc.example.com/livekit/jwt".to_owned()]
+        );
+    }
+
+    #[test]
+    fn a_token_says_whether_it_lets_this_device_publish() {
+        use base64::Engine as _;
+        let jwt = |claims: Value| {
+            let b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+            format!("{}.{}.sig", b64.encode("{}"), b64.encode(claims.to_string()))
+        };
+        let full = jwt(json!({ "sub": "@me:localhost:DEV", "video": { "room": "abc", "canPublish": true } }));
+        let listen = jwt(json!({ "sub": "x", "video": { "room": "abc", "canPublish": false } }));
+        // LiveKit lets a token without the grant publish.
+        let unsaid = jwt(json!({ "sub": "x", "video": { "room": "abc" } }));
+        assert_eq!(publish_rights(&full), Some(true));
+        assert_eq!(publish_rights(&listen), Some(false));
+        assert_eq!(publish_rights(&unsaid), Some(true));
+        assert_eq!(publish_rights("not a jwt"), None);
+    }
+
+    #[test]
+    fn short_ids_are_the_call_crates() {
+        // `morpheus_call::short_id` pins the same value: a log line from
+        // either crate names the same person the same way.
+        assert_eq!(short_id("@me:localhost:DEV"), "8eae53");
+        assert_ne!(short_id("@me:localhost:DEV"), short_id("@me:localhost:DEW"));
     }
 
     /// Element Call's reading of a to-device key event
