@@ -272,6 +272,7 @@ impl Shell {
                         this.restore_place(cx);
                         this.sync_members(cx);
                         this.refresh_switcher(cx);
+                        crate::badge::set(crate::badge::count_of(&this.rooms), cx);
                         cx.notify();
                     })
                     .is_ok();

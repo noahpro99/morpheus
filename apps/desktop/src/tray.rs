@@ -7,7 +7,7 @@
 
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
 /// What the user asked for from the tray.
@@ -89,11 +89,67 @@ fn logo_rgba(dark: bool) -> Result<(Vec<u8>, u32, u32), String> {
     }
 }
 
+/// The icon to show: the logo for the taskbar (`dark`) with the unread dot
+/// for `count` (the plain logo at 0).
+fn badged_logo(dark: bool, count: usize) -> Result<(Vec<u8>, u32, u32), String> {
+    let (rgba, w, h) = logo_rgba(dark)?;
+    Ok((crate::badge::tray_icon(&rgba, w, h, count), w, h))
+}
+
+/// The count the tray icon carries, kept for the theme refresh and for an
+/// icon made later.
+static BADGE: AtomicUsize = AtomicUsize::new(0);
+
+fn badge_now() -> usize {
+    BADGE.load(Ordering::Relaxed)
+}
+
+/// Put the unread dot for `count` on the tray icon (none at 0). Main thread.
+pub fn show_badge(count: usize) {
+    BADGE.store(count, Ordering::Relaxed);
+    #[cfg(target_os = "linux")]
+    linux::show_badge(count);
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    native::show_badge(count);
+    #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+    let _ = count;
+}
+
 #[cfg(target_os = "linux")]
 mod linux {
-    use ksni::blocking::TrayMethods;
+    use ksni::blocking::{Handle, TrayMethods};
+    use std::sync::OnceLock;
 
-    use super::{Handler, TrayAction, logo_rgba};
+    use super::{Handler, TrayAction, badge_now, badged_logo};
+
+    static HANDLE: OnceLock<Handle<MorpheusTray>> = OnceLock::new();
+
+    /// StatusNotifierItem wants ARGB in network byte order.
+    fn pixmap(count: usize) -> Vec<ksni::Icon> {
+        match badged_logo(false, count) {
+            Ok((rgba, width, height)) => vec![ksni::Icon {
+                width: width as i32,
+                height: height as i32,
+                data: rgba
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .flat_map(|p| [p[3], p[0], p[1], p[2]])
+                    .collect(),
+            }],
+            Err(err) => {
+                eprintln!("morpheus-desktop: tray icon image failed, using none: {err}");
+                Vec::new()
+            }
+        }
+    }
+
+    pub fn show_badge(count: usize) {
+        if let Some(handle) = HANDLE.get() {
+            let icon = pixmap(count);
+            let _ = handle.update(move |tray| tray.icon = icon);
+        }
+    }
 
     struct MorpheusTray {
         handler: Handler,
@@ -147,27 +203,11 @@ mod linux {
     /// Register with the desktop's tray host; `false` without one (no
     /// StatusNotifierWatcher on the session bus).
     pub fn install(handler: Handler) -> bool {
-        let icon = match logo_rgba(false) {
-            Ok((rgba, width, height)) => vec![ksni::Icon {
-                width: width as i32,
-                height: height as i32,
-                // StatusNotifierItem wants ARGB in network byte order.
-                data: rgba
-                    .as_chunks::<4>()
-                    .0
-                    .iter()
-                    .flat_map(|p| [p[3], p[0], p[1], p[2]])
-                    .collect(),
-            }],
-            Err(err) => {
-                eprintln!("morpheus-desktop: tray icon image failed, using none: {err}");
-                Vec::new()
-            }
-        };
+        let icon = pixmap(badge_now());
         match (MorpheusTray { handler, icon }).spawn() {
             // The service stops when its last handle goes; keep it for good.
             Ok(handle) => {
-                std::mem::forget(handle);
+                let _ = HANDLE.set(handle);
                 true
             }
             Err(err) => {
@@ -193,7 +233,7 @@ mod native {
 
     use std::cell::RefCell;
 
-    use super::{Handler, TrayAction, dark_icon_wanted, logo_rgba};
+    use super::{Handler, TrayAction, badge_now, badged_logo, dark_icon_wanted};
 
     thread_local! {
         /// The icon and whether it is the dark one: kept (dropping removes the
@@ -227,11 +267,27 @@ mod native {
         ICON.with_borrow_mut(|slot| {
             if let Some((icon, shown_dark)) = slot
                 && *shown_dark != dark
-                && let Ok((rgba, w, h)) = logo_rgba(dark)
+                && let Ok((rgba, w, h)) = badged_logo(dark, badge_now())
                 && let Ok(new) = Icon::from_rgba(rgba, w, h)
                 && icon.set_icon(Some(new)).is_ok()
             {
                 *shown_dark = dark;
+            }
+        });
+    }
+
+    /// The icon with the unread dot for `count`. On macOS the plain logo is a
+    /// template (tinted for the menu bar); a red dot would lose its colour as
+    /// one, so a badged icon is a plain picture.
+    pub fn show_badge(count: usize) {
+        ICON.with_borrow_mut(|slot| {
+            if let Some((icon, dark)) = slot
+                && let Ok((rgba, w, h)) = badged_logo(*dark, count)
+                && let Ok(new) = Icon::from_rgba(rgba, w, h)
+                && icon.set_icon(Some(new)).is_ok()
+            {
+                #[cfg(target_os = "macos")]
+                icon.set_icon_as_template(count == 0);
             }
         });
     }
@@ -281,7 +337,7 @@ mod native {
             .with_menu_on_left_click(false)
             .with_tooltip("Morpheus");
         let dark = taskbar_is_light();
-        match logo_rgba(dark)
+        match badged_logo(dark, badge_now())
             .and_then(|(rgba, w, h)| Icon::from_rgba(rgba, w, h).map_err(|e| e.to_string()))
         {
             // macOS tints a template (the white logo's shape) for a light or dark menu bar.
@@ -370,6 +426,7 @@ pub fn install_native(handler: Handler, cx: &mut gpui::App) {
                         .timer(std::time::Duration::from_secs(3))
                         .await;
                     native::refresh_theme();
+                    cx.update(crate::badge::tick).ok();
                 }
             })
             .detach();

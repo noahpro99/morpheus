@@ -302,6 +302,7 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                         inbox
                             .e2e("button", "ghost titlebar-button inbox-button")
                             .attr("title", "Inbox (Ctrl+I)")
+                            .attr("data-badge", crate::badge::shown().to_string())
                             .attr("data-color", colour_of("inbox-button"))
                             .attr("data-bg", ""),
                     )

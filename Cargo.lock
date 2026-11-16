@@ -7456,7 +7456,11 @@ dependencies = [
  "morpheus-video",
  "morpheus-view-model",
  "notify-rust",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
  "png 0.17.16",
+ "raw-window-handle 0.6.2",
  "rodio",
  "ruma-html",
  "serde",
@@ -7465,7 +7469,9 @@ dependencies = [
  "tokio",
  "tracing-subscriber",
  "tray-icon",
+ "windows 0.62.2",
  "windows-registry 0.5.3",
+ "zbus",
 ]
 
 [[package]]

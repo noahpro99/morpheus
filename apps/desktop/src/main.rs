@@ -8,6 +8,7 @@
 use std::{borrow::Cow, path::PathBuf};
 
 mod about;
+mod badge;
 mod call;
 mod call_invite;
 mod call_ui;
@@ -76,6 +77,8 @@ mod user_bar;
 mod video;
 mod welcome;
 mod vim;
+#[cfg(target_os = "windows")]
+mod win_badge;
 mod zoom;
 // The view-models live in their own crate; the old module path stays valid.
 use morpheus_view_model as view_model;
