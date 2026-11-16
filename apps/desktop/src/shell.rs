@@ -1434,18 +1434,12 @@ impl Render for Shell {
             .bg(rgb(theme::bg_chat()))
             .track_focus(&root_focus)
             // A click on nothing in particular leaves the focus where it is (the
-            // root would otherwise take it from a text box).
+            // root would otherwise take it from a text box). On Windows a press
+            // on the bar's caption still drags: vendor/gpui leaves the caption
+            // to the system whatever the app did with the press.
             .on_mouse_down(
                 gpui::MouseButton::Left,
-                cx.listener(|this, event: &gpui::MouseDownEvent, window, cx| {
-                    // Windows: a press on the bar's caption is the system's
-                    // (drag, snap, double-click maximise); handling it here
-                    // would stop that.
-                    if crate::chrome::Layout::this_os()
-                        .press_is_systems(f32::from(event.position.y))
-                    {
-                        return;
-                    }
+                cx.listener(|this, _, window, cx| {
                     window.prevent_default();
                     // A click that got here landed on nothing that takes the
                     // caret (a text box would have, first): the search box lets go.

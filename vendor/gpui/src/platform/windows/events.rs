@@ -979,7 +979,13 @@ impl WindowsWindowInner {
                 first_mouse: false,
             });
             let result = func(input);
-            let handled = !result.propagate || result.default_prevented;
+            // Morpheus patch: a press on the caption (the app's
+            // `WindowControlArea::Drag`) is the system's whatever the app did
+            // with it. A focus-tracking ancestor of the title bar prevents the
+            // default on every press, which stopped the drag (Aero snap and
+            // the double-click maximise went the same way).
+            let handled = (!result.propagate || result.default_prevented)
+                && wparam.0 as u32 != HTCAPTION;
             self.state.borrow_mut().callbacks.input = Some(func);
 
             if handled {

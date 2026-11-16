@@ -741,7 +741,10 @@ impl WindowsPlatformInner {
             .unwrap();
         lock.remove(index);
 
+        // Morpheus patch: an app living on in the tray keeps its event loop
+        // (`KEEP_RUNNING_WITHOUT_WINDOWS`); upstream ends it here.
         lock.is_empty()
+            && !crate::KEEP_RUNNING_WITHOUT_WINDOWS.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     #[inline]

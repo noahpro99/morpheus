@@ -321,7 +321,7 @@ pub static PREFER_INTEGRATED_GPU: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
 /// Morpheus patch: when set, closing the last window does not stop the Linux
-/// event loop (both backends stop it there by default), so an app that lives
+/// or Windows event loop (they stop it there by default), so an app that lives
 /// on in a tray keeps its entities, tasks and calls, and opens a new window
 /// later in the same run. Unset (the default) is upstream's behaviour.
 pub static KEEP_RUNNING_WITHOUT_WINDOWS: std::sync::atomic::AtomicBool =

@@ -148,13 +148,6 @@ impl Layout {
         !self.system_hit_test || button == WindowButton::Close
     }
 
-    /// Whether a press at `y` (from the window's top) on nothing else of the
-    /// bar must be left unhandled for the system (drag, double-click
-    /// maximise): a handled press of the caption stops the system's.
-    pub fn press_is_systems(self, y: f32) -> bool {
-        self.system_hit_test && (0.0..BAR_HEIGHT).contains(&y)
-    }
-
     /// The layout of this build's system for `window`.
     pub fn current(window: &Window) -> Layout {
         Layout::for_os(Os::current(), window.is_fullscreen())
@@ -485,7 +478,6 @@ mod layout_tests {
                 assert_eq!(layout.button_area(b), None);
                 assert!(layout.app_clicks(b));
             }
-            assert!(!layout.press_is_systems(10.0));
         }
     }
 
@@ -496,7 +488,6 @@ mod layout_tests {
         for b in BUTTONS {
             assert_eq!(mac.button_area(b), None);
         }
-        assert!(!mac.press_is_systems(10.0));
     }
 
     #[test]
@@ -525,11 +516,6 @@ mod layout_tests {
             assert!(!win.app_clicks(WindowButton::Minimize));
             assert!(!win.app_clicks(WindowButton::Maximize));
             assert!(win.app_clicks(WindowButton::Close));
-            // A press in the bar is left to the system; below it, the app's.
-            assert!(win.press_is_systems(0.0));
-            assert!(win.press_is_systems(BAR_HEIGHT - 1.0));
-            assert!(!win.press_is_systems(BAR_HEIGHT));
-            assert!(!win.press_is_systems(200.0));
         }
     }
 }

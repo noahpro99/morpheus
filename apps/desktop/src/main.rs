@@ -700,8 +700,12 @@ fn run_window(core: Core, commands: Commands, first: Option<Command>, start_hidd
                 eprintln!("morpheus-desktop: window closed, quitting");
                 quit(cx);
             }
+            // Closed to the tray, by the app's close or the system's (the
+            // caption's close on Windows, Alt+F4, the taskbar's Close
+            // window): nobody is looking, so messages notify.
             if cx.windows().is_empty() {
                 eprintln!("morpheus-desktop: window closed, app runs on");
+                notify::set_looking(false, None);
                 HEADLESS.store(true, Ordering::Relaxed);
                 #[cfg(feature = "e2e")]
                 e2e::run_ended();
