@@ -385,7 +385,7 @@ pub fn decode_avatar(media: &morpheus_core::Media, w: u32, h: u32) -> Option<Arc
     let color = image::load_from_memory(image.bytes())
         .ok()
         .and_then(|decoded| {
-            crate::view_model::avatar_color::average_rgba(decoded.to_rgba8().as_raw())
+            crate::view_model::avatar_color::dominant_rgba(decoded.to_rgba8().as_raw())
         })
         .map(crate::view_model::avatar_color::card_color);
     if let (Some(color), Ok(mut colors)) = (color, CARD_COLORS.lock()) {
