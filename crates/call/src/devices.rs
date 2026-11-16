@@ -137,8 +137,8 @@ pub struct CameraDevice {
 static CAMERA: Mutex<Option<String>> = Mutex::new(None);
 
 /// The cameras to choose from: test runs list stand-ins, Linux its
-/// Video4Linux cameras, Windows its Media Foundation ones; elsewhere none
-/// yet (macOS: AVFoundation, to come).
+/// Video4Linux cameras, Windows its Media Foundation ones, macOS its
+/// AVFoundation ones; elsewhere none.
 pub fn cameras(mode: AudioMode) -> Vec<CameraDevice> {
     if mode == AudioMode::Tone {
         return (1..=2)
@@ -148,11 +148,11 @@ pub fn cameras(mode: AudioMode) -> Vec<CameraDevice> {
             })
             .collect();
     }
-    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
     {
         crate::imp::camera::list()
     }
-    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
     {
         Vec::new()
     }

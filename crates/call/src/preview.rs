@@ -236,7 +236,7 @@ async fn open() -> Result<Own, PreviewError> {
             camera: test_camera_id(),
         });
     }
-    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
     {
         let device = tokio::task::spawn_blocking(crate::imp::camera::Camera::open)
             .await
@@ -250,7 +250,7 @@ async fn open() -> Result<Own, PreviewError> {
         });
         Ok(Own { stop, task, camera })
     }
-    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
     {
         let _ = stop;
         Err(PreviewError::NoCamera)
@@ -288,10 +288,10 @@ pub fn camera_preview_stop() -> impl Future<Output = ()> + 'static {
 /// held after stopping, is a failure.
 pub fn camera_self_test(seconds: f32) -> Result<String, String> {
     use std::time::{Duration, Instant};
-    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
     let backend = crate::imp::camera::status();
-    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
-    let backend = "no camera backend on this system yet".to_owned();
+    #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+    let backend = "no camera on this system yet".to_owned();
     let cameras = crate::imp::cameras(AudioMode::from_env());
     let mut report = format!("{backend}: {} camera(s)", cameras.len());
     for camera in &cameras {

@@ -5,7 +5,7 @@
 //! on any machine.
 //!
 //! Media Foundation's modes are what most of it is for; Linux uses the
-//! mode choice and YUYV, macOS none of it yet.
+//! mode choice and YUYV, macOS (camera_mac.rs) the mode choice and NV12.
 #![cfg_attr(not(target_os = "windows"), allow(dead_code))]
 
 use livekit::webrtc::video_frame::I420Buffer;
@@ -183,30 +183,48 @@ pub(crate) fn to_i420(format: PixelFormat, data: &[u8], width: u32, height: u32)
     })
 }
 
-/// NV12 (a luma plane, then U and V interleaved at half size) to I420.
-pub(crate) fn nv12_to_i420(nv12: &[u8], width: u32, height: u32, stride: u32) -> I420Buffer {
+/// NV12 whose two planes are apart, each with its own stride (CoreVideo's
+/// bi-planar pixel buffers), to I420.
+pub(crate) fn nv12_planes_to_i420(
+    luma: &[u8],
+    luma_stride: u32,
+    chroma: &[u8],
+    chroma_stride: u32,
+    width: u32,
+    height: u32,
+) -> I420Buffer {
     let mut out = I420Buffer::new(width, height);
     let (stride_y, stride_u, stride_v) = out.strides();
     let (y, u, v) = out.data_mut();
-    let (width, height, stride) = (width as usize, height as usize, stride as usize);
+    let (width, height) = (width as usize, height as usize);
+    let (luma_stride, chroma_stride) = (luma_stride as usize, chroma_stride as usize);
     let (stride_y, stride_u, stride_v) = (stride_y as usize, stride_u as usize, stride_v as usize);
     let (half_w, half_h) = (width / 2, height / 2);
-    if stride < width || nv12.len() < stride * (height + half_h) {
+    let fits = |plane: &[u8], stride: usize, rows: usize, row: usize| {
+        rows == 0 || (stride >= row && plane.len() >= stride * (rows - 1) + row)
+    };
+    if !fits(luma, luma_stride, height, width) || !fits(chroma, chroma_stride, half_h, half_w * 2) {
         return out;
     }
     for row in 0..height {
         y[row * stride_y..row * stride_y + width]
-            .copy_from_slice(&nv12[row * stride..row * stride + width]);
+            .copy_from_slice(&luma[row * luma_stride..row * luma_stride + width]);
     }
-    let chroma = &nv12[stride * height..];
     for row in 0..half_h {
-        let src = &chroma[row * stride..row * stride + half_w * 2];
+        let src = &chroma[row * chroma_stride..row * chroma_stride + half_w * 2];
         for col in 0..half_w {
             u[row * stride_u + col] = src[col * 2];
             v[row * stride_v + col] = src[col * 2 + 1];
         }
     }
     out
+}
+
+/// NV12 (a luma plane, then U and V interleaved at half size) to I420.
+pub(crate) fn nv12_to_i420(nv12: &[u8], width: u32, height: u32, stride: u32) -> I420Buffer {
+    let split = (stride as usize * height as usize).min(nv12.len());
+    let (luma, chroma) = nv12.split_at(split);
+    nv12_planes_to_i420(luma, stride, chroma, stride, width, height)
 }
 
 /// I420 as it is, its planes one after the other, `stride` apart (half
@@ -413,6 +431,22 @@ mod tests {
         assert!(to_i420(PixelFormat::Mjpg, &packed, 4, 2).is_none());
     }
 
+
+    #[test]
+    fn nv12_planes_apart_with_their_own_strides_become_i420() {
+        // 4x2: luma rows 5 apart, the chroma row 8 long (0xEE is padding).
+        let luma = [10, 11, 12, 13, 0xEE, 14, 15, 16, 17, 0xEE];
+        let chroma = [100, 200, 120, 220, 0xEE, 0xEE, 0xEE, 0xEE];
+        let i420 = nv12_planes_to_i420(&luma, 5, &chroma, 8, 4, 2);
+        let (sy, _, _) = i420.strides();
+        let (y, u, v) = i420.data();
+        assert_eq!(&y[..4], &[10, 11, 12, 13]);
+        assert_eq!(&y[sy as usize..sy as usize + 4], &[14, 15, 16, 17]);
+        assert_eq!((&u[..2], &v[..2]), (&[100, 120][..], &[200, 220][..]));
+        // Planes too short for the size: a blank picture, no panic.
+        let blank = nv12_planes_to_i420(&luma[..6], 5, &chroma, 8, 4, 2);
+        assert_eq!(blank.data().0[sy as usize], 0);
+    }
     #[test]
     fn i420_is_copied_plane_by_plane() {
         // 4x2: Y 0..8, then U (2x1) 50 51, then V 60 61.

@@ -58,6 +58,9 @@ mod camera;
 #[cfg(target_os = "windows")]
 #[path = "camera_win.rs"]
 mod camera;
+#[cfg(target_os = "macos")]
+#[path = "camera_mac.rs"]
+mod camera;
 #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 #[path = "camera_format.rs"]
 mod camera_format;
@@ -175,10 +178,10 @@ impl AudioMode {
 
 static TEST_TONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// Whether calls here can send video: a webcam on Linux and Windows, the app's own
+/// Whether calls here can send video: a webcam on Linux, Windows and macOS, the app's own
 /// camera (phones, [`set_platform_camera`]), or the test pattern.
 pub fn can_send_video() -> bool {
-    cfg!(any(target_os = "linux", target_os = "windows"))
+    cfg!(any(target_os = "linux", target_os = "windows", target_os = "macos"))
         || platform_camera::available()
         || AudioMode::from_env() == AudioMode::Tone
 }
@@ -1012,7 +1015,7 @@ enum Feed {
     TestPattern(video::TestPattern, u32, u32, u32),
     /// The app's own camera ([`set_platform_camera`]).
     Platform,
-    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
     Camera(camera::Camera),
     /// Already capturing; frames go out once the source is put in the slot.
     #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
@@ -1225,7 +1228,7 @@ impl Outgoing {
                 );
                 (Feed::Platform, source)
             }
-            #[cfg(any(target_os = "linux", target_os = "windows"))]
+            #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
             (AudioMode::Platform, VideoKind::Camera) => {
                 let device = tokio::task::spawn_blocking(camera::Camera::open)
                     .await?
@@ -1395,7 +1398,7 @@ impl Outgoing {
                     return Err(Error::Video("the camera did not start".into()));
                 }
             }
-            #[cfg(any(target_os = "linux", target_os = "windows"))]
+            #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
             Feed::Camera(device) => device.run(source, stop.clone()),
             #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
             Feed::Screen(sink) => {

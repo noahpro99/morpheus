@@ -98,6 +98,24 @@ jobs:
           kill "$pid"
           echo "Morpheus is running after 20s"; tail -5 smoke/log.txt
 
+      # The camera path (#74), as the app takes it: AVFoundation's cameras
+      # listed and, with one, opened as the Settings preview opens it, read
+      # for a few seconds and let go. The runner has no camera, so this
+      # proves the listing runs and reports zero without crashing (and that
+      # no permission prompt is waited on: it is asked only with a camera).
+      - name: Camera
+        run: |
+          if [ "${{ matrix.arch }}" = x86_64 ] && ! arch -x86_64 /usr/bin/true 2>/dev/null; then
+            echo "No Rosetta on this runner; not run"; exit 0
+          fi
+          out="$RUNNER_TEMP/camera-self-test.txt"
+          code=0
+          MORPHEUS_CAMERA_SELF_TEST=3 MORPHEUS_CAMERA_SELF_TEST_OUT="$out" MORPHEUS_DATA_DIR="$(mktemp -d)" \
+            perl -e 'alarm 120; exec @ARGV' smoke/Morpheus.app/Contents/MacOS/morpheus-desktop || code=$?
+          cat "$out" || true
+          test "$code" -eq 0
+          grep -q "^camera self-test: ok: AVFoundation: " "$out"
+
       # As a Mac user expects it: its icon, an Edit menu that pastes, one
       # title bar with the traffic lights that drags the window, ⌘W
       # closing the window, and the Dock bringing it back.

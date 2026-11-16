@@ -134,7 +134,7 @@ pub fn processing() -> (Option<bool>, Option<bool>) {
 /// it: its name, size, speed and format, and what reads it.
 static CAMERA: Mutex<Option<String>> = Mutex::new(None);
 
-#[cfg_attr(not(any(target_os = "linux", target_os = "windows")), allow(dead_code))]
+#[cfg_attr(not(any(target_os = "linux", target_os = "windows", target_os = "macos")), allow(dead_code))]
 pub(crate) fn note_camera(info: Option<String>) {
     if let Ok(mut camera) = CAMERA.lock() {
         *camera = info;

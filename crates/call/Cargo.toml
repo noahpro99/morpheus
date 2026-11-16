@@ -55,11 +55,15 @@ windows-core = "0.62"
 objc2 = "0.6"
 block2 = "0.6"
 dispatch2 = "0.3"
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSError", "NSProcessInfo", "NSString", "NSObject"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSDictionary", "NSError", "NSProcessInfo", "NSString", "NSObject", "NSValue"] }
 objc2-screen-capture-kit = { version = "0.3", default-features = false, features = ["std", "block2", "dispatch2", "objc2-core-media", "SCContentSharingPicker", "SCError", "SCShareableContent", "SCStream"] }
-objc2-core-media = { version = "0.3", default-features = false, features = ["std", "objc2-core-audio-types", "CMBase", "CMBlockBuffer", "CMFormatDescription", "CMSampleBuffer", "CMTime"] }
+objc2-core-media = { version = "0.3", default-features = false, features = ["std", "objc2-core-audio-types", "objc2-core-video", "CMBase", "CMBlockBuffer", "CMFormatDescription", "CMSampleBuffer", "CMTime"] }
 objc2-core-foundation = { version = "0.3", default-features = false, features = ["std"] }
 objc2-core-audio-types = { version = "0.3", default-features = false, features = ["std", "CoreAudioBaseTypes"] }
+# The camera (src/camera_mac.rs): AVFoundation's capture session, its
+# pictures as CoreVideo pixel buffers.
+objc2-av-foundation = { version = "0.3", default-features = false, features = ["std", "block2", "dispatch2", "objc2-core-media", "objc2-core-video", "AVCaptureDevice", "AVCaptureInput", "AVCaptureOutputBase", "AVCaptureSession", "AVCaptureSessionPreset", "AVCaptureVideoDataOutput", "AVMediaFormat"] }
+objc2-core-video = { version = "0.3", default-features = false, features = ["std", "CVBase", "CVBuffer", "CVImageBuffer", "CVPixelBuffer", "CVReturn"] }
 
 # The camera (Video4Linux, without C bindings to build).
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -81,7 +85,7 @@ pkg-config = "0.3"
 # Windows (src/system_audio_wasapi.rs) and Objective-C on macOS
 # (src/system_audio_sck.rs) through raw calls, so this crate denies it instead
 # and allows it in those modules (and ducking.rs, autorelease.rs, the
-# Windows camera in camera_win.rs).
+# Windows and macOS cameras in camera_win.rs and camera_mac.rs).
 unsafe_code = "deny"
 
 [lints.clippy]
