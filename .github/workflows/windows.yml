@@ -64,6 +64,22 @@ jobs:
         shell: pwsh
         run: scripts/windows-chrome-check.ps1 target/x86_64-pc-windows-msvc/release/morpheus-desktop.exe
 
+      # The camera path (#74), as the app takes it: Media Foundation loaded,
+      # the cameras listed, and with one, opened as the Settings preview
+      # opens it, read for a few seconds and let go. The runner has no
+      # camera (and a virtual one needs a signed driver or a custom media
+      # source), so here it proves the listing runs and reports zero without
+      # crashing; on a laptop the same command checks the whole path.
+      - name: Camera
+        run: |
+          out="$RUNNER_TEMP/camera-self-test.txt"
+          code=0
+          MORPHEUS_CAMERA_SELF_TEST=3 MORPHEUS_CAMERA_SELF_TEST_OUT="$out" \
+            timeout 120 target/x86_64-pc-windows-msvc/release/morpheus-desktop.exe || code=$?
+          cat "$out" || true
+          test "$code" -eq 0
+          grep -q "^camera self-test: ok: Media Foundation: " "$out"
+
       - name: Package
         run: echo "RELEASE_ZIP=$(scripts/package-windows.sh | tail -1)" >> "$GITHUB_ENV"
 

@@ -65,4 +65,4 @@ pub use screen_sources::{
 
 #[path = "diag.rs"]
 mod diag;
-pub use diag::{CallDiag, OtherSfu, TrackDiag, call_diag, processing};
+pub use diag::{CallDiag, OtherSfu, TrackDiag, call_diag, camera_info, processing};

@@ -41,9 +41,10 @@ tokio = { version = "1", default-features = false, features = ["sync"] }
 
 # Windows: the shared screen's sound by WASAPI process loopback
 # (src/system_audio_wasapi.rs) and the screen picker's pictures by GDI
-# (src/screen_sources_win.rs); the version cpal uses.
+# (src/screen_sources_win.rs), the camera by Media Foundation
+# (src/camera_win.rs); the version cpal uses.
 [target.'cfg(target_os = "windows")'.dependencies]
-windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Media_Audio", "Win32_Security", "Win32_Storage_Xps", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_Threading", "Win32_System_Variant", "Win32_UI_WindowsAndMessaging"] }
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Media_Audio", "Win32_Media_MediaFoundation", "Win32_Security", "Win32_Storage_Xps", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_LibraryLoader", "Win32_System_Threading", "Win32_System_Variant", "Win32_UI_WindowsAndMessaging"] }
 # Its `implement` macro (a COM callback) names this crate.
 windows-core = "0.62"
 
@@ -79,7 +80,8 @@ pkg-config = "0.3"
 # The workspace forbids unsafe code; the shared screen's sound is COM on
 # Windows (src/system_audio_wasapi.rs) and Objective-C on macOS
 # (src/system_audio_sck.rs) through raw calls, so this crate denies it instead
-# and allows it in those modules (and ducking.rs, autorelease.rs).
+# and allows it in those modules (and ducking.rs, autorelease.rs, the
+# Windows camera in camera_win.rs).
 unsafe_code = "deny"
 
 [lints.clippy]

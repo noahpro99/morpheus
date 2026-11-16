@@ -55,6 +55,12 @@ pub use devices::{
 #[cfg(target_os = "linux")]
 #[path = "camera.rs"]
 mod camera;
+#[cfg(target_os = "windows")]
+#[path = "camera_win.rs"]
+mod camera;
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+#[path = "camera_format.rs"]
+mod camera_format;
 #[path = "platform_camera.rs"]
 mod platform_camera;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
@@ -133,7 +139,7 @@ mod preview;
 mod speech_fixture;
 pub use preview::{
     PREVIEW_CAMERA, PreviewError, camera_in_use, camera_opens, camera_preview_device,
-    camera_preview_key, camera_preview_start, camera_preview_stop,
+    camera_preview_key, camera_preview_start, camera_preview_stop, camera_self_test,
 };
 #[path = "video.rs"]
 mod video;
@@ -169,10 +175,10 @@ impl AudioMode {
 
 static TEST_TONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// Whether calls here can send video: a webcam on Linux, the app's own
+/// Whether calls here can send video: a webcam on Linux and Windows, the app's own
 /// camera (phones, [`set_platform_camera`]), or the test pattern.
 pub fn can_send_video() -> bool {
-    cfg!(target_os = "linux")
+    cfg!(any(target_os = "linux", target_os = "windows"))
         || platform_camera::available()
         || AudioMode::from_env() == AudioMode::Tone
 }
@@ -1006,7 +1012,7 @@ enum Feed {
     TestPattern(video::TestPattern, u32, u32, u32),
     /// The app's own camera ([`set_platform_camera`]).
     Platform,
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     Camera(camera::Camera),
     /// Already capturing; frames go out once the source is put in the slot.
     #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
@@ -1219,7 +1225,7 @@ impl Outgoing {
                 );
                 (Feed::Platform, source)
             }
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
             (AudioMode::Platform, VideoKind::Camera) => {
                 let device = tokio::task::spawn_blocking(camera::Camera::open)
                     .await?
@@ -1389,7 +1395,7 @@ impl Outgoing {
                     return Err(Error::Video("the camera did not start".into()));
                 }
             }
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
             Feed::Camera(device) => device.run(source, stop.clone()),
             #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
             Feed::Screen(sink) => {

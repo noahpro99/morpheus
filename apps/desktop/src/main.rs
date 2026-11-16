@@ -815,6 +815,24 @@ fn main() {
         }
         std::process::exit(0);
     }
+    // The camera path without a window (#74; windows.yml, or by hand on a
+    // laptop): list the cameras and, with one, open it as the preview does,
+    // take pictures for the seconds given, and let it go. The result also
+    // goes to MORPHEUS_CAMERA_SELF_TEST_OUT if set (a release build on
+    // Windows has no console).
+    if let Some(seconds) = std::env::var_os("MORPHEUS_CAMERA_SELF_TEST") {
+        init_logging();
+        let seconds = seconds.to_string_lossy().parse().unwrap_or(3.0);
+        let (line, code) = match morpheus_call::camera_self_test(seconds) {
+            Ok(report) => (format!("camera self-test: ok: {report}"), 0),
+            Err(why) => (format!("camera self-test: failed: {why}"), 1),
+        };
+        eprintln!("{line}");
+        if let Some(out) = std::env::var_os("MORPHEUS_CAMERA_SELF_TEST_OUT") {
+            let _ = std::fs::write(out, format!("{line}\n"));
+        }
+        std::process::exit(code);
+    }
     // A later launch hands over to the one running (its window shows, or the
     // Matrix link it was given opens) and ends.
     let link = view_model::instance::link_in_args(std::env::args().skip(1));

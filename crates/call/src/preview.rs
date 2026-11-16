@@ -51,6 +51,7 @@ impl PreviewError {
         match err.kind() {
             std::io::ErrorKind::NotFound => Self::NoCamera,
             std::io::ErrorKind::PermissionDenied => Self::Denied,
+            std::io::ErrorKind::ResourceBusy => Self::Busy,
             _ if err.raw_os_error() == Some(16) => Self::Busy,
             _ => Self::Other(err.to_string()),
         }
@@ -235,7 +236,7 @@ async fn open() -> Result<Own, PreviewError> {
             camera: test_camera_id(),
         });
     }
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     {
         let device = tokio::task::spawn_blocking(crate::imp::camera::Camera::open)
             .await
@@ -249,7 +250,7 @@ async fn open() -> Result<Own, PreviewError> {
         });
         Ok(Own { stop, task, camera })
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
     {
         let _ = stop;
         Err(PreviewError::NoCamera)
@@ -277,4 +278,52 @@ pub fn camera_preview_stop() -> impl Future<Output = ()> + 'static {
             })
             .await;
     }
+}
+
+/// The camera path checked without a window (`MORPHEUS_CAMERA_SELF_TEST`;
+/// CI's Windows runner, or by hand on a laptop): the cameras are listed,
+/// and with one, it is opened as the preview opens it, pictures are waited
+/// for for `seconds`, and it must be let go when stopped. No camera is a
+/// pass (there is nothing to open); a camera giving no pictures, or still
+/// held after stopping, is a failure.
+pub fn camera_self_test(seconds: f32) -> Result<String, String> {
+    use std::time::{Duration, Instant};
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    let backend = crate::imp::camera::status();
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    let backend = "no camera backend on this system yet".to_owned();
+    let cameras = crate::imp::cameras(AudioMode::from_env());
+    let mut report = format!("{backend}: {} camera(s)", cameras.len());
+    for camera in &cameras {
+        report.push_str(&format!("; {} [{}]", camera.name, camera.id));
+    }
+    if cameras.is_empty() {
+        return Ok(report);
+    }
+    let started = runtime().block_on(camera_preview_start());
+    let key = started.map_err(|why| format!("{report}; the preview did not open: {why}"))?;
+    let info = crate::diag::camera_info().unwrap_or_else(|| "no camera noted".to_owned());
+    let deadline = Instant::now() + Duration::from_secs_f32(seconds.max(0.5));
+    let (mut first, mut last, mut size) = (None, 0, (0, 0));
+    while Instant::now() < deadline {
+        if let Some(frame) = video::latest_frame(key) {
+            first.get_or_insert(frame.seq);
+            last = frame.seq;
+            size = (frame.width, frame.height);
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    runtime().block_on(camera_preview_stop());
+    let pictures = first.map_or(0, |first| last - first + 1);
+    let report = format!(
+        "{report}; open: {info}; {pictures} picture(s) shown, {}x{}",
+        size.0, size.1
+    );
+    if camera_opens().0 != 0 {
+        return Err(format!("{report}; the camera was not let go"));
+    }
+    if pictures < 3 {
+        return Err(format!("{report}; too few pictures"));
+    }
+    Ok(format!("{report}; let go"))
 }
