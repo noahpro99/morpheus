@@ -40,6 +40,7 @@ mod memory;
 mod member_actions;
 mod members;
 mod menu;
+mod mini_call;
 mod message;
 mod mod_view;
 mod model;

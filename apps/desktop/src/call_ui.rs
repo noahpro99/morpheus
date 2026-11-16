@@ -29,7 +29,7 @@ use crate::{
 };
 
 /// A person's shown name: your nickname for them, else their profile's.
-fn shown(shell: &Shell, user: &OwnedUserId) -> String {
+pub(crate) fn shown(shell: &Shell, user: &OwnedUserId) -> String {
     crate::streamer::name(&shown_name(
         &shell.nicknames,
         user.as_str(),

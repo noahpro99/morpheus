@@ -30,6 +30,7 @@ pub mod marks;
 pub mod members;
 pub mod profile;
 pub mod menu;
+pub mod mini_call;
 pub mod mod_view;
 pub mod nav;
 pub mod notices;

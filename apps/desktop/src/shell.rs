@@ -1449,6 +1449,8 @@ impl Render for Shell {
         let toasts = dialogs::render_toasts(self, cx);
         let diagnostics = self.diagnostics_overlay(window, cx);
         let incoming = crate::call_ui::incoming_calls(self, cx);
+        let mini_feed = self.mini_call_feed(cx);
+        let mini_call = crate::mini_call::render(self, mini_feed, window, cx);
         // The Rooms scope is empty of rooms at first; nothing else to wait for.
         let _ = rooms_in_scope;
         let left = div()
@@ -1579,6 +1581,9 @@ impl Render for Shell {
             .when(show_backup_prompt(self.keys, self.backup_later), |d| {
                 d.child(backup_prompt(cx))
             })
+            // Over the app (the key backup prompt too), under its dialogs,
+            // menus and Settings.
+            .children(mini_call)
             .children(self.settings.clone().inspect(|settings| {
                 let own = match &self.profile {
                     Some(p) => (
