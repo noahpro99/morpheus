@@ -1771,7 +1771,7 @@ pub fn incoming_calls(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyEleme
                     .items_center()
                     .justify_center()
                     .rounded_full()
-                    .bg(rgb(theme::bg_selected()))
+                    .bg(rgba(theme::bg_selected()))
                     .child(icon("lock", 24.0).text_color(rgb(theme::text_muted())))
                     .into_any_element()
             } else {

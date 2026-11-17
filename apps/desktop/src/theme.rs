@@ -254,6 +254,29 @@ mod source_tests {
         }
     }
 
+    /// The translucent tokens are RRGGBBAA: through `rgb()` their alpha byte
+    /// reads as blue (white at 8% came out yellow), so they go through `rgba()`.
+    #[test]
+    fn translucent_tokens_are_never_drawn_with_rgb() {
+        let mut files = Vec::new();
+        sources(
+            &Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+            &mut files,
+        );
+        let mut wrong = Vec::new();
+        for file in files {
+            let text = std::fs::read_to_string(&file).expect("source");
+            for (n, line) in text.lines().enumerate() {
+                for token in ["bg_hover", "bg_selected", "edge", "accent_tint"] {
+                    if line.contains(&format!("rgb(theme::{token}())")) {
+                        wrong.push(format!("{}:{}: {token}", file.display(), n + 1));
+                    }
+                }
+            }
+        }
+        assert!(wrong.is_empty(), "translucent tokens through rgb():\n{}", wrong.join("\n"));
+    }
+
     #[test]
     fn no_hex_colours_outside_the_theme() {
         let mut files = Vec::new();
