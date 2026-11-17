@@ -1574,24 +1574,43 @@ impl Render for TimelineView {
             .line_height(relative(theme::LINE_HEIGHT))
             .child(rows)
             .children(scrollbar);
-        // While the thumb is held, a layer follows the pointer wherever it goes.
+        // While the thumb is held, the window's own mouse listeners (not the
+        // panel's) follow the pointer wherever it goes and let go wherever the
+        // button comes up; the other views see none of it (#148).
         if dragging {
-            timeline = timeline.child(
-                div()
-                    .absolute()
-                    .inset_0()
-                    .on_mouse_move(cx.listener(|this, event: &gpui::MouseMoveEvent, _, cx| {
-                        this.bar.drag_to(&this.list, event);
-                        cx.notify();
-                    }))
-                    .on_mouse_up(
-                        gpui::MouseButton::Left,
-                        cx.listener(|this, _: &gpui::MouseUpEvent, _, cx| {
+            let this = cx.entity();
+            timeline = timeline.child(gpui::canvas(
+                |_, _, _| (),
+                move |_, _, window, _| {
+                    let moved = this.clone();
+                    window.on_mouse_event(move |event: &gpui::MouseMoveEvent, phase, _, cx| {
+                        if phase != gpui::DispatchPhase::Capture {
+                            return;
+                        }
+                        cx.stop_propagation();
+                        moved.update(cx, |this, cx| {
+                            if event.pressed_button != Some(gpui::MouseButton::Left) {
+                                // The button came up out of our sight.
+                                this.bar.end_drag(&this.list);
+                            } else {
+                                this.bar.drag_to(&this.list, event);
+                            }
+                            cx.notify();
+                        });
+                    });
+                    let up = this.clone();
+                    window.on_mouse_event(move |_: &gpui::MouseUpEvent, phase, _, cx| {
+                        if phase != gpui::DispatchPhase::Capture {
+                            return;
+                        }
+                        cx.stop_propagation();
+                        up.update(cx, |this, cx| {
                             this.bar.end_drag(&this.list);
                             cx.notify();
-                        }),
-                    ),
-            );
+                        });
+                    });
+                },
+            ).absolute().size_0());
         }
         if let Some(error) = &self.load_error {
             timeline = timeline.child(
