@@ -1195,6 +1195,14 @@ impl Shell {
                     .flat_map(|m| [(m.clone(), 24), (m, 72)]),
             );
         }
+        // The overview's big icon.
+        wanted.extend(
+            self.welcome
+                .as_ref()
+                .and_then(|id| self.rooms.iter().find(|r| &r.id == id))
+                .and_then(|r| r.avatar.clone())
+                .map(|m| (m, 96)),
+        );
         if let Some(room) = &self.preview {
             wanted.extend(room.avatar.clone().map(|m| (m, 72)));
         }
