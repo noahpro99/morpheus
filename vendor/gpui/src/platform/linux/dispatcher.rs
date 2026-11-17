@@ -30,9 +30,17 @@ pub(crate) struct LinuxDispatcher {
 impl LinuxDispatcher {
     pub fn new(main_sender: Sender<Runnable>) -> Self {
         let (background_sender, background_receiver) = flume::unbounded::<Runnable>();
+        // Not a thread per core (32 on a big machine): each one costs the
+        // allocator a heap of its own (issue #10); the work is pictures and text.
         let thread_count = std::thread::available_parallelism()
             .map(|i| i.get())
-            .unwrap_or(1);
+            .unwrap_or(1)
+            .min(
+                std::env::var("MORPHEUS_GPUI_WORKERS")
+                    .ok()
+                    .and_then(|n| n.parse().ok())
+                    .unwrap_or(6),
+            );
 
         let mut background_threads = (0..thread_count)
             .map(|i| {
