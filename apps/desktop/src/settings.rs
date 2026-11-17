@@ -188,6 +188,8 @@ pub struct SettingsView {
     /// which list is open.
     voice: Option<VoiceLists>,
     voice_prefs: crate::view_model::calls::DevicePrefs,
+    /// Voice & Video → Screen Share: Discord left out of shared sound.
+    leave_out_discord: bool,
     picker_open: Option<&'static str>,
     /// Whether the noise suppression page's Advanced section is open.
     noise_advanced: bool,
@@ -383,6 +385,7 @@ impl SettingsView {
             data_dir,
             voice: None,
             voice_prefs: Default::default(),
+            leave_out_discord: true,
             picker_open: None,
             noise_advanced: false,
             preview: None,
@@ -419,6 +422,7 @@ impl SettingsView {
         self.highlight = None;
         self.on_here = notifications_enabled(&self.data_dir);
         self.sounds_here = message_sounds_enabled(&self.data_dir);
+        self.leave_out_discord = crate::view_model::settings::leaves_out_discord(&self.data_dir);
         self.content = notification_content(&self.data_dir);
         self.autostart = read_autostart();
         self.startup_note = None;

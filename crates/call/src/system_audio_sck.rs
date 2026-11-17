@@ -1,6 +1,8 @@
 //! macOS: what other apps play, by ScreenCaptureKit (macOS 13 and later):
 //! an `SCStream` with `capturesAudio` and `excludesCurrentProcessAudio`, so
-//! the call's voices, chimes and videos played here are not in it. See
+//! the call's voices, chimes and videos played here are not in it, and with
+//! Discord's apps left out of the content filter while Settings says so
+//! ([`sound_filter`]). See
 //! `system_audio.rs`.
 //!
 //! The shared screen's pictures come from libwebrtc's own ScreenCaptureKit
@@ -48,7 +50,8 @@ use objc2_core_media::{
 };
 use objc2_foundation::{NSArray, NSError, NSObject, NSObjectProtocol, NSProcessInfo};
 use objc2_screen_capture_kit::{
-    SCContentFilter, SCContentSharingPicker, SCContentSharingPickerObserver, SCShareableContent,
+    SCContentFilter, SCContentSharingPicker, SCContentSharingPickerObserver, SCRunningApplication,
+    SCShareableContent, SCShareableContentStyle,
     SCStream, SCStreamConfiguration, SCStreamDelegate, SCStreamErrorCode, SCStreamOutput,
     SCStreamOutputType,
 };
@@ -131,15 +134,18 @@ define_class!(
         ) {
             autorelease::pool(|| {
                 info!("screen audio: the picker chose what to share; its sound follows");
-                if let Ok(live) = LIVE.lock()
-                    && let Some(live) = live.as_ref()
-                {
-                    // SAFETY: a running stream and a filter from the picker.
-                    unsafe { live.0.updateContentFilter_completionHandler(filter, None) };
-                }
                 if let Ok(mut picked) = PICKED.lock() {
                     *picked = Some(Shared(filter.retain()));
                 }
+                // Off this callback: leaving Discord out may wait for the
+                // screen's apps.
+                let picked = Shared(filter.retain());
+                let _ = std::thread::Builder::new()
+                    .name("morpheus-screen-audio-pick".into())
+                    .spawn(move || {
+                        let picked = picked;
+                        autorelease::pool(|| refilter(Some(picked.0)));
+                    });
             });
         }
 
@@ -418,6 +424,23 @@ unsafe fn read(sample: &CMSampleBuffer, framer: &mut Framer) -> Result<Read, Str
     }
 }
 
+/// The running sound stream, if any, on `picked` (less Discord while it is
+/// left out).
+fn refilter(picked: Option<Retained<SCContentFilter>>) {
+    let live = LIVE.lock().ok().and_then(|l| l.as_ref().map(|s| s.0.clone()));
+    let Some(live) = live else {
+        return;
+    };
+    match sound_filter(picked) {
+        Ok((filter, what)) => {
+            info!(source = what, "screen audio: the sound now comes from");
+            // SAFETY: a running stream and a filter made for it.
+            unsafe { live.updateContentFilter_completionHandler(&filter, None) };
+        }
+        Err(why) => warn!(%why, "screen audio: the sound's source could not change"),
+    }
+}
+
 /// Capture until `stop`; `started` hears once whether it could.
 pub(crate) fn run(stop: &AtomicBool, out: Out, started: Sender<Result<(), String>>) {
     let opened = autorelease::pool(|| open(out));
@@ -433,8 +456,15 @@ pub(crate) fn run(stop: &AtomicBool, out: Out, started: Sender<Result<(), String
         *live = Some(Shared(stream.clone()));
     }
     let _ = started.send(Ok(()));
+    let mut leaving_out = crate::screen_audio_leaves_out_discord();
     while !stop.load(Ordering::Relaxed) {
         std::thread::sleep(Duration::from_millis(100));
+        // Settings changed whether Discord is left out: the stream follows.
+        if crate::screen_audio_leaves_out_discord() != leaving_out {
+            leaving_out = !leaving_out;
+            let picked = PICKED.lock().ok().and_then(|p| p.as_ref().map(|f| f.0.clone()));
+            autorelease::pool(|| refilter(picked));
+        }
     }
     if let Ok(mut live) = LIVE.lock() {
         *live = None;
@@ -461,10 +491,7 @@ fn open(out: Out) -> Result<Running, String> {
         return Err(why.into());
     }
     let picked = PICKED.lock().ok().and_then(|p| p.as_ref().map(|f| f.0.clone()));
-    let (filter, what) = match picked {
-        Some(filter) => (filter, "what was picked"),
-        None => (main_display()?, "the main display"),
-    };
+    let (filter, what) = sound_filter(picked)?;
     // SAFETY: plain ScreenCaptureKit calls with objects made here; the
     // output and queue outlive the stream (they are returned with it).
     unsafe {
@@ -510,8 +537,106 @@ fn open(out: Out) -> Result<Running, String> {
     }
 }
 
-/// The main display's content filter (needs the Screen Recording permission).
-fn main_display() -> Result<Retained<SCContentFilter>, String> {
+/// What the screen's sound is taken from: what was picked (or else the main
+/// display), less Discord while Settings leaves it out. Leaving Discord out
+/// of a picked screen needs the screen's apps, which only the Screen
+/// Recording permission shows (the picker's grant does not); without it, or
+/// where the picked screen can't be told, the picked screen is shared with
+/// Discord in it and the log says why. A picked window or app shares only
+/// that app's sound already.
+fn sound_filter(
+    picked: Option<Retained<SCContentFilter>>,
+) -> Result<(Retained<SCContentFilter>, &'static str), String> {
+    let leave_out = crate::screen_audio_leaves_out_discord();
+    let Some(picked) = picked else {
+        return Ok((main_display(leave_out)?, "the main display"));
+    };
+    if !leave_out {
+        return Ok((picked, "what was picked"));
+    }
+    match without_discord(&picked) {
+        Ok(Some(filter)) => Ok((filter, "the screen picked, less Discord")),
+        Ok(None) => Ok((picked, "what was picked")),
+        Err(why) => {
+            warn!(%why, "screen audio: Discord can't be left out of the screen picked");
+            Ok((picked, "what was picked"))
+        }
+    }
+}
+
+#[link(name = "CoreGraphics", kind = "framework")]
+unsafe extern "C" {
+    /// Whether this app may record the screen, without asking.
+    fn CGPreflightScreenCaptureAccess() -> bool;
+}
+
+/// The picked screen less Discord's apps, if a screen was picked and
+/// Discord is running (`None`: nothing to change).
+fn without_discord(picked: &SCContentFilter) -> Result<Option<Retained<SCContentFilter>>, String> {
+    // SAFETY: getters on a filter from the picker (macOS 14 and later, as
+    // the picker is); `includedDisplays` only where it answers to it.
+    unsafe {
+        if picked.style() != SCShareableContentStyle::Display {
+            return Ok(None);
+        }
+        if !CGPreflightScreenCaptureAccess() {
+            return Err("it needs the Screen Recording permission (System Settings, Privacy & Security)".into());
+        }
+        let content = shareable_content()?;
+        let apps = discord_apps(&content);
+        if apps.is_empty() {
+            return Ok(None);
+        }
+        let displays = content.displays();
+        let display = if picked.respondsToSelector(objc2::sel!(includedDisplays)) {
+            let id = picked
+                .includedDisplays()
+                .firstObject()
+                .map(|d| -> u32 { msg_send![&*d, displayID] });
+            displays
+                .iter()
+                .find(|d| {
+                    let shown: u32 = msg_send![&**d, displayID];
+                    Some(shown) == id
+                })
+        } else if displays.count() == 1 {
+            displays.firstObject()
+        } else {
+            None
+        };
+        let display = display.ok_or("which screen was picked can't be told before macOS 15.2")?;
+        Ok(Some(
+            SCContentFilter::initWithDisplay_excludingApplications_exceptingWindows(
+                SCContentFilter::alloc(),
+                &display,
+                &apps,
+                &NSArray::new(),
+            ),
+        ))
+    }
+}
+
+/// Discord's apps (and its helpers) among those running.
+fn discord_apps(content: &SCShareableContent) -> Retained<NSArray<SCRunningApplication>> {
+    // SAFETY: getters on objects ScreenCaptureKit gave.
+    let apps: Vec<Retained<SCRunningApplication>> = unsafe {
+        content
+            .applications()
+            .iter()
+            .filter(|app| {
+                crate::is_discord_app(&app.bundleIdentifier().to_string())
+                    || crate::is_discord_app(&app.applicationName().to_string())
+            })
+            .collect()
+    };
+    if !apps.is_empty() {
+        info!(apps = apps.len(), "screen audio: Discord left out");
+    }
+    NSArray::from_retained_slice(&apps)
+}
+
+/// What can be shared (needs the Screen Recording permission).
+fn shareable_content() -> Result<Retained<SCShareableContent>, String> {
     let (done, finished) = mpsc::channel::<Result<Shared<SCShareableContent>, String>>();
     let block = RcBlock::new(move |content: *mut SCShareableContent, err: *mut NSError| {
         // SAFETY: the objects ScreenCaptureKit passes, retained for the
@@ -531,22 +656,37 @@ fn main_display() -> Result<Retained<SCContentFilter>, String> {
             true, true, &block,
         );
     }
-    let content = finished
+    Ok(finished
         .recv_timeout(Duration::from_secs(10))
         .map_err(|_| "the screen's content: no answer".to_owned())?
         .map_err(|why| format!("the screen's content: {why}"))?
-        .0;
+        .0)
+}
+
+/// The main display's content filter, less Discord with `leave_out` (needs
+/// the Screen Recording permission).
+fn main_display(leave_out: bool) -> Result<Retained<SCContentFilter>, String> {
+    let content = shareable_content()?;
     // SAFETY: getters and an init on objects ScreenCaptureKit gave.
     unsafe {
         let display = content
             .displays()
             .firstObject()
             .ok_or("no display to take the sound of")?;
-        Ok(SCContentFilter::initWithDisplay_excludingWindows(
-            SCContentFilter::alloc(),
-            &display,
-            &NSArray::new(),
-        ))
+        Ok(if leave_out {
+            SCContentFilter::initWithDisplay_excludingApplications_exceptingWindows(
+                SCContentFilter::alloc(),
+                &display,
+                &discord_apps(&content),
+                &NSArray::new(),
+            )
+        } else {
+            SCContentFilter::initWithDisplay_excludingWindows(
+                SCContentFilter::alloc(),
+                &display,
+                &NSArray::new(),
+            )
+        })
     }
 }
 

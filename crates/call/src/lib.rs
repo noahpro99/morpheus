@@ -53,7 +53,8 @@ pub use quality::{
 #[path = "screen_audio.rs"]
 mod screen_audio;
 pub use screen_audio::{
-    MAX_SCREEN_VOLUME, ScreenAudio, screen_audio, screen_volume, sent_screen_audio,
+    MAX_SCREEN_VOLUME, ScreenAudio, is_discord_app, screen_audio, screen_audio_leaves_out_discord,
+    screen_volume, sent_screen_audio, set_screen_audio_leaves_out_discord,
 };
 
 #[path = "screen_sources.rs"]

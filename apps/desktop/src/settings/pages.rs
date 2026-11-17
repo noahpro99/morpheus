@@ -556,6 +556,7 @@ impl SettingsView {
             },
         ));
         let video = self.video_section(cx);
+        let screen_share = self.screen_share_section(cx);
         vec![
             section_classed(
                 "Devices",
@@ -574,6 +575,7 @@ impl SettingsView {
             )
             .into_any_element(),
             video,
+            screen_share,
         ]
     }
 

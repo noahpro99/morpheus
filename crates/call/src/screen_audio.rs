@@ -86,3 +86,90 @@ pub(crate) fn note_sent(sent: Option<Result<String, String>>) {
         *now = sent;
     }
 }
+
+/// Settings → Voice & Video → "Leave Discord out of shared sound" (on unless
+/// turned off). This app's own sound is always left out (the call's voices
+/// would come back to everyone); Discord's only while this says so. Read as
+/// the shared sound follows apps starting and stopping, so a change applies
+/// to a share going now within a second or so.
+static LEAVE_OUT_DISCORD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+pub fn set_screen_audio_leaves_out_discord(on: bool) {
+    LEAVE_OUT_DISCORD.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn screen_audio_leaves_out_discord() -> bool {
+    LEAVE_OUT_DISCORD.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Other Discord clients, by the names their programs and bundles go by
+/// (Vencord's Vesktop and Equibop, WebCord, ArmCord / Legcord, Dorion).
+const DISCORD_CLIENTS: &[&str] = &["vesktop", "equibop", "webcord", "armcord", "legcord", "dorion"];
+
+/// Whether an app, by any name it goes by (its name, its program with or
+/// without a folder or `.exe`, a Flatpak id, a macOS bundle id), is Discord
+/// or a Discord client: "Discord", "DiscordPTB", "Discord Canary",
+/// "C:\…\Discord.exe", "com.discordapp.Discord", "com.hnc.Discord",
+/// "dev.vencord.Vesktop", ...
+pub fn is_discord_app(name: &str) -> bool {
+    let name = name.trim().trim_end_matches('\0');
+    let base = name.rsplit(['/', '\\']).next().unwrap_or(name).to_lowercase();
+    !base.is_empty()
+        && (base.contains("discord") || DISCORD_CLIENTS.iter().any(|c| base.contains(c)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn discord_and_its_clients_are_known_by_any_of_their_names() {
+        for name in [
+            "Discord",
+            "discord",
+            "DiscordPTB",
+            "DiscordCanary",
+            "Discord Canary",
+            "Discord.exe",
+            "C:\\Users\\me\\AppData\\Local\\Discord\\app-1.0.9200\\Discord.exe",
+            "/opt/discord/Discord",
+            "/usr/lib/discord/Discord\0",
+            "com.discordapp.Discord",
+            "com.hnc.Discord",
+            "com.hnc.Discord.helper.Renderer",
+            "Vesktop",
+            "vesktop.exe",
+            "dev.vencord.Vesktop",
+            "WebCord",
+            "io.github.spacingbat3.webcord",
+            "Equibop",
+            "legcord",
+            "ArmCord",
+        ] {
+            assert!(is_discord_app(name), "{name:?} is Discord");
+        }
+        for name in [
+            "",
+            "morpheus-desktop",
+            "Morpheus",
+            "firefox",
+            "Spotify",
+            "chrome.exe",
+            "/usr/bin/mpv",
+            "com.spotify.client",
+            "Chromium",
+            "steam",
+        ] {
+            assert!(!is_discord_app(name), "{name:?} is not Discord");
+        }
+    }
+
+    #[test]
+    fn discord_is_left_out_unless_turned_off() {
+        assert!(screen_audio_leaves_out_discord(), "on by default");
+        set_screen_audio_leaves_out_discord(false);
+        assert!(!screen_audio_leaves_out_discord());
+        set_screen_audio_leaves_out_discord(true);
+        assert!(screen_audio_leaves_out_discord());
+    }
+}

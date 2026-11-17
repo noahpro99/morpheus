@@ -2,7 +2,7 @@
 //! own PulseAudio server speaks it too). See `system_audio.rs`.
 
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::HashMap,
     ffi::{CStr, CString},
     io::{BufReader, Read as _},
     os::unix::net::UnixStream,
@@ -16,7 +16,7 @@ use std::{
 use pulseaudio::protocol;
 use tracing::{debug, info, warn};
 
-use super::system_audio::{CHANNELS, FRAME, Out, RATE, clamp, mix_into};
+use super::system_audio::{CHANNELS, FRAME, Mixer, Out, RATE};
 
 /// Whose playback is captured.
 #[derive(Debug, Clone, Copy)]
@@ -25,15 +25,24 @@ pub(crate) struct Filter {
     pub exclude_pid: u32,
     /// Only streams playing to this sink (tests: their own null sink).
     pub only_sink: Option<u32>,
+    /// Whether Discord's streams are left out too (`None`: as Settings
+    /// says, followed while capturing).
+    pub leave_out_discord: Option<bool>,
 }
 
 impl Filter {
-    /// Every app but this one.
+    /// Every app but this one, and Discord unless Settings lets it in.
     pub fn others() -> Self {
         Self {
             exclude_pid: std::process::id(),
             only_sink: None,
+            leave_out_discord: None,
         }
+    }
+
+    fn discord_left_out(&self) -> bool {
+        self.leave_out_discord
+            .unwrap_or_else(crate::screen_audio_leaves_out_discord)
     }
 }
 
@@ -75,16 +84,15 @@ pub(crate) fn start(filter: Filter, out: Out) -> Result<Running, String> {
         .spawn(move || {
             let mut capture = Capturing {
                 conn,
+                left_out_discord: filter.discord_left_out(),
                 filter,
                 out,
                 inputs: HashMap::new(),
-                streams: HashMap::new(),
+                channels: HashMap::new(),
+                mixer: Mixer::new(),
                 pending: HashMap::new(),
                 listing: false,
                 list_again: false,
-                sum: vec![0; SAMPLES],
-                frame: vec![0; SAMPLES],
-                sent: 0,
             };
             capture.run(&running);
         })
@@ -98,20 +106,9 @@ pub(crate) fn start(filter: Filter, out: Out) -> Result<Running, String> {
 
 /// Samples in a 10 ms stereo frame.
 const SAMPLES: usize = FRAME * CHANNELS;
-/// A stream that has sent nothing for this long is not waited for.
-const STALLED: Duration = Duration::from_millis(60);
-/// What one stream may hold before its oldest is dropped (80 ms), and what
-/// it is cut to (20 ms): a stream on another sound card runs on another
-/// clock and slowly gets ahead.
-const MOST: usize = 8 * SAMPLES;
-const CUT_TO: usize = 2 * SAMPLES;
-
-/// One app's playback, recorded.
-struct Stream {
-    input: u32,
-    queue: VecDeque<i16>,
-    last: Instant,
-}
+/// How long a read waits before the setting is looked at again (it may have
+/// changed while nothing else did).
+const IDLE: Duration = Duration::from_millis(500);
 
 /// What a reply answers.
 enum Pending {
@@ -122,19 +119,19 @@ enum Pending {
 struct Capturing {
     conn: Conn,
     filter: Filter,
+    /// Whether Discord was left out when the streams were last chosen.
+    left_out_discord: bool,
     out: Out,
     /// Playback streams recorded: their record stream's channel once made.
     inputs: HashMap<u32, Option<u32>>,
-    /// Record streams by channel.
-    streams: HashMap<u32, Stream>,
+    /// The playback stream each record stream (by channel) records.
+    channels: HashMap<u32, u32>,
+    mixer: Mixer,
     pending: HashMap<u32, Pending>,
     /// A list of the playback streams has been asked for.
     listing: bool,
     /// And something changed since it was asked for.
     list_again: bool,
-    sum: Vec<i32>,
-    frame: Vec<i16>,
-    sent: u64,
 }
 
 impl Capturing {
@@ -144,8 +141,9 @@ impl Capturing {
             warn!(%err, "screen audio: listing playback");
             return;
         }
+        let mut looked = Instant::now();
         loop {
-            let message = match self.conn.next() {
+            let message = match self.conn.next(Some(IDLE)) {
                 Ok(message) => message,
                 Err(err) => {
                     if !stop.load(Ordering::Relaxed) {
@@ -160,7 +158,21 @@ impl Capturing {
                     Ok(())
                 }
                 Message::Command { seq, command, rest } => self.command(seq, command, rest),
+                Message::Idle => Ok(()),
             };
+            // Now and then (and when quiet): choose again if the setting
+            // changed.
+            let handled = handled.and_then(|()| {
+                if looked.elapsed() < IDLE {
+                    return Ok(());
+                }
+                looked = Instant::now();
+                if self.filter.discord_left_out() != self.left_out_discord {
+                    self.ask_list()
+                } else {
+                    Ok(())
+                }
+            });
             if let Err(err) = handled {
                 warn!(%err, "screen audio");
             }
@@ -168,7 +180,7 @@ impl Capturing {
                 break;
             }
         }
-        info!(frames = self.sent, "screen audio: capture stopped");
+        info!(frames = self.mixer.sent, "screen audio: capture stopped");
     }
 
     fn ask_list(&mut self) -> Result<(), String> {
@@ -209,14 +221,8 @@ impl Capturing {
                                 "screen audio: recording a stream"
                             );
                             *channel = Some(made.channel);
-                            self.streams.insert(
-                                made.channel,
-                                Stream {
-                                    input,
-                                    queue: VecDeque::new(),
-                                    last: Instant::now(),
-                                },
-                            );
+                            self.channels.insert(made.channel, input);
+                            self.mixer.add(made.channel);
                         }
                         // It ended while the record stream was being made.
                         None => {
@@ -244,8 +250,9 @@ impl Capturing {
                 self.ask_list()?;
             }
             protocol::Command::RecordStreamKilled(channel) => {
-                if let Some(stream) = self.streams.remove(&channel) {
-                    self.inputs.remove(&stream.input);
+                self.mixer.remove(channel);
+                if let Some(input) = self.channels.remove(&channel) {
+                    self.inputs.remove(&input);
                 }
             }
             _ => {}
@@ -255,9 +262,14 @@ impl Capturing {
 
     /// Record what plays now and stop recording what ended.
     fn reconcile(&mut self, list: &[protocol::SinkInputInfo]) -> Result<(), String> {
+        let discord = self.filter.discord_left_out();
+        if discord != self.left_out_discord {
+            info!(left_out = discord, "screen audio: Discord's sound");
+            self.left_out_discord = discord;
+        }
         let wanted: Vec<u32> = list
             .iter()
-            .filter(|input| self.filter.lets_through(input))
+            .filter(|input| self.filter.lets_through(input, discord))
             .map(|input| input.index)
             .collect();
         let gone: Vec<(u32, Option<u32>)> = self
@@ -269,7 +281,8 @@ impl Capturing {
         for (input, channel) in gone {
             self.inputs.remove(&input);
             if let Some(channel) = channel {
-                self.streams.remove(&channel);
+                self.channels.remove(&channel);
+                self.mixer.remove(channel);
                 self.conn
                     .send(protocol::Command::DeleteRecordStream(channel))?;
             }
@@ -311,67 +324,68 @@ impl Capturing {
 
     /// Samples for one stream: queued, then mixed while there is a frame.
     fn take(&mut self, channel: u32, bytes: &[u8]) {
-        let Some(stream) = self.streams.get_mut(&channel) else {
-            return;
-        };
-        stream.queue.extend(
+        self.mixer.push(
+            channel,
             bytes
                 .chunks_exact(2)
                 .map(|b| i16::from_le_bytes([b[0], b[1]])),
+            &mut self.out,
         );
-        stream.last = Instant::now();
-        if stream.queue.len() > MOST {
-            let excess = stream.queue.len() - CUT_TO;
-            stream.queue.drain(..excess);
-        }
-        self.mix();
-    }
-
-    /// Out with every whole frame: when each stream still sending has one
-    /// (or one is so far ahead that the others must have stalled).
-    fn mix(&mut self) {
-        loop {
-            let fullest = self
-                .streams
-                .values()
-                .map(|s| s.queue.len())
-                .max()
-                .unwrap_or(0);
-            if fullest < SAMPLES {
-                return;
-            }
-            let all = self
-                .streams
-                .values()
-                .filter(|s| s.last.elapsed() < STALLED)
-                .all(|s| s.queue.len() >= SAMPLES);
-            if !all && fullest < 3 * SAMPLES {
-                return;
-            }
-            self.sum.fill(0);
-            for stream in self.streams.values_mut() {
-                let n = stream.queue.len().min(SAMPLES);
-                mix_into(&mut self.sum, stream.queue.drain(..n));
-            }
-            clamp(&self.sum, &mut self.frame);
-            (self.out)(&self.frame);
-            self.sent += 1;
-        }
     }
 }
 
 impl Filter {
-    fn lets_through(&self, input: &protocol::SinkInputInfo) -> bool {
+    /// Whether a playback stream is shared: not this app's (always), not
+    /// Discord's (with `discord` left out), on the sink asked for.
+    fn lets_through(&self, input: &protocol::SinkInputInfo, discord: bool) -> bool {
         if self.only_sink.is_some_and(|sink| sink != input.sink_index) {
             return false;
         }
-        let pid = input
-            .props
-            .get(protocol::Prop::ApplicationProcessId)
-            .and_then(|bytes| std::str::from_utf8(bytes.strip_suffix(&[0]).unwrap_or(bytes)).ok())
-            .and_then(|pid| pid.trim().parse::<u32>().ok());
-        pid != Some(self.exclude_pid)
+        let text = |prop: &CStr| {
+            input
+                .props
+                .get_bytes(prop)
+                .and_then(|bytes| std::str::from_utf8(bytes.strip_suffix(&[0]).unwrap_or(bytes)).ok())
+                .map(str::to_owned)
+        };
+        let pid = text(c"application.process.id").and_then(|pid| pid.trim().parse::<u32>().ok());
+        if pid == Some(self.exclude_pid) {
+            return false;
+        }
+        !(discord && is_discord_stream(&stream_names(&text, pid)))
     }
+}
+
+/// Every name a playback stream's app goes by: what it told the server
+/// (its name, program, app id; a Flatpak's id) and, where its process can
+/// be seen, the program running (Electron apps often call themselves
+/// "Chromium").
+fn stream_names(text: &dyn Fn(&CStr) -> Option<String>, pid: Option<u32>) -> Vec<String> {
+    let mut names: Vec<String> = [
+        c"application.name",
+        c"application.process.binary",
+        c"application.id",
+        c"pipewire.access.portal.app_id",
+        c"application.icon_name",
+    ]
+    .into_iter()
+    .filter_map(text)
+    .collect();
+    if let Some(pid) = pid {
+        let proc = std::path::PathBuf::from(format!("/proc/{pid}"));
+        if let Ok(comm) = std::fs::read_to_string(proc.join("comm")) {
+            names.push(comm.trim().to_owned());
+        }
+        if let Ok(exe) = std::fs::read_link(proc.join("exe")) {
+            names.push(exe.to_string_lossy().into_owned());
+        }
+    }
+    names
+}
+
+/// Whether any of a stream's names is Discord's (or a Discord client's).
+fn is_discord_stream(names: &[String]) -> bool {
+    names.iter().any(|name| crate::is_discord_app(name))
 }
 
 /// A message from the server.
@@ -384,6 +398,8 @@ enum Message {
         command: protocol::Command,
         rest: std::io::Cursor<Vec<u8>>,
     },
+    /// Nothing came for a while.
+    Idle,
 }
 
 /// A blocking connection to the server, read and written by one thread.
@@ -433,7 +449,32 @@ impl Conn {
         Ok(self.seq)
     }
 
-    fn next(&mut self) -> Result<Message, String> {
+    /// The next message; with `idle`, [`Message::Idle`] once that long has
+    /// gone by with none starting (a message once begun is read whole).
+    fn next(&mut self, idle: Option<Duration>) -> Result<Message, String> {
+        use std::io::BufRead as _;
+        if let Some(idle) = idle
+            && self.sock.buffer().is_empty()
+        {
+            let sock = self.sock.get_ref().try_clone().map_err(|err| err.to_string())?;
+            sock.set_read_timeout(Some(idle))
+                .map_err(|err| err.to_string())?;
+            let waited = self.sock.fill_buf().map(|got| got.is_empty());
+            sock.set_read_timeout(None).map_err(|err| err.to_string())?;
+            match waited {
+                Ok(true) => return Err("the sound server closed the connection".into()),
+                Ok(false) => {}
+                Err(err)
+                    if matches!(
+                        err.kind(),
+                        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                    ) =>
+                {
+                    return Ok(Message::Idle);
+                }
+                Err(err) => return Err(err.to_string()),
+            }
+        }
         let desc = protocol::read_descriptor(&mut self.sock).map_err(|err| err.to_string())?;
         let mut bytes = vec![0u8; desc.length as usize];
         self.sock
@@ -459,7 +500,7 @@ impl Conn {
                 seq: got,
                 command,
                 rest,
-            } = self.next()?
+            } = self.next(None)?
                 && got == seq
             {
                 return match command {
@@ -625,6 +666,7 @@ mod tests {
             Filter {
                 exclude_pid: std::process::id(),
                 only_sink: Some(sink.index),
+                leave_out_discord: Some(true),
             },
             Box::new(move |frame| {
                 into.lock()
@@ -729,5 +771,125 @@ mod tests {
         };
         let _stream = play(&sink, hz.parse().expect("hz"));
         std::thread::sleep(Duration::from_secs(5));
+    }
+
+    const DISCORDS: f32 = 700.0;
+
+    /// Another app plays a tone, and "Discord" (a helper calling itself so)
+    /// another, both to the test's null sink, captured twice at once: with
+    /// Discord left out only the other app's tone is shared; let in, both
+    /// are.
+    #[test]
+    fn discord_is_left_out_unless_let_in() {
+        let Some(sink) = NullSink::new() else {
+            eprintln!("no PulseAudio or PipeWire server; skipping");
+            return;
+        };
+        let capture = |leave_out: bool| {
+            let got = Arc::new(Mutex::new(Vec::<i16>::new()));
+            let into = got.clone();
+            let running = start(
+                Filter {
+                    exclude_pid: std::process::id(),
+                    only_sink: Some(sink.index),
+                    leave_out_discord: Some(leave_out),
+                },
+                Box::new(move |frame| into.lock().expect("lock").extend_from_slice(frame)),
+            )
+            .expect("capture starts");
+            (running, got)
+        };
+        let (left_out, without) = capture(true);
+        let (let_in, with) = capture(false);
+        let helper = |name: &str, hz: f32| {
+            std::process::Command::new(std::env::current_exe().expect("test binary"))
+                .args([
+                    "--exact",
+                    &format!("imp::system_audio_pulse::tests::{name}"),
+                    "--ignored",
+                ])
+                .env("MORPHEUS_TEST_SINK", &sink.name)
+                .env("MORPHEUS_TEST_HZ", hz.to_string())
+                .stdout(std::process::Stdio::null())
+                .spawn()
+                .expect("helper")
+        };
+        let mut discord = helper("helper_plays_a_tone_as_discord", DISCORDS);
+        let mut other = helper("helper_plays_a_tone", THEIRS);
+        std::thread::sleep(Duration::from_millis(1500));
+        // From here on (both followed by now).
+        let from = (without.lock().expect("lock").len(), with.lock().expect("lock").len());
+        std::thread::sleep(Duration::from_millis(2000));
+        for child in [&mut discord, &mut other] {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        drop((left_out, let_in));
+        let without = without.lock().expect("lock")[from.0..].to_vec();
+        let with = with.lock().expect("lock")[from.1..].to_vec();
+        assert!(without.len() >= 100 * FRAME * CHANNELS, "{} samples", without.len());
+        assert!(with.len() >= 100 * FRAME * CHANNELS, "{} samples", with.len());
+        let power = |samples: &[i16], hz| power_at(samples, CHANNELS, 0, hz);
+        eprintln!(
+            "Discord left out: other {:e}, Discord {:e}; let in: other {:e}, Discord {:e}",
+            power(&without, THEIRS),
+            power(&without, DISCORDS),
+            power(&with, THEIRS),
+            power(&with, DISCORDS)
+        );
+        assert!(power(&without, THEIRS) > 1e-3, "the other app is shared");
+        assert!(
+            power(&without, DISCORDS) < power(&without, THEIRS) / 1e4,
+            "Discord was shared though left out"
+        );
+        assert!(power(&with, THEIRS) > 1e-3, "the other app is shared");
+        assert!(power(&with, DISCORDS) > 1e-3, "Discord is shared when let in");
+    }
+
+    /// "Discord" for the test above: a PulseAudio client of that name
+    /// playing `MORPHEUS_TEST_HZ` to `MORPHEUS_TEST_SINK` for 5 s.
+    #[test]
+    #[ignore = "helper, run by discord_is_left_out_unless_let_in"]
+    fn helper_plays_a_tone_as_discord() {
+        use pulseaudio::AsPlaybackSource as _;
+        let (Ok(sink), Ok(hz)) = (
+            std::env::var("MORPHEUS_TEST_SINK"),
+            std::env::var("MORPHEUS_TEST_HZ"),
+        ) else {
+            return;
+        };
+        let step = hz.parse::<f32>().expect("hz") * std::f32::consts::TAU / RATE as f32;
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+        runtime.block_on(async move {
+            let client = pulseaudio::Client::from_env(c"Discord").expect("connects");
+            let params = protocol::PlaybackStreamParams {
+                sample_spec: protocol::SampleSpec {
+                    format: protocol::SampleFormat::S16Le,
+                    channels: CHANNELS as u8,
+                    sample_rate: RATE,
+                },
+                channel_map: protocol::ChannelMap::stereo(),
+                sink_name: Some(CString::new(sink).expect("sink name")),
+                ..Default::default()
+            };
+            let mut phase = 0f32;
+            let source = move |buf: &mut [u8]| {
+                for pair in buf.chunks_exact_mut(4) {
+                    phase = (phase + step) % std::f32::consts::TAU;
+                    let s = ((phase.sin() * 0.25) * 32767.0) as i16;
+                    pair[..2].copy_from_slice(&s.to_le_bytes());
+                    pair[2..].copy_from_slice(&s.to_le_bytes());
+                }
+                buf.len() / 4 * 4
+            };
+            let stream = client
+                .create_playback_stream(params, source.as_playback_source())
+                .await
+                .expect("plays");
+            let _ = tokio::time::timeout(Duration::from_secs(5), stream.play_all()).await;
+        });
     }
 }

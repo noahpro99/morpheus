@@ -178,6 +178,12 @@ pub const SETTINGS_INDEX: &[SettingEntry] = &[
         "audio-devices",
     ),
     entry(
+        LEAVE_OUT_DISCORD_LABEL,
+        "screen share sharing sound audio discord vesktop mute echo go live stream computer",
+        SettingsPage::VoiceVideo,
+        "screen-share-sound",
+    ),
+    entry(
         "Streamer mode",
         "streamer hide names privacy sharing screen share notifications ids obscure",
         SettingsPage::StreamerMode,
@@ -380,6 +386,31 @@ pub fn set_notification_content(
         remove_if_there(&path)
     } else {
         std::fs::write(path, content.key())
+    }
+}
+
+// ---- screen share sound -----------------------------------------------------------
+
+/// Settings → Voice & Video → Screen Share: Discord left out of the sound a
+/// shared screen carries (on unless turned off). Morpheus's own sound is
+/// always left out, with no setting.
+pub const LEAVE_OUT_DISCORD_LABEL: &str = "Leave Discord out of shared sound";
+pub const LEAVE_OUT_DISCORD_HINT: &str = "When you share your screen with sound, the others don't hear Discord (or Vesktop, WebCord, ...) playing. Morpheus's own sound, the call's voices included, is never shared.";
+
+/// Marks this device as sharing Discord's sound (absent: left out).
+const DISCORD_SHARED: &str = "share-discord-sound";
+
+/// Whether this device leaves Discord out of a shared screen's sound.
+pub fn leaves_out_discord(data_dir: &Path) -> bool {
+    !data_dir.join(DISCORD_SHARED).exists()
+}
+
+pub fn set_leaves_out_discord(data_dir: &Path, leave_out: bool) -> std::io::Result<()> {
+    let marker = data_dir.join(DISCORD_SHARED);
+    if leave_out {
+        remove_if_there(&marker)
+    } else {
+        std::fs::write(marker, "")
     }
 }
 
@@ -710,6 +741,36 @@ mod tests {
         );
         assert_eq!(SettingsPage::listed(true).len(), 8);
         assert!(!SettingsPage::listed(false).contains(&SettingsPage::Startup));
+    }
+
+    #[test]
+    fn discord_is_left_out_of_shared_sound_unless_turned_off_on_this_device() {
+        let dir = std::env::temp_dir().join(format!("morpheus-discord-sound-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("dir");
+        assert!(leaves_out_discord(&dir), "on by default");
+        set_leaves_out_discord(&dir, false).expect("save");
+        assert!(!leaves_out_discord(&dir), "kept off");
+        set_leaves_out_discord(&dir, false).expect("again");
+        set_leaves_out_discord(&dir, true).expect("save");
+        assert!(leaves_out_discord(&dir), "back on");
+        set_leaves_out_discord(&dir, true).expect("on twice is fine");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_search_finds_the_discord_sound_setting() {
+        for query in ["discord", "screen share sound", "echo", "go live audio"] {
+            let found = find_settings(query, true);
+            assert!(
+                found
+                    .iter()
+                    .any(|e| e.label == LEAVE_OUT_DISCORD_LABEL
+                        && e.page == SettingsPage::VoiceVideo
+                        && e.anchor == "screen-share-sound"),
+                "{query:?} finds it"
+            );
+        }
+        assert!(LEAVE_OUT_DISCORD_HINT.contains("Morpheus"));
     }
 
     #[test]

@@ -1,19 +1,28 @@
 //! What this computer plays, sent with a shared screen (Discord's "share
-//! audio"): every other app's sound, but none of this app's own (the call's
+//! audio"): every other app's sound, but never this app's own (the call's
 //! voices, its chimes, a video it plays), or everyone in the call would hear
-//! themselves come back. 48 kHz stereo in 10 ms frames, with no processing
-//! (no echo cancellation or noise suppression: it is music and films too).
+//! themselves come back; and not Discord's either while Settings leaves it
+//! out (on by default: "Leave Discord out of shared sound", see
+//! [`crate::is_discord_app`] for the names it goes by). 48 kHz stereo in
+//! 10 ms frames, with no processing (no echo cancellation or noise
+//! suppression: it is music and films too).
 //!
 //! - Linux: one PulseAudio record stream on each other app's playback
-//!   (`direct_on_input`, what pavucontrol's per-app meters use), mixed here.
-//!   PipeWire's PulseAudio server and PulseAudio itself both do this; apps
-//!   are followed as they start and stop. This app's own streams are told
-//!   apart by their `application.process.id`.
+//!   (`direct_on_input`, what pavucontrol's per-app meters use), mixed here
+//!   ([`Mixer`]). PipeWire's PulseAudio server and PulseAudio itself both do
+//!   this; apps are followed as they start and stop. This app's own streams
+//!   are told apart by their `application.process.id`, Discord's by their
+//!   app's names (`application.name`, `application.process.binary`, ids, the
+//!   process's program). Chosen over a null sink with a loopback per app:
+//!   nothing is loaded into the user's sound server, nothing is moved, and
+//!   leaving one app out is not hearing its stream.
 //! - Windows: WASAPI process loopback of everything but this process tree
-//!   (Windows 10 2004 and later).
+//!   (Windows 10 2004 and later); while Discord plays and is left out, a
+//!   loopback of each other app playing instead, mixed ([`plan`],
+//!   `system_audio_wasapi.rs`).
 //! - macOS 13 and later: a ScreenCaptureKit stream of sound alone, less this
 //!   process, of what was picked in the system's picker or else the main
-//!   display (`system_audio_sck.rs`).
+//!   display, less Discord's apps (`system_audio_sck.rs`).
 //! - Test runs ([`AudioMode::Tone`]): a tone, [`TONE_LEFT`] Hz on the left
 //!   and [`TONE_RIGHT`] Hz on the right, instead of the computer's sound.
 
@@ -221,6 +230,175 @@ pub(crate) fn clamp(sum: &[i32], out: &mut [i16]) {
     }
 }
 
+/// Several apps' sound, each recorded on its own, mixed into one 10 ms frame
+/// at a time (Linux's record streams, Windows's per-app loopbacks).
+#[cfg_attr(not(any(target_os = "linux", target_os = "windows")), allow(dead_code))]
+pub(crate) struct Mixer {
+    streams: std::collections::HashMap<u32, Queued>,
+    sum: Vec<i32>,
+    frame: Vec<i16>,
+    /// Frames sent out.
+    pub sent: u64,
+}
+
+struct Queued {
+    queue: std::collections::VecDeque<i16>,
+    last: Instant,
+}
+
+/// Samples in a 10 ms stereo frame.
+const SAMPLES: usize = FRAME * CHANNELS;
+/// A stream that has sent nothing for this long is not waited for.
+const STALLED: Duration = Duration::from_millis(60);
+/// What one stream may hold before its oldest is dropped (80 ms), and what
+/// it is cut to (20 ms): a stream on another sound card runs on another
+/// clock and slowly gets ahead.
+const MOST: usize = 8 * SAMPLES;
+const CUT_TO: usize = 2 * SAMPLES;
+
+#[cfg_attr(not(any(target_os = "linux", target_os = "windows")), allow(dead_code))]
+impl Mixer {
+    pub fn new() -> Self {
+        Self {
+            streams: std::collections::HashMap::new(),
+            sum: vec![0; SAMPLES],
+            frame: vec![0; SAMPLES],
+            sent: 0,
+        }
+    }
+
+    /// A stream to mix from now on (nothing yet heard from it).
+    pub fn add(&mut self, key: u32) {
+        self.streams.entry(key).or_insert_with(|| Queued {
+            queue: std::collections::VecDeque::new(),
+            last: Instant::now(),
+        });
+    }
+
+    pub fn remove(&mut self, key: u32) {
+        self.streams.remove(&key);
+    }
+
+    /// Samples (interleaved stereo) from stream `key`, queued; then out with
+    /// every whole frame there is.
+    pub fn push(&mut self, key: u32, samples: impl IntoIterator<Item = i16>, out: &mut Out) {
+        let Some(stream) = self.streams.get_mut(&key) else {
+            return;
+        };
+        stream.queue.extend(samples);
+        stream.last = Instant::now();
+        if stream.queue.len() > MOST {
+            let excess = stream.queue.len() - CUT_TO;
+            stream.queue.drain(..excess);
+        }
+        self.mix(out);
+    }
+
+    /// Out with every whole frame: when each stream still sending has one
+    /// (or one is so far ahead that the others must have stalled).
+    fn mix(&mut self, out: &mut Out) {
+        loop {
+            let fullest = self
+                .streams
+                .values()
+                .map(|s| s.queue.len())
+                .max()
+                .unwrap_or(0);
+            if fullest < SAMPLES {
+                return;
+            }
+            let all = self
+                .streams
+                .values()
+                .filter(|s| s.last.elapsed() < STALLED)
+                .all(|s| s.queue.len() >= SAMPLES);
+            if !all && fullest < 3 * SAMPLES {
+                return;
+            }
+            self.sum.fill(0);
+            for stream in self.streams.values_mut() {
+                let n = stream.queue.len().min(SAMPLES);
+                mix_into(&mut self.sum, stream.queue.drain(..n));
+            }
+            clamp(&self.sum, &mut self.frame);
+            out(&self.frame);
+            self.sent += 1;
+        }
+    }
+}
+
+/// A running process, as the system lists it (Windows: its program's file
+/// name and its parent).
+#[derive(Debug, Clone)]
+#[cfg_attr(not(any(target_os = "windows", test)), allow(dead_code))]
+pub(crate) struct Process {
+    pub pid: u32,
+    pub parent: u32,
+    pub exe: String,
+}
+
+/// What Windows's process loopback captures.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(not(any(target_os = "windows", test)), allow(dead_code))]
+pub(crate) enum Plan {
+    /// Everything but this process tree (one loopback; system sounds too).
+    AllButMe,
+    /// Only these process trees, each on a loopback of its own, mixed:
+    /// Discord plays and is to be left out, and a loopback can leave out
+    /// only one tree.
+    Only(Vec<u32>),
+}
+
+/// What to capture on Windows: everything but this process (`me`), unless
+/// Discord is to be left out and one of the processes `playing` (those with
+/// an audio session) is Discord's; then each playing process that is
+/// neither ours nor Discord's (nor a child of one already captured, which
+/// that one's tree takes in).
+#[cfg_attr(not(any(target_os = "windows", test)), allow(dead_code))]
+pub(crate) fn plan(processes: &[Process], playing: &[u32], me: u32, leave_out_discord: bool) -> Plan {
+    if !leave_out_discord {
+        return Plan::AllButMe;
+    }
+    let by_pid: std::collections::HashMap<u32, &Process> =
+        processes.iter().map(|p| (p.pid, p)).collect();
+    // A process and its ancestors (a parent that ended may have its id
+    // taken again: the walk stops at a loop or a long chain).
+    let lineage = |pid: u32| -> Vec<u32> {
+        let mut chain = vec![pid];
+        let mut at = pid;
+        while let Some(p) = by_pid.get(&at) {
+            if p.parent == 0 || chain.contains(&p.parent) || chain.len() > 64 {
+                break;
+            }
+            chain.push(p.parent);
+            at = p.parent;
+        }
+        chain
+    };
+    let discord = |pid: u32| {
+        lineage(pid)
+            .iter()
+            .any(|p| by_pid.get(p).is_some_and(|p| crate::is_discord_app(&p.exe)))
+    };
+    let ours = |pid: u32| lineage(pid).contains(&me);
+    let mut playing: Vec<u32> = playing.iter().copied().filter(|&pid| pid != 0).collect();
+    playing.sort_unstable();
+    playing.dedup();
+    if !playing.iter().any(|&pid| discord(pid) && !ours(pid)) {
+        return Plan::AllButMe;
+    }
+    let wanted: Vec<u32> = playing
+        .into_iter()
+        .filter(|&pid| !ours(pid) && !discord(pid))
+        .collect();
+    let only = wanted
+        .iter()
+        .copied()
+        .filter(|&pid| !lineage(pid)[1..].iter().any(|up| wanted.contains(up)))
+        .collect();
+    Plan::Only(only)
+}
+
 /// Frequency analysis for tests and the receiving side's figures: how many
 /// times each channel crosses zero, as a frequency.
 pub(crate) fn zero_crossing_hz(samples: &[i16], channels: usize, channel: usize) -> f32 {
@@ -295,6 +473,96 @@ mod tests {
         assert!((left - TONE_LEFT).abs() < 15.0, "left {left}");
         assert!((right - TONE_RIGHT).abs() < 15.0, "right {right}");
         assert!(power_at(&got, 2, 0, TONE_LEFT) > 100.0 * power_at(&got, 2, 0, TONE_RIGHT));
+    }
+
+    fn process(pid: u32, parent: u32, exe: &str) -> Process {
+        Process {
+            pid,
+            parent,
+            exe: exe.into(),
+        }
+    }
+
+    /// Explorer (1) started Morpheus (10, with a child 11), Discord (20,
+    /// its sound in a child 21), Spotify (30) and a browser (40, its sound
+    /// in a child 41).
+    fn desktop() -> Vec<Process> {
+        vec![
+            process(1, 0, "explorer.exe"),
+            process(10, 1, "morpheus-desktop.exe"),
+            process(11, 10, "morpheus-desktop.exe"),
+            process(20, 1, "Discord.exe"),
+            process(21, 20, "Discord.exe"),
+            process(30, 1, "Spotify.exe"),
+            process(40, 1, "chrome.exe"),
+            process(41, 40, "chrome.exe"),
+        ]
+    }
+
+    #[test]
+    fn windows_captures_all_but_morpheus_unless_discord_plays_and_is_left_out() {
+        let all = desktop();
+        // Discord not playing: one loopback of everything but Morpheus.
+        assert_eq!(plan(&all, &[11, 30, 41], 10, true), Plan::AllButMe);
+        // Discord playing but the setting off: the same.
+        assert_eq!(plan(&all, &[11, 21, 30, 41], 10, false), Plan::AllButMe);
+        // Discord playing and left out: each other app on its own, never
+        // Morpheus, never Discord or its children (system sounds, 0, can't
+        // be had this way).
+        assert_eq!(
+            plan(&all, &[0, 11, 21, 30, 41], 10, true),
+            Plan::Only(vec![30, 41])
+        );
+        // A parent and its child both playing: the parent's tree has both.
+        assert_eq!(
+            plan(&all, &[21, 40, 41, 30, 30], 10, true),
+            Plan::Only(vec![30, 40])
+        );
+        // Only Discord playing: nothing to capture.
+        assert_eq!(plan(&all, &[20, 21], 10, true), Plan::Only(vec![]));
+    }
+
+    #[test]
+    fn windows_plan_survives_reused_process_ids() {
+        // A loop of parents (ids taken again) ends the walk.
+        let all = vec![
+            process(5, 6, "Discord.exe"),
+            process(6, 5, "explorer.exe"),
+            process(7, 6, "game.exe"),
+        ];
+        assert_eq!(plan(&all, &[5, 7], 99, true), Plan::Only(vec![]));
+        // (6 counts as started by Discord here: its parent id is 5.)
+        assert_eq!(plan(&all, &[6], 99, true), Plan::Only(vec![]));
+        assert_eq!(plan(&all, &[6], 6, true), Plan::AllButMe);
+    }
+
+    #[test]
+    fn the_mixer_sums_streams_and_does_not_wait_for_a_stalled_one() {
+        let got = Arc::new(std::sync::Mutex::new(Vec::<Vec<i16>>::new()));
+        let into = got.clone();
+        let mut out: Out = Box::new(move |f: &[i16]| into.lock().expect("lock").push(f.to_vec()));
+        let mut mixer = Mixer::new();
+        mixer.add(1);
+        mixer.add(2);
+        let frame = |v: i16| vec![v; FRAME * CHANNELS];
+        mixer.push(1, frame(100), &mut out);
+        assert!(got.lock().expect("lock").is_empty(), "waits for the other");
+        mixer.push(2, frame(20), &mut out);
+        assert_eq!(got.lock().expect("lock").len(), 1);
+        assert!(got.lock().expect("lock")[0].iter().all(|&s| s == 120), "summed");
+        // Loud enough to clip: kept at the top.
+        mixer.push(1, frame(30_000), &mut out);
+        mixer.push(2, frame(30_000), &mut out);
+        assert!(got.lock().expect("lock")[1].iter().all(|&s| s == i16::MAX));
+        // Stream 2 goes quiet: 1 goes on alone once 2 has stalled.
+        std::thread::sleep(STALLED + Duration::from_millis(20));
+        mixer.push(1, frame(7), &mut out);
+        assert_eq!(got.lock().expect("lock").len(), 3);
+        assert!(got.lock().expect("lock")[2].iter().all(|&s| s == 7));
+        // A stream taken away is not mixed any more.
+        mixer.remove(1);
+        mixer.push(1, frame(7), &mut out);
+        assert_eq!(got.lock().expect("lock").len(), 3);
     }
 
     #[test]

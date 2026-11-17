@@ -206,54 +206,51 @@ impl SettingsView {
     /// devices; a camera or screen already sent keeps its encoder.
     fn hardware_video_row(&self, cx: &mut Context<Self>) -> AnyElement {
         let on = self.voice_prefs.hardware_video;
-        let switch = div()
-            .id("hw-video-switch")
-            .flex_none()
-            .w(px(38.0))
-            .h(px(20.0))
-            .rounded_full()
-            .p(px(2.0))
-            .flex()
-            .when(on, |d| d.justify_end())
-            .bg(if on {
-                rgb(theme::accent_solid())
-            } else {
-                rgb(theme::bg_input())
-            })
-            .cursor_pointer()
-            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-            .on_click(cx.listener(move |this, _, _, cx| this.set_hardware_video(!on, cx)))
-            .child(div().size(px(16.0)).rounded_full().bg(rgb(0xffffff)))
-            .e2e("button", "hw-video-switch")
-            .attr("data-on", on.to_string());
-        div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .gap(px(12.0))
-            .mt(px(6.0))
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(2.0))
-                    .min_w_0()
-                    .child(div().child(crate::view_model::calls::HARDWARE_VIDEO_LABEL))
-                    .child(
-                        div()
-                            .text_size(px(0.75 * theme::REM))
-                            .text_color(rgb(theme::text_muted()))
-                            .child(crate::view_model::calls::HARDWARE_VIDEO_HINT),
-                    ),
-            )
-            .child(switch)
-            .e2e("div", "hw-video")
-            .text(format!(
-                "{} {}",
-                crate::view_model::calls::HARDWARE_VIDEO_LABEL,
-                crate::view_model::calls::HARDWARE_VIDEO_HINT
-            ))
-            .into_any_element()
+        switch_row(
+            "hw-video",
+            "hw-video-switch",
+            crate::view_model::calls::HARDWARE_VIDEO_LABEL,
+            crate::view_model::calls::HARDWARE_VIDEO_HINT,
+            on,
+            cx.listener(move |this, _, _, cx| this.set_hardware_video(!on, cx)),
+        )
+    }
+
+    /// Voice & Video → Screen Share: what a shared screen's sound leaves
+    /// out. Morpheus's own sound always (no switch: the call's voices would
+    /// come back to everyone); Discord's unless turned off here.
+    pub(super) fn screen_share_section(&self, cx: &mut Context<Self>) -> AnyElement {
+        use crate::view_model::settings::{LEAVE_OUT_DISCORD_HINT, LEAVE_OUT_DISCORD_LABEL};
+        let on = self.leave_out_discord;
+        let row = switch_row(
+            "discord-sound",
+            "discord-sound-switch",
+            LEAVE_OUT_DISCORD_LABEL,
+            LEAVE_OUT_DISCORD_HINT,
+            on,
+            cx.listener(move |this, _, _, cx| this.set_leave_out_discord(!on, cx)),
+        );
+        section_classed(
+            "Screen Share",
+            "screen-share-sound",
+            vec![row],
+            self.hl("screen-share-sound"),
+            "voice-screen-share",
+        )
+        .into_any_element()
+    }
+
+    /// Kept on this device and applied at once (a share going now follows
+    /// within a second or so).
+    fn set_leave_out_discord(&mut self, on: bool, cx: &mut Context<Self>) {
+        match crate::view_model::settings::set_leaves_out_discord(&self.data_dir, on) {
+            Ok(()) => {
+                self.leave_out_discord = on;
+                morpheus_call::set_screen_audio_leaves_out_discord(on);
+            }
+            Err(err) => eprintln!("morpheus-desktop: saving the Discord sound setting: {err}"),
+        }
+        cx.notify();
     }
 
     fn set_hardware_video(&mut self, on: bool, cx: &mut Context<Self>) {
@@ -269,4 +266,60 @@ impl SettingsView {
         cx.emit(super::DevicesChosen(crate::view_model::menu::DeviceKind::Camera));
         cx.notify();
     }
+}
+
+/// A setting with a switch beside its name and what it does (`div.{class}`
+/// holding `button.{switch}[data-on]`).
+fn switch_row(
+    class: &'static str,
+    switch: &'static str,
+    label: &'static str,
+    hint: &'static str,
+    on: bool,
+    on_click: impl Fn(&gpui::ClickEvent, &mut gpui::Window, &mut gpui::App) + 'static,
+) -> AnyElement {
+    let toggle = div()
+        .id(switch)
+        .flex_none()
+        .w(px(38.0))
+        .h(px(20.0))
+        .rounded_full()
+        .p(px(2.0))
+        .flex()
+        .when(on, |d| d.justify_end())
+        .bg(if on {
+            rgb(theme::accent_solid())
+        } else {
+            rgb(theme::bg_input())
+        })
+        .cursor_pointer()
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        .on_click(on_click)
+        .child(div().size(px(16.0)).rounded_full().bg(rgb(0xffffff)))
+        .e2e("button", switch)
+        .attr("data-on", on.to_string());
+    div()
+        .flex()
+        .items_center()
+        .justify_between()
+        .gap(px(12.0))
+        .mt(px(6.0))
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(2.0))
+                .min_w_0()
+                .child(div().child(label))
+                .child(
+                    div()
+                        .text_size(px(0.75 * theme::REM))
+                        .text_color(rgb(theme::text_muted()))
+                        .child(hint),
+                ),
+        )
+        .child(toggle)
+        .e2e("div", class)
+        .text(format!("{label} {hint}"))
+        .into_any_element()
 }
