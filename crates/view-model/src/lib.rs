@@ -45,6 +45,7 @@ pub mod settings;
 pub mod state_lines;
 pub mod streamer;
 pub mod rail_drag;
+pub mod scrollbar;
 pub mod reorder;
 pub mod rich;
 pub mod rows;

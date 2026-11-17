@@ -46,6 +46,7 @@ mod mod_view;
 mod model;
 mod capture_watch;
 mod noise;
+mod scrollbar;
 mod noise_model;
 mod notify;
 mod pictures;

@@ -173,6 +173,8 @@ pub struct TimelineView {
     vim_selected: Option<String>,
     /// The message whose avatar is held down (it sits a pixel lower).
     pressed_avatar: Option<String>,
+    /// The scrollbar's state (#144).
+    bar: crate::scrollbar::Bar,
     /// Set while the room is kept in the background: the newest message it
     /// had when left (what came after is new on return) and whether the view
     /// sat at the newest end.
@@ -298,6 +300,7 @@ impl TimelineView {
             menu_message: None,
             vim_selected: None,
             pressed_avatar: None,
+            bar: crate::scrollbar::Bar::default(),
             left_at: None,
             videos: HashMap::new(),
             people: Default::default(),
@@ -1437,8 +1440,101 @@ impl Drop for TimelineView {
     }
 }
 
+impl TimelineView {
+    /// The scrollbar over the list (#144), if it scrolls.
+    fn scrollbar_el(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Option<AnyElement> {
+        use crate::view_model::scrollbar as vm;
+        // The list is measured after its first frame: look again a few times.
+        if self.bar.seen_rows != self.rows.len() {
+            self.bar.seen_rows = self.rows.len();
+            self.bar.retries = 0;
+        }
+        let Some(frame) = self.bar.frame(&self.list) else {
+            if self.bar.retries < 90 {
+                self.bar.retries += 1;
+                crate::scrollbar::want_frame(window);
+            }
+            return None;
+        };
+        self.bar.retries = 0;
+        if frame.animating {
+            crate::scrollbar::want_frame(window);
+        } else if let Some(wait) = frame.fade_in_ms
+            && !self.bar.timer
+        {
+            self.bar.timer = true;
+            cx.spawn(async move |this, cx| {
+                cx.background_executor()
+                    .timer(Duration::from_millis(wait))
+                    .await;
+                this.update(cx, |this, cx| {
+                    this.bar.timer = false;
+                    cx.notify();
+                })
+                .ok();
+            })
+            .detach();
+        }
+        let bounds = self.bar.bounds.clone();
+        let thumb = (frame.opacity > 0.0).then(|| {
+            div()
+                .absolute()
+                .top(px(frame.top))
+                .right(px(3.0))
+                .w(px(vm::width(frame.wide)))
+                .h(px(frame.len))
+                .rounded_full()
+                .bg(rgb(if frame.wide { theme::text_muted() } else { theme::text_faint() }))
+                .opacity(frame.opacity)
+                .on_mouse_down(
+                    gpui::MouseButton::Left,
+                    cx.listener(|this, event: &gpui::MouseDownEvent, _, cx| {
+                        cx.stop_propagation();
+                        this.bar.grab_at(&this.list, f32::from(event.position.y));
+                        cx.notify();
+                    }),
+                )
+                .e2e("div", "scrollbar-thumb")
+                .attr("data-opacity", format!("{:.2}", frame.opacity))
+                .attr("data-wide", frame.wide.to_string())
+                .attr("data-len", format!("{:.1}", frame.len))
+                .attr("data-top", format!("{:.1}", frame.top))
+        });
+        Some(
+            div()
+                .id("scrollbar")
+                .absolute()
+                .top_0()
+                .bottom_0()
+                .right_0()
+                .w(px(14.0))
+                .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
+                    this.bar.over_track = *hovered;
+                    this.bar.touch();
+                    cx.notify();
+                }))
+                .on_mouse_down(
+                    gpui::MouseButton::Left,
+                    cx.listener(|this, event: &gpui::MouseDownEvent, _, cx| {
+                        this.bar.click_track(&this.list, f32::from(event.position.y));
+                        cx.notify();
+                    }),
+                )
+                .child(
+                    gpui::canvas(move |b, _, _| bounds.set(b), |_, _, _, _| {})
+                        .absolute()
+                        .size_full(),
+                )
+                .children(thumb)
+                .e2e("div", "scrollbar")
+                .attr("data-engaged", frame.engaged.to_string())
+                .into_any_element(),
+        )
+    }
+}
+
 impl Render for TimelineView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.check_history(cx);
         let now = metrics(&self.list);
         // Rows just spliced in are unmeasured until painted and read as no
@@ -1461,14 +1557,42 @@ impl Render for TimelineView {
         .inset_0()
         .pt(px(16.0))
         .pb(px(8.0));
+        let scrollbar = self.scrollbar_el(window, cx);
+        let dragging = self.bar.grab.is_some();
         let mut timeline = div()
+            .id("timeline-section")
+            .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
+                this.bar.over_list = *hovered;
+                this.bar.touch();
+                cx.notify();
+            }))
             .relative()
             .flex_1()
             .min_h_0()
             .w_full()
             .overflow_hidden()
             .line_height(relative(theme::LINE_HEIGHT))
-            .child(rows);
+            .child(rows)
+            .children(scrollbar);
+        // While the thumb is held, a layer follows the pointer wherever it goes.
+        if dragging {
+            timeline = timeline.child(
+                div()
+                    .absolute()
+                    .inset_0()
+                    .on_mouse_move(cx.listener(|this, event: &gpui::MouseMoveEvent, _, cx| {
+                        this.bar.drag_to(&this.list, event);
+                        cx.notify();
+                    }))
+                    .on_mouse_up(
+                        gpui::MouseButton::Left,
+                        cx.listener(|this, _: &gpui::MouseUpEvent, _, cx| {
+                            this.bar.end_drag(&this.list);
+                            cx.notify();
+                        }),
+                    ),
+            );
+        }
         if let Some(error) = &self.load_error {
             timeline = timeline.child(
                 div()
