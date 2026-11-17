@@ -31,7 +31,7 @@ use crate::{
 
 /// Every row's height, a heading's as a member's: the list draws only what
 /// is on screen, which needs rows of one height.
-const ROW: f32 = 40.0;
+const ROW: f32 = 42.0;
 
 /// What the member list tells the shell.
 pub enum MemberEvent {
@@ -321,6 +321,7 @@ impl Render for MembersView {
                     .track_scroll(self.scroll.clone())
                     .flex_1()
                     .min_h_0()
+                    .px(px(8.0))
                     .pb(px(8.0)),
                 );
             }
@@ -340,7 +341,7 @@ fn heading(role: MemberRole, total: usize) -> impl IntoElement {
         .flex()
         .flex_col()
         .justify_end()
-        .px(px(16.0))
+        .px(px(8.0))
         .pb(px(4.0))
         .child(
             div()
@@ -371,10 +372,10 @@ fn member_row(
         )))
         .flex()
         .items_center()
-        .gap(px(10.0))
+        .gap(px(12.0))
+        .w_full()
         .h(px(ROW))
         .flex_none()
-        .mx(px(8.0))
         .px(px(8.0))
         .rounded(px(theme::RADIUS_SM))
         .text_color(rgb(theme::text_muted()))
