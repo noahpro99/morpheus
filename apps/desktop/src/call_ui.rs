@@ -1271,6 +1271,49 @@ fn invite_card(cx: &mut Context<Shell>, room: &OwnedRoomId, direct: bool, fit: F
     } else {
         "Invite to voice channel"
     };
+    // The text goes with the icon when the card has room for it (about 8.5 px a
+    // letter, the icon, the gaps and the card's own edge), else only the icon,
+    // the text kept as its tooltip.
+    let card_w = match fit {
+        Fit::Grid(w) | Fit::Main(w, _) => w,
+        Fit::Strip => 144.0,
+    };
+    let needed = label.chars().count() as f32 * 8.5 + 16.0 + 8.0 + 28.0 + 4.0 + 16.0;
+    let button = if card_w >= needed {
+        div()
+            .id("call-invite-button")
+            .flex()
+            .items_center()
+            .gap(px(8.0))
+            .px(px(14.0))
+            .py(px(8.0))
+            .rounded(px(theme::RADIUS))
+            .bg(rgb(theme::accent()))
+            .text_color(rgb(0xffffff))
+            .font_weight(gpui::FontWeight::SEMIBOLD)
+            .cursor_pointer()
+            .child(icon("user-plus", 16.0).text_color(rgb(0xffffff)))
+            .child(label)
+            .on_click(cx.listener(move |this, _, _, cx| this.open_call_invite(room.clone(), cx)))
+            .e2e("button", "primary invite-to-call")
+            .attr("title", label)
+            .text(label)
+            .into_any_element()
+    } else {
+        control_button(
+            Control {
+                id: "call-invite-button",
+                classes: "call-control invite-to-call".into(),
+                title: label.into(),
+                glyph: "user-plus",
+                size: 20.0,
+                enabled: true,
+                pending: false,
+            },
+            cx.listener(move |this, _, _, cx| this.open_call_invite(room.clone(), cx)),
+            None,
+        )
+    };
     sized(div().id("call-invite-card"), fit, None)
         .flex()
         .items_center()
@@ -1279,19 +1322,7 @@ fn invite_card(cx: &mut Context<Shell>, room: &OwnedRoomId, direct: bool, fit: F
         .border_2()
         .border_color(rgba(theme::bg_selected()))
         .child(
-            control_button(
-                Control {
-                    id: "call-invite-button",
-                    classes: "call-control invite-to-call".into(),
-                    title: label.into(),
-                    glyph: "user-plus",
-                    size: 20.0,
-                    enabled: true,
-                    pending: false,
-                },
-                cx.listener(move |this, _, _, cx| this.open_call_invite(room.clone(), cx)),
-                None,
-            ),
+            button,
         )
         .e2e("div", "call-invite")
         .into_any_element()
