@@ -85,6 +85,7 @@ pub fn classify(key: &str, ctrl: bool, alt: bool, shift: bool) -> Option<Hotkey>
             "'" => Some(Hotkey::StartCall),
             "r" => Some(Hotkey::Reload),
             "q" => Some(Hotkey::Quit),
+            "Tab" | "tab" => Some(Hotkey::Scope { forward: true }),
             _ => None,
         },
         (true, false, true) => match key {
@@ -93,6 +94,7 @@ pub fn classify(key: &str, ctrl: bool, alt: bool, shift: bool) -> Option<Hotkey>
             "m" => Some(Hotkey::ToggleMute),
             "d" => Some(Hotkey::ToggleDeafen),
             "l" => Some(Hotkey::CopyLink),
+            "Tab" | "tab" => Some(Hotkey::Scope { forward: false }),
             _ => None,
         },
         (true, true, true) => match key {
@@ -170,6 +172,7 @@ pub const GROUPS: &[(&str, &[(&str, &str)])] = &[
             ("Alt+← / Alt+→", "Back / forward through the rooms visited"),
             ("Alt+Shift+↑ / ↓", "Previous / next unread room"),
             ("Ctrl+Alt+↑ / ↓", "Previous / next server (rail)"),
+            ("Ctrl+Shift+Tab / Ctrl+Tab", "Previous / next server (rail)"),
             ("Ctrl+Alt+→", "Switch between the DM and the server channel you were last in"),
             ("Ctrl+Shift+Alt+↑ / ↓", "Previous / next room that mentions you"),
             ("Ctrl+Shift+Alt+V", "Go to the call you are in"),
@@ -249,6 +252,17 @@ pub const VIM_GROUPS: &[(&str, &[(&str, &str)])] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ctrl_tab_steps_through_the_servers_too() {
+        assert_eq!(classify("Tab", true, false, false), Some(Hotkey::Scope { forward: true }));
+        assert_eq!(classify("tab", true, false, true), Some(Hotkey::Scope { forward: false }));
+        assert_eq!(classify("tab", false, false, false), None, "plain Tab moves focus");
+        assert!(
+            GROUPS.iter().flat_map(|(_, rows)| rows.iter()).any(|(keys, _)| keys.contains("Ctrl+Tab")),
+            "listed in the shortcuts"
+        );
+    }
 
     #[test]
     fn combos_name_their_actions() {
