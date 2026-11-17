@@ -8,7 +8,7 @@
 
 use std::collections::HashSet;
 
-use gpui::{Context, FontWeight, IntoElement, MouseButton, div, prelude::*, px, rgb};
+use gpui::{AnyElement, Context, FontWeight, IntoElement, MouseButton, div, prelude::*, px, rgb};
 use morpheus_core::{OwnedRoomId, RoomSummary, SpaceRoom};
 
 use crate::{
@@ -534,21 +534,8 @@ fn room_button(
     let title = crate::streamer::room_title(&shell.nicknames, room);
     button = if room.is_dm {
         button.child(avatar(shell.picture(&room.avatar, 32), &title, 32.0, None))
-    } else if room.is_voice {
-        button.child(
-            icon("volume-2", 18.0)
-                .text_color(rgb(theme::text_faint()))
-                .e2e("svg", "voice-icon"),
-        )
     } else {
-        button.child(
-            div()
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(rgb(theme::text_faint()))
-                .child("#")
-                .e2e("span", "hash")
-                .text("#"),
-        )
+        button.child(channel_glyph(room.is_voice))
     };
     button = button.child(
         div()
@@ -641,19 +628,7 @@ fn unjoined_row(shell: &Shell, cx: &mut Context<Shell>, room: &SpaceRoom) -> imp
             let room = room.clone();
             move |_, _, cx| view.update(cx, |s, cx| s.open_unjoined(room.clone(), cx))
         })
-        .child(if room.is_voice {
-            icon("volume-2", 18.0)
-                .text_color(rgb(theme::text_faint()))
-                .into_any_element()
-        } else {
-            div()
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(rgb(theme::text_faint()))
-                .child("#")
-                .e2e("span", "hash")
-                .text("#")
-                .into_any_element()
-        })
+        .child(channel_glyph(room.is_voice))
         .child(
             div()
                 .flex_1()
@@ -895,4 +870,34 @@ pub fn welcome_channels(shell: &Shell, space: &OwnedRoomId) -> (Vec<RoomSummary>
     }
     joined.retain(|r| !r.is_space && !r.invited);
     (joined, found.unjoined)
+}
+
+/// A channel's mark before its name: the speaker of a voice channel or the #
+/// of a text one, in one slot as wide for both, so every name starts at the
+/// same x and the mark is centred on the name's line.
+pub fn channel_glyph(voice: bool) -> AnyElement {
+    let slot = div()
+        .w(px(20.0))
+        .flex_none()
+        .flex()
+        .items_center()
+        .justify_center();
+    if voice {
+        slot.child(
+            icon("volume-2", 18.0)
+                .text_color(rgb(theme::text_faint()))
+                .e2e("svg", "voice-icon"),
+        )
+        .into_any_element()
+    } else {
+        slot.child(
+            div()
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(rgb(theme::text_faint()))
+                .child("#")
+                .e2e("span", "hash")
+                .text("#"),
+        )
+        .into_any_element()
+    }
 }

@@ -143,17 +143,7 @@ fn row(
         .bg(rgb(theme::bg_elevated()))
         .cursor_pointer()
         .on_click(cx.listener(move |this, _, _, cx| on_click(this, cx)))
-        .child(if voice {
-            icon("volume-2", 18.0)
-                .text_color(rgb(theme::text_faint()))
-                .into_any_element()
-        } else {
-            div()
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(rgb(theme::text_faint()))
-                .child("#")
-                .into_any_element()
-        })
+        .child(crate::room_list::channel_glyph(voice))
         .child(div().flex_1().min_w_0().child(label))
         .child(status)
         .e2e("div", if voice { "welcome-channel voice" } else { "welcome-channel" })
