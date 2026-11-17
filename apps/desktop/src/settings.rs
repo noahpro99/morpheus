@@ -1423,16 +1423,38 @@ impl Render for SettingsView {
                     .rounded(px(theme::RADIUS_SM))
                     .cursor_pointer()
                     .hover(|s| s.bg(rgba(theme::bg_hover())))
-                    .child(icon(entry.page.glyph(), 18.0).text_color(rgb(theme::text())))
-                    .child(div().child(entry.label).e2e("span", "").text(entry.label))
+                    .overflow_hidden()
+                    .child(
+                        icon(entry.page.glyph(), 18.0)
+                            .flex_none()
+                            .text_color(rgb(theme::text())),
+                    )
+                    // The title and the page it is on stack in the rest of the row and wrap
+                    // there: a long name never runs past the column.
                     .child(
                         div()
-                            .ml_auto()
-                            .text_size(px(0.75 * theme::REM))
-                            .text_color(rgb(theme::text_muted()))
-                            .child(entry.page.label())
-                            .e2e("span", "settings-result-page muted")
-                            .text(entry.page.label()),
+                            .flex_1()
+                            .min_w_0()
+                            .flex()
+                            .flex_col()
+                            .child(
+                                div()
+                                    .min_w_0()
+                                    .child(entry.label)
+                                    .e2e("span", "settings-result-label")
+                                    .attr("title", entry.label)
+                                    .text(entry.label),
+                            )
+                            .child(
+                                div()
+                                    .min_w_0()
+                                    .text_size(px(0.75 * theme::REM))
+                                    .text_color(rgb(theme::text_muted()))
+                                    .child(entry.page.label())
+                                    .e2e("span", "settings-result-page muted")
+                                    .attr("title", entry.page.label())
+                                    .text(entry.page.label()),
+                            ),
                     )
                     .on_click(cx.listener(move |this, _, _, cx| this.show_setting(entry, cx)))
                     .e2e("button", "settings-result")
