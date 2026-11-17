@@ -14,7 +14,7 @@ use std::{sync::OnceLock, time::Instant};
 
 use gpui::{
     AnyElement, Context, FontWeight, IntoElement, MouseButton, Window, canvas, div, prelude::*,
-    px, rgb,
+    px, rgb, rgba,
 };
 
 use crate::{
@@ -335,7 +335,7 @@ pub fn render(
         .overflow_hidden()
         .bg(rgb(0x000000))
         .border_1()
-        .border_color(rgb(theme::bg_selected()))
+        .border_color(rgba(theme::edge()))
         .shadow_lg()
         .occlude()
         .cursor(if shell.calls.mini_drag.is_some() {
@@ -377,6 +377,7 @@ pub fn render(
             .attr("data-feed", key)
             .attr("data-user", feed.user.to_string())
             .attr("data-side", place.side.key())
+            .attr("data-border", format!("{:08x}", theme::edge()))
             .attr("data-width", format!("{w:.0}"))
             .into_any_element(),
     )

@@ -1279,25 +1279,19 @@ fn invite_card(cx: &mut Context<Shell>, room: &OwnedRoomId, direct: bool, fit: F
         .border_2()
         .border_color(rgba(theme::bg_selected()))
         .child(
-            div()
-                .id("call-invite-button")
-                .flex()
-                .items_center()
-                .gap(px(8.0))
-                .px(px(14.0))
-                .py(px(8.0))
-                .rounded(px(theme::RADIUS))
-                .bg(rgb(theme::accent()))
-                .text_color(rgb(0xffffff))
-                .font_weight(gpui::FontWeight::SEMIBOLD)
-                .cursor_pointer()
-                .child(icon("user-plus", 16.0).text_color(rgb(0xffffff)))
-                .child(label)
-                .on_click(
-                    cx.listener(move |this, _, _, cx| this.open_call_invite(room.clone(), cx)),
-                )
-                .e2e("button", "primary invite-to-call")
-                .text(label),
+            control_button(
+                Control {
+                    id: "call-invite-button",
+                    classes: "call-control invite-to-call".into(),
+                    title: label.into(),
+                    glyph: "user-plus",
+                    size: 20.0,
+                    enabled: true,
+                    pending: false,
+                },
+                cx.listener(move |this, _, _, cx| this.open_call_invite(room.clone(), cx)),
+                None,
+            ),
         )
         .e2e("div", "call-invite")
         .into_any_element()
