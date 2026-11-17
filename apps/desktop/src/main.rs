@@ -44,6 +44,7 @@ mod mini_call;
 mod message;
 mod mod_view;
 mod model;
+mod capture_watch;
 mod noise;
 mod noise_model;
 mod notify;
@@ -91,8 +92,35 @@ use e2e::E2eExt as _;
 
 /// Rust's allocations through mimalloc, which hands freed memory back to
 /// the system; glibc's malloc held on to most of what a big room freed.
+#[cfg(not(feature = "dhat-heap"))]
 #[global_allocator]
 static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
+/// A heap-profiling build (issue #10): dhat counts every allocation by its
+/// call site; [`heap_dump`] writes what is live now (`MORPHEUS_DHAT_FILE`,
+/// else dhat-heap.json).
+#[cfg(feature = "dhat-heap")]
+#[global_allocator]
+static ALLOCATOR: dhat::Alloc = dhat::Alloc;
+
+#[cfg(feature = "dhat-heap")]
+static HEAP_PROFILER: std::sync::Mutex<Option<dhat::Profiler>> = std::sync::Mutex::new(None);
+
+/// Ends the heap profile and writes it; the bytes still allocated then are what
+/// the profile says the program holds.
+#[cfg(feature = "dhat-heap")]
+pub fn heap_dump() {
+    if let Ok(mut profiler) = HEAP_PROFILER.lock() {
+        drop(profiler.take());
+    }
+}
+
+/// Bytes live now and the most at once, if this is a heap-profiling build.
+#[cfg(feature = "dhat-heap")]
+pub fn heap_now() -> (u64, u64) {
+    let stats = dhat::HeapStats::get();
+    (stats.curr_bytes as u64, stats.max_bytes as u64)
+}
 
 use gpui::{
     App, Application, AssetSource, Bounds, Context, Entity, IntoElement, Render, SharedString,
@@ -808,6 +836,11 @@ fn main() {
         let err = command.exec();
         eprintln!("morpheus-desktop: could not restart with PULSE_PROP: {err}");
     }
+    #[cfg(feature = "dhat-heap")]
+    if let Ok(mut profiler) = HEAP_PROFILER.lock() {
+        let file = std::env::var("MORPHEUS_DHAT_FILE").unwrap_or_else(|_| "dhat-heap.json".into());
+        *profiler = Some(dhat::Profiler::builder().file_name(file).build());
+    }
     // CI's check that an update installs and the new version starts: no window.
     if update_self_test::requested() {
         update_self_test::run(data_dir());
@@ -881,6 +914,7 @@ fn main() {
     }
     init_logging();
     streamer::load(&data_dir());
+    capture_watch::start();
     // Start on login must follow the app when an update moved it.
     view_model::settings::refresh_autostart();
     // matrix: links open Morpheus (per user, where nobody else has them).

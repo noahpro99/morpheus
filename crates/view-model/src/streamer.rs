@@ -255,3 +255,108 @@ mod pill_tests {
         assert_eq!(swap_who("joined", "", "b"), "joined");
     }
 }
+
+/// Whether the screen is being shared, and streamer mode turned off by hand
+/// while it is: this app's own share (call.screen) or another program's capture
+/// (#143: Discord, OBS) both count; the hand-off stays until neither is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ShareTracker {
+    own: bool,
+    external: bool,
+    overridden: bool,
+}
+
+impl ShareTracker {
+    pub const fn new() -> Self {
+        Self { own: false, external: false, overridden: false }
+    }
+
+    /// The share this app is making began or ended.
+    pub fn set_own(&mut self, on: bool) {
+        self.own = on;
+        self.settle();
+    }
+
+    /// Another program's capture of the screen began or ended.
+    pub fn set_external(&mut self, on: bool) {
+        self.external = on;
+        self.settle();
+    }
+
+    fn settle(&mut self) {
+        if !self.sharing() {
+            self.overridden = false;
+        }
+    }
+
+    /// Whether the screen is being shared or captured.
+    pub fn sharing(&self) -> bool {
+        self.own || self.external
+    }
+
+    /// Streamer mode was turned off by hand: during a share it stays off.
+    pub fn override_off(&mut self) {
+        if self.sharing() {
+            self.overridden = true;
+        }
+    }
+
+    /// Streamer mode was turned on by hand again.
+    pub fn clear_override(&mut self) {
+        self.overridden = false;
+    }
+
+    /// Whether streamer mode is on under `settings`.
+    pub fn active(&self, settings: &StreamerSettings) -> bool {
+        settings.active(self.sharing()) && !(self.sharing() && self.overridden)
+    }
+}
+
+#[cfg(test)]
+mod tracker_tests {
+    use super::*;
+
+    #[test]
+    fn another_programs_capture_turns_it_on_and_off_like_our_own_share() {
+        let settings = StreamerSettings::default();
+        let mut t = ShareTracker::new();
+        assert!(!t.active(&settings));
+        t.set_external(true);
+        assert!(t.active(&settings), "OBS capturing");
+        t.set_external(false);
+        assert!(!t.active(&settings), "OBS stopped");
+        t.set_own(true);
+        assert!(t.active(&settings));
+        t.set_external(true);
+        t.set_own(false);
+        assert!(t.active(&settings), "still captured by another");
+        t.set_external(false);
+        assert!(!t.active(&settings));
+    }
+
+    #[test]
+    fn the_auto_setting_and_the_hand_override_apply_to_it_too() {
+        let mut t = ShareTracker::new();
+        let no_auto = StreamerSettings { auto: false, ..StreamerSettings::default() };
+        t.set_external(true);
+        assert!(!t.active(&no_auto), "auto-on turned off");
+        assert!(t.active(&StreamerSettings { now: true, ..no_auto }), "by hand still works");
+        let auto = StreamerSettings::default();
+        t.override_off();
+        assert!(!t.active(&auto), "turned off by hand during the capture");
+        t.set_own(true);
+        t.set_external(false);
+        assert!(!t.active(&auto), "off until all sharing has ended");
+        t.set_own(false);
+        t.set_external(true);
+        assert!(t.active(&auto), "a later capture turns it on again");
+    }
+
+    #[test]
+    fn turning_it_off_by_hand_with_nothing_shared_is_not_an_override() {
+        let mut t = ShareTracker::new();
+        t.override_off();
+        t.set_external(true);
+        assert!(t.active(&StreamerSettings::default()));
+    }
+}

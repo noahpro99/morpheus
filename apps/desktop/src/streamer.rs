@@ -3,12 +3,9 @@
 //! whether the screen is being shared. `Shell::sync_streamer` keeps the share
 //! flag current and redraws when the mode flips.
 
-use std::sync::{
-    RwLock,
-    atomic::{AtomicBool, Ordering},
-};
+use std::sync::{Mutex, RwLock};
 
-use crate::view_model::streamer::{StreamerSettings, mask_id, mask_name};
+use crate::view_model::streamer::{ShareTracker, StreamerSettings, mask_id, mask_name};
 
 static SETTINGS: RwLock<StreamerSettings> = RwLock::new(StreamerSettings {
     auto: true,
@@ -18,10 +15,17 @@ static SETTINGS: RwLock<StreamerSettings> = RwLock::new(StreamerSettings {
     ids: true,
     ask: true,
 });
-static SHARING: AtomicBool = AtomicBool::new(false);
-/// Streamer mode was turned off by hand during this share: it stays off until
-/// the share ends, whatever the auto-on-share setting says.
-static OVERRIDDEN: AtomicBool = AtomicBool::new(false);
+/// Whether the screen is shared (by this app, or captured by another program:
+/// #143), and streamer mode turned off by hand during it: that stays off until
+/// the sharing ends, whatever the auto-on-share setting says.
+static SHARE: Mutex<ShareTracker> = Mutex::new(ShareTracker::new());
+
+fn share<R>(f: impl FnOnce(&mut ShareTracker) -> R) -> R {
+    match SHARE.lock() {
+        Ok(mut tracker) => f(&mut tracker),
+        Err(poisoned) => f(&mut poisoned.into_inner()),
+    }
+}
 
 /// Read this device's choices (at startup).
 pub fn load(dir: &std::path::Path) {
@@ -38,25 +42,32 @@ pub fn set_settings(settings: StreamerSettings) {
     }
 }
 
-/// Whether this device is sharing its screen in a call.
+/// Whether the screen is being shared in a call from this device, or captured
+/// by another program.
 pub fn sharing() -> bool {
-    SHARING.load(Ordering::Relaxed)
+    share(|t| t.sharing())
 }
 
 /// Note whether the screen is shared; true when that changed whether streamer
 /// mode is on.
 pub fn set_sharing(on: bool) -> bool {
     let was = active();
-    if !on {
-        OVERRIDDEN.store(false, Ordering::Relaxed);
-    }
-    SHARING.store(on, Ordering::Relaxed);
+    share(|t| t.set_own(on));
+    was != active()
+}
+
+/// Note whether another program is capturing the screen (Discord, OBS);
+/// true when that changed whether streamer mode is on.
+pub fn set_external(on: bool) -> bool {
+    let was = active();
+    share(|t| t.set_external(on));
     was != active()
 }
 
 /// Whether streamer mode is on now.
 pub fn active() -> bool {
-    settings().active(sharing()) && !(sharing() && OVERRIDDEN.load(Ordering::Relaxed))
+    let settings = settings();
+    share(|t| t.active(&settings))
 }
 
 /// Turn streamer mode off (the pill, the Settings switch): the saved choice
@@ -65,15 +76,13 @@ pub fn active() -> bool {
 pub fn turn_off() -> StreamerSettings {
     let mut s = settings();
     s.now = false;
-    if sharing() {
-        OVERRIDDEN.store(true, Ordering::Relaxed);
-    }
+    share(|t| t.override_off());
     s
 }
 
 /// Turn streamer mode on by hand; returns the settings to save.
 pub fn turn_on() -> StreamerSettings {
-    OVERRIDDEN.store(false, Ordering::Relaxed);
+    share(|t| t.clear_override());
     let mut s = settings();
     s.now = true;
     s
