@@ -1303,6 +1303,8 @@ impl Shell {
                 let image = media::fetched(cx, fetching, (size * 2, size * 2), true).await;
                 this.update(cx, |this, cx| {
                     this.avatars.finish(&media, size, image);
+                    // An open palette shows the picture that has just come.
+                    this.refresh_switcher(cx);
                     cx.notify();
                 })
                 .ok();
