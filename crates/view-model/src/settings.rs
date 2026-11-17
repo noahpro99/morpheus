@@ -161,15 +161,15 @@ pub const SETTINGS_INDEX: &[SettingEntry] = &[
     ),
     entry(
         "Use the dedicated graphics card",
-        "graphics gpu card nvidia intel discrete integrated dedicated vulkan",
-        SettingsPage::Appearance,
+        "graphics gpu card nvidia intel amd discrete integrated dedicated vulkan",
+        SettingsPage::VoiceVideo,
         "graphics",
     ),
     entry(
         "Hardware video acceleration",
         "video gpu graphics card encoder decoder h264 vp8 nvenc vaapi videotoolbox media foundation quick sync camera screen share",
         SettingsPage::VoiceVideo,
-        "video-preview",
+        "graphics",
     ),
     entry(
         "Microphone and speaker",

@@ -93,11 +93,10 @@ impl SettingsView {
             .attr("data-camera", device)
             .attr("data-state", if running { "on" } else { "off" })
             .into_any_element();
-        let hardware = self.hardware_video_row(cx);
         section_classed(
             "Video",
             "video-preview",
-            vec![body, note, hardware],
+            vec![body, note],
             self.hl("video-preview"),
             "voice-video",
         )
@@ -216,6 +215,36 @@ impl SettingsView {
         )
     }
 
+    /// Voice & Video → Graphics card: what the graphics card does for the
+    /// app, in one place. Hardware video acceleration everywhere; on Linux
+    /// also which card draws the app (Vulkan's, picked at start; macOS and
+    /// Windows leave that to the system).
+    pub(super) fn graphics_section(&self, cx: &mut Context<Self>) -> AnyElement {
+        let mut rows = vec![self.hardware_video_row(cx)];
+        if cfg!(target_os = "linux") {
+            let on = crate::graphics::dedicated();
+            rows.push(switch_row(
+                "dedicated-gpu",
+                "dedicated-gpu-switch",
+                DEDICATED_GPU_LABEL,
+                DEDICATED_GPU_HINT,
+                on,
+                cx.listener(move |this, _, _, cx| {
+                    crate::graphics::set(&this.data_dir, !on);
+                    cx.notify();
+                }),
+            ));
+        }
+        section_classed(
+            "Graphics card",
+            "graphics",
+            rows,
+            self.hl("graphics"),
+            "voice-graphics",
+        )
+        .into_any_element()
+    }
+
     /// Voice & Video → Screen Share: what a shared screen's sound leaves
     /// out. Morpheus's own sound always (no switch: the call's voices would
     /// come back to everyone); Discord's unless turned off here.
@@ -323,3 +352,8 @@ fn switch_row(
         .text(format!("{label} {hint}"))
         .into_any_element()
 }
+
+/// Voice & Video → Graphics card's switch for the card that draws the app
+/// (Linux).
+pub const DEDICATED_GPU_LABEL: &str = "Use the dedicated graphics card";
+pub const DEDICATED_GPU_HINT: &str = "On a computer with two graphics cards, draw with the dedicated one (faster, uses more power) rather than the one built into the processor. Takes effect the next time Morpheus starts.";

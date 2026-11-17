@@ -1,4 +1,4 @@
-//! Settings > Appearance > Graphics: whether to draw with the dedicated
+//! Settings > Voice & Video > Graphics card: whether to draw with the dedicated
 //! graphics card (the discrete GPU of a laptop with two) or the integrated
 //! one. On unless turned off; kept in the data directory, read at start
 //! (the GPU is chosen once, when the window system starts).

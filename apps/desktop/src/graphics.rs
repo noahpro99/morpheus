@@ -1,4 +1,4 @@
-//! The dedicated graphics card switch (Settings > Appearance > Graphics,
+//! The dedicated graphics card switch (Settings > Voice & Video > Graphics card,
 //! Linux): on unless turned off, kept in the data directory
 //! (`view_model::gpu`). gpui reads it when the window system starts, so a
 //! change takes effect at the next start.

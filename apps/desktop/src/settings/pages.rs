@@ -434,7 +434,7 @@ impl SettingsView {
             ],
             self.hl("keyboard"),
         );
-        let mut sections = vec![
+        let sections = vec![
             section(
                 "Theme",
                 "theme",
@@ -446,38 +446,6 @@ impl SettingsView {
             self.history_section(cx).into_any_element(),
             keyboard.into_any_element(),
         ];
-        // Linux draws with Vulkan on the GPU picked at start (macOS: Metal's).
-        if cfg!(target_os = "linux") {
-            let dedicated = choice(
-                "dedicated-gpu".into(),
-                "dedicated-gpu",
-                "",
-                "Use the dedicated graphics card",
-                crate::graphics::dedicated(),
-                true,
-                false,
-                cx.listener(|this, _, _, cx| {
-                    crate::graphics::set(&this.data_dir, !crate::graphics::dedicated());
-                    cx.notify();
-                }),
-            );
-            sections.push(
-                section(
-                    "Graphics",
-                    "graphics",
-                    vec![
-                        dedicated,
-                        muted(
-                            "On a computer with two graphics cards, draw with the dedicated one (faster, uses more power) rather than the one built into the processor. Takes effect the next time Morpheus starts.",
-                            "muted",
-                        )
-                        .into_any_element(),
-                    ],
-                    self.hl("graphics"),
-                )
-                .into_any_element(),
-            );
-        }
         sections
     }
 
@@ -556,6 +524,7 @@ impl SettingsView {
             },
         ));
         let video = self.video_section(cx);
+        let graphics = self.graphics_section(cx);
         let screen_share = self.screen_share_section(cx);
         vec![
             section_classed(
@@ -575,6 +544,7 @@ impl SettingsView {
             )
             .into_any_element(),
             video,
+            graphics,
             screen_share,
         ]
     }
