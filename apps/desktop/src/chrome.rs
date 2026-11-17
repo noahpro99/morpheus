@@ -164,12 +164,11 @@ impl Layout {
         }
     }
 
-    /// Windows: the caption buttons as Windows draws its own, (width,
-    /// height): square, the bar's full height, side by side at its right
-    /// end, so a push into the top right corner is Close. Elsewhere the
-    /// small rounded buttons (`None`).
+    /// The app's window buttons as Windows draws its own (Linux too), (width,
+    /// height): the bar's full height, side by side at its right end, so a
+    /// push into the top right corner is Close. macOS has its own (`None`).
     pub fn caption_buttons(self) -> Option<(f32, f32)> {
-        self.system_hit_test.then_some((46.0, BAR_HEIGHT))
+        self.app_buttons.then_some((46.0, BAR_HEIGHT))
     }
 
     /// The bar's right padding: none where the caption buttons reach its end.
@@ -186,6 +185,11 @@ impl Layout {
 /// How far in from the window's edge a resize starts, and a corner's reach.
 const EDGE: f32 = 5.0;
 const CORNER: f32 = 12.0;
+/// Where the app's caption buttons are, the corner strip is this small (the
+/// buttons reach the window's corner) and the top and right strips keep off them.
+const CORNER_OVER_BUTTONS: f32 = 2.0;
+/// The three buttons' width together.
+const BUTTONS_W: f32 = 3.0 * 46.0;
 
 /// Closing the window hides it when there is a tray to bring it back (the
 /// app goes on syncing and notifying); without one the app ends.
@@ -389,15 +393,21 @@ pub fn resize_edges(window: &Window) -> AnyElement {
     {
         return div().into_any_element();
     }
+    let buttons = Layout::current(window).caption_buttons().is_some();
+    let (top_right, top_gap, right_gap) = if buttons {
+        (CORNER_OVER_BUTTONS, BUTTONS_W, BAR_HEIGHT)
+    } else {
+        (CORNER, CORNER, CORNER)
+    };
     let strip = |edge: ResizeEdge, cursor: CursorStyle| {
         let (name, mut d) = (format!("{edge:?}"), div().absolute());
         d = match edge {
-            ResizeEdge::Top => d.top_0().left(px(CORNER)).right(px(CORNER)).h(px(EDGE)),
+            ResizeEdge::Top => d.top_0().left(px(CORNER)).right(px(top_gap)).h(px(EDGE)),
             ResizeEdge::Bottom => d.bottom_0().left(px(CORNER)).right(px(CORNER)).h(px(EDGE)),
             ResizeEdge::Left => d.left_0().top(px(CORNER)).bottom(px(CORNER)).w(px(EDGE)),
-            ResizeEdge::Right => d.right_0().top(px(CORNER)).bottom(px(CORNER)).w(px(EDGE)),
+            ResizeEdge::Right => d.right_0().top(px(right_gap)).bottom(px(CORNER)).w(px(EDGE)),
             ResizeEdge::TopLeft => d.top_0().left_0().size(px(CORNER)),
-            ResizeEdge::TopRight => d.top_0().right_0().size(px(CORNER)),
+            ResizeEdge::TopRight => d.top_0().right_0().size(px(top_right)),
             ResizeEdge::BottomLeft => d.bottom_0().left_0().size(px(CORNER)),
             ResizeEdge::BottomRight => d.bottom_0().right_0().size(px(CORNER)),
         };
@@ -536,9 +546,13 @@ mod layout_tests {
             assert_eq!(win.caption_buttons(), Some((46.0, BAR_HEIGHT)));
             assert_eq!(win.right_padding(), 0.0);
         }
-        for os in [Os::Linux, Os::Mac] {
-            assert_eq!(Layout::for_os(os, false).caption_buttons(), None);
-            assert_eq!(Layout::for_os(os, false).right_padding(), BAR_PADDING);
-        }
+        assert_eq!(Layout::for_os(Os::Mac, false).caption_buttons(), None);
+        assert_eq!(Layout::for_os(Os::Mac, false).right_padding(), BAR_PADDING);
+        // Linux: the same full-height buttons, to the window's right edge.
+        assert_eq!(
+            Layout::for_os(Os::Linux, false).caption_buttons(),
+            Some((46.0, BAR_HEIGHT))
+        );
+        assert_eq!(Layout::for_os(Os::Linux, false).right_padding(), 0.0);
     }
 }
