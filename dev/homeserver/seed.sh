@@ -495,6 +495,75 @@ if [[ ! -f "$HS_DIR/.seeded-multitude-pictures" ]]; then
   echo "  + a 3 MB picture and a substitute picture in #multitude"
 fi
 
+# Re-assert what the tests rely on. Tests (and concurrent runs) kick, ban,
+# promote, leave and close, so check first and write only what is off: when
+# everything is already right this is a handful of GETs.
+echo "restore:"
+token_of() { case "$1" in alice) echo "$ALICE" ;; bob) echo "$BOB" ;; *) echo "$CAROL" ;; esac; }
+
+# joined_with <room-id> <user> -> succeeds when <user> is joined to the room
+joined_with() {
+  api "$ALICE" GET "/_matrix/client/v3/rooms/$1/joined_members" 2>/dev/null \
+    | jq -e --arg u "@$2:localhost" '.joined[$u] != null' >/dev/null
+}
+
+# ensure_dm <user> <other>: a DM between the two exists, both are joined, and
+# both m.direct maps list it (as the only DM with the other). The DM kept is
+# the first one either side already lists with both joined, else a new one.
+ensure_dm() {
+  local a="$1" b="$2" ta tb ma mb dm cand
+  ta=$(token_of "$a"); tb=$(token_of "$b")
+  ma=$(api "$ta" GET "/_matrix/client/v3/user/@$a:localhost/account_data/m.direct" 2>/dev/null || echo '{}')
+  mb=$(api "$tb" GET "/_matrix/client/v3/user/@$b:localhost/account_data/m.direct" 2>/dev/null || echo '{}')
+  dm=""
+  for cand in $(jq -r --arg o "@$b:localhost" '.[$o][]?' <<<"$ma") $(jq -r --arg o "@$a:localhost" '.[$o][]?' <<<"$mb"); do
+    if joined_with "$cand" "$a" && joined_with "$cand" "$b"; then dm="$cand"; break; fi
+  done
+  if [[ -z "$dm" ]]; then
+    dm=$(api "$ta" POST /_matrix/client/v3/createRoom \
+      "$(jq -nc --arg b "@$b:localhost" '{is_direct:true, preset:"trusted_private_chat", invite:[$b]}')" | jq -r .room_id)
+    api "$tb" POST "/_matrix/client/v3/join/$dm" '{}' >/dev/null
+    echo "  + dm $a <-> $b ($dm)"
+  fi
+  # Only a DM that is not the seed's own default needs its map rewritten.
+  if [[ $(jq -c --arg o "@$b:localhost" '.[$o]' <<<"$ma") != "[\"$dm\"]" ]]; then
+    api "$ta" PUT "/_matrix/client/v3/user/@$a:localhost/account_data/m.direct" \
+      "$(jq -c --arg o "@$b:localhost" --arg r "$dm" '.[$o]=[$r]' <<<"$ma")" >/dev/null
+    echo "  = m.direct of $a lists $b's dm"
+  fi
+  if [[ $(jq -c --arg o "@$a:localhost" '.[$o]' <<<"$mb") != "[\"$dm\"]" ]]; then
+    api "$tb" PUT "/_matrix/client/v3/user/@$b:localhost/account_data/m.direct" \
+      "$(jq -c --arg o "@$a:localhost" --arg r "$dm" '.[$o]=[$r]' <<<"$mb")" >/dev/null
+    echo "  = m.direct of $b lists $a's dm"
+  fi
+}
+ensure_dm alice bob
+ensure_dm alice carol
+
+# The seeded rooms: bob and carol joined (unbanned, invited back if needed),
+# and nobody but the creator holding a power level.
+for alias in general random dev lounge hangout vault encrypted moderation engineering; do
+  room=$(curl -fsS "$HS_URL/_matrix/client/v3/directory/room/%23$alias:localhost" 2>/dev/null | jq -r .room_id) || continue
+  for u in bob carol; do
+    joined_with "$room" "$u" && continue
+    api "$ALICE" POST "/_matrix/client/v3/rooms/$room/unban" "$(jq -nc --arg u "@$u:localhost" '{user_id:$u}')" >/dev/null 2>&1 || true
+    api "$ALICE" POST "/_synapse/admin/v1/join/$room" "$(jq -nc --arg u "@$u:localhost" '{user_id:$u}')" >/dev/null
+    echo "  + @$u:localhost is back in #$alias"
+  done
+  # Throwaway accounts the mod-view test parks in #general and #random.
+  for u in $(api "$ALICE" GET "/_matrix/client/v3/rooms/$room/joined_members" | jq -r '.joined|keys[]|select(startswith("@modee-"))'); do
+    api "$ALICE" POST "/_matrix/client/v3/rooms/$room/kick" "$(jq -nc --arg u "$u" '{user_id:$u}')" >/dev/null 2>&1 || true
+    echo "  - $u left #$alias"
+  done
+  pl=$(api "$ALICE" GET "/_matrix/client/v3/rooms/$room/state/m.room.power_levels/")
+  if [[ $(jq -c '.users // {}' <<<"$pl") != "{}" ]]; then
+    api "$ALICE" PUT "/_matrix/client/v3/rooms/$room/state/m.room.power_levels/" \
+      "$(jq -c '.users = {}' <<<"$pl")" >/dev/null
+    echo "  = power levels of #$alias reset"
+  fi
+done
+echo "  = dms, members and power levels are as the tests expect"
+
 # Every test login leaves a device behind (alice had 1300+), and each one
 # adds key queries to every sync and fans out verification requests. Last
 # step, since it also signs out the tokens this script used.
