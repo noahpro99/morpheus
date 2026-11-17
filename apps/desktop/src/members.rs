@@ -240,7 +240,8 @@ impl MembersView {
             })
             .detach();
         }
-        None
+        // Meanwhile a copy already read elsewhere (the DM list, a message).
+        self.images.get_or_stand_in(media, SIZE)
     }
 
     /// The rows in `range`, drawn (only those on screen are asked for).
@@ -266,7 +267,10 @@ impl MembersView {
                         member.user_id.as_str(),
                         &member.name,
                     ));
-                    Some(member_row(member, shown, picture, cx).into_any_element())
+                    // Still to come: a skeleton, not the letter on blue.
+                    let waiting = picture.is_none()
+                        && member.avatar.as_ref().is_some_and(|m| self.images.waiting(m, 64));
+                    Some(member_row(member, shown, picture, waiting, cx).into_any_element())
                 }
             })
             .collect()
@@ -355,6 +359,7 @@ fn member_row(
     member: &Member,
     shown: String,
     picture: Option<Arc<Image>>,
+    waiting: bool,
     cx: &mut Context<MembersView>,
 ) -> impl IntoElement {
     let (open, menu) = (Box::new(member.clone()), member.clone());
@@ -389,7 +394,11 @@ fn member_row(
                 ))
             }),
         )
-        .child(avatar(picture, &member.name, 32.0, None))
+        .child(if waiting {
+            media::avatar_waiting(32.0, None).into_any_element()
+        } else {
+            avatar(picture, &member.name, 32.0, None).into_any_element()
+        })
         .child(
             div()
                 .min_w_0()

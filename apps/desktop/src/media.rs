@@ -84,6 +84,17 @@ impl Avatars {
         })
     }
 
+    /// Whether the picture of `media` is still to come: not here, and not
+    /// failed a moment ago. Drawn as a skeleton meanwhile ([`avatar_waiting`]).
+    pub fn waiting(&self, media: &MediaRef, size: u32) -> bool {
+        let key = (media.key().to_owned(), size);
+        !self.images.contains_key(&key)
+            && !self
+                .failed
+                .get(&key)
+                .is_some_and(|at| at.elapsed() < RETRY_AFTER)
+    }
+
     /// The media these pictures are of (to drop them from the shared copies).
     pub fn keys(&self) -> Vec<String> {
         self.images.keys().map(|(key, _)| key.clone()).collect()
@@ -519,9 +530,46 @@ pub fn avatar(
     }
 }
 
+/// An avatar's place while its picture is on its way: the skeleton's colour,
+/// no letter (which would flash the accent colour before the picture).
+pub fn avatar_waiting(size: f32, radius: Option<f32>) -> Tagged<Div> {
+    div()
+        .size(px(size))
+        .flex_none()
+        .map(|d| match radius {
+            Some(r) => d.rounded(px(r)),
+            None => d.rounded_full(),
+        })
+        .bg(rgb(theme::bg_elevated()))
+        .e2e("div", "avatar skeleton")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A picture that is there to be had but not read yet is waited for (a
+    /// skeleton, not the letter on the accent colour); one that could not be
+    /// had is not, so its letter shows.
+    #[test]
+    fn a_picture_on_its_way_is_waited_for_and_a_failed_one_is_not() {
+        let media = MediaRef::from_mxc("mxc://test/waiting".into());
+        let mut avatars = Avatars::default();
+        assert!(avatars.waiting(&media, 64), "not asked for yet");
+        assert!(avatars.begin(&media, 64));
+        assert!(avatars.waiting(&media, 64), "on its way");
+        avatars.finish(&media, 64, None);
+        assert!(!avatars.waiting(&media, 64), "failed: the letter");
+        let other = MediaRef::from_mxc("mxc://test/waiting-ok".into());
+        avatars.begin(&other, 64);
+        avatars.finish(
+            &other,
+            64,
+            Some(Arc::new(Image::from_bytes(ImageFormat::Png, b"x".to_vec()))),
+        );
+        assert!(!avatars.waiting(&other, 64), "here");
+        forget(&[other.key().to_owned()], &[]);
+    }
 
     #[test]
     fn forgetting_drops_the_shared_copies_of_the_pictures() {
