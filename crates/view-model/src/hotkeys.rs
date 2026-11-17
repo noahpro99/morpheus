@@ -337,3 +337,34 @@ mod tests {
         assert_eq!(step_scope(0, None, true), None);
     }
 }
+
+/// How long the "nothing there" shake lasts, in milliseconds.
+pub const SHAKE_MS: u64 = 300;
+
+/// The sideways offset in px of the shake at `t` (0 to 1 through its
+/// duration): a few swings of at most 4 px, dying away, 0 at both ends.
+pub fn shake_offset(t: f32) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    4.0 * (t * 4.0 * std::f32::consts::TAU / 2.0).sin() * (1.0 - t)
+}
+
+#[cfg(test)]
+mod shake_tests {
+    use super::*;
+
+    #[test]
+    fn the_shake_starts_and_ends_at_rest_and_stays_within_4_px() {
+        assert_eq!(shake_offset(0.0), 0.0);
+        assert!(shake_offset(1.0).abs() < 1e-4);
+        let mut biggest: f32 = 0.0;
+        let mut sides = (false, false);
+        for i in 0..=100 {
+            let x = shake_offset(i as f32 / 100.0);
+            assert!(x.abs() <= 4.0 + 1e-4, "{x} at {i}");
+            biggest = biggest.max(x.abs());
+            sides = (sides.0 || x > 0.5, sides.1 || x < -0.5);
+        }
+        assert!(biggest > 2.0, "it moves visibly: {biggest}");
+        assert!(sides.0 && sides.1, "it goes both ways");
+    }
+}

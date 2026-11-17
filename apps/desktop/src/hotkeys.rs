@@ -431,10 +431,56 @@ impl Shell {
         true
     }
 
+    /// A small sideways shake of the app: there is nothing to go to.
+    fn shake(&mut self, cx: &mut Context<Self>) {
+        self.shake_at = Some(std::time::Instant::now());
+        cx.notify();
+        cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(std::time::Duration::from_millis(hotkeys::SHAKE_MS + 40))
+                .await;
+            this.update(cx, |_, cx| cx.notify()).ok();
+        })
+        .detach();
+    }
+
+    /// Alt+Shift+Up / Down: the next room with something unread wherever it
+    /// is (any server, the DMs), in the rail's order then the sidebar's,
+    /// wrapping; its server opens with it.
+    fn step_unread(&mut self, forward: bool, cx: &mut Context<Self>) {
+        let mut all: Vec<morpheus_core::RoomSummary> = Vec::new();
+        for scope in rail_scopes(&self.prefs, &self.rooms) {
+            for room in crate::room_list::sidebar_order(self, &scope) {
+                if !all.iter().any(|r| r.id == room.id) {
+                    all.push(room);
+                }
+            }
+        }
+        let candidates: Vec<bool> = all
+            .iter()
+            .map(|r| r.unread_messages > 0 || r.highlight_count > 0 || r.marked_unread)
+            .collect();
+        let current = self
+            .selected
+            .as_ref()
+            .and_then(|id| all.iter().position(|r| &r.id == id));
+        if let Some(room) =
+            hotkeys::step_room(&candidates, current, forward).and_then(|i| all.get(i))
+        {
+            let scope = crate::model::scope_for(&self.rooms, room);
+            self.open_room_in(scope, room.id.clone(), cx);
+        } else {
+            self.shake(cx);
+        }
+    }
+
     /// Alt+Up / Alt+Down: the room before or after the open one in the
     /// sidebar's list (only rooms with something unread, for `unread`). In
     /// the DMs the Friends page is the first entry of that list.
     fn step_room(&mut self, forward: bool, unread: bool, cx: &mut Context<Self>) {
+        if unread {
+            return self.step_unread(forward, cx);
+        }
         let list = crate::room_list::sidebar_order(self, &self.scope);
         let friends = self.scope == Scope::Dms && !unread;
         let offset = usize::from(friends);
@@ -520,6 +566,8 @@ impl Shell {
         {
             let scope = crate::model::scope_for(&self.rooms, room);
             self.open_room_in(scope, room.id.clone(), cx);
+        } else {
+            self.shake(cx);
         }
     }
 

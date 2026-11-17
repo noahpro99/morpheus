@@ -148,6 +148,8 @@ pub struct Shell {
     pub dialog_focus: Option<FocusHandle>,
     pub take_dialog_focus: bool,
     pub toasts: ToastList,
+    /// When the "nothing there" shake began (Alt+Shift+Down with nothing unread).
+    pub shake_at: Option<std::time::Instant>,
     /// The F3 stats overlay is showing, and its redraw timer runs.
     pub diag_overlay: bool,
     pub diag_timer: bool,
@@ -484,6 +486,7 @@ impl Shell {
             dialog_focus: None,
             take_dialog_focus: false,
             toasts: ToastList::default(),
+            shake_at: None,
             diag_overlay: false,
             diag_timer: false,
             pending: HashMap::new(),
@@ -1413,6 +1416,19 @@ pub fn apply(rooms: &mut Vec<RoomSummary>, diff: VectorDiff<RoomSummary>) {
 
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // The shake of "nothing there": an offset while it lasts.
+        let shake = match self.shake_at {
+            Some(at) if at.elapsed() < std::time::Duration::from_millis(crate::view_model::hotkeys::SHAKE_MS) => {
+                window.request_animation_frame();
+                Some(crate::view_model::hotkeys::shake_offset(
+                    at.elapsed().as_secs_f32() * 1000.0 / crate::view_model::hotkeys::SHAKE_MS as f32,
+                ))
+            }
+            _ => {
+                self.shake_at = None;
+                None
+            }
+        };
         crate::pictures::drop_orphans(window);
         crate::media::sweep(window, cx);
         self.note_timelines();
@@ -1585,9 +1601,12 @@ impl Render for Shell {
                     .flex()
                     .flex_1()
                     .min_h_0()
+                    .relative()
+                    .left(px(shake.unwrap_or(0.0)))
                     .child(left)
                     .child(chat::render(self, window, cx))
                     .e2e("div", "shell-body")
+                    .attr("data-shaking", if shake.is_some() { "true" } else { "false" })
                     .attr("data-held-pictures", crate::media::held().to_string()),
             )
             .when(show_backup_prompt(self.keys, self.backup_later), |d| {
