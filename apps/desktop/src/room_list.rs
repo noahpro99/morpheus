@@ -891,12 +891,9 @@ pub fn channel_glyph(voice: bool) -> AnyElement {
         .into_any_element()
     } else {
         slot.child(
-            div()
-                .font_weight(FontWeight::SEMIBOLD)
+            icon("hash", 18.0)
                 .text_color(rgb(theme::text_faint()))
-                .child("#")
-                .e2e("span", "hash")
-                .text("#"),
+                .e2e("svg", "hash"),
         )
         .into_any_element()
     }
