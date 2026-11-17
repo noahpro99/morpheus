@@ -132,6 +132,8 @@ pub struct Shell {
     pub typing: Option<(OwnedRoomId, Entity<crate::typing::TypingView>)>,
     /// The sidebar's room list scrolling.
     pub room_scroll: ScrollHandle,
+    /// The shortcuts dialog's list.
+    pub help_scroll: ScrollHandle,
     /// The settings window, shown or not (absent only in widget tests).
     pub settings: Option<Entity<SettingsView>>,
     /// Whether this device can read encrypted history.
@@ -472,6 +474,7 @@ impl Shell {
             composer: None,
             typing: None,
             room_scroll: ScrollHandle::new(),
+            help_scroll: ScrollHandle::new(),
             settings: None,
             keys: KeyAccess::default(),
             backup_later: false,

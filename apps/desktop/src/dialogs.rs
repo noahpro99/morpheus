@@ -457,6 +457,15 @@ impl Shell {
 
 // ---- drawing --------------------------------------------------------------
 
+/// The space kept below a dialog, and above it in a short window.
+pub(crate) const MODAL_MARGIN: f32 = 40.0;
+
+/// Where a dialog starts: near the top of a tall window, the margin in a short one.
+fn modal_top(window: &Window) -> f32 {
+    let height = f32::from(window.viewport_size().height);
+    if height < 800.0 { MODAL_MARGIN } else { 0.15 * height }
+}
+
 /// `.overlay`: the dimmed window, the dialog near the top.
 pub(crate) fn overlay(
     window: &Window,
@@ -465,7 +474,7 @@ pub(crate) fn overlay(
     close: impl Fn(&mut Window, &mut gpui::App) + 'static,
 ) -> AnyElement {
     let trap = crate::tab::trap(cx);
-    let top = 0.15 * f32::from(window.viewport_size().height);
+    let top = modal_top(window);
     let layer = div()
         .absolute()
         .top_0()
@@ -475,6 +484,7 @@ pub(crate) fn overlay(
         .justify_center()
         .items_start()
         .pt(px(top))
+        .pb(px(MODAL_MARGIN))
         .bg(rgba(0x0000008c))
         .occlude()
         .track_focus(&trap)
@@ -500,7 +510,7 @@ pub(crate) fn dialog_box() -> Div {
         .gap(px(12.0))
         .w(px(440.0))
         .max_w(relative(0.9))
-        .max_h(relative(0.8))
+        .max_h(relative(1.0))
         .p(px(20.0))
         .rounded(px(theme::RADIUS_XL))
         .bg(rgb(theme::bg_sidebar()))
@@ -706,16 +716,37 @@ pub fn render_dialog(
         Dialog::ScreenPicker(entity) => Some(entity.clone().into_any_element()),
         Dialog::ModView(entity) => Some(entity.clone().into_any_element()),
         Dialog::Help => {
+            let help_scroll = shell.help_scroll.clone();
             let boxed = dialog_box()
                 .id("help-dialog")
                 .track_focus(&focus)
                 .on_key_down(cx.listener(|this, event: &gpui::KeyDownEvent, _, cx| {
-                    if event.keystroke.key == "escape" {
+                    let key = event.keystroke.key.as_str();
+                    if key == "escape" {
                         this.dialog_close(cx);
+                        return;
                     }
+                    let vim = crate::vim::enabled() && !event.keystroke.modifiers.modified();
+                    let page = f32::from(this.help_scroll.bounds().size.height) * 0.9;
+                    let by = match key {
+                        "down" => 40.0,
+                        "up" => -40.0,
+                        "pagedown" | "space" => page,
+                        "pageup" => -page,
+                        "j" if vim => 40.0,
+                        "k" if vim => -40.0,
+                        _ => return,
+                    };
+                    let max = f32::from(this.help_scroll.max_offset().height);
+                    let mut offset = this.help_scroll.offset();
+                    offset.y = px((f32::from(offset.y) - by).clamp(-max, 0.0));
+                    this.help_scroll.set_offset(offset);
+                    cx.notify();
                 }))
                 .w(px(880.0))
-                .max_h(px(680.0))
+                .max_h(px(680.0_f32.min(
+                    f32::from(window.viewport_size().height) - modal_top(window) - MODAL_MARGIN,
+                )))
                 .child(heading("Keyboard shortcuts"))
                 .child(actions(vec![
                     dialog_button("help-report-bug", "Report a bug", false)
@@ -745,6 +776,7 @@ pub fn render_dialog(
                         .flex_1()
                         .min_h_0()
                         .overflow_y_scroll()
+                        .track_scroll(&help_scroll)
                         .children(
                             crate::view_model::hotkeys::GROUPS
                                 .iter()
@@ -763,7 +795,10 @@ pub fn render_dialog(
                                 )
                                 .e2e("div", if on { "vim-keys on" } else { "vim-keys off" })
                         })
-                        .e2e("div", "help-body"),
+                        .e2e("div", "help-body")
+                        .scrollable(std::rc::Rc::new(crate::e2e::HandleProbe(
+                            help_scroll.clone(),
+                        ))),
                 )
                 .child(
                     div()
