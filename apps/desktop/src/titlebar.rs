@@ -239,7 +239,7 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
             .flex()
             .items_center()
             .pl(px(layout.left_padding))
-            .pr(px(chrome::BAR_PADDING))
+            .pr(px(layout.right_padding()))
             .bg(rgb(theme::bg_rail()))
             .text_size(px(0.8 * theme::REM))
             .text_color(rgb(theme::text_muted()))

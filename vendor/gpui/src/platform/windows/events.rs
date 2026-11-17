@@ -857,16 +857,24 @@ impl WindowsWindowInner {
         // areas, so a caption (`WindowControlArea::Drag`) along the window's
         // top still resizes from its top edge, and a hit test outside the
         // client area does not answer from the app's last mouse position.
+        // The resize strip inside the window's top is the caption buttons'
+        // where they are (as Windows's own buttons are), so a push into the
+        // top right corner is Close; outside the window the borders resize.
         if self.hide_title_bar
             && let Some(hit) = self.hit_test_resize_border(handle, msg, wparam, lparam)
         {
+            if hit == HTTOP as isize
+                && let Some(button) = self.window_button_at(handle, lparam)
+            {
+                return Some(button);
+            }
             return Some(hit);
         }
 
         let mut lock = self.state.borrow_mut();
         if let Some(mut callback) = lock.callbacks.hit_test_window_control.take() {
             drop(lock);
-            let area = callback();
+            let area = callback(None);
             self.state.borrow_mut().callbacks.hit_test_window_control = Some(callback);
             if let Some(area) = area {
                 return match area {
@@ -886,6 +894,27 @@ impl WindowsWindowInner {
         }
 
         Some(HTCLIENT as _)
+    }
+
+    /// The app's minimise, maximise or close button under the hit test's
+    /// point (`lparam`, screen coordinates), as its HT code.
+    fn window_button_at(&self, handle: HWND, lparam: LPARAM) -> Option<isize> {
+        let mut point = POINT {
+            x: lparam.signed_loword().into(),
+            y: lparam.signed_hiword().into(),
+        };
+        unsafe { ScreenToClient(handle, &mut point).ok().log_err() };
+        let scale_factor = self.state.borrow().scale_factor;
+        let at = logical_point(point.x as f32, point.y as f32, scale_factor);
+        let mut callback = self.state.borrow_mut().callbacks.hit_test_window_control.take()?;
+        let area = callback(Some(at));
+        self.state.borrow_mut().callbacks.hit_test_window_control = Some(callback);
+        match area? {
+            WindowControlArea::Close => Some(HTCLOSE as _),
+            WindowControlArea::Max => Some(HTMAXBUTTON as _),
+            WindowControlArea::Min => Some(HTMINBUTTON as _),
+            WindowControlArea::Drag => None,
+        }
     }
 
     /// With the title bar hidden: the system's resize borders (outside the

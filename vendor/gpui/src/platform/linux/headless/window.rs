@@ -295,7 +295,7 @@ impl PlatformWindow for HeadlessWindow {
         self.0.callbacks.borrow_mut().should_close = Some(callback);
     }
 
-    fn on_hit_test_window_control(&self, _callback: Box<dyn FnMut() -> Option<WindowControlArea>>) {
+    fn on_hit_test_window_control(&self, _callback: Box<dyn FnMut(Option<Point<Pixels>>) -> Option<WindowControlArea>>) {
     }
 
     fn on_close(&self, callback: Box<dyn FnOnce()>) {

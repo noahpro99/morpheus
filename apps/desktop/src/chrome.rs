@@ -164,6 +164,19 @@ impl Layout {
         }
     }
 
+    /// Windows: the caption buttons as Windows draws its own, (width,
+    /// height): square, the bar's full height, side by side at its right
+    /// end, so a push into the top right corner is Close. Elsewhere the
+    /// small rounded buttons (`None`).
+    pub fn caption_buttons(self) -> Option<(f32, f32)> {
+        self.system_hit_test.then_some((46.0, BAR_HEIGHT))
+    }
+
+    /// The bar's right padding: none where the caption buttons reach its end.
+    pub fn right_padding(self) -> f32 {
+        if self.caption_buttons().is_some() { 0.0 } else { BAR_PADDING }
+    }
+
     /// For the e2e tree and the start-up log: whose buttons are on the bar.
     pub fn buttons(self) -> &'static str {
         if self.app_buttons { "app" } else { "native" }
@@ -232,11 +245,12 @@ pub fn window_controls(window: &Window) -> AnyElement {
             "Maximize" => WindowButton::Maximize,
             _ => WindowButton::Close,
         };
-        let mut b = div()
-            .id(id)
-            .px(px(9.0))
-            .py(px(2.0))
-            .rounded(px(theme::RADIUS_SM))
+        let mut b = div().id(id);
+        b = match layout.caption_buttons() {
+            Some((w, h)) => b.w(px(w)).h(px(h)),
+            None => b.px(px(9.0)).py(px(2.0)).rounded(px(theme::RADIUS_SM)),
+        };
+        b = b
             .flex()
             .items_center()
             .justify_center()
@@ -270,9 +284,10 @@ pub fn window_controls(window: &Window) -> AnyElement {
         )
         .attr("title", title)
     };
+    let edge = layout.caption_buttons().is_some();
     div()
         .flex()
-        .gap(px(2.0))
+        .when(!edge, |d| d.gap(px(2.0)))
         .ml(px(10.0))
         .child(button("window-minimize", "Minimize", "minus", 14.0))
         .child(button("window-maximize", "Maximize", "square", 13.0))
@@ -347,7 +362,7 @@ pub fn window_bar(window: &Window) -> AnyElement {
             .flex()
             .items_center()
             .pl(px(layout.left_padding))
-            .pr(px(BAR_PADDING))
+            .pr(px(layout.right_padding()))
             .bg(rgb(theme::bg_rail()))
             .text_size(px(0.8 * theme::REM))
             .text_color(rgb(theme::text_muted()))
@@ -516,6 +531,14 @@ mod layout_tests {
             assert!(!win.app_clicks(WindowButton::Minimize));
             assert!(!win.app_clicks(WindowButton::Maximize));
             assert!(win.app_clicks(WindowButton::Close));
+            // The buttons fill the bar's height and reach its right end, as
+            // Windows's own do: the top right corner is Close.
+            assert_eq!(win.caption_buttons(), Some((46.0, BAR_HEIGHT)));
+            assert_eq!(win.right_padding(), 0.0);
+        }
+        for os in [Os::Linux, Os::Mac] {
+            assert_eq!(Layout::for_os(os, false).caption_buttons(), None);
+            assert_eq!(Layout::for_os(os, false).right_padding(), BAR_PADDING);
         }
     }
 }

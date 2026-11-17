@@ -1139,9 +1139,23 @@ impl Window {
         });
         platform_window.on_hit_test_window_control({
             let mut cx = cx.to_async();
-            Box::new(move || {
+            // Morpheus: asked about `at` (a point the platform is testing,
+            // not the last mouse position), only the minimise, maximise and
+            // close buttons answer, by their bounds.
+            Box::new(move |at: Option<Point<Pixels>>| {
                 handle
                     .update(&mut cx, |_, window, _cx| {
+                        if let Some(at) = at {
+                            return window
+                                .rendered_frame
+                                .window_control_hitboxes
+                                .iter()
+                                .find(|(area, hitbox)| {
+                                    !matches!(area, WindowControlArea::Drag)
+                                        && hitbox.bounds.contains(&at)
+                                })
+                                .map(|(area, _)| *area);
+                        }
                         for (area, hitbox) in &window.rendered_frame.window_control_hitboxes {
                             if window.mouse_hit_test.ids.contains(&hitbox.id) {
                                 return Some(*area);

@@ -327,7 +327,7 @@ pub(crate) struct Callbacks {
     pub(crate) moved: Option<Box<dyn FnMut()>>,
     pub(crate) should_close: Option<Box<dyn FnMut() -> bool>>,
     pub(crate) close: Option<Box<dyn FnOnce()>>,
-    pub(crate) hit_test_window_control: Option<Box<dyn FnMut() -> Option<WindowControlArea>>>,
+    pub(crate) hit_test_window_control: Option<Box<dyn FnMut(Option<Point<Pixels>>) -> Option<WindowControlArea>>>,
     pub(crate) appearance_changed: Option<Box<dyn FnMut()>>,
 }
 
@@ -823,7 +823,7 @@ impl PlatformWindow for WindowsWindow {
         self.0.state.borrow_mut().callbacks.close = Some(callback);
     }
 
-    fn on_hit_test_window_control(&self, callback: Box<dyn FnMut() -> Option<WindowControlArea>>) {
+    fn on_hit_test_window_control(&self, callback: Box<dyn FnMut(Option<Point<Pixels>>) -> Option<WindowControlArea>>) {
         self.0.state.borrow_mut().callbacks.hit_test_window_control = Some(callback);
     }
 
