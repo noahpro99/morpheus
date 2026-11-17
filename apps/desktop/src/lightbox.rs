@@ -48,6 +48,8 @@ pub struct Lightbox {
     viewport: (f32, f32),
 }
 
+/// How far Left or Right pan a zoomed picture, px.
+const PAN_STEP: f32 = 80.0;
 const STEP: f32 = 1.25;
 
 impl EventEmitter<Closed> for Lightbox {}
@@ -101,6 +103,17 @@ impl Lightbox {
             .ok();
         })
         .detach();
+    }
+
+    /// Left or Right: another picture at fit; panned while zoomed past it.
+    fn step(&mut self, delta: isize, cx: &mut Context<Self>) {
+        if self.view.zoomed() {
+            self.view.offset.0 -= delta as f32 * PAN_STEP;
+            self.view.clamp(self.fit, self.viewport);
+            cx.notify();
+        } else {
+            self.go(delta, cx);
+        }
     }
 
     fn go(&mut self, delta: isize, cx: &mut Context<Self>) {
@@ -316,7 +329,9 @@ impl Render for Lightbox {
                 .e2e("div", "lightbox-loading skeleton"),
         };
         let mut row = div().relative().flex().items_center();
-        if count > 1 && self.index > 0 {
+        // Zoomed past fit the arrows are gone (Left and Right pan instead).
+        let arrows = count > 1 && zoom <= 1.001;
+        if arrows && self.index > 0 {
             row = row.child(self.nav_button("prev", "Previous image", "‹", -1, h / 2.0 - 20.0, cx));
         }
         row = row.child(
@@ -328,7 +343,7 @@ impl Render for Lightbox {
                 .child(picture)
                 .e2e("div", "lightbox-image-wrap"),
         );
-        if count > 1 && self.index + 1 < count {
+        if arrows && self.index + 1 < count {
             row = row.child(self.nav_button("next", "Next image", "›", 1, h / 2.0 - 20.0, cx));
         }
         let mut caption = div()
@@ -444,8 +459,8 @@ impl Render for Lightbox {
             .on_key_down(cx.listener(|this, event: &gpui::KeyDownEvent, _, cx| {
                 match event.keystroke.key.as_str() {
                     "escape" => cx.emit(Closed),
-                    "left" => this.go(-1, cx),
-                    "right" => this.go(1, cx),
+                    "left" => this.step(-1, cx),
+                    "right" => this.step(1, cx),
                     "+" | "=" => this.zoom_middle(this.view.zoom * STEP, cx),
                     "-" | "_" => this.zoom_middle(this.view.zoom / STEP, cx),
                     "0" => this.zoom_middle(1.0, cx),
