@@ -402,6 +402,10 @@ impl Render for ScreenPicker {
                             .into_any_element()
                     }),
             )
+            .children(
+                crate::view_model::calls::screen_picker_hint(cfg!(target_os = "windows"))
+                    .map(|hint| crate::dialogs::muted(hint, "muted screen-picker-hint")),
+            )
             .child(
                 div()
                     .flex()

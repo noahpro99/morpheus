@@ -1401,3 +1401,24 @@ pub fn call_card_items(
     );
     items
 }
+
+/// The hint under the share picker's sources: on Windows (where the picker
+/// is the app's own and nobody has seen that a double click shares), a line
+/// saying so; nowhere else.
+pub fn screen_picker_hint(on_windows: bool) -> Option<&'static str> {
+    on_windows.then_some("Double-click a screen or window to share it")
+}
+
+#[cfg(test)]
+mod screen_picker_hint_tests {
+    use super::*;
+
+    #[test]
+    fn the_share_picker_hints_at_double_click_on_windows_only() {
+        assert_eq!(
+            screen_picker_hint(true),
+            Some("Double-click a screen or window to share it")
+        );
+        assert_eq!(screen_picker_hint(false), None);
+    }
+}
