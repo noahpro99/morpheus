@@ -363,20 +363,57 @@ pub fn dragged_stage_height(start: f32, delta: f32, chat_height: f32) -> f32 {
     (start + delta).clamp(STAGE_MIN, (chat_height * 0.85).max(STAGE_MIN))
 }
 
+/// How `count` same-size 16:9 tiles sit in a stage.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Grid {
+    /// Tiles in a full row.
+    pub across: usize,
+    /// Rows (the last may be short, and is centred).
+    pub rows: usize,
+    pub tile_w: f32,
+    pub tile_h: f32,
+}
+
+impl Grid {
+    /// How many tiles each row holds, for `count` tiles.
+    pub fn row_counts(&self, count: usize) -> Vec<usize> {
+        (0..self.rows)
+            .map(|row| (count - row * self.across).min(self.across))
+            .collect()
+    }
+}
+
+/// Discord's grid: the number across (and so of rows) that makes the tiles
+/// biggest in a `width` by `height` stage, each 16:9, `CARD_GAP` apart.
+pub fn grid_layout(count: usize, width: f32, height: f32) -> Grid {
+    let count = count.max(1);
+    let mut best = Grid { across: 1, rows: count, tile_w: 0.0, tile_h: 0.0 };
+    for across in 1..=count {
+        let rows = count.div_ceil(across);
+        let w = ((width - (across as f32 - 1.0) * CARD_GAP) / across as f32)
+            .min(((height - (rows as f32 - 1.0) * CARD_GAP) / rows as f32) * CARD_RATIO);
+        if w > best.tile_w {
+            best = Grid { across, rows, tile_w: w, tile_h: 0.0 };
+        }
+    }
+    best.tile_w = best.tile_w.floor().max(40.0);
+    best.tile_h = (best.tile_w / CARD_RATIO).floor();
+    best
+}
+
+/// A person's picture on a card `card_w` wide: about a third of its height,
+/// from the strip's 40 up to 160.
+pub fn card_avatar_size(card_w: f32) -> f32 {
+    (card_w / CARD_RATIO * 0.34).round().clamp(40.0, 160.0)
+}
+
 /// Discord's cards: all the same size (16:9), as big as lets every one of
 /// `count` fit a `width` by `height` stage, trying each number across.
 pub fn card_width(count: usize, width: f32, height: f32) -> f32 {
     if count == 0 {
         return 40.0;
     }
-    let mut best = 0.0f32;
-    for across in 1..=count {
-        let rows = count.div_ceil(across);
-        let w = ((width - (across as f32 - 1.0) * CARD_GAP) / across as f32)
-            .min(((height - (rows as f32 - 1.0) * CARD_GAP) / rows as f32) * CARD_RATIO);
-        best = best.max(w);
-    }
-    best.floor().max(40.0)
+    grid_layout(count, width, height).tile_w
 }
 
 /// The rings still worth answering: not expired, not for the call this
@@ -1029,6 +1066,44 @@ mod tests {
             Some("@alice:x")
         );
         assert_eq!(focused_card(&Some("@gone:x".into()), &cards), None);
+    }
+
+    #[test]
+    fn the_grid_picks_the_split_with_the_biggest_tiles() {
+        let g = grid_layout(1, 1600.0, 800.0);
+        assert_eq!((g.across, g.rows), (1, 1));
+        assert_eq!((g.tile_w, g.tile_h), (1422.0, 799.0));
+        let g = grid_layout(2, 1600.0, 800.0);
+        assert_eq!((g.across, g.rows), (2, 1));
+        assert_eq!(g.tile_w, 796.0);
+        let g = grid_layout(2, 748.0, 564.0);
+        assert_eq!((g.across, g.rows), (1, 2));
+        assert_eq!(g.tile_w, 494.0);
+        let g = grid_layout(4, 1000.0, 600.0);
+        assert_eq!((g.across, g.rows), (2, 2));
+        let g = grid_layout(5, 1200.0, 500.0);
+        assert_eq!((g.across, g.rows), (3, 2));
+        assert_eq!(g.row_counts(5), vec![3, 2]);
+        assert_eq!(grid_layout(7, 1200.0, 700.0).row_counts(7), vec![3, 3, 1]);
+        for count in 1..=12 {
+            for (w, h) in [(1600.0, 800.0), (500.0, 900.0), (1100.0, 300.0), (90.0, 60.0)] {
+                let g = grid_layout(count, w, h);
+                assert!(g.tile_w >= 40.0);
+                if g.tile_w > 40.0 {
+                    let used_w = g.across as f32 * g.tile_w + (g.across as f32 - 1.0) * CARD_GAP;
+                    let used_h = g.rows as f32 * g.tile_h + (g.rows as f32 - 1.0) * CARD_GAP;
+                    assert!(used_w <= w + 0.01 && used_h <= h + 0.01, "{count} in {w}x{h}: {g:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_cards_picture_grows_with_it_within_limits() {
+        assert_eq!(card_avatar_size(144.0), 40.0);
+        assert!(card_avatar_size(494.0) > 72.0);
+        assert_eq!(card_avatar_size(494.0), (494.0f32 / CARD_RATIO * 0.34).round());
+        assert_eq!(card_avatar_size(3000.0), 160.0);
     }
 
     #[test]

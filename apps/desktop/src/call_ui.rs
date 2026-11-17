@@ -21,7 +21,7 @@ use crate::{
     theme,
     view_model::{
         calls::{
-            CARD_RATIO, CallState, Card, VideoFeed, card_width, default_stage_height, focused_card,
+            CARD_RATIO, CallState, Card, VideoFeed, card_avatar_size, card_width, default_stage_height, focused_card,
             listed, marks, media_of, tiles, toggled_focus,
         },
         nicknames::shown_name,
@@ -955,7 +955,18 @@ fn person_card(
     let flags = media(shell, room, user);
     let click_key = key.clone();
     let strip = matches!(fit, Fit::Strip);
-    let size = if strip { 40.0 } else { 72.0 };
+    let size = if strip {
+        40.0
+    } else {
+        let card_w = match fit {
+            Fit::Grid(w) | Fit::Main(w, _) => w.min(match fit {
+                Fit::Main(_, h) => h * CARD_RATIO,
+                _ => w,
+            }),
+            Fit::Strip => 144.0,
+        };
+        card_avatar_size(card_w)
+    };
     let mut classes = String::from("call-tile");
     if speaking {
         classes.push_str(" speaking");
