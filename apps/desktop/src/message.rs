@@ -44,6 +44,9 @@ pub struct Base {
 #[derive(Default)]
 pub struct Pictures {
     pub avatar: Option<Arc<Image>>,
+    /// The sender has a picture that is still on its way: a skeleton circle
+    /// holds its place, not their letter on the accent colour.
+    pub avatar_waiting: bool,
     /// An image message's picture, or a video's thumbnail.
     pub media: Option<Arc<Image>>,
     /// Whether this device can read encrypted history: a message it cannot
@@ -1670,7 +1673,12 @@ pub fn message_el(
                         // A one-line message is 42 px of text (name line and text line): the
                         // picture is 40, so 1 px above it makes the gaps equal.
                         .mt(px(1.0))
-                        .child(avatar(pics.avatar.clone(), &m.sender_name, 40.0, None)),
+                        .child(if pics.avatar_waiting && pics.avatar.is_none() {
+                            crate::media::avatar_waiting(40.0, None).into_any_element()
+                        } else {
+                            avatar(pics.avatar.clone(), &m.sender_name, 40.0, None)
+                                .into_any_element()
+                        }),
                     format!("avatar-{}", m.unique_id),
                     &m.unique_id,
                     actions,

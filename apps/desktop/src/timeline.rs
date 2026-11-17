@@ -1066,6 +1066,11 @@ impl TimelineView {
         if show_header && let Some(avatar) = &row.message.sender_avatar {
             let person = Some((row.message.sender.clone(), Some(self.room_id.clone())));
             pictures.avatar = self.picture_of(person, avatar, (80, 80), cx);
+            // A copy read elsewhere stands in; else a skeleton, not the letter.
+            if pictures.avatar.is_none() {
+                pictures.avatar = self.images.get_or_stand_in(avatar, 80);
+            }
+            pictures.avatar_waiting = pictures.avatar.is_none() && self.images.waiting(avatar, 80);
         }
         match &row.message.kind {
             MessageKind::Image { media, .. } => {
