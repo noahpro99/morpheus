@@ -40,6 +40,17 @@ pub struct OpenMenu {
     /// the row it belongs to), so the flyout can be placed inside the window.
     pub row_frame: Rc<Cell<gpui::Bounds<Pixels>>>,
     pub flyout_size: Rc<Cell<Option<(usize, gpui::Size<Pixels>)>>>,
+    /// The servers' pictures for the invite flyout, as the rail has them (set
+    /// each frame by [`render`]).
+    pub pictures: std::collections::HashMap<morpheus_core::OwnedRoomId, MenuPic>,
+}
+
+/// A server's picture in a menu row: there, on its way (a skeleton), or none.
+#[derive(Clone)]
+pub enum MenuPic {
+    Image(std::sync::Arc<gpui::Image>),
+    Waiting,
+    None,
 }
 
 impl OpenMenu {
@@ -55,6 +66,7 @@ impl OpenMenu {
             flyout_scroll: ScrollHandle::new(),
             row_frame: Rc::default(),
             flyout_size: Rc::default(),
+            pictures: Default::default(),
         }
     }
 
@@ -139,7 +151,27 @@ pub fn render(
     shell.menu.as_ref()?;
     let focus = shell.menu_focus(cx);
     let viewport = window.viewport_size();
+    // The servers an invite flyout lists, with the rail's pictures.
+    let mut pictures = std::collections::HashMap::new();
+    if let Some(menu) = shell.menu.as_ref() {
+        for item in menu.items.iter().flat_map(|i| i.children.iter()) {
+            if let Some(MenuAction::Invite(id, _)) = &item.action
+                && let Some(room) = shell.rooms.iter().find(|r| &r.id == id)
+            {
+                let pic = match &room.avatar {
+                    None => MenuPic::None,
+                    Some(media) => match shell.picture(&room.avatar, 40) {
+                        Some(image) => MenuPic::Image(image),
+                        None if shell.avatars.waiting(media, 40) => MenuPic::Waiting,
+                        None => MenuPic::None,
+                    },
+                };
+                pictures.insert(id.clone(), pic);
+            }
+        }
+    }
     let menu = shell.menu.as_mut()?;
+    menu.pictures = pictures;
     if std::mem::take(&mut menu.take_focus) {
         window.focus(&focus);
     }
@@ -250,6 +282,14 @@ fn panel(
 }
 
 /// One row; a row with children draws its flyout beside it while open.
+/// The picture of the server an invite row is for.
+fn menu_pic(menu: &OpenMenu, item: &MenuItem) -> MenuPic {
+    match &item.action {
+        Some(MenuAction::Invite(id, _)) => menu.pictures.get(id).cloned().unwrap_or(MenuPic::None),
+        _ => MenuPic::None,
+    }
+}
+
 fn item_el(
     menu: &OpenMenu,
     row: usize,
@@ -335,7 +375,13 @@ fn item_el(
             div()
                 .size(px(20.0))
                 .flex_none()
-                .child(crate::media::avatar(None, name, 20.0, None).text(String::new()))
+                .child(match menu_pic(menu, item) {
+                    MenuPic::Image(image) => {
+                        crate::media::avatar(Some(image), name, 20.0, Some(5.0)).text(String::new()).into_any_element()
+                    }
+                    MenuPic::Waiting => crate::media::avatar_waiting(20.0, Some(5.0)).into_any_element(),
+                    MenuPic::None => crate::media::avatar(None, name, 20.0, Some(5.0)).text(String::new()).into_any_element(),
+                })
                 .e2e("span", "menu-avatar"),
         );
     }
