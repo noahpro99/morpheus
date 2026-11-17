@@ -1671,12 +1671,8 @@ pub fn voice_channel(
         .items_center()
         .justify_center()
         .rounded(px(theme::RADIUS_SM))
-        .bg(if open {
-            gpui::Hsla::from(rgba(theme::bg_selected()))
-        } else {
-            black(0.35)
-        })
         .cursor_pointer()
+        .hover(|s| s.bg(rgba(theme::bg_hover())))
         .child(icon("messages-square", 18.0).text_color(rgb(theme::text())))
         .when(unread && !open, |d| {
             d.child(
@@ -1734,7 +1730,8 @@ pub fn voice_channel(
                 .flex()
                 .items_center()
                 .justify_end()
-                .child(toggle),
+                // Open, the chat's own X closes it: no button here.
+                .children((!open).then_some(toggle)),
         )
         .child(
             div()
@@ -1776,6 +1773,26 @@ pub fn voice_channel(
                         .border_1()
                         .border_color(rgba(theme::bg_selected()))
                         .bg(rgb(theme::bg_chat()))
+                        .child(
+                            div().flex_none().h(px(40.0)).px(px(8.0)).flex().items_center().justify_end().child(
+                                div()
+                                    .id("voice-chat-close")
+                                    .size(px(28.0))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .rounded(px(theme::RADIUS_SM))
+                                    .cursor_pointer()
+                                    .hover(|s| s.bg(rgba(theme::bg_hover())))
+                                    .child(icon("x", 18.0).text_color(rgb(theme::text_muted())))
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.calls.voice_chat = false;
+                                        cx.notify();
+                                    }))
+                                    .e2e("button", "ghost voice-chat-close")
+                                    .attr("title", "Close the chat"),
+                            ),
+                        )
                         .child(chat)
                         .e2e("div", "voice-chat"),
                 ),
