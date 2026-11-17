@@ -994,6 +994,7 @@ impl SettingsView {
             .e2e("a", "button primary report-bug")
             .text("Report a bug");
         let copy = button("diag-copy", "Copy all", Kind::Secondary, "diag-copy")
+            .child(icon("copy", 16.0).text_color(rgb(theme::text())))
             .child("Copy all")
             .on_click(cx.listener(move |_, _, _, cx| {
                 cx.write_to_clipboard(gpui::ClipboardItem::new_string(text.clone()));
@@ -1001,6 +1002,7 @@ impl SettingsView {
             .e2e("a", "button secondary diag-copy")
             .text("Copy all");
         let folder = button("diag-open-folder", "Open folder", Kind::Secondary, "diag-open-folder")
+            .child(icon("folder", 16.0).text_color(rgb(theme::text())))
             .child("Open folder")
             .on_click(cx.listener(move |_, _, _, cx| {
                 if std::env::var_os("MORPHEUS_E2E_PORT").is_none() {

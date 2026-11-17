@@ -1343,10 +1343,11 @@ fn backup_prompt(cx: &mut Context<Shell>) -> impl IntoElement {
     };
     div()
         .absolute()
-        // Bottom left, above the user bar: the top right corner is where the
-        // window's and the pages' own buttons are (a voice chat's X).
-        .left(px(theme::RAIL_W + 8.0))
-        .bottom(px(76.0))
+        // Top left of the chat, under the title bar: not the top right (the
+        // window's and pages' own buttons, a voice chat's X) nor the bottom left (the
+        // call panel above the user bar).
+        .left(px(theme::RAIL_W + 280.0))
+        .top(px(48.0))
         .w(px(360.0))
         .flex()
         .gap(px(12.0))
