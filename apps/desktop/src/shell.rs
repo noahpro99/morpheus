@@ -1335,7 +1335,7 @@ fn backup_prompt(cx: &mut Context<Shell>) -> impl IntoElement {
                 gpui::rgba(theme::bg_hover()).into()
             })
             .text_color(if primary {
-                rgb(0xffffff)
+                rgb(theme::on_accent())
             } else {
                 rgb(theme::text())
             })

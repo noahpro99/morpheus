@@ -93,7 +93,7 @@ fn mark_elements(media: morpheus_core::CallMedia, video: bool, size: f32) -> Vec
                 .py(px(1.0))
                 .rounded(px(4.0))
                 .bg(rgb(theme::danger()))
-                .text_color(rgb(0xffffff))
+                .text_color(rgb(theme::on_danger()))
                 .text_size(px(0.65 * theme::REM))
                 .font_weight(FontWeight::EXTRA_BOLD)
                 .child("LIVE")
@@ -272,7 +272,7 @@ fn control_button(
     let hang = classes.split(' ').any(|c| c == "hang-up");
     let mute = classes.split(' ').any(|c| c == "mute-button");
     let (bg, fg) = if hang || (mute && active) {
-        (rgb(theme::danger()), rgb(0xffffff))
+        (rgb(theme::danger()), rgb(theme::on_danger()))
     } else if active {
         (rgb(theme::text()), rgb(theme::bg_rail()))
     } else {
@@ -489,7 +489,7 @@ fn ghost_button(
         .when(!enabled, |d| d.opacity(0.4))
         .when(pending, |d| d.opacity(0.7))
         .child(icon(glyph, 18.0).text_color(if hang {
-            rgb(0xffffff)
+            rgb(theme::on_danger())
         } else if active {
             rgb(theme::accent())
         } else {
@@ -790,7 +790,7 @@ fn focus_button(shell: &Shell, cx: &mut Context<Shell>, key: &str, group: &str) 
         })
         .cursor_pointer()
         .child(
-            icon(if focused { "minimize-2" } else { "maximize-2" }, 16.0).text_color(rgb(0xffffff)),
+            icon(if focused { "minimize-2" } else { "maximize-2" }, 16.0).text_color(rgb(theme::OVERLAY_TEXT)),
         )
         .on_click(cx.listener(move |this, _, _, cx| {
             cx.stop_propagation();
@@ -852,10 +852,10 @@ fn zoom_control(shell: &Shell, key: &str, zoom: f32) -> AnyElement {
         .bg(black(0.6))
         .hover(|s| s.bg(black(0.8)))
         .text_size(px(0.8 * theme::REM))
-        .text_color(rgb(0xffffff))
+        .text_color(rgb(theme::OVERLAY_TEXT))
         .cursor_pointer()
         .when(!zoomed, |d| {
-            d.child(icon("search", 13.0).text_color(rgb(0xffffff)))
+            d.child(icon("search", 13.0).text_color(rgb(theme::OVERLAY_TEXT)))
         })
         .child(label.clone())
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
@@ -902,7 +902,7 @@ fn name_label(text: String) -> AnyElement {
         .py(px(2.0))
         .rounded_full()
         .bg(black(0.55))
-        .text_color(rgb(0xffffff))
+        .text_color(rgb(theme::OVERLAY_TEXT))
         .text_size(px(0.8 * theme::REM))
         .truncate()
         .child(text.clone())
@@ -1077,7 +1077,7 @@ fn video_card(
     .bg(if waiting {
         rgb(theme::bg_elevated())
     } else if feed.screen {
-        rgb(0x000000)
+        rgb(0x000000) // fixed: a shared screen sits on black
     } else {
         rgb(theme::bg_elevated())
     })
@@ -1150,7 +1150,7 @@ fn video_card(
                 .p(px(5.0))
                 .rounded_full()
                 .bg(black(0.6))
-                .child(icon("volume-x", 14.0).text_color(rgb(0xffffff)))
+                .child(icon("volume-x", 14.0).text_color(rgb(theme::OVERLAY_TEXT)))
                 .e2e("div", "stream-muted")
                 .attr("title", "Stream muted"),
         );
@@ -1293,10 +1293,10 @@ fn invite_card(cx: &mut Context<Shell>, room: &OwnedRoomId, direct: bool, fit: F
             .py(px(8.0))
             .rounded(px(theme::RADIUS))
             .bg(rgb(theme::accent()))
-            .text_color(rgb(0xffffff))
+            .text_color(rgb(theme::on_accent()))
             .font_weight(gpui::FontWeight::SEMIBOLD)
             .cursor_pointer()
-            .child(icon("user-plus", 16.0).text_color(rgb(0xffffff)))
+            .child(icon("user-plus", 16.0).text_color(rgb(theme::on_accent())))
             .child(label)
             .on_click(cx.listener(move |this, _, _, cx| this.open_call_invite(room.clone(), cx)))
             .e2e("button", "primary invite-to-call")
@@ -1636,10 +1636,10 @@ pub fn voice_page(
                         .py(px(10.0))
                         .rounded(px(theme::RADIUS_SM))
                         .bg(rgb(theme::green()))
-                        .text_color(rgb(0xffffff))
+                        .text_color(rgb(theme::on_green()))
                         .font_weight(FontWeight::SEMIBOLD)
                         .cursor_pointer()
-                        .child(icon("phone", 18.0).text_color(rgb(0xffffff)))
+                        .child(icon("phone", 18.0).text_color(rgb(theme::on_green())))
                         .child("Join voice")
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.join_call(id.clone(), name.clone(), cx)
@@ -1882,7 +1882,7 @@ pub fn incoming_calls(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyEleme
                     .rounded_full()
                     .bg(rgb(theme::danger()))
                     .cursor_pointer()
-                    .child(icon("phone-off", 20.0).text_color(rgb(0xffffff)))
+                    .child(icon("phone-off", 20.0).text_color(rgb(theme::on_danger())))
                     .on_click(cx.listener(move |this, _, _, cx| this.decline_ring(&decline, cx)))
                     .e2e("button", "decline-call")
                     .attr("title", "Decline"),
@@ -1900,7 +1900,7 @@ pub fn incoming_calls(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyEleme
                     .rounded_full()
                     .bg(rgb(theme::green()))
                     .cursor_pointer()
-                    .child(icon("phone", 20.0).text_color(rgb(0xffffff)))
+                    .child(icon("phone", 20.0).text_color(rgb(theme::on_green())))
                     .on_click(cx.listener(move |this, _, _, cx| this.answer_call(&accept, cx)))
                     .e2e("button", "accept-call")
                     .attr("title", "Accept"),

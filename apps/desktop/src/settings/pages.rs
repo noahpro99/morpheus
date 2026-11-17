@@ -981,7 +981,7 @@ impl SettingsView {
         let report_text = diagnostics.text_within(2200);
         let data_dir = self.data_dir.clone();
         let report = button("report-bug", "Report a bug", Kind::Primary, "report-bug")
-            .child(icon("bug", 16.0).text_color(rgb(theme::text())))
+            .child(icon("bug", 16.0).text_color(rgb(theme::on_accent_solid())))
             .child("Report a bug")
             .on_click(cx.listener(move |this, _, _, cx| {
                 let url = morpheus_core::bug_report_url_with(
@@ -1421,7 +1421,7 @@ impl SettingsView {
             .size(px(frame))
             .overflow_hidden()
             .rounded(px(theme::RADIUS_SM))
-            .bg(rgb(0x000000))
+            .bg(rgb(0x000000)) // fixed: the video's black
             .cursor_pointer()
             .child(
                 gpui::img(crate::media::drawn(picked.image.clone()))
@@ -1804,7 +1804,7 @@ impl SettingsView {
                 .collect(),
         );
         let saturation = track(vec![(from_hsv(h, 0.0, v), from_hsv(h, 1.0, v))]);
-        let value = track(vec![(0x000000, from_hsv(h, s, 1.0))]);
+        let value = track(vec![(0x000000, from_hsv(h, s, 1.0))]); // fixed: the value track starts at black
         div()
             .flex()
             .flex_col()

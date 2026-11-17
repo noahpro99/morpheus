@@ -643,7 +643,7 @@ impl Composer {
                             .text_color(rgb(theme::text_muted()))
                             .shadow_sm()
                             .cursor_pointer()
-                            .hover(|s| s.bg(rgb(theme::danger())).text_color(rgb(0xffffff)))
+                            .hover(|s| s.bg(rgb(theme::danger())).text_color(rgb(theme::on_danger())))
                             .child(icon("x", 14.0))
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.state.remove(id);

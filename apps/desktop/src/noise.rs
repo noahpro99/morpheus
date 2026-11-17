@@ -238,7 +238,7 @@ pub fn controls<V: 'static>(
             .cursor_pointer()
             .when(active, |d| d.bg(rgb(theme::accent_solid())))
             .text_color(if active {
-                rgb(0xffffff)
+                rgb(theme::on_accent_solid())
             } else {
                 rgb(theme::text_muted())
             })
@@ -322,7 +322,7 @@ pub fn controls<V: 'static>(
         } else {
             rgb(theme::accent_solid())
         })
-        .text_color(rgb(0xffffff))
+        .text_color(rgb(theme::on(if testing { theme::danger() } else { theme::accent_solid() })))
         .font_weight(gpui::FontWeight::SEMIBOLD)
         .hover(|s| s.opacity(0.9))
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
@@ -587,7 +587,7 @@ fn switch_row<V: 'static>(cx: &mut Context<V>, switch: morpheus_call::NoiseSwitc
                     tune(|t| t.with_switch(key, !(switch.get)(&t)));
                     cx.notify();
                 }))
-                .child(div().size(px(16.0)).rounded_full().bg(rgb(0xffffff)))
+                .child(div().size(px(16.0)).rounded_full().bg(rgb(theme::on(if on { theme::accent_solid() } else { theme::bg_input() }))))
                 .e2e("button", "noise-switch")
                 .attr("data-key", key)
                 .attr("data-on", on.to_string()),

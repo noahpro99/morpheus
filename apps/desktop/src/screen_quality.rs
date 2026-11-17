@@ -74,7 +74,7 @@ fn row<T: Copy + 'static>(
             .cursor_pointer()
             .when(active, |d| d.bg(rgb(theme::accent_solid())))
             .text_color(if active {
-                rgb(0xffffff)
+                rgb(theme::on_accent_solid())
             } else {
                 rgb(theme::text_muted())
             })
@@ -145,7 +145,7 @@ pub(crate) fn sound_switch<V: 'static>(
         .when(!on, |d| d.left(px(2.0)))
         .size(px(14.0))
         .rounded_full()
-        .bg(rgb(0xffffff));
+        .bg(rgb(theme::on(if on { theme::green() } else { theme::text_faint() })));
     let switch = div()
         .relative()
         .flex_none()
@@ -286,7 +286,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElement> {
                 .py(px(8.0))
                 .rounded(px(theme::RADIUS_SM))
                 .bg(rgb(theme::green()))
-                .text_color(rgb(0xffffff))
+                .text_color(rgb(theme::on_green()))
                 .font_weight(gpui::FontWeight::SEMIBOLD)
                 .cursor_pointer()
                 .hover(|s| s.opacity(0.9))

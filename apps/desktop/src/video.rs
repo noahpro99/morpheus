@@ -646,7 +646,7 @@ impl VideoPlayer {
             .rounded(px(4.0))
             .cursor_pointer()
             .hover(|d| d.bg(rgba(0xffffff26)))
-            .child(icon(glyph, 18.0).text_color(rgb(0xffffff)))
+            .child(icon(glyph, 18.0).text_color(rgb(theme::OVERLAY_TEXT)))
             .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                 cx.stop_propagation();
                 act(this, window, cx);
@@ -783,7 +783,7 @@ impl VideoPlayer {
                 div()
                     .px(px(4.0))
                     .text_size(px(0.75 * theme::REM))
-                    .text_color(rgb(0xffffff))
+                    .text_color(rgb(theme::OVERLAY_TEXT))
                     .whitespace_nowrap()
                     .child(time.clone())
                     .e2e("span", "video-time")
@@ -871,7 +871,7 @@ impl VideoPlayer {
                         div()
                             .px(px(12.0))
                             .text_size(px(0.85 * theme::REM))
-                            .text_color(rgb(0xffffff))
+                            .text_color(rgb(theme::OVERLAY_TEXT))
                             .child(why.clone())
                             .e2e("div", "video-unsupported")
                             .text(why),
@@ -937,7 +937,7 @@ impl VideoPlayer {
                     .rounded(px(4.0))
                     .bg(rgba(0x00000099))
                     .text_size(px(0.75 * theme::REM))
-                    .text_color(rgb(0xffffff))
+                    .text_color(rgb(theme::OVERLAY_TEXT))
                     .child(label.clone())
                     .e2e("span", "video-duration")
                     .text(label),
@@ -1068,7 +1068,7 @@ impl Render for VideoPlayer {
                         .rounded(px(4.0))
                         .bg(rgba(0x00000099))
                         .text_size(px(0.7 * theme::REM))
-                        .text_color(rgb(0xffffff))
+                        .text_color(rgb(theme::OVERLAY_TEXT))
                         .child("GIF")
                         .e2e("span", "video-gif")
                         .text("GIF"),

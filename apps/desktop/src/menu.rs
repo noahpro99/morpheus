@@ -346,9 +346,9 @@ fn item_el(
         .py(px(7.0))
         .rounded(px(theme::RADIUS_SM))
         .cursor_pointer()
-        .text_color(rgb(if lit { 0xffffff } else { colour }))
+        .text_color(rgb(if lit { theme::on(highlight) } else { colour }))
         .when(lit, |d| d.bg(rgb(highlight)))
-        .hover(|s| s.bg(rgb(highlight)).text_color(rgb(0xffffff)))
+        .hover(|s| s.bg(rgb(highlight)).text_color(rgb(theme::on(highlight))))
         .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
             if *hovered {
                 this.menu_hover(path, cx);
@@ -387,7 +387,7 @@ fn item_el(
     }
     if let Some(glyph) = glyph {
         el = el.child(icon(glyph, 16.0).text_color(rgb(if lit || hovered {
-            0xffffff
+            theme::on(highlight)
         } else {
             theme::text_faint()
         })));
@@ -406,7 +406,7 @@ fn item_el(
     }
     if item.has_submenu() {
         el = el.child(div().ml(px(12.0)).child("›").text_color(rgb(if lit {
-            0xffffff
+            theme::on(highlight)
         } else {
             theme::text_faint()
         })));
@@ -693,7 +693,7 @@ pub(crate) fn slider_handle(fraction: f32, top: f32) -> impl IntoElement {
         .ml(px(-6.0))
         .size(px(12.0))
         .rounded_full()
-        .bg(rgb(0xffffff))
+        .bg(rgb(theme::on(theme::accent())))
         .border_2()
         .border_color(rgb(theme::accent()))
         .e2e("div", "slider-handle")

@@ -216,7 +216,7 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                 .justify_center()
                 .rounded_full()
                 .bg(rgb(theme::danger()))
-                .text_color(rgb(0xffffff))
+                .text_color(rgb(theme::on_danger()))
                 .text_size(px(0.65 * theme::REM))
                 .font_weight(FontWeight::BOLD)
                 .text_align(gpui::TextAlign::Center)

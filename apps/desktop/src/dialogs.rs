@@ -553,7 +553,7 @@ pub(crate) fn dialog_button(
         .rounded(px(theme::RADIUS))
         .when(danger, |d| {
             d.bg(rgb(theme::danger()))
-                .text_color(rgb(0xffffff))
+                .text_color(rgb(theme::on_danger()))
                 .px(px(14.0))
                 .py(px(8.0))
         })

@@ -1646,7 +1646,7 @@ impl Render for TimelineView {
                             .py(px(6.0))
                             .rounded_full()
                             .bg(rgb(theme::accent_strong()))
-                            .text_color(rgb(0xffffff))
+                            .text_color(rgb(theme::on_accent_strong()))
                             .text_size(px(0.8 * theme::REM))
                             .font_weight(FontWeight::SEMIBOLD)
                             .shadow_md()
@@ -1720,12 +1720,12 @@ fn key_banner(cx: &mut Context<TimelineView>) -> impl IntoElement {
                 gpui::rgba(theme::bg_hover()).into()
             })
             .text_color(if primary {
-                rgb(0xffffff)
+                rgb(theme::on_accent())
             } else {
                 rgb(theme::text())
             })
             .child(icon(glyph, 16.0).text_color(if primary {
-                rgb(0xffffff)
+                rgb(theme::on_accent())
             } else {
                 rgb(theme::text())
             }))

@@ -273,6 +273,46 @@ fn nudge(start: u32, lighter: bool, passes: impl Fn(u32) -> bool) -> u32 {
     }
 }
 
+impl Palette {
+    /// The foreground (text, icon) on the accent, `accent_strong` and `accent_solid`
+    /// fills (a primary button, a selected rail item, a chosen option), on the
+    /// danger fill, and on the green one: black or white by contrast.
+    pub fn on_accent(&self) -> u32 {
+        on_colour(self.accent)
+    }
+    pub fn on_accent_strong(&self) -> u32 {
+        on_colour(self.accent_strong)
+    }
+    pub fn on_accent_solid(&self) -> u32 {
+        on_colour(self.accent_solid)
+    }
+    pub fn on_danger(&self) -> u32 {
+        on_colour(self.danger)
+    }
+    pub fn on_green(&self) -> u32 {
+        on_colour(self.green)
+    }
+}
+
+impl Palette {
+    /// Every coloured fill that carries text or an icon, as (name, fill,
+    /// foreground drawn on it).
+    pub fn fills(&self) -> Vec<(&'static str, u32, u32)> {
+        let on = on_colour;
+        vec![
+            ("accent", self.accent, self.on_accent()),
+            ("accent_strong", self.accent_strong, self.on_accent_strong()),
+            ("accent_solid", self.accent_solid, self.on_accent_solid()),
+            ("danger", self.danger, self.on_danger()),
+            ("green", self.green, self.on_green()),
+            ("ok", self.ok, on(self.ok)),
+            ("warn", self.warn, on(self.warn)),
+            ("own", self.own, on(self.own)),
+            ("link", self.link, on(self.link)),
+        ]
+    }
+}
+
 /// `start` mixed toward `fg` until `passes` accepts it (muted and faint text: grey that
 /// gets as strong as it needs to).
 fn strengthen(start: u32, fg: u32, passes: impl Fn(u32) -> bool) -> u32 {
@@ -417,6 +457,37 @@ pub fn derive(base: u32) -> Palette {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every palette a screen can draw with: the themes and colours derived from
+    /// the extremes and the middle (a very light accent included).
+    fn every_palette() -> Vec<(String, Palette)> {
+        let mut all: Vec<(String, Palette)> = [Theme::Dark, Theme::Midnight, Theme::Light]
+            .into_iter()
+            .map(|t| (format!("{t:?}"), Palette::of(t)))
+            .collect();
+        for base in [
+            0xffffff, 0xfffde0, 0xf5f5f5, 0xffe0e0, 0xe0ffe0, 0xe0e8ff, 0xffff00, 0x00ffff, 0x808080, 0x7c8cff,
+            0x23a559, 0xff6b6b, 0x4b5ce6, 0x203040, 0x000000, 0x101010,
+        ] {
+            all.push((format!("custom {base:06x}"), derive(base)));
+        }
+        all
+    }
+
+    #[test]
+    fn the_text_on_every_coloured_fill_reads_in_every_palette() {
+        for (name, p) in every_palette() {
+            for (fill_name, fill, fg) in p.fills() {
+                let ratio = contrast(fg, fill);
+                assert!(
+                    ratio >= 4.5,
+                    "{name}: the text on {fill_name} ({fill:06x}) is {fg:06x}, {ratio:.2}:1 (under 4.5)"
+                );
+                // An icon needs 3:1; text 4.5 covers it, and the pair is what is drawn.
+                assert!(ratio >= 3.0, "{name}: the icon on {fill_name} is {ratio:.2}:1");
+            }
+        }
+    }
 
     fn luminance(rgb: u32) -> u32 {
         let (r, g, b) = ((rgb >> 16) & 0xff, (rgb >> 8) & 0xff, rgb & 0xff);

@@ -308,7 +308,7 @@ impl FriendsPage {
             .tabbable()
             .child(tab.label());
         button = match (new_message, active) {
-            (true, false) => button.bg(rgb(theme::green())).text_color(rgb(0xffffff)),
+            (true, false) => button.bg(rgb(theme::green())).text_color(rgb(theme::on_green())),
             (true, true) => button.text_color(rgb(theme::green())),
             (false, true) => button
                 .bg(rgba(theme::bg_selected()))
@@ -345,7 +345,7 @@ impl FriendsPage {
             .rounded(px(theme::RADIUS_SM))
             .whitespace_nowrap()
             .bg(rgb(theme::accent()))
-            .text_color(rgb(0xffffff))
+            .text_color(rgb(theme::on_accent()))
             .font_weight(FontWeight::SEMIBOLD)
             .tabbable()
             .child(label);
@@ -359,6 +359,8 @@ impl FriendsPage {
         let mut button = button
             .e2e("button", "primary")
             .attr("type", "submit")
+            .attr("data-color", format!("{:06x}", theme::on_accent()))
+            .attr("data-bg", format!("{:06x}", theme::accent()))
             .text(label);
         if !can {
             button = button.attr("disabled", "");

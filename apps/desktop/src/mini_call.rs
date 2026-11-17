@@ -256,7 +256,7 @@ pub fn render(
         .bg(gpui::hsla(0.0, 0.0, 0.0, 0.6))
         .hover(|s| s.bg(gpui::hsla(0.0, 0.0, 0.0, 0.85)))
         .cursor_pointer()
-        .child(icon("chevron-left", 18.0).text_color(rgb(0xffffff)))
+        .child(icon("chevron-left", 18.0).text_color(rgb(theme::OVERLAY_TEXT)))
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_click(cx.listener({
             let room = room.0.clone();
@@ -274,7 +274,7 @@ pub fn render(
         .py(px(2.0))
         .rounded(px(theme::RADIUS_SM))
         .bg(gpui::hsla(0.0, 0.0, 0.0, 0.6))
-        .text_color(rgb(0xffffff))
+        .text_color(rgb(theme::OVERLAY_TEXT))
         .text_size(px(0.8 * theme::REM))
         .font_weight(FontWeight::SEMIBOLD)
         .truncate()
@@ -333,7 +333,7 @@ pub fn render(
         .h(px(h))
         .rounded(px(theme::RADIUS_LG))
         .overflow_hidden()
-        .bg(rgb(0x000000))
+        .bg(rgb(0x000000)) // fixed: the video's black
         .border_1()
         .border_color(rgba(theme::edge()))
         .shadow_lg()

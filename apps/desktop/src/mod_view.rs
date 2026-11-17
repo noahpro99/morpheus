@@ -131,10 +131,10 @@ impl ModView {
             .cursor_pointer()
             .when(busy, |d| d.opacity(0.6))
             .when(danger, |d| {
-                d.bg(rgb(theme::danger())).text_color(rgb(0xffffff))
+                d.bg(rgb(theme::danger())).text_color(rgb(theme::on_danger()))
             })
             .when(!danger, |d| d.text_color(rgb(theme::text())))
-            .child(icon(glyph, 16.0).text_color(rgb(if danger { 0xffffff } else { theme::text() })))
+            .child(icon(glyph, 16.0).text_color(rgb(if danger { theme::on_danger() } else { theme::text() })))
             .child(label)
             .tabbable()
             .on_click(on_click)

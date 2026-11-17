@@ -156,7 +156,7 @@ fn round_button(
             } else {
                 theme::danger()
             }))
-            .text_color(rgb(0xffffff))
+            .text_color(rgb(theme::on(if accept { theme::green() } else { theme::danger() })))
         })
         .child(icon(glyph, 14.0))
 }
@@ -270,7 +270,7 @@ pub(crate) fn card_button(id: impl Into<gpui::ElementId>, label: &'static str, p
         } else {
             gpui::Hsla::from(rgb(theme::bg_elevated()))
         })
-        .text_color(rgb(if primary { 0xffffff } else { theme::text() }))
+        .text_color(rgb(if primary { theme::on_accent_solid() } else { theme::text() }))
         .child(label)
         .tabbable()
 }
@@ -646,7 +646,7 @@ pub fn inbox(
                 .px(px(6.0))
                 .rounded(px(9.0))
                 .bg(rgb(theme::danger()))
-                .text_color(rgb(0xffffff))
+                .text_color(rgb(theme::on_danger()))
                 .text_size(px(0.75 * theme::REM))
                 .font_weight(FontWeight::BOLD)
                 .child(text.clone())

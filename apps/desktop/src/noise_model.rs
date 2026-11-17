@@ -189,7 +189,7 @@ pub fn picker<V: 'static>(
             .rounded(px(theme::RADIUS_SM))
             .text_center()
             .cursor_pointer()
-            .when(active, |d| d.bg(rgb(theme::accent_solid())).text_color(rgb(0xffffff)))
+            .when(active, |d| d.bg(rgb(theme::accent_solid())).text_color(rgb(theme::on_accent_solid())))
             .when(!active, |d| {
                 d.text_color(rgb(theme::text_muted()))
                     .hover(|s| s.bg(rgba(theme::bg_selected())).text_color(rgb(theme::text())))

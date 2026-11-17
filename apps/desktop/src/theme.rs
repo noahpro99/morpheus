@@ -166,6 +166,27 @@ colours!(
     accent_tint,
 );
 
+/// The foreground on each coloured fill (a primary button, a selected item, a danger
+/// or call button, a badge): black or white by contrast, whatever the theme or the
+/// custom colour. Anything drawn on a theme fill uses these, never a fixed white.
+macro_rules! on_fills {
+    ($($name:ident),* $(,)?) => {
+        $(
+            #[inline]
+            pub fn $name() -> u32 {
+                palette().$name()
+            }
+        )*
+    };
+}
+
+on_fills!(on_accent, on_accent_strong, on_accent_solid, on_danger, on_green);
+
+/// Black or white, whichever reads on any `fill` (a swatch, a user colour, a toggle's track).
+pub fn on(fill: u32) -> u32 {
+    crate::view_model::theme::on_colour(fill)
+}
+
 /// `color` (0xRRGGBB) with alpha `a`, as 0xRRGGBBAA: a tint of a token.
 pub fn alpha(color: u32, a: u8) -> u32 {
     (color << 8) | u32::from(a)
@@ -275,6 +296,46 @@ mod source_tests {
             }
         }
         assert!(wrong.is_empty(), "translucent tokens through rgb():\n{}", wrong.join("\n"));
+    }
+
+    /// A foreground on a coloured fill is picked by contrast (`theme::on_accent_solid()`,
+    /// `on_danger()`, `on(fill)`: black or white as reads), never a fixed white: white on
+    /// a light accent or a light danger red is unreadable. An opaque white or black in
+    /// the code is only for what no theme changes (the video's black, the lightbox's
+    /// scrim), and says so with `// fixed:` on the line.
+    #[test]
+    fn no_fixed_white_or_black_on_a_theme_fill() {
+        let mut files = Vec::new();
+        sources(
+            &Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+            &mut files,
+        );
+        let mut fixed = Vec::new();
+        for file in files {
+            let text = std::fs::read_to_string(&file).expect("source");
+            let code = text.split("#[cfg(test)]").next().unwrap_or_default();
+            for (n, line) in code.lines().enumerate() {
+                if line.contains("// fixed:") {
+                    continue;
+                }
+                let mut rest = line;
+                while let Some(at) = rest.find("0x") {
+                    let digits: String = rest[at + 2..]
+                        .chars()
+                        .take_while(char::is_ascii_hexdigit)
+                        .collect();
+                    rest = &rest[at + 2 + digits.len()..];
+                    if digits == "ffffff" || digits == "000000" {
+                        fixed.push(format!("{}:{}: 0x{digits}", file.display(), n + 1));
+                    }
+                }
+            }
+        }
+        assert!(
+            fixed.is_empty(),
+            "fixed white or black (use theme::on_* or mark it `// fixed:`):\n{}",
+            fixed.join("\n")
+        );
     }
 
     #[test]

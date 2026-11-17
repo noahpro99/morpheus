@@ -744,7 +744,7 @@ fn button(
 ) -> Stateful<gpui::Div> {
     let id: SharedString = id.into();
     let (bg, fg) = match kind {
-        Kind::Primary => (rgb(theme::accent_solid()), rgb(0xffffff)),
+        Kind::Primary => (rgb(theme::accent_solid()), rgb(theme::on_accent_solid())),
         Kind::Secondary => (rgb(theme::bg_elevated()), rgb(theme::text())),
         Kind::Danger => (
             rgba(theme::alpha(theme::danger(), 0x26)),
@@ -852,7 +852,7 @@ fn qr_el(code: &QrImage) -> impl IntoElement {
         .mx_auto()
         .rounded(px(theme::RADIUS))
         .overflow_hidden()
-        .bg(rgb(0xffffff))
+        .bg(rgb(0xffffff)) // fixed: a QR code is black on white
         .child(
             canvas(
                 |_, _, _| (),
@@ -871,7 +871,7 @@ fn qr_el(code: &QrImage) -> impl IntoElement {
                                 ),
                                 gpui::size(px(cell.ceil()), px(cell.ceil())),
                             ),
-                            rgb(0x000000),
+                            rgb(0x000000), // fixed: a QR code is black on white
                         ));
                     }
                 },
@@ -1068,7 +1068,7 @@ impl SettingsView {
                     .child(
                         button("setup-recovery", "Set up recovery", Kind::Primary, "")
                             .when(busy, |d| d.opacity(0.6))
-                            .child(icon("shield", 16.0).text_color(rgb(theme::text())))
+                            .child(icon("shield", 16.0).text_color(rgb(theme::on_accent_solid())))
                             .child("Set up recovery")
                             .on_click(cx.listener(|this, _, _, cx| this.set_up_recovery(cx)))
                             .e2e("button", "primary setup-recovery")
@@ -1190,7 +1190,7 @@ impl SettingsView {
                             "",
                         )
                         .when(busy, |d| d.opacity(0.6))
-                        .child(icon("shield-check", 16.0).text_color(rgb(theme::text())))
+                        .child(icon("shield-check", 16.0).text_color(rgb(theme::on_accent_solid())))
                         .child("Verify with another signed-in device")
                         .on_click(cx.listener(|this, _, _, cx| this.start_verification(cx)))
                         .e2e("button", "primary")

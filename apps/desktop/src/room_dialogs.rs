@@ -679,7 +679,7 @@ pub(crate) fn button(
     on_click: impl Fn(&ClickEvent, &mut Window, &mut gpui::App) + 'static,
 ) -> AnyElement {
     let danger = class.contains("danger");
-    let color = if danger { 0xffffff } else { theme::text() };
+    let color = if danger { theme::on_danger() } else { theme::text() };
     let el = div()
         .id(ElementId::from(SharedString::from(id.to_owned())))
         .flex()

@@ -609,7 +609,7 @@ fn room_button(
                 .justify_center()
                 .rounded(px(9.0))
                 .bg(rgb(theme::danger()))
-                .text_color(rgb(0xffffff))
+                .text_color(rgb(theme::on_danger()))
                 .text_size(px(0.75 * theme::REM))
                 .line_height(px(18.0))
                 .font_weight(FontWeight::BOLD)

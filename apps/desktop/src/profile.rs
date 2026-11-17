@@ -546,7 +546,7 @@ impl Render for ProfileCard {
                             .bg(rgba(0x00000059))
                             .hover(|s| s.bg(rgba(0x0000008c)))
                             .cursor_pointer()
-                            .child(icon("shield-check", 16.0).text_color(rgb(0xffffff)))
+                            .child(icon("shield-check", 16.0).text_color(rgb(theme::OVERLAY_TEXT)))
                             .on_click(cx.listener(move |_, _, _, cx| {
                                 cx.emit(ProfileEvent::ModView(user.clone()))
                             }))
@@ -564,7 +564,7 @@ impl Render for ProfileCard {
                             .bg(rgba(0x00000059))
                             .hover(|s| s.bg(rgba(0x0000008c)))
                             .cursor_pointer()
-                            .child(icon("ellipsis", 16.0).text_color(rgb(0xffffff)))
+                            .child(icon("ellipsis", 16.0).text_color(rgb(theme::OVERLAY_TEXT)))
                             .on_click(cx.listener(|_, event: &gpui::ClickEvent, _, cx| {
                                 cx.emit(ProfileEvent::More(event.position()))
                             }))
@@ -836,13 +836,13 @@ impl ProfileCard {
                 .rounded(px(6.0))
                 .when(danger, |d| {
                     d.bg(rgb(theme::danger()))
-                        .text_color(rgb(0xffffff))
+                        .text_color(rgb(theme::on_danger()))
                         .px(px(14.0))
                         .py(px(8.0))
                 })
                 .when(!danger, |d| d.px(px(6.0)).py(px(1.0)))
                 .when(danger, |d| {
-                    d.child(icon("flag", 16.0).text_color(rgb(0xffffff)))
+                    d.child(icon("flag", 16.0).text_color(rgb(theme::on_danger())))
                 })
                 .child(label)
                 .on_click(cx.listener(move |this, _, _, cx| on_click(this, cx)))
@@ -1101,7 +1101,7 @@ impl ProfileCard {
                     .right(px(8.0))
                     .p(px(6.0))
                     .cursor_pointer()
-                    .child(icon("x", 18.0).text_color(rgb(0xffffff)))
+                    .child(icon("x", 18.0).text_color(rgb(theme::OVERLAY_TEXT)))
                     .on_click(cx.listener(|this, _, _, cx| this.close(cx)))
                     .e2e("button", "ghost profile-close")
                     .attr("title", "Close"),

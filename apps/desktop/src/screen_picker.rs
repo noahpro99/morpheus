@@ -194,7 +194,7 @@ impl ScreenPicker {
             .rounded(px(theme::RADIUS_SM))
             .cursor_pointer()
             .when(active, |d| {
-                d.bg(rgb(theme::accent_solid())).text_color(rgb(0xffffff))
+                d.bg(rgb(theme::accent_solid())).text_color(rgb(theme::on_accent_solid()))
             })
             .when(!active, |d| {
                 d.text_color(rgb(theme::text_muted())).hover(|s| {
@@ -338,7 +338,7 @@ impl Render for ScreenPicker {
             .py(px(8.0))
             .rounded(px(theme::RADIUS_SM))
             .bg(rgb(theme::green()))
-            .text_color(rgb(0xffffff))
+            .text_color(rgb(theme::on_green()))
             .font_weight(gpui::FontWeight::SEMIBOLD)
             .when(can_share, |d| d.cursor_pointer().hover(|s| s.opacity(0.9)))
             .when(!can_share, |d| d.opacity(0.5))

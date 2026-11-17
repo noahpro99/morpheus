@@ -262,7 +262,7 @@ pub fn window_controls(window: &Window) -> AnyElement {
             .cursor_pointer()
             .child(icon(glyph, size));
         b = if title == "Close" {
-            b.hover(|s| s.bg(rgb(theme::danger())).text_color(rgb(0xffffff)))
+            b.hover(|s| s.bg(rgb(theme::danger())).text_color(rgb(theme::on_danger())))
         } else {
             b.hover(|s| s.bg(rgba(theme::bg_hover())).text_color(rgb(theme::text())))
         };

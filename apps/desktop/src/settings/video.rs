@@ -33,7 +33,7 @@ impl SettingsView {
             .rounded(px(theme::RADIUS_SM))
             .cursor_pointer()
             .bg(rgb(bg))
-            .text_color(rgb(0xffffff))
+            .text_color(rgb(theme::on(bg)))
             .font_weight(gpui::FontWeight::SEMIBOLD)
             .hover(|s| s.opacity(0.9))
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
@@ -324,7 +324,7 @@ fn switch_row(
         .cursor_pointer()
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_click(on_click)
-        .child(div().size(px(16.0)).rounded_full().bg(rgb(0xffffff)))
+        .child(div().size(px(16.0)).rounded_full().bg(rgb(theme::on(if on { theme::accent_solid() } else { theme::bg_input() }))))
         .e2e("button", switch)
         .attr("data-on", on.to_string());
     div()

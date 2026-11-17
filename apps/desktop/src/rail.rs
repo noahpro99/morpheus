@@ -193,13 +193,14 @@ impl Badge {
                             .w(px(4.0))
                             .h(px(pill_height))
                             .rounded_r(px(4.0))
-                            .bg(rgb(0xffffff))
+                            .bg(rgb(0xffffff)) // fixed: the rail's selection mark (white, as tested)
                             .e2e("span", "rail-pill")
                             .attr("data-bg", "#ffffff"),
                     ),
             )
             .child(content);
         if self.call || self.in_call {
+            let badge_bg = if self.in_call { theme::green() } else { 0x000000 }; // fixed: a call is going on, no one in it
             button = button.child(
                 div()
                     .absolute()
@@ -221,12 +222,8 @@ impl Badge {
                             .items_center()
                             .justify_center()
                             .rounded_full()
-                            .bg(rgb(if self.in_call {
-                                theme::green()
-                            } else {
-                                0x000000
-                            }))
-                            .child(icon("volume-2", 10.0).text_color(rgb(0xffffff))),
+                            .bg(rgb(badge_bg))
+                            .child(icon("volume-2", 10.0).text_color(rgb(theme::on(badge_bg)))),
                     )
                     .e2e("span", "rail-call-badge")
                     .attr(
@@ -318,7 +315,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
     // Direct messages: the logo; its count of unread conversations.
     let dms_selected = *current == Scope::Dms;
     let logo_color = if dms_selected {
-        0xffffff
+        theme::on_accent_strong()
     } else {
         theme::text()
     };
@@ -363,7 +360,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                 .justify_center()
                 .rounded_full()
                 .bg(rgb(theme::danger()))
-                .text_color(rgb(0xffffff))
+                .text_color(rgb(theme::on_danger()))
                 .text_size(px(0.65 * theme::REM))
                 .font_weight(gpui::FontWeight::BOLD)
                 .text_align(gpui::TextAlign::Center)
@@ -602,7 +599,7 @@ fn entry_slot(
             .w(px(theme::RAIL_W - 24.0))
             .h(px(2.0))
             .rounded(px(1.0))
-            .bg(rgb(0xffffff));
+            .bg(rgb(0xffffff)); // fixed: the drop line
         (if at_top {
             base.top(px(-1.0))
         } else {
