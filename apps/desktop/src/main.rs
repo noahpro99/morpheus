@@ -882,6 +882,8 @@ fn main() {
     streamer::load(&data_dir());
     // Start on login must follow the app when an update moved it.
     view_model::settings::refresh_autostart();
+    // matrix: links open Morpheus (per user, where nobody else has them).
+    std::thread::spawn(view_model::url_scheme::register);
     vim::load(&data_dir());
     // The GPU is chosen when the window system starts (MORPHEUS_GPU overrides it).
     graphics::load(&data_dir());

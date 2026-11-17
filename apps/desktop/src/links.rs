@@ -23,6 +23,10 @@ impl Shell {
             return;
         };
         match link {
+            // matrix:u/…?action=chat: their DM (made if need be), not a profile.
+            MatrixLink::User(user) if morpheus_core::link_wants_chat(url) => {
+                self.message_user(user, cx);
+            }
             MatrixLink::User(user) => {
                 self.open_profile(user, None, None, cx);
                 self.show_full_profile(cx);

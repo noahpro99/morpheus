@@ -138,3 +138,57 @@ mod tests {
         ));
     }
 }
+
+/// Whether a link to a person asks to chat (`?action=chat`): their DM opens,
+/// not only their profile.
+pub fn link_wants_chat(url: &str) -> bool {
+    let Some(rest) = url.trim().strip_prefix("matrix:") else {
+        return false;
+    };
+    let (path, query) = rest.split_once('?').unwrap_or((rest, ""));
+    path.starts_with("u/") && query.split('&').any(|pair| pair == "action=chat")
+}
+
+#[cfg(test)]
+mod msc2312_tests {
+    use super::*;
+
+    fn room(url: &str) -> (String, Option<String>, Vec<String>) {
+        let Some(MatrixLink::Room { room, event, via }) = parse_matrix_link(url) else {
+            panic!("a room link: {url}");
+        };
+        (room.to_string(), event.map(|e| e.to_string()), via)
+    }
+
+    #[test]
+    fn reads_matrix_uris_as_xdg_open_hands_them_over() {
+        let Some(MatrixLink::User(user)) = parse_matrix_link("matrix:u/noahpro%3Amatrix.org?action=chat")
+        else {
+            panic!("a user link");
+        };
+        assert_eq!(user, "@noahpro:matrix.org");
+        let Some(MatrixLink::User(user)) = parse_matrix_link("matrix:u/bob:example.org") else {
+            panic!("a user link");
+        };
+        assert_eq!(user, "@bob:example.org");
+        assert_eq!(room("matrix:r/room:example.org"), ("#room:example.org".into(), None, vec![]));
+        assert_eq!(
+            room("matrix:r/room%3Aexample.org?action=join&via=a.org&via=b.org"),
+            ("#room:example.org".into(), None, vec!["a.org".into(), "b.org".into()])
+        );
+        assert_eq!(room("matrix:roomid/abc:example.org"), ("!abc:example.org".into(), None, vec![]));
+        assert_eq!(
+            room("matrix:roomid/abc%3Aexample.org/e/ev?via=example.org"),
+            ("!abc:example.org".into(), Some("$ev".into()), vec!["example.org".into()])
+        );
+    }
+
+    #[test]
+    fn a_person_link_asks_to_chat_only_with_action_chat() {
+        assert!(link_wants_chat("matrix:u/noahpro%3Amatrix.org?action=chat"));
+        assert!(link_wants_chat("matrix:u/bob:example.org?via=x.org&action=chat"));
+        assert!(!link_wants_chat("matrix:u/bob:example.org"));
+        assert!(!link_wants_chat("matrix:r/room:example.org?action=chat"));
+        assert!(!link_wants_chat("https://matrix.to/#/@bob:example.org"));
+    }
+}

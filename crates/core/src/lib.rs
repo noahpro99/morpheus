@@ -53,7 +53,7 @@ pub use calls::{
     CallCredentials, CallKey, CallKeyUpdates, CallMedia, CallMember, IncomingCall, RING_FOR_MS,
     RingUpdates, Ringing, Role as CallRole, foci_to_subscribe,
 };
-pub use links::{LinkedRoom, MatrixLink, parse_matrix_link};
+pub use links::{LinkedRoom, MatrixLink, link_wants_chat, parse_matrix_link};
 pub use media::{AVATAR_FULL_MAX, AvatarStats, Media, MediaRef, avatar_stats};
 pub use members::{
     KnownMembers, Member, MemberPermissions, MemberRole, ModRoom, ProfileChange, ProfileUpdates,
