@@ -401,6 +401,42 @@ pub fn grid_layout(count: usize, width: f32, height: f32) -> Grid {
     best
 }
 
+/// How a stage with one card focused is shared: the focused card at the top,
+/// then one row of the other cards (16:9) under it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FocusLayout {
+    /// The focused card's room (a 16:9 card fills it).
+    pub main_w: f32,
+    pub main_h: f32,
+    /// The height of the row under it (0 with nothing there).
+    pub strip_h: f32,
+}
+
+/// Share a `width` by `height` stage between the focused card and the
+/// `others` in the row under it. The row gets at least about a quarter of the
+/// height (as its width allows), the focused card the rest; when the focused
+/// card is held by the width instead, the height it leaves goes to the row. The focused card is `ratio` (width
+/// over height): its picture's shape, or 16:9.
+pub fn focus_layout(others: usize, width: f32, height: f32, ratio: f32) -> FocusLayout {
+    let fit = |w: f32, h: f32| {
+        if w / h > ratio {
+            ((h * ratio).floor(), h)
+        } else {
+            (w, (w / ratio).floor())
+        }
+    };
+    if others == 0 {
+        let (main_w, main_h) = fit(width, height);
+        return FocusLayout { main_w, main_h, strip_h: 0.0 };
+    }
+    let n = others as f32;
+    let by_width = ((width - (n - 1.0) * CARD_GAP) / n / CARD_RATIO).floor();
+    let first = (height * 0.28).max(81.0).min(by_width).floor().max(40.0);
+    let (main_w, main_h) = fit(width, (height - first - CARD_GAP).max(40.0));
+    let strip_h = (height - main_h - CARD_GAP).min(by_width).floor().max(40.0);
+    FocusLayout { main_w, main_h, strip_h }
+}
+
 /// A person's picture on a card `card_w` wide: about a third of its height,
 /// from the strip's 40 up to 160.
 pub fn card_avatar_size(card_w: f32) -> f32 {
@@ -916,6 +952,37 @@ pub fn voice_popup_menu(
 mod tests {
     use super::*;
     use crate::test_room::room;
+
+    #[test]
+    fn a_focused_card_sits_at_the_top_and_the_strip_takes_the_height_left() {
+        // Wide stage: the strip is far taller than the old 81 px and the
+        // focused card fills the rest, from the top.
+        let f = focus_layout(2, 1200.0, 700.0, CARD_RATIO);
+        assert!(f.strip_h >= 160.0, "{f:?}");
+        assert!(f.main_h + CARD_GAP + f.strip_h <= 700.0, "{f:?}");
+        assert!(f.main_h + CARD_GAP + f.strip_h >= 698.0, "{f:?}");
+        assert!(f.main_w <= 1200.0 && (f.main_w / f.main_h - CARD_RATIO).abs() < 0.02);
+        // Narrow, tall stage: the focused card is held by the width, and all
+        // the height it leaves goes to the strip (as far as its width allows).
+        let f = focus_layout(1, 800.0, 900.0, CARD_RATIO);
+        assert_eq!(f.main_w, 800.0);
+        assert_eq!(
+            f.strip_h,
+            (900.0 - f.main_h - CARD_GAP).min(800.0 / CARD_RATIO).floor()
+        );
+        // Many in the strip: they stay on one row, so the width bounds them.
+        let f = focus_layout(6, 1000.0, 800.0, CARD_RATIO);
+        assert!(6.0 * f.strip_h * CARD_RATIO + 5.0 * CARD_GAP <= 1000.0 + 0.5, "{f:?}");
+        assert!(f.strip_h >= 40.0);
+        // A wide picture focused (a 21:9 screen) is held by the width sooner:
+        // the row gets what it leaves.
+        let f = focus_layout(1, 900.0, 700.0, 21.0 / 9.0);
+        assert_eq!(f.main_w, 900.0);
+        assert_eq!(f.strip_h, (700.0 - f.main_h - CARD_GAP).min(900.0 / CARD_RATIO).floor());
+        // Nothing in the strip: the focused card has it all.
+        let f = focus_layout(0, 1200.0, 700.0, CARD_RATIO);
+        assert_eq!((f.strip_h, f.main_h), (0.0, 675.0));
+    }
 
     fn user(name: &str) -> OwnedUserId {
         OwnedUserId::try_from(format!("@{name}:x")).expect("user id")

@@ -21,7 +21,7 @@ use crate::{
     theme,
     view_model::{
         calls::{
-            CARD_RATIO, CallState, Card, VideoFeed, card_avatar_size, card_width, default_stage_height, focused_card,
+            CARD_RATIO, CallState, Card, VideoFeed, card_avatar_size, card_width, default_stage_height, focus_layout, focused_card,
             listed, marks, media_of, tiles, toggled_focus,
         },
         nicknames::shown_name,
@@ -728,8 +728,8 @@ enum Fit {
     Grid(f32),
     /// The focused card, filling its place: the room (width, height) it has.
     Main(f32, f32),
-    /// One of the strip under the focused card.
-    Strip,
+    /// One of the row under the focused card, this high (16:9).
+    Strip(f32),
 }
 
 /// The largest `ratio` (width over height) box inside `room`.
@@ -752,7 +752,7 @@ fn sized(
     let room = match fit {
         Fit::Grid(w) => (w, w / CARD_RATIO),
         Fit::Main(w, h) => (w, h),
-        Fit::Strip => (144.0, 81.0),
+        Fit::Strip(h) => ((h * CARD_RATIO).floor(), h),
     };
     match (fit, ratio) {
         // A person's card focused: 16:9, as large as the stage lets it.
@@ -954,19 +954,11 @@ fn person_card(
     let group = format!("card-{key}");
     let flags = media(shell, room, user);
     let click_key = key.clone();
-    let strip = matches!(fit, Fit::Strip);
-    let size = if strip {
-        40.0
-    } else {
-        let card_w = match fit {
-            Fit::Grid(w) | Fit::Main(w, _) => w.min(match fit {
-                Fit::Main(_, h) => h * CARD_RATIO,
-                _ => w,
-            }),
-            Fit::Strip => 144.0,
-        };
-        card_avatar_size(card_w)
-    };
+    let size = card_avatar_size(match fit {
+        Fit::Grid(w) => w,
+        Fit::Main(w, h) => w.min(h * CARD_RATIO),
+        Fit::Strip(h) => h * CARD_RATIO,
+    });
     let mut classes = String::from("call-tile");
     if speaking {
         classes.push_str(" speaking");
@@ -1287,7 +1279,7 @@ fn invite_card(cx: &mut Context<Shell>, room: &OwnedRoomId, direct: bool, fit: F
     // the text kept as its tooltip.
     let card_w = match fit {
         Fit::Grid(w) | Fit::Main(w, _) => w,
-        Fit::Strip => 144.0,
+        Fit::Strip(h) => h * CARD_RATIO,
     };
     let needed = label.chars().count() as f32 * 8.5 + 16.0 + 8.0 + 28.0 + 4.0 + 16.0;
     let button = if card_w >= needed {
@@ -1364,26 +1356,41 @@ fn cards(
         return (out, false);
     };
     let (main, strip): (Vec<&Card>, Vec<&Card>) = all.iter().partition(|c| c.key() == focused);
-    // The focused card's room: the stage less the strip under it (81 high,
-    // 8 apart) and a little for rounding.
+    // The focused card at the top, the row of the others filling the height
+    // it leaves (a little kept for rounding).
+    let others = strip.len() + usize::from(invite.is_some());
+    // The focused card's shape: its picture's, once there is one.
+    let ratio = main
+        .first()
+        .and_then(|card| match card {
+            Card::Video(feed) => shell.calls.frames.get(&feed.key),
+            Card::Person(_) => None,
+        })
+        .map(|frame| frame.read(cx).dim)
+        .filter(|(w, h)| *w > 0 && *h > 0)
+        .map_or(CARD_RATIO, |(w, h)| w as f32 / h as f32);
+    let layout = focus_layout(
+        others,
+        (stage.0 - 1.0).max(40.0),
+        (stage.1 - 1.0).max(40.0),
+        ratio,
+    );
     let main_room = (
         (stage.0 - 1.0).max(40.0),
-        (stage.1
-            - if strip.is_empty() && invite.is_none() {
-                0.0
-            } else {
-                89.0
-            }
-            - 1.0)
-            .max(40.0),
+        if others == 0 {
+            (stage.1 - 1.0).max(40.0)
+        } else {
+            (stage.1 - 1.0 - layout.strip_h - 8.0).max(40.0)
+        },
     );
+    let strip_h = layout.strip_h;
     let mut out = vec![
         div()
-            .flex_1()
-            .min_h_0()
+            .flex_none()
+            .h(px(main_room.1))
             .flex()
             .justify_center()
-            .items_center()
+            .items_start()
             .children(
                 main.into_iter()
                     .map(|c| draw(c, Fit::Main(main_room.0, main_room.1), cx)),
@@ -1391,15 +1398,17 @@ fn cards(
             .e2e("div", "call-focus-main")
             .into_any_element(),
     ];
-    if !strip.is_empty() || invite.is_some() {
+    if others > 0 {
         out.push(
             div()
                 .flex_none()
+                .h(px(strip_h))
                 .flex()
                 .justify_center()
+                .items_center()
                 .gap(px(8.0))
-                .children(strip.into_iter().map(|c| draw(c, Fit::Strip, cx)))
-                .children(invite.map(|(room, direct)| invite_card(cx, room, direct, Fit::Strip)))
+                .children(strip.into_iter().map(|c| draw(c, Fit::Strip(strip_h), cx)))
+                .children(invite.map(|(room, direct)| invite_card(cx, room, direct, Fit::Strip(strip_h))))
                 .e2e("div", "call-strip")
                 .into_any_element(),
         );
