@@ -314,3 +314,27 @@ mod source_tests {
         );
     }
 }
+
+/// How far a smaller run of text must be lifted to share the baseline of a
+/// bigger one after it in a row aligned by box bottoms (the layout has no
+/// text baselines, so `items_baseline` lines up the boxes' bottoms). Inter's
+/// baseline sits its descent plus half the leading above a line box's
+/// bottom, which grows with the font size (sizes in rem).
+pub fn baseline_lift(big_rem: f32, small_rem: f32) -> f32 {
+    const ASCENT: f32 = 1984.0 / 2048.0;
+    const DESCENT: f32 = 494.0 / 2048.0;
+    let above_bottom = (LINE_HEIGHT - (ASCENT + DESCENT)) / 2.0 + DESCENT;
+    above_bottom * (big_rem - small_rem) * REM
+}
+
+#[cfg(test)]
+mod baseline_tests {
+    use super::*;
+
+    #[test]
+    fn a_smaller_time_is_lifted_onto_the_names_baseline() {
+        let lift = baseline_lift(1.0, 0.75);
+        assert!((lift - 1.26).abs() < 0.01, "{lift}");
+        assert_eq!(baseline_lift(0.8, 0.8), 0.0);
+    }
+}

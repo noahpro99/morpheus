@@ -1532,6 +1532,8 @@ pub fn message_el(
                     )
                     .child(
                         div()
+                            .relative()
+                            .top(px(-theme::baseline_lift(0.85, 0.75)))
                             .text_size(rem(0.75))
                             .text_color(rgb(theme::text_faint()))
                             .child(when(&row))
@@ -1590,6 +1592,8 @@ pub fn message_el(
                 )
                 .child(
                     div()
+                        .relative()
+                        .top(px(-theme::baseline_lift(1.0, 0.75)))
                         .text_size(rem(0.75))
                         .text_color(rgb(theme::text_faint()))
                         .child(when(&row))
