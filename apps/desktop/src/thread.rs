@@ -17,7 +17,7 @@ use crate::{
     media::{self, Avatars},
     message::{self, LinkHandler, Pictures},
     theme,
-    timeline::{TimelineEvent, TimelineView},
+    timeline::{LinkClicked, TimelineEvent, TimelineView},
     view_model::{nicknames::NickMap, rows::MessageRow, threads::reply_count_label},
 };
 
@@ -37,6 +37,8 @@ pub enum ThreadEvent {
     Delete(Box<Message>, bool),
     /// A background action failed: what it was, and why.
     Failed(&'static str, String),
+    /// A link clicked in the root or a reply.
+    Link(String),
 }
 
 impl EventEmitter<ThreadEvent> for ThreadPanel {}
@@ -102,6 +104,10 @@ impl ThreadPanel {
                 }
             },
         )
+        .detach();
+        cx.subscribe(&timeline, |_, _, event: &LinkClicked, cx| {
+            cx.emit(ThreadEvent::Link(event.0.clone()))
+        })
         .detach();
         let shared = Arc::new(nicknames.clone());
         timeline.update(cx, |timeline, cx| timeline.set_nicknames(shared, cx));
@@ -174,7 +180,11 @@ impl Render for ThreadPanel {
             nickname: self.nickname.clone(),
             ..Pictures::default()
         };
-        let links: LinkHandler = Rc::new(|_, _| {});
+        let panel = cx.weak_entity();
+        let links: LinkHandler = Rc::new(move |url: &str, cx: &mut gpui::App| {
+            let url = url.to_owned();
+            panel.update(cx, |_, cx| cx.emit(ThreadEvent::Link(url))).ok();
+        });
         let root = message::message_el(&self.row, true, &pictures, None, &links, None);
         let label = reply_count_label(&self.root);
         div()

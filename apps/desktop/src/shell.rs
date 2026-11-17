@@ -684,6 +684,7 @@ impl Shell {
                     this.delete_message((**message).clone(), *skip, cx)
                 }
                 ThreadEvent::Failed(what, err) => this.fail(what, err, cx),
+                ThreadEvent::Link(url) => this.link_clicked(url, cx),
             },
         )
         .detach();
