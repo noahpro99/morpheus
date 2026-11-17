@@ -184,16 +184,17 @@ impl Switcher {
     }
 }
 
-/// The rooms the switcher offers: not servers, not invites; each with its
-/// place. (`scope_name` says where a room lives.)
+/// What the switcher offers: the servers first (found by their name, opened as
+/// their rail button does), then the rooms; not invites; each with its place.
+/// (`scope_name` says where a room lives.)
 pub fn rooms_for(
     rooms: &[RoomSummary],
     nicknames: &crate::view_model::nicknames::NickMap,
     scope_name: impl Fn(&RoomSummary) -> (String, Option<Arc<gpui::Image>>, Option<String>),
 ) -> Vec<SwitchRoom> {
-    rooms
+    let mut list: Vec<SwitchRoom> = rooms
         .iter()
-        .filter(|room| !room.is_space && !room.invited)
+        .filter(|room| !room.invited)
         .map(|room| {
             let (kind, picture, letter_of) = scope_name(room);
             SwitchRoom {
@@ -206,7 +207,11 @@ pub fn rooms_for(
                 letter_of: letter_of.unwrap_or_else(|| room.name.clone()),
             }
         })
-        .collect()
+        .collect();
+    // Servers lead (the sort keeps each group in the order given).
+    let server = |item: &SwitchRoom| rooms.iter().any(|r| r.id == item.id && r.is_space);
+    list.sort_by_key(|item| !server(item));
+    list
 }
 
 impl Render for Switcher {
@@ -362,6 +367,13 @@ impl crate::shell::Shell {
     fn switch_rooms(&self) -> Vec<SwitchRoom> {
         rooms_for(&self.rooms, &self.nicknames, |room| {
             use crate::model::Scope;
+            if room.is_space {
+                return (
+                    "Server".to_owned(),
+                    self.picture(&room.avatar, 40),
+                    Some(room.name.clone()),
+                );
+            }
             match crate::model::scope_for(&self.rooms, room) {
                 // A server's channel shows the server's picture.
                 Scope::Space(id) => {
@@ -407,8 +419,13 @@ impl crate::shell::Shell {
                 this.switcher = None;
                 match event {
                     SwitcherEvent::Room(id) => {
+                        // A server opens as its rail button does.
+                        if this.rooms.iter().any(|r| &r.id == id && r.is_space) {
+                            this.pick_scope(crate::model::Scope::Space(id.clone()), cx);
+                        } else {
                         // Scope first, so the sidebar follows the room.
                         this.open_room_in_scope(id.clone(), cx);
+                        }
                     }
                     SwitcherEvent::Action(Action::Settings) => {
                         this.open_settings(crate::view_model::keys::SettingsFocus::None, cx)
