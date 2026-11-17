@@ -388,7 +388,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             !rooms_selected && unread_in(&Scope::Rooms),
         )
         .track(shell, cx)
-        .build(div().child("#").e2e("span", "").text("#"), false, {
+        .build(icon("hash", 22.0), false, {
             let view = cx.entity();
             move |_, cx| view.update(cx, |s, cx| s.pick_scope(Scope::Rooms, cx))
         }),
