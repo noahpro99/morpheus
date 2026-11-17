@@ -105,6 +105,11 @@ pub struct NoiseChosen(pub morpheus_call::NoiseSuppression);
 
 impl EventEmitter<NoiseChosen> for SettingsView {}
 
+/// A noise suppression model was picked on the Voice & Video page.
+pub struct NoiseModelChosen(pub morpheus_call::NoiseModel);
+
+impl EventEmitter<NoiseModelChosen> for SettingsView {}
+
 /// The Voice & Video page's Mic Test was started (true) or stopped; it
 /// also stops when the settings close.
 pub struct MicTest(pub bool);

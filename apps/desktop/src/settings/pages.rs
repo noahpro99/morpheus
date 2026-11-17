@@ -515,6 +515,9 @@ impl SettingsView {
             |_: &mut Self, mode, cx| cx.emit(super::NoiseChosen(mode)),
             |_: &mut Self, on, cx| cx.emit(super::MicTest(on)),
         );
+        noise.push(crate::noise_model::picker(cx, |_: &mut Self, model, cx| {
+            cx.emit(super::NoiseModelChosen(model))
+        }));
         noise.extend(crate::noise::advanced(
             cx,
             self.noise_advanced,

@@ -18,6 +18,8 @@ mod accounts;
 mod blur;
 mod calls;
 mod core;
+#[cfg(not(target_arch = "wasm32"))]
+mod download;
 mod error;
 pub mod fs;
 mod links;
@@ -76,6 +78,8 @@ pub use timeline::{
     TimelineEntry, TimelineHandle, TimelineUpdates,
 };
 pub use typing::TypingUpdates;
+#[cfg(not(target_arch = "wasm32"))]
+pub use download::DownloadProgress;
 pub use updates::{UpdateStatus, clean_up_after_update, installs_updates};
 pub use verification::{
     Device, QrImage, VerificationActions, VerificationHandle, VerificationStep, VerificationUpdates,

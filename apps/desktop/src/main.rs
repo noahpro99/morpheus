@@ -45,6 +45,7 @@ mod message;
 mod mod_view;
 mod model;
 mod noise;
+mod noise_model;
 mod notify;
 mod pictures;
 mod prefs;
@@ -885,6 +886,7 @@ fn main() {
     // matrix: links open Morpheus (per user, where nobody else has them).
     std::thread::spawn(view_model::url_scheme::register);
     vim::load(&data_dir());
+    noise_model::init();
     // The GPU is chosen when the window system starts (MORPHEUS_GPU overrides it).
     graphics::load(&data_dir());
     let start_hidden = std::env::args().any(|arg| arg == view_model::settings::HIDDEN_FLAG);

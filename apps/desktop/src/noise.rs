@@ -30,11 +30,18 @@ pub fn read() -> NoiseSuppression {
 
 /// The advanced settings kept from last time (the defaults if none).
 pub fn read_tuning() -> NoiseTuning {
-    std::fs::read_to_string(crate::data_dir().join(FILE))
+    let mut tuning = std::fs::read_to_string(crate::data_dir().join(FILE))
         .ok()
         .and_then(|json| serde_json::from_str::<serde_json::Value>(&json).ok())
         .map(|file| NoiseTuning::from_value(&file["tuning"]))
-        .unwrap_or_default()
+        .unwrap_or_default();
+    // The low-delay model chosen, its file gone: the built-in one.
+    if tuning.model == morpheus_call::NoiseModel::DeepFilterNet3LowDelay
+        && !crate::noise_model::ready()
+    {
+        tuning.model = morpheus_call::NoiseModel::default();
+    }
+    tuning
 }
 
 /// Keeps the mode and the advanced settings now in use:
@@ -121,7 +128,7 @@ impl Shell {
         cx.notify();
     }
 
-    fn refresh_settings(&self, cx: &mut Context<Self>) {
+    pub(crate) fn refresh_settings(&self, cx: &mut Context<Self>) {
         if let Some(settings) = &self.settings {
             settings.update(cx, |_, cx| cx.notify());
         }

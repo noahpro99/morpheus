@@ -60,6 +60,7 @@ webpki-root-certs = "1"
 [dev-dependencies]
 tracing-subscriber = { workspace = true }
 tempfile = { workspace = true }
+tokio = { workspace = true, features = ["net", "io-util"] }
 
 [lints]
 workspace = true

@@ -101,10 +101,15 @@ impl Processor {
         {
             self.apm = Self::apm(self.mode, self.live, &tuning);
         }
+        let model_changed = tuning.model != self.tuning.model;
         if let Some(denoiser) = self.denoiser.as_mut() {
             denoiser.tune(&tuning);
         }
         self.tuning = tuning;
+        // Another model: loaded now (about 0.2 s), the old one running till then.
+        if model_changed && self.denoiser.is_some() && self.mode == NoiseSuppression::Strong {
+            self.load_model();
+        }
     }
 
     /// What the frames are tuned to now.
@@ -138,7 +143,13 @@ impl Processor {
     /// echo canceller ([`APM_DELAY`]), its noise suppression in Standard
     /// ([`APM_NS_DELAY`]), DeepFilterNet in Strong ([`DELAY`]).
     pub fn delay(&self) -> usize {
-        self.tuning.delay_samples(self.applied(), self.live)
+        // The model that runs, which is the built-in one where the low-delay
+        // file was not there.
+        let mut tuning = self.tuning;
+        if let Some(denoiser) = &self.denoiser {
+            tuning.model = denoiser.model();
+        }
+        tuning.delay_samples(self.applied(), self.live)
     }
 
     /// Strong is chosen and its model not loaded yet (it takes ~0.2 s).
@@ -2310,6 +2321,31 @@ mod tuning_tests {
         processor.load_model();
         assert_eq!(processor.applied(), NoiseSuppression::Strong);
         processor
+    }
+
+    /// Choosing the low-delay model in a running chain swaps it in at once,
+    /// and the chain's delay follows what runs (10 ms of model, not 30).
+    #[test]
+    fn choosing_the_low_delay_model_swaps_it_in_and_the_delay_follows() {
+        let _guard = crate::noise_model::tests::DIR_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(file) = crate::noise_model::tests::checkout_model() else {
+            eprintln!("DeepFilterNet checkout not found; skipping");
+            return;
+        };
+        let dir = std::env::temp_dir().join(format!("morpheus-ll-chain-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("dir");
+        std::fs::copy(&file, dir.join(crate::noise_model::LOW_DELAY_FILE)).expect("copy");
+        crate::noise_model::set_model_dir(dir.clone());
+        let mut processor = strong();
+        let before = processor.delay();
+        let tuning = NoiseTuning {
+            model: crate::noise::NoiseModel::DeepFilterNet3LowDelay,
+            ..processor.tuning()
+        };
+        processor.set_tuning(tuning);
+        assert_eq!(before - processor.delay(), 960, "20 ms less");
+        assert_eq!(processor.applied(), NoiseSuppression::Strong);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Every number setting, moved off its default, is what the model (or the

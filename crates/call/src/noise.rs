@@ -132,26 +132,34 @@ pub(crate) const APM_NS_DELAY: usize = 288;
 /// How late DeepFilterNet's cleaned voice comes out (30 ms).
 pub(crate) const DFN_DELAY: usize = 1440;
 
-/// The neural model Strong runs. Only DeepFilterNet 3 is built in; a
-/// low-latency one (#37) is added here when there is one.
+/// How late the low-latency DeepFilterNet 3's cleaned voice comes out (10 ms:
+/// no look-ahead, only the 20 ms window's overlap).
+pub(crate) const DFN_LL_DELAY: usize = 480;
+
+/// The neural model Strong runs. DeepFilterNet 3 is built in; the low-latency
+/// one (#37) is downloaded when it is chosen ([`LOW_DELAY_MODEL`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum NoiseModel {
     #[default]
     DeepFilterNet3,
+    /// DeepFilterNet 3 without look-ahead: 20 ms less delay.
+    DeepFilterNet3LowDelay,
 }
 
 impl NoiseModel {
-    pub const ALL: [Self; 1] = [Self::DeepFilterNet3];
+    pub const ALL: [Self; 2] = [Self::DeepFilterNet3, Self::DeepFilterNet3LowDelay];
 
     pub fn key(self) -> &'static str {
         match self {
             Self::DeepFilterNet3 => "dfn3",
+            Self::DeepFilterNet3LowDelay => "dfn3ll",
         }
     }
 
     pub fn label(self) -> &'static str {
         match self {
             Self::DeepFilterNet3 => "DeepFilterNet 3",
+            Self::DeepFilterNet3LowDelay => "DeepFilterNet 3 low delay",
         }
     }
 
@@ -163,6 +171,7 @@ impl NoiseModel {
     pub fn delay(self) -> usize {
         match self {
             Self::DeepFilterNet3 => DFN_DELAY,
+            Self::DeepFilterNet3LowDelay => DFN_LL_DELAY,
         }
     }
 }

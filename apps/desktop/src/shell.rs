@@ -436,6 +436,10 @@ impl Shell {
             this.choose_noise(chosen.0, cx)
         })
         .detach();
+        cx.subscribe(&settings, |this, _, chosen: &super::settings::NoiseModelChosen, cx| {
+            this.choose_noise_model(chosen.0, cx)
+        })
+        .detach();
         cx.subscribe(&settings, |this, _, test: &MicTest, cx| {
             this.set_mic_test(test.0, cx)
         })

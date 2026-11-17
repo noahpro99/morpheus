@@ -29,11 +29,14 @@ pub const FRAME: usize = 480;
 
 /// After frames it missed, the model's next [`DELAY`] of output is of the
 /// frames before them (its look-ahead): not used.
-const WARM_UP: usize = DELAY / FRAME;
 
 /// The suppressor, with its state (it follows the voice over time).
 pub struct Denoiser {
     model: df::tract::DfTract,
+    /// Which model it is (the low-delay one only when its file was there).
+    kind: crate::noise::NoiseModel,
+    /// How late its output comes, in samples.
+    delay: usize,
     input: ndarray::Array2<f32>,
     output: ndarray::Array2<f32>,
     /// The frames that went in, [`DELAY`] long: the one the output matches
@@ -50,9 +53,30 @@ pub struct Denoiser {
 }
 
 impl Denoiser {
-    /// Loads the model (built in; about 0.2 s).
+    /// Loads the model the tuning names: DeepFilterNet 3, built in, or the
+    /// low-delay one from its downloaded file (checked against the pinned
+    /// hash); where that is not there the built-in one runs (about 0.2 s).
     pub fn new(tuning: &NoiseTuning) -> Result<Self, String> {
-        let params = df::tract::DfParams::default();
+        use crate::noise::NoiseModel;
+        let (kind, params) = match tuning.model {
+            NoiseModel::DeepFilterNet3LowDelay => {
+                let loaded = crate::noise_model::low_delay_path()
+                    .ok_or_else(|| "no place for downloaded models".to_owned())
+                    .and_then(|path| crate::noise_model::read_low_delay(&path))
+                    .and_then(|bytes| {
+                        df::tract::DfParams::from_bytes(&bytes).map_err(|err| format!("{err:#}"))
+                    });
+                match loaded {
+                    Ok(params) => (NoiseModel::DeepFilterNet3LowDelay, params),
+                    Err(why) => {
+                        tracing::warn!(%why, "low-delay noise model not used; DeepFilterNet 3 runs");
+                        (NoiseModel::DeepFilterNet3, df::tract::DfParams::default())
+                    }
+                }
+            }
+            NoiseModel::DeepFilterNet3 => (NoiseModel::DeepFilterNet3, df::tract::DfParams::default()),
+        };
+        let delay = kind.delay();
         let runtime = df::tract::RuntimeParams::default_with_ch(1);
         let model = df::tract::DfTract::new(params, &runtime).map_err(|err| format!("{err:#}"))?;
         if model.hop_size != FRAME || model.sr != 48_000 {
@@ -63,16 +87,28 @@ impl Denoiser {
         }
         let mut denoiser = Self {
             model,
+            kind,
+            delay,
             input: ndarray::Array2::zeros((1, FRAME)),
             output: ndarray::Array2::zeros((1, FRAME)),
-            history: std::iter::repeat_n(0.0, DELAY).collect(),
+            history: std::iter::repeat_n(0.0, delay).collect(),
             gain: 1.0,
             noise: 0.0,
-            run: WARM_UP + 1,
+            run: delay / FRAME + 1,
             tuning: *tuning,
         };
         denoiser.tune(tuning);
         Ok(denoiser)
+    }
+
+    /// Which model is running.
+    pub fn model(&self) -> crate::noise::NoiseModel {
+        self.kind
+    }
+
+    /// How late the cleaned voice comes out, in samples.
+    pub fn delay(&self) -> usize {
+        self.delay
     }
 
     /// Tune the model and the smoothing from the next frame (the model keeps
@@ -129,7 +165,7 @@ impl Denoiser {
         self.run += 1;
         let before = energy(&came);
         self.follow_noise(before);
-        if self.run <= WARM_UP {
+        if self.run <= self.delay / FRAME {
             // The model's output is still of frames from before the gap.
             self.hold(frame, &came, before);
             return;
@@ -154,7 +190,7 @@ impl Denoiser {
     /// catch up (#101): as late as the model's frames, so nothing repeats
     /// or jumps, and kept as speech or lowered as noise by its energy over
     /// the noise floor alone. The model misses the frame, so the next
-    /// [`WARM_UP`] frames it cleans (its output is still of frames before
+    /// the model's look-ahead frames it cleans (its output is still of frames before
     /// the gap) go out this way too.
     pub fn pass(&mut self, frame: &mut [f32]) {
         if frame.len() != FRAME {
@@ -273,5 +309,54 @@ mod tests {
         }
         eprintln!("worst {worst:?}");
         assert!(worst.0 > 0.6, "frame {} out matches what came only {:.2}", worst.1, worst.0);
+    }
+
+    fn low_delay_tuning() -> NoiseTuning {
+        NoiseTuning {
+            model: crate::noise::NoiseModel::DeepFilterNet3LowDelay,
+            ..NoiseTuning::default()
+        }
+    }
+
+    /// Without the downloaded file the low-delay choice falls back to the
+    /// built-in model, which says so by its delay.
+    #[test]
+    fn the_low_delay_model_falls_back_to_the_built_in_one_until_it_is_there() {
+        let _guard = crate::noise_model::tests::DIR_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        crate::noise_model::set_model_dir(std::env::temp_dir().join("morpheus-no-model-here"));
+        let denoiser = Denoiser::new(&low_delay_tuning()).expect("the built-in model");
+        assert_eq!(denoiser.delay(), crate::noise::DFN_DELAY);
+        assert_eq!(denoiser.model(), crate::noise::NoiseModel::DeepFilterNet3);
+    }
+
+    /// With the file there (the one in the crate's checkout, as downloaded)
+    /// the model loads, runs 10 ms behind (the built-in one 30), and still
+    /// takes the noise out of pauses and keeps the voice.
+    #[test]
+    fn the_low_delay_model_runs_ten_ms_behind_and_suppresses() {
+        let _guard = crate::noise_model::tests::DIR_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(file) = crate::noise_model::tests::checkout_model() else {
+            eprintln!("DeepFilterNet checkout not found; skipping");
+            return;
+        };
+        let dir = std::env::temp_dir().join(format!("morpheus-ll-model-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("dir");
+        std::fs::copy(&file, dir.join(crate::noise_model::LOW_DELAY_FILE)).expect("copy");
+        crate::noise_model::set_model_dir(dir.clone());
+        let mut denoiser = Denoiser::new(&low_delay_tuning()).expect("model");
+        assert_eq!(denoiser.model(), crate::noise::NoiseModel::DeepFilterNet3LowDelay);
+        assert_eq!(denoiser.delay(), 480, "10 ms");
+        let speech = noisy_speech(10, 0.05, 0.03);
+        let mix = speech.mix();
+        let mut out = mix.clone();
+        for frame in out.chunks_exact_mut(FRAME) {
+            denoiser.process(frame);
+        }
+        let pauses = change_db(&mix, &out, &speech.pause, 480);
+        let voice = change_db(&mix, &out, &speech.speech, 480);
+        eprintln!("low delay: pauses {pauses:.1} dB, voice {voice:.1} dB");
+        assert!(pauses <= -10.0, "noise between phrases only {pauses:.1} dB down");
+        assert!(voice >= -3.0, "the voice lost {voice:.1} dB");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

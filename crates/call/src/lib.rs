@@ -67,3 +67,14 @@ pub use screen_sources::{
 #[path = "diag.rs"]
 mod diag;
 pub use diag::{CallDiag, OtherSfu, TrackDiag, call_diag, camera_info, processing};
+
+#[path = "noise_model.rs"]
+#[cfg_attr(
+    not(any(target_os = "linux", target_os = "windows", target_os = "macos")),
+    allow(dead_code)
+)]
+mod noise_model;
+pub use noise_model::{
+    LOW_DELAY_BYTES, LOW_DELAY_SHA256, LOW_DELAY_URL, low_delay_path, low_delay_url,
+    read_low_delay, set_model_dir, sha256_hex,
+};
