@@ -19,6 +19,7 @@ pub mod gpu;
 pub mod history;
 pub mod hotkeys;
 pub mod instance;
+pub mod sidebar;
 pub mod url_scheme;
 pub mod invites;
 pub mod keys;

@@ -322,7 +322,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         .flex()
         .flex_col()
         // The grid's column: as wide as the CSS has it whatever the names inside.
-        .w(px(theme::SIDEBAR_W))
+        .w(px(shell.sidebar_shown))
         .flex_none()
         .min_h_0()
         .h_full()
@@ -335,6 +335,37 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                     shell.room_scroll.clone(),
                 ))),
         )
+        // The right edge: dragged to resize the list, a double click resets it.
+        .child({
+            let view = cx.entity();
+            div()
+                .id("sidebar-resize")
+                .absolute()
+                .top_0()
+                .bottom_0()
+                .right_0()
+                .w(px(6.0))
+                .cursor_col_resize()
+                .hover(|s| s.bg(gpui::rgba(theme::bg_hover())))
+                .on_mouse_down(gpui::MouseButton::Left, move |event, _, cx| {
+                    cx.stop_propagation();
+                    let x = f32::from(event.position.x);
+                    let reset = event.click_count >= 2;
+                    view.update(cx, |this, cx| {
+                        if reset {
+                            this.sidebar_w = theme::SIDEBAR_W;
+                            this.sidebar_drag = None;
+                            this.save_sidebar_width();
+                        } else {
+                            this.sidebar_drag = Some((x, this.sidebar_shown));
+                        }
+                        cx.notify();
+                    });
+                })
+                .e2e("div", "sidebar-resize")
+                .attr("title", "Drag to resize")
+        })
+        .relative()
         .e2e("aside", "sidebar")
         .attr("data-bg", format!("{:06x}", theme::bg_sidebar()))
         .attr("data-radius-tl", theme::RADIUS_LG.to_string())

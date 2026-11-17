@@ -180,8 +180,9 @@ pub fn room_call(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -> 
                 row = row.child(mark);
             }
             // Beside the row: the card opens to the right of the sidebar.
-            let beside = |at: gpui::Point<gpui::Pixels>| {
-                gpui::point(px(theme::RAIL_W + theme::SIDEBAR_W - 8.0), at.y)
+            let sidebar_shown = shell.sidebar_shown;
+            let beside = move |at: gpui::Point<gpui::Pixels>| {
+                gpui::point(px(theme::RAIL_W + sidebar_shown - 8.0), at.y)
             };
             let (opened, menu_user, menu_room) = (user.clone(), user.clone(), room.id.clone());
             let (dbl_user, dbl_room) = (user.clone(), room.id.clone());

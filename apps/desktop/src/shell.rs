@@ -150,6 +150,12 @@ pub struct Shell {
     pub toasts: ToastList,
     /// When the "nothing there" shake began (Alt+Shift+Down with nothing unread).
     pub shake_at: Option<std::time::Instant>,
+    /// The channel list's width (dragged at its right edge; kept per device).
+    pub sidebar_w: f32,
+    /// A drag of its edge: where the pointer was, and the width then.
+    pub sidebar_drag: Option<(f32, f32)>,
+    /// The width drawn this frame: the kept one within this window's limits.
+    pub sidebar_shown: f32,
     /// The F3 stats overlay is showing, and its redraw timer runs.
     pub diag_overlay: bool,
     pub diag_timer: bool,
@@ -487,6 +493,10 @@ impl Shell {
             take_dialog_focus: false,
             toasts: ToastList::default(),
             shake_at: None,
+            sidebar_w: crate::view_model::sidebar::load(&crate::data_dir())
+                .map_or(theme::SIDEBAR_W, |w| w.clamp(crate::view_model::sidebar::MIN_WIDTH, crate::view_model::sidebar::MAX_WIDTH)),
+            sidebar_drag: None,
+            sidebar_shown: theme::SIDEBAR_W,
             diag_overlay: false,
             diag_timer: false,
             pending: HashMap::new(),
@@ -1150,6 +1160,21 @@ impl Shell {
         crate::memory::TIMELINE_WEIGHT.store(self.timeline_cache.weight(), Ordering::Relaxed);
     }
 
+    /// The channel list's width now, kept within the limits for this window.
+    pub fn sidebar_width(&self, window: &Window) -> f32 {
+        crate::view_model::sidebar::clamp_width(
+            self.sidebar_w,
+            f32::from(window.viewport_size().width),
+            theme::RAIL_W,
+        )
+    }
+
+    pub fn save_sidebar_width(&self) {
+        if let Err(err) = crate::view_model::sidebar::save(&crate::data_dir(), self.sidebar_w) {
+            eprintln!("morpheus-desktop: saving the channel list's width: {err}");
+        }
+    }
+
     /// A link in a message: Matrix links open in the app,
     /// others in the browser; test runs only log the hand-off.
     pub(crate) fn link_clicked(&mut self, url: &str, cx: &mut Context<Self>) {
@@ -1416,6 +1441,7 @@ pub fn apply(rooms: &mut Vec<RoomSummary>, diff: VectorDiff<RoomSummary>) {
 
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.sidebar_shown = self.sidebar_width(window);
         // The shake of "nothing there": an offset while it lasts.
         let shake = match self.shake_at {
             Some(at) if at.elapsed() < std::time::Duration::from_millis(crate::view_model::hotkeys::SHAKE_MS) => {
@@ -1484,7 +1510,7 @@ impl Render for Shell {
         let left = div()
             .flex()
             .flex_col()
-            .w(px(theme::RAIL_W + theme::SIDEBAR_W))
+            .w(px(theme::RAIL_W + self.sidebar_shown))
             .flex_none()
             .h_full()
             .child(
@@ -1525,6 +1551,16 @@ impl Render for Shell {
             )
             .on_mouse_move(
                 cx.listener(|this, event: &gpui::MouseMoveEvent, window, cx| {
+                    if let Some((x0, start)) = this.sidebar_drag {
+                        let moved = f32::from(event.position.x) - x0;
+                        this.sidebar_w = crate::view_model::sidebar::dragged_width(
+                            start,
+                            moved,
+                            f32::from(window.viewport_size().width),
+                            theme::RAIL_W,
+                        );
+                        cx.notify();
+                    }
                     if let Some((y0, start)) = this.calls.stage_drag {
                         let chat = f32::from(window.viewport_size().height) - 32.0 - 48.0;
                         let moved = f32::from(event.position.y) - y0;
@@ -1539,6 +1575,10 @@ impl Render for Shell {
                 gpui::MouseButton::Left,
                 cx.listener(|this, _, _, cx| {
                     if this.calls.stage_drag.take().is_some() {
+                        cx.notify();
+                    }
+                    if this.sidebar_drag.take().is_some() {
+                        this.save_sidebar_width();
                         cx.notify();
                     }
                 }),
