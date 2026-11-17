@@ -16,6 +16,7 @@ use morpheus_core::{
 };
 
 use crate::hover_underline::underline_on_hover;
+use crate::icons::icon;
 use crate::tab::Tabbable as _;
 use crate::{
     e2e::E2eExt as _,
@@ -596,6 +597,9 @@ pub fn render_dialog(
     match dialog {
         Dialog::Confirm(confirm, action) => {
             let (confirm, action) = (confirm.clone(), action.clone());
+            if let Some(prompt) = open_prompt(shell, &action, &focus, cx) {
+                return Some(overlay(window, cx, prompt, close));
+            }
             let opens_room = matches!(
                 action,
                 ConfirmAction::OpenRoom(_) | ConfirmAction::OpenWelcome(_)
@@ -623,7 +627,6 @@ pub fn render_dialog(
                 }))
                 .child(heading(&confirm.title))
                 .child(muted(&confirm.body, "muted"))
-                .when(opens_room, |d| d.child(dont_ask_tick(shell.ask_tick, cx)))
                 .child(actions(vec![
                     dialog_button("confirm-cancel", "Cancel", false)
                         .text_color(rgb(theme::text()))
@@ -837,6 +840,7 @@ impl Shell {
             ConfirmAction::DeleteMessage(message) => self.delete_with_undo(*message, cx),
             ConfirmAction::SignOut => cx.emit(crate::shell::AccountEvent::SignOut),
             ConfirmAction::OpenRoom(room) => {
+                self.opened_this_share.remember(room.as_str());
                 self.ask_skipped |= std::mem::take(&mut self.ask_tick);
                 if let Some(scope) = self.ask_scope.take()
                     && scope != self.scope
@@ -846,6 +850,7 @@ impl Shell {
                 self.open_room_now(room, cx);
             }
             ConfirmAction::OpenWelcome(space) => {
+                self.opened_this_share.remember(space.as_str());
                 self.ask_skipped |= std::mem::take(&mut self.ask_tick);
                 self.show_welcome(space, cx);
             }
@@ -1235,54 +1240,6 @@ impl Render for PinnedDialog {
     }
 }
 
-/// The open-channel question's "Don't ask again during this share" tick.
-fn dont_ask_tick(ticked: bool, cx: &mut Context<Shell>) -> impl IntoElement {
-    let ring = rgb(if ticked {
-        theme::accent()
-    } else {
-        theme::text_muted()
-    });
-    let mark = div()
-        .size(px(18.0))
-        .flex_none()
-        .flex()
-        .items_center()
-        .justify_center()
-        .border_2()
-        .border_color(ring)
-        .rounded(px(3.0))
-        .when(ticked, |d| {
-            d.child(
-                div()
-                    .size(px(8.0))
-                    .rounded(px(3.0))
-                    .bg(rgb(theme::accent())),
-            )
-        })
-        .e2e("input", "")
-        .attr("type", "checkbox")
-        .attr("name", "dont-ask");
-    let mark = if ticked {
-        mark.attr("checked", "true")
-    } else {
-        mark
-    };
-    div()
-        .id("dont-ask")
-        .flex()
-        .items_center()
-        .gap(px(8.0))
-        .mt(px(12.0))
-        .cursor_pointer()
-        .on_click(cx.listener(|this, _, _, cx| {
-            this.ask_tick = !this.ask_tick;
-            cx.notify();
-        }))
-        .child(mark)
-        .child("Don't ask again during this share")
-        .e2e("label", "dont-ask")
-}
-
 /// One group of the shortcuts dialog: its name, then a row per shortcut.
 fn help_group(group: &str, rows: &[(&str, &str)]) -> impl IntoElement {
     div()
@@ -1322,4 +1279,217 @@ fn help_group(group: &str, rows: &[(&str, &str)]) -> impl IntoElement {
                 .e2e("div", "help-row")
         }))
         .e2e("section", "help-group")
+}
+
+/// A shortcut as a small key cap (the Jump to present pill's, the open
+/// prompt's): on a coloured fill (`Some(fill)`) the cap is a wash of the
+/// foreground that reads on it, else of the theme's edge and hover tokens.
+pub(crate) fn key_cap(label: &'static str, on_fill: Option<u32>) -> impl IntoElement {
+    let cap = div()
+        .px(px(5.0))
+        .rounded(px(theme::RADIUS_SM))
+        .border_1()
+        .text_size(px(0.7 * theme::REM))
+        .font_weight(FontWeight::BOLD)
+        .child(label);
+    let cap = match on_fill {
+        Some(fill) => {
+            let fg = theme::on(fill);
+            cap.border_color(rgba((fg << 8) | 0x66))
+                .bg(rgba((fg << 8) | 0x26))
+        }
+        None => cap
+            .border_color(rgba(theme::edge()))
+            .bg(rgba(theme::bg_hover())),
+    };
+    cap.e2e("kbd", "key-cap").text(label)
+}
+
+/// The streamer mode question before another room (or server) opens while the
+/// screen is shared: the headline names where, with its picture inline; a
+/// switch turns streamer mode off (and opens it); Cancel, "Don't ask again
+/// during this stream" and Open are at the bottom, Esc and Enter their keys.
+fn open_prompt(
+    shell: &Shell,
+    action: &ConfirmAction,
+    focus: &FocusHandle,
+    cx: &mut Context<Shell>,
+) -> Option<AnyElement> {
+    let (shown, mark): (String, AnyElement) = match action {
+        ConfirmAction::OpenRoom(id) => {
+            let room = shell.rooms.iter().find(|room| room.id == *id)?;
+            if room.is_dm {
+                let title = crate::streamer::room_title(&shell.nicknames, room);
+                (
+                    title.clone(),
+                    crate::media::avatar(shell.picture(&room.avatar, 32), &title, 28.0, None)
+                        .into_any_element(),
+                )
+            } else {
+                (
+                    room.name.clone(),
+                    crate::room_list::channel_glyph(room.is_voice),
+                )
+            }
+        }
+        ConfirmAction::OpenWelcome(space) => {
+            let server = shell.rooms.iter().find(|room| room.id == *space)?;
+            (
+                server.name.clone(),
+                crate::media::avatar(
+                    shell.picture(&server.avatar, 32),
+                    &server.name,
+                    28.0,
+                    Some(theme::RADIUS_SM),
+                )
+                .into_any_element(),
+            )
+        }
+        _ => return None,
+    };
+    let go = {
+        let action = action.clone();
+        cx.listener(move |this, _: &gpui::ClickEvent, _, cx| this.confirmed(action.clone(), cx))
+    };
+    let skip = {
+        let action = action.clone();
+        cx.listener(move |this, _: &gpui::ClickEvent, _, cx| {
+            this.ask_tick = true;
+            this.confirmed(action.clone(), cx)
+        })
+    };
+    let off = {
+        let action = action.clone();
+        cx.listener(move |this, _: &gpui::ClickEvent, _, cx| {
+            let settings = crate::streamer::turn_off();
+            if let Err(err) = settings.save(&crate::data_dir()) {
+                eprintln!("morpheus-desktop: saving the streamer mode setting: {err}");
+            }
+            crate::streamer::set_settings(settings);
+            this.streamer_changed(cx);
+            this.confirmed(action.clone(), cx)
+        })
+    };
+    let headline = div()
+        .flex()
+        .items_center()
+        .gap(px(8.0))
+        .text_size(px(1.6 * theme::REM))
+        .font_weight(FontWeight::BOLD)
+        .child("Open")
+        .child(mark.into_any_element())
+        .child(
+            div()
+                .min_w_0()
+                .truncate()
+                .child(format!("{shown}?"))
+                .e2e("span", "open-prompt-name")
+                .text(format!("{shown}?")),
+        )
+        .e2e("h2", "open-prompt-title")
+        .text(format!("Open {shown}?"));
+    let on = true;
+    let switch = div()
+        .id("open-prompt-streamer")
+        .flex_none()
+        .w(px(38.0))
+        .h(px(20.0))
+        .rounded_full()
+        .p(px(2.0))
+        .flex()
+        .justify_end()
+        .bg(rgb(theme::accent_solid()))
+        .cursor_pointer()
+        .on_click(off)
+        .child(
+            div()
+                .size(px(16.0))
+                .rounded_full()
+                .bg(rgb(theme::on(theme::accent_solid()))),
+        )
+        .e2e("button", "open-prompt-switch")
+        .attr("data-on", on.to_string());
+    let toggle_row = div()
+        .flex()
+        .items_center()
+        .justify_between()
+        .gap(px(12.0))
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(8.0))
+                .text_color(rgb(theme::text_muted()))
+                .child(icon("eye-off", 16.0))
+                .child("Streamer mode is on")
+                .e2e("span", "open-prompt-streamer-label")
+                .text("Streamer mode is on"),
+        )
+        .child(switch)
+        .e2e("div", "open-prompt-streamer");
+    let key_button = |id: &'static str| {
+        div()
+            .id(id)
+            .flex()
+            .items_center()
+            .gap(px(8.0))
+            .px(px(14.0))
+            .py(px(8.0))
+            .rounded(px(theme::RADIUS))
+            .cursor_pointer()
+            .tabbable()
+    };
+    let cancel = key_button("confirm-cancel")
+        .text_color(rgb(theme::text()))
+        .hover(|s| s.bg(rgba(theme::bg_hover())))
+        .child("Cancel")
+        .child(key_cap("Esc", None))
+        .on_click(cx.listener(|this, _, _, cx| this.dialog_close(cx)))
+        .e2e("button", "secondary confirm-cancel")
+        .text("Cancel");
+    let dont_ask = key_button("confirm-dont-ask")
+        .text_color(rgb(theme::text_muted()))
+        .hover(|s| s.bg(rgba(theme::bg_hover())))
+        .child("Don't ask again during this stream")
+        .on_click(skip)
+        .e2e("button", "secondary confirm-dont-ask")
+        .text("Don't ask again during this stream");
+    let open = key_button("confirm-go")
+        .bg(rgb(theme::accent()))
+        .text_color(rgb(theme::on_accent()))
+        .font_weight(FontWeight::SEMIBOLD)
+        .child("Open")
+        .child(key_cap("Enter", Some(theme::accent())))
+        .on_click(go)
+        .e2e("button", "primary confirm-go")
+        .text("Open");
+    let actions = div()
+        .flex()
+        .items_center()
+        .gap(px(8.0))
+        .mt(px(8.0))
+        .child(cancel)
+        .child(div().flex_1())
+        .child(dont_ask)
+        .child(open)
+        .e2e("div", "settings-actions open-prompt-actions");
+    let boxed = dialog_box()
+        .w(px(580.0))
+        .id("confirm-dialog")
+        .track_focus(focus)
+        .on_key_down(cx.listener({
+            let action = action.clone();
+            move |this, event: &gpui::KeyDownEvent, _, cx| match event.keystroke.key.as_str() {
+                "enter" => this.confirmed(action.clone(), cx),
+                "escape" => this.dialog_close(cx),
+                _ => {}
+            }
+        }))
+        .child(headline)
+        .child(toggle_row)
+        .child(actions)
+        .e2e("div", "message-dialog confirm-dialog open-prompt")
+        .attr("role", "alertdialog")
+        .focusable(focus);
+    Some(boxed.into_any_element())
 }

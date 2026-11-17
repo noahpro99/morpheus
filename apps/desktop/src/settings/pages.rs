@@ -1146,6 +1146,12 @@ impl SettingsView {
                 ],
             ),
             switch("ask", "Ask before opening another channel while I share", s.ask, |s| s.ask = !s.ask),
+            switch(
+                "remember-opened",
+                "Don't ask again for channels you've already opened this stream",
+                s.remember_opened,
+                |s| s.remember_opened = !s.remember_opened,
+            ),
         ];
         vec![section("Streamer mode", "streamer", children, self.hl("streamer")).into_any_element()]
     }

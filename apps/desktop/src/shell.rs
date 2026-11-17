@@ -222,6 +222,8 @@ pub struct Shell {
     /// The rail entry to show when the open-channel question is answered Open.
     pub ask_scope: Option<Scope>,
     pub ask_skipped: bool,
+    /// The rooms and servers opened through the streamer question during this share.
+    pub opened_this_share: crate::view_model::streamer::OpenedThisShare,
     pub inbox_focus: Option<FocusHandle>,
     pub inbox_take_focus: bool,
     /// A channel of the server that you are not in, shown as a join card.
@@ -533,6 +535,7 @@ impl Shell {
             ask_tick: false,
             ask_scope: None,
             ask_skipped: false,
+            opened_this_share: Default::default(),
             inbox_focus: None,
             inbox_take_focus: false,
             preview: None,

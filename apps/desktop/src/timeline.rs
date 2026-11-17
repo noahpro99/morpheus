@@ -22,7 +22,7 @@ use std::{
 use gpui::{
     AnyElement, App, Context, EventEmitter, FontWeight, Image, IntoElement, ListAlignment,
     ListOffset, ListState, Pixels, Point, Render, Window, div, list, point, prelude::*, px,
-    relative, rgb, rgba,
+    relative, rgb,
 };
 use morpheus_core::{
     MediaRef, Message, MessageId, MessageKind, OpenTimeline, OwnedEventId, OwnedRoomId,
@@ -1657,20 +1657,7 @@ impl Render for TimelineView {
                             .items_center()
                             .gap(px(8.0))
                             .child("Jump to present ↓")
-                            .children(show_key.then(|| {
-                                // The shortcut, as a small key cap.
-                                div()
-                                    .px(px(5.0))
-                                    .rounded(px(theme::RADIUS_SM))
-                                    .border_1()
-                                    .border_color(rgba(theme::edge()))
-                                    .bg(rgba(theme::bg_hover()))
-                                    .text_size(px(0.7 * theme::REM))
-                                    .font_weight(FontWeight::BOLD)
-                                    .child("Esc")
-                                    .e2e("kbd", "key-cap")
-                                    .text("Esc")
-                            }))
+                            .children(show_key.then(|| crate::dialogs::key_cap("Esc", None)))
                             .e2e("button", "jump-to-bottom")
                             .attr("title", "Jump to the newest message (Esc)")
                             .text(if show_key { "Jump to present ↓ Esc" } else { "Jump to present ↓" }),

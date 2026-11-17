@@ -157,6 +157,8 @@ pub struct SettingsView {
     done_handled: bool,
     focus: FocusHandle,
     scroll: ScrollHandle,
+    /// The search results' list, when it has more rows than fit.
+    results_scroll: ScrollHandle,
     /// Take the keyboard (and the recovery key field, when asked) at the
     /// next frame, once the elements exist.
     take_focus: bool,
@@ -369,6 +371,7 @@ impl SettingsView {
             done_handled: false,
             focus: cx.focus_handle(),
             scroll: ScrollHandle::new(),
+            results_scroll: ScrollHandle::new(),
             take_focus: false,
             focus_key: false,
             set_up_when_ready: false,
@@ -1414,6 +1417,7 @@ impl Render for SettingsView {
                         "result-{}",
                         entry.anchor
                     ))))
+                    .flex_none()
                     .flex()
                     .items_center()
                     .gap(px(10.0))
@@ -1537,7 +1541,25 @@ impl Render for SettingsView {
                     .e2e("button", "settings-profile")
             })
             .child(div().mb(px(8.0)).child(self.search.clone()))
-            .children(results)
+            // Rows keep their height; a long list scrolls in the room the sidebar has.
+            .when(searching, |nav| {
+                nav.child(
+                div()
+                    .id("settings-results")
+                    .flex_1()
+                    .min_h_0()
+                    .flex()
+                    .flex_col()
+                    .gap(px(2.0))
+                    .overflow_y_scroll()
+                    .track_scroll(&self.results_scroll)
+                    .children(results)
+                    .e2e("div", "settings-results")
+                    .scrollable(std::rc::Rc::new(crate::e2e::HandleProbe(
+                        self.results_scroll.clone(),
+                    ))),
+            )
+            })
             .children(
                 SettingsPage::listed(true)
                     .into_iter()

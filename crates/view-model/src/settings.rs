@@ -190,6 +190,12 @@ pub const SETTINGS_INDEX: &[SettingEntry] = &[
         "streamer",
     ),
     entry(
+        "Don't ask again for channels you've already opened this stream",
+        "streamer ask prompt open channel server again remembered stream sharing",
+        SettingsPage::StreamerMode,
+        "streamer",
+    ),
+    entry(
         "Keep running in the background",
         "startup background tray close window quit exit notifications calls hidden",
         SettingsPage::Startup,

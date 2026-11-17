@@ -14,6 +14,7 @@ static SETTINGS: RwLock<StreamerSettings> = RwLock::new(StreamerSettings {
     notifications: true,
     ids: true,
     ask: true,
+    remember_opened: true,
 });
 /// Whether the screen is shared (by this app, or captured by another program:
 /// #143), and streamer mode turned off by hand during it: that stays off until
@@ -128,10 +129,14 @@ impl Shell {
     /// when that turned streamer mode on or off.
     pub fn sync_streamer(&mut self, cx: &mut Context<Self>) {
         let sharing = self.calls.state.as_ref().is_some_and(|call| call.screen);
-        if !sharing {
+        let changed = set_sharing(sharing);
+        // What the share taught the questions ends with it: this app's own or another
+        // program's capture (either keeps it).
+        if !self::sharing() {
             self.ask_skipped = false;
+            self.opened_this_share.clear();
         }
-        if set_sharing(sharing) {
+        if changed {
             cx.defer(|cx| cx.refresh_windows());
         }
     }
@@ -166,7 +171,7 @@ impl Shell {
     pub fn open_welcome(&mut self, space: OwnedRoomId, cx: &mut Context<Self>) {
         let asking = sharing()
             && active()
-            && settings().ask
+            && self.opened_this_share.asks(&settings(), space.as_str())
             && !self.ask_skipped
             && self.welcome.as_ref() != Some(&space);
         let server = self.rooms.iter().find(|room| room.id == space);
@@ -194,7 +199,10 @@ impl Shell {
         cx: &mut Context<Self>,
     ) {
         let asking =
-            sharing() && active() && settings().ask && !self.ask_skipped
+            sharing()
+            && active()
+            && self.opened_this_share.asks(&settings(), id.as_str())
+            && !self.ask_skipped
             && (self.selected.as_ref() != Some(&id) || self.welcome.is_some());
         let room = self
             .rooms

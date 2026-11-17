@@ -31,11 +31,14 @@ pub struct StreamerSettings {
     pub ids: bool,
     /// Ask before another channel opens while sharing.
     pub ask: bool,
+    /// Once a channel or server was opened through the question during a share, opening it
+    /// again during that share does not ask again.
+    pub remember_opened: bool,
 }
 
 impl Default for StreamerSettings {
     fn default() -> Self {
-        Self { auto: true, now: false, names: true, notifications: true, ids: true, ask: true }
+        Self { auto: true, now: false, names: true, notifications: true, ids: true, ask: true, remember_opened: true }
     }
 }
 
@@ -63,6 +66,7 @@ impl StreamerSettings {
             notifications: get("notifications", d.notifications),
             ids: get("ids", d.ids),
             ask: get("ask", d.ask),
+            remember_opened: get("remember_opened", d.remember_opened),
         }
     }
 
@@ -70,6 +74,7 @@ impl StreamerSettings {
         let json = json!({
             "auto": self.auto, "now": self.now, "names": self.names,
             "notifications": self.notifications, "ids": self.ids, "ask": self.ask,
+            "remember_opened": self.remember_opened,
         });
         std::fs::write(dir.join(FILE), json.to_string())
     }
@@ -256,6 +261,29 @@ mod pill_tests {
     }
 }
 
+/// The channels and servers opened through the streamer question during this share: opening
+/// one again does not ask (when the setting says so). Emptied when the share ends.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct OpenedThisShare(std::collections::HashSet<String>);
+
+impl OpenedThisShare {
+    /// `id` (a room or server) was confirmed in the question.
+    pub fn remember(&mut self, id: &str) {
+        self.0.insert(id.to_owned());
+    }
+
+    /// Whether opening `id` asks: asking is on, and the person has not already opened it
+    /// through the question during this share (or has the memory turned off).
+    pub fn asks(&self, settings: &StreamerSettings, id: &str) -> bool {
+        settings.ask && !(settings.remember_opened && self.0.contains(id))
+    }
+
+    /// The share ended.
+    pub fn clear(&mut self) {
+        self.0.clear();
+    }
+}
+
 /// Whether the screen is being shared, and streamer mode turned off by hand
 /// while it is: this app's own share (call.screen) or another program's capture
 /// (#143: Discord, OBS) both count; the hand-off stays until neither is.
@@ -358,5 +386,45 @@ mod tracker_tests {
         t.override_off();
         t.set_external(true);
         assert!(t.active(&StreamerSettings::default()));
+    }
+}
+
+#[cfg(test)]
+mod opened_tests {
+    use super::*;
+
+    #[test]
+    fn a_room_opened_through_the_question_does_not_ask_again_that_share() {
+        let settings = StreamerSettings::default();
+        assert!(settings.remember_opened, "on by default");
+        let mut opened = OpenedThisShare::default();
+        assert!(opened.asks(&settings, "!a"));
+        opened.remember("!a");
+        assert!(!opened.asks(&settings, "!a"));
+        assert!(opened.asks(&settings, "!b"), "other rooms still ask");
+        opened.clear();
+        assert!(opened.asks(&settings, "!a"), "a new share asks again");
+    }
+
+    #[test]
+    fn with_the_memory_off_it_always_asks_and_with_asking_off_never() {
+        let mut opened = OpenedThisShare::default();
+        opened.remember("!a");
+        let off = StreamerSettings { remember_opened: false, ..StreamerSettings::default() };
+        assert!(opened.asks(&off, "!a"));
+        let none = StreamerSettings { ask: false, ..StreamerSettings::default() };
+        assert!(!opened.asks(&none, "!b"));
+    }
+
+    #[test]
+    fn the_memory_setting_is_kept_and_defaults_on_for_an_old_file() {
+        let dir = std::env::temp_dir().join(format!("streamer-remember-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("dir");
+        std::fs::write(dir.join(FILE), r#"{"ask": true}"#).expect("old file");
+        assert!(StreamerSettings::load(&dir).remember_opened);
+        let off = StreamerSettings { remember_opened: false, ..StreamerSettings::default() };
+        off.save(&dir).expect("save");
+        assert!(!StreamerSettings::load(&dir).remember_opened);
+        std::fs::remove_dir_all(&dir).ok();
     }
 }
