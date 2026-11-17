@@ -23,6 +23,8 @@ required-features = ["e2e"]
 [features]
 # The test bridge (`MORPHEUS_E2E_PORT`) and element tags; never in a release.
 e2e = ["dep:serde"]
+# A build for heap profiling (slower; replaces mimalloc). Never in a release.
+dhat-heap = ["dep:dhat"]
 # macOS: GPUI compiles its Metal shaders when the app starts, not while building
 # (for a runner whose Xcode has no Metal compiler; apple.yml).
 runtime-shaders = ["gpui/runtime_shaders"]
@@ -49,6 +51,8 @@ png = { workspace = true }
 tokio = { workspace = true }
 # Returns freed memory to the system (glibc's malloc kept ~130 MB freed after scrolling a big room).
 mimalloc = { version = "0.1", default-features = false }
+# Heap profiling (issue #10): `--features dhat-heap` swaps the allocator for dhat's; the e2e bridge's `heap_dump` writes the profile.
+dhat = { version = "0.3", optional = true }
 tracing-subscriber = { workspace = true }
 tracing = { workspace = true }
 

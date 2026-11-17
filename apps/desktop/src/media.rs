@@ -42,7 +42,7 @@ const CARD_COLOR_BUDGET: Budget = Budget {
 /// every picture drawn, and the window's atlas another, for as long as the
 /// app runs unless told otherwise; see [`drawn`]). Pictures on screen are
 /// kept even when one screen needs more.
-pub const DRAWN_BUDGET: usize = 64 * MB;
+pub const DRAWN_BUDGET: usize = 32 * MB;
 
 /// Frames a drawn picture is kept for regardless of the budget: the one
 /// being drawn and the one before (what is on screen).
@@ -547,6 +547,14 @@ pub fn avatar_waiting(size: f32, radius: Option<f32>) -> Tagged<Div> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// What GPUI keeps decoded (and the atlas a copy of) is held to 32 MB: a
+    /// screen of pictures needs a few MB, and 64 MB left 60 MB resident after
+    /// visiting rooms (issue #10: 389 MB resident after 30 rooms).
+    #[test]
+    fn the_decoded_picture_budget_is_32_mb() {
+        assert_eq!(DRAWN_BUDGET, 32 * MB);
+    }
 
     /// A picture that is there to be had but not read yet is waited for (a
     /// skeleton, not the letter on the accent colour); one that could not be

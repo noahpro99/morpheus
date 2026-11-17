@@ -167,7 +167,7 @@ impl std::fmt::Display for Report {
 impl Report {
     pub fn json(&self) -> serde_json::Value {
         let held = |h: Held| serde_json::json!({ "entries": h.entries, "bytes": h.bytes });
-        serde_json::json!({
+        let mut report = serde_json::json!({
             "rss_kb": self.rss_kb,
             "anon_kb": self.anon_kb,
             "lazy_free_kb": self.lazy_free_kb,
@@ -196,7 +196,15 @@ impl Report {
                 "full_cut": self.avatars.full_cut,
                 "full_largest": self.avatars.full_largest,
             },
-        })
+        });
+        // A heap-profiling build also says what the allocator counts live.
+        #[cfg(feature = "dhat-heap")]
+        {
+            let (live, most) = crate::heap_now();
+            report["heap_live"] = live.into();
+            report["heap_max"] = most.into();
+        }
+        report
     }
 }
 
