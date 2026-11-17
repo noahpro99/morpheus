@@ -389,7 +389,7 @@ fn friends_row(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             })
         })
         .on_click(cx.listener(|this, _, _, cx| this.open_friends(cx)))
-        .child(div().w(px(32.0)).flex_none().flex().items_center().child(
+        .child(div().w(px(32.0)).flex_none().flex().items_center().justify_center().child(
             icon("users", 22.0).text_color(rgb(if selected {
                 theme::text()
             } else {
