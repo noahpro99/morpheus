@@ -270,6 +270,18 @@ impl Shell {
             if !self.modal_open(cx) && !self.inbox_open && self.escape_search(window, cx) {
                 return true;
             }
+            // Scrolled up, the thread's own "Jump to present" comes before closing it.
+            if let Some((_, panel)) = self.thread.clone()
+                && !self.modal_open(cx)
+                && !self.inbox_open
+                && !self.composer_busy(cx)
+            {
+                let (timeline, _) = panel.read(cx).timeline();
+                if timeline.read(cx).away_from_present() {
+                    timeline.update(cx, |timeline, cx| timeline.jump_to_present(cx));
+                    return true;
+                }
+            }
             // Escape in a voice channel with its chat side panel open: first
             // leave the message box, then close the chat panel, then (below)
             // un-focus a card.
@@ -287,6 +299,13 @@ impl Shell {
                 {
                     window.focus(&root);
                     cx.notify();
+                    return true;
+                }
+                // Scrolled up, the chat's "Jump to present" comes before closing it.
+                if let Some((_, timeline)) = self.timeline.clone()
+                    && timeline.read(cx).away_from_present()
+                {
+                    timeline.update(cx, |timeline, cx| timeline.jump_to_present(cx));
                     return true;
                 }
                 self.calls.voice_chat = false;

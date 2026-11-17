@@ -1448,6 +1448,7 @@ pub fn apply(rooms: &mut Vec<RoomSummary>, diff: VectorDiff<RoomSummary>) {
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.sidebar_shown = self.sidebar_width(window);
+        crate::timeline::THREAD_PANEL_OPEN.store(self.thread.is_some(), std::sync::atomic::Ordering::Relaxed);
         // The shake of "nothing there": an offset while it lasts.
         let shake = match self.shake_at {
             Some(at) if at.elapsed() < std::time::Duration::from_millis(crate::view_model::hotkeys::SHAKE_MS) => {

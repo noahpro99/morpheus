@@ -9,6 +9,9 @@
 //! element's state, so the whole list is never rebuilt, and each frame only
 //! builds the rows in or near the view.
 
+/// Whether a thread panel is open (set by the shell each frame).
+pub static THREAD_PANEL_OPEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 use std::{
     collections::{HashMap, HashSet},
     rc::Rc,
@@ -19,7 +22,7 @@ use std::{
 use gpui::{
     AnyElement, App, Context, EventEmitter, FontWeight, Image, IntoElement, ListAlignment,
     ListOffset, ListState, Pixels, Point, Render, Window, div, list, point, prelude::*, px,
-    relative, rgb,
+    relative, rgb, rgba,
 };
 use morpheus_core::{
     MediaRef, Message, MessageId, MessageKind, OpenTimeline, OwnedEventId, OwnedRoomId,
@@ -1624,6 +1627,10 @@ impl Render for TimelineView {
                     .text(error.clone()),
             );
         }
+        // Escape does this jump where nothing nearer has the key: the main
+        // timeline's pill shows the key cap unless a thread panel (whose own pill
+        // it is) is open.
+        let show_key = self.thread_root.is_some() || !THREAD_PANEL_OPEN.load(std::sync::atomic::Ordering::Relaxed);
         if away {
             timeline = timeline.child(
                 div()
@@ -1646,10 +1653,27 @@ impl Render for TimelineView {
                             .cursor_pointer()
                             .hover(|s| s.bg(rgb(theme::accent())))
                             .on_click(cx.listener(|this, _, _, cx| this.jump_to_present(cx)))
+                            .flex()
+                            .items_center()
+                            .gap(px(8.0))
                             .child("Jump to present ↓")
+                            .children(show_key.then(|| {
+                                // The shortcut, as a small key cap.
+                                div()
+                                    .px(px(5.0))
+                                    .rounded(px(theme::RADIUS_SM))
+                                    .border_1()
+                                    .border_color(rgba(theme::edge()))
+                                    .bg(rgba(theme::bg_hover()))
+                                    .text_size(px(0.7 * theme::REM))
+                                    .font_weight(FontWeight::BOLD)
+                                    .child("Esc")
+                                    .e2e("kbd", "key-cap")
+                                    .text("Esc")
+                            }))
                             .e2e("button", "jump-to-bottom")
-                            .attr("title", "Jump to the newest message")
-                            .text("Jump to present ↓"),
+                            .attr("title", "Jump to the newest message (Esc)")
+                            .text(if show_key { "Jump to present ↓ Esc" } else { "Jump to present ↓" }),
                     ),
             );
         }
