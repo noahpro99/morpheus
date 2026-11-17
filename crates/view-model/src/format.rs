@@ -121,7 +121,7 @@ pub fn full_time(timestamp_ms: u64) -> String {
     full_time_in(timestamp_ms, &TimeZone::system())
 }
 
-/// A date divider's label: "Today", "Yesterday", else `YYYY-MM-DD`.
+/// A date divider's label: "Today", "Yesterday", else "Nov 8" or "Nov 8, 2025".
 pub fn day_label(timestamp_ms: u64, now_ms: u64) -> String {
     day_label_in(timestamp_ms, now_ms, &TimeZone::system())
 }
@@ -130,6 +130,20 @@ const MINUTE_MS: u64 = 60_000;
 const HOUR_MS: u64 = 3_600_000;
 /// Relative times ("3 hr ago") are used up to this age.
 const RELATIVE_LIMIT_MS: u64 = 6 * HOUR_MS;
+
+/// A day as people say it: "Today", "Yesterday", else "Nov 8" (this year) or
+/// "Nov 8, 2025": a message's time and the date dividers share it.
+fn day_phrase(at: &jiff::Zoned, now: &jiff::Zoned) -> String {
+    if at.date() == now.date() {
+        "Today".to_owned()
+    } else if now.date().yesterday().is_ok_and(|y| y == at.date()) {
+        "Yesterday".to_owned()
+    } else if at.year() == now.year() {
+        at.strftime("%b %-d").to_string()
+    } else {
+        at.strftime("%b %-d, %Y").to_string()
+    }
+}
 
 pub(crate) fn message_time_in(timestamp_ms: u64, now_ms: u64, zone: &TimeZone) -> String {
     let age = now_ms.saturating_sub(timestamp_ms);
@@ -146,16 +160,7 @@ pub(crate) fn message_time_in(timestamp_ms: u64, now_ms: u64, zone: &TimeZone) -
         return String::new();
     };
     let clock = at.strftime("%H:%M");
-    let day = if at.date() == now.date() {
-        "Today".to_owned()
-    } else if now.date().yesterday().is_ok_and(|y| y == at.date()) {
-        "Yesterday".to_owned()
-    } else if at.year() == now.year() {
-        at.strftime("%b %-d").to_string()
-    } else {
-        at.strftime("%b %-d, %Y").to_string()
-    };
-    format!("{day} at {clock}")
+    format!("{} at {clock}", day_phrase(&at, &now))
 }
 
 pub(crate) fn full_time_in(timestamp_ms: u64, zone: &TimeZone) -> String {
@@ -168,13 +173,7 @@ pub(crate) fn day_label_in(timestamp_ms: u64, now_ms: u64, zone: &TimeZone) -> S
     let (Some(at), Some(now)) = (zoned(timestamp_ms, zone), zoned(now_ms, zone)) else {
         return String::new();
     };
-    if at.date() == now.date() {
-        "Today".into()
-    } else if now.date().yesterday().is_ok_and(|y| y == at.date()) {
-        "Yesterday".into()
-    } else {
-        calendar_date_in(timestamp_ms, zone)
-    }
+    day_phrase(&at, &now)
 }
 
 #[cfg(test)]
@@ -262,6 +261,10 @@ mod relative_tests {
         let label = |then| day_label_in(then, now(), UTC);
         assert_eq!(label(ms(2026, 3, 10, 0, 1, 0)), "Today");
         assert_eq!(label(ms(2026, 3, 9, 23, 0, 0)), "Yesterday");
-        assert_eq!(label(ms(2026, 3, 8, 12, 0, 0)), "2026-03-08");
+        assert_eq!(label(ms(2026, 3, 8, 12, 0, 0)), "Mar 8");
+        assert_eq!(label(ms(2026, 1, 1, 12, 0, 0)), "Jan 1");
+        assert_eq!(label(ms(2025, 11, 8, 12, 0, 0)), "Nov 8, 2025");
+        // The same wording as a message's time, minus "at 12:00".
+        assert_eq!(message_time_in(ms(2025, 11, 8, 12, 0, 0), now(), UTC), "Nov 8, 2025 at 12:00");
     }
 }
