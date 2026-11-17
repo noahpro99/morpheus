@@ -1069,11 +1069,14 @@ pub fn hardware_encoder() -> Option<String> {
         .clone()
 }
 
-/// The video encoders, tried without a call (`MORPHEUS_VIDEO_ENCODER_SELF_TEST`;
-/// windows.yml, or by hand on a laptop): the hardware encoder libwebrtc
-/// found and, on Windows, 30 pictures through the GPU's Media Foundation
-/// encoder and through Microsoft's software one (which CI machines have).
-/// One line each; a failed encode says "error:".
+/// The video encoders and decoders, tried without a call
+/// (`MORPHEUS_VIDEO_ENCODER_SELF_TEST`; windows.yml, or by hand on a
+/// laptop): the hardware encoder libwebrtc found and, on Windows, 30
+/// pictures through the GPU's Media Foundation encoder and through
+/// Microsoft's software one (which CI machines have); then the GPU decoder
+/// found, and 30 pictures from the software encoder decoded by the Media
+/// Foundation decoder on the GPU and in software. One line each; a failed
+/// encode or decode says "error:".
 pub fn video_encoder_self_test() -> String {
     #[cfg_attr(not(target_os = "windows"), allow(unused_mut))]
     let mut lines = vec![format!(
@@ -1082,7 +1085,10 @@ pub fn video_encoder_self_test() -> String {
     )];
     #[cfg(target_os = "windows")]
     {
-        use livekit::webrtc::native::media_foundation_h264_self_test;
+        use livekit::webrtc::native::{
+            media_foundation_h264_decode_self_test, media_foundation_h264_decoder_name,
+            media_foundation_h264_self_test,
+        };
         lines.push(format!(
             "media foundation hardware: {}",
             media_foundation_h264_self_test(false, 30)
@@ -1090,6 +1096,19 @@ pub fn video_encoder_self_test() -> String {
         lines.push(format!(
             "media foundation software: {}",
             media_foundation_h264_self_test(true, 30)
+        ));
+        let gpu = media_foundation_h264_decoder_name();
+        lines.push(format!(
+            "hardware decoder: {}",
+            if gpu.is_empty() { "none".to_owned() } else { format!("Media Foundation on {gpu}") }
+        ));
+        lines.push(format!(
+            "media foundation decode hardware: {}",
+            media_foundation_h264_decode_self_test(true, 30)
+        ));
+        lines.push(format!(
+            "media foundation decode software: {}",
+            media_foundation_h264_decode_self_test(false, 30)
         ));
     }
     lines.join("\n") + "\n"

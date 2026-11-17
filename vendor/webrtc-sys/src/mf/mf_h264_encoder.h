@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "api/environment/environment.h"
+#include "api/video/encoded_image.h"
 #include "api/video_codecs/sdp_video_format.h"
 #include "api/video_codecs/video_encoder.h"
 #include "api/video_codecs/video_encoder_factory.h"
@@ -43,5 +44,17 @@ class MediaFoundationVideoEncoderFactory : public webrtc::VideoEncoderFactory {
 // `software`, Microsoft's software one, which CI machines have) and says
 // how it went: "ok: <name>: ..." or "unavailable: ..." or "error: ...".
 std::string MediaFoundationH264SelfTest(bool software, int frames);
+
+// The same with any size, keeping the encoded pictures in `out` (when not
+// null) for the decoder's self-test. Picture `i` is a moving gradient: Y at
+// (x, y) is MediaFoundationTestLuma(x, y, i), U and V 128, its RTP time
+// MediaFoundationTestRtpTimestamp(i).
+std::string MediaFoundationH264Encode(bool software,
+                                      int width,
+                                      int height,
+                                      int frames,
+                                      std::vector<webrtc::EncodedImage>* out);
+uint8_t MediaFoundationTestLuma(int x, int y, int picture);
+uint32_t MediaFoundationTestRtpTimestamp(int picture);
 
 }  // namespace livekit_ffi

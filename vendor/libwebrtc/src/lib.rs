@@ -72,6 +72,7 @@ pub mod native {
     // Morpheus patch: the Media Foundation encoder (Windows) and the
     // hardware decoding switch.
     pub use webrtc_sys::webrtc::ffi::{
+        media_foundation_h264_decode_self_test, media_foundation_h264_decoder_name,
         media_foundation_h264_encoder_name, media_foundation_h264_self_test,
         set_hardware_video_decoding,
     };

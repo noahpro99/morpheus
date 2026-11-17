@@ -193,7 +193,12 @@ pub struct PublishedVideo {
 /// implementation name its stats give ("NVIDIA H264 Encoder", "VAAPI H264
 /// Encoder", "SimulcastEncoderAdapter (NVIDIA H264 Encoder, …)", "libvpx",
 /// "OpenH264", "FFmpeg", …).
+/// A wrapper that fell back to software names the one in use first
+/// ("FFmpeg (fallback from: Media Foundation H264 Decoder (…))").
 pub fn codec_backend(implementation: &str, encoder: bool) -> &'static str {
+    let implementation = implementation
+        .split_once(" (fallback from")
+        .map_or(implementation, |(in_use, _)| in_use);
     if implementation.contains("NVIDIA") {
         if encoder { "nvenc" } else { "nvdec" }
     } else if implementation.contains("VAAPI") {
@@ -324,6 +329,26 @@ mod tests {
         assert_eq!(
             codec_backend("Media Foundation H264 Encoder (Intel Quick Sync Video H.264 Encoder MFT)", true),
             "mediafoundation"
+        );
+        assert_eq!(
+            codec_backend("Media Foundation H264 Decoder (D3D11 on Intel(R) UHD Graphics 620)", false),
+            "mediafoundation"
+        );
+    }
+
+    #[test]
+    fn a_hardware_codec_that_fell_back_reads_as_software() {
+        // libwebrtc's fallback wrappers name the one in use first.
+        assert_eq!(
+            codec_backend(
+                "FFmpeg (fallback from: Media Foundation H264 Decoder (D3D11 on Intel(R) UHD Graphics 620))",
+                false
+            ),
+            "software"
+        );
+        assert_eq!(
+            codec_backend("OpenH264 (fallback from: NVIDIA H264 Encoder)", true),
+            "software"
         );
     }
 

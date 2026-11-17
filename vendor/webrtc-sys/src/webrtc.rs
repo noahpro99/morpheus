@@ -77,6 +77,8 @@ pub mod ffi {
         // hardware decoding switch.
         fn media_foundation_h264_encoder_name() -> String;
         fn media_foundation_h264_self_test(software: bool, frames: u32) -> String;
+        fn media_foundation_h264_decoder_name() -> String;
+        fn media_foundation_h264_decode_self_test(gpu: bool, frames: u32) -> String;
         fn set_hardware_video_decoding(on: bool);
         fn new_log_sink(fnc: fn(String, LoggingSeverity)) -> UniquePtr<LogSink>;
     }

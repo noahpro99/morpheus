@@ -43,6 +43,11 @@
 #include "nvidia/nvidia_decoder_factory.h"
 #endif
 
+// Morpheus patch: Windows' hardware H.264 decoding (Media Foundation).
+#if defined(USE_MEDIA_FOUNDATION_VIDEO_CODEC)
+#include "mf/mf_h264_decoder.h"
+#endif
+
 namespace livekit_ffi {
 
 namespace {
@@ -91,6 +96,13 @@ VideoDecoderFactory::VideoDecoderFactory()
 #if defined(USE_NVIDIA_VIDEO_CODEC)
   if (webrtc::NvidiaVideoDecoderFactory::IsSupported()) {
     factories_.push_back(std::make_unique<webrtc::NvidiaVideoDecoderFactory>());
+  }
+#endif
+
+#if defined(USE_MEDIA_FOUNDATION_VIDEO_CODEC)
+  if (MediaFoundationVideoDecoderFactory::IsSupported()) {
+    factories_.push_back(std::make_unique<MediaFoundationVideoDecoderFactory>(
+        internal_h264_decoder_works_));
   }
 #endif
 
@@ -205,6 +217,32 @@ std::unique_ptr<webrtc::VideoDecoder> VideoDecoderFactory::Create(
 
 void set_hardware_video_decoding(bool on) {
   g_hardware_decoding.store(on);
+}
+
+}  // namespace livekit_ffi
+
+namespace livekit_ffi {
+
+// Morpheus patch: the Media Foundation decoder's GPU, and its self-test
+// (Windows; elsewhere there is none).
+rust::String media_foundation_h264_decoder_name() {
+#if defined(USE_MEDIA_FOUNDATION_VIDEO_CODEC)
+  return rust::String(MediaFoundationVideoDecoderFactory::DecoderName());
+#else
+  return rust::String();
+#endif
+}
+
+rust::String media_foundation_h264_decode_self_test(bool gpu,
+                                                    uint32_t frames) {
+#if defined(USE_MEDIA_FOUNDATION_VIDEO_CODEC)
+  return rust::String(
+      MediaFoundationH264DecodeSelfTest(gpu, static_cast<int>(frames)));
+#else
+  (void)gpu;
+  (void)frames;
+  return rust::String("unavailable: not Windows");
+#endif
 }
 
 }  // namespace livekit_ffi

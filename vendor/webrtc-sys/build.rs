@@ -171,7 +171,9 @@ fn main() {
                 //.file("src/vaapi/vaapi_encoder_factory.cpp")
                 //.file("src/vaapi/h264_encoder_impl.cpp")
                 // Morpheus patch: hardware H.264 through Media Foundation.
+                .file("src/mf/mf_common.cpp")
                 .file("src/mf/mf_h264_encoder.cpp")
+                .file("src/mf/mf_h264_decoder.cpp")
                 .flag("-DUSE_MEDIA_FOUNDATION_VIDEO_CODEC=1")
                 .flag("/std:c++20")
                 //.flag("/wd4819")
@@ -414,6 +416,11 @@ fn main() {
     builder.warnings(false).compile("webrtcsys-cxx");
 
     for entry in glob::glob("./src/**/*.cpp").unwrap() {
+        println!("cargo:rerun-if-changed={}", entry.unwrap().display());
+    }
+
+    // Morpheus patch: headers beside the sources (src/mf) too.
+    for entry in glob::glob("./src/**/*.h").unwrap() {
         println!("cargo:rerun-if-changed={}", entry.unwrap().display());
     }
 

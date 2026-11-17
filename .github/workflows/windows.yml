@@ -95,12 +95,15 @@ jobs:
           ! grep -q "^matrix-sdk: unknown" "$out"
           grep -q "^Hardware video: " "$out"
 
-      # Hardware video (#102): which encoder libwebrtc found, and 30 pictures
-      # through Media Foundation's H.264 encoders. The runner has no GPU, so
-      # the hardware one is "unavailable"; Microsoft's software MFT runs the
-      # same encoder class (sync rather than async). An encode that fails
-      # says "error:" and exits 1.
-      - name: Video encoders
+      # Hardware video (#102): which encoder and decoder libwebrtc found, 30
+      # pictures through Media Foundation's H.264 encoders, and the software
+      # encoder's pictures through the Media Foundation decoder. The runner
+      # has no GPU, so the hardware ones are "unavailable"; Microsoft's
+      # software MFTs run the same classes (the encoder sync rather than
+      # async, the decoder without a Direct3D device). The decode checks
+      # count, size and pixels. A failed encode or decode says "error:" and
+      # exits 1.
+      - name: Video encoders and decoders
         run: |
           out="$RUNNER_TEMP/video-encoder-self-test.txt"
           code=0
@@ -111,6 +114,9 @@ jobs:
           grep -q "^hardware encoder: " "$out"
           grep -q "^media foundation hardware: " "$out"
           grep -Eq "^media foundation software: (ok|unavailable): " "$out"
+          grep -q "^hardware decoder: " "$out"
+          grep -Eq "^media foundation decode hardware: (ok|unavailable): " "$out"
+          grep -q "^media foundation decode software: ok: " "$out"
 
       - name: Package
         run: echo "RELEASE_ZIP=$(scripts/package-windows.sh | tail -1)" >> "$GITHUB_ENV"

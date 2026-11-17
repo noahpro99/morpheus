@@ -48,6 +48,8 @@
 #include <mftransform.h>
 #include <wrl/client.h>
 
+#include "mf_common.h"
+
 using Microsoft::WRL::ComPtr;
 
 namespace livekit_ffi {
@@ -64,133 +66,20 @@ constexpr int kMaxStalls = 15;
 // for again.
 constexpr int kKeyWait = 10;
 
-// mfplat.dll's functions, loaded at run time.
-struct MfApi {
-  decltype(&::MFStartup) startup = nullptr;
-  decltype(&::MFShutdown) shutdown = nullptr;
-  decltype(&::MFTEnumEx) enum_ex = nullptr;
-  decltype(&::MFCreateMediaType) create_media_type = nullptr;
-  decltype(&::MFCreateSample) create_sample = nullptr;
-  decltype(&::MFCreateMemoryBuffer) create_memory_buffer = nullptr;
-};
-
-const MfApi* Mf() {
-  static const MfApi* api = []() -> const MfApi* {
-    HMODULE dll = LoadLibraryExW(L"mfplat.dll", nullptr,
-                                 LOAD_LIBRARY_SEARCH_SYSTEM32);
-    if (!dll) {
-      RTC_LOG(LS_INFO) << "Media Foundation: mfplat.dll is not here";
-      return nullptr;
-    }
-    auto* found = new MfApi();
-    found->startup = reinterpret_cast<decltype(&::MFStartup)>(
-        GetProcAddress(dll, "MFStartup"));
-    found->shutdown = reinterpret_cast<decltype(&::MFShutdown)>(
-        GetProcAddress(dll, "MFShutdown"));
-    found->enum_ex = reinterpret_cast<decltype(&::MFTEnumEx)>(
-        GetProcAddress(dll, "MFTEnumEx"));
-    found->create_media_type = reinterpret_cast<decltype(&::MFCreateMediaType)>(
-        GetProcAddress(dll, "MFCreateMediaType"));
-    found->create_sample = reinterpret_cast<decltype(&::MFCreateSample)>(
-        GetProcAddress(dll, "MFCreateSample"));
-    found->create_memory_buffer =
-        reinterpret_cast<decltype(&::MFCreateMemoryBuffer)>(
-            GetProcAddress(dll, "MFCreateMemoryBuffer"));
-    if (!found->startup || !found->shutdown || !found->enum_ex ||
-        !found->create_media_type || !found->create_sample ||
-        !found->create_memory_buffer) {
-      RTC_LOG(LS_WARNING) << "Media Foundation: mfplat.dll lacks a function";
-      delete found;
-      return nullptr;
-    }
-    return found;
-  }();
-  return api;
-}
-
-// COM on this thread for as long as the thread lives (MFTs are free
-// threaded; a thread already in another apartment keeps it).
-void EnsureCom() {
-  struct Com {
-    HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-    ~Com() {
-      if (SUCCEEDED(hr))
-        CoUninitialize();
-    }
-  };
-  static thread_local Com com;
-  (void)com;
-}
-
-// MFStartup / MFShutdown, balanced.
-class MfStarted {
- public:
-  MfStarted() {
-    const MfApi* mf = Mf();
-    ok_ = mf && SUCCEEDED(mf->startup(MF_VERSION, MFSTARTUP_LITE));
-  }
-  ~MfStarted() {
-    if (ok_)
-      Mf()->shutdown();
-  }
-  bool ok() const { return ok_; }
-
- private:
-  bool ok_ = false;
-};
-
-std::string Utf8(const wchar_t* text) {
-  if (!text)
-    return {};
-  int n = WideCharToMultiByte(CP_UTF8, 0, text, -1, nullptr, 0, nullptr,
-                              nullptr);
-  if (n <= 1)
-    return {};
-  std::string out(static_cast<size_t>(n - 1), '\0');
-  WideCharToMultiByte(CP_UTF8, 0, text, -1, out.data(), n, nullptr, nullptr);
-  return out;
-}
-
-std::string Hex(HRESULT hr) {
-  char text[16];
-  snprintf(text, sizeof(text), "0x%08lx", static_cast<unsigned long>(hr));
-  return text;
-}
-
-std::string FriendlyName(IMFActivate* activate) {
-  wchar_t* name = nullptr;
-  UINT32 length = 0;
-  if (FAILED(activate->GetAllocatedString(MFT_FRIENDLY_NAME_Attribute, &name,
-                                          &length)))
-    return "unnamed MFT";
-  std::string out = Utf8(name);
-  CoTaskMemFree(name);
-  return out;
-}
+using mf::EnsureCom;
+using mf::FriendlyName;
+using mf::Hex;
+using mf::Mf;
+using mf::MfApi;
+using mf::MfStarted;
 
 // The encoder MFTs taking NV12 and giving H.264: the GPU's (hardware) or
 // the synchronous software ones.
 std::vector<ComPtr<IMFActivate>> EncoderMfts(bool hardware) {
-  std::vector<ComPtr<IMFActivate>> out;
-  const MfApi* mf = Mf();
-  if (!mf)
-    return out;
-  MFT_REGISTER_TYPE_INFO input = {MFMediaType_Video, MFVideoFormat_NV12};
-  MFT_REGISTER_TYPE_INFO output = {MFMediaType_Video, MFVideoFormat_H264};
-  UINT32 flags = MFT_ENUM_FLAG_SORTANDFILTER |
-                 (hardware ? MFT_ENUM_FLAG_HARDWARE : MFT_ENUM_FLAG_SYNCMFT);
-  IMFActivate** found = nullptr;
-  UINT32 count = 0;
-  HRESULT hr = mf->enum_ex(MFT_CATEGORY_VIDEO_ENCODER, flags, &input, &output,
-                           &found, &count);
-  if (FAILED(hr) || !found)
-    return out;
-  for (UINT32 i = 0; i < count; ++i) {
-    out.emplace_back(found[i]);
-    found[i]->Release();
-  }
-  CoTaskMemFree(found);
-  return out;
+  return mf::FindMfts(
+      MFT_CATEGORY_VIDEO_ENCODER, MFVideoFormat_NV12, MFVideoFormat_H264,
+      MFT_ENUM_FLAG_SORTANDFILTER |
+          (hardware ? MFT_ENUM_FLAG_HARDWARE : MFT_ENUM_FLAG_SYNCMFT));
 }
 
 void SetUint(ICodecAPI* api, const GUID& what, ULONG value) {
@@ -1115,17 +1004,37 @@ std::unique_ptr<webrtc::VideoEncoder> MediaFoundationVideoEncoderFactory::Create
 }
 
 namespace {
-class CountingCallback : public webrtc::EncodedImageCallback {
+// Keeps what the encoder gives (the self-tests).
+class KeepingCallback : public webrtc::EncodedImageCallback {
  public:
-  Result OnEncodedImage(const webrtc::EncodedImage&,
+  explicit KeepingCallback(std::vector<webrtc::EncodedImage>* out)
+      : out_(out) {}
+  Result OnEncodedImage(const webrtc::EncodedImage& image,
                         const webrtc::CodecSpecificInfo*) override {
+    if (out_)
+      out_->push_back(image);
     return Result(Result::OK);
   }
   void OnFrameDropped(uint32_t, int, bool) override {}
+
+ private:
+  std::vector<webrtc::EncodedImage>* out_;
 };
 }  // namespace
 
-std::string MediaFoundationH264SelfTest(bool software, int frames) {
+uint8_t MediaFoundationTestLuma(int x, int y, int picture) {
+  return static_cast<uint8_t>(x + y + picture * 4);
+}
+
+uint32_t MediaFoundationTestRtpTimestamp(int picture) {
+  return 1000 + picture * 3000;
+}
+
+std::string MediaFoundationH264Encode(bool software,
+                                      int width,
+                                      int height,
+                                      int frames,
+                                      std::vector<webrtc::EncodedImage>* out) {
   EnsureCom();
   if (!Mf())
     return "unavailable: no mfplat.dll (Media Foundation)";
@@ -1135,12 +1044,12 @@ std::string MediaFoundationH264SelfTest(bool software, int frames) {
                                          {"level-asymmetry-allowed", "1"},
                                          {"packetization-mode", "1"}});
   MediaFoundationH264Encoder encoder(format, software);
-  CountingCallback callback;
+  KeepingCallback callback(out);
   encoder.RegisterEncodeCompleteCallback(&callback);
   webrtc::VideoCodec codec;
   codec.codecType = webrtc::kVideoCodecH264;
-  codec.width = 640;
-  codec.height = 360;
+  codec.width = width;
+  codec.height = height;
   codec.maxFramerate = 30;
   codec.startBitrate = 800;
   codec.maxBitrate = 1500;
@@ -1155,19 +1064,22 @@ std::string MediaFoundationH264SelfTest(bool software, int frames) {
     return "error: InitEncode " + std::to_string(init) + ": " + error;
   }
   for (int i = 0; i < frames; ++i) {
-    auto buffer = webrtc::I420Buffer::Create(640, 360);
+    auto buffer = webrtc::I420Buffer::Create(width, height);
     // A moving gradient, so pictures differ.
-    for (int y = 0; y < 360; ++y)
-      for (int x = 0; x < 640; ++x)
+    for (int y = 0; y < height; ++y)
+      for (int x = 0; x < width; ++x)
         buffer->MutableDataY()[y * buffer->StrideY() + x] =
-            static_cast<uint8_t>(x + y + i * 4);
-    memset(buffer->MutableDataU(), 128, buffer->StrideU() * 180);
-    memset(buffer->MutableDataV(), 128, buffer->StrideV() * 180);
-    webrtc::VideoFrame frame = webrtc::VideoFrame::Builder()
-                                   .set_video_frame_buffer(buffer)
-                                   .set_rtp_timestamp(1000 + i * 3000)
-                                   .set_timestamp_us(1000000 + i * 33333)
-                                   .build();
+            MediaFoundationTestLuma(x, y, i);
+    memset(buffer->MutableDataU(), 128,
+           buffer->StrideU() * buffer->ChromaHeight());
+    memset(buffer->MutableDataV(), 128,
+           buffer->StrideV() * buffer->ChromaHeight());
+    webrtc::VideoFrame frame =
+        webrtc::VideoFrame::Builder()
+            .set_video_frame_buffer(buffer)
+            .set_rtp_timestamp(MediaFoundationTestRtpTimestamp(i))
+            .set_timestamp_us(1000000 + i * 33333)
+            .build();
     std::vector<webrtc::VideoFrameType> types = {
         i == 0 ? webrtc::VideoFrameType::kVideoFrameKey
                : webrtc::VideoFrameType::kVideoFrameDelta};
@@ -1187,6 +1099,10 @@ std::string MediaFoundationH264SelfTest(bool software, int frames) {
       encoder.keyframes() == 0)
     return "error: " + report;
   return "ok: " + report;
+}
+
+std::string MediaFoundationH264SelfTest(bool software, int frames) {
+  return MediaFoundationH264Encode(software, 640, 360, frames, nullptr);
 }
 
 }  // namespace livekit_ffi

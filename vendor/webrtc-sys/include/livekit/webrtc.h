@@ -121,6 +121,8 @@ rust::Vec<VideoEncoderBackend> video_encoder_backend_list();
 // elsewhere), and whether decoders may use the GPU (Settings' switch).
 rust::String media_foundation_h264_encoder_name();
 rust::String media_foundation_h264_self_test(bool software, uint32_t frames);
+rust::String media_foundation_h264_decoder_name();
+rust::String media_foundation_h264_decode_self_test(bool gpu, uint32_t frames);
 void set_hardware_video_decoding(bool on);
 
 }  // namespace livekit_ffi
