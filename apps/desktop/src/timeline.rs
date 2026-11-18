@@ -79,8 +79,6 @@ pub enum TimelineEvent {
     Opened(TimelineHandle),
     /// "Reply" on a message.
     Reply(Message),
-    /// "Edit" on a message.
-    Edit(Message),
     /// Your newest message that can be edited changed.
     LastOwn(Option<Message>),
     /// A button of the key banner: open Settings there.
@@ -129,6 +127,8 @@ pub struct TimelineView {
     /// where the last step left the list (if the list is elsewhere, the
     /// reader scrolled and it stops).
     paging: Option<(f32, f32)>,
+    /// The message being edited in place.
+    edit: Option<InPlaceEdit>,
     load_error: Option<String>,
     /// The message the NEW divider sits above, fixed once found.
     new_marker: Option<String>,
@@ -276,6 +276,7 @@ impl TimelineView {
             was_away: false,
             last_update: std::time::Instant::now(),
             paging: None,
+            edit: None,
             load_error: None,
             new_marker: None,
             caught_up: false,
@@ -1071,6 +1072,7 @@ impl TimelineView {
             after_divider: ix > 0 && matches!(self.rows.get(ix - 1), Some(Row::Date(..))),
             ..Pictures::default()
         };
+        *pictures.editor.borrow_mut() = self.edit_el(&row.message.unique_id);
         if show_header {
             pictures.nickname = self.nicknames.get(row.message.sender.as_str()).cloned();
         }
@@ -1235,7 +1237,7 @@ impl TimelineView {
         };
         match action {
             RowAction::Reply => cx.emit(TimelineEvent::Reply(message)),
-            RowAction::Edit => cx.emit(TimelineEvent::Edit(message)),
+            RowAction::Edit => self.start_edit(message, cx),
             RowAction::Thread => cx.emit(TimelineEvent::Thread(Box::new(message))),
             RowAction::React(key) => self.react(message.id, key.to_owned(), cx),
             RowAction::Context(at) => cx.emit(TimelineEvent::Menu(Box::new(message), at)),
@@ -1554,6 +1556,10 @@ impl TimelineView {
 impl Render for TimelineView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.check_history(cx);
+        if let Some(edit) = self.edit.as_mut().filter(|e| e.focus) {
+            edit.focus = false;
+            edit.input.read(cx).focus(window);
+        }
         let now = metrics(&self.list);
         // Rows just spliced in are unmeasured until painted and read as no
         // range at all: that is not a jump to the newest message.
@@ -2258,5 +2264,152 @@ mod widget_tests {
             "{painted} rows painted of 2000"
         );
         assert!(texts(".message .body").contains(&"message 1999".to_owned()));
+    }
+}
+
+/// A message being edited where it is in the list: its text is a box.
+struct InPlaceEdit {
+    message: Message,
+    original: String,
+    input: gpui::Entity<crate::input::TextInput>,
+    /// The box takes the caret on the next frame.
+    focus: bool,
+}
+
+impl TimelineView {
+    /// "Edit" on a message (the bin's neighbour, the menu, Up in an empty message
+    /// box): the message's text becomes a box in the list, holding its text.
+    pub fn start_edit(&mut self, message: Message, cx: &mut Context<Self>) {
+        self.cancel_edit(cx);
+        let original = message.kind.plain_body().unwrap_or_default().to_owned();
+        let input = cx.new(|cx| {
+            crate::input::TextInput::new("message-edit", "", false, &original, cx)
+                .multiline(10)
+                .spellcheck()
+                .with_class("message-edit-input")
+        });
+        cx.subscribe(&input, |this, _, _: &crate::input::Submit, cx| {
+            this.save_edit(cx)
+        })
+        .detach();
+        cx.subscribe(&input, |this, _, _: &crate::input::Changed, cx| {
+            // The box grew or shrank with its lines: the row is measured again.
+            this.remeasure_edit(cx)
+        })
+        .detach();
+        cx.subscribe(&input, |this, _, nav: &crate::input::Nav, cx| {
+            if nav.0 == crate::input::NavKey::Escape {
+                this.cancel_edit(cx);
+            }
+        })
+        .detach();
+        let unique_id = message.unique_id.clone();
+        self.edit = Some(InPlaceEdit {
+            message,
+            original,
+            input,
+            focus: true,
+        });
+        self.remeasure(&unique_id);
+        if let Some(ix) = self.row_of(&unique_id) {
+            self.list.scroll_to_reveal_item(ix);
+        }
+        cx.notify();
+    }
+
+    /// Whether a message is being edited here.
+    pub fn is_editing(&self) -> bool {
+        self.edit.is_some()
+    }
+
+    fn row_of(&self, unique_id: &str) -> Option<usize> {
+        self.rows.iter().position(
+            |row| matches!(row, Row::Message { row, .. } if row.message.unique_id == unique_id),
+        )
+    }
+
+    fn remeasure(&mut self, unique_id: &str) {
+        if let Some(ix) = self.row_of(unique_id) {
+            self.list.splice(ix..ix + 1, 1);
+        }
+    }
+
+    fn remeasure_edit(&mut self, cx: &mut Context<Self>) {
+        if let Some(unique_id) = self.edit.as_ref().map(|e| e.message.unique_id.clone()) {
+            self.remeasure(&unique_id);
+            cx.notify();
+        }
+    }
+
+    /// Esc: the message is as it was.
+    pub fn cancel_edit(&mut self, cx: &mut Context<Self>) {
+        if let Some(edit) = self.edit.take() {
+            self.remeasure(&edit.message.unique_id);
+            cx.notify();
+        }
+    }
+
+    /// Enter: the new text is saved; unchanged is just closed, and empty asks
+    /// whether to delete the message.
+    fn save_edit(&mut self, cx: &mut Context<Self>) {
+        let Some(edit) = self.edit.take() else {
+            return;
+        };
+        self.remeasure(&edit.message.unique_id);
+        cx.notify();
+        let text = edit.input.read(cx).value().trim().to_owned();
+        if text.is_empty() {
+            cx.emit(TimelineEvent::Delete(Box::new(edit.message), false));
+            return;
+        }
+        if text == edit.original.trim() {
+            return;
+        }
+        let Some(handle) = self.handle.clone() else {
+            return;
+        };
+        let saving = handle.edit(edit.message.id.clone(), text);
+        cx.spawn(async move |this, cx| {
+            if let Err(err) = saving.await {
+                this.update(cx, |_, cx| {
+                    cx.emit(TimelineEvent::Failed("edit", err.to_string()))
+                })
+                .ok();
+            }
+        })
+        .detach();
+    }
+
+    /// The box and its hint, in place of the message's text.
+    fn edit_el(&self, unique_id: &str) -> Option<AnyElement> {
+        let edit = self.edit.as_ref().filter(|e| e.message.unique_id == unique_id)?;
+        let hint = "escape to cancel \u{2022} enter to save";
+        Some(
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(4.0))
+                .py(px(4.0))
+                .child(edit.input.clone())
+                .child(
+                    div()
+                        .text_size(px(0.75 * theme::REM))
+                        .text_color(rgb(theme::text_faint()))
+                        .child(hint)
+                        .e2e("div", "edit-hint")
+                        .text(hint),
+                )
+                .e2e("div", "message-edit")
+                .into_any_element(),
+        )
+    }
+}
+
+impl TimelineView {
+    /// Whether the in-place edit box has the caret (it takes Escape, to cancel).
+    pub fn edit_focused(&self, window: &Window, cx: &App) -> bool {
+        self.edit
+            .as_ref()
+            .is_some_and(|e| e.input.read(cx).is_focused(window))
     }
 }

@@ -69,6 +69,13 @@ impl ThreadPanel {
             Composer::new(session.clone(), room_id.clone(), String::new(), false, cx)
                 .with_placeholder("Reply in thread", cx)
         });
+        {
+            let timeline = timeline.clone();
+            cx.subscribe(&composer, move |_, _, event: &crate::composer::EditLast, cx| {
+                timeline.update(cx, |t, cx| t.start_edit(event.0.clone(), cx))
+            })
+            .detach();
+        }
         let target = composer.clone();
         cx.subscribe(
             &timeline,
@@ -76,7 +83,6 @@ impl ThreadPanel {
                 target.update(cx, |composer, cx| match event {
                     TimelineEvent::Opened(handle) => composer.opened(handle.clone(), cx),
                     TimelineEvent::Reply(message) => composer.reply_to(message, cx),
-                    TimelineEvent::Edit(message) => composer.edit(message, cx),
                     TimelineEvent::LastOwn(message) => composer.set_last_own(message.clone()),
                     _ => {}
                 });

@@ -232,6 +232,11 @@ impl Shell {
         let key = keystroke.key.as_str();
         let ringing = !self.ringing(crate::call::now_ms()).is_empty();
         if key == "escape" && !m.shift && !m.control && !m.alt {
+            // A message edited in place takes Escape (to cancel the edit).
+            let editing = self.timeline.iter().map(|(_, t)| t.clone()).chain(self.thread.iter().map(|(_, p)| p.read(cx).timeline().0)).any(|t| t.read(cx).edit_focused(window, cx));
+            if editing {
+                return false;
+            }
             // Vim mode: a message box in insert or visual mode takes the key
             // (to go to normal mode); with none focused it lets go of the
             // selected message.

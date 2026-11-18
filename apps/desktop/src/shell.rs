@@ -1071,6 +1071,13 @@ impl Shell {
             timeline.update(cx, |t, cx| t.set_direct(is_dm, cx));
             let composer =
                 cx.new(|cx| Composer::new(self.session.clone(), room.clone(), name, is_dm, cx));
+            {
+                let timeline = timeline.clone();
+                cx.subscribe(&composer, move |_, _, event: &crate::composer::EditLast, cx| {
+                    timeline.update(cx, |t, cx| t.start_edit(event.0.clone(), cx))
+                })
+                .detach();
+            }
             let target = composer.clone();
             self.composer_link = Some(cx.subscribe(
                 &timeline,
@@ -1078,7 +1085,6 @@ impl Shell {
                     target.update(cx, |composer, cx| match event {
                         TimelineEvent::Opened(handle) => composer.opened(handle.clone(), cx),
                         TimelineEvent::Reply(message) => composer.reply_to(message, cx),
-                        TimelineEvent::Edit(message) => composer.edit(message, cx),
                         TimelineEvent::LastOwn(message) => composer.set_last_own(message.clone()),
                         TimelineEvent::OpenSettings(_)
                         | TimelineEvent::Menu(..)

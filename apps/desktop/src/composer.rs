@@ -42,6 +42,11 @@ struct Tile {
     src: String,
 }
 
+/// Up in the empty box: your newest message is to be edited (in place, in the list).
+pub struct EditLast(pub Message);
+
+impl gpui::EventEmitter<EditLast> for Composer {}
+
 pub struct Composer {
     room_id: OwnedRoomId,
     room_name: String,
@@ -415,7 +420,7 @@ impl Composer {
             NavKey::Up => {
                 // Up in an empty box edits your newest message.
                 if let Some(message) = self.last_own.clone() {
-                    self.edit(&message, cx);
+                    cx.emit(EditLast(message));
                 }
             }
             NavKey::Down | NavKey::Enter | NavKey::Tab => {}

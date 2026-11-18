@@ -44,6 +44,8 @@ pub struct Base {
 #[derive(Default)]
 pub struct Pictures {
     pub avatar: Option<Arc<Image>>,
+    /// A box in place of the message's text (it is being edited).
+    pub editor: std::cell::RefCell<Option<AnyElement>>,
     /// The sender has a picture that is still on its way: a skeleton circle
     /// holds its place, not their letter on the accent colour.
     pub avatar_waiting: bool,
@@ -1639,7 +1641,10 @@ pub fn message_el(
     if let Some(reply) = &m.in_reply_to {
         main = main.child(reply_quote(reply));
     }
-    main = main.child(body_el(row, &m.unique_id, pics, download, links, actions));
+    main = match pics.editor.borrow_mut().take() {
+        Some(editor) => main.child(editor),
+        None => main.child(body_el(row, &m.unique_id, pics, download, links, actions)),
+    };
     if let Some(card) = invite_embed(row, links) {
         main = main.child(card);
     }
