@@ -307,12 +307,12 @@ try {
     $iClose = [array]::IndexOf($codes, 20); $iMax = [array]::IndexOf($codes, 9); $iMin = [array]::IndexOf($codes, 8)
     if ($iClose -ge 0 -and $iMax -gt $iClose -and $iMin -gt $iMax) { Ok 'close, maximise and minimise at the right are the system''s caption buttons (snap layouts over maximise)' }
     else { Fail "the window buttons are not the caption's buttons, right to left ($order)" }
-    # Three buttons of about 30 logical px: their row's width says the hit
+    # Three buttons of 46 logical px (Windows' own caption size, reaching the corner): their row's width says the hit
     # test is in the window's own scale.
     if ($iMin -ge 0 -and $iMin + 1 -lt $seen.Count) {
         $buttonsWidth = $seen[$iMin + 1].Off
-        if ($buttonsWidth -gt 70 * $scale -and $buttonsWidth -lt 130 * $scale) { Ok "the buttons span $buttonsWidth px at $([int]($scale * 100))%: hit test and drawing agree on the scale" }
-        else { Fail "the buttons span $buttonsWidth px at $([int]($scale * 100))% (expected about $([int](96 * $scale)))" }
+        if ($buttonsWidth -gt 120 * $scale -and $buttonsWidth -lt 160 * $scale) { Ok "the buttons span $buttonsWidth px at $([int]($scale * 100))%: hit test and drawing agree on the scale" }
+        else { Fail "the buttons span $buttonsWidth px at $([int]($scale * 100))% (expected about $([int](138 * $scale)))" }
     }
     # The caption across the bar: left, middle, right of middle, and just
     # left of minimise.
