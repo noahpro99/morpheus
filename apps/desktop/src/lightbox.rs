@@ -255,6 +255,8 @@ impl Lightbox {
             .text_color(rgb(theme::OVERLAY_TEXT))
             .cursor_pointer()
             .child(glyph)
+            // The arrow sits outside the picture box: its press must not reach the backdrop.
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.go(delta, cx)))
             .e2e("button", &format!("lightbox-nav {class}"))
             .attr("title", title)
