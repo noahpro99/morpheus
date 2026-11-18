@@ -19,7 +19,7 @@ please check that a problem still happens there before reporting it.
 ## Scope
 
 This covers the Morpheus app (this repository), the website at
-morpheuschat.org and the web app at app.morpheuschat.org. Problems in
+morpheuschat.org. Problems in
 matrix-rust-sdk, in a homeserver or in Matrix itself belong with those projects
 (see the [Matrix.org security disclosure policy](https://matrix.org/security-disclosure-policy/)),
 though we're glad to hear about them too.

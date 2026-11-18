@@ -8,7 +8,7 @@ Goal: a fast, beautiful, Discord-style Matrix client. Native Rust everywhere.
 > - The desktop app is drawn with **GPUI** (`apps/desktop`, logic in
 >   `crates/view-model`) on Linux, Windows and macOS, not Dioxus: see
 >   [GPUI_PORT.md](GPUI_PORT.md) and [gpui-port-history.md](gpui-port-history.md).
->   Phone (`apps/mobile`) and web (`apps/web`) are still Dioxus on `crates/ui`.
+>   The phone app (`apps/mobile`) is still Dioxus on `crates/ui`.
 >   Phase 6 (Dioxus Native) is therefore dropped, and where the text below says
 >   "desktop webview", "Dioxus signal" or "evaluates JavaScript" for the desktop
 >   app it is out of date.
@@ -22,7 +22,7 @@ Goal: a fast, beautiful, Discord-style Matrix client. Native Rust everywhere.
 | Layer          | Choice                             | Why                                                                 |
 | -------------- | ---------------------------------- | ------------------------------------------------------------------- |
 | Matrix         | matrix-rust-sdk + matrix-sdk-ui    | Production-grade (Element X, Fractal). Timeline + sliding sync free. |
-| UI (phone, web) | Dioxus 0.7                        | One component model for phone and web; CSS for polish.              |
+| UI (phone)       | Dioxus 0.7                        | One component model for phone and web; CSS for polish.              |
 | UI (desktop)   | GPUI (was Dioxus webview, until 0.2.0) | GPU-drawn, no web view; logic in `crates/view-model`.            |
 | Async          | Tokio runtime owned by the core    | Core works under any executor; UI never touches the SDK directly.    |
 | Dev homeserver | Synapse in Docker                  | Reference implementation, native simplified sliding sync.            |

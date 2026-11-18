@@ -85,23 +85,6 @@ gpui-e2e file="" name="": (e2e file name)
 e2e-one file: e2e-build hs-seed
     MORPHEUS_E2E_BIN=$PWD/target/debug/morpheus-desktop-e2e MORPHEUS_TEST_HOMESERVER={{hs}} MORPHEUS_E2E_TIMINGS=1 scripts/e2e-cargo.sh --test {{file}} -- --nocapture --test-threads=1
 
-# The web app (app.morpheuschat.org) at http://localhost:8080, rebuilt on save
-web:
-    nix develop .#web -c dx serve --package morpheus-web --platform web
-
-# The web app for hosting: static files in target/dx/morpheus-web/release/web/public
-web-release: sweep
-    nix develop .#web -c dx build --package morpheus-web --platform web --release
-
-# The web app with the page's test bridge
-e2e-web-build: sweep
-    nix develop .#web -c dx build --package morpheus-web --platform web --features e2e
-
-# The e2e tests against the web app in a headless Chromium, e.g.
-# `just e2e-web web` (one file) or `just e2e-web` (all of them)
-e2e-web file="": e2e-web-build hs-seed
-    nix develop .#web -c bash -c 'MORPHEUS_E2E_WEB=1 MORPHEUS_TEST_HOMESERVER={{hs}} scripts/e2e-cargo.sh {{ if file == "" { "" } else { "--test " + file } }} -- --nocapture --test-threads=1'
-
 # Everything CI would run
 ci: fmt lint test
 

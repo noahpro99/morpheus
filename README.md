@@ -8,7 +8,6 @@ Discord's keyboard shortcuts, on any Matrix homeserver.
 | --- | --- | --- |
 | Linux, Windows, macOS | `apps/desktop` | [GPUI](https://www.gpui.rs) (GPU-drawn, no web view) |
 | Android, iOS | `apps/mobile` | Dioxus 0.7 |
-| Web (app.morpheuschat.org) | `apps/web` | Dioxus 0.7, WebAssembly |
 
 ## Features
 
@@ -46,7 +45,6 @@ The repository is a Cargo workspace; on NixOS or with Nix, `direnv allow` (or
 just desktop            # cargo run -p morpheus-desktop
 just desktop-as bob     # a second profile (own data dir under .dev-data), to talk to yourself
 just desktop-release    # release build
-just web                # the web app at http://localhost:8080 (nix develop .#web)
 just android            # run on a plugged-in phone (nix develop .#android)
 just android-virtual    # run on the emulator (just android-avd, just android-emulator first)
 ```

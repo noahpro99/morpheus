@@ -8,12 +8,9 @@ license.workspace = true
 [features]
 # Test bridge that evaluates JavaScript in the webview on request. See src/e2e.rs.
 e2e = ["dep:serde", "tokio/net", "tokio/io-util"]
-# The same for the web app: the page asks the test relay for scripts (see
-# src/e2e_web.rs and morpheus-e2e/src/web.rs).
-web-e2e = []
 
 [dependencies]
-# No platform feature here on purpose: apps/desktop, apps/mobile and apps/web choose.
+# No platform feature here on purpose: apps/desktop and apps/mobile choose.
 dioxus = { workspace = true }
 morpheus-core = { workspace = true }
 emojis = "0.9.1"

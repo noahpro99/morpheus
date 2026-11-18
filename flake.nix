@@ -1,5 +1,5 @@
 {
-  description = "Morpheus - a Discord-style Matrix client in Rust (GPUI desktop, Dioxus phone and web)";
+  description = "Morpheus - a Discord-style Matrix client in Rust (GPUI desktop, Dioxus phone)";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -353,43 +353,6 @@
               inherit shellHook;
             }
           );
-          # `nix develop .#web` — the browser build (app.morpheuschat.org):
-          # the wasm target, wasm-bindgen as Cargo.lock has it (dx checks the
-          # versions match; nixpkgs' dx brings an older one, last in PATH),
-          # and a headless Chromium the e2e tests drive.
-          web =
-            let
-              wasmBindgen = pkgs.buildWasmBindgenCli rec {
-                src = pkgs.fetchCrate {
-                  pname = "wasm-bindgen-cli";
-                  version = "0.2.129";
-                  hash = "sha256-pcecKQd7E8Opw6bkFoE569epUi7gh5qpQF1e5PJY6V8=";
-                };
-                cargoDeps = pkgs.rustPlatform.fetchCargoVendor {
-                  inherit src;
-                  inherit (src) pname version;
-                  hash = "sha256-vmUrWVU7kPJJxO5qIVeAkwQyWDELO1Z4Z5gitz2kco8=";
-                };
-              };
-            in
-            pkgs.mkShell (
-              commonEnv
-              // {
-                nativeBuildInputs = tools ++ [
-                  (toolchain.override { targets = [ "wasm32-unknown-unknown" ]; })
-                  wasmBindgen
-                  pkgs.binaryen
-                  pkgs.chromium
-                  pkgs.llvmPackages_21.clang-unwrapped
-                ];
-                buildInputs = guiLibs;
-                # C in the SDK's dependencies (ring, zstd) compiled for wasm.
-                CC_wasm32_unknown_unknown = "${pkgs.llvmPackages_21.clang-unwrapped}/bin/clang";
-                AR_wasm32_unknown_unknown = "${pkgs.llvmPackages_21.llvm}/bin/llvm-ar";
-                CHROME = "${pkgs.chromium}/bin/chromium";
-                inherit shellHook;
-              }
-            );
           # `nix develop .#android` — the Android SDK/NDK and Rust targets for
           # `dx serve --platform android` on a plugged-in phone.
           android = androidShell false;
