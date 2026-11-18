@@ -613,6 +613,11 @@ impl TimelineView {
         let to = now + step;
         ListProbe(self.list.clone()).scroll_to(to);
         self.paging = (!done).then_some((target, to));
+        if done && target <= 1.0 {
+            // The list's own count of the way down is an estimate until every row
+            // is measured: arriving at the bottom of it lands on the real bottom.
+            self.jump_to_present(cx);
+        }
         cx.notify();
         !done
     }
@@ -1411,6 +1416,16 @@ impl TimelineView {
     /// Whether the view is far enough from the newest message for the jump button.
     pub fn away_from_present(&self) -> bool {
         metrics(&self.list).from_bottom > JUMP_THRESHOLD_PX
+    }
+
+    /// Home: to the oldest loaded message, and more history loads.
+    pub fn jump_to_oldest(&mut self, cx: &mut Context<Self>) {
+        self.list.scroll_to(ListOffset {
+            item_ix: 0,
+            offset_in_item: px(0.0),
+        });
+        self.load_older(cx);
+        cx.notify();
     }
 
     /// Scrolls to the newest message.

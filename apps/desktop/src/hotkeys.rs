@@ -395,6 +395,43 @@ impl Shell {
                 return true;
             }
         }
+        // Home and End scroll the chat (to the oldest loaded message, to the
+        // newest) unless a message box with text in it has the caret.
+        if matches!(key, "home" | "end")
+            && !ctrl
+            && !m.alt
+            && !m.shift
+            && !self.modal_open(cx)
+            && !self.inbox_open
+            && !self.chat_covered()
+        {
+            let thread = self.thread.as_ref().map(|(_, p)| p.read(cx).composer().clone());
+            let room = self.composer.as_ref().map(|(_, c)| c.clone());
+            let in_thread = thread.as_ref().is_some_and(|c| c.read(cx).input_focused(window, cx));
+            let in_room = room.as_ref().is_some_and(|c| c.read(cx).input_focused(window, cx));
+            let typing = [thread.as_ref().filter(|_| in_thread), room.as_ref().filter(|_| in_room)]
+                .into_iter()
+                .flatten()
+                .any(|c| !c.read(cx).draft_empty(cx));
+            let nothing = self.root_focus.as_ref().is_some_and(|f| f.is_focused(window));
+            if !typing && (nothing || in_thread || in_room) {
+                let timeline = if in_thread {
+                    self.thread.as_ref().map(|(_, p)| p.read(cx).timeline().0)
+                } else {
+                    self.timeline.as_ref().map(|(_, t)| t.clone())
+                };
+                if let Some(timeline) = timeline {
+                    timeline.update(cx, |t, cx| {
+                        if key == "home" {
+                            t.jump_to_oldest(cx)
+                        } else {
+                            t.jump_to_present(cx)
+                        }
+                    });
+                    return true;
+                }
+            }
+        }
         // DOM names for the arrows, as `classify` has them.
         let name = match key {
             "up" => "ArrowUp",

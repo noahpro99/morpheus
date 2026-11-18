@@ -303,6 +303,11 @@ impl Composer {
         cx.notify();
     }
 
+    /// Whether the box has no text (Home and End then belong to the chat).
+    pub fn draft_empty(&self, cx: &gpui::App) -> bool {
+        self.draft(cx).is_empty()
+    }
+
     fn draft(&self, cx: &gpui::App) -> String {
         self.input.read(cx).value().to_owned()
     }
