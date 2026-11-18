@@ -911,6 +911,7 @@ impl Drop for Call {
         video::forget(LOCAL_SCREEN);
         crate::screen_audio::note_sent(None);
         crate::screen_sources::note_shared(None);
+        crate::trim::release_memory_later();
     }
 }
 
@@ -1789,8 +1790,11 @@ async fn forward_events(
     // Everyone in the call is on this device's own SFU too (to listen, if
     // not to publish): who comes and goes is said from there alone, once.
     let own = source == Source::Own;
-    let mut voice_tasks: HashMap<String, tokio::task::JoinHandle<()>> = HashMap::new();
-    let mut measure_tasks: HashMap<String, tokio::task::JoinHandle<()>> = HashMap::new();
+    // Tasks that stop when this one does (a JoinHandle dropped keeps its task
+    // running: after the call, each held its track, stream and decoder, #190).
+    let mut voice_tasks: HashMap<String, Aborting> = HashMap::new();
+    let mut measure_tasks: HashMap<String, Aborting> = HashMap::new();
+    let mut media_tasks: Vec<Aborting> = Vec::new();
     while let Some(event) = events.recv().await {
         // What happens in a call goes to the log: when someone cannot be
         // heard or seen, it says whether they arrived, sent anything, and
@@ -1859,12 +1863,13 @@ async fn forward_events(
                     track.disable();
                 }
                 apply_screen_volume(&track, crate::screen_volume(&identity));
-                tokio::spawn(watch_screen_audio(
+                media_tasks.retain(|t| !t.is_finished());
+                media_tasks.push(Aborting(tokio::spawn(watch_screen_audio(
                     track,
                     identity.clone(),
                     mode == AudioMode::Platform,
                     deafened.clone(),
-                ));
+                ))));
                 CallEvent::ScreenAudio { identity, on: true }
             }
             RoomEvent::TrackUnsubscribed {
@@ -1912,12 +1917,12 @@ async fn forward_events(
                 }
                 voice_tasks.insert(
                     identity.clone(),
-                    tokio::spawn(watch_voice(
+                    Aborting(tokio::spawn(watch_voice(
                         track.clone(),
                         identity.clone(),
                         speech.clone(),
                         mode == AudioMode::Platform,
-                    )),
+                    ))),
                 );
                 if mode == AudioMode::Tone {
                     if let Some(prev) = measure_tasks.remove(&identity) {
@@ -1925,7 +1930,7 @@ async fn forward_events(
                     }
                     measure_tasks.insert(
                         identity.clone(),
-                        tokio::spawn(measure(track, identity, tx.clone())),
+                        Aborting(tokio::spawn(measure(track, identity, tx.clone()))),
                     );
                 }
                 continue;
@@ -1938,12 +1943,13 @@ async fn forward_events(
                 let identity = participant.identity().to_string();
                 let key = format!("{identity}/{}", track.sid());
                 info!(who = %identity, track = %track.sid(), "video arriving");
-                tokio::spawn(watch_decoder(track.clone(), identity.clone()));
-                tokio::spawn(video::show_remote(
+                media_tasks.retain(|t| !t.is_finished());
+                media_tasks.push(Aborting(tokio::spawn(watch_decoder(track.clone(), identity.clone()))));
+                media_tasks.push(Aborting(tokio::spawn(video::show_remote(
                     track,
                     key.clone(),
                     publication.source() == TrackSource::Screenshare,
-                ));
+                ))));
                 // The top layer, if it is the sort of track that has layers: the
                 // pictures are drawn large.
                 publication.set_video_quality(livekit::track::VideoQuality::High);
@@ -2602,5 +2608,25 @@ fn key_options() -> KeyProviderOptions {
         key_ring_size: 256,
         key_derivation_algorithm: livekit::e2ee::key_provider::KeyDerivationAlgorithm::HKDF,
         ..KeyProviderOptions::default()
+    }
+}
+
+/// A task that is stopped when this is dropped (a dropped `JoinHandle` only
+/// lets go of the task, which goes on holding what it was given).
+struct Aborting(tokio::task::JoinHandle<()>);
+
+impl Aborting {
+    fn abort(&self) {
+        self.0.abort();
+    }
+
+    fn is_finished(&self) -> bool {
+        self.0.is_finished()
+    }
+}
+
+impl Drop for Aborting {
+    fn drop(&mut self) {
+        self.0.abort();
     }
 }

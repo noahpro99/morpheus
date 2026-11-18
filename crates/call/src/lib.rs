@@ -43,6 +43,10 @@ pub use volume::{
     user_track_volume, user_volume, voice_belongs_to, voice_gain, voice_owner,
 };
 
+#[cfg(not(target_arch = "wasm32"))]
+#[path = "trim.rs"]
+mod trim;
+
 #[path = "quality.rs"]
 mod quality;
 pub use quality::{

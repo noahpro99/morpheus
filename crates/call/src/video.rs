@@ -212,6 +212,18 @@ fn keep_turned_now(key: &str, buffer: &dyn VideoBuffer, degrees: u32) {
 
 /// Show a remote video track under `key` until it ends.
 pub(crate) async fn show_remote(track: RemoteVideoTrack, key: String, screen: bool) {
+    // Its picture goes whenever this ends, also when it is stopped (the call
+    // left): then nothing below it runs (#190).
+    struct Forget(String);
+    impl Drop for Forget {
+        fn drop(&mut self) {
+            if let Ok(mut keys) = SCREENS.lock() {
+                keys.retain(|k| *k != self.0);
+            }
+            forget(&self.0);
+        }
+    }
+    let _forget = Forget(key.clone());
     if screen && let Ok(mut keys) = SCREENS.lock() {
         keys.push(key.clone());
     }
@@ -227,10 +239,6 @@ pub(crate) async fn show_remote(track: RemoteVideoTrack, key: String, screen: bo
         keep(&key, frame.buffer.as_ref());
     }
     debug!(key, "video track ended");
-    if let Ok(mut keys) = SCREENS.lock() {
-        keys.retain(|k| *k != key);
-    }
-    forget(&key);
 }
 
 /// A test run's stand-in for a camera or a screen: two colours side by side
