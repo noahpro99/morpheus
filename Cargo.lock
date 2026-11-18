@@ -7369,6 +7369,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "morpheus-launcher"
+version = "0.2.6"
+dependencies = [
+ "embed-resource",
+]
+
+[[package]]
 name = "morpheus-mobile"
 version = "0.2.6"
 dependencies = [

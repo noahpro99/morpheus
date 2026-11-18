@@ -59,7 +59,7 @@ pub fn key_action(existing: Option<&str>, exe: &Path) -> KeyAction {
     let ours = |p: &Path| {
         let text = p.to_string_lossy().to_lowercase();
         let name = text.rsplit(['\\', '/']).next().unwrap_or_default().to_owned();
-        name == "morpheus-desktop.exe" || name == "morpheus-desktop"
+        name == "morpheus-desktop.exe" || name == "morpheus-desktop" || name == "morpheus.exe"
     };
     match crate::settings::command_exe(existing) {
         Some(old) if ours(&old) => KeyAction::Write,
@@ -248,6 +248,11 @@ mod tests {
         assert_eq!(key_action(Some(moved), exe), KeyAction::Write);
         let element = r#""C:\Program Files\Element\Element.exe" "%1""#;
         assert_eq!(key_action(Some(element), exe), KeyAction::Leave);
+        // The launcher is ours too: a key still pointing at an old install's
+        // Morpheus.exe is rewritten, not left behind.
+        let launcher = Path::new(r"C:\Users\a\AppData\Local\Programs\Morpheus\Morpheus.exe");
+        let old_launcher = r#""C:\Old\Morpheus.exe" "%1""#;
+        assert_eq!(key_action(Some(old_launcher), launcher), KeyAction::Write);
     }
 
     /// A fake `xdg-mime` in a temp dir (answering `query` with `answer` and

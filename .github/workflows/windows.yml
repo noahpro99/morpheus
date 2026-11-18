@@ -1,7 +1,7 @@
 # The desktop app for Windows (x86-64), built natively here so a release does
 # not depend on one person's machine (scripts/release-windows.sh cross-builds
 # the same zip on Linux): morpheus-<version>-windows-x86_64.zip, one folder
-# holding Morpheus.exe. The update is tried on the built zip
+# holding the launcher Morpheus.exe and app/morpheus-desktop.exe. The update is tried on the built zip
 # (scripts/update-self-test.sh). On a release tag it is attached to that
 # release; run by hand, to the release named in `tag` (if any).
 name: Windows
@@ -55,7 +55,7 @@ jobs:
       # the runner has; the build script finds it through where.exe or its
       # default path.
       - name: Build
-        run: cargo build --release -p morpheus-desktop --locked --target x86_64-pc-windows-msvc
+        run: cargo build --release -p morpheus-desktop -p morpheus-launcher --locked --target x86_64-pc-windows-msvc
 
       # One title bar (#97): no system caption above the app's, its buttons
       # the caption's (snap layouts), the bar the caption, maximised on the
@@ -94,6 +94,7 @@ jobs:
           grep -q "^Window system: Win32" "$out"
           ! grep -q "^matrix-sdk: unknown" "$out"
           grep -q "^Hardware video: " "$out"
+          grep -q "^Hardware decoder: " "$out"
 
       # Hardware video (#102): which encoder and decoder libwebrtc found, 30
       # pictures through Media Foundation's H.264 encoders, and the software
@@ -122,8 +123,11 @@ jobs:
         run: echo "RELEASE_ZIP=$(scripts/package-windows.sh | tail -1)" >> "$GITHUB_ENV"
 
       # Update on this platform: the installed zip finds a newer release on a
-      # local feed and swaps its running Morpheus.exe for it (Windows lets a
-      # running program be renamed, not deleted), and the new one starts.
+      # local feed and swaps the files of its app/ (Windows lets a running
+      # program be renamed, not deleted), leaving the launcher Morpheus.exe
+      # (what a taskbar pin points at) untouched; the launcher then starts the
+      # new version. An old single-program install migrates to the launcher
+      # layout the same way (#186).
       - name: Update works
         run: scripts/update-self-test.sh "$RELEASE_ZIP"
 

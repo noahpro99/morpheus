@@ -88,6 +88,8 @@ mod vim;
 mod win_badge;
 #[cfg(target_os = "windows")]
 mod win_sys;
+#[cfg(target_os = "windows")]
+mod win_shell;
 mod zoom;
 // The view-models live in their own crate; the old module path stays valid.
 use morpheus_view_model as view_model;
@@ -919,6 +921,10 @@ fn main() {
     init_logging();
     streamer::load(&data_dir());
     capture_watch::start();
+    // The taskbar groups this app's windows under its pin, and the first run from
+    // the stable install makes the Start menu shortcut to the launcher.
+    #[cfg(target_os = "windows")]
+    set_up_windows_shell();
     // Start on login must follow the app when an update moved it.
     view_model::settings::refresh_autostart();
     // matrix: links open Morpheus (per user, where nobody else has them).
@@ -1068,5 +1074,31 @@ mod dioxus_data {
         .expect("write");
         assert!(last_place::read(&dir, "@a:x").is_some());
         std::fs::remove_dir_all(&dir).ok();
+    }
+}
+
+/// Windows: the app's AppUserModelID, and (when this is the stable install
+/// made by the launcher) the Start menu shortcut to the launcher with it.
+#[cfg(target_os = "windows")]
+fn set_up_windows_shell() {
+    win_shell::set_app_id();
+    if std::env::var_os("MORPHEUS_E2E_PORT").is_some()
+        || std::env::var_os("MORPHEUS_UPDATE_SELF_TEST").is_some()
+    {
+        return;
+    }
+    let (Some(local), Some(roaming), Ok(front)) = (
+        std::env::var_os("LOCALAPPDATA"),
+        std::env::var_os("APPDATA"),
+        morpheus_core::install_layout::front_exe(),
+    ) else {
+        return;
+    };
+    let (local, roaming) = (std::path::PathBuf::from(local), std::path::PathBuf::from(roaming));
+    if morpheus_core::install_layout::is_stable_launcher(&front, &local) {
+        let shortcut = morpheus_core::install_layout::start_menu_shortcut(&roaming);
+        std::thread::spawn(move || {
+            let _ = win_shell::ensure_start_menu_shortcut(&front, &shortcut);
+        });
     }
 }

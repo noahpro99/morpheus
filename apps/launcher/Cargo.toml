@@ -1,0 +1,16 @@
+[package]
+name = "morpheus-launcher"
+description = "Morpheus.exe on Windows: a tiny program that starts app\\morpheus-desktop.exe. Updates never touch it, so taskbar pins and shortcuts to it keep working."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "morpheus-launcher"
+path = "src/main.rs"
+
+[build-dependencies]
+embed-resource = "3"
+
+[lints]
+workspace = true

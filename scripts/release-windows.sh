@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # The desktop app for Windows (x86-64), cross-built here:
-# target/dist/morpheus-<version>-windows-x86_64.zip (a folder with Morpheus.exe;
+# target/dist/morpheus-<version>-windows-x86_64.zip (a folder Morpheus with the
+# launcher Morpheus.exe and app/morpheus-desktop.exe;
 # fonts and images are inside it). Run inside `nix develop .#windows`;
 # cargo-xwin downloads Microsoft's headers and libraries on first use. (CI's
 # windows.yml builds the same zip natively; GPUI's shaders are compiled
@@ -16,7 +17,7 @@ cd "$(dirname "$0")/.."
 # flags.
 eval "$(cargo xwin env --target x86_64-pc-windows-msvc)"
 export RUSTFLAGS="${CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS/-C linker-flavor=lld-link/}"
-cargo build --release -p morpheus-desktop --locked --target x86_64-pc-windows-msvc
+cargo build --release -p morpheus-desktop -p morpheus-launcher --locked --target x86_64-pc-windows-msvc
 
 DIST=target/dist scripts/package-windows.sh
 ls -la target/dist/morpheus-*-windows-x86_64.zip | tail -1

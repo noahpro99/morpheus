@@ -623,7 +623,7 @@ pub fn write_autostart(wanted: Autostart) -> std::io::Result<()> {
             .create(RUN_KEY)
             .map_err(std::io::Error::other)?;
         if wanted.enabled {
-            let command = run_command(&std::env::current_exe()?, wanted.hidden);
+            let command = run_command(&morpheus_core::install_layout::front_exe()?, wanted.hidden);
             return key
                 .set_string(RUN_VALUE, command)
                 .map_err(std::io::Error::other);
@@ -643,7 +643,7 @@ pub fn write_autostart(wanted: Autostart) -> std::io::Result<()> {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
-        let exe = std::env::current_exe()?;
+        let exe = morpheus_core::install_layout::front_exe()?;
         #[cfg(target_os = "macos")]
         let text = launch_agent_plist(&exe, wanted.hidden);
         #[cfg(target_os = "linux")]
@@ -681,7 +681,7 @@ pub fn refresh_autostart() {
     if !AUTOSTART_SUPPORTED || std::env::var_os("MORPHEUS_E2E_PORT").is_some() {
         return;
     }
-    let Ok(exe) = std::env::current_exe() else {
+    let Ok(exe) = morpheus_core::install_layout::front_exe() else {
         return;
     };
     #[cfg(target_os = "windows")]

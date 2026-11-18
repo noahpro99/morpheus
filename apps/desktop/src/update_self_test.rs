@@ -1,4 +1,10 @@
-//! The updater's self-test (`scripts/update-self-test.sh`, run by CI on each
+//! Th        let left = folders.iter().any(|folder| {
+            std::fs::read_dir(folder)
+                .into_iter()
+                .flatten()
+                .flatten()
+                .any(|e| e.file_name().to_string_lossy().ends_with(".old"))
+        }); updater's self-test (`scripts/update-self-test.sh`, run by CI on each
 //! platform): the app, started with `MORPHEUS_UPDATE_SELF_TEST=1`, opens no
 //! window and signs in nowhere. It pretends to be an old version, asks the
 //! feed in `MORPHEUS_UPDATE_FEED` for an update, installs it exactly as the
@@ -68,13 +74,20 @@ fn after_update() -> Result<(), String> {
     }
     .ok_or("no folder")?
     .to_owned();
+    // With a launcher (Windows), what an update leaves is in the install's top
+    // as well as in `app\`.
+    let top = morpheus_core::install_layout::launcher_root(&exe).map(std::path::Path::to_path_buf);
+    let folders: Vec<PathBuf> = std::iter::once(dir.clone()).chain(top).collect();
     let deadline = Instant::now() + Duration::from_secs(30);
     loop {
         morpheus_core::clean_up_after_update();
-        let left = std::fs::read_dir(&dir)
-            .map_err(|err| err.to_string())?
-            .flatten()
-            .any(|e| e.file_name().to_string_lossy().ends_with(".old"));
+        let left = folders.iter().any(|folder| {
+            std::fs::read_dir(folder)
+                .into_iter()
+                .flatten()
+                .flatten()
+                .any(|e| e.file_name().to_string_lossy().ends_with(".old"))
+        });
         if !left {
             break;
         }

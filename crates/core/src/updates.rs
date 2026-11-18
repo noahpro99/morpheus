@@ -299,6 +299,180 @@ pub fn clean_up_after_update() {
     swap::clean_up();
 }
 
+/// Where a Windows install keeps its parts (the other desktops are one
+/// program, or one bundle, and are untouched by this).
+///
+/// A small launcher, `Morpheus.exe`, is what the taskbar pin, the Start menu
+/// shortcut, the registry's `matrix:` handler and start on login all point
+/// at; updates never touch it. The app is `app\morpheus-desktop.exe` beside
+/// it, and an update swaps only what is in `app\`.
+pub mod layout {
+    use std::path::{Path, PathBuf};
+
+    /// The launcher's file name, at the top of an install.
+    pub const LAUNCHER: &str = "Morpheus.exe";
+    /// The folder of the app.
+    pub const APP_DIR: &str = "app";
+    /// The app's program, in [`APP_DIR`].
+    pub const APP_EXE: &str = "morpheus-desktop.exe";
+
+    /// How an update is put in place.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub enum Kind {
+        /// The install has a launcher: swap only the files of `app\`, then
+        /// start the launcher.
+        AppOnly { root: PathBuf },
+        /// The old single-program install gets the release as it is, so the
+        /// launcher takes the program's place and `app\` arrives beside it.
+        Migrate,
+        /// One program (or bundle) replaced with the release's.
+        Flat,
+        /// An install with a launcher and a release without an `app\`:
+        /// nothing is done, rather than break the install.
+        Refuse,
+    }
+
+    /// The top of an install whose app is `exe` (that is, `exe` sits in
+    /// `<root>\app\`), by the names alone.
+    pub fn launcher_root(exe: &Path) -> Option<&Path> {
+        let dir = exe.parent()?;
+        if dir.file_name()? != APP_DIR {
+            return None;
+        }
+        dir.parent()
+    }
+
+    /// The launcher of the install `exe` is the app of, when it is there.
+    pub fn launcher_for(exe: &Path) -> Option<PathBuf> {
+        let launcher = launcher_root(exe)?.join(LAUNCHER);
+        launcher.is_file().then_some(launcher)
+    }
+
+    /// What starts this app: the launcher of its install, or itself. This
+    /// is what the registry and start on login point at.
+    pub fn front_exe() -> std::io::Result<PathBuf> {
+        let exe = std::env::current_exe()?;
+        Ok(launcher_for(&exe).unwrap_or(exe))
+    }
+
+    /// The stable install folder under the user's local app data, where the
+    /// launcher puts the first run's copy (the launcher crate has its own
+    /// copy of this; it has no dependencies).
+    pub fn stable_dir(local_app_data: &Path) -> PathBuf {
+        local_app_data.join("Programs").join("Morpheus")
+    }
+
+    /// The Start menu shortcut, in the user's Roaming app data.
+    pub fn start_menu_shortcut(app_data: &Path) -> PathBuf {
+        app_data
+            .join("Microsoft")
+            .join("Windows")
+            .join("Start Menu")
+            .join("Programs")
+            .join("Morpheus.lnk")
+    }
+
+    /// Whether `launcher` is the one of the stable install (case ignored, as
+    /// Windows does): only that one gets a Start menu shortcut, not an unpacked
+    /// download, a development build or the updater's test install.
+    pub fn is_stable_launcher(launcher: &Path, local_app_data: &Path) -> bool {
+        let fold = |p: &Path| p.to_string_lossy().replace('/', "\\").to_lowercase();
+        launcher
+            .parent()
+            .is_some_and(|dir| fold(dir) == fold(&stable_dir(local_app_data)))
+            && launcher.file_name().is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case(LAUNCHER))
+    }
+
+    /// Whether an unpacked release has the app in `app\`.
+    pub fn release_has_app(top: &Path) -> bool {
+        top.join(APP_DIR).join(APP_EXE).is_file()
+    }
+
+    /// How to apply a release (`has_app`: it has `app\`) over the app `exe`.
+    pub fn kind(exe: &Path, has_app: bool) -> Kind {
+        match (launcher_for(exe), has_app) {
+            (Some(_), true) => Kind::AppOnly {
+                root: launcher_root(exe).map(Path::to_owned).unwrap_or_default(),
+            },
+            (Some(_), false) => Kind::Refuse,
+            (None, true) => Kind::Migrate,
+            (None, false) => Kind::Flat,
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        fn install(dir: &Path) -> PathBuf {
+            std::fs::create_dir_all(dir.join(APP_DIR)).unwrap();
+            std::fs::write(dir.join(LAUNCHER), b"launcher").unwrap();
+            let exe = dir.join(APP_DIR).join(APP_EXE);
+            std::fs::write(&exe, b"app").unwrap();
+            exe
+        }
+
+        #[test]
+        fn the_launcher_is_found_beside_the_app_folder() {
+            let dir = tempfile::tempdir().unwrap();
+            let exe = install(dir.path());
+            assert_eq!(launcher_root(&exe), Some(dir.path()));
+            assert_eq!(launcher_for(&exe), Some(dir.path().join(LAUNCHER)));
+        }
+
+        #[test]
+        fn a_program_outside_an_app_folder_is_its_own_front() {
+            let dir = tempfile::tempdir().unwrap();
+            let exe = dir.path().join("Morpheus.exe");
+            std::fs::write(&exe, b"old single program").unwrap();
+            assert_eq!(launcher_root(&exe), None);
+            assert_eq!(launcher_for(&exe), None);
+            // An app folder with no launcher beside it is no install either.
+            std::fs::create_dir_all(dir.path().join("x").join(APP_DIR)).unwrap();
+            let lone = dir.path().join("x").join(APP_DIR).join(APP_EXE);
+            assert_eq!(launcher_for(&lone), None);
+        }
+
+        #[test]
+        fn a_release_has_an_app_when_its_program_is_in_app() {
+            let dir = tempfile::tempdir().unwrap();
+            assert!(!release_has_app(dir.path()));
+            install(dir.path());
+            assert!(release_has_app(dir.path()));
+        }
+
+        #[test]
+        fn updates_replace_only_the_app_of_an_install_with_a_launcher() {
+            let dir = tempfile::tempdir().unwrap();
+            let exe = install(dir.path());
+            assert_eq!(kind(&exe, true), Kind::AppOnly { root: dir.path().to_owned() });
+            assert_eq!(kind(&exe, false), Kind::Refuse);
+        }
+
+        #[test]
+        fn only_the_stable_installs_launcher_gets_the_start_menu_shortcut() {
+            let local = Path::new(r"C:\Users\a\AppData\Local");
+            assert_eq!(stable_dir(local), local.join("Programs").join("Morpheus"));
+            let stable = stable_dir(local).join(LAUNCHER);
+            assert!(is_stable_launcher(&stable, local));
+            assert!(!is_stable_launcher(Path::new("/d/Downloads/Morpheus/Morpheus.exe"), local));
+            assert!(!is_stable_launcher(&stable_dir(local).join("app").join(APP_EXE), local));
+            let roaming = Path::new("/r/AppData/Roaming");
+            assert!(start_menu_shortcut(roaming).ends_with("Start Menu/Programs/Morpheus.lnk"));
+        }
+
+        #[test]
+        fn the_old_single_program_migrates_to_the_launcher_layout() {
+            let dir = tempfile::tempdir().unwrap();
+            let exe = dir.path().join("Morpheus.exe");
+            std::fs::write(&exe, b"old").unwrap();
+            assert_eq!(kind(&exe, true), Kind::Migrate);
+            // A release of the old shape is a plain swap.
+            assert_eq!(kind(&exe, false), Kind::Flat);
+        }
+    }
+}
+
 #[cfg(not(any(target_os = "android", target_os = "ios", target_arch = "wasm32")))]
 mod swap {
     use std::io;
@@ -311,6 +485,13 @@ mod swap {
     /// it), or on a Mac the `.app` bundle in its folder.
     fn place() -> io::Result<(PathBuf, PathBuf)> {
         let exe = std::env::current_exe()?;
+        // With a launcher (Windows) the folder is the install's top, and the
+        // app is the `app\` in it.
+        if let Some(root) = super::layout::launcher_root(&exe)
+            && super::layout::launcher_for(&exe).is_some()
+        {
+            return Ok((exe.clone(), root.to_owned()));
+        }
         if cfg!(target_os = "macos")
             && let Some(bundle) = exe
                 .ancestors()
@@ -369,7 +550,18 @@ mod swap {
             [only] if only.is_dir() && only.extension().is_none_or(|e| e != "app") => only.clone(),
             _ => staging.clone(),
         };
-        let started = if cfg!(target_os = "macos")
+        let release_kind = super::layout::kind(&exe, super::layout::release_has_app(&top));
+        let started = if let super::layout::Kind::AppOnly { root } = &release_kind {
+            // The launcher is not touched: only what is in `app\`.
+            let app = root.join(super::layout::APP_DIR);
+            for entry in std::fs::read_dir(top.join(super::layout::APP_DIR))?.flatten() {
+                replace(&entry.path(), &app.join(entry.file_name()))?;
+            }
+            root.join(super::layout::LAUNCHER)
+        } else if release_kind == super::layout::Kind::Refuse {
+            let _ = std::fs::remove_dir_all(&staging);
+            return Err(io::Error::other("the release has no app folder for this install"));
+        } else if cfg!(target_os = "macos")
             && let Some(bundle) = exe
                 .ancestors()
                 .find(|p| p.extension().is_some_and(|e| e == "app"))
@@ -440,14 +632,18 @@ mod swap {
             return;
         };
         let _ = std::fs::remove_dir_all(dir.join(STAGING));
-        for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
-            let path = entry.path();
-            if path.to_string_lossy().ends_with(OLD) {
-                let _ = if path.is_dir() {
-                    std::fs::remove_dir_all(&path)
-                } else {
-                    std::fs::remove_file(&path)
-                };
+        // With a launcher, the install's top and its `app\` both hold
+        // leftovers (the old single program's file, the old app's).
+        for folder in [dir.clone(), dir.join(super::layout::APP_DIR)] {
+            for entry in std::fs::read_dir(&folder).into_iter().flatten().flatten() {
+                let path = entry.path();
+                if path.to_string_lossy().ends_with(OLD) {
+                    let _ = if path.is_dir() {
+                        std::fs::remove_dir_all(&path)
+                    } else {
+                        std::fs::remove_file(&path)
+                    };
+                }
             }
         }
     }
