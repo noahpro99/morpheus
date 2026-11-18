@@ -109,6 +109,7 @@ impl Composer {
                 .multiline(8)
                 .bare("textarea", "composer-input")
                 .vim()
+                .spellcheck()
         });
         input.update(cx, |input, cx| input.set_disabled(true, cx));
         cx.subscribe(&input, |this, _, _: &Changed, cx| this.edited(cx))

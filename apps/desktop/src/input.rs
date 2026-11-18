@@ -111,6 +111,20 @@ pub struct TextInput {
     vim_capable: bool,
     vim: Vim,
     was_focused: bool,
+    /// A message box: misspelled words get a wavy underline and a menu.
+    spell: bool,
+    /// The misspelled words of the text, for the text and the spell check's
+    /// state they were found with.
+    spell_cache: (String, u64, Vec<Range<usize>>),
+    spell_menu: Option<SpellMenu>,
+    spell_polling: bool,
+}
+
+/// The right-click menu of a message box.
+struct SpellMenu {
+    at: gpui::Point<Pixels>,
+    /// The misspelled word under the click, and its corrections.
+    word: Option<(Range<usize>, Vec<String>)>,
 }
 
 impl TextInput {
@@ -145,6 +159,10 @@ impl TextInput {
             vim_capable: false,
             vim: Vim::new(),
             was_focused: false,
+            spell: false,
+            spell_cache: (String::new(), u64::MAX, Vec::new()),
+            spell_menu: None,
+            spell_polling: false,
         }
     }
 
@@ -189,6 +207,12 @@ impl TextInput {
     /// A message box: vim mode, when it is on, makes it modal.
     pub fn vim(mut self) -> Self {
         self.vim_capable = true;
+        self
+    }
+
+    /// A message box: misspelled words are underlined (a setting turns it off).
+    pub fn spellcheck(mut self) -> Self {
+        self.spell = true;
         self
     }
 
@@ -566,6 +590,12 @@ impl TextInput {
         if self.disabled {
             return;
         }
+        if self.spell_menu.take().is_some() {
+            cx.notify();
+            if event.keystroke.key == "escape" {
+                return;
+            }
+        }
         let keystroke = &event.keystroke;
         let m = keystroke.modifiers;
         let multiline = self.max_lines > 1;
@@ -724,6 +754,255 @@ impl TextInput {
         self.scroll.set_offset(offset);
         window.refresh();
     }
+}
+
+impl TextInput {
+    /// Whether spell check marks this box now.
+    fn spell_on(&self) -> bool {
+        self.spell && !self.password && !self.disabled && crate::spell::enabled()
+    }
+
+    /// The misspelled words now (as byte ranges): found again only when the
+    /// text or the spell check's state changed, and leaving out the word the
+    /// caret is at the end of, which is still being typed.
+    fn marks(&mut self, cx: &mut Context<Self>) -> Vec<Range<usize>> {
+        if !self.spell_on() {
+            return Vec::new();
+        }
+        let generation = crate::spell::generation();
+        if self.spell_cache.0 != self.buf.text() || self.spell_cache.1 != generation {
+            self.spell_cache = (
+                self.buf.text().to_owned(),
+                generation,
+                crate::spell::misspellings(self.buf.text()),
+            );
+        }
+        // The dictionary builds in the background: look again until it is there.
+        if !crate::spell::ready() && !self.spell_polling {
+            self.spell_polling = true;
+            cx.spawn(async move |this, cx| {
+                loop {
+                    cx.background_executor()
+                        .timer(std::time::Duration::from_millis(100))
+                        .await;
+                    let done = this
+                        .update(cx, |this, cx| {
+                            let ready = crate::spell::ready();
+                            if ready {
+                                this.spell_polling = false;
+                                cx.notify();
+                            }
+                            ready
+                        })
+                        .unwrap_or(true);
+                    if done {
+                        break;
+                    }
+                }
+            })
+            .detach();
+        }
+        let typing_at = (!self.buf.has_selection()).then_some(self.buf.head());
+        self.spell_cache
+            .2
+            .iter()
+            .filter(|r| {
+                !typing_at.is_some_and(|c| {
+                    crate::view_model::spellcheck::being_typed(r.end, c)
+                })
+            })
+            .cloned()
+            .collect()
+    }
+
+    /// A right click in a message box: the menu, with corrections when the
+    /// click is on a misspelled word.
+    fn open_spell_menu(
+        &mut self,
+        event: &MouseDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.spell || self.disabled || self.password {
+            return;
+        }
+        window.focus(&self.focus);
+        let marks = self.marks(cx);
+        let word = self.index_at(event.position).and_then(|at| {
+            marks
+                .into_iter()
+                .find(|r| r.start <= at && at <= r.end)
+                .map(|r| {
+                    let suggestions = crate::spell::suggest(&self.buf.text()[r.clone()]);
+                    (r, suggestions)
+                })
+        });
+        // Kept inside the window: rows (35 px each, a rule and padding) that would
+        // run off the bottom make the menu open upwards.
+        let rows = 3 + word.as_ref().map_or(0, |(_, s)| s.len().max(1) + 2);
+        let (width, height) = (200.0, rows as f32 * 35.0 + 20.0);
+        let view = window.viewport_size();
+        let at = point(
+            px(f32::from(event.position.x).min(f32::from(view.width) - width - 8.0).max(8.0)),
+            px(f32::from(event.position.y).min(f32::from(view.height) - height - 8.0).max(8.0)),
+        );
+        self.spell_menu = Some(SpellMenu { at, word });
+        cx.notify();
+    }
+
+    fn spell_pick(&mut self, choice: SpellChoice, cx: &mut Context<Self>) {
+        let Some(menu) = self.spell_menu.take() else {
+            return;
+        };
+        cx.notify();
+        match choice {
+            SpellChoice::Replace(text) => {
+                if let Some((range, _)) = menu.word {
+                    let before = self.buf.clone();
+                    self.buf.select_range(range);
+                    self.insert_text(&text);
+                    self.vim.history.record(&before);
+                    cx.emit(Changed);
+                }
+            }
+            SpellChoice::Add => {
+                if let Some((range, _)) = menu.word {
+                    crate::spell::add_word(&crate::data_dir(), &self.buf.text()[range]);
+                }
+            }
+            SpellChoice::Ignore => {
+                if let Some((range, _)) = menu.word {
+                    crate::spell::ignore(&self.buf.text()[range]);
+                }
+            }
+            SpellChoice::Cut => self.shortcut("x", cx),
+            SpellChoice::Copy => self.shortcut("c", cx),
+            SpellChoice::Paste => self.shortcut("v", cx),
+        }
+    }
+
+    /// The right-click menu, over a backdrop that closes it.
+    fn spell_menu_el(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        use gpui::{AnyElement, ClickEvent};
+        let menu = self.spell_menu.as_ref()?;
+        let has_selection = self.buf.has_selection();
+        let has_word = menu.word.is_some();
+        let row = |id: String, label: String, choice: Option<SpellChoice>, cx: &mut Context<Self>| -> AnyElement {
+            let live = choice.is_some();
+            let mut el = div()
+                .id(gpui::ElementId::from(SharedString::from(id)))
+                .flex()
+                .items_center()
+                .w_full()
+                .py(px(7.0))
+                .px(px(10.0))
+                .rounded(px(theme::RADIUS_SM))
+                .text_color(rgb(if live {
+                    theme::text_muted()
+                } else {
+                    theme::text_faint()
+                }))
+                .child(
+                    div()
+                        .child(label.clone())
+                        .e2e("span", "menu-label")
+                        .text(label),
+                );
+            if let Some(choice) = choice {
+                el = el
+                    .cursor_pointer()
+                    .hover(|s| {
+                        s.bg(rgb(theme::accent_strong()))
+                            .text_color(rgb(theme::on(theme::accent_strong())))
+                    })
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                        this.spell_pick(choice.clone(), cx)
+                    }));
+            }
+            el.e2e("button", if live { "context-item" } else { "context-item disabled" })
+                .attr("role", "menuitem")
+                .into_any_element()
+        };
+        let mut rows: Vec<AnyElement> = Vec::new();
+        if let Some((_, suggestions)) = &menu.word {
+            for (n, s) in suggestions.iter().enumerate() {
+                rows.push(row(
+                    format!("spell-suggest-{n}"),
+                    s.clone(),
+                    Some(SpellChoice::Replace(s.clone())),
+                    cx,
+                ));
+            }
+            if suggestions.is_empty() {
+                rows.push(row("spell-none".into(), "No suggestions".into(), None, cx));
+            }
+            rows.push(row("spell-add".into(), "Add to dictionary".into(), Some(SpellChoice::Add), cx));
+            rows.push(row("spell-ignore".into(), "Ignore".into(), Some(SpellChoice::Ignore), cx));
+            rows.push(div().h(px(1.0)).my(px(4.0)).bg(rgb(theme::bg_elevated())).into_any_element());
+        }
+        let _ = has_word;
+        rows.push(row("spell-cut".into(), "Cut".into(), has_selection.then_some(SpellChoice::Cut), cx));
+        rows.push(row("spell-copy".into(), "Copy".into(), has_selection.then_some(SpellChoice::Copy), cx));
+        rows.push(row("spell-paste".into(), "Paste".into(), Some(SpellChoice::Paste), cx));
+        let panel = div()
+            .id("spell-menu")
+            .absolute()
+            .left(menu.at.x)
+            .top(menu.at.y)
+            .occlude()
+            .flex()
+            .flex_col()
+            .gap(px(2.0))
+            .min_w(px(188.0))
+            .p(px(6.0))
+            .rounded(px(theme::RADIUS_LG))
+            .bg(rgb(theme::bg_rail()))
+            .border_1()
+            .border_color(rgba(theme::edge()))
+            .shadow_lg()
+            .text_size(px(0.9 * theme::REM))
+            .line_height(gpui::relative(theme::LINE_HEIGHT))
+            .text_color(rgb(theme::text_muted()))
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .on_mouse_down(MouseButton::Right, |_, _, cx| cx.stop_propagation())
+            .children(rows)
+            .e2e("div", "context-menu")
+            .attr("role", "menu");
+        let close = |this: &mut Self, _: &MouseDownEvent, _: &mut Window, cx: &mut Context<Self>| {
+            this.spell_menu = None;
+            cx.notify();
+        };
+        // The backdrop is the window's size, placed at its corner whatever the
+        // box's own place is.
+        let backdrop = div()
+            .id("spell-menu-backdrop")
+            .size_full()
+            .occlude()
+            .on_mouse_down(MouseButton::Left, cx.listener(close))
+            .on_mouse_down(MouseButton::Right, cx.listener(close))
+            .child(panel);
+        Some(
+            gpui::deferred(
+                gpui::anchored()
+                    .position(point(px(0.0), px(0.0)))
+                    .anchor(gpui::Corner::TopLeft)
+                    .child(backdrop.w(px(100_000.0)).h(px(100_000.0))),
+            )
+            .with_priority(30)
+            .into_any_element(),
+        )
+    }
+}
+
+/// What a row of the right-click menu does.
+#[derive(Clone)]
+enum SpellChoice {
+    Replace(String),
+    Add,
+    Ignore,
+    Cut,
+    Copy,
+    Paste,
 }
 
 impl Focusable for TextInput {
@@ -901,6 +1180,15 @@ impl Element for EditorText {
                 input.update(cx, |input, cx| input.mouse_down(event, window, cx));
             }
         });
+        let (input, hit) = (self.input.clone(), hitbox.clone());
+        window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
+            if phase == DispatchPhase::Bubble
+                && event.button == MouseButton::Right
+                && hit.is_hovered(window)
+            {
+                input.update(cx, |input, cx| input.open_spell_menu(event, window, cx));
+            }
+        });
         let input = self.input.clone();
         window.on_mouse_event(move |event: &MouseMoveEvent, phase, _, cx| {
             if phase == DispatchPhase::Bubble {
@@ -930,6 +1218,7 @@ impl Render for TextInput {
         if !self.vim_on() && self.vim.mode() != VimMode::Insert {
             self.vim.enter_insert();
         }
+        let marks = self.marks(cx);
         let (shown, is_placeholder) = self.shown();
         let mut text = StyledText::new(shown.clone());
         if is_placeholder && !shown.is_empty() {
@@ -940,6 +1229,16 @@ impl Render for TextInput {
                     ..HighlightStyle::default()
                 },
             )]);
+        } else if !marks.is_empty() {
+            let wavy = HighlightStyle {
+                underline: Some(gpui::UnderlineStyle {
+                    thickness: px(1.0),
+                    color: Some(rgb(theme::danger()).into()),
+                    wavy: true,
+                }),
+                ..HighlightStyle::default()
+            };
+            text = text.with_highlights(marks.iter().map(|r| (r.clone(), wavy)));
         }
         let chosen = self
             .vim_on()
@@ -1064,6 +1363,9 @@ impl Render for TextInput {
                 })
                 .bg(rgb(theme::bg_input()));
         }
+        if let Some(menu) = self.spell_menu_el(cx) {
+            outer = outer.child(menu);
+        }
         let mut tagged = outer
             .e2e(self.tag, self.class)
             .attr("name", self.name)
@@ -1090,6 +1392,11 @@ impl Render for TextInput {
         }
         if self.disabled {
             tagged = tagged.attr("disabled", "");
+        }
+        if self.spell {
+            let text = self.buf.text();
+            let words: Vec<&str> = marks.iter().map(|r| &text[r.clone()]).collect();
+            tagged = tagged.attr("data-misspelled", words.join(","));
         }
         if focused {
             // Which field has the keyboard, for the test bridge.

@@ -7,6 +7,7 @@
 
 pub mod about;
 pub mod permissions;
+pub mod spellcheck;
 pub mod release_notes;
 pub mod avatar_color;
 pub mod calls;

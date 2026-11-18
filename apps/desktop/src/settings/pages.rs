@@ -421,6 +421,20 @@ impl SettingsView {
                 cx.notify();
             }),
         );
+        let spell_on = crate::spell::enabled();
+        let spell = choice(
+            "spell-check".into(),
+            "spell-check",
+            "",
+            "Spell check",
+            spell_on,
+            true,
+            false,
+            cx.listener(|this, _, _, cx| {
+                crate::spell::set_enabled(&this.data_dir, !crate::spell::enabled());
+                cx.notify();
+            }),
+        );
         let keyboard = section(
             "Keyboard",
             "keyboard",
@@ -428,6 +442,12 @@ impl SettingsView {
                 vim,
                 muted(
                     "Modal editing as in vim. The message box starts in insert mode; Esc goes to normal mode (h j k l, w b e, 0 ^ $, gg G, x, dd, D, C, cw, ciw, yy, p, u, Ctrl+R, i a I A o O, v, counts and . work), and Enter sends from there. With no box focused, j and k move through the messages, r replies, e edits, dd deletes, + reacts, y copies, o opens the thread, / searches and i goes back to the box.",
+                    "muted",
+                )
+                .into_any_element(),
+                spell,
+                muted(
+                    "Underlines misspelled words in the message box in red; right-click one for corrections, to add it to your dictionary or to ignore it. Checked on this computer, nothing is sent anywhere.",
                     "muted",
                 )
                 .into_any_element(),

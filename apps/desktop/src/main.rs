@@ -81,6 +81,7 @@ mod update_self_test;
 mod user_bar;
 mod video;
 mod welcome;
+mod spell;
 mod vim;
 #[cfg(target_os = "windows")]
 mod win_badge;
@@ -922,6 +923,7 @@ fn main() {
     // matrix: links open Morpheus (per user, where nobody else has them).
     std::thread::spawn(view_model::url_scheme::register);
     vim::load(&data_dir());
+    spell::load(&data_dir());
     noise_model::init();
     // The GPU is chosen when the window system starts (MORPHEUS_GPU overrides it).
     graphics::load(&data_dir());
