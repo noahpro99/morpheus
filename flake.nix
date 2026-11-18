@@ -32,6 +32,25 @@
           )
         );
 
+      # Calls' hardware video codecs (webrtc-sys): it builds VAAPI (Intel,
+      # AMD) when pkg-config finds libva and NVENC/NVDEC when it finds
+      # cuda.h. Both are dlopened at run time from the system's drivers
+      # (/run/opengl-driver/lib on NixOS), so only headers are needed:
+      # libva's dev output, and cuda.h on its own (the NvCodec sources
+      # bring the rest) rather than CUDA's runtime or toolkit. cuda_cudart is
+      # unfree, but only this header is copied out of it: it isn't in any
+      # runtime closure.
+      hwCodecEnvFor =
+        pkgs:
+        let
+          cudaHeaders = pkgs.runCommand "cuda-headers" { } ''
+            install -Dm644 ${pkgs.cudaPackages.cuda_cudart}/include/cuda.h $out/include/cuda.h
+          '';
+        in
+        {
+          CUDA_PATH = "${cudaHeaders}";
+        };
+
       # Native libraries the Dioxus desktop (webview) build links against on Linux.
       guiLibsFor =
         pkgs: with pkgs; [
@@ -109,6 +128,9 @@
           pkgs = import nixpkgs {
             inherit system;
             overlays = [ rust-overlay.overlays.default ];
+            # Only CUDA packages (their evaluation for cuda.h pulls in siblings);
+            # none is in the runtime closure.
+            config.allowUnfreePredicate = p: builtins.any (l: (l.shortName or "") == "CUDA EULA") (nixpkgs.lib.toList (p.meta.license or [ ]));
           };
           inherit (pkgs) lib;
           toolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
@@ -176,13 +198,19 @@
               pkgs.copyDesktopItems
             ];
             # glib: crates/call (the screen-capture portal on Linux).
-            buildInputs = desktopLibs ++ [ pkgs.glib ];
+            # libva: VAAPI video (webrtc-sys builds it when pkg-config finds it).
+            buildInputs = desktopLibs ++ [
+              pkgs.glib
+              pkgs.libva
+            ];
             cargoBuildFlags = [
               "--package"
               "morpheus-desktop"
             ];
 
             LK_CUSTOM_WEBRTC = webrtc;
+            # cuda.h for NVENC/NVDEC, as in the dev shell.
+            inherit (hwCodecEnvFor pkgs) CUDA_PATH;
             # As in the dev shell: libwebrtc is built against Chromium's libc++.
             CC_x86_64_unknown_linux_gnu = "${clang}/bin/clang";
             CXX_x86_64_unknown_linux_gnu = "${clang}/bin/clang++";
@@ -215,7 +243,7 @@
             # (Wayland, X11, Vulkan, GL), sound, screen capture.
             postFixup = ''
               makeWrapper $out/lib/morpheus/morpheus-desktop $out/bin/morpheus \
-                --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath desktopLibs}"
+                --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath (desktopLibs ++ [ pkgs.libva ])}:${pkgs.addDriverRunpath.driverLink}/lib"
             '';
 
             meta = {
@@ -243,18 +271,7 @@
 
           guiLibs = guiLibsFor pkgs;
 
-          # Calls' hardware video codecs (webrtc-sys): it builds VAAPI (Intel,
-          # AMD) when pkg-config finds libva and NVENC/NVDEC when it finds
-          # cuda.h. Both are dlopened at run time from the system's drivers
-          # (/run/opengl-driver/lib on NixOS), so only headers are needed:
-          # libva's dev output, and cuda.h on its own (the NvCodec sources
-          # bring the rest) rather than CUDA's runtime or toolkit.
-          cudaHeaders = pkgs.runCommand "cuda-headers" { } ''
-            install -Dm644 ${pkgs.cudaPackages.cuda_cudart}/include/cuda.h $out/include/cuda.h
-          '';
-          hwCodecEnv = {
-            CUDA_PATH = "${cudaHeaders}";
-          };
+          hwCodecEnv = hwCodecEnvFor pkgs;
 
           tools = with pkgs; [
             dioxus-cli
