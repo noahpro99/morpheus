@@ -148,6 +148,10 @@ android-reinstall: sweep
     nix develop .#android -c adb install target/dx/morpheus-mobile/debug/android/app/app/build/outputs/apk/debug/app-debug.apk
     nix develop .#android -c adb shell am start -n dev.morpheus.mobile/dev.dioxus.main.MainActivity
 
+# The native Android app (apps/android): debug APK for the emulator (x86_64) in apps/android/app/build/outputs/apk/debug
+android-native-build abi="x86_64": sweep
+    nix develop .#android-emulator -c bash -c "cd apps/android && gradle assembleDebug -PrustAbis={{abi}}"
+
 # Create the virtual phone (once; downloads the emulator and a system image, a few GB): a Pixel-sized Android 14 device in ~/.android/avd
 android-avd:
     nix develop .#android-emulator -c bash -c 'echo no | avdmanager create avd --force -n morpheus -d pixel_7 -k "system-images;android-34;google_apis;x86_64"'
@@ -157,6 +161,15 @@ android-avd:
 # Boot the virtual phone in its own window (KVM-accelerated); the app reaches the dev homeserver at http://10.0.2.2:8008
 android-emulator:
     nix develop .#android-emulator -c env LD_LIBRARY_PATH=/run/opengl-driver/lib emulator -avd morpheus -gpu host -netdelay none -netspeed full
+
+# The virtual phone without a window or sound (what the e2e runs use)
+android-emulator-headless:
+    nix develop .#android-emulator -c env LD_LIBRARY_PATH=/run/opengl-driver/lib emulator -avd morpheus -no-window -no-audio -no-boot-anim -no-snapshot-save -gpu swiftshader_indirect -netdelay none -netspeed full
+
+# Drive the native app on the virtual phone (`just android-emulator-headless` first): builds, installs, runs
+e2e-android-native file="android_native": hs-seed (android-native-build "x86_64")
+    nix develop .#android-emulator -c bash -c 'adb -s "${ANDROID_SERIAL:-emulator-5554}" install -r apps/android/app/build/outputs/apk/debug/app-debug.apk'
+    nix develop .#android-emulator -c env MORPHEUS_E2E_ANDROID_NATIVE=1 ANDROID_SERIAL="${ANDROID_SERIAL:-emulator-5554}" MORPHEUS_TEST_HOMESERVER={{hs}} scripts/e2e-cargo.sh --test {{file}} -- --nocapture --test-threads=1
 
 # Run on the virtual phone (start it with `just android-emulator` first)
 android-virtual: sweep

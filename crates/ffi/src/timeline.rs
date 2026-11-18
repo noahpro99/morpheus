@@ -171,7 +171,7 @@ pub struct RoomTimeline {
 
 fn event_id(id: &str) -> Result<OwnedEventId, FfiError> {
     OwnedEventId::try_from(id).map_err(|_| FfiError::Failed {
-        message: format!("{id} is not an event id"),
+        reason: format!("{id} is not an event id"),
     })
 }
 
@@ -219,7 +219,7 @@ impl Morpheus {
     ) -> Result<Arc<RoomTimeline>, FfiError> {
         let session = self.session()?;
         let room_id = OwnedRoomId::try_from(room_id.as_str()).map_err(|_| FfiError::Failed {
-            message: format!("{room_id} is not a room id"),
+            reason: format!("{room_id} is not a room id"),
         })?;
         let opened = session.timeline(room_id).await?;
         let (handle, mut updates) = (opened.handle, opened.updates);

@@ -609,6 +609,10 @@ pub fn read_autostart() -> Option<Autostart> {
             Err(_) => Autostart::default(),
         })
     }
+    #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+    {
+        None
+    }
 }
 
 /// Writes (or removes) the entry to match `wanted`.

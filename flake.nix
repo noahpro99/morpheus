@@ -320,6 +320,8 @@
                   androidToolchain
                   androidSdk
                   pkgs.jdk17
+                  # apps/android (Kotlin, Compose): gradle from nix, its plugins from Maven.
+                  pkgs.gradle
                 ];
                 buildInputs = guiLibs;
                 ANDROID_HOME = androidHome;

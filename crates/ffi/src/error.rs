@@ -5,14 +5,14 @@ pub enum FfiError {
     #[error("not signed in")]
     SignedOut,
     /// The core refused or failed; the message is for people.
-    #[error("{message}")]
-    Failed { message: String },
+    #[error("{reason}")]
+    Failed { reason: String },
 }
 
 impl From<morpheus_core::Error> for FfiError {
     fn from(err: morpheus_core::Error) -> Self {
         Self::Failed {
-            message: err.to_string(),
+            reason: err.to_string(),
         }
     }
 }
