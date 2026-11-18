@@ -103,17 +103,46 @@ data, starts it, forwards the port, and offers `wait_for_text`, `tap_tag`,
 Screens tag what tests need with `Modifier.testTag`, and tags are also exposed
 as resource ids (`testTagsAsResourceId`), so uiautomator sees them too.
 
-## Running the tests
+## Running the tests (the emulator, headless)
 
 ```sh
 just android-emulator-headless
-just android-native-build    # build + (install is done by the e2e launcher)
-just e2e-android-native      # the tests in morpheus-e2e/tests/android_native.rs
+just e2e-android-native                 # build (Gradle skips what did not change), install, run
+just e2e-android-native-run android_native a_room_shows   # no build: reinstall and run one test
 just test-ffi                # the Rust side alone, against the local homeserver
 ```
+
+## Release build and the phone
+
+`just android-native-phone` builds `assembleRelease` for `arm64-v8a` (R8 on,
+signed with `~/.config/morpheus/release.keystore`) and installs it with `adb
+install -r` on the plugged-in phone (never the emulator; `ANDROID_SERIAL` picks
+one when several are attached). Release builds have no test bridge and no
+cleartext traffic (the dev homeserver on `http://10.0.2.2` is debug only).
+
+R8 was checked on the emulator (x86_64 release APK): the app starts, the Rust
+library loads through JNA, and a sign-in attempt reaches matrix.org over TLS and
+comes back as the core's own error sentence, so the keep rules in
+`app/proguard-rules.pro` (JNA, the generated `uniffi` package) are enough.
 
 ## Not done yet
 
 Push notifications (UnifiedPush), calls, threads, settings, media upload,
 verification, a release APK path (signing is wired, `assembleRelease` is
 untested), iOS.
+
+## Notes from building it
+
+- A test leaves the app on screen when it ends and starts from a clean slate
+  (`pm clear`) at the next launch, so someone watching the emulator sees the
+  last state.
+- The tests make their own rooms (and Bob, a second core client, joins them):
+  the seeded rooms keep growing and move between servers while other suites
+  use the same homeserver.
+- `tap` waits for the layout to stop moving (keyboard, list scrolling), and a
+  swipe holds still before it lifts so the list does not fling.
+- Messages are not `clickable` (that merges a message into one semantics
+  node); they take taps with `pointerInput` and expose an `onClick` action.
+- Listing older messages: the screen asks again whenever a request ends and it
+  still needs more (a request made while one was out used to be dropped and the
+  start of the room never showed).

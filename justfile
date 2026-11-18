@@ -177,7 +177,7 @@ e2e-android-native file="android_native" name="": (android-native-build "x86_64"
 
 # Only install the last build and run the native app's tests: for a change to the tests alone
 e2e-android-native-run file="android_native" name="": hs-seed
-    nix develop .#android-emulator -c bash -c 'adb -s "${ANDROID_SERIAL:-emulator-5554}" install -r apps/android/app/build/outputs/apk/debug/app-debug.apk'
+    nix develop .#android-emulator -c bash -c 's="${ANDROID_SERIAL:-emulator-5554}"; apk=apps/android/app/build/outputs/apk/debug/app-debug.apk; adb -s "$s" install -r "$apk" || { adb -s "$s" uninstall dev.morpheus.mobile; adb -s "$s" install "$apk"; }'
     nix develop .#android-emulator -c env MORPHEUS_E2E_ANDROID_NATIVE=1 ANDROID_SERIAL="${ANDROID_SERIAL:-emulator-5554}" MORPHEUS_TEST_HOMESERVER={{hs}} scripts/e2e-cargo.sh --test {{file}} {{name}} -- --nocapture --test-threads=1
 
 # Run on the virtual phone (start it with `just android-emulator` first)
