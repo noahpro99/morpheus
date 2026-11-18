@@ -605,7 +605,10 @@ impl TimelineView {
             return false;
         };
         let now = metrics(&self.list).from_bottom;
-        if (now - left_at).abs() > 40.0 {
+        // Heading for the bottom the list re-measures rows as they come into view
+        // and its count of the way down shifts under the ease; that is not the
+        // reader scrolling, so only a scroll elsewhere stops it.
+        if target > 1.0 && (now - left_at).abs() > 40.0 {
             self.paging = None;
             return false;
         }
