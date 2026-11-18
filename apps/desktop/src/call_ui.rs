@@ -1370,6 +1370,9 @@ fn cards(
         .map(|frame| frame.read(cx).dim)
         .filter(|(w, h)| *w > 0 && *h > 0)
         .map_or(CARD_RATIO, |(w, h)| w as f32 / h as f32);
+    let has_others = others > 0;
+    let hidden = has_others && shell.calls.strip_hidden;
+    let others = if hidden { 0 } else { others };
     let layout = focus_layout(
         others,
         (stage.0 - 1.0).max(40.0),
@@ -1385,7 +1388,7 @@ fn cards(
         },
     );
     let strip_h = layout.strip_h;
-    let mut out = vec![
+    let mut col = vec![
         div()
             .flex_none()
             .h(px(main_room.1))
@@ -1400,7 +1403,7 @@ fn cards(
             .into_any_element(),
     ];
     if others > 0 {
-        out.push(
+        col.push(
             div()
                 .flex_none()
                 .h(px(strip_h))
@@ -1414,6 +1417,40 @@ fn cards(
                 .into_any_element(),
         );
     }
+    if has_others {
+        let top = if hidden { main_room.1 - 26.0 } else { main_room.1 - 6.0 };
+        let (name, title) = if hidden {
+            ("chevron-up", "Show the other cards")
+        } else {
+            ("chevron-down", "Hide the other cards")
+        };
+        col.push(
+            div()
+                .id("call-strip-toggle")
+                .occlude()
+                .absolute()
+                .top(px(top))
+                .left(px(stage.0 / 2.0 - 16.0))
+                .w(px(32.0))
+                .h(px(20.0))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(px(theme::RADIUS_XL))
+                .bg(rgb(theme::bg_elevated()))
+                .cursor_pointer()
+                .hover(|s| s.opacity(0.85))
+                .child(icon(name, 16.0).text_color(rgb(theme::text())))
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.calls.strip_hidden = !this.calls.strip_hidden;
+                    cx.notify();
+                }))
+                .e2e("button", if hidden { "call-strip-toggle hidden" } else { "call-strip-toggle" })
+                .attr("title", title)
+                .into_any_element(),
+        );
+    }
+    let out = vec![div().relative().w_full().flex().flex_col().children(col).into_any_element()];
     (out, true)
 }
 

@@ -48,6 +48,8 @@ pub struct Calls {
     media: Option<Call>,
     /// The card focused in the call view (a feed's key, or a person's id).
     pub focus: Option<String>,
+    /// The strip of the other cards under the focused one is hidden (kept for the session).
+    pub strip_hidden: bool,
     /// People's names and pictures, as profiles say.
     pub people: HashMap<OwnedUserId, Person>,
     asked: HashSet<OwnedUserId>,

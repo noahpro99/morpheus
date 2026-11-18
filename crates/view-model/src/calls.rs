@@ -431,7 +431,7 @@ pub fn focus_layout(others: usize, width: f32, height: f32, ratio: f32) -> Focus
     }
     let n = others as f32;
     let by_width = ((width - (n - 1.0) * CARD_GAP) / n / CARD_RATIO).floor();
-    let first = (height * 0.28).max(81.0).min(by_width).floor().max(40.0);
+    let first = 81.0_f32.min(by_width).floor().max(40.0);
     let (main_w, main_h) = fit(width, (height - first - CARD_GAP).max(40.0));
     let strip_h = (height - main_h - CARD_GAP).min(by_width).floor().max(40.0);
     FocusLayout { main_w, main_h, strip_h }
@@ -958,7 +958,7 @@ mod tests {
         // Wide stage: the strip is far taller than the old 81 px and the
         // focused card fills the rest, from the top.
         let f = focus_layout(2, 1200.0, 700.0, CARD_RATIO);
-        assert!(f.strip_h >= 160.0, "{f:?}");
+        assert!(f.strip_h >= 81.0, "{f:?}");
         assert!(f.main_h + CARD_GAP + f.strip_h <= 700.0, "{f:?}");
         assert!(f.main_h + CARD_GAP + f.strip_h >= 698.0, "{f:?}");
         assert!(f.main_w <= 1200.0 && (f.main_w / f.main_h - CARD_RATIO).abs() < 0.02);
@@ -982,6 +982,31 @@ mod tests {
         // Nothing in the strip: the focused card has it all.
         let f = focus_layout(0, 1200.0, 700.0, CARD_RATIO);
         assert_eq!((f.strip_h, f.main_h), (0.0, 675.0));
+    }
+
+    #[test]
+    fn a_focused_card_takes_the_full_width_or_all_the_height() {
+        let min_strip = 81.0;
+        // Wide window, 16:9 picture: the height is the limit, the strip is
+        // only the smallest card tall.
+        let f = focus_layout(2, 1600.0, 600.0, CARD_RATIO);
+        assert_eq!(f.strip_h, min_strip, "{f:?}");
+        assert_eq!(f.main_h, 600.0 - min_strip - CARD_GAP, "{f:?}");
+        // Tall window: the width is the limit, full width, and the strip
+        // gets the height left.
+        let f = focus_layout(2, 800.0, 1200.0, CARD_RATIO);
+        assert_eq!(f.main_w, 800.0, "{f:?}");
+        assert!(f.main_h + CARD_GAP + f.strip_h <= 1200.0, "{f:?}");
+        assert!(f.strip_h > min_strip, "{f:?}");
+        // Chat open (a narrower call area): still the full width when it can.
+        let f = focus_layout(1, 700.0, 700.0, CARD_RATIO);
+        assert_eq!(f.main_w, 700.0, "{f:?}");
+        assert_eq!(f.main_h, (700.0f32 / CARD_RATIO).floor(), "{f:?}");
+        // Never stretched: the card keeps the picture's shape.
+        for (w, h, r) in [(1600.0, 600.0, 4.0 / 3.0), (700.0, 700.0, 21.0 / 9.0)] {
+            let f = focus_layout(2, w, h, r);
+            assert!((f.main_w / f.main_h / r - 1.0).abs() < 0.02, "{f:?}");
+        }
     }
 
     fn user(name: &str) -> OwnedUserId {

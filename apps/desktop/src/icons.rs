@@ -11,6 +11,7 @@ pub const AUDIO_WAVEFORM_OFF: &str = r#"<path d="M2 13a2 2 0 0 0 2-2V7a2 2 0 0 1
 pub const PLUS: &str = r#"<path d="M5 12h14" /> <path d="M12 5v14" />"#;
 pub const CHEVRON_DOWN: &str = r#"<path d="m6 9 6 6 6-6" />"#;
 pub const CHEVRON_RIGHT: &str = r#"<path d="m9 18 6-6-6-6" />"#;
+pub const CHEVRON_UP: &str = r#"<path d="m18 15-6-6-6 6" />"#;
 pub const FOLDER: &str = r#"<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />"#;
 pub const LOCK: &str = r#"<path d="M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2z" /> <path d="M7 11V7a5 5 0 0 1 10 0v4" />"#;
 pub const LOCK_OPEN: &str = r#"<path d="M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2z" /> <path d="M7 11V7a5 5 0 0 1 9.9-1" />"#;
@@ -109,6 +110,7 @@ fn glyph(name: &str) -> Option<&'static str> {
         "heart" => HEART,
         "log-in" => LOG_IN,
         "chevron-down" => CHEVRON_DOWN,
+        "chevron-up" => CHEVRON_UP,
         "chevron-right" => CHEVRON_RIGHT,
         "folder" => FOLDER,
         "lock" => LOCK,
