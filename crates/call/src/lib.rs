@@ -68,9 +68,13 @@ pub use screen_sources::{
     platform_source_provider, shared_screen_source,
 };
 
+#[path = "watch.rs"]
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+mod watch;
+
 #[path = "diag.rs"]
 mod diag;
-pub use diag::{CallDiag, OtherSfu, TrackDiag, call_diag, camera_info, processing};
+pub use diag::{CallDiag, OtherSfu, TrackDiag, call_diag, camera_info, processing, sent_bytes};
 
 #[path = "noise_model.rs"]
 #[cfg_attr(

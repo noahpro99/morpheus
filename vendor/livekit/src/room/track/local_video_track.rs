@@ -367,6 +367,21 @@ impl LocalVideoTrack {
         self.apply_publishing_layers(qualities)
     }
 
+    /// Morpheus patch: stop (`paused`) or resume the encoder of every layer, as
+    /// dynacast does when the SFU says nobody receives the track: used when no
+    /// one watches a shared screen (the server does not send that for a screen).
+    pub fn pause_sending(&self, paused: bool) -> RoomResult<()> {
+        let all: Vec<proto::SubscribedQuality> = [
+            proto::VideoQuality::Low,
+            proto::VideoQuality::Medium,
+            proto::VideoQuality::High,
+        ]
+        .into_iter()
+        .map(|quality| proto::SubscribedQuality { quality: quality as i32, enabled: !paused })
+        .collect();
+        self.set_publishing_layers(&all)
+    }
+
     /// Re-applies the last dynacast qualities, since renegotiation re-enables paused layers.
     pub(crate) fn refresh_publishing_layers(&self) -> RoomResult<()> {
         let Some(qualities) = self.subscribed_qualities.lock().clone() else {

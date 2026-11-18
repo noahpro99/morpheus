@@ -115,6 +115,8 @@ pub enum MenuAction {
     CallMute(OwnedUserId, bool),
     /// Silences (true) or restores the sound of their shared screen for you.
     CallMuteStream(OwnedUserId, bool),
+    /// Stops watching their shared screen (it returns to a card to Watch).
+    CallStopWatching(OwnedUserId),
     /// Focuses the card with this key, or (when focused already) puts it back.
     CallFocus(String),
 }

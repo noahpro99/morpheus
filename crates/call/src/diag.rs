@@ -23,6 +23,8 @@ pub struct TrackDiag {
     pub bitrate: Option<f64>,
     pub loss_percent: Option<f64>,
     pub jitter_ms: Option<f64>,
+    /// Bytes sent so far on a "sending" track.
+    pub bytes_sent: u64,
 }
 
 /// The call as measured.
@@ -79,6 +81,14 @@ pub(crate) fn update(change: impl FnOnce(&mut CallDiag)) {
     {
         change(diag);
     }
+}
+
+/// The bytes our video `label` ("camera", "screen") has sent so far (0 when
+/// none, or not measured yet).
+pub fn sent_bytes(label: &str) -> u64 {
+    call_diag()
+        .and_then(|d| d.tracks.into_iter().find(|t| t.label == label && t.direction == "sending"))
+        .map_or(0, |t| t.bytes_sent)
 }
 
 /// Note a video track's numbers (replacing its earlier ones).

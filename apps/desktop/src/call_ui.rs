@@ -22,7 +22,7 @@ use crate::{
     view_model::{
         calls::{
             CARD_RATIO, CallState, Card, VideoFeed, card_avatar_size, card_width, default_stage_height, focus_layout, focused_card,
-            listed, marks, media_of, tiles, toggled_focus,
+            is_unwatched, listed, marks, media_of, tiles, toggled_focus,
         },
         nicknames::shown_name,
     },
@@ -491,7 +491,7 @@ fn ghost_button(
         .child(icon(glyph, 18.0).text_color(if hang {
             rgb(theme::on_danger())
         } else if active {
-            rgb(theme::accent())
+            rgb(theme::green())
         } else {
             rgb(theme::text_muted())
         }))
@@ -1033,11 +1033,13 @@ fn video_card(
     let flags = media(shell, room, &feed.user);
     let click_key = key.clone();
     let own = key == morpheus_call::LOCAL_CAMERA || key == morpheus_call::LOCAL_SCREEN;
-    let mut classes = String::from("video-tile");
+    // Someone's share not received yet: a card with a Watch button, no picture.
+    let unwatched = is_unwatched(feed);
+    let mut classes = String::from(if unwatched { "share-card" } else { "video-tile" });
     if own {
         classes.push_str(" self");
     }
-    if feed.screen {
+    if feed.screen && !unwatched {
         classes.push_str(" screen");
     }
     // A person's face rings green while they speak, as their avatar card
@@ -1052,7 +1054,7 @@ fn video_card(
         .frames
         .get(&key)
         .map_or((0, 0), |frame| frame.read(cx).dim);
-    if feed.screen && pw == 0 {
+    if feed.screen && pw == 0 && !unwatched {
         classes.push_str(" skeleton");
     }
     let ratio = if pw > 0 && ph > 0 {
@@ -1061,7 +1063,7 @@ fn video_card(
         CARD_RATIO
     };
     // A shared screen, focused, zooms and pans (as the picture viewer does).
-    let waiting = feed.screen && pw == 0;
+    let waiting = feed.screen && pw == 0 && !unwatched;
     let zoomable = feed.screen && matches!(fit, Fit::Main(..));
     let frame = shell.calls.frames.get(&key).cloned();
     let view = frame.as_ref().map(|f| f.read(cx).view).unwrap_or_default();
@@ -1130,6 +1132,35 @@ fn video_card(
     }
     if zoomable {
         tile = tile.child(zoom_control(shell, &key, view.zoom));
+    }
+    if unwatched {
+        tile = tile.child(watch_overlay(shell, cx, &feed.user));
+    }
+    if own && feed.screen {
+        // How many people watch this share (this device's own preview does not
+        // count): nothing is sent while it is nobody.
+        let n = shell.calls.state.as_ref().map_or(0, |c| c.watchers);
+        let text = if n == 0 {
+            "Nobody is watching".to_owned()
+        } else {
+            format!("{n} watching")
+        };
+        tile = tile.child(
+            div()
+                .absolute()
+                .top(px(8.0))
+                .right(px(8.0))
+                .px(px(8.0))
+                .py(px(2.0))
+                .rounded_full()
+                .bg(black(0.55))
+                .text_color(rgb(theme::OVERLAY_TEXT))
+                .text_size(px(0.8 * theme::REM))
+                .child(text.clone())
+                .e2e("span", "watchers")
+                .attr("data-count", n.to_string())
+                .text(text),
+        );
     }
     tile = tile
         .child(focus_button(shell, cx, &key, &group))
@@ -1251,8 +1282,64 @@ fn video_card(
                 String::new()
             },
         )
+        .attr(
+            "data-sent-bytes",
+            if own && feed.screen {
+                morpheus_call::sent_bytes("screen").to_string()
+            } else {
+                String::new()
+            },
+        )
         .attr("data-feed", key)
         .attr("data-user", feed.user.to_string())
+        .into_any_element()
+}
+
+/// A share not received: its Watch button, or (asked for) that it is starting.
+fn watch_overlay(shell: &Shell, cx: &mut Context<Shell>, user: &OwnedUserId) -> AnyElement {
+    let asked = shell
+        .calls
+        .state
+        .as_ref()
+        .is_some_and(|c| c.watching.contains(user));
+    let inner = if asked {
+        div()
+            .text_color(rgb(theme::OVERLAY_TEXT))
+            .child("Starting the stream...")
+            .e2e("span", "watch-starting")
+            .text("Starting the stream...")
+            .into_any_element()
+    } else {
+        let user = user.clone();
+        div()
+            .id(gpui::SharedString::from(format!("watch-{user}")))
+            .px(px(16.0))
+            .py(px(8.0))
+            .rounded(px(theme::RADIUS_XL))
+            .bg(rgb(theme::green()))
+            .text_color(rgb(theme::on_green()))
+            .cursor_pointer()
+            .hover(|s| s.opacity(0.9))
+            .child("Watch")
+            .on_click(cx.listener(move |this, _, _, cx| {
+                cx.stop_propagation();
+                this.watch_share(&user, true, cx);
+            }))
+            .e2e("button", "watch-button")
+            .text("Watch")
+            .into_any_element()
+    };
+    div()
+        .absolute()
+        .inset_0()
+        .flex()
+        .flex_col()
+        .gap(px(8.0))
+        .items_center()
+        .justify_center()
+        .child(icon("screen-share", 40.0).text_color(rgb(theme::OVERLAY_TEXT)))
+        .child(inner)
+        .e2e("div", "watch-overlay")
         .into_any_element()
 }
 
@@ -1292,11 +1379,11 @@ fn invite_card(cx: &mut Context<Shell>, room: &OwnedRoomId, direct: bool, fit: F
             .px(px(14.0))
             .py(px(8.0))
             .rounded(px(theme::RADIUS))
-            .bg(rgb(theme::accent()))
-            .text_color(rgb(theme::on_accent()))
+            .bg(rgb(theme::green()))
+            .text_color(rgb(theme::on_green()))
             .font_weight(gpui::FontWeight::SEMIBOLD)
             .cursor_pointer()
-            .child(icon("user-plus", 16.0).text_color(rgb(theme::on_accent())))
+            .child(icon("user-plus", 16.0).text_color(rgb(theme::on_green())))
             .child(label)
             .on_click(cx.listener(move |this, _, _, cx| this.open_call_invite(room.clone(), cx)))
             .e2e("button", "primary invite-to-call")
@@ -1604,7 +1691,7 @@ pub fn call_stage(
         .mt(px(-3.0))
         .w_full()
         .cursor_row_resize()
-        .hover(|s| s.bg(rgb(theme::accent())))
+        .hover(|s| s.bg(rgb(theme::green())))
         .on_mouse_down(MouseButton::Left, move |event, _, cx| {
             let y = f32::from(event.position.y);
             view.update(cx, |this, cx| {
@@ -2614,9 +2701,14 @@ impl Shell {
                 self.calls.muted_for_me.contains(&user),
             )
         };
+        let watching = self
+            .calls
+            .state
+            .as_ref()
+            .is_some_and(|c| c.watching.contains(&user));
         let focused = self.calls.focus.as_deref() == Some(key.as_str());
         let extra =
-            crate::view_model::calls::call_card_items(&user, own, screen, volume, muted, &key, focused);
+            crate::view_model::calls::call_card_items(&user, own, screen, volume, muted, &key, focused, watching);
         let name = shown(self, &user);
         self.open_user_menu_extra(room, user, name, extra, at, cx);
     }

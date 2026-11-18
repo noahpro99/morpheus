@@ -13,12 +13,12 @@
 
 use std::{
     borrow::Cow,
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{
-        Arc, Mutex, OnceLock,
+        Arc, LazyLock, Mutex, OnceLock,
         atomic::{AtomicBool, Ordering},
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use futures_util::{FutureExt as _, StreamExt};
@@ -232,6 +232,14 @@ pub enum CallEvent {
         identity: String,
         on: bool,
     },
+    /// `identity` started (`on`) or stopped sharing their screen. Nothing of it
+    /// arrives until [`Call::watch`]; the card is a Watch button until then.
+    Screen {
+        identity: String,
+        on: bool,
+    },
+    /// How many people watch this device's shared screen now.
+    Watchers(usize),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -377,6 +385,10 @@ impl Call {
             .as_ref()
             .map(|_| KeyProvider::new(key_options()));
         let mut options = RoomOptions::default();
+        // Shared screens are subscribed to on request ([`Call::watch`]); dynacast
+        // pauses a sender nobody receives.
+        options.auto_subscribe = false;
+        options.dynacast = true;
         options.encryption = keys.clone().map(|key_provider| E2eeOptions {
             encryption_type: EncryptionType::Gcm,
             key_provider,
@@ -479,14 +491,28 @@ impl Call {
         let (speech, speech_rx) = unbounded_channel();
         let me = room.local_participant().identity().to_string();
         crate::diag::begin(&url);
+        if let Ok(mut w) = WATCHING.lock() {
+            w.clear();
+        }
+        if let Ok(mut t) = TALLY.lock() {
+            *t = crate::watch::Tally::default();
+        }
         tasks.push(tokio::spawn(watch_connection(room.clone(), mic.clone())));
         tasks.push(tokio::spawn(aggregate(speech_rx, tx.clone())));
+        let screen: Arc<tokio::sync::Mutex<Option<Outgoing>>> = Arc::default();
+        tasks.push(tokio::spawn(watch_watchers(
+            room.clone(),
+            me.clone(),
+            tx.clone(),
+            screen.clone(),
+        )));
         tasks.push(tokio::spawn(watch_mic(
             mic.clone(),
             me.clone(),
             speech.clone(),
         )));
         tasks.push(tokio::spawn(forward_events(
+            Arc::downgrade(&room),
             room_events,
             tx.clone(),
             speech.clone(),
@@ -506,7 +532,7 @@ impl Call {
                 _mic: captured,
                 mode,
                 camera: Arc::default(),
-                screen: Arc::default(),
+                screen,
                 tasks,
                 events: tx,
                 others: Arc::default(),
@@ -563,6 +589,10 @@ impl Call {
             runtime()
                 .spawn(async move {
                     let mut options = RoomOptions::default();
+        // Shared screens are subscribed to on request ([`Call::watch`]); dynacast
+        // pauses a sender nobody receives.
+        options.auto_subscribe = false;
+        options.dynacast = true;
                     options.encryption = keys.map(|key_provider| E2eeOptions {
                         encryption_type: EncryptionType::Gcm,
                         key_provider,
@@ -580,6 +610,7 @@ impl Call {
                     log_connected(&room, &Source::Other(service.clone()));
                     let tasks = vec![
                         tokio::spawn(forward_events(
+                            Arc::downgrade(&room),
                             room_events,
                             events.clone(),
                             speech.clone(),
@@ -614,6 +645,36 @@ impl Call {
                     .await;
             }
         }
+    }
+
+    /// Start (`on`) or stop watching `identity`'s shared screen: its video
+    /// and sound are received only while watched, and the sharer is told
+    /// (it sends nothing while nobody watches).
+    pub fn watch(&self, identity: &str, on: bool) {
+        // LiveKit spawns its requests: from the interface thread that needs the runtime.
+        let _runtime = runtime().enter();
+        set_watching(identity, on);
+        let mut rooms = vec![self.room.clone()];
+        if let Ok(others) = self.others.lock() {
+            rooms.extend(others.values().map(|l| l.room.clone()));
+        }
+        for room in &rooms {
+            for participant in room.remote_participants().values() {
+                if participant.identity().as_str() != identity {
+                    continue;
+                }
+                for publication in participant.track_publications().values() {
+                    if is_share(publication.source()) {
+                        publication.set_subscribed(on);
+                    }
+                }
+            }
+        }
+        runtime().spawn(async move {
+            for room in rooms {
+                announce_watching(&room).await;
+            }
+        });
     }
 
     /// The call services of the other SFUs listened on, and whether each
@@ -1175,6 +1236,7 @@ async fn watch_encoder(
                 bitrate: Some(sent.outbound.target_bitrate).filter(|b| *b > 0.0),
                 loss_percent: loss,
                 jitter_ms: None,
+                bytes_sent: sent.sent.bytes_sent,
             });
         }
         if last.as_ref() != Some(&implementation) {
@@ -1242,6 +1304,7 @@ async fn watch_decoder_inner(track: &RemoteVideoTrack, who: &str, label: &str) {
                     bitrate,
                     loss_percent: (received + lost > 0.0).then(|| lost / (received + lost) * 100.0),
                     jitter_ms: Some(i.received.jitter * 1000.0),
+                    bytes_sent: 0,
                 });
                 if last.as_ref() != Some(&implementation) {
                     let decoder = crate::codec_backend(&implementation, false);
@@ -1779,7 +1842,111 @@ async fn play_tone(source: NativeAudioSource) {
     }
 }
 
+/// The shares (LiveKit identities) this device watches.
+static WATCHING: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(Mutex::default);
+/// Who watches what, as the others said.
+static TALLY: LazyLock<Mutex<crate::watch::Tally>> = LazyLock::new(Mutex::default);
+
+fn is_share(source: TrackSource) -> bool {
+    matches!(source, TrackSource::Screenshare | TrackSource::ScreenshareAudio)
+}
+
+fn watching(identity: &str) -> bool {
+    WATCHING.lock().is_ok_and(|w| w.contains(identity))
+}
+
+fn set_watching(identity: &str, on: bool) {
+    if let Ok(mut w) = WATCHING.lock() {
+        if on {
+            w.insert(identity.to_owned());
+        } else {
+            w.remove(identity);
+        }
+    }
+}
+
+/// Everyone already in `room` when its events start: what they publish is
+/// subscribed to (their shared screens excepted, those wait to be watched)
+/// and their shared screens are said.
+fn subscribe_existing(room: &std::sync::Weak<Room>, tx: &UnboundedSender<CallEvent>) {
+    let Some(room) = room.upgrade() else {
+        return;
+    };
+    for participant in room.remote_participants().values() {
+        let identity = participant.identity().to_string();
+        for publication in participant.track_publications().values() {
+            if !is_share(publication.source()) || watching(&identity) {
+                publication.set_subscribed(true);
+            }
+            if publication.source() == TrackSource::Screenshare {
+                let _ = tx.send(CallEvent::Screen { identity: identity.clone(), on: true });
+            }
+        }
+    }
+}
+
+/// Tell everyone in `room` which shares this device watches.
+async fn announce_watching(room: &Room) {
+    let payload = crate::watch::encode(&WATCHING.lock().map(|w| w.clone()).unwrap_or_default());
+    let _ = room
+        .local_participant()
+        .publish_data(DataPacket {
+            payload,
+            topic: Some(crate::watch::TOPIC.to_owned()),
+            reliable: true,
+            ..DataPacket::default()
+        })
+        .await;
+}
+
+/// While in the call: say what this device watches every few seconds (a
+/// sharer joining late, or a message lost, hears it soon) and report how many
+/// watch this device's own share when that changes.
+async fn watch_watchers(
+    room: Arc<Room>,
+    me: String,
+    tx: UnboundedSender<CallEvent>,
+    screen: Arc<tokio::sync::Mutex<Option<Outgoing>>>,
+) {
+    let mut shown = 0;
+    let mut said_something = false;
+    let mut paused = false;
+    let mut since_said = crate::watch::EVERY;
+    loop {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let count = TALLY.lock().map_or(0, |t| t.watching(&me, Instant::now()));
+        if count != shown {
+            shown = count;
+            if tx.send(CallEvent::Watchers(count)).is_err() {
+                return;
+            }
+        }
+        // Nobody watching: nothing is sent (its encoders are paused; the sharer's own preview is not the track). Dynacast alone
+        // does not stop a screen sent as one layer.
+        if screen.lock().await.is_none() {
+            paused = false;
+        }
+        if let Some(out) = screen.lock().await.as_ref()
+            && out.kind == VideoKind::Screen
+            && paused != (count == 0)
+        {
+            paused = count == 0;
+            let _ = out.track.pause_sending(paused);
+        }
+        since_said += Duration::from_secs(1);
+        if since_said >= crate::watch::EVERY {
+            since_said = Duration::ZERO;
+            let any = WATCHING.lock().is_ok_and(|w| !w.is_empty());
+            if any || said_something {
+                announce_watching(&room).await;
+                said_something = any;
+            }
+        }
+    }
+}
+
 async fn forward_events(
+    room: std::sync::Weak<Room>,
     mut events: UnboundedReceiver<RoomEvent>,
     tx: UnboundedSender<CallEvent>,
     speech: UnboundedSender<Speech>,
@@ -1787,6 +1954,7 @@ async fn forward_events(
     deafened: Arc<Mutex<bool>>,
     source: Source,
 ) {
+    subscribe_existing(&room, &tx);
     // Everyone in the call is on this device's own SFU too (to listen, if
     // not to publish): who comes and goes is said from there alone, once.
     let own = source == Source::Own;
@@ -1820,6 +1988,9 @@ async fn forward_events(
                 #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
                 mic::far_end_gone(&identity);
                 let _ = speech.send(Speech::Gone(identity.clone()));
+                if let Ok(mut tally) = TALLY.lock() {
+                    tally.forget(&identity);
+                }
                 if !own {
                     continue;
                 }
@@ -1974,6 +2145,38 @@ async fn forward_events(
                     screen: publication.source() == TrackSource::Screenshare,
                     on: false,
                 }
+            }
+            // Someone's screen is published: nothing of it is received until
+            // asked for (unless it is watched already); everything else is.
+            RoomEvent::TrackPublished { publication, participant } => {
+                let identity = participant.identity().to_string();
+                let screen = publication.source() == TrackSource::Screenshare;
+                if is_share(publication.source()) {
+                    if watching(&identity) {
+                        publication.set_subscribed(true);
+                    }
+                } else {
+                    publication.set_subscribed(true);
+                }
+                if !screen {
+                    continue;
+                }
+                CallEvent::Screen { identity, on: true }
+            }
+            RoomEvent::TrackUnpublished { publication, participant }
+                if publication.source() == TrackSource::Screenshare =>
+            {
+                let identity = participant.identity().to_string();
+                set_watching(&identity, false);
+                CallEvent::Screen { identity, on: false }
+            }
+            RoomEvent::DataReceived { payload, topic, participant: Some(p), .. }
+                if topic.as_deref() == Some(crate::watch::TOPIC) =>
+            {
+                if let Ok(mut tally) = TALLY.lock() {
+                    tally.hear(&p.identity().to_string(), crate::watch::decode(&payload), Instant::now());
+                }
+                continue;
             }
             // Another SFU dropping is not the call ending: it is connected again.
             RoomEvent::Disconnected { reason } if !own => {

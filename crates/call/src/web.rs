@@ -57,6 +57,11 @@ pub enum CallEvent {
         identity: String,
         on: bool,
     },
+    Screen {
+        identity: String,
+        on: bool,
+    },
+    Watchers(usize),
 }
 
 #[derive(Debug, thiserror::Error)]

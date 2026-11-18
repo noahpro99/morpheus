@@ -10,6 +10,16 @@ use morpheus_core::{CallMedia, IncomingCall, OwnedRoomId, OwnedUserId, RoomSumma
 /// ring and the membership arrive in either order).
 pub const RING_GRACE_MS: u64 = 5_000;
 
+/// The key of the card standing for `user`'s share until it is watched.
+pub fn unwatched_key(user: &OwnedUserId) -> String {
+    format!("unwatched:{user}")
+}
+
+/// Whether `feed` is that stand-in (a Watch button), not a picture.
+pub fn is_unwatched(feed: &VideoFeed) -> bool {
+    feed.key.starts_with("unwatched:")
+}
+
 /// Someone's video, and where its pictures are (`morpheus_call::latest_frame`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VideoFeed {
@@ -38,6 +48,12 @@ pub struct CallState {
     pub screen: bool,
     /// The desktop is asking which screen to share.
     pub choosing_screen: bool,
+    /// Others sharing their screen: nothing of it arrives until watched.
+    pub shares: Vec<OwnedUserId>,
+    /// The shares watched (asked for).
+    pub watching: Vec<OwnedUserId>,
+    /// How many people watch this device's shared screen.
+    pub watchers: usize,
 }
 
 impl CallState {
@@ -53,6 +69,28 @@ impl CallState {
             camera: false,
             screen: false,
             choosing_screen: false,
+            shares: Vec::new(),
+            watching: Vec::new(),
+            watchers: 0,
+        }
+    }
+
+    /// Someone started or stopped sharing their screen. A share that ended
+    /// is no longer watched (the next one must be asked for).
+    pub fn share_event(&mut self, user: OwnedUserId, on: bool) {
+        self.shares.retain(|u| *u != user);
+        if on {
+            self.shares.push(user);
+        } else {
+            self.watching.retain(|u| *u != user);
+        }
+    }
+
+    /// Watch (`on`) or stop watching `user`'s share.
+    pub fn set_watching(&mut self, user: OwnedUserId, on: bool) {
+        self.watching.retain(|u| *u != user);
+        if on {
+            self.watching.push(user);
         }
     }
 
@@ -319,6 +357,24 @@ pub fn tiles(
         .cloned()
         .map(Card::Video)
         .collect();
+    // Shares not received (yet): a card each, to press Watch on.
+    cards.extend(
+        call.shares
+            .iter()
+            .filter(|user| {
+                !call
+                    .video
+                    .iter()
+                    .any(|feed| feed.screen && &feed.user == *user)
+            })
+            .map(|user| {
+                Card::Video(VideoFeed {
+                    user: user.clone(),
+                    key: unwatched_key(user),
+                    screen: true,
+                })
+            }),
+    );
     cards.extend(people.iter().map(|user| match camera(user) {
         Some(feed) => Card::Video(feed.clone()),
         None => Card::Person(user.clone()),
@@ -985,6 +1041,34 @@ mod tests {
     }
 
     #[test]
+    fn a_share_is_a_card_to_watch_until_it_is_received() {
+        let mut call = call();
+        let bob = user("bob");
+        call.share_event(bob.clone(), true);
+        let cards = tiles(&call, &[bob.clone()], None);
+        // The share first (a Watch card), then bob's own card.
+        assert_eq!(cards.len(), 2);
+        let Card::Video(feed) = &cards[0] else { panic!("{cards:?}") };
+        assert!(feed.screen && is_unwatched(feed) && feed.user == bob);
+        // Watched and received: the real feed replaces the stand-in.
+        call.set_watching(bob.clone(), true);
+        call.video_event(Some(bob.clone()), "bob/TR_1".into(), true, true);
+        let cards = tiles(&call, &[bob.clone()], None);
+        assert_eq!(cards.len(), 2);
+        let Card::Video(feed) = &cards[0] else { panic!("{cards:?}") };
+        assert!(!is_unwatched(feed));
+        // Stopped watching: the stand-in is back; the share ending drops it
+        // and the choice.
+        call.video_event(None, "bob/TR_1".into(), true, false);
+        call.set_watching(bob.clone(), false);
+        assert_eq!(tiles(&call, &[bob.clone()], None).len(), 2);
+        call.set_watching(bob.clone(), true);
+        call.share_event(bob.clone(), false);
+        assert!(call.watching.is_empty());
+        assert_eq!(tiles(&call, &[bob], None).len(), 1);
+    }
+
+    #[test]
     fn a_focused_card_takes_the_full_width_or_all_the_height() {
         let min_strip = 81.0;
         // Wide window, 16:9 picture: the height is the limit, the strip is
@@ -1395,6 +1479,7 @@ pub fn call_card_items(
     muted: bool,
     key: &str,
     focused: bool,
+    watching: bool,
 ) -> Vec<crate::menu::MenuItem> {
     use crate::menu::{MenuAction, MenuItem, MenuSlider};
     let mut items = Vec::new();
@@ -1415,6 +1500,12 @@ pub fn call_card_items(
                 MenuAction::CallMute(user.clone(), !muted),
             )
             .icon(if muted { "volume-2" } else { "volume-x" }),
+        );
+    }
+    if stream && watching && !own {
+        items.push(
+            MenuItem::new("Stop watching", MenuAction::CallStopWatching(user.clone()))
+                .icon("eye-off"),
         );
     }
     items.push(

@@ -50,6 +50,8 @@ pub struct Calls {
     pub focus: Option<String>,
     /// The strip of the other cards under the focused one is hidden (kept for the session).
     pub strip_hidden: bool,
+    /// The LiveKit identity of each user sharing their screen (to watch it by).
+    pub share_identity: HashMap<OwnedUserId, String>,
     /// People's names and pictures, as profiles say.
     pub people: HashMap<OwnedUserId, Person>,
     asked: HashSet<OwnedUserId>,
@@ -706,6 +708,19 @@ impl Shell {
                     *v = volume;
                 }
             }
+        }
+        cx.notify();
+    }
+
+    /// Start or stop watching `user`'s shared screen: nothing of it is
+    /// received until asked for, and its sender sends nothing while nobody asks.
+    pub fn watch_share(&mut self, user: &OwnedUserId, on: bool, cx: &mut Context<Self>) {
+        let Some(state) = self.calls.state.as_mut() else {
+            return;
+        };
+        state.set_watching(user.clone(), on);
+        if let (Some(call), Some(identity)) = (&self.calls.media, self.calls.share_identity.get(user)) {
+            call.watch(identity, on);
         }
         cx.notify();
     }
@@ -1514,17 +1529,6 @@ async fn run_call(
                     said.unplaced.remove(&key);
                 }
                 this.update(cx, |this, cx| {
-                    // Someone starts sharing their screen: heard, as in Discord.
-                    if screen
-                        && on
-                        && this
-                            .calls
-                            .state
-                            .as_ref()
-                            .is_some_and(|c| !c.video.iter().any(|f| f.key == key))
-                    {
-                        this.chime(Sound::ScreenOn);
-                    }
                     if let Some(state) = this.calls.state.as_mut() {
                         state.video_event(user, key, screen, on);
                         cx.notify();
@@ -1548,6 +1552,45 @@ async fn run_call(
             CallEvent::Left(_) => {
                 this.update(cx, |this, _| this.chime(Sound::Leave)).ok();
             }
+            CallEvent::Screen { identity, on } => {
+                if !people.contains_key(&identity) {
+                    let learned = refresh_people(&session, &room_id, &mut people).await;
+                    show_learned(&this, cx, &people, &mut said, &learned);
+                }
+                let Some(user) = people.get(&identity).cloned() else {
+                    continue;
+                };
+                this.update(cx, |this, cx| {
+                    // Someone starts sharing their screen: heard, as in Discord.
+                    if on && this.calls.state.as_ref().is_some_and(|c| !c.shares.contains(&user)) {
+                        this.chime(Sound::ScreenOn);
+                    }
+                    if on {
+                        this.calls.share_identity.insert(user.clone(), identity);
+                    } else {
+                        this.calls.share_identity.remove(&user);
+                    }
+                    if let Some(state) = this.calls.state.as_mut() {
+                        state.share_event(user.clone(), on);
+                    }
+                    // The test runs watch every share as it appears (they check the
+                    // pictures); MORPHEUS_WATCH_ASK=1 gives the Watch buttons.
+                    if on && auto_watch() {
+                        this.watch_share(&user, true, cx);
+                    }
+                    cx.notify();
+                })
+                .ok();
+            }
+            CallEvent::Watchers(n) => {
+                this.update(cx, |this, cx| {
+                    if let Some(state) = this.calls.state.as_mut() {
+                        state.watchers = n;
+                        cx.notify();
+                    }
+                })
+                .ok();
+            }
             CallEvent::ScreenAudio { identity, on } => {
                 if !people.contains_key(&identity) {
                     let learned = refresh_people(&session, &room_id, &mut people).await;
@@ -1570,6 +1613,11 @@ async fn run_call(
             }
         }
     }
+}
+
+/// E2e runs watch shares by themselves (see `CallEvent::Screen`).
+fn auto_watch() -> bool {
+    std::env::var_os("MORPHEUS_E2E_PORT").is_some() && std::env::var_os("MORPHEUS_WATCH_ASK").is_none()
 }
 
 impl Shell {
