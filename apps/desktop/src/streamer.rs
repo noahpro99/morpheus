@@ -198,6 +198,9 @@ impl Shell {
         id: OwnedRoomId,
         cx: &mut Context<Self>,
     ) {
+        if self.rooms.iter().any(|room| room.id == id && room.is_space && !room.invited) {
+            return self.open_welcome(id, cx);
+        }
         let asking =
             sharing()
             && active()

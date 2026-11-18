@@ -205,6 +205,12 @@ pub struct Shell {
     /// Whether the Friends page fills the chat area, and the page itself.
     /// The server whose welcome screen fills the chat area.
     pub welcome: Option<OwnedRoomId>,
+    /// The member list shown on that server's overview.
+    pub welcome_members: Option<(OwnedRoomId, Entity<MembersView>)>,
+    /// A room just opened as a channel whose type may not be known yet: if
+    /// it turns out to be a space, its overview replaces it (until the person
+    /// goes elsewhere).
+    pub watch_space: Option<OwnedRoomId>,
     /// Channels joined from the overview: joining, joined or why not.
     pub welcome_join: std::collections::HashMap<OwnedRoomId, crate::welcome::JoinState>,
     pub friends_open: bool,
@@ -286,6 +292,7 @@ impl Shell {
                         this.keep_joined_here();
                         this.reopen_closed(cx);
                         this.open_pending_dm(cx);
+                        this.redirect_space_selection(cx);
                         this.restore_place(cx);
                         this.sync_members(cx);
                         this.refresh_switcher(cx);
@@ -517,6 +524,8 @@ impl Shell {
             menu_at: gpui::Point::default(),
             members: None,
             members_open: true,
+            welcome_members: None,
+            watch_space: None,
             members_count: 0,
             timeline_handle: None,
             acting_in_thread: false,
@@ -753,6 +762,23 @@ impl Shell {
         cx.notify();
     }
 
+    /// A space is never a channel: when the room shown turns out to be one
+    /// (its type is known only after the list has had it a while), its
+    /// overview takes its place.
+    fn redirect_space_selection(&mut self, cx: &mut Context<Self>) {
+        let Some(id) = self.selected.clone() else {
+            return;
+        };
+        if self.watch_space.as_ref() != Some(&id) {
+            return;
+        }
+        if self.welcome.as_ref() != Some(&id)
+            && self.rooms.iter().any(|room| room.id == id && room.is_space && !room.invited)
+        {
+            self.show_welcome(id, cx);
+        }
+    }
+
     /// A direct message that was just made is opened once the room list has
     /// it (before that it would have no name).
     fn open_dm_when_listed(&mut self, id: OwnedRoomId, cx: &mut Context<Self>) {
@@ -879,6 +905,7 @@ impl Shell {
 
     /// What a rail badge does: list another scope.
     pub fn set_scope(&mut self, scope: Scope, cx: &mut Context<Self>) {
+        self.watch_space = None;
         if self
             .welcome
             .as_ref()
@@ -946,8 +973,33 @@ impl Shell {
         }
     }
 
+    /// A member list of `room` whose clicks open profiles and menus.
+    pub fn new_members_view(&mut self, room: OwnedRoomId, cx: &mut Context<Self>) -> Entity<MembersView> {
+        let session = self.session.clone();
+        let members = cx.new(|cx| MembersView::new(session, room, cx));
+        cx.subscribe(
+            &members,
+            |this: &mut Self, _, event: &MemberEvent, cx| match event {
+                MemberEvent::Context(member, permissions, at) => {
+                    this.open_member_menu(member, *permissions, *at, cx)
+                }
+                MemberEvent::Open(member, at) => {
+                    let seen = Some((member.name.clone(), member.avatar.clone()));
+                    this.open_profile(member.user_id.clone(), Some(*at), seen, cx)
+                }
+            },
+        )
+        .detach();
+        members
+    }
+
     /// Show a room now, whatever streamer mode would ask (`open_room` asks).
     pub fn open_room_now(&mut self, id: OwnedRoomId, cx: &mut Context<Self>) {
+        // A space is a server, never a channel: its overview opens.
+        if self.rooms.iter().any(|room| room.id == id && room.is_space && !room.invited) {
+            return self.show_welcome(id, cx);
+        }
+        self.watch_space = Some(id.clone());
         if self.last_room_in.get(&self.scope) != Some(&id) {
             self.last_room_in.insert(self.scope.clone(), id.clone());
             self.save_last_rooms();
@@ -1113,22 +1165,7 @@ impl Shell {
             self.thread = None;
         }
         if self.session.is_some() && self.members.as_ref().is_none_or(|(room, _)| room != &id) {
-            let session = self.session.clone();
-            let room = id.clone();
-            let members = cx.new(|cx| MembersView::new(session, room, cx));
-            cx.subscribe(
-                &members,
-                |this: &mut Self, _, event: &MemberEvent, cx| match event {
-                    MemberEvent::Context(member, permissions, at) => {
-                        this.open_member_menu(member, *permissions, *at, cx)
-                    }
-                    MemberEvent::Open(member, at) => {
-                        let seen = Some((member.name.clone(), member.avatar.clone()));
-                        this.open_profile(member.user_id.clone(), Some(*at), seen, cx)
-                    }
-                },
-            )
-            .detach();
+            let members = self.new_members_view(id.clone(), cx);
             self.members_count = self
                 .rooms
                 .iter()
