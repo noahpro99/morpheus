@@ -38,7 +38,7 @@ fun Root(model: AppModel) {
                     Modifier.align(Alignment.Center).testTag("loading"),
                 )
                 Screen.SignedOut -> SignInScreen(model)
-                is Screen.SignedIn -> SignedInScreen(model, current)
+                is Screen.SignedIn -> SignedInScreen(model, current) { }
             }
         }
     }

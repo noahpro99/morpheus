@@ -2,7 +2,12 @@ package dev.morpheus.app
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.launchIn
@@ -10,6 +15,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import uniffi.morpheus_ffi.Account
 import uniffi.morpheus_ffi.Morpheus
+import uniffi.morpheus_ffi.Sidebar
 
 /** Which screen the app is on. */
 sealed interface Screen {
@@ -37,6 +43,20 @@ class AppModel(val morpheus: Morpheus) : ViewModel() {
 
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
+
+    /** Which rail entry the channel list shows (`ScopeItem.key`). */
+    private val _scopeKey = MutableStateFlow("rooms")
+    val scopeKey: StateFlow<String> = _scopeKey.asStateFlow()
+
+    fun selectScope(key: String) {
+        _scopeKey.value = key
+    }
+
+    /** The channel list while signed in; the Rust side stops pushing when nobody collects. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val sidebar: StateFlow<Sidebar?> = _screen
+        .flatMapLatest { if (it is Screen.SignedIn) morpheus.sidebars() else emptyFlow() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     init {
         _screen.onEach { AppState.screen = it.name() }.launchIn(viewModelScope)
@@ -66,13 +86,15 @@ class AppModel(val morpheus: Morpheus) : ViewModel() {
     }
 
     fun signOut() {
+        // The screen goes first: its listeners stop with it, and the sign-in
+        // screen is there while the server is told.
+        _screen.value = Screen.SignedOut
         viewModelScope.launch {
             try {
                 morpheus.logout()
             } catch (e: Exception) {
                 _error.value = e.message
             }
-            _screen.value = Screen.SignedOut
         }
     }
 }
