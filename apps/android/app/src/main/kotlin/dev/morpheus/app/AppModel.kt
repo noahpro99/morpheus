@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import uniffi.morpheus_ffi.Account
 import uniffi.morpheus_ffi.Morpheus
+import uniffi.morpheus_ffi.RoomItem
 import uniffi.morpheus_ffi.Sidebar
 
 /** Which screen the app is on. */
@@ -37,6 +38,20 @@ sealed interface Screen {
 class AppModel(val morpheus: Morpheus) : ViewModel() {
     private val _screen = MutableStateFlow<Screen>(Screen.Loading)
     val screen: StateFlow<Screen> = _screen.asStateFlow()
+
+    /** The room that is open, if one is. */
+    private val _room = MutableStateFlow<RoomItem?>(null)
+    val openRoom: StateFlow<RoomItem?> = _room.asStateFlow()
+
+    fun open(room: RoomItem) {
+        _room.value = room
+        AppState.screen = "room"
+    }
+
+    fun closeRoom() {
+        _room.value = null
+        AppState.screen = _screen.value.name()
+    }
 
     private val _signingIn = MutableStateFlow(false)
     val signingIn: StateFlow<Boolean> = _signingIn.asStateFlow()
@@ -64,7 +79,7 @@ class AppModel(val morpheus: Morpheus) : ViewModel() {
             _screen.value = try {
                 morpheus.restoreSession()?.let { Screen.SignedIn(it) } ?: Screen.SignedOut
             } catch (e: Exception) {
-                _error.value = e.message
+                _error.value = e.sentence()
                 Screen.SignedOut
             }
         }
@@ -78,7 +93,7 @@ class AppModel(val morpheus: Morpheus) : ViewModel() {
             try {
                 _screen.value = Screen.SignedIn(morpheus.login(homeserver.trim(), username.trim(), password))
             } catch (e: Exception) {
-                _error.value = e.message ?: "Could not sign in"
+                _error.value = e.sentence()
             } finally {
                 _signingIn.value = false
             }
@@ -88,12 +103,13 @@ class AppModel(val morpheus: Morpheus) : ViewModel() {
     fun signOut() {
         // The screen goes first: its listeners stop with it, and the sign-in
         // screen is there while the server is told.
+        _room.value = null
         _screen.value = Screen.SignedOut
         viewModelScope.launch {
             try {
                 morpheus.logout()
             } catch (e: Exception) {
-                _error.value = e.message
+                _error.value = e.sentence()
             }
         }
     }

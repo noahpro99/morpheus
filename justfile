@@ -162,17 +162,23 @@ android-avd:
 android-emulator:
     nix develop .#android-emulator -c env LD_LIBRARY_PATH=/run/opengl-driver/lib emulator -avd morpheus -gpu host -netdelay none -netspeed full
 
+# A release build for a plugged-in phone (arm64): built, signed with the release key,
+# installed over the old one. `ANDROID_SERIAL=<id>` names the phone when several are attached;
+# the emulator is never chosen.
+android-native-phone:
+    nix develop .#android -c bash -c 'set -euo pipefail; (cd apps/android && gradle assembleRelease -PrustAbis=arm64-v8a); serial="${ANDROID_SERIAL:-$(adb devices | awk '"'"'$2=="device" && $1 !~ /^emulator/ {print $1; exit}'"'"')}"; [ -n "$serial" ] || { echo "no phone attached (adb devices)"; exit 1; }; apk=apps/android/app/build/outputs/apk/release/app-release.apk; [ -f "$apk" ] || { echo "$apk is missing: no release key at ~/.config/morpheus/release.keystore?"; exit 1; }; adb -s "$serial" install -r "$apk"'
+
 # The virtual phone without a window or sound (what the e2e runs use)
 android-emulator-headless:
     nix develop .#android-emulator -c env LD_LIBRARY_PATH=/run/opengl-driver/lib emulator -avd morpheus -no-window -no-audio -no-boot-anim -no-snapshot-save -gpu swiftshader_indirect -netdelay none -netspeed full
 
 # Drive the native app on the virtual phone (`just android-emulator-headless` first): builds (Gradle skips what did not change), installs, runs
-e2e-android-native file="android_native": (android-native-build "x86_64") (e2e-android-native-run file)
+e2e-android-native file="android_native" name="": (android-native-build "x86_64") (e2e-android-native-run file name)
 
 # Only install the last build and run the native app's tests: for a change to the tests alone
-e2e-android-native-run file="android_native": hs-seed
+e2e-android-native-run file="android_native" name="": hs-seed
     nix develop .#android-emulator -c bash -c 'adb -s "${ANDROID_SERIAL:-emulator-5554}" install -r apps/android/app/build/outputs/apk/debug/app-debug.apk'
-    nix develop .#android-emulator -c env MORPHEUS_E2E_ANDROID_NATIVE=1 ANDROID_SERIAL="${ANDROID_SERIAL:-emulator-5554}" MORPHEUS_TEST_HOMESERVER={{hs}} scripts/e2e-cargo.sh --test {{file}} -- --nocapture --test-threads=1
+    nix develop .#android-emulator -c env MORPHEUS_E2E_ANDROID_NATIVE=1 ANDROID_SERIAL="${ANDROID_SERIAL:-emulator-5554}" MORPHEUS_TEST_HOMESERVER={{hs}} scripts/e2e-cargo.sh --test {{file}} {{name}} -- --nocapture --test-threads=1
 
 # Run on the virtual phone (start it with `just android-emulator` first)
 android-virtual: sweep

@@ -245,6 +245,9 @@ class TestBridge(private val app: Application) {
             Thread.sleep(ms / steps)
             touch(MotionEvent.ACTION_MOVE, down, x1 + (x2 - x1) * i / steps, y1 + (y2 - y1) * i / steps)
         }
+        // Held still a moment before lifting: no fling, so a drag moves the
+        // content by what it covers and no more.
+        Thread.sleep(150)
         touch(MotionEvent.ACTION_UP, down, x2, y2)
     }
 

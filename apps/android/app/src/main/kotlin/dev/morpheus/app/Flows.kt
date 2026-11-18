@@ -31,3 +31,10 @@ fun Morpheus.sidebars(): Flow<Sidebar> = callbackFlow {
     })
     awaitClose { handle.cancel() }
 }
+
+/** What to tell a person about a failed call: the core's own sentence when it gave one. */
+fun Throwable.sentence(): String = when (this) {
+    is uniffi.morpheus_ffi.FfiException.Failed -> reason
+    is uniffi.morpheus_ffi.FfiException.SignedOut -> "Not signed in"
+    else -> message ?: toString()
+}

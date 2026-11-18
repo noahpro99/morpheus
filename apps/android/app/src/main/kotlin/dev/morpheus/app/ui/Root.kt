@@ -38,7 +38,11 @@ fun Root(model: AppModel) {
                     Modifier.align(Alignment.Center).testTag("loading"),
                 )
                 Screen.SignedOut -> SignInScreen(model)
-                is Screen.SignedIn -> SignedInScreen(model, current) { }
+                is Screen.SignedIn -> {
+                    val room by model.openRoom.collectAsState()
+                    val open = room
+                    if (open != null) RoomScreen(model, open) else SignedInScreen(model, current) { model.open(it) }
+                }
             }
         }
     }
