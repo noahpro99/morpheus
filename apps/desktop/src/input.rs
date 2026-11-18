@@ -430,6 +430,21 @@ impl TextInput {
         ));
     }
 
+    /// Ctrl+V with nothing focused: the box takes the caret and the
+    /// clipboard (text, or pictures handed to the owner), as a paste in it.
+    pub fn paste_focused(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        window.focus(&self.focus);
+        let before = self.buf.clone();
+        let was = self.buf.text().to_owned();
+        self.paste(cx);
+        self.goal_x = None;
+        cx.notify();
+        if self.buf.text() != was {
+            self.vim.history.record(&before);
+            cx.emit(Changed);
+        }
+    }
+
     fn paste(&mut self, cx: &mut Context<Self>) -> bool {
         let Some(item) = cx.read_from_clipboard() else {
             return false;

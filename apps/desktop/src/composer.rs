@@ -187,6 +187,14 @@ impl Composer {
         self.input.read(cx).focus(window);
     }
 
+    /// Ctrl+V with nothing focused: the box takes the caret and the clipboard.
+    pub fn paste_in(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.input
+            .update(cx, |input, cx| input.paste_focused(window, cx));
+        self.edited(cx);
+        cx.notify();
+    }
+
     /// Whether the caret is in the box.
     pub fn input_focused(&self, window: &Window, cx: &gpui::App) -> bool {
         self.input.read(cx).is_focused(window)

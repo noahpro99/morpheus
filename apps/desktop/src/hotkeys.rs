@@ -372,6 +372,29 @@ impl Shell {
             composer.update(cx, |composer, cx| composer.type_in(&text, cx));
             return true;
         }
+        // Ctrl+V with nothing focused goes to the message box (the thread's
+        // when its panel is open), as typing does.
+        if ctrl
+            && !m.alt
+            && !m.shift
+            && key == "v"
+            && !self.modal_open(cx)
+            && !self.inbox_open
+            && !self.chat_covered()
+            && self
+                .root_focus
+                .as_ref()
+                .is_some_and(|focus| focus.is_focused(window))
+        {
+            let target = match &self.thread {
+                Some((_, panel)) => Some(panel.read(cx).composer().clone()),
+                None => self.composer.as_ref().map(|(_, c)| c.clone()),
+            };
+            if let Some(composer) = target {
+                composer.update(cx, |composer, cx| composer.paste_in(window, cx));
+                return true;
+            }
+        }
         // DOM names for the arrows, as `classify` has them.
         let name = match key {
             "up" => "ArrowUp",
