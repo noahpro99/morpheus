@@ -1,10 +1,4 @@
-//! Th        let left = folders.iter().any(|folder| {
-            std::fs::read_dir(folder)
-                .into_iter()
-                .flatten()
-                .flatten()
-                .any(|e| e.file_name().to_string_lossy().ends_with(".old"))
-        }); updater's self-test (`scripts/update-self-test.sh`, run by CI on each
+//! The updater's self-test (`scripts/update-self-test.sh`, run by CI on each
 //! platform): the app, started with `MORPHEUS_UPDATE_SELF_TEST=1`, opens no
 //! window and signs in nowhere. It pretends to be an old version, asks the
 //! feed in `MORPHEUS_UPDATE_FEED` for an update, installs it exactly as the
