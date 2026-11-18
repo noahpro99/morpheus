@@ -1107,7 +1107,46 @@ impl PinnedDialog {
             take_focus: true,
         };
         this.load(cx);
+        this.watch(cx);
         this
+    }
+
+    /// Keeps the list live: while the dialog is open the room's pinned ids are
+    /// read again every second (a local read), and a change, a pin made in
+    /// the meantime here or from another client, loads the list again.
+    fn watch(&mut self, cx: &mut Context<Self>) {
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_millis(700))
+                    .await;
+                let Ok(reading) = this.update(cx, |this, _| {
+                    this.session.pinned_event_ids(this.room.clone())
+                }) else {
+                    return;
+                };
+                let Ok(ids) = reading.await else { continue };
+                let changed = this
+                    .update(cx, |this, cx| {
+                        let shown: Option<Vec<OwnedEventId>> = match &this.list {
+                            Some(Ok(list)) => {
+                                Some(list.iter().map(|m| m.event_id.clone()).collect())
+                            }
+                            _ => None,
+                        };
+                        if shown.as_ref() != Some(&ids) {
+                            this.load(cx);
+                            return true;
+                        }
+                        false
+                    })
+                    .unwrap_or(false);
+                if changed {
+                    this.update(cx, |_, cx| cx.emit(PinsChanged)).ok();
+                }
+            }
+        })
+        .detach();
     }
 
     fn load(&mut self, cx: &mut Context<Self>) {

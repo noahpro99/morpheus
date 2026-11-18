@@ -36,17 +36,26 @@ impl Session {
             let room = room?;
             let mut out = Vec::new();
             for event_id in room.pinned_event_ids().unwrap_or_default() {
-                let Ok(event) = room.event(&event_id, None).await else {
-                    continue;
+                // A pin that cannot be fetched (not loaded, not visible to
+                // us) still shows, so it can be unpinned and the list always
+                // matches the room's pins.
+                let json = match room.event(&event_id, None).await {
+                    Ok(event) => event.raw().deserialize_as::<Value>().ok(),
+                    Err(_) => None,
                 };
-                let Ok(json) = event.raw().deserialize_as::<Value>() else {
+                let Some(json) = json else {
+                    out.push(PinnedMessage {
+                        event_id,
+                        sender: room.own_user_id().to_owned(),
+                        body: "(message not available)".into(),
+                    });
                     continue;
                 };
                 let sender = json
                     .get("sender")
                     .and_then(Value::as_str)
-                    .and_then(|s| s.parse().ok());
-                let Some(sender) = sender else { continue };
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or_else(|| room.own_user_id().to_owned());
                 let content = json.get("content").cloned().unwrap_or(Value::Null);
                 let body = content
                     .get("body")
