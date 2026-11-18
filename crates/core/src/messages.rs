@@ -10,7 +10,8 @@ use crate::{CoreFuture, Error, OwnedRoomId, Session};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PinnedMessage {
     pub event_id: OwnedEventId,
-    pub sender: OwnedUserId,
+    /// None when the event could not be fetched: its sender is not known.
+    pub sender: Option<OwnedUserId>,
     /// Plain body, or a short description for non-text events.
     pub body: String,
 }
@@ -46,7 +47,7 @@ impl Session {
                 let Some(json) = json else {
                     out.push(PinnedMessage {
                         event_id,
-                        sender: room.own_user_id().to_owned(),
+                        sender: None,
                         body: "(message not available)".into(),
                     });
                     continue;
@@ -54,8 +55,7 @@ impl Session {
                 let sender = json
                     .get("sender")
                     .and_then(Value::as_str)
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or_else(|| room.own_user_id().to_owned());
+                    .and_then(|s| s.parse().ok());
                 let content = json.get("content").cloned().unwrap_or(Value::Null);
                 let body = content
                     .get("body")

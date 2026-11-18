@@ -166,7 +166,7 @@ pub fn PinnedPanel(room_id: OwnedRoomId) -> Element {
                         for item in list.iter().rev() {
                             div { key: "{item.event_id}", class: "pinned-item",
                                 div { class: "pinned-main",
-                                    span { class: "sender", "{item.sender.localpart()}" }
+                                    if let Some(sender) = &item.sender { span { class: "sender", "{sender.localpart()}" } }
                                     p { class: "body", "{item.body}" }
                                 }
                                 button {

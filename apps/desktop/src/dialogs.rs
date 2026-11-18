@@ -1225,13 +1225,13 @@ impl Render for PinnedDialog {
                                 div()
                                     .flex_1()
                                     .min_w_0()
-                                    .child(
+                                    .children(item.sender.as_ref().map(|sender| {
                                         div()
                                             .font_weight(FontWeight::SEMIBOLD)
-                                            .child(item.sender.localpart().to_owned())
+                                            .child(sender.localpart().to_owned())
                                             .e2e("span", "sender")
-                                            .text(item.sender.localpart().to_owned()),
-                                    )
+                                            .text(sender.localpart().to_owned())
+                                    }))
                                     .child(
                                         div()
                                             .child(item.body.clone())
