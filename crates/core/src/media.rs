@@ -30,6 +30,11 @@ pub struct MediaRef {
 }
 
 impl MediaRef {
+    /// The picture at `uri` (`mxc://…`).
+    pub fn from_mxc_uri(uri: &str) -> Self {
+        Self::from_mxc(OwnedMxcUri::from(uri))
+    }
+
     pub fn from_mxc(uri: OwnedMxcUri) -> Self {
         Self {
             key: uri.to_string(),

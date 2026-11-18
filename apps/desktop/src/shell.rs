@@ -194,6 +194,8 @@ pub struct Shell {
     pub pinned: Vec<OwnedEventId>,
     /// Your nicknames for people.
     pub nicknames: NickMap,
+    /// The custom emoji packs in reach of the open room (`custom_emoji`).
+    pub emote_packs: Vec<morpheus_core::EmotePack>,
     /// The open thread, in the side column in place of the members.
     pub thread: Option<(OwnedRoomId, Entity<ThreadPanel>)>,
     /// The room search panel, in the side column when no thread is open.
@@ -533,6 +535,7 @@ impl Shell {
             overlay_was_open: false,
             pinned: Vec::new(),
             nicknames: NickMap::new(),
+            emote_packs: Vec::new(),
             thread: None,
             search: None,
             search_input: None,
@@ -1186,6 +1189,7 @@ impl Shell {
         if self.search.as_ref().is_some_and(|(room, _)| room != &id) {
             self.clear_search(cx);
         }
+        self.refresh_emotes(cx);
         self.push_nicknames(cx);
         self.refresh_pinned(cx);
         cx.notify();

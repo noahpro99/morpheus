@@ -245,12 +245,14 @@ impl Shell {
     ) {
         use crate::emoji_picker::{EmojiPicker, PickerEvent};
         use gpui::AppContext as _;
-        let picker = cx.new(|cx| EmojiPicker::new(at, cx));
+        self.refresh_emotes(cx);
+        let (packs, session) = (self.emote_packs.clone(), self.session.clone());
+        let picker = cx.new(|cx| EmojiPicker::new(at, packs, session, cx));
         cx.subscribe(&picker, |this: &mut Self, _, event: &PickerEvent, cx| {
             let Some((_, message)) = this.picker.take() else {
                 return;
             };
-            if let PickerEvent::Picked(emoji) = event
+            if let PickerEvent::Picked(emoji) | PickerEvent::PickedCustom(emoji) = event
                 && let Some((timeline, _)) = this.active_timeline(cx)
             {
                 timeline.update(cx, |timeline, cx| {

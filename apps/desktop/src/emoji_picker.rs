@@ -5,22 +5,28 @@
 
 use gpui::{
     AnyElement, Context, ElementId, EventEmitter, FocusHandle, FontWeight, IntoElement,
-    MouseButton, Pixels, Point, Render, ScrollHandle, SharedString, Subscription, Window, anchored,
-    deferred, div, point, prelude::*, px, relative, rgb, rgba,
+    MouseButton, Pixels, Point, Render, ScrollHandle, SharedString, StyledImage as _, Subscription, Window, anchored,
+    deferred, div, img, point, prelude::*, px, relative, rgb, rgba,
 };
+
+use morpheus_core::{EmotePack, Session};
 
 use crate::{
     e2e::{E2eExt as _, HandleProbe},
     icons::icon,
     input::{Submit, TextInput},
     theme,
-    view_model::emoji_picker::{GROUPS, Remembered, TONES, hand, sections, tone_of},
+    view_model::emoji_picker::{
+        GROUPS, Remembered, TONES, custom_sections, hand, sections, tone_of,
+    },
 };
 
 /// What the picker tells whoever opened it.
 pub enum PickerEvent {
     /// This emoji was chosen.
     Picked(String),
+    /// A custom emoji was chosen: its picture's `mxc://` URI (the reaction's key).
+    PickedCustom(String),
     Closed,
 }
 
@@ -30,6 +36,9 @@ const WIDTH: f32 = 360.0;
 const HEIGHT: f32 = 440.0;
 
 pub struct EmojiPicker {
+    /// Custom emoji packs in reach, a section each.
+    packs: Vec<EmotePack>,
+    session: Option<Session>,
     /// Where it was opened (the button's click).
     at: Point<Pixels>,
     search: gpui::Entity<TextInput>,
@@ -42,7 +51,12 @@ pub struct EmojiPicker {
 }
 
 impl EmojiPicker {
-    pub fn new(at: Point<Pixels>, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        at: Point<Pixels>,
+        packs: Vec<EmotePack>,
+        session: Option<Session>,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let search = cx.new(|cx| {
             TextInput::new("emoji-search", "Find the perfect emoji", false, "", cx)
                 .bare("input", "emoji-search")
@@ -63,6 +77,8 @@ impl EmojiPicker {
         // Typing changes what is listed.
         cx.observe(&search, |_, _, cx| cx.notify()).detach();
         Self {
+            packs,
+            session,
             at,
             search,
             remembered: Remembered::load(&crate::data_dir()),
@@ -92,6 +108,14 @@ impl Render for EmojiPicker {
         let searching = !query.trim().is_empty();
         let tone = tone_of(self.remembered.tone);
         let listed = sections(&query, tone, &self.remembered.recent);
+        let custom = custom_sections(&self.packs, &query);
+        if let Some(session) = self.session.clone() {
+            for section in &custom {
+                for emote in &section.emotes {
+                    crate::custom_emoji::want(&session, &emote.url, cx);
+                }
+            }
+        }
 
         // The search box and the skin tone.
         let tones = div().relative().child(
@@ -203,12 +227,25 @@ impl Render for EmojiPicker {
                 .w(px(44.0))
                 .py(px(6.0))
                 .bg(rgb(theme::bg_rail()));
-            let mut entries: Vec<(&'static str, &'static str)> = Vec::new();
-            if !self.remembered.recent.is_empty() {
-                entries.push(("Recent", "🕘"));
+            // (title, glyph, the first emoji's picture for a pack's tab)
+            let mut entries: Vec<(String, String, Option<String>)> = Vec::new();
+            for section in &custom {
+                let glyph: String = section.name.chars().take(1).collect();
+                entries.push((
+                    section.name.clone(),
+                    glyph,
+                    section.emotes.first().map(|e| e.url.clone()),
+                ));
             }
-            entries.extend(GROUPS.iter().map(|(_, name, glyph)| (*name, *glyph)));
-            for (index, (name, glyph)) in entries.into_iter().enumerate() {
+            if !self.remembered.recent.is_empty() {
+                entries.push(("Recent".into(), "🕘".into(), None));
+            }
+            entries.extend(
+                GROUPS
+                    .iter()
+                    .map(|(_, name, glyph)| ((*name).into(), (*glyph).into(), None)),
+            );
+            for (index, (name, glyph, picture)) in entries.into_iter().enumerate() {
                 tabs = tabs.child(
                     div()
                         .id(ElementId::from(SharedString::from(format!("tab-{name}"))))
@@ -220,7 +257,10 @@ impl Render for EmojiPicker {
                         .text_size(px(1.15 * theme::REM))
                         .cursor_pointer()
                         .hover(|s| s.bg(rgba(theme::bg_hover())))
-                        .child(glyph)
+                        .map(|tab| match picture.as_deref().and_then(crate::custom_emoji::image) {
+                            Some(image) => tab.child(img(crate::media::drawn(image)).size(px(24.0))),
+                            None => tab.child(glyph.clone()),
+                        })
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.scroll.scroll_to_top_of_item(index);
                             cx.notify();
@@ -244,7 +284,7 @@ impl Render for EmojiPicker {
             .flex_col()
             .px(px(8.0))
             .pb(px(8.0));
-        if listed.is_empty() {
+        if listed.is_empty() && custom.is_empty() {
             grid = grid.child(
                 div()
                     .px(px(8.0))
@@ -255,6 +295,73 @@ impl Render for EmojiPicker {
                     .child("No emoji found")
                     .e2e("p", "emoji-none muted")
                     .text("No emoji found"),
+            );
+        }
+        for section in custom {
+            let mut cells = div().flex().flex_wrap();
+            for emote in &section.emotes {
+                let url = emote.url.clone();
+                let name = format!(":{}:", emote.shortcode);
+                let picture = crate::custom_emoji::image(&emote.url);
+                let loaded = picture.is_some();
+                cells = cells.child(
+                    div()
+                        .id(ElementId::from(SharedString::from(format!(
+                            "custom-{}-{}",
+                            section.name, emote.shortcode
+                        ))))
+                        .w(px(37.0))
+                        .h(px(37.0))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded(px(theme::RADIUS_SM))
+                        .cursor_pointer()
+                        .hover(|s| s.bg(rgba(theme::bg_hover())))
+                        .child(match picture {
+                            Some(image) => div()
+                                .child(img(crate::media::drawn(image)).size(px(28.0)))
+                                .e2e("img", "emote")
+                                .attr("alt", name.clone())
+                                .attr("data-loaded", "true")
+                                .into_any_element(),
+                            None => div()
+                                .size(px(28.0))
+                                .rounded(px(4.0))
+                                .bg(rgb(theme::bg_input()))
+                                .e2e("span", "emote")
+                                .attr("alt", name.clone())
+                                .attr("data-loaded", "false")
+                                .into_any_element(),
+                        })
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            cx.emit(PickerEvent::PickedCustom(url.clone()));
+                            let _ = this;
+                        }))
+                        .e2e("button", "emoji-cell custom")
+                        .attr("title", name)
+                        .attr("data-loaded", loaded.to_string()),
+                );
+            }
+            grid = grid.child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .child(
+                        div()
+                            .pt(px(8.0))
+                            .pb(px(4.0))
+                            .px(px(2.0))
+                            .text_size(px(0.72 * theme::REM))
+                            .font_weight(FontWeight::BOLD)
+                            .text_color(rgb(theme::text_muted()))
+                            .child(section.name.to_uppercase())
+                            .e2e("h3", "")
+                            .text(section.name.clone()),
+                    )
+                    .child(cells.e2e("div", "emoji-cells"))
+                    .e2e("section", "emoji-section")
+                    .attr("data-group", section.name),
             );
         }
         for section in listed {

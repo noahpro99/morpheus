@@ -53,6 +53,8 @@ pub struct Composer {
     is_dm: bool,
     /// Your nicknames for people, which the `@` finder matches too.
     nicknames: HashMap<String, String>,
+    /// Custom emoji in reach (`:name` finds them, sending turns them into pictures).
+    emotes: Vec<morpheus_core::Emote>,
     session: Option<Session>,
     handle: Option<TimelineHandle>,
     input: Entity<TextInput>,
@@ -133,6 +135,7 @@ impl Composer {
             room_id,
             room_name,
             nicknames: HashMap::new(),
+            emotes: Vec::new(),
             is_dm,
             session,
             handle: None,
@@ -366,10 +369,30 @@ impl Composer {
             })
             .detach();
         }
-        self.suggestions = composer::suggest(&draft, self.members.as_deref(), &self.nicknames);
+        self.suggestions = composer::suggest_with(
+            &draft,
+            self.members.as_deref(),
+            &self.nicknames,
+            &self.emotes,
+        );
+        if let Some(session) = self.session.clone() {
+            for row in &self.suggestions {
+                if let Suggestion::Custom { url, .. } = row {
+                    crate::custom_emoji::want(&session, url, cx);
+                }
+            }
+        }
         self.active = 0;
         self.sync_capture(cx);
         cx.notify();
+    }
+
+    /// The custom emoji in reach changed: the suggestions follow.
+    pub fn set_emotes(&mut self, emotes: Vec<morpheus_core::Emote>, cx: &mut Context<Self>) {
+        if self.emotes != emotes {
+            self.emotes = emotes;
+            self.recompute(cx);
+        }
     }
 
     /// Your nicknames changed: the suggestions follow.
@@ -457,11 +480,16 @@ impl Composer {
         self.set_draft("", cx);
         self.suggestions.clear();
         self.sync_capture(cx);
+        let emotes: Vec<(String, String)> = self
+            .emotes
+            .iter()
+            .map(|e| (e.shortcode.clone(), e.url.clone()))
+            .collect();
         // Sending first: the message shows (greyed) the moment it is queued.
         let sending = text.map(|(kind, body)| match kind {
-            SendKind::Text => handle.send_text(body),
-            SendKind::Reply(event_id) => handle.send_reply(body, event_id),
-            SendKind::Edit(id) => handle.edit(id, body),
+            SendKind::Text => handle.send_text_with(body, emotes),
+            SendKind::Reply(event_id) => handle.send_reply_with(body, event_id, emotes),
+            SendKind::Edit(id) => handle.edit_with(id, body, emotes),
         });
         let typing = handle.stop_typing();
         cx.spawn(async move |_, _| {
@@ -767,6 +795,9 @@ impl Composer {
                 Suggestion::Emoji { emoji, code } => {
                     ((*emoji).to_owned(), format!(":{code}:"), None)
                 }
+                Suggestion::Custom { shortcode, .. } => {
+                    (String::new(), format!(":{shortcode}:"), None)
+                }
                 Suggestion::Member {
                     name,
                     nickname: Some(nickname),
@@ -781,6 +812,10 @@ impl Composer {
                     nickname: None,
                     user_id,
                 } => ("@".into(), name.clone(), Some(user_id.clone())),
+            };
+            let picture = match row {
+                Suggestion::Custom { url, .. } => crate::custom_emoji::image(url),
+                _ => None,
             };
             let mut item = div()
                 .id(ElementId::Name(format!("suggestion-{index}").into()))
@@ -798,6 +833,9 @@ impl Composer {
                         .flex()
                         .justify_center()
                         .text_size(rem(1.1))
+                        .when_some(picture, |d, image| {
+                            d.child(img(crate::media::drawn(image)).size(px(22.0)))
+                        })
                         .child(glyph.clone())
                         .e2e("span", "emoji")
                         .text(glyph),

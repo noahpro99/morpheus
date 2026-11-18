@@ -36,6 +36,9 @@ pub struct Style {
     pub mention: bool,
     /// Where a click goes.
     pub link: Option<Arc<str>>,
+    /// A custom emoji: the text (`:name:`) stands for the picture at this
+    /// `mxc://` URI.
+    pub emote: Option<Arc<str>>,
 }
 
 /// A byte range of a paragraph's text and its style.
@@ -61,6 +64,15 @@ impl Para {
             .collect()
     }
 
+    /// The custom emoji in it: byte range of the `:name:` text and the
+    /// picture's `mxc://` URI.
+    pub fn emotes(&self) -> Vec<(Range<usize>, Arc<str>)> {
+        self.spans
+            .iter()
+            .filter_map(|s| s.style.emote.clone().map(|e| (s.range.clone(), e)))
+            .collect()
+    }
+
     /// Adds text with `style` at the end.
     pub fn push(&mut self, text: &str, style: Style) {
         if text.is_empty() {
@@ -77,6 +89,7 @@ impl Para {
         }
         // Text nodes of one element come as several pushes: one span.
         if let Some(last) = self.spans.last_mut()
+            && style.emote.is_none()
             && last.style == style
             && last.range.end == range.start
         {
@@ -99,6 +112,33 @@ pub enum Block {
         items: Vec<Vec<Block>>,
     },
     Rule,
+}
+
+/// Every custom emoji picture (`mxc://` URI) the blocks hold, once each.
+pub fn emote_urls(blocks: &[Block]) -> Vec<Arc<str>> {
+    fn walk(blocks: &[Block], out: &mut Vec<Arc<str>>) {
+        for block in blocks {
+            match block {
+                Block::Para(p) => {
+                    for (_, url) in p.emotes() {
+                        if !out.contains(&url) {
+                            out.push(url);
+                        }
+                    }
+                }
+                Block::Quote(inner) => walk(inner, out),
+                Block::List { items, .. } => {
+                    for item in items {
+                        walk(item, out);
+                    }
+                }
+                Block::Pre(_) | Block::Rule => {}
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(blocks, &mut out);
+    out
 }
 
 /// What a test sees as the text of blocks (as the DOM's `textContent`: no
@@ -329,6 +369,27 @@ fn walk(node: &NodeRef, style: &Style, inline: &mut Inline, out: &mut Vec<Block>
             None => walk_children(node, style, inline, out),
         },
         "img" => {
+            // A picture from a pack (custom emoji; the sanitiser drops its
+            // `data-mx-emoticon`, so it is known by its `:shortcode:` alt
+            // text): inline, as itself.
+            let shortcode = |a: &String| {
+                a.len() > 2
+                    && a.starts_with(':')
+                    && a.ends_with(':')
+                    && !a[1..a.len() - 1].contains([':', ' '])
+            };
+            let named = attr(node, "alt")
+                .filter(shortcode)
+                .or_else(|| attr(node, "title").filter(shortcode));
+            if let (Some(src), Some(alt)) = (
+                attr(node, "src").filter(|s| s.starts_with("mxc://")),
+                named,
+            ) {
+                let mut emote = style.clone();
+                emote.emote = Some(src.as_str().into());
+                inline.para.push(&alt, emote);
+                return;
+            }
             let alt = attr(node, "alt")
                 .or_else(|| attr(node, "title"))
                 .unwrap_or_else(|| "image".into());
@@ -367,6 +428,30 @@ mod tests {
             .find(|s| s.range.start <= start && start < s.range.end)
             .map(|s| s.style.clone())
             .unwrap_or_default()
+    }
+
+    #[test]
+    fn pictures_from_packs_are_inline_emoji_with_their_shortcode_as_text() {
+        let blocks = html(
+            "<p>look <img data-mx-emoticon src=\"mxc://x/a\" alt=\":party:\" height=\"32\"> and <img src=\"mxc://x/a\" alt=\":party:\"><img src=\"mxc://x/b\" title=\":blob:\"> <img src=\"mxc://x/c\" alt=\"a cat\"> end</p>",
+        );
+        let p = para(&blocks, 0);
+        assert_eq!(p.text, "look :party: and :party::blob: [a cat] end");
+        let found = p.emotes();
+        let named: Vec<(&str, &str)> = found
+            .iter()
+            .map(|(r, u)| (&p.text[r.clone()], &**u))
+            .collect();
+        assert_eq!(
+            named,
+            [
+                (":party:", "mxc://x/a"),
+                (":party:", "mxc://x/a"),
+                (":blob:", "mxc://x/b"),
+            ],
+            "touching emoji stay apart; other pictures stay a description"
+        );
+        assert_eq!(emote_urls(&blocks).len(), 2, "each picture once");
     }
 
     #[test]

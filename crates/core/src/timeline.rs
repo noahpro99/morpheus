@@ -18,7 +18,7 @@ use std::collections::HashSet;
 
 use crate::rt::JoinHandle;
 use matrix_sdk::{
-    room::edit::EditedContent, ruma::events::room::message::RoomMessageEventContentWithoutRelation,
+    room::edit::EditedContent,
 };
 use tokio::sync::mpsc;
 use tracing::{debug, warn};
@@ -795,8 +795,14 @@ impl TimelineHandle {
     /// Send a message. Markdown is rendered to HTML when it contains any
     /// formatting; plain text otherwise. Shows up as a local echo first.
     pub fn send_text(&self, body: String) -> CoreFuture<()> {
+        self.send_text_with(body, Vec::new())
+    }
+
+    /// [`Self::send_text`], with each `:code:` of `emotes` (code, `mxc://`
+    /// URI: custom emoji) in it sent as a picture.
+    pub fn send_text_with(&self, body: String, emotes: Vec<(String, String)>) -> CoreFuture<()> {
         let timeline = self.timeline.clone();
-        let content = RoomMessageEventContent::text_markdown(body);
+        let content = RoomMessageEventContent::from(crate::emotes::message_content(&body, &emotes));
         self.core.run(async move {
             timeline.send(content.into()).await?;
             Ok(())
@@ -805,8 +811,18 @@ impl TimelineHandle {
 
     /// Reply to `in_reply_to` with markdown `body`.
     pub fn send_reply(&self, body: String, in_reply_to: OwnedEventId) -> CoreFuture<()> {
+        self.send_reply_with(body, in_reply_to, Vec::new())
+    }
+
+    /// [`Self::send_reply`] with custom emoji (see [`Self::send_text_with`]).
+    pub fn send_reply_with(
+        &self,
+        body: String,
+        in_reply_to: OwnedEventId,
+        emotes: Vec<(String, String)>,
+    ) -> CoreFuture<()> {
         let timeline = self.timeline.clone();
-        let content = RoomMessageEventContentWithoutRelation::text_markdown(body);
+        let content = crate::emotes::message_content(&body, &emotes);
         self.core.run(async move {
             timeline.send_reply(content, in_reply_to).await?;
             Ok(())
@@ -815,9 +831,18 @@ impl TimelineHandle {
 
     /// Replace the text of one of the user's own messages.
     pub fn edit(&self, message: MessageId, body: String) -> CoreFuture<()> {
+        self.edit_with(message, body, Vec::new())
+    }
+
+    /// [`Self::edit`] with custom emoji (see [`Self::send_text_with`]).
+    pub fn edit_with(
+        &self,
+        message: MessageId,
+        body: String,
+        emotes: Vec<(String, String)>,
+    ) -> CoreFuture<()> {
         let timeline = self.timeline.clone();
-        let content =
-            EditedContent::RoomMessage(RoomMessageEventContentWithoutRelation::text_markdown(body));
+        let content = EditedContent::RoomMessage(crate::emotes::message_content(&body, &emotes));
         self.core.run(async move {
             timeline
                 .edit(&TimelineEventItemId::from(&message), content)

@@ -127,6 +127,35 @@ pub fn sections(query: &str, tone: SkinTone, recent: &[String]) -> Vec<Section> 
     sections
 }
 
+/// One pack's section of the grid: its name and the emoji that match.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CustomSection {
+    pub name: String,
+    pub emotes: Vec<morpheus_core::Emote>,
+}
+
+/// The packs' sections for `query` (every emoji of each without one; with
+/// one, those whose shortcode contains it). Packs with nothing to show are
+/// left out.
+pub fn custom_sections(packs: &[morpheus_core::EmotePack], query: &str) -> Vec<CustomSection> {
+    let wanted = query.trim().trim_matches(':').to_lowercase();
+    packs
+        .iter()
+        .filter_map(|pack| {
+            let emotes: Vec<_> = pack
+                .emotes
+                .iter()
+                .filter(|e| wanted.is_empty() || e.shortcode.to_lowercase().contains(&wanted))
+                .cloned()
+                .collect();
+            (!emotes.is_empty()).then(|| CustomSection {
+                name: pack.name.clone(),
+                emotes,
+            })
+        })
+        .collect()
+}
+
 /// What the picker keeps on this device: the skin tone and the emoji used
 /// lately, newest first (`emoji.json` in the data directory, as the
 /// Dioxus app's).
@@ -192,6 +221,26 @@ impl Remembered {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn packs_get_a_section_each_and_search_by_shortcode() {
+        let emote = |code: &str| morpheus_core::Emote { shortcode: code.into(), url: format!("mxc://x/{code}") };
+        let pack = |name: &str, codes: &[&str]| morpheus_core::EmotePack {
+            room_id: None,
+            state_key: String::new(),
+            name: name.into(),
+            avatar: None,
+            emotes: codes.iter().map(|c| emote(c)).collect(),
+            editable: false,
+        };
+        let packs = vec![pack("Parrots", &["party", "sad"]), pack("Empty", &[]), pack("Cats", &["partycat"])];
+        let all = custom_sections(&packs, "");
+        assert_eq!(all.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(), ["Parrots", "Cats"]);
+        let found = custom_sections(&packs, " :PART");
+        assert_eq!(found.len(), 2);
+        assert_eq!(found[0].emotes.len(), 1);
+        assert!(custom_sections(&packs, "zzz").is_empty());
+    }
 
     #[test]
     fn search_finds_by_shortcode_and_name() {

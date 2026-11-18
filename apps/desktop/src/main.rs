@@ -20,6 +20,7 @@ mod dialogs;
 mod patch_notes;
 mod e2e;
 mod emoji_picker;
+mod custom_emoji;
 mod discover;
 mod friend_picker;
 mod friends;

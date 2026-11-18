@@ -168,6 +168,9 @@ fn runs_hovering(para: &Para, base: Base, hover: Option<&Range<usize>>) -> Vec<T
 /// pointer underlined (gpui shapes text before it knows where the pointer
 /// is, so the hover is tracked here and the runs restyled).
 fn para_el(para: &Para, key: &str, base: Base, links: &LinkHandler) -> AnyElement {
+    if !para.emotes().is_empty() {
+        return emote_para_el(para, key, base, links);
+    }
     let found = para.links();
     if found.is_empty() {
         return StyledText::new(SharedString::from(para.text.clone()))
@@ -224,6 +227,116 @@ fn para_el(para: &Para, key: &str, base: Base, links: &LinkHandler) -> AnyElemen
         }),
     }
     .into_any_element()
+}
+
+
+/// How tall a custom emoji is drawn beside text, and when it is all there
+/// is in a paragraph (a few of them alone): bigger.
+const EMOTE_PX: f32 = 22.0;
+const EMOTE_JUMBO_PX: f32 = 44.0;
+
+/// A paragraph with custom emoji in it: gpui's text cannot hold a picture,
+/// so it is laid out as a row that wraps, of words (each a piece of the
+/// paragraph, links and all) and the pictures between them.
+fn emote_para_el(para: &Para, key: &str, base: Base, links: &LinkHandler) -> AnyElement {
+    let emotes = para.emotes();
+    let alone = para
+        .text
+        .char_indices()
+        .all(|(at, c)| c.is_whitespace() || emotes.iter().any(|(r, _)| r.contains(&at)))
+        && emotes.len() <= 12;
+    let size = if alone { EMOTE_JUMBO_PX } else { EMOTE_PX };
+    let mut row = div().flex().flex_wrap().items_center().min_w_0();
+    let mut part = 0usize;
+    let mut cut = 0usize;
+    let mut pieces: Vec<(Range<usize>, Option<Arc<str>>)> = Vec::new();
+    for (range, url) in &emotes {
+        if cut < range.start {
+            pieces.push((cut..range.start, None));
+        }
+        pieces.push((range.clone(), Some(url.clone())));
+        cut = range.end;
+    }
+    if cut < para.text.len() {
+        pieces.push((cut..para.text.len(), None));
+    }
+    for (range, emote) in pieces {
+        if let Some(url) = emote {
+            let name = para.text[range.clone()].to_owned();
+            let loaded = crate::custom_emoji::image(&url);
+            let item = match loaded {
+                Some(image) => div()
+                    .flex_none()
+                    .mx(px(1.0))
+                    .child(img(crate::media::drawn(image)).size(px(size)))
+                    .e2e("img", "emote")
+                    .attr("alt", name.clone())
+                    .attr("title", name)
+                    .attr("data-loaded", "true"),
+                None => div()
+                    .flex_none()
+                    .text_color(rgb(theme::text_faint()))
+                    .child(name.clone())
+                    .e2e("span", "emote placeholder")
+                    .attr("alt", name.clone())
+                    .attr("data-loaded", "false")
+                    .text(name),
+            };
+            row = row.child(item);
+            continue;
+        }
+        // Words, each with the space after it; a line break is a full-width
+        // nothing that ends the line.
+        let text = &para.text[range.clone()];
+        let mut start = 0usize;
+        let bytes = text.as_bytes();
+        while start < text.len() {
+            let mut end = start;
+            while end < text.len() && !bytes[end].is_ascii_whitespace() {
+                end += 1;
+            }
+            while end < text.len() && bytes[end] == b' ' {
+                end += 1;
+            }
+            if end == start {
+                // A line break (or other white space) on its own.
+                end = start + 1;
+                if bytes[start] == b'\n' {
+                    row = row.child(div().w_full().h(px(0.0)));
+                    start = end;
+                    continue;
+                }
+            }
+            let (from, to) = (range.start + start, range.start + end);
+            let word = Para {
+                text: para.text[from..to].trim_end_matches('\n').to_owned(),
+                spans: para
+                    .spans
+                    .iter()
+                    .filter(|s| s.style.emote.is_none() && s.range.start < to && from < s.range.end)
+                    .map(|s| rich::Span {
+                        range: s.range.start.max(from) - from..s.range.end.min(to) - from,
+                        style: s.style.clone(),
+                    })
+                    .collect(),
+            };
+            let trailing_break = para.text[from..to].ends_with('\n');
+            if !word.text.is_empty() {
+                part += 1;
+                row = row.child(div().flex_none().child(para_el(
+                    &word,
+                    &format!("{key}~{part}"),
+                    base,
+                    links,
+                )));
+            }
+            if trailing_break {
+                row = row.child(div().w_full().h(px(0.0)));
+            }
+            start = end;
+        }
+    }
+    row.into_any_element()
 }
 
 /// The paragraph's text and links, rebuilt every frame from the link under
@@ -544,12 +657,30 @@ fn reactions_el(
                     .text_color(rgb(theme::text_muted()))
             };
             let count = reaction.count.to_string();
-            chip.child(
+            // A custom emoji (keyed by its picture's URI): the picture.
+            let key_el = if reaction.key.starts_with("mxc://") {
+                match crate::custom_emoji::image(&reaction.key) {
+                    Some(image) => div()
+                        .child(img(crate::media::drawn(image)).size(rem(1.3)))
+                        .e2e("span", "reaction-key emote")
+                        .attr("data-loaded", "true")
+                        .into_any_element(),
+                    None => div()
+                        .size(rem(1.3))
+                        .rounded(px(4.0))
+                        .bg(rgb(theme::bg_input()))
+                        .e2e("span", "reaction-key emote")
+                        .attr("data-loaded", "false")
+                        .into_any_element(),
+                }
+            } else {
                 div()
                     .child(reaction.key.clone())
                     .e2e("span", "reaction-key")
-                    .text(reaction.key.clone()),
-            )
+                    .text(reaction.key.clone())
+                    .into_any_element()
+            };
+            chip.child(key_el)
             .child(
                 div()
                     .font_weight(FontWeight::SEMIBOLD)

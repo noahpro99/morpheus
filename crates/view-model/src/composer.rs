@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 
-use morpheus_core::{Member, Message, MessageId, OwnedEventId};
+use morpheus_core::{Emote, Member, Message, MessageId, OwnedEventId};
 
 use super::emoji;
 
@@ -32,6 +32,12 @@ pub enum Suggestion {
         emoji: &'static str,
         code: &'static str,
     },
+    /// A custom emoji of a pack (`:code:`, sent as its picture).
+    Custom {
+        shortcode: String,
+        /// `mxc://` URI of the picture.
+        url: String,
+    },
     Member {
         /// Their display name: what goes in the message, so they are pinged.
         name: String,
@@ -46,6 +52,7 @@ impl Suggestion {
     pub fn insert(&self) -> String {
         match self {
             Self::Emoji { emoji, .. } => format!("{emoji} "),
+            Self::Custom { shortcode, .. } => format!(":{shortcode}: "),
             Self::Member { name, .. } => format!("@{name} "),
         }
     }
@@ -69,15 +76,47 @@ pub fn suggest(
     members: Option<&[Member]>,
     nicknames: &HashMap<String, String>,
 ) -> Vec<Suggestion> {
+    suggest_with(draft, members, nicknames, &[])
+}
+
+/// [`suggest`], with the custom emoji of the packs in reach among the `:code`
+/// matches (first: those whose code starts with it, then those containing it).
+pub fn suggest_with(
+    draft: &str,
+    members: Option<&[Member]>,
+    nicknames: &HashMap<String, String>,
+    custom: &[Emote],
+) -> Vec<Suggestion> {
     let word = last_word(draft);
     if let Some(code) = word.strip_prefix(':') {
         if code.len() < 2 {
             return Vec::new();
         }
-        return emoji::search(code)
+        let wanted = code.to_lowercase();
+        let mut own: Vec<(bool, &Emote)> = custom
+            .iter()
+            .filter_map(|e| {
+                let have = e.shortcode.to_lowercase();
+                if have.starts_with(&wanted) {
+                    Some((false, e))
+                } else {
+                    have.contains(&wanted).then_some((true, e))
+                }
+            })
+            .collect();
+        own.sort_by_key(|(later, _)| *later);
+        return own
             .into_iter()
+            .map(|(_, e)| Suggestion::Custom {
+                shortcode: e.shortcode.clone(),
+                url: e.url.clone(),
+            })
+            .chain(
+                emoji::search(code)
+                    .into_iter()
+                    .map(|(emoji, code)| Suggestion::Emoji { emoji, code }),
+            )
             .take(8)
-            .map(|(emoji, code)| Suggestion::Emoji { emoji, code })
             .collect();
     }
     if let Some(prefix) = word.strip_prefix('@') {
@@ -356,6 +395,27 @@ mod tests {
         );
         assert!(rows.len() <= 8);
         assert_eq!(accept("hot :fir", &rows[0]), "hot 🔥 ");
+    }
+
+    #[test]
+    fn custom_emoji_are_suggested_first_and_accepted_as_their_shortcode() {
+        let none = HashMap::new();
+        let custom = vec![
+            Emote { shortcode: "partyparrot".into(), url: "mxc://x/a".into() },
+            Emote { shortcode: "big_fire".into(), url: "mxc://x/b".into() },
+            Emote { shortcode: "other".into(), url: "mxc://x/c".into() },
+        ];
+        let rows = suggest_with("go :PARTY", None, &none, &custom);
+        assert_eq!(
+            rows.first(),
+            Some(&Suggestion::Custom { shortcode: "partyparrot".into(), url: "mxc://x/a".into() })
+        );
+        assert_eq!(accept("go :part", &rows[0]), "go :partyparrot: ");
+        let rows = suggest_with(":fir", None, &none, &custom);
+        assert!(matches!(&rows[0], Suggestion::Custom { shortcode, .. } if shortcode == "big_fire"), "contains");
+        assert!(rows.iter().any(|r| matches!(r, Suggestion::Emoji { code: "fire", .. })), "the standard ones follow");
+        assert!(rows.len() <= 8);
+        assert!(suggest_with(":p", None, &none, &custom).is_empty(), "two letters");
     }
 
     #[test]

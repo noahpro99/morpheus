@@ -1076,6 +1076,15 @@ impl TimelineView {
             ..Pictures::default()
         };
         *pictures.editor.borrow_mut() = self.edit_el(&row.message.unique_id);
+        if let Some(session) = self.session.clone() {
+            // Custom emoji in the text and in reactions.
+            for url in crate::view_model::rich::emote_urls(&row.blocks) {
+                crate::custom_emoji::want(&session, &url, cx);
+            }
+            for reaction in &row.message.reactions {
+                crate::custom_emoji::want(&session, &reaction.key, cx);
+            }
+        }
         if show_header {
             pictures.nickname = self.nicknames.get(row.message.sender.as_str()).cloned();
         }
