@@ -279,3 +279,8 @@ pub fn screen_audio_unavailable() -> Option<&'static str> {
 
 pub const SCREEN_TONE_LEFT: f32 = 660.0;
 pub const SCREEN_TONE_RIGHT: f32 = 990.0;
+
+/// No hardware video decoder in a browser build.
+pub fn hardware_decoder() -> String {
+    "none: the browser decodes video".to_owned()
+}

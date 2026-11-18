@@ -1069,6 +1069,19 @@ pub fn hardware_encoder() -> Option<String> {
         .clone()
 }
 
+/// The GPU video decoder libwebrtc found ("Media Foundation on <GPU>",
+/// "NVDEC", "VideoToolbox"), or "none: <why>" (#189). Looked for once.
+pub fn hardware_decoder() -> String {
+    static FOUND: OnceLock<String> = OnceLock::new();
+    FOUND
+        .get_or_init(|| {
+            let status = livekit::webrtc::native::hardware_video_decoder_status();
+            info!(%status, "video decoders available");
+            status
+        })
+        .clone()
+}
+
 /// The video encoders and decoders, tried without a call
 /// (`MORPHEUS_VIDEO_ENCODER_SELF_TEST`; windows.yml, or by hand on a
 /// laptop): the hardware encoder libwebrtc found and, on Windows, 30
@@ -1083,6 +1096,7 @@ pub fn video_encoder_self_test() -> String {
         "hardware encoder: {}",
         hardware_encoder().unwrap_or_else(|| "none".into())
     )];
+    lines.push(format!("hardware decoder status: {}", hardware_decoder()));
     #[cfg(target_os = "windows")]
     {
         use livekit::webrtc::native::{
@@ -1231,6 +1245,14 @@ async fn watch_decoder_inner(track: &RemoteVideoTrack, who: &str, label: &str) {
                 if last.as_ref() != Some(&implementation) {
                     let decoder = crate::codec_backend(&implementation, false);
                     info!(%who, track = %track.sid(), decoder, %implementation, "video decoder");
+                    // Why a GPU decoder is not the one in use (#189): a fallback
+                    // names its cause in the libwebrtc log; the rest is here.
+                    if decoder == "software" && crate::hardware_video() {
+                        warn!(
+                            %who, %implementation, gpu = %hardware_decoder(),
+                            "video decoded in software with hardware acceleration on (a codec without a GPU decoder here, or the GPU decoder fell back)"
+                        );
+                    }
                     last = Some(implementation);
                 }
             }

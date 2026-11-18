@@ -49,6 +49,10 @@
 #endif
 
 namespace livekit_ffi {
+rust::String hardware_video_decoder_status();
+}
+
+namespace livekit_ffi {
 
 namespace {
 // Morpheus patch: Settings' "Hardware video acceleration". Off, a new
@@ -158,6 +162,8 @@ VideoDecoderFactory::CodecSupport VideoDecoderFactory::QueryCodecSupport(
 std::unique_ptr<webrtc::VideoDecoder> VideoDecoderFactory::Create(
     const webrtc::Environment& env, const webrtc::SdpVideoFormat& format) {
   if (!g_hardware_decoding.load()) {
+    RTC_LOG(LS_INFO) << "Hardware video acceleration is off: decoding "
+                     << format.name << " in software";
     if (absl::EqualsIgnoreCase(format.name, webrtc::kVp8CodecName))
       return webrtc::CreateVp8Decoder(env);
     if (absl::EqualsIgnoreCase(format.name, webrtc::kVp9CodecName))
@@ -195,6 +201,10 @@ std::unique_ptr<webrtc::VideoDecoder> VideoDecoderFactory::Create(
     }
   }
 
+  // Morpheus patch (#189): say why this one is in software.
+  RTC_LOG(LS_WARNING) << "Decoding " << format.name
+                      << " in software: no GPU decoder for it (GPU decoders: "
+                      << hardware_video_decoder_status().c_str() << ")";
   if (absl::EqualsIgnoreCase(format.name, webrtc::kVp8CodecName))
     return webrtc::CreateVp8Decoder(env);
   if (absl::EqualsIgnoreCase(format.name, webrtc::kVp9CodecName))
@@ -202,7 +212,6 @@ std::unique_ptr<webrtc::VideoDecoder> VideoDecoderFactory::Create(
   if (absl::EqualsIgnoreCase(format.name, webrtc::kH264CodecName) &&
       internal_h264_decoder_works_)
     return webrtc::H264Decoder::Create();
-
 
 #if defined(RTC_DAV1D_IN_INTERNAL_DECODER_FACTORY)
   if (absl::EqualsIgnoreCase(format.name, webrtc::kAv1CodecName)) {
@@ -242,6 +251,33 @@ rust::String media_foundation_h264_decode_self_test(bool gpu,
   (void)gpu;
   (void)frames;
   return rust::String("unavailable: not Windows");
+#endif
+}
+
+}  // namespace livekit_ffi
+
+namespace livekit_ffi {
+
+// Morpheus patch: which GPU decoder this machine has, or why none (#189).
+rust::String hardware_video_decoder_status() {
+#if defined(USE_MEDIA_FOUNDATION_VIDEO_CODEC)
+  if (MediaFoundationVideoDecoderFactory::IsSupported())
+    return rust::String("Media Foundation on " +
+                        MediaFoundationVideoDecoderFactory::DecoderName());
+  return rust::String("none: " + MediaFoundationVideoDecoderFactory::Unavailable());
+#elif defined(USE_NVIDIA_VIDEO_CODEC)
+  if (webrtc::NvidiaVideoDecoderFactory::IsSupported())
+    return rust::String("NVDEC");
+  return rust::String(
+      "none: NVDEC unavailable (no NVIDIA driver with libcuda and "
+      "libnvcuvid, or LK_DISABLE_NVDEC is set); VAAPI decoding is not "
+      "implemented");
+#elif defined(__APPLE__)
+  return rust::String("VideoToolbox");
+#else
+  return rust::String(
+      "none: this build has no GPU decoder (no CUDA headers at build time; "
+      "VAAPI decoding is not implemented)");
 #endif
 }
 

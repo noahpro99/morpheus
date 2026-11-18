@@ -160,9 +160,38 @@ pub fn hardware_video_line(setting: bool, env_off: bool, found: Option<&str>) ->
     }
 }
 
+/// Diagnostics' "Hardware decoder" line: Settings' switch, the env
+/// override and what libwebrtc found (`found`: "Media Foundation on <GPU>",
+/// "NVDEC", or "none: <why>").
+pub fn hardware_decoder_line(setting: bool, env_off: bool, found: &str) -> String {
+    if !setting {
+        "off in Settings (all video decoded in software)".to_owned()
+    } else if env_off {
+        "off (MORPHEUS_HW_VIDEO=0; all video decoded in software)".to_owned()
+    } else if let Some(why) = found.strip_prefix("none: ") {
+        format!("on, but no hardware decoder: {why} (software)")
+    } else {
+        format!("on (H.264 on {found}; VP8, VP9 and AV1 have no GPU decoder here and use software)")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_hardware_decoder_line_says_what_decodes_and_why_not() {
+        assert_eq!(
+            hardware_decoder_line(true, false, "Media Foundation on NVIDIA GeForce RTX 3060"),
+            "on (H.264 on Media Foundation on NVIDIA GeForce RTX 3060; VP8, VP9 and AV1 have no GPU decoder here and use software)"
+        );
+        assert_eq!(
+            hardware_decoder_line(true, false, "none: no GPU (Microsoft Basic Render Driver)"),
+            "on, but no hardware decoder: no GPU (Microsoft Basic Render Driver) (software)"
+        );
+        assert!(hardware_decoder_line(false, false, "NVDEC").starts_with("off in Settings"));
+        assert!(hardware_decoder_line(true, true, "NVDEC").starts_with("off (MORPHEUS_HW_VIDEO=0"));
+    }
 
     #[test]
     fn the_hardware_video_line_says_what_sends_video_and_why() {

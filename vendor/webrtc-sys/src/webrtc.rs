@@ -80,6 +80,7 @@ pub mod ffi {
         fn media_foundation_h264_decoder_name() -> String;
         fn media_foundation_h264_decode_self_test(gpu: bool, frames: u32) -> String;
         fn set_hardware_video_decoding(on: bool);
+        fn hardware_video_decoder_status() -> String;
         fn new_log_sink(fnc: fn(String, LoggingSeverity)) -> UniquePtr<LogSink>;
     }
 }

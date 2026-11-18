@@ -74,7 +74,7 @@ pub mod native {
     pub use webrtc_sys::webrtc::ffi::{
         media_foundation_h264_decode_self_test, media_foundation_h264_decoder_name,
         media_foundation_h264_encoder_name, media_foundation_h264_self_test,
-        set_hardware_video_decoding,
+        hardware_video_decoder_status, set_hardware_video_decoding,
     };
 
     pub use crate::imp::{

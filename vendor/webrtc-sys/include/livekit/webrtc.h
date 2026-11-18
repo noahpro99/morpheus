@@ -124,5 +124,7 @@ rust::String media_foundation_h264_self_test(bool software, uint32_t frames);
 rust::String media_foundation_h264_decoder_name();
 rust::String media_foundation_h264_decode_self_test(bool gpu, uint32_t frames);
 void set_hardware_video_decoding(bool on);
+// "Media Foundation on <GPU>", "NVDEC" or "none: <why>".
+rust::String hardware_video_decoder_status();
 
 }  // namespace livekit_ffi
