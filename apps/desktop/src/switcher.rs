@@ -98,6 +98,7 @@ pub struct Switcher {
     pub rooms: Vec<SwitchRoom>,
     cursor: usize,
     focus_next: bool,
+    scroll: gpui::ScrollHandle,
 }
 
 impl Switcher {
@@ -115,16 +116,19 @@ impl Switcher {
         input.update(cx, |input, _| input.set_capture_nav(true));
         cx.subscribe(&input, |this, _, _: &Changed, cx| {
             this.cursor = 0;
+            this.scroll.scroll_to_item(0);
             cx.notify();
         })
         .detach();
         cx.subscribe(&input, |this, _, nav: &Nav, cx| match nav.0 {
             NavKey::Down => {
                 this.cursor += 1;
+                this.scroll.scroll_to_item(this.cursor_now(cx));
                 cx.notify();
             }
             NavKey::Up => {
                 this.cursor = this.cursor.saturating_sub(1);
+                this.scroll.scroll_to_item(this.cursor_now(cx));
                 cx.notify();
             }
             NavKey::Enter => this.choose(this.cursor_now(cx), cx),
@@ -137,6 +141,7 @@ impl Switcher {
             rooms,
             cursor: 0,
             focus_next: true,
+            scroll: gpui::ScrollHandle::new(),
         }
     }
 
@@ -222,7 +227,15 @@ impl Render for Switcher {
         let viewport = window.viewport_size();
         let entries = self.entries(cx);
         let cursor = self.cursor.min(entries.len().saturating_sub(1));
-        let mut list = div().flex().flex_col().p(px(6.0)).gap(px(0.0));
+        let mut list = div()
+            .id("switcher-results")
+            .flex()
+            .flex_col()
+            .p(px(6.0))
+            .gap(px(0.0))
+            .min_h_0()
+            .overflow_y_scroll()
+            .track_scroll(&self.scroll);
         for (index, entry) in entries.iter().enumerate() {
             let active = index == cursor;
             let (classes, text) = match entry {
@@ -323,6 +336,10 @@ impl Render for Switcher {
         }
         let panel = div()
             .w(px(520.0).min(viewport.width * 0.9))
+            // As tall as its rows, up to 65% of the window; the list scrolls past that.
+            .max_h(viewport.height * 0.65)
+            .flex()
+            .flex_col()
             .rounded(px(theme::RADIUS_XL))
             .bg(rgb(theme::bg_sidebar()))
             .shadow(vec![BoxShadow {
@@ -342,7 +359,12 @@ impl Render for Switcher {
                     .font_weight(FontWeight::NORMAL)
                     .child(self.input.clone()),
             )
-            .child(list.e2e("ul", "switcher-results"))
+            .child(
+                list.e2e("ul", "switcher-results")
+                    .scrollable(std::rc::Rc::new(crate::e2e::HandleProbe(
+                        self.scroll.clone(),
+                    ))),
+            )
             .e2e("div", "switcher");
         div()
             .absolute()
@@ -351,6 +373,7 @@ impl Render for Switcher {
             .size_full()
             .flex()
             .justify_center()
+            .items_start()
             .pt(viewport.height * 0.15)
             .bg(rgba(0x0000008c))
             .on_mouse_down(
