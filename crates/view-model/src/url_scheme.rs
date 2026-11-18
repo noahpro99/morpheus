@@ -72,6 +72,74 @@ pub fn key_command(exe: &Path) -> String {
     format!("\"{}\" \"%1\"", exe.display())
 }
 
+/// Where an exe lives, which decides whether it may own the desktop entry.
+#[derive(Debug, PartialEq, Eq)]
+pub enum ExeKind {
+    /// A debug build or one inside a cargo `target/` dir: never registered.
+    Dev,
+    /// Under `/nix/store`: the package ships its own entry.
+    Store,
+    /// Anything else: gets the entry.
+    Installed,
+}
+
+/// Classify the exe; `debug` is `cfg!(debug_assertions)`.
+pub fn exe_kind(exe: &Path, debug: bool) -> ExeKind {
+    if debug || exe.components().any(|c| c.as_os_str() == "target") {
+        ExeKind::Dev
+    } else if exe.starts_with("/nix/store") {
+        ExeKind::Store
+    } else {
+        ExeKind::Installed
+    }
+}
+
+/// Whether `entry` is one we wrote whose Exec points at a dev or store exe
+/// (so it would shadow the right entry or fail to launch).
+pub fn entry_is_stale(entry: &str) -> bool {
+    let ours = entry.lines().any(|l| l == "Name=Morpheus") && entry.lines().any(|l| l == "Comment=Matrix chat");
+    let Some(exec) = entry.lines().find_map(|l| l.strip_prefix("Exec=")) else {
+        return false;
+    };
+    let path = match exec.strip_prefix('"') {
+        Some(rest) => rest.split('"').next().unwrap_or_default(),
+        None => exec.split_whitespace().next().unwrap_or_default(),
+    };
+    ours && exe_kind(Path::new(path), false) != ExeKind::Installed
+}
+
+/// Linux, by kind of exe: dev builds leave things alone; a store exe leaves
+/// the package's own entry in charge and only claims a free scheme; both
+/// remove a stale entry of ours. Returns whether it wrote an entry.
+pub fn register_for(apps: &Path, exe: &Path, debug: bool, xdg_mime: &str) -> std::io::Result<bool> {
+    let kind = exe_kind(exe, debug);
+    if kind == ExeKind::Installed {
+        return register_linux(apps, exe, xdg_mime);
+    }
+    let path = apps.join(DESKTOP_FILE);
+    if std::fs::read_to_string(&path).is_ok_and(|text| entry_is_stale(&text)) {
+        std::fs::remove_file(&path)?;
+    }
+    if kind == ExeKind::Store {
+        claim_if_free(xdg_mime);
+    }
+    Ok(false)
+}
+
+fn claim_if_free(xdg_mime: &str) {
+    let current = std::process::Command::new(xdg_mime)
+        .args(["query", "default", MIME])
+        .output()
+        .ok()
+        .filter(|out| out.status.success())
+        .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_owned());
+    if should_become_default(current.as_deref()) && current.as_deref() != Some(DESKTOP_FILE) {
+        let _ = std::process::Command::new(xdg_mime)
+            .args(["default", DESKTOP_FILE, MIME])
+            .status();
+    }
+}
+
 /// Linux: write the entry under `apps` if it changed, and become the default
 /// handler through `xdg_mime` if nobody else is. Returns whether it wrote.
 pub fn register_linux(apps: &Path, exe: &Path, xdg_mime: &str) -> std::io::Result<bool> {
@@ -118,7 +186,7 @@ pub fn register() {
             return;
         };
         let program = std::env::var("MORPHEUS_XDG_MIME").unwrap_or_else(|_| "xdg-mime".into());
-        let _ = register_linux(&data.join("applications"), &exe, &program);
+        let _ = register_for(&data.join("applications"), &exe, cfg!(debug_assertions), &program);
     }
     #[cfg(target_os = "windows")]
     {
@@ -221,6 +289,58 @@ mod tests {
         let moved = Path::new("/elsewhere/morpheus-desktop");
         assert!(register_linux(&apps, moved, &other).expect("moved"));
         assert!(!dir.join("calls.log").exists(), "took the default from Element");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn dev_and_store_exes_are_told_apart() {
+        assert_eq!(exe_kind(Path::new("/home/a/repos/morpheus/target/debug/morpheus-desktop"), false), ExeKind::Dev);
+        assert_eq!(exe_kind(Path::new("/home/a/m/target/release/morpheus-desktop"), false), ExeKind::Dev);
+        assert_eq!(exe_kind(Path::new("/opt/morpheus/morpheus-desktop"), true), ExeKind::Dev);
+        assert_eq!(exe_kind(Path::new("/nix/store/abc-morpheus/bin/.morpheus-desktop-wrapped"), false), ExeKind::Store);
+        assert_eq!(exe_kind(Path::new("/opt/morpheus/morpheus-desktop"), false), ExeKind::Installed);
+        assert_eq!(exe_kind(Path::new("/home/a/.local/bin/morpheus-desktop"), false), ExeKind::Installed);
+    }
+
+    #[test]
+    fn a_stale_entry_of_ours_is_recognised() {
+        let dev = desktop_entry(Path::new("/home/a/repos/morpheus/target/debug/morpheus-desktop"));
+        let store = desktop_entry(Path::new("/nix/store/abc-morpheus/bin/morpheus-desktop"));
+        let good = desktop_entry(Path::new("/opt/morpheus/morpheus-desktop"));
+        assert!(entry_is_stale(&dev));
+        assert!(entry_is_stale(&store));
+        assert!(!entry_is_stale(&good));
+        assert!(!entry_is_stale("[Desktop Entry]\nName=Other\nExec=/x/target/debug/foo\n"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dev_and_store_exes_write_nothing_and_clear_stale_entries() {
+        let dir = std::env::temp_dir().join(format!("morpheus-scheme-skip-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("dir");
+        let apps = dir.join("applications");
+        let xdg = fake_xdg(&dir, "");
+        // Dev: nothing written, nothing claimed.
+        let dev = Path::new("/home/a/m/target/debug/morpheus-desktop");
+        assert!(!register_for(&apps, dev, false, &xdg).expect("dev"));
+        assert!(!apps.join(DESKTOP_FILE).exists());
+        assert!(!dir.join("calls.log").exists());
+        // Store: nothing written, default claimed for the package's entry.
+        let store = Path::new("/nix/store/abc-morpheus/bin/morpheus-desktop");
+        assert!(!register_for(&apps, store, false, &xdg).expect("store"));
+        assert!(!apps.join(DESKTOP_FILE).exists());
+        let calls = std::fs::read_to_string(dir.join("calls.log")).expect("log");
+        assert!(calls.contains("default morpheus.desktop x-scheme-handler/matrix"));
+        // A stale entry of ours is removed, a good one is kept.
+        std::fs::create_dir_all(&apps).expect("apps");
+        std::fs::write(apps.join(DESKTOP_FILE), desktop_entry(dev)).expect("stale");
+        register_for(&apps, store, false, &xdg).expect("clean");
+        assert!(!apps.join(DESKTOP_FILE).exists(), "stale entry kept");
+        let good = Path::new("/opt/morpheus/morpheus-desktop");
+        assert!(register_for(&apps, good, false, &xdg).expect("good"));
+        register_for(&apps, store, false, &xdg).expect("store again");
+        assert!(apps.join(DESKTOP_FILE).exists(), "a good entry was removed");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
