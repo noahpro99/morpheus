@@ -149,7 +149,7 @@ android-reinstall: sweep
     nix develop .#android -c adb shell am start -n dev.morpheus.mobile/dev.dioxus.main.MainActivity
 
 # The native Android app (apps/android): debug APK for the emulator (x86_64) in apps/android/app/build/outputs/apk/debug
-android-native-build abi="x86_64": sweep
+android-native-build abi="x86_64":
     nix develop .#android-emulator -c bash -c "cd apps/android && gradle assembleDebug -PrustAbis={{abi}}"
 
 # Create the virtual phone (once; downloads the emulator and a system image, a few GB): a Pixel-sized Android 14 device in ~/.android/avd
@@ -166,8 +166,11 @@ android-emulator:
 android-emulator-headless:
     nix develop .#android-emulator -c env LD_LIBRARY_PATH=/run/opengl-driver/lib emulator -avd morpheus -no-window -no-audio -no-boot-anim -no-snapshot-save -gpu swiftshader_indirect -netdelay none -netspeed full
 
-# Drive the native app on the virtual phone (`just android-emulator-headless` first): builds, installs, runs
-e2e-android-native file="android_native": hs-seed (android-native-build "x86_64")
+# Drive the native app on the virtual phone (`just android-emulator-headless` first): builds (Gradle skips what did not change), installs, runs
+e2e-android-native file="android_native": (android-native-build "x86_64") (e2e-android-native-run file)
+
+# Only install the last build and run the native app's tests: for a change to the tests alone
+e2e-android-native-run file="android_native": hs-seed
     nix develop .#android-emulator -c bash -c 'adb -s "${ANDROID_SERIAL:-emulator-5554}" install -r apps/android/app/build/outputs/apk/debug/app-debug.apk'
     nix develop .#android-emulator -c env MORPHEUS_E2E_ANDROID_NATIVE=1 ANDROID_SERIAL="${ANDROID_SERIAL:-emulator-5554}" MORPHEUS_TEST_HOMESERVER={{hs}} scripts/e2e-cargo.sh --test {{file}} -- --nocapture --test-threads=1
 

@@ -21,8 +21,17 @@ val buildRust = tasks.register<Exec>("buildRust") {
         rustOut.get().asFile.absolutePath, rustAbis,
         (findProperty("rustProfile") as String?) ?: "android-dev",
     )
-    // Cargo knows what changed; this task's own output is never "up to date".
-    outputs.upToDateWhen { false }
+    // Up to date when no Rust source, manifest or this script changed, so a
+    // Kotlin-only change does not even start cargo.
+    inputs.files(
+        fileTree(repoRoot) {
+            include("crates/ffi/**", "crates/core/**", "crates/view-model/**", "Cargo.toml", "Cargo.lock", "scripts/android-ffi.sh")
+            exclude("**/target/**")
+        },
+    )
+    inputs.property("abis", rustAbis)
+    inputs.property("profile", (findProperty("rustProfile") as String?) ?: "android-dev")
+    outputs.dir(rustOut)
 }
 
 android {
