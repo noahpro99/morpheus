@@ -1,0 +1,56 @@
+# Builds the flake's package (`nix build .#morpheus`) so it can't break
+# unnoticed: once as the flake pins nixpkgs, once with nixpkgs overridden to
+# the current nixos-unstable (what users get with `inputs.nixpkgs.follows`).
+# Runs on release tags, by hand, and on pushes that touch the flake or the
+# dependency manifests. No binary cache is configured, so it is a full build.
+name: Nix
+
+on:
+  push:
+    tags: ["v*"]
+    paths:
+      - flake.nix
+      - flake.lock
+      - Cargo.lock
+      - "**/Cargo.toml"
+      - .github/workflows/nix.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: nix build (${{ matrix.name }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: pinned nixpkgs
+            args: ""
+          - name: nixos-unstable
+            args: "--override-input nixpkgs github:NixOS/nixpkgs/nixos-unstable"
+    steps:
+      - uses: actions/checkout@v5
+
+      # The runner has ~14 GB free; the build and the Nix store need much more.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          sudo docker image prune --all --force || true
+          df -h /
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            accept-flake-config = true
+            max-jobs = auto
+
+      - name: Build
+        run: nix build .#morpheus ${{ matrix.args }} --print-build-logs --no-link
+
+      - name: Disk after build
+        if: always()
+        run: df -h /
