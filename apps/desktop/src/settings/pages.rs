@@ -1209,8 +1209,9 @@ impl SettingsView {
     /// Security > Locked chats: how long an unlocked chat that is not looked
     /// at stays unlocked.
     pub(super) fn locked_chats_section(&self, cx: &mut Context<Self>) -> AnyElement {
-        use crate::view_model::locks::TIMEOUT_CHOICES;
-        let now = crate::locks::timeout_secs();
+        use crate::view_model::locks::{AutoLock, TIMEOUT_CHOICES, TimeUnit, describe_secs};
+        let now = crate::locks::auto_lock();
+        let custom = self.lock_custom_open || now.is_custom();
         let mut children = vec![
             muted(
                 "A chat locked with a password (its menu, Lock with a password) opens again with the password only. Unlocked, it locks itself when you have not been looking at it for:",
@@ -1218,20 +1219,88 @@ impl SettingsView {
             )
             .into_any_element(),
         ];
-        for (secs, label) in TIMEOUT_CHOICES {
+        let mut pick = |id: String, value: String, label: &str, checked: bool, to: Option<AutoLock>| {
             children.push(choice(
-                format!("lock-timeout-{secs}"),
+                id,
                 "lock-timeout",
-                &secs.to_string(),
+                &value,
                 label,
-                now == secs,
+                checked,
                 false,
                 false,
-                cx.listener(move |_, _, _, cx| {
-                    crate::locks::set_timeout_secs(secs);
+                cx.listener(move |this, _, _, cx| {
+                    this.lock_custom_open = to.is_none();
+                    this.lock_custom_error = None;
+                    if let Some(to) = to {
+                        crate::locks::set_auto_lock(to);
+                    } else {
+                        this.apply_lock_custom(cx);
+                    }
                     cx.notify();
                 }),
             ));
+        };
+        pick(
+            "lock-timeout-now".into(),
+            "now".into(),
+            "Immediately (when you leave the chat)",
+            !custom && now == AutoLock::Immediately,
+            Some(AutoLock::Immediately),
+        );
+        for (secs, label) in TIMEOUT_CHOICES {
+            pick(
+                format!("lock-timeout-{secs}"),
+                secs.to_string(),
+                label,
+                !custom && now == AutoLock::After(secs),
+                Some(AutoLock::After(secs)),
+            );
+        }
+        pick(
+            "lock-timeout-never".into(),
+            "never".into(),
+            "Never (only on restart or Lock now)",
+            !custom && now == AutoLock::Never,
+            Some(AutoLock::Never),
+        );
+        let label = match now {
+            AutoLock::After(secs) if now.is_custom() => format!("Custom ({})", describe_secs(secs)),
+            _ => "Custom".to_owned(),
+        };
+        pick("lock-timeout-custom".into(), "custom".into(), &label, custom, None);
+        if custom {
+            let mut row = div().flex().items_center().gap(px(12.0)).child(
+                div()
+                    .w(px(90.0))
+                    .child(self.lock_custom_input.clone())
+                    .e2e("div", "lock-custom-number"),
+            );
+            for unit in TimeUnit::ALL {
+                row = row.child(choice(
+                    format!("lock-unit-{}", unit.label()),
+                    "lock-unit",
+                    unit.label(),
+                    unit.label(),
+                    self.lock_unit == unit,
+                    false,
+                    false,
+                    cx.listener(move |this, _, _, cx| {
+                        this.lock_unit = unit;
+                        this.apply_lock_custom(cx);
+                    }),
+                ));
+            }
+            let mut block = div().flex().flex_col().gap(px(6.0)).child(row);
+            if let Some(message) = &self.lock_custom_error {
+                block = block.child(
+                    div()
+                        .text_color(rgb(theme::danger()))
+                        .child(message.clone())
+                        .e2e("div", "lock-custom-error")
+                        .text(message.clone()),
+                );
+            }
+            children.push(block.e2e("div", "lock-custom").into_any_element());
         }
         section(
             "Locked chats",

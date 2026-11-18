@@ -192,6 +192,12 @@ pub struct SettingsView {
     /// A slider is being dragged (the colour is shown, not yet kept).
     hsv_dragging: bool,
     colour_input: Entity<TextInput>,
+    /// Locked chats > Custom: the typed number, its unit, whether the Custom choice is open
+    /// and what is wrong with the time typed.
+    lock_custom_input: Entity<TextInput>,
+    lock_unit: crate::view_model::locks::TimeUnit,
+    lock_custom_open: bool,
+    lock_custom_error: Option<String>,
     data_dir: std::path::PathBuf,
     /// The devices to pick from (None while looking), what is chosen, and
     /// which list is open.
@@ -224,6 +230,23 @@ impl SettingsView {
     /// The colours changed: the boxes are views of their own and take the new text
     /// colour only when redrawn (a hex box kept the old theme's light text on a light
     /// colour).
+    /// The custom lock time typed or its unit changed: kept when it is in range, else a message.
+    pub(super) fn apply_lock_custom(&mut self, cx: &mut Context<Self>) {
+        let typed = self.lock_custom_input.read(cx).value().to_owned();
+        if typed.trim().is_empty() {
+            self.lock_custom_error = None;
+        } else {
+            match crate::view_model::locks::parse_custom(&typed, self.lock_unit) {
+                Ok(secs) => {
+                    self.lock_custom_error = None;
+                    crate::locks::set_auto_lock(crate::view_model::locks::AutoLock::After(secs));
+                }
+                Err(message) => self.lock_custom_error = Some(message),
+            }
+        }
+        cx.notify();
+    }
+
     fn redraw_inputs(&self, cx: &mut Context<Self>) {
         for input in [&self.key_input, &self.search, &self.colour_input, &self.name_input] {
             input.update(cx, |_, cx| cx.notify());
@@ -334,6 +357,25 @@ impl SettingsView {
             }
         })
         .detach();
+        let lock_custom_input =
+            cx.new(|cx| TextInput::new("lock-custom", "Time", false, "", cx).framed());
+        cx.subscribe(&lock_custom_input, |this, _, _: &Changed, cx| this.apply_lock_custom(cx))
+            .detach();
+        let (lock_unit, lock_text) = match crate::locks::auto_lock() {
+            auto @ crate::view_model::locks::AutoLock::After(secs) if auto.is_custom() => {
+                use crate::view_model::locks::TimeUnit;
+                let (unit, div) = if secs % 3600 == 0 {
+                    (TimeUnit::Hours, 3600)
+                } else if secs % 60 == 0 {
+                    (TimeUnit::Minutes, 60)
+                } else {
+                    (TimeUnit::Seconds, 1)
+                };
+                (unit, (secs / div).to_string())
+            }
+            _ => (crate::view_model::locks::TimeUnit::Minutes, String::new()),
+        };
+        lock_custom_input.update(cx, |input, cx| input.set_value(&lock_text, cx));
         let data_dir = crate::data_dir();
         if let Some(session) = session.clone() {
             // Incoming requests from the user's other devices pop the window.
@@ -393,6 +435,10 @@ impl SettingsView {
             hsv: crate::view_model::theme::to_hsv(crate::view_model::theme::DARK.bg_chat),
             hsv_dragging: false,
             colour_input,
+            lock_custom_input,
+            lock_unit,
+            lock_custom_open: false,
+            lock_custom_error: None,
             data_dir,
             voice: None,
             voice_prefs: Default::default(),

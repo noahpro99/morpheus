@@ -30,6 +30,88 @@ pub const TIMEOUT_CHOICES: [(u64, &str); 5] = [
     (3600, "1 hour"),
 ];
 
+/// The shortest custom auto-lock time, in seconds.
+pub const MIN_CUSTOM_SECS: u64 = 10;
+/// The longest custom auto-lock time: 24 hours.
+pub const MAX_CUSTOM_SECS: u64 = 24 * 3600;
+
+/// What the custom time's box says when the time is out of range.
+pub const CUSTOM_RANGE: &str = "Choose a time of at least 10 seconds and at most 24 hours.";
+
+/// When an unlocked chat that is not looked at locks again.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AutoLock {
+    /// As soon as you leave the chat.
+    Immediately,
+    /// After this many seconds away.
+    After(u64),
+    /// Only on restart or a manual lock.
+    Never,
+}
+
+impl AutoLock {
+    /// An `After` that is not one of the fixed choices.
+    pub fn is_custom(self) -> bool {
+        matches!(self, Self::After(secs) if !TIMEOUT_CHOICES.iter().any(|(s, _)| *s == secs))
+    }
+}
+
+/// The unit of a custom time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TimeUnit {
+    Seconds,
+    Minutes,
+    Hours,
+}
+
+impl TimeUnit {
+    pub const ALL: [TimeUnit; 3] = [Self::Seconds, Self::Minutes, Self::Hours];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Seconds => "seconds",
+            Self::Minutes => "minutes",
+            Self::Hours => "hours",
+        }
+    }
+
+    fn secs(self) -> f64 {
+        match self {
+            Self::Seconds => 1.0,
+            Self::Minutes => 60.0,
+            Self::Hours => 3600.0,
+        }
+    }
+}
+
+/// A custom time typed as `number` of `unit`, in seconds, or the message to show.
+pub fn parse_custom(number: &str, unit: TimeUnit) -> Result<u64, String> {
+    let value: f64 = number
+        .trim()
+        .parse()
+        .ok()
+        .filter(|v: &f64| v.is_finite() && *v >= 0.0)
+        .ok_or_else(|| "Type a number, like 30.".to_owned())?;
+    let secs = (value * unit.secs()).round();
+    if secs < MIN_CUSTOM_SECS as f64 || secs > MAX_CUSTOM_SECS as f64 {
+        return Err(CUSTOM_RANGE.to_owned());
+    }
+    Ok(secs as u64)
+}
+
+/// A time in words, in the biggest unit that holds it whole.
+pub fn describe_secs(secs: u64) -> String {
+    let (n, unit) = if secs >= 3600 && secs % 3600 == 0 {
+        (secs / 3600, "hour")
+    } else if secs >= 60 && secs % 60 == 0 {
+        (secs / 60, "minute")
+    } else {
+        (secs, "second")
+    };
+    format!("{n} {unit}{}", if n == 1 { "" } else { "s" })
+}
+
+
 /// The shortest password a lock accepts.
 pub const MIN_PASSWORD: usize = 4;
 
@@ -88,6 +170,7 @@ pub struct Locks {
     /// Room ID to the hash of its password.
     hashes: BTreeMap<String, String>,
     timeout_secs: Option<u64>,
+    never: bool,
     /// A timeout of the tests' choosing (not kept).
     timeout_override: Option<Duration>,
     /// The rooms open now.
@@ -115,11 +198,12 @@ impl Locks {
             })
             .unwrap_or_default();
         let timeout_secs = kept.get("timeout_secs").and_then(Value::as_u64);
-        Self { hashes, timeout_secs, ..Self::default() }
+        let never = kept.get("never").and_then(Value::as_bool).unwrap_or(false);
+        Self { hashes, timeout_secs, never, ..Self::default() }
     }
 
     pub fn save(&self, dir: &Path) -> std::io::Result<()> {
-        let json = json!({ "timeout_secs": self.timeout_secs, "rooms": self.hashes });
+        let json = json!({ "timeout_secs": self.timeout_secs, "never": self.never, "rooms": self.hashes });
         std::fs::write(dir.join(FILE), json.to_string())
     }
 
@@ -133,8 +217,25 @@ impl Locks {
         self.timeout_secs.unwrap_or(DEFAULT_TIMEOUT_SECS)
     }
 
+    pub fn auto_lock(&self) -> AutoLock {
+        match self.timeout_secs() {
+            _ if self.never => AutoLock::Never,
+            0 => AutoLock::Immediately,
+            secs => AutoLock::After(secs),
+        }
+    }
+
+    pub fn set_auto_lock(&mut self, choice: AutoLock) {
+        self.never = choice == AutoLock::Never;
+        match choice {
+            AutoLock::Immediately => self.timeout_secs = Some(0),
+            AutoLock::After(secs) => self.timeout_secs = Some(secs),
+            AutoLock::Never => {}
+        }
+    }
+
     pub fn set_timeout_secs(&mut self, secs: u64) {
-        self.timeout_secs = Some(secs);
+        self.set_auto_lock(AutoLock::After(secs));
     }
 
     /// For tests: a timeout that is not kept.
@@ -195,6 +296,7 @@ impl Locks {
     /// front), if any. Returns the rooms that locked now.
     pub fn tick(&mut self, now: Instant, watching: Option<&str>) -> Vec<String> {
         let timeout = self.timeout();
+        let never = self.never && self.timeout_override.is_none();
         let mut closed = Vec::new();
         for room in &self.unlocked {
             if Some(room.as_str()) == watching {
@@ -202,7 +304,7 @@ impl Locks {
                 continue;
             }
             let since = *self.away.entry(room.clone()).or_insert(now);
-            if now.duration_since(since) >= timeout {
+            if !never && now.duration_since(since) >= timeout {
                 closed.push(room.clone());
             }
         }
@@ -327,5 +429,75 @@ mod tests {
         assert!(password_problem("abc", "abc").is_some());
         assert!(password_problem("abcd", "abce").is_some());
         assert!(password_problem("abcd", "abcd").is_none());
+    }
+
+    #[test]
+    fn a_custom_time_is_a_number_and_a_unit() {
+        assert_eq!(parse_custom("30", TimeUnit::Seconds), Ok(30));
+        assert_eq!(parse_custom(" 45 ", TimeUnit::Minutes), Ok(2700));
+        assert_eq!(parse_custom("2", TimeUnit::Hours), Ok(7200));
+        assert_eq!(parse_custom("1.5", TimeUnit::Hours), Ok(5400));
+        assert_eq!(parse_custom("24", TimeUnit::Hours), Ok(86_400));
+        assert_eq!(parse_custom("10", TimeUnit::Seconds), Ok(10));
+    }
+
+    #[test]
+    fn out_of_range_or_unreadable_times_are_refused_with_a_message() {
+        for (text, unit) in [
+            ("9", TimeUnit::Seconds),
+            ("0", TimeUnit::Minutes),
+            ("25", TimeUnit::Hours),
+            ("1441", TimeUnit::Minutes),
+            ("86401", TimeUnit::Seconds),
+        ] {
+            let err = parse_custom(text, unit).expect_err(text);
+            assert!(err.contains("10 seconds") && err.contains("24 hours"), "{text}: {err}");
+        }
+        for text in ["", "abc", "-5", "NaN", "inf"] {
+            let err = parse_custom(text, TimeUnit::Minutes).expect_err(text);
+            assert!(err.contains("number"), "{text}: {err}");
+        }
+    }
+
+    #[test]
+    fn times_are_worded_in_the_biggest_whole_unit() {
+        assert_eq!(describe_secs(10), "10 seconds");
+        assert_eq!(describe_secs(60), "1 minute");
+        assert_eq!(describe_secs(90), "90 seconds");
+        assert_eq!(describe_secs(7200), "2 hours");
+        assert_eq!(describe_secs(5400), "90 minutes");
+    }
+
+    #[test]
+    fn immediately_and_never_are_choices_and_are_kept() {
+        let dir = temp_dir("modes");
+        let mut locks = Locks::default();
+        assert_eq!(locks.auto_lock(), AutoLock::After(300));
+        locks.set_auto_lock(AutoLock::Never);
+        locks.save(&dir).expect("save");
+        assert_eq!(Locks::load(&dir).auto_lock(), AutoLock::Never);
+        locks.set_auto_lock(AutoLock::Immediately);
+        locks.save(&dir).expect("save");
+        assert_eq!(Locks::load(&dir).auto_lock(), AutoLock::Immediately);
+        locks.set_auto_lock(AutoLock::After(90));
+        locks.save(&dir).expect("save");
+        assert_eq!(Locks::load(&dir).auto_lock(), AutoLock::After(90));
+        assert!(!AutoLock::After(900).is_custom() && AutoLock::After(90).is_custom());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn never_does_not_lock_and_immediately_locks_on_leaving() {
+        let t0 = Instant::now();
+        let mut locks = Locks::default();
+        locks.add("!r:s", "h".into());
+        locks.unlock("!r:s");
+        locks.set_auto_lock(AutoLock::Never);
+        locks.tick(t0, None);
+        assert!(locks.tick(t0 + Duration::from_secs(100_000), None).is_empty());
+        assert!(!locks.is_locked("!r:s"));
+        locks.set_auto_lock(AutoLock::Immediately);
+        assert!(locks.tick(t0, Some("!r:s")).is_empty(), "looked at: stays");
+        assert_eq!(locks.tick(t0, None), vec!["!r:s".to_owned()]);
     }
 }

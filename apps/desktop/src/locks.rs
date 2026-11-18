@@ -97,6 +97,15 @@ pub fn set_timeout_secs(secs: u64) {
     save();
 }
 
+pub fn auto_lock() -> vm::AutoLock {
+    with(|locks| locks.auto_lock())
+}
+
+pub fn set_auto_lock(choice: vm::AutoLock) {
+    with(|locks| locks.set_auto_lock(choice));
+    save();
+}
+
 impl Shell {
     /// Starts the clock that locks open rooms again.
     pub fn start_lock_clock(&mut self, cx: &mut Context<Self>) {
