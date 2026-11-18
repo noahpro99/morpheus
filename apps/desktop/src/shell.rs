@@ -976,12 +976,13 @@ impl Shell {
     /// A member list of `room` whose clicks open profiles and menus.
     pub fn new_members_view(&mut self, room: OwnedRoomId, cx: &mut Context<Self>) -> Entity<MembersView> {
         let session = self.session.clone();
+        let of = room.clone();
         let members = cx.new(|cx| MembersView::new(session, room, cx));
         cx.subscribe(
             &members,
-            |this: &mut Self, _, event: &MemberEvent, cx| match event {
+            move |this: &mut Self, _, event: &MemberEvent, cx| match event {
                 MemberEvent::Context(member, permissions, at) => {
-                    this.open_member_menu(member, *permissions, *at, cx)
+                    this.open_member_menu_in(of.clone(), member, *permissions, *at, cx)
                 }
                 MemberEvent::Open(member, at) => {
                     let seen = Some((member.name.clone(), member.avatar.clone()));

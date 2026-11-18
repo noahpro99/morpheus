@@ -294,25 +294,6 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>, space: &RoomSummary) -> An
                     .e2e("div", "welcome-channels"),
             )
             .child(div().mt(px(12.0)).child(start))
-            .children(shell.welcome_members.as_ref().filter(|(room, _)| room == &space.id).map(|(_, members)| {
-                div()
-                    .mt(px(16.0))
-                    .w_full()
-                    .text_left()
-                    .flex()
-                    .flex_col()
-                    .child(
-                        div()
-                            .text_size(px(0.75 * theme::REM))
-                            .font_weight(FontWeight::BOLD)
-                            .text_color(rgb(theme::text_muted()))
-                            .child("MEMBERS")
-                            .e2e("h3", "")
-                            .text("Members"),
-                    )
-                    .child(div().h(px(320.0)).flex().flex_col().child(members.clone()))
-                    .e2e("div", "welcome-members")
-            }))
             .e2e("section", "server-welcome"),
         )
         .into_any_element()

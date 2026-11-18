@@ -19,7 +19,36 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
         .cloned();
     let body = match shell.current().filter(|_| friends.is_none()) {
         _ if welcome.is_some() => match &welcome {
-            Some(space) => crate::welcome::render(shell, cx, space),
+            Some(space) => {
+                let mut body = div()
+                    .flex()
+                    .flex_1()
+                    .min_h_0()
+                    .child(crate::welcome::render(shell, cx, space));
+                if shell.members_open
+                    && let Some((id, members)) = &shell.welcome_members
+                    && id == &space.id
+                {
+                    body = body.child(side_pane(members.clone().into_any_element(), false));
+                }
+                let header = div()
+                    .flex()
+                    .items_center()
+                    .h(px(48.0))
+                    .px(px(16.0))
+                    .flex_none()
+                    .child(div().flex_1())
+                    .child(members_toggle(shell, cx))
+                    .e2e("header", "chat-header");
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .min_h_0()
+                    .child(header)
+                    .child(body)
+                    .into_any_element()
+            }
             None => div().into_any_element(),
         },
         _ if friends.is_some() => friends
@@ -205,39 +234,7 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
             // The rest of the header sits at the right: the room's menu, the
             // member list's toggle, the pinned messages.
             header = header.child(div().flex_1());
-            let open = shell.members_open;
-            let members_colour = if open {
-                theme::text()
-            } else {
-                bar_colour(shell, "member-toggle", theme::text_muted())
-            };
-            header = header.child(
-                div()
-                    .id("member-toggle")
-                    .flex()
-                    .items_center()
-                    .gap(px(5.0))
-                    .px(px(8.0))
-                    .h(px(28.0))
-                    .rounded(px(theme::RADIUS_SM))
-                    .text_size(px(0.85 * theme::REM))
-                    .text_color(rgb(members_colour))
-                    .cursor_pointer()
-                    .on_hover(bar_hover(cx, "member-toggle"))
-                    .child(icon("users", 16.0).text_color(rgb(members_colour)))
-                    .on_click(cx.listener(|this, _, _, cx| this.toggle_members(cx)))
-                    .e2e(
-                        "button",
-                        if open {
-                            "ghost member-toggle active"
-                        } else {
-                            "ghost member-toggle"
-                        },
-                    )
-                    .attr("title", "Member list (Ctrl+U)")
-                    .attr("data-color", format!("{members_colour:06x}"))
-                    .attr("data-bg", ""),
-            );
+            header = header.child(members_toggle(shell, cx));
             // Calls belong to DMs and voice channels, as in Discord.
             if room.is_dm {
                 header = header.child(crate::call_ui::header_call_button(shell, cx, room));
@@ -396,33 +393,7 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                 None
             };
             if let Some(side) = side {
-                body = body.child(
-                    div()
-                        .w(px(if searching {
-                            theme::SEARCH_W
-                        } else {
-                            theme::MEMBERS_W
-                        }))
-                        .flex_none()
-                        .flex()
-                        .flex_col()
-                        .pt(px(8.0))
-                        .pr(px(8.0))
-                        .pb(px(theme::BOTTOM_GAP))
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .flex_1()
-                                .min_h_0()
-                                .rounded(px(theme::RADIUS_LG))
-                                .overflow_hidden()
-                                .bg(rgb(theme::bg_sidebar()))
-                                .child(side)
-                                .e2e("div", "side-pane")
-                                .attr("data-radius", theme::RADIUS_LG.to_string()),
-                        ),
-                );
+                body = body.child(side_pane(side, searching));
             }
             let column = div()
                 .flex()
@@ -506,4 +477,69 @@ pub fn bar_hover(
             }
         })
     }
+}
+
+/// The header's member-list toggle (a channel's and a server overview's).
+pub fn members_toggle(shell: &Shell, cx: &mut Context<Shell>) -> gpui::AnyElement {
+    let open = shell.members_open;
+    let members_colour = if open {
+        theme::text()
+    } else {
+        bar_colour(shell, "member-toggle", theme::text_muted())
+    };
+    div()
+        .id("member-toggle")
+        .flex()
+        .items_center()
+        .gap(px(5.0))
+        .px(px(8.0))
+        .h(px(28.0))
+        .rounded(px(theme::RADIUS_SM))
+        .text_size(px(0.85 * theme::REM))
+        .text_color(rgb(members_colour))
+        .cursor_pointer()
+        .on_hover(bar_hover(cx, "member-toggle"))
+        .child(icon("users", 16.0).text_color(rgb(members_colour)))
+        .on_click(cx.listener(|this, _, _, cx| this.toggle_members(cx)))
+        .e2e(
+            "button",
+            if open {
+                "ghost member-toggle active"
+            } else {
+                "ghost member-toggle"
+            },
+        )
+        .attr("title", "Member list (Ctrl+U)")
+        .attr("data-color", format!("{members_colour:06x}"))
+        .attr("data-bg", "")
+        .into_any_element()
+}
+
+/// The side column's frame (a channel's and a server overview's).
+pub fn side_pane(side: gpui::AnyElement, searching: bool) -> gpui::Div {
+    div()
+        .w(px(if searching {
+            theme::SEARCH_W
+        } else {
+            theme::MEMBERS_W
+        }))
+        .flex_none()
+        .flex()
+        .flex_col()
+        .pt(px(8.0))
+        .pr(px(8.0))
+        .pb(px(theme::BOTTOM_GAP))
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .flex_1()
+                .min_h_0()
+                .rounded(px(theme::RADIUS_LG))
+                .overflow_hidden()
+                .bg(rgb(theme::bg_sidebar()))
+                .child(side)
+                .e2e("div", "side-pane")
+                .attr("data-radius", theme::RADIUS_LG.to_string()),
+        )
 }
