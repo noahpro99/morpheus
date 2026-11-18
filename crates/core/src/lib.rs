@@ -59,7 +59,7 @@ pub use links::{LinkedRoom, MatrixLink, link_wants_chat, parse_matrix_link};
 pub use media::{AVATAR_FULL_MAX, AvatarStats, Media, MediaRef, avatar_stats};
 pub use members::{
     KnownMembers, Member, MemberPermissions, MemberRole, ModRoom, ProfileChange, ProfileUpdates,
-    Standing,
+    RoomPowers, Standing,
 };
 pub use messages::PinnedMessage;
 pub use notifications::{Notification, NotificationUpdates};

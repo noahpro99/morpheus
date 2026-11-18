@@ -142,7 +142,12 @@ impl Shell {
             .map(|room| forward_targets(&self.rooms, room))
             .unwrap_or_default();
         let items = message_menu(message, room.as_ref(), pinned, &targets, false);
-        let react = offers_quick_reactions(message);
+        let powers = room.as_ref().and_then(crate::composer::known_powers);
+        let items = match &powers {
+            Some(powers) => crate::view_model::permissions::restrict_menu(items, powers),
+            None => items,
+        };
+        let react = offers_quick_reactions(message) && crate::composer::may_react();
         let target = MenuTarget::Message {
             message: Box::new(message.clone()),
             room,

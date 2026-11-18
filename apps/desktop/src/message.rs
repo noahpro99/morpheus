@@ -1318,7 +1318,9 @@ fn actions_bar(m: &Message, group: SharedString, actions: &ActionHandler) -> Any
         .opacity(0.0)
         .group_hover(group, |s| s.opacity(1.0));
     let uid = m.unique_id.as_str();
-    for key in QUICK_REACTIONS {
+    // Reactions the channel does not allow this person are not offered.
+    let reactions: &[&str] = if crate::composer::may_react() { &QUICK_REACTIONS } else { &[] };
+    for key in reactions.iter().copied() {
         bar = bar.child(action_button(
             format!("react-{uid}-{key}").into(),
             "action quick-reaction",
@@ -1330,15 +1332,17 @@ fn actions_bar(m: &Message, group: SharedString, actions: &ActionHandler) -> Any
         ));
     }
     // Every other emoji: the full picker, beside this button.
-    bar = bar.child(action_button(
-        format!("more-{uid}").into(),
-        "action more-reactions",
-        "Add reaction",
-        icon("smile-plus", 15.0).into_any_element(),
-        RowAction::MoreReactions(Point::default()),
-        uid,
-        actions,
-    ));
+    if crate::composer::may_react() {
+        bar = bar.child(action_button(
+            format!("more-{uid}").into(),
+            "action more-reactions",
+            "Add reaction",
+            icon("smile-plus", 15.0).into_any_element(),
+            RowAction::MoreReactions(Point::default()),
+            uid,
+            actions,
+        ));
+    }
     let can_reply = matches!(m.id, morpheus_core::MessageId::Event(_));
     if can_reply {
         bar = bar.child(action_button(

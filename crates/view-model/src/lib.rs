@@ -6,6 +6,7 @@
 //! front ends.
 
 pub mod about;
+pub mod permissions;
 pub mod release_notes;
 pub mod avatar_color;
 pub mod calls;

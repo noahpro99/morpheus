@@ -537,3 +537,64 @@ impl Session {
         })
     }
 }
+
+/// A room's power levels as the room has them, and what the signed-in user
+/// has there (#175; the rules about them are `view_model::permissions`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct RoomPowers {
+    /// The `m.room.power_levels` content.
+    pub content: serde_json::Value,
+    pub own: i64,
+    pub can_change: bool,
+}
+
+async fn read_powers(room: &matrix_sdk::Room) -> Result<RoomPowers, Error> {
+    use matrix_sdk::deserialized_responses::RawAnySyncOrStrippedState;
+    let content = match room.get_state_event(StateEventType::RoomPowerLevels, "").await? {
+        Some(RawAnySyncOrStrippedState::Sync(raw)) => raw
+            .deserialize_as::<serde_json::Value>()
+            .ok()
+            .and_then(|event| event.get("content").cloned()),
+        _ => None,
+    }
+    .unwrap_or_else(|| serde_json::json!({}));
+    let mine = permissions_in(room, room.own_user_id()).await?;
+    Ok(RoomPowers {
+        content,
+        own: mine.power_level,
+        can_change: mine.can_change_roles,
+    })
+}
+
+impl Session {
+    /// The room's power levels (a local read) and what we have there.
+    pub fn room_powers(&self, room_id: OwnedRoomId) -> CoreFuture<RoomPowers> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            let room = client
+                .get_room(&room_id)
+                .ok_or_else(|| Error::UnknownRoom(room_id.clone()))?;
+            read_powers(&room).await
+        })
+    }
+
+    /// Replace the room's power levels with `content`, once the room shows it.
+    pub fn set_room_powers(&self, room_id: OwnedRoomId, content: serde_json::Value) -> CoreFuture<()> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            let room = client
+                .get_room(&room_id)
+                .ok_or_else(|| Error::UnknownRoom(room_id.clone()))?;
+            room.send_state_event_raw("m.room.power_levels", "", content.clone())
+                .await?;
+            let deadline = crate::rt::Instant::now() + std::time::Duration::from_secs(8);
+            while crate::rt::Instant::now() < deadline {
+                if read_powers(&room).await.is_ok_and(|now| now.content == content) {
+                    break;
+                }
+                crate::rt::sleep(std::time::Duration::from_millis(100)).await;
+            }
+            Ok(())
+        })
+    }
+}

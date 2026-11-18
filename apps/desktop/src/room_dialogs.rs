@@ -23,6 +23,7 @@ use crate::{
     model::{Scope, rooms_in_scope},
     theme,
     view_model::locks as vm_locks,
+    view_model::permissions as vm_perm,
     view_model::room_dialogs::{
         self as vm, ENCRYPTION_OFF, ENCRYPTION_ON, ENCRYPTION_PERMANENT, ENCRYPTION_WARNING,
         Encryption, HISTORY_CHOICES, JOIN_CHOICES, Note, RoomDialogKind,
@@ -94,6 +95,10 @@ pub struct RoomDialog {
     history: History,
     /// Per-server profile: the picture chosen, not yet saved.
     avatar: Option<PathBuf>,
+    /// Edit room: who may do what (#175), once read.
+    powers: Option<morpheus_core::RoomPowers>,
+    /// Edit room: the last attempt to change it failed.
+    powers_note: Option<Note>,
 }
 
 impl EventEmitter<Closed> for RoomDialog {}
@@ -218,8 +223,11 @@ impl RoomDialog {
             public: true,
             history: History::Shared,
             avatar: None,
+            powers: None,
+            powers_note: None,
         };
         this.load(cx);
+        this.load_powers(cx);
         if let (Some((joined, invited)), Some(picker)) = (roster, this.picker.clone()) {
             cx.spawn(async move |_, cx| {
                 let joined: Vec<_> = joined
@@ -234,6 +242,125 @@ impl RoomDialog {
             .detach();
         }
         this
+    }
+
+    /// Edit room: reads who may do what in the room.
+    fn load_powers(&mut self, cx: &mut Context<Self>) {
+        let RoomDialogKind::Edit(room) = self.kind.clone() else {
+            return;
+        };
+        let reading = self.session.room_powers(room);
+        cx.spawn(async move |this, cx| {
+            if let Ok(powers) = reading.await {
+                this.update(cx, |this, cx| {
+                    this.powers = Some(powers);
+                    cx.notify();
+                })
+                .ok();
+            }
+        })
+        .detach();
+    }
+
+    /// Edit room: choose who may `action`; shown at once, and read again if it failed.
+    fn choose_level(
+        &mut self,
+        action: vm_perm::Action,
+        level: vm_perm::Level,
+        cx: &mut Context<Self>,
+    ) {
+        let (RoomDialogKind::Edit(room), Some(current)) =
+            (self.kind.clone(), self.powers.clone())
+        else {
+            return;
+        };
+        let known = vm_perm::Powers {
+            content: current.content,
+            own: current.own,
+            can_change: current.can_change,
+        };
+        let content = known.with_level(action, level);
+        if let Some(powers) = &mut self.powers {
+            powers.content = content.clone();
+        }
+        self.powers_note = None;
+        let setting = self.session.set_room_powers(room, content);
+        cx.spawn(async move |this, cx| {
+            let result = setting.await;
+            this.update(cx, |this, cx| {
+                if let Err(err) = result {
+                    this.powers_note = Some(Note::error(err.to_string()));
+                    this.load_powers(cx);
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+        cx.notify();
+    }
+
+    /// Edit room: the Permissions section, for those who may change it.
+    fn permissions_section(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let powers = self.powers.as_ref()?;
+        let known = vm_perm::Powers {
+            content: powers.content.clone(),
+            own: powers.own,
+            can_change: powers.can_change,
+        };
+        let mut section = div().flex().flex_col().gap(px(6.0)).child(
+            div()
+                .font_weight(FontWeight::BOLD)
+                .child("Permissions")
+                .e2e("h3", "")
+                .text("Permissions"),
+        );
+        if !known.can_change {
+            return Some(
+                section
+                    .child(muted(vm_perm::CANNOT_CHANGE, "muted perm-note"))
+                    .e2e("div", "perm-section")
+                    .into_any_element(),
+            );
+        }
+        for action in vm_perm::Action::ALL {
+            let chosen = known.level(action);
+            let mut options = div().flex().flex_wrap().gap(px(6.0));
+            for level in vm_perm::Level::ALL {
+                let selected = chosen == level;
+                options = options.child(
+                    div()
+                        .id(ElementId::from(SharedString::from(format!(
+                            "perm-{}-{}",
+                            action.id(),
+                            level.power()
+                        ))))
+                        .px(px(10.0))
+                        .py(px(4.0))
+                        .rounded(px(theme::RADIUS))
+                        .cursor_pointer()
+                        .bg(rgb(if selected { theme::accent() } else { theme::bg_elevated() }))
+                        .text_color(rgb(if selected { theme::on_accent_solid() } else { theme::text() }))
+                        .child(level.label())
+                        .on_click(cx.listener(move |this, _, _, cx| this.choose_level(action, level, cx)))
+                        .e2e("button", if selected { "perm-option selected" } else { "perm-option" })
+                        .text(level.label()),
+                );
+            }
+            section = section.child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(4.0))
+                    .child(div().child(action.label()))
+                    .child(options)
+                    .e2e("div", &format!("perm-row perm-{}", action.id())),
+            );
+        }
+        if let Some(note) = &self.powers_note {
+            section = section.child(note_el(note));
+        }
+        Some(section.e2e("div", "perm-section").into_any_element())
     }
 
     /// What the form starts from, as the server has it.
@@ -1167,6 +1294,7 @@ impl RoomDialog {
                     )])
                     .into_any_element(),
                 );
+                parts.extend(self.permissions_section(cx));
                 parts.extend(note);
                 parts.push(
                     actions(vec![

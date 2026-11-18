@@ -68,6 +68,32 @@ pub struct Composer {
     open_focus: bool,
     /// A placeholder of its own (a thread's box), instead of the room's.
     placeholder: Option<String>,
+    /// The channel lets this person send (#175); else the box is replaced by why not.
+    may_send: bool,
+}
+
+/// The power levels of the room whose composer read them last (the room
+/// open), for what else must follow them: the reaction and pin actions.
+static KNOWN: std::sync::Mutex<Option<(OwnedRoomId, crate::view_model::permissions::Powers)>> =
+    std::sync::Mutex::new(None);
+
+/// The open room's power levels, when they are `room`'s.
+pub fn known_powers(room: &OwnedRoomId) -> Option<crate::view_model::permissions::Powers> {
+    let known = KNOWN.lock().ok()?;
+    known.as_ref().filter(|(known, _)| known == room).map(|(_, p)| p.clone())
+}
+
+/// Whether the open room lets this person react (true while not known).
+pub fn may_react() -> bool {
+    KNOWN
+        .lock()
+        .ok()
+        .and_then(|known| {
+            known
+                .as_ref()
+                .map(|(_, p)| p.allows(crate::view_model::permissions::Action::React))
+        })
+        .unwrap_or(true)
 }
 
 impl Composer {
@@ -117,11 +143,52 @@ impl Composer {
             pending_blur: false,
             open_focus: false,
             placeholder: None,
+            may_send: true,
         };
+        this.watch_powers(cx);
         this.refresh_placeholder(cx);
         #[cfg(feature = "e2e")]
         crate::e2e::on_attach(cx.weak_entity());
         this
+    }
+
+    /// Reads the room's power levels now and then (a local read), so a change
+    /// of who may send shows without reopening the room.
+    fn watch_powers(&mut self, cx: &mut Context<Self>) {
+        let Some(session) = self.session.clone() else {
+            return;
+        };
+        let room = self.room_id.clone();
+        cx.spawn(async move |this, cx| {
+            loop {
+                if let Ok(powers) = session.room_powers(room.clone()).await {
+                    let powers = crate::view_model::permissions::Powers {
+                        content: powers.content,
+                        own: powers.own,
+                        can_change: powers.can_change,
+                    };
+                    let allowed = powers.allows(crate::view_model::permissions::Action::Send);
+                    if let Ok(mut known) = KNOWN.lock() {
+                        *known = Some((room.clone(), powers));
+                    }
+                    let alive = this
+                        .update(cx, |this, cx| {
+                            if this.may_send != allowed {
+                                this.may_send = allowed;
+                                cx.notify();
+                            }
+                        })
+                        .is_ok();
+                    if !alive {
+                        return;
+                    }
+                }
+                cx.background_executor()
+                    .timer(std::time::Duration::from_millis(700))
+                    .await;
+            }
+        })
+        .detach();
     }
 
     /// A placeholder of its own, as a thread's box has.
@@ -891,6 +958,26 @@ impl Render for Composer {
         if std::mem::take(&mut self.open_focus) && nothing_held {
             self.input.read(cx).focus(window);
         }
+        if !self.may_send {
+            let why = crate::view_model::permissions::CANNOT_SEND;
+            return div()
+                .flex_none()
+                .px(px(8.0))
+                .pb(px(theme::BOTTOM_GAP))
+                .child(
+                    div()
+                        .px(px(16.0))
+                        .py(px(12.0))
+                        .rounded(px(theme::RADIUS_LG))
+                        .bg(rgb(theme::bg_elevated()))
+                        .text_color(rgb(theme::text_muted()))
+                        .child(why)
+                        .e2e("div", "composer-readonly")
+                        .text(why),
+                )
+                .e2e("footer", "composer")
+                .into_any_element();
+        }
         let ready = self.handle.is_some();
         let banner = self.banner(cx);
         let tiles = self.tiles_el(banner.is_some(), cx);
@@ -972,7 +1059,7 @@ impl Render for Composer {
         if let Some(panel) = self.emoji_panel_el(cx) {
             footer = footer.child(panel);
         }
-        footer.e2e("footer", "composer")
+        footer.e2e("footer", "composer").into_any_element()
     }
 }
 
