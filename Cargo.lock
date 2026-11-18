@@ -7380,7 +7380,7 @@ dependencies = [
 
 [[package]]
 name = "morpheus-call"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "block2",
  "cpal",
@@ -7421,7 +7421,7 @@ dependencies = [
 
 [[package]]
 name = "morpheus-core"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "apple-native-keyring-store",
  "base64 0.22.1",
@@ -7462,7 +7462,7 @@ dependencies = [
 
 [[package]]
 name = "morpheus-desktop"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -7502,7 +7502,7 @@ dependencies = [
 
 [[package]]
 name = "morpheus-mobile"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "dioxus",
  "jni 0.21.1",
@@ -7519,7 +7519,7 @@ dependencies = [
 
 [[package]]
 name = "morpheus-ui"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "base64 0.22.1",
  "dioxus",
@@ -7537,7 +7537,7 @@ dependencies = [
 
 [[package]]
 name = "morpheus-video"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "mp4",
  "openh264",
@@ -7548,7 +7548,7 @@ dependencies = [
 
 [[package]]
 name = "morpheus-view-model"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "argon2",
  "color-thief",
@@ -7562,7 +7562,7 @@ dependencies = [
 
 [[package]]
 name = "morpheus-web"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "dioxus",
  "morpheus-ui",
