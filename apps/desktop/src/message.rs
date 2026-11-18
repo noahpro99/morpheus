@@ -68,6 +68,15 @@ pub struct Pictures {
     pub after_divider: bool,
     /// A video message's player (the timeline keeps one per message).
     pub video: Option<gpui::AnyView>,
+    /// The link preview card under the message, when it has one.
+    pub preview: Option<PreviewCard>,
+}
+
+/// A link's card and its picture, if fetched yet.
+#[derive(Clone)]
+pub struct PreviewCard {
+    pub preview: morpheus_core::UrlPreview,
+    pub image: Option<Arc<Image>>,
 }
 
 /// A file's download, as its card shows it.
@@ -1390,6 +1399,8 @@ pub enum RowAction {
     Toggle(String),
     /// A file card's Download button.
     Download,
+    /// The link preview's close button.
+    DismissPreview,
 }
 
 /// What a click on a hover action does: the action, the message's unique ID.
@@ -1778,6 +1789,9 @@ pub fn message_el(
     };
     if let Some(card) = invite_embed(row, links) {
         main = main.child(card);
+    }
+    if let Some(card) = &pics.preview {
+        main = main.child(preview_el(card, &m.unique_id, links, actions));
     }
     if !m.reactions.is_empty() {
         main = main.child(reactions_el(&m.reactions, &m.unique_id, actions));
@@ -2176,4 +2190,129 @@ fn invite_embed(row: &MessageRow, links: &LinkHandler) -> Option<AnyElement> {
             .e2e("div", "invite-embed")
             .into_any_element(),
     )
+}
+
+/// A link's preview card under a message: the site, the title (a link), the
+/// description, the picture, and a close button.
+fn preview_el(
+    card: &PreviewCard,
+    unique_id: &str,
+    links: &LinkHandler,
+    actions: Option<&ActionHandler>,
+) -> AnyElement {
+    let preview = &card.preview;
+    let url = preview.url.clone();
+    let mut text = div().flex().flex_col().gap(px(2.0)).min_w_0();
+    if let Some(site) = &preview.site {
+        text = text.child(
+            div()
+                .text_size(rem(0.75))
+                .text_color(rgb(theme::text_faint()))
+                .truncate()
+                .child(site.clone())
+                .e2e("div", "preview-site")
+                .text(site.clone()),
+        );
+    }
+    if let Some(title) = &preview.title {
+        let (open, target) = (links.clone(), url.clone());
+        text = text.child(
+            div()
+                .id(SharedString::from(format!("preview-title-{unique_id}")))
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(rgb(theme::link()))
+                .cursor_pointer()
+                .on_click(move |_, _, cx| open(&target, cx))
+                .child(title.clone())
+                .e2e("div", "preview-title")
+                .text(title.clone()),
+        );
+    }
+    if let Some(description) = &preview.description {
+        let shown: String = if description.chars().count() > 300 {
+            description.chars().take(300).chain(['…']).collect()
+        } else {
+            description.clone()
+        };
+        text = text.child(
+            div()
+                .text_size(rem(0.9))
+                .text_color(rgb(theme::text_muted()))
+                .child(shown.clone())
+                .e2e("div", "preview-description")
+                .text(shown),
+        );
+    }
+    let mut body = div().flex().flex_col().gap(px(8.0)).min_w_0().child(text);
+    if preview.image.is_some() {
+        let (w, h) = match (preview.image_width, preview.image_height) {
+            (Some(w), Some(h)) if w > 0 && h > 0 => {
+                let scale = (360.0 / w as f32).min(200.0 / h as f32).min(1.0);
+                (w as f32 * scale, h as f32 * scale)
+            }
+            _ => (360.0, 200.0),
+        };
+        body = body.child(match &card.image {
+            Some(image) => div()
+                .w(px(w))
+                .h(px(h))
+                .rounded(px(theme::RADIUS))
+                .overflow_hidden()
+                .child(
+                    img(crate::media::drawn(image.clone()))
+                        .size_full()
+                        .object_fit(ObjectFit::Cover),
+                )
+                .e2e("div", "preview-image")
+                .attr("data-loaded", "true")
+                .into_any_element(),
+            None => div()
+                .w(px(w))
+                .h(px(h))
+                .rounded(px(theme::RADIUS))
+                .bg(rgb(theme::bg_input()))
+                .e2e("div", "preview-image")
+                .attr("data-loaded", "false")
+                .into_any_element(),
+        });
+    }
+    let dismiss = {
+        let (actions, unique_id) = (actions.cloned(), unique_id.to_owned());
+        div()
+            .id(SharedString::from(format!("preview-dismiss-{unique_id}")))
+            .absolute()
+            .top(px(6.0))
+            .right(px(6.0))
+            .size(px(20.0))
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded(px(theme::RADIUS_SM))
+            .cursor_pointer()
+            .hover(|s| s.bg(rgba(theme::bg_hover())))
+            .child(crate::icons::icon("x", 14.0).text_color(rgb(theme::text_muted())))
+            .on_click(move |_, window, cx| {
+                if let Some(actions) = &actions {
+                    actions(RowAction::DismissPreview, &unique_id, window, cx);
+                }
+            })
+            .e2e("button", "preview-dismiss")
+            .attr("title", "Remove preview")
+    };
+    div()
+        .relative()
+        .mt(px(4.0))
+        .max_w(px(420.0))
+        .pl(px(12.0))
+        .pr(px(32.0))
+        .py(px(8.0))
+        .rounded(px(theme::RADIUS))
+        .border_l(px(4.0))
+        .border_color(rgb(theme::accent()))
+        .bg(rgb(theme::bg_elevated()))
+        .child(body)
+        .child(dismiss)
+        .e2e("div", "link-preview")
+        .attr("data-url", url)
+        .into_any_element()
 }

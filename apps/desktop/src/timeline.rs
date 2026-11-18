@@ -113,6 +113,8 @@ pub struct TimelineView {
     handle: Option<TimelineHandle>,
     /// A direct message: an empty one offers "Say hi!" (set by the shell).
     say_hi: bool,
+    /// The room is encrypted: no link previews unless turned on for them.
+    encrypted: bool,
     entries: Vector<TimelineEntry>,
     rows: Vec<Row>,
     list: ListState,
@@ -267,6 +269,7 @@ impl TimelineView {
             session: session.clone(),
             handle: None,
             say_hi: false,
+            encrypted: false,
             entries: Vector::new(),
             rows: vec![Row::Skeleton { older: false }],
             list,
@@ -627,6 +630,24 @@ impl TimelineView {
     }
 
     /// The people you ignore changed: their messages fold away (or show).
+    /// Whether the room is encrypted (link previews tell the homeserver the link).
+    pub fn set_encrypted(&mut self, encrypted: bool, cx: &mut Context<Self>) {
+        if self.encrypted != encrypted {
+            self.encrypted = encrypted;
+            cx.notify();
+        }
+    }
+
+    /// A link preview arrived (or went): the row is measured again.
+    fn relayout(&mut self, unique_id: &str, cx: &mut Context<Self>) {
+        if let Some(ix) = self.rows.iter().position(|r| {
+            matches!(r, Row::Message { row, .. } if row.message.unique_id == unique_id)
+        }) {
+            self.list.splice(ix..ix + 1, 1);
+        }
+        cx.notify();
+    }
+
     /// Whether this is a direct message, which offers "Say hi!" while empty.
     pub fn set_direct(&mut self, direct: bool, cx: &mut Context<Self>) {
         if self.say_hi != direct {
@@ -999,6 +1020,37 @@ impl TimelineView {
         })
     }
 
+    /// The card under a message with a link, if previews are allowed here:
+    /// asks the homeserver the first time, and again lays the row out when
+    /// the answer (and its picture) arrive.
+    fn link_preview(&mut self, row: &MessageRow, pictures: &mut Pictures, cx: &mut Context<Self>) {
+        let Some(session) = self.session.clone() else {
+            return;
+        };
+        if !matches!(
+            row.message.kind,
+            MessageKind::Text { .. } | MessageKind::Notice { .. }
+        ) || !crate::link_previews::settings().allows(self.encrypted)
+            || crate::link_previews::is_dismissed(&row.message.unique_id)
+        {
+            return;
+        }
+        let Some(url) = crate::view_model::link_previews::first_url(&row.blocks) else {
+            return;
+        };
+        let unique_id = row.message.unique_id.clone();
+        crate::link_previews::want(&session, &url, cx, move |this: &mut Self, cx| {
+            this.relayout(&unique_id, cx)
+        });
+        if let Some(preview) = crate::link_previews::card(&url) {
+            let image = preview
+                .image
+                .as_ref()
+                .and_then(|i| crate::link_previews::picture(i.key()));
+            pictures.preview = Some(crate::message::PreviewCard { preview, image });
+        }
+    }
+
     fn render_row(&mut self, ix: usize, cx: &mut Context<Self>) -> AnyElement {
         let Some(row) = self.rows.get(ix).cloned() else {
             return div().into_any_element();
@@ -1076,6 +1128,7 @@ impl TimelineView {
             ..Pictures::default()
         };
         *pictures.editor.borrow_mut() = self.edit_el(&row.message.unique_id);
+        self.link_preview(&row, &mut pictures, cx);
         if let Some(session) = self.session.clone() {
             // Custom emoji in the text and in reactions.
             for url in crate::view_model::rich::emote_urls(&row.blocks) {
@@ -1262,6 +1315,10 @@ impl TimelineView {
             RowAction::AvatarPress(_) => {}
             RowAction::Toggle(key) => self.react(message.id, key, cx),
             RowAction::Download => self.download(&message, cx),
+            RowAction::DismissPreview => {
+                crate::link_previews::dismiss(unique_id);
+                self.relayout(unique_id, cx);
+            }
             RowAction::OpenImage => {
                 let gallery = self.gallery();
                 if let Some(at) = gallery.iter().position(|(id, _)| id == unique_id) {

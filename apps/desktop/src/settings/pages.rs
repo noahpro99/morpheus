@@ -454,6 +454,52 @@ impl SettingsView {
             ],
             self.hl("keyboard"),
         );
+        let previews_now = crate::link_previews::settings();
+        let previews = choice(
+            "link-previews".into(),
+            "link-previews",
+            "",
+            "Link previews",
+            previews_now.enabled,
+            true,
+            false,
+            cx.listener(|_, _, _, cx| {
+                crate::link_previews::set_enabled(!crate::link_previews::settings().enabled);
+                cx.notify();
+            }),
+        );
+        let previews_encrypted = choice(
+            "link-previews-encrypted".into(),
+            "link-previews-encrypted",
+            "",
+            "Also in encrypted rooms",
+            previews_now.in_encrypted,
+            true,
+            false,
+            cx.listener(|_, _, _, cx| {
+                crate::link_previews::set_in_encrypted(!crate::link_previews::settings().in_encrypted);
+                cx.notify();
+            }),
+        );
+        let previews_section = section(
+            "Link previews",
+            "link-previews-section",
+            vec![
+                previews,
+                muted(
+                    "A card under a message with a link: the site, title, description and picture. They come through your homeserver, so this device never contacts the site; you can close a card with its x.",
+                    "muted",
+                )
+                .into_any_element(),
+                previews_encrypted,
+                muted(
+                    "In encrypted rooms the homeserver would learn the link, which end-to-end encryption otherwise keeps from it, so previews stay off there unless you turn this on.",
+                    "muted",
+                )
+                .into_any_element(),
+            ],
+            self.hl("link-previews-section"),
+        );
         let sections = vec![
             section(
                 "Theme",
@@ -465,6 +511,7 @@ impl SettingsView {
             self.custom_colour_section(cx).into_any_element(),
             self.history_section(cx).into_any_element(),
             keyboard.into_any_element(),
+            previews_section.into_any_element(),
         ];
         sections
     }

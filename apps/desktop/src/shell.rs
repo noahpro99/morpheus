@@ -1072,6 +1072,8 @@ impl Shell {
                 .map(|r| (r.name.clone(), r.is_dm))
                 .unwrap_or_default();
             timeline.update(cx, |t, cx| t.set_direct(is_dm, cx));
+            let encrypted = self.rooms.iter().any(|r| r.id == id && r.is_encrypted);
+            timeline.update(cx, |t, cx| t.set_encrypted(encrypted, cx));
             let composer =
                 cx.new(|cx| Composer::new(self.session.clone(), room.clone(), name, is_dm, cx));
             {

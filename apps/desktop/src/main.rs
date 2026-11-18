@@ -33,6 +33,7 @@ mod instance;
 mod invites;
 mod last_place;
 mod lightbox;
+mod link_previews;
 mod links;
 mod locks;
 mod log_file;
@@ -932,6 +933,7 @@ fn main() {
     std::thread::spawn(view_model::url_scheme::register);
     vim::load(&data_dir());
     spell::load(&data_dir());
+    link_previews::init(&data_dir());
     noise_model::init();
     // The GPU is chosen when the window system starts (MORPHEUS_GPU overrides it).
     graphics::load(&data_dir());

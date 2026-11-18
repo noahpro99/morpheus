@@ -30,6 +30,7 @@ pub mod invites;
 pub mod keys;
 pub mod last_place;
 pub mod discover;
+pub mod link_previews;
 pub mod links;
 pub mod locks;
 pub mod lru;
