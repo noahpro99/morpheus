@@ -248,6 +248,8 @@ pub struct Shell {
     /// A newer release the app found, and what was done about its card.
     pub update: Option<crate::view_model::updates::Offer>,
     pub update_later: bool,
+    /// The "What's new" popup is showing.
+    pub whats_new: bool,
     pub update_busy: bool,
     /// A locked room that is open: its password box, the last refusal, whether
     /// a check runs, and whether the box should take the focus.
@@ -262,6 +264,7 @@ impl Shell {
         let mut shell = Self::bare(Some(session.clone()));
         shell.wait_for_last_place(cx);
         shell.start_update_checks(cx);
+        shell.start_patch_notes(&session, cx);
         shell.start_calls(&session, cx);
         shell.start_profile_sync(&session, cx);
         shell.make_search_box(cx);
@@ -550,6 +553,7 @@ impl Shell {
             seen_mentions: Default::default(),
             update: None,
             update_later: false,
+            whats_new: false,
             update_busy: false,
             lock_input: None,
             lock_error: None,
@@ -1482,6 +1486,7 @@ impl Render for Shell {
         let noise_card = crate::noise::render(self, cx);
         self.keep_mic_fresh(cx);
         let dialog = dialogs::render_dialog(self, window, cx);
+        let whats_new = self.whats_new_popup(window, cx);
         let inbox = crate::invites::inbox(self, window, cx);
         let toasts = dialogs::render_toasts(self, cx);
         let diagnostics = self.diagnostics_overlay(window, cx);
@@ -1652,6 +1657,7 @@ impl Render for Shell {
             .children(incoming)
             .children(self.switcher.clone())
             .children(dialog)
+            .children(whats_new)
             .children(self.card.clone())
             .children(self.picker.as_ref().map(|(picker, _)| picker.clone()))
             .children(menu)

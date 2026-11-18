@@ -518,3 +518,76 @@ mod tests {
         assert_eq!(version, "0.2.2");
     }
 }
+
+/// A release's notes: its markdown body and its page.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReleaseNotes {
+    pub body: String,
+    pub url: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ReleaseDoc {
+    #[serde(default)]
+    body: Option<String>,
+    #[serde(default)]
+    html_url: Option<String>,
+}
+
+/// Where the notes of `version` are: `MORPHEUS_RELEASE_NOTES_URL` (read when
+/// asked), else GitHub's release by tag. Test runs never ask GitHub.
+fn notes_url(version: &str) -> Option<String> {
+    if let Ok(url) = std::env::var("MORPHEUS_RELEASE_NOTES_URL") {
+        return Some(url).filter(|url| !url.trim().is_empty());
+    }
+    if std::env::var_os("MORPHEUS_E2E_PORT").is_some() {
+        return None;
+    }
+    Some(format!(
+        "https://api.github.com/repos/noahpro99/morpheus/releases/tags/v{version}"
+    ))
+}
+
+async fn fetch_notes(
+    http: matrix_sdk::reqwest::Client,
+    version: String,
+) -> Result<ReleaseNotes, Error> {
+    let failed = |err: &dyn std::fmt::Display| Error::Other(format!("release notes: {err}"));
+    let Some(url) = notes_url(&version) else {
+        return Err(failed(&"no release feed"));
+    };
+    let mut request = http
+        .get(&url)
+        .header("User-Agent", "Morpheus")
+        .header("Accept", "application/vnd.github+json")
+        .timeout(std::time::Duration::from_secs(10));
+    if let Ok(token) = std::env::var("GITHUB_TOKEN").or_else(|_| std::env::var("GH_TOKEN")) {
+        request = request.header("Authorization", format!("Bearer {token}"));
+    }
+    let body = request
+        .send()
+        .await
+        .and_then(|response| response.error_for_status())
+        .map_err(|err| failed(&err))?
+        .text()
+        .await
+        .map_err(|err| failed(&err))?;
+    let doc: ReleaseDoc = serde_json::from_str(&body).map_err(|err| failed(&err))?;
+    let body = doc.body.unwrap_or_default();
+    if body.trim().is_empty() {
+        return Err(failed(&"the release has no notes"));
+    }
+    Ok(ReleaseNotes {
+        body,
+        url: doc.html_url,
+    })
+}
+
+impl Session {
+    /// The GitHub release notes of `version` (short timeout; no network or
+    /// no such release is an error).
+    pub fn release_notes(&self, version: &str) -> CoreFuture<ReleaseNotes> {
+        let http = client_with_timeout(10).unwrap_or_else(|| self.client.http_client().clone());
+        self.core.run(fetch_notes(http, version.to_owned()))
+    }
+}

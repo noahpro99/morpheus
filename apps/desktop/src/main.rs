@@ -17,6 +17,7 @@ mod chrome;
 mod composer;
 mod diagnostics;
 mod dialogs;
+mod patch_notes;
 mod e2e;
 mod emoji_picker;
 mod friend_picker;

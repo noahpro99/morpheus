@@ -1048,6 +1048,13 @@ impl SettingsView {
                 ));
             }
         }
+        let notes_link = button("patch-notes-link", "View release on GitHub", Kind::Secondary, "patch-notes-link")
+            .child("View release on GitHub")
+            .on_click(cx.listener(|_, _, _, cx| {
+                crate::shell::open_external(&crate::patch_notes::release_page(), cx);
+            }))
+            .e2e("a", "button secondary patch-notes-link")
+            .text("View release on GitHub");
         vec![
             section(
                 "Report a bug",
@@ -1071,6 +1078,16 @@ impl SettingsView {
                     muted(&morpheus_core::device(), "muted").into_any_element(),
                 ],
                 self.hl("version"),
+            )
+            .into_any_element(),
+            section(
+                "Patch notes",
+                "patch-notes",
+                vec![
+                    crate::patch_notes::help_notes(),
+                    div().flex().child(notes_link).into_any_element(),
+                ],
+                self.hl("patch-notes"),
             )
             .into_any_element(),
             section("Diagnostics", "diagnostics", diag_children, self.hl("diagnostics"))

@@ -7423,6 +7423,7 @@ dependencies = [
  "emojis",
  "jiff",
  "morpheus-core",
+ "pulldown-cmark",
  "ruma-html",
  "serde_json",
  "windows-registry 0.5.3",

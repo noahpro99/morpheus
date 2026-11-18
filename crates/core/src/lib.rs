@@ -80,7 +80,7 @@ pub use timeline::{
 pub use typing::TypingUpdates;
 #[cfg(not(target_arch = "wasm32"))]
 pub use download::DownloadProgress;
-pub use updates::{UpdateStatus, clean_up_after_update, installs_updates};
+pub use updates::{ReleaseNotes, UpdateStatus, clean_up_after_update, installs_updates};
 pub use verification::{
     Device, QrImage, VerificationActions, VerificationHandle, VerificationStep, VerificationUpdates,
 };
