@@ -11,6 +11,8 @@ use std::collections::HashSet;
 use gpui::{AnyElement, Context, FontWeight, IntoElement, MouseButton, div, prelude::*, px, rgb};
 use morpheus_core::{OwnedRoomId, RoomSummary, SpaceRoom};
 
+pub use morpheus_view_model::scopes::Sections;
+
 use crate::{
     e2e::E2eExt as _,
     icons::icon,
@@ -21,17 +23,6 @@ use crate::{
     view_model::marks::Marks,
     view_model::room_dialogs::RoomDialogKind,
 };
-
-/// The sidebar's rows, in the order they are drawn.
-#[derive(Debug, Default)]
-pub struct Sections {
-    pub dms: Vec<RoomSummary>,
-    pub channels: Vec<RoomSummary>,
-    /// Rooms under a nested server, by its name, in the server's order.
-    pub categories: Vec<(OwnedRoomId, String, Vec<RoomSummary>)>,
-    /// A server's channels you are not in.
-    pub unjoined: Vec<SpaceRoom>,
-}
 
 /// What decides which rooms the lists show besides the scope.
 pub struct Filters<'a> {
@@ -57,62 +48,7 @@ pub fn sections(
         .partition(|r| r.is_dm);
     // Closed DMs stay out until a new message; pinned ones come first.
     let dms = filters.marks.visible_dms(dms, open, false);
-    let mut categories: Vec<(OwnedRoomId, String)> = match scope {
-        Scope::Space(space_id) => rooms
-            .iter()
-            .filter(|r| r.is_space && r.parent_spaces.contains(space_id))
-            .map(|r| (r.id.clone(), r.name.clone()))
-            .collect(),
-        _ => Vec::new(),
-    };
-    let (mut channels, categorised): (Vec<_>, Vec<_>) = channels.into_iter().partition(|room| {
-        !categories
-            .iter()
-            .any(|(id, _)| room.parent_spaces.contains(id))
-    });
-    let children_of = |id: &OwnedRoomId| -> Vec<OwnedRoomId> {
-        rooms
-            .iter()
-            .find(|r| &r.id == id)
-            .map(|r| r.space_children.clone())
-            .unwrap_or_default()
-    };
-    let place = |order: &[OwnedRoomId], id: &OwnedRoomId| {
-        order.iter().position(|c| c == id).unwrap_or(usize::MAX)
-    };
-    if let Scope::Space(space_id) = scope {
-        let order = children_of(space_id);
-        channels.sort_by_key(|r| place(&order, &r.id));
-        categories.sort_by_key(|(id, _)| place(&order, id));
-    }
-    let categories = categories
-        .into_iter()
-        .map(|(id, name)| {
-            let order = children_of(&id);
-            let mut members: Vec<RoomSummary> = categorised
-                .iter()
-                .filter(|r| r.parent_spaces.contains(&id))
-                .cloned()
-                .collect();
-            members.sort_by_key(|r| place(&order, &r.id));
-            (id, name, members)
-        })
-        .collect();
-    let unjoined = match scope {
-        Scope::Space(_) => directory
-            .iter()
-            .filter(|r| !r.is_space)
-            .filter(|r| !rooms.iter().any(|known| known.id == r.id && !known.invited))
-            .cloned()
-            .collect(),
-        _ => Vec::new(),
-    };
-    Sections {
-        dms,
-        channels,
-        categories,
-        unjoined,
-    }
+    morpheus_view_model::scopes::categorise(rooms, scope, dms, channels, directory)
 }
 
 pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {

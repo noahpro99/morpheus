@@ -1419,37 +1419,7 @@ fn backup_prompt(cx: &mut Context<Shell>) -> impl IntoElement {
         .attr("role", "status")
 }
 
-/// One batch change of the core's list, applied to a plain vector.
-pub fn apply(rooms: &mut Vec<RoomSummary>, diff: VectorDiff<RoomSummary>) {
-    use VectorDiff::*;
-    match diff {
-        Append { values } => rooms.extend(values),
-        Clear => rooms.clear(),
-        PushFront { value } => rooms.insert(0, value),
-        PushBack { value } => rooms.push(value),
-        PopFront => {
-            if !rooms.is_empty() {
-                rooms.remove(0);
-            }
-        }
-        PopBack => {
-            rooms.pop();
-        }
-        Insert { index, value } => rooms.insert(index.min(rooms.len()), value),
-        Set { index, value } => {
-            if let Some(slot) = rooms.get_mut(index) {
-                *slot = value;
-            }
-        }
-        Remove { index } => {
-            if index < rooms.len() {
-                rooms.remove(index);
-            }
-        }
-        Truncate { length } => rooms.truncate(length),
-        Reset { values } => *rooms = values.into_iter().collect(),
-    }
-}
+pub use morpheus_view_model::diffs::apply;
 
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {

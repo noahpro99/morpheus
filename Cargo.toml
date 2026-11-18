@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/call", "crates/view-model", "crates/video", "crates/ui", "apps/desktop", "apps/mobile"]
+members = ["crates/core", "crates/call", "crates/view-model", "crates/video", "crates/ffi", "crates/ui", "apps/desktop", "apps/mobile"]
 # `cargo build` / `cargo test` cover desktop by default; mobile builds via `dx`.
 default-members = ["crates/core", "apps/desktop"]
 
@@ -16,6 +16,7 @@ morpheus-ui = { path = "crates/ui" }
 morpheus-call = { path = "crates/call" }
 morpheus-view-model = { path = "crates/view-model" }
 morpheus-video = { path = "crates/video" }
+morpheus-ffi = { path = "crates/ffi" }
 
 # Shared by every platform; the stores and logins are added per target in
 # crates/core (a browser has IndexedDB, and no local server for SSO).

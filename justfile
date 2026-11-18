@@ -36,6 +36,10 @@ test: sweep
 test-live:
     MORPHEUS_TEST_HOMESERVER={{hs}} cargo test -p morpheus-core --test live -- --nocapture
 
+# The UniFFI layer (crates/ffi) against the local homeserver
+test-ffi:
+    MORPHEUS_TEST_HOMESERVER={{hs}} cargo test -p morpheus-ffi --test live -- --nocapture
+
 # The desktop app with the in-app test bridge, its own binary (morpheus-desktop-e2e, an
 # [[bin]] of apps/desktop that needs the e2e feature): cargo writes
 # target/debug/morpheus-desktop-e2e directly and never touches

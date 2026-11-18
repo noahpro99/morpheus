@@ -1,160 +1,15 @@
 //! What the shell lists, as `crates/ui/src/components/{shell,rail,room_list}.rs`
 //! decide it: the scope a rail badge selects, the rooms in it, the rail's
-//! layout, what is unread.
+//! layout, what is unread. The scopes themselves are in `view_model::scopes`
+//! (the phone apps use them too); the rail's saved layout is the desktop's.
 
 use morpheus_core::{OwnedRoomId, RoomSummary};
 
 use crate::prefs::{Prefs, RailEntry};
-
-/// What the sidebar lists: direct messages, ungrouped rooms, favorites, or
-/// one space.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
-pub enum Scope {
-    Dms,
-    #[default]
-    Rooms,
-    Favorites,
-    /// A top-level space and everything nested under it.
-    Space(OwnedRoomId),
-}
-
-impl Scope {
-    /// The name of this entry in `last_rooms.json`.
-    pub fn key(&self) -> String {
-        match self {
-            Self::Dms => "dms".into(),
-            Self::Rooms => "rooms".into(),
-            Self::Favorites => "favorites".into(),
-            Self::Space(id) => format!("space:{id}"),
-        }
-    }
-
-    pub fn from_key(key: &str) -> Option<Self> {
-        if let Some(id) = key.strip_prefix("space:") {
-            return OwnedRoomId::try_from(id).ok().map(Self::Space);
-        }
-        match key {
-            "dms" => Some(Self::Dms),
-            "rooms" => Some(Self::Rooms),
-            "favorites" => Some(Self::Favorites),
-            _ => None,
-        }
-    }
-
-    pub fn space_id(&self) -> Option<&OwnedRoomId> {
-        match self {
-            Self::Space(id) => Some(id),
-            _ => None,
-        }
-    }
-}
-
-/// The rail scope a room belongs to: DMs, Rooms, or its top-level space.
-/// Used when something other than the rail opens a room (the inbox), so the
-/// sidebar follows instead of bouncing the selection back.
-pub fn scope_for(rooms: &[RoomSummary], room: &RoomSummary) -> Scope {
-    if room.is_dm {
-        return Scope::Dms;
-    }
-    let mut current = room.parent_spaces.first().cloned();
-    let mut hops = 0;
-    while let Some(space_id) = current {
-        let Some(space) = rooms.iter().find(|r| r.id == space_id) else {
-            return Scope::Rooms;
-        };
-        match space.parent_spaces.first() {
-            None => return Scope::Space(space_id),
-            Some(parent) if hops < 16 => {
-                hops += 1;
-                current = Some(parent.clone());
-            }
-            Some(_) => return Scope::Rooms,
-        }
-    }
-    Scope::Rooms
-}
-
-/// Rooms visible for a scope: DMs; rooms that are neither DMs nor in a space;
-/// favorites; or a space's whole subtree.
-pub fn rooms_in_scope(rooms: &[RoomSummary], scope: &Scope) -> Vec<RoomSummary> {
-    let space_id = match scope {
-        Scope::Dms => {
-            return rooms
-                .iter()
-                .filter(|r| r.is_dm && !r.is_space && !r.invited)
-                .cloned()
-                .collect();
-        }
-        Scope::Favorites => {
-            return rooms
-                .iter()
-                .filter(|r| r.favorite && !r.is_space && !r.invited)
-                .cloned()
-                .collect();
-        }
-        Scope::Rooms => {
-            return rooms
-                .iter()
-                .filter(|r| !r.is_space && !r.is_dm && !r.invited && r.parent_spaces.is_empty())
-                .cloned()
-                .collect();
-        }
-        Scope::Space(id) => id,
-    };
-    // Every space reachable from the selected one through nested parents.
-    let mut scope = std::collections::HashSet::new();
-    scope.insert(space_id.clone());
-    loop {
-        let mut grew = false;
-        for space in rooms.iter().filter(|r| r.is_space) {
-            if !scope.contains(&space.id) && space.parent_spaces.iter().any(|p| scope.contains(p)) {
-                scope.insert(space.id.clone());
-                grew = true;
-            }
-        }
-        if !grew {
-            break;
-        }
-    }
-    rooms
-        .iter()
-        .filter(|r| !r.is_space && !r.invited && r.parent_spaces.iter().any(|p| scope.contains(p)))
-        .cloned()
-        .collect()
-}
-
-/// Rooms a joined space lists (its `m.space.child`) belong to it even when
-/// they don't name it back (no `m.space.parent`), as other clients have it:
-/// the space goes into their parents.
-pub fn adopt_children(list: &mut [RoomSummary]) {
-    let links: Vec<(OwnedRoomId, OwnedRoomId)> = list
-        .iter()
-        .filter(|r| r.is_space && !r.invited)
-        .flat_map(|space| {
-            space
-                .space_children
-                .iter()
-                .map(|c| (c.clone(), space.id.clone()))
-        })
-        .collect();
-    for (child, space) in links {
-        if let Some(room) = list
-            .iter_mut()
-            .find(|r| r.id == child && !r.parent_spaces.contains(&space))
-        {
-            room.parent_spaces.push(space);
-        }
-    }
-}
-
-/// Top-level spaces, the ones with a badge.
-pub fn top_spaces(rooms: &[RoomSummary]) -> Vec<RoomSummary> {
-    rooms
-        .iter()
-        .filter(|r| r.is_space && r.parent_spaces.is_empty() && !r.invited)
-        .cloned()
-        .collect()
-}
+pub use morpheus_view_model::scopes::{
+    Scope, adopt_children, header_title, rooms_in_scope, scope_for, scope_has_call,
+    scope_has_unread, top_spaces,
+};
 
 /// Every rail entry in order (DMs, Rooms, Favorites if any, then the servers as
 /// drawn, folders opened out): what Ctrl+Alt+Up and Down step through.
@@ -212,60 +67,9 @@ pub fn layout(prefs: &Prefs, spaces: &[RoomSummary]) -> Vec<RailEntry> {
     entries
 }
 
-/// Whether a scope holds an unread room (muted ones aside), for the dot
-/// beside its badge.
-pub fn scope_has_unread(rooms: &[RoomSummary], scope: &Scope) -> bool {
-    rooms_in_scope(rooms, scope).iter().any(|room| {
-        room.invited
-            || (!room.muted
-                && (room.unread_messages > 0 || room.marked_unread || room.highlight_count > 0))
-    })
-}
-
-/// Whether someone is in a call in a scope's voice channels (or DMs): the
-/// speaker badge on its rail icon. `has_call` says whether a room has one
-/// to show (`Shell::has_call_shown`: a call just hung up is gone at once).
-pub fn scope_has_call(
-    rooms: &[RoomSummary],
-    scope: &Scope,
-    has_call: impl Fn(&RoomSummary) -> bool,
-) -> bool {
-    match scope {
-        Scope::Space(space_id) => {
-            if let Some(space_room) = rooms.iter().find(|r| &r.id == space_id) {
-                if rooms.iter().any(|r| {
-                    space_room.space_children.contains(&r.id) && has_call(r)
-                }) {
-                    return true;
-                }
-            }
-            rooms_in_scope(rooms, scope)
-                .iter()
-                .any(|room| has_call(room))
-        }
-        _ => rooms_in_scope(rooms, scope)
-            .iter()
-            .any(|room| has_call(room)),
-    }
-}
-
-/// The sidebar header: what the rail selected.
-pub fn header_title(rooms: &[RoomSummary], scope: &Scope) -> String {
-    match scope {
-        Scope::Dms => "Direct messages".into(),
-        Scope::Rooms => "Rooms".into(),
-        Scope::Favorites => "Favorites".into(),
-        Scope::Space(id) => rooms
-            .iter()
-            .find(|r| &r.id == id)
-            .map_or_else(|| "Space".into(), |r| r.name.clone()),
-    }
-}
-
 #[cfg(test)]
 pub mod tests {
     use super::*;
-
     /// A joined room with nothing special; tests set what they need.
     pub fn room(id: &str, name: &str) -> RoomSummary {
         RoomSummary {
@@ -296,41 +100,6 @@ pub mod tests {
     }
 
     #[test]
-    fn scopes_split_rooms_dms_and_spaces() {
-        let mut space = room("!s:x", "Engineering");
-        space.is_space = true;
-        let mut inside = room("!dev:x", "dev");
-        inside.parent_spaces = vec![space.id.clone()];
-        let mut dm = room("!dm:x", "bob");
-        dm.is_dm = true;
-        let all = [space.clone(), inside, room("!g:x", "general"), dm];
-        let names = |scope: &Scope| -> Vec<String> {
-            rooms_in_scope(&all, scope)
-                .into_iter()
-                .map(|r| r.name)
-                .collect()
-        };
-        assert_eq!(names(&Scope::Rooms), ["general"]);
-        assert_eq!(names(&Scope::Dms), ["bob"]);
-        assert_eq!(names(&Scope::Space(space.id.clone())), ["dev"]);
-        assert_eq!(header_title(&all, &Scope::Space(space.id)), "Engineering");
-    }
-
-    #[test]
-    fn nested_spaces_show_under_the_top_one() {
-        let mut top = room("!top:x", "Top");
-        top.is_space = true;
-        let mut sub = room("!sub:x", "Sub");
-        sub.is_space = true;
-        sub.parent_spaces = vec![top.id.clone()];
-        let mut deep = room("!deep:x", "deep");
-        deep.parent_spaces = vec![sub.id.clone()];
-        let all = [top.clone(), sub, deep];
-        assert_eq!(rooms_in_scope(&all, &Scope::Space(top.id.clone())).len(), 1);
-        assert_eq!(top_spaces(&all).len(), 1);
-    }
-
-    #[test]
     fn unknown_spaces_come_after_the_saved_layout() {
         let mut a = room("!a:x", "A");
         a.is_space = true;
@@ -343,44 +112,5 @@ pub mod tests {
         };
         let entries = layout(&prefs, &[a.clone(), b.clone()]);
         assert_eq!(entries, [RailEntry::Space(b.id), RailEntry::Space(a.id)]);
-    }
-
-    #[test]
-    fn a_space_adopts_the_rooms_it_lists() {
-        let mut server = room("!s:x", "Projects");
-        server.is_space = true;
-        let child = room("!c:x", "projects-news");
-        server.space_children = vec![child.id.clone()];
-        let mut all = [server.clone(), child];
-        assert_eq!(rooms_in_scope(&all, &Scope::Rooms).len(), 1);
-        adopt_children(&mut all);
-        assert!(rooms_in_scope(&all, &Scope::Rooms).is_empty());
-        assert_eq!(rooms_in_scope(&all, &Scope::Space(server.id)).len(), 1);
-    }
-
-    #[test]
-    fn muted_rooms_are_not_unread() {
-        let mut r = room("!r:x", "r");
-        r.unread_messages = 3;
-        assert!(scope_has_unread(&[r.clone()], &Scope::Rooms));
-        r.muted = true;
-        assert!(!scope_has_unread(&[r], &Scope::Rooms));
-    }
-
-    #[test]
-    fn scope_has_call_checks_participants_and_space_children() {
-        let mut space = room("!s:x", "Server");
-        space.is_space = true;
-        let mut channel = room("!v:x", "Voice");
-        channel.is_voice = true;
-        space.space_children = vec![channel.id.clone()];
-        let scope = Scope::Space(space.id.clone());
-
-        let has_call = |r: &RoomSummary| !r.call_participants.is_empty();
-        assert!(!scope_has_call(&[space.clone(), channel.clone()], &scope, has_call));
-        channel
-            .call_participants
-            .push(morpheus_core::OwnedUserId::try_from("@bob:x").unwrap());
-        assert!(scope_has_call(&[space, channel], &scope, has_call));
     }
 }
