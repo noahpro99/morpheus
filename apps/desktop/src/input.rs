@@ -820,6 +820,7 @@ impl Element for EditorText {
         let layout = self.text.layout().clone();
         *self.layout.borrow_mut() = Some(layout.clone());
         let line = layout.line_height();
+        let scale = window.scale_factor();
 
         // The selection, a box per run of characters on one row.
         if self.selection.is_some() {
@@ -851,8 +852,10 @@ impl Element for EditorText {
             }
             boxes.extend(run);
             for (origin, width) in boxes {
+                let (x, width) = snap::span(f32::from(origin.x), f32::from(width), scale);
+                let origin = gpui::point(px(x), origin.y);
                 window.paint_quad(fill(
-                    Bounds::new(origin, size(width, line)),
+                    Bounds::new(origin, size(px(width), line)),
                     rgba(theme::alpha(theme::accent_strong(), 0x73)),
                 ));
             }
@@ -866,8 +869,9 @@ impl Element for EditorText {
                 .position_for_index(to)
                 .filter(|b| (b.y - a.y).abs() < px(1.0) && b.x > a.x)
                 .map_or(px(8.0), |b| b.x - a.x);
+            let (x, width) = snap::span(f32::from(a.x), f32::from(width), scale);
             window.paint_quad(fill(
-                Bounds::new(a, size(width, line)),
+                Bounds::new(gpui::point(px(x), a.y), size(px(width), line)),
                 rgba(theme::alpha(theme::accent(), 0xcc)),
             ));
         }
@@ -877,8 +881,9 @@ impl Element for EditorText {
 
         if let Some(at) = self.caret.and_then(|i| layout.position_for_index(i)) {
             if self.block.is_none() {
+                let (x, width) = snap::caret(f32::from(at.x), 1.5, scale);
                 window.paint_quad(fill(
-                    Bounds::new(at, size(px(1.5), line)),
+                    Bounds::new(gpui::point(px(x), at.y), size(px(width), line)),
                     rgb(theme::text()),
                 ));
             }
@@ -1454,5 +1459,72 @@ mod typed_text_tests {
             key_char: None,
         };
         assert_eq!(typed_text(&f5), None);
+    }
+}
+
+/// Snapping to the device-pixel grid: a quad at a fractional device x is
+/// antialiased over a varying number of pixels, so the caret looked thicker
+/// or thinner as it moved. All in logical pixels at the window's `scale`.
+mod snap {
+    /// The caret's left edge and width: the edge on a whole device pixel,
+    /// the width a whole number of device pixels (at least one).
+    pub fn caret(x: f32, logical_width: f32, scale: f32) -> (f32, f32) {
+        let width = (logical_width * scale).round().max(1.0);
+        ((x * scale).round() / scale, width / scale)
+    }
+
+    /// A span from `x` to `x + width` with both edges on whole device
+    /// pixels (at least one pixel wide): selections and the block cursor.
+    pub fn span(x: f32, width: f32, scale: f32) -> (f32, f32) {
+        let left = (x * scale).round();
+        let right = ((x + width) * scale).round().max(left + 1.0);
+        (left / scale, (right - left) / scale)
+    }
+}
+
+#[cfg(test)]
+mod snap_tests {
+    use super::snap::{caret, span};
+
+    const SCALES: [f32; 5] = [1.0, 1.2, 1.25, 1.5, 2.0];
+
+    fn device(v: f32, scale: f32) -> f32 {
+        v * scale
+    }
+
+    fn whole(v: f32) -> bool {
+        (v - v.round()).abs() < 1e-3
+    }
+
+    #[test]
+    fn the_caret_is_the_same_whole_number_of_device_pixels_wherever_it_is() {
+        for scale in SCALES {
+            let expected = (1.5 * scale).round().max(1.0);
+            for i in 0..2000 {
+                let x = i as f32 * 0.37 + 0.11;
+                let (left, width) = caret(x, 1.5, scale);
+                assert!(whole(device(left, scale)), "x {x} at {scale}: left {left}");
+                assert!(
+                    (device(width, scale) - expected).abs() < 1e-3,
+                    "x {x} at {scale}: width {width}"
+                );
+                assert!((left - x).abs() <= 0.5 / scale + 1e-4, "stays near x");
+            }
+        }
+    }
+
+    #[test]
+    fn spans_have_edges_on_whole_device_pixels() {
+        for scale in SCALES {
+            for i in 0..500 {
+                let x = i as f32 * 0.53 + 0.07;
+                for w in [0.4_f32, 3.7, 8.0, 41.3] {
+                    let (left, width) = span(x, w, scale);
+                    assert!(whole(device(left, scale)), "left at {scale}");
+                    assert!(whole(device(left + width, scale)), "right at {scale}");
+                    assert!(device(width, scale) >= 1.0 - 1e-3, "visible");
+                }
+            }
+        }
     }
 }
