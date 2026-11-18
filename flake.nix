@@ -124,6 +124,12 @@
             url = "https://github.com/livekit/rust-sdks/releases/download/webrtc-89d790b/webrtc-linux-x64-release.zip";
             hash = "sha256-qsjhLygyCqIJrk0PMxoP2aoUdd3DPvtFtYrlIOBLpx0=";
           };
+          # DeepFilterNet's model (crates/call), which deep_filter includes from
+          # its repository outside the crate, so cargo vendoring leaves it out.
+          dfModel = pkgs.fetchurl {
+            url = "https://github.com/Rikorose/DeepFilterNet/raw/7b14b895fe7fc42cab72b4a4c1e49c982bd6404b/models/DeepFilterNet3_onnx.tar.gz";
+            hash = "sha256-yU2R9wkRAByUbg+rtKqa3DcEX0WgO1YAjLDIJEy2NhY=";
+          };
           desktopItem = pkgs.makeDesktopItem {
             name = "morpheus";
             desktopName = "Morpheus";
@@ -169,7 +175,8 @@
               pkgs.makeWrapper
               pkgs.copyDesktopItems
             ];
-            buildInputs = desktopLibs;
+            # glib: crates/call (the screen-capture portal on Linux).
+            buildInputs = desktopLibs ++ [ pkgs.glib ];
             cargoBuildFlags = [
               "--package"
               "morpheus-desktop"
@@ -180,6 +187,18 @@
             CC_x86_64_unknown_linux_gnu = "${clang}/bin/clang";
             CXX_x86_64_unknown_linux_gnu = "${clang}/bin/clang++";
             dontUseCmakeConfigure = true;
+            # Newer nixpkgs' cargo setup hook forces -sys crates onto system
+            # libraries (AWS_LC_SYS_USE_SYSTEM, ZSTD_SYS_USE_PKG_CONFIG, ...),
+            # some of which nixpkgs lacks in a usable form: keep the crates'
+            # own bundled builds, as with this flake's pinned nixpkgs.
+            dontCargoUseSystemLibs = true;
+            # aws-lc-sys's cc builder gives clang (the CC above) the GNU-as-only
+            # `-Wa,--debug-prefix-map` in release builds; its cmake build doesn't.
+            AWS_LC_SYS_CMAKE_BUILDER = "1";
+            # Where deep_filter's include_bytes! looks: ../../models from its src.
+            postPatch = ''
+              install -Dm644 ${dfModel} "$NIX_BUILD_TOP/cargo-vendor-dir/models/DeepFilterNet3_onnx.tar.gz"
+            '';
 
             doCheck = false;
             # cargo's install hook puts the binary in bin/; it moves to lib/ and
