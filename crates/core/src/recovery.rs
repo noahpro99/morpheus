@@ -142,12 +142,17 @@ impl Session {
     /// Encrypted history becomes readable as keys are downloaded.
     pub fn recover(&self, recovery_key: String) -> CoreFuture<()> {
         let client = self.client.clone();
+        let dir = self.dir.clone();
         self.core.run(async move {
             client
                 .encryption()
                 .recovery()
                 .recover(recovery_key.trim())
                 .await?;
+            // The key of the sealed account data comes with it, when there is one.
+            if let Err(err) = crate::private_data::adopt_key(&client, &dir, &recovery_key, false).await {
+                tracing::warn!(%err, "reading the private data key");
+            }
             Ok(())
         })
     }

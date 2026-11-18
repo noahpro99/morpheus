@@ -82,8 +82,9 @@ impl Session {
     /// Your private note about a user (account data, synced across devices).
     pub fn note(&self, user_id: OwnedUserId) -> CoreFuture<String> {
         let client = self.client.clone();
+        let dir = self.dir.clone();
         self.core.run(async move {
-            let notes = read_notes(&client).await?;
+            let notes = read_notes(&client, &dir).await?;
             Ok(notes
                 .get(user_id.as_str())
                 .and_then(Value::as_str)
@@ -94,21 +95,16 @@ impl Session {
 
     pub fn set_note(&self, user_id: OwnedUserId, note: String) -> CoreFuture<()> {
         let client = self.client.clone();
+        let dir = self.dir.clone();
         self.core.run(async move {
-            let mut notes = read_notes(&client).await?;
+            let mut notes = read_notes(&client, &dir).await?;
             let note = note.trim();
             if note.is_empty() {
                 notes.remove(user_id.as_str());
             } else {
                 notes.insert(user_id.to_string(), Value::String(note.to_owned()));
             }
-            let raw: Raw<AnyGlobalAccountDataEventContent> =
-                Raw::from_json(serde_json::value::to_raw_value(&Value::Object(notes))?);
-            client
-                .account()
-                .set_account_data_raw(GlobalAccountDataEventType::from(NOTES_TYPE), raw)
-                .await?;
-            Ok(())
+            crate::private_data::write_private(&client, &dir, NOTES_TYPE, &Value::Object(notes)).await
         })
     }
 
@@ -134,8 +130,11 @@ impl Session {
     }
 }
 
-async fn read_notes(client: &matrix_sdk::Client) -> crate::Result<serde_json::Map<String, Value>> {
-    read_map(client, NOTES_TYPE).await
+async fn read_notes(
+    client: &matrix_sdk::Client,
+    dir: &std::path::Path,
+) -> crate::Result<serde_json::Map<String, Value>> {
+    read_private_map(client, dir, NOTES_TYPE).await
 }
 
 /// Account data of `kind`, from the server: the local copy only catches up
@@ -168,13 +167,26 @@ async fn read_map(
         .unwrap_or_default())
 }
 
+/// [`read_map`] for what is kept sealed (see `private_data`).
+async fn read_private_map(
+    client: &matrix_sdk::Client,
+    dir: &std::path::Path,
+    kind: &str,
+) -> crate::Result<serde_json::Map<String, Value>> {
+    Ok(crate::private_data::read_private(client, dir, kind)
+        .await?
+        .and_then(|v| v.as_object().cloned())
+        .unwrap_or_default())
+}
+
 impl Session {
     /// Your nicknames for people, by user id (account data, synced across
     /// your devices, seen by nobody else).
     pub fn nicknames(&self) -> CoreFuture<std::collections::HashMap<String, String>> {
         let client = self.client.clone();
+        let dir = self.dir.clone();
         self.core.run(async move {
-            Ok(read_map(&client, NICKNAMES_TYPE)
+            Ok(read_private_map(&client, &dir, NICKNAMES_TYPE)
                 .await?
                 .into_iter()
                 .filter_map(|(user, name)| Some((user, name.as_str()?.to_owned())))
@@ -185,21 +197,16 @@ impl Session {
     /// Set (or, empty, clear) your nickname for a user.
     pub fn set_nickname(&self, user_id: OwnedUserId, nickname: String) -> CoreFuture<()> {
         let client = self.client.clone();
+        let dir = self.dir.clone();
         self.core.run(async move {
-            let mut names = read_map(&client, NICKNAMES_TYPE).await?;
+            let mut names = read_private_map(&client, &dir, NICKNAMES_TYPE).await?;
             let nickname = nickname.trim();
             if nickname.is_empty() {
                 names.remove(user_id.as_str());
             } else {
                 names.insert(user_id.to_string(), Value::String(nickname.to_owned()));
             }
-            let raw: Raw<AnyGlobalAccountDataEventContent> =
-                Raw::from_json(serde_json::value::to_raw_value(&Value::Object(names))?);
-            client
-                .account()
-                .set_account_data_raw(GlobalAccountDataEventType::from(NICKNAMES_TYPE), raw)
-                .await?;
-            Ok(())
+            crate::private_data::write_private(&client, &dir, NICKNAMES_TYPE, &Value::Object(names)).await
         })
     }
 }
@@ -208,9 +215,9 @@ impl Session {
     /// Your friends (a private list in account data; Matrix has no
     /// friendship of its own), in the order you added them.
     pub fn friends(&self) -> CoreFuture<Vec<OwnedUserId>> {
-        let client = self.client.clone();
+        let (client, dir) = (self.client.clone(), self.dir.clone());
         self.core
-            .run(async move { Ok(read_friends(&client).await) })
+            .run(async move { read_friends(&client, &dir).await })
     }
 
     /// Who someone typed means (New Message): a bare
@@ -251,8 +258,9 @@ impl Session {
     /// Add (`true`) or remove a friend.
     pub fn set_friend(&self, user_id: OwnedUserId, friend: bool) -> CoreFuture<()> {
         let client = self.client.clone();
+        let dir = self.dir.clone();
         self.core.run(async move {
-            let mut friends = read_friends(&client).await;
+            let mut friends = read_friends(&client, &dir).await?;
             friends.retain(|id| *id != user_id);
             if friend {
                 friends.push(user_id);
@@ -261,26 +269,28 @@ impl Session {
                 .iter()
                 .map(|id| Value::String(id.to_string()))
                 .collect();
-            let raw: Raw<AnyGlobalAccountDataEventContent> = Raw::from_json(
-                serde_json::value::to_raw_value(&serde_json::json!({ "users": list }))?,
-            );
-            client
-                .account()
-                .set_account_data_raw(GlobalAccountDataEventType::from(FRIENDS_TYPE), raw)
-                .await?;
-            Ok(())
+            crate::private_data::write_private(
+                &client,
+                &dir,
+                FRIENDS_TYPE,
+                &serde_json::json!({ "users": list }),
+            )
+            .await
         })
     }
 }
 
-async fn read_friends(client: &matrix_sdk::Client) -> Vec<OwnedUserId> {
-    let raw = read_account_data(client, FRIENDS_TYPE).await.ok().flatten();
-    raw.and_then(|raw| raw.deserialize_as::<Value>().ok())
+async fn read_friends(
+    client: &matrix_sdk::Client,
+    dir: &std::path::Path,
+) -> crate::Result<Vec<OwnedUserId>> {
+    let value = crate::private_data::read_private(client, dir, FRIENDS_TYPE).await?;
+    Ok(value
         .and_then(|value| value.get("users")?.as_array().cloned())
         .unwrap_or_default()
         .iter()
         .filter_map(|id| id.as_str()?.parse().ok())
-        .collect()
+        .collect())
 }
 
 /// Private marks kept in account data (synced across your devices, seen by

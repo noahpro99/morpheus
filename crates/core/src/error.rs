@@ -58,6 +58,9 @@ pub enum Error {
     #[error("only messages can be forwarded")]
     NotForwardable,
 
+    #[error("your friends, nicknames and notes are sealed and this device does not have the key yet: enter your recovery key in Settings")]
+    PrivateDataLocked,
+
     #[error("{0}")]
     Other(String),
 }

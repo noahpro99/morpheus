@@ -144,6 +144,10 @@ pub struct SettingsView {
     open: bool,
     page: SettingsPage,
     status: Option<Result<EncryptionStatus, String>>,
+    /// Whether the friends, nicknames and notes are sealed, and what the buttons said.
+    private_state: Option<morpheus_core::PrivateDataState>,
+    private_note: Option<Result<String, String>>,
+    private_busy: bool,
     /// Times the status was read again because this device was not verified yet.
     status_rereads: u32,
     devices: Option<Result<Vec<Device>, String>>,
@@ -405,6 +409,9 @@ impl SettingsView {
             open: false,
             page: SettingsPage::Account,
             status: None,
+            private_state: None,
+            private_note: None,
+            private_busy: false,
             status_rereads: 0,
             devices: None,
             form: RecoveryForm::default(),
@@ -514,9 +521,12 @@ impl SettingsView {
         };
         let status = session.encryption_status();
         let devices = session.own_devices();
+        let private = session.private_data_state();
         cx.spawn(async move |this, cx| {
             let status = status.await.map_err(|e| e.to_string());
+            let private = private.await.ok();
             this.update(cx, |this, cx| {
+                this.private_state = private;
                 this.status = Some(status);
                 if this.set_up_when_ready
                     && matches!(&this.status, Some(Ok(s)) if recovery_offer(Some(s), false) == RecoveryOffer::SetUp)
@@ -662,6 +672,46 @@ impl SettingsView {
                     }
                     Err(err) => this.form.failed(err.to_string()),
                 }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+        cx.notify();
+    }
+
+    /// "Encrypt my data" (with the typed recovery key) or "Remove the
+    /// unencrypted copies".
+    fn private_data(&mut self, remove_plaintext: bool, cx: &mut Context<Self>) {
+        let Some(session) = self.session.clone() else {
+            return;
+        };
+        if self.private_busy {
+            return;
+        }
+        let typed = self.key_input.read(cx).value().trim().to_owned();
+        if !remove_plaintext && typed.is_empty() {
+            self.private_note = Some(Err("Type your recovery key above first.".into()));
+            cx.notify();
+            return;
+        }
+        self.private_busy = true;
+        self.private_note = None;
+        let working = if remove_plaintext {
+            session.remove_plaintext_copies()
+        } else {
+            session.enable_private_encryption(typed)
+        };
+        cx.spawn(async move |this, cx| {
+            let result = working.await;
+            this.update(cx, |this, cx| {
+                this.private_busy = false;
+                this.private_note = Some(match result {
+                    Ok(()) if remove_plaintext => Ok("The unencrypted copies are gone.".into()),
+                    Ok(()) => Ok("Your friends, nicknames and notes are sealed.".into()),
+                    Err(err) => Err(err.to_string()),
+                });
+                this.refresh(cx);
                 cx.notify();
             })
             .ok();
@@ -1299,6 +1349,82 @@ impl SettingsView {
                 encryption.push(note(message, "error", theme::danger()).into_any_element())
             }
             None => {}
+        }
+
+        // The friends, nicknames and notes, sealed so the homeserver cannot read them.
+        if let Some(state) = self.private_state {
+            let busy = self.private_busy;
+            let (headline, about) = if state.plaintext_removed && state.unlocked {
+                (
+                    "Friends, nicknames and notes are encrypted",
+                    "Only your devices with the recovery key can read them.",
+                )
+            } else if state.sealed && !state.unlocked {
+                (
+                    "Friends, nicknames and notes are encrypted",
+                    "This device does not have the key yet: type your recovery key above and press Restore from backup to read and change them here.",
+                )
+            } else if state.sealed {
+                (
+                    "Friends, nicknames and notes are encrypted, with unencrypted copies kept",
+                    "Devices running an older Morpheus keep working from the unencrypted copies. Remove them once every device is updated; they are then readable only here and on devices with the recovery key.",
+                )
+            } else {
+                (
+                    "Encrypt friends, nicknames and notes",
+                    "Today the homeserver's admin can read them. Type your recovery key above, then encrypt: nothing is removed until you ask.",
+                )
+            };
+            let mut block = div()
+                .flex()
+                .flex_col()
+                .items_start()
+                .gap(px(8.0))
+                .my(px(12.0))
+                .child(
+                    div()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .child(headline)
+                        .e2e("div", "private-data-headline")
+                        .text(headline),
+                )
+                .child(muted(about, "muted"));
+            if !state.sealed {
+                block = block.child(
+                    button("encrypt-private", "Encrypt my data", Kind::Secondary, "")
+                        .when(busy, |d| d.opacity(0.6))
+                        .child(icon("lock", 16.0).text_color(rgb(theme::text())))
+                        .child("Encrypt my data")
+                        .on_click(cx.listener(|this, _, _, cx| this.private_data(false, cx)))
+                        .e2e("button", "secondary encrypt-private")
+                        .text("Encrypt my data"),
+                );
+            }
+            if state.sealed && state.unlocked && !state.plaintext_removed {
+                block = block.child(
+                    button(
+                        "remove-plaintext",
+                        "Remove the unencrypted copies",
+                        Kind::Secondary,
+                        "",
+                    )
+                    .when(busy, |d| d.opacity(0.6))
+                    .child("Remove the unencrypted copies")
+                    .on_click(cx.listener(|this, _, _, cx| this.private_data(true, cx)))
+                    .e2e("button", "secondary remove-plaintext")
+                    .text("Remove the unencrypted copies"),
+                );
+            }
+            encryption.push(block.e2e("div", "private-data").into_any_element());
+            match &self.private_note {
+                Some(Ok(message)) => {
+                    encryption.push(note(message, "ok", theme::ok()).into_any_element())
+                }
+                Some(Err(message)) => {
+                    encryption.push(note(message, "error", theme::danger()).into_any_element())
+                }
+                None => {}
+            }
         }
 
         let devices: Vec<gpui::AnyElement> = match &self.devices {

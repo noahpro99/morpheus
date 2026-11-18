@@ -2503,3 +2503,152 @@ async fn self_verification_by_qr_code_between_two_devices() {
     // verified long ago would): two fresh devices cannot show that here.
     assert!(sees_other_verified(device_a).await, "A sees B verified");
 }
+
+/// `user`'s raw account data of `kind`, as the homeserver holds it.
+fn raw_account_data(homeserver: &str, user: &str, kind: &str) -> Option<serde_json::Value> {
+    let curl = |args: &[&str]| -> Option<String> {
+        let out = std::process::Command::new("curl").arg("-s").args(args).output().ok()?;
+        Some(String::from_utf8_lossy(&out.stdout).into_owned())
+    };
+    let login = curl(&[
+        "-X",
+        "POST",
+        &format!("{homeserver}/_matrix/client/v3/login"),
+        "-d",
+        &serde_json::json!({
+            "type": "m.login.password",
+            "identifier": { "type": "m.id.user", "user": user },
+            "password": format!("{user}-password"),
+        })
+        .to_string(),
+    ])?;
+    let login: serde_json::Value = serde_json::from_str(&login).ok()?;
+    let token = login["access_token"].as_str()?;
+    let got = curl(&[
+        "-H",
+        &format!("Authorization: Bearer {token}"),
+        &format!(
+            "{homeserver}/_matrix/client/v3/user/%40{user}%3Alocalhost/account_data/{kind}"
+        ),
+    ])?;
+    let value: serde_json::Value = serde_json::from_str(&got).ok()?;
+    (value.get("errcode").is_none()).then_some(value)
+}
+
+/// Morpheus's private account data is encrypted with a key kept in secret
+/// storage (#177): sealed copies appear, the plaintext ones stay until the
+/// user removes them (so no device loses anything meanwhile), a device
+/// without the key sees "locked" rather than an empty list and never
+/// overwrites, and the recovery key unlocks it.
+#[tokio::test]
+async fn private_account_data_is_encrypted_without_losing_anything() {
+    let Some(env) = env() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping live test");
+        return;
+    };
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or_default();
+    let user = format!("enc{}", nonce % 1_000_000_000);
+    let registered = std::process::Command::new("curl")
+        .args([
+            "-s",
+            "-X",
+            "POST",
+            &format!("{}/_matrix/client/v3/register", env.homeserver),
+            "-d",
+            &serde_json::json!({
+                "username": user,
+                "password": format!("{user}-password"),
+                "auth": { "type": "m.login.dummy" },
+            })
+            .to_string(),
+        ])
+        .output()
+        .expect("curl");
+    assert!(
+        String::from_utf8_lossy(&registered.stdout).contains("access_token"),
+        "registered: {}",
+        String::from_utf8_lossy(&registered.stdout)
+    );
+    let login = |dir: std::path::PathBuf| {
+        let (homeserver, user) = (env.homeserver.clone(), user.clone());
+        async move {
+            Core::with_session_store(dir, SessionStoreKind::File)
+                .expect("core")
+                .login(LoginRequest {
+                    password: format!("{user}-password"),
+                    homeserver,
+                    username: user,
+                })
+                .await
+                .expect("login")
+        }
+    };
+    let bob: morpheus_core::OwnedUserId = "@bob:localhost".try_into().expect("id");
+    let one = login(fresh_data_dir()).await;
+    one.set_nickname(bob.clone(), "Bobby the Builder".into())
+        .await
+        .expect("nickname");
+    one.set_note(bob.clone(), "owes me lunch".into())
+        .await
+        .expect("note");
+    let kind = "dev.morpheus.nicknames";
+    assert!(
+        raw_account_data(&env.homeserver, &user, &format!("{kind}.enc")).is_none(),
+        "nothing sealed before it is turned on"
+    );
+
+    let recovery_key = one.enable_recovery().await.expect("recovery");
+    one.enable_private_encryption(recovery_key.clone())
+        .await
+        .expect("turn encryption on");
+    // A sealed copy exists and says nothing; the plaintext one is still
+    // there, so a device that does not have the key keeps working.
+    let sealed = raw_account_data(&env.homeserver, &user, &format!("{kind}.enc"))
+        .expect("a sealed copy");
+    assert!(!sealed.to_string().contains("Bobby"), "sealed: {sealed}");
+    assert_eq!(sealed["v"], 1);
+    let plain = raw_account_data(&env.homeserver, &user, kind).expect("plaintext copy");
+    assert!(plain.to_string().contains("Bobby"), "kept meanwhile: {plain}");
+    assert_eq!(
+        one.nicknames().await.expect("read").get(bob.as_str()).map(String::as_str),
+        Some("Bobby the Builder")
+    );
+
+    // Removing the plaintext copies: nothing is lost on this device.
+    one.remove_plaintext_copies().await.expect("remove plaintext");
+    let plain = raw_account_data(&env.homeserver, &user, kind).unwrap_or_default();
+    assert!(!plain.to_string().contains("Bobby"), "plaintext gone: {plain}");
+    let notes = raw_account_data(&env.homeserver, &user, "dev.morpheus.notes").unwrap_or_default();
+    assert!(!notes.to_string().contains("lunch"), "notes too: {notes}");
+    assert_eq!(
+        one.nicknames().await.expect("read").get(bob.as_str()).map(String::as_str),
+        Some("Bobby the Builder")
+    );
+    assert_eq!(
+        one.note(bob.clone()).await.expect("note"),
+        "owes me lunch"
+    );
+
+    // A second device without the key: locked, not empty; it cannot
+    // overwrite what it cannot read.
+    let two = login(fresh_data_dir()).await;
+    assert!(two.nicknames().await.is_err(), "locked, not an empty list");
+    assert!(
+        two.set_nickname(bob.clone(), "Overwritten".into()).await.is_err(),
+        "no writes it cannot seal"
+    );
+    two.recover(recovery_key).await.expect("recover");
+    assert_eq!(
+        two.nicknames().await.expect("unlocked").get(bob.as_str()).map(String::as_str),
+        Some("Bobby the Builder")
+    );
+    // And now it writes sealed data the first one reads.
+    two.set_nickname(bob.clone(), "Bob".into()).await.expect("write");
+    assert_eq!(
+        one.nicknames().await.expect("read").get(bob.as_str()).map(String::as_str),
+        Some("Bob")
+    );
+}
