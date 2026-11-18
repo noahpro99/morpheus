@@ -88,7 +88,7 @@ impl Shell {
         }
     }
 
-    fn preview_room(
+    pub(crate) fn preview_room(
         &mut self,
         room: morpheus_core::LinkedRoom,
         via: Vec<String>,

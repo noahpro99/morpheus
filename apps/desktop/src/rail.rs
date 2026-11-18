@@ -564,6 +564,24 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             .e2e("button", "rail-item rail-add")
             .attr("title", "Create a server"),
     )
+    .child(
+        div()
+            .id("rail-discover")
+            .size(px(48.0))
+            .flex_none()
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded(px(theme::RADIUS_XL))
+            .bg(rgb(theme::bg_elevated()))
+            .text_color(rgb(theme::text_faint()))
+            .cursor_pointer()
+            .hover(|s| s.text_color(rgb(theme::accent())))
+            .child(icon("compass", 24.0).text_color(rgb(theme::text_faint())))
+            .on_click(cx.listener(|this, _, _, cx| this.open_discover(cx)))
+            .e2e("button", "rail-discover")
+            .attr("title", "Discover public servers"),
+    )
     .on_drag_move::<DraggedBadge>(cx.listener(
         |this, event: &gpui::DragMoveEvent<DraggedBadge>, _, cx| {
             // Out of the rail: nothing to drop on.

@@ -18,6 +18,7 @@ mod accounts;
 mod blur;
 mod calls;
 mod core;
+mod directory;
 #[cfg(not(target_arch = "wasm32"))]
 mod download;
 mod error;
@@ -55,6 +56,7 @@ pub use calls::{
     CallCredentials, CallKey, CallKeyUpdates, CallMedia, CallMember, IncomingCall, RING_FOR_MS,
     RingUpdates, Ringing, Role as CallRole, foci_to_subscribe,
 };
+pub use directory::{PublicRoom, PublicRooms};
 pub use links::{LinkedRoom, MatrixLink, link_wants_chat, parse_matrix_link};
 pub use media::{AVATAR_FULL_MAX, AvatarStats, Media, MediaRef, avatar_stats};
 pub use members::{

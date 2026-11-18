@@ -29,6 +29,7 @@ pub mod url_scheme;
 pub mod invites;
 pub mod keys;
 pub mod last_place;
+pub mod discover;
 pub mod links;
 pub mod locks;
 pub mod lru;

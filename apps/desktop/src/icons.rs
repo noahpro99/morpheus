@@ -30,6 +30,7 @@ pub const REPLY: &str =
 pub const SMILE: &str = r#"<circle cx="12" cy="12" r="10" /> <path d="M8 14s1.5 2 4 2 4-2 4-2" /> <line x1="9" x2="9.01" y1="9" y2="9" /> <line x1="15" x2="15.01" y1="9" y2="9" />"#;
 pub const LOG_IN: &str = r#"<path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" /> <polyline points="10 17 15 12 10 7" /> <line x1="15" x2="3" y1="12" y2="12" />"#;
 pub const HEART: &str = r#"<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" />"#;
+pub const COMPASS: &str = r#"<circle cx="12" cy="12" r="10" /> <path d="m16.24 7.76-1.804 5.411a2 2 0 0 1-1.265 1.265L7.76 16.24l1.804-5.411a2 2 0 0 1 1.265-1.265z" />"#;
 pub const MINUS: &str = r#"<path d="M5 12h14" />"#;
 pub const X: &str = r#"<path d="M18 6 6 18" /> <path d="m6 6 12 12" />"#;
 pub const CHEVRON_LEFT: &str = r#"<path d="m15 18-6-6 6-6" />"#;
@@ -103,6 +104,7 @@ pub const DOWNLOAD: &str = r#"<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4
 fn glyph(name: &str) -> Option<&'static str> {
     Some(match name {
         "plus" => PLUS,
+        "compass" => COMPASS,
         "minus" => MINUS,
         "heart" => HEART,
         "log-in" => LOG_IN,
