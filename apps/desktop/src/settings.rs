@@ -139,6 +139,8 @@ pub struct SettingsView {
     session: Option<Session>,
     /// The Diagnostics section redraws itself every second while shown.
     diag_timer: bool,
+    /// "Show debug info" is open (kept while the dialog is open).
+    diag_open: bool,
     open: bool,
     page: SettingsPage,
     status: Option<Result<EncryptionStatus, String>>,
@@ -357,6 +359,7 @@ impl SettingsView {
         Self {
             session,
             diag_timer: false,
+            diag_open: false,
             open: false,
             page: SettingsPage::Account,
             status: None,
@@ -448,6 +451,7 @@ impl SettingsView {
     pub fn close(&mut self, cx: &mut Context<Self>) {
         if self.open {
             self.open = false;
+            self.diag_open = false;
             if morpheus_call::mic_test_running() {
                 cx.emit(MicTest(false));
             }

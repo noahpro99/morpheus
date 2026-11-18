@@ -1019,7 +1019,18 @@ impl SettingsView {
                 .child(folder)
                 .into_any_element(),
         ];
-        for section in &diagnostics.sections {
+        let diag_open = self.diag_open;
+        let toggle = button("diag-toggle", "Show debug info", Kind::Secondary, "diag-toggle")
+            .child(icon(if diag_open { "chevron-down" } else { "chevron-right" }, 16.0).text_color(rgb(theme::text())))
+            .child(if diag_open { "Hide debug info" } else { "Show debug info" })
+            .on_click(cx.listener(move |this, _, _, cx| {
+                this.diag_open = !this.diag_open;
+                cx.notify();
+            }))
+            .e2e("button", "button secondary diag-toggle")
+            .text(if diag_open { "Hide debug info" } else { "Show debug info" });
+        diag_children.push(div().mt(px(10.0)).flex().child(toggle).into_any_element());
+        for section in diagnostics.sections.iter().filter(|_| diag_open) {
             diag_children.push(
                 div()
                     .mt(px(10.0))
