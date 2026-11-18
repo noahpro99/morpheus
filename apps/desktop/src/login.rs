@@ -38,6 +38,7 @@ pub struct Login {
     busy: Option<&'static str>,
     /// An account already on this device (added another from its menu).
     stored: Option<String>,
+    scroll: gpui::ScrollHandle,
 }
 
 impl Login {
@@ -72,6 +73,7 @@ impl Login {
             error: restore_error,
             busy: None,
             stored: None,
+            scroll: gpui::ScrollHandle::new(),
         };
         this.probe(cx);
         this.load_stored(cx);
@@ -364,13 +366,27 @@ impl Render for Login {
                     .text(text),
             );
         }
+        // Scrolls when the card is taller than the window; the inner box centres it
+        // while it fits and grows with it when it does not.
         div()
+            .id("login-scroll")
             .size_full()
-            .flex()
-            .items_center()
-            .justify_center()
+            .overflow_y_scroll()
+            .track_scroll(&self.scroll)
             .bg(rgb(theme::bg_rail()))
-            .child(form.e2e("form", "card login"))
+            .child(
+                div()
+                    .min_h_full()
+                    .w_full()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .py(px(16.0))
+                    .child(form.flex_none().e2e("form", "card login")),
+            )
             .e2e("main", "centered")
+            .scrollable(std::rc::Rc::new(crate::e2e::HandleProbe(
+                self.scroll.clone(),
+            )))
     }
 }
