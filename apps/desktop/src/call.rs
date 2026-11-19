@@ -1685,10 +1685,10 @@ impl Shell {
                     found.speakers.into_iter().map(|d| (d.id, d.name)).collect();
                 let items = if speakers {
                     let rows = device_rows(&spks, this.calls.devices.speaker.as_deref());
-                    voice_popup_menu(DeviceKind::Speaker, &rows, morpheus_call::output_volume(), "")
+                    voice_popup_menu(DeviceKind::Speaker, &rows, morpheus_call::output_volume())
                 } else {
                     let rows = device_rows(&mics, this.calls.devices.microphone.as_deref());
-                    voice_popup_menu(DeviceKind::Microphone, &rows, morpheus_call::input_volume(), crate::noise::read().key())
+                    voice_popup_menu(DeviceKind::Microphone, &rows, morpheus_call::input_volume())
                 };
                 let mut menu = crate::menu::OpenMenu::new(
                     at,
