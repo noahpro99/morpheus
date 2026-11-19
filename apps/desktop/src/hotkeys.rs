@@ -452,6 +452,13 @@ impl Shell {
         };
         // The panels that toggle themselves stay reachable over their own
         // modal; anything else waits until the modal is closed.
+        // Back closes what is open first (the mouse's back button does the same).
+        if matches!(action, Hotkey::History { forward: false })
+            && (self.modal_open(cx) || self.inbox_open)
+        {
+            self.go_back(window, cx);
+            return true;
+        }
         let toggles_help =
             matches!(action, Hotkey::Shortcuts) && matches!(self.dialog, Some(Dialog::Help));
         let toggles_switcher = matches!(action, Hotkey::Switcher) && self.switcher.is_some();

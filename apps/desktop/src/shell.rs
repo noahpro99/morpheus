@@ -1693,7 +1693,7 @@ impl Render for Shell {
             // The mouse's back and forward buttons walk the history as Alt+Left/Right do.
             .on_mouse_down(
                 gpui::MouseButton::Navigate(gpui::NavigationDirection::Back),
-                cx.listener(|this, _, _, cx| this.nav_jump(-1, cx)),
+                cx.listener(|this, _, window, cx| this.go_back(window, cx)),
             )
             .on_mouse_down(
                 gpui::MouseButton::Navigate(gpui::NavigationDirection::Forward),

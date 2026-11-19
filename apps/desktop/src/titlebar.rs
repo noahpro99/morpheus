@@ -72,6 +72,24 @@ fn title_mark(shell: &Shell) -> gpui::AnyElement {
 }
 
 impl Shell {
+    /// Back, from the mouse's back button or Alt+Left: closes what is open
+    /// (a popup, menu, dialog, picker, lightbox, palette, the inbox, Settings)
+    /// first, exactly as Escape would, and goes back in the history only when
+    /// nothing is open.
+    pub fn go_back(&mut self, window: &mut gpui::Window, cx: &mut Context<Self>) {
+        if self.modal_open(cx) || self.inbox_open {
+            // Through the key path itself, so the thing in front closes the
+            // way it does for Escape; after this handler, which holds the shell.
+            window.defer(cx, |window, cx| {
+                if let Ok(escape) = gpui::Keystroke::parse("escape") {
+                    window.dispatch_keystroke(escape, cx);
+                }
+            });
+            return;
+        }
+        self.nav_jump(-1, cx);
+    }
+
     /// Back (`-1`) or forward (`1`) through the rooms visited: the scope first,
     /// then the room, as the Dioxus bar does.
     pub fn nav_jump(&mut self, step: isize, cx: &mut Context<Self>) {
