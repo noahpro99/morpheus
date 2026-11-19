@@ -1463,6 +1463,7 @@ fn cards(
         return (out, false);
     };
     let (main, strip): (Vec<&Card>, Vec<&Card>) = all.iter().partition(|c| c.key() == focused);
+    let all_in_order: Vec<&Card> = all.iter().collect();
     // The focused card at the top, the row of the others filling the height
     // it leaves (a little kept for rounding).
     let others = strip.len() + usize::from(invite.is_some());
@@ -1478,7 +1479,9 @@ fn cards(
         .map_or(CARD_RATIO, |(w, h)| w as f32 / h as f32);
     let has_others = others > 0;
     let hidden = has_others && shell.calls.strip_hidden;
-    let others = if hidden { 0 } else { others };
+    // The strip holds every member, the focused one too (greyed), so it never
+    // reflows when the focus moves.
+    let others = if hidden { 0 } else if has_others { others + 1 } else { 0 };
     let layout = focus_layout(
         others,
         (stage.0 - 1.0).max(40.0),
@@ -1517,7 +1520,44 @@ fn cards(
                 .justify_center()
                 .items_center()
                 .gap(px(8.0))
-                .children(strip.into_iter().map(|c| draw(c, Fit::Strip(strip_h), cx)))
+                .children(all_in_order.iter().map(|c| {
+                    if c.key() == focused {
+                        // The person's avatar card, not the picture again (the one picture is
+                        // the focused card's above).
+                        let user = match c {
+                            Card::Video(feed) => feed.user.clone(),
+                            Card::Person(user) => user.clone(),
+                        };
+                        let card = person_card(shell, cx, room, &user, false, Fit::Strip(strip_h));
+                        let key = focused.to_owned();
+                        // Greyed, with a focus icon; a click on it goes through to the card
+                        // (which unfocuses).
+                        div()
+                            .relative()
+                            .flex_none()
+                            .child(card)
+                            .child(
+                                div()
+                                    .id("strip-focused-mark")
+                                    .absolute()
+                                    .inset_0()
+                                    .occlude()
+                                    .cursor_pointer()
+                                    .on_click(cx.listener(move |this, _, _, cx| this.toggle_focus(&key, cx)))
+                                    .rounded(px(theme::RADIUS_LG))
+                                    .bg(gpui::rgba(0x0000008c))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .child(icon("maximize-2", 20.0).text_color(rgb(theme::text())))
+                                    .e2e("div", "strip-focused-mark"),
+                            )
+                            .e2e("div", "strip-focused")
+                            .into_any_element()
+                    } else {
+                        draw(c, Fit::Strip(strip_h), cx)
+                    }
+                }))
                 .children(invite.map(|(room, direct)| invite_card(cx, room, direct, Fit::Strip(strip_h))))
                 .e2e("div", "call-strip")
                 .into_any_element(),
