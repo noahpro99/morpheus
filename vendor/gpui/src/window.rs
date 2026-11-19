@@ -641,6 +641,10 @@ impl TooltipId {
     }
 }
 
+/// How far from a tooltip bubble's ends the arrow's tip stays (the bubble's corner
+/// radius and the arrow's half base), so the bubble always spans the element's centre.
+pub const TOOLTIP_ARROW_REACH: f32 = 10.0;
+
 /// Where the tooltip being drawn sits and the element it belongs to, for
 /// drawing an arrow from one to the other.
 #[derive(Clone, Copy, Debug)]
@@ -652,6 +656,8 @@ pub struct TooltipPlacement {
     /// Whether it is below the element (else above), decided before the view is
     /// laid out so the view can leave room for its arrow on that side.
     pub below: bool,
+    /// Whether it is to the right of the element (`below` is then false).
+    pub right: bool,
 }
 
 pub(crate) struct TooltipBounds {
@@ -860,6 +866,7 @@ pub struct Window {
     pub(crate) next_tooltip_id: TooltipId,
     pub(crate) tooltip_bounds: Option<TooltipBounds>,
     tooltip_placement: Option<TooltipPlacement>,
+    tooltip_side: crate::TooltipSide,
     next_frame_callbacks: Rc<RefCell<Vec<FrameCallback>>>,
     wheel_ease: crate::smooth_scroll::WheelEase,
     pub(crate) dirty_views: FxHashSet<EntityId>,
@@ -1267,6 +1274,7 @@ impl Window {
             next_tooltip_id: TooltipId::default(),
             tooltip_bounds: None,
             tooltip_placement: None,
+            tooltip_side: crate::TooltipSide::default(),
             dirty_views: FxHashSet::default(),
             focus_listeners: SubscriberSet::new(),
             focus_lost_listeners: SubscriberSet::new(),
@@ -2148,10 +2156,15 @@ impl Window {
             // else above it; known before the layout so the view can leave
             // room for its arrow on that side.
             let viewport = self.viewport_size();
+            let right = tooltip_request.tooltip.side == crate::TooltipSide::Right
+                && tooltip_request
+                    .tooltip
+                    .anchor
+                    .is_some_and(|anchor| anchor.right() + px(200.) <= viewport.width);
             let below = tooltip_request
                 .tooltip
                 .anchor
-                .map(|anchor| anchor.bottom() + px(80.) <= viewport.height);
+                .map(|anchor| !right && anchor.bottom() + px(80.) <= viewport.height);
             self.tooltip_placement = tooltip_request
                 .tooltip
                 .anchor
@@ -2160,6 +2173,7 @@ impl Window {
                     bounds: Bounds::default(),
                     anchor,
                     below,
+                    right,
                 });
             let tooltip_size = element.layout_as_root(AvailableSpace::min_size(), self, cx);
 
@@ -2173,17 +2187,32 @@ impl Window {
             if let Some(anchor) = tooltip_request.tooltip.anchor {
                 // Centred on the element, kept inside the window, clear of the
                 // pointer (which is on the element).
-                let margin = px(6.);
-                let x = anchor.center().x - tooltip_size.width / 2.;
-                let max_x = (window_bounds.right() - tooltip_size.width - margin).max(Pixels::ZERO);
-                tooltip_bounds.origin.x = x.clamp(margin.min(max_x), max_x);
-                let y = if below == Some(false) {
-                    anchor.origin.y - tooltip_size.height - px(1.)
+                let margin = px(4.);
+                if right {
+                    tooltip_bounds.origin.x = anchor.right() + px(1.);
+                    let max_y = (window_bounds.bottom() - tooltip_size.height).max(Pixels::ZERO);
+                    tooltip_bounds.origin.y = (anchor.center().y - tooltip_size.height / 2.)
+                        .clamp(Pixels::ZERO, max_y);
                 } else {
-                    anchor.bottom() + px(1.)
-                };
-                let max_y = (window_bounds.bottom() - tooltip_size.height).max(Pixels::ZERO);
-                tooltip_bounds.origin.y = y.clamp(Pixels::ZERO, max_y);
+                    // The bubble always spans the element's centre (with room
+                    // for the arrow's base either side), so the arrow can
+                    // point at the element wherever the window pushes the
+                    // bubble.
+                    let reach = px(TOOLTIP_ARROW_REACH);
+                    let centre = anchor.center().x;
+                    let max_x = (window_bounds.right() - tooltip_size.width - margin).max(Pixels::ZERO);
+                    let lo = margin.min(max_x).max(centre + reach - tooltip_size.width);
+                    let hi = max_x.min(centre - reach);
+                    let x = centre - tooltip_size.width / 2.;
+                    tooltip_bounds.origin.x = if lo > hi { hi } else { x.clamp(lo, hi) };
+                    let y = if below == Some(false) {
+                        anchor.origin.y - tooltip_size.height - px(1.)
+                    } else {
+                        anchor.bottom() + px(1.)
+                    };
+                    let max_y = (window_bounds.bottom() - tooltip_size.height).max(Pixels::ZERO);
+                    tooltip_bounds.origin.y = y.clamp(Pixels::ZERO, max_y);
+                }
             } else {
 
             if tooltip_bounds.right() > window_bounds.right() {
@@ -2448,6 +2477,15 @@ impl Window {
             hitbox_id: None,
             style,
         })
+    }
+
+    /// Called by a tooltip builder: the side its tooltip prefers.
+    pub fn set_tooltip_side(&mut self, side: crate::TooltipSide) {
+        self.tooltip_side = side;
+    }
+
+    pub(crate) fn take_tooltip_side(&mut self) -> crate::TooltipSide {
+        std::mem::take(&mut self.tooltip_side)
     }
 
     /// Where the tooltip being drawn sits and what it is for (set while it is

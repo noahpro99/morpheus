@@ -2757,6 +2757,7 @@ fn handle_tooltip_mouse_move(
                                         view,
                                         mouse_position: window.mouse_position(),
                                         anchor,
+                                        side: window.take_tooltip_side(),
                                         check_visible_and_update: Rc::new(
                                             move |tooltip_bounds, window, cx| {
                                                 handle_tooltip_check_visible_and_update(

@@ -2338,6 +2338,16 @@ pub struct AnyDrag {
     pub cursor_style: Option<CursorStyle>,
 }
 
+/// Which side of its element a tooltip prefers.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TooltipSide {
+    /// Below the element (above when there is no room).
+    #[default]
+    Below,
+    /// To its right (below when there is no room), centred on it vertically.
+    Right,
+}
+
 /// Contains state associated with a tooltip. You'll only need this struct if you're implementing
 /// tooltip behavior on a custom element. Otherwise, use [Div::tooltip](crate::Interactivity::tooltip).
 #[derive(Clone)]
@@ -2351,6 +2361,9 @@ pub struct AnyTooltip {
     /// The hovered element's bounds, when known: the tooltip is placed beside it
     /// (below, or above when there is no room) instead of at the pointer.
     pub anchor: Option<Bounds<Pixels>>,
+
+    /// The side the tooltip prefers (set by its builder with `Window::set_tooltip_side`).
+    pub side: TooltipSide,
 
     /// Given the bounds of the tooltip, checks whether the tooltip should still be visible and
     /// updates its state accordingly. This is needed atop the hovered element's mouse move handler
