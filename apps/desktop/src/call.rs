@@ -1698,6 +1698,7 @@ impl Shell {
     pub fn open_audio_menu(
         &mut self,
         speakers: bool,
+        listed: bool,
         at: gpui::Point<gpui::Pixels>,
         cx: &mut Context<Self>,
     ) {
@@ -1719,7 +1720,11 @@ impl Shell {
             false,
             crate::view_model::menu::MenuTarget::Other,
         );
-        menu.open = Some(0);
+        // Opened from the arrow, the list of devices is open at once; from a
+        // right-click nothing is, until the pointer moves onto it.
+        if listed {
+            menu.open = Some(0);
+        }
         self.open_menu(menu, cx);
         self.calls.audio_menu = Some((speakers, at));
         // Opened from what was read before; the list is read again for next time.
@@ -1804,7 +1809,8 @@ impl Shell {
                     if let Some((speakers, at)) = this.calls.audio_menu
                         && this.menu.is_some()
                     {
-                        this.open_audio_menu(speakers, at, cx);
+                        let listed = this.menu.as_ref().is_some_and(|m| m.open.is_some());
+                        this.open_audio_menu(speakers, listed, at, cx);
                     }
                 }
             })

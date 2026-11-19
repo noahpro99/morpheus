@@ -459,7 +459,7 @@ fn audio_right_click(
         let at = event.position;
         view.update(cx, |this, cx| {
             cx.stop_propagation();
-            this.open_audio_menu(speakers, at, cx);
+            this.open_audio_menu(speakers, false, at, cx);
         });
     })
 }

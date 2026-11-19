@@ -129,7 +129,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                 gpui::MouseButton::Right,
                 cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
                     cx.stop_propagation();
-                    this.open_audio_menu(speakers, event.position, cx)
+                    this.open_audio_menu(speakers, false, event.position, cx)
                 }),
             )
             .tip(title.to_owned())
@@ -157,7 +157,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             })
             .child(icon("chevron-down", 12.0).text_color(rgb(colour)))
             .on_click(cx.listener(move |this, event: &gpui::ClickEvent, _, cx| {
-                this.open_audio_menu(speakers, event.position(), cx)
+                this.open_audio_menu(speakers, true, event.position(), cx)
             }))
             .tip(arrow_title.to_owned())
             .e2e("button", "ghost device-menu-button")

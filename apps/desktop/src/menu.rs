@@ -125,8 +125,18 @@ impl Shell {
         }
     }
 
-    fn menu_hover(&mut self, path: (usize, Option<usize>), cx: &mut Context<Self>) {
+    fn menu_hover(
+        &mut self,
+        path: (usize, Option<usize>),
+        pointer: gpui::Point<gpui::Pixels>,
+        cx: &mut Context<Self>,
+    ) {
         let Some(menu) = &mut self.menu else { return };
+        // A menu that opens under a still pointer highlights nothing until the
+        // pointer moves.
+        if pointer == menu.at {
+            return;
+        }
         if menu.hover == Some(path) {
             return;
         }
@@ -357,10 +367,9 @@ fn item_el(
         .cursor_pointer()
         .text_color(rgb(if lit { theme::on(highlight) } else { colour }))
         .when(lit, |d| d.bg(rgb(highlight)))
-        .hover(|s| s.bg(rgb(highlight)).text_color(rgb(theme::on(highlight))))
-        .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+        .on_hover(cx.listener(move |this, hovered: &bool, window, cx| {
             if *hovered {
-                this.menu_hover(path, cx);
+                this.menu_hover(path, window.mouse_position(), cx);
             }
         }))
         .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
@@ -439,6 +448,7 @@ fn item_el(
     }
     el.e2e(if item.has_submenu() { "div" } else { "button" }, &classes)
         .attr("role", "menuitem")
+        .attr("data-lit", lit.to_string())
         .attr("data-icon", glyph.unwrap_or(""))
         .into_any_element()
 }
@@ -582,9 +592,9 @@ fn menu_slider_el(
         .px(px(10.0))
         .py(px(6.0))
         .rounded(px(theme::RADIUS_SM))
-        .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+        .on_hover(cx.listener(move |this, hovered: &bool, window, cx| {
             if *hovered {
-                this.menu_hover(path, cx);
+                this.menu_hover(path, window.mouse_position(), cx);
             }
         }))
         .child(
