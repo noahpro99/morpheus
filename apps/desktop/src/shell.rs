@@ -1685,14 +1685,39 @@ impl Render for Shell {
                 }),
             )
             // The mouse's back and forward buttons walk the history as Alt+Left/Right do.
-            .on_mouse_down(
-                gpui::MouseButton::Navigate(gpui::NavigationDirection::Back),
-                cx.listener(|this, _, window, cx| this.go_back(window, cx)),
-            )
-            .on_mouse_down(
-                gpui::MouseButton::Navigate(gpui::NavigationDirection::Forward),
-                cx.listener(|this, _, _, cx| this.nav_jump(1, cx)),
-            )
+            // A window-level listener, not the root's: Settings, dialogs and menus
+            // occlude the root, which would never see the press.
+            .child({
+                let shell = cx.entity();
+                gpui::canvas(
+                    |_, _, _| (),
+                    move |_, _, window, _| {
+                        let shell = shell.clone();
+                        window.on_mouse_event(move |event: &gpui::MouseDownEvent, phase, window, cx| {
+                            if phase != gpui::DispatchPhase::Capture {
+                                return;
+                            }
+                            match event.button {
+                                gpui::MouseButton::Navigate(gpui::NavigationDirection::Back) => {
+                                    shell.update(cx, |this, cx| this.go_back(window, cx));
+                                    cx.stop_propagation();
+                                }
+                                gpui::MouseButton::Navigate(gpui::NavigationDirection::Forward) => {
+                                    shell.update(cx, |this, cx| {
+                                        if !this.modal_open(cx) && !this.inbox_open {
+                                            this.nav_jump(1, cx);
+                                        }
+                                    });
+                                    cx.stop_propagation();
+                                }
+                                _ => {}
+                            }
+                        });
+                    },
+                )
+                .size_0()
+                .absolute()
+            })
             .capture_key_down(cx.listener(|this, event: &gpui::KeyDownEvent, window, cx| {
                 if this.handle_key(event, window, cx) {
                     cx.stop_propagation();
