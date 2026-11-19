@@ -59,8 +59,6 @@ pub enum Dialog {
     About,
     /// A room linked to that you are not in.
     Preview(Entity<crate::room_preview::RoomPreview>),
-    /// The compass: public rooms to join.
-    Discover(Entity<crate::discover::Discover>),
     /// A picture of the room, full size.
     Lightbox(Entity<crate::lightbox::Lightbox>),
     /// A video of the room, in the full-window player.
@@ -834,7 +832,6 @@ pub fn render_dialog(
             Some(overlay(window, cx, boxed.into_any_element(), close))
         }
         Dialog::Preview(entity) => Some(entity.clone().into_any_element()),
-        Dialog::Discover(entity) => Some(entity.clone().into_any_element()),
         Dialog::Lightbox(entity) => Some(entity.clone().into_any_element()),
         Dialog::Video(entity) => Some(entity.clone().into_any_element()),
         Dialog::About => Some(crate::about::render(&focus, window, cx, close)),

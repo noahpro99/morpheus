@@ -1,8 +1,12 @@
-//! Discover: the compass under + in the server list. Browse the public
-//! rooms and spaces of a Matrix server's room directory (your own at first;
-//! any server's can be typed in, and a few are offered), search them, look
-//! at one (name, topic, size, in the same card a matrix.to link gets) and
-//! join it. What a row says is `view_model::discover`.
+//! Discover: the compass under + in the server list. A full page to the right
+//! of the rail (no channel list, chat or thread beside it) browsing the public
+//! rooms and spaces of several Matrix servers' room directories at once: the
+//! own server's and the well-known ones, each switched on or off (and
+//! remembered), searched at the same time with their results merged, each
+//! row saying which server it is from. A directory that fails shows its own
+//! error on its chip; the others carry on. Back (the title bar's button,
+//! Alt+Left, the mouse's back button) returns to where it was opened from.
+//! What a row says and how results merge is `view_model::discover`.
 
 use std::collections::HashSet;
 
@@ -13,34 +17,39 @@ use gpui::{
 use morpheus_core::{PublicRoom, Session};
 
 use crate::{
-    dialogs::{Closed, dialog_box, heading, muted, overlay},
+    dialogs::Closed,
     e2e::E2eExt as _,
     input::{Changed, Submit, TextInput},
     media::{self, Avatars, avatar},
     room_dialogs::button,
     room_preview::Joined,
     theme,
-    view_model::discover as vm,
+    view_model::discover::{self as vm, Directories, Results, Status},
 };
 
+/// How long a search waits for the typing to pause.
+const TYPING_PAUSE: std::time::Duration = std::time::Duration::from_millis(300);
+/// How long one directory has to answer.
+const ANSWER_WITHIN: std::time::Duration = std::time::Duration::from_secs(10);
+
 /// A room's row was clicked: look at it before joining (the second is the
-/// server whose directory it came from).
-pub struct Preview(pub PublicRoom, pub String);
+/// servers whose directories list it).
+pub struct Preview(pub PublicRoom, pub Vec<String>);
+
+/// The directories were switched on or off or one was added: keep the choice.
+pub struct Choice(pub Directories);
 
 pub struct Discover {
     session: Session,
-    /// The account's own server, whose directory is the first shown.
+    /// The account's own server, whose directory is `None` to the session.
     home: String,
-    /// The directory being browsed.
-    server: String,
+    dirs: Directories,
     server_input: Entity<TextInput>,
     search: Entity<TextInput>,
-    rooms: Vec<PublicRoom>,
-    next: Option<String>,
-    loading: bool,
-    /// The newest query; older answers arriving late are dropped.
-    generation: u64,
-    error: Option<String>,
+    results: Results,
+    input_error: Option<String>,
+    /// Counts changes of the search box (a search waits for a pause).
+    typed: u64,
     /// Rooms already joined (by id), and those being joined.
     joined: HashSet<String>,
     joining: HashSet<String>,
@@ -53,27 +62,55 @@ pub struct Discover {
 impl EventEmitter<Closed> for Discover {}
 impl EventEmitter<Joined> for Discover {}
 impl EventEmitter<Preview> for Discover {}
+impl EventEmitter<Choice> for Discover {}
 
 impl Discover {
-    pub fn new(session: Session, joined: HashSet<String>, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        session: Session,
+        joined: HashSet<String>,
+        saved: Option<serde_json::Value>,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let home = session
             .user_id()
             .map(|u| u.server_name().to_string())
             .unwrap_or_default();
-        let server_input =
-            cx.new(|cx| TextInput::new("discover-server", "Server, e.g. matrix.org", false, &home, cx).framed());
+        let dirs = Directories::new(&home, saved.as_ref());
+        let server_input = cx.new(|cx| {
+            TextInput::new("discover-server", "Add a server, e.g. matrix.org", false, "", cx)
+                .framed()
+        });
         let search = cx.new(|cx| {
             TextInput::new("discover-search", "Search public rooms and spaces", false, "", cx)
                 .framed()
         });
-        cx.subscribe(&search, |this, _, _: &Changed, cx| this.query(false, cx))
+        cx.subscribe(&search, |this, _, _: &Changed, cx| {
+            // Wait for the typing to pause: one search, not one per key.
+            this.typed += 1;
+            let typed = this.typed;
+            cx.spawn(async move |this, cx| {
+                cx.background_executor().timer(TYPING_PAUSE).await;
+                this.update(cx, |this, cx| {
+                    if this.typed == typed {
+                        this.query(cx);
+                    }
+                })
+                .ok();
+            })
+            .detach();
+        })
             .detach();
         cx.subscribe(&server_input, |this, _, _: &Submit, cx| {
             let typed = this.server_input.read(cx).value().to_owned();
             match vm::normalise_server(&typed) {
-                Some(server) => this.show_server(server, cx),
+                Some(server) => {
+                    this.input_error = None;
+                    this.dirs.add(&server);
+                    this.server_input.update(cx, |input, cx| input.set_value("", cx));
+                    this.chosen(cx);
+                }
                 None => {
-                    this.error = Some(format!("\"{}\" is not a server name", typed.trim()));
+                    this.input_error = Some(format!("\"{}\" is not a server name", typed.trim()));
                     cx.notify();
                 }
             }
@@ -81,15 +118,13 @@ impl Discover {
         .detach();
         let mut this = Self {
             session,
-            server: home.clone(),
             home,
+            dirs,
             server_input,
             search,
-            rooms: Vec::new(),
-            next: None,
-            loading: false,
-            generation: 0,
-            error: None,
+            results: Results::default(),
+            input_error: None,
+            typed: 0,
             joined,
             joining: HashSet::new(),
             join_error: None,
@@ -97,49 +132,54 @@ impl Discover {
             focus: cx.focus_handle(),
             take_focus: true,
         };
-        this.query(false, cx);
+        this.query(cx);
         this
     }
 
-    fn show_server(&mut self, server: String, cx: &mut Context<Self>) {
-        self.server = server.clone();
-        self.server_input
-            .update(cx, |input, cx| input.set_value(&server, cx));
-        self.query(false, cx);
+    /// The choice of directories changed: keep it and ask again.
+    fn chosen(&mut self, cx: &mut Context<Self>) {
+        cx.emit(Choice(self.dirs.clone()));
+        self.query(cx);
     }
 
-    /// Ask the directory: the first page of what the search box says, or
-    /// (`more`) the page after the one shown.
-    fn query(&mut self, more: bool, cx: &mut Context<Self>) {
-        self.generation += 1;
-        let generation = self.generation;
-        let since = if more { self.next.clone() } else { None };
-        if !more {
-            self.rooms.clear();
-            self.next = None;
+    /// Ask every selected directory at once for the first page of what the
+    /// search box says.
+    fn query(&mut self, cx: &mut Context<Self>) {
+        let servers = self.dirs.selected();
+        let generation = self.results.start(&servers);
+        for server in servers {
+            self.ask(generation, server, None, cx);
         }
-        self.loading = true;
-        self.error = None;
-        let term = self.search.read(cx).value().to_owned();
-        let server = (self.server != self.home).then(|| self.server.clone());
-        let asking = self.session.public_rooms(server, term, since);
         cx.notify();
+    }
+
+    /// The page after the one shown, of every directory that has one.
+    fn more(&mut self, cx: &mut Context<Self>) {
+        let (generation, ask) = self.results.start_more();
+        for (server, since) in ask {
+            self.ask(generation, server, Some(since), cx);
+        }
+        cx.notify();
+    }
+
+    fn ask(&mut self, generation: u64, server: String, since: Option<String>, cx: &mut Context<Self>) {
+        let term = self.search.read(cx).value().to_owned();
+        let own = (server != self.home).then(|| server.clone());
+        let asking = self.session.public_rooms(own, term, since);
         cx.spawn(async move |this, cx| {
-            let result = asking.await;
+            // A slow directory gives up on its own; the others are not waited for.
+            let timeout = cx.background_executor().timer(ANSWER_WITHIN);
+            let answer = match futures::future::select(asking, timeout).await {
+                futures::future::Either::Left((answer, _)) => answer
+                    .map(|page| (page.rooms, page.next))
+                    .map_err(|err| err.to_string()),
+                futures::future::Either::Right(_) => Err("no answer in time".to_owned()),
+            };
             this.update(cx, |this, cx| {
-                if this.generation != generation {
-                    return;
+                if this.results.finish(generation, &server, answer) {
+                    this.fetch_pictures(cx);
+                    cx.notify();
                 }
-                this.loading = false;
-                match result {
-                    Ok(page) => {
-                        this.next = page.next;
-                        this.rooms.extend(page.rooms);
-                        this.fetch_pictures(cx);
-                    }
-                    Err(err) => this.error = Some(err.to_string()),
-                }
-                cx.notify();
             })
             .ok();
         })
@@ -147,8 +187,8 @@ impl Discover {
     }
 
     fn fetch_pictures(&mut self, cx: &mut Context<Self>) {
-        for room in self.rooms.clone() {
-            let Some(media) = room.avatar.clone() else {
+        for entry in self.results.merged() {
+            let Some(media) = entry.room.avatar.clone() else {
                 continue;
             };
             if !self.avatars.begin(&media, 40) {
@@ -167,7 +207,7 @@ impl Discover {
         }
     }
 
-    fn join(&mut self, room: &PublicRoom, cx: &mut Context<Self>) {
+    fn join(&mut self, room: &PublicRoom, servers: Vec<String>, cx: &mut Context<Self>) {
         let key = room.room_id.to_string();
         if self.joining.contains(&key) {
             return;
@@ -179,8 +219,7 @@ impl Discover {
         self.joining.insert(key.clone());
         self.join_error = None;
         let room_id = room.room_id.clone();
-        let via = vec![self.server.clone()];
-        let joining = self.session.join_room_via(room_id.clone(), via);
+        let joining = self.session.join_room_via(room_id.clone(), servers);
         cx.notify();
         cx.spawn(async move |this, cx| {
             let result = joining.await;
@@ -200,7 +239,8 @@ impl Discover {
         .detach();
     }
 
-    fn row(&self, room: &PublicRoom, cx: &mut Context<Self>) -> AnyElement {
+    fn row(&self, entry: &vm::Entry, cx: &mut Context<Self>) -> AnyElement {
+        let room = &entry.room;
         let name = crate::streamer::name(&vm::name(room));
         let key = room.room_id.to_string();
         let joined = self.joined.contains(&key);
@@ -217,7 +257,7 @@ impl Discover {
             "Join"
         };
         let (look, join) = (room.clone(), room.clone());
-        let server = self.server.clone();
+        let (via_look, via_join) = (entry.servers.clone(), entry.servers.clone());
         let mut info = div()
             .id(ElementId::Name(format!("discover-look-{key}").into()))
             .flex_1()
@@ -227,35 +267,43 @@ impl Discover {
             .gap(px(10.0))
             .cursor_pointer()
             .on_click(cx.listener(move |_, _, _, cx| {
-                cx.emit(Preview(look.clone(), server.clone()));
+                cx.emit(Preview(look.clone(), via_look.clone()));
             }))
             .child(avatar(picture, &name, 40.0, Some(theme::RADIUS)));
-        let mut text = div()
-            .flex_1()
-            .min_w_0()
-            .flex()
-            .flex_col()
-            .child(
-                div()
-                    .truncate()
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .child(name.clone())
-                    .e2e("span", "discover-name")
-                    .text(name.clone()),
-            );
+        let mut text = div().flex_1().min_w_0().flex().flex_col().child(
+            div()
+                .truncate()
+                .font_weight(FontWeight::SEMIBOLD)
+                .child(name.clone())
+                .e2e("span", "discover-name")
+                .text(name.clone()),
+        );
         let size = if room.is_space {
             format!("Space, {}", vm::members_line(room))
         } else {
             vm::members_line(room)
         };
+        let from = entry.label();
         text = text.child(
             div()
-                .truncate()
+                .flex()
+                .gap(px(8.0))
                 .text_size(px(0.8 * theme::REM))
                 .text_color(rgb(theme::text_muted()))
-                .child(size.clone())
-                .e2e("span", "discover-size muted")
-                .text(size),
+                .child(
+                    div()
+                        .truncate()
+                        .child(size.clone())
+                        .e2e("span", "discover-size muted")
+                        .text(size),
+                )
+                .child(
+                    div()
+                        .truncate()
+                        .child(from.clone())
+                        .e2e("span", "discover-server muted")
+                        .text(from),
+                ),
         );
         if let Some(topic) = vm::topic(room) {
             text = text.child(
@@ -291,7 +339,9 @@ impl Discover {
                     .text_color(rgb(theme::on_danger()))
                     .cursor_pointer()
                     .when(joining, |d| d.opacity(0.6))
-                    .on_click(cx.listener(move |this, _, _, cx| this.join(&join, cx)))
+                    .on_click(
+                        cx.listener(move |this, _, _, cx| this.join(&join, via_join.clone(), cx)),
+                    )
                     .child(SharedString::from(label))
                     .e2e("button", "discover-join")
                     .text(label),
@@ -302,31 +352,60 @@ impl Discover {
             .into_any_element()
     }
 
+    /// A directory's switch: on is filled; a failing one says so on itself.
     fn chip(&self, server: &str, cx: &mut Context<Self>) -> AnyElement {
         let target = server.to_owned();
-        let current = self.server == server;
-        div()
+        let on = self.dirs.is_on(server);
+        let failed = on.then(|| self.results.error_of(server)).flatten().is_some();
+        let loading = on
+            && self
+                .results
+                .listings
+                .iter()
+                .any(|l| l.server == server && l.status == Status::Loading);
+        let mut chip = div()
             .id(ElementId::Name(format!("discover-chip-{server}").into()))
             .flex_none()
+            .flex()
+            .items_center()
+            .gap(px(6.0))
             .px(px(10.0))
             .py(px(3.0))
             .rounded_full()
             .text_size(px(0.85 * theme::REM))
             .cursor_pointer()
-            .bg(rgb(if current {
+            .bg(rgb(if on {
                 theme::accent_strong()
             } else {
                 theme::bg_elevated()
             }))
-            .text_color(rgb(if current {
+            .text_color(rgb(if on {
                 theme::on_danger()
             } else {
                 theme::text_muted()
             }))
-            .on_click(cx.listener(move |this, _, _, cx| this.show_server(target.clone(), cx)))
-            .child(server.to_owned())
-            .e2e("button", "discover-chip")
+            .when(loading, |d| d.opacity(0.7))
+            .on_click(cx.listener(move |this, _, _, cx| {
+                this.dirs.toggle(&target);
+                this.chosen(cx);
+            }))
+            .child(server.to_owned());
+        if failed {
+            chip = chip.child(
+                div()
+                    .px(px(6.0))
+                    .rounded_full()
+                    .bg(rgb(theme::danger()))
+                    .text_color(rgb(theme::on_danger()))
+                    .text_size(px(0.75 * theme::REM))
+                    .child("Error")
+                    .e2e("span", "discover-chip-error")
+                    .text("Error"),
+            );
+        }
+        chip.e2e("button", "discover-chip")
             .attr("data-server", server.to_owned())
+            .attr("data-on", on.to_string())
             .text(server.to_owned())
             .into_any_element()
     }
@@ -337,54 +416,61 @@ impl Render for Discover {
         if std::mem::take(&mut self.take_focus) {
             self.search.read(cx).focus(window);
         }
-        let mut chips = vec![self.chip(&self.home.clone(), cx)];
-        for server in vm::SUGGESTED_SERVERS {
-            if *server != self.home {
-                chips.push(self.chip(server, cx));
-            }
-        }
-        let rows: Vec<AnyElement> = self
-            .rooms
-            .clone()
+        let chips: Vec<AnyElement> = self
+            .dirs
+            .all()
             .iter()
-            .map(|room| self.row(room, cx))
+            .map(|server| self.chip(server, cx))
             .collect();
-        let status = if let Some(error) = &self.error {
-            Some((error.clone(), true))
-        } else if let Some(error) = &self.join_error {
-            Some((error.clone(), true))
-        } else if self.loading {
-            Some(("Loading…".to_owned(), false))
-        } else if self.rooms.is_empty() {
-            Some((format!("No public rooms found on {}.", self.server), false))
+        let entries = self.results.merged();
+        let rows: Vec<AnyElement> = entries.iter().map(|entry| self.row(entry, cx)).collect();
+        // One line per problem: a directory's own error, the typed name's, a join's.
+        let mut problems: Vec<(Option<String>, String)> = self
+            .results
+            .errors()
+            .into_iter()
+            .filter(|(server, _)| self.dirs.is_on(server))
+            .map(|(server, err)| (Some(server.to_owned()), format!("{server}: {err}")))
+            .collect();
+        problems.extend(self.input_error.clone().map(|e| (None, e)));
+        problems.extend(self.join_error.clone().map(|e| (None, e)));
+        let selected = self.dirs.selected();
+        let info = if selected.is_empty() {
+            Some("Switch on a server above to see its public rooms.".to_owned())
+        } else if self.results.loading() && entries.is_empty() {
+            Some("Loading…".to_owned())
+        } else if entries.is_empty() && problems.is_empty() {
+            Some("No public rooms found.".to_owned())
         } else {
             None
         };
         let list = div()
-            .id("discover-list")
             .flex()
             .flex_col()
             .gap(px(2.0))
-            .h(px(340.0))
-            .min_h_0()
-            .overflow_y_scroll()
             .children(rows)
-            .when_some(status, |d, (text, bad)| {
+            .children(problems.into_iter().map(|(server, text)| {
+                div()
+                    .px(px(8.0))
+                    .py(px(6.0))
+                    .text_color(rgb(theme::danger()))
+                    .child(text.clone())
+                    .e2e("p", "discover-status error")
+                    .attr("data-server", server.unwrap_or_default())
+                    .text(text)
+            }))
+            .when_some(info, |d, text| {
                 d.child(
                     div()
                         .px(px(8.0))
                         .py(px(10.0))
-                        .text_color(rgb(if bad {
-                            theme::danger()
-                        } else {
-                            theme::text_muted()
-                        }))
+                        .text_color(rgb(theme::text_muted()))
                         .child(text.clone())
-                        .e2e("p", if bad { "discover-status error" } else { "discover-status muted" })
+                        .e2e("p", "discover-status muted")
                         .text(text),
                 )
             })
-            .when(self.next.is_some() && !self.loading, |d| {
+            .when(self.results.has_more() && !self.results.loading(), |d| {
                 d.child(button(
                     "discover-more",
                     None,
@@ -392,67 +478,93 @@ impl Render for Discover {
                     "secondary",
                     false,
                     false,
-                    cx.listener(|this, _, _, cx| this.query(true, cx)),
+                    cx.listener(|this, _, _, cx| this.more(cx)),
                 ))
             });
-        let boxed = dialog_box()
-            .id("discover-dialog")
+        div()
+            .id("discover-page")
             .track_focus(&self.focus)
             .on_key_down(cx.listener(|_, event: &gpui::KeyDownEvent, _, cx| {
                 if event.keystroke.key == "escape" {
                     cx.emit(Closed);
                 }
             }))
-            .w(px(560.0))
-            .child(heading("Discover"))
-            .child(muted(
-                "Public rooms and spaces anyone can join. Pick a server or type one in and press Enter.",
-                "muted",
-            ))
-            .child(div().flex().flex_wrap().gap(px(6.0)).children(chips))
-            .child(self.server_input.clone())
-            .child(self.search.clone())
-            .child(list)
+            .flex_1()
+            .min_w_0()
+            .h_full()
+            .flex()
+            .flex_col()
+            .items_center()
+            .bg(rgb(theme::bg_chat()))
             .child(
                 div()
+                    .id("discover-scroll")
+                    .w_full()
+                    .h_full()
+                    .overflow_y_scroll()
                     .flex()
-                    .justify_end()
-                    .child(button(
-                        "discover-close",
-                        None,
-                        "Close",
-                        "secondary",
-                        false,
-                        false,
-                        cx.listener(|_, _, _, cx| cx.emit(Closed)),
-                    )),
+                    .flex_col()
+                    .items_center()
+                    .child(
+                        div()
+                            .w_full()
+                            .max_w(px(760.0))
+                            .flex()
+                            .flex_col()
+                            .gap(px(12.0))
+                            .p(px(24.0))
+                            .child(
+                                div()
+                                    .text_size(px(1.5 * theme::REM))
+                                    .font_weight(FontWeight::BOLD)
+                                    .child("Discover")
+                                    .e2e("h1", "discover-title")
+                                    .text("Discover"),
+                            )
+                            .child(
+                                div()
+                                    .text_color(rgb(theme::text_muted()))
+                                    .child("Public rooms and spaces anyone can join, from the servers switched on below."),
+                            )
+                            .child(self.search.clone())
+                            .child(div().flex().flex_wrap().gap(px(6.0)).children(chips))
+                            .child(self.server_input.clone())
+                            .child(list),
+                    ),
             )
-            .e2e("div", "message-dialog room-dialog discover")
-            .focusable(&self.focus);
-        let this = cx.weak_entity();
-        overlay(window, cx, boxed.into_any_element(), move |_, cx| {
-            this.update(cx, |_, cx| cx.emit(Closed)).ok();
-        })
+            .e2e("div", "discover")
+            .focusable(&self.focus)
     }
 }
 
 impl crate::shell::Shell {
-    /// The compass: browse public rooms to join.
+    /// The compass: browse public rooms to join, on a page of its own.
     pub fn open_discover(&mut self, cx: &mut Context<Self>) {
+        if self.discover.is_some() {
+            return self.close_discover(cx);
+        }
         let Some(session) = self.session.clone() else {
             return;
         };
         let joined: HashSet<String> = self.rooms.iter().map(|r| r.id.to_string()).collect();
-        let dialog = cx.new(|cx| Discover::new(session, joined, cx));
-        cx.subscribe(&dialog, |this, _, _: &Closed, cx| this.dialog_close(cx))
+        let saved = self.prefs.extra.get("discover_directories").cloned();
+        let page = cx.new(|cx| Discover::new(session, joined, saved, cx));
+        cx.subscribe(&page, |this, _, _: &Closed, cx| this.close_discover(cx))
             .detach();
-        cx.subscribe(&dialog, |this, _, joined: &Joined, cx| {
-            this.dialog_close(cx);
+        cx.subscribe(&page, |this, _, choice: &Choice, cx| {
+            this.prefs
+                .extra
+                .insert("discover_directories".into(), choice.0.to_json());
+            this.save_prefs(cx);
+        })
+        .detach();
+        cx.subscribe(&page, |this, _, joined: &Joined, cx| {
+            this.close_discover(cx);
             this.pending_dm = Some(joined.0.clone());
             this.open_pending_dm(cx);
         })
         .detach();
-        cx.subscribe(&dialog, |this, _, look: &Preview, cx| {
+        cx.subscribe(&page, |this, _, look: &Preview, cx| {
             let room = morpheus_core::LinkedRoom {
                 room_id: look.0.room_id.clone(),
                 name: look.0.name.clone(),
@@ -461,10 +573,40 @@ impl crate::shell::Shell {
                 members: look.0.members,
                 joined: false,
             };
-            this.dialog_close(cx);
-            this.preview_room(room, vec![look.1.clone()], cx);
+            // The page stays under the card: closing it comes back here.
+            this.preview_room(room, look.1.clone(), cx);
         })
         .detach();
-        self.dialog_open(crate::dialogs::Dialog::Discover(dialog), cx);
+        self.discover_place = Some(self.place());
+        self.discover = Some(page);
+        cx.notify();
+    }
+
+    /// Back from Discover to exactly where it was opened from: nothing of the
+    /// room, scope or scroll behind it was touched.
+    pub fn close_discover(&mut self, cx: &mut Context<Self>) {
+        if self.discover.take().is_some() {
+            self.discover_place = None;
+            cx.notify();
+        }
+    }
+
+    /// Where the user is, as far as Discover cares: leaving it by going
+    /// anywhere else (a server in the rail, a notification, a hotkey) ends it.
+    pub fn place(&self) -> Place {
+        (
+            self.scope.clone(),
+            self.selected.clone(),
+            self.welcome.clone(),
+            self.friends_open,
+        )
     }
 }
+
+/// Scope, open room, open server overview and whether Friends shows.
+pub type Place = (
+    crate::model::Scope,
+    Option<morpheus_core::OwnedRoomId>,
+    Option<morpheus_core::OwnedRoomId>,
+    bool,
+);

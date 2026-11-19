@@ -75,6 +75,13 @@ impl Shell {
     /// Back (`-1`) or forward (`1`) through the rooms visited: the scope first,
     /// then the room, as the Dioxus bar does.
     pub fn nav_jump(&mut self, step: isize, cx: &mut Context<Self>) {
+        // Back out of Discover first: to exactly where it was opened from.
+        if self.discover.is_some() {
+            if step < 0 {
+                self.close_discover(cx);
+            }
+            return;
+        }
         let Some(room_id) = self.nav.step(step) else {
             return;
         };
@@ -258,7 +265,7 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                         "nav-back",
                         "chevron-left",
                         "Back (Alt+←)",
-                        shell.nav.can_go_back(),
+                        shell.nav.can_go_back() || shell.discover.is_some(),
                         -1,
                     ))
                     .child(nav_button(

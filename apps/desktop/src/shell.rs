@@ -220,6 +220,9 @@ pub struct Shell {
     /// Channels joined from the overview: joining, joined or why not.
     pub welcome_join: std::collections::HashMap<OwnedRoomId, crate::welcome::JoinState>,
     pub friends_open: bool,
+    /// The Discover page, when it is open over the chat, and where the user was.
+    pub discover: Option<Entity<crate::discover::Discover>>,
+    pub discover_place: Option<crate::discover::Place>,
     pub friends_page: Option<Entity<FriendsPage>>,
     /// A direct message just made, to open once the room list has it.
     pub pending_dm: Option<OwnedRoomId>,
@@ -562,6 +565,8 @@ impl Shell {
             search_input: None,
             search_was_wide: std::cell::Cell::new(false),
             friends_open: false,
+            discover: None,
+            discover_place: None,
             welcome: None,
             welcome_join: std::collections::HashMap::new(),
             friends_page: None,
@@ -889,7 +894,8 @@ impl Shell {
     /// Whether the open room's chat is out of sight: a voice channel's page
     /// with its chat closed. Nothing is read, and notices still come, then.
     pub fn chat_covered(&self) -> bool {
-        !self.calls.voice_chat && self.current().is_some_and(|r| r.is_voice && !r.is_dm)
+        self.discover.is_some()
+            || !self.calls.voice_chat && self.current().is_some_and(|r| r.is_voice && !r.is_dm)
     }
 
     /// The open room is being read (its timeline sends the read receipt):
@@ -1532,6 +1538,11 @@ pub use morpheus_view_model::diffs::apply;
 
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Going anywhere else (a server, a notification, a hotkey) ends Discover.
+        if self.discover.is_some() && self.discover_place.as_ref() != Some(&self.place()) {
+            self.discover = None;
+            self.discover_place = None;
+        }
         self.sidebar_shown = self.sidebar_width(window);
         crate::timeline::THREAD_PANEL_OPEN.store(self.thread.is_some(), std::sync::atomic::Ordering::Relaxed);
         // The shake of "nothing there": an offset while it lasts.
@@ -1676,6 +1687,15 @@ impl Render for Shell {
                     }
                 }),
             )
+            // The mouse's back and forward buttons walk the history as Alt+Left/Right do.
+            .on_mouse_down(
+                gpui::MouseButton::Navigate(gpui::NavigationDirection::Back),
+                cx.listener(|this, _, _, cx| this.nav_jump(-1, cx)),
+            )
+            .on_mouse_down(
+                gpui::MouseButton::Navigate(gpui::NavigationDirection::Forward),
+                cx.listener(|this, _, _, cx| this.nav_jump(1, cx)),
+            )
             .capture_key_down(cx.listener(|this, event: &gpui::KeyDownEvent, window, cx| {
                 if this.handle_key(event, window, cx) {
                     cx.stop_propagation();
@@ -1736,8 +1756,21 @@ impl Render for Shell {
                     .min_h_0()
                     .relative()
                     .left(px(shake.unwrap_or(0.0)))
-                    .child(left)
-                    .child(chat::render(self, window, cx))
+                    .when_some(self.discover.clone(), |d, page| {
+                        // Everything right of the rail is Discover's.
+                        d.child(
+                            div()
+                                .w(px(theme::RAIL_W))
+                                .flex_none()
+                                .h_full()
+                                .bg(rgb(theme::bg_rail()))
+                                .child(rail::render(self, cx)),
+                        )
+                        .child(page)
+                    })
+                    .when(self.discover.is_none(), |d| {
+                        d.child(left).child(chat::render(self, window, cx))
+                    })
                     .e2e("div", "shell-body")
                     .attr("data-shaking", if shake.is_some() { "true" } else { "false" })
                     .attr("data-held-pictures", crate::media::held().to_string()),

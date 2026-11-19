@@ -25,6 +25,7 @@ run=(docker run --rm --user "$(id -u):$(id -g)" -v "$DIR:/data" -e SYNAPSE_SERVE
 sed -n '/^# ---- morpheus dev overrides/,/^YAML/p' "$(dirname "$0")/up.sh" | grep -v '^YAML' >>"$DIR/homeserver.yaml"
 sed -i 's/^  - port: 8008/  - port: 8010/' "$DIR/homeserver.yaml"
 cat >>"$DIR/homeserver.yaml" <<'YAML'
+allow_guest_access: true
 room_list_publication_rules:
   - action: allow
 url_preview_enabled: true
