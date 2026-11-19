@@ -464,6 +464,8 @@ impl Shell {
             self.chime(Sound::Leave);
         }
         self.calls.state = Some(CallState::joining(room_id.clone(), room_name));
+        // The channel's chat loads meanwhile, so its panel opens full.
+        self.warm_timeline(room_id.clone(), cx);
         self.calls.joined_at_ms = now_ms();
         self.calls.left.retain(|(left, _)| *left != room_id);
         self.calls.published = None;

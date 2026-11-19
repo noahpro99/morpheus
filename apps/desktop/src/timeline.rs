@@ -50,6 +50,8 @@ use crate::{
 const CLOCK_REFRESH: Duration = Duration::from_secs(15);
 
 /// Start loading older history when the first row in view is this close to the top.
+/// The most pages a background fill asks for (a room flooded with hidden events).
+const PREFILL_MAX_PAGES: u16 = 200;
 const NEAR_TOP_ROWS: usize = 8;
 /// ... or when what is loaded is shorter than the view plus this (px).
 const FILL_PX: f32 = 400.0;
@@ -121,6 +123,9 @@ pub struct TimelineView {
     reached_start: bool,
     paginating: bool,
     auto_pages: u32,
+    /// Messages to have loaded whether or not the list is on screen (0: none), and the pages asked for them.
+    prefill: usize,
+    prefill_pages: u16,
     /// Whether the jump button was showing last frame (kept through the frame in
     /// which a list that was just changed has not measured its rows yet).
     was_away: bool,
@@ -276,6 +281,8 @@ impl TimelineView {
             reached_start: false,
             paginating: false,
             auto_pages: 0,
+            prefill: 0,
+            prefill_pages: 0,
             was_away: false,
             last_update: std::time::Instant::now(),
             paging: None,
@@ -480,6 +487,7 @@ impl TimelineView {
         self.last_update = std::time::Instant::now();
         self.rebuild();
         self.continue_jump(cx);
+        self.check_prefill(cx);
         // Sending a message brings the view to it, wherever it was scrolled.
         let sending = self.entries.iter().rev().find_map(|entry| match entry {
             TimelineEntry::Message(m) if m.is_own && m.is_local_echo => Some(m.unique_id.clone()),
@@ -836,6 +844,7 @@ impl TimelineView {
                 this.last_update = std::time::Instant::now();
                 this.rebuild();
                 this.continue_jump(cx);
+                this.check_prefill(cx);
                 cx.notify();
                 // A page of hidden events (joins, say) leaves the column short: look
                 // again once it has settled, nothing else will draw it.
@@ -918,6 +927,26 @@ impl TimelineView {
             return;
         }
         self.jump = Some((event_id, pages + 1));
+        self.load_older(cx);
+    }
+
+    /// Has this many messages loaded without being on screen (a voice channel
+    /// joined: its chat opens full), paging back through hidden events
+    /// until they are there or the start is reached.
+    pub fn prefill(&mut self, messages: usize, cx: &mut Context<Self>) {
+        self.prefill = messages;
+        self.check_prefill(cx);
+    }
+
+    fn check_prefill(&mut self, cx: &mut Context<Self>) {
+        if self.prefill == 0 || self.handle.is_none() || self.paginating || self.at_start() {
+            return;
+        }
+        let visible = self.rows.iter().filter(|r| matches!(r, Row::Message { .. })).count();
+        if visible >= self.prefill || self.prefill_pages >= PREFILL_MAX_PAGES {
+            return;
+        }
+        self.prefill_pages += 1;
         self.load_older(cx);
     }
 
@@ -1476,7 +1505,13 @@ impl TimelineView {
 
     /// What keeping this room costs, in entries (a picture counts as one).
     pub fn weight(&self) -> usize {
-        self.entries.len() + self.images.len()
+        // Hidden events (a voice channel's calls coming and going) cost next to nothing.
+        let shown = self
+            .entries
+            .iter()
+            .filter(|e| !matches!(e, TimelineEntry::Message(m) if matches!(m.kind, MessageKind::CallPlumbing)))
+            .count();
+        shown + self.images.len()
     }
 
     /// The room was marked unread: leaving it must not read it again.
@@ -2007,6 +2042,18 @@ mod widget_tests {
                 "a placeholder line is {line:?}"
             );
         }
+    }
+
+    /// Hidden call events cost next to nothing in the cache budget.
+    #[gpui::test]
+    fn hidden_call_events_do_not_count_toward_the_weight(cx: &mut TestAppContext) {
+        let (view, cx) = open(cx);
+        let mut entries: Vec<_> = (0..50)
+            .map(|n| entry(n, "@bob:x", 1000 + n as u64, MessageKind::CallPlumbing))
+            .collect();
+        entries.push(entry(100, "@bob:x", 5000, text("hello")));
+        feed(&view, cx, entries);
+        assert_eq!(view.read_with(cx, |t, _| t.weight()), 1);
     }
 
     /// A channel whose loaded events are all hidden call events automatically

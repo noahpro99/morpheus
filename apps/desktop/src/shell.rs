@@ -1078,14 +1078,10 @@ impl Shell {
             let fresh = kept.is_none();
             let session = self.session.clone();
             let room = id.clone();
-            let timeline =
-                kept.unwrap_or_else(|| cx.new(|cx| TimelineView::new(session, room.clone(), cx)));
-            if fresh {
-                cx.subscribe(&timeline, |this: &mut Self, _, event: &LinkClicked, cx| {
-                    this.link_clicked(&event.0, cx)
-                })
-                .detach();
-            }
+            let timeline = match kept {
+                Some(kept) => kept,
+                None => self.new_timeline_view(&id, cx),
+            };
             let (name, is_dm) = self
                 .rooms
                 .iter()
@@ -1125,57 +1121,7 @@ impl Shell {
                     })
                 },
             ));
-            if fresh {
-                cx.subscribe(
-                    &timeline,
-                    |this: &mut Self, from, event: &TimelineEvent, cx| match event {
-                        // A timeline kept in the background says nothing to the shell.
-                        _ if this.timeline.as_ref().is_none_or(|(_, open)| *open != from) => {}
-                        TimelineEvent::Opened(handle) => {
-                            this.timeline_handle = Some(handle.clone())
-                        }
-                        TimelineEvent::Menu(message, at) => {
-                            this.acting_in_thread = false;
-                            this.open_message_menu(message, *at, cx)
-                        }
-                        TimelineEvent::Picker(message, at) => {
-                            this.acting_in_thread = false;
-                            this.open_picker(message.id.clone(), *at, cx)
-                        }
-                        TimelineEvent::Delete(message, skip) => {
-                            this.acting_in_thread = false;
-                            this.delete_message((**message).clone(), *skip, cx)
-                        }
-                        TimelineEvent::Failed(what, err) => this.fail(what, err, cx),
-                        TimelineEvent::Thread(message) => this.open_thread((**message).clone(), cx),
-                        TimelineEvent::OpenImage(images, index) => {
-                            this.open_lightbox(images.clone(), *index, cx)
-                        }
-                        TimelineEvent::FullscreenVideo(player) => {
-                            this.open_video(player.clone(), cx)
-                        }
-                        TimelineEvent::SenderMenu(message, at) => {
-                            this.open_sender_menu(message, *at, cx)
-                        }
-                        TimelineEvent::Sender(message, at) => {
-                            let seen =
-                                Some((message.sender_name.clone(), message.sender_avatar.clone()));
-                            this.open_profile(message.sender.clone(), Some(*at), seen, cx)
-                        }
-                        _ => {}
-                    },
-                )
-                .detach();
-                cx.subscribe(
-                    &timeline,
-                    |this: &mut Self, _, event: &TimelineEvent, cx| {
-                        if let TimelineEvent::OpenSettings(focus) = event {
-                            this.open_settings(*focus, cx);
-                        }
-                    },
-                )
-                .detach();
-            }
+            // (a fresh timeline's subscriptions are in `new_timeline_view`)
             let keys = self.keys;
             timeline.update(cx, |timeline, cx| timeline.set_keys(keys, cx));
             let resumed = (!fresh).then(|| timeline.clone());
@@ -1216,6 +1162,94 @@ impl Shell {
         self.push_nicknames(cx);
         self.refresh_pinned(cx);
         cx.notify();
+    }
+
+    /// A timeline view for `id`, wired to the shell (clicks, menus, settings).
+    fn new_timeline_view(&mut self, id: &OwnedRoomId, cx: &mut Context<Self>) -> Entity<TimelineView> {
+        let session = self.session.clone();
+        let timeline = cx.new(|cx| TimelineView::new(session, id.clone(), cx));
+        cx.subscribe(&timeline, |this: &mut Self, _, event: &LinkClicked, cx| {
+            this.link_clicked(&event.0, cx)
+        })
+        .detach();
+            cx.subscribe(
+                &timeline,
+                |this: &mut Self, from, event: &TimelineEvent, cx| match event {
+                    // A timeline kept in the background says nothing to the shell.
+                    _ if this.timeline.as_ref().is_none_or(|(_, open)| *open != from) => {}
+                    TimelineEvent::Opened(handle) => {
+                        this.timeline_handle = Some(handle.clone())
+                    }
+                    TimelineEvent::Menu(message, at) => {
+                        this.acting_in_thread = false;
+                        this.open_message_menu(message, *at, cx)
+                    }
+                    TimelineEvent::Picker(message, at) => {
+                        this.acting_in_thread = false;
+                        this.open_picker(message.id.clone(), *at, cx)
+                    }
+                    TimelineEvent::Delete(message, skip) => {
+                        this.acting_in_thread = false;
+                        this.delete_message((**message).clone(), *skip, cx)
+                    }
+                    TimelineEvent::Failed(what, err) => this.fail(what, err, cx),
+                    TimelineEvent::Thread(message) => this.open_thread((**message).clone(), cx),
+                    TimelineEvent::OpenImage(images, index) => {
+                        this.open_lightbox(images.clone(), *index, cx)
+                    }
+                    TimelineEvent::FullscreenVideo(player) => {
+                        this.open_video(player.clone(), cx)
+                    }
+                    TimelineEvent::SenderMenu(message, at) => {
+                        this.open_sender_menu(message, *at, cx)
+                    }
+                    TimelineEvent::Sender(message, at) => {
+                        let seen =
+                            Some((message.sender_name.clone(), message.sender_avatar.clone()));
+                        this.open_profile(message.sender.clone(), Some(*at), seen, cx)
+                    }
+                    _ => {}
+                },
+            )
+            .detach();
+            cx.subscribe(
+                &timeline,
+                |this: &mut Self, _, event: &TimelineEvent, cx| {
+                    if let TimelineEvent::OpenSettings(focus) = event {
+                        this.open_settings(*focus, cx);
+                    }
+                },
+            )
+            .detach();
+        timeline
+    }
+
+    /// A voice channel was joined: its chat loads in the background, a screen
+    /// of messages (past the hidden call events), so that opening the panel
+    /// shows it at once.
+    pub(crate) fn warm_timeline(&mut self, id: OwnedRoomId, cx: &mut Context<Self>) {
+        const PREFILL: usize = 30;
+        if self.session.is_none() {
+            return;
+        }
+        if let Some((room, timeline)) = &self.timeline
+            && room == &id
+        {
+            timeline.update(cx, |t, cx| t.prefill(PREFILL, cx));
+            return;
+        }
+        let timeline = match self.timeline_cache.take(&id) {
+            Some(kept) => kept,
+            None => {
+                let fresh = self.new_timeline_view(&id, cx);
+                // Out of sight, as a room just left is.
+                fresh.update(cx, |t, _| t.leave());
+                fresh
+            }
+        };
+        timeline.update(cx, |t, cx| t.prefill(PREFILL, cx));
+        let weight = timeline.update(cx, |t, _| t.weight());
+        drop(self.timeline_cache.insert(id, timeline, weight));
     }
 
     /// Puts the open room's timeline away in the cache of rooms just left
