@@ -1760,16 +1760,35 @@ impl Render for Shell {
                     .relative()
                     .left(px(shake.unwrap_or(0.0)))
                     .when_some(self.discover.clone(), |d, page| {
-                        // Everything right of the rail is Discover's.
+                        // Everything right of the rail is Discover's, above the
+                        // user bar, which stays where it is on other pages.
+                        let rail_col = div()
+                            .w(px(theme::RAIL_W))
+                            .flex_none()
+                            .h_full()
+                            .bg(rgb(theme::bg_rail()))
+                            .child(rail::render(self, cx));
+                        let bar = user_bar::render(self, cx);
                         d.child(
                             div()
-                                .w(px(theme::RAIL_W))
-                                .flex_none()
-                                .h_full()
-                                .bg(rgb(theme::bg_rail()))
-                                .child(rail::render(self, cx)),
+                                .flex()
+                                .flex_col()
+                                .size_full()
+                                .child(
+                                    div()
+                                        .flex()
+                                        .flex_1()
+                                        .min_h_0()
+                                        .child(rail_col)
+.child(page),
+                                )
+                                .child(
+                                    div()
+                                        .w(px(theme::RAIL_W + self.sidebar_shown))
+                                        .flex_none()
+                                        .child(bar),
+                                ),
                         )
-                        .child(page)
                     })
                     .when(self.discover.is_none(), |d| {
                         d.child(left).child(chat::render(self, window, cx))
