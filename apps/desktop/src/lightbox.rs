@@ -381,21 +381,7 @@ impl Render for Lightbox {
         }
         let boxed = div()
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-            .child(
-                div()
-                    .id("lightbox-close")
-                    .absolute()
-                    .top(px(-28.0))
-                    .right(px(-8.0))
-                    .text_size(px(1.2 * theme::REM))
-                    .text_color(rgb(theme::text_muted()))
-                    .cursor_pointer()
-                    .child("✕")
-                    .on_click(cx.listener(|_, _: &ClickEvent, _, cx| cx.emit(Closed)))
-                    .e2e("button", "lightbox-close")
-                    .attr("title", "Close")
-                    .text("✕"),
-            )
+            .child(crate::dialogs::modal_close_at(-36.0, -8.0, cx.listener(|_, _: &ClickEvent, _, cx| cx.emit(Closed))))
             .child(row)
             .when(zoom <= 1.001, |d| {
                 d.child(

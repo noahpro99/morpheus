@@ -510,9 +510,56 @@ pub(crate) fn overlay(
     deferred(layer).with_priority(20).into_any_element()
 }
 
+/// The close X of every modal (#222): top right, tooltip "Close (Esc)". One
+/// component so a modal cannot go without; `on_click` closes the modal.
+pub(crate) fn modal_close(
+    on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
+) -> impl IntoElement {
+    modal_close_at(8.0, 8.0, on_click)
+}
+
+/// [`modal_close`] at another place (the image viewer's is outside its picture).
+pub(crate) fn modal_close_at(
+    top: f32,
+    right: f32,
+    on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
+) -> impl IntoElement {
+    use crate::tooltip::TipExt as _;
+    div()
+        .id("modal-close")
+        .absolute()
+        .top(px(top))
+        .right(px(right))
+        .size(px(28.0))
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(px(theme::RADIUS_SM))
+        .cursor_pointer()
+        .text_color(rgb(theme::text_muted()))
+        .hover(|s| s.bg(rgba(theme::bg_hover())).text_color(rgb(theme::text())))
+        .child(icon("x", 16.0))
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        .on_click(on_click)
+        .tip("Close (Esc)")
+        .e2e("button", "modal-close ghost")
+        .attr("title", "Close")
+}
+
+/// A modal's X when the modal closes by its own Escape handling: it sends
+/// Escape, as the keyboard does.
+fn escape_close(window: &mut Window, cx: &mut gpui::App) {
+    window.defer(cx, |window, cx| {
+        if let Ok(escape) = gpui::Keystroke::parse("escape") {
+            window.dispatch_keystroke(escape, cx);
+        }
+    });
+}
+
 /// `.message-dialog`: the box.
 pub(crate) fn dialog_box() -> Div {
     div()
+        .relative()
         .flex()
         .flex_col()
         .gap(px(12.0))
@@ -526,6 +573,7 @@ pub(crate) fn dialog_box() -> Div {
         .text_color(rgb(theme::text()))
         .line_height(relative(theme::LINE_HEIGHT))
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        .child(modal_close(|_, window, cx| escape_close(window, cx)))
 }
 
 pub(crate) fn heading(text: &str) -> impl IntoElement {

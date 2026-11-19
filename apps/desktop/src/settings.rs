@@ -1734,21 +1734,6 @@ impl Render for SettingsView {
                     .e2e("h2", "")
                     .text(page.label()),
             )
-            .child(
-                div()
-                    .id("settings-close")
-                    .px(px(8.0))
-                    .py(px(4.0))
-                    .rounded(px(theme::RADIUS_SM))
-                    .cursor_pointer()
-                    .text_color(rgb(theme::text_muted()))
-                    .hover(|s| s.bg(rgba(theme::bg_hover())))
-                    .child("✕")
-                    .on_click(cx.listener(|this, _, _, cx| this.close(cx)))
-                    .e2e("button", "ghost")
-                    .attr("title", "Close")
-                    .text("✕"),
-            )
             .e2e("header", "settings-header");
         let content = div()
             .id("settings-page")
@@ -1790,9 +1775,11 @@ impl Render for SettingsView {
             .overflow_hidden()
             .rounded(px(theme::RADIUS_XL))
             .bg(rgb(theme::bg_chat()))
+            .relative()
             .shadow_lg()
             .child(nav)
             .child(content)
+            .child(crate::dialogs::modal_close(cx.listener(|this, _, _, cx| this.close(cx))))
             .e2e("div", "settings");
         div()
             .absolute()
