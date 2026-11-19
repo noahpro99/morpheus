@@ -42,6 +42,46 @@ fn comparable(path: &Path) -> String {
     text.trim_end_matches('\\').to_lowercase()
 }
 
+/// The process to wait for before starting the app (Restart: the old copy is
+/// told to exit and the launcher is started with its id).
+fn restart_pid(value: Option<OsString>) -> Option<u32> {
+    value?.to_str()?.trim().parse().ok().filter(|pid| *pid != 0)
+}
+
+/// Wait until the process `pid` has ended (at most half a minute; one that is
+/// not there is already gone).
+#[cfg(windows)]
+fn wait_for_exit(pid: u32) {
+    use std::os::windows::process::CommandExt as _;
+    // No Win32 calls (this program has no unsafe code): ask tasklist, with no
+    // console window, until the process is not listed.
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let text = pid.to_string();
+    for _ in 0..300 {
+        let listed = Command::new("tasklist")
+            .args(["/FI", &format!("PID eq {pid}"), "/NH"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+            .map(|out| String::from_utf8_lossy(&out.stdout).contains(&text))
+            .unwrap_or(false);
+        if !listed {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+}
+
+#[cfg(not(windows))]
+fn wait_for_exit(pid: u32) {
+    let proc = PathBuf::from(format!("/proc/{pid}"));
+    for _ in 0..300 {
+        if !proc.exists() {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+}
+
 /// What to start.
 #[derive(Debug, PartialEq, Eq)]
 enum Plan {
@@ -114,7 +154,7 @@ fn run() -> std::io::Result<i32> {
         .ok_or_else(|| std::io::Error::other("the launcher has no folder"))?
         .to_owned();
     let stable = std::env::var_os("LOCALAPPDATA").map(|dir| stable_dir(Path::new(&dir)));
-    let off = ["MORPHEUS_NO_INSTALL", "MORPHEUS_UPDATE_SELF_TEST", "MORPHEUS_E2E_PORT"]
+    let off = ["MORPHEUS_NO_INSTALL", "MORPHEUS_UPDATE_SELF_TEST", "MORPHEUS_RESTART_SELF_TEST", "MORPHEUS_E2E_PORT"]
         .iter()
         .any(|name| std::env::var_os(name).is_some())
         || !app_exe(&root).is_file();
@@ -129,7 +169,14 @@ fn run() -> std::io::Result<i32> {
         },
     };
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
-    let mut child = Command::new(&app).args(args).spawn()?;
+    // A restart: the old copy is still ending; the new one starts after it.
+    if let Some(pid) = restart_pid(std::env::var_os("MORPHEUS_RESTART_AFTER_PID")) {
+        wait_for_exit(pid);
+    }
+    let mut child = Command::new(&app)
+        .args(args)
+        .env("MORPHEUS_VIA_LAUNCHER", "1")
+        .spawn()?;
     if std::env::var_os("MORPHEUS_LAUNCHER_WAIT").is_some() {
         return Ok(child.wait()?.code().unwrap_or(1));
     }
@@ -149,6 +196,22 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_restart_names_the_process_to_wait_for() {
+        assert_eq!(restart_pid(Some("4242".into())), Some(4242));
+        assert_eq!(restart_pid(Some(" 7 ".into())), Some(7));
+        assert_eq!(restart_pid(Some("0".into())), None);
+        assert_eq!(restart_pid(Some("soon".into())), None);
+        assert_eq!(restart_pid(None), None);
+    }
+
+    #[test]
+    fn waiting_for_a_process_that_is_not_there_returns_at_once() {
+        let started = std::time::Instant::now();
+        wait_for_exit(u32::MAX - 1);
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
+    }
 
     #[test]
     fn the_app_is_in_the_app_folder_beside_the_launcher() {

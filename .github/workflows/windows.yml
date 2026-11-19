@@ -128,6 +128,8 @@ jobs:
       # (what a taskbar pin points at) untouched; the launcher then starts the
       # new version. An old single-program install migrates to the launcher
       # layout the same way (#186).
+      # Restart Morpheus goes through that launcher too, after the old process
+      # has ended (#232).
       - name: Update works
         run: scripts/update-self-test.sh "$RELEASE_ZIP"
 

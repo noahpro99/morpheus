@@ -82,6 +82,7 @@ mod titlebar;
 mod tray;
 mod typing;
 mod update;
+mod restart;
 mod update_self_test;
 mod user_bar;
 mod video;
@@ -666,26 +667,9 @@ pub(crate) fn quit(cx: &mut App) {
 /// Start the app again: a new copy is launched a moment from now (once this
 /// one has let go of the single-instance lock), then this one quits.
 pub(crate) fn restart(cx: &mut App) {
-    if let Ok(exe) = std::env::current_exe() {
-        let args: Vec<String> = std::env::args().skip(1).collect();
-        #[cfg(unix)]
-        let spawned = std::process::Command::new("sh")
-            .arg("-c")
-            .arg("sleep 1; exec \"$0\" \"$@\"")
-            .arg(&exe)
-            .args(&args)
-            .spawn();
-        #[cfg(windows)]
-        let spawned = std::process::Command::new("cmd")
-            .arg("/C")
-            .arg("ping -n 2 127.0.0.1 >nul & start \"\"")
-            .arg(&exe)
-            .args(&args)
-            .spawn();
-        if let Err(err) = spawned {
-            eprintln!("morpheus-desktop: could not start again: {err}");
-            return;
-        }
+    if let Err(err) = restart::spawn() {
+        eprintln!("morpheus-desktop: could not start again: {err}");
+        return;
     }
     quit(cx);
 }
@@ -893,6 +877,11 @@ fn main() {
     // CI's check that an update installs and the new version starts: no window.
     if update_self_test::requested() {
         update_self_test::run(data_dir());
+    }
+    // CI's check that Restart goes through the launcher and the old process
+    // is gone before the new one runs (scripts/update-self-test.sh): no window.
+    if let Some(marker) = std::env::var_os("MORPHEUS_RESTART_SELF_TEST") {
+        restart::self_test(std::path::Path::new(&marker));
     }
     // CI's check (scripts/mac-check.sh) that the shared screen's sound starts
     // with what this computer plays, or says why not: no window.

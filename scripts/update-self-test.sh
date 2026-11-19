@@ -156,5 +156,33 @@ if [ -n "$app_exe" ]; then
     [ -f "$work/single/app/update-self-test.txt" ] && echo "ok: the new files are in app/" || fail "the new release's file is missing from app/"
     grep -qi 'app.morpheus-desktop' "$marker2" && echo "ok: the launcher started the app in app/" || fail "the migrated install did not run from app/: $(cat "$marker2")"
     no_leftovers "$work/single"
+
+    # Restart Morpheus (#232) goes through the launcher: the installed app
+    # restarts itself (self-test mode: no window), the old process is gone
+    # before the new one runs, and the new one came through Morpheus.exe, the
+    # same version, from app/.
+    echo "--- restart goes through the launcher"
+    rmark="$work/restart-marker.txt"
+    rm -f "$rmark"
+    MORPHEUS_RESTART_SELF_TEST="$(native "$rmark")" \
+    MORPHEUS_LAUNCHER_WAIT=1 \
+        "$exe" || fail "the first run of the restart self-test exited with $?"
+    for _ in $(seq 120); do grep -q '^second ' "$rmark" 2>/dev/null && break; sleep 0.5; done
+    cat "$rmark" 2>/dev/null || true
+    first=$(grep '^first ' "$rmark" 2>/dev/null | head -1)
+    second=$(grep '^second ' "$rmark" 2>/dev/null | head -1)
+    if [ -z "$first" ] || [ -z "$second" ]; then
+        fail "the restart did not produce a new process (first: '$first', second: '$second')"
+    else
+        first_pid=$(echo "$first" | sed -E 's/^first pid=([0-9]+) .*/\1/')
+        second_pid=$(echo "$second" | sed -E 's/^second pid=([0-9]+) .*/\1/')
+        [ "$first_pid" != "$second_pid" ] && echo "ok: a new process runs ($second_pid, was $first_pid)" || fail "the restart is the same process"
+        echo "$second" | grep -q "from=$first_pid " && echo "ok: the new one was told which process to wait for" || fail "the new process did not name the old one: $second"
+        echo "$second" | grep -q 'old_running=false' && echo "ok: the old process was gone before the new one ran" || fail "the old process was still running: $second"
+        echo "$second" | grep -q 'launcher=true' && echo "ok: it was started through the launcher" || fail "the new process did not come through the launcher: $second"
+        v1=$(echo "$first" | sed -E 's/.* version=([^ ]+) .*/\1/'); v2=$(echo "$second" | sed -E 's/.* version=([^ ]+) .*/\1/')
+        [ "$v1" = "$v2" ] && echo "ok: the same app version ($v2)" || fail "the version changed over the restart: $v1 -> $v2"
+        echo "$second" | grep -qi 'app.morpheus-desktop' && echo "ok: it runs from app/" || fail "the new process does not run from app/: $second"
+    fi
 fi
 exit $failed
