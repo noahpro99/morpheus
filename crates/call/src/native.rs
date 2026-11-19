@@ -681,6 +681,35 @@ impl Call {
         });
     }
 
+    /// Hide (`on`) or show `user`'s camera: its track is unsubscribed (nothing
+    /// is downloaded) or subscribed again.
+    pub fn hide_video(&self, user: &str, on: bool) {
+        let _runtime = runtime().enter();
+        if let Ok(mut hidden) = HIDDEN_VIDEO.lock() {
+            if on {
+                hidden.insert(user.to_owned());
+            } else {
+                hidden.remove(user);
+            }
+        }
+        let mut rooms = vec![self.room.clone()];
+        if let Ok(others) = self.others.lock() {
+            rooms.extend(others.values().map(|l| l.room.clone()));
+        }
+        for room in &rooms {
+            for participant in room.remote_participants().values() {
+                if participant.identity().as_str().strip_prefix(user).is_none_or(|rest| !rest.starts_with(':')) {
+                    continue;
+                }
+                for publication in participant.track_publications().values() {
+                    if publication.source() == TrackSource::Camera {
+                        publication.set_subscribed(!on);
+                    }
+                }
+            }
+        }
+    }
+
     /// The call services of the other SFUs listened on, and whether each
     /// is still connected (one that dropped is to be connected again).
     pub fn listening(&self) -> Vec<(String, bool)> {
@@ -1848,6 +1877,25 @@ async fn play_tone(source: NativeAudioSource) {
 
 /// The shares (LiveKit identities) this device watches.
 static WATCHING: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(Mutex::default);
+
+/// People whose camera is hidden here (by user id, e.g. `@bob:server`): their
+/// camera track is not subscribed to, so nothing of it is downloaded.
+static HIDDEN_VIDEO: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(Mutex::default);
+
+fn video_hidden(identity: &str) -> bool {
+    HIDDEN_VIDEO.lock().is_ok_and(|h| {
+        h.iter().any(|user| identity.strip_prefix(user.as_str()).is_some_and(|rest| rest.starts_with(':')))
+    })
+}
+
+/// Whether what `identity` publishes as `source` is received as it appears.
+fn receive_on_sight(identity: &str, source: TrackSource) -> bool {
+    if is_share(source) {
+        watching(identity)
+    } else {
+        !(source == TrackSource::Camera && video_hidden(identity))
+    }
+}
 /// Who watches what, as the others said.
 static TALLY: LazyLock<Mutex<crate::watch::Tally>> = LazyLock::new(Mutex::default);
 
@@ -1887,7 +1935,7 @@ fn subscribe_existing(room: &std::sync::Weak<Room>, tx: &UnboundedSender<CallEve
     for participant in room.remote_participants().values() {
         let identity = participant.identity().to_string();
         for publication in participant.track_publications().values() {
-            if !is_share(publication.source()) || watching(&identity) {
+            if receive_on_sight(&identity, publication.source()) {
                 publication.set_subscribed(true);
             }
             if publication.source() == TrackSource::Screenshare {
@@ -2187,11 +2235,7 @@ async fn forward_events(
             RoomEvent::TrackPublished { publication, participant } => {
                 let identity = participant.identity().to_string();
                 let screen = publication.source() == TrackSource::Screenshare;
-                if is_share(publication.source()) {
-                    if watching(&identity) {
-                        publication.set_subscribed(true);
-                    }
-                } else {
+                if receive_on_sight(&identity, publication.source()) {
                     publication.set_subscribed(true);
                 }
                 if !screen {

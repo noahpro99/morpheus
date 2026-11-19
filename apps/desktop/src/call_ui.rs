@@ -1179,6 +1179,23 @@ fn video_card(
         }
         tile = tile.child(watch_overlay(shell, cx, &feed.user));
     }
+    if own && feed.screen && in_background() {
+        tile = tile.child(
+            div()
+                .absolute()
+                .inset_0()
+                .bg(black(0.55))
+                .flex()
+                .items_center()
+                .justify_center()
+                .px(px(16.0))
+                .text_color(rgb(theme::OVERLAY_TEXT))
+                .text_align(gpui::TextAlign::Center)
+                .child("Preview paused while Morpheus is in the background")
+                .e2e("div", "preview-paused")
+                .text("Preview paused while Morpheus is in the background"),
+        );
+    }
     if own && feed.screen {
         // How many people watch this share (this device's own preview does not
         // count): nothing is sent while it is nobody.
@@ -1787,6 +1804,13 @@ fn stage_body(
             },
         )
         .attr("data-cards", count.to_string())
+        // Video tracks being received (a hidden camera is not): for the tests.
+        .attr(
+            "data-receiving",
+            morpheus_call::call_diag()
+                .map_or(0, |d| d.tracks.iter().filter(|t| t.direction == "receiving").count())
+                .to_string(),
+        )
         .into_any_element()
 }
 
@@ -2474,6 +2498,11 @@ impl VideoFrame {
         {
             return;
         }
+        // Your own share's preview freezes on its last picture while the window is
+        // in the background (the first picture still comes).
+        if self.key == morpheus_call::LOCAL_SCREEN && self.seen != 0 && in_background() {
+            return;
+        }
         let Some(frame) = morpheus_call::latest_frame(&self.key) else {
             return;
         };
@@ -2835,4 +2864,23 @@ impl Shell {
         let name = shown(self, &user);
         self.open_user_menu_extra(room, user, name, extra, at, cx);
     }
+}
+
+/// The window is not the one being used (another has the focus): your own
+/// preview of your share stops being redrawn, to save the decode and render
+/// work; what is sent is not affected.
+static BACKGROUND: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// A test can say the window is in the background (1) or the foreground (2)
+/// whatever the system says; 0 leaves it to the system (a test window is in the
+/// foreground then: headless windows never have the focus).
+pub static FORCE_BACKGROUND: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+/// Note whether the window has the focus; whether that changed.
+pub fn set_background(background: bool) -> bool {
+    BACKGROUND.swap(background, std::sync::atomic::Ordering::Relaxed) != background
+}
+
+pub fn in_background() -> bool {
+    BACKGROUND.load(std::sync::atomic::Ordering::Relaxed)
 }

@@ -1823,8 +1823,13 @@ impl Shell {
 impl Shell {
     /// Hide someone's camera on their card (the avatar shows instead), or show it again.
     pub fn toggle_hide_video(&mut self, user: OwnedUserId, cx: &mut Context<Self>) {
-        if !self.calls.hidden_video.remove(&user) {
-            self.calls.hidden_video.insert(user);
+        let hidden = !self.calls.hidden_video.remove(&user);
+        if hidden {
+            self.calls.hidden_video.insert(user.clone());
+        }
+        // Nothing of their camera is downloaded while it is hidden.
+        if let Some(call) = &self.calls.media {
+            call.hide_video(user.as_str(), hidden);
         }
         cx.notify();
     }

@@ -1597,6 +1597,15 @@ impl Render for Shell {
         let menu = menu::render(self, window, cx);
         let screen_quality = crate::screen_quality::render(self, cx);
         let noise_card = crate::noise::render(self, cx);
+        // Your own share's preview rests while the window is in the background.
+        let background = match crate::call_ui::FORCE_BACKGROUND.load(std::sync::atomic::Ordering::Relaxed) {
+            1 => true,
+            2 => false,
+            _ => !window.is_window_active() && std::env::var_os("MORPHEUS_E2E_PORT").is_none(),
+        };
+        if crate::call_ui::set_background(background) {
+            cx.notify();
+        }
         self.keep_mic_fresh(cx);
         if self.calls.audio_cache.is_none() && !self.calls.audio_reading && self.session.is_some() {
             self.refresh_audio_cache(cx);
