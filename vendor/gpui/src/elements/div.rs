@@ -2594,6 +2594,8 @@ pub(crate) enum ActiveTooltip {
         tooltip: AnyTooltip,
         _task: Task<()>,
     },
+    /// A click hid the tooltip; it stays hidden until the pointer leaves the element.
+    Suppressed,
 }
 
 pub(crate) fn clear_active_tooltip(
@@ -2604,6 +2606,7 @@ pub(crate) fn clear_active_tooltip(
         None => {}
         Some(ActiveTooltip::WaitingForShow { .. }) => {}
         Some(ActiveTooltip::Visible { .. }) => window.refresh(),
+        Some(ActiveTooltip::Suppressed) => {}
         Some(ActiveTooltip::WaitingForHide { .. }) => window.refresh(),
     }
 }
@@ -2617,6 +2620,7 @@ pub(crate) fn clear_active_tooltip_if_not_hoverable(
         Some(ActiveTooltip::WaitingForShow { .. }) => false,
         Some(ActiveTooltip::Visible { is_hoverable, .. }) => !is_hoverable,
         Some(ActiveTooltip::WaitingForHide { .. }) => false,
+        Some(ActiveTooltip::Suppressed) => false,
     };
     if should_clear {
         active_tooltip.borrow_mut().take();
@@ -2631,6 +2635,7 @@ pub(crate) fn set_tooltip_on_window(
     let tooltip = match active_tooltip.borrow().as_ref() {
         None => return None,
         Some(ActiveTooltip::WaitingForShow { .. }) => return None,
+        Some(ActiveTooltip::Suppressed) => return None,
         Some(ActiveTooltip::Visible { tooltip, .. }) => tooltip.clone(),
         Some(ActiveTooltip::WaitingForHide { tooltip, .. }) => tooltip.clone(),
     };
@@ -2666,7 +2671,18 @@ pub(crate) fn register_tooltip_mouse_handlers(
 
     window.on_mouse_event({
         let active_tooltip = active_tooltip.clone();
-        move |_: &MouseDownEvent, _phase, window: &mut Window, _cx| {
+        move |event: &MouseDownEvent, _phase, window: &mut Window, _cx| {
+            // A click on the element hides its tooltip until the pointer leaves.
+            if anchor.is_some_and(|bounds| bounds.contains(&event.position))
+                && !tooltip_id.is_some_and(|tooltip_id| tooltip_id.is_hovered(window))
+            {
+                let was_shown = active_tooltip.borrow().is_some();
+                *active_tooltip.borrow_mut() = Some(ActiveTooltip::Suppressed);
+                if was_shown {
+                    window.refresh();
+                }
+                return;
+            }
             if !tooltip_id.is_some_and(|tooltip_id| tooltip_id.is_hovered(window)) {
                 clear_active_tooltip_if_not_hoverable(&active_tooltip, window);
             }
@@ -2713,6 +2729,13 @@ fn handle_tooltip_mouse_move(
     }
 
     let action = match active_tooltip.borrow().as_ref() {
+        Some(ActiveTooltip::Suppressed) => {
+            if anchor.is_some_and(|bounds| bounds.contains(&window.mouse_position())) {
+                Action::None
+            } else {
+                Action::CancelShow
+            }
+        }
         None => {
             let is_hovered = check_is_hovered(window);
             if is_hovered && phase.bubble() {
@@ -2830,7 +2853,7 @@ fn handle_tooltip_check_visible_and_update(
                 Action::None
             }
         }
-        None | Some(ActiveTooltip::WaitingForShow { .. }) => Action::None,
+        None | Some(ActiveTooltip::WaitingForShow { .. }) | Some(ActiveTooltip::Suppressed) => Action::None,
     };
 
     match action {
