@@ -1497,13 +1497,18 @@ fn cards(
         },
     );
     let strip_h = layout.strip_h;
+    // The focused card and the strip (when shown) are one group, centred in the
+    // stage: the strip right under the card with the usual gap.
+    let (_, card_h) = fit_ratio(main_room, ratio);
+    let group_h = card_h + if others > 0 { 8.0 + strip_h } else { 0.0 };
+    let pad = ((stage.1 - 1.0 - group_h) / 2.0).max(0.0);
     let mut col = vec![
         div()
             .flex_none()
-            .h(px(main_room.1))
+            .h(px(card_h))
             .flex()
             .justify_center()
-            .items_start()
+            .items_center()
             .children(
                 main.into_iter()
                     .map(|c| draw(c, Fit::Main(main_room.0, main_room.1), cx)),
@@ -1512,6 +1517,7 @@ fn cards(
             .into_any_element(),
     ];
     if others > 0 {
+        col.push(div().flex_none().h(px(8.0)).into_any_element());
         col.push(
             div()
                 .flex_none()
@@ -1564,7 +1570,7 @@ fn cards(
         );
     }
     if has_others {
-        let top = if hidden { main_room.1 - 26.0 } else { main_room.1 - 6.0 };
+        let top = pad + if hidden { card_h - 26.0 } else { card_h - 6.0 };
         let (name, title) = if hidden {
             ("chevron-up", "Show members")
         } else {
@@ -1599,7 +1605,7 @@ fn cards(
                 .into_any_element(),
         );
     }
-    let out = vec![div().relative().w_full().flex().flex_col().children(col).into_any_element()];
+    let out = vec![div().relative().w_full().flex().flex_col().pt(px(pad)).children(col).into_any_element()];
     (out, true)
 }
 
