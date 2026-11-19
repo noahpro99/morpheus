@@ -77,8 +77,9 @@ pub struct RoomSummary {
     pub inviter: Option<String>,
     /// Who is in the room's call (MatrixRTC), oldest first; empty when none.
     pub call_participants: Vec<OwnedUserId>,
-    /// When the call began (ms since the epoch), from its membership events; None when nobody is in it.
-    pub call_started_ms: Option<u64>,
+    /// The room's call membership events (left ones too): when the call began is
+    /// worked out from them, at the time it is shown.
+    pub call_memberships: Vec<crate::CallMembership>,
     /// What each person in the call has on (muted, deafened, camera, screen),
     /// as Morpheus publishes it; people in other apps are missing.
     pub call_media: Vec<(OwnedUserId, crate::CallMedia)>,
@@ -193,7 +194,7 @@ impl RoomSummary {
             inviter,
             call_participants: call_participants_now.clone(),
             call_media: crate::calls::call_media(&room).await,
-            call_started_ms: if call_participants_now.is_empty() { None } else { crate::calls::call_started(&room).await },
+            call_memberships: if call_participants_now.is_empty() { Vec::new() } else { crate::calls::call_memberships(&room).await },
             favorite: room.is_favourite(),
             is_voice: room
                 .room_type()

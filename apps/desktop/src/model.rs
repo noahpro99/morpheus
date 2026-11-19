@@ -90,7 +90,7 @@ pub mod tests {
             inviter: None,
             call_participants: Vec::new(),
             call_media: Vec::new(),
-            call_started_ms: None,
+            call_memberships: Vec::new(),
             favorite: false,
             is_voice: false,
             is_encrypted: false,

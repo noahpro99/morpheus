@@ -165,7 +165,10 @@ impl Shell {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis() as u64)
             .unwrap_or_default();
-        crate::view_model::calls::call_timer(now, room.call_started_ms)
+        crate::view_model::calls::call_timer(
+            now,
+            crate::view_model::calls::call_start(now, &room.call_memberships),
+        )
     }
 
     pub fn call_shown(&self, room: &RoomSummary) -> Vec<OwnedUserId> {

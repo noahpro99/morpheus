@@ -57,7 +57,7 @@ pub use accounts::SavedAccount;
 pub use blur::placeholder as blur_placeholder;
 pub use calls::{
     CallCredentials, CallKey, CallKeyUpdates, CallMedia, CallMember, IncomingCall, RING_FOR_MS,
-    RingUpdates, Ringing, Role as CallRole, foci_to_subscribe,
+    CallMembership, RingUpdates, Ringing, Role as CallRole, foci_to_subscribe,
 };
 pub use directory::{PublicRoom, PublicRooms};
 pub use emotes::{Emote, EmotePack, clean_shortcode, message_content, parse_pack};

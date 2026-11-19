@@ -1794,7 +1794,7 @@ mod tests {
             is_voice: false,
             is_encrypted: false,
             call_media: Vec::new(),
-            call_started_ms: None,
+            call_memberships: Vec::new(),
         }
     }
 

@@ -2092,35 +2092,43 @@ async fn leave_now(
     Ok(())
 }
 
+/// One member of a room's call as its state event says (MatrixRTC); the
+/// call's start is worked out from these (`view_model::calls::call_start`).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct CallMembership {
+    /// Left: the event's content is empty.
+    pub left: bool,
+    /// When this device joined, as it says (`created_ts`).
+    pub created_ts: Option<u64>,
+    /// When the event was sent (the server's clock).
+    pub origin_server_ts: Option<u64>,
+    /// How long the membership lasts from when it began (`expires`, an older
+    /// way of letting a membership lapse), when it says.
+    pub expires_ms: Option<u64>,
+}
 
-/// When the room's call began, in milliseconds: the earliest `created_ts`
-/// (else the event's own time) among the call's present memberships. The
-/// same for everyone, as it comes from the membership state events.
-pub(crate) async fn call_started(room: &matrix_sdk::Room) -> Option<u64> {
+/// Every call membership event of the room, left ones too.
+pub(crate) async fn call_memberships(room: &matrix_sdk::Room) -> Vec<CallMembership> {
     use matrix_sdk::deserialized_responses::RawAnySyncOrStrippedState;
-    let events = room.get_state_events(StateEventType::CallMember).await.ok()?;
-    let mut earliest: Option<u64> = None;
-    for raw in events {
-        let RawAnySyncOrStrippedState::Sync(raw) = raw else {
-            continue;
-        };
-        let Ok(event) = raw.deserialize_as::<Value>() else {
-            continue;
-        };
-        let content = &event["content"];
-        // Left: an empty membership.
-        if content.get("device_id").is_none() {
-            continue;
-        }
-        let at = content["created_ts"]
-            .as_u64()
-            .or_else(|| event["origin_server_ts"].as_u64());
-        earliest = match (earliest, at) {
-            (Some(a), Some(b)) => Some(a.min(b)),
-            (a, b) => a.or(b),
-        };
-    }
-    earliest
+    let Ok(events) = room.get_state_events(StateEventType::CallMember).await else {
+        return Vec::new();
+    };
+    events
+        .into_iter()
+        .filter_map(|raw| {
+            let RawAnySyncOrStrippedState::Sync(raw) = raw else {
+                return None;
+            };
+            let event = raw.deserialize_as::<Value>().ok()?;
+            let content = &event["content"];
+            Some(CallMembership {
+                left: content.get("device_id").is_none(),
+                created_ts: content["created_ts"].as_u64(),
+                origin_server_ts: event["origin_server_ts"].as_u64(),
+                expires_ms: content["expires"].as_u64(),
+            })
+        })
+        .collect()
 }
 impl Session {
     /// Get ready for a call: find the homeserver's call service and take an

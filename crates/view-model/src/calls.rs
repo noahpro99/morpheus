@@ -4,7 +4,7 @@
 //! chimes, and the device lists. The media itself is `morpheus-call`; this
 //! only turns its events and the room's call memberships into what is drawn.
 
-use morpheus_core::{CallMedia, IncomingCall, OwnedRoomId, OwnedUserId, RoomSummary};
+use morpheus_core::{CallMedia, CallMembership, IncomingCall, OwnedRoomId, OwnedUserId, RoomSummary};
 
 /// How long after a ring a caller may still be missing from the call (the
 /// ring and the membership arrive in either order).
@@ -1539,6 +1539,24 @@ mod screen_picker_hint_tests {
     }
 }
 
+/// When the call began, in ms since the epoch: the earliest join among the
+/// memberships active now. A membership that has left (empty content) or has
+/// expired (`expires` passed, counted from when it began) is not part of the
+/// call, however old; when everyone left and someone joined again, the call
+/// starts from that join. A join's time is its `created_ts`, else the event's
+/// own time. `None` when nobody is in the call.
+pub fn call_start(now_ms: u64, memberships: &[CallMembership]) -> Option<u64> {
+    memberships
+        .iter()
+        .filter(|m| !m.left)
+        .filter_map(|m| {
+            let began = m.created_ts.or(m.origin_server_ts)?;
+            let lapsed = m.expires_ms.is_some_and(|lasts| began.saturating_add(lasts) <= now_ms);
+            (!lapsed).then_some(began)
+        })
+        .min()
+}
+
 /// How long a call has been going, as a timer: `m:ss`, `h:mm:ss` from an
 /// hour. `None` for a call whose start is not known or lies ahead of the
 /// clock by more than a few seconds (clocks differ a little: a start up to
@@ -1577,5 +1595,94 @@ mod call_timer_tests {
         assert_eq!(call_timer(now, None), None);
         assert_eq!(call_timer(now, Some(now + 3_000)), Some("0:00".into()));
         assert_eq!(call_timer(now, Some(now + 60_000)), None);
+    }
+}
+
+#[cfg(test)]
+mod call_start_tests {
+    use super::*;
+
+    const NOW: u64 = 1_000_000_000_000;
+    const MIN: u64 = 60_000;
+
+    fn joined(created_ago_min: u64) -> CallMembership {
+        CallMembership {
+            created_ts: Some(NOW - created_ago_min * MIN),
+            origin_server_ts: Some(NOW - created_ago_min * MIN + 500),
+            ..Default::default()
+        }
+    }
+
+    fn left(ago_min: u64) -> CallMembership {
+        CallMembership {
+            left: true,
+            // A left event carries no created_ts.
+            origin_server_ts: Some(NOW - ago_min * MIN),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn the_earliest_join_among_the_present_is_the_start() {
+        let members = [joined(3), joined(10), joined(1)];
+        assert_eq!(call_start(NOW, &members), Some(NOW - 10 * MIN));
+    }
+
+    #[test]
+    fn nobody_in_the_call_has_no_start() {
+        assert_eq!(call_start(NOW, &[]), None);
+        assert_eq!(call_start(NOW, &[left(5), left(500)]), None);
+    }
+
+    #[test]
+    fn a_stale_left_membership_is_ignored() {
+        // An old device left long ago; its event's time must not count.
+        let members = [left(600), joined(2)];
+        assert_eq!(call_start(NOW, &members), Some(NOW - 2 * MIN));
+    }
+
+    #[test]
+    fn an_expired_membership_is_ignored() {
+        let expired = CallMembership {
+            expires_ms: Some(2 * 60 * MIN),
+            ..joined(5 * 60)
+        };
+        // Began 5 h ago and lasted 2 h: over 3 h ago.
+        let alive = CallMembership {
+            expires_ms: Some(2 * 60 * MIN),
+            ..joined(60)
+        };
+        assert_eq!(call_start(NOW, &[expired.clone(), joined(1)]), Some(NOW - MIN));
+        assert_eq!(call_start(NOW, &[expired]), None);
+        // Not yet expired: counts.
+        assert_eq!(call_start(NOW, &[alive, joined(1)]), Some(NOW - 60 * MIN));
+    }
+
+    #[test]
+    fn a_rejoin_after_the_call_emptied_starts_again() {
+        // An earlier call (its members left), then someone joined just now.
+        let members = [left(180), left(170), joined(0)];
+        assert_eq!(call_start(NOW, &members), Some(NOW));
+        // The same device rejoining replaces its event: only the new join exists.
+        assert_eq!(call_start(NOW, &[joined(0)]), Some(NOW));
+    }
+
+    #[test]
+    fn several_devices_count_from_the_earliest_present() {
+        let phone = joined(7);
+        let laptop = joined(4);
+        let gone = left(1);
+        assert_eq!(call_start(NOW, &[laptop, gone, phone]), Some(NOW - 7 * MIN));
+    }
+
+    #[test]
+    fn without_created_ts_the_events_own_time_counts() {
+        let bare = CallMembership {
+            origin_server_ts: Some(NOW - 9 * MIN),
+            ..Default::default()
+        };
+        assert_eq!(call_start(NOW, &[bare, joined(2)]), Some(NOW - 9 * MIN));
+        // Neither time known: not counted as a start.
+        assert_eq!(call_start(NOW, &[CallMembership::default()]), None);
     }
 }

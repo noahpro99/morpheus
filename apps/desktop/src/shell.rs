@@ -485,7 +485,7 @@ impl Shell {
             loop {
                 cx.background_executor().timer(std::time::Duration::from_secs(1)).await;
                 let alive = this.update(cx, |this, cx| {
-                    if this.rooms.iter().any(|r| r.call_started_ms.is_some() && !r.call_participants.is_empty()) {
+                    if this.rooms.iter().any(|r| !r.call_memberships.is_empty() && !r.call_participants.is_empty()) {
                         cx.notify();
                     }
                 });

@@ -1860,15 +1860,6 @@ pub fn voice_channel(
                 .items_center()
                 .justify_end()
                 .gap(px(12.0))
-                // How long the call has been going.
-                .children(shell.call_timer(room).map(|timer| {
-                    div()
-                        .flex_1()
-                        .text_color(rgb(theme::text_muted()))
-                        .child(format!("In call for {timer}"))
-                        .e2e("span", "voice-timer")
-                        .text(timer)
-                }))
                 // Open, the chat's own X closes it: no button here.
                 .children((!open).then_some(toggle)),
         )
