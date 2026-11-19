@@ -911,7 +911,7 @@ fn zoom_control(shell: &Shell, key: &str, zoom: f32) -> AnyElement {
 }
 
 /// The name label at a card's bottom left.
-fn name_label(text: String) -> AnyElement {
+fn name_label(text: String, screen: bool) -> AnyElement {
     div()
         .absolute()
         .left(px(8.0))
@@ -923,7 +923,12 @@ fn name_label(text: String) -> AnyElement {
         .bg(black(0.55))
         .text_color(rgb(theme::OVERLAY_TEXT))
         .text_size(px(0.8 * theme::REM))
+        .flex()
+        .items_center()
+        .gap(px(4.0))
         .truncate()
+        // A share: its screen icon, then the name.
+        .when(screen, |d| d.child(icon("screen-share", 13.0).text_color(rgb(theme::OVERLAY_TEXT))))
         .child(text.clone())
         .e2e("span", "video-name")
         .text(text)
@@ -1018,7 +1023,7 @@ fn person_card(
     // The ring is the card's; the picture inside has none of its own.
     .child(avatar(picture_of(shell, user, 72), &name, size, None))
     .child(focus_button(shell, cx, &key, &group))
-    .child(name_label(name));
+    .child(name_label(name, false));
     if let Some(marks) = card_marks(flags) {
         tile = tile.child(marks);
     }
@@ -1043,11 +1048,7 @@ fn video_card(
 ) -> AnyElement {
     let key = feed.key.clone();
     let name = shown(shell, &feed.user);
-    let label = if feed.screen {
-        format!("{name}'s screen")
-    } else {
-        name
-    };
+    let label = name;
     let group = format!("card-{key}");
     let flags = media(shell, room, &feed.user);
     let click_key = key.clone();
@@ -1206,7 +1207,7 @@ fn video_card(
     }
     tile = tile
         .child(focus_button(shell, cx, &key, &group))
-        .child(name_label(label));
+        .child(name_label(label, feed.screen));
     // Someone else's screen with sound: how it sounds here, and its volume.
     let heard = (feed.screen && !own)
         .then(|| shell.calls.screen_audio.get(&feed.user))
@@ -1557,7 +1558,25 @@ fn cards(
                             Card::Video(feed) => feed.user.clone(),
                             Card::Person(user) => user.clone(),
                         };
-                        let card = person_card(shell, cx, room, &user, false, Fit::Strip(strip_h));
+                        let card = match c {
+                            // A share: its icon, not the person's avatar.
+                            Card::Video(feed) if feed.screen => {
+                                let name = shown(shell, &feed.user);
+                                sized(div().id(gpui::SharedString::from(format!("strip-share-{}", feed.user))), Fit::Strip(strip_h), None)
+                                    .relative()
+                                    .rounded(px(theme::RADIUS_LG))
+                                    .bg(rgb(theme::bg_elevated()))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .child(icon("screen-share", 28.0).text_color(rgb(theme::text_muted())))
+                                    .child(name_label(name, true))
+                                    .e2e("div", "call-tile share-placeholder")
+                                    .attr("data-user", feed.user.to_string())
+                                    .into_any_element()
+                            }
+                            _ => person_card(shell, cx, room, &user, false, Fit::Strip(strip_h)),
+                        };
                         let key = focused.to_owned();
                         // Greyed, with a focus icon; a click on it goes through to the card
                         // (which unfocuses).
