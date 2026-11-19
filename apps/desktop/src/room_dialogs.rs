@@ -43,6 +43,8 @@ pub enum Done {
         parent: Option<OwnedRoomId>,
     },
     LeftServer,
+    /// "Join a server" was chosen in Create a server: Join by address instead.
+    JoinByAddress,
     /// A nickname was saved (empty: cleared).
     NicknameSaved {
         user: morpheus_core::OwnedUserId,
@@ -1351,6 +1353,26 @@ impl RoomDialog {
                     ])
                     .into_any_element(),
                 );
+                if !is_category {
+                    parts.push(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(8.0))
+                            .text_color(rgb(theme::text_muted()))
+                            .child("Have an invite or address?")
+                            .child(button(
+                                "join-server",
+                                Some("log-in"),
+                                "Join a server",
+                                "secondary join-server-button",
+                                false,
+                                false,
+                                cx.listener(|_, _, _, cx| cx.emit(Done::JoinByAddress)),
+                            ))
+                            .into_any_element(),
+                    );
+                }
                 ("create-space-dialog", parts)
             }
             RoomDialogKind::Privacy(room) => {

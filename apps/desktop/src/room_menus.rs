@@ -572,6 +572,10 @@ impl Shell {
                     cx,
                 );
             }
+            Done::JoinByAddress => {
+                self.dialog_close(cx);
+                self.open_join_address(cx);
+            }
             Done::LeftServer => {
                 self.dialog_close(cx);
                 self.set_scope(Scope::Rooms, cx);
