@@ -2215,14 +2215,10 @@ fn preview_el(
         );
     }
     if let Some(title) = &preview.title {
-        let (open, target) = (links.clone(), url.clone());
         text = text.child(
             div()
-                .id(SharedString::from(format!("preview-title-{unique_id}")))
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(rgb(theme::link()))
-                .cursor_pointer()
-                .on_click(move |_, _, cx| open(&target, cx))
                 .child(title.clone())
                 .e2e("div", "preview-title")
                 .text(title.clone()),
@@ -2291,6 +2287,8 @@ fn preview_el(
             .cursor_pointer()
             .hover(|s| s.bg(rgba(theme::bg_hover())))
             .child(crate::icons::icon("x", 14.0).text_color(rgb(theme::text_muted())))
+            // The card opens the link; the close button must not.
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(move |_, window, cx| {
                 if let Some(actions) = &actions {
                     actions(RowAction::DismissPreview, &unique_id, window, cx);
@@ -2299,8 +2297,12 @@ fn preview_el(
             .e2e("button", "preview-dismiss")
             .attr("title", "Remove preview")
     };
+    let (open, target) = (links.clone(), url.clone());
     div()
+        .id(SharedString::from(format!("preview-card-{unique_id}")))
         .relative()
+        .cursor_pointer()
+        .on_click(move |_, _, cx| open(&target, cx))
         .mt(px(4.0))
         .max_w(px(420.0))
         .pl(px(12.0))
