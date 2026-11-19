@@ -13,6 +13,7 @@ use morpheus_core::{OwnedRoomId, RoomSummary, SpaceRoom};
 
 pub use morpheus_view_model::scopes::Sections;
 
+use crate::tooltip::TipExt as _;
 use crate::{
     e2e::E2eExt as _,
     icons::icon,
@@ -169,6 +170,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                 .on_click(
                     cx.listener(|this, _, _, cx| this.open_room_dialog(RoomDialogKind::Create, cx)),
                 )
+                .tip("Create room")
                 .e2e("button", "ghost create-room-button")
                 .attr("data-color", format!("{plus_colour:06x}"))
                 .attr("data-bg", "")

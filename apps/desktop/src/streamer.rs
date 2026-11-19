@@ -8,7 +8,7 @@ use std::sync::{Mutex, RwLock};
 use crate::view_model::streamer::{ShareTracker, StreamerSettings, mask_id, mask_name};
 
 static SETTINGS: RwLock<StreamerSettings> = RwLock::new(StreamerSettings {
-    auto: true,
+    auto: false,
     now: false,
     names: true,
     notifications: true,

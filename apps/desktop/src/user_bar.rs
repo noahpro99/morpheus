@@ -5,6 +5,7 @@
 
 use gpui::{Context, FontWeight, IntoElement, div, linear_gradient, prelude::*, px, rgb};
 
+use crate::tooltip::TipExt as _;
 use crate::{
     e2e::E2eExt as _, icons::icon, media::avatar, shell::Shell, theme,
     view_model::keys::SettingsFocus,
@@ -33,6 +34,7 @@ fn ghost(
                 .text_color(rgb(theme::text()))
         })
         .child(icon(glyph, 18.0).text_color(rgb(theme::text_muted())))
+        .tip(title.to_owned())
         .e2e("button", classes)
         .attr("title", title)
 }
@@ -130,6 +132,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                     this.open_audio_menu(speakers, event.position, cx)
                 }),
             )
+            .tip(title.to_owned())
             .e2e("button", classes)
             .attr("data-color", if active { "#ff6b6b" } else { "#8a90a2" })
             .attr("data-bg", if active { "#ff6b6b2e" } else { "" })
@@ -156,6 +159,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             .on_click(cx.listener(move |this, event: &gpui::ClickEvent, _, cx| {
                 this.open_audio_menu(speakers, event.position(), cx)
             }))
+            .tip(arrow_title.to_owned())
             .e2e("button", "ghost device-menu-button")
             .attr("data-color", if active { "#ff6b6b" } else { "#8a90a2" })
             .attr("data-bg", if active { "#ff6b6b2e" } else { "" })

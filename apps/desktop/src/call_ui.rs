@@ -6,6 +6,7 @@
 
 use std::{rc::Rc, sync::Arc, time::Duration};
 
+use crate::tooltip::TipExt as _;
 use crate::zoom::ZoomPan;
 use gpui::{
     AnyElement, App, Context, Entity, FontWeight, IntoElement, MouseButton, ObjectFit, RenderImage,
@@ -299,6 +300,7 @@ fn control_button(
         button = button.on_mouse_down(MouseButton::Right, on_right);
     }
     let tagged = button
+        .tip(title.to_owned())
         .e2e("button", &classes)
         .attr("title", title)
         .attr(
@@ -500,6 +502,7 @@ fn ghost_button(
         button = button.on_mouse_down(MouseButton::Right, on_right);
     }
     let tagged = button
+        .tip(title.to_owned())
         .e2e("button", &classes)
         .attr("title", title)
         .attr("data-bg", if hang { "#ff6b6b" } else { "" });
@@ -796,6 +799,7 @@ fn focus_button(shell: &Shell, cx: &mut Context<Shell>, key: &str, group: &str) 
             cx.stop_propagation();
             this.toggle_focus(&card, cx);
         }))
+        .tip(if focused { "Shrink" } else { "Enlarge" })
         .e2e("button", "card-enlarge")
         .attr("title", if focused { "Shrink" } else { "Enlarge" })
         .into_any_element()
@@ -2086,6 +2090,7 @@ pub fn header_call_button(
                 this.join_call(id.clone(), name.clone(), cx);
             }
         }))
+        .tip(title.to_owned())
         .e2e(
             "button",
             if in_this {

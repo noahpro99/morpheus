@@ -5,6 +5,7 @@
 
 use gpui::{Context, ExternalPaths, FontWeight, IntoElement, div, prelude::*, px, rgb};
 
+use crate::tooltip::TipExt as _;
 use crate::{
     e2e::E2eExt as _, icons::icon, media::avatar, shell::Shell, theme,
     view_model::room_dialogs::RoomDialogKind,
@@ -255,6 +256,7 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                     .on_hover(bar_hover(cx, "pin-toggle"))
                     .child(icon("pin", 16.0).text_color(rgb(pins_colour)))
                     .on_click(cx.listener(|this, _, _, cx| this.open_pinned(cx)))
+                    .tip("Pinned messages (Ctrl+P)")
                     .e2e("button", "ghost pin-toggle")
                     .attr("title", "Pinned messages (Ctrl+P)")
                     .attr("data-color", format!("{pins_colour:06x}"))
@@ -501,6 +503,7 @@ pub fn members_toggle(shell: &Shell, cx: &mut Context<Shell>) -> gpui::AnyElemen
         .on_hover(bar_hover(cx, "member-toggle"))
         .child(icon("users", 16.0).text_color(rgb(members_colour)))
         .on_click(cx.listener(|this, _, _, cx| this.toggle_members(cx)))
+        .tip("Member list (Ctrl+U)")
         .e2e(
             "button",
             if open {

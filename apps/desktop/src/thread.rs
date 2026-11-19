@@ -11,6 +11,7 @@ use gpui::{
 };
 use morpheus_core::{Message, OwnedEventId, OwnedRoomId, Session};
 
+use crate::tooltip::TipExt as _;
 use crate::{
     composer::Composer,
     e2e::E2eExt as _,
@@ -228,6 +229,7 @@ impl Render for ThreadPanel {
                             .hover(|s| s.text_color(rgb(theme::text())))
                             .child("✕")
                             .on_click(cx.listener(|_, _, _, cx| cx.emit(ThreadEvent::Close)))
+                            .tip("Close thread")
                             .e2e("button", "ghost")
                             .attr("title", "Close thread")
                             .text("✕"),

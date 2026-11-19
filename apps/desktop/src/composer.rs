@@ -14,6 +14,7 @@ use gpui::{
 };
 use morpheus_core::{Member, Message, OwnedRoomId, Session, TimelineHandle};
 
+use crate::tooltip::TipExt as _;
 use crate::{
     e2e::E2eExt as _,
     icons::icon,
@@ -673,6 +674,7 @@ impl Composer {
                 .hover(|s| s.bg(rgba(theme::bg_hover())).text_color(rgb(theme::text())))
                 .child("✕")
                 .on_click(cx.listener(|this, _, _, cx| this.cancel(cx)))
+                .tip("Cancel (Esc)")
                 .e2e("button", "ghost")
                 .attr("title", "Cancel (Esc)")
                 .text("✕"),
@@ -979,6 +981,7 @@ fn tool_button(
         .hover(|s| s.bg(rgba(theme::bg_hover())).text_color(rgb(theme::text())))
         .child(glyph)
         .on_click(on_click)
+        .tip(title.to_owned())
         .e2e("button", classes)
         .attr("title", title);
     if enabled {

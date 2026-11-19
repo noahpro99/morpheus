@@ -13,6 +13,7 @@ use gpui::{
 };
 use morpheus_core::{OwnedRoomId, RoomSummary};
 
+use crate::tooltip::TipExt as _;
 use crate::{
     e2e::E2eExt as _,
     icons::icon,
@@ -237,6 +238,7 @@ impl Badge {
             );
         }
         let mut tagged = button
+            .tip(self.title.clone())
             .e2e("button", &self.classes)
             .attr("title", &self.title);
         tagged = tagged.attr("data-radius", theme::RADIUS_XL.to_string());
@@ -561,6 +563,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             .on_click(cx.listener(|this, _, _, cx| {
                 this.open_room_dialog(RoomDialogKind::CreateSpace(None), cx)
             }))
+            .tip("Create a server")
             .e2e("button", "rail-item rail-add")
             .attr("title", "Create a server"),
     )
@@ -579,6 +582,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             .hover(|s| s.text_color(rgb(theme::accent())))
             .child(icon("compass", 24.0).text_color(rgb(theme::text_faint())))
             .on_click(cx.listener(|this, _, _, cx| this.open_discover(cx)))
+            .tip("Discover public servers")
             .e2e("button", "rail-discover")
             .attr("title", "Discover public servers"),
     )

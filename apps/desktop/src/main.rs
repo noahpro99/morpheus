@@ -74,6 +74,7 @@ mod streamer;
 mod switcher;
 mod tab;
 mod theme;
+mod tooltip;
 mod thread;
 mod timeline;
 mod titlebar;

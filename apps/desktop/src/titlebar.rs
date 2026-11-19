@@ -5,6 +5,7 @@
 
 use gpui::{Context, FontWeight, IntoElement, div, prelude::*, px, rgb, rgba};
 
+use crate::tooltip::TipExt as _;
 use crate::{
     chrome,
     dialogs::Dialog,
@@ -139,6 +140,7 @@ fn streamer_button(shell: &Shell, cx: &mut Context<Shell>) -> Option<impl IntoEl
             bar_button(shell, cx, "streamer-button")
                 .child(icon("eye-off", 18.0))
                 .on_click(toggle)
+                .tip("Turn on streamer mode")
                 .e2e("button", "ghost streamer-button")
                 .attr("title", "Turn on streamer mode"),
         );
@@ -156,6 +158,7 @@ fn streamer_button(shell: &Shell, cx: &mut Context<Shell>) -> Option<impl IntoEl
             .child(icon("eye-off", 12.0))
             .child("Streamer mode")
             .on_click(toggle)
+            .tip("Streamer mode is on: names and IDs are hidden. Click to turn off")
             .e2e("button", "streamer-badge streamer-button")
             .attr(
                 "title",
@@ -189,6 +192,7 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
             b = b.opacity(0.35).cursor_default();
         }
         let tagged = b
+            .tip(label)
             .e2e("button", "ghost nav-button")
             .attr("title", label)
             .attr("data-color", colour_of(id))
@@ -300,6 +304,7 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                     .children(crate::update::topbar_button(shell, cx))
                     .child(
                         inbox
+                            .tip("Inbox (Ctrl+I)")
                             .e2e("button", "ghost titlebar-button inbox-button")
                             .attr("title", "Inbox (Ctrl+I)")
                             .attr("data-badge", crate::badge::shown().to_string())
@@ -307,7 +312,8 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                             .attr("data-bg", ""),
                     )
                     .child(
-                        help.e2e("button", "ghost titlebar-button help-button")
+                        help.tip("Help (Ctrl+/)")
+                            .e2e("button", "ghost titlebar-button help-button")
                             .attr("title", "Help (Ctrl+/)")
                             .attr("data-color", colour_of("help-button"))
                             .attr("data-bg", ""),

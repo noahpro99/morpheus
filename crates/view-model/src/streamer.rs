@@ -38,7 +38,7 @@ pub struct StreamerSettings {
 
 impl Default for StreamerSettings {
     fn default() -> Self {
-        Self { auto: true, now: false, names: true, notifications: true, ids: true, ask: true, remember_opened: true }
+        Self { auto: false, now: false, names: true, notifications: true, ids: true, ask: true, remember_opened: true }
     }
 }
 
@@ -199,9 +199,10 @@ mod tests {
     #[test]
     fn it_is_on_by_hand_or_while_sharing_when_that_is_allowed() {
         let mut s = StreamerSettings::default();
-        assert!(!s.active(false) && s.active(true));
-        s.auto = false;
+        assert!(!s.auto, "off until you ask for it");
         assert!(!s.active(true));
+        s.auto = true;
+        assert!(!s.active(false) && s.active(true));
         s.now = true;
         assert!(s.active(false));
     }
@@ -211,7 +212,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("morpheus-streamer-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("dir");
         assert_eq!(StreamerSettings::load(&dir), StreamerSettings::default());
-        let s = StreamerSettings { auto: false, now: true, ids: false, ..Default::default() };
+        let s = StreamerSettings { auto: true, now: true, ids: false, ..Default::default() };
         s.save(&dir).expect("save");
         assert_eq!(StreamerSettings::load(&dir), s);
         std::fs::write(dir.join(FILE), r#"{"ask":false}"#).expect("write");
@@ -346,7 +347,7 @@ mod tracker_tests {
 
     #[test]
     fn another_programs_capture_turns_it_on_and_off_like_our_own_share() {
-        let settings = StreamerSettings::default();
+        let settings = StreamerSettings { auto: true, ..StreamerSettings::default() };
         let mut t = ShareTracker::new();
         assert!(!t.active(&settings));
         t.set_external(true);
@@ -365,11 +366,11 @@ mod tracker_tests {
     #[test]
     fn the_auto_setting_and_the_hand_override_apply_to_it_too() {
         let mut t = ShareTracker::new();
-        let no_auto = StreamerSettings { auto: false, ..StreamerSettings::default() };
+        let no_auto = StreamerSettings::default();
         t.set_external(true);
         assert!(!t.active(&no_auto), "auto-on turned off");
         assert!(t.active(&StreamerSettings { now: true, ..no_auto }), "by hand still works");
-        let auto = StreamerSettings::default();
+        let auto = StreamerSettings { auto: true, ..StreamerSettings::default() };
         t.override_off();
         assert!(!t.active(&auto), "turned off by hand during the capture");
         t.set_own(true);
@@ -385,7 +386,7 @@ mod tracker_tests {
         let mut t = ShareTracker::new();
         t.override_off();
         t.set_external(true);
-        assert!(t.active(&StreamerSettings::default()));
+        assert!(t.active(&StreamerSettings { auto: true, ..StreamerSettings::default() }));
     }
 }
 
