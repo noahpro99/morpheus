@@ -889,14 +889,8 @@ impl TextInput {
         let has_word = menu.word.is_some();
         let row = |id: String, label: String, choice: Option<SpellChoice>, cx: &mut Context<Self>| -> AnyElement {
             let live = choice.is_some();
-            let mut el = div()
-                .id(gpui::ElementId::from(SharedString::from(id)))
-                .flex()
-                .items_center()
-                .w_full()
-                .py(px(7.0))
+            let mut el = crate::menu::item_base(gpui::ElementId::from(SharedString::from(id)))
                 .px(px(10.0))
-                .rounded(px(theme::RADIUS_SM))
                 .text_color(rgb(if live {
                     theme::text_muted()
                 } else {

@@ -290,6 +290,21 @@ fn menu_pic(menu: &OpenMenu, item: &MenuItem) -> MenuPic {
     }
 }
 
+/// The row every context menu is made of, the spell-check menu included: it
+/// fills the menu's inner width (no fixed width, so the column stretches it)
+/// and is highlighted across all of it. The caller adds the text, the
+/// padding and what it does.
+pub fn item_base(id: gpui::ElementId) -> gpui::Stateful<gpui::Div> {
+    div()
+        .id(id)
+        .relative()
+        .flex()
+        .items_center()
+        .gap(px(10.0))
+        .py(px(7.0))
+        .rounded(px(theme::RADIUS_SM))
+}
+
 fn item_el(
     menu: &OpenMenu,
     row: usize,
@@ -336,15 +351,8 @@ fn item_el(
         "ctx-{row}-{}",
         sub.map_or(-1, |s| s as i64)
     )));
-    let mut el = div()
-        .id(id)
-        .relative()
-        .flex()
-        .items_center()
-        .gap(px(10.0))
+    let mut el = item_base(id)
         .when(sub.is_none(), |d| d.w_full())
-        .py(px(7.0))
-        .rounded(px(theme::RADIUS_SM))
         .cursor_pointer()
         .text_color(rgb(if lit { theme::on(highlight) } else { colour }))
         .when(lit, |d| d.bg(rgb(highlight)))
