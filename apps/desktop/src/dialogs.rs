@@ -1328,14 +1328,15 @@ fn help_group(group: &str, rows: &[(&str, &str)]) -> impl IntoElement {
 /// A shortcut as a small key cap (the Jump to present pill's, the open
 /// prompt's): on a coloured fill (`Some(fill)`) the cap is a wash of the
 /// foreground that reads on it, else of the theme's edge and hover tokens.
-pub(crate) fn key_cap(label: &'static str, on_fill: Option<u32>) -> impl IntoElement {
+pub(crate) fn key_cap(label: impl Into<SharedString>, on_fill: Option<u32>) -> impl IntoElement {
+    let label: SharedString = label.into();
     let cap = div()
         .px(px(5.0))
         .rounded(px(theme::RADIUS_SM))
         .border_1()
         .text_size(px(0.7 * theme::REM))
         .font_weight(FontWeight::BOLD)
-        .child(label);
+        .child(label.clone());
     let cap = match on_fill {
         Some(fill) => {
             let fg = theme::on(fill);
@@ -1346,7 +1347,7 @@ pub(crate) fn key_cap(label: &'static str, on_fill: Option<u32>) -> impl IntoEle
             .border_color(rgba(theme::edge()))
             .bg(rgba(theme::bg_hover())),
     };
-    cap.e2e("kbd", "key-cap").text(label)
+    cap.e2e("kbd", "key-cap").text(label.to_string())
 }
 
 /// The streamer mode question before another room (or server) opens while the

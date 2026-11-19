@@ -2300,6 +2300,7 @@ impl Interactivity {
                     build_tooltip,
                     check_is_hovered,
                     check_is_hovered_during_prepaint,
+                    Some(hitbox.bounds),
                     window,
                 );
             }
@@ -2642,6 +2643,7 @@ pub(crate) fn register_tooltip_mouse_handlers(
     build_tooltip: Rc<dyn Fn(&mut Window, &mut App) -> Option<(AnyView, bool)>>,
     check_is_hovered: Rc<dyn Fn(&Window) -> bool>,
     check_is_hovered_during_prepaint: Rc<dyn Fn(&Window) -> bool>,
+    anchor: Option<Bounds<Pixels>>,
     window: &mut Window,
 ) {
     window.on_mouse_event({
@@ -2654,6 +2656,7 @@ pub(crate) fn register_tooltip_mouse_handlers(
                 &build_tooltip,
                 &check_is_hovered,
                 &check_is_hovered_during_prepaint,
+                anchor,
                 phase,
                 window,
                 cx,
@@ -2696,6 +2699,7 @@ fn handle_tooltip_mouse_move(
     build_tooltip: &Rc<dyn Fn(&mut Window, &mut App) -> Option<(AnyView, bool)>>,
     check_is_hovered: &Rc<dyn Fn(&Window) -> bool>,
     check_is_hovered_during_prepaint: &Rc<dyn Fn(&Window) -> bool>,
+    anchor: Option<Bounds<Pixels>>,
     phase: DispatchPhase,
     window: &mut Window,
     cx: &mut App,
@@ -2752,6 +2756,7 @@ fn handle_tooltip_mouse_move(
                                     tooltip: AnyTooltip {
                                         view,
                                         mouse_position: window.mouse_position(),
+                                        anchor,
                                         check_visible_and_update: Rc::new(
                                             move |tooltip_bounds, window, cx| {
                                                 handle_tooltip_check_visible_and_update(

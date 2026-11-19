@@ -563,7 +563,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             .on_click(cx.listener(|this, _, _, cx| {
                 this.open_room_dialog(RoomDialogKind::CreateSpace(None), cx)
             }))
-            .tip("Create a server")
+            .tip("Create a server (Ctrl+Shift+N)")
             .e2e("button", "rail-item rail-add")
             .attr("title", "Create a server"),
     )

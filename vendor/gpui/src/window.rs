@@ -641,6 +641,19 @@ impl TooltipId {
     }
 }
 
+/// Where the tooltip being drawn sits and the element it belongs to, for
+/// drawing an arrow from one to the other.
+#[derive(Clone, Copy, Debug)]
+pub struct TooltipPlacement {
+    /// The tooltip view's box.
+    pub bounds: Bounds<Pixels>,
+    /// The hovered element's box.
+    pub anchor: Bounds<Pixels>,
+    /// Whether it is below the element (else above), decided before the view is
+    /// laid out so the view can leave room for its arrow on that side.
+    pub below: bool,
+}
+
 pub(crate) struct TooltipBounds {
     id: TooltipId,
     bounds: Bounds<Pixels>,
@@ -846,6 +859,7 @@ pub struct Window {
     next_hitbox_id: HitboxId,
     pub(crate) next_tooltip_id: TooltipId,
     pub(crate) tooltip_bounds: Option<TooltipBounds>,
+    tooltip_placement: Option<TooltipPlacement>,
     next_frame_callbacks: Rc<RefCell<Vec<FrameCallback>>>,
     wheel_ease: crate::smooth_scroll::WheelEase,
     pub(crate) dirty_views: FxHashSet<EntityId>,
@@ -1252,6 +1266,7 @@ impl Window {
             next_hitbox_id: HitboxId(0),
             next_tooltip_id: TooltipId::default(),
             tooltip_bounds: None,
+            tooltip_placement: None,
             dirty_views: FxHashSet::default(),
             focus_listeners: SubscriberSet::new(),
             focus_lost_listeners: SubscriberSet::new(),
@@ -2039,6 +2054,7 @@ impl Window {
         let started = Instant::now();
         self.invalidator.set_phase(DrawPhase::Prepaint);
         self.tooltip_bounds.take();
+        self.tooltip_placement.take();
 
         let _inspector_width: Pixels = rems(30.0).to_pixels(self.rem_size());
         let root_size = {
@@ -2128,6 +2144,23 @@ impl Window {
             };
             let mut element = tooltip_request.tooltip.view.clone().into_any();
             let mouse_position = tooltip_request.tooltip.mouse_position;
+            // Below the element when there is room for a tooltip (a few lines),
+            // else above it; known before the layout so the view can leave
+            // room for its arrow on that side.
+            let viewport = self.viewport_size();
+            let below = tooltip_request
+                .tooltip
+                .anchor
+                .map(|anchor| anchor.bottom() + px(80.) <= viewport.height);
+            self.tooltip_placement = tooltip_request
+                .tooltip
+                .anchor
+                .zip(below)
+                .map(|(anchor, below)| TooltipPlacement {
+                    bounds: Bounds::default(),
+                    anchor,
+                    below,
+                });
             let tooltip_size = element.layout_as_root(AvailableSpace::min_size(), self, cx);
 
             let mut tooltip_bounds =
@@ -2136,6 +2169,22 @@ impl Window {
                 origin: Point::default(),
                 size: self.viewport_size(),
             };
+
+            if let Some(anchor) = tooltip_request.tooltip.anchor {
+                // Centred on the element, kept inside the window, clear of the
+                // pointer (which is on the element).
+                let margin = px(6.);
+                let x = anchor.center().x - tooltip_size.width / 2.;
+                let max_x = (window_bounds.right() - tooltip_size.width - margin).max(Pixels::ZERO);
+                tooltip_bounds.origin.x = x.clamp(margin.min(max_x), max_x);
+                let y = if below == Some(false) {
+                    anchor.origin.y - tooltip_size.height - px(1.)
+                } else {
+                    anchor.bottom() + px(1.)
+                };
+                let max_y = (window_bounds.bottom() - tooltip_size.height).max(Pixels::ZERO);
+                tooltip_bounds.origin.y = y.clamp(Pixels::ZERO, max_y);
+            } else {
 
             if tooltip_bounds.right() > window_bounds.right() {
                 let new_x = mouse_position.x - tooltip_bounds.size.width - px(1.);
@@ -2160,6 +2209,7 @@ impl Window {
                     );
                 }
             }
+            }
 
             // It's possible for an element to have an active tooltip while not being painted (e.g.
             // via the `visible_on_hover` method). Since mouse listeners are not active in this
@@ -2170,6 +2220,9 @@ impl Window {
                 continue;
             }
 
+            if let Some(placement) = self.tooltip_placement.as_mut() {
+                placement.bounds = tooltip_bounds;
+            }
             self.with_absolute_element_offset(tooltip_bounds.origin, |window| {
                 element.prepaint(window, cx)
             });
@@ -2395,6 +2448,12 @@ impl Window {
             hitbox_id: None,
             style,
         })
+    }
+
+    /// Where the tooltip being drawn sits and what it is for (set while it is
+    /// painted), so its view can point an arrow at the element.
+    pub fn tooltip_placement(&self) -> Option<TooltipPlacement> {
+        self.tooltip_placement
     }
 
     /// Sets a tooltip to be rendered for the upcoming frame. This method should only be called
