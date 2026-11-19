@@ -209,6 +209,8 @@ pub struct Shell {
     pub welcome: Option<OwnedRoomId>,
     /// The member list shown on that server's overview.
     pub welcome_members: Option<(OwnedRoomId, Entity<MembersView>)>,
+    /// The server overview's scroll position (also the e2e's probe).
+    pub welcome_scroll: gpui::ScrollHandle,
     /// A room just opened as a channel whose type may not be known yet: if
     /// it turns out to be a space, its overview replaces it (until the person
     /// goes elsewhere).
@@ -527,6 +529,7 @@ impl Shell {
             members: None,
             members_open: true,
             welcome_members: None,
+            welcome_scroll: gpui::ScrollHandle::new(),
             watch_space: None,
             members_count: 0,
             timeline_handle: None,

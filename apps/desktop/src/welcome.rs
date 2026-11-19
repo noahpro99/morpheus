@@ -238,7 +238,8 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>, space: &RoomSummary) -> An
         .text("Start chatting");
     let line = vm_invites::members_label(space.member_count);
     let mut card = div()
-        .m_auto()
+        .mx_auto()
+        .flex_none()
         .w_full()
         .max_w(px(480.0))
         .flex()
@@ -283,7 +284,12 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>, space: &RoomSummary) -> An
         .flex_1()
         .min_h_0()
         .flex()
+        .flex_col()
         .overflow_y_scroll()
+        .track_scroll(&shell.welcome_scroll)
+        // Spacers centre a short card; an auto margin would push a tall
+        // one above the scroll area (#197).
+        .child(div().flex_grow())
         .child(
             card.child(
                 div()
@@ -296,6 +302,11 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>, space: &RoomSummary) -> An
             .child(div().mt(px(12.0)).child(start))
             .e2e("section", "server-welcome"),
         )
+        .child(div().flex_grow())
+        .e2e("div", "server-welcome-scroll")
+        .scrollable(std::rc::Rc::new(crate::e2e::HandleProbe(
+            shell.welcome_scroll.clone(),
+        )))
         .into_any_element()
 }
 
