@@ -69,6 +69,7 @@ impl Session {
     /// this identity on a new device.
     pub fn enable_recovery(&self) -> CoreFuture<String> {
         let client = self.client.clone();
+        let dir = self.dir.clone();
         self.core.run(async move {
             let encryption = client.encryption();
             bootstrap_cross_signing(&client).await;
@@ -77,6 +78,9 @@ impl Session {
                 .enable()
                 .wait_for_backups_to_upload()
                 .await?;
+            // With the new recovery key in hand the account key can be kept in
+            // secret storage: the data seals by itself.
+            crate::private_data::adopt_and_settle(&client, &dir, &key, true).await;
             Ok(key)
         })
     }
@@ -86,9 +90,12 @@ impl Session {
     /// (recovery enabled here). Returns the new key; the old one stops working.
     pub fn change_recovery_key(&self) -> CoreFuture<String> {
         let client = self.client.clone();
+        let dir = self.dir.clone();
         self.core.run(async move {
             let recovery = client.encryption().recovery();
             let key = recovery.reset_key().await?;
+            // The new secret storage does not hold the account key yet.
+            crate::private_data::adopt_and_settle(&client, &dir, &key, true).await;
             Ok(key)
         })
     }
@@ -103,6 +110,7 @@ impl Session {
         use matrix_sdk::encryption::CrossSigningResetAuthType;
         use matrix_sdk::ruma::api::client::uiaa;
         let client = self.client.clone();
+        let dir = self.dir.clone();
         self.core.run(async move {
             let recovery = client.encryption().recovery();
             if let Some(handle) = recovery.reset_identity().await? {
@@ -134,6 +142,7 @@ impl Session {
                 }
             }
             let key = recovery.enable().wait_for_backups_to_upload().await?;
+            crate::private_data::adopt_and_settle(&client, &dir, &key, true).await;
             Ok(key)
         })
     }
@@ -150,9 +159,9 @@ impl Session {
                 .recover(recovery_key.trim())
                 .await?;
             // The key of the sealed account data comes with it, when there is one.
-            if let Err(err) = crate::private_data::adopt_key(&client, &dir, &recovery_key, false).await {
-                tracing::warn!(%err, "reading the private data key");
-            }
+            // The account key comes with it (made when there is none), and the
+            // data seals.
+            crate::private_data::adopt_and_settle(&client, &dir, &recovery_key, true).await;
             Ok(())
         })
     }

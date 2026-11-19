@@ -460,6 +460,11 @@ impl Session {
                 .await?,
         );
         sync.start().await;
+        // A device that has the account key seals what is still in plaintext (#195).
+        {
+            let (client, dir) = (client.clone(), dir.clone());
+            core.spawn(async move { crate::private_data::settle_logged(&client, &dir).await });
+        }
         let syncing = Arc::new(AtomicBool::new(true));
         core.spawn(keep_syncing(Arc::downgrade(&sync), syncing.clone()));
         Ok(Self {

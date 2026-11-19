@@ -2600,25 +2600,13 @@ async fn private_account_data_is_encrypted_without_losing_anything() {
         "nothing sealed before it is turned on"
     );
 
+    // Setting up recovery seals the data by itself, and the plaintext copies
+    // are emptied once the sealed ones read back equal (no button, #195).
     let recovery_key = one.enable_recovery().await.expect("recovery");
-    one.enable_private_encryption(recovery_key.clone())
-        .await
-        .expect("turn encryption on");
-    // A sealed copy exists and says nothing; the plaintext one is still
-    // there, so a device that does not have the key keeps working.
     let sealed = raw_account_data(&env.homeserver, &user, &format!("{kind}.enc"))
         .expect("a sealed copy");
     assert!(!sealed.to_string().contains("Bobby"), "sealed: {sealed}");
     assert_eq!(sealed["v"], 1);
-    let plain = raw_account_data(&env.homeserver, &user, kind).expect("plaintext copy");
-    assert!(plain.to_string().contains("Bobby"), "kept meanwhile: {plain}");
-    assert_eq!(
-        one.nicknames().await.expect("read").get(bob.as_str()).map(String::as_str),
-        Some("Bobby the Builder")
-    );
-
-    // Removing the plaintext copies: nothing is lost on this device.
-    one.remove_plaintext_copies().await.expect("remove plaintext");
     let plain = raw_account_data(&env.homeserver, &user, kind).unwrap_or_default();
     assert!(!plain.to_string().contains("Bobby"), "plaintext gone: {plain}");
     let notes = raw_account_data(&env.homeserver, &user, "dev.morpheus.notes").unwrap_or_default();
@@ -2627,10 +2615,9 @@ async fn private_account_data_is_encrypted_without_losing_anything() {
         one.nicknames().await.expect("read").get(bob.as_str()).map(String::as_str),
         Some("Bobby the Builder")
     );
-    assert_eq!(
-        one.note(bob.clone()).await.expect("note"),
-        "owes me lunch"
-    );
+    assert_eq!(one.note(bob.clone()).await.expect("note"), "owes me lunch");
+    let state = one.private_data_state().await.expect("state");
+    assert!(state.sealed && state.unlocked && state.plaintext_removed, "{state:?}");
 
     // A second device without the key: locked, not empty; it cannot
     // overwrite what it cannot read.

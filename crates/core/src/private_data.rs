@@ -187,6 +187,54 @@ pub(crate) async fn write_private(
     }
 }
 
+/// Whether any sealed copy exists (so a new key must never be made).
+async fn any_sealed(client: &matrix_sdk::Client) -> bool {
+    for kind in KINDS {
+        if read_value(client, &sealed_type(kind))
+            .await
+            .ok()
+            .flatten()
+            .is_some_and(|v| is_sealed(&v))
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// Seals what is still in plaintext and then empties the plaintext copies,
+/// by itself, on a device that has the account key (#195). Does nothing
+/// without the key, and once the plaintext copies are gone (writes seal
+/// from then on).
+pub(crate) async fn settle(client: &matrix_sdk::Client, dir: &std::path::Path) -> Result<()> {
+    if load_key(dir).is_none() || plaintext_removed(client).await {
+        return Ok(());
+    }
+    remove_plaintext(client, dir).await
+}
+
+/// [`settle`], logging instead of failing.
+pub(crate) async fn settle_logged(client: &matrix_sdk::Client, dir: &std::path::Path) {
+    if let Err(err) = settle(client, dir).await {
+        tracing::warn!(%err, "sealing the private data");
+    }
+}
+
+/// Reads the account key with the recovery key (making it, with `create`,
+/// when there is none anywhere) and seals what this device can.
+pub(crate) async fn adopt_and_settle(
+    client: &matrix_sdk::Client,
+    dir: &std::path::Path,
+    recovery_key: &str,
+    create: bool,
+) {
+    if let Err(err) = adopt_key(client, dir, recovery_key, create).await {
+        tracing::warn!(%err, "reading the private data key");
+        return;
+    }
+    settle_logged(client, dir).await;
+}
+
 /// Gets the account key out of secret storage (making it, with `create`,
 /// when there is none) and keeps it on this device.
 pub(crate) async fn adopt_key(
@@ -210,9 +258,14 @@ pub(crate) async fn adopt_key(
         .and_then(|b| <[u8; KEY_LEN]>::try_from(b).ok());
     let key = match existing {
         Some(key) => key,
-        None if create => {
-            let mut key = [0u8; KEY_LEN];
-            rand::rng().fill_bytes(&mut key);
+        None if create && (load_key(dir).is_some() || !any_sealed(client).await) => {
+            // This device's own copy goes back into a new secret storage;
+            // else a new key, unless sealed data exists that it would orphan.
+            let key = load_key(dir).unwrap_or_else(|| {
+                let mut key = [0u8; KEY_LEN];
+                rand::rng().fill_bytes(&mut key);
+                key
+            });
             store
                 .put_secret(name, &STANDARD.encode(key))
                 .await
@@ -268,26 +321,22 @@ impl Session {
         })
     }
 
-    /// Turn sealing on (or finish it on this device): the account key is
-    /// read from (or put in) secret storage with the recovery key, kept
-    /// here, and the friends, nicknames and notes sealed. The plaintext
-    /// copies stay until [`Self::remove_plaintext_copies`].
-    pub fn enable_private_encryption(&self, recovery_key: String) -> CoreFuture<()> {
+    /// Seals the friends, nicknames and notes and empties the plaintext
+    /// copies, if this device has the account key and it was not done yet.
+    /// Happens by itself (at sign-in, with a recovery key); this is for a
+    /// caller that wants it now.
+    pub fn settle_private_data(&self) -> CoreFuture<()> {
         let (client, dir) = (self.client.clone(), self.dir.clone());
-        self.core.run(async move {
-            adopt_key(&client, &dir, &recovery_key, true).await?;
-            seal_all(&client, &dir).await
-        })
+        self.core.run(async move { settle(&client, &dir).await })
     }
+}
 
-    /// Empty the plaintext copies, so only the sealed ones are left. Every
-    /// kind is sealed and read back first; nothing is emptied otherwise.
-    /// Devices without the key see "locked" afterwards until they have
-    /// recovered with the recovery key.
-    pub fn remove_plaintext_copies(&self) -> CoreFuture<()> {
-        let (client, dir) = (self.client.clone(), self.dir.clone());
-        self.core.run(async move {
-            let key = load_key(&dir).ok_or(Error::PrivateDataLocked)?;
+/// Empties the plaintext copies, so only the sealed ones are left. Every
+/// kind is sealed and read back first; nothing is emptied otherwise.
+/// Devices without the key see "locked" afterwards until they have
+/// recovered with the recovery key.
+async fn remove_plaintext(client: &matrix_sdk::Client, dir: &std::path::Path) -> Result<()> {
+    let key = load_key(dir).ok_or(Error::PrivateDataLocked)?;
             seal_all(&client, &dir).await?;
             // Read back: each sealed copy opens to what is readable.
             for kind in KINDS {
@@ -313,9 +362,7 @@ impl Session {
                 };
                 write_raw(&client, kind, &empty).await?;
             }
-            Ok(())
-        })
-    }
+    Ok(())
 }
 
 #[cfg(test)]
