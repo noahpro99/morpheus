@@ -7,7 +7,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use gpui::{
     AnyElement, Context, ElementId, Entity, EventEmitter, FontWeight, Image, IntoElement, Render,
-    SharedString, Window, div, prelude::*, px, rgb, rgba,
+    Window, div, prelude::*, px, rgb, rgba,
 };
 use morpheus_core::{OwnedRoomId, OwnedUserId, Profile, Session};
 
@@ -19,7 +19,7 @@ use crate::{
     media::{self, Avatars, avatar},
     theme,
     view_model::{
-        friends::{self, NewMessage, Tab},
+        friends::{self, NewMessage},
         nicknames::NickMap,
     },
 };
@@ -42,7 +42,7 @@ pub struct FriendsPage {
     session: Option<Session>,
     friends: Vec<OwnedUserId>,
     nicknames: NickMap,
-    picked: Option<Tab>,
+    focus_search: bool,
     form: NewMessage,
     input: Entity<TextInput>,
     /// Friends' profiles, asked for once each (`None` while loading or if
@@ -89,7 +89,7 @@ impl FriendsPage {
             session,
             friends,
             nicknames,
-            picked: None,
+            focus_search: false,
             form: NewMessage::default(),
             input,
             profiles: HashMap::new(),
@@ -117,8 +117,8 @@ impl FriendsPage {
     }
 
     /// Shows a tab (the palette's Start a DM: New Message).
-    pub fn show_tab(&mut self, tab: Tab, cx: &mut Context<Self>) {
-        self.picked = Some(tab);
+    pub fn focus_new_message(&mut self, cx: &mut Context<Self>) {
+        self.focus_search = true;
         cx.notify();
     }
 
@@ -292,52 +292,6 @@ impl FriendsPage {
     fn picture(&self, user_id: &str) -> Option<Arc<Image>> {
         let media = self.profiles.get(user_id)?.as_ref()?.avatar.clone()?;
         self.avatars.get(&media, 40)
-    }
-
-    fn tab_button(
-        &self,
-        tab: Tab,
-        current: Tab,
-        class: &'static str,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let active = tab == current;
-        let new_message = tab == Tab::NewMessage;
-        let mut button = div()
-            .id(SharedString::from(class))
-            .px(px(10.0))
-            .py(px(4.0))
-            .rounded(px(theme::RADIUS_SM))
-            .font_weight(FontWeight::SEMIBOLD)
-            .whitespace_nowrap()
-            .cursor_pointer()
-            .tabbable()
-            .child(tab.label());
-        button = match (new_message, active) {
-            (true, false) => button.bg(rgb(theme::green())).text_color(rgb(theme::on_green())),
-            (true, true) => button.text_color(rgb(theme::green())),
-            (false, true) => button
-                .bg(rgba(theme::bg_selected()))
-                .text_color(rgb(theme::text())),
-            (false, false) => button
-                .text_color(rgb(theme::text_muted()))
-                .hover(|s| s.bg(rgba(theme::bg_hover())).text_color(rgb(theme::text()))),
-        };
-        button
-            .on_click(cx.listener(move |this, _, _, cx| {
-                this.picked = Some(tab);
-                cx.notify();
-            }))
-            .e2e(
-                "button",
-                &if active {
-                    format!("friends-tab {class} active")
-                } else {
-                    format!("friends-tab {class}")
-                },
-            )
-            .text(tab.label())
-            .into_any_element()
     }
 
     fn new_message_el(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -679,9 +633,11 @@ impl FriendsPage {
 }
 
 impl Render for FriendsPage {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.fetch(cx);
-        let tab = friends::effective_tab(self.picked, self.rows().len());
+        if std::mem::take(&mut self.focus_search) {
+            self.input.read(cx).focus(window);
+        }
         let header = div()
             .h(px(48.0))
             .flex_none()
@@ -708,13 +664,17 @@ impl Render for FriendsPage {
                     .bg(rgba(theme::bg_selected()))
                     .e2e("span", "friends-divider"),
             )
-            .child(self.tab_button(Tab::All, tab, "all-friends-tab", cx))
-            .child(self.tab_button(Tab::NewMessage, tab, "new-message-tab", cx))
             .e2e("header", "chat-header friends-header");
-        let body = match tab {
-            Tab::NewMessage => self.new_message_el(cx),
-            Tab::All => self.list_el(cx),
-        };
+        // The new message part on top, the friends below.
+        let body = div()
+            .id("friends-body")
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_h_0()
+            .overflow_y_scroll()
+            .child(self.new_message_el(cx))
+            .child(self.list_el(cx));
         div()
             .flex()
             .flex_col()

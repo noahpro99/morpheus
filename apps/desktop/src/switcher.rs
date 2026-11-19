@@ -469,7 +469,7 @@ impl crate::shell::Shell {
             Action::StartDm => {
                 self.open_friends(cx);
                 if let Some(page) = self.friends_page.clone() {
-                    page.update(cx, |page, cx| page.show_tab(crate::view_model::friends::Tab::NewMessage, cx));
+                    page.update(cx, |page, cx| page.focus_new_message(cx));
                 }
             }
             Action::Settings => self.open_settings(SettingsFocus::None, cx),
