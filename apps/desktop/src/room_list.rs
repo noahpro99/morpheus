@@ -531,6 +531,17 @@ fn room_button(
             .e2e("span", "room-name")
             .text(title.clone()),
     );
+    if room.is_voice && !room.is_dm && let Some(timer) = shell.call_timer(room) {
+        button = button.child(
+            div()
+                .flex_none()
+                .text_size(px(0.75 * theme::REM))
+                .text_color(rgb(theme::text_faint()))
+                .child(timer.clone())
+                .e2e("span", "call-timer")
+                .text(timer),
+        );
+    }
     if chat_shown {
         // Like Discord's: the channel's text chat, without joining the call.
         let id = room.id.clone();

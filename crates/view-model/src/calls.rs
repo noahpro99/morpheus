@@ -1538,3 +1538,44 @@ mod screen_picker_hint_tests {
         assert_eq!(screen_picker_hint(false), None);
     }
 }
+
+/// How long a call has been going, as a timer: `m:ss`, `h:mm:ss` from an
+/// hour. `None` for a call whose start is not known or lies ahead of the
+/// clock by more than a few seconds (clocks differ a little: a start up to
+/// 5 s ahead reads as 0:00).
+pub fn call_timer(now_ms: u64, started_ms: Option<u64>) -> Option<String> {
+    let started = started_ms?;
+    if started > now_ms + 5_000 {
+        return None;
+    }
+    let seconds = now_ms.saturating_sub(started) / 1000;
+    let (h, m, s) = (seconds / 3600, seconds / 60 % 60, seconds % 60);
+    Some(if h > 0 {
+        format!("{h}:{m:02}:{s:02}")
+    } else {
+        format!("{m}:{s:02}")
+    })
+}
+
+#[cfg(test)]
+mod call_timer_tests {
+    use super::*;
+
+    #[test]
+    fn the_timer_counts_from_the_calls_start() {
+        let now = 1_000_000_000;
+        assert_eq!(call_timer(now, Some(now)), Some("0:00".into()));
+        assert_eq!(call_timer(now, Some(now - 65_000)), Some("1:05".into()));
+        assert_eq!(call_timer(now, Some(now - 3_599_000)), Some("59:59".into()));
+        assert_eq!(call_timer(now, Some(now - 3_600_000)), Some("1:00:00".into()));
+        assert_eq!(call_timer(now, Some(now - 36_125_000)), Some("10:02:05".into()));
+    }
+
+    #[test]
+    fn an_unknown_or_future_start_shows_nothing_or_zero() {
+        let now = 1_000_000_000;
+        assert_eq!(call_timer(now, None), None);
+        assert_eq!(call_timer(now, Some(now + 3_000)), Some("0:00".into()));
+        assert_eq!(call_timer(now, Some(now + 60_000)), None);
+    }
+}

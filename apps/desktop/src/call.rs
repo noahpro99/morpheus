@@ -156,6 +156,18 @@ impl Calls {
 impl Shell {
     /// Who `room`'s call shows: the server's list, less this account right
     /// after it hung up there (the list, and the badges on the rail).
+    /// How long the room's call has been going (`m:ss`), when someone is in it.
+    pub fn call_timer(&self, room: &RoomSummary) -> Option<String> {
+        if self.call_shown(room).is_empty() {
+            return None;
+        }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or_default();
+        crate::view_model::calls::call_timer(now, room.call_started_ms)
+    }
+
     pub fn call_shown(&self, room: &RoomSummary) -> Vec<OwnedUserId> {
         let me = self.session.as_ref().and_then(|s| s.user_id());
         crate::view_model::calls::shown_participants(

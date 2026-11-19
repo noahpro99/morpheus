@@ -475,6 +475,21 @@ impl Shell {
             }
         })
         .detach();
+        // The call timers count: draw again each second while a call is going.
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor().timer(std::time::Duration::from_secs(1)).await;
+                let alive = this.update(cx, |this, cx| {
+                    if this.rooms.iter().any(|r| r.call_started_ms.is_some() && !r.call_participants.is_empty()) {
+                        cx.notify();
+                    }
+                });
+                if alive.is_err() {
+                    break;
+                }
+            }
+        })
+        .detach();
         shell
     }
 

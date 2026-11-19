@@ -2092,6 +2092,36 @@ async fn leave_now(
     Ok(())
 }
 
+
+/// When the room's call began, in milliseconds: the earliest `created_ts`
+/// (else the event's own time) among the call's present memberships. The
+/// same for everyone, as it comes from the membership state events.
+pub(crate) async fn call_started(room: &matrix_sdk::Room) -> Option<u64> {
+    use matrix_sdk::deserialized_responses::RawAnySyncOrStrippedState;
+    let events = room.get_state_events(StateEventType::CallMember).await.ok()?;
+    let mut earliest: Option<u64> = None;
+    for raw in events {
+        let RawAnySyncOrStrippedState::Sync(raw) = raw else {
+            continue;
+        };
+        let Ok(event) = raw.deserialize_as::<Value>() else {
+            continue;
+        };
+        let content = &event["content"];
+        // Left: an empty membership.
+        if content.get("device_id").is_none() {
+            continue;
+        }
+        let at = content["created_ts"]
+            .as_u64()
+            .or_else(|| event["origin_server_ts"].as_u64());
+        earliest = match (earliest, at) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        };
+    }
+    earliest
+}
 impl Session {
     /// Get ready for a call: find the homeserver's call service and take an
     /// OpenID token, so joining does not wait for them. With a room, its
