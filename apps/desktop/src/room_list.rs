@@ -537,6 +537,7 @@ fn room_button(
                 .flex_none()
                 .text_size(px(0.75 * theme::REM))
                 .text_color(rgb(theme::text_faint()))
+                .tabular_nums()
                 .child(timer.clone())
                 .e2e("span", "call-timer")
                 .text(timer),

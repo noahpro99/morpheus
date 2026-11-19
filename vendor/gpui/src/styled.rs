@@ -605,6 +605,17 @@ pub trait Styled: Sized {
         self
     }
 
+    /// Tabular (fixed-width) figures for this element and its children (`tnum`).
+    fn tabular_nums(mut self) -> Self {
+        self.text_style()
+            .get_or_insert_with(Default::default)
+            .font_features = Some(crate::FontFeatures(std::sync::Arc::new(vec![(
+            "tnum".into(),
+            1,
+        )])));
+        self
+    }
+
     /// Sets the font family of this element and its children.
     fn font_family(mut self, family_name: impl Into<SharedString>) -> Self {
         self.text_style()
