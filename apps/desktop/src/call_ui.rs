@@ -1526,9 +1526,9 @@ fn cards(
     if has_others {
         let top = if hidden { main_room.1 - 26.0 } else { main_room.1 - 6.0 };
         let (name, title) = if hidden {
-            ("chevron-up", "Show the other cards")
+            ("chevron-up", "Show members")
         } else {
-            ("chevron-down", "Hide the other cards")
+            ("chevron-down", "Hide members")
         };
         col.push(
             div()
@@ -1536,21 +1536,24 @@ fn cards(
                 .occlude()
                 .absolute()
                 .top(px(top))
-                .left(px(stage.0 / 2.0 - 16.0))
-                .w(px(32.0))
+                .left(px(stage.0 / 2.0 - 28.0))
+                .w(px(56.0))
                 .h(px(20.0))
                 .flex()
                 .items_center()
                 .justify_center()
+                .gap(px(4.0))
                 .rounded(px(theme::RADIUS_XL))
                 .bg(rgb(theme::bg_elevated()))
                 .cursor_pointer()
                 .hover(|s| s.opacity(0.85))
                 .child(icon(name, 16.0).text_color(rgb(theme::text())))
+                .child(icon("users", 14.0).text_color(rgb(theme::text_muted())))
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.calls.strip_hidden = !this.calls.strip_hidden;
                     cx.notify();
                 }))
+                .tip(title)
                 .e2e("button", if hidden { "call-strip-toggle hidden" } else { "call-strip-toggle" })
                 .attr("title", title)
                 .into_any_element(),
