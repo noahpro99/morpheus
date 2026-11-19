@@ -449,6 +449,7 @@ impl crate::shell::Shell {
             streamer: crate::streamer::active(),
             light: crate::theme::current() == crate::view_model::settings::Theme::Light,
             no_window: false,
+            background: crate::tray::hides_on_close(),
         }
     }
 
@@ -495,6 +496,9 @@ impl crate::shell::Shell {
             Action::Inbox => self.toggle_inbox(cx),
             Action::CheckForUpdates => self.check_for_updates(true, cx),
             Action::Acknowledgements => self.open_about(cx),
+            Action::CloseToBackground => crate::send_command(crate::Command::CloseToBackground),
+            Action::Quit => crate::send_command(crate::Command::Quit),
+            Action::Restart => crate::send_command(crate::Command::Restart),
         }
     }
 }

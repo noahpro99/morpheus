@@ -499,6 +499,10 @@ pub(crate) enum Command {
     Redraw,
     /// Quit (the tray, Cmd+Q or Ctrl+Q, SIGTERM): hang up first, then end.
     Quit,
+    /// Close the window, the app going on in the background (the palette).
+    CloseToBackground,
+    /// Quit, then start again (the palette).
+    Restart,
 }
 
 static COMMANDS: OnceLock<UnboundedSender<Command>> = OnceLock::new();
@@ -622,6 +626,14 @@ fn run_command(command: Command, cx: &mut App) {
             root.update(cx, |root, cx| root.tray_action(action, cx));
         }
         Command::Tray(tray::TrayAction::Quit) | Command::Quit => quit(cx),
+        Command::CloseToBackground => {
+            if let Some(window) = cx.windows().first().copied() {
+                window
+                    .update(cx, |_, window, cx| chrome::close_window(window, cx))
+                    .ok();
+            }
+        }
+        Command::Restart => restart(cx),
         Command::Redraw => {
             root.update(cx, |root, cx| {
                 root.with_shell(cx, |shell, cx| shell.sync_notices(cx))
@@ -649,6 +661,33 @@ pub(crate) fn quit(cx: &mut App) {
         });
     }
     std::process::exit(0);
+}
+
+/// Start the app again: a new copy is launched a moment from now (once this
+/// one has let go of the single-instance lock), then this one quits.
+pub(crate) fn restart(cx: &mut App) {
+    if let Ok(exe) = std::env::current_exe() {
+        let args: Vec<String> = std::env::args().skip(1).collect();
+        #[cfg(unix)]
+        let spawned = std::process::Command::new("sh")
+            .arg("-c")
+            .arg("sleep 1; exec \"$0\" \"$@\"")
+            .arg(&exe)
+            .args(&args)
+            .spawn();
+        #[cfg(windows)]
+        let spawned = std::process::Command::new("cmd")
+            .arg("/C")
+            .arg("ping -n 2 127.0.0.1 >nul & start \"\"")
+            .arg(&exe)
+            .args(&args)
+            .spawn();
+        if let Err(err) = spawned {
+            eprintln!("morpheus-desktop: could not start again: {err}");
+            return;
+        }
+    }
+    quit(cx);
 }
 
 /// The system asking the app to end (logout, shutdown, `kill`, Ctrl+C in a

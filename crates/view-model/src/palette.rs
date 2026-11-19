@@ -26,6 +26,11 @@ pub enum PaletteAction {
     Inbox,
     CheckForUpdates,
     Acknowledgements,
+    /// Close the window; the app goes on in the background (the tray).
+    CloseToBackground,
+    /// End the app altogether, the background too.
+    Quit,
+    Restart,
 }
 
 /// What the labels depend on.
@@ -39,6 +44,8 @@ pub struct PaletteState {
     pub light: bool,
     /// No window of its own (a phone): no Startup page.
     pub no_window: bool,
+    /// There is a tray to go on running in: Close to background is offered.
+    pub background: bool,
 }
 
 /// One row of the palette.
@@ -113,6 +120,17 @@ pub fn actions(state: PaletteState) -> Vec<PaletteEntry> {
         entry(PaletteAction::CheckForUpdates, "Check for updates", "refresh-cw", &[], "update upgrade version"),
         entry(PaletteAction::Acknowledgements, "Acknowledgements", "heart", &[], "about credits licenses thanks"),
     ]);
+    if state.background {
+        list.push(entry(
+            PaletteAction::CloseToBackground,
+            "Close to background",
+            "minus",
+            &[],
+            "hide tray minimise window keep running",
+        ));
+    }
+    list.push(entry(PaletteAction::Quit, "Quit Morpheus", "log-out", &["Ctrl", "Q"], "exit close end stop"));
+    list.push(entry(PaletteAction::Restart, "Restart Morpheus", "refresh-cw", &[], "relaunch reload reopen"));
     list
 }
 
@@ -232,7 +250,7 @@ mod tests {
         assert!(!idle.iter().any(|e| e.action == PaletteAction::LeaveCall));
         assert!(labels(&idle).contains(&"Mute"));
         assert!(labels(&idle).contains(&"Deafen"));
-        let busy = actions(PaletteState { in_call: true, muted: true, deafened: true, streamer: true, light: true, no_window: false });
+        let busy = actions(PaletteState { in_call: true, muted: true, deafened: true, streamer: true, light: true, no_window: false, background: false });
         assert!(busy.iter().any(|e| e.action == PaletteAction::LeaveCall));
         assert!(labels(&busy).contains(&"Unmute"));
         assert!(labels(&busy).contains(&"Undeafen"));
@@ -266,5 +284,28 @@ mod tests {
         assert_eq!(search(all.clone(), "").len(), all.len());
         let found = search(all, "voice");
         assert!(found.iter().any(|e| e.action == PaletteAction::SettingsPage(SettingsPage::VoiceVideo)));
+    }
+}
+
+#[cfg(test)]
+mod app_actions {
+    use super::*;
+
+    #[test]
+    fn close_to_background_quit_and_restart_are_offered() {
+        let all = actions(PaletteState::default());
+        let find = |a| all.iter().find(|e| e.action == a);
+        assert_eq!(find(PaletteAction::Quit).expect("quit").label, "Quit Morpheus");
+        assert_eq!(find(PaletteAction::Quit).expect("quit").keys, ["Ctrl", "Q"]);
+        assert_eq!(find(PaletteAction::Restart).expect("restart").label, "Restart Morpheus");
+        // Closing to the background needs somewhere to go (a tray).
+        assert!(find(PaletteAction::CloseToBackground).is_none());
+        let with_tray = actions(PaletteState { background: true, ..PaletteState::default() });
+        assert_eq!(
+            with_tray.iter().find(|e| e.action == PaletteAction::CloseToBackground).expect("entry").label,
+            "Close to background"
+        );
+        let found = search(with_tray, "quit");
+        assert_eq!(found[0].action, PaletteAction::Quit);
     }
 }
