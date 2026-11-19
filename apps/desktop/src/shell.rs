@@ -389,13 +389,7 @@ impl Shell {
         )
         .detach();
         cx.subscribe(&settings, |this, _, chosen: &ThemeChosen, cx| {
-            crate::theme::set(chosen.0);
-            cx.refresh_windows();
-            this.prefs.set_theme(chosen.0);
-            crate::theme::set_custom(None);
-            this.prefs.set_custom_colour(None);
-            this.save_prefs(cx);
-            this.look_changed(cx);
+            this.choose_theme(chosen.0, cx)
         })
         .detach();
         cx.subscribe(

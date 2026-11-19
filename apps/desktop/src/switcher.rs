@@ -32,44 +32,8 @@ pub enum SwitcherEvent {
 
 impl EventEmitter<SwitcherEvent> for Switcher {}
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Action {
-    Settings,
-    Shortcuts,
-    Inbox,
-    CheckForUpdates,
-    Acknowledgements,
-}
-
-impl Action {
-    const ALL: [Action; 5] = [
-        Action::Settings,
-        Action::Shortcuts,
-        Action::Inbox,
-        Action::CheckForUpdates,
-        Action::Acknowledgements,
-    ];
-
-    fn label(self) -> &'static str {
-        match self {
-            Action::Settings => "Settings",
-            Action::Shortcuts => "Keyboard shortcuts",
-            Action::Inbox => "Inbox",
-            Action::CheckForUpdates => "Check for updates",
-            Action::Acknowledgements => "Acknowledgements",
-        }
-    }
-
-    fn glyph(self) -> &'static str {
-        match self {
-            Action::Settings => "settings",
-            Action::Shortcuts => "circle-help",
-            Action::Inbox => "inbox",
-            Action::CheckForUpdates => "refresh-cw",
-            Action::Acknowledgements => "heart",
-        }
-    }
-}
+pub use crate::view_model::palette::PaletteAction as Action;
+use crate::view_model::palette::{PaletteEntry, PaletteState};
 
 /// A room the switcher can open, with where it lives.
 pub struct SwitchRoom {
@@ -90,19 +54,20 @@ pub struct SwitchRoom {
 enum Entry {
     Setting(&'static crate::view_model::settings::SettingEntry),
     Room(usize),
-    Action(Action),
+    Action(PaletteEntry),
 }
 
 pub struct Switcher {
     input: Entity<TextInput>,
     pub rooms: Vec<SwitchRoom>,
+    state: PaletteState,
     cursor: usize,
     focus_next: bool,
     scroll: gpui::ScrollHandle,
 }
 
 impl Switcher {
-    pub fn new(rooms: Vec<SwitchRoom>, cx: &mut Context<Self>) -> Self {
+    pub fn new(rooms: Vec<SwitchRoom>, state: PaletteState, cx: &mut Context<Self>) -> Self {
         let input = cx.new(|cx| {
             TextInput::new(
                 "switcher",
@@ -139,6 +104,7 @@ impl Switcher {
         Self {
             input,
             rooms,
+            state,
             cursor: 0,
             focus_next: true,
             scroll: gpui::ScrollHandle::new(),
@@ -160,11 +126,8 @@ impl Switcher {
             .map(|(index, _)| Entry::Room(index))
             .collect();
         list.extend(
-            Action::ALL
+            crate::view_model::palette::search(crate::view_model::palette::actions(self.state), &needle)
                 .into_iter()
-                .filter(|action| {
-                    needle.is_empty() || action.label().to_lowercase().contains(&needle)
-                })
                 .map(Entry::Action),
         );
         // Settings, found by their name or the words they answer to.
@@ -182,7 +145,7 @@ impl Switcher {
                 let id = self.rooms[*room].id.clone();
                 cx.emit(SwitcherEvent::Room(id));
             }
-            Some(Entry::Action(action)) => cx.emit(SwitcherEvent::Action(*action)),
+            Some(Entry::Action(action)) => cx.emit(SwitcherEvent::Action(action.action)),
             Some(Entry::Setting(setting)) => cx.emit(SwitcherEvent::Setting(setting)),
             None => cx.emit(SwitcherEvent::Close),
         }
@@ -240,7 +203,7 @@ impl Render for Switcher {
             let active = index == cursor;
             let (classes, text) = match entry {
                 Entry::Room(room) => ("switcher-item", self.rooms[*room].name.clone()),
-                Entry::Action(action) => ("switcher-item action", action.label().to_owned()),
+                Entry::Action(action) => ("switcher-item action", action.label.clone()),
                 Entry::Setting(setting) => ("switcher-item", setting.label.to_owned()),
             };
             let classes = if active {
@@ -304,13 +267,25 @@ impl Render for Switcher {
                             .text(format!("Settings · {}", setting.page.label())),
                     ),
                 Entry::Action(action) => row
-                    .child(icon(action.glyph(), 16.0).text_color(rgb(theme::text_faint())))
+                    .child(icon(action.icon, 16.0).text_color(rgb(theme::text_faint())))
                     .child(
                         div()
                             .ml(px(8.0))
-                            .child(action.label())
+                            .child(action.label.clone())
                             .e2e("span", "action-label")
-                            .text(action.label()),
+                            .text(action.label.clone()),
+                    )
+                    .child(
+                        div()
+                            .ml_auto()
+                            .flex()
+                            .gap(px(4.0))
+                            .children(
+                                action
+                                    .keys
+                                    .iter()
+                                    .map(|key| crate::dialogs::key_cap(*key, None)),
+                            ),
                     ),
             };
             let key = match entry {
@@ -435,7 +410,8 @@ impl crate::shell::Shell {
             return;
         }
         let list = self.switch_rooms();
-        let switcher = cx.new(|cx| Switcher::new(list, cx));
+        let state = self.palette_state();
+        let switcher = cx.new(|cx| Switcher::new(list, state, cx));
         cx.subscribe(
             &switcher,
             |this: &mut Self, _, event: &SwitcherEvent, cx| {
@@ -450,17 +426,7 @@ impl crate::shell::Shell {
                         this.open_room_in_scope(id.clone(), cx);
                         }
                     }
-                    SwitcherEvent::Action(Action::Settings) => {
-                        this.open_settings(crate::view_model::keys::SettingsFocus::None, cx)
-                    }
-                    SwitcherEvent::Action(Action::Shortcuts) => {
-                        this.dialog_open(crate::dialogs::Dialog::Help, cx)
-                    }
-                    SwitcherEvent::Action(Action::Inbox) => this.toggle_inbox(cx),
-                    SwitcherEvent::Action(Action::CheckForUpdates) => {
-                        this.check_for_updates(true, cx)
-                    }
-                    SwitcherEvent::Action(Action::Acknowledgements) => this.open_about(cx),
+                    SwitcherEvent::Action(action) => this.run_palette_action(*action, cx),
                     SwitcherEvent::Setting(entry) => this.open_setting_entry(entry, cx),
                     SwitcherEvent::Close => {}
                 }
@@ -470,6 +436,60 @@ impl crate::shell::Shell {
         .detach();
         self.switcher = Some(switcher);
         cx.notify();
+    }
+}
+
+impl crate::shell::Shell {
+    /// What the palette's action labels depend on.
+    fn palette_state(&self) -> PaletteState {
+        PaletteState {
+            in_call: self.calls.state.is_some(),
+            muted: self.calls.voice.muted,
+            deafened: self.calls.voice.deafened,
+            streamer: crate::streamer::active(),
+            light: crate::theme::current() == crate::view_model::settings::Theme::Light,
+            no_window: false,
+        }
+    }
+
+    /// Runs an action chosen in the palette.
+    fn run_palette_action(&mut self, action: Action, cx: &mut Context<Self>) {
+        use crate::view_model::keys::SettingsFocus;
+        match action {
+            Action::CreateServer => self.open_room_dialog(
+                crate::view_model::room_dialogs::RoomDialogKind::CreateSpace(None),
+                cx,
+            ),
+            Action::Discover | Action::Join => {
+                if self.discover.is_none() {
+                    self.open_discover(cx);
+                }
+            }
+            Action::StartDm => self.open_friends(cx),
+            Action::Settings => self.open_settings(SettingsFocus::None, cx),
+            Action::SettingsPage(page) => {
+                self.open_settings(SettingsFocus::None, cx);
+                if let Some(settings) = self.settings.clone() {
+                    settings.update(cx, |settings, cx| settings.show_page(page, cx));
+                }
+            }
+            Action::ToggleTheme => {
+                let next = if crate::theme::current() == crate::view_model::settings::Theme::Light {
+                    crate::view_model::settings::Theme::Dark
+                } else {
+                    crate::view_model::settings::Theme::Light
+                };
+                self.choose_theme(next, cx);
+            }
+            Action::ToggleStreamer => self.toggle_streamer(cx),
+            Action::ToggleMute => self.toggle_mute(cx),
+            Action::ToggleDeafen => self.toggle_deafen(cx),
+            Action::LeaveCall => self.hang_up(cx),
+            Action::Shortcuts => self.dialog_open(crate::dialogs::Dialog::Help, cx),
+            Action::Inbox => self.toggle_inbox(cx),
+            Action::CheckForUpdates => self.check_for_updates(true, cx),
+            Action::Acknowledgements => self.open_about(cx),
+        }
     }
 }
 

@@ -691,3 +691,23 @@ impl Shell {
         self.open_menu(OpenMenu::new(at, items, false, MenuTarget::Other), cx);
     }
 }
+
+impl Shell {
+    /// Switches to a theme (and drops a custom colour), keeps the choice.
+    pub fn choose_theme(&mut self, theme: crate::view_model::settings::Theme, cx: &mut Context<Self>) {
+        crate::theme::set(theme);
+        cx.refresh_windows();
+        self.prefs.set_theme(theme);
+        crate::theme::set_custom(None);
+        self.prefs.set_custom_colour(None);
+        if let Some(settings) = &self.settings {
+            settings.update(cx, |settings, cx| {
+                settings.theme = theme;
+                settings.set_custom_shown(None, cx);
+            });
+        }
+        self.save_prefs(cx);
+        self.look_changed(cx);
+        cx.notify();
+    }
+}

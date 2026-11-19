@@ -72,6 +72,22 @@ fn title_mark(shell: &Shell) -> gpui::AnyElement {
 }
 
 impl Shell {
+    /// Streamer mode on, or off (the title bar's button, the palette).
+    pub fn toggle_streamer(&mut self, cx: &mut Context<Self>) {
+        let settings = if crate::streamer::active() {
+            crate::streamer::turn_off()
+        } else {
+            crate::streamer::turn_on()
+        };
+        if let Err(err) = settings.save(&crate::data_dir()) {
+            eprintln!("morpheus-desktop: saving the streamer mode setting: {err}");
+        }
+        crate::streamer::set_settings(settings);
+        self.streamer_changed(cx);
+    }
+}
+
+impl Shell {
     /// Back, from the mouse's back button or Alt+Left: closes what is open
     /// (a popup, menu, dialog, picker, lightbox, palette, the inbox, Settings)
     /// first, exactly as Escape would, and goes back in the history only when
@@ -148,18 +164,7 @@ fn streamer_button(shell: &Shell, cx: &mut Context<Shell>) -> Option<impl IntoEl
     if !on && !crate::streamer::sharing() {
         return None;
     }
-    let toggle = cx.listener(move |this, _, _, cx| {
-        let settings = if on {
-            crate::streamer::turn_off()
-        } else {
-            crate::streamer::turn_on()
-        };
-        if let Err(err) = settings.save(&crate::data_dir()) {
-            eprintln!("morpheus-desktop: saving the streamer mode setting: {err}");
-        }
-        crate::streamer::set_settings(settings);
-        this.streamer_changed(cx);
-    });
+    let toggle = cx.listener(move |this, _, _, cx| this.toggle_streamer(cx));
     if !on {
         return Some(
             bar_button(shell, cx, "streamer-button")

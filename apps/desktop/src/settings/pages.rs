@@ -149,6 +149,15 @@ impl SettingsView {
         self.highlight == Some(anchor)
     }
 
+    /// Shows one page.
+    pub(crate) fn show_page(&mut self, page: crate::view_model::settings::SettingsPage, cx: &mut Context<Self>) {
+        if page != crate::view_model::settings::SettingsPage::VoiceVideo {
+            self.stop_video(cx);
+        }
+        self.page = page;
+        cx.notify();
+    }
+
     /// Flashes the setting `anchor` for a moment.
     pub(crate) fn flash(&mut self, anchor: &'static str, cx: &mut Context<Self>) {
         self.highlight = Some(anchor);
