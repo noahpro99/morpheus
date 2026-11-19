@@ -493,6 +493,9 @@ impl SettingsView {
         self.focus_key = focus == SettingsFocus::RecoveryKey;
         self.set_up_when_ready = focus == SettingsFocus::SetUpBackup;
         self.status_rereads = 0;
+        if focus == SettingsFocus::NoiseSuppression {
+            self.flash("noise-suppression", cx);
+        }
         self.refresh(cx);
         cx.notify();
     }

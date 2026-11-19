@@ -77,6 +77,8 @@ pub enum SettingsFocus {
     Security,
     /// The Voice & Video page (the devices calls use).
     VoiceVideo,
+    /// The noise suppression section of the Voice & Video page, flashed.
+    NoiseSuppression,
 }
 
 #[cfg(test)]

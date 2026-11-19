@@ -149,6 +149,22 @@ impl SettingsView {
         self.highlight == Some(anchor)
     }
 
+    /// Flashes the setting `anchor` for a moment.
+    pub(crate) fn flash(&mut self, anchor: &'static str, cx: &mut Context<Self>) {
+        self.highlight = Some(anchor);
+        cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(HIGHLIGHT).await;
+            this.update(cx, |this, cx| {
+                if this.highlight == Some(anchor) {
+                    this.highlight = None;
+                    cx.notify();
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
     /// Opens a page on the setting a search found, flashing it a moment.
     pub(crate) fn show_setting(&mut self, entry: &'static SettingEntry, cx: &mut Context<Self>) {
         if entry.page != crate::view_model::settings::SettingsPage::VoiceVideo {

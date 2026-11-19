@@ -422,6 +422,29 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElement> {
             |this: &mut Shell, mode, cx| this.choose_noise(mode, cx),
             |this: &mut Shell, on, cx| this.set_mic_test(on, cx),
         ))
+        .child(
+            div()
+                .id("noise-settings")
+                .flex()
+                .items_center()
+                .gap(px(6.0))
+                .px(px(8.0))
+                .py(px(6.0))
+                .rounded(px(theme::RADIUS_SM))
+                .cursor_pointer()
+                .text_color(rgb(theme::text()))
+                .hover(|s| s.bg(gpui::rgba(theme::bg_selected())))
+                .child(icon("settings", 14.0))
+                .child("Noise suppression settings…")
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.close_noise_card(cx);
+                    this.open_settings(
+                        crate::view_model::keys::SettingsFocus::NoiseSuppression,
+                        cx,
+                    );
+                }))
+                .e2e("button", "noise-settings-button"),
+        )
         .e2e("div", "noise-card");
     let backdrop = div()
         .absolute()
