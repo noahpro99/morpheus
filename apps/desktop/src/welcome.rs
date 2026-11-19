@@ -8,6 +8,7 @@
 use gpui::{AnyElement, Context, FontWeight, IntoElement, div, prelude::*, px, rgb};
 use morpheus_core::{OwnedRoomId, RoomSummary, SpaceRoom};
 
+use crate::tooltip::TipExt as _;
 use crate::{
     e2e::E2eExt as _,
     icons::icon,
@@ -105,6 +106,7 @@ impl Shell {
 
 fn row(
     cx: &mut Context<Shell>,
+    open: bool,
     key: String,
     voice: bool,
     name: &str,
@@ -118,12 +120,18 @@ fn row(
             .font_weight(FontWeight::SEMIBOLD)
             .child(name.to_owned()),
     );
+    let has_topic = topic.is_some_and(|t| !t.is_empty());
     if let Some(topic) = topic.filter(|t| !t.is_empty()) {
+        // One line, cut off with an ellipsis, until opened.
         label = label.child(
             div()
                 .text_size(px(0.85 * theme::REM))
                 .text_color(rgb(theme::text_muted()))
-                .child(topic.to_owned()),
+                .when(!open, |d| d.truncate())
+                .child(topic.to_owned())
+                .e2e("div", "welcome-topic")
+                .attr("data-open", open.to_string())
+                .text(topic.to_owned()),
         );
     }
     if let Some(error) = error {
@@ -149,6 +157,34 @@ fn row(
         .on_click(cx.listener(move |this, _, _, cx| on_click(this, cx)))
         .child(crate::room_list::channel_glyph(voice))
         .child(div().flex_1().min_w_0().child(label))
+        .children(has_topic.then(|| {
+            let tip = if open { "Collapse the description" } else { "Show the full description" };
+            let toggled = key.clone();
+            div()
+                .id(gpui::SharedString::from(format!("welcome-topic-toggle-{key}")))
+                .flex_none()
+                .size(px(24.0))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(px(theme::RADIUS_SM))
+                .text_color(rgb(theme::text_muted()))
+                .hover(|s| s.text_color(rgb(theme::text())))
+                .cursor_pointer()
+                .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    cx.stop_propagation();
+                    if !this.welcome_topics_open.remove(&toggled) {
+                        this.welcome_topics_open.insert(toggled.clone());
+                    }
+                    cx.notify();
+                }))
+                .child(icon(if open { "chevron-up" } else { "chevron-down" }, 16.0))
+                .tip(tip)
+                .e2e("button", "welcome-topic-toggle")
+                .attr("data-open", open.to_string())
+                .attr("title", tip)
+        }))
         .child(status)
         .e2e("div", if voice { "welcome-channel voice" } else { "welcome-channel" })
         .text(name.to_owned())
@@ -158,7 +194,7 @@ fn row(
 /// The welcome screen of `space`, in place of the chat.
 pub fn render(shell: &Shell, cx: &mut Context<Shell>, space: &RoomSummary) -> AnyElement {
     let (joined, unjoined) = welcome_channels(shell, &space.id);
-    let mut channels = div().flex().flex_col().gap(px(6.0)).w_full();
+    let mut channels = div().flex().flex_col().gap(px(6.0));
     let pending: Vec<SpaceRoom> = unjoined
         .iter()
         .filter(|r| {
@@ -184,6 +220,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>, space: &RoomSummary) -> An
         let (id, scope) = (room.id.clone(), Scope::Space(space.id.clone()));
         channels = channels.child(row(
             cx,
+            shell.welcome_topics_open.contains(&room.id.to_string()),
             room.id.to_string(),
             room.is_voice,
             &room.name,
@@ -222,6 +259,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>, space: &RoomSummary) -> An
         };
         channels = channels.child(row(
             cx,
+            shell.welcome_topics_open.contains(&room.id.to_string()),
             room.id.to_string(),
             room.is_voice,
             &room.name,
@@ -238,10 +276,9 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>, space: &RoomSummary) -> An
         .text("Start chatting");
     let line = vm_invites::members_label(space.member_count);
     let mut card = div()
-        .mx_auto()
         .flex_none()
-        .w_full()
-        .max_w(px(480.0))
+        .w(px(480.0))
+        .max_w_full()
         .flex()
         .flex_col()
         .items_center()
@@ -279,6 +316,9 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>, space: &RoomSummary) -> An
                 .text(topic.to_owned()),
         );
     }
+    // One column as tall as its content (at least the area), the card
+    // centred in it: a short card sits in the middle, a tall one scrolls from
+    // its top to its bottom (#197, #205).
     div()
         .id("server-welcome-scroll")
         .flex_1()
@@ -287,22 +327,27 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>, space: &RoomSummary) -> An
         .flex_col()
         .overflow_y_scroll()
         .track_scroll(&shell.welcome_scroll)
-        // Spacers centre a short card; an auto margin would push a tall
-        // one above the scroll area (#197).
-        .child(div().flex_grow())
         .child(
-            card.child(
-                div()
-                    .mt(px(8.0))
-                    .w_full()
-                    .text_left()
-                    .child(channels)
-                    .e2e("div", "welcome-channels"),
-            )
-            .child(div().mt(px(12.0)).child(start))
-            .e2e("section", "server-welcome"),
+            div()
+                .flex_none()
+                .min_h_full()
+                .flex()
+                .flex_col()
+                .justify_center()
+                .items_center()
+                .child(
+                    card.child(
+                        div()
+                            .mt(px(8.0))
+                            .w_full()
+                            .text_left()
+                            .child(channels)
+                            .e2e("div", "welcome-channels"),
+                    )
+                    .child(div().mt(px(12.0)).child(start))
+                    .e2e("section", "server-welcome"),
+                ),
         )
-        .child(div().flex_grow())
         .e2e("div", "server-welcome-scroll")
         .scrollable(std::rc::Rc::new(crate::e2e::HandleProbe(
             shell.welcome_scroll.clone(),
