@@ -82,6 +82,7 @@ impl OpenMenu {
 
 impl Shell {
     pub fn open_menu(&mut self, menu: OpenMenu, cx: &mut Context<Self>) {
+        self.calls.audio_menu = None;
         self.menu = Some(menu);
         cx.notify();
     }

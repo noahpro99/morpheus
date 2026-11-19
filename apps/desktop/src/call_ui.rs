@@ -344,7 +344,7 @@ fn stage_controls(shell: &Shell, cx: &mut Context<Shell>, call: &CallState) -> A
             pending: false,
         },
         cx.listener(|this, _, _, cx| this.toggle_mute(cx)),
-        None,
+        Some(audio_right_click(false, cx)),
     ));
     row = row.child(control_button(
         Control {
@@ -365,7 +365,7 @@ fn stage_controls(shell: &Shell, cx: &mut Context<Shell>, call: &CallState) -> A
             pending: false,
         },
         cx.listener(|this, _, _, cx| this.toggle_deafen(cx)),
-        None,
+        Some(audio_right_click(true, cx)),
     ));
     if morpheus_call::can_send_video() {
         let on = !call.camera;
@@ -447,6 +447,21 @@ fn screen_title(call: &CallState) -> &'static str {
     } else {
         "Share your screen"
     }
+}
+
+/// The mic (or, `speakers`, the headphones) button's right-click: its devices.
+fn audio_right_click(
+    speakers: bool,
+    cx: &mut Context<Shell>,
+) -> Box<dyn Fn(&gpui::MouseDownEvent, &mut Window, &mut App)> {
+    let view = cx.entity();
+    Box::new(move |event, _, cx| {
+        let at = event.position;
+        view.update(cx, |this, cx| {
+            cx.stop_propagation();
+            this.open_audio_menu(speakers, at, cx);
+        });
+    })
 }
 
 /// The camera button's right-click: the cameras, to pick from.

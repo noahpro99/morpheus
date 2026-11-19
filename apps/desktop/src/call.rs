@@ -111,6 +111,12 @@ pub struct Calls {
     pub mic_test_before: Option<VoiceFlags>,
     /// A redraw for the mic's meter or processing is on its way.
     pub mic_refresh: std::cell::Cell<bool>,
+    /// The microphones and speakers last read (id, name), so a menu opens at once.
+    pub audio_cache: Option<AudioCache>,
+    /// A read of the devices is on its way.
+    pub audio_reading: bool,
+    /// The device menu open now (speakers?, where), to refill when a read lands.
+    pub audio_menu: Option<(bool, gpui::Point<gpui::Pixels>)>,
     /// The last join that did not come off (shown with a way to try again).
     pub join_error: Option<JoinError>,
     /// The mini call window (issue #86): which feed it shows over time,
@@ -1672,36 +1678,25 @@ impl Shell {
             calls::{device_rows, voice_popup_menu},
             menu::DeviceKind,
         };
-        let found = morpheus_call::audio_devices(AudioMode::from_env());
-        cx.spawn(async move |this, cx| {
-            let found = found.await;
-            this.update(cx, |this, cx| {
-                let mics: Vec<(String, String)> = found
-                    .microphones
-                    .into_iter()
-                    .map(|d| (d.id, d.name))
-                    .collect();
-                let spks: Vec<(String, String)> =
-                    found.speakers.into_iter().map(|d| (d.id, d.name)).collect();
-                let items = if speakers {
-                    let rows = device_rows(&spks, this.calls.devices.speaker.as_deref());
-                    voice_popup_menu(DeviceKind::Speaker, &rows, morpheus_call::output_volume())
-                } else {
-                    let rows = device_rows(&mics, this.calls.devices.microphone.as_deref());
-                    voice_popup_menu(DeviceKind::Microphone, &rows, morpheus_call::input_volume())
-                };
-                let mut menu = crate::menu::OpenMenu::new(
-                    at,
-                    items,
-                    false,
-                    crate::view_model::menu::MenuTarget::Other,
-                );
-                menu.open = Some(0);
-                this.open_menu(menu, cx);
-            })
-            .ok();
-        })
-        .detach();
+        let cache = self.calls.audio_cache.clone().unwrap_or_default();
+        let items = if speakers {
+            let rows = device_rows(&cache.speakers, self.calls.devices.speaker.as_deref());
+            voice_popup_menu(DeviceKind::Speaker, &rows, morpheus_call::output_volume())
+        } else {
+            let rows = device_rows(&cache.microphones, self.calls.devices.microphone.as_deref());
+            voice_popup_menu(DeviceKind::Microphone, &rows, morpheus_call::input_volume())
+        };
+        let mut menu = crate::menu::OpenMenu::new(
+            at,
+            items,
+            false,
+            crate::view_model::menu::MenuTarget::Other,
+        );
+        menu.open = Some(0);
+        self.open_menu(menu, cx);
+        self.calls.audio_menu = Some((speakers, at));
+        // Opened from what was read before; the list is read again for next time.
+        self.refresh_audio_cache(cx);
     }
 
     /// A device chosen from a quick list: used from now on, a call going
@@ -1751,4 +1746,43 @@ fn notify_ring(title: String) {
         None,
         Some(crate::notify::RING_SOUND),
     );
+}
+
+/// The audio devices last read: microphones and speakers, as (id, name).
+#[derive(Clone, PartialEq, Eq, Default)]
+pub struct AudioCache {
+    pub microphones: Vec<(String, String)>,
+    pub speakers: Vec<(String, String)>,
+}
+
+impl Shell {
+    /// Reads the audio devices in the background (the system takes a while to
+    /// answer); a device menu open meanwhile is refilled when they come.
+    pub fn refresh_audio_cache(&mut self, cx: &mut Context<Self>) {
+        if self.calls.audio_reading {
+            return;
+        }
+        self.calls.audio_reading = true;
+        let found = morpheus_call::audio_devices(AudioMode::from_env());
+        cx.spawn(async move |this, cx| {
+            let found = found.await;
+            this.update(cx, |this, cx| {
+                this.calls.audio_reading = false;
+                let cache = AudioCache {
+                    microphones: found.microphones.into_iter().map(|d| (d.id, d.name)).collect(),
+                    speakers: found.speakers.into_iter().map(|d| (d.id, d.name)).collect(),
+                };
+                if this.calls.audio_cache.as_ref() != Some(&cache) {
+                    this.calls.audio_cache = Some(cache);
+                    if let Some((speakers, at)) = this.calls.audio_menu
+                        && this.menu.is_some()
+                    {
+                        this.open_audio_menu(speakers, at, cx);
+                    }
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
 }

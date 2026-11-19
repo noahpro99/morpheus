@@ -50,6 +50,15 @@ fn stand_ins(kind: &str) -> Vec<AudioDevice> {
 /// chooses (Android, iOS) or there is no audio hardware.
 pub async fn audio_devices(mode: AudioMode) -> AudioDevices {
     if mode == AudioMode::Tone {
+        // A test can make the system probe slow, as real hardware is (about a second).
+        if let Some(ms) = std::env::var("MORPHEUS_E2E_DEVICE_DELAY_MS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+        {
+            let _ = runtime()
+                .spawn_blocking(move || std::thread::sleep(std::time::Duration::from_millis(ms)))
+                .await;
+        }
         return AudioDevices {
             microphones: stand_ins("microphone"),
             speakers: stand_ins("speaker"),

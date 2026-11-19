@@ -1598,6 +1598,9 @@ impl Render for Shell {
         let screen_quality = crate::screen_quality::render(self, cx);
         let noise_card = crate::noise::render(self, cx);
         self.keep_mic_fresh(cx);
+        if self.calls.audio_cache.is_none() && !self.calls.audio_reading && self.session.is_some() {
+            self.refresh_audio_cache(cx);
+        }
         let dialog = dialogs::render_dialog(self, window, cx);
         let whats_new = self.whats_new_popup(window, cx);
         let inbox = crate::invites::inbox(self, window, cx);
