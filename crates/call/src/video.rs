@@ -389,3 +389,43 @@ fn turn(rgba: Vec<u8>, width: u32, height: u32, degrees: u32) -> (Vec<u8>, u32, 
     }
     (out, out_w as u32, out_h as u32)
 }
+
+/// A small JPEG of `frame` as a thumbnail message (its mean colour first), for
+/// the data channel; `None` when it cannot be made small enough.
+pub(crate) fn thumbnail_message(frame: &Frame) -> Option<Vec<u8>> {
+    let (tw, th) = crate::watch::thumb_size(frame.width, frame.height);
+    if frame.width == 0 || frame.height == 0 || frame.bgra.len() < (frame.width * frame.height * 4) as usize {
+        return None;
+    }
+    // Nearest-neighbour: cheap on a big screen, enough for a thumbnail.
+    let mut rgb = Vec::with_capacity((tw * th * 3) as usize);
+    let mut sum = [0u64; 3];
+    for y in 0..th {
+        let sy = (u64::from(y) * u64::from(frame.height) / u64::from(th)) as usize;
+        for x in 0..tw {
+            let sx = (u64::from(x) * u64::from(frame.width) / u64::from(tw)) as usize;
+            let at = (sy * frame.width as usize + sx) * 4;
+            let (r, g, b) = (frame.bgra[at + 2], frame.bgra[at + 1], frame.bgra[at]);
+            rgb.extend_from_slice(&[r, g, b]);
+            sum[0] += u64::from(r);
+            sum[1] += u64::from(g);
+            sum[2] += u64::from(b);
+        }
+    }
+    let n = u64::from(tw * th).max(1);
+    let mean = ((sum[0] / n) as u8, (sum[1] / n) as u8, (sum[2] / n) as u8);
+    for quality in [60u8, 40, 25] {
+        let mut jpeg = Vec::new();
+        let encoder = jpeg_encoder::Encoder::new(&mut jpeg, quality);
+        if encoder
+            .encode(&rgb, tw as u16, th as u16, jpeg_encoder::ColorType::Rgb)
+            .is_err()
+        {
+            return None;
+        }
+        if let Some(message) = crate::watch::encode_thumb(mean, &jpeg) {
+            return Some(message);
+        }
+    }
+    None
+}

@@ -1141,6 +1141,11 @@ fn video_card(
                     }
                 }))
         }
+        // Someone's share not watched yet: a click anywhere on the card watches it.
+        _ if unwatched => {
+            let user = feed.user.clone();
+            tile.on_click(cx.listener(move |this, _, _, cx| this.watch_share(&user, true, cx)))
+        }
         _ => tile.on_click(cx.listener(move |this, _, _, cx| this.toggle_focus(&click_key, cx))),
     };
     if let Some(frame) = frame {
@@ -1153,6 +1158,24 @@ fn video_card(
         tile = tile.child(zoom_control(shell, &key, view.zoom));
     }
     if unwatched {
+        // One recent small picture of the share, dimmed, instead of black (the
+        // video itself is not sent until it is watched).
+        if let Some((image, bytes, mean)) = shell.calls.share_thumbs.get(&feed.user) {
+            tile = tile.child(
+                div()
+                    .absolute()
+                    .inset_0()
+                    .child(
+                        gpui::img(image.clone())
+                            .size_full()
+                            .object_fit(gpui::ObjectFit::Cover)
+                            .opacity(0.45),
+                    )
+                    .e2e("div", "share-thumb")
+                    .attr("data-bytes", bytes.to_string())
+                    .attr("data-mean", format!("{},{},{}", mean.0, mean.1, mean.2)),
+            );
+        }
         tile = tile.child(watch_overlay(shell, cx, &feed.user));
     }
     if own && feed.screen {

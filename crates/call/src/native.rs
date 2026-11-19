@@ -240,6 +240,10 @@ pub enum CallEvent {
     },
     /// How many people watch this device's shared screen now.
     Watchers(usize),
+    /// A new thumbnail of `identity`'s shared screen arrived ([`share_thumbnail`]).
+    Thumbnail {
+        identity: String,
+    },
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -1847,6 +1851,14 @@ static WATCHING: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(Mutex::default
 /// Who watches what, as the others said.
 static TALLY: LazyLock<Mutex<crate::watch::Tally>> = LazyLock::new(Mutex::default);
 
+static THUMBS: LazyLock<Mutex<crate::watch::Thumbs>> = LazyLock::new(Mutex::default);
+
+/// The latest small picture of `identity`'s shared screen, sent by the
+/// sharer while nobody watches it (the card shows it behind the Watch button).
+pub fn share_thumbnail(identity: &str) -> Option<crate::watch::Thumb> {
+    THUMBS.lock().ok()?.get(identity).cloned()
+}
+
 fn is_share(source: TrackSource) -> bool {
     matches!(source, TrackSource::Screenshare | TrackSource::ScreenshareAudio)
 }
@@ -1912,6 +1924,7 @@ async fn watch_watchers(
     let mut said_something = false;
     let mut paused = false;
     let mut since_said = crate::watch::EVERY;
+    let mut clock = crate::watch::ThumbClock::default();
     loop {
         tokio::time::sleep(Duration::from_secs(1)).await;
         let count = TALLY.lock().map_or(0, |t| t.watching(&me, Instant::now()));
@@ -1932,6 +1945,29 @@ async fn watch_watchers(
         {
             paused = count == 0;
             let _ = out.track.pause_sending(paused);
+        }
+        // A small picture of the share for those who do not watch it (nothing
+        // of the video is sent): when it starts, then every few seconds.
+        let sharing = screen
+            .lock()
+            .await
+            .as_ref()
+            .is_some_and(|out| out.kind == VideoKind::Screen);
+        let others = !room.remote_participants().is_empty();
+        if clock.due(Instant::now(), sharing, others)
+            && let Some(frame) = latest_frame(LOCAL_SCREEN)
+            && let Some(payload) = video::thumbnail_message(&frame)
+        {
+            clock.sent(Instant::now());
+            let _ = room
+                .local_participant()
+                .publish_data(DataPacket {
+                    payload,
+                    topic: Some(crate::watch::THUMB_TOPIC.to_owned()),
+                    reliable: true,
+                    ..DataPacket::default()
+                })
+                .await;
         }
         since_said += Duration::from_secs(1);
         if since_said >= crate::watch::EVERY {
@@ -2168,7 +2204,20 @@ async fn forward_events(
             {
                 let identity = participant.identity().to_string();
                 set_watching(&identity, false);
+                if let Ok(mut t) = THUMBS.lock() {
+                    t.forget(&identity);
+                }
                 CallEvent::Screen { identity, on: false }
+            }
+            RoomEvent::DataReceived { payload, topic, participant: Some(p), .. }
+                if topic.as_deref() == Some(crate::watch::THUMB_TOPIC) =>
+            {
+                let identity = p.identity().to_string();
+                let kept = THUMBS.lock().is_ok_and(|mut t| t.keep(&identity, &payload));
+                if !kept {
+                    continue;
+                }
+                CallEvent::Thumbnail { identity }
             }
             RoomEvent::DataReceived { payload, topic, participant: Some(p), .. }
                 if topic.as_deref() == Some(crate::watch::TOPIC) =>

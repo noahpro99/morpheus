@@ -62,6 +62,9 @@ pub enum CallEvent {
         on: bool,
     },
     Watchers(usize),
+    Thumbnail {
+        identity: String,
+    },
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -288,4 +291,9 @@ pub const SCREEN_TONE_RIGHT: f32 = 990.0;
 /// No hardware video decoder in a browser build.
 pub fn hardware_decoder() -> String {
     "none: the browser decodes video".to_owned()
+}
+
+/// The small picture of a shared screen (none in a browser yet).
+pub fn share_thumbnail(_identity: &str) -> Option<crate::watch::Thumb> {
+    None
 }

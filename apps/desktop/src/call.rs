@@ -52,6 +52,8 @@ pub struct Calls {
     pub strip_hidden: bool,
     /// The LiveKit identity of each user sharing their screen (to watch it by).
     pub share_identity: HashMap<OwnedUserId, String>,
+    /// The latest small picture of each unwatched share: the image, its JPEG size and mean colour.
+    pub share_thumbs: HashMap<OwnedUserId, (std::sync::Arc<gpui::Image>, usize, (u8, u8, u8))>,
     /// People's names and pictures, as profiles say.
     pub people: HashMap<OwnedUserId, Person>,
     asked: HashSet<OwnedUserId>,
@@ -1594,6 +1596,7 @@ async fn run_call(
                         this.calls.share_identity.insert(user.clone(), identity);
                     } else {
                         this.calls.share_identity.remove(&user);
+                        this.calls.share_thumbs.remove(&user);
                     }
                     if let Some(state) = this.calls.state.as_mut() {
                         state.share_event(user.clone(), on);
@@ -1606,6 +1609,28 @@ async fn run_call(
                     cx.notify();
                 })
                 .ok();
+            }
+            CallEvent::Thumbnail { identity } => {
+                if let Some(thumb) = morpheus_call::share_thumbnail(&identity) {
+                    this.update(cx, |this, cx| {
+                        let user = this
+                            .calls
+                            .share_identity
+                            .iter()
+                            .find(|(_, id)| **id == identity)
+                            .map(|(user, _)| user.clone());
+                        if let Some(user) = user {
+                            let bytes = thumb.jpeg.len();
+                            let image = std::sync::Arc::new(gpui::Image::from_bytes(
+                                gpui::ImageFormat::Jpeg,
+                                thumb.jpeg,
+                            ));
+                            this.calls.share_thumbs.insert(user, (image, bytes, thumb.mean));
+                            cx.notify();
+                        }
+                    })
+                    .ok();
+                }
             }
             CallEvent::Watchers(n) => {
                 this.update(cx, |this, cx| {
