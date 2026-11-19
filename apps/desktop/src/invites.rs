@@ -687,11 +687,15 @@ pub fn inbox(
     Some(
         div()
             .absolute()
-            .inset_0()
+            // Under the title bar: its inbox button stays clickable (it toggles).
+            .top(px(crate::titlebar::HEIGHT))
+            .left_0()
+            .right_0()
+            .bottom_0()
             .flex()
             .justify_end()
             .items_start()
-            .pt(px(36.0))
+            .pt(px(4.0))
             .pr(px(12.0))
             .on_mouse_down(
                 MouseButton::Left,
