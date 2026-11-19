@@ -207,6 +207,8 @@ pub struct Shell {
     /// Whether the Friends page fills the chat area, and the page itself.
     /// The server whose welcome screen fills the chat area.
     pub welcome: Option<OwnedRoomId>,
+    /// The voice channel under the pointer in the channel list (it shows a chat button).
+    pub hovered_voice: Option<OwnedRoomId>,
     /// The member list shown on that server's overview.
     pub welcome_members: Option<(OwnedRoomId, Entity<MembersView>)>,
     /// The server overview's scroll position (also the e2e's probe).
@@ -529,6 +531,7 @@ impl Shell {
             members: None,
             members_open: true,
             welcome_members: None,
+            hovered_voice: None,
             welcome_scroll: gpui::ScrollHandle::new(),
             watch_space: None,
             members_count: 0,

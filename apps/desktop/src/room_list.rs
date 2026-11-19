@@ -440,6 +440,7 @@ fn room_button(
     let lit = selected || unread;
     let id = room.id.clone();
     let view = cx.entity();
+    let chat_shown = room.is_voice && !room.is_dm && shell.hovered_voice.as_ref() == Some(&room.id);
     let mut button = div()
         .id(gpui::SharedString::from(format!("room-{}", room.id)))
         .flex()
@@ -484,6 +485,21 @@ fn room_button(
                 this.open_room_menu(room.clone(), event.position, cx)
             })
         });
+    if room.is_voice && !room.is_dm {
+        let id = room.id.clone();
+        button = button.on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+            let now = this.hovered_voice.clone();
+            if *hovered {
+                if now.as_ref() != Some(&id) {
+                    this.hovered_voice = Some(id.clone());
+                    cx.notify();
+                }
+            } else if now.as_ref() == Some(&id) {
+                this.hovered_voice = None;
+                cx.notify();
+            }
+        }));
+    }
     if let Some(listed) = reorder {
         let dragged = DraggedRoom {
             id: room.id.clone(),
@@ -515,6 +531,32 @@ fn room_button(
             .e2e("span", "room-name")
             .text(title.clone()),
     );
+    if chat_shown {
+        // Like Discord's: the channel's text chat, without joining the call.
+        let id = room.id.clone();
+        button = button.child(
+            div()
+                .id(gpui::SharedString::from(format!("room-chat-{}", room.id)))
+                .size(px(20.0))
+                .flex_none()
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(px(theme::RADIUS_SM))
+                .hover(|s| s.bg(gpui::rgba(theme::bg_selected())))
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    cx.stop_propagation();
+                    this.open_room(id.clone(), cx);
+                    this.calls.voice_chat = true;
+                    cx.notify();
+                }))
+                .child(icon("messages-square", 14.0).text_color(rgb(theme::text())))
+                .tip("Open chat")
+                .e2e("button", "room-chat-button")
+                .attr("title", "Open chat"),
+        );
+    }
     if pinned {
         button = button.child(icon("pin", 12.0).text_color(rgb(theme::text_faint())));
     }
