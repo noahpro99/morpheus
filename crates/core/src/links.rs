@@ -77,6 +77,23 @@ pub struct LinkedRoom {
     pub members: u64,
     /// This account is in it already.
     pub joined: bool,
+    /// Joining needs the room's say-so: you can knock (ask to join).
+    pub knockable: bool,
+}
+
+impl Session {
+    /// Ask to join a room that takes knocks (`via`: servers to ask).
+    pub fn knock_room(&self, room: OwnedRoomOrAliasId, via: Vec<String>) -> CoreFuture<()> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            let servers = via
+                .iter()
+                .filter_map(|s| s.as_str().try_into().ok())
+                .collect();
+            client.knock(room, None, servers).await?;
+            Ok(())
+        })
+    }
 }
 
 impl Session {
@@ -96,6 +113,13 @@ impl Session {
             let preview = client.get_room_preview(&room, via).await?;
             Ok(LinkedRoom {
                 joined: preview.state == Some(matrix_sdk::RoomState::Joined),
+                knockable: matches!(
+                    preview.join_rule,
+                    Some(
+                        matrix_sdk::ruma::room::JoinRuleSummary::Knock
+                            | matrix_sdk::ruma::room::JoinRuleSummary::KnockRestricted(_)
+                    )
+                ),
                 room_id: preview.room_id,
                 name: preview.name,
                 topic: preview.topic,

@@ -95,4 +95,4 @@ pub use verification::{
 
 pub use eyeball_im::VectorDiff;
 pub use imbl::Vector;
-pub use matrix_sdk::ruma::{OwnedDeviceId, OwnedEventId, OwnedRoomId, OwnedUserId, RoomId, UserId};
+pub use matrix_sdk::ruma::{OwnedDeviceId, OwnedEventId, OwnedRoomId, OwnedRoomOrAliasId, OwnedUserId, RoomId, UserId};

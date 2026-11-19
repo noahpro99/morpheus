@@ -34,6 +34,7 @@ mod tests {
             avatar: None,
             members: 3,
             joined: false,
+            knockable: false,
         }
     }
 

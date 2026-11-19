@@ -116,6 +116,12 @@ impl FriendsPage {
         rows
     }
 
+    /// Shows a tab (the palette's Start a DM: New Message).
+    pub fn show_tab(&mut self, tab: Tab, cx: &mut Context<Self>) {
+        self.picked = Some(tab);
+        cx.notify();
+    }
+
     /// The page is left: the removed rows go.
     pub fn clear_removed(&mut self, cx: &mut Context<Self>) {
         if !self.removed.is_empty() {

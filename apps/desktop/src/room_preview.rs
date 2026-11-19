@@ -25,6 +25,8 @@ pub struct RoomPreview {
     via: Vec<String>,
     busy: bool,
     error: Option<String>,
+    /// A knock was sent.
+    asked: bool,
     focus: FocusHandle,
     take_focus: bool,
 }
@@ -45,9 +47,34 @@ impl RoomPreview {
             via,
             busy: false,
             error: None,
+            asked: false,
             focus: cx.focus_handle(),
             take_focus: true,
         }
+    }
+
+    /// Ask to join a room that takes knocks.
+    fn knock(&mut self, cx: &mut Context<Self>) {
+        if self.busy || self.asked {
+            return;
+        }
+        self.busy = true;
+        cx.notify();
+        let room: morpheus_core::OwnedRoomOrAliasId = self.room.room_id.clone().into();
+        let knocking = self.session.knock_room(room, self.via.clone());
+        cx.spawn(async move |this, cx| {
+            let result = knocking.await;
+            this.update(cx, |this, cx| {
+                this.busy = false;
+                match result {
+                    Ok(()) => this.asked = true,
+                    Err(err) => this.error = Some(err.to_string()),
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
     }
 
     fn join(&mut self, cx: &mut Context<Self>) {
@@ -127,6 +154,15 @@ impl Render for RoomPreview {
                     .text(topic),
             );
         }
+        if self.asked {
+            boxed = boxed.child(
+                div()
+                    .text_color(rgb(theme::ok()))
+                    .child("Request sent. You can join once someone lets you in.")
+                    .e2e("p", "room-preview-note")
+                    .text("Request sent. You can join once someone lets you in."),
+            );
+        }
         if let Some(error) = &self.error {
             boxed = boxed.child(
                 div()
@@ -138,15 +174,27 @@ impl Render for RoomPreview {
         }
         let boxed = boxed
             .child(actions(vec![
-                button(
-                    "room-preview-join",
-                    Some("log-in"),
-                    "Join",
-                    "primary",
-                    false,
-                    self.busy,
-                    cx.listener(|this, _, _, cx| this.join(cx)),
-                ),
+                if self.room.knockable {
+                    button(
+                        "room-preview-knock",
+                        Some("log-in"),
+                        "Ask to join",
+                        "primary room-preview-knock",
+                        false,
+                        self.busy || self.asked,
+                        cx.listener(|this, _, _, cx| this.knock(cx)),
+                    )
+                } else {
+                    button(
+                        "room-preview-join",
+                        Some("log-in"),
+                        "Join",
+                        "primary room-preview-join",
+                        false,
+                        self.busy,
+                        cx.listener(|this, _, _, cx| this.join(cx)),
+                    )
+                },
                 button(
                     "room-preview-cancel",
                     None,

@@ -39,6 +39,9 @@ pub struct Preview(pub PublicRoom, pub Vec<String>);
 /// The directories were switched on or off or one was added: keep the choice.
 pub struct Choice(pub Directories);
 
+/// The Join by address button was pressed.
+pub struct JoinAddress;
+
 pub struct Discover {
     session: Session,
     /// The account's own server, whose directory is `None` to the session.
@@ -63,6 +66,7 @@ impl EventEmitter<Closed> for Discover {}
 impl EventEmitter<Joined> for Discover {}
 impl EventEmitter<Preview> for Discover {}
 impl EventEmitter<Choice> for Discover {}
+impl EventEmitter<JoinAddress> for Discover {}
 
 impl Discover {
     pub fn new(
@@ -529,6 +533,15 @@ impl Render for Discover {
                             .child(self.search.clone())
                             .child(div().flex().flex_wrap().gap(px(6.0)).children(chips))
                             .child(self.server_input.clone())
+                            .child(div().flex().child(button(
+                                "discover-join-address",
+                                Some("link"),
+                                "Join by address",
+                                "secondary discover-join-address",
+                                false,
+                                false,
+                                cx.listener(|_, _, _, cx| cx.emit(JoinAddress)),
+                            )))
                             .child(list),
                     ),
             )
@@ -564,6 +577,8 @@ impl crate::shell::Shell {
             this.open_pending_dm(cx);
         })
         .detach();
+        cx.subscribe(&page, |this, _, _: &JoinAddress, cx| this.open_join_address(cx))
+            .detach();
         cx.subscribe(&page, |this, _, look: &Preview, cx| {
             let room = morpheus_core::LinkedRoom {
                 room_id: look.0.room_id.clone(),
@@ -572,6 +587,7 @@ impl crate::shell::Shell {
                 avatar: look.0.avatar.clone(),
                 members: look.0.members,
                 joined: false,
+                knockable: false,
             };
             // The page stays under the card: closing it comes back here.
             this.preview_room(room, look.1.clone(), cx);

@@ -15,7 +15,7 @@ pub enum PaletteAction {
     /// Settings on one page.
     SettingsPage(SettingsPage),
     StartDm,
-    /// Join a server or room (through the public directories).
+    /// Join by address: a room alias, ID or link.
     Join,
     ToggleTheme,
     ToggleStreamer,
@@ -66,7 +66,7 @@ pub fn actions(state: PaletteState) -> Vec<PaletteEntry> {
         entry(PaletteAction::CreateServer, "Create a server", "plus", &["Ctrl", "Shift", "N"], "new community space add"),
         entry(PaletteAction::Discover, "Discover servers", "compass", &[], "browse explore public directory find"),
         entry(PaletteAction::StartDm, "Start a DM", "message-circle", &[], "dm direct message chat friend person"),
-        entry(PaletteAction::Join, "Join a server or room", "log-in", &[], "join enter public room server directory"),
+        entry(PaletteAction::Join, "Join by address", "log-in", &[], "join room server alias link matrix.to id knock"),
         entry(PaletteAction::Settings, "Settings", "settings", &["Ctrl", ","], "preferences options"),
     ];
     list.extend(SettingsPage::listed(!state.no_window).into_iter().map(|page| PaletteEntry {

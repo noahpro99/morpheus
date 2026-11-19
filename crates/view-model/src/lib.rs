@@ -23,6 +23,7 @@ pub mod gpu;
 pub mod history;
 pub mod hotkeys;
 pub mod palette;
+pub mod join_address;
 pub mod capture;
 pub mod instance;
 pub mod sidebar;

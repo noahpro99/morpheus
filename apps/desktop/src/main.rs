@@ -23,6 +23,7 @@ mod emoji_picker;
 mod custom_emoji;
 mod discover;
 mod friend_picker;
+mod join_address;
 mod friends;
 mod graphics;
 mod hotkeys;

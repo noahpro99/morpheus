@@ -460,12 +460,18 @@ impl crate::shell::Shell {
                 crate::view_model::room_dialogs::RoomDialogKind::CreateSpace(None),
                 cx,
             ),
-            Action::Discover | Action::Join => {
+            Action::Discover => {
                 if self.discover.is_none() {
                     self.open_discover(cx);
                 }
             }
-            Action::StartDm => self.open_friends(cx),
+            Action::Join => self.open_join_address(cx),
+            Action::StartDm => {
+                self.open_friends(cx);
+                if let Some(page) = self.friends_page.clone() {
+                    page.update(cx, |page, cx| page.show_tab(crate::view_model::friends::Tab::NewMessage, cx));
+                }
+            }
             Action::Settings => self.open_settings(SettingsFocus::None, cx),
             Action::SettingsPage(page) => {
                 self.open_settings(SettingsFocus::None, cx);
