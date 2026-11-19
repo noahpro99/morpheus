@@ -531,43 +531,67 @@ fn room_button(
             .e2e("span", "room-name")
             .text(title.clone()),
     );
-    if room.is_voice && !room.is_dm && let Some(timer) = shell.call_timer(room) {
-        button = button.child(
-            div()
-                .flex_none()
-                .text_size(px(0.75 * theme::REM))
-                .text_color(rgb(theme::text_faint()))
-                .tabular_nums()
-                .child(timer.clone())
-                .e2e("span", "call-timer")
-                .text(timer),
-        );
-    }
-    if chat_shown {
-        // Like Discord's: the channel's text chat, without joining the call.
+    let timer = if room.is_voice && !room.is_dm {
+        shell.call_timer(room)
+    } else {
+        None
+    };
+    // Like Discord's: the channel's text chat, without joining the call.
+    let chat_button = chat_shown.then(|| {
         let id = room.id.clone();
-        button = button.child(
-            div()
-                .id(gpui::SharedString::from(format!("room-chat-{}", room.id)))
-                .size(px(20.0))
-                .flex_none()
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(px(theme::RADIUS_SM))
-                .hover(|s| s.bg(gpui::rgba(theme::bg_selected())))
-                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    cx.stop_propagation();
-                    this.open_room(id.clone(), cx);
-                    this.calls.voice_chat = true;
-                    cx.notify();
-                }))
-                .child(icon("messages-square", 14.0).text_color(rgb(theme::text())))
-                .tip("Open chat")
-                .e2e("button", "room-chat-button")
-                .attr("title", "Open chat"),
-        );
+        div()
+            .id(gpui::SharedString::from(format!("room-chat-{}", room.id)))
+            .size(px(20.0))
+            .flex_none()
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded(px(theme::RADIUS_SM))
+            .hover(|s| s.bg(gpui::rgba(theme::bg_selected())))
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .on_click(cx.listener(move |this, _, _, cx| {
+                cx.stop_propagation();
+                this.open_room(id.clone(), cx);
+                this.calls.voice_chat = true;
+                cx.notify();
+            }))
+            .child(icon("messages-square", 14.0).text_color(rgb(theme::text())))
+            .tip("Open chat")
+            .e2e("button", "room-chat-button")
+            .attr("title", "Open chat")
+    });
+    match (timer, chat_button) {
+        // On hover the button takes the timer's place: the timer stays in the
+        // layout, unseen, so the row does not shift.
+        (Some(timer), Some(chat)) => {
+            button = button.child(
+                div()
+                    .relative()
+                    .flex_none()
+                    .child(
+                        div()
+                            .text_size(px(0.75 * theme::REM))
+                            .opacity(0.0)
+                            .tabular_nums()
+                            .child(timer),
+                    )
+                    .child(div().absolute().right_0().top_0().bottom_0().flex().items_center().child(chat)),
+            );
+        }
+        (Some(timer), None) => {
+            button = button.child(
+                div()
+                    .flex_none()
+                    .text_size(px(0.75 * theme::REM))
+                    .text_color(rgb(theme::text_faint()))
+                    .tabular_nums()
+                    .child(timer.clone())
+                    .e2e("span", "call-timer")
+                    .text(timer),
+            );
+        }
+        (None, Some(chat)) => button = button.child(chat),
+        (None, None) => {}
     }
     if pinned {
         button = button.child(icon("pin", 12.0).text_color(rgb(theme::text_faint())));
