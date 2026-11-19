@@ -1576,6 +1576,17 @@ fn stage_body(
         .map(|r| r.call_participants.clone())
         .unwrap_or_default();
     let mut all = tiles(call, &participants, me.clone());
+    // A hidden camera: the person's avatar card instead of their video.
+    let all_cards = std::mem::take(&mut all);
+    all = all_cards
+        .into_iter()
+        .map(|card| match card {
+            Card::Video(feed) if !feed.screen && shell.calls.hidden_video.contains(&feed.user) => {
+                Card::Person(feed.user)
+            }
+            other => other,
+        })
+        .collect();
     // Your screen is being started (the picker, the connection): its tile is
     // here already, a skeleton, until the first picture.
     if call.choosing_screen
@@ -2727,9 +2738,9 @@ impl Shell {
             .state
             .as_ref()
             .is_some_and(|c| c.watching.contains(&user));
-        let focused = self.calls.focus.as_deref() == Some(key.as_str());
+        let hidden = self.calls.hidden_video.contains(&user);
         let extra =
-            crate::view_model::calls::call_card_items(&user, own, screen, volume, muted, &key, focused, watching);
+            crate::view_model::calls::call_card_items(&user, own, screen, volume, muted, hidden, watching);
         let name = shown(self, &user);
         self.open_user_menu_extra(room, user, name, extra, at, cx);
     }

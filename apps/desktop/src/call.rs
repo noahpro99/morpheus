@@ -96,6 +96,8 @@ pub struct Calls {
     /// for you, for as long as the app runs.
     pub user_volumes: HashMap<OwnedUserId, f32>,
     pub muted_for_me: std::collections::HashSet<OwnedUserId>,
+    /// People whose camera is hidden on their card (for this call, on this device).
+    pub hidden_video: std::collections::HashSet<OwnedUserId>,
     /// Whose shared screen's sound is muted for you (apart from their voice).
     pub stream_muted: std::collections::HashSet<OwnedUserId>,
     /// The signed-in account, whose per-person volumes are kept (`person-volumes.json`).
@@ -1784,5 +1786,15 @@ impl Shell {
             .ok();
         })
         .detach();
+    }
+}
+
+impl Shell {
+    /// Hide someone's camera on their card (the avatar shows instead), or show it again.
+    pub fn toggle_hide_video(&mut self, user: OwnedUserId, cx: &mut Context<Self>) {
+        if !self.calls.hidden_video.remove(&user) {
+            self.calls.hidden_video.insert(user);
+        }
+        cx.notify();
     }
 }

@@ -1462,8 +1462,7 @@ pub fn call_card_items(
     stream: bool,
     volume: f32,
     muted: bool,
-    key: &str,
-    focused: bool,
+    hidden: bool,
     watching: bool,
 ) -> Vec<crate::menu::MenuItem> {
     use crate::menu::{MenuAction, MenuItem, MenuSlider};
@@ -1493,13 +1492,15 @@ pub fn call_card_items(
                 .icon("eye-off"),
         );
     }
-    items.push(
-        MenuItem::new(
-            if focused { "Unfocus" } else { "Focus" },
-            MenuAction::CallFocus(key.to_owned()),
-        )
-        .icon(if focused { "minimize-2" } else { "maximize-2" }),
-    );
+    // Someone else's camera: shown or hidden (a check mark says which). Clicking
+    // the card focuses it, so there is no Focus item.
+    if !own && !stream {
+        items.push(
+            MenuItem::new("Hide video", MenuAction::CallHideVideo(user.clone()))
+                .icon("video-off")
+                .checked(hidden),
+        );
+    }
     items
 }
 

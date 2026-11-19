@@ -119,6 +119,8 @@ pub enum MenuAction {
     CallStopWatching(OwnedUserId),
     /// Focuses the card with this key, or (when focused already) puts it back.
     CallFocus(String),
+    /// Hides (or shows again) this person's camera on their card.
+    CallHideVideo(OwnedUserId),
 }
 
 /// Which device a call's quick list picks.
