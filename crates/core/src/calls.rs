@@ -132,25 +132,39 @@ impl Session {
                 let _writing = membership_writes(&user_id, &room_id).lock_owned().await;
                 stop_heartbeat(&user_id, &room_id);
                 let content = member_content(&room_id, &device_id, &first_service);
+                let joined_at = now_ms();
+                // Without a delayed leave to catch a crash the membership is short-lived and
+                // renewed; whether there will be one is known from the start unless the
+                // homeserver turns it down just now.
+                let value = stamped(&content, joined_at, !delayed_expected(&client));
                 // Kept, so the media state can be added to it later.
-                if let (Ok(value), Ok(mut kept)) =
-                    (serde_json::to_value(&content), memberships().lock())
-                {
+                if let Ok(mut kept) = memberships().lock() {
                     kept.insert(
                         (user_id.clone(), room_id.clone()),
-                        (state_key.as_ref().to_owned(), value),
+                        (state_key.as_ref().to_owned(), value.clone()),
                     );
                 }
                 let others_in_call = call_participants(&room).iter().any(|u| *u != user_id);
-                let (_, sent) = futures_util::future::join(
+                let (armed, sent) = futures_util::future::join(
                     schedule_leave(&client, &room_id, &user_id, &state_key),
-                    room.send_state_event_for_key(&state_key, content),
+                    room.send_state_event_raw(
+                        &StateEventType::CallMember.to_string(),
+                        state_key.as_ref(),
+                        value,
+                    ),
                 )
                 .await;
-                Ok::<_, Error>((sent?.event_id, others_in_call))
+                let sent = sent?;
+                if !armed {
+                    let renewal = crate::rt::spawn(renew_membership(room.clone(), user_id.clone(), joined_at));
+                    if let Ok(mut r) = renewals().lock() {
+                        r.insert((user_id.clone(), room_id.clone()), renewal);
+                    }
+                }
+                Ok::<_, Error>((sent.event_id, others_in_call, joined_at, armed))
             };
             let (credentials, membership) = futures_util::future::join(token, membership).await;
-            let (event_id, others_in_call) = match (credentials.as_ref(), membership) {
+            let (event_id, others_in_call, joined_at, armed) = match (credentials.as_ref(), membership) {
                 (Ok(_), Ok(done)) => done,
                 (credentials, membership) => {
                     // One half failed: the other must not stay behind.
@@ -172,7 +186,11 @@ impl Session {
             );
             if credentials.service_url != first_service {
                 // The first service refused: the membership names the one that answered.
-                let content = member_content(&room_id, &device_id, &credentials.service_url);
+                let content = stamped(
+                    &member_content(&room_id, &device_id, &credentials.service_url),
+                    joined_at,
+                    !armed,
+                );
                 let _writing = membership_writes(&user_id, &room_id).lock_owned().await;
                 // Not if a hang-up came meanwhile (it took the membership):
                 // that would put this device back in the call.
@@ -181,13 +199,12 @@ impl Session {
                     if !kept.contains_key(&key) {
                         return false;
                     }
-                    if let Ok(value) = serde_json::to_value(&content) {
-                        kept.insert(key, (state_key.as_ref().to_owned(), value));
-                    }
+                    kept.insert(key, (state_key.as_ref().to_owned(), content.clone()));
                     true
                 });
                 if still_in {
-                    room.send_state_event_for_key(&state_key, content).await?;
+                    room.send_state_event_raw(&StateEventType::CallMember.to_string(), state_key.as_ref(), content)
+                        .await?;
                 }
             }
             if encrypted {
@@ -593,7 +610,21 @@ const LEAVE_DELAY: Duration = Duration::from_secs(10);
 /// How often a device in a call checks in (well inside [`LEAVE_DELAY`]).
 const HEARTBEAT: Duration = Duration::from_secs(4);
 
-type Heartbeats = Mutex<HashMap<(OwnedUserId, OwnedRoomId), (crate::rt::JoinHandle<()>, String)>>;
+type Heartbeats = Mutex<HashMap<(OwnedUserId, OwnedRoomId), (crate::rt::JoinHandle<()>, Arc<Mutex<String>>)>>;
+
+/// How long a membership lasts when nothing postpones a delayed leave for it (a
+/// homeserver without delayed events): short, and renewed ([`renew_membership`]), so
+/// a device that vanished drops out of the call for everyone within about a minute.
+const FALLBACK_EXPIRY: Duration = Duration::from_secs(40);
+/// How often such a membership is renewed.
+const RENEW_EVERY: Duration = Duration::from_secs(15);
+
+type Renewals = Mutex<HashMap<(OwnedUserId, OwnedRoomId), crate::rt::JoinHandle<()>>>;
+
+fn renewals() -> &'static Renewals {
+    static RENEWALS: OnceLock<Renewals> = OnceLock::new();
+    RENEWALS.get_or_init(Default::default)
+}
 
 /// The running heartbeat (and delayed leave id) per account and room.
 fn heartbeats() -> &'static Heartbeats {
@@ -603,21 +634,66 @@ fn heartbeats() -> &'static Heartbeats {
 
 /// Stop checking in for a call; returns the delayed leave it kept postponed.
 fn stop_heartbeat(user_id: &OwnedUserId, room_id: &OwnedRoomId) -> Option<String> {
+    if let Some(task) = renewals()
+        .lock()
+        .ok()
+        .and_then(|mut r| r.remove(&(user_id.clone(), room_id.clone())))
+    {
+        task.abort();
+    }
     let (task, delay_id) = heartbeats()
         .lock()
         .ok()?
         .remove(&(user_id.clone(), room_id.clone()))?;
     task.abort();
-    Some(delay_id)
+    let id = delay_id.lock().ok()?.clone();
+    Some(id)
 }
 
-async fn heartbeat(client: matrix_sdk::Client, delay_id: String) {
+/// Whether a delayed leave is armed for this device in `room_id`'s call now: if the app
+/// is killed, the homeserver hangs up for it within [`LEAVE_DELAY`].
+pub(crate) fn delayed_leave_armed(user_id: &OwnedUserId, room_id: &OwnedRoomId) -> bool {
+    heartbeats()
+        .lock()
+        .is_ok_and(|b| b.contains_key(&(user_id.clone(), room_id.clone())))
+}
+
+async fn heartbeat(
+    client: matrix_sdk::Client,
+    room_id: OwnedRoomId,
+    state_key: CallMemberStateKey,
+    delay_id: Arc<Mutex<String>>,
+) {
     loop {
         crate::rt::sleep(HEARTBEAT).await;
-        if let Err(err) = update_delay(&client, delay_id.clone(), UpdateAction::Restart).await {
-            debug!(%err, "call heartbeat");
+        let id = delay_id.lock().map(|id| id.clone()).unwrap_or_default();
+        if let Err(err) = update_delay(&client, id, UpdateAction::Restart).await {
+            // The homeserver forgot the delayed leave (it fired, or a restart): arm a
+            // new one, or the next crash would leave this device in the call for hours.
+            tracing::warn!(%err, "call heartbeat: the delayed leave is gone, arming another");
+            if let Ok(new_id) = send_delayed_leave(&client, &room_id, &state_key).await
+                && let Ok(mut id) = delay_id.lock()
+            {
+                *id = new_id;
+            }
         }
     }
+}
+
+/// Ask the homeserver to hang up for this device in [`LEAVE_DELAY`] unless postponed.
+async fn send_delayed_leave(
+    client: &matrix_sdk::Client,
+    room_id: &OwnedRoomId,
+    state_key: &CallMemberStateKey,
+) -> Result<String, matrix_sdk::Error> {
+    let request = delayed_state_event::unstable::Request::new(
+        room_id.clone(),
+        state_key.as_ref().to_owned(),
+        DelayParameters::Timeout { timeout: LEAVE_DELAY },
+        &CallMemberEventContent::new_empty(None),
+    )
+    .map_err(|err| matrix_sdk::Error::UnknownError(Box::new(err)))?;
+    Ok(client.send(request).await?.delay_id)
 }
 
 /// Restart, send or cancel a delayed event (both unstable MSC4140 shapes).
@@ -2016,51 +2092,97 @@ async fn livekit_token_cached(
 
 /// Schedule the homeserver's leave for this device and keep postponing it
 /// ([`heartbeat`]), unless the homeserver has refused delayed events (then
-/// the membership simply expires, as it does for everyone after a few
-/// hours, and nobody asks again for half an hour).
+/// the membership is short-lived and renewed instead, [`renew_membership`], and
+/// nobody asks again for half an hour). Whether a delayed leave is armed.
 async fn schedule_leave(
     client: &matrix_sdk::Client,
     room_id: &OwnedRoomId,
     user_id: &OwnedUserId,
     state_key: &CallMemberStateKey,
-) {
+) -> bool {
     // `MORPHEUS_DELAYED_EVENTS=off` does without them, as on matrix.org
-    // (which turns them off): what a test of a clean leave needs.
-    if std::env::var("MORPHEUS_DELAYED_EVENTS").is_ok_and(|v| v == "off") {
-        return;
+    // (which turns them off): what a test of the fallback needs.
+    if !delayed_expected(client) {
+        return false;
     }
     let key = homeserver_key(client);
-    if let Ok(refused) = delayed_refused().lock()
-        && let Some(at) = refused.get(&key)
-        && at.elapsed() < DELAYED_RETRY
-    {
-        return;
-    }
-    let Ok(request) = delayed_state_event::unstable::Request::new(
-            room_id.clone(),
-            state_key.as_ref().to_owned(),
-            DelayParameters::Timeout {
-                timeout: LEAVE_DELAY,
-            },
-            &CallMemberEventContent::new_empty(None),
-    ) else {
-        return;
-    };
-    match client.send(request).await {
-        Ok(response) => {
-            let heartbeat = crate::rt::spawn(heartbeat(client.clone(), response.delay_id.clone()));
+    match send_delayed_leave(client, room_id, state_key).await {
+        Ok(delay_id) => {
+            let delay_id = Arc::new(Mutex::new(delay_id));
+            let heartbeat = crate::rt::spawn(heartbeat(
+                client.clone(),
+                room_id.clone(),
+                state_key.clone(),
+                delay_id.clone(),
+            ));
             if let Ok(mut beats) = heartbeats().lock() {
-                beats.insert(
-                    (user_id.clone(), room_id.clone()),
-                    (heartbeat, response.delay_id),
-                );
+                beats.insert((user_id.clone(), room_id.clone()), (heartbeat, delay_id));
             }
+            info!("call: a delayed leave is armed ({LEAVE_DELAY:?}, postponed every {HEARTBEAT:?})");
+            true
         }
         Err(err) => {
-            debug!(%err, "no delayed leave for the call");
-            if let Ok(mut refused) = delayed_refused().lock() {
+            // A homeserver that says no (unsupported, forbidden, too long) is left alone for
+            // a while; a network error or a 5xx may pass, so the next join tries again.
+            let refused = err
+                .as_client_api_error()
+                .is_some_and(|e| e.status_code.as_u16() != 429 && e.status_code.as_u16() < 500);
+            tracing::warn!(%err, refused, "call: no delayed leave; the membership will expire quickly instead");
+            if refused && let Ok(mut refused) = delayed_refused().lock() {
                 refused.insert(key, Instant::now());
             }
+            false
+        }
+    }
+}
+
+/// Whether to try a delayed leave on this homeserver: not turned off
+/// (`MORPHEUS_DELAYED_EVENTS=off`) and not refused lately.
+fn delayed_expected(client: &matrix_sdk::Client) -> bool {
+    if std::env::var("MORPHEUS_DELAYED_EVENTS").is_ok_and(|v| v == "off") {
+        return false;
+    }
+    let key = homeserver_key(client);
+    !delayed_refused()
+        .lock()
+        .is_ok_and(|refused| refused.get(&key).is_some_and(|at| at.elapsed() < DELAYED_RETRY))
+}
+
+/// The membership's `content` stamped with when this device joined and, when no delayed
+/// leave is there to catch a crash, a short `expires` (renewed by [`renew_membership`]).
+fn stamped(content: &CallMemberEventContent, joined_at: u64, short_lived: bool) -> Value {
+    let mut value = serde_json::to_value(content).unwrap_or_default();
+    value["created_ts"] = json!(joined_at);
+    if short_lived {
+        value["expires"] = json!(now_ms().saturating_sub(joined_at) + FALLBACK_EXPIRY.as_millis() as u64);
+    }
+    value
+}
+
+/// Keep a short-lived membership alive while this device is in the call: a fresh
+/// `expires` every [`RENEW_EVERY`], so that if the app dies nothing more comes and
+/// everyone's view drops the member when it runs out.
+async fn renew_membership(room: matrix_sdk::Room, user_id: OwnedUserId, joined_at: u64) {
+    let room_id = room.room_id().to_owned();
+    loop {
+        crate::rt::sleep(RENEW_EVERY).await;
+        let _writing = membership_writes(&user_id, &room_id).lock_owned().await;
+        let kept = memberships()
+            .lock()
+            .ok()
+            .and_then(|k| k.get(&(user_id.clone(), room_id.clone())).cloned());
+        let Some((state_key, mut content)) = kept else {
+            break;
+        };
+        content["expires"] = json!(now_ms().saturating_sub(joined_at) + FALLBACK_EXPIRY.as_millis() as u64);
+        if let Ok(mut k) = memberships().lock() {
+            k.insert((user_id.clone(), room_id.clone()), (state_key.clone(), content.clone()));
+        }
+        if let Err(err) = room
+            .send_state_event_raw(&StateEventType::CallMember.to_string(), &state_key, content)
+            .await
+        {
+            debug!(%err, "renewing the call membership");
         }
     }
 }
@@ -2448,5 +2570,15 @@ mod element_call_tests {
         assert_eq!(back.len(), 1);
         assert_eq!(back[0].key, key);
         assert_eq!(back[0].livekit_identity.as_deref(), Some("@me:localhost:MYDEVICE"));
+    }
+}
+
+impl Session {
+    /// Whether the homeserver will hang up for this device on its own if the app dies in
+    /// `room_id`'s call (a delayed leave is armed and being postponed). For diagnostics.
+    pub fn delayed_leave_armed(&self, room_id: &OwnedRoomId) -> bool {
+        self.client
+            .user_id()
+            .is_some_and(|user| delayed_leave_armed(&user.to_owned(), room_id))
     }
 }

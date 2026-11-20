@@ -31,7 +31,7 @@ const VOICE_ROOM_TYPES: [&str; 2] = ["org.matrix.msc3417.call", "io.element.vide
 const PAGE_SIZE: usize = 200;
 
 /// How often the room list looks for call memberships that ran out.
-const CALL_EXPIRY_CHECK: std::time::Duration = std::time::Duration::from_secs(30);
+const CALL_EXPIRY_CHECK: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// Remember who the call of each room in `diff` lists.
 fn note_calls(diff: &VectorDiff<RoomSummary>, in_calls: &mut HashMap<OwnedRoomId, Vec<OwnedUserId>>) {
