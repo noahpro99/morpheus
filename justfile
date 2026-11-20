@@ -96,6 +96,17 @@ ci: fmt lint test
 desktop: sweep
     cargo run -p morpheus-desktop {{shaders}}
 
+# Run the desktop app without the GPU: drawn by Mesa's software Vulkan
+# (lavapipe) and with hardware video encode/decode off (MORPHEUS_HW_VIDEO=0).
+# For checking a machine with no usable GPU, or a GPU driver problem.
+desktop-no-gpu: sweep
+    #!/usr/bin/env bash
+    set -euo pipefail
+    icd=/run/opengl-driver/share/vulkan/icd.d/lvp_icd.x86_64.json
+    [ -f "$icd" ] || { echo "no lavapipe at $icd (needs Mesa's Vulkan drivers)" >&2; exit 1; }
+    VK_DRIVER_FILES="$icd" VK_ICD_FILENAMES="$icd" MORPHEUS_HW_VIDEO=0 \
+        cargo run -p morpheus-desktop {{shaders}}
+
 # Run the desktop app as a named profile (separate data dir), e.g. `just desktop-as bob`
 desktop-as profile: sweep
     MORPHEUS_DATA_DIR="$PWD/.dev-data/{{profile}}" cargo run -p morpheus-desktop {{shaders}}
