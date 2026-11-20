@@ -1,0 +1,190 @@
+//! People and ways into rooms: starting a direct message, invites, joining by
+//! address, making a room, friends and the public directory. The wording and
+//! the parsing are `morpheus-view-model` (`friends`, `invites`,
+//! `join_address`, `discover`).
+
+use std::sync::Arc;
+
+use morpheus_core::{MatrixLink, OwnedRoomId, OwnedRoomOrAliasId, OwnedUserId, RoomSummary};
+use morpheus_view_model::{discover, friends, invites, join_address::parse_room_address};
+
+use crate::{FfiError, MediaHandle, Morpheus};
+
+fn failed(reason: impl Into<String>) -> FfiError {
+    FfiError::Failed { reason: reason.into() }
+}
+
+fn room_id(id: &str) -> Result<OwnedRoomId, FfiError> {
+    OwnedRoomId::try_from(id).map_err(|_| failed(format!("{id} is not a room id")))
+}
+
+/// A room I am invited to.
+#[derive(uniffi::Record)]
+pub struct InviteItem {
+    pub id: String,
+    pub name: String,
+    pub avatar: Option<Arc<MediaHandle>>,
+    pub is_dm: bool,
+    /// "Bob invited you to a room."
+    pub line: String,
+}
+
+pub(crate) fn invite_items(rooms: &[RoomSummary], session: &morpheus_core::Session) -> Vec<InviteItem> {
+    invites::pending_invites(rooms)
+        .iter()
+        .map(|room| InviteItem {
+            id: room.id.to_string(),
+            name: room.name.clone(),
+            avatar: room.avatar.clone().map(|m| MediaHandle::new(m, session)),
+            is_dm: room.is_dm,
+            line: invites::card_line(room),
+        })
+        .collect()
+}
+
+/// A friend: a name in a private list.
+#[derive(uniffi::Record)]
+pub struct FriendItem {
+    pub user_id: String,
+    pub name: String,
+    pub subtitle: String,
+    pub avatar: Option<Arc<MediaHandle>>,
+}
+
+/// A room of a server's public directory.
+#[derive(uniffi::Record)]
+pub struct DirectoryItem {
+    pub id: String,
+    pub name: String,
+    pub topic: Option<String>,
+    pub alias: Option<String>,
+    /// "12 members".
+    pub members: String,
+    pub avatar: Option<Arc<MediaHandle>>,
+    pub is_space: bool,
+}
+
+#[derive(uniffi::Record)]
+pub struct DirectoryPage {
+    pub rooms: Vec<DirectoryItem>,
+    /// Pass back to get the next page; `None` at the end.
+    pub next: Option<String>,
+}
+
+#[uniffi::export]
+impl Morpheus {
+    /// The direct message with whoever `typed` names (a username on this
+    /// server, or a full Matrix ID), made if there is none yet; its room id.
+    pub async fn start_dm(&self, typed: String) -> Result<String, FfiError> {
+        let session = self.session()?;
+        let user = session.find_user(typed).await?;
+        friends::check_target(session.user_id().as_ref().map(|u| u.as_str()), user.as_str())
+            .map_err(failed)?;
+        Ok(session.dm_with(user).await?.to_string())
+    }
+
+    /// Join an invited room.
+    pub async fn accept_invite(&self, room_id_of: String) -> Result<(), FfiError> {
+        Ok(self.session()?.join_room(room_id(&room_id_of)?).await?)
+    }
+
+    /// Turn an invite down.
+    pub async fn decline_invite(&self, room_id_of: String) -> Result<(), FfiError> {
+        Ok(self.session()?.leave_room(room_id(&room_id_of)?).await?)
+    }
+
+    /// Join the room an address names (`#alias:server`, `!id:server`, a
+    /// matrix.to or matrix: link); its room id.
+    pub async fn join_address(&self, text: String) -> Result<String, FfiError> {
+        let session = self.session()?;
+        let (room, via) = match parse_room_address(&text) {
+            Ok(MatrixLink::Room { room, via, .. }) => (room, via),
+            Ok(_) => return Err(failed("That is a person, not a room.")),
+            Err(err) => return Err(failed(err.message())),
+        };
+        let room: OwnedRoomOrAliasId = room;
+        let found = session
+            .linked_room(room, via.clone())
+            .await
+            .map_err(|err| failed(format!("Could not find that room: {err}")))?;
+        if !found.joined {
+            session.join_room_via(found.room_id.clone(), via).await?;
+        }
+        Ok(found.room_id.to_string())
+    }
+
+    /// Make a room; its room id.
+    pub async fn create_room(&self, name: String, topic: String) -> Result<String, FfiError> {
+        if name.trim().is_empty() {
+            return Err(failed("A room needs a name."));
+        }
+        Ok(self.session()?.create_room(name, topic, None).await?.to_string())
+    }
+
+    /// My friends.
+    pub async fn friends(&self) -> Result<Vec<FriendItem>, FfiError> {
+        let session = self.session()?;
+        let nicknames = Default::default();
+        let mut items = Vec::new();
+        for user in session.friends().await? {
+            let profile = session.profile(user.clone()).await.ok();
+            let row = friends::friend_row(
+                &nicknames,
+                user.as_str(),
+                profile.as_ref().map(|p| (p.name.as_str(), p.status.as_deref())),
+            );
+            items.push(FriendItem {
+                user_id: user.to_string(),
+                name: row.name,
+                subtitle: row.subtitle,
+                avatar: profile.and_then(|p| p.avatar).map(|m| MediaHandle::new(m, &session)),
+            });
+        }
+        Ok(items)
+    }
+
+    /// Add or remove a friend.
+    pub async fn set_friend(&self, user_id: String, friend: bool) -> Result<(), FfiError> {
+        let session = self.session()?;
+        // Adding takes what a person types (a username too); removing a listed ID.
+        let user = if friend {
+            session.find_user(user_id).await?
+        } else {
+            OwnedUserId::try_from(user_id.as_str()).map_err(|_| failed(format!("{user_id} is not a Matrix ID")))?
+        };
+        Ok(session.set_friend(user, friend).await?)
+    }
+
+    /// A page of this server's (or `server`'s) public rooms matching `term`.
+    pub async fn public_rooms(
+        &self,
+        server: Option<String>,
+        term: String,
+        since: Option<String>,
+    ) -> Result<DirectoryPage, FfiError> {
+        let session = self.session()?;
+        let page = session.public_rooms(server, term, since).await?;
+        Ok(DirectoryPage {
+            rooms: page
+                .rooms
+                .iter()
+                .map(|room| DirectoryItem {
+                    id: room.room_id.to_string(),
+                    name: discover::name(room),
+                    topic: discover::topic(room),
+                    alias: room.alias.clone(),
+                    members: discover::members_line(room),
+                    avatar: room.avatar.clone().map(|m| MediaHandle::new(m, &session)),
+                    is_space: room.is_space,
+                })
+                .collect(),
+            next: page.next,
+        })
+    }
+
+    /// Join a room found in the directory (`via`: the server it was found on).
+    pub async fn join_public(&self, room_id_of: String, via: Option<String>) -> Result<(), FfiError> {
+        let id = room_id(&room_id_of)?;
+        Ok(self.session()?.join_room_via(id, via.into_iter().collect()).await?)
+    }
+}

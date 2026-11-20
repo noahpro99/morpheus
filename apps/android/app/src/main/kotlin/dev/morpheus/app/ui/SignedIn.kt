@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.morpheus.app.AppModel
 import dev.morpheus.app.Screen
+import uniffi.morpheus_ffi.InviteItem
 import uniffi.morpheus_ffi.RoomItem
 import uniffi.morpheus_ffi.ScopeItem
 import uniffi.morpheus_ffi.ScopeKind
@@ -48,6 +49,7 @@ fun SignedInScreen(model: AppModel, state: Screen.SignedIn, onOpenRoom: (RoomIte
     val key by model.scopeKey.collectAsState()
     val scopes = sidebar?.scopes.orEmpty()
     val scope = scopes.firstOrNull { it.key == key } ?: scopes.firstOrNull()
+    val invites = sidebar?.invites.orEmpty()
 
     Row(Modifier.fillMaxSize().testTag("signed-in")) {
         Rail(scopes, scope?.key) { model.selectScope(it.key) }
@@ -55,7 +57,7 @@ fun SignedInScreen(model: AppModel, state: Screen.SignedIn, onOpenRoom: (RoomIte
             if (scope == null) {
                 Text("Loading…", Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
-                ChannelList(scope, onOpenRoom, Modifier.weight(1f))
+                ChannelList(scope, invites, model, onOpenRoom, Modifier.weight(1f))
             }
             SecurityBanner(model)
             Account(model, state)
@@ -123,16 +125,29 @@ private fun Badge(text: String, colour: Color, tag: String, modifier: Modifier =
 }
 
 @Composable
-private fun ChannelList(scope: ScopeItem, onOpenRoom: (RoomItem) -> Unit, modifier: Modifier) {
+private fun ChannelList(scope: ScopeItem, invites: List<InviteItem>, model: AppModel, onOpenRoom: (RoomItem) -> Unit, modifier: Modifier) {
     Column(modifier.background(Palette.Surface)) {
-        Text(
-            scope.title,
-            Modifier.fillMaxWidth().padding(16.dp).testTag("scope-title"),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-        )
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                scope.title,
+                Modifier.weight(1f).padding(16.dp).testTag("scope-title"),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            TextButton({ model.openNew() }, Modifier.testTag("new-button")) { Text("＋", fontSize = 24.sp) }
+        }
         // Each rail entry has its own scroll position.
-        key(scope.key) { LazyColumn(Modifier.fillMaxSize().testTag("rooms-list")) {
+        key(scope.key) {
+            val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+            // A new invitation goes above the rooms: the list stays on the room it was showing, so go and look.
+            androidx.compose.runtime.LaunchedEffect(invites.size) { if (invites.isNotEmpty()) listState.animateScrollToItem(0) }
+            LazyColumn(Modifier.fillMaxSize().testTag("rooms-list"), state = listState) {
+            if (invites.isNotEmpty()) {
+                item(key = "invites-heading") {
+                    Text("INVITES", Modifier.padding(start = 16.dp, top = 8.dp, bottom = 4.dp), color = Palette.Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+                items(invites, key = { "invite-${it.id}" }) { invite -> InviteCard(invite, model) }
+            }
             for ((index, section) in scope.sections.withIndex()) {
                 section.title?.let {
                     item(key = "section-$index-$it") {
@@ -220,5 +235,22 @@ private fun SecurityBanner(model: AppModel) {
     ) {
         Text("Verify this device to read your encrypted messages", Modifier.weight(1f))
         Text("›", fontSize = 22.sp, color = Palette.Muted)
+    }
+}
+
+/** An invitation: who asked, to what, and the two answers. */
+@Composable
+private fun InviteCard(invite: InviteItem, model: AppModel) {
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
+            .background(Palette.Raised, RoundedCornerShape(8.dp)).padding(12.dp).testTag("invite-${invite.name}"),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(invite.name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(invite.line, color = Palette.Muted, fontSize = 13.sp, modifier = Modifier.testTag("invite-line"))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            androidx.compose.material3.Button({ model.answerInvite(invite.id, true) }, Modifier.testTag("invite-accept-${invite.name}")) { Text("Accept") }
+            TextButton({ model.answerInvite(invite.id, false) }, Modifier.testTag("invite-decline-${invite.name}")) { Text("Decline") }
+        }
     }
 }

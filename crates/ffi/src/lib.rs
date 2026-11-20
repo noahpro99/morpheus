@@ -22,6 +22,7 @@
 mod composer;
 mod error;
 mod media;
+mod people;
 mod push;
 mod security;
 mod sidebar;
@@ -35,6 +36,7 @@ use tokio::{runtime::Runtime, task::JoinHandle};
 pub use error::FfiError;
 pub use composer::{CustomEmojiItem, CustomEmojiSection, EmojiSection, SuggestionItem, SuggestionKind, emoji_sections, with_emoji};
 pub use media::MediaHandle;
+pub use people::{DirectoryItem, DirectoryPage, FriendItem, InviteItem};
 pub use push::{PushNotice, preview_push};
 pub use security::{
     ButtonKind, IncomingVerificationListener, PanelButton, PanelCode, PanelEmoji, PanelTone, RecoveryKind,

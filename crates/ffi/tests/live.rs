@@ -413,3 +413,113 @@ fn image_png() -> Vec<u8> {
         0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
     ]
 }
+
+/// Bob, as a plain Matrix client (no Morpheus around him).
+async fn bob_client(homeserver: &str) -> matrix_sdk::Client {
+    let client = matrix_sdk::Client::builder()
+        .homeserver_url(homeserver)
+        .build()
+        .await
+        .expect("client");
+    client
+        .matrix_auth()
+        .login_username("bob", "bob-password")
+        .send()
+        .await
+        .expect("bob signs in");
+    client
+}
+
+#[tokio::test]
+async fn direct_messages_invites_join_create_friends_and_the_directory() {
+    use matrix_sdk::ruma::{
+        api::client::room::{create_room, Visibility},
+        OwnedUserId,
+    };
+    let Ok(homeserver) = std::env::var("MORPHEUS_TEST_HOMESERVER") else {
+        return;
+    };
+    let dir = tempfile::tempdir().expect("dir");
+    let app = Morpheus::new(dir.path().display().to_string()).expect("app");
+    let account = app.login(homeserver.clone(), "alice".into(), "alice-password".into()).await.expect("login");
+    let (sidebar, mut sidebar_rx) = Feed::new();
+    let _sidebar = app.watch_sidebar(sidebar).await.expect("watch sidebar");
+    let stamp = std::process::id();
+    let bob = bob_client(&homeserver).await;
+    let bob_id: OwnedUserId = bob.user_id().expect("bob").to_owned();
+    let alice_id: OwnedUserId = account.user_id.as_str().try_into().expect("alice id");
+    fn has_room_named(sidebar: &Sidebar, name: &str) -> bool {
+        sidebar.scopes.iter().flat_map(|s| &s.sections).flat_map(|s| &s.rooms).any(|r| r.name == name)
+    }
+    fn has_room(sidebar: &Sidebar, id: &str) -> bool {
+        sidebar.scopes.iter().flat_map(|s| &s.sections).flat_map(|s| &s.rooms).any(|r| r.id == id)
+    }
+
+    // The account has synced (a DM is looked for in what it knows).
+    until(&mut sidebar_rx, "the rooms", |s: &Sidebar| has_room_named(s, "general")).await;
+
+    // A direct message: by a bare username, again the same room, never with myself.
+    let dm = app.start_dm("bob".into()).await.expect("dm");
+    assert!(!dm.is_empty());
+    app.start_dm(bob_id.to_string()).await.expect("a full Matrix ID works too");
+    let own = app.start_dm("alice".into()).await.expect_err("not myself");
+    assert!(own.to_string().contains("That is you"), "{own}");
+    let nobody = app.start_dm(format!("nobody-{stamp}")).await.expect_err("no such person");
+    assert!(nobody.to_string().contains("No one is called"), "{nobody}");
+
+    // A room of my own.
+    let made = app.create_room(format!("ffi made {stamp}"), String::new()).await.expect("create");
+    until(&mut sidebar_rx, "the new room", |s: &Sidebar| has_room(s, &made)).await;
+
+    // Invites: bob asks twice; I accept one and decline the other.
+    let mut invited = Vec::new();
+    for n in 1..=2 {
+        let mut request = create_room::v3::Request::new();
+        request.name = Some(format!("ffi invite {n} {stamp}"));
+        request.invite = vec![alice_id.clone()];
+        invited.push(bob.create_room(request).await.expect("bob's room").room_id().to_string());
+    }
+    let list = until(&mut sidebar_rx, "both invites", |s: &Sidebar| invited.iter().all(|id| s.invites.iter().any(|i| i.id == *id))).await;
+    let first = list.invites.iter().find(|i| i.id == invited[0]).expect("first");
+    assert_eq!(first.name, format!("ffi invite 1 {stamp}"));
+    assert!(first.line.contains("invited you to a room"), "{}", first.line);
+    assert!(!has_room(&list, &invited[0]), "an invite is not yet one of my rooms");
+    app.accept_invite(invited[0].clone()).await.expect("accept");
+    app.decline_invite(invited[1].clone()).await.expect("decline");
+    until(&mut sidebar_rx, "accepted and declined", |s: &Sidebar| {
+        has_room(s, &invited[0]) && s.invites.iter().all(|i| !invited.contains(&i.id))
+    })
+    .await;
+
+    // Joining by address, and finding a room in the directory.
+    let mut request = create_room::v3::Request::new();
+    request.name = Some(format!("ffi public {stamp}"));
+    request.visibility = Visibility::Public;
+    request.preset = Some(create_room::v3::RoomPreset::PublicChat);
+    let public = bob.create_room(request).await.expect("public room").room_id().to_string();
+    let page = timeout(WAIT, async {
+        loop {
+            let page = app.public_rooms(None, format!("ffi public {stamp}"), None).await.expect("directory");
+            if page.rooms.iter().any(|r| r.id == public) {
+                return page;
+            }
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+    })
+    .await
+    .expect("the room is listed");
+    let listed = page.rooms.iter().find(|r| r.id == public).expect("listed");
+    assert_eq!(listed.name, format!("ffi public {stamp}"));
+    assert!(listed.members.contains("member"), "{}", listed.members);
+    let words = app.join_address("not an address".into()).await.expect_err("not an address");
+    assert!(words.to_string().contains("not a room address"), "{words}");
+    assert_eq!(app.join_address(public.clone()).await.expect("join by id"), public);
+    until(&mut sidebar_rx, "the joined room", |s: &Sidebar| has_room(s, &public)).await;
+
+    // Friends come and go.
+    app.set_friend(bob_id.to_string(), true).await.expect("add");
+    let friends = app.friends().await.expect("friends");
+    assert!(friends.iter().any(|f| f.user_id == bob_id.as_str()), "bob is a friend now");
+    app.set_friend(bob_id.to_string(), false).await.expect("remove");
+    assert!(app.friends().await.expect("friends").iter().all(|f| f.user_id != bob_id.as_str()));
+}

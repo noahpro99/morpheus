@@ -56,6 +56,35 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         AppState.screen = "room"
     }
 
+    private val _newOpen = MutableStateFlow(false)
+    val newOpen: StateFlow<Boolean> = _newOpen.asStateFlow()
+
+    fun openNew() {
+        _newOpen.value = true
+        AppState.screen = "new"
+    }
+
+    fun closeNew() {
+        _newOpen.value = false
+        AppState.screen = _screen.value.name()
+    }
+
+    /** A room just made, joined or messaged: leave the New screen and open it once the list has it. */
+    fun openNewRoom(roomId: String) {
+        closeNew()
+        openRoomWhenKnown(roomId)
+    }
+
+    fun answerInvite(roomId: String, accept: Boolean) {
+        viewModelScope.launch {
+            try {
+                if (accept) morpheus.acceptInvite(roomId) else morpheus.declineInvite(roomId)
+            } catch (e: Exception) {
+                _error.value = e.sentence()
+            }
+        }
+    }
+
     fun closeRoom() {
         _room.value = null
         AppState.screen = _screen.value.name()
@@ -150,6 +179,7 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
     fun signOut() {
         // The screen goes first: its listeners stop with it, and the sign-in
         // screen is there while the server is told.
+        _newOpen.value = false
         _room.value = null
         _screen.value = Screen.SignedOut
         viewModelScope.launch {

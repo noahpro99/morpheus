@@ -85,6 +85,9 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
     DisposableEffect(model) { onDispose { model.close() } }
     val rows by model.rows.collectAsState()
     val replyingTo by model.replyingTo.collectAsState()
+    // A room just joined is listed before its name is known: the title follows the list.
+    val sidebar by app.sidebar.collectAsState()
+    val title = sidebar?.scopes?.flatMap { it.sections }?.flatMap { it.rooms }?.firstOrNull { it.id == room.id }?.name ?: room.name
     val editing by model.editing.collectAsState()
     var actions by remember { mutableStateOf<MessageItem?>(null) }
     var viewing by remember { mutableStateOf<MediaHandle?>(null) }
@@ -119,7 +122,7 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
             ) {
                 TextButton({ onClose() }, Modifier.testTag(if (threadRoot == null) "back" else "thread-back")) { Text("‹", fontSize = 28.sp) }
                 Text(
-                    if (threadRoot == null) room.name else "Thread",
+                    if (threadRoot == null) title else "Thread",
                     Modifier.testTag(if (threadRoot == null) "room-title" else "thread-title"),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,

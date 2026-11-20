@@ -62,6 +62,8 @@ pub struct ScopeItem {
 #[derive(uniffi::Record)]
 pub struct Sidebar {
     pub scopes: Vec<ScopeItem>,
+    /// Rooms I am invited to, waiting for an answer.
+    pub invites: Vec<crate::InviteItem>,
 }
 
 /// Gets a whole new [`Sidebar`] whenever something in it changed; the first
@@ -129,6 +131,7 @@ pub(crate) fn sidebar_of(rooms: &[RoomSummary], session: &morpheus_core::Session
             .into_iter()
             .map(|view| scope_item(view, session))
             .collect(),
+        invites: crate::people::invite_items(rooms, session),
     }
 }
 
