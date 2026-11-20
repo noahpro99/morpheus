@@ -54,6 +54,9 @@ pub struct ThreadPanel {
     handle: Option<morpheus_core::TimelineHandle>,
     avatars: Avatars,
     nickname: Option<String>,
+    /// The last click was in this panel (not the chat): Ctrl+Home, Ctrl+End and
+    /// the page keys act on its replies (#287).
+    pub active: bool,
 }
 
 impl ThreadPanel {
@@ -128,6 +131,7 @@ impl ThreadPanel {
             composer,
             handle: None,
             avatars: Avatars::default(),
+            active: false,
         }
     }
 
@@ -266,6 +270,8 @@ impl Render for ThreadPanel {
             )
             .child(self.timeline.clone())
             .child(self.composer.clone())
+            .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, _, _| this.active = true))
+            .on_mouse_down_out(cx.listener(|this, _, _, _| this.active = false))
             .e2e("aside", "thread-panel")
     }
 }

@@ -403,7 +403,6 @@ impl Shell {
         // Home and End scroll the chat (to the oldest loaded message, to the
         // newest) unless a message box with text in it has the caret.
         if matches!(key, "home" | "end")
-            && !ctrl
             && !m.alt
             && !m.shift
             && !self.modal_open(cx)
@@ -420,7 +419,8 @@ impl Shell {
                 .any(|c| !c.read(cx).draft_empty(cx));
             let nothing = self.root_focus.as_ref().is_some_and(|f| f.is_focused(window));
             if !typing && (nothing || in_thread || in_room) {
-                let timeline = if in_thread {
+                let panel_active = self.thread.as_ref().is_some_and(|(_, p)| p.read(cx).active);
+                let timeline = if in_thread || panel_active {
                     self.thread.as_ref().map(|(_, p)| p.read(cx).timeline().0)
                 } else {
                     self.timeline.as_ref().map(|(_, t)| t.clone())
@@ -499,7 +499,15 @@ impl Shell {
             Hotkey::Quit => crate::send_command(crate::Command::Quit),
             Hotkey::CopyLink => self.copy_room_link(cx),
             Hotkey::Page { down } => {
-                if let Some((_, timeline)) = &self.timeline {
+                let in_thread = self.thread.as_ref().is_some_and(|(_, p)| {
+                    let p = p.read(cx);
+                    p.active || p.composer().read(cx).input_focused(window, cx)
+                });
+                let timeline = match &self.thread {
+                    Some((_, panel)) if in_thread => Some(panel.read(cx).timeline().0),
+                    _ => self.timeline.as_ref().map(|(_, t)| t.clone()),
+                };
+                if let Some(timeline) = timeline {
                     timeline.update(cx, |timeline, cx| timeline.scroll_page(down, cx));
                 }
             }
