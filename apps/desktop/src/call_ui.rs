@@ -4,6 +4,7 @@
 //! handle that resizes it), a voice channel's page, the rings. Video frames
 //! are drawn natively by [`VideoFrame`] from the call crate's raw pixels.
 
+use crate::view_model::i18n::t;
 use std::{rc::Rc, sync::Arc, time::Duration};
 
 use crate::tooltip::TipExt as _;
@@ -97,10 +98,10 @@ fn mark_elements(media: morpheus_core::CallMedia, video: bool, size: f32) -> Vec
                 .text_color(rgb(theme::on_danger()))
                 .text_size(px(0.65 * theme::REM))
                 .font_weight(FontWeight::EXTRA_BOLD)
-                .child("LIVE")
+                .child(t("LIVE"))
                 .e2e("span", mark.class)
                 .attr("title", mark.title)
-                .text("LIVE")
+                .text(t("LIVE"))
                 .into_any_element(),
         })
         .collect()
@@ -546,9 +547,9 @@ pub fn join_error(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElement> 
                 .text_size(px(0.85 * theme::REM))
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(rgb(theme::danger()))
-                .child("Could not join")
+                .child(t("Could not join"))
                 .e2e("span", "voice-state failed")
-                .text("Could not join"),
+                .text(t("Could not join")),
         )
         .child(
             div()
@@ -1157,9 +1158,9 @@ fn video_card(
                 .px(px(16.0))
                 .text_color(rgb(theme::OVERLAY_TEXT))
                 .text_align(gpui::TextAlign::Center)
-                .child("Preview paused while Morpheus is in the background")
+                .child(t("Preview paused while Morpheus is in the background"))
                 .e2e("div", "preview-paused")
-                .text("Preview paused while Morpheus is in the background"),
+                .text(t("Preview paused while Morpheus is in the background")),
         );
     }
     if own && feed.screen {
@@ -1330,9 +1331,9 @@ fn watch_overlay(shell: &Shell, cx: &mut Context<Shell>, user: &OwnedUserId) -> 
     let inner = if asked {
         div()
             .text_color(rgb(theme::OVERLAY_TEXT))
-            .child("Starting the stream...")
+            .child(t("Starting the stream..."))
             .e2e("span", "watch-starting")
-            .text("Starting the stream...")
+            .text(t("Starting the stream..."))
             .into_any_element()
     } else {
         let user = user.clone();
@@ -1345,13 +1346,13 @@ fn watch_overlay(shell: &Shell, cx: &mut Context<Shell>, user: &OwnedUserId) -> 
             .text_color(rgb(theme::on_green()))
             .cursor_pointer()
             .hover(|s| s.opacity(0.9))
-            .child("Watch")
+            .child(t("Watch"))
             .on_click(cx.listener(move |this, _, _, cx| {
                 cx.stop_propagation();
                 this.watch_share(&user, true, cx);
             }))
             .e2e("button", "watch-button")
-            .text("Watch")
+            .text(t("Watch"))
             .into_any_element()
     };
     div()
@@ -1858,9 +1859,9 @@ pub fn voice_page(
                 )
                 .child(
                     div()
-                        .child("No one has to be here first: join, and others can drop in.")
+                        .child(t("No one has to be here first: join, and others can drop in."))
                         .e2e("p", "muted")
-                        .text("No one has to be here first: join, and others can drop in."),
+                        .text(t("No one has to be here first: join, and others can drop in.")),
                 )
                 .child(
                     div()
@@ -1876,12 +1877,12 @@ pub fn voice_page(
                         .font_weight(FontWeight::SEMIBOLD)
                         .cursor_pointer()
                         .child(icon("phone", 18.0).text_color(rgb(theme::on_green())))
-                        .child("Join voice")
+                        .child(t("Join voice"))
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.join_call(id.clone(), name.clone(), cx)
                         }))
                         .e2e("button", "primary join-voice")
-                        .text("Join voice"),
+                        .text(t("Join voice")),
                 )
                 .e2e("div", "voice-page-join")
                 .into_any_element()
@@ -2101,9 +2102,9 @@ pub fn incoming_calls(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyEleme
                         div()
                             .text_size(px(0.85 * theme::REM))
                             .text_color(rgb(theme::text_muted()))
-                            .child("Incoming call…")
+                            .child(t("Incoming call…"))
                             .e2e("span", "incoming-call-what")
-                            .text("Incoming call…"),
+                            .text(t("Incoming call…")),
                     ),
             )
             .child(

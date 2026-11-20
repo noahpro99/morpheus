@@ -167,6 +167,12 @@ pub const SETTINGS_INDEX: &[SettingEntry] = &[
         "theme-share",
     ),
     entry(
+        "Language",
+        "appearance language translation locale english spanish espanol idioma",
+        SettingsPage::Appearance,
+        "language",
+    ),
+    entry(
         "Vim mode",
         "keyboard vim modal editing normal insert keys hotkeys shortcuts",
         SettingsPage::Appearance,
@@ -734,6 +740,21 @@ pub fn refresh_autostart() {
 // ---- help -------------------------------------------------------------------------
 
 pub const REPORT_BUG_BLURB: &str = "Opens a new issue on GitHub with your version, device and the end of this run's log filled in. Issues are public: read the log over and remove anything you'd rather not share before posting.";
+
+/// The settings texts above that the screens show through `t`, for the translation tests.
+pub fn translatable_labels() -> Vec<&'static str> {
+    vec![
+        ROOM_DEFAULTS_BLURB,
+        DESKTOP_NOTIFICATION_NOTE,
+        LEAVE_OUT_DISCORD_LABEL,
+        LEAVE_OUT_DISCORD_HINT,
+        KEEP_RUNNING_HINT,
+        START_HIDDEN_NEEDS_BACKGROUND,
+        STARTUP_UNAVAILABLE,
+        REPORT_BUG_BLURB,
+        VOICE_NO_DEVICES,
+    ]
+}
 
 /// The app's version, as the Version section shows it.
 pub fn version_line() -> String {

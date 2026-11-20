@@ -3,6 +3,7 @@
 //! data directory, with progress and errors shown in the setting; it is used
 //! only once its SHA-256 has been checked. The default model is built in.
 
+use crate::view_model::i18n::t;
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicU8, Ordering},
@@ -219,13 +220,13 @@ pub fn picker<V: 'static>(
         .flex()
         .flex_col()
         .gap(px(6.0))
-        .child(div().font_weight(gpui::FontWeight::SEMIBOLD).child("Strong's model"))
+        .child(div().font_weight(gpui::FontWeight::SEMIBOLD).child(t("Strong's model")))
         .child(div().flex().gap(px(8.0)).children(choices))
         .child(
             div()
                 .text_size(px(0.8 * theme::REM))
                 .text_color(rgb(theme::text_muted()))
-                .child("The low-delay model sends your voice 20 ms sooner; it is downloaded once, when you choose it."),
+                .child(t("The low-delay model sends your voice 20 ms sooner; it is downloaded once, when you choose it.")),
         )
         .children(status)
         .e2e("div", "noise-model")

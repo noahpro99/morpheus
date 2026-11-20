@@ -4,6 +4,7 @@
 //! server's channel you are not in, and the inbox panel from the title bar.
 //! What they say is in `view_model::invites`.
 
+use crate::view_model::i18n::t;
 use gpui::{
     AnyElement, Context, ElementId, FontWeight, IntoElement, MouseButton, SharedString, Window,
     div, prelude::*, px, rgb, rgba,
@@ -349,14 +350,14 @@ pub fn invite_card(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -
             card_button("card-accept", "Accept", true)
                 .on_click(cx.listener(move |this, _, _, cx| this.accept_invite(accept.clone(), cx)))
                 .e2e("button", "primary invite-accept")
-                .text("Accept")
+                .text(t("Accept"))
                 .into_any_element(),
             card_button("card-decline", "Decline", false)
                 .on_click(
                     cx.listener(move |this, _, _, cx| this.decline_invite(decline.clone(), cx)),
                 )
                 .e2e("button", "secondary invite-decline")
-                .text("Decline")
+                .text(t("Decline"))
                 .into_any_element(),
         ],
         "invite-card",
@@ -482,9 +483,9 @@ pub fn inbox(
                 .text_size(px(0.7 * theme::REM))
                 .font_weight(FontWeight::BOLD)
                 .text_color(rgb(theme::text_faint()))
-                .child("INVITES")
+                .child(t("INVITES"))
                 .e2e("h4", "section")
-                .text("Invites"),
+                .text(t("Invites")),
         );
         for room in &pending {
             let (open, accept, decline) = (room.clone(), room.id.clone(), room.id.clone());
@@ -574,9 +575,9 @@ pub fn inbox(
                 .text_size(px(0.7 * theme::REM))
                 .font_weight(FontWeight::BOLD)
                 .text_color(rgb(theme::text_faint()))
-                .child("MENTIONS")
+                .child(t("MENTIONS"))
                 .e2e("h4", "section")
-                .text("Mentions"),
+                .text(t("Mentions")),
         );
         for (index, notice) in mentions.into_iter().enumerate() {
             let room = shell.rooms.iter().find(|r| r.id == notice.room_id).cloned();

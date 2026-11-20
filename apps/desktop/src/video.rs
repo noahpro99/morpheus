@@ -9,6 +9,7 @@
 //! Decoding and timing are `morpheus_video`'s (its own thread per video);
 //! this polls it for the newest picture and draws it as an image.
 
+use crate::view_model::i18n::t;
 use std::{
     cell::Cell,
     rc::Rc,
@@ -1069,9 +1070,9 @@ impl Render for VideoPlayer {
                         .bg(rgba(0x00000099))
                         .text_size(px(0.7 * theme::REM))
                         .text_color(rgb(theme::OVERLAY_TEXT))
-                        .child("GIF")
+                        .child(t("GIF"))
                         .e2e("span", "video-gif")
-                        .text("GIF"),
+                        .text(t("GIF")),
                 );
             } else if self.hovered || !self.status.playing || self.dragging.is_some() {
                 card = card.child(self.controls(false, cx));

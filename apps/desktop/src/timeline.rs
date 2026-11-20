@@ -9,6 +9,7 @@
 //! element's state, so the whole list is never rebuilt, and each frame only
 //! builds the rows in or near the view.
 
+use crate::view_model::i18n::t;
 /// Whether a thread panel is open (set by the shell each frame).
 pub static THREAD_PANEL_OPEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
@@ -1117,14 +1118,14 @@ impl TimelineView {
                         .cursor_pointer()
                         .text_size(px(0.85 * theme::REM))
                         .text_color(rgb(theme::text_faint()))
-                        .child("Ignored message · Show")
+                        .child(t("Ignored message · Show"))
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.revealed.insert(unique_id.clone());
                             this.list.splice(ix..ix + 1, 1);
                             cx.notify();
                         }))
                         .e2e("button", "ignored-fold")
-                        .text("Ignored message · Show"),
+                        .text(t("Ignored message · Show")),
                 )
                 .e2e("div", "message ignored")
                 .attr(
@@ -1784,7 +1785,7 @@ impl Render for TimelineView {
                             .flex()
                             .items_center()
                             .gap(px(8.0))
-                            .child("Jump to present ↓")
+                            .child(t("Jump to present ↓"))
                             .children(show_key.then(|| crate::dialogs::key_cap("Esc", None)))
                             .e2e("button", "jump-to-bottom")
                             .attr("title", "Jump to the newest message (Esc)")

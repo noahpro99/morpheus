@@ -4,6 +4,7 @@
 //! the data directory (`screen-quality.json`) for the next time. What the
 //! choices mean for the encoder is `morpheus_call::ScreenQuality`.
 
+use crate::view_model::i18n::t;
 use gpui::{
     AnyElement, Context, IntoElement, MouseButton, Pixels, Point, anchored, deferred, div,
     prelude::*, px, rgb, rgba,
@@ -165,7 +166,7 @@ pub(crate) fn sound_switch<V: 'static>(
         .justify_between()
         .gap(px(8.0))
         .py(px(4.0))
-        .child(div().child("Share your computer's sound"))
+        .child(div().child(t("Share your computer's sound")))
         .child(switch);
     if unavailable.is_none() {
         button = button
@@ -185,7 +186,7 @@ pub(crate) fn sound_switch<V: 'static>(
                 },
             )
             .attr("data-on", on.to_string())
-            .text("Share your computer's sound"),
+            .text(t("Share your computer's sound")),
     );
     if let Some(why) = unavailable {
         column = column.child(
@@ -239,7 +240,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElement> {
         .child(
             div()
                 .font_weight(gpui::FontWeight::SEMIBOLD)
-                .child("Share your screen"),
+                .child(t("Share your screen")),
         )
         .child(row(
             cx,
@@ -290,10 +291,10 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElement> {
                 .font_weight(gpui::FontWeight::SEMIBOLD)
                 .cursor_pointer()
                 .hover(|s| s.opacity(0.9))
-                .child("Go Live")
+                .child(t("Go Live"))
                 .on_click(cx.listener(|this, _, _, cx| this.go_live(cx)))
                 .e2e("button", "screen-go")
-                .text("Go Live"),
+                .text(t("Go Live")),
         )
         .e2e("div", "screen-quality");
     let backdrop = div()

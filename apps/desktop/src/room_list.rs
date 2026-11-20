@@ -6,6 +6,7 @@
 //! closed DMs, the room and server menus, drag to reorder, the create-room
 //! dialog.
 
+use crate::view_model::i18n::t;
 use std::collections::HashSet;
 
 use gpui::{AnyElement, Context, FontWeight, IntoElement, MouseButton, div, prelude::*, px, rgb};
@@ -170,7 +171,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                 .on_click(
                     cx.listener(|this, _, _, cx| this.open_room_dialog(RoomDialogKind::Create, cx)),
                 )
-                .tip("Create room")
+                .tip(t("Create room"))
                 .e2e("button", "ghost create-room-button")
                 .attr("data-color", format!("{plus_colour:06x}"))
                 .attr("data-bg", "")
@@ -369,9 +370,9 @@ fn friends_row(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             div()
                 .flex_1()
                 .min_w_0()
-                .child("Friends")
+                .child(t("Friends"))
                 .e2e("span", "room-name")
-                .text("Friends"),
+                .text(t("Friends")),
         )
         .e2e(
             "button",
@@ -556,7 +557,7 @@ fn room_button(
                 cx.notify();
             }))
             .child(icon("messages-square", 14.0).text_color(rgb(theme::text())))
-            .tip("Open chat")
+            .tip(t("Open chat"))
             .e2e("button", "room-chat-button")
             .attr("title", "Open chat")
     });
@@ -884,7 +885,7 @@ fn palette_button(cx: &mut Context<Shell>) -> impl IntoElement {
         .cursor_pointer()
         .hover(|s| s.text_color(rgb(theme::text())))
         .on_click(cx.listener(|this, _, _, cx| this.toggle_switcher(cx)))
-        .child("Command palette")
+        .child(t("Command palette"))
         .child(
             div()
                 .text_size(px(0.75 * theme::REM))

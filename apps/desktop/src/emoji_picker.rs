@@ -3,6 +3,7 @@
 //! a tab per category down the left, every emoji in a grid by category,
 //! the recently used first. What it lists is `view_model::emoji_picker`.
 
+use crate::view_model::i18n::t;
 use gpui::{
     AnyElement, Context, ElementId, EventEmitter, FocusHandle, FontWeight, IntoElement,
     MouseButton, Pixels, Point, Render, ScrollHandle, SharedString, StyledImage as _, Subscription, Window, anchored,
@@ -292,9 +293,9 @@ impl Render for EmojiPicker {
                     .flex()
                     .justify_center()
                     .text_color(rgb(theme::text_muted()))
-                    .child("No emoji found")
+                    .child(t("No emoji found"))
                     .e2e("p", "emoji-none muted")
-                    .text("No emoji found"),
+                    .text(t("No emoji found")),
             );
         }
         for section in custom {

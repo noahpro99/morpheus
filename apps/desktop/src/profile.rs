@@ -6,6 +6,7 @@
 //! its "…" opens a menu (the full profile, share, invite, block, report,
 //! copy), and the shield opens the mod view.
 
+use crate::view_model::i18n::t;
 use std::{sync::Arc, time::Duration};
 
 use gpui::{
@@ -711,9 +712,9 @@ impl Render for ProfileCard {
                     .text_size(px(0.7 * theme::REM))
                     .font_weight(FontWeight::BOLD)
                     .text_color(rgb(theme::text_faint()))
-                    .child("NOTE")
+                    .child(t("NOTE"))
                     .e2e("h4", "")
-                    .text("Note"),
+                    .text(t("Note")),
             )
             .child(
                 div()
@@ -732,9 +733,9 @@ impl Render for ProfileCard {
                 div()
                     .text_size(px(0.75 * theme::REM))
                     .text_color(rgb(theme::text_muted()))
-                    .child("Saved")
+                    .child(t("Saved"))
                     .e2e("span", "muted note-saved")
-                    .text("Saved"),
+                    .text(t("Saved")),
             );
         }
         body = body.child(note.e2e("section", "card-section"));
@@ -864,7 +865,7 @@ impl ProfileCard {
                     .gap(px(6.0))
                     .text_size(px(0.85 * theme::REM))
                     .text_color(rgb(theme::text_muted()))
-                    .child("Report this user")
+                    .child(t("Report this user"))
                     .child(
                         div()
                             .text_size(px(theme::REM))
@@ -872,7 +873,7 @@ impl ProfileCard {
                             .child(self.report_reason.clone()),
                     )
                     .e2e("label", "")
-                    .text("Report this user"),
+                    .text(t("Report this user")),
             )
             .children(note)
             .child(
@@ -1006,9 +1007,9 @@ impl ProfileCard {
                 section = section.child(
                     div()
                         .text_color(rgb(theme::text_muted()))
-                        .child("None yet.")
+                        .child(t("None yet."))
                         .e2e("p", "muted")
-                        .text("None yet."),
+                        .text(t("None yet.")),
                 );
             }
             for server in servers {

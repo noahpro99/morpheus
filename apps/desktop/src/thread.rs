@@ -3,6 +3,7 @@
 //! how many replies it has, the replies themselves (a timeline of their
 //! own) and a message box that posts back into the thread.
 
+use crate::view_model::i18n::t;
 use std::{rc::Rc, sync::Arc};
 
 use gpui::{
@@ -220,9 +221,9 @@ impl Render for ThreadPanel {
                         div()
                             .text_size(px(0.95 * theme::REM))
                             .font_weight(FontWeight::BOLD)
-                            .child("Thread")
+                            .child(t("Thread"))
                             .e2e("h3", "")
-                            .text("Thread"),
+                            .text(t("Thread")),
                     )
                     .child(
                         div()
@@ -235,7 +236,7 @@ impl Render for ThreadPanel {
                             .hover(|s| s.text_color(rgb(theme::text())))
                             .child("✕")
                             .on_click(cx.listener(|_, _, _, cx| cx.emit(ThreadEvent::Close)))
-                            .tip("Close thread")
+                            .tip(t("Close thread"))
                             .e2e("button", "ghost")
                             .attr("title", "Close thread")
                             .text("✕"),

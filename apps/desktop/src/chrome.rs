@@ -11,6 +11,7 @@
 //! system still drags, snaps (Aero snap, Win+arrows, the snap layouts over
 //! the maximise button), maximises on a double click and resizes.
 
+use crate::view_model::i18n::t;
 use gpui::{
     AnyElement, App, CursorStyle, FontWeight, IntoElement, MouseButton, ResizeEdge, Window, div,
     prelude::*, px, rgb, rgba,
@@ -329,12 +330,12 @@ pub fn brand(size: f32) -> AnyElement {
                 .flex()
                 .child(
                     div()
-                        .child("Morpheus")
+                        .child(t("Morpheus"))
                         .e2e("span", "brand-name")
                         .attr("data-font", "Unbounded")
                         .attr("data-weight", "700")
                         .attr("data-size", size.to_string())
-                        .text("Morpheus"),
+                        .text(t("Morpheus")),
                 )
                 .child(
                     div()

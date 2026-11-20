@@ -2,6 +2,7 @@
 //! once in the background, shown in Settings > Help & Feedback, and on the
 //! first launch after an update in a "What's new" popup (once).
 
+use crate::view_model::i18n::t;
 use std::{rc::Rc, sync::Mutex};
 
 use gpui::{AnyElement, Context, IntoElement, Window, div, prelude::*, px, rgb};
@@ -143,13 +144,13 @@ impl Shell {
             .text_color(rgb(theme::text()))
             .on_click(cx.listener(|_, _, _, cx| open_external(&page(), cx)))
             .e2e("button", "secondary whats-new-more")
-            .text("View release on GitHub")
+            .text(t("View release on GitHub"))
             .into_any_element();
         let close = dialog_button("whats-new-close", "Close", false)
             .text_color(rgb(theme::text()))
             .on_click(cx.listener(|this, _, _, cx| this.dismiss_whats_new(cx)))
             .e2e("button", "secondary whats-new-close")
-            .text("Close")
+            .text(t("Close"))
             .into_any_element();
         let body = div()
             .id("whats-new-scroll")

@@ -3,6 +3,7 @@
 //! moderation you may do in each. Which controls a row has is decided in
 //! `view_model::mod_view`; this draws them and runs the calls.
 
+use crate::view_model::i18n::t;
 use gpui::{
     AnyElement, Context, ElementId, Entity, EventEmitter, FocusHandle, FontWeight, IntoElement,
     Render, SharedString, Window, div, prelude::*, px, rgb, rgba,
@@ -396,7 +397,7 @@ impl Render for ModView {
             .gap(px(6.0))
             .text_size(px(0.85 * theme::REM))
             .text_color(rgb(theme::text_muted()))
-            .child("Reason (for kicks and bans)")
+            .child(t("Reason (for kicks and bans)"))
             .child(
                 div()
                     .text_size(px(theme::REM))
@@ -429,10 +430,10 @@ impl Render for ModView {
                     .px(px(6.0))
                     .py(px(1.0))
                     .cursor_pointer()
-                    .child("Close")
+                    .child(t("Close"))
                     .on_click(cx.listener(|_, _, _, cx| cx.emit(Closed)))
                     .e2e("button", "secondary")
-                    .text("Close")
+                    .text(t("Close"))
                     .into_any_element(),
             ]))
             .e2e("div", "message-dialog mod-view")

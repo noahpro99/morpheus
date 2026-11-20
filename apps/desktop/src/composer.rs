@@ -5,6 +5,7 @@
 //! what Enter sends) is in `view_model::composer`; this draws it and wires
 //! the text box's events to the room's timeline handle.
 
+use crate::view_model::i18n::t;
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use gpui::{
@@ -621,7 +622,7 @@ impl Composer {
                     div()
                         .flex()
                         .gap(px(4.0))
-                        .child("Replying to")
+                        .child(t("Replying to"))
                         .child(
                             div()
                                 .font_weight(FontWeight::BOLD)
@@ -635,9 +636,9 @@ impl Composer {
             }
             ComposerMode::Edit { .. } => (
                 div()
-                    .child("Editing message")
+                    .child(t("Editing message"))
                     .e2e("span", "banner-label")
-                    .text("Editing message")
+                    .text(t("Editing message"))
                     .into_any_element(),
                 None,
             ),
@@ -674,7 +675,7 @@ impl Composer {
                 .hover(|s| s.bg(rgba(theme::bg_hover())).text_color(rgb(theme::text())))
                 .child("✕")
                 .on_click(cx.listener(|this, _, _, cx| this.cancel(cx)))
-                .tip("Cancel (Esc)")
+                .tip(t("Cancel (Esc)"))
                 .e2e("button", "ghost")
                 .attr("title", "Cancel (Esc)")
                 .text("✕"),

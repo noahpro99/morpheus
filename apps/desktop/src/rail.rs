@@ -5,6 +5,7 @@
 //! another makes a folder of the two, onto a folder goes into it
 //! (`view_model::rail_drag`, `Prefs::drop_badge`).
 
+use crate::view_model::i18n::t;
 use std::{rc::Rc, sync::Arc};
 
 use gpui::{
@@ -563,7 +564,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             .on_click(cx.listener(|this, _, _, cx| {
                 this.open_room_dialog(RoomDialogKind::CreateSpace(None), cx)
             }))
-            .tip_beside("Create a server (Ctrl+Shift+N)")
+            .tip_beside(t("Create a server (Ctrl+Shift+N)"))
             .e2e("button", "rail-item rail-add")
             .attr("title", "Create a server"),
     )
@@ -582,7 +583,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             .hover(|s| s.text_color(rgb(theme::accent())))
             .child(icon("compass", 24.0).text_color(rgb(theme::text_faint())))
             .on_click(cx.listener(|this, _, _, cx| this.open_discover(cx)))
-            .tip_beside("Discover public servers")
+            .tip_beside(t("Discover public servers"))
             .e2e("button", "rail-discover")
             .attr("title", "Discover public servers"),
     )

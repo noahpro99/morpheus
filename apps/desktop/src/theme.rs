@@ -346,8 +346,15 @@ pub const SEARCH_W: f32 = 440.0;
 mod tests {
     use super::*;
 
+    /// The theme is global state: the tests that set it take turns.
+    static TURN: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    fn turn() -> std::sync::MutexGuard<'static, ()> {
+        TURN.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     #[test]
     fn the_saved_theme_is_installed_from_the_data_folder_before_drawing() {
+        let _turn = turn();
         let dir = std::env::temp_dir().join(format!("morpheus-theme-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
@@ -366,6 +373,7 @@ mod tests {
 
     #[test]
     fn glass_makes_surfaces_translucent_and_off_is_opaque() {
+        let _turn = turn();
         set(Theme::Dark);
         set_glass(Glass::default());
         assert_eq!(fill_chat().a, 1.0);
@@ -378,6 +386,7 @@ mod tests {
 
     #[test]
     fn choosing_a_theme_changes_the_colours_read_next() {
+        let _turn = turn();
         set(Theme::Light);
         assert_eq!(bg_chat(), 0xffffff);
         assert_eq!(text(), 0x1c1f29);

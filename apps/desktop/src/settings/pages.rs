@@ -3,6 +3,7 @@
 //! (`crates/ui/src/components/settings.rs`). What they offer and say is in
 //! `view_model::settings`; this draws it and runs the calls.
 
+use crate::view_model::i18n::t;
 use std::time::Duration;
 
 use gpui::{
@@ -37,6 +38,8 @@ pub(crate) fn choice(
     disabled: bool,
     on_click: impl Fn(&ClickEvent, &mut Window, &mut gpui::App) + 'static,
 ) -> AnyElement {
+    let label = t(label);
+    let label = label.as_str();
     let ring = rgb(if checked {
         theme::accent()
     } else {
@@ -106,6 +109,8 @@ fn group(
     highlighted: bool,
     children: Vec<AnyElement>,
 ) -> AnyElement {
+    let legend = t(legend);
+    let legend = legend.as_str();
     let el = div()
         .flex()
         .flex_wrap()
@@ -339,7 +344,7 @@ impl SettingsView {
                     format!("content-{}", content.key()),
                     "notification-content",
                     content.key(),
-                    content.label(),
+                    &t(content.label()),
                     self.content == content,
                     false,
                     false,
@@ -405,9 +410,9 @@ impl SettingsView {
                 .child(
                     div()
                         .font_weight(FontWeight::SEMIBOLD)
-                        .child(theme_choice.label())
+                        .child(t(theme_choice.label()))
                         .e2e("span", "theme-name")
-                        .text(theme_choice.label()),
+                        .text(t(theme_choice.label())),
                 )
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.theme = theme_choice;
@@ -534,6 +539,7 @@ impl SettingsView {
             )
             .into_any_element(),
             self.custom_colour_section(cx).into_any_element(),
+            self.language_section(cx).into_any_element(),
             self.glass_section(cx).into_any_element(),
             self.share_section(cx).into_any_element(),
             self.history_section(cx).into_any_element(),
@@ -1076,7 +1082,7 @@ impl SettingsView {
         let data_dir = self.data_dir.clone();
         let report = button("report-bug", "Report a bug", Kind::Primary, "report-bug")
             .child(icon("bug", 16.0).text_color(rgb(theme::on_accent_solid())))
-            .child("Report a bug")
+            .child(t("Report a bug"))
             .on_click(cx.listener(move |this, _, _, cx| {
                 let url = morpheus_core::bug_report_url_with(
                     env!("CARGO_PKG_VERSION"),
@@ -1086,25 +1092,25 @@ impl SettingsView {
                 crate::shell::open_external(&url, cx);
             }))
             .e2e("a", "button primary report-bug")
-            .text("Report a bug");
+            .text(t("Report a bug"));
         let copy = button("diag-copy", "Copy all", Kind::Secondary, "diag-copy")
             .child(icon("copy", 16.0).text_color(rgb(theme::text())))
-            .child("Copy all")
+            .child(t("Copy all"))
             .on_click(cx.listener(move |_, _, _, cx| {
                 cx.write_to_clipboard(gpui::ClipboardItem::new_string(text.clone()));
             }))
             .e2e("a", "button secondary diag-copy")
-            .text("Copy all");
+            .text(t("Copy all"));
         let folder = button("diag-open-folder", "Open folder", Kind::Secondary, "diag-open-folder")
             .child(icon("folder", 16.0).text_color(rgb(theme::text())))
-            .child("Open folder")
+            .child(t("Open folder"))
             .on_click(cx.listener(move |_, _, _, cx| {
                 if std::env::var_os("MORPHEUS_E2E_PORT").is_none() {
                     cx.reveal_path(&data_dir);
                 }
             }))
             .e2e("a", "button secondary diag-open-folder")
-            .text("Open folder");
+            .text(t("Open folder"));
         let mut diag_children: Vec<AnyElement> = vec![
             div()
                 .flex()
@@ -1144,12 +1150,12 @@ impl SettingsView {
         }
         let notes_link = button("patch-notes-link", "View release on GitHub", Kind::Secondary, "patch-notes-link")
             .child(icon("link", 16.0).text_color(rgb(theme::text())))
-            .child("View release on GitHub")
+            .child(t("View release on GitHub"))
             .on_click(cx.listener(|_, _, _, cx| {
                 crate::shell::open_external(&crate::patch_notes::release_page(), cx);
             }))
             .e2e("a", "button secondary patch-notes-link")
-            .text("View release on GitHub");
+            .text(t("View release on GitHub"));
         vec![
             section(
                 "Report a bug",
@@ -1785,10 +1791,10 @@ impl SettingsView {
             .into_any_element();
         let save = button("save-name", "Save", Kind::Primary, "")
             .when(busy, |d| d.opacity(0.6))
-            .child("Save")
+            .child(t("Save"))
             .on_click(cx.listener(|this, _, _, cx| this.save_name(cx)))
             .e2e("button", "primary")
-            .text("Save")
+            .text(t("Save"))
             .into_any_element();
         let note = self.profile_note.as_ref().map(|note| match note {
             Ok(text) => super::note(text, "ok", theme::ok()).into_any_element(),
@@ -1807,31 +1813,31 @@ impl SettingsView {
         };
         let pick = button("pick-picture", "Choose picture…", Kind::Secondary, "")
             .child(icon("image", 16.0).text_color(rgb(theme::text())))
-            .child("Choose picture…")
+            .child(t("Choose picture…"))
             .on_click(cx.listener(|this, _, _, cx| this.pick_picture(cx)))
             .e2e("button", "secondary")
-            .text("Choose picture…");
+            .text(t("Choose picture…"));
         let set = button("set-picture", "Set as avatar", Kind::Primary, "")
             .when(busy || self.picked.is_none(), |d| d.opacity(0.5))
-            .child("Set as avatar")
+            .child(t("Set as avatar"))
             .on_click(cx.listener(|this, _, _, cx| this.set_picture(cx)))
             .e2e("button", "primary")
-            .text("Set as avatar");
+            .text(t("Set as avatar"));
         let remove = button("remove-picture", "Remove picture", Kind::Danger, "")
             .when(busy, |d| d.opacity(0.6))
-            .child("Remove picture")
+            .child(t("Remove picture"))
             .on_click(cx.listener(|this, _, _, cx| this.remove_picture(cx)))
             .e2e("button", "danger")
-            .text("Remove picture");
+            .text(t("Remove picture"));
         let cancel = button("cancel-picture", "Cancel", Kind::Secondary, "")
             .child(icon("x", 16.0).text_color(rgb(theme::text())))
-                                        .child("Cancel")
+                                        .child(t("Cancel"))
             .on_click(cx.listener(|this, _, _, cx| {
                 this.picked = None;
                 cx.notify();
             }))
             .e2e("button", "secondary")
-            .text("Cancel");
+            .text(t("Cancel"));
         let name_section = section(
             "Display name",
             "profile-name",
@@ -2112,6 +2118,66 @@ impl SettingsView {
         )
     }
 
+    /// Appearance's language: the system's (the default) or one of ours, kept on this
+    /// device and shown at once.
+    fn language_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        use crate::view_model::i18n::{self, Choice};
+        let system_now = i18n::from_system(&i18n::system_languages());
+        let system_name = i18n::LANGUAGES
+            .iter()
+            .find(|l| l.code == system_now)
+            .map(|l| l.name)
+            .unwrap_or("English");
+        let mut options: Vec<(Choice, String)> = vec![(
+            Choice::System,
+            format!("{} ({system_name})", t("System default")),
+        )];
+        options.extend(i18n::LANGUAGES.iter().map(|l| (Choice::Fixed(l.code), l.name.to_owned())));
+        let choices: Vec<AnyElement> = options
+            .into_iter()
+            .map(|(option, label)| {
+                // The language's own name is never translated: it is what its speakers look for.
+                choice(
+                    format!("language-{}", option.key()),
+                    "language",
+                    option.key(),
+                    &label,
+                    self.lang == option,
+                    false,
+                    false,
+                    cx.listener(move |this, _, _, cx| {
+                        this.lang = option;
+                        if let Err(err) = i18n::save_choice(&this.data_dir, option) {
+                            eprintln!("morpheus-desktop: saving the language: {err}");
+                        }
+                        i18n::set_language(option.resolve(&i18n::system_languages()));
+                        cx.refresh_windows();
+                        cx.notify();
+                    }),
+                )
+            })
+            .collect();
+        section(
+            "Language",
+            "language",
+            vec![
+                muted(
+                    "The language Morpheus is shown in. Text that is not translated yet stays in English.",
+                    "muted",
+                )
+                .into_any_element(),
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .gap(px(16.0))
+                    .children(choices)
+                    .e2e("div", "language-options")
+                    .into_any_element(),
+            ],
+            self.hl("language"),
+        )
+    }
+
     /// Appearance's frosted glass: a see-through window with translucent surfaces; the
     /// strengths on offer are those at which text still reads over any backdrop.
     fn glass_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -2144,7 +2210,7 @@ impl SettingsView {
                     format!("glass-{percent}"),
                     "glass-strength",
                     &percent.to_string(),
-                    &format!("{percent}% opaque"),
+                    &crate::view_model::i18n::tf("%{percent}% opaque", &[("percent", &percent.to_string())]),
                     drawn == percent,
                     false,
                     !current.on || !supported,
@@ -2323,20 +2389,20 @@ impl SettingsView {
             .child(
                 button("theme-copy", "Copy", Kind::Secondary, "")
                     .child(icon("copy", 16.0).text_color(rgb(theme::text())))
-                    .child("Copy")
+                    .child(t("Copy"))
                     .on_click(move |_, _, cx| {
                         cx.write_to_clipboard(gpui::ClipboardItem::new_string(copied.clone()))
                     })
                     .e2e("button", "secondary theme-copy")
-                    .text("Copy"),
+                    .text(t("Copy")),
             )
             .child(
                 button("theme-save", "Save to file", Kind::Secondary, "")
                     .child(icon("download", 16.0).text_color(rgb(theme::text())))
-                    .child("Save to file")
+                    .child(t("Save to file"))
                     .on_click(cx.listener(|this, _, _, cx| this.save_theme_file(cx)))
                     .e2e("button", "secondary theme-save")
-                    .text("Save to file"),
+                    .text(t("Save to file")),
             );
         let import_row = div()
             .flex()
@@ -2347,10 +2413,10 @@ impl SettingsView {
             .child(
                 button("theme-open", "Open file", Kind::Secondary, "")
                     .child(icon("folder-open", 16.0).text_color(rgb(theme::text())))
-                    .child("Open file")
+                    .child(t("Open file"))
                     .on_click(cx.listener(|this, _, _, cx| this.open_theme_file(cx)))
                     .e2e("button", "secondary theme-open")
-                    .text("Open file"),
+                    .text(t("Open file")),
             )
             .e2e("div", "theme-import");
         let mut children = vec![
@@ -2392,17 +2458,17 @@ impl SettingsView {
                                 .child(
                                     button("theme-apply", "Apply", Kind::Primary, "")
                                         .child(icon("check", 16.0).text_color(rgb(theme::on_accent_solid())))
-                                        .child("Apply")
+                                        .child(t("Apply"))
                                         .on_click(cx.listener(|this, _, _, cx| this.apply_import(cx)))
                                         .e2e("button", "primary theme-apply")
-                                        .text("Apply"),
+                                        .text(t("Apply")),
                                 )
                                 .child(
                                     button("theme-cancel", "Cancel", Kind::Secondary, "")
-                                        .child("Cancel")
+                                        .child(t("Cancel"))
                                         .on_click(cx.listener(|this, _, _, cx| this.cancel_import(cx)))
                                         .e2e("button", "secondary theme-cancel")
-                                        .text("Cancel"),
+                                        .text(t("Cancel")),
                                 ),
                         )
                         .into_any_element(),
@@ -2524,7 +2590,7 @@ fn preview(p: crate::view_model::theme::Palette) -> impl IntoElement {
                 .rounded(px(theme::RADIUS))
                 .bg(rgb(p.bg_input))
                 .text_color(rgb(p.text_faint))
-                .child("Message #general"),
+                .child(t("Message #general")),
         );
     div()
         .flex()

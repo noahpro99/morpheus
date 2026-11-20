@@ -1,6 +1,7 @@
 //! The signed-in shell (`crates/ui/src/components/shell.rs`): the rail, the
 //! sidebar with its footer, and the chat area, over the rooms the core syncs.
 
+use crate::view_model::i18n::t;
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
@@ -1518,16 +1519,16 @@ fn backup_prompt(cx: &mut Context<Shell>) -> impl IntoElement {
                 .child(
                     div()
                         .font_weight(gpui::FontWeight::BOLD)
-                        .child("Set up Secure Backup")
+                        .child(t("Set up Secure Backup"))
                         .e2e("strong", "")
-                        .text("Set up Secure Backup"),
+                        .text(t("Set up Secure Backup")),
                 )
                 .child(
                     div()
                         .text_color(rgb(theme::text_muted()))
-                        .child("Keep your encrypted messages if you lose this device: you'll get a recovery key to save.")
+                        .child(t("Keep your encrypted messages if you lose this device: you'll get a recovery key to save."))
                         .e2e("span", "")
-                        .text("Keep your encrypted messages if you lose this device: you'll get a recovery key to save."),
+                        .text(t("Keep your encrypted messages if you lose this device: you'll get a recovery key to save.")),
                 )
                 .child(
                     div()
@@ -1542,7 +1543,7 @@ fn backup_prompt(cx: &mut Context<Shell>) -> impl IntoElement {
                                     cx.notify();
                                 }))
                                 .e2e("button", "secondary")
-                                .text("Later"),
+                                .text(t("Later")),
                         )
                         .child(
                             action("backup-set-up", "Set up", true)
@@ -1550,7 +1551,7 @@ fn backup_prompt(cx: &mut Context<Shell>) -> impl IntoElement {
                                     this.open_settings(SettingsFocus::SetUpBackup, cx)
                                 }))
                                 .e2e("button", "primary")
-                                .text("Set up"),
+                                .text(t("Set up")),
                         )
                         .e2e("div", "backup-prompt-actions"),
                 )
@@ -1843,15 +1844,15 @@ impl Render for Shell {
                             .child(
                                 div()
                                     .font_weight(gpui::FontWeight::BOLD)
-                                    .child("Discover")
+                                    .child(t("Discover"))
                                     .e2e("h3", "")
-                                    .text("Discover"),
+                                    .text(t("Discover")),
                             )
                             .child(
                                 div()
                                     .text_size(px(0.85 * theme::REM))
                                     .text_color(rgb(theme::text_muted()))
-                                    .child("Public servers and rooms")
+                                    .child(t("Public servers and rooms"))
                                     .e2e("p", "muted"),
                             )
                             .e2e("div", "discover-sidebar");

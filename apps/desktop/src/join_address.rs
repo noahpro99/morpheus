@@ -2,6 +2,7 @@
 //! matrix.to / matrix: link; Enter or Preview looks the room up and shows it
 //! in the room preview card, which joins it (or asks to, when it takes knocks).
 
+use crate::view_model::i18n::t;
 use gpui::{
     Context, Entity, EventEmitter, FocusHandle, FontWeight, IntoElement, Render, Window, div,
     prelude::*, px, rgb, rgba,
@@ -115,14 +116,14 @@ impl Render for JoinAddress {
                 div()
                     .text_size(px(1.1 * theme::REM))
                     .font_weight(FontWeight::BOLD)
-                    .child("Join by address")
+                    .child(t("Join by address"))
                     .e2e("h2", "")
-                    .text("Join by address"),
+                    .text(t("Join by address")),
             )
             .child(
                 div()
                     .text_color(rgb(theme::text_muted()))
-                    .child("A room's alias, its room ID, or a matrix.to or matrix: link.")
+                    .child(t("A room's alias, its room ID, or a matrix.to or matrix: link."))
                     .e2e("p", "muted"),
             )
             .child(

@@ -3,6 +3,7 @@
 //! with its count of rooms with something unread, and the window's buttons.
 //! Anywhere on it that is not a button drags the window.
 
+use crate::view_model::i18n::t;
 use gpui::{Context, FontWeight, IntoElement, div, prelude::*, px, rgb, rgba};
 
 use crate::tooltip::TipExt as _;
@@ -170,7 +171,7 @@ fn streamer_button(shell: &Shell, cx: &mut Context<Shell>) -> Option<impl IntoEl
             bar_button(shell, cx, "streamer-button")
                 .child(icon("eye-off", 18.0))
                 .on_click(toggle)
-                .tip("Turn on streamer mode")
+                .tip(t("Turn on streamer mode"))
                 .e2e("button", "ghost streamer-button")
                 .attr("title", "Turn on streamer mode"),
         );
@@ -186,15 +187,15 @@ fn streamer_button(shell: &Shell, cx: &mut Context<Shell>) -> Option<impl IntoEl
             .bg(rgba(theme::accent_tint()))
             .text_color(rgb(theme::accent()))
             .child(icon("eye-off", 12.0))
-            .child("Streamer mode")
+            .child(t("Streamer mode"))
             .on_click(toggle)
-            .tip("Streamer mode is on: names and IDs are hidden. Click to turn off")
+            .tip(t("Streamer mode is on: names and IDs are hidden. Click to turn off"))
             .e2e("button", "streamer-badge streamer-button")
             .attr(
                 "title",
                 "Streamer mode is on: names and IDs are hidden. Click to turn off",
             )
-            .text("Streamer mode"),
+            .text(t("Streamer mode")),
     )
 }
 
@@ -334,7 +335,7 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                     .children(crate::update::topbar_button(shell, cx))
                     .child(
                         inbox
-                            .tip("Inbox (Ctrl+I)")
+                            .tip(t("Inbox (Ctrl+I)"))
                             .e2e("button", "ghost titlebar-button inbox-button")
                             .attr("title", "Inbox (Ctrl+I)")
                             .attr("data-badge", crate::badge::shown().to_string())
@@ -342,7 +343,7 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                             .attr("data-bg", ""),
                     )
                     .child(
-                        help.tip("Help (Ctrl+/)")
+                        help.tip(t("Help (Ctrl+/)"))
                             .e2e("button", "ghost titlebar-button help-button")
                             .attr("title", "Help (Ctrl+/)")
                             .attr("data-color", colour_of("help-button"))

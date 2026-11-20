@@ -4,6 +4,7 @@
 //! item does (`Shell::run_menu_action`), the undo of a deletion and the
 //! pinned list's upkeep are here too, since they are what these serve.
 
+use crate::view_model::i18n::t;
 use std::time::Duration;
 
 use gpui::{
@@ -543,7 +544,7 @@ pub(crate) fn modal_close_at(
         .child(icon("x", 16.0))
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_click(on_click)
-        .tip("Close (Esc)")
+        .tip(t("Close (Esc)"))
         .e2e("button", "modal-close ghost")
         .attr("title", "Close")
 }
@@ -695,7 +696,7 @@ pub fn render_dialog(
                         .text_color(rgb(theme::text()))
                         .on_click(cx.listener(|this, _, _, cx| this.dialog_close(cx)))
                         .e2e("button", "secondary confirm-cancel")
-                        .text("Cancel")
+                        .text(t("Cancel"))
                         .into_any_element(),
                     dialog_button("confirm-go", &confirm.confirm, true)
                         .when(opens_room, |d| d.bg(rgb(theme::accent())))
@@ -759,7 +760,7 @@ pub fn render_dialog(
                                     cx.write_to_clipboard(ClipboardItem::new_string(copy.clone()));
                                 }))
                                 .e2e("button", "long-message-copy ghost")
-                                .text("Copy"),
+                                .text(t("Copy")),
                         ),
                 )
                 .child(
@@ -829,7 +830,7 @@ pub fn render_dialog(
                         .text_color(rgb(theme::text()))
                         .on_click(cx.listener(|this, _, _, cx| this.dialog_close(cx)))
                         .e2e("button", "secondary")
-                        .text("Close")
+                        .text(t("Close"))
                         .into_any_element(),
                 ]))
                 .e2e("div", "message-dialog reactions-dialog")
@@ -892,7 +893,7 @@ pub fn render_dialog(
                             crate::shell::open_external(&url, cx);
                         }))
                         .e2e("a", "button secondary report-bug")
-                        .text("Report a bug")
+                        .text(t("Report a bug"))
                         .into_any_element(),
                 ]))
                 .child(
@@ -946,7 +947,7 @@ pub fn render_dialog(
                         .e2e("div", "help-vim-switch"),
                 )
                 .e2e("div", "message-dialog help-dialog")
-                .text("Keyboard shortcuts")
+                .text(t("Keyboard shortcuts"))
                 .focusable(&focus);
             Some(overlay(window, cx, boxed.into_any_element(), close))
         }
@@ -1036,7 +1037,7 @@ pub fn render_toasts(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElemen
                                 .font_weight(FontWeight::SEMIBOLD)
                                 .text_color(rgb(theme::accent()))
                                 .cursor_pointer()
-                                .child("Undo")
+                                .child(t("Undo"))
                                 .on_click(
                                     cx.listener(move |this, _, _, cx| this.undo_toast(id, cx)),
                                 ),
@@ -1045,7 +1046,7 @@ pub fn render_toasts(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElemen
                             7.0,
                         )
                         .e2e("button", "toast-undo")
-                        .text("Undo"),
+                        .text(t("Undo")),
                     )
                 })
                 .e2e("div", "toast")
@@ -1134,7 +1135,7 @@ impl Render for ReportDialog {
                     .on_click(cx.listener(|this, _, _, cx| this.submit(cx)))
                     .e2e("button", "danger")
                     .attr("type", "submit")
-                    .text("Report")
+                    .text(t("Report"))
                     .into_any_element(),
             );
         }
@@ -1144,7 +1145,7 @@ impl Render for ReportDialog {
                 .on_click(cx.listener(|_, _, _, cx| cx.emit(Closed)))
                 .e2e("button", "secondary")
                 .attr("type", "button")
-                .text("Close")
+                .text(t("Close"))
                 .into_any_element(),
         );
         let boxed = dialog_box()
@@ -1167,7 +1168,7 @@ impl Render for ReportDialog {
                     .gap(px(6.0))
                     .text_size(px(0.85 * theme::REM))
                     .text_color(rgb(theme::text_muted()))
-                    .child("Reason")
+                    .child(t("Reason"))
                     .child(
                         div()
                             .text_size(px(theme::REM))
@@ -1175,7 +1176,7 @@ impl Render for ReportDialog {
                             .child(self.input.clone()),
                     )
                     .e2e("label", "")
-                    .text("Reason"),
+                    .text(t("Reason")),
             )
             .children(match &self.result {
                 Some(Ok(text)) => Some(
@@ -1392,7 +1393,7 @@ impl Render for PinnedDialog {
                     .text_color(rgb(theme::text()))
                     .on_click(cx.listener(|_, _, _, cx| cx.emit(Closed)))
                     .e2e("button", "secondary")
-                    .text("Close")
+                    .text(t("Close"))
                     .into_any_element(),
             ]))
             .e2e("div", "message-dialog pinned-dialog")
@@ -1541,7 +1542,7 @@ fn open_prompt(
         .gap(px(8.0))
         .text_size(px(1.6 * theme::REM))
         .font_weight(FontWeight::BOLD)
-        .child("Open")
+        .child(t("Open"))
         .child(mark.into_any_element())
         .child(
             div()
@@ -1586,9 +1587,9 @@ fn open_prompt(
                 .gap(px(8.0))
                 .text_color(rgb(theme::text_muted()))
                 .child(icon("eye-off", 16.0))
-                .child("Streamer mode is on")
+                .child(t("Streamer mode is on"))
                 .e2e("span", "open-prompt-streamer-label")
-                .text("Streamer mode is on"),
+                .text(t("Streamer mode is on")),
         )
         .child(switch)
         .e2e("div", "open-prompt-streamer");
@@ -1607,27 +1608,27 @@ fn open_prompt(
     let cancel = key_button("confirm-cancel")
         .text_color(rgb(theme::text()))
         .hover(|s| s.bg(rgba(theme::bg_hover())))
-        .child("Cancel")
+        .child(t("Cancel"))
         .child(key_cap("Esc", None))
         .on_click(cx.listener(|this, _, _, cx| this.dialog_close(cx)))
         .e2e("button", "secondary confirm-cancel")
-        .text("Cancel");
+        .text(t("Cancel"));
     let dont_ask = key_button("confirm-dont-ask")
         .text_color(rgb(theme::text_muted()))
         .hover(|s| s.bg(rgba(theme::bg_hover())))
-        .child("Don't ask again during this stream")
+        .child(t("Don't ask again during this stream"))
         .on_click(skip)
         .e2e("button", "secondary confirm-dont-ask")
-        .text("Don't ask again during this stream");
+        .text(t("Don't ask again during this stream"));
     let open = key_button("confirm-go")
         .bg(rgb(theme::accent()))
         .text_color(rgb(theme::on_accent()))
         .font_weight(FontWeight::SEMIBOLD)
-        .child("Open")
+        .child(t("Open"))
         .child(key_cap("Enter", Some(theme::accent())))
         .on_click(go)
         .e2e("button", "primary confirm-go")
-        .text("Open");
+        .text(t("Open"));
     let actions = div()
         .flex()
         .items_center()

@@ -416,8 +416,7 @@ pub fn message_menu(
 
 /// Glyphs by label, so every menu gets icons without each builder naming
 /// them. A label starting with one of these gets its glyph ("Kick carol").
-pub fn default_icon(label: &str) -> Option<&'static str> {
-    const TABLE: &[(&str, &str)] = &[
+const TABLE: &[(&str, &str)] = &[
         ("Add reaction", "smile-plus"),
         ("View reactions", "eye"),
         ("Remove reactions", "circle-minus"),
@@ -482,10 +481,34 @@ pub fn default_icon(label: &str) -> Option<&'static str> {
         ("Moderator", "shield"),
         ("Admin", "shield-check"),
     ];
+
+pub fn default_icon(label: &str) -> Option<&'static str> {
     TABLE
         .iter()
         .find(|(prefix, _)| label.starts_with(prefix))
         .map(|(_, glyph)| *glyph)
+}
+
+/// The menu labels that have a translation of their own (the table above).
+pub fn translatable_labels() -> Vec<&'static str> {
+    TABLE.iter().map(|(label, _)| *label).collect()
+}
+
+/// A menu label in the language in use: a known label whole ("Reply"), or one that starts
+/// with a known label and goes on with a name ("Kick carol" is "Expulsar carol"), else as is.
+pub fn translated_label(label: &str) -> String {
+    translated_label_in(crate::i18n::language(), label)
+}
+
+pub fn translated_label_in(code: &str, label: &str) -> String {
+    if let Some((prefix, _)) = TABLE.iter().find(|(prefix, _)| label.starts_with(prefix)) {
+        let rest = &label[prefix.len()..];
+        // A prefix only counts at a word boundary ("Message" is not the start of "Messages").
+        if rest.is_empty() || rest.starts_with(' ') {
+            return format!("{}{rest}", crate::i18n::t_in(code, prefix));
+        }
+    }
+    crate::i18n::t_in(code, label)
 }
 
 /// What a confirmation dialog says.
@@ -692,6 +715,17 @@ mod tests {
         let mut mention = message(false);
         mention.kind = MessageKind::Text { body: "codes start with morpheus-theme/1;".into(), html: None };
         assert!(!offered(&mention));
+    }
+
+    #[test]
+    fn menu_labels_translate_whole_or_by_their_known_start() {
+        assert_eq!(translated_label_in("es", "Reply"), "Responder");
+        assert_eq!(translated_label_in("es", "Reply in thread"), "Responder en un hilo");
+        assert_eq!(translated_label_in("es", "Kick carol"), "Expulsar carol");
+        assert_eq!(translated_label_in("en", "Kick carol"), "Kick carol");
+        // Only at a word boundary, and a label with no translation stays as it is.
+        assert_eq!(translated_label_in("es", "Messages from carol"), "Messages from carol");
+        assert_eq!(translated_label_in("es", "Something new"), "Something new");
     }
 
     #[test]

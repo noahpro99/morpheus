@@ -8,6 +8,7 @@
 //! Alt+Left, the mouse's back button) returns to where it was opened from.
 //! What a row says and how results merge is `view_model::discover`.
 
+use crate::view_model::i18n::t;
 use std::collections::HashSet;
 
 use gpui::{
@@ -402,9 +403,9 @@ impl Discover {
                     .bg(rgb(theme::danger()))
                     .text_color(rgb(theme::on_danger()))
                     .text_size(px(0.75 * theme::REM))
-                    .child("Error")
+                    .child(t("Error"))
                     .e2e("span", "discover-chip-error")
-                    .text("Error"),
+                    .text(t("Error")),
             );
         }
         chip.e2e("button", "discover-chip")
@@ -521,14 +522,14 @@ impl Render for Discover {
                                 div()
                                     .text_size(px(1.5 * theme::REM))
                                     .font_weight(FontWeight::BOLD)
-                                    .child("Discover")
+                                    .child(t("Discover"))
                                     .e2e("h1", "discover-title")
-                                    .text("Discover"),
+                                    .text(t("Discover")),
                             )
                             .child(
                                 div()
                                     .text_color(rgb(theme::text_muted()))
-                                    .child("Public rooms and spaces anyone can join, from the servers switched on below."),
+                                    .child(t("Public rooms and spaces anyone can join, from the servers switched on below.")),
                             )
                             .child(self.search.clone())
                             .child(div().flex().flex_wrap().gap(px(6.0)).children(chips))

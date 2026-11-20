@@ -2,6 +2,7 @@
 //! (`RoomPreviewModal` in `crates/ui/src/components/room_dialogs.rs`): its
 //! name, topic and size, and Join (which opens it).
 
+use crate::view_model::i18n::t;
 use gpui::{
     Context, EventEmitter, FocusHandle, FontWeight, IntoElement, Render, Window, div, prelude::*,
     px, rgb,
@@ -158,9 +159,9 @@ impl Render for RoomPreview {
             boxed = boxed.child(
                 div()
                     .text_color(rgb(theme::ok()))
-                    .child("Request sent. You can join once someone lets you in.")
+                    .child(t("Request sent. You can join once someone lets you in."))
                     .e2e("p", "room-preview-note")
-                    .text("Request sent. You can join once someone lets you in."),
+                    .text(t("Request sent. You can join once someone lets you in.")),
             );
         }
         if let Some(error) = &self.error {

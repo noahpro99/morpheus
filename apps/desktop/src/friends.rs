@@ -3,6 +3,7 @@
 //! (the whole row opens the DM), and New Message, which opens a DM with
 //! anyone by username. What it decides is in `view_model::friends`.
 
+use crate::view_model::i18n::t;
 use std::{collections::HashMap, sync::Arc};
 
 use gpui::{
@@ -496,9 +497,9 @@ impl FriendsPage {
                                     div()
                                         .text_size(px(0.85 * theme::REM))
                                         .text_color(rgb(theme::text_muted()))
-                                        .child("Removed")
+                                        .child(t("Removed"))
                                         .e2e("span", "friend-status friend-removed muted")
-                                        .text("Removed"),
+                                        .text(t("Removed")),
                                 )
                                 .e2e("div", "friend-text"),
                         )
@@ -514,12 +515,12 @@ impl FriendsPage {
                                         .rounded(px(theme::RADIUS))
                                         .bg(theme::fill_elevated())
                                         .cursor_pointer()
-                                        .child("Undo")
+                                        .child(t("Undo"))
                                         .on_click(cx.listener(move |this, _, _, cx| {
                                             this.undo(undo.clone(), cx)
                                         }))
                                         .e2e("button", "secondary")
-                                        .text("Undo"),
+                                        .text(t("Undo")),
                                 )
                                 .e2e("div", "friend-actions"),
                         )
@@ -580,13 +581,13 @@ impl FriendsPage {
                                     .rounded(px(theme::RADIUS))
                                     .bg(theme::fill_elevated())
                                     .cursor_pointer()
-                                    .child("Message")
+                                    .child(t("Message"))
                                     .on_click(cx.listener(move |this, _, _, cx| {
                                         cx.stop_propagation();
                                         this.message(talk.clone(), cx)
                                     }))
                                     .e2e("button", "secondary")
-                                    .text("Message"),
+                                    .text(t("Message")),
                             )
                             .child(
                                 div()
@@ -596,14 +597,14 @@ impl FriendsPage {
                                     .rounded(px(theme::RADIUS))
                                     .text_color(rgb(theme::text_muted()))
                                     .hover(|s| s.text_color(rgb(theme::text())))
-                                    .child("Remove")
+                                    .child(t("Remove"))
                                     .on_click(cx.listener(move |this, _, _, cx| {
                                         // Not also the row's click.
                                         cx.stop_propagation();
                                         this.remove(ix, remove.clone(), cx)
                                     }))
                                     .e2e("button", "ghost")
-                                    .text("Remove"),
+                                    .text(t("Remove")),
                             )
                             .e2e("div", "friend-actions"),
                     )
@@ -652,9 +653,9 @@ impl Render for FriendsPage {
                 div()
                     .flex_none()
                     .font_weight(FontWeight::BOLD)
-                    .child("Friends")
+                    .child(t("Friends"))
                     .e2e("h2", "")
-                    .text("Friends"),
+                    .text(t("Friends")),
             )
             .child(
                 div()

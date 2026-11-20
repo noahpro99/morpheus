@@ -9,6 +9,7 @@
 //! deafen button), plays your microphone back as the call sends it (after
 //! suppression) and shows its level; stopping puts deafen back as it was.
 
+use crate::view_model::i18n::t;
 use std::time::Duration;
 
 use gpui::{
@@ -415,7 +416,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElement> {
         .child(
             div()
                 .font_weight(gpui::FontWeight::SEMIBOLD)
-                .child("Noise suppression"),
+                .child(t("Noise suppression")),
         )
         .children(controls(
             cx,
@@ -435,7 +436,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElement> {
                 .text_color(rgb(theme::text()))
                 .hover(|s| s.bg(gpui::rgba(theme::bg_selected())))
                 .child(icon("settings", 14.0))
-                .child("Noise suppression settings…")
+                .child(t("Noise suppression settings…"))
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.close_noise_card(cx);
                     this.open_settings(
@@ -648,10 +649,10 @@ pub fn advanced<V: 'static>(
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_click(cx.listener(move |this, _, _, cx| toggle(this, cx)))
         .child(if open { "\u{25BE}" } else { "\u{25B8}" })
-        .child("Advanced")
+        .child(t("Advanced"))
         .e2e("button", "noise-advanced-toggle")
         .attr("data-open", open.to_string())
-        .text("Advanced")
+        .text(t("Advanced"))
         .into_any_element();
     if !open {
         return vec![header];
@@ -684,7 +685,7 @@ pub fn advanced<V: 'static>(
                 .flex()
                 .flex_col()
                 .gap(px(2.0))
-                .child(div().child("Model"))
+                .child(div().child(t("Model")))
                 .child(about_line(
                     "The neural model Strong runs; a low-latency one will be listed here when there is one.",
                 )),
@@ -723,7 +724,7 @@ pub fn advanced<V: 'static>(
         .flex()
         .items_center()
         .justify_between()
-        .child(div().child("Added latency"))
+        .child(div().child(t("Added latency")))
         .child(
             div()
                 .text_color(rgb(theme::text_muted()))
@@ -746,9 +747,9 @@ pub fn advanced<V: 'static>(
             tune(|_| NoiseTuning::default());
             cx.notify();
         }))
-        .child("Reset to defaults")
+        .child(t("Reset to defaults"))
         .e2e("button", "noise-reset")
-        .text("Reset to defaults")
+        .text(t("Reset to defaults"))
         .into_any_element();
     let body = div()
         .flex()

@@ -4,6 +4,7 @@
 //! joining a voice channel's call. The settings entries of the Dioxus
 //! palette are not ported.
 
+use crate::view_model::i18n::t;
 use std::sync::Arc;
 
 use gpui::{
@@ -304,9 +305,9 @@ impl Render for Switcher {
                     .px(px(10.0))
                     .py(px(8.0))
                     .text_color(rgb(theme::text_muted()))
-                    .child("Nothing matches")
+                    .child(t("Nothing matches"))
                     .e2e("li", "switcher-item muted")
-                    .text("Nothing matches"),
+                    .text(t("Nothing matches")),
             );
         }
         let panel = div()

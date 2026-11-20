@@ -9,6 +9,7 @@
 //! own, or in e2e builds a test's (MORPHEUS_E2E_SCREEN_SOURCES, see
 //! [`TestSources`]), so the dialog can be tested anywhere.
 
+use crate::view_model::i18n::t;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use gpui::{
@@ -342,7 +343,7 @@ impl Render for ScreenPicker {
             .font_weight(gpui::FontWeight::SEMIBOLD)
             .when(can_share, |d| d.cursor_pointer().hover(|s| s.opacity(0.9)))
             .when(!can_share, |d| d.opacity(0.5))
-            .child("Share")
+            .child(t("Share"))
             .on_click(cx.listener(|this, _, _, cx| this.share(cx)))
             .e2e(
                 "button",
@@ -352,7 +353,7 @@ impl Render for ScreenPicker {
                     "screen-picker-share disabled"
                 },
             )
-            .text("Share");
+            .text(t("Share"));
         let cancel = div()
             .id("screen-picker-cancel")
             .px(px(12.0))
@@ -360,10 +361,10 @@ impl Render for ScreenPicker {
             .rounded(px(theme::RADIUS_SM))
             .cursor_pointer()
             .hover(|s| s.bg(rgba(theme::bg_selected())))
-            .child("Cancel")
+            .child(t("Cancel"))
             .on_click(cx.listener(|_, _, _, cx| cx.emit(Picked::Cancel)))
             .e2e("button", "secondary screen-picker-cancel")
-            .text("Cancel");
+            .text(t("Cancel"));
         let boxed = dialog_box()
             .id("screen-picker")
             .track_focus(&self.focus)

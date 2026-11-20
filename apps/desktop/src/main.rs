@@ -422,6 +422,7 @@ impl Render for Root {
             .attr("data-font", "Inter")
             .attr("data-bg", format!("{:06x}", theme::bg_chat()))
             .attr("data-color", format!("{:06x}", theme::text()))
+            .attr("data-lang", view_model::i18n::language())
             .attr("data-glass", theme::glass_percent().map(|p| p.to_string()).unwrap_or_else(|| "off".into()))
             .attr(
                 "data-cursor",
@@ -877,6 +878,8 @@ fn main() {
         let file = std::env::var("MORPHEUS_DHAT_FILE").unwrap_or_else(|_| "dhat-heap.json".into());
         *profiler = Some(dhat::Profiler::builder().file_name(file).build());
     }
+    // The language (this device's choice, else the system's) before anything is drawn.
+    view_model::i18n::init(&data_dir());
     // CI's check that an update installs and the new version starts: no window.
     if update_self_test::requested() {
         update_self_test::run(data_dir());

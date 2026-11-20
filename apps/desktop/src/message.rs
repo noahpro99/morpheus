@@ -3,6 +3,7 @@
 //! start of the room and placeholders. Classes and attributes are the
 //! Dioxus app's (`crates/ui/src/components/timeline.rs`) so tests find them.
 
+use crate::view_model::i18n::t;
 use std::{cell::Cell, ops::Range, rc::Rc, sync::Arc};
 
 use gpui::{
@@ -894,12 +895,12 @@ fn attachment_card(
             .text_size(rem(0.85))
             .text_color(rgb(theme::text_muted()))
             .cursor_pointer()
-            .child("Download")
+            .child(t("Download"))
             .when_some(start, |d, (actions, key)| {
                 d.on_click(move |_, window, cx| actions(RowAction::Download, &key, window, cx))
             })
             .e2e("button", "ghost attachment-download")
-            .text("Download")
+            .text(t("Download"))
             .into_any_element(),
         Some(Download::Downloading) => status("Downloading…".into(), false, None),
         Some(Download::Saved(path)) => {
@@ -1414,11 +1415,11 @@ fn collapsed_el(
                 .cursor_pointer()
                 .hover(|s| s.text_color(rgb(theme::text())))
                 .child(icon("maximize-2", 14.0))
-                .child("Show more")
+                .child(t("Show more"))
                 .on_click(move |_, window, cx| open(RowAction::Expand, &bar_key, window, cx))
                 .e2e("button", "show-more")
                 .attr("title", "Show the whole message")
-                .text("Show more"),
+                .text(t("Show more")),
         )
         .e2e("div", "collapsed-message")
         .into_any_element()
@@ -2032,10 +2033,10 @@ pub fn say_hi_row(on_click: impl Fn(&mut gpui::App) + 'static) -> AnyElement {
                 .text_color(rgb(theme::text()))
                 .font_weight(FontWeight::SEMIBOLD)
                 .cursor_pointer()
-                .child("Say hi! 👋")
+                .child(t("Say hi! 👋"))
                 .on_click(move |_, _, cx| on_click(cx))
                 .e2e("button", "say-hi")
-                .text("Say hi! 👋"),
+                .text(t("Say hi! 👋")),
         )
         .into_any_element()
 }
@@ -2080,9 +2081,9 @@ pub fn other_row(row: &Row) -> AnyElement {
             .justify_center()
             .text_color(rgb(theme::text_faint()))
             .text_size(rem(0.85))
-            .child("This is the beginning of the room.")
+            .child(t("This is the beginning of the room."))
             .e2e("div", "timeline-start")
-            .text("This is the beginning of the room.")
+            .text(t("This is the beginning of the room."))
             .into_any_element(),
         // Discord's: a red line from edge to edge, the NEW pill at its right
         // end, centred on it (one flex row, items centred).
@@ -2110,9 +2111,9 @@ pub fn other_row(row: &Row) -> AnyElement {
                     .text_color(rgb(theme::on_danger()))
                     .text_size(rem(0.7))
                     .font_weight(FontWeight::BOLD)
-                    .child("NEW")
+                    .child(t("NEW"))
                     .e2e("span", "new-pill")
-                    .text("NEW"),
+                    .text(t("NEW")),
             )
             .e2e("div", "new-divider")
             .into_any_element(),
@@ -2245,9 +2246,9 @@ fn invite_embed(row: &MessageRow, links: &LinkHandler) -> Option<AnyElement> {
                     .text_color(rgb(theme::on_accent()))
                     .cursor_pointer()
                     .on_click(move |_, _, cx| open(&target, cx))
-                    .child("Join")
+                    .child(t("Join"))
                     .e2e("button", "invite-embed-join")
-                    .text("Join"),
+                    .text(t("Join")),
             )
             .e2e("div", "invite-embed")
             .into_any_element(),

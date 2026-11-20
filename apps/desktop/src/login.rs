@@ -3,6 +3,7 @@
 //! button and the way back to a stored account. Signs in through
 //! `morpheus_core`; the root view takes the [`Session`] from [`SignedIn`].
 
+use crate::view_model::i18n::t;
 use std::time::Duration;
 
 use gpui::{
@@ -205,6 +206,7 @@ impl Login {
 
 fn button(label: impl Into<SharedString>, primary: bool, busy: bool) -> gpui::Stateful<gpui::Div> {
     let label: SharedString = label.into();
+    let shown: SharedString = t(&label).into();
     div()
         .id(label.clone())
         .flex()
@@ -219,11 +221,13 @@ fn button(label: impl Into<SharedString>, primary: bool, busy: bool) -> gpui::St
         } else {
             theme::bg_input()
         }))
-        .child(label)
+        .child(shown)
         .tabbable()
 }
 
 fn label(text: &str, field: Entity<TextInput>) -> impl IntoElement {
+    let text = t(text);
+    let text = text.as_str();
     div()
         .w_full()
         .flex()
@@ -279,17 +283,17 @@ impl Render for Login {
                     .font_family("Unbounded")
                     .font_weight(FontWeight::BOLD)
                     .text_size(px(1.5 * theme::REM))
-                    .child("Welcome back")
+                    .child(t("Welcome back"))
                     .e2e("h1", "")
                     .attr("data-font", "Unbounded")
-                    .text("Welcome back"),
+                    .text(t("Welcome back")),
             )
             .child(
                 div()
                     .text_color(rgb(theme::text_muted()))
-                    .child("Sign in to your Matrix account")
+                    .child(t("Sign in to your Matrix account"))
                     .e2e("p", "muted")
-                    .text("Sign in to your Matrix account"),
+                    .text(t("Sign in to your Matrix account")),
             )
             .child(label("Homeserver", self.homeserver.clone()));
         if flows.password {
@@ -309,10 +313,11 @@ impl Render for Login {
             );
         }
         if let Some(status) = self.busy {
+            let status = t(status);
             form = form.child(
                 div()
                     .text_color(rgb(theme::text_muted()))
-                    .child(status)
+                    .child(status.clone())
                     .e2e("p", "muted status")
                     .text(status),
             );
@@ -325,7 +330,7 @@ impl Render for Login {
                     .e2e("button", "")
                     .attr("type", "submit")
                     .attr("disabled", busy.to_string())
-                    .text("Sign in"),
+                    .text(t("Sign in")),
             );
         }
         if flows.sso {
@@ -334,11 +339,11 @@ impl Render for Login {
                     .on_click(cx.listener(|this, _, _, cx| this.sso(cx)))
                     .e2e("button", "secondary")
                     .attr("type", "button")
-                    .text("Sign in with single sign-on"),
+                    .text(t("Sign in with single sign-on")),
             );
         }
         if let Some(account) = self.stored.clone() {
-            let text = format!("Back to {account}");
+            let text = crate::view_model::i18n::tf("Back to %{account}", &[("account", &account)]);
             form = form.child(
                 button(text.clone(), false, busy)
                     .on_click(cx.listener(|this, _, _, cx| this.back(cx)))
@@ -351,17 +356,17 @@ impl Render for Login {
             form = form.child(
                 div()
                     .text_color(rgb(theme::text_muted()))
-                    .child("Checking sign-in options…")
+                    .child(t("Checking sign-in options…"))
                     .e2e("p", "muted status")
-                    .text("Checking sign-in options…"),
+                    .text(t("Checking sign-in options…")),
             );
         }
         if !probing && !flows.password && !flows.sso {
-            let text = "This server offers no sign-in method Morpheus supports yet.";
+            let text = t("This server offers no sign-in method Morpheus supports yet.");
             form = form.child(
                 div()
                     .text_color(rgb(theme::danger()))
-                    .child(text)
+                    .child(text.clone())
                     .e2e("p", "error")
                     .text(text),
             );

@@ -124,3 +124,15 @@ Note after task 17: its bridge change (a click presses again when the target mov
 - LiveKit's Rust crates are vendored (task 50): `vendor/livekit`, `vendor/libwebrtc`, `vendor/webrtc-sys` are crates.io 0.9.5 / 0.3.52 / 0.3.49 with additions marked "Morpheus patch" (a stereo publish option, a remote audio track's volume). Upgrading LiveKit means copying the new versions and carrying those few lines over. Measured on the screen-sound track: at a lowered volume, and also disabled (deafened), its `NativeAudioStream` still got the samples as received, so a level measured there is before WebRTC's gain (the inbound-rtp `audioLevel` stat is after it); the screen sound's level therefore applies volume and deafen itself. (A quick check on a deafened voice track in Tone mode went quiet instead, as `watch_voice`'s comment says; not reconciled.)
 
 - Headless e2e (task 58): `just e2e` is headless now; a test that needs real pixels or Hyprland must call `morpheus_e2e::display_or_skip("…")` (directly or through `common::capture`) and return when it says false, never pass silently: the headless run then prints and counts it. Run such files with `just e2e-display` (unlocked session). The headless window is `vendor/gpui/src/platform/linux/headless/window.rs` (a Morpheus patch, carry it over on a gpui update). Don't call a headless window's callbacks while gpui is inside an update (reentrancy panics): resize and close are deferred to the 60 Hz tick for that reason. A headless app opens at the size it asks for (no compositor resizes it), so the harness passes 1280x800 when a test gives none; a layout test that fails only headless is first a size question.
+
+## Translations
+
+Text the app shows is written in English and the English text is the key:
+`t("Theme")` (`morpheus_view_model::i18n`) shows "Theme", or the Spanish for it from
+`crates/view-model/locales/es.json`; text with no translation shows in English. New UI
+text goes through `t(..)` / `tf("Back to %{account}", ..)` (the settings helpers `muted`,
+`note`, `section`, `group`, `choice` and menu labels translate what they are given).
+A literal handed to `t`, `tf`, those helpers or `label` is a key, and
+`cargo test -p morpheus-view-model i18n` fails when a key has no entry in a locale file
+(or a file keeps one nothing uses, or its `%{..}` placeholders differ). Text built from
+a variable (labels in view-model enums) is listed in `i18n::dynamic_keys`.

@@ -8,6 +8,7 @@
 //! verification started here keeps running (and is still there) after the
 //! window closes and opens again.
 
+use crate::view_model::i18n::t;
 use std::time::Duration;
 
 use gpui::{
@@ -211,6 +212,8 @@ pub struct SettingsView {
     import_input: Entity<TextInput>,
     pub import: Option<Result<crate::view_model::theme_share::SharedTheme, crate::view_model::theme_share::ThemeCodeError>>,
     share_note: Option<String>,
+    /// The language chosen on this device (System by default).
+    lang: crate::view_model::i18n::Choice,
     /// Locked chats > Custom: the typed number, its unit, whether the Custom choice is open
     /// and what is wrong with the time typed.
     lock_custom_input: Entity<TextInput>,
@@ -464,6 +467,7 @@ impl SettingsView {
             import_input,
             import: None,
             share_note: None,
+            lang: crate::view_model::i18n::load_choice(&crate::data_dir()),
             lock_custom_input,
             lock_unit,
             lock_custom_open: false,
@@ -867,6 +871,8 @@ fn kind_class(kind: Kind) -> &'static str {
 }
 
 fn muted(text: &str, class: &str) -> impl IntoElement {
+    let text = t(text);
+    let text = text.as_str();
     div()
         .text_color(rgb(theme::text_muted()))
         .child(text.to_owned())
@@ -877,6 +883,8 @@ fn muted(text: &str, class: &str) -> impl IntoElement {
 }
 
 fn note(text: &str, class: &'static str, color: u32) -> impl IntoElement {
+    let text = t(text);
+    let text = text.as_str();
     div()
         .text_color(rgb(color))
         .child(text.to_owned())
@@ -901,6 +909,8 @@ fn section_classed(
     highlighted: bool,
     extra: &str,
 ) -> impl IntoElement {
+    let title = t(title);
+    let title = title.as_str();
     let classes = match (highlighted, extra.is_empty()) {
         (true, true) => "settings-section setting-highlight".to_owned(),
         (true, false) => format!("settings-section setting-highlight {extra}"),
@@ -1056,10 +1066,10 @@ impl SettingsView {
                 |b| {
                     let action = b.action;
                     button(format!("flow-{}", b.label), b.label, b.kind, b.class)
-                        .child(b.label)
+                        .child(t(b.label))
                         .on_click(cx.listener(move |this, _, _, cx| this.flow_action(action, cx)))
                         .e2e("button", &format!("{} {}", kind_class(b.kind), b.class))
-                        .text(b.label)
+                        .text(t(b.label))
                 },
             )));
         }
@@ -1123,9 +1133,9 @@ impl SettingsView {
                         .child(
                             div()
                                 .font_weight(FontWeight::BOLD)
-                                .child("Your recovery key")
+                                .child(t("Your recovery key"))
                                 .e2e("strong", "")
-                                .text("Your recovery key"),
+                                .text(t("Your recovery key")),
                         )
                         .child(muted(keys::RECOVERY_SAVE_NOTE, "muted"))
                         .child(
@@ -1139,14 +1149,14 @@ impl SettingsView {
                         .child(
                             button("copy-key", "Copy", Kind::Secondary, "")
                                 .child(icon("copy", 16.0).text_color(rgb(theme::text())))
-                                .child("Copy")
+                                .child(t("Copy"))
                                 .on_click(move |_, _, cx| {
                                     cx.write_to_clipboard(gpui::ClipboardItem::new_string(
                                         copied.clone(),
                                     ))
                                 })
                                 .e2e("button", "secondary")
-                                .text("Copy"),
+                                .text(t("Copy")),
                         )
                         .e2e("div", "recovery-key-new")
                         .into_any_element(),
@@ -1160,10 +1170,10 @@ impl SettingsView {
                         button("setup-recovery", "Set up recovery", Kind::Primary, "")
                             .when(busy, |d| d.opacity(0.6))
                             .child(icon("shield", 16.0).text_color(rgb(theme::on_accent_solid())))
-                            .child("Set up recovery")
+                            .child(t("Set up recovery"))
                             .on_click(cx.listener(|this, _, _, cx| this.set_up_recovery(cx)))
                             .e2e("button", "primary setup-recovery")
-                            .text("Set up recovery"),
+                            .text(t("Set up recovery")),
                     )
                     .e2e("div", "settings-actions")
                     .into_any_element(),
@@ -1179,10 +1189,10 @@ impl SettingsView {
                         button("change-key", "Change recovery key", Kind::Secondary, "")
                             .when(busy, |d| d.opacity(0.6))
                             .child(icon("refresh-cw", 16.0).text_color(rgb(theme::text())))
-                            .child("Change recovery key")
+                            .child(t("Change recovery key"))
                             .on_click(cx.listener(|this, _, _, cx| this.ask_new_key(false, cx)))
                             .e2e("button", "secondary change-recovery-key")
-                            .text("Change recovery key"),
+                            .text(t("Change recovery key")),
                     )
                     .child(muted(keys::RECOVERY_CHANGE_NOTE, "muted"))
                     .e2e("div", "settings-actions")
@@ -1199,10 +1209,10 @@ impl SettingsView {
                         button("reset-key", "Reset recovery key", Kind::Secondary, "")
                             .when(busy, |d| d.opacity(0.6))
                             .child(icon("refresh-cw", 16.0).text_color(rgb(theme::text())))
-                            .child("Reset recovery key")
+                            .child(t("Reset recovery key"))
                             .on_click(cx.listener(|this, _, _, cx| this.ask_new_key(true, cx)))
                             .e2e("button", "secondary reset-recovery-key")
-                            .text("Reset recovery key"),
+                            .text(t("Reset recovery key")),
                     )
                     .child(muted(keys::RECOVERY_RESET_NOTE, "muted"))
                     .e2e("div", "settings-actions")
@@ -1243,19 +1253,19 @@ impl SettingsView {
                             .child(
                                 button("confirm-new-key", "Create new key", Kind::Primary, "")
                                     .when(busy, |d| d.opacity(0.6))
-                                    .child("Create new key")
+                                    .child(t("Create new key"))
                                     .on_click(cx.listener(|this, _, _, cx| this.change_key(cx)))
                                     .e2e("button", "primary confirm-new-key")
-                                    .text("Create new key"),
+                                    .text(t("Create new key")),
                             )
                             .child(
                                 button("cancel-new-key", "Cancel", Kind::Secondary, "")
-                                    .child("Cancel")
+                                    .child(t("Cancel"))
                                     .on_click(
                                         cx.listener(|this, _, _, cx| this.cancel_new_key(cx)),
                                     )
                                     .e2e("button", "secondary cancel-key-reset")
-                                    .text("Cancel"),
+                                    .text(t("Cancel")),
                             ),
                     )
                     .e2e("div", "confirm-key-reset")
@@ -1282,10 +1292,10 @@ impl SettingsView {
                         )
                         .when(busy, |d| d.opacity(0.6))
                         .child(icon("shield-check", 16.0).text_color(rgb(theme::on_accent_solid())))
-                        .child("Verify with another signed-in device")
+                        .child(t("Verify with another signed-in device"))
                         .on_click(cx.listener(|this, _, _, cx| this.start_verification(cx)))
                         .e2e("button", "primary")
-                        .text("Verify with another signed-in device"),
+                        .text(t("Verify with another signed-in device")),
                     )
                     .e2e("div", "settings-actions")
                     .into_any_element(),
@@ -1303,7 +1313,7 @@ impl SettingsView {
                             .text_size(px(0.75 * theme::REM))
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(rgb(theme::text_muted()))
-                            .child("RECOVERY KEY OR PASSPHRASE")
+                            .child(t("RECOVERY KEY OR PASSPHRASE"))
                             .child(
                                 div()
                                     .text_size(px(theme::REM))
@@ -1311,18 +1321,18 @@ impl SettingsView {
                                     .child(self.key_input.clone()),
                             )
                             .e2e("label", "")
-                            .text("Recovery key or passphrase"),
+                            .text(t("Recovery key or passphrase")),
                     )
                     .child(
                         div().flex().child(
                             button("restore-backup", "Restore from backup", Kind::Secondary, "")
                                 .when(busy, |d| d.opacity(0.6))
                                 .child(icon("key", 16.0).text_color(rgb(theme::text())))
-                                .child("Restore from backup")
+                                .child(t("Restore from backup"))
                                 .on_click(cx.listener(|this, _, _, cx| this.submit_key(cx)))
                                 .e2e("button", "secondary")
                                 .attr("type", "submit")
-                                .text("Restore from backup"),
+                                .text(t("Restore from backup")),
                         ),
                     )
                     .e2e("form", "recovery-form")
@@ -1449,10 +1459,10 @@ impl SettingsView {
             children.push(
                 button("manage-account", "Manage account", Kind::Secondary, "")
                     .child(icon("link", 16.0).text_color(rgb(theme::text())))
-                    .child("Manage account")
+                    .child(t("Manage account"))
                     .on_click(cx.listener(move |_, _, _, cx| crate::shell::open_external(&url, cx)))
                     .e2e("button", "secondary manage-account")
-                    .text("Manage account")
+                    .text(t("Manage account"))
                     .into_any_element(),
             );
         }
@@ -1567,20 +1577,20 @@ impl Render for SettingsView {
                             .child(
                                 div()
                                     .min_w_0()
-                                    .child(entry.label)
+                                    .child(t(entry.label))
                                     .e2e("span", "settings-result-label")
-                                    .attr("title", entry.label)
-                                    .text(entry.label),
+                                    .attr("title", t(entry.label))
+                                    .text(t(entry.label)),
                             )
                             .child(
                                 div()
                                     .min_w_0()
                                     .text_size(px(0.75 * theme::REM))
                                     .text_color(rgb(theme::text_muted()))
-                                    .child(entry.page.label())
+                                    .child(t(entry.page.label()))
                                     .e2e("span", "settings-result-page muted")
-                                    .attr("title", entry.page.label())
-                                    .text(entry.page.label()),
+                                    .attr("title", t(entry.page.label()))
+                                    .text(t(entry.page.label())),
                             ),
                     )
                     .on_click(cx.listener(move |this, _, _, cx| this.show_setting(entry, cx)))
@@ -1651,9 +1661,9 @@ impl Render for SettingsView {
                                     .child(
                                         icon("pencil", 12.0).text_color(rgb(theme::text_muted())),
                                     )
-                                    .child("Edit profile")
+                                    .child(t("Edit profile"))
                                     .e2e("span", "settings-profile-edit")
-                                    .text("Edit profile"),
+                                    .text(t("Edit profile")),
                             ),
                     )
                     .on_click(cx.listener(|this, _, _, cx| {
@@ -1714,7 +1724,7 @@ impl Render for SettingsView {
                             } else {
                                 theme::text_muted()
                             })))
-                            .child(item.label())
+                            .child(t(item.label()))
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 if item != SettingsPage::VoiceVideo {
                                     this.stop_video(cx);
@@ -1730,7 +1740,7 @@ impl Render for SettingsView {
                                     "settings-nav-item"
                                 },
                             )
-                            .text(item.label())
+                            .text(t(item.label()))
                     }),
             )
             .e2e("nav", "settings-nav");
@@ -1759,9 +1769,9 @@ impl Render for SettingsView {
                     .flex_1()
                     .text_size(px(1.1 * theme::REM))
                     .font_weight(FontWeight::BOLD)
-                    .child(page.label())
+                    .child(t(page.label()))
                     .e2e("h2", "")
-                    .text(page.label()),
+                    .text(t(page.label())),
             )
             .e2e("header", "settings-header");
         let content = div()

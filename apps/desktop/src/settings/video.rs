@@ -4,6 +4,7 @@
 //! let the camera go. With a call's camera on it shows that feed instead
 //! (the call crate sees to the device: see `morpheus_call::preview`).
 
+use crate::view_model::i18n::t;
 use std::time::Duration;
 
 use gpui::{AnyElement, Context, MouseButton, div, prelude::*, px, rgb};
@@ -83,7 +84,7 @@ impl SettingsView {
         let note = div()
             .text_size(px(0.75 * theme::REM))
             .text_color(rgb(theme::text_muted()))
-            .child("Your picture is shown as a mirror; others see it the other way round.")
+            .child(t("Your picture is shown as a mirror; others see it the other way round."))
             .into_any_element();
         // The counters and the camera in use are for tests and support.
         let body = preview

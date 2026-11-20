@@ -351,7 +351,7 @@ fn item_el(
     } else {
         theme::accent_strong()
     };
-    let label = item.label.clone();
+    let label = crate::view_model::menu::translated_label(&item.label);
     let mut classes = String::from("context-item");
     if item.danger {
         classes.push_str(" danger");

@@ -5,6 +5,7 @@
 //! server. One entity serves all of them (`kind` says which); what they
 //! accept and say is decided in `view_model::room_dialogs`.
 
+use crate::view_model::i18n::t;
 use std::path::PathBuf;
 
 use gpui::{
@@ -332,9 +333,9 @@ impl RoomDialog {
         let mut section = div().flex().flex_col().gap(px(6.0)).child(
             div()
                 .font_weight(FontWeight::BOLD)
-                .child("Permissions")
+                .child(t("Permissions"))
                 .e2e("h3", "")
-                .text("Permissions"),
+                .text(t("Permissions")),
         );
         if !known.can_change {
             return Some(
@@ -546,9 +547,9 @@ impl RoomDialog {
         let mut section = div().flex().flex_col().gap(px(6.0)).child(
             div()
                 .font_weight(FontWeight::BOLD)
-                .child("Emoji")
+                .child(t("Emoji"))
                 .e2e("h3", "")
-                .text("Emoji"),
+                .text(t("Emoji")),
         );
         if !pack.editable {
             section = section.child(muted(vm::EMOJI_CANNOT_CHANGE, "muted emoji-note"));
@@ -1356,7 +1357,7 @@ impl RoomDialog {
                     .text_size(px(0.75 * theme::REM))
                     .font_weight(gpui::FontWeight::BOLD)
                     .text_color(rgb(theme::text_muted()))
-                    .child("CHANNEL TYPE"),
+                    .child(t("CHANNEL TYPE")),
             )
             .child(option(
                 false,
@@ -1447,7 +1448,7 @@ impl RoomDialog {
             .gap(px(6.0))
             .text_size(px(0.85 * theme::REM))
             .text_color(rgb(theme::text_muted()))
-            .child("Category")
+            .child(t("Category"))
             .child(select)
             .e2e("label", "")
             .into_any_element()
@@ -1476,7 +1477,7 @@ impl RoomDialog {
                     icon(if on { "lock" } else { "lock-open" }, 16.0)
                         .text_color(rgb(theme::text())),
                 )
-                .child(div().child("Encryption").e2e("span", "").text("Encryption"))
+                .child(div().child(t("Encryption")).e2e("span", "").text(t("Encryption")))
                 .e2e("h3", "")
                 .into_any_element(),
         ];
@@ -1657,7 +1658,7 @@ impl RoomDialog {
                             .items_center()
                             .gap(px(8.0))
                             .text_color(rgb(theme::text_muted()))
-                            .child("Have an invite or address?")
+                            .child(t("Have an invite or address?"))
                             .child(button(
                                 "join-server",
                                 Some("log-in"),

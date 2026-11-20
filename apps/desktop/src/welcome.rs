@@ -5,6 +5,7 @@
 //! Which servers have been welcomed is kept in `welcomed_servers.json` in the
 //! data directory (`view_model::last_place`).
 
+use crate::view_model::i18n::t;
 use gpui::{AnyElement, Context, FontWeight, IntoElement, div, prelude::*, px, rgb};
 use morpheus_core::{OwnedRoomId, RoomSummary, SpaceRoom};
 
@@ -213,7 +214,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>, space: &RoomSummary) -> An
                 }
             }))
             .e2e("button", "welcome-join-all")
-            .text("Join all");
+            .text(t("Join all"));
         channels = channels.child(div().flex().justify_end().child(all));
     }
     for room in joined {
@@ -253,7 +254,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>, space: &RoomSummary) -> An
                     this.join_from_welcome(join_target.clone(), cx)
                 }))
                 .e2e("button", "welcome-join")
-                .text("Join");
+                .text(t("Join"));
                 (button.into_any_element(), error)
             }
         };
@@ -273,7 +274,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>, space: &RoomSummary) -> An
     let start = card_button("welcome-start", "Start chatting", true)
         .on_click(cx.listener(move |this, _, _, cx| this.start_chatting(id.clone(), cx)))
         .e2e("button", "primary welcome-start")
-        .text("Start chatting");
+        .text(t("Start chatting"));
     let line = vm_invites::members_label(space.member_count);
     let mut card = div()
         .flex_none()
@@ -364,9 +365,9 @@ fn joined_mark() -> AnyElement {
         .text_size(px(0.85 * theme::REM))
         .text_color(rgb(theme::text_muted()))
         .child(icon("check", 14.0))
-        .child("Joined")
+        .child(t("Joined"))
         .e2e("div", "welcome-joined")
-        .text("Joined")
+        .text(t("Joined"))
         .into_any_element()
 }
 
@@ -384,8 +385,8 @@ fn joining_mark() -> AnyElement {
             Animation::new(std::time::Duration::from_millis(900)).repeat(),
             |icon, delta| icon.rotated(delta),
         ))
-        .child("Joining…")
+        .child(t("Joining…"))
         .e2e("div", "welcome-joining")
-        .text("Joining…")
+        .text(t("Joining…"))
         .into_any_element()
 }

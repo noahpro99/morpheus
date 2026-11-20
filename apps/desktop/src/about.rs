@@ -1,6 +1,7 @@
 //! The Acknowledgements dialog (`crates/ui/src/components/about.rs`),
 //! opened from the tray menu.
 
+use crate::view_model::i18n::t;
 use gpui::{
     AnyElement, Context, FocusHandle, FontWeight, SharedString, Window, div, prelude::*, px, rgb,
 };
@@ -92,7 +93,7 @@ pub fn render(
                 .e2e("div", "about-body"),
         )
         .e2e("div", "message-dialog settings about")
-        .text("Acknowledgements")
+        .text(t("Acknowledgements"))
         .focusable(focus);
     overlay(window, cx, boxed.into_any_element(), close)
 }

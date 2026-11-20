@@ -3,6 +3,7 @@
 //! (task 5) and composer (task 6) come later. With no room open, the
 //! "Pick a room" placeholder.
 
+use crate::view_model::i18n::t;
 use gpui::{Context, ExternalPaths, FontWeight, IntoElement, div, prelude::*, px, rgb};
 
 use crate::tooltip::TipExt as _;
@@ -256,7 +257,7 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                     .on_hover(bar_hover(cx, "pin-toggle"))
                     .child(icon("pin", 16.0).text_color(rgb(pins_colour)))
                     .on_click(cx.listener(|this, _, _, cx| this.open_pinned(cx)))
-                    .tip("Pinned messages (Ctrl+P)")
+                    .tip(t("Pinned messages (Ctrl+P)"))
                     .e2e("button", "ghost pin-toggle")
                     .attr("title", "Pinned messages (Ctrl+P)")
                     .attr("data-color", format!("{pins_colour:06x}"))
@@ -416,16 +417,16 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
             .child(
                 div()
                     .font_weight(FontWeight::BOLD)
-                    .child("Pick a room")
+                    .child(t("Pick a room"))
                     .e2e("h2", "")
-                    .text("Pick a room"),
+                    .text(t("Pick a room")),
             )
             .child(
                 div()
                     .text_color(rgb(theme::text_muted()))
-                    .child("Your conversations will show up here.")
+                    .child(t("Your conversations will show up here."))
                     .e2e("p", "muted")
-                    .text("Your conversations will show up here."),
+                    .text(t("Your conversations will show up here.")),
             )
             .e2e("div", "empty-state")
             .into_any_element(),
@@ -503,7 +504,7 @@ pub fn members_toggle(shell: &Shell, cx: &mut Context<Shell>) -> gpui::AnyElemen
         .on_hover(bar_hover(cx, "member-toggle"))
         .child(icon("users", 16.0).text_color(rgb(members_colour)))
         .on_click(cx.listener(|this, _, _, cx| this.toggle_members(cx)))
-        .tip("Member list (Ctrl+U)")
+        .tip(t("Member list (Ctrl+U)"))
         .e2e(
             "button",
             if open {
