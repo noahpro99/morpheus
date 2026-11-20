@@ -98,6 +98,7 @@ pub mod tests {
             latest_ms: 0,
             space_children: Vec::new(),
             can_edit_children: false,
+            bridge: None,
         }
     }
 
