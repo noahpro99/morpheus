@@ -518,6 +518,53 @@ mod source_tests {
         );
     }
 
+    /// Text drawn on a theme fill uses that fill's own foreground: `.bg(rgb(theme::F()))`
+    /// with a `text_color` in the same builder chain (up to the first child) picks
+    /// `theme::on_F()` (or `theme::on(theme::F())`), not another fill's or a text token (#266:
+    /// the Edit room permission buttons drew `on_accent_solid` on `accent`).
+    #[test]
+    fn text_on_a_theme_fill_uses_that_fills_foreground() {
+        let mut files = Vec::new();
+        sources(&Path::new(env!("CARGO_MANIFEST_DIR")).join("src"), &mut files);
+        let fills = ["accent", "accent_strong", "accent_solid", "danger", "green", "ok", "warn", "own", "link"];
+        let mut wrong = Vec::new();
+        for file in files {
+            let text = std::fs::read_to_string(&file).expect("source");
+            let code = text.split("#[cfg(test)]").next().unwrap_or_default();
+            let lines: Vec<&str> = code.lines().collect();
+            for (i, line) in lines.iter().enumerate() {
+                for fill in fills {
+                    let bg = format!("bg(rgb(theme::{fill}()))");
+                    let picked = format!("{{ theme::{fill}() }} else");
+                    if !line.contains(&bg) && !(line.contains(".bg(rgb(if ") && line.contains(&picked)) {
+                        continue;
+                    }
+                    // The chain: from the fill to the first child, the end of its closure or the statement.
+                    let end = (i + 1..lines.len().min(i + 7))
+                        .find(|&j| {
+                            let l = lines[j];
+                            l.contains(".child(") || l.contains(".children(") || l.contains("})") || l.trim_end().ends_with(';')
+                        })
+                        .unwrap_or(lines.len().min(i + 7));
+                    let chain = lines[i..end.max(i + 1)].join("\n");
+                    let Some(at) = chain.find("text_color(") else {
+                        continue;
+                    };
+                    let colour: String = chain[at..].chars().take(90).collect();
+                    let own = match fill {
+                        "accent" | "accent_strong" | "accent_solid" | "danger" | "green" => format!("on_{fill}()"),
+                        _ => String::new(),
+                    };
+                    let by_on = format!("on(theme::{fill}())");
+                    if !colour.contains(&by_on) && (own.is_empty() || !colour.contains(&own)) {
+                        wrong.push(format!("{}:{}: {fill} fill, text {colour:?}", file.display(), i + 1));
+                    }
+                }
+            }
+        }
+        assert!(wrong.is_empty(), "text on a fill must use its on_* colour:\n{}", wrong.join("\n"));
+    }
+
     #[test]
     fn no_hex_colours_outside_the_theme() {
         let mut files = Vec::new();

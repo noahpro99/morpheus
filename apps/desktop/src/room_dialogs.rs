@@ -362,7 +362,7 @@ impl RoomDialog {
                         .rounded(px(theme::RADIUS))
                         .cursor_pointer()
                         .bg(rgb(if selected { theme::accent() } else { theme::bg_elevated() }))
-                        .text_color(rgb(if selected { theme::on_accent_solid() } else { theme::text() }))
+                        .text_color(rgb(if selected { theme::on_accent() } else { theme::text() }))
                         .child(level.label())
                         .on_click(cx.listener(move |this, _, _, cx| this.choose_level(action, level, cx)))
                         .e2e("button", if selected { "perm-option selected" } else { "perm-option" })

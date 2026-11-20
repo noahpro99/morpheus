@@ -163,7 +163,7 @@ impl Badge {
                     s.bg(rgba(theme::alpha(theme::accent(), 0x33)))
                 } else {
                     s.bg(rgb(theme::accent_strong()))
-                        .text_color(rgb(theme::text()))
+                        .text_color(rgb(theme::on_accent_strong()))
                 }
             })
             .on_click(move |_, window, cx| on_click(window, cx));

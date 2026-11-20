@@ -341,7 +341,7 @@ impl Discover {
                     .py(px(5.0))
                     .rounded(px(theme::RADIUS))
                     .bg(rgb(theme::accent_strong()))
-                    .text_color(rgb(theme::on_danger()))
+                    .text_color(rgb(theme::on_accent_strong()))
                     .cursor_pointer()
                     .when(joining, |d| d.opacity(0.6))
                     .on_click(

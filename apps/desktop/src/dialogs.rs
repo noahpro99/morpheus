@@ -699,7 +699,7 @@ pub fn render_dialog(
                         .text(t("Cancel"))
                         .into_any_element(),
                     dialog_button("confirm-go", &confirm.confirm, true)
-                        .when(opens_room, |d| d.bg(rgb(theme::accent())))
+                        .when(opens_room, |d| d.bg(rgb(theme::accent())).text_color(rgb(theme::on_accent())))
                         .on_click(go)
                         .e2e(
                             "button",
