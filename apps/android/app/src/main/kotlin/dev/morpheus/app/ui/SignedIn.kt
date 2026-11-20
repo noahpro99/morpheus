@@ -54,7 +54,7 @@ fun SignedInScreen(model: AppModel, state: Screen.SignedIn, onOpenRoom: (RoomIte
     val invites = sidebar?.invites.orEmpty()
 
     Row(Modifier.fillMaxSize().testTag("signed-in")) {
-        Rail(scopes, scope?.key) { model.selectScope(it.key) }
+        Rail(scopes, scope?.key, onReorder = { model.openReorder() }) { model.selectScope(it.key) }
         Column(Modifier.weight(1f).fillMaxHeight()) {
             if (scope == null) {
                 Text(t("Loading…"), Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -68,7 +68,7 @@ fun SignedInScreen(model: AppModel, state: Screen.SignedIn, onOpenRoom: (RoomIte
 }
 
 @Composable
-private fun Rail(scopes: List<ScopeItem>, selected: String?, onSelect: (ScopeItem) -> Unit) {
+private fun Rail(scopes: List<ScopeItem>, selected: String?, onReorder: () -> Unit, onSelect: (ScopeItem) -> Unit) {
     LazyColumn(
         Modifier.width(72.dp).fillMaxHeight().background(Palette.Background).testTag("rail"),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 12.dp),
@@ -111,6 +111,11 @@ private fun Rail(scopes: List<ScopeItem>, selected: String?, onSelect: (ScopeIte
                 if (scope.highlights > 0UL) {
                     Badge(scope.highlights.toString(), Palette.Danger, "mentions-${scope.title}", Modifier.align(Alignment.BottomEnd))
                 }
+            }
+        }
+        if (scopes.count { it.kind == ScopeKind.SERVER } > 1) {
+            item(key = "reorder-servers") {
+                TextButton(onReorder, Modifier.testTag("reorder-servers")) { Text("⇅", fontSize = 20.sp, color = Palette.Muted) }
             }
         }
     }

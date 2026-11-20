@@ -124,6 +124,30 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
     /** The words for `key` in the language in use. */
     fun t(key: String): String = morpheus.translate(key)
 
+    private val _reorderOpen = MutableStateFlow(false)
+    val reorderOpen: StateFlow<Boolean> = _reorderOpen.asStateFlow()
+
+    fun openReorder() {
+        _reorderOpen.value = true
+        AppState.screen = "reorder-servers"
+    }
+
+    fun closeReorder() {
+        _reorderOpen.value = false
+        AppState.screen = _screen.value.name()
+    }
+
+    /** Put the servers in this order (their IDs) on every device. */
+    fun setRailOrder(ids: List<String>) {
+        viewModelScope.launch {
+            try {
+                morpheus.setRailOrder(ids)
+            } catch (e: Exception) {
+                _error.value = e.sentence()
+            }
+        }
+    }
+
     private val _newOpen = MutableStateFlow(false)
     val newOpen: StateFlow<Boolean> = _newOpen.asStateFlow()
 

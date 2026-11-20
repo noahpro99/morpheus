@@ -279,6 +279,7 @@
   "Your recovery key": "Tu clave de recuperación",
   "Your theme as a code (the theme, custom colour and glass). Send it to a friend in a message or a file; they can paste it below, or choose Apply this theme on the message.": "Tu tema como un código (el tema, el color personalizado y el cristal). Envíaselo a un amigo en un mensaje o en un archivo; puede pegarlo abajo o elegir Aplicar este tema en el mensaje.",
   "Theme": "Tema",
+  "Servers": "Servidores",
   "Add": "Añadir",
   "Add a friend: username or @name:server": "Añadir un amigo: usuario o @nombre:servidor",
   "Also in encrypted rooms (the homeserver is told the link)": "También en salas cifradas (el servidor ve el enlace)",

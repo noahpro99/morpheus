@@ -131,7 +131,7 @@ Verification and recovery (#241), message menu with edit and delete (#242), file
 
 ## Not done yet
 
-Open issues with the `android` label: calls left over (#255 the phone's camera, #256 ringing, H.264 and other homeservers), showing who has read a message (#254, the core does not expose receipts yet). Not done: reordering servers or making folders from the phone (the order is read, and `set_rail_order` writes it, but there is no screen), the muted-for-a-while marks have no menu, ignored people are not folded away. A release APK path (signing is wired, `assembleRelease` is untested), iOS.
+Open issues with the `android` label: calls left over (#255 the phone's camera, #256 ringing, H.264 and other homeservers), showing who has read a message (#254, the core does not expose receipts yet). Not done: making folders from the phone (the ⇅ button at the foot of the rail opens a screen that moves servers up and down, #258), the muted-for-a-while marks have no menu, ignored people are not folded away. A release APK path (signing is wired, `assembleRelease` is untested), iOS.
 
 ## Notes from building it
 
