@@ -291,10 +291,10 @@ mod tests {
 
     #[test]
     fn a_summary_shows_the_glass_strength_that_will_be_drawn() {
-        // 50% is under Dark's floor, so it is drawn at the floor and says so.
-        let t = SharedTheme::decode("morpheus-theme/1;theme=dark;glass=50").expect("code");
+        // 10% is under the lowest opacity, so it is drawn at that and says so.
+        let t = SharedTheme::decode("morpheus-theme/1;theme=dark;glass=10").expect("code");
         let drawn = t.glass.opacity_for(&t.palette());
-        assert!(drawn > 50);
+        assert!(drawn > 10);
         assert!(t.summary().contains(&format!("{drawn}%")), "{}", t.summary());
     }
 

@@ -2206,6 +2206,7 @@ impl SettingsView {
         );
         let floor = glass::floor(&palette);
         let drawn = current.opacity_for(&palette);
+        let readable = glass::readable_floor(&palette);
         let enabled = current.on && supported;
         let bar: Rc<std::cell::Cell<gpui::Bounds<gpui::Pixels>>> = Rc::default();
         let at = {
@@ -2290,7 +2291,7 @@ impl SettingsView {
             );
         let mut body = vec![
             muted(
-                "Makes the window and its panels see-through. Text, icons, buttons, menus and pictures stay solid. The lowest opacity is where this theme's text still reads over any backdrop.",
+                "Makes the window and its panels see-through. Text, icons, buttons, menus and pictures stay solid.",
                 "muted",
             )
             .into_any_element(),
@@ -2306,6 +2307,15 @@ impl SettingsView {
             )
             .into_any_element(),
         ];
+        if current.on && supported && drawn < readable {
+            body.push(
+                muted(
+                    "Text can be hard to read over a bright window behind this one at this opacity.",
+                    "glass-readable",
+                )
+                .into_any_element(),
+            );
+        }
         body.shrink_to_fit();
         section("Transparent", "glass", body, self.hl("glass"))
     }

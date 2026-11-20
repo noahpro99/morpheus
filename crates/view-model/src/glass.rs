@@ -22,7 +22,13 @@ use crate::theme::{Palette, contrast, mix, over};
 
 /// How much of the window the glass setting leaves see-through, in percent opaque.
 pub const STRENGTHS: [u8; 5] = [90, 80, 70, 60, 50];
-pub const DEFAULT_OPACITY: u8 = 80;
+pub const DEFAULT_OPACITY: u8 = 60;
+
+/// The least opaque the slider goes, for every palette: clearly see-through (a quarter of the
+/// window), so that choosing transparency visibly does something. Whether text still reads
+/// over a bright window at that strength is for the person to judge; [`readable_floor`] says
+/// where it stops being guaranteed and the setting says so below it.
+pub const MIN_OPACITY: u8 = 25;
 
 /// The contrast the main text must keep over any backdrop, and muted text.
 pub const TEXT_CONTRAST: f32 = 4.5;
@@ -154,13 +160,18 @@ pub fn first_failure(palette: &Palette, percent: u8) -> Option<(&'static str, u3
 }
 
 /// The least opacity (percent) at which the palette's text reads over any backdrop.
-pub fn floor(palette: &Palette) -> u8 {
+pub fn readable_floor(palette: &Palette) -> u8 {
     (0..=100u8).find(|p| reads_at(palette, *p)).unwrap_or(100)
+}
+
+/// The least opacity the slider offers (see [`MIN_OPACITY`]).
+pub fn floor(_palette: &Palette) -> u8 {
+    MIN_OPACITY
 }
 
 /// The strengths on offer for `palette`: those at or above its floor.
 pub fn strengths(palette: &Palette) -> Vec<u8> {
-    let floor = floor(palette);
+    let floor = readable_floor(palette);
     STRENGTHS.into_iter().filter(|s| *s >= floor).collect()
 }
 
@@ -220,9 +231,9 @@ mod tests {
     }
 
     #[test]
-    fn fully_opaque_always_reads_and_the_floor_is_where_it_starts_to() {
+    fn fully_opaque_always_reads_and_the_readable_floor_is_where_it_starts_to() {
         for (name, p) in palettes() {
-            let f = floor(&p);
+            let f = readable_floor(&p);
             assert!(reads_at(&p, 100), "{name}: opaque must read");
             assert!(reads_at(&p, f), "{name}: reads at its floor {f}");
             if f > 0 {
@@ -235,7 +246,7 @@ mod tests {
     fn text_reads_over_the_worst_backdrop_at_every_strength_offered() {
         for (name, p) in palettes() {
             let offered = strengths(&p);
-            assert!(!offered.is_empty() || floor(&p) > 50, "{name}");
+            assert!(!offered.is_empty() || readable_floor(&p) > 50, "{name}");
             for s in offered {
                 assert_eq!(first_failure(&p, s), None, "{name} at {s}%");
             }
@@ -243,19 +254,23 @@ mod tests {
     }
 
     #[test]
-    fn a_strength_below_the_floor_is_raised_to_it_not_drawn_unreadable() {
-        let g = Glass { on: true, opacity: 1 };
+    fn the_slider_reaches_a_clearly_see_through_window_for_every_palette() {
+        // A floor near fully opaque (the readable one is about 80 for the dark theme) left
+        // 20% of the desktop showing: transparency did nothing anyone could see (#270).
         for (name, p) in palettes() {
+            assert!(floor(&p) <= 30, "{name}: the lowest opacity offered is {}", floor(&p));
+            let g = Glass { on: true, opacity: 1 };
             let drawn = g.effective(&p, Support::Blur).expect("glass");
-            assert!(reads_at(&p, drawn), "{name} drawn at {drawn}%");
+            assert_eq!(drawn, floor(&p), "{name}: a choice below the floor is drawn at the floor");
         }
+        assert!(DEFAULT_OPACITY <= 70, "the default shows the desktop through");
     }
 
     #[test]
-    fn a_translucent_window_is_not_readable_for_a_palette_with_text_near_the_backdrop() {
+    fn a_translucent_window_is_not_guaranteed_readable_for_a_palette_with_text_near_the_backdrop() {
         // Mid-grey chat with white text: see-through reads on black but not on white.
         let p = derive(0x808080);
-        assert!(floor(&p) > 50, "floor {}", floor(&p));
+        assert!(readable_floor(&p) > 50, "floor {}", readable_floor(&p));
     }
 
     #[test]
