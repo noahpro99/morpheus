@@ -1388,16 +1388,25 @@ mod tests {
         };
         let (composer, cx) = open(cx);
         focus(&composer, cx);
+        let asked = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let seen = asked.clone();
+        cx.update(|_, cx| {
+            cx.subscribe(&composer, move |_, event: &EditLast, _| {
+                seen.borrow_mut().push(event.0.unique_id.clone());
+            })
+            .detach();
+        });
         composer.update(cx, |c, _| c.set_last_own(Some(message)));
+        // Up in an empty box asks for the newest own message to be edited in
+        // place (the timeline does it; the box itself shows no banner).
         cx.simulate_keystrokes("up");
         redraw(cx);
-        assert!(texts(".composer-banner")[0].contains("Editing message"));
-        assert_eq!(draft(&composer, cx), "edit me");
+        assert_eq!(asked.borrow().len(), 1, "Up in an empty box asks to edit");
         // Up with text in the box moves the caret instead.
-        cx.simulate_keystrokes("escape");
         cx.simulate_input("x");
         cx.simulate_keystrokes("up");
         redraw(cx);
+        assert_eq!(asked.borrow().len(), 1, "Up with text asks for nothing");
         assert_eq!(query(".composer-banner").len(), 0);
     }
 }
