@@ -241,4 +241,8 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
 object AppState {
     @Volatile
     var screen: String = "loading"
+
+    /** The last web link opened from a message (the debug bridge reports it). */
+    @Volatile
+    var lastLink: String = ""
 }

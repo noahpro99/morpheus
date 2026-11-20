@@ -141,6 +141,15 @@ fun SettingsScreen(app: AppModel) {
                 }
             }
 
+            Heading(t("Link previews"))
+            var previews by remember { mutableStateOf(app.morpheus.previewSettings()) }
+            Choice(t("Show a card under messages with a link"), previews.enabled, "previews-enabled") {
+                attempt { app.morpheus.setPreviewSettings(!previews.enabled, previews.inEncrypted); previews = app.morpheus.previewSettings() }
+            }
+            Choice(t("Also in encrypted rooms (the homeserver is told the link)"), previews.inEncrypted, "previews-encrypted") {
+                attempt { app.morpheus.setPreviewSettings(previews.enabled, !previews.inEncrypted); previews = app.morpheus.previewSettings() }
+            }
+
             Heading(t("Account"))
             Text(account?.userId.orEmpty(), Modifier.testTag("settings-account"), color = Palette.Muted)
             Button({ app.signOut() }, Modifier.testTag("settings-sign-out")) { Text(t("Sign out")) }

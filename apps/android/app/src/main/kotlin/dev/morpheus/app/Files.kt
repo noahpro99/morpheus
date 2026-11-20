@@ -59,3 +59,15 @@ fun size(bytes: ULong?): String {
         else -> "%.1f MB".format(n / 1024 / 1024)
     }
 }
+
+/** Open a web link in the phone's browser; the message when there is none. */
+fun Context.openLink(url: String): String? {
+    val address = if (url.startsWith("www.", ignoreCase = true)) "https://$url" else url
+    AppState.lastLink = address
+    return try {
+        startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(address)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        null
+    } catch (_: Exception) {
+        "No app can open $address"
+    }
+}

@@ -38,7 +38,11 @@ pub enum FileKind {
 #[derive(uniffi::Enum)]
 pub enum MessageBody {
     /// Plain text (a notice or an emote too).
-    Text { text: String },
+    Text {
+        text: String,
+        /// The text cut into plain runs and links (`url` set), for drawing.
+        segments: Vec<TextSegment>,
+    },
     Image {
         /// The file name or caption.
         caption: String,
@@ -55,6 +59,13 @@ pub enum MessageBody {
     },
     /// A deleted or unreadable message, a state change, in one line.
     Other { summary: String },
+}
+
+/// A run of a message's text: plain, or a link to open.
+#[derive(uniffi::Record)]
+pub struct TextSegment {
+    pub text: String,
+    pub url: Option<String>,
 }
 
 /// A message row.
@@ -84,6 +95,8 @@ pub struct MessageItem {
     pub reactions: Vec<ReactionItem>,
     /// Replies to this message live in a thread: the chip under it.
     pub thread: Option<ThreadChip>,
+    /// The first web link of a text message: the one that may get a card.
+    pub preview_url: Option<String>,
 }
 
 /// The chip on a thread's root: how many replies, and from whom last.
@@ -146,7 +159,16 @@ fn message_item(row: &MessageRow, show_header: bool, session: &Session) -> Messa
             media: MediaHandle::new(media.clone(), session),
         },
         kind => match kind.plain_body() {
-            Some(text) => MessageBody::Text { text: text.to_owned() },
+            Some(text) => MessageBody::Text {
+                text: text.to_owned(),
+                segments: morpheus_view_model::linkify::segments(text)
+                    .into_iter()
+                    .map(|segment| match segment {
+                        morpheus_view_model::linkify::Segment::Text(text) => TextSegment { text, url: None },
+                        morpheus_view_model::linkify::Segment::Link { text, url } => TextSegment { text, url: Some(url) },
+                    })
+                    .collect(),
+            },
             None => MessageBody::Other {
                 summary: kind.summary(),
             },
@@ -187,6 +209,11 @@ fn message_item(row: &MessageRow, show_header: bool, session: &Session) -> Messa
                 mine: r.mine,
             })
             .collect(),
+        preview_url: if matches!(message.kind, MessageKind::Text { .. }) {
+            morpheus_view_model::link_previews::first_url(&row.blocks)
+        } else {
+            None
+        },
         thread: message.thread.as_ref().map(|t| ThreadChip {
             count: morpheus_view_model::threads::chip_count(t),
             latest: morpheus_view_model::threads::chip_latest(t),

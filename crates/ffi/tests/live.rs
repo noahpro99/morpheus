@@ -60,7 +60,7 @@ fn texts(rows: &[TimelineRow]) -> Vec<String> {
     rows.iter()
         .filter_map(|row| match row {
             TimelineRow::Message { message } => match &message.body {
-                MessageBody::Text { text } => Some(text.clone()),
+                MessageBody::Text { text, .. } => Some(text.clone()),
                 _ => None,
             },
             _ => None,
@@ -147,7 +147,7 @@ async fn sign_in_lists_servers_and_rooms_opens_a_timeline_sends_replies_and_rest
     })
     .await;
     let mine = sent.iter().find_map(|row| match row {
-        TimelineRow::Message { message } if matches!(&message.body, MessageBody::Text { text } if *text == stamp) => Some(message),
+        TimelineRow::Message { message } if matches!(&message.body, MessageBody::Text { text, .. } if *text == stamp) => Some(message),
         _ => None,
     });
     let mine = mine.expect("the sent message");
@@ -155,13 +155,13 @@ async fn sign_in_lists_servers_and_rooms_opens_a_timeline_sends_replies_and_rest
 
     // The event id arrives once the server has it.
     let with_id = until(&mut rows_rx, "my message's event id", |rows: &Vec<TimelineRow>| {
-        rows.iter().any(|row| matches!(row, TimelineRow::Message { message } if message.event_id.is_some() && matches!(&message.body, MessageBody::Text { text } if *text == stamp)))
+        rows.iter().any(|row| matches!(row, TimelineRow::Message { message } if message.event_id.is_some() && matches!(&message.body, MessageBody::Text { text, .. } if *text == stamp)))
     })
     .await;
     let event_id = with_id
         .iter()
         .find_map(|row| match row {
-            TimelineRow::Message { message } if matches!(&message.body, MessageBody::Text { text } if *text == stamp) => message.event_id.clone(),
+            TimelineRow::Message { message } if matches!(&message.body, MessageBody::Text { text, .. } if *text == stamp) => message.event_id.clone(),
             _ => None,
         })
         .expect("event id");
@@ -170,7 +170,7 @@ async fn sign_in_lists_servers_and_rooms_opens_a_timeline_sends_replies_and_rest
     room.send_reply(reply.clone(), event_id.clone()).await.expect("reply");
     let replied = until(&mut rows_rx, "my reply", |rows: &Vec<TimelineRow>| {
         rows.iter().any(|row| matches!(row, TimelineRow::Message { message }
-            if matches!(&message.body, MessageBody::Text { text } if text.contains("(reply)") && text.contains(&stamp))
+            if matches!(&message.body, MessageBody::Text { text, .. } if text.contains("(reply)") && text.contains(&stamp))
                 && message.reply_to.is_some()))
     })
     .await;
@@ -221,7 +221,7 @@ async fn own_messages_can_be_edited_and_deleted() {
     room.send_text(stamp.clone()).await.expect("send");
     fn mine<'a>(rows: &'a [TimelineRow], text: &str) -> Option<&'a MessageItem> {
         rows.iter().find_map(|row| match row {
-            TimelineRow::Message { message } if matches!(&message.body, MessageBody::Text { text: t } if t == text) && message.event_id.is_some() => Some(message),
+            TimelineRow::Message { message } if matches!(&message.body, MessageBody::Text { text: t, .. } if t == text) && message.event_id.is_some() => Some(message),
             _ => None,
         })
     }
@@ -261,7 +261,7 @@ async fn a_thread_opens_on_a_message_takes_replies_and_shows_on_its_root() {
     room.send_text(root_text.clone()).await.expect("send");
     fn find<'a>(rows: &'a [TimelineRow], text: &str) -> Option<&'a MessageItem> {
         rows.iter().find_map(|row| match row {
-            TimelineRow::Message { message } if matches!(&message.body, MessageBody::Text { text: t } if t == text) && message.event_id.is_some() => Some(message),
+            TimelineRow::Message { message } if matches!(&message.body, MessageBody::Text { text: t, .. } if t == text) && message.event_id.is_some() => Some(message),
             _ => None,
         })
     }
@@ -400,7 +400,7 @@ async fn the_composer_suggests_members_emoji_and_custom_emoji_and_sends_the_pict
     room.send_text(text.clone()).await.expect("send");
     until(&mut rows_rx, "the sent message", |rows: &Vec<TimelineRow>| {
         rows.iter().any(|row| matches!(row, TimelineRow::Message { message }
-            if matches!(&message.body, MessageBody::Text { text: t } if t.contains(&shortcode)) && message.event_id.is_some()))
+            if matches!(&message.body, MessageBody::Text { text: t, .. } if t.contains(&shortcode)) && message.event_id.is_some()))
     })
     .await;
 }
@@ -682,4 +682,44 @@ async fn search_finds_messages_the_new_divider_marks_the_first_unread_and_rooms_
     // Marking the room read takes the count away.
     app.mark_rooms_read(vec![id.clone()]).await.expect("mark read");
     until(&mut sidebar_rx, "read", |s: &Sidebar| unread_of(s) == Some(0)).await;
+}
+
+#[tokio::test]
+async fn links_in_a_message_are_found_get_a_preview_address_and_previews_can_be_turned_off() {
+    let Ok(homeserver) = std::env::var("MORPHEUS_TEST_HOMESERVER") else {
+        return;
+    };
+    let dir = tempfile::tempdir().expect("dir");
+    let app = Morpheus::new(dir.path().display().to_string()).expect("app");
+    app.login(homeserver, "alice".into(), "alice-password".into()).await.expect("login");
+    let (sidebar, mut sidebar_rx) = Feed::new();
+    let _sidebar = app.watch_sidebar(sidebar).await.expect("watch sidebar");
+    let id = app.create_room(format!("ffi links {}", std::process::id()), String::new()).await.expect("create");
+    until(&mut sidebar_rx, "the room", |s: &Sidebar| s.scopes.iter().flat_map(|s| &s.sections).flat_map(|s| &s.rooms).any(|r| r.id == id)).await;
+    let (rows, mut rows_rx) = Feed::new();
+    let room = app.open_room(id, rows).await.expect("open");
+
+    room.send_text("see https://example.org/page, ok".into()).await.expect("send");
+    room.send_text("no link here".into()).await.expect("send");
+    let rows = until(&mut rows_rx, "both", |rows: &Vec<TimelineRow>| texts(rows).iter().any(|t| t == "no link here")).await;
+    let message = |part: &str| rows.iter().find_map(|r| match r {
+        TimelineRow::Message { message } if matches!(&message.body, MessageBody::Text { text, .. } if text.contains(part)) => Some(message),
+        _ => None,
+    });
+    let with = message("see ").expect("the message with a link");
+    let MessageBody::Text { segments, .. } = &with.body else { panic!("text") };
+    let shown: Vec<_> = segments.iter().map(|s| (s.text.as_str(), s.url.as_deref())).collect();
+    assert_eq!(shown, [("see ", None), ("https://example.org/page", Some("https://example.org/page")), (", ok", None)]);
+    assert_eq!(with.preview_url.as_deref(), Some("https://example.org/page"));
+    assert!(message("no link").expect("plain").preview_url.is_none());
+    // A homeserver that does no previews says nothing rather than failing.
+    let _ = room.link_preview("https://example.org/page".into()).await.expect("asking is fine");
+
+    // The settings are this device's and are kept.
+    let before = app.preview_settings();
+    assert!(before.enabled && !before.in_encrypted);
+    app.set_preview_settings(false, true).expect("set");
+    app.dismiss_preview("$one".into()).expect("dismiss");
+    let again = Morpheus::new(dir.path().display().to_string()).expect("app again").preview_settings();
+    assert!(!again.enabled && again.in_encrypted && again.dismissed == ["$one"]);
 }

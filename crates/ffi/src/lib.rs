@@ -39,7 +39,7 @@ pub use error::FfiError;
 pub use composer::{CustomEmojiItem, CustomEmojiSection, EmojiSection, SuggestionItem, SuggestionKind, emoji_sections, with_emoji};
 pub use media::MediaHandle;
 pub use settings::{Appearance, LanguageChoice, NotifyDefaults, PaletteItem, ThemeChoice};
-pub use room_info::{HitItem, MemberItem, MemberRow, ProfileCard, TypingListener};
+pub use room_info::{PreviewCard, PreviewSettings, HitItem, MemberItem, MemberRow, ProfileCard, TypingListener};
 pub use people::{DirectoryItem, DirectoryPage, FriendItem, InviteItem};
 pub use push::{PushNotice, preview_push};
 pub use security::{
@@ -48,7 +48,7 @@ pub use security::{
 };
 pub use sidebar::{RoomItem, ScopeItem, ScopeKind, SectionItem, Sidebar, SidebarListener};
 pub use timeline::{
-    FileKind, MessageBody, MessageItem, ReactionItem, ReplyItem, ThreadChip, RoomTimeline, TimelineListener, TimelineRow,
+    FileKind, MessageBody, MessageItem, ReactionItem, ReplyItem, TextSegment, ThreadChip, RoomTimeline, TimelineListener, TimelineRow,
 };
 
 uniffi::setup_scaffolding!();

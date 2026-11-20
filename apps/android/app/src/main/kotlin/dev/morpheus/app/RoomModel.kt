@@ -42,6 +42,27 @@ class RoomModel(private val morpheus: Morpheus, val room: RoomItem, private val 
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
+    private val previewSettings = morpheus.previewSettings()
+
+    /** Whether this room gets link cards (a setting of this device, and encrypted rooms ask for their own). */
+    val previewsAllowed: Boolean = previewSettings.enabled && (previewSettings.inEncrypted || !room.isEncrypted)
+    private val _dismissed = MutableStateFlow(previewSettings.dismissed.toSet())
+    val dismissed: StateFlow<Set<String>> = _dismissed.asStateFlow()
+    private val cards = HashMap<String, uniffi.morpheus_ffi.PreviewCard?>()
+
+    /** The card for a link, asked of the homeserver once. */
+    suspend fun preview(url: String): uniffi.morpheus_ffi.PreviewCard? {
+        if (cards.containsKey(url)) return cards[url]
+        val card = try { timeline?.linkPreview(url) } catch (_: Exception) { null }
+        cards[url] = card
+        return card
+    }
+
+    fun dismissPreview(eventId: String) {
+        try { morpheus.dismissPreview(eventId) } catch (_: Exception) {}
+        _dismissed.value = _dismissed.value + eventId
+    }
+
     private val _typing = MutableStateFlow<String?>(null)
 
     /** "bob is typing…", or nothing. */

@@ -211,3 +211,64 @@ impl Morpheus {
         Ok(())
     }
 }
+
+/// A page a link points at, as a card.
+#[derive(uniffi::Record)]
+pub struct PreviewCard {
+    pub url: String,
+    pub site: Option<String>,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub image: Option<Arc<MediaHandle>>,
+    pub image_width: Option<u32>,
+    pub image_height: Option<u32>,
+}
+
+/// What this device does about link previews.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct PreviewSettings {
+    pub enabled: bool,
+    /// Also in encrypted rooms (the homeserver is told the link).
+    pub in_encrypted: bool,
+    /// Messages whose card was dismissed (event IDs).
+    pub dismissed: Vec<String>,
+}
+
+#[uniffi::export]
+impl RoomTimeline {
+    /// The card for the page at `url`, asked of the homeserver (nothing when it has none).
+    pub async fn link_preview(&self, url: String) -> Result<Option<PreviewCard>, FfiError> {
+        Ok(self.session.url_preview(url).await?.map(|p| PreviewCard {
+            url: p.url,
+            site: p.site,
+            title: p.title,
+            description: p.description,
+            image: p.image.map(|m| MediaHandle::new(m, &self.session)),
+            image_width: p.image_width,
+            image_height: p.image_height,
+        }))
+    }
+}
+
+#[uniffi::export]
+impl Morpheus {
+    pub fn preview_settings(&self) -> PreviewSettings {
+        let (settings, dismissed) = morpheus_view_model::link_previews::load(&self.dir);
+        PreviewSettings { enabled: settings.enabled, in_encrypted: settings.in_encrypted, dismissed: dismissed.0 }
+    }
+
+    pub fn set_preview_settings(&self, enabled: bool, in_encrypted: bool) -> Result<(), FfiError> {
+        let (_, dismissed) = morpheus_view_model::link_previews::load(&self.dir);
+        let settings = morpheus_view_model::link_previews::Settings { enabled, in_encrypted };
+        morpheus_view_model::link_previews::save(&self.dir, &settings, &dismissed)
+            .map_err(|err| failed(format!("could not save: {err}")))
+    }
+
+    /// Take the card away from a message.
+    pub fn dismiss_preview(&self, event_id: String) -> Result<(), FfiError> {
+        let (settings, mut dismissed) = morpheus_view_model::link_previews::load(&self.dir);
+        dismissed.add(&event_id);
+        morpheus_view_model::link_previews::save(&self.dir, &settings, &dismissed)
+            .map_err(|err| failed(format!("could not save: {err}")))
+    }
+}

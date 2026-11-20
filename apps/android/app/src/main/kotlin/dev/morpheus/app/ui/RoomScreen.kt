@@ -369,10 +369,7 @@ private fun MessageRow(
                 )
             }
             when (val body = message.body) {
-                is MessageBody.Text -> Text(
-                    if (message.edited) body.text + "  (edited)" else body.text,
-                    Modifier.testTag("msg-body"),
-                )
+                is MessageBody.Text -> LinkedText(body, message.edited) { onActions(message) }
                 is MessageBody.Other -> Text(body.summary, Modifier.testTag("msg-body"), color = Palette.Muted)
                 is MessageBody.Image -> PictureBody(body, onImage)
                 is MessageBody.File -> Text(
@@ -397,6 +394,12 @@ private fun MessageRow(
                     color = Palette.Accent,
                     fontSize = 13.sp,
                 )
+            }
+            val dismissed by model.dismissed.collectAsState()
+            val url = message.previewUrl
+            val eventId = message.eventId
+            if (url != null && eventId != null && model.previewsAllowed && eventId !in dismissed) {
+                PreviewCardView(model, url, eventId)
             }
             if (message.reactions.isNotEmpty()) {
                 Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
