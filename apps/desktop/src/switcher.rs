@@ -28,6 +28,8 @@ pub enum SwitcherEvent {
     Setting(&'static crate::view_model::settings::SettingEntry),
     Room(OwnedRoomId),
     Action(Action),
+    /// A right-click menu action for where you are.
+    Menu(crate::view_model::menu::MenuAction),
     Close,
 }
 
@@ -53,6 +55,8 @@ pub struct SwitchRoom {
 
 #[derive(Clone)]
 enum Entry {
+    /// An action of the open room's or server's right-click menu.
+    Context(usize),
     Setting(&'static crate::view_model::settings::SettingEntry),
     Room(usize),
     Action(PaletteEntry),
@@ -65,10 +69,16 @@ pub struct Switcher {
     cursor: usize,
     focus_next: bool,
     scroll: gpui::ScrollHandle,
+    /// The menu actions that apply to where you are (#276).
+    context: Vec<crate::view_model::palette::ContextEntry>,
 }
 
 impl Switcher {
-    pub fn new(rooms: Vec<SwitchRoom>, state: PaletteState, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        rooms: Vec<SwitchRoom>,
+        state: PaletteState,
+        context: Vec<crate::view_model::palette::ContextEntry>,
+        cx: &mut Context<Self>) -> Self {
         let input = cx.new(|cx| {
             TextInput::new(
                 "switcher",
@@ -109,6 +119,7 @@ impl Switcher {
             cursor: 0,
             focus_next: true,
             scroll: gpui::ScrollHandle::new(),
+            context,
         }
     }
 
@@ -131,6 +142,16 @@ impl Switcher {
                 .into_iter()
                 .map(Entry::Action),
         );
+        // What the room, server or call you are in offers (typed to find: they would crowd the list).
+        if !needle.is_empty() {
+            list.extend(
+                self.context
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, e)| e.label.to_lowercase().contains(&needle) || crate::view_model::palette::fuzzy_score(&needle, &e.label.to_lowercase()).is_some())
+                    .map(|(i, _)| Entry::Context(i)),
+            );
+        }
         // Settings, found by their name or the words they answer to.
         list.extend(find_settings(&needle, true).into_iter().map(Entry::Setting));
         list
@@ -147,6 +168,7 @@ impl Switcher {
                 cx.emit(SwitcherEvent::Room(id));
             }
             Some(Entry::Action(action)) => cx.emit(SwitcherEvent::Action(action.action)),
+            Some(Entry::Context(at)) => cx.emit(SwitcherEvent::Menu(self.context[*at].action.clone())),
             Some(Entry::Setting(setting)) => cx.emit(SwitcherEvent::Setting(setting)),
             None => cx.emit(SwitcherEvent::Close),
         }
@@ -205,6 +227,7 @@ impl Render for Switcher {
             let (classes, text) = match entry {
                 Entry::Room(room) => ("switcher-item", self.rooms[*room].name.clone()),
                 Entry::Action(action) => ("switcher-item action", action.label.clone()),
+                Entry::Context(at) => ("switcher-item action context", self.context[*at].label.clone()),
                 Entry::Setting(setting) => ("switcher-item", setting.label.to_owned()),
             };
             let classes = if active {
@@ -266,6 +289,15 @@ impl Render for Switcher {
                             .child(crate::view_model::i18n::tf("Settings · %{page}", &[("page", &crate::view_model::i18n::t(setting.page.label()))]))
                             .e2e("span", "kind")
                             .text(crate::view_model::i18n::tf("Settings · %{page}", &[("page", &crate::view_model::i18n::t(setting.page.label()))])),
+                    ),
+                Entry::Context(at) => row
+                    .child(icon(self.context[*at].icon, 16.0).text_color(rgb(theme::text_faint())))
+                    .child(
+                        div()
+                            .ml(px(8.0))
+                            .child(self.context[*at].label.clone())
+                            .e2e("span", "action-label")
+                            .text(self.context[*at].label.clone()),
                     ),
                 Entry::Action(action) => row
                     .child(icon(action.icon, 16.0).text_color(rgb(theme::text_faint())))
@@ -412,7 +444,8 @@ impl crate::shell::Shell {
         }
         let list = self.switch_rooms();
         let state = self.palette_state();
-        let switcher = cx.new(|cx| Switcher::new(list, state, cx));
+        let context = self.palette_context();
+        let switcher = cx.new(|cx| Switcher::new(list, state, context, cx));
         cx.subscribe(
             &switcher,
             |this: &mut Self, _, event: &SwitcherEvent, cx| {
@@ -428,6 +461,7 @@ impl crate::shell::Shell {
                         }
                     }
                     SwitcherEvent::Action(action) => this.run_palette_action(*action, cx),
+                    SwitcherEvent::Menu(action) => this.run_menu_action(action.clone(), crate::view_model::menu::MenuTarget::Other, cx),
                     SwitcherEvent::Setting(entry) => this.open_setting_entry(entry, cx),
                     SwitcherEvent::Close => {}
                 }
@@ -519,5 +553,34 @@ impl crate::shell::Shell {
         if let Some(settings) = self.settings.clone() {
             settings.update(cx, |settings, cx| settings.show_setting(entry, cx));
         }
+    }
+}
+
+impl crate::shell::Shell {
+    /// The right-click menu actions that apply to where you are: the open
+    /// room's and its server's, from the same definitions the menus use.
+    fn palette_context(&self) -> Vec<crate::view_model::palette::ContextEntry> {
+        use crate::view_model::{
+            palette::contextual,
+            room_menu::{room_menu, space_menu},
+        };
+        let mut found = Vec::new();
+        if let Some(room) = self
+            .selected
+            .as_ref()
+            .and_then(|id| self.rooms.iter().find(|r| &r.id == id))
+            .filter(|r| !r.is_dm)
+        {
+            found.extend(contextual(&room_menu(room, None), &format!("#{}", room.name)));
+        }
+        if let crate::model::Scope::Space(id) = &self.scope
+            && let Some(space) = self.rooms.iter().find(|r| &r.id == id)
+        {
+            let children = crate::model::rooms_in_scope(&self.rooms, &self.scope);
+            let folders = self.prefs.folder_choices(id);
+            let menu = space_menu(space, &children, self.prefs.hide_muted, &folders);
+            found.extend(contextual(&menu, &space.name));
+        }
+        found
     }
 }

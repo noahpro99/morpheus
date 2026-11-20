@@ -321,3 +321,63 @@ mod app_actions {
         }
     }
 }
+
+/// One action of a right-click menu that applies to where you are, offered by
+/// the palette: the menu's own item, named for its target ("Leave #general").
+#[derive(Clone, Debug, PartialEq)]
+pub struct ContextEntry {
+    pub label: String,
+    pub icon: &'static str,
+    pub action: crate::menu::MenuAction,
+}
+
+/// The palette's contextual actions from one menu's `items` (the room's, the
+/// server's: built by the same functions that draw the menus, so the two never
+/// drift): each item with an action, and the choices of a "Notifications"
+/// submenu, labelled for `subject` ("#general", "Projects").
+pub fn contextual(items: &[crate::menu::MenuItem], subject: &str) -> Vec<ContextEntry> {
+    let mut found = Vec::new();
+    let mut add = |item: &crate::menu::MenuItem, prefix: &str| {
+        let Some(action) = item.action.clone() else {
+            return;
+        };
+        let label = match item.label.as_str() {
+            "Leave room" => format!("Leave {subject}"),
+            "Leave server" => format!("Leave {subject}"),
+            other => format!("{prefix}{other} ({subject})"),
+        };
+        found.push(ContextEntry { label, icon: item.glyph().unwrap_or("chevron-right"), action });
+    };
+    for item in items {
+        if item.has_submenu() {
+            if item.label == "Notifications" {
+                for choice in &item.children {
+                    add(choice, "Notifications: ");
+                }
+            }
+        } else {
+            add(item, "");
+        }
+    }
+    found
+}
+
+#[cfg(test)]
+mod context_tests {
+    use super::*;
+    use crate::menu::MenuAction;
+
+    #[test]
+    fn a_rooms_menu_gives_its_actions_named_for_the_room() {
+        let room = crate::test_room::room("!general:x", "general");
+        let menu = crate::room_menu::room_menu(&room, None);
+        let found = contextual(&menu, "#general");
+        let labels: Vec<&str> = found.iter().map(|e| e.label.as_str()).collect();
+        assert!(labels.contains(&"Leave #general"), "{labels:?}");
+        assert!(labels.iter().any(|l| l.starts_with("Mark as")), "{labels:?}");
+        // Every action of the menu's top level is there, from the same items.
+        let top = menu.iter().filter(|i| i.action.is_some() && !i.has_submenu()).count();
+        assert!(found.len() >= top);
+        assert!(found.iter().any(|e| matches!(e.action, MenuAction::Leave(..))));
+    }
+}
