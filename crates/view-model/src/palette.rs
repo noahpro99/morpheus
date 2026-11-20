@@ -26,6 +26,8 @@ pub enum PaletteAction {
     Inbox,
     CheckForUpdates,
     Acknowledgements,
+    /// The running version's patch notes.
+    WhatsNew,
     /// Close the window; the app goes on in the background (the tray).
     CloseToBackground,
     /// End the app altogether, the background too.
@@ -119,6 +121,7 @@ pub fn actions(state: PaletteState) -> Vec<PaletteEntry> {
         entry(PaletteAction::Shortcuts, "Keyboard shortcuts", "circle-help", &["Ctrl", "/"], "hotkeys keys help"),
         entry(PaletteAction::CheckForUpdates, "Check for updates", "refresh-cw", &[], "update upgrade version"),
         entry(PaletteAction::Acknowledgements, "Acknowledgements", "heart", &[], "about credits licenses thanks"),
+        entry(PaletteAction::WhatsNew, "What's new", "info", &[], "patch notes changelog release notes version updates"),
     ]);
     if state.background {
         list.push(entry(
@@ -307,5 +310,14 @@ mod app_actions {
         );
         let found = search(with_tray, "quit");
         assert_eq!(found[0].action, PaletteAction::Quit);
+    }
+
+    #[test]
+    fn whats_new_is_found_by_patch_notes_and_changelog() {
+        let all = actions(PaletteState::default());
+        for word in ["what's new", "patch notes", "changelog", "release notes"] {
+            let found = search(all.clone(), word);
+            assert_eq!(found.first().map(|e| e.action), Some(PaletteAction::WhatsNew), "{word}");
+        }
     }
 }

@@ -497,6 +497,10 @@ impl crate::shell::Shell {
             Action::Inbox => self.toggle_inbox(cx),
             Action::CheckForUpdates => self.check_for_updates(true, cx),
             Action::Acknowledgements => self.open_about(cx),
+            Action::WhatsNew => {
+                self.whats_new = true;
+                cx.notify();
+            }
             Action::CloseToBackground => crate::send_command(crate::Command::CloseToBackground),
             Action::Quit => crate::send_command(crate::Command::Quit),
             Action::Restart => crate::send_command(crate::Command::Restart),
