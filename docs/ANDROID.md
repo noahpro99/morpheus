@@ -125,11 +125,13 @@ library loads through JNA, and a sign-in attempt reaches matrix.org over TLS and
 comes back as the core's own error sentence, so the keep rules in
 `app/proguard-rules.pro` (JNA, the generated `uniffi` package) are enough.
 
+## Done since
+
+Verification and recovery (#241), message menu with edit and delete (#242), files (#243), composer suggestions, emoji panel and custom emoji (#244), UnifiedPush notifications (#245). The e2e bridge has `attach` (stands in for the file picker), `push` and `notifications` (hand the push service a payload, read the system notifications back). Kotlin unit tests: `gradle testDebugUnitTest`.
+
 ## Not done yet
 
-Push notifications (UnifiedPush), calls, threads, settings, media upload,
-verification, a release APK path (signing is wired, `assembleRelease` is
-untested), iOS.
+Open issues with the `android` label: threads, DMs and friends, link previews, settings and themes, encrypted account data, typing and members, calls, search. A release APK path (signing is wired, `assembleRelease` is untested), iOS.
 
 ## Notes from building it
 
