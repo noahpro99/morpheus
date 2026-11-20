@@ -45,6 +45,8 @@ pub struct OpenMenu {
     /// The servers' pictures for the invite flyout, as the rail has them (set
     /// each frame by [`render`]).
     pub pictures: std::collections::HashMap<morpheus_core::OwnedRoomId, MenuPic>,
+    /// The pictures of the accounts the switcher lists, by account key.
+    pub account_pictures: std::collections::HashMap<String, std::sync::Arc<gpui::Image>>,
 }
 
 /// A server's picture in a menu row: there, on its way (a skeleton), or none.
@@ -70,6 +72,7 @@ impl OpenMenu {
             row_frame: Rc::default(),
             flyout_size: Rc::default(),
             pictures: Default::default(),
+            account_pictures: Default::default(),
         }
     }
 
@@ -306,6 +309,10 @@ fn panel(
 fn menu_pic(menu: &OpenMenu, item: &MenuItem) -> MenuPic {
     match &item.action {
         Some(MenuAction::Invite(id, _)) => menu.pictures.get(id).cloned().unwrap_or(MenuPic::None),
+        Some(MenuAction::SwitchAccount(key)) => menu
+            .account_pictures
+            .get(key)
+            .map_or(MenuPic::None, |image| MenuPic::Image(image.clone())),
         _ => MenuPic::None,
     }
 }
@@ -376,6 +383,11 @@ fn item_el(
         .cursor_pointer()
         .text_color(rgb(if lit { theme::on(highlight) } else { colour }))
         .when(lit, |d| d.bg(rgb(highlight)))
+        // An account in the switcher sits on its own colour, its text by contrast.
+        .when(!lit && item.fill.is_some(), |d| {
+            let fill = item.fill.unwrap_or_default();
+            d.bg(rgb(fill)).text_color(rgb(theme::on(fill)))
+        })
         // Every move over the row, not the hover state: a pointer that was already
         // on the row when the menu opened never changes that state.
         .on_mouse_move(cx.listener(move |this, event: &gpui::MouseMoveEvent, _, cx| {
@@ -429,7 +441,8 @@ fn item_el(
         el.child(div().flex_1().child(text))
     };
     if item.checked {
-        el = el.child(div().text_color(rgb(theme::accent())).child("✓"));
+        let tick = item.fill.map_or_else(theme::accent, theme::on);
+        el = el.child(div().text_color(rgb(tick)).child("✓"));
     }
     if item.has_submenu() {
         el = el.child(div().ml(px(12.0)).child("›").text_color(rgb(if lit {
@@ -458,6 +471,8 @@ fn item_el(
     el.e2e(if item.has_submenu() { "div" } else { "button" }, &classes)
         .attr("role", "menuitem")
         .attr("data-lit", lit.to_string())
+        .attr("data-bg", item.fill.map_or(String::new(), |f| format!("{f:06x}")))
+        .attr("data-color", item.fill.map_or(String::new(), |f| format!("{:06x}", theme::on(f))))
         .attr("data-icon", glyph.unwrap_or(""))
         .into_any_element()
 }

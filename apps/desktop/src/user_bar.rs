@@ -51,6 +51,10 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         Some(profile) => (profile.name.clone(), profile.avatar.clone()),
         None => (user_id.trim_start_matches('@').to_owned(), None),
     };
+    let picture = shell.picture(&media, 34);
+    if !user_id.is_empty() && (media.is_none() || picture.is_some()) {
+        looks::remember(&user_id, theme::accent_solid(), picture.as_ref());
+    }
     let (name, user_id) = (crate::streamer::name(&name), crate::streamer::id(&user_id));
     let chip = div()
         .id("profile-chip")
@@ -75,7 +79,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                 this.open_account_menu(event.position, cx)
             }),
         )
-        .child(avatar(shell.picture(&media, 34), &name, 34.0, None))
+        .child(avatar(picture, &name, 34.0, None))
         .child(
             div()
                 .flex_1()
@@ -271,11 +275,27 @@ impl Shell {
         let Some(own) = self.session.as_ref().and_then(|s| s.user_id()) else {
             return;
         };
-        let items = account_menu(&own, &self.accounts);
-        self.open_menu(
-            crate::menu::OpenMenu::new(at, items, false, MenuTarget::Other),
-            cx,
-        );
+        let mut items = account_menu(&own, &self.accounts);
+        // Each account on its picture and the colour of its theme.
+        let mut pictures = std::collections::HashMap::new();
+        for item in items.iter_mut().flat_map(|i| i.children.iter_mut()) {
+            let Some(crate::view_model::menu::MenuAction::SwitchAccount(key)) = &item.action else {
+                continue;
+            };
+            let Some(account) = self.accounts.iter().find(|a| &a.key == key) else {
+                continue;
+            };
+            let look = looks::read(account.user_id.as_str());
+            if let Some(accent) = look.accent {
+                item.fill = Some(accent);
+            }
+            if let Some(picture) = look.picture {
+                pictures.insert(key.clone(), picture);
+            }
+        }
+        let mut menu = crate::menu::OpenMenu::new(at, items, false, MenuTarget::Other);
+        menu.account_pictures = pictures;
+        self.open_menu(menu, cx);
     }
 
     /// Reads your own name, picture and status again (they were edited).
@@ -294,5 +314,63 @@ impl Shell {
             }
         })
         .detach();
+    }
+}
+
+/// What an account looks like in the account switcher: its picture and the
+/// colour of its theme, remembered on this device as each account is used, so
+/// the others show at once (#275).
+pub mod looks {
+    use std::sync::{Arc, Mutex};
+
+    use base64::Engine as _;
+
+    #[derive(Clone, Default)]
+    pub struct Look {
+        pub accent: Option<u32>,
+        pub picture: Option<Arc<gpui::Image>>,
+    }
+
+    fn file(user: &str) -> std::path::PathBuf {
+        let stem: String = user.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect();
+        crate::data_dir().join("account-looks").join(format!("{stem}.json"))
+    }
+
+    pub fn read(user: &str) -> Look {
+        let Ok(text) = std::fs::read_to_string(file(user)) else {
+            return Look::default();
+        };
+        let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) else {
+            return Look::default();
+        };
+        let picture = (|| {
+            let format = gpui::ImageFormat::from_mime_type(json["mime"].as_str()?)?;
+            let bytes = base64::engine::general_purpose::STANDARD.decode(json["picture"].as_str()?).ok()?;
+            Some(Arc::new(gpui::Image::from_bytes(format, bytes)))
+        })();
+        Look { accent: json["accent"].as_u64().map(|a| a as u32), picture }
+    }
+
+    /// Remember the signed-in account's look (written when it changes).
+    pub fn remember(user: &str, accent: u32, picture: Option<&Arc<gpui::Image>>) {
+        static LAST: Mutex<Option<(String, u32, usize)>> = Mutex::new(None);
+        let seen = (user.to_owned(), accent, picture.map_or(0, |p| Arc::as_ptr(p) as usize));
+        let Ok(mut last) = LAST.lock() else {
+            return;
+        };
+        if last.as_ref() == Some(&seen) {
+            return;
+        }
+        *last = Some(seen);
+        let path = file(user);
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let mut json = serde_json::json!({ "accent": accent });
+        if let Some(picture) = picture {
+            json["mime"] = picture.format.mime_type().into();
+            json["picture"] = base64::engine::general_purpose::STANDARD.encode(&picture.bytes).into();
+        }
+        let _ = std::fs::write(path, json.to_string());
     }
 }

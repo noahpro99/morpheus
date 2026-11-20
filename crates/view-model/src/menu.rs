@@ -170,6 +170,9 @@ pub struct MenuItem {
     /// A picture in front of the label instead of a glyph (rooms, servers):
     /// the name its letter comes from.
     pub avatar: Option<String>,
+    /// A background for the row (an account's own colour in the account switcher); its
+    /// text follows the contrast rule.
+    pub fill: Option<u32>,
     /// An interactive slider in the row (e.g. volume).
     pub slider: Option<MenuSlider>,
 }
@@ -185,6 +188,7 @@ impl MenuItem {
             grid: false,
             icon: None,
             avatar: None,
+            fill: None,
             slider: None,
         }
     }
@@ -199,12 +203,19 @@ impl MenuItem {
             grid: false,
             icon: None,
             avatar: None,
+            fill: None,
             slider: Some(slider),
         }
     }
 
     pub fn checked(mut self, checked: bool) -> Self {
         self.checked = checked;
+        self
+    }
+
+    /// Draws the row on this colour.
+    pub fn fill(mut self, colour: u32) -> Self {
+        self.fill = Some(colour);
         self
     }
 
