@@ -423,6 +423,7 @@ impl Render for Root {
             .attr("data-bg", format!("{:06x}", theme::bg_chat()))
             .attr("data-color", format!("{:06x}", theme::text()))
             .attr("data-lang", view_model::i18n::language())
+            .attr("data-dir", view_model::i18n::direction().name())
             .attr("data-glass", theme::glass_percent().map(|p| p.to_string()).unwrap_or_else(|| "off".into()))
             .attr(
                 "data-cursor",

@@ -1135,9 +1135,9 @@ impl SettingsView {
                 div()
                     .mt(px(10.0))
                     .font_weight(FontWeight::SEMIBOLD)
-                    .child(section.title.clone())
+                    .child(t(&section.title))
                     .e2e("div", "diag-heading")
-                    .text(section.title.clone())
+                    .text(t(&section.title))
                     .into_any_element(),
             );
             for (label, value) in &section.lines {

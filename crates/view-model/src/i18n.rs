@@ -47,6 +47,39 @@ pub fn language() -> &'static str {
     CURRENT.read().map(|c| *c).unwrap_or(SOURCE)
 }
 
+/// Which way a language is written. Layout groundwork for right-to-left languages (Arabic, Hebrew,
+/// Persian, Urdu): none is offered yet, but the app says which way the language in use runs
+/// (`.app` has `data-dir`), so a screen can mirror itself when one is added.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Direction {
+    LeftToRight,
+    RightToLeft,
+}
+
+/// The direction of the language `code` (`ar`, `ar_EG` and `he-IL` run right to left).
+pub fn direction_of(code: &str) -> Direction {
+    let base = code.split(['_', '-', '.']).next().unwrap_or_default().to_ascii_lowercase();
+    match base.as_str() {
+        "ar" | "he" | "iw" | "fa" | "ur" | "yi" | "ps" | "sd" | "ug" | "dv" => Direction::RightToLeft,
+        _ => Direction::LeftToRight,
+    }
+}
+
+/// The direction of the language in use.
+pub fn direction() -> Direction {
+    direction_of(language())
+}
+
+impl Direction {
+    /// `ltr` or `rtl`, as the web names it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Direction::LeftToRight => "ltr",
+            Direction::RightToLeft => "rtl",
+        }
+    }
+}
+
 /// Shows the app in `code` (an unknown one is English).
 pub fn set_language(code: &str) {
     let lang = LANGUAGES.iter().find(|l| l.code == code).map(|l| l.code).unwrap_or(SOURCE);
@@ -196,6 +229,8 @@ pub fn dynamic_keys() -> Vec<&'static str> {
     keys.extend(crate::menu::translatable_labels());
     keys.extend(crate::settings::translatable_labels());
     keys.extend(crate::bridges::translatable_labels());
+    keys.push(crate::release_notes::UNAVAILABLE);
+    keys.extend(crate::diagnostics::translatable_labels());
     keys.extend(crate::toast::WHATS);
     keys
 }
@@ -396,6 +431,17 @@ mod tests {
         assert_eq!(tf_in("es", "Back to %{account}", &[("account", "carol")]), "Volver a carol");
         // A placeholder with no translation is still filled, in English.
         assert_eq!(tf_in("es", "Hello %{a} and %{b}", &[("a", "x"), ("b", "y")]), "Hello x and y");
+    }
+
+    #[test]
+    fn languages_run_left_to_right_except_the_right_to_left_ones() {
+        assert_eq!(direction_of("en"), Direction::LeftToRight);
+        assert_eq!(direction_of("es_MX.UTF-8"), Direction::LeftToRight);
+        assert_eq!(direction_of("ar"), Direction::RightToLeft);
+        assert_eq!(direction_of("he-IL"), Direction::RightToLeft);
+        assert_eq!(direction_of("FA_IR"), Direction::RightToLeft);
+        assert_eq!(direction_of(""), Direction::LeftToRight);
+        assert_eq!(direction().name(), "ltr", "the app's languages are left to right");
     }
 
     #[test]

@@ -175,6 +175,43 @@ pub fn hardware_decoder_line(setting: bool, env_off: bool, found: &str) -> Strin
     }
 }
 
+/// The labels and headings the screens draw (the copied and reported text stays English, for
+/// whoever reads a bug report), and the fixed words their values are.
+pub fn translatable_labels() -> Vec<&'static str> {
+    let mut labels = vec![
+        "App", "Atlas", "Audio capture", "Auto gain", "Backend", "Build", "Call", "Camera", "Commit", "Connection",
+        "Cross-signing", "Data folder", "Decoded pictures (GPUI)", "Decoder", "DeepFilterNet latency", "Dedicated GPU setting",
+        "Desktop", "Displays", "Driver", "Dropped as late", "Echo cancellation", "Encoder", "FPS (frames drawn)",
+        "Frame time", "Frames without DeepFilterNet", "GPU", "GPU type", "GPU vendor", "GPUs found", "Graphics",
+        "Hardware decoder", "Hardware video", "Homeserver", "Jitter", "JWT service", "Kernel", "Key backup",
+        "Lazily freed", "Log file", "Matrix", "matrix-sdk", "Memory", "Memory (RSS)", "Memory (working set)",
+        "Microphone", "Microphone callback", "Noise suppression", "Other SFU", "OS", "Packet loss",
+        "Pictures, biggest copies", "Pictures, cut to shape", "Pictures drawn", "Private bytes (heap, GPU buffers)",
+        "Anonymous (heap, GPU buffers)", "Processing per 10 ms frame", "Rooms", "RTT", "Sample rate", "Screen share", "SFU", "SFUs",
+        "Speaker", "Stats", "Strong too slow, using Standard", "Sync", "System", "Timelines kept", "User",
+        "Validation", "Version", "Video capture", "Views", "Voice bitrate", "Window system",
+    ];
+    labels.extend(FIXED_VALUES);
+    labels
+}
+
+/// Values that are words rather than measurements: translated on the screen.
+pub const FIXED_VALUES: &[&str] = &[
+    "unknown",
+    "on",
+    "off",
+    "yes",
+    "no",
+    "system default",
+    "debug",
+    "release",
+    "hidden (streamer mode)",
+    "this device is verified",
+    "this device is not verified",
+    "none (no video is being sent)",
+    "none (no video is being received)",
+];
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -206,6 +243,36 @@ mod tests {
         );
         assert!(hardware_video_line(false, false, mf).starts_with("off in Settings (VP8 in software"));
         assert!(hardware_video_line(true, true, mf).starts_with("off (MORPHEUS_HW_VIDEO=0"));
+    }
+
+    /// Every label and heading the desktop writes into a report has a translation entry.
+    #[test]
+    fn every_label_the_report_writes_is_listed_for_translation() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/desktop/src/diagnostics.rs");
+        let source = std::fs::read_to_string(path).expect("the desktop diagnostics");
+        let listed = translatable_labels();
+        let mut missing = Vec::new();
+        for call in [".line(", ".maybe(", ".section("] {
+            for (at, _) in source.match_indices(call) {
+                let rest = source[at + call.len()..].trim_start();
+                let Some(rest) = rest.strip_prefix('"') else {
+                    continue;
+                };
+                let label = rest.split('"').next().unwrap_or_default();
+                if !listed.contains(&label) {
+                    missing.push(label.to_owned());
+                }
+            }
+        }
+        for constant in ["RSS_LABEL: &str = \"", "ANON_LABEL: &str = \""] {
+            for (at, _) in source.match_indices(constant) {
+                let label = source[at + constant.len()..].split('"').next().unwrap_or_default();
+                if !listed.contains(&label) {
+                    missing.push(label.to_owned());
+                }
+            }
+        }
+        assert!(missing.is_empty(), "not in translatable_labels: {missing:?}");
     }
 
     fn sample() -> Report {

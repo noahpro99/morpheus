@@ -450,11 +450,12 @@ pub const REFRESH: Duration = Duration::from_secs(1);
 
 use gpui::{AnyElement, Context, IntoElement as _, div, prelude::*, px, rgb, rgba};
 
-use crate::{e2e::E2eExt as _, shell::Shell, theme};
+use crate::{e2e::E2eExt as _, shell::Shell, theme, view_model::i18n::t};
 
 /// One "Label: value" line, as the settings page and the overlay draw it.
 pub fn line_element(label: &str, value: &str, color: u32) -> AnyElement {
-    let text = format!("{label}: {value}");
+    let value = if vm::FIXED_VALUES.contains(&value) { t(value) } else { value.to_owned() };
+    let text = format!("{}: {value}", t(label));
     div()
         .text_color(rgb(color))
         .child(text.clone())

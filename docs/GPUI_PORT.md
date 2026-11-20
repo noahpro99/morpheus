@@ -141,3 +141,11 @@ formatted for the language, `number`); dates, times and file sizes in `view_mode
 take the language's words, order and decimal mark; failed actions go through
 `toast::failure_text` (the action word is a key listed in `toast::WHATS`). A plural rule
 beyond one/other is added in `i18n::plural`.
+Diagnostics labels, headings and fixed value words are translated on screen only (the
+copied report and bug reports stay English): they are listed in
+`view_model::diagnostics::translatable_labels`, and a test fails when a `.line("..")` or
+`.section("..")` in `apps/desktop/src/diagnostics.rs` is missing from it. Right-to-left:
+`i18n::direction()` says which way the language runs and `.app` carries `data-dir`; no
+right-to-left language or mirrored layout exists yet. After editing `locales/*.json`,
+touch `crates/view-model/src/i18n.rs` (the catalogue is compiled in and cargo does not
+watch it).

@@ -20,7 +20,7 @@ pub fn release_page(version: &str) -> String {
 
 /// The popup's title.
 pub fn popup_title(version: &str) -> String {
-    format!("What's new in {version}")
+    crate::i18n::tf("What's new in %{version}", &[("version", version)])
 }
 
 /// The last version whose notes were shown on this device.

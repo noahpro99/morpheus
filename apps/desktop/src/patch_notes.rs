@@ -45,9 +45,10 @@ fn links() -> LinkHandler {
 fn notes_element(key: &str) -> AnyElement {
     let base = Base { color: theme::text(), italic: false };
     let muted = |text: &str| {
+        let text = t(text);
         div()
             .text_color(rgb(theme::text_muted()))
-            .child(text.to_owned())
+            .child(text.clone())
             .e2e("p", "muted")
             .text(text)
             .into_any_element()
@@ -69,8 +70,8 @@ pub fn help_notes() -> AnyElement {
         .e2e("div", "patch-notes")
         .text(match NOTES.lock().as_deref() {
             Ok(State::Ready { blocks, .. }) => rich::text_of(blocks),
-            Ok(State::Failed) => vm::UNAVAILABLE.to_owned(),
-            _ => "Loading the patch notes…".to_owned(),
+            Ok(State::Failed) => t(vm::UNAVAILABLE),
+            _ => t("Loading the patch notes…"),
         })
         .into_any_element()
 }
