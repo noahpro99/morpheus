@@ -25,6 +25,7 @@ mod media;
 mod people;
 mod push;
 mod security;
+mod settings;
 mod sidebar;
 mod timeline;
 
@@ -36,6 +37,7 @@ use tokio::{runtime::Runtime, task::JoinHandle};
 pub use error::FfiError;
 pub use composer::{CustomEmojiItem, CustomEmojiSection, EmojiSection, SuggestionItem, SuggestionKind, emoji_sections, with_emoji};
 pub use media::MediaHandle;
+pub use settings::{Appearance, LanguageChoice, NotifyDefaults, PaletteItem, ThemeChoice};
 pub use people::{DirectoryItem, DirectoryPage, FriendItem, InviteItem};
 pub use push::{PushNotice, preview_push};
 pub use security::{
@@ -130,6 +132,7 @@ fn store_kind() -> morpheus_core::SessionStoreKind {
 #[derive(uniffi::Object)]
 pub struct Morpheus {
     core: Core,
+    pub(crate) dir: std::path::PathBuf,
     session: Mutex<Option<Session>>,
 }
 
@@ -157,6 +160,7 @@ impl Morpheus {
     #[uniffi::constructor]
     pub fn new(data_dir: String) -> Result<Arc<Self>, FfiError> {
         Ok(Arc::new(Self {
+            dir: std::path::PathBuf::from(&data_dir),
             core: Core::with_session_store(data_dir, store_kind())?,
             session: Mutex::new(None),
         }))

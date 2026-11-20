@@ -27,6 +27,11 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
         )
         setContent {
+            val light = dev.morpheus.app.ui.Palette.IsLight
+            androidx.compose.runtime.LaunchedEffect(light) {
+                val bars = if (light) SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT) else SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+                enableEdgeToEdge(statusBarStyle = bars, navigationBarStyle = bars)
+            }
             MorpheusTheme { Root(model) }
         }
         if (savedInstanceState == null) dev.morpheus.app.push.Push.start(this)

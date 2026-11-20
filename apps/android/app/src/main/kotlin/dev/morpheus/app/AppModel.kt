@@ -56,6 +56,40 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         AppState.screen = "room"
     }
 
+    private val _settingsOpen = MutableStateFlow(false)
+    val settingsOpen: StateFlow<Boolean> = _settingsOpen.asStateFlow()
+
+    fun openSettings() {
+        _settingsOpen.value = true
+        AppState.screen = "settings"
+    }
+
+    fun closeSettings() {
+        _settingsOpen.value = false
+        AppState.screen = _screen.value.name()
+    }
+
+    /** The look in use (a theme, or a custom colour); the palette it makes is what every screen draws with. */
+    private val _appearance = MutableStateFlow(morpheus.appearance().also { dev.morpheus.app.ui.Palette.use(it.palette) })
+    val appearance: StateFlow<uniffi.morpheus_ffi.Appearance> = _appearance.asStateFlow()
+
+    fun useAppearance(look: uniffi.morpheus_ffi.Appearance) {
+        dev.morpheus.app.ui.Palette.use(look.palette)
+        _appearance.value = look
+    }
+
+    /** The language picked; screens read it so their words change with it. */
+    private val _language = MutableStateFlow(run { morpheus.startLanguage(); morpheus.languageChoice() })
+    val language: StateFlow<String> = _language.asStateFlow()
+
+    fun useLanguage(code: String) {
+        morpheus.setLanguage(code)
+        _language.value = code
+    }
+
+    /** The words for `key` in the language in use. */
+    fun t(key: String): String = morpheus.translate(key)
+
     private val _newOpen = MutableStateFlow(false)
     val newOpen: StateFlow<Boolean> = _newOpen.asStateFlow()
 

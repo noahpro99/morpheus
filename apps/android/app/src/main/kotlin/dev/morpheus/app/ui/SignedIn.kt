@@ -219,6 +219,7 @@ private fun Account(model: AppModel, state: Screen.SignedIn) {
             overflow = TextOverflow.Ellipsis,
             color = Palette.Muted,
         )
+        TextButton({ model.openSettings() }, Modifier.testTag("settings-button")) { Text("Settings") }
         TextButton({ model.signOut() }, Modifier.testTag("sign-out")) { Text("Sign out") }
     }
 }
