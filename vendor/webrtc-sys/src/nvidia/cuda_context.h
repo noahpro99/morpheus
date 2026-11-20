@@ -19,6 +19,12 @@ class CudaContext {
   /// @return True when CUDA can be used.
   static bool IsAvailable();
 
+  /// @brief Morpheus patch: whether an NVIDIA kernel driver is there at all
+  /// (a device node), without loading any library or starting CUDA: starting
+  /// CUDA costs about 100-200 MB of resident memory, so a call that never
+  /// decodes or encodes hardware video must not do it.
+  static bool DriverPresent();
+
   /// @brief Returns the process-wide context manager.
   /// @return Non-owning pointer to the singleton context manager.
   static CudaContext* GetInstance();

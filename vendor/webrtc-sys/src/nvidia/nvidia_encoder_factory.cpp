@@ -226,7 +226,21 @@ NvencProbeResult ProbeNvencSupport() {
 
 }  // namespace
 
-NvidiaVideoEncoderFactory::NvidiaVideoEncoderFactory() {
+// Morpheus patch (#10): the probe that opens a CUDA context and an NVENC
+// session (about 100-200 MB of resident memory) runs when the first encoder is
+// wanted (or the app asks which encoders exist), not when the factory is made:
+// a call that sends no hardware video never pays for it.
+NvidiaVideoEncoderFactory::NvidiaVideoEncoderFactory() {}
+
+void NvidiaVideoEncoderFactory::EnsureFormats() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (formats_ready_) {
+    return;
+  }
+  formats_ready_ = true;
+  if (!IsSupported()) {
+    return;
+  }
   std::map<std::string, std::string> baselineParameters = {
       {"profile-level-id", "42e01f"},
       {"level-asymmetry-allowed", "1"},
@@ -282,6 +296,11 @@ bool NvidiaVideoEncoderFactory::IsSupported() {
   return CachedNvencProbe().encoder_supported;
 }
 
+bool NvidiaVideoEncoderFactory::MightBeSupported() {
+  // Morpheus patch: what costs nothing to find out, without starting CUDA.
+  return livekit_ffi::CudaContext::DriverPresent();
+}
+
 bool NvidiaVideoEncoderFactory::IsAv1Supported() {
   return CachedNvencProbe().av1_supported;
 }
@@ -289,6 +308,7 @@ bool NvidiaVideoEncoderFactory::IsAv1Supported() {
 std::unique_ptr<VideoEncoder> NvidiaVideoEncoderFactory::Create(
     const Environment& env,
     const SdpVideoFormat& format) {
+  EnsureFormats();
   // Check if the requested format is supported.
   for (const auto& supported_format : supported_formats_) {
     if (format.IsSameCodec(supported_format)) {
@@ -327,12 +347,26 @@ std::unique_ptr<VideoEncoder> NvidiaVideoEncoderFactory::Create(
 }
 std::vector<SdpVideoFormat> NvidiaVideoEncoderFactory::GetSupportedFormats()
     const {
-  return supported_formats_;
+  // Asked when a connection is made, in a voice-only call too: until the probe
+  // has run (Create, or the app asking which encoders exist) the answer is the
+  // H.264 every encoder here can do, without starting CUDA.
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (formats_ready_) {
+      return supported_formats_;
+    }
+  }
+  if (!MightBeSupported()) {
+    return {};
+  }
+  return {SdpVideoFormat("H264", {{"profile-level-id", "42e01f"},
+                                 {"level-asymmetry-allowed", "1"},
+                                 {"packetization-mode", "1"}})};
 }
 
 std::vector<SdpVideoFormat> NvidiaVideoEncoderFactory::GetImplementations()
     const {
-  return supported_formats_;
+  return GetSupportedFormats();
 }
 
 }  // namespace webrtc

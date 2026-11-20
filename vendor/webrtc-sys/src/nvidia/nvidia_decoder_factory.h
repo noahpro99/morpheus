@@ -3,6 +3,7 @@
 #ifndef NVIDIA_VIDEO_DECODER_FACTORY_H_
 #define NVIDIA_VIDEO_DECODER_FACTORY_H_
 
+#include <mutex>
 #include <vector>
 
 #include "api/environment/environment.h"
@@ -25,7 +26,11 @@ class NvidiaVideoDecoderFactory : public VideoDecoderFactory {
       const SdpVideoFormat& format) override;
 
  private:
-  std::vector<SdpVideoFormat> supported_formats_;
+  void EnsureFormats() const;
+
+  mutable std::mutex mutex_;
+  mutable bool formats_ready_ = false;
+  mutable std::vector<SdpVideoFormat> supported_formats_;
   livekit_ffi::CudaContext* cu_context_;
 };
 

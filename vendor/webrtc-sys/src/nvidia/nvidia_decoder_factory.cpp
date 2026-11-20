@@ -53,27 +53,14 @@ bool IsNvdecRuntimeAvailable() {
 
 }  // namespace
 
-static int GetCudaDeviceCapabilityMajorVersion(CUcontext context) {
-  cuCtxSetCurrent(context);
-
-  CUdevice device;
-  cuCtxGetDevice(&device);
-
-  int major;
-  cuDeviceGetAttribute(&major, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR,
-                       device);
-
-  return major;
-}
-
-std::vector<SdpVideoFormat> SupportedNvDecoderCodecs(CUcontext context) {
+std::vector<SdpVideoFormat> SupportedNvDecoderCodecsForGeneration(int major) {
   std::vector<SdpVideoFormat> supportedFormats;
 
   // HardwareGeneration Kepler is 3.x
   // https://docs.nvidia.com/deploy/cuda-compatibility/index.html#faq
   // Kepler support h264 profile Main, Highprofile up to Level4.1
   // https://docs.nvidia.com/video-technologies/video-codec-sdk/nvdec-video-decoder-api-prog-guide/index.html#video-decoder-capabilities__table_o3x_fms_3lb
-  if (GetCudaDeviceCapabilityMajorVersion(context) <= 3) {
+  if (major <= 3) {
     supportedFormats = {
         CreateH264Format(webrtc::H264Profile::kProfileHigh,
                          webrtc::H264Level::kLevel4_1, "1"),
@@ -105,26 +92,36 @@ std::vector<SdpVideoFormat> SupportedNvDecoderCodecs(CUcontext context) {
   return supportedFormats;
 }
 
+// Morpheus patch (#10): nothing of CUDA is started here. Starting the driver
+// (cuInit, a context) costs 100-200 MB of resident memory, and a call that
+// receives no hardware-decodable video never needs it. The driver is started
+// when the first decoder is wanted (Create), the context with it.
 NvidiaVideoDecoderFactory::NvidiaVideoDecoderFactory()
-    : cu_context_(nullptr) {
+    : cu_context_(nullptr) {}
+
+void NvidiaVideoDecoderFactory::EnsureFormats() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (formats_ready_) {
+    return;
+  }
+  formats_ready_ = true;
   if (IsNvdecDisabledByEnv()) {
     LogNvdecDisabledByEnv();
     return;
   }
-
-  if (!IsNvdecRuntimeAvailable()) {
-    RTC_LOG(LS_INFO) << "NvidiaVideoDecoderFactory created without NVDEC "
-                        "support because the runtime library is unavailable.";
+  if (!livekit_ffi::CudaContext::IsAvailable() || !IsNvdecRuntimeAvailable()) {
+    RTC_LOG(LS_INFO) << "NvidiaVideoDecoderFactory: no NVDEC support.";
     return;
   }
-
-  cu_context_ = livekit_ffi::CudaContext::GetInstance();
-  if (cu_context_->Initialize()) {
-    supported_formats_ = SupportedNvDecoderCodecs(cu_context_->GetContext());
-  } else {
-    RTC_LOG(LS_ERROR) << "Failed to initialize CUDA context.";
-    cu_context_ = nullptr;
+  // The generation of the GPU decides the formats; asking needs the driver
+  // started but no context.
+  int major = 0;
+  CUdevice device;
+  if (cuDeviceGet(&device, 0) == CUDA_SUCCESS) {
+    cuDeviceGetAttribute(&major, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR,
+                         device);
   }
+  supported_formats_ = SupportedNvDecoderCodecsForGeneration(major);
   RTC_LOG(LS_INFO) << "NvidiaVideoDecoderFactory created with "
                    << supported_formats_.size() << " supported formats.";
 }
@@ -146,22 +143,16 @@ bool NvidiaVideoDecoderFactory::IsSupported() {
     return false;
   }
 
-  if (!livekit_ffi::CudaContext::IsAvailable()) {
-    RTC_LOG(LS_WARNING) << "Cuda Context is not available.";
-    return false;
-  }
-
-  if (!IsNvdecRuntimeAvailable()) {
-    return false;
-  }
-
-  std::cout << "Nvidia Decoder is supported." << std::endl;
-  return true;
+  // Morpheus patch: only what costs nothing to find out: the driver's device
+  // node. CUDA itself starts when a decoder is
+  // wanted.
+  return livekit_ffi::CudaContext::DriverPresent();
 }
 
 std::unique_ptr<VideoDecoder> NvidiaVideoDecoderFactory::Create(
     const Environment& env,
     const SdpVideoFormat& format) {
+  EnsureFormats();
   // Check if the requested format is supported.
   for (const auto& supported_format : supported_formats_) {
     if (format.IsSameCodec(supported_format)) {
@@ -189,7 +180,27 @@ std::unique_ptr<VideoDecoder> NvidiaVideoDecoderFactory::Create(
 
 std::vector<SdpVideoFormat> NvidiaVideoDecoderFactory::GetSupportedFormats()
     const {
-  return supported_formats_;
+  // WebRTC asks when a connection is made, in a voice-only call too. Until a
+  // decoder is wanted the answer is the H.264 a GPU of this century decodes,
+  // worked out without starting CUDA or loading a library (the driver's device
+  // node). Create() then finds out for real, and a GPU that cannot is passed
+  // over for the software decoder (which lists the same H.264).
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (formats_ready_) {
+      return supported_formats_;
+    }
+  }
+  if (IsNvdecDisabledByEnv() || !livekit_ffi::CudaContext::DriverPresent()) {
+    return {};
+  }
+  std::vector<SdpVideoFormat> formats;
+  for (auto& format : SupportedNvDecoderCodecsForGeneration(4)) {
+    if (format.name == "H264") {
+      formats.push_back(format);
+    }
+  }
+  return formats;
 }
 
 }  // namespace webrtc

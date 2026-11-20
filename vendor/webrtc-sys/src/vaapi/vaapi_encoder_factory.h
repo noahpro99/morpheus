@@ -16,7 +16,10 @@
   VAAPIVideoEncoderFactory();
    ~VAAPIVideoEncoderFactory() override;
 
+   // Opens a VA display (starts the GPU's VA driver).
    static bool IsSupported();
+   // Whether libva can be loaded: no driver starts.
+   static bool MightBeSupported();
  
    std::unique_ptr<VideoEncoder> Create(const Environment& env,
                                         const SdpVideoFormat& format) override;

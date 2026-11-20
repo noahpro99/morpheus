@@ -3,6 +3,7 @@
 #ifndef NVIDIA_VIDEO_ENCODER_FACTORY_H_
 #define NVIDIA_VIDEO_ENCODER_FACTORY_H_
 
+#include <mutex>
 #include <vector>
 
 #include "api/environment/environment.h"
@@ -17,7 +18,10 @@ class NvidiaVideoEncoderFactory : public VideoEncoderFactory {
   NvidiaVideoEncoderFactory();
   ~NvidiaVideoEncoderFactory() override;
 
+  // Whether NVENC works: opens a CUDA context and an encode session once.
   static bool IsSupported();
+  // Whether it may: no CUDA started, nothing loaded.
+  static bool MightBeSupported();
 
   std::unique_ptr<VideoEncoder> Create(const Environment& env,
                                        const SdpVideoFormat& format) override;
@@ -34,8 +38,11 @@ class NvidiaVideoEncoderFactory : public VideoEncoderFactory {
 
  private:
   static bool IsAv1Supported();
+  void EnsureFormats() const;
 
-  std::vector<SdpVideoFormat> supported_formats_;
+  mutable std::mutex mutex_;
+  mutable bool formats_ready_ = false;
+  mutable std::vector<SdpVideoFormat> supported_formats_;
   livekit_ffi::CudaContext* cu_context_ = nullptr;
 };
 

@@ -38,9 +38,11 @@ VAAPIVideoEncoderFactory::VAAPIVideoEncoderFactory() {
 
 VAAPIVideoEncoderFactory::~VAAPIVideoEncoderFactory() {}
 
-bool VAAPIVideoEncoderFactory::IsSupported() {
-  // Ensure that libva and libva-drm are actually available for loading.
-  // Otherwise, we will immediately abort.
+bool VAAPIVideoEncoderFactory::MightBeSupported() {
+  // Morpheus patch (#10): are libva and libva-drm there to load (nothing of
+  // the driver starts)? Opening a display, below, loads the GPU's VA driver,
+  // which on NVIDIA starts CUDA (100-200 MB of resident memory): that waits
+  // for the first encoder.
   void* libva_ptr = lk_driver_dlopen("libva.so.2", RTLD_LAZY);
   if (!libva_ptr) {
     RTC_LOG(LS_INFO) << "libva.so.2 is not found";
@@ -54,7 +56,13 @@ bool VAAPIVideoEncoderFactory::IsSupported() {
     return false;
   }
   dlclose(libvadrm_ptr);
-  
+  return true;
+}
+
+bool VAAPIVideoEncoderFactory::IsSupported() {
+  if (!MightBeSupported()) {
+    return false;
+  }
   // Check if VAAPI is supported by the environment.
   // This could involve checking if the VAAPI display can be opened.
   VaapiDisplay vaapi_display;
@@ -72,6 +80,11 @@ bool VAAPIVideoEncoderFactory::IsSupported() {
 std::unique_ptr<VideoEncoder> VAAPIVideoEncoderFactory::Create(
     const Environment& env,
     const SdpVideoFormat& format) {
+  // Found out here, not when the factory was made (see MightBeSupported).
+  static const bool works = IsSupported();
+  if (!works) {
+    return nullptr;
+  }
   // Check if the requested format is supported.
   for (const auto& supported_format : supported_formats_) {
     if (format.IsSameCodec(supported_format)) {

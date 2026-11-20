@@ -8,6 +8,7 @@
 #include <windows.h>
 #else
 #include <dlfcn.h>
+#include <unistd.h>
 #endif
 
 #include <iostream>
@@ -105,6 +106,14 @@ static bool check_cuda_device() {
 CudaContext* CudaContext::GetInstance() {
   static CudaContext instance;
   return &instance;
+}
+
+bool CudaContext::DriverPresent() {
+#if defined(__linux__)
+  return access("/dev/nvidiactl", F_OK) == 0 || access("/proc/driver/nvidia/version", F_OK) == 0;
+#else
+  return true;
+#endif
 }
 
 bool CudaContext::IsAvailable() {

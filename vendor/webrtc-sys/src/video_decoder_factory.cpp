@@ -266,7 +266,9 @@ rust::String hardware_video_decoder_status() {
                         MediaFoundationVideoDecoderFactory::DecoderName());
   return rust::String("none: " + MediaFoundationVideoDecoderFactory::Unavailable());
 #elif defined(USE_NVIDIA_VIDEO_CODEC)
-  if (webrtc::NvidiaVideoDecoderFactory::IsSupported())
+  // Asked for by a diagnostics page (or when video arrives), so CUDA may start here.
+  if (webrtc::NvidiaVideoDecoderFactory::IsSupported() &&
+      livekit_ffi::CudaContext::IsAvailable())
     return rust::String("NVDEC");
   return rust::String(
       "none: NVDEC unavailable (no NVIDIA driver with libcuda and "

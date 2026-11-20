@@ -243,7 +243,10 @@ void AddNvencFactory(
     std::vector<VideoEncoderBackendFactory>& factories,
     bool preferred) {
 #if defined(USE_NVIDIA_VIDEO_CODEC)
-  if (webrtc::NvidiaVideoEncoderFactory::IsSupported()) {
+  // Morpheus patch (#10): a cheap look unless this encoder was asked for; the
+  // factory itself finds out whether NVENC works when its formats are wanted.
+  if (preferred ? webrtc::NvidiaVideoEncoderFactory::IsSupported()
+                : webrtc::NvidiaVideoEncoderFactory::MightBeSupported()) {
     AddBackendFactory(
         factories,
         VideoEncoderBackend::Nvenc,
@@ -270,7 +273,9 @@ void AddVaapiFactory(
     std::vector<VideoEncoderBackendFactory>& factories,
     bool preferred) {
 #if defined(USE_VAAPI_VIDEO_CODEC)
-  if (webrtc::VAAPIVideoEncoderFactory::IsSupported()) {
+  // Morpheus patch (#10): libva only; the display opens at the first encoder.
+  if (preferred ? webrtc::VAAPIVideoEncoderFactory::IsSupported()
+                : webrtc::VAAPIVideoEncoderFactory::MightBeSupported()) {
     AddBackendFactory(
         factories,
         VideoEncoderBackend::Vaapi,
