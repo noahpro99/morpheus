@@ -723,3 +723,40 @@ async fn links_in_a_message_are_found_get_a_preview_address_and_previews_can_be_
     let again = Morpheus::new(dir.path().display().to_string()).expect("app again").preview_settings();
     assert!(!again.enabled && again.in_encrypted && again.dismissed == ["$one"]);
 }
+
+#[tokio::test]
+async fn pinned_and_closed_dms_and_the_servers_order_come_from_the_accounts_layout() {
+    let Ok(homeserver) = std::env::var("MORPHEUS_TEST_HOMESERVER") else {
+        return;
+    };
+    let dir = tempfile::tempdir().expect("dir");
+    let app = Morpheus::new(dir.path().display().to_string()).expect("app");
+    app.login(homeserver, "alice".into(), "alice-password".into()).await.expect("login");
+    let (sidebar, mut rx) = Feed::new();
+    let _s = app.watch_sidebar(sidebar).await.expect("watch");
+    let list = until(&mut rx, "the servers", |s: &Sidebar| s.scopes.iter().filter(|c| c.kind == ScopeKind::Server).count() >= 2).await;
+    let dms = |s: &Sidebar| s.scopes.iter().find(|c| c.kind == ScopeKind::Dms).map(|c| c.sections.iter().flat_map(|s| s.rooms.iter().map(|r| (r.id.clone(), r.pinned)).collect::<Vec<_>>()).collect::<Vec<_>>()).unwrap_or_default();
+    let servers = |s: &Sidebar| s.scopes.iter().filter(|c| c.kind == ScopeKind::Server).map(|c| c.key.trim_start_matches("space:").to_owned()).collect::<Vec<_>>();
+
+    // A DM, pinned: it is first and says so; closed: it is gone until a message; both on any device.
+    let dm = app.start_dm("bob".into()).await.expect("dm");
+    until(&mut rx, "the DM", |s: &Sidebar| dms(s).iter().any(|(id, _)| *id == dm)).await;
+    app.set_dm_mark(dm.clone(), "pinned".into(), true).await.expect("pin");
+    until(&mut rx, "pinned first", |s: &Sidebar| dms(s).first().is_some_and(|(id, pinned)| *id == dm && *pinned)).await;
+    app.set_dm_mark(dm.clone(), "pinned".into(), false).await.expect("unpin");
+    app.set_dm_mark(dm.clone(), "closed".into(), true).await.expect("close");
+    until(&mut rx, "closed", |s: &Sidebar| !dms(s).iter().any(|(id, _)| *id == dm)).await;
+    app.set_dm_mark(dm.clone(), "closed".into(), false).await.expect("reopen");
+    until(&mut rx, "back", |s: &Sidebar| dms(s).iter().any(|(id, pinned)| *id == dm && !*pinned)).await;
+    let wrong = app.set_dm_mark(dm, "loud".into(), true).await.expect_err("not a mark");
+    assert!(wrong.to_string().contains("not a mark"), "{wrong}");
+
+    // The servers' order is the account's: reversed here, reversed in the list.
+    let now = servers(&list);
+    let mut reversed = now.clone();
+    reversed.reverse();
+    app.set_rail_order(reversed.clone()).await.expect("order");
+    until(&mut rx, "the new order", |s: &Sidebar| servers(s) == reversed).await;
+    app.set_rail_order(now.clone()).await.expect("put back");
+    until(&mut rx, "the old order", |s: &Sidebar| servers(s) == now).await;
+}

@@ -2,6 +2,7 @@ package dev.morpheus.app.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,6 +24,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -164,21 +166,23 @@ private fun ChannelList(scope: ScopeItem, invites: List<InviteItem>, model: AppM
                         )
                     }
                 }
-                items(section.rooms, key = { it.id }) { room -> RoomRow(room, onOpenRoom) }
+                items(section.rooms, key = { it.id }) { room -> RoomRow(room, onOpenRoom, model) }
             }
         } }
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun RoomRow(room: RoomItem, onOpen: (RoomItem) -> Unit) {
+private fun RoomRow(room: RoomItem, onOpen: (RoomItem) -> Unit, model: AppModel) {
     val unread = room.unread > 0UL && !room.muted
+    var menu by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     Box(Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
         Row(
             Modifier
                 .fillMaxWidth()
                 .heightIn(min = 56.dp)
-                .clickable { onOpen(room) }
+                .combinedClickable(onClick = { onOpen(room) }, onLongClick = { if (room.isDm) menu = true })
                 .padding(start = 12.dp, end = 72.dp)
                 .testTag("room-${room.name}"),
             verticalAlignment = Alignment.CenterVertically,
@@ -189,6 +193,7 @@ private fun RoomRow(room: RoomItem, onOpen: (RoomItem) -> Unit) {
             } else {
                 Text(if (room.isVoice) "🔊" else "#", color = Palette.Muted, fontSize = 20.sp, modifier = Modifier.width(40.dp))
             }
+            if (room.pinned) Text("📌", Modifier.testTag("pin-${room.name}"), fontSize = 12.sp)
             Text(
                 room.name,
                 maxLines = 1,
@@ -196,6 +201,18 @@ private fun RoomRow(room: RoomItem, onOpen: (RoomItem) -> Unit) {
                 fontWeight = if (unread) FontWeight.Bold else FontWeight.Normal,
                 color = if (unread) Palette.Text else Palette.Muted,
             )
+        }
+        // In the tree, not a popup window: the list itself carries it (and so do the tests).
+        if (menu) {
+            Row(Modifier.align(Alignment.CenterEnd).background(Palette.Raised, RoundedCornerShape(8.dp)).testTag("dm-menu")) {
+                TextButton({ menu = false; model.setDmMark(room.id, "pinned", !room.pinned) }, Modifier.testTag("dm-pin")) {
+                    Text(if (room.pinned) "Unpin" else "Pin", fontSize = 13.sp)
+                }
+                TextButton({ menu = false; model.setDmMark(room.id, "closed", true) }, Modifier.testTag("dm-close")) {
+                    Text("Close", fontSize = 13.sp)
+                }
+                TextButton({ menu = false }, Modifier.testTag("dm-cancel")) { Text("✕", fontSize = 13.sp) }
+            }
         }
         Row(
             Modifier.align(Alignment.CenterEnd).padding(end = 16.dp),

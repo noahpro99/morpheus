@@ -120,6 +120,17 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         }
     }
 
+    /** Pin a DM to the top, or close it until a new message (on every device). */
+    fun setDmMark(roomId: String, kind: String, on: Boolean) {
+        viewModelScope.launch {
+            try {
+                morpheus.setDmMark(roomId, kind, on)
+            } catch (e: Exception) {
+                _error.value = e.sentence()
+            }
+        }
+    }
+
     fun answerInvite(roomId: String, accept: Boolean) {
         viewModelScope.launch {
             try {

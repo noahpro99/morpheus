@@ -80,7 +80,10 @@ impl Morpheus {
         let user = session.find_user(typed).await?;
         friends::check_target(session.user_id().as_ref().map(|u| u.as_str()), user.as_str())
             .map_err(failed)?;
-        Ok(session.dm_with(user).await?.to_string())
+        let dm = session.dm_with(user).await?.to_string();
+        // Messaging someone brings a closed DM back.
+        let _ = session.set_mark(morpheus_core::marks::CLOSED, dm.clone(), None).await;
+        Ok(dm)
     }
 
     /// Join an invited room.
@@ -186,5 +189,38 @@ impl Morpheus {
     pub async fn join_public(&self, room_id_of: String, via: Option<String>) -> Result<(), FfiError> {
         let id = room_id(&room_id_of)?;
         Ok(self.session()?.join_room_via(id, via.into_iter().collect()).await?)
+    }
+}
+
+#[uniffi::export]
+impl Morpheus {
+    /// Pin a DM to the top of the list, or close it (hidden until a new message), on every device:
+    /// `kind` is `pinned` or `closed`.
+    pub async fn set_dm_mark(&self, room_id_of: String, kind: String, on: bool) -> Result<(), FfiError> {
+        let kind = match kind.as_str() {
+            "pinned" => morpheus_core::marks::PINNED,
+            "closed" => morpheus_core::marks::CLOSED,
+            other => return Err(failed(format!("{other} is not a mark"))),
+        };
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or_default();
+        Ok(self.session()?.set_mark(kind, room_id_of, on.then_some(now)).await?)
+    }
+
+    /// Put the servers in this order (their room IDs, first to last) on every device. What else the
+    /// account keeps with the layout (the desktop's folders, hidden muted rooms) is left as it is.
+    pub async fn set_rail_order(&self, space_ids: Vec<String>) -> Result<(), FfiError> {
+        let session = self.session()?;
+        let mut prefs = session.ui_prefs().await?;
+        let rail: Vec<serde_json::Value> = space_ids.into_iter().map(|id| serde_json::json!({ "space": id })).collect();
+        match prefs.as_object_mut() {
+            Some(object) => {
+                object.insert("rail".into(), rail.into());
+            }
+            None => prefs = serde_json::json!({ "rail": rail }),
+        }
+        Ok(session.set_ui_prefs(prefs).await?)
     }
 }

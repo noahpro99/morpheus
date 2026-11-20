@@ -23,6 +23,7 @@ morpheus-core = { workspace = true }
 morpheus-view-model = { workspace = true }
 uniffi = "0.32"
 tokio = { workspace = true }
+serde_json = { workspace = true }
 futures-util = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }

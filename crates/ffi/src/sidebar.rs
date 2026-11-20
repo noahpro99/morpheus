@@ -7,6 +7,7 @@ use std::sync::Arc;
 use morpheus_core::RoomSummary;
 use morpheus_view_model::{
     diffs,
+    marks::Marks,
     scopes::{Scope, ScopeView, scope_views},
 };
 
@@ -27,6 +28,8 @@ pub struct RoomItem {
     /// Unread mentions.
     pub highlights: u64,
     pub muted: bool,
+    /// A DM pinned to the top of the list (on any of my devices).
+    pub pinned: bool,
 }
 
 /// What a scope is: the app may draw the first three with icons.
@@ -73,7 +76,7 @@ pub trait SidebarListener: Send + Sync {
     fn on_sidebar(&self, sidebar: Sidebar);
 }
 
-fn room_item(room: &RoomSummary, session: &morpheus_core::Session) -> RoomItem {
+fn room_item(room: &RoomSummary, session: &morpheus_core::Session, marks: &Marks) -> RoomItem {
     RoomItem {
         id: room.id.to_string(),
         name: room.name.clone(),
@@ -84,17 +87,19 @@ fn room_item(room: &RoomSummary, session: &morpheus_core::Session) -> RoomItem {
         is_encrypted: room.is_encrypted,
         unread: room.unread_messages,
         highlights: room.highlight_count,
-        muted: room.muted,
+        muted: marks.is_muted(room),
+        pinned: marks.is_pinned(room),
     }
 }
 
-fn scope_item(view: ScopeView, session: &morpheus_core::Session) -> ScopeItem {
-    let items = |rooms: &[RoomSummary]| rooms.iter().map(|r| room_item(r, session)).collect();
+fn scope_item(view: ScopeView, session: &morpheus_core::Session, marks: &Marks) -> ScopeItem {
+    let items = |rooms: &[RoomSummary]| rooms.iter().map(|r| room_item(r, session, marks)).collect();
     let mut sections = Vec::new();
     if matches!(view.scope, Scope::Dms) {
         sections.push(SectionItem {
             title: None,
-            rooms: items(&view.sections.dms),
+            // Closed DMs stay out until a new message; pinned ones come first.
+            rooms: items(&marks.visible_dms(view.sections.dms.clone(), None, false)),
         });
     } else {
         sections.push(SectionItem {
@@ -125,12 +130,17 @@ fn scope_item(view: ScopeView, session: &morpheus_core::Session) -> ScopeItem {
 }
 
 /// The sidebar for a room list (`scope_views` and the mapping).
-pub(crate) fn sidebar_of(rooms: &[RoomSummary], session: &morpheus_core::Session) -> Sidebar {
+pub(crate) fn sidebar_of(rooms: &[RoomSummary], session: &morpheus_core::Session, layout: &Layout) -> Sidebar {
+    let mut scopes: Vec<ScopeItem> = scope_views(rooms)
+        .into_iter()
+        .map(|view| scope_item(view, session, &layout.marks))
+        .collect();
+    // Servers in the order the account keeps (the same layout on every device); the rest after, as listed.
+    let place = |key: &str| key.strip_prefix("space:").and_then(|id| layout.rail.iter().position(|r| r == id));
+    let first_server = scopes.iter().position(|s| s.kind == ScopeKind::Server).unwrap_or(scopes.len());
+    scopes[first_server..].sort_by_key(|s| place(&s.key).unwrap_or(usize::MAX));
     Sidebar {
-        scopes: scope_views(rooms)
-            .into_iter()
-            .map(|view| scope_item(view, session))
-            .collect(),
+        scopes,
         invites: crate::people::invite_items(rooms, session),
     }
 }
@@ -146,14 +156,92 @@ impl Morpheus {
         let mut updates = session.room_list().await?;
         let task = runtime().spawn(async move {
             let mut rooms: Vec<RoomSummary> = Vec::new();
-            while let Some(batch) = updates.next().await {
-                for diff in batch {
-                    diffs::apply(&mut rooms, diff);
+            let mut layout = Layout::load(&session).await;
+            let mut ticks = tokio::time::interval(std::time::Duration::from_secs(4));
+            let mut told = false;
+            loop {
+                tokio::select! {
+                    batch = updates.next() => {
+                        let Some(batch) = batch else { break };
+                        for diff in batch {
+                            diffs::apply(&mut rooms, diff);
+                        }
+                        layout = Layout::load(&session).await;
+                    }
+                    _ = ticks.tick() => {
+                        // The layout changes on another device without the room list changing.
+                        let now = Layout::load(&session).await;
+                        if !told || now.signature() == layout.signature() {
+                            continue;
+                        }
+                        layout = now;
+                    }
                 }
-                listener.on_sidebar(sidebar_of(&rooms, &session));
+                told = true;
+                listener.on_sidebar(sidebar_of(&rooms, &session, &layout));
             }
         });
         Ok(TaskHandle::new(task))
     }
 }
 
+
+/// What the account keeps about the list's layout (sealed account data, shared
+/// with the desktop app): DMs pinned, closed or muted, and the servers' order.
+#[derive(Default, Clone)]
+pub(crate) struct Layout {
+    pub marks: Marks,
+    pub rail: Vec<String>,
+}
+
+impl Layout {
+    pub(crate) async fn load(session: &morpheus_core::Session) -> Self {
+        let mut marks = Marks::default();
+        for kind in [
+            morpheus_core::marks::PINNED,
+            morpheus_core::marks::CLOSED,
+            morpheus_core::marks::IGNORED,
+            morpheus_core::marks::MUTED_UNTIL,
+        ] {
+            if let Ok(map) = session.marks(kind).await {
+                *marks.map_mut(kind) = map;
+            }
+        }
+        let rail = session
+            .ui_prefs()
+            .await
+            .ok()
+            .and_then(|prefs| prefs.get("rail").and_then(|r| r.as_array().cloned()))
+            .map(|items| {
+                items
+                    .iter()
+                    .flat_map(|item| {
+                        let mut ids: Vec<String> = item.get("space").and_then(|v| v.as_str()).map(str::to_owned).into_iter().collect();
+                        if let Some(spaces) = item.get("spaces").and_then(|v| v.as_array()) {
+                            ids.extend(spaces.iter().filter_map(|v| v.as_str().map(str::to_owned)));
+                        }
+                        ids
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        Self { marks, rail }
+    }
+
+    /// Equal layouts have equal signatures (the maps' order does not count).
+    fn signature(&self) -> String {
+        let mut parts: Vec<String> = Vec::new();
+        for (name, map) in [
+            ("p", &self.marks.pinned),
+            ("c", &self.marks.closed),
+            ("i", &self.marks.ignored),
+            ("m", &self.marks.muted_until),
+        ] {
+            let mut entries: Vec<_> = map.iter().map(|(k, v)| format!("{name}{k}={v}")).collect();
+            entries.sort();
+            parts.extend(entries);
+        }
+        parts.extend(self.rail.iter().map(|r| format!("r{r}")));
+        parts.join("|")
+    }
+}
