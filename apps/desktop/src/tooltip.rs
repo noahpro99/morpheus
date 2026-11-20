@@ -149,7 +149,7 @@ impl Render for Tip {
             .px(px(10.0))
             .py(px(6.0))
             .rounded(px(theme::RADIUS))
-            .bg(rgb(theme::bg_elevated()))
+            .bg(theme::fill_elevated())
             .border_1()
             .border_color(rgba(theme::edge()))
             .shadow_md()

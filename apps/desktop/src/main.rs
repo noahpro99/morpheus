@@ -387,7 +387,7 @@ impl Render for Root {
             .size_full()
             .flex()
             .flex_col()
-            .bg(rgb(theme::bg_chat()))
+            .bg(theme::fill_chat())
             .font_family("Inter")
             .text_size(px(theme::REM))
             .text_color(rgb(theme::text()));
@@ -422,6 +422,7 @@ impl Render for Root {
             .attr("data-font", "Inter")
             .attr("data-bg", format!("{:06x}", theme::bg_chat()))
             .attr("data-color", format!("{:06x}", theme::text()))
+            .attr("data-glass", theme::glass_percent().map(|p| p.to_string()).unwrap_or_else(|| "off".into()))
             .attr(
                 "data-cursor",
                 if cx.has_active_drag() {
@@ -549,6 +550,8 @@ fn window_options(cx: &App) -> WindowOptions {
         // The app draws its own bar, buttons and resize edges (Linux;
         // macOS and Windows ignore this).
         window_decorations: Some(gpui::WindowDecorations::Client),
+        // Frosted glass (Settings > Appearance): see-through, blurred where the system can.
+        window_background: theme::window_background(),
         ..Default::default()
     }
 }

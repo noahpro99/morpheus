@@ -247,7 +247,7 @@ impl Render for ThreadPanel {
                     .flex_none()
                     .pt(px(8.0))
                     .border_b_1()
-                    .border_color(rgb(theme::bg_elevated()))
+                    .border_color(theme::fill_elevated())
                     .child(root)
                     .e2e("div", "thread-panel-root"),
             )

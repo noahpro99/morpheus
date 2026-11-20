@@ -6,6 +6,7 @@
 use std::sync::atomic::{AtomicU8, Ordering};
 
 use crate::view_model::{
+    glass::{self, Glass, Support},
     settings::Theme,
     theme::{Palette, swatch},
 };
@@ -36,7 +37,7 @@ pub fn parse_cache(text: &str) -> (Theme, Option<u32>) {
 }
 
 fn cache_text(theme: Theme, custom: Option<u32>) -> String {
-    let mut value = serde_json::json!({ "theme": theme.key() });
+    let mut value = serde_json::json!({ "theme": theme.key(), "glass": glass_setting_raw().to_json() });
     if let Some(c) = custom {
         value["custom_colour"] = crate::view_model::theme::hex(c).into();
     }
@@ -47,6 +48,9 @@ fn cache_text(theme: Theme, custom: Option<u32>) -> String {
 fn install_cache(dir: &std::path::Path) {
     if let Ok(text) = std::fs::read_to_string(dir.join(CACHE_FILE)) {
         let (theme, custom) = parse_cache(&text);
+        if let Ok(mut g) = GLASS.write() {
+            *g = Glass::from_json(serde_json::from_str::<serde_json::Value>(&text).ok().as_ref().and_then(|v| v.get("glass")));
+        }
         store_theme(theme);
         store_custom(custom);
     }
@@ -76,12 +80,14 @@ fn store_theme(theme: Theme) {
         Theme::ALL.iter().position(|t| *t == theme).unwrap_or(0) as u8,
         Ordering::Relaxed,
     );
+    refresh_glass();
 }
 
 fn store_custom(colour: Option<u32>) {
     if let Ok(mut custom) = CUSTOM.write() {
         *custom = colour.map(|c| (c, crate::view_model::theme::derive(c)));
     }
+    refresh_glass();
 }
 
 /// Draw with `theme` from now on.
@@ -125,6 +131,124 @@ pub fn palette() -> Palette {
     }
     Palette::of(current())
 }
+
+
+// ---- frosted glass ---------------------------------------------------------------------
+
+static GLASS: std::sync::RwLock<Glass> = std::sync::RwLock::new(Glass { on: false, opacity: glass::DEFAULT_OPACITY });
+/// The alphas drawn now: main surface in the high byte, raised in the low; 0 is opaque.
+static ALPHAS: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(0);
+
+/// What this system can do for a see-through window (everything in tests, so they
+/// do not depend on the machine).
+pub fn support() -> Support {
+    #[cfg(test)]
+    {
+        Support::Blur
+    }
+    #[cfg(not(test))]
+    {
+        static SUPPORT: std::sync::OnceLock<Support> = std::sync::OnceLock::new();
+        *SUPPORT.get_or_init(Support::detect)
+    }
+}
+
+fn glass_setting_raw() -> Glass {
+    GLASS.read().map(|g| *g).unwrap_or_default()
+}
+
+/// The glass setting as chosen.
+pub fn glass_setting() -> Glass {
+    ensure_loaded();
+    GLASS.read().map(|g| *g).unwrap_or_default()
+}
+
+/// The percent opaque actually drawn (None: opaque), after the contrast floor and
+/// what the system supports.
+pub fn glass_percent() -> Option<u8> {
+    ensure_loaded();
+    glass_setting().effective(&palette_unglassed(), support())
+}
+
+fn refresh_glass() {
+    let a = glass_percent_now().map(glass::alphas);
+    let packed = a.map(|a| (u16::from(a.main) << 8) | u16::from(a.raised)).unwrap_or(0);
+    ALPHAS.store(packed, Ordering::Relaxed);
+}
+
+fn glass_percent_now() -> Option<u8> {
+    let g = GLASS.read().map(|g| *g).unwrap_or_default();
+    g.effective(&palette_unglassed(), support())
+}
+
+fn palette_unglassed() -> Palette {
+    if let Ok(custom) = CUSTOM.read()
+        && let Some((_, palette)) = *custom
+    {
+        return palette;
+    }
+    Palette::of(Theme::ALL.get(usize::from(CURRENT.load(Ordering::Relaxed))).copied().unwrap_or_default())
+}
+
+/// Draw with `glass` from now on.
+pub fn set_glass(glass: Glass) {
+    ensure_loaded();
+    if let Ok(mut g) = GLASS.write() {
+        *g = glass;
+    }
+    refresh_glass();
+    remember();
+}
+
+/// The window's background for what is drawn: blurred where glass is on, else opaque.
+pub fn window_background() -> gpui::WindowBackgroundAppearance {
+    if glass_percent().is_some() {
+        gpui::WindowBackgroundAppearance::Blurred
+    } else {
+        gpui::WindowBackgroundAppearance::Opaque
+    }
+}
+
+/// Tell every open window how see-through it is now.
+pub fn sync_windows(cx: &mut gpui::App) {
+    let background = window_background();
+    for handle in cx.windows() {
+        handle
+            .update(cx, |_, window, _| window.set_background_appearance(background))
+            .ok();
+    }
+}
+
+fn surface(colour: u32, raised: bool) -> gpui::Rgba {
+    ensure_loaded();
+    let packed = ALPHAS.load(Ordering::Relaxed);
+    let alpha = match packed {
+        0 => 0xff,
+        p if raised => (p & 0xff) as u8,
+        p => (p >> 8) as u8,
+    };
+    gpui::rgba((colour << 8) | u32::from(alpha))
+}
+
+macro_rules! fills {
+    ($($name:ident: $token:ident, $raised:expr);* $(;)?) => {
+        $(
+            /// The surface colour as a fill: translucent under a glass theme.
+            #[inline]
+            pub fn $name() -> gpui::Rgba {
+                surface(palette().$token, $raised)
+            }
+        )*
+    };
+}
+
+fills!(
+    fill_rail: bg_rail, false;
+    fill_sidebar: bg_sidebar, false;
+    fill_chat: bg_chat, false;
+    fill_input: bg_input, true;
+    fill_elevated: bg_elevated, true;
+);
 
 /// The swatch of a theme's option in Settings: (sidebar, chat).
 pub fn swatch_of(theme: Theme) -> (u32, u32) {
@@ -238,6 +362,18 @@ mod tests {
         set_custom(None);
         set(Theme::Dark);
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn glass_makes_surfaces_translucent_and_off_is_opaque() {
+        set(Theme::Dark);
+        set_glass(Glass::default());
+        assert_eq!(fill_chat().a, 1.0);
+        set_glass(Glass { on: true, opacity: 80 });
+        assert!(fill_chat().a < 1.0 && fill_chat().a > 0.5);
+        assert!(fill_elevated().a > fill_chat().a, "menus and dialogs are more opaque");
+        set_glass(Glass::default());
+        assert_eq!(fill_chat().a, 1.0);
     }
 
     #[test]

@@ -166,7 +166,7 @@ impl ModView {
             .rounded(px(theme::RADIUS_SM))
             .border_1()
             .border_color(rgba(theme::bg_selected()))
-            .bg(rgb(theme::bg_elevated()))
+            .bg(theme::fill_elevated())
             .text_size(px(0.8 * theme::REM))
             .text_color(rgb(theme::text()))
             .cursor_pointer()
@@ -189,7 +189,7 @@ impl ModView {
                 .flex_col()
                 .mt(px(2.0))
                 .rounded(px(theme::RADIUS_SM))
-                .bg(rgb(theme::bg_elevated()))
+                .bg(theme::fill_elevated())
                 .text_size(px(0.8 * theme::REM))
                 .text_color(rgb(theme::text()))
                 .children(roles.iter().map(|(role, label)| {
@@ -293,7 +293,7 @@ impl ModView {
             .px(px(12.0))
             .py(px(8.0))
             .rounded(px(theme::RADIUS))
-            .bg(rgb(theme::bg_input()))
+            .bg(theme::fill_input())
             .when(busy, |d| d.opacity(0.6))
             .child(
                 div()

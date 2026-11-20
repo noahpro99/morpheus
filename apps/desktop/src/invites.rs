@@ -268,7 +268,7 @@ pub(crate) fn card_button(id: impl Into<gpui::ElementId>, label: &'static str, p
         .bg(if primary {
             gpui::Hsla::from(rgb(theme::accent_solid()))
         } else {
-            gpui::Hsla::from(rgb(theme::bg_elevated()))
+            gpui::Hsla::from(theme::fill_elevated())
         })
         .text_color(rgb(if primary { theme::on_accent_solid() } else { theme::text() }))
         .child(label)
@@ -427,7 +427,7 @@ pub fn inbox(
         .overflow_y_scroll()
         .pb(px(6.0))
         .rounded(px(10.0))
-        .bg(rgb(theme::bg_sidebar()))
+        .bg(theme::fill_sidebar())
         .border_1()
         .border_color(rgba(theme::edge()))
         .shadow_lg()

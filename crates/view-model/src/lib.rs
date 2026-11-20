@@ -19,6 +19,7 @@ pub mod emoji_picker;
 pub mod format;
 pub mod friends;
 pub mod diagnostics;
+pub mod glass;
 pub mod gpu;
 pub mod history;
 pub mod hotkeys;

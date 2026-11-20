@@ -932,7 +932,7 @@ impl TextInput {
             }
             rows.push(row("spell-add".into(), "Add to dictionary".into(), Some(SpellChoice::Add), cx));
             rows.push(row("spell-ignore".into(), "Ignore".into(), Some(SpellChoice::Ignore), cx));
-            rows.push(div().h(px(1.0)).my(px(4.0)).bg(rgb(theme::bg_elevated())).into_any_element());
+            rows.push(div().h(px(1.0)).my(px(4.0)).bg(theme::fill_elevated()).into_any_element());
         }
         let _ = has_word;
         rows.push(row("spell-cut".into(), "Cut".into(), has_selection.then_some(SpellChoice::Cut), cx));
@@ -950,7 +950,7 @@ impl TextInput {
             .min_w(px(188.0))
             .p(px(6.0))
             .rounded(px(theme::RADIUS_LG))
-            .bg(rgb(theme::bg_rail()))
+            .bg(theme::fill_rail())
             .border_1()
             .border_color(rgba(theme::edge()))
             .shadow_lg()
@@ -1353,9 +1353,9 @@ impl Render for TextInput {
                 } else if focused {
                     rgb(theme::accent())
                 } else {
-                    rgb(theme::bg_input())
+                    theme::fill_input()
                 })
-                .bg(rgb(theme::bg_input()));
+                .bg(theme::fill_input());
         }
         if let Some(menu) = self.spell_menu_el(cx) {
             outer = outer.child(menu);

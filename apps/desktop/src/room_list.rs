@@ -265,7 +265,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         .min_h_0()
         .h_full()
         .rounded_tl(px(theme::RADIUS_LG))
-        .bg(rgb(theme::bg_sidebar()))
+        .bg(theme::fill_sidebar())
         .child(header.e2e("header", "sidebar-header"))
         .child(
             list.e2e("div", "room-list")
@@ -706,7 +706,7 @@ impl gpui::Render for DragGhost {
             .px(px(12.0))
             .py(px(6.0))
             .rounded(px(theme::RADIUS_SM))
-            .bg(rgb(theme::bg_elevated()))
+            .bg(theme::fill_elevated())
             .text_color(rgb(theme::text()))
             .child(format!("# {}", self.0))
     }
@@ -878,7 +878,7 @@ fn palette_button(cx: &mut Context<Shell>) -> impl IntoElement {
         .px(px(10.0))
         .h(px(30.0))
         .rounded(px(theme::RADIUS_SM))
-        .bg(rgb(theme::bg_elevated()))
+        .bg(theme::fill_elevated())
         .text_size(px(0.85 * theme::REM))
         .text_color(rgb(theme::text_muted()))
         .cursor_pointer()

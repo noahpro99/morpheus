@@ -54,6 +54,11 @@ pub struct ThemeChosen(pub Theme);
 
 impl EventEmitter<ThemeChosen> for SettingsView {}
 
+/// Frosted glass was switched or its strength changed: the shell applies and keeps it.
+pub struct GlassChosen(pub crate::view_model::glass::Glass);
+
+impl EventEmitter<GlassChosen> for SettingsView {}
+
 /// A custom theme colour (0xRRGGBB) was chosen: the shell applies and keeps it.
 pub struct CustomColourChosen(pub u32);
 
@@ -186,6 +191,8 @@ pub struct SettingsView {
     pub theme: Theme,
     /// The custom colour in use, and the box it is typed in.
     pub custom: Option<u32>,
+    /// The frosted-glass setting in the account's prefs (the shell tells us).
+    pub glass: crate::view_model::glass::Glass,
     /// The looks used lately, as shown (the shell tells us).
     pub history: Vec<crate::view_model::theme_history::Entry>,
     /// The custom colour as hue, saturation and value: kept apart so a grey keeps its hue
@@ -434,6 +441,7 @@ impl SettingsView {
             startup_note: None,
             theme: Theme::Dark,
             custom: None,
+            glass: Default::default(),
             history: Vec::new(),
             hsv: crate::view_model::theme::to_hsv(crate::view_model::theme::DARK.bg_chat),
             hsv_dragging: false,
@@ -807,7 +815,7 @@ fn button(
     let id: SharedString = id.into();
     let (bg, fg) = match kind {
         Kind::Primary => (rgb(theme::accent_solid()), rgb(theme::on_accent_solid())),
-        Kind::Secondary => (rgb(theme::bg_elevated()), rgb(theme::text())),
+        Kind::Secondary => (theme::fill_elevated(), rgb(theme::text())),
         Kind::Danger => (
             rgba(theme::alpha(theme::danger(), 0x26)),
             rgb(theme::danger()),
@@ -885,7 +893,7 @@ fn section_classed(
         .px(px(20.0))
         .py(px(16.0))
         .border_b_1()
-        .border_color(rgb(theme::bg_elevated()))
+        .border_color(theme::fill_elevated())
         .when(highlighted, |d| d.bg(rgba(theme::accent_tint())))
         .child(
             div()
@@ -964,7 +972,7 @@ impl SettingsView {
             .gap(px(8.0))
             .p(px(12.0))
             .rounded(px(theme::RADIUS))
-            .bg(rgb(theme::bg_elevated()));
+            .bg(theme::fill_elevated());
         column = column.child(note(
             &panel.text,
             match panel.tone {
@@ -1090,7 +1098,7 @@ impl SettingsView {
                         .my(px(12.0))
                         .p(px(12.0))
                         .rounded(px(theme::RADIUS_LG))
-                        .bg(rgb(theme::bg_elevated()))
+                        .bg(theme::fill_elevated())
                         .child(
                             div()
                                 .font_weight(FontWeight::BOLD)
@@ -1196,7 +1204,7 @@ impl SettingsView {
                     .my(px(12.0))
                     .p(px(12.0))
                     .rounded(px(theme::RADIUS_LG))
-                    .bg(rgb(theme::bg_elevated()))
+                    .bg(theme::fill_elevated())
                     .child(muted(warning, "muted"))
                     .when(reset, |d| {
                         d.child(
@@ -1357,7 +1365,7 @@ impl SettingsView {
                             .h(px(14.0))
                             .w(gpui::relative(width / 100.0))
                             .rounded(px(7.0))
-                            .bg(rgb(theme::bg_elevated()))
+                            .bg(theme::fill_elevated())
                             .e2e("div", "skeleton skeleton-line")
                     }))
                     .e2e("div", "skeleton-block")
@@ -1574,7 +1582,7 @@ impl Render for SettingsView {
             .py(px(12.0))
             .rounded_tl(px(theme::RADIUS_XL))
             .rounded_bl(px(theme::RADIUS_XL))
-            .bg(rgb(theme::bg_sidebar()))
+            .bg(theme::fill_sidebar())
             .child({
                 let (name, image) = self.own.clone();
                 let name = if name.is_empty() {
@@ -1724,7 +1732,7 @@ impl Render for SettingsView {
             .px(px(20.0))
             .py(px(16.0))
             .border_b_1()
-            .border_color(rgb(theme::bg_elevated()))
+            .border_color(theme::fill_elevated())
             .child(
                 div()
                     .flex_1()
@@ -1774,7 +1782,7 @@ impl Render for SettingsView {
             .max_h(px(760.0))
             .overflow_hidden()
             .rounded(px(theme::RADIUS_XL))
-            .bg(rgb(theme::bg_chat()))
+            .bg(theme::fill_chat())
             .relative()
             .shadow_lg()
             .child(nav)

@@ -152,7 +152,7 @@ fn row(
         .px(px(12.0))
         .py(px(8.0))
         .rounded(px(theme::RADIUS))
-        .bg(rgb(theme::bg_elevated()))
+        .bg(theme::fill_elevated())
         .cursor_pointer()
         .on_click(cx.listener(move |this, _, _, cx| on_click(this, cx)))
         .child(crate::room_list::channel_glyph(voice))

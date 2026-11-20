@@ -241,7 +241,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         .flex()
         .flex_col()
         .rounded(px(theme::RADIUS_LG))
-        .bg(rgb(theme::bg_elevated()))
+        .bg(theme::fill_elevated())
         .children(crate::call_ui::join_error(shell, cx))
         .children(crate::call_ui::voice_panel(shell, cx))
         .child(row)
@@ -256,8 +256,8 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         .pb(px(theme::BOTTOM_GAP))
         .bg(linear_gradient(
             90.0,
-            gpui::linear_color_stop(rgb(theme::bg_rail()), 0.0),
-            gpui::linear_color_stop(rgb(theme::bg_sidebar()), 1.0),
+            gpui::linear_color_stop(theme::fill_rail(), 0.0),
+            gpui::linear_color_stop(theme::fill_sidebar(), 1.0),
         ))
         .child(pill)
         .e2e("footer", "sidebar-footer user-bar")

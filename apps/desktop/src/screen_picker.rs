@@ -228,7 +228,7 @@ impl ScreenPicker {
             .w_full()
             .h(px(101.0))
             .rounded(px(theme::RADIUS_SM))
-            .bg(rgb(theme::bg_chat()))
+            .bg(theme::fill_chat())
             .overflow_hidden()
             .when_some(painting, |d, (image, painted)| {
                 d.child(

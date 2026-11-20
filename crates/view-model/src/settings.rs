@@ -154,6 +154,12 @@ pub const SETTINGS_INDEX: &[SettingEntry] = &[
         "theme",
     ),
     entry(
+        "Frosted glass",
+        "appearance glass blur transparent translucent frosted see-through acrylic mica vibrancy",
+        SettingsPage::Appearance,
+        "glass",
+    ),
+    entry(
         "Vim mode",
         "keyboard vim modal editing normal insert keys hotkeys shortcuts",
         SettingsPage::Appearance,

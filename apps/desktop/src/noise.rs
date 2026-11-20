@@ -353,7 +353,7 @@ pub fn controls<V: 'static>(
         .flex_1()
         .h(px(8.0))
         .rounded(px(4.0))
-        .bg(rgb(theme::bg_input()))
+        .bg(theme::fill_input())
         .overflow_hidden()
         .child(
             div()
@@ -406,7 +406,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElement> {
         .w(px(300.0))
         .p(px(12.0))
         .rounded(px(theme::RADIUS_LG))
-        .bg(rgb(theme::bg_rail()))
+        .bg(theme::fill_rail())
         .border_1()
         .border_color(rgba(theme::edge()))
         .shadow_lg()
@@ -602,7 +602,7 @@ fn switch_row<V: 'static>(cx: &mut Context<V>, switch: morpheus_call::NoiseSwitc
                 .bg(if on {
                     rgb(theme::accent_solid())
                 } else {
-                    rgb(theme::bg_input())
+                    theme::fill_input()
                 })
                 .cursor_pointer()
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())

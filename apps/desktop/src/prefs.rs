@@ -214,6 +214,15 @@ impl Prefs {
         }
     }
 
+    /// Frosted glass (see-through theme), off unless chosen.
+    pub fn glass(&self) -> crate::view_model::glass::Glass {
+        crate::view_model::glass::Glass::from_json(self.extra.get("glass"))
+    }
+
+    pub fn set_glass(&mut self, glass: crate::view_model::glass::Glass) {
+        self.extra.insert("glass".into(), glass.to_json());
+    }
+
     /// The looks used lately (`theme_history`).
     pub fn theme_history(&self) -> crate::view_model::theme_history::ThemeHistory {
         crate::view_model::theme_history::ThemeHistory::from_json(self.extra.get("theme_history"))

@@ -333,7 +333,7 @@ impl FriendsPage {
             .pr(px(6.0))
             .py(px(2.0))
             .rounded(px(theme::RADIUS))
-            .bg(rgb(theme::bg_input()))
+            .bg(theme::fill_input())
             .border_1()
             .border_color(rgba(theme::bg_selected()))
             .child(div().flex_1().min_w_0().child(self.input.clone()))
@@ -474,7 +474,7 @@ impl FriendsPage {
                     .py(px(10.0))
                     .rounded(px(theme::RADIUS));
                 if ix > 0 {
-                    item = item.border_t_1().border_color(rgb(theme::bg_elevated()));
+                    item = item.border_t_1().border_color(theme::fill_elevated());
                 }
                 list = list.child(
                     item.child(avatar(self.picture(&key), &row.name, 40.0, None))
@@ -512,7 +512,7 @@ impl FriendsPage {
                                         .px(px(12.0))
                                         .py(px(6.0))
                                         .rounded(px(theme::RADIUS))
-                                        .bg(rgb(theme::bg_elevated()))
+                                        .bg(theme::fill_elevated())
                                         .cursor_pointer()
                                         .child("Undo")
                                         .on_click(cx.listener(move |this, _, _, cx| {
@@ -540,7 +540,7 @@ impl FriendsPage {
                 .hover(|s| s.bg(rgba(theme::bg_hover())))
                 .on_click(cx.listener(move |this, _, _, cx| this.message(open.clone(), cx)));
             if ix > 0 {
-                item = item.border_t_1().border_color(rgb(theme::bg_elevated()));
+                item = item.border_t_1().border_color(theme::fill_elevated());
             }
             list = list.child(
                 item.child(avatar(self.picture(&key), &row.name, 40.0, None))
@@ -578,7 +578,7 @@ impl FriendsPage {
                                     .px(px(12.0))
                                     .py(px(6.0))
                                     .rounded(px(theme::RADIUS))
-                                    .bg(rgb(theme::bg_elevated()))
+                                    .bg(theme::fill_elevated())
                                     .cursor_pointer()
                                     .child("Message")
                                     .on_click(cx.listener(move |this, _, _, cx| {

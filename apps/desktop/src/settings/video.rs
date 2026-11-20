@@ -66,7 +66,7 @@ impl SettingsView {
                     .w(px(PREVIEW_WIDTH))
                     .h(px(PREVIEW_WIDTH * ratio))
                     .rounded(px(theme::RADIUS_LG))
-                    .bg(rgb(theme::bg_input()))
+                    .bg(theme::fill_input())
                     .child(frame.clone()),
             );
         }
@@ -319,7 +319,7 @@ fn switch_row(
         .bg(if on {
             rgb(theme::accent_solid())
         } else {
-            rgb(theme::bg_input())
+            theme::fill_input()
         })
         .cursor_pointer()
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())

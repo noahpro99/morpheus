@@ -230,7 +230,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElement> {
         .w(px(260.0))
         .p(px(12.0))
         .rounded(px(theme::RADIUS_LG))
-        .bg(rgb(theme::bg_rail()))
+        .bg(theme::fill_rail())
         .border_1()
         .border_color(rgba(theme::edge()))
         .shadow_lg()

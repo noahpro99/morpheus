@@ -489,7 +489,7 @@ pub fn blocks_el(blocks: &[Block], key: &str, base: Base, links: &LinkHandler) -
                 .py(px(8.0))
                 .my(px(4.0))
                 .rounded(px(theme::RADIUS_SM))
-                .bg(rgb(theme::bg_input()))
+                .bg(theme::fill_input())
                 .font_family(theme::MONO)
                 .text_size(rem(0.85))
                 .text_color(rgb(base.color))
@@ -499,7 +499,7 @@ pub fn blocks_el(blocks: &[Block], key: &str, base: Base, links: &LinkHandler) -
                 .my(px(4.0))
                 .pl(px(12.0))
                 .border_l(px(3.0))
-                .border_color(rgb(theme::bg_elevated()))
+                .border_color(theme::fill_elevated())
                 .child(blocks_el(
                     inner,
                     &key,
@@ -541,7 +541,7 @@ pub fn blocks_el(blocks: &[Block], key: &str, base: Base, links: &LinkHandler) -
             Block::Rule => div()
                 .h(px(1.0))
                 .my(px(6.0))
-                .bg(rgb(theme::bg_elevated()))
+                .bg(theme::fill_elevated())
                 .into_any_element(),
         });
     }
@@ -567,7 +567,7 @@ fn shimmer_bar(width: f32, key: &str) -> impl IntoElement {
         .my(px(5.0))
         .w(relative(width / 100.0))
         .rounded(px(7.0))
-        .bg(rgb(theme::bg_elevated()))
+        .bg(theme::fill_elevated())
         .id(ElementId::from(SharedString::from(key.to_owned())))
         .e2e("div", "skeleton-bar")
 }
@@ -605,7 +605,7 @@ fn skeleton(older: bool) -> AnyElement {
                             .mt(px(2.0))
                             .flex_none()
                             .rounded_full()
-                            .bg(rgb(theme::bg_elevated()))
+                            .bg(theme::fill_elevated())
                             .e2e("div", "avatar skeleton"),
                     )
                     .child(lines.e2e("div", "message-main"))
@@ -662,7 +662,7 @@ fn reactions_el(
                     .text_color(rgb(theme::text()))
             } else {
                 chip.border_color(gpui::transparent_black())
-                    .bg(rgb(theme::bg_elevated()))
+                    .bg(theme::fill_elevated())
                     .text_color(rgb(theme::text_muted()))
             };
             let count = reaction.count.to_string();
@@ -677,7 +677,7 @@ fn reactions_el(
                     None => div()
                         .size(rem(1.3))
                         .rounded(px(4.0))
-                        .bg(rgb(theme::bg_input()))
+                        .bg(theme::fill_input())
                         .e2e("span", "reaction-key emote")
                         .attr("data-loaded", "false")
                         .into_any_element(),
@@ -727,7 +727,7 @@ fn thread_chip(
         .px(px(10.0))
         .py(px(4.0))
         .rounded(px(10.0))
-        .bg(rgb(theme::bg_elevated()))
+        .bg(theme::fill_elevated())
         .text_color(rgb(theme::text_muted()))
         .text_size(rem(0.82))
         .cursor_pointer()
@@ -810,7 +810,7 @@ fn reply_quote(reply: &morpheus_core::ReplyPreview) -> impl IntoElement {
                 .h(px(10.0))
                 .mt(px(3.0))
                 .rounded(px(5.0))
-                .bg(rgb(theme::bg_elevated()))
+                .bg(theme::fill_elevated())
                 .e2e("span", "skeleton skeleton-inline"),
         ),
     };
@@ -890,7 +890,7 @@ fn attachment_card(
             .px(px(12.0))
             .py(px(6.0))
             .rounded(px(theme::RADIUS_SM))
-            .bg(rgb(theme::bg_input()))
+            .bg(theme::fill_input())
             .text_size(rem(0.85))
             .text_color(rgb(theme::text_muted()))
             .cursor_pointer()
@@ -916,7 +916,7 @@ fn attachment_card(
         .py(px(10.0))
         .max_w(px(360.0))
         .rounded(px(theme::RADIUS))
-        .bg(rgb(theme::bg_elevated()))
+        .bg(theme::fill_elevated())
         .child(
             div()
                 .flex_none()
@@ -1071,7 +1071,7 @@ fn image_el(
         .min_w_0()
         .rounded(px(theme::RADIUS))
         .overflow_hidden()
-        .bg(rgb(theme::bg_input()))
+        .bg(theme::fill_input())
         .child(Shape { w, h })
         .children(blur.map(|blur| {
             img(crate::media::drawn(blur))
@@ -1135,7 +1135,7 @@ fn video_el(
         .min_w_0()
         .rounded(px(theme::RADIUS))
         .overflow_hidden()
-        .bg(rgb(theme::bg_input()))
+        .bg(theme::fill_input())
         .child(Shape { w, h });
     card = match thumbnail {
         Some(image) => card.child(
@@ -1337,7 +1337,7 @@ fn body_el(
                     .h(px(14.0))
                     .my(px(5.0))
                     .rounded(px(7.0))
-                    .bg(rgb(theme::bg_elevated()))
+                    .bg(theme::fill_elevated())
                     .e2e("div", "body skeleton skeleton-line undecrypted")
                     .attr("title", WAITING_HINT)
                     .attr("aria-label", "Encrypted message, waiting for keys")
@@ -1394,7 +1394,7 @@ fn collapsed_el(
                         .bg(gpui::linear_gradient(
                             180.0,
                             gpui::linear_color_stop(rgba(theme::alpha(theme::bg_chat(), 0x00)), 0.0),
-                            gpui::linear_color_stop(rgb(theme::bg_chat()), 1.0),
+                            gpui::linear_color_stop(theme::fill_chat(), 1.0),
                         )),
                 ),
         )
@@ -1408,7 +1408,7 @@ fn collapsed_el(
                 .items_center()
                 .gap(px(6.0))
                 .rounded(px(theme::RADIUS_SM))
-                .bg(rgb(theme::bg_input()))
+                .bg(theme::fill_input())
                 .text_size(rem(0.85))
                 .text_color(rgb(theme::text_muted()))
                 .cursor_pointer()
@@ -1519,7 +1519,7 @@ fn actions_bar(m: &Message, group: SharedString, actions: &ActionHandler) -> Any
         .gap(px(2.0))
         .p(px(2.0))
         .rounded(px(theme::RADIUS_SM))
-        .bg(rgb(theme::bg_elevated()))
+        .bg(theme::fill_elevated())
         .shadow_md()
         .opacity(0.0)
         .group_hover(group, |s| s.opacity(1.0));
@@ -2028,7 +2028,7 @@ pub fn say_hi_row(on_click: impl Fn(&mut gpui::App) + 'static) -> AnyElement {
                 .px(px(16.0))
                 .py(px(8.0))
                 .rounded(px(theme::RADIUS_SM))
-                .bg(rgb(theme::bg_input()))
+                .bg(theme::fill_input())
                 .text_color(rgb(theme::text()))
                 .font_weight(FontWeight::SEMIBOLD)
                 .cursor_pointer()
@@ -2063,14 +2063,14 @@ pub fn other_row(row: &Row) -> AnyElement {
                     .text_color(rgb(theme::text_faint()))
                     .text_size(rem(0.75))
                     .font_weight(FontWeight::SEMIBOLD)
-                    .child(div().flex_1().h(px(1.0)).bg(rgb(theme::bg_elevated())))
+                    .child(div().flex_1().h(px(1.0)).bg(theme::fill_elevated()))
                     .child(
                         div()
                             .child(day_label(*at, now_ms()))
                             .e2e("span", "")
                             .text(day_label(*at, now_ms())),
                     )
-                    .child(div().flex_1().h(px(1.0)).bg(rgb(theme::bg_elevated())))
+                    .child(div().flex_1().h(px(1.0)).bg(theme::fill_elevated()))
                     .e2e("div", "date-divider"),
             )
             .into_any_element(),
@@ -2222,7 +2222,7 @@ fn invite_embed(row: &MessageRow, links: &LinkHandler) -> Option<AnyElement> {
             .py(px(10.0))
             .max_w(px(420.0))
             .rounded(px(theme::RADIUS))
-            .bg(rgb(theme::bg_elevated()))
+            .bg(theme::fill_elevated())
             .child(
                 div()
                     .flex_1()
@@ -2328,7 +2328,7 @@ fn preview_el(
                 .w(px(w))
                 .h(px(h))
                 .rounded(px(theme::RADIUS))
-                .bg(rgb(theme::bg_input()))
+                .bg(theme::fill_input())
                 .e2e("div", "preview-image")
                 .attr("data-loaded", "false")
                 .into_any_element(),
@@ -2373,7 +2373,7 @@ fn preview_el(
         .rounded(px(theme::RADIUS))
         .border_l(px(4.0))
         .border_color(rgb(theme::accent()))
-        .bg(rgb(theme::bg_elevated()))
+        .bg(theme::fill_elevated())
         .child(body)
         .child(dismiss)
         .e2e("div", "link-preview")

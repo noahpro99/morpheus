@@ -224,7 +224,7 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                         .min_w_0()
                         .truncate()
                         .border_l_1()
-                        .border_color(rgb(theme::bg_elevated()))
+                        .border_color(theme::fill_elevated())
                         .text_color(rgb(theme::text_muted()))
                         .text_size(px(0.85 * theme::REM))
                         .child(topic.clone())
@@ -292,7 +292,7 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                     .pl(px(8.0))
                     .when(text.is_empty(), |d| d.pr(px(8.0)))
                     .rounded(px(theme::RADIUS_SM))
-                    .bg(rgb(theme::bg_input()))
+                    .bg(theme::fill_input())
                     .text_size(px(0.85 * theme::REM))
                     .text_color(rgb(theme::text()))
                     .overflow_hidden()
@@ -437,7 +437,7 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
         .flex_1()
         .min_w_0()
         .h_full()
-        .bg(rgb(theme::bg_chat()))
+        .bg(theme::fill_chat())
         // Files dropped anywhere on the chat wait on the message being written.
         .on_drop::<ExternalPaths>(move |paths, _, cx| {
             if let Some(composer) = &composer {
@@ -540,7 +540,7 @@ pub fn side_pane(side: gpui::AnyElement, searching: bool) -> gpui::Div {
                 .min_h_0()
                 .rounded(px(theme::RADIUS_LG))
                 .overflow_hidden()
-                .bg(rgb(theme::bg_sidebar()))
+                .bg(theme::fill_sidebar())
                 .child(side)
                 .e2e("div", "side-pane")
                 .attr("data-radius", theme::RADIUS_LG.to_string()),

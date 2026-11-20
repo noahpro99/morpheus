@@ -130,7 +130,7 @@ impl Render for JoinAddress {
                     .px(px(12.0))
                     .py(px(4.0))
                     .rounded(px(theme::RADIUS))
-                    .bg(rgb(theme::bg_input()))
+                    .bg(theme::fill_input())
                     .border_1()
                     .border_color(rgba(theme::bg_selected()))
                     .child(self.input.clone()),

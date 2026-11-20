@@ -274,7 +274,7 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
             .items_center()
             .pl(px(layout.left_padding))
             .pr(px(layout.right_padding()))
-            .bg(rgb(theme::bg_rail()))
+            .bg(theme::fill_rail())
             .text_size(px(0.8 * theme::REM))
             .text_color(rgb(theme::text_muted()))
             .child(

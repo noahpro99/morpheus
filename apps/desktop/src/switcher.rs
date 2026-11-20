@@ -316,7 +316,7 @@ impl Render for Switcher {
             .flex()
             .flex_col()
             .rounded(px(theme::RADIUS_XL))
-            .bg(rgb(theme::bg_sidebar()))
+            .bg(theme::fill_sidebar())
             .shadow(vec![BoxShadow {
                 color: gpui::hsla(0.0, 0.0, 0.0, 0.6),
                 offset: point(px(0.0), px(24.0)),
@@ -330,7 +330,7 @@ impl Render for Switcher {
                     .px(px(16.0))
                     .py(px(0.0))
                     .border_b_1()
-                    .border_color(rgb(theme::bg_elevated()))
+                    .border_color(theme::fill_elevated())
                     .font_weight(FontWeight::NORMAL)
                     .child(self.input.clone()),
             )

@@ -253,7 +253,7 @@ fn panel(
         .min_w(px(188.0))
         .p(px(6.0))
         .rounded(px(theme::RADIUS_LG))
-        .bg(rgb(theme::bg_rail()))
+        .bg(theme::fill_rail())
         .border_1()
         .border_color(rgba(theme::edge()))
         .shadow_lg()
@@ -269,7 +269,7 @@ fn panel(
                 .pb(px(6.0))
                 .mb(px(4.0))
                 .border_b_1()
-                .border_color(rgb(theme::bg_elevated()))
+                .border_color(theme::fill_elevated())
                 .children(QUICK_REACTIONS.into_iter().map(|key| {
                     div()
                         .id(gpui::ElementId::from(gpui::SharedString::from(format!(
@@ -511,7 +511,7 @@ fn flyout(
         .max_h(px(0.6 * height))
         .p(px(6.0))
         .rounded(px(theme::RADIUS_LG))
-        .bg(rgb(theme::bg_rail()))
+        .bg(theme::fill_rail())
         .border_1()
         .border_color(rgba(theme::edge()))
         .shadow_lg()

@@ -397,9 +397,9 @@ impl SettingsView {
                 .border_color(if selected {
                     rgb(theme::accent())
                 } else {
-                    rgb(theme::bg_elevated())
+                    theme::fill_elevated()
                 })
-                .bg(rgb(theme::bg_elevated()))
+                .bg(theme::fill_elevated())
                 .cursor_pointer()
                 .child(swatch)
                 .child(
@@ -534,6 +534,7 @@ impl SettingsView {
             )
             .into_any_element(),
             self.custom_colour_section(cx).into_any_element(),
+            self.glass_section(cx).into_any_element(),
             self.history_section(cx).into_any_element(),
             keyboard.into_any_element(),
             previews_section.into_any_element(),
@@ -676,7 +677,7 @@ impl SettingsView {
             .px(px(12.0))
             .py(px(8.0))
             .rounded(px(theme::RADIUS_SM))
-            .bg(rgb(theme::bg_input()))
+            .bg(theme::fill_input())
             .cursor_pointer()
             .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(cx.listener(move |this, _, _, cx| {
@@ -753,7 +754,7 @@ impl SettingsView {
                     .flex_col()
                     .p(px(4.0))
                     .rounded(px(theme::RADIUS_SM))
-                    .bg(rgb(theme::bg_elevated()))
+                    .bg(theme::fill_elevated())
                     .children(options)
                     .e2e("div", "device-options")
                     .attr("role", "listbox")
@@ -2065,9 +2066,9 @@ impl SettingsView {
                 .border_color(if entry.pinned {
                     rgb(theme::accent())
                 } else {
-                    rgb(theme::bg_elevated())
+                    theme::fill_elevated()
                 })
-                .bg(rgb(theme::bg_elevated()))
+                .bg(theme::fill_elevated())
                 .cursor_pointer()
                 .child(swatch)
                 .child(pin)
@@ -2107,6 +2108,78 @@ impl SettingsView {
             ],
             false,
         )
+    }
+
+    /// Appearance's frosted glass: a see-through window with translucent surfaces; the
+    /// strengths on offer are those at which text still reads over any backdrop.
+    fn glass_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        use crate::view_model::glass;
+        let support = theme::support();
+        let palette = self.custom.map(crate::view_model::theme::derive).unwrap_or_else(|| {
+            crate::view_model::theme::Palette::of(self.theme)
+        });
+        let current = self.glass;
+        let supported = support != glass::Support::None;
+        let on = choice(
+            "glass-on".into(),
+            "glass",
+            "on",
+            "Frosted glass",
+            current.on,
+            true,
+            !supported,
+            cx.listener(move |this, _, _, cx| {
+                this.glass.on = !this.glass.on;
+                cx.emit(super::GlassChosen(this.glass));
+                cx.notify();
+            }),
+        );
+        let drawn = current.opacity_for(&palette);
+        let strengths: Vec<AnyElement> = glass::strengths(&palette)
+            .into_iter()
+            .map(|percent| {
+                choice(
+                    format!("glass-{percent}"),
+                    "glass-strength",
+                    &percent.to_string(),
+                    &format!("{percent}% opaque"),
+                    drawn == percent,
+                    false,
+                    !current.on || !supported,
+                    cx.listener(move |this, _, _, cx| {
+                        this.glass.opacity = percent;
+                        cx.emit(super::GlassChosen(this.glass));
+                        cx.notify();
+                    }),
+                )
+            })
+            .collect();
+        let mut body = vec![
+            muted(
+                "A see-through window: the panels let the desktop show through, blurred where your system can. Text always stays readable, so a theme that would not read at a low opacity has a higher lowest strength.",
+                "muted",
+            )
+            .into_any_element(),
+            on,
+            div()
+                .flex()
+                .flex_wrap()
+                .gap(px(16.0))
+                .children(strengths)
+                .e2e("div", "glass-strengths")
+                .into_any_element(),
+            div().child(muted(support.note(), "muted")).e2e("div", "glass-support").attr(
+                "data-support",
+                match support {
+                    glass::Support::Blur => "blur",
+                    glass::Support::Translucent => "translucent",
+                    glass::Support::None => "none",
+                },
+            )
+            .into_any_element(),
+        ];
+        body.shrink_to_fit();
+        section("Frosted glass", "glass", body, self.hl("glass"))
     }
 
     /// Appearance's custom colour: a hex box, a grid to pick from and the preview.

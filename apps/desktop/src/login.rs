@@ -267,7 +267,7 @@ impl Render for Login {
             .flex_col()
             .gap(px(16.0))
             .rounded(px(16.0))
-            .bg(rgb(theme::bg_sidebar()))
+            .bg(theme::fill_sidebar())
             .child(
                 svg()
                     .path("logo.svg")
@@ -373,7 +373,7 @@ impl Render for Login {
             .size_full()
             .overflow_y_scroll()
             .track_scroll(&self.scroll)
-            .bg(rgb(theme::bg_rail()))
+            .bg(theme::fill_rail())
             .child(
                 div()
                     .min_h_full()

@@ -336,13 +336,16 @@ impl Shell {
                     let theme = this.prefs.theme();
                     crate::theme::set(theme);
                     crate::theme::set_custom(this.prefs.custom_colour());
+                    crate::theme::set_glass(this.prefs.glass());
+                    crate::theme::sync_windows(cx);
                     cx.refresh_windows();
                     // What the account has been using counts as used.
                     this.record_look(cx);
                     if let Some(settings) = &this.settings {
                         let custom = this.prefs.custom_colour();
                         settings.update(cx, |settings, cx| {
-                            settings.theme = theme;
+                            settings.glass = this.prefs.glass();
+                        settings.theme = theme;
                             settings.set_custom_shown(custom, cx);
                         });
                     }
@@ -385,6 +388,18 @@ impl Shell {
                 this.prefs.set_custom_colour(Some(chosen.0));
                 this.save_prefs(cx);
                 this.look_changed(cx);
+            },
+        )
+        .detach();
+        cx.subscribe(
+            &settings,
+            |this, _, chosen: &crate::settings::GlassChosen, cx| {
+                crate::theme::set_glass(chosen.0);
+                crate::theme::sync_windows(cx);
+                cx.refresh_windows();
+                this.prefs.set_glass(chosen.0);
+                this.save_prefs(cx);
+                cx.notify();
             },
         )
         .detach();
@@ -1478,7 +1493,7 @@ fn backup_prompt(cx: &mut Context<Shell>) -> impl IntoElement {
         .px(px(16.0))
         .py(px(14.0))
         .rounded(px(10.0))
-        .bg(rgb(theme::bg_elevated()))
+        .bg(theme::fill_elevated())
         .shadow_md()
         .occlude()
         .child(
@@ -1640,7 +1655,7 @@ impl Render for Shell {
                     .flex()
                     .flex_1()
                     .min_h_0()
-                    .bg(rgb(theme::bg_rail()))
+                    .bg(theme::fill_rail())
                     .child(rail::render(self, cx))
                     .child(room_list::render(self, cx)),
             )
@@ -1650,7 +1665,7 @@ impl Render for Shell {
             .relative()
             .flex()
             .flex_col()
-            .bg(rgb(theme::bg_chat()))
+            .bg(theme::fill_chat())
             .track_focus(&root_focus)
             // A click on nothing in particular leaves the focus where it is (the
             // root would otherwise take it from a text box). On Windows a press
@@ -1806,7 +1821,7 @@ impl Render for Shell {
                             .w(px(theme::RAIL_W))
                             .flex_none()
                             .h_full()
-                            .bg(rgb(theme::bg_rail()))
+                            .bg(theme::fill_rail())
                             .child(rail::render(self, cx));
                         // The sidebar column stays under Discover: its colour and width, so
                         // the user bar below it is part of the layout as on every page.
@@ -1814,7 +1829,7 @@ impl Render for Shell {
                             .w(px(self.sidebar_shown))
                             .flex_none()
                             .h_full()
-                            .bg(rgb(theme::bg_sidebar()))
+                            .bg(theme::fill_sidebar())
                             .px(px(16.0))
                             .py(px(14.0))
                             .flex()

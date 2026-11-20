@@ -1860,7 +1860,7 @@ fn key_banner(cx: &mut Context<TimelineView>) -> impl IntoElement {
         .px(px(14.0))
         .py(px(10.0))
         .rounded(px(theme::RADIUS_LG))
-        .bg(rgb(theme::bg_elevated()))
+        .bg(theme::fill_elevated())
         .border_1()
         .border_color(gpui::rgba(theme::alpha(theme::accent(), 0x59)))
         .child(

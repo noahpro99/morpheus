@@ -149,7 +149,7 @@ impl Render for EmojiPicker {
                     .flex_col()
                     .p(px(4.0))
                     .rounded(px(theme::RADIUS_SM))
-                    .bg(rgb(theme::bg_rail()))
+                    .bg(theme::fill_rail())
                     .shadow_lg()
                     .occlude()
                     .children(TONES.into_iter().map(|(stored, name, option)| {
@@ -207,7 +207,7 @@ impl Render for EmojiPicker {
                     .gap(px(6.0))
                     .px(px(10.0))
                     .rounded(px(theme::RADIUS_SM))
-                    .bg(rgb(theme::bg_rail()))
+                    .bg(theme::fill_rail())
                     .text_color(rgb(theme::text()))
                     .child(div().flex_1().min_w_0().child(self.search.clone()))
                     .child(icon("search", 16.0).text_color(rgb(theme::text_muted())))
@@ -226,7 +226,7 @@ impl Render for EmojiPicker {
                 .gap(px(2.0))
                 .w(px(44.0))
                 .py(px(6.0))
-                .bg(rgb(theme::bg_rail()));
+                .bg(theme::fill_rail());
             // (title, glyph, the first emoji's picture for a pack's tab)
             let mut entries: Vec<(String, String, Option<String>)> = Vec::new();
             for section in &custom {
@@ -328,7 +328,7 @@ impl Render for EmojiPicker {
                             None => div()
                                 .size(px(28.0))
                                 .rounded(px(4.0))
-                                .bg(rgb(theme::bg_input()))
+                                .bg(theme::fill_input())
                                 .e2e("span", "emote")
                                 .attr("alt", name.clone())
                                 .attr("data-loaded", "false")
@@ -442,7 +442,7 @@ impl Render for EmojiPicker {
             .flex_col()
             .overflow_hidden()
             .rounded(px(10.0))
-            .bg(rgb(theme::bg_sidebar()))
+            .bg(theme::fill_sidebar())
             .border_1()
             .border_color(rgba(theme::edge()))
             .shadow_lg()

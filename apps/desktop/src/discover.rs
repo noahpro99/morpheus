@@ -499,7 +499,7 @@ impl Render for Discover {
             .flex()
             .flex_col()
             .items_center()
-            .bg(rgb(theme::bg_chat()))
+            .bg(theme::fill_chat())
             .child(
                 div()
                     .id("discover-scroll")

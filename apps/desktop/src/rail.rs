@@ -215,7 +215,7 @@ impl Badge {
                     // on top (a border round a fill let the fill's
                     // edge show beyond it).
                     .rounded_full()
-                    .bg(rgb(theme::bg_rail()))
+                    .bg(theme::fill_rail())
                     .child(
                         div()
                             .size(px(16.0))
@@ -312,7 +312,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         .flex_none()
         .h_full()
         .pb(px(8.0))
-        .bg(rgb(theme::bg_rail()));
+        .bg(theme::fill_rail());
 
     // Direct messages: the logo; its count of unread conversations.
     let dms_selected = *current == Scope::Dms;
@@ -417,7 +417,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             .w(px(32.0))
             .h(px(2.0))
             .rounded(px(1.0))
-            .bg(rgb(theme::bg_elevated()))
+            .bg(theme::fill_elevated())
             .e2e("div", "rail-divider"),
     );
 
@@ -552,7 +552,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             .rounded(px(theme::RADIUS_XL))
             .border_2()
             .border_dashed()
-            .border_color(rgb(theme::bg_elevated()))
+            .border_color(theme::fill_elevated())
             .text_color(rgb(theme::text_faint()))
             .cursor_pointer()
             .hover(|s| {
@@ -576,7 +576,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             .items_center()
             .justify_center()
             .rounded(px(theme::RADIUS_XL))
-            .bg(rgb(theme::bg_elevated()))
+            .bg(theme::fill_elevated())
             .text_color(rgb(theme::text_faint()))
             .cursor_pointer()
             .hover(|s| s.text_color(rgb(theme::accent())))

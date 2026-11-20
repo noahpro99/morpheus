@@ -442,7 +442,7 @@ fn skeleton_row(index: usize, width: f32) -> impl IntoElement {
                 .size(px(32.0))
                 .flex_none()
                 .rounded_full()
-                .bg(rgb(theme::bg_elevated()))
+                .bg(theme::fill_elevated())
                 .e2e("div", "avatar skeleton"),
         )
         .child(
@@ -450,7 +450,7 @@ fn skeleton_row(index: usize, width: f32) -> impl IntoElement {
                 .h(px(14.0))
                 .w(gpui::relative(width / 100.0))
                 .rounded(px(7.0))
-                .bg(rgb(theme::bg_elevated()))
+                .bg(theme::fill_elevated())
                 .id(gpui::SharedString::from(format!("member-sk{index}")))
                 .e2e("div", "skeleton skeleton-line"),
         )

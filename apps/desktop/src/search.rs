@@ -131,7 +131,7 @@ impl Render for SearchPanel {
                             .px(px(10.0))
                             .py(px(8.0))
                             .rounded(px(theme::RADIUS))
-                            .bg(rgb(theme::bg_chat()))
+                            .bg(theme::fill_chat())
                             .cursor_pointer()
                             .hover(|s| s.bg(gpui::rgba(theme::bg_hover())))
                             .on_click(cx.listener(move |_, _, _, cx| {
