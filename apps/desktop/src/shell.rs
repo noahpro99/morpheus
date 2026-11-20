@@ -108,6 +108,8 @@ pub struct Shell {
     pub open_folders: Vec<String>,
     /// Where a server dragged on the rail would land now.
     pub rail_drop: Option<crate::view_model::rail_drag::Drop>,
+    /// A channel is dragged over this row, on this edge (the line shows there).
+    pub channel_drop: Option<(morpheus_core::OwnedRoomId, crate::view_model::rail_drag::Zone)>,
     /// The rail badge the pointer is over (its pill grows).
     pub rail_hover: Option<String>,
     /// The top-bar button the pointer is over (its glyph brightens; no background).
@@ -526,6 +528,7 @@ impl Shell {
             look_generation: 0,
             open_folders: Vec::new(),
             rail_drop: None,
+            channel_drop: None,
             rail_hover: None,
             bar_hover: None,
             title_bounds: Default::default(),

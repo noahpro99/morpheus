@@ -48,6 +48,36 @@ pub fn target(index: usize, zone: Zone, own: bool) -> Option<Drop> {
     }
 }
 
+/// For a list of rows that cannot be dropped onto (channels): which edge of the
+/// row at `top..bottom` the pointer at `y` is nearer, with the same hysteresis
+/// on both lists: a pointer within the middle fifth of the row keeps the edge
+/// it had (`previous`), so the line does not flicker as it crosses.
+pub fn edge(y: f32, top: f32, bottom: f32, previous: Option<Zone>) -> Zone {
+    let (mid, band) = ((top + bottom) / 2.0, (bottom - top) * 0.1);
+    match previous {
+        Some(zone @ (Zone::Before | Zone::After)) if (y - mid).abs() <= band => zone,
+        _ if y < mid => Zone::Before,
+        _ => Zone::After,
+    }
+}
+
+/// How far from a list's top or bottom edge (px) the pointer starts scrolling
+/// it, and the scroll in px per frame at the very edge.
+pub const SCROLL_EDGE: f32 = 36.0;
+pub const SCROLL_SPEED: f32 = 14.0;
+
+/// The scroll step for a pointer at `y` over a list spanning `top..bottom`:
+/// negative up, positive down, 0 away from the edges, faster the nearer.
+pub fn auto_scroll(y: f32, top: f32, bottom: f32) -> f32 {
+    if y < top + SCROLL_EDGE {
+        -SCROLL_SPEED * ((top + SCROLL_EDGE - y) / SCROLL_EDGE).min(1.0)
+    } else if y > bottom - SCROLL_EDGE {
+        SCROLL_SPEED * ((y - (bottom - SCROLL_EDGE)) / SCROLL_EDGE).min(1.0)
+    } else {
+        0.0
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -74,5 +104,27 @@ mod tests {
     fn a_badge_held_over_its_own_middle_goes_nowhere() {
         assert_eq!(target(2, Zone::Onto, true), None);
         assert!(target(2, Zone::Before, true).is_some());
+    }
+}
+
+#[cfg(test)]
+mod edge_tests {
+    use super::*;
+
+    #[test]
+    fn the_nearer_edge_wins_and_the_middle_keeps_the_last() {
+        assert_eq!(edge(102.0, 100.0, 140.0, None), Zone::Before);
+        assert_eq!(edge(138.0, 100.0, 140.0, None), Zone::After);
+        assert_eq!(edge(121.0, 100.0, 140.0, Some(Zone::Before)), Zone::Before);
+        assert_eq!(edge(119.0, 100.0, 140.0, Some(Zone::After)), Zone::After);
+        assert_eq!(edge(125.0, 100.0, 140.0, Some(Zone::Before)), Zone::After, "past the band");
+    }
+
+    #[test]
+    fn the_list_scrolls_near_its_edges_only() {
+        assert_eq!(auto_scroll(300.0, 0.0, 600.0), 0.0);
+        assert!(auto_scroll(10.0, 0.0, 600.0) < 0.0);
+        assert!(auto_scroll(590.0, 0.0, 600.0) > 0.0);
+        assert!(auto_scroll(0.0, 0.0, 600.0) < auto_scroll(30.0, 0.0, 600.0));
     }
 }

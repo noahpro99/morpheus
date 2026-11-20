@@ -6,6 +6,7 @@
 //! closed DMs, the room and server menus, drag to reorder, the create-room
 //! dialog.
 
+use crate::view_model::rail_drag;
 use crate::view_model::i18n::t;
 use std::collections::HashSet;
 
@@ -506,16 +507,48 @@ fn room_button(
         let dragged = DraggedRoom {
             id: room.id.clone(),
             name: room.name.clone(),
+            voice: room.is_voice,
+            width: (shell.sidebar_shown - 16.0).max(80.0),
         };
         let (target, listed) = (room.id.clone(), listed.clone());
+        let (over, view) = (target.clone(), cx.entity());
+        let drop_at = shell.channel_drop.clone().filter(|_| cx.has_active_drag());
+        let line = |at_top: bool| {
+            let base = div()
+                .absolute()
+                .left(px(4.0))
+                .right(px(4.0))
+                .h(px(2.0))
+                .rounded(px(1.0))
+                .bg(rgb(0xffffff)); // fixed: the drop line, as on the rail
+            (if at_top { base.top(px(-1.0)) } else { base.bottom(px(-1.0)) })
+                .e2e("div", "channel-drop-line")
+                .attr("data-bg", "#ffffff")
+        };
         button = button
-            .on_drag(dragged, |dragged, _, _, cx| {
-                let name = dragged.name.clone();
-                cx.new(|_| DragGhost(name))
+            .relative()
+            .on_drag(dragged, |dragged, _, _, cx| cx.new(|_| DragGhost(dragged.clone())))
+            .when(drop_at == Some((target.clone(), rail_drag::Zone::Before)), |d| d.child(line(true)))
+            .when(drop_at == Some((target.clone(), rail_drag::Zone::After)), |d| d.child(line(false)))
+            .on_drag_move::<DraggedRoom>(move |event, _, cx| {
+                if !event.bounds.contains(&event.event.position) || event.drag(cx).id == over {
+                    return;
+                }
+                let (top, bottom) = (f32::from(event.bounds.origin.y), f32::from(event.bounds.bottom()));
+                let y = f32::from(event.event.position.y);
+                let id = over.clone();
+                view.update(cx, |shell, cx| {
+                    let previous = shell.channel_drop.as_ref().filter(|(r, _)| *r == id).map(|(_, z)| *z);
+                    let next = Some((id, rail_drag::edge(y, top, bottom, previous)));
+                    if shell.channel_drop != next {
+                        shell.channel_drop = next;
+                        cx.notify();
+                    }
+                });
             })
-            .drag_over::<DraggedRoom>(|s, _, _, _| s.bg(gpui::rgba(theme::bg_hover())))
             .on_drop::<DraggedRoom>(cx.listener(move |this, dragged: &DraggedRoom, _, cx| {
-                this.drop_channel(dragged.id.clone(), target.clone(), &listed, cx)
+                let after = this.channel_drop.take().is_some_and(|(r, z)| r == target && z == rail_drag::Zone::After);
+                this.drop_channel(dragged.id.clone(), target.clone(), after, &listed, cx)
             }));
     }
     let title = crate::streamer::room_title(&shell.nicknames, room);
@@ -697,20 +730,31 @@ fn unjoined_row(shell: &Shell, cx: &mut Context<Shell>, room: &SpaceRoom) -> imp
 pub struct DraggedRoom {
     id: OwnedRoomId,
     name: String,
+    voice: bool,
+    width: f32,
 }
 
 /// What follows the pointer while a channel is dragged.
-struct DragGhost(String);
+struct DragGhost(DraggedRoom);
 
 impl gpui::Render for DragGhost {
     fn render(&mut self, _: &mut gpui::Window, _: &mut Context<Self>) -> impl IntoElement {
+        // The row as it is listed: its glyph and name, at its size, lifted.
         div()
-            .px(px(12.0))
+            .w(px(self.0.width))
+            .flex()
+            .items_center()
+            .gap(px(8.0))
+            .px(px(8.0))
             .py(px(6.0))
             .rounded(px(theme::RADIUS_SM))
-            .bg(theme::fill_elevated())
+            .bg(rgb(theme::bg_elevated()))
+            .shadow_lg()
+            .opacity(0.9)
             .text_color(rgb(theme::text()))
-            .child(format!("# {}", self.0))
+            .child(channel_glyph(self.0.voice))
+            .child(div().flex_1().min_w_0().truncate().child(self.0.name.clone()))
+            .e2e("div", "channel-drag-ghost")
     }
 }
 
@@ -720,6 +764,7 @@ impl Shell {
         &mut self,
         from: OwnedRoomId,
         target: OwnedRoomId,
+        after: bool,
         listed: &[OwnedRoomId],
         cx: &mut Context<Self>,
     ) {
@@ -736,7 +781,7 @@ impl Shell {
             .map(|r| r.space_children.clone())
             .unwrap_or_default();
         if let Some(order) =
-            crate::view_model::reorder::dropped_before(&order, listed, &from, &target)
+            crate::view_model::reorder::dropped_beside(&order, listed, &from, &target, after)
         {
             let ordering = session.set_space_order(space, order);
             self.run_in_background("reorder channels", ordering, cx);

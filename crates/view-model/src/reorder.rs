@@ -27,6 +27,34 @@ pub fn dropped_before(
     Some(order)
 }
 
+/// The server's order after `from` is dropped on the `after` edge of `target`
+/// (before the next channel) or its before edge: [`dropped_before`] or the
+/// channel that follows `target` in the whole list.
+pub fn dropped_beside(
+    order: &[OwnedRoomId],
+    listed: &[OwnedRoomId],
+    from: &OwnedRoomId,
+    target: &OwnedRoomId,
+    after: bool,
+) -> Option<Vec<OwnedRoomId>> {
+    if from == target {
+        return None;
+    }
+    if !after {
+        return dropped_before(order, listed, from, target);
+    }
+    let mut all = order.to_vec();
+    for id in listed {
+        if !all.contains(id) {
+            all.push(id.clone());
+        }
+    }
+    all.retain(|id| id != from);
+    let at = all.iter().position(|id| id == target)? + 1;
+    all.insert(at, from.clone());
+    (all != order).then_some(all)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -53,5 +81,33 @@ mod tests {
         assert_eq!(dropped_before(&all, &all, &all[1], &all[1]), None);
         let moved = dropped_before(&all[..1], &all, &all[2], &all[1]).expect("moves");
         assert_eq!(moved, ids(&["a", "c", "b"]));
+    }
+}
+
+#[cfg(test)]
+mod beside_tests {
+    use super::*;
+
+    fn ids(names: &[&str]) -> Vec<OwnedRoomId> {
+        names
+            .iter()
+            .map(|n| OwnedRoomId::try_from(format!("!{n}:x")).expect("room id"))
+            .collect()
+    }
+
+    #[test]
+    fn dropped_after_a_channel_goes_right_behind_it() {
+        let all = ids(&["a", "b", "c"]);
+        assert_eq!(dropped_beside(&all, &all, &all[0], &all[1], true), Some(ids(&["b", "a", "c"])));
+        assert_eq!(dropped_beside(&all, &all, &all[0], &all[2], true), Some(ids(&["b", "c", "a"])));
+        assert_eq!(dropped_beside(&all, &all, &all[2], &all[0], false), Some(ids(&["c", "a", "b"])));
+        assert_eq!(dropped_beside(&all, &all, &all[0], &all[2], false), Some(ids(&["b", "a", "c"])));
+    }
+
+    #[test]
+    fn dropped_where_it_already_is_moves_nothing() {
+        let all = ids(&["a", "b", "c"]);
+        assert_eq!(dropped_beside(&all, &all, &all[1], &all[0], true), None);
+        assert_eq!(dropped_beside(&all, &all, &all[1], &all[1], true), None);
     }
 }
