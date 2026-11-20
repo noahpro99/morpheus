@@ -216,8 +216,11 @@ impl Root {
             cx.update(|cx| {
                 this.update(cx, |this, cx| match result {
                     Ok(Some(session)) => this.signed_in(session, cx),
-                    Ok(None) => this.show_login(None, cx),
-                    Err(err) => this.show_login(Some(err.to_string()), cx),
+                    Ok(None) => this.show_login(morpheus_core::take_keychain_notice(), cx),
+                    Err(err) => this.show_login(
+                        Some(morpheus_core::take_keychain_notice().unwrap_or_else(|| err.to_string())),
+                        cx,
+                    ),
                 })
             })
             .ok();
@@ -931,6 +934,22 @@ fn main() {
         eprint!("{text}");
         let _ = std::fs::write(out, &text);
         std::process::exit(if text.contains(": error:") { 1 } else { 0 });
+    }
+    // How often the OS keychain is asked in one launch (apple.yml, against a
+    // CI keychain): no window. The directory is the data dir; "seed" first
+    // saves three accounts. The line goes to the file named too.
+    if let Ok(mode) = std::env::var("MORPHEUS_KEYCHAIN_SELF_TEST") {
+        init_logging();
+        let (line, code) =
+            match morpheus_core::keychain_self_test(&data_dir(), mode == "seed") {
+                Ok(line) => (line, 0),
+                Err(why) => (format!("keychain self-test: failed: {why}"), 1),
+            };
+        eprintln!("{line}");
+        if let Some(out) = std::env::var_os("MORPHEUS_KEYCHAIN_SELF_TEST_OUT") {
+            let _ = std::fs::write(out, format!("{line}\n"));
+        }
+        std::process::exit(code);
     }
     // The report's parts that need no window, to a file (windows.yml: a
     // release build on Windows has no console).

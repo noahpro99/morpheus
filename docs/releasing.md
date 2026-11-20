@@ -122,3 +122,34 @@ The end-to-end tests are not in this repo: they live in the private
 never need it (the test bridge compiles only with the `e2e` feature). Before a
 release, run `just e2e <file>` for the files you care about, or its headless
 workflow (Actions > "e2e (headless)" in that repo).
+
+## The macOS keychain (#159)
+
+Morpheus keeps every account's session in **one** keychain item (service
+`dev.morpheus.Morpheus`, account `vault`: a JSON map), read once per launch
+and cached; it writes only when something changes. Before, each account had its
+own item and every look at the accounts read them again, which on a Mac whose
+keychain did not trust the program meant dozens of prompts per launch.
+
+- Old per-account items are moved into the vault on first sight and deleted
+  (that is up to one prompt per old item, once).
+- Denied, cancelled or locked: the keychain is not asked again in that process,
+  nor in later launches (`keychain-denied` in the data folder; delete it to
+  try again), and the session lives in the encrypted file instead, with a note
+  on the sign-in screen. The earlier sessions are in the keychain, out of reach,
+  so a sign-in is needed.
+- Dev builds on macOS (a debug build, or a binary outside a `.app`) use the file
+  and never prompt. `MORPHEUS_SESSION_STORE=keyring` forces the keychain.
+- Release builds are ad-hoc signed (no Apple developer account), so the code
+  signature differs per build. `package-macos.sh` pins the designated
+  requirement to `identifier "dev.morpheus.desktop"` so that the item's
+  access list can match the next version. This is not verified on a real Mac
+  (CI has no way to update an app between two signed builds against a real
+  keychain ACL). If macOS still asks after an update, the user clicks
+  "Always Allow" once per update: one prompt, and the answer sticks until the
+  next update. A proper fix is a stable signing identity (a Developer ID or
+  a self-signed certificate imported into the user's keychain, which an
+  ad-hoc download cannot get).
+- CI (`apple.yml`, "Keychain access count"): `scripts/keychain-self-test.sh`
+  runs the packaged app's `MORPHEUS_KEYCHAIN_SELF_TEST` against a throwaway
+  keychain and checks one read and no writes for a launch with 3 accounts.

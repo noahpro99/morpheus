@@ -67,8 +67,13 @@ cat > "$app/Contents/Info.plist" <<PLIST
 PLIST
 plutil -lint "$app/Contents/Info.plist"
 
-# Not notarised: ad-hoc signed so Apple silicon runs it at all.
-codesign --force --deep --sign - "$app"
+# Not notarised: ad-hoc signed so Apple silicon runs it at all. The designated
+# requirement is pinned to the identifier (an ad-hoc one is otherwise the
+# build's own hash, new with every update), so that what the keychain was told
+# to trust can match the next version too (#159; docs/releasing.md).
+codesign --force --deep --sign - -i dev.morpheus.desktop \
+  -r='designated => identifier "dev.morpheus.desktop"' "$app"
+codesign -d -r- "$app" 2>&1 | sed -n '/designated/p'
 codesign --verify --deep "$app"
 zip="dist/morpheus-$version-macos-$arch.zip"
 rm -f "$zip"

@@ -98,6 +98,13 @@ jobs:
           kill "$pid"
           echo "Morpheus is running after 20s"; tail -5 smoke/log.txt
 
+      # One launch asks the keychain once, with 3 accounts (#159): the
+      # packaged app against a temporary, unlocked keychain.
+      - name: Keychain access count
+        if: matrix.arch == 'arm64'
+        timeout-minutes: 10
+        run: scripts/keychain-self-test.sh smoke/Morpheus.app
+
       # The camera path (#74), as the app takes it: AVFoundation's cameras
       # listed and, with one, opened as the Settings preview opens it, read
       # for a few seconds and let go. The runner has no camera, so this

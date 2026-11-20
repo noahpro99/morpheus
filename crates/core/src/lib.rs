@@ -82,6 +82,8 @@ pub use rooms::{Bridge, GHOST_PREFIXES, network_of_ghost, NotifyMode, RoomListUp
 pub use search::SearchHit;
 pub use session::{LoginFlows, LoginRequest, NotificationPreview, Session, UrlOpener};
 pub use session_store::SessionStoreKind;
+#[cfg(not(target_arch = "wasm32"))]
+pub use session_store::{keychain_self_test, take_keychain_notice};
 pub use spaces::{History, Privacy, RoomProfile};
 pub use timeline::{
     history_requests, Message, MessageId, MessageKind, OpenTimeline, Reaction, ReplyPreview, Shield, StateKind, ThreadSummary,
