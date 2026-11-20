@@ -431,7 +431,7 @@ impl SettingsView {
                     .justify_center()
                     .p(px(12.0))
                     .rounded(px(theme::RADIUS_SM))
-                    .bg(rgb(0xffffff))
+                    .bg(rgb(0xffffff)) // fixed: a QR code is black on white
                     .child(
                         gpui::img(crate::media::drawn(qr.clone()))
                             .size(px(220.0))
