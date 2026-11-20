@@ -547,7 +547,7 @@ impl Shell {
                 }
             }
         }
-        let candidates: Vec<bool> = all
+        let unread: Vec<bool> = all
             .iter()
             .map(|r| r.unread_messages > 0 || r.highlight_count > 0 || r.marked_unread)
             .collect();
@@ -555,6 +555,13 @@ impl Shell {
             .selected
             .as_ref()
             .and_then(|id| all.iter().position(|r| &r.id == id));
+        // The call you are in is always a stop (#279).
+        let call = self
+            .calls
+            .state
+            .as_ref()
+            .and_then(|state| all.iter().position(|r| r.id == state.room_id));
+        let candidates = hotkeys::unread_stops(&unread, call, current);
         if let Some(room) =
             hotkeys::step_room(&candidates, current, forward).and_then(|i| all.get(i))
         {

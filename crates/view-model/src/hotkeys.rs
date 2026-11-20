@@ -145,6 +145,22 @@ pub fn step_room(candidates: &[bool], current: Option<usize>, forward: bool) -> 
     }
 }
 
+/// The stops for Alt+Shift+Up/Down: the rooms with something unread, plus the
+/// call room you are in (`call`, its place in the list) even with nothing
+/// unread, so a jump back to the call is always one key away. Once you are on
+/// it (`current`) it stops counting, so the keys move on to the next real unread.
+pub fn unread_stops(unread: &[bool], call: Option<usize>, current: Option<usize>) -> Vec<bool> {
+    let mut stops = unread.to_vec();
+    if let Some(i) = call {
+        if current != Some(i) {
+            if let Some(slot) = stops.get_mut(i) {
+                *slot = true;
+            }
+        }
+    }
+    stops
+}
+
 /// The rail entry after (or before) the current one, wrapping round.
 pub fn step_scope(len: usize, current: Option<usize>, forward: bool) -> Option<usize> {
     if len == 0 {
@@ -327,6 +343,18 @@ mod tests {
         assert_eq!(step_room(&unread, Some(3), true), Some(1));
         assert_eq!(step_room(&unread, Some(2), false), Some(1));
         assert_eq!(step_room(&[false, false], Some(0), true), None);
+    }
+
+    #[test]
+    fn the_call_you_are_in_is_an_unread_stop() {
+        let unread = [false, false, true, false];
+        assert_eq!(unread_stops(&unread, Some(3), Some(0)), [false, false, true, true]);
+        // On the call already: it stops counting.
+        assert_eq!(unread_stops(&unread, Some(3), Some(3)), unread);
+        // No call: nothing changes.
+        assert_eq!(unread_stops(&unread, None, Some(0)), unread);
+        let stops = unread_stops(&[false, false], Some(1), Some(0));
+        assert_eq!(step_room(&stops, Some(0), true), Some(1));
     }
 
     #[test]
