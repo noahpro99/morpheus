@@ -38,3 +38,23 @@ fun Throwable.sentence(): String = when (this) {
     is uniffi.morpheus_ffi.FfiException.SignedOut -> "Not signed in"
     else -> message ?: toString()
 }
+
+/** The panel a verification shows, now and at each step. */
+fun uniffi.morpheus_ffi.VerificationFlow.panels(): Flow<uniffi.morpheus_ffi.VerificationPanel> = callbackFlow {
+    val handle = watch(object : uniffi.morpheus_ffi.VerificationListener {
+        override fun onPanel(panel: uniffi.morpheus_ffi.VerificationPanel) {
+            trySend(panel)
+        }
+    })
+    awaitClose { handle.cancel() }
+}
+
+/** Verification requests from the account's other devices. */
+fun Morpheus.incomingVerifications(): Flow<uniffi.morpheus_ffi.VerificationFlow> = callbackFlow {
+    val handle = watchIncomingVerifications(object : uniffi.morpheus_ffi.IncomingVerificationListener {
+        override fun onIncoming(flow: uniffi.morpheus_ffi.VerificationFlow) {
+            trySend(flow)
+        }
+    })
+    awaitClose { handle.cancel() }
+}

@@ -21,6 +21,7 @@
 
 mod error;
 mod media;
+mod security;
 mod sidebar;
 mod timeline;
 
@@ -31,6 +32,10 @@ use tokio::{runtime::Runtime, task::JoinHandle};
 
 pub use error::FfiError;
 pub use media::MediaHandle;
+pub use security::{
+    ButtonKind, IncomingVerificationListener, PanelButton, PanelCode, PanelEmoji, PanelTone, RecoveryKind,
+    SecurityStatus, VerificationAction, VerificationFlow, VerificationListener, VerificationPanel,
+};
 pub use sidebar::{RoomItem, ScopeItem, ScopeKind, SectionItem, Sidebar, SidebarListener};
 pub use timeline::{
     MessageBody, MessageItem, ReactionItem, ReplyItem, RoomTimeline, TimelineListener, TimelineRow,

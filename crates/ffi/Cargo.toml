@@ -29,6 +29,8 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+matrix-sdk = { workspace = true }
+serde_json = { workspace = true }
 
 # The UniFFI scaffolding is unsafe code (extern functions); the rest of the
 # workspace's lints apply.

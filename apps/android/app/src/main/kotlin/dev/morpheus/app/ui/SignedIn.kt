@@ -57,6 +57,7 @@ fun SignedInScreen(model: AppModel, state: Screen.SignedIn, onOpenRoom: (RoomIte
             } else {
                 ChannelList(scope, onOpenRoom, Modifier.weight(1f))
             }
+            SecurityBanner(model)
             Account(model, state)
         }
     }
@@ -204,5 +205,20 @@ private fun Account(model: AppModel, state: Screen.SignedIn) {
             color = Palette.Muted,
         )
         TextButton({ model.signOut() }, Modifier.testTag("sign-out")) { Text("Sign out") }
+    }
+}
+
+/** Shown while this device is not verified or cannot read the key backup yet. */
+@Composable
+private fun SecurityBanner(model: AppModel) {
+    val security by model.security.collectAsState()
+    val status = security?.status?.collectAsState()?.value ?: return
+    if (status.deviceVerified && status.recovery != uniffi.morpheus_ffi.RecoveryKind.NEEDS_KEY) return
+    Row(
+        Modifier.fillMaxWidth().background(Palette.Raised).clickable { model.openSecurity() }.padding(16.dp).testTag("verify-banner"),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("Verify this device to read your encrypted messages", Modifier.weight(1f))
+        Text("›", fontSize = 22.sp, color = Palette.Muted)
     }
 }

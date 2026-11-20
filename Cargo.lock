@@ -7437,8 +7437,10 @@ name = "morpheus-ffi"
 version = "0.2.7"
 dependencies = [
  "futures-util",
+ "matrix-sdk",
  "morpheus-core",
  "morpheus-view-model",
+ "serde_json",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",

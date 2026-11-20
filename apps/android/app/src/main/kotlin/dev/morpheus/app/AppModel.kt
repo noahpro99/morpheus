@@ -3,6 +3,7 @@ package dev.morpheus.app
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.emptyFlow
@@ -53,6 +54,37 @@ class AppModel(val morpheus: Morpheus) : ViewModel() {
         AppState.screen = _screen.value.name()
     }
 
+    /** Encryption: made at sign-in, stopped at sign-out. */
+    private val _security = MutableStateFlow<SecurityModel?>(null)
+    val security: StateFlow<SecurityModel?> = _security.asStateFlow()
+    private var securityScope: kotlinx.coroutines.CoroutineScope? = null
+
+    private val _securityOpen = MutableStateFlow(false)
+    val securityOpen: StateFlow<Boolean> = _securityOpen.asStateFlow()
+
+    fun openSecurity() {
+        _securityOpen.value = true
+        AppState.screen = "security"
+    }
+
+    fun closeSecurity() {
+        _securityOpen.value = false
+        AppState.screen = _screen.value.name()
+    }
+
+    private fun signedInChanged(screen: Screen) {
+        securityScope?.cancel()
+        _securityOpen.value = false
+        if (screen is Screen.SignedIn) {
+            val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main)
+            securityScope = scope
+            _security.value = SecurityModel(morpheus, scope) { openSecurity() }
+        } else {
+            securityScope = null
+            _security.value = null
+        }
+    }
+
     private val _signingIn = MutableStateFlow(false)
     val signingIn: StateFlow<Boolean> = _signingIn.asStateFlow()
 
@@ -74,7 +106,7 @@ class AppModel(val morpheus: Morpheus) : ViewModel() {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     init {
-        _screen.onEach { AppState.screen = it.name() }.launchIn(viewModelScope)
+        _screen.onEach { AppState.screen = it.name(); signedInChanged(it) }.launchIn(viewModelScope)
         viewModelScope.launch {
             _screen.value = try {
                 morpheus.restoreSession()?.let { Screen.SignedIn(it) } ?: Screen.SignedOut

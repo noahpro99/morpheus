@@ -41,7 +41,12 @@ fun Root(model: AppModel) {
                 is Screen.SignedIn -> {
                     val room by model.openRoom.collectAsState()
                     val open = room
-                    if (open != null) RoomScreen(model, open) else SignedInScreen(model, current) { model.open(it) }
+                    val securityOpen by model.securityOpen.collectAsState()
+                    val security by model.security.collectAsState()
+                    val shown = security
+                    if (open != null) RoomScreen(model, open)
+                    else if (securityOpen && shown != null) SecurityScreen(model, shown)
+                    else SignedInScreen(model, current) { model.open(it) }
                 }
             }
         }
