@@ -139,6 +139,28 @@ jobs:
           sleep 2
           bash scripts/mac-check.sh smoke/Morpheus.app
 
+      # The title bar as it is drawn (#284): the window on a shell with no
+      # account, a screenshot of the screen kept as an artifact to look at.
+      - name: Title bar screenshot
+        if: matrix.arch == 'arm64'
+        timeout-minutes: 5
+        run: |
+          mkdir -p shots
+          MORPHEUS_TITLEBAR_SHOT=14 MORPHEUS_DATA_DIR="$(mktemp -d)" \
+            smoke/Morpheus.app/Contents/MacOS/morpheus-desktop > shots/log.txt 2>&1 &
+          pid=$!
+          sleep 8
+          screencapture -x shots/titlebar.png || true
+          wait "$pid" || true
+          cat shots/log.txt
+          ls -l shots
+
+      - uses: actions/upload-artifact@v4
+        if: always() && matrix.arch == 'arm64'
+        with:
+          name: titlebar-shot
+          path: shots
+
       # Update on this platform: the installed bundle finds a newer release
       # on a local feed, swaps itself for it, and the new one starts.
       - name: Update works

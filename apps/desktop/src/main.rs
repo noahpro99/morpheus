@@ -8,6 +8,7 @@
 use std::{borrow::Cow, path::PathBuf};
 
 mod about;
+mod titlebar_shot;
 mod awake;
 mod badge;
 mod call;
@@ -959,6 +960,10 @@ fn main() {
         eprint!("{text}");
         let _ = std::fs::write(out, text);
         std::process::exit(0);
+    }
+    // CI's screenshot of the title bar (apple.yml): a window on a bare shell.
+    if let Some(seconds) = titlebar_shot::requested() {
+        titlebar_shot::run(seconds);
     }
     // A later launch hands over to the one running (its window shows, or the
     // Matrix link it was given opens) and ends.
