@@ -81,7 +81,7 @@ private val quickReactions = listOf("👍", "❤️", "😂", "🎉", "😮")
 @Composable
 fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClose: () -> Unit = { app.closeRoom() }) {
     val model = remember(room.id, threadRoot) { RoomModel(app.morpheus, room, threadRoot) }
-    var thread by remember { mutableStateOf<String?>(null) }
+    var thread by remember(room.id) { mutableStateOf<String?>(null) }
     DisposableEffect(model) { onDispose { model.close() } }
     val rows by model.rows.collectAsState()
     val replyingTo by model.replyingTo.collectAsState()
@@ -90,6 +90,8 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
     val title = sidebar?.scopes?.flatMap { it.sections }?.flatMap { it.rooms }?.firstOrNull { it.id == room.id }?.name ?: room.name
     val editing by model.editing.collectAsState()
     var actions by remember { mutableStateOf<MessageItem?>(null) }
+    var info by remember(room.id) { mutableStateOf(false) }
+    val typingLine by model.typing.collectAsState()
     var viewing by remember { mutableStateOf<MediaHandle?>(null) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -103,6 +105,7 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
 
     BackHandler {
         when {
+            info -> info = false
             viewing != null -> viewing = null
             actions != null -> actions = null
             editing != null -> model.edit(null)
@@ -115,7 +118,8 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
     LaunchedEffect(newest) { if (newest != null && threadRoot == null) model.markRead() }
 
     Box(Modifier.fillMaxSize()) {
-        if (thread == null) Column(Modifier.fillMaxSize().background(Palette.Surface)) {
+        if (info) RoomInfo(app, model, room, title) { info = false }
+        else if (thread == null) Column(Modifier.fillMaxSize().background(Palette.Surface)) {
             Row(
                 Modifier.fillMaxWidth().background(Palette.Background).padding(horizontal = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -123,12 +127,13 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
                 TextButton({ onClose() }, Modifier.testTag(if (threadRoot == null) "back" else "thread-back")) { Text("‹", fontSize = 28.sp) }
                 Text(
                     if (threadRoot == null) title else "Thread",
-                    Modifier.testTag(if (threadRoot == null) "room-title" else "thread-title"),
+                    Modifier.weight(1f).clickable(enabled = threadRoot == null) { info = true }.testTag(if (threadRoot == null) "room-title" else "thread-title"),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                if (threadRoot == null) TextButton({ info = true }, Modifier.testTag("room-info-button")) { Text("ⓘ", fontSize = 22.sp) }
             }
             Timeline(
                 model, rows, Modifier.weight(1f),
@@ -137,6 +142,9 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
                 onImage = { viewing = it },
                 onFile = { media, name -> scope.launch { context.open(media, name)?.let { model.fail(it) } } },
             )
+            typingLine?.let {
+                Text(it, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp).testTag("typing-line"), color = Palette.Muted, fontSize = 12.sp)
+            }
             replyingTo?.let { reply ->
                 Row(
                     Modifier.fillMaxWidth().background(Palette.Raised).padding(start = 16.dp),
@@ -411,6 +419,7 @@ private fun Composer(model: RoomModel, editing: MessageItem?, onAttach: () -> Un
     var panel by remember { mutableStateOf(false) }
     var suggestions by remember { mutableStateOf<List<SuggestionItem>>(emptyList()) }
     LaunchedEffect(text) { suggestions = model.suggest(text) }
+    LaunchedEffect(text) { if (text.isNotBlank()) model.typing() }
     LaunchedEffect(editing?.key) {
         if (editing != null) text = (editing.body as? MessageBody.Text)?.text.orEmpty()
     }
@@ -430,7 +439,7 @@ private fun Composer(model: RoomModel, editing: MessageItem?, onAttach: () -> Un
             maxLines = 5,
         )
         Button(
-            { onSend(text.trim()); text = "" },
+            { onSend(text.trim()); text = ""; model.stopTyping() },
             Modifier.testTag("send"),
             enabled = text.isNotBlank(),
         ) { Text("Send") }

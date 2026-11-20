@@ -215,7 +215,7 @@ fn rows_of(rows: &[Row], session: &Session) -> Vec<TimelineRow> {
 /// the handle of its updates) closes the timeline.
 #[derive(uniffi::Object)]
 pub struct RoomTimeline {
-    handle: TimelineHandle,
+    pub(crate) handle: TimelineHandle,
     pub(crate) session: Session,
     pub(crate) room_id: OwnedRoomId,
     _updates: Arc<TaskHandle>,

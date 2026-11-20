@@ -1,4 +1,5 @@
 #![allow(clippy::expect_used)]
+#![recursion_limit = "512"]
 //! The FFI surface against the local homeserver, driven the way Kotlin does:
 //! through listeners. Self-skips unless `MORPHEUS_TEST_HOMESERVER` is set
 //! (`just hs-up hs-seed`, then `just test-ffi`).
@@ -6,7 +7,7 @@
 use std::{sync::Arc, time::Duration};
 
 use morpheus_ffi::{
-    FileKind, MessageBody, MessageItem, Morpheus, ScopeKind, SuggestionKind, emoji_sections, with_emoji, Sidebar, SidebarListener, SyncListener, TimelineListener,
+    FileKind, MessageBody, MessageItem, Morpheus, ScopeKind, SuggestionKind, emoji_sections, with_emoji, MemberRow, TypingListener, Sidebar, SidebarListener, SyncListener, TimelineListener,
     TimelineRow,
 };
 use tokio::{sync::mpsc, time::timeout};
@@ -522,4 +523,95 @@ async fn direct_messages_invites_join_create_friends_and_the_directory() {
     assert!(friends.iter().any(|f| f.user_id == bob_id.as_str()), "bob is a friend now");
     app.set_friend(bob_id.to_string(), false).await.expect("remove");
     assert!(app.friends().await.expect("friends").iter().all(|f| f.user_id != bob_id.as_str()));
+}
+
+impl TypingListener for Feed<Option<String>> {
+    fn on_typing(&self, line: Option<String>) {
+        self.push(line);
+    }
+}
+
+#[tokio::test]
+async fn typing_members_profiles_and_a_rooms_own_settings() {
+    use matrix_sdk::ruma::api::client::room::create_room;
+    let Ok(homeserver) = std::env::var("MORPHEUS_TEST_HOMESERVER") else {
+        return;
+    };
+    let dir = tempfile::tempdir().expect("dir");
+    let app = Morpheus::new(dir.path().display().to_string()).expect("app");
+    app.login(homeserver.clone(), "alice".into(), "alice-password".into()).await.expect("login");
+    let (sidebar, mut sidebar_rx) = Feed::new();
+    let _sidebar = app.watch_sidebar(sidebar).await.expect("watch sidebar");
+    let stamp = std::process::id();
+
+    // A room of alice's that bob is in.
+    let bob = bob_client(&homeserver).await;
+    let id = app.create_room(format!("ffi people {stamp}"), "a topic".into()).await.expect("create");
+    until(&mut sidebar_rx, "the room", |s: &Sidebar| s.scopes.iter().flat_map(|s| &s.sections).flat_map(|s| &s.rooms).any(|r| r.id == id)).await;
+    let room_id: matrix_sdk::ruma::OwnedRoomId = id.as_str().try_into().expect("id");
+    bob.join_room_by_id(&room_id).await.expect("bob joins");
+    let syncing = bob.clone();
+    tokio::spawn(async move { let _ = syncing.sync(matrix_sdk::config::SyncSettings::default()).await; });
+    let (rows, mut rows_rx) = Feed::new();
+    let room = app.open_room(id.clone(), rows).await.expect("open");
+    until(&mut rows_rx, "the joined line", |rows: &Vec<TimelineRow>| rows.iter().any(|r| matches!(r, TimelineRow::Message { message } if matches!(&message.body, MessageBody::Other { summary } if summary.contains("bob"))))).await;
+
+    // Typing: bob's shows as a line, and goes; mine reaches bob.
+    let (feed, mut typing_rx) = Feed::new();
+    let _typing = room.watch_typing(feed).await.expect("watch typing");
+    let bobs_room = bob.get_room(&room_id).expect("bob's room");
+    bobs_room.typing_notice(true).await.expect("bob types");
+    until(&mut typing_rx, "bob typing", |line: &Option<String>| line.as_deref() == Some("bob is typing…")).await;
+    bobs_room.typing_notice(false).await.expect("bob stops");
+    until(&mut typing_rx, "bob stopped", |line: &Option<String>| line.is_none()).await;
+    let (mut seen, _guard) = {
+        let (guard, rx) = bobs_room.subscribe_to_typing_notifications();
+        (rx, guard)
+    };
+    room.renew_typing().await.expect("alice types");
+    timeout(WAIT, async {
+        loop {
+            let users = seen.recv().await.expect("typing feed");
+            if users.iter().any(|u| u.as_str().starts_with("@alice:")) {
+                return;
+            }
+        }
+    })
+    .await
+    .expect("bob sees alice typing");
+    room.stop_typing().await.expect("alice stops");
+
+    // Members under headings, with roles; a person's card.
+    let list = room.members().await.expect("members");
+    let headings: Vec<_> = list.iter().filter_map(|r| match r { MemberRow::Heading { title } => Some(title.clone()), _ => None }).collect();
+    assert_eq!(headings, ["Admins — 1", "Members — 1"], "{headings:?}");
+    let people: Vec<_> = list.iter().filter_map(|r| match r { MemberRow::Member { member } => Some((member.name.clone(), member.role.clone())), _ => None }).collect();
+    assert_eq!(people, [("alice".to_string(), "Admin".to_string()), ("bob".to_string(), "Member".to_string())]);
+    let card = room.profile(bob.user_id().expect("bob").to_string()).await.expect("card");
+    assert_eq!(card.name, "bob");
+    assert!(card.role.is_none() && !card.is_me);
+    assert!(card.mutual_rooms.contains(&format!("ffi people {stamp}")), "{:?}", card.mutual_rooms);
+    let me = room.profile(app.account().expect("account").user_id).await.expect("me");
+    assert!(me.is_me && me.role.as_deref() == Some("Admin"));
+
+    // The room's own notification setting, and leaving.
+    room.set_notify_mode("mute".into()).await.expect("mute");
+    // The new rule comes back through sync: it takes a moment to read as set.
+    async fn becomes(room: &morpheus_ffi::RoomTimeline, want: &str) {
+        timeout(WAIT, async {
+            while room.notify_mode().await.expect("mode") != want {
+                tokio::time::sleep(Duration::from_millis(300)).await;
+            }
+        })
+        .await
+        .unwrap_or_else(|_| panic!("the mode never became {want}"));
+    }
+    becomes(&room, "mute").await;
+    room.set_notify_mode("all".into()).await.expect("all");
+    becomes(&room, "all").await;
+    let wrong = room.set_notify_mode("loud".into()).await.expect_err("not a choice");
+    assert!(wrong.to_string().contains("not a notification choice"), "{wrong}");
+    drop(room);
+    app.leave_room(id.clone()).await.expect("leave");
+    until(&mut sidebar_rx, "the room gone", |s: &Sidebar| !s.scopes.iter().flat_map(|s| &s.sections).flat_map(|s| &s.rooms).any(|r| r.id == id)).await;
 }

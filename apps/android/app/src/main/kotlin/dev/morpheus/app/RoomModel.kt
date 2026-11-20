@@ -42,6 +42,13 @@ class RoomModel(private val morpheus: Morpheus, val room: RoomItem, private val 
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
+    private val _typing = MutableStateFlow<String?>(null)
+
+    /** "bob is typing…", or nothing. */
+    val typing: StateFlow<String?> = _typing.asStateFlow()
+    private var typingHandle: uniffi.morpheus_ffi.TaskHandle? = null
+    private var lastTyping = 0L
+
     init {
         scope.launch {
             try {
@@ -51,6 +58,11 @@ class RoomModel(private val morpheus: Morpheus, val room: RoomItem, private val 
                     }
                 }
                 timeline = if (threadRoot == null) morpheus.openRoom(room.id, listener) else morpheus.openThread(room.id, threadRoot, listener)
+                typingHandle = timeline?.watchTyping(object : uniffi.morpheus_ffi.TypingListener {
+                    override fun onTyping(line: String?) {
+                        _typing.value = line
+                    }
+                })
             } catch (e: Exception) {
                 _error.value = e.sentence()
             }
@@ -127,6 +139,27 @@ class RoomModel(private val morpheus: Morpheus, val room: RoomItem, private val 
 
     fun markRead() = launchSafely { timeline?.markRead() }
 
+    /** The person is typing: tell the room, at most every few seconds (the notice outlives that). */
+    fun typing() {
+        val now = System.currentTimeMillis()
+        if (now - lastTyping < 3_000) return
+        lastTyping = now
+        launchSafely { timeline?.renewTyping() }
+    }
+
+    fun stopTyping() {
+        lastTyping = 0
+        launchSafely { timeline?.stopTyping() }
+    }
+
+    suspend fun members(): List<uniffi.morpheus_ffi.MemberRow> = timeline?.members().orEmpty()
+
+    suspend fun notifyMode(): String = try { timeline?.notifyMode() ?: "all" } catch (_: Exception) { "all" }
+
+    fun setNotifyMode(mode: String) = launchSafely { timeline?.setNotifyMode(mode) }
+
+    suspend fun profile(userId: String): uniffi.morpheus_ffi.ProfileCard? = timeline?.profile(userId)
+
     private fun launchSafely(block: suspend () -> Unit) {
         scope.launch {
             try {
@@ -139,6 +172,7 @@ class RoomModel(private val morpheus: Morpheus, val room: RoomItem, private val 
 
     fun close() {
         scope.cancel()
+        typingHandle?.cancel()
         timeline?.close()
         timeline = null
     }

@@ -127,11 +127,11 @@ comes back as the core's own error sentence, so the keep rules in
 
 ## Done since
 
-Verification and recovery (#241), message menu with edit and delete (#242), files (#243), composer suggestions, emoji panel and custom emoji (#244), UnifiedPush notifications (#245), threads (#246), the New screen (message someone, join by address, create a room, browse the directory, friends) and invites on the list (#247), Settings (#249: Appearance with themes, a custom colour and shareable theme codes, language, default notifications, account; the look and language are kept in the app folder and the whole app draws with the chosen palette, see `Palette` in `ui/Theme.kt`). The e2e bridge has `attach` (stands in for the file picker), `push` and `notifications` (hand the push service a payload, read the system notifications back). Kotlin unit tests: `gradle testDebugUnitTest`.
+Verification and recovery (#241), message menu with edit and delete (#242), files (#243), composer suggestions, emoji panel and custom emoji (#244), UnifiedPush notifications (#245), threads (#246), the New screen (message someone, join by address, create a room, browse the directory, friends) and invites on the list (#247), Typing, members, profile cards and room details (#251), Settings (#249: Appearance with themes, a custom colour and shareable theme codes, language, default notifications, account; the look and language are kept in the app folder and the whole app draws with the chosen palette, see `Palette` in `ui/Theme.kt`). The e2e bridge has `attach` (stands in for the file picker), `push` and `notifications` (hand the push service a payload, read the system notifications back). Kotlin unit tests: `gradle testDebugUnitTest`.
 
 ## Not done yet
 
-Open issues with the `android` label: link previews, settings and themes, encrypted account data, typing and members, calls, search. A release APK path (signing is wired, `assembleRelease` is untested), iOS.
+Open issues with the `android` label: showing who has read a message (the core does not expose receipts yet), link previews, settings and themes, encrypted account data, typing and members, calls, search. A release APK path (signing is wired, `assembleRelease` is untested), iOS.
 
 ## Notes from building it
 
