@@ -54,6 +54,29 @@ pub struct CallState {
     pub watching: Vec<OwnedUserId>,
     /// How many people watch this device's shared screen.
     pub watchers: usize,
+    /// What each other member publishes, from the call's own publications:
+    /// the one source of the camera, LIVE and muted marks while in the call.
+    pub members: Vec<(OwnedUserId, MemberMedia)>,
+    /// Members LiveKit said left, each with the number of that report: they
+    /// are dropped for good once it has stood for [`LEFT_GRACE_MS`].
+    pub leaving: Vec<(OwnedUserId, u32)>,
+    /// Members LiveKit reports gone (past the grace): not shown in the call,
+    /// whatever their membership still says, until they join again.
+    pub gone: Vec<OwnedUserId>,
+    left_reports: u32,
+}
+
+/// How long a member LiveKit reports gone may take to come back (a network
+/// blip, a reconnect) before they are dropped from the call.
+pub const LEFT_GRACE_MS: u64 = 6_000;
+
+/// What a member of the call you are in publishes: camera, screen, muted
+/// microphone (deafened is not a publication; it comes with the membership).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct MemberMedia {
+    pub camera: bool,
+    pub screen: bool,
+    pub muted: bool,
 }
 
 impl CallState {
@@ -72,7 +95,64 @@ impl CallState {
             shares: Vec::new(),
             watching: Vec::new(),
             watchers: 0,
+            members: Vec::new(),
+            leaving: Vec::new(),
+            gone: Vec::new(),
+            left_reports: 0,
         }
+    }
+
+    /// LiveKit says `user` left. The number returned is asked back with
+    /// [`Self::grace_over`] after [`LEFT_GRACE_MS`].
+    pub fn livekit_left(&mut self, user: OwnedUserId) -> u32 {
+        self.left_reports += 1;
+        self.leaving.retain(|(u, _)| *u != user);
+        self.leaving.push((user, self.left_reports));
+        self.left_reports
+    }
+
+    /// LiveKit says `user` is (back) in the call.
+    pub fn livekit_joined(&mut self, user: &OwnedUserId) {
+        self.leaving.retain(|(u, _)| u != user);
+        self.gone.retain(|u| u != user);
+    }
+
+    /// The grace for report `ticket` of `user` has run out: if they did not
+    /// come back in it, they are gone (true when that is new).
+    pub fn grace_over(&mut self, user: &OwnedUserId, ticket: u32) -> bool {
+        if !self.leaving.contains(&(user.clone(), ticket)) {
+            return false;
+        }
+        self.leaving.retain(|(u, _)| u != user);
+        self.members.retain(|(u, _)| u != user);
+        if !self.gone.contains(user) {
+            self.gone.push(user.clone());
+        }
+        true
+    }
+
+    /// `participants` less those LiveKit reports gone.
+    pub fn without_gone(&self, participants: &[OwnedUserId]) -> Vec<OwnedUserId> {
+        participants.iter().filter(|u| !self.gone.contains(u)).cloned().collect()
+    }
+
+    /// `user`'s publications changed (a camera or share started or stopped,
+    /// the microphone muted): kept whether or not their share is watched or
+    /// their video shown. Nothing published drops the entry.
+    pub fn publications_event(&mut self, user: OwnedUserId, media: MemberMedia) {
+        self.members.retain(|(u, _)| *u != user);
+        if media != MemberMedia::default() {
+            self.members.push((user, media));
+        }
+    }
+
+    /// What `user` publishes now (nothing, if they have not said).
+    pub fn member_media(&self, user: &OwnedUserId) -> MemberMedia {
+        self.members
+            .iter()
+            .find(|(u, _)| u == user)
+            .map(|(_, m)| *m)
+            .unwrap_or_default()
     }
 
     /// Someone started or stopped sharing their screen. A share that ended
@@ -301,7 +381,7 @@ pub fn media_of(
     {
         return flags.media(call);
     }
-    rooms
+    let mut media = rooms
         .iter()
         .find(|r| &r.id == room)
         .and_then(|r| {
@@ -310,7 +390,16 @@ pub fn media_of(
                 .find(|(u, _)| u == user)
                 .map(|(_, media)| *media)
         })
-        .unwrap_or_default()
+        .unwrap_or_default();
+    // In this call, the call itself says what they publish (their membership
+    // lags, and says nothing of a camera hidden or a share not watched).
+    if let Some(call) = call.filter(|c| &c.room_id == room && c.connected) {
+        let live = call.member_media(user);
+        media.camera = live.camera;
+        media.screen = live.screen;
+        media.muted = live.muted;
+    }
+    media
 }
 
 /// One card in a call, as Discord has them: a shared screen, or a person
@@ -1130,6 +1219,52 @@ mod tests {
 
     fn call() -> CallState {
         CallState::joining(OwnedRoomId::try_from("!a:x").expect("id"), "hangout".into())
+    }
+
+    #[test]
+    fn a_member_livekit_reports_gone_is_dropped_after_the_grace_unless_back() {
+        let bob = user("bob");
+        let mut state = call();
+        let people = [user("alice"), bob.clone()];
+        // Gone, then back within the grace (a reconnect): stays.
+        let ticket = state.livekit_left(bob.clone());
+        assert_eq!(state.without_gone(&people), people);
+        state.livekit_joined(&bob);
+        assert!(!state.grace_over(&bob, ticket));
+        assert_eq!(state.without_gone(&people), people);
+        // Gone and stays gone: dropped, wherever the membership still lists them.
+        let ticket = state.livekit_left(bob.clone());
+        assert!(state.grace_over(&bob, ticket));
+        assert_eq!(state.without_gone(&people), [user("alice")]);
+        // An old report's grace ending does not drop a newer one early.
+        state.livekit_joined(&bob);
+        let old = state.livekit_left(bob.clone());
+        let _new = state.livekit_left(bob.clone());
+        assert!(!state.grace_over(&bob, old));
+        // Back for good.
+        state.livekit_joined(&bob);
+        assert_eq!(state.without_gone(&people), people);
+    }
+
+    #[test]
+    fn publications_set_the_marks_of_others_in_the_call() {
+        let room = OwnedRoomId::try_from("!a:x").expect("id");
+        let bob = user("bob");
+        let me = user("me");
+        let mut state = call();
+        state.connected = true;
+        let media = |s: &CallState| media_of(&room, &bob, Some(&me), Some(s), VoiceFlags::default(), &[]);
+        assert_eq!(media(&state), CallMedia::default());
+        state.publications_event(bob.clone(), MemberMedia { camera: true, ..Default::default() });
+        assert!(media(&state).camera);
+        // A share on, watched or not, and the microphone muted.
+        state.publications_event(bob.clone(), MemberMedia { camera: true, screen: true, muted: true });
+        let on = media(&state);
+        assert!(on.camera && on.screen && on.muted);
+        // Off again, with nothing published: no stale mark.
+        state.publications_event(bob.clone(), MemberMedia::default());
+        assert_eq!(media(&state), CallMedia::default());
+        assert!(state.members.is_empty());
     }
 
     fn dm(id: &str, with: &str, in_call: &[&str]) -> RoomSummary {

@@ -238,6 +238,15 @@ pub enum CallEvent {
         identity: String,
         on: bool,
     },
+    /// What `identity` publishes now, from LiveKit's publications (not what is
+    /// subscribed to, so it holds with a share unwatched or video hidden): a
+    /// camera, a shared screen, a muted microphone (all off once they leave).
+    Publications {
+        identity: String,
+        camera: bool,
+        screen: bool,
+        muted: bool,
+    },
     /// How many people watch this device's shared screen now.
     Watchers(usize),
     /// A new thumbnail of `identity`'s shared screen arrived ([`share_thumbnail`]).
@@ -1925,6 +1934,29 @@ fn set_watching(identity: &str, on: bool) {
     }
 }
 
+/// What `participant` publishes, as the call says it: camera and screen are
+/// on while published (a camera also not muted), the microphone muted while
+/// its publication is.
+fn publications_of(participant: &RemoteParticipant) -> CallEvent {
+    let mut camera = false;
+    let mut screen = false;
+    let mut muted = false;
+    for publication in participant.track_publications().values() {
+        match publication.source() {
+            TrackSource::Camera => camera = !publication.is_muted(),
+            TrackSource::Screenshare => screen = true,
+            TrackSource::Microphone => muted = publication.is_muted(),
+            _ => {}
+        }
+    }
+    CallEvent::Publications {
+        identity: participant.identity().to_string(),
+        camera,
+        screen,
+        muted,
+    }
+}
+
 /// Everyone already in `room` when its events start: what they publish is
 /// subscribed to (their shared screens excepted, those wait to be watched)
 /// and their shared screens are said.
@@ -1942,6 +1974,7 @@ fn subscribe_existing(room: &std::sync::Weak<Room>, tx: &UnboundedSender<CallEve
                 let _ = tx.send(CallEvent::Screen { identity: identity.clone(), on: true });
             }
         }
+        let _ = tx.send(publications_of(participant));
     }
 }
 
@@ -2052,6 +2085,25 @@ async fn forward_events(
         // heard or seen, it says whether they arrived, sent anything, and
         // whether it decrypted.
         log_event(&event, &source);
+        match &event {
+            RoomEvent::TrackPublished { participant, .. }
+            | RoomEvent::TrackUnpublished { participant, .. } => {
+                let _ = tx.send(publications_of(participant));
+            }
+            RoomEvent::TrackMuted { participant: Participant::Remote(p), .. }
+            | RoomEvent::TrackUnmuted { participant: Participant::Remote(p), .. } => {
+                let _ = tx.send(publications_of(p));
+            }
+            RoomEvent::ParticipantDisconnected(p) => {
+                let _ = tx.send(CallEvent::Publications {
+                    identity: p.identity().to_string(),
+                    camera: false,
+                    screen: false,
+                    muted: false,
+                });
+            }
+            _ => {}
+        }
         let out = match event {
             RoomEvent::ParticipantConnected(p) => {
                 info!(who = %p.identity(), ?source, "joined the call");

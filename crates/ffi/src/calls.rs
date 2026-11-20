@@ -982,7 +982,17 @@ where
                 model.state.share_event(user, on);
             }
         }
+        CallEvent::Publications { identity, camera, screen, muted } => {
+            known!(&identity);
+            if let Some(user) = model.people.by_identity.get(&identity).cloned() {
+                model.state.publications_event(
+                    user,
+                    morpheus_view_model::calls::MemberMedia { camera, screen, muted },
+                );
+            }
+        }
         CallEvent::Watchers(n) => model.state.watchers = n,
+
         CallEvent::ScreenAudio { .. } | CallEvent::Thumbnail { .. } => {}
     }
     let _ = call;

@@ -2139,7 +2139,7 @@ async fn schedule_leave(
 /// Whether to try a delayed leave on this homeserver: not turned off
 /// (`MORPHEUS_DELAYED_EVENTS=off`) and not refused lately.
 fn delayed_expected(client: &matrix_sdk::Client) -> bool {
-    if std::env::var("MORPHEUS_DELAYED_EVENTS").is_ok_and(|v| v == "off") {
+    if std::env::var("MORPHEUS_DELAYED_EVENTS").is_ok_and(|v| v == "off" || v == "old") {
         return false;
     }
     let key = homeserver_key(client);
@@ -2148,12 +2148,18 @@ fn delayed_expected(client: &matrix_sdk::Client) -> bool {
         .is_ok_and(|refused| refused.get(&key).is_some_and(|at| at.elapsed() < DELAYED_RETRY))
 }
 
+/// `MORPHEUS_DELAYED_EVENTS=old` (tests): behave like a build from before delayed leaves and
+/// expiry, which leaves nothing to take this device out of a call if it dies.
+fn like_an_old_build() -> bool {
+    std::env::var("MORPHEUS_DELAYED_EVENTS").is_ok_and(|v| v == "old")
+}
+
 /// The membership's `content` stamped with when this device joined and, when no delayed
 /// leave is there to catch a crash, a short `expires` (renewed by [`renew_membership`]).
 fn stamped(content: &CallMemberEventContent, joined_at: u64, short_lived: bool) -> Value {
     let mut value = serde_json::to_value(content).unwrap_or_default();
     value["created_ts"] = json!(joined_at);
-    if short_lived {
+    if short_lived && !like_an_old_build() {
         value["expires"] = json!(now_ms().saturating_sub(joined_at) + FALLBACK_EXPIRY.as_millis() as u64);
     }
     value
@@ -2164,7 +2170,7 @@ fn stamped(content: &CallMemberEventContent, joined_at: u64, short_lived: bool) 
 /// everyone's view drops the member when it runs out.
 async fn renew_membership(room: matrix_sdk::Room, user_id: OwnedUserId, joined_at: u64) {
     let room_id = room.room_id().to_owned();
-    loop {
+    while !like_an_old_build() {
         crate::rt::sleep(RENEW_EVERY).await;
         let _writing = membership_writes(&user_id, &room_id).lock_owned().await;
         let kept = memberships()

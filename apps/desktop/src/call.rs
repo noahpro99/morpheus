@@ -183,12 +183,16 @@ impl Shell {
 
     pub fn call_shown(&self, room: &RoomSummary) -> Vec<OwnedUserId> {
         let me = self.session.as_ref().and_then(|s| s.user_id());
-        crate::view_model::calls::shown_participants(
+        let shown = crate::view_model::calls::shown_participants(
             room,
             me.as_ref(),
             self.calls.in_call(&room.id),
             self.calls.just_left(&room.id),
-        )
+        );
+        match self.calls.state.as_ref().filter(|c| c.room_id == room.id) {
+            Some(call) => call.without_gone(&shown),
+            None => shown,
+        }
     }
 
     /// The server has said this account left: its call lists go by the
@@ -1493,7 +1497,16 @@ async fn run_call(
             }
         };
         match event {
-            CallEvent::Joined(_) => {
+            CallEvent::Joined(ref identity) => {
+                if let Some(user) = people.get(identity).cloned() {
+                    this.update(cx, |this, cx| {
+                        if let Some(state) = this.calls.state.as_mut() {
+                            state.livekit_joined(&user);
+                            cx.notify();
+                        }
+                    })
+                    .ok();
+                }
                 this.update(cx, |this, _| this.chime(Sound::Join)).ok();
                 cx.background_executor().spawn(share_key()).detach();
                 let learned = refresh_people(&session, &room_id, &mut people).await;
@@ -1576,9 +1589,39 @@ async fn run_call(
                 .ok();
                 return;
             }
-            CallEvent::Left(_) => {
+            CallEvent::Left(identity) => {
                 this.update(cx, |this, _| this.chime(Sound::Leave)).ok();
+                // They are dropped from the call's list unless they are back within
+                // a short grace (#281): whatever their client did or did not send.
+                if let Some(user) = people.get(&identity).cloned() {
+                    let ticket = this
+                        .update(cx, |this, _| {
+                            this.calls.state.as_mut().map(|s| s.livekit_left(user.clone()))
+                        })
+                        .ok()
+                        .flatten();
+                    if let Some(ticket) = ticket {
+                        let this = this.clone();
+                        cx.spawn(async move |cx| {
+                            cx.background_executor()
+                                .timer(std::time::Duration::from_millis(
+                                    crate::view_model::calls::LEFT_GRACE_MS,
+                                ))
+                                .await;
+                            this.update(cx, |this, cx| {
+                                if let Some(state) = this.calls.state.as_mut()
+                                    && state.grace_over(&user, ticket)
+                                {
+                                    cx.notify();
+                                }
+                            })
+                            .ok();
+                        })
+                        .detach();
+                    }
+                }
             }
+
             CallEvent::Screen { identity, on } => {
                 if !people.contains_key(&identity) {
                     let learned = refresh_people(&session, &room_id, &mut people).await;
@@ -1610,7 +1653,27 @@ async fn run_call(
                 })
                 .ok();
             }
+            CallEvent::Publications { identity, camera, screen, muted } => {
+                if !people.contains_key(&identity) {
+                    let learned = refresh_people(&session, &room_id, &mut people).await;
+                    show_learned(&this, cx, &people, &mut said, &learned);
+                }
+                let Some(user) = people.get(&identity).cloned() else {
+                    continue;
+                };
+                this.update(cx, |this, cx| {
+                    if let Some(state) = this.calls.state.as_mut() {
+                        state.publications_event(
+                            user,
+                            crate::view_model::calls::MemberMedia { camera, screen, muted },
+                        );
+                        cx.notify();
+                    }
+                })
+                .ok();
+            }
             CallEvent::Thumbnail { identity } => {
+
                 if let Some(thumb) = morpheus_call::share_thumbnail(&identity) {
                     this.update(cx, |this, cx| {
                         let user = this

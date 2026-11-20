@@ -61,6 +61,12 @@ pub enum CallEvent {
         identity: String,
         on: bool,
     },
+    Publications {
+        identity: String,
+        camera: bool,
+        screen: bool,
+        muted: bool,
+    },
     Watchers(usize),
     Thumbnail {
         identity: String,

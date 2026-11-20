@@ -903,8 +903,8 @@ fn name_label(text: String, screen: bool) -> AnyElement {
         .into_any_element()
 }
 
-fn card_marks(media: morpheus_core::CallMedia) -> Option<AnyElement> {
-    let items = marks(media, false);
+fn card_marks(media: morpheus_core::CallMedia, with_video: bool) -> Option<AnyElement> {
+    let items = marks(media, with_video);
     if items.is_empty() {
         return None;
     }
@@ -916,7 +916,11 @@ fn card_marks(media: morpheus_core::CallMedia) -> Option<AnyElement> {
             .justify_center()
             .rounded_full()
             .bg(black(0.6))
-            .child(icon(mark.glyph.unwrap_or("mic-off"), 14.0).text_color(rgb(theme::danger())))
+            .child(icon(mark.glyph.unwrap_or("mic-off"), 14.0).text_color(rgb(if mark.class.starts_with("voice-state") {
+                theme::danger()
+            } else {
+                theme::text()
+            })))
             .e2e("span", mark.class)
             .attr("title", mark.title)
     });
@@ -991,7 +995,7 @@ fn person_card(
     // The ring is the card's; the picture inside has none of its own.
     .child(avatar(picture_of(shell, user, 72), &name, size, None))
     .child(name_label(name, false));
-    if let Some(marks) = card_marks(flags) {
+    if let Some(marks) = card_marks(flags, true) {
         tile = tile.child(marks);
     }
     tile.e2e("div", &classes)
@@ -1227,7 +1231,7 @@ fn video_card(
         );
     }
     if !feed.screen
-        && let Some(marks) = card_marks(flags)
+        && let Some(marks) = card_marks(flags, false)
     {
         tile = tile.child(marks);
     }
@@ -1619,7 +1623,7 @@ fn cards(
                 .rounded(px(theme::RADIUS_XL))
                 .bg(rgb(theme::bg_elevated()))
                 .cursor_pointer()
-                .hover(|s| s.opacity(0.85))
+                .hover(|s| s.bg(rgba(theme::bg_hover())))
                 .child(icon(name, 16.0).text_color(rgb(theme::text())))
                 .child(icon("users", 14.0).text_color(rgb(theme::text_muted())))
                 .on_click(cx.listener(|this, _, _, cx| {
@@ -1649,7 +1653,7 @@ fn stage_body(
         .rooms
         .iter()
         .find(|r| r.id == call.room_id)
-        .map(|r| r.call_participants.clone())
+        .map(|r| call.without_gone(&r.call_participants))
         .unwrap_or_default();
     let mut all = tiles(call, &participants, me.clone());
     // A hidden camera: the person's avatar card instead of their video.
