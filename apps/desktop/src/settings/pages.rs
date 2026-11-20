@@ -1396,7 +1396,7 @@ impl SettingsView {
 // ---- Edit Profile -----------------------------------------------------------------
 
 /// The picture in `bytes`, if it is a format GPUI draws.
-fn picture_from(bytes: Vec<u8>) -> Option<std::sync::Arc<gpui::Image>> {
+pub(super) fn picture_from(bytes: Vec<u8>) -> Option<std::sync::Arc<gpui::Image>> {
     let format = match image::guess_format(&bytes).ok()? {
         image::ImageFormat::Png => gpui::ImageFormat::Png,
         image::ImageFormat::Jpeg => gpui::ImageFormat::Jpeg,

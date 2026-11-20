@@ -6,6 +6,7 @@
 //! front ends.
 
 pub mod about;
+pub mod bridges;
 pub mod rail_folders;
 pub mod permissions;
 pub mod spellcheck;
@@ -105,6 +106,7 @@ mod test_room {
             latest_ms: 0,
             space_children: Vec::new(),
             can_edit_children: false,
+            bridge: None,
         }
     }
 }

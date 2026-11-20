@@ -97,6 +97,131 @@ pub struct RoomSummary {
     pub space_children: Vec<OwnedRoomId>,
     /// For a space: you may change its children (and so their order).
     pub can_edit_children: bool,
+    /// The network this room is bridged to (a mautrix or other bridge's
+    /// `m.bridge` state), when it is.
+    pub bridge: Option<Bridge>,
+}
+
+/// A bridge a room is part of, from its `m.bridge` (or the older
+/// `uk.half-shot.bridge`) state event.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Bridge {
+    /// The network's id as the bridge names it (`discord`, `whatsapp`, ...), lower case.
+    pub protocol: String,
+    /// What the bridge calls the network (`Discord`).
+    pub name: String,
+    /// The bridge's bot user, when the event names it.
+    pub bot: Option<String>,
+}
+
+/// What a bridge state event's content says about its network.
+pub fn bridge_of_content(content: &serde_json::Value) -> Option<Bridge> {
+    let protocol = content.get("protocol")?;
+    let id = protocol.get("id")?.as_str()?.trim().to_lowercase();
+    if id.is_empty() {
+        return None;
+    }
+    let name = protocol
+        .get("displayname")
+        .and_then(serde_json::Value::as_str)
+        .filter(|n| !n.is_empty())
+        .unwrap_or(&id)
+        .to_owned();
+    let bot = content
+        .get("bridgebot")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_owned);
+    Some(Bridge { protocol: id, name, bot })
+}
+
+/// What the ghost users of each network's bridge (mautrix and others) are named, by network:
+/// `@discord_123:server` is a Discord person. A room with one of them is bridged to that network.
+pub const GHOST_PREFIXES: &[(&str, &str)] = &[
+    ("whatsapp", "whatsapp_"),
+    ("signal", "signal_"),
+    ("discord", "discord_"),
+    ("telegram", "telegram_"),
+    ("slack", "slack_"),
+    ("instagram", "instagram_"),
+    ("messenger", "meta_"),
+    ("googlechat", "googlechat_"),
+    ("gmessages", "gmessages_"),
+    ("imessage", "imessage_"),
+    ("twitter", "twitter_"),
+    ("bluesky", "bluesky_"),
+    ("linkedin", "linkedin_"),
+];
+
+/// The network a bridge's ghost user stands for, from its name.
+pub fn network_of_ghost(user: &matrix_sdk::ruma::UserId) -> Option<&'static str> {
+    let local = user.localpart();
+    GHOST_PREFIXES
+        .iter()
+        .find(|(_, prefix)| local.starts_with(prefix))
+        .map(|(id, _)| *id)
+}
+
+/// Rooms already looked at for ghosts, by how many people were in them then.
+static GHOSTS: std::sync::Mutex<Option<HashMap<OwnedRoomId, (u64, Option<String>, std::time::Instant)>>> =
+    std::sync::Mutex::new(None);
+
+/// The network of the first ghost user among the room's members the device knows.
+async fn ghost_network(room: &Room) -> Option<String> {
+    let count = room.joined_members_count();
+    if count > 300 {
+        return None;
+    }
+    let key = room.room_id().to_owned();
+    if let Ok(cache) = GHOSTS.lock()
+        && let Some((was, found, at)) = cache.as_ref().and_then(|c| c.get(&key))
+        && *was == count
+        // A room with no ghost found is looked at again now and then: people's names arrive late.
+        && (found.is_some() || at.elapsed() < std::time::Duration::from_secs(20))
+    {
+        return found.clone();
+    }
+    let found = room
+        .members_no_sync(matrix_sdk::RoomMemberships::JOIN)
+        .await
+        .ok()?
+        .iter()
+        .find_map(|member| network_of_ghost(member.user_id()))
+        .map(str::to_owned);
+    if let Ok(mut cache) = GHOSTS.lock() {
+        cache.get_or_insert_with(HashMap::new).insert(key, (count, found.clone(), std::time::Instant::now()));
+    }
+    found
+}
+
+/// The bridge a room is part of, from the state the device holds.
+async fn bridge_of(room: &Room) -> Option<Bridge> {
+    use matrix_sdk::deserialized_responses::RawAnySyncOrStrippedState as Raws;
+    for kind in ["m.bridge", "uk.half-shot.bridge"] {
+        let Ok(events) = room
+            .get_state_events(matrix_sdk::ruma::events::StateEventType::from(kind))
+            .await
+        else {
+            continue;
+        };
+        for event in events {
+            let text = match &event {
+                Raws::Sync(raw) => raw.json().get(),
+                Raws::Stripped(raw) => raw.json().get(),
+            };
+            let Ok(json) = serde_json::from_str::<serde_json::Value>(text) else {
+                continue;
+            };
+            if let Some(bridge) = json.get("content").and_then(bridge_of_content) {
+                return Some(bridge);
+            }
+        }
+    }
+    let id = ghost_network(room).await?;
+    let name = {
+        let mut chars = id.chars();
+        chars.next().map(|c| c.to_uppercase().collect::<String>() + chars.as_str()).unwrap_or_default()
+    };
+    Some(Bridge { protocol: id, name, bot: None })
 }
 
 impl RoomSummary {
@@ -203,6 +328,7 @@ impl RoomSummary {
             latest_ms: room.latest_event_timestamp().map_or(0, |ts| ts.0.into()),
             space_children,
             can_edit_children,
+            bridge: bridge_of(&room).await,
         }
     }
 }

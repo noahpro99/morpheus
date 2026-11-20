@@ -78,7 +78,7 @@ pub use previews::{UrlPreview, parse_preview as parse_url_preview};
 pub use push::{DEFAULT_PUSH_GATEWAY, PUSH_APP_ID, PushRegistration};
 pub use recovery::{EncryptionStatus, RecoveryAvailability};
 pub use report::{bug_report_url, bug_report_url_with, device};
-pub use rooms::{NotifyMode, RoomListUpdates, RoomSummary, SpaceRoom};
+pub use rooms::{Bridge, GHOST_PREFIXES, network_of_ghost, NotifyMode, RoomListUpdates, RoomSummary, SpaceRoom, bridge_of_content};
 pub use search::SearchHit;
 pub use session::{LoginFlows, LoginRequest, NotificationPreview, Session, UrlOpener};
 pub use session_store::SessionStoreKind;

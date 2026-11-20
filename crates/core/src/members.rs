@@ -343,6 +343,31 @@ impl Session {
         })
     }
 
+    /// The direct message with a bridge bot, created if there is none yet. Not encrypted: a
+    /// bridge's bot reads its management room as plain text unless the bridge was set up for
+    /// encryption, and a login (its QR code, a password) is between you and your own server.
+    pub fn bridge_dm_with(&self, user_id: OwnedUserId) -> CoreFuture<OwnedRoomId> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            if let Some(room) = client
+                .get_dm_rooms(&user_id)
+                .find(|room| !room.encryption_state().is_encrypted() && room.state() == matrix_sdk::RoomState::Joined)
+            {
+                return Ok(room.room_id().to_owned());
+            }
+            let request = {
+                use matrix_sdk::ruma::api::client::room::create_room::v3::{Request, RoomPreset};
+                let mut request = Request::new();
+                request.invite = vec![user_id.clone()];
+                request.is_direct = true;
+                request.preset = Some(RoomPreset::TrustedPrivateChat);
+                request
+            };
+            let room = client.create_room(request).await?;
+            Ok(room.room_id().to_owned())
+        })
+    }
+
     /// The DM room with a user, created if there is none yet.
     pub fn dm_with(&self, user_id: OwnedUserId) -> CoreFuture<OwnedRoomId> {
         let client = self.client.clone();

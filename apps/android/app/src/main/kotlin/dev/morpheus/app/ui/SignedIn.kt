@@ -94,6 +94,7 @@ private fun Rail(scopes: List<ScopeItem>, selected: String?, onReorder: () -> Un
                             when (scope.kind) {
                                 ScopeKind.DMS -> "@"
                                 ScopeKind.FAVORITES -> "★"
+                                ScopeKind.NETWORK -> scope.title.take(1)
                                 else -> "#"
                             },
                             fontSize = 22.sp,

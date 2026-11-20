@@ -19,18 +19,20 @@ pub enum SettingsPage {
     Appearance,
     VoiceVideo,
     StreamerMode,
+    Bridges,
     Startup,
     Help,
 }
 
 impl SettingsPage {
-    pub const ALL: [SettingsPage; 8] = [
+    pub const ALL: [SettingsPage; 9] = [
         SettingsPage::Account,
         SettingsPage::Security,
         SettingsPage::Notifications,
         SettingsPage::Appearance,
         SettingsPage::VoiceVideo,
         SettingsPage::StreamerMode,
+        SettingsPage::Bridges,
         SettingsPage::Startup,
         SettingsPage::Help,
     ];
@@ -43,6 +45,7 @@ impl SettingsPage {
             SettingsPage::Appearance => "Appearance",
             SettingsPage::VoiceVideo => "Voice & Video",
             SettingsPage::StreamerMode => "Streamer Mode",
+            SettingsPage::Bridges => "Bridges",
             SettingsPage::Startup => "Startup",
             SettingsPage::Help => "Help & Feedback",
         }
@@ -56,6 +59,7 @@ impl SettingsPage {
             SettingsPage::Appearance => "palette",
             SettingsPage::VoiceVideo => "mic",
             SettingsPage::StreamerMode => "eye-off",
+            SettingsPage::Bridges => "link",
             SettingsPage::Startup => "square",
             SettingsPage::Help => "circle-help",
         }
@@ -213,6 +217,12 @@ pub const SETTINGS_INDEX: &[SettingEntry] = &[
         "streamer ask prompt open channel server again remembered stream sharing",
         SettingsPage::StreamerMode,
         "streamer",
+    ),
+    entry(
+        "Bridges",
+        "bridges bridge connect discord whatsapp telegram signal mautrix matrix networks chats login qr",
+        SettingsPage::Bridges,
+        "bridges",
     ),
     entry(
         "Keep running in the background",
@@ -779,11 +789,12 @@ mod tests {
                 "Appearance",
                 "Voice & Video",
                 "Streamer Mode",
+                "Bridges",
                 "Startup",
                 "Help & Feedback"
             ]
         );
-        assert_eq!(SettingsPage::listed(true).len(), 8);
+        assert_eq!(SettingsPage::listed(true).len(), 9);
         assert!(!SettingsPage::listed(false).contains(&SettingsPage::Startup));
     }
 

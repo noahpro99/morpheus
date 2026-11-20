@@ -15,6 +15,8 @@ pub enum Scope {
     #[default]
     Rooms,
     Favorites,
+    /// The rooms bridged to one network (`discord`), whichever way they are otherwise filed.
+    Network(String),
     /// A top-level space and everything nested under it.
     Space(OwnedRoomId),
 }
@@ -26,11 +28,15 @@ impl Scope {
             Self::Dms => "dms".into(),
             Self::Rooms => "rooms".into(),
             Self::Favorites => "favorites".into(),
+            Self::Network(id) => format!("net:{id}"),
             Self::Space(id) => format!("space:{id}"),
         }
     }
 
     pub fn from_key(key: &str) -> Option<Self> {
+        if let Some(id) = key.strip_prefix("net:") {
+            return (!id.is_empty()).then(|| Self::Network(id.to_owned()));
+        }
         if let Some(id) = key.strip_prefix("space:") {
             return OwnedRoomId::try_from(id).ok().map(Self::Space);
         }
@@ -54,6 +60,9 @@ impl Scope {
 /// Used when something other than the rail opens a room (the inbox), so the
 /// sidebar follows instead of bouncing the selection back.
 pub fn scope_for(rooms: &[RoomSummary], room: &RoomSummary) -> Scope {
+    if let Some(network) = crate::bridges::network_id_of(room) {
+        return Scope::Network(network);
+    }
     if room.is_dm {
         return Scope::Dms;
     }
@@ -75,6 +84,11 @@ pub fn scope_for(rooms: &[RoomSummary], room: &RoomSummary) -> Scope {
     Scope::Rooms
 }
 
+/// Not part of a bridged network: those are listed under their network.
+fn not_bridged(room: &RoomSummary) -> bool {
+    crate::bridges::network_id_of(room).is_none()
+}
+
 /// Rooms visible for a scope: DMs; rooms that are neither DMs nor in a space;
 /// favorites; or a space's whole subtree.
 pub fn rooms_in_scope(rooms: &[RoomSummary], scope: &Scope) -> Vec<RoomSummary> {
@@ -82,7 +96,7 @@ pub fn rooms_in_scope(rooms: &[RoomSummary], scope: &Scope) -> Vec<RoomSummary> 
         Scope::Dms => {
             return rooms
                 .iter()
-                .filter(|r| r.is_dm && !r.is_space && !r.invited)
+                .filter(|r| r.is_dm && !r.is_space && !r.invited && not_bridged(r))
                 .cloned()
                 .collect();
         }
@@ -96,7 +110,14 @@ pub fn rooms_in_scope(rooms: &[RoomSummary], scope: &Scope) -> Vec<RoomSummary> 
         Scope::Rooms => {
             return rooms
                 .iter()
-                .filter(|r| !r.is_space && !r.is_dm && !r.invited && r.parent_spaces.is_empty())
+                .filter(|r| !r.is_space && !r.is_dm && !r.invited && r.parent_spaces.is_empty() && not_bridged(r))
+                .cloned()
+                .collect();
+        }
+        Scope::Network(network) => {
+            return rooms
+                .iter()
+                .filter(|r| !r.is_space && !r.invited && crate::bridges::network_id_of(r).as_deref() == Some(network.as_str()))
                 .cloned()
                 .collect();
         }
@@ -200,6 +221,7 @@ pub fn header_title(rooms: &[RoomSummary], scope: &Scope) -> String {
         Scope::Dms => "Direct messages".into(),
         Scope::Rooms => "Rooms".into(),
         Scope::Favorites => "Favorites".into(),
+        Scope::Network(id) => crate::bridges::network_name(rooms, id),
         Scope::Space(id) => rooms
             .iter()
             .find(|r| &r.id == id)
@@ -312,6 +334,7 @@ pub fn scope_views(rooms: &[RoomSummary]) -> Vec<ScopeView> {
     if rooms.iter().any(|room| room.favorite && !room.invited) {
         scopes.push(Scope::Favorites);
     }
+    scopes.extend(crate::bridges::networks_in(&rooms).into_iter().map(Scope::Network));
     scopes.extend(top_spaces(&rooms).into_iter().map(|space| Scope::Space(space.id)));
     scopes
         .into_iter()
@@ -401,6 +424,7 @@ pub mod tests {
             latest_ms: 0,
             space_children: Vec::new(),
             can_edit_children: false,
+            bridge: None,
         }
     }
 

@@ -22,6 +22,7 @@ use morpheus_core::{
 };
 
 pub(crate) mod pages;
+mod bridges;
 mod video;
 
 use crate::tab::Tabbable as _;
@@ -246,6 +247,8 @@ pub struct SettingsView {
     manage_url: Option<String>,
     /// Your display name and current picture (the shell keeps them here).
     pub own: (String, Option<std::sync::Arc<gpui::Image>>),
+    /// Settings > Bridges.
+    bridges: bridges::Bridges,
 }
 
 impl SettingsView {
@@ -488,6 +491,7 @@ impl SettingsView {
             profile_busy: false,
             manage_url: None,
             own: (String::new(), None),
+            bridges: bridges::Bridges::new(&crate::data_dir(), cx),
         }
     }
 
@@ -522,6 +526,7 @@ impl SettingsView {
         self.load_notify_defaults(cx);
         self.load_own_name(cx);
         self.load_voice(cx);
+        self.bridges.looked = false;
         self.take_focus = true;
         self.focus_key = focus == SettingsFocus::RecoveryKey;
         self.set_up_when_ready = focus == SettingsFocus::SetUpBackup;
@@ -1752,6 +1757,7 @@ impl Render for SettingsView {
             SettingsPage::Appearance => self.appearance_page(cx),
             SettingsPage::VoiceVideo => self.voice_page(cx),
             SettingsPage::StreamerMode => self.streamer_page(cx),
+            SettingsPage::Bridges => self.bridges_page(cx),
             SettingsPage::Startup => self.startup_page(cx),
             SettingsPage::Help => self.help_page(window, cx),
         };

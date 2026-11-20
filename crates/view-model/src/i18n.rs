@@ -195,6 +195,7 @@ pub fn dynamic_keys() -> Vec<&'static str> {
     keys.extend(NotificationContent::ALL.iter().map(|c| c.label()));
     keys.extend(crate::menu::translatable_labels());
     keys.extend(crate::settings::translatable_labels());
+    keys.extend(crate::bridges::translatable_labels());
     keys.extend(crate::toast::WHATS);
     keys
 }

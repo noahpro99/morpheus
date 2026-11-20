@@ -41,6 +41,8 @@ pub enum ScopeKind {
     Rooms,
     Favorites,
     Server,
+    /// The rooms bridged to one network (Discord, WhatsApp, ...).
+    Network,
 }
 
 /// A group of rooms under an optional heading (a server's category).
@@ -123,6 +125,7 @@ fn scope_item(view: ScopeView, session: &morpheus_core::Session, marks: &Marks) 
             Scope::Rooms => ScopeKind::Rooms,
             Scope::Favorites => ScopeKind::Favorites,
             Scope::Space(_) => ScopeKind::Server,
+            Scope::Network(_) => ScopeKind::Network,
         },
         title: view.title,
         avatar: view.avatar.map(|m| MediaHandle::new(m, session)),

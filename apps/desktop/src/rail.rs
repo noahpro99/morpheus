@@ -413,6 +413,27 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         );
     }
 
+    // A badge for each network the rooms are bridged to (Discord, WhatsApp, ...).
+    for id in crate::view_model::bridges::networks_in(rooms) {
+        let scope = Scope::Network(id.clone());
+        let selected = *current == scope;
+        let name = crate::view_model::bridges::network_name(rooms, &id);
+        let mut badge = Badge::new(
+            format!("rail-network-{id}"),
+            &name,
+            "rail-network",
+            48.0,
+            selected,
+            !selected && unread_in(&scope),
+        )
+        .track(shell, cx);
+        badge.extra.push(("data-network", id.clone()));
+        rail = rail.child(badge.build(icon("link", 20.0), false, {
+            let view = cx.entity();
+            move |_, cx| view.update(cx, |s, cx| s.pick_scope(scope.clone(), cx))
+        }));
+    }
+
     rail = rail.child(
         div()
             .w(px(32.0))

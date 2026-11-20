@@ -17,6 +17,11 @@ echo "users:"
 register_user alice alice-password --admin
 register_user bob bob-password
 register_user carol carol-password
+# Stand-ins for mautrix bridge bots (the e2e tests answer for them), one under a name no bridge uses.
+register_user discordbot discordbot-password
+register_user testbridge testbridge-password
+# A Discord person as the bridge shows them (a ghost user), in a bridged room.
+register_user discord_ghost discord_ghost-password
 
 ALICE=$(login alice alice-password)
 BOB=$(login bob bob-password)

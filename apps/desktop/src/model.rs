@@ -18,6 +18,7 @@ pub fn rail_scopes(prefs: &Prefs, rooms: &[RoomSummary]) -> Vec<Scope> {
     if rooms.iter().any(|room| room.favorite && !room.invited) {
         all.push(Scope::Favorites);
     }
+    all.extend(crate::view_model::bridges::networks_in(rooms).into_iter().map(Scope::Network));
     for entry in layout(prefs, &top_spaces(rooms)) {
         match entry {
             RailEntry::Space(id) => all.push(Scope::Space(id)),
