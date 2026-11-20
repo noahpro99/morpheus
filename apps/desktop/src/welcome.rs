@@ -297,7 +297,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>, space: &RoomSummary) -> An
                 .mt(px(4.0))
                 .text_size(px(1.5 * theme::REM))
                 .font_weight(FontWeight::BOLD)
-                .child(format!("Welcome to {}", space.name))
+                .child(crate::view_model::i18n::tf("Welcome to %{name}", &[("name", &space.name)]))
                 .e2e("h2", "")
                 .text(space.name.clone()),
         )

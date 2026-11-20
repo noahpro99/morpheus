@@ -1170,7 +1170,7 @@ fn video_card(
         let text = if n == 0 {
             "Nobody is watching".to_owned()
         } else {
-            format!("{n} watching")
+            crate::view_model::i18n::tf("%{n} watching", &[("n", &n.to_string())])
         };
         tile = tile.child(
             div()

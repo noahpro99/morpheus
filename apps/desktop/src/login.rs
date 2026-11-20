@@ -109,7 +109,7 @@ impl Login {
             } else {
                 core.login_flows(server.clone())
                     .await
-                    .map_err(|err| format!("Could not reach {}: {err}", server.trim()))
+                    .map_err(|err| crate::view_model::i18n::tf("Could not reach %{server}: %{err}", &[("server", server.trim()), ("err", &err.to_string())]))
             };
             this.update(cx, |this, cx| {
                 if this.probed == server {

@@ -117,7 +117,7 @@ impl ProfileCard {
         let message = cx.new(|cx| {
             TextInput::new(
                 "message",
-                &format!("Message @{}", crate::streamer::name(&name)),
+                &crate::view_model::i18n::tf("Message @%{name}", &[("name", &crate::streamer::name(&name))]),
                 false,
                 "",
                 cx,

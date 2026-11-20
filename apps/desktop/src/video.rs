@@ -438,8 +438,8 @@ impl VideoPlayer {
         let saving = session.download(self.media.clone(), self.body.clone());
         cx.spawn(async move |this, cx| {
             let state = match saving.await {
-                Ok(path) => format!("Saved to {}", path.display()),
-                Err(err) => format!("Download failed: {err}"),
+                Ok(path) => crate::view_model::i18n::tf("Saved to %{path}", &[("path", &path.display().to_string())]),
+                Err(err) => crate::view_model::i18n::tf("Download failed: %{err}", &[("err", &err.to_string())]),
             };
             this.update(cx, |this, cx| {
                 this.download = Some(state);

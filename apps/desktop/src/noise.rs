@@ -165,7 +165,7 @@ impl Shell {
 pub fn button(shell: &Shell, cx: &mut Context<Shell>) -> AnyElement {
     let mode = morpheus_call::noise_suppression();
     let open = shell.calls.noise_card.is_some();
-    let title = format!("Noise suppression: {}", mode.label());
+    let title = crate::view_model::i18n::tf("Noise suppression: %{mode}", &[("mode", &crate::view_model::i18n::t(mode.label()))]);
     div()
         .id("voice-noise")
         .size(px(32.0))
@@ -292,7 +292,7 @@ pub fn controls<V: 'static>(
     let too_slow = morpheus_call::strong_too_slow()
         .filter(|_| current == NoiseSuppression::Strong)
         .map(|why| {
-            let text = format!("Strong is too slow on this computer ({why}), so Standard is used.");
+            let text = crate::view_model::i18n::tf("Strong is too slow on this computer (%{why}), so Standard is used.", &[("why", &why.to_string())]);
             div()
                 .text_size(px(0.8 * theme::REM))
                 .text_color(rgb(theme::danger()))

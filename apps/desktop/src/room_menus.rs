@@ -303,7 +303,7 @@ impl Shell {
             MenuAction::Leave(room, name) => {
                 // No "are you sure": it goes from the list now, undoable a moment.
                 self.hidden_rooms.insert(room.to_string());
-                self.undoable(&format!("Left #{name}"), PendingUndo::Leave(room), cx);
+                self.undoable(&crate::view_model::i18n::tf("Left #%{name}", &[("name", &name.to_string())]), PendingUndo::Leave(room), cx);
             }
             MenuAction::Favorite(room, favorite) => {
                 if let Some(session) = session {

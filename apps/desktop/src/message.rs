@@ -904,7 +904,7 @@ fn attachment_card(
             .into_any_element(),
         Some(Download::Downloading) => status("Downloading…".into(), false, None),
         Some(Download::Saved(path)) => {
-            status(format!("Saved to {path}"), false, Some(path.clone()))
+            status(crate::view_model::i18n::tf("Saved to %{path}", &[("path", &path.to_string())]), false, Some(path.clone()))
         }
         Some(Download::Failed(message)) => status(message.clone(), true, None),
     };
@@ -1351,7 +1351,7 @@ fn body_el(
                 row.message.state_who.as_deref(),
             ));
         }
-        MessageKind::Unsupported(what) => return muted_body(&format!("Unsupported: {what}")),
+        MessageKind::Unsupported(what) => return muted_body(&crate::view_model::i18n::tf("Unsupported: %{what}", &[("what", &what.to_string())])),
         MessageKind::ProfileChange | MessageKind::CallPlumbing => return div().into_any_element(),
     };
     let blocks = crate::streamer::pills(&row.blocks);
@@ -1531,7 +1531,7 @@ fn actions_bar(m: &Message, group: SharedString, actions: &ActionHandler) -> Any
         bar = bar.child(action_button(
             format!("react-{uid}-{key}").into(),
             "action quick-reaction",
-            &format!("React with {key}"),
+            &crate::view_model::i18n::tf("React with %{key}", &[("key", &key.to_string())]),
             div().child(key).into_any_element(),
             RowAction::React(key),
             uid,

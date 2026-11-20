@@ -1449,7 +1449,7 @@ impl SettingsView {
                 .unwrap_or_default();
             children.push(
                 muted(
-                    &format!("This device: {}", crate::streamer::id(&device)),
+                    &crate::view_model::i18n::tf("This device: %{id}", &[("id", &crate::streamer::id(&device).to_string())]),
                     "muted",
                 )
                 .into_any_element(),

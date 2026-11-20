@@ -331,7 +331,7 @@ impl Shell {
                             let title = if crate::locks::is_locked(&ring_room) {
                                 crate::locks::LOCKED_CALL.to_owned()
                             } else {
-                                format!("{} is calling", if hidden { "Someone" } else { &name })
+                                crate::view_model::i18n::tf("%{name} is calling", &[("name", &if hidden { crate::view_model::i18n::t("Someone") } else { name.to_string() })])
                             };
                             notify_ring(title);
                         }
@@ -701,7 +701,7 @@ impl Shell {
                         this.chime(Sound::ScreenOn);
                         // The screen went, but its sound could not.
                         if let Some(Err(why)) = morpheus_call::sent_screen_audio() {
-                            this.toast(format!("Sharing without sound: {why}"), cx);
+                            this.toast(crate::view_model::i18n::tf("Sharing without sound: %{why}", &[("why", &why.to_string())]), cx);
                         }
                     }
                     Ok(()) => this.chime(match (screen, on) {
@@ -1032,7 +1032,7 @@ async fn declined(
     this.update(cx, |this, cx| {
         eprintln!("morpheus-desktop: {name} declined the call in {room_for_log} (alone: {alone})");
         this.toast(
-            format!("{} declined the call", crate::streamer::name(&name)),
+            crate::view_model::i18n::tf("%{name} declined the call", &[("name", &crate::streamer::name(&name).to_string())]),
             cx,
         );
         if alone {

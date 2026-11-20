@@ -1328,11 +1328,11 @@ impl SettingsView {
             !custom && now == AutoLock::Immediately,
             Some(AutoLock::Immediately),
         );
-        for (secs, label) in TIMEOUT_CHOICES {
+        for (secs, _) in TIMEOUT_CHOICES {
             pick(
                 format!("lock-timeout-{secs}"),
                 secs.to_string(),
-                label,
+                &describe_secs(secs),
                 !custom && now == AutoLock::After(secs),
                 Some(AutoLock::After(secs)),
             );
@@ -1345,7 +1345,7 @@ impl SettingsView {
             Some(AutoLock::Never),
         );
         let label = match now {
-            AutoLock::After(secs) if now.is_custom() => format!("Custom ({})", describe_secs(secs)),
+            AutoLock::After(secs) if now.is_custom() => crate::view_model::i18n::tf("Custom (%{time})", &[("time", &describe_secs(secs))]),
             _ => "Custom".to_owned(),
         };
         pick("lock-timeout-custom".into(), "custom".into(), &label, custom, None);
@@ -2359,8 +2359,8 @@ impl SettingsView {
 
     fn theme_file_saved(&mut self, result: Result<(), String>, cx: &mut Context<Self>) {
         self.share_note = Some(match result {
-            Ok(()) => "Saved. Anyone can open it from Settings > Appearance.".to_owned(),
-            Err(err) => format!("Could not save the file: {err}"),
+            Ok(()) => crate::view_model::i18n::t("Saved. Anyone can open it from Settings > Appearance."),
+            Err(err) => crate::view_model::i18n::tf("Could not save the file: %{err}", &[("err", &err.to_string())]),
         });
         cx.notify();
     }
@@ -2444,7 +2444,7 @@ impl SettingsView {
                         .flex()
                         .flex_col()
                         .gap(px(8.0))
-                        .child(muted(&format!("Preview: {summary}. Nothing changes until you apply it."), "muted"))
+                        .child(muted(&crate::view_model::i18n::tf("Preview: %{summary}. Nothing changes until you apply it.", &[("summary", &summary.to_string())]), "muted"))
                         .child(
                             div()
                                 .child(preview(p))

@@ -776,7 +776,7 @@ impl RoomDialog {
             .as_ref()
             .is_some_and(|p| p.read(cx).is_member(&user))
         {
-            self.note = Some(Note::error(format!("{user} is already in.")));
+            self.note = Some(Note::error(crate::view_model::i18n::tf("%{user} is already in.", &[("user", &user.to_string())])));
             cx.notify();
             return;
         }

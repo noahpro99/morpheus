@@ -21,7 +21,7 @@ pub fn render(
     close: impl Fn(&mut Window, &mut gpui::App) + 'static,
 ) -> AnyElement {
     let list = crates();
-    let header = format!("Open-source libraries ({})", list.len());
+    let header = crate::view_model::i18n::tf("Open-source libraries (%{count})", &[("count", &list.len().to_string())]);
     let boxed = dialog_box()
         .id("about-dialog")
         .track_focus(focus)

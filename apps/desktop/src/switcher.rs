@@ -263,9 +263,9 @@ impl Render for Switcher {
                             .ml_auto()
                             .text_size(px(0.8 * theme::REM))
                             .text_color(rgb(theme::text_faint()))
-                            .child(format!("Settings · {}", setting.page.label()))
+                            .child(crate::view_model::i18n::tf("Settings · %{page}", &[("page", &crate::view_model::i18n::t(setting.page.label()))]))
                             .e2e("span", "kind")
-                            .text(format!("Settings · {}", setting.page.label())),
+                            .text(crate::view_model::i18n::tf("Settings · %{page}", &[("page", &crate::view_model::i18n::t(setting.page.label()))])),
                     ),
                 Entry::Action(action) => row
                     .child(icon(action.icon, 16.0).text_color(rgb(theme::text_faint())))

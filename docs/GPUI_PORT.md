@@ -136,3 +136,8 @@ A literal handed to `t`, `tf`, those helpers or `label` is a key, and
 `cargo test -p morpheus-view-model i18n` fails when a key has no entry in a locale file
 (or a file keeps one nothing uses, or its `%{..}` placeholders differ). Text built from
 a variable (labels in view-model enums) is listed in `i18n::dynamic_keys`.
+Counts use `tn("1 reply", "%{count} replies", n)` (both literals are keys; the count is
+formatted for the language, `number`); dates, times and file sizes in `view_model::format`
+take the language's words, order and decimal mark; failed actions go through
+`toast::failure_text` (the action word is a key listed in `toast::WHATS`). A plural rule
+beyond one/other is added in `i18n::plural`.

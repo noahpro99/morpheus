@@ -128,10 +128,10 @@ impl Shell {
             let result = checking.await;
             this.update(cx, |this, cx| match result {
                 Ok(UpdateStatus::UpToDate) => {
-                    this.toast(format!("Morpheus {version} is up to date"), cx)
+                    this.toast(crate::view_model::i18n::tf("Morpheus %{version} is up to date", &[("version", &version.to_string())]), cx)
                 }
                 Ok(UpdateStatus::NoFeed) => this.toast(
-                    format!("Morpheus {version}: this build has no release feed to check"),
+                    crate::view_model::i18n::tf("Morpheus %{version}: this build has no release feed to check", &[("version", &version.to_string())]),
                     cx,
                 ),
                 Ok(UpdateStatus::Available {
@@ -150,18 +150,18 @@ impl Shell {
                     let action = offer.action(morpheus_core::installs_updates());
                     match action {
                         Action::Install(download) if asked => {
-                            this.toast(format!("Updating to Morpheus {version}…"), cx);
+                            this.toast(crate::view_model::i18n::tf("Updating to Morpheus %{version}…", &[("version", &version.to_string())]), cx);
                             this.install_update(download, cx);
                         }
                         Action::Download(target) if asked => {
-                            this.toast(format!("Morpheus {version} is available"), cx);
+                            this.toast(crate::view_model::i18n::tf("Morpheus %{version} is available", &[("version", &version.to_string())]), cx);
                             this.link_clicked(&target, cx);
                         }
                         _ => {
                             this.toast(
                                 match &url {
-                                    Some(url) => format!("Morpheus {version} is available: {url}"),
-                                    None => format!("Morpheus {version} is available"),
+                                    Some(url) => crate::view_model::i18n::tf("Morpheus %{version} is available: %{url}", &[("version", &version.to_string()), ("url", &url.to_string())]),
+                                    None => crate::view_model::i18n::tf("Morpheus %{version} is available", &[("version", &version.to_string())]),
                                 },
                                 cx,
                             );

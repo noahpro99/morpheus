@@ -869,7 +869,7 @@ fn palette_shortcut() -> &'static str {
 
 /// The top of the DMs: an inset, lighter button that opens the command palette.
 fn palette_button(cx: &mut Context<Shell>) -> impl IntoElement {
-    let label = format!("Command palette {}", palette_shortcut());
+    let label = crate::view_model::i18n::tf("Command palette %{keys}", &[("keys", &palette_shortcut().to_string())]);
     div()
         .id("palette-button")
         .flex()

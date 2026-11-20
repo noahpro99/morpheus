@@ -213,9 +213,9 @@ impl Composer {
         let text = if let Some(text) = &self.placeholder {
             text.clone()
         } else if self.is_dm {
-            format!("Message @{}", self.room_name)
+            crate::view_model::i18n::tf("Message @%{name}", &[("name", &self.room_name)])
         } else {
-            format!("Message #{}", self.room_name)
+            crate::view_model::i18n::tf("Message #%{name}", &[("name", &self.room_name)])
         };
         self.input
             .update(cx, |input, cx| input.set_placeholder(&text, cx));
@@ -629,7 +629,7 @@ impl Composer {
                                 .child(sender_name.clone()),
                         )
                         .e2e("span", "banner-label")
-                        .text(format!("Replying to {sender_name}"))
+                        .text(crate::view_model::i18n::tf("Replying to %{name}", &[("name", &sender_name.to_string())]))
                         .into_any_element(),
                     Some(summary.clone()),
                 )
@@ -769,7 +769,7 @@ impl Composer {
                             }))
                             .e2e("button", "remove-attachment")
                             .attr("title", "Remove")
-                            .attr("aria-label", format!("Remove {}", tile.name)),
+                            .attr("aria-label", crate::view_model::i18n::tf("Remove %{name}", &[("name", &tile.name.to_string())])),
                     )
                     .e2e("div", "composer-attachment")
                     .attr("title", tile.name.clone()),

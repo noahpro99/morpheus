@@ -284,7 +284,7 @@ impl Discover {
                 .text(name.clone()),
         );
         let size = if room.is_space {
-            format!("Space, {}", vm::members_line(room))
+            crate::view_model::i18n::tf("Space, %{members}", &[("members", &vm::members_line(room))])
         } else {
             vm::members_line(room)
         };

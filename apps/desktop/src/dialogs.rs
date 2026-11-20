@@ -1553,7 +1553,7 @@ fn open_prompt(
                 .text(format!("{shown}?")),
         )
         .e2e("h2", "open-prompt-title")
-        .text(format!("Open {shown}?"));
+        .text(crate::view_model::i18n::tf("Open %{shown}?", &[("shown", &shown.to_string())]));
     let on = true;
     let switch = div()
         .id("open-prompt-streamer")

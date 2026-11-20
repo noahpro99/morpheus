@@ -192,7 +192,7 @@ pub fn render(
     }
     let name = shown(shell, &feed.user);
     let label = if feed.screen {
-        format!("{name}'s screen")
+        crate::view_model::i18n::tf("%{name}'s screen", &[("name", &name.to_string())])
     } else {
         name
     };

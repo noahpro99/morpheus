@@ -88,7 +88,7 @@ impl JoinAddress {
                 match result {
                     Ok(room) => cx.emit(Found(room, via)),
                     Err(err) => {
-                        this.error = Some(format!("Could not find that room: {err}"));
+                        this.error = Some(crate::view_model::i18n::tf("Could not find that room: %{err}", &[("err", &err.to_string())]));
                     }
                 }
                 cx.notify();

@@ -78,9 +78,9 @@ pub fn status_text() -> Option<String> {
                 .map(|p| (p.done.load(Ordering::Relaxed), p.total.load(Ordering::Relaxed)))
                 .unwrap_or_default();
             let total = if total == 0 { morpheus_call::LOW_DELAY_BYTES } else { total };
-            Some(format!("Downloading the model: {} of {} MB", mb(done), mb(total)))
+            Some(crate::view_model::i18n::tf("Downloading the model: %{done} of %{total} MB", &[("done", &mb(done).to_string()), ("total", &mb(total).to_string())]))
         }
-        State::Failed(why) => Some(format!("Could not download the model: {why}")),
+        State::Failed(why) => Some(crate::view_model::i18n::tf("Could not download the model: %{why}", &[("why", &why.to_string())])),
         State::Idle => None,
     }
 }
@@ -177,7 +177,7 @@ pub fn picker<V: 'static>(
             if downloaded {
                 "Low delay (10 ms)".to_owned()
             } else {
-                format!("Low delay (10 ms, {} MB download)", mb(morpheus_call::LOW_DELAY_BYTES))
+                crate::view_model::i18n::tf("Low delay (10 ms, %{size} MB download)", &[("size", &mb(morpheus_call::LOW_DELAY_BYTES).to_string())])
             }
         } else {
             "Standard delay (30 ms, built in)".to_owned()
