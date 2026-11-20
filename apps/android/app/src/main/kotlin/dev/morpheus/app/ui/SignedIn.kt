@@ -182,13 +182,14 @@ private fun ChannelList(scope: ScopeItem, invites: List<InviteItem>, model: AppM
 private fun RoomRow(room: RoomItem, onOpen: (RoomItem) -> Unit, model: AppModel) {
     val unread = room.unread > 0UL && !room.muted
     var menu by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    var choosing by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     Box(Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
         Column {
         Row(
             Modifier
                 .fillMaxWidth()
                 .heightIn(min = 56.dp)
-                .combinedClickable(onClick = { if (room.isVoice) model.startCall(room.id, room.name) else onOpen(room) }, onLongClick = { if (room.isDm) menu = true })
+                .combinedClickable(onClick = { if (room.isVoice) model.startCall(room.id, room.name) else onOpen(room) }, onLongClick = { menu = true })
                 .padding(start = 12.dp, end = 72.dp)
                 .testTag("room-${room.name}"),
             verticalAlignment = Alignment.CenterVertically,
@@ -200,6 +201,7 @@ private fun RoomRow(room: RoomItem, onOpen: (RoomItem) -> Unit, model: AppModel)
                 Text(if (room.isVoice) "🔊" else "#", color = Palette.Muted, fontSize = 20.sp, modifier = Modifier.width(40.dp))
             }
             if (room.pinned) Text("📌", Modifier.testTag("pin-${room.name}"), fontSize = 12.sp)
+            if (room.muted) Text("🔕", Modifier.testTag("muted-room-${room.name}"), fontSize = 12.sp)
             Text(
                 room.name,
                 maxLines = 1,
@@ -225,14 +227,27 @@ private fun RoomRow(room: RoomItem, onOpen: (RoomItem) -> Unit, model: AppModel)
         }
         // In the tree, not a popup window: the list itself carries it (and so do the tests).
         if (menu) {
-            Row(Modifier.align(Alignment.CenterEnd).background(Palette.Raised, RoundedCornerShape(8.dp)).testTag("dm-menu")) {
-                TextButton({ menu = false; model.setDmMark(room.id, "pinned", !room.pinned) }, Modifier.testTag("dm-pin")) {
-                    Text(if (room.pinned) "Unpin" else "Pin", fontSize = 13.sp)
+            if (choosing) {
+                Column(Modifier.align(Alignment.CenterEnd).background(Palette.Raised, RoundedCornerShape(8.dp)).testTag("mute-choices")) {
+                    for ((index, choice) in androidx.compose.runtime.remember { uniffi.morpheus_ffi.muteChoices() }.withIndex()) {
+                        TextButton({ menu = false; choosing = false; model.muteRoom(room.id, choice.ms) }, Modifier.testTag("mute-choice-$index")) {
+                            Text(choice.label, fontSize = 13.sp)
+                        }
+                    }
                 }
-                TextButton({ menu = false; model.setDmMark(room.id, "closed", true) }, Modifier.testTag("dm-close")) {
-                    Text(t("Close"), fontSize = 13.sp)
+            } else Row(Modifier.align(Alignment.CenterEnd).background(Palette.Raised, RoundedCornerShape(8.dp)).testTag("dm-menu")) {
+                if (room.isDm) {
+                    TextButton({ menu = false; model.setDmMark(room.id, "pinned", !room.pinned) }, Modifier.testTag("dm-pin")) {
+                        Text(if (room.pinned) t("Unpin") else t("Pin"), fontSize = 13.sp)
+                    }
+                    TextButton({ menu = false; model.setDmMark(room.id, "closed", true) }, Modifier.testTag("dm-close")) {
+                        Text(t("Close"), fontSize = 13.sp)
+                    }
                 }
-                TextButton({ menu = false }, Modifier.testTag("dm-cancel")) { Text("✕", fontSize = 13.sp) }
+                TextButton({ if (room.muted) { menu = false; model.muteRoom(room.id, null) } else choosing = true }, Modifier.testTag("room-mute")) {
+                    Text(if (room.muted) t("Unmute") else t("Mute"), fontSize = 13.sp)
+                }
+                TextButton({ menu = false; choosing = false }, Modifier.testTag("dm-cancel")) { Text("✕", fontSize = 13.sp) }
             }
         }
         Row(

@@ -189,6 +189,17 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         }
     }
 
+    /** Mute a room for `ms` milliseconds (0: until turned back on), or turn its notifications back on (null). */
+    fun muteRoom(roomId: String, ms: ULong?) {
+        viewModelScope.launch {
+            try {
+                if (ms == null) morpheus.unmuteRoom(roomId) else morpheus.muteRoom(roomId, ms)
+            } catch (e: Exception) {
+                _error.value = e.sentence()
+            }
+        }
+    }
+
     fun answerInvite(roomId: String, accept: Boolean) {
         viewModelScope.launch {
             try {

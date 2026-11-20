@@ -50,7 +50,7 @@ pub use security::{
     ButtonKind, IncomingVerificationListener, PanelButton, PanelCode, PanelEmoji, PanelTone, RecoveryKind,
     SecurityStatus, VerificationAction, VerificationFlow, VerificationListener, VerificationPanel,
 };
-pub use sidebar::{RoomItem, ScopeItem, ScopeKind, SectionItem, Sidebar, SidebarListener};
+pub use sidebar::{MuteChoice, mute_choices, RoomItem, ScopeItem, ScopeKind, SectionItem, Sidebar, SidebarListener};
 pub use timeline::{
     FileKind, MessageBody, MessageItem, ReactionItem, ReplyItem, TextSegment, ThreadChip, RoomTimeline, TimelineListener, TimelineRow,
 };
@@ -140,6 +140,10 @@ pub struct Morpheus {
     core: Core,
     pub(crate) dir: std::path::PathBuf,
     session: Mutex<Option<Session>>,
+    /// Mutes changed here, which the room list only learns of with the room's next change.
+    pub(crate) muted_now: Arc<Mutex<std::collections::HashMap<String, bool>>>,
+    /// Poked when the account's layout (marks, mutes, the rail) is changed here, so the list follows at once.
+    pub(crate) layout_changed: Arc<tokio::sync::Notify>,
 }
 
 impl Morpheus {
@@ -169,6 +173,8 @@ impl Morpheus {
             dir: std::path::PathBuf::from(&data_dir),
             core: Core::with_session_store(data_dir, store_kind())?,
             session: Mutex::new(None),
+            muted_now: Arc::default(),
+            layout_changed: Arc::default(),
         }))
     }
 

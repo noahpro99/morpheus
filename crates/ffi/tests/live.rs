@@ -893,3 +893,33 @@ async fn a_call_is_joined_heard_muted_watched_and_left_through_the_listener() {
     alice_call.leave().await;
     until(&mut alice_rx, "alice's call ends", |s| s.phase == CallPhase::Ended).await;
 }
+
+#[tokio::test]
+async fn a_room_is_muted_for_a_while_unmuted_and_the_mute_ends_by_itself() {
+    let Ok(homeserver) = std::env::var("MORPHEUS_TEST_HOMESERVER") else {
+        return;
+    };
+    let (_dir, app) = signed_in(&homeserver, "alice").await;
+    let (feed, mut rx) = Feed::new();
+    let _watch = app.watch_sidebar(feed).await.expect("watch");
+    let room = app.create_room(format!("mute {}", std::process::id()), String::new()).await.expect("a room");
+    let state = |s: &Sidebar| s.scopes.iter().flat_map(|c| c.sections.iter().flat_map(|sec| sec.rooms.iter())).find(|r| r.id == room).map(|r| r.muted);
+    until(&mut rx, "the room", |s: &Sidebar| state(s) == Some(false)).await;
+
+    // The choices the menu offers, shortest first, the last for good.
+    let choices = morpheus_ffi::mute_choices();
+    assert_eq!(choices.len(), 6);
+    assert_eq!(choices.last().map(|c| c.ms), Some(0), "the last is until turned back on");
+    assert!(choices.iter().all(|c| !c.label.is_empty()));
+
+    // Muted, then unmuted, on every device.
+    app.mute_room(room.clone(), choices[0].ms).await.expect("mute");
+    until(&mut rx, "muted", |s: &Sidebar| state(s) == Some(true)).await;
+    app.unmute_room(room.clone()).await.expect("unmute");
+    until(&mut rx, "unmuted", |s: &Sidebar| state(s) == Some(false)).await;
+
+    // A mute that runs out ends: here a few seconds.
+    app.mute_room(room.clone(), 3_000).await.expect("mute briefly");
+    until(&mut rx, "muted again", |s: &Sidebar| state(s) == Some(true)).await;
+    until(&mut rx, "the mute ended", |s: &Sidebar| state(s) == Some(false)).await;
+}

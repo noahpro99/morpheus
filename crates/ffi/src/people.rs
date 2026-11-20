@@ -206,7 +206,9 @@ impl Morpheus {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis() as i64)
             .unwrap_or_default();
-        Ok(self.session()?.set_mark(kind, room_id_of, on.then_some(now)).await?)
+        self.session()?.set_mark(kind, room_id_of, on.then_some(now)).await?;
+        self.layout_changed.notify_one();
+        Ok(())
     }
 
     /// Put the servers in this order (their room IDs, first to last) on every device. What else the
@@ -221,6 +223,8 @@ impl Morpheus {
             }
             None => prefs = serde_json::json!({ "rail": rail }),
         }
-        Ok(session.set_ui_prefs(prefs).await?)
+        session.set_ui_prefs(prefs).await?;
+        self.layout_changed.notify_one();
+        Ok(())
     }
 }

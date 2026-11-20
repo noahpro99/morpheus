@@ -2,9 +2,9 @@
 //! them), each with its sections of rooms. `morpheus-view-model::scopes`
 //! decides the content; this maps it for the app.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
-use morpheus_core::RoomSummary;
+use morpheus_core::{OwnedRoomId, RoomSummary};
 use morpheus_view_model::{
     diffs,
     marks::Marks,
@@ -157,9 +157,11 @@ impl Morpheus {
     ) -> Result<Arc<TaskHandle>, FfiError> {
         let session = self.session()?;
         let mut updates = session.room_list().await?;
+        let (overrides, changed) = (self.muted_now.clone(), self.layout_changed.clone());
         let task = runtime().spawn(async move {
             let mut rooms: Vec<RoomSummary> = Vec::new();
-            let mut layout = Layout::load(&session).await;
+            let load = || async { Layout::load(&session).await.with_mutes(&overrides) };
+            let mut layout = load().await;
             let mut ticks = tokio::time::interval(std::time::Duration::from_secs(4));
             let mut told = false;
             loop {
@@ -169,11 +171,22 @@ impl Morpheus {
                         for diff in batch {
                             diffs::apply(&mut rooms, diff);
                         }
-                        layout = Layout::load(&session).await;
+                        layout = load().await;
+                    }
+                    _ = changed.notified() => {
+                        layout = load().await;
                     }
                     _ = ticks.tick() => {
+                        // A timed mute that ran out ends (on every device), as on the desktop.
+                        for id in layout.marks.ended_mutes(now_ms()) {
+                            if let Ok(room) = OwnedRoomId::try_from(id.as_str()) {
+                                let _ = session.set_notify_mode(room, morpheus_core::NotifyMode::AllMessages).await;
+                            }
+                            overrides.lock().map(|mut m| m.insert(id.clone(), false)).ok();
+                            let _ = session.set_mark(morpheus_core::marks::MUTED_UNTIL, id, None).await;
+                        }
                         // The layout changes on another device without the room list changing.
-                        let now = Layout::load(&session).await;
+                        let now = load().await;
                         if !told || now.signature() == layout.signature() {
                             continue;
                         }
@@ -198,6 +211,12 @@ pub(crate) struct Layout {
 }
 
 impl Layout {
+    /// With the mutes changed here counted.
+    fn with_mutes(mut self, overrides: &Mutex<std::collections::HashMap<String, bool>>) -> Self {
+        self.marks.muted_now = overrides.lock().map(|m| m.clone()).unwrap_or_default();
+        self
+    }
+
     pub(crate) async fn load(session: &morpheus_core::Session) -> Self {
         let mut marks = Marks::default();
         for kind in [
@@ -234,6 +253,7 @@ impl Layout {
     /// Equal layouts have equal signatures (the maps' order does not count).
     fn signature(&self) -> String {
         let mut parts: Vec<String> = Vec::new();
+        parts.extend(self.marks.muted_now.iter().map(|(k, v)| format!("n{k}={v}")));
         for (name, map) in [
             ("p", &self.marks.pinned),
             ("c", &self.marks.closed),
@@ -246,5 +266,59 @@ impl Layout {
         }
         parts.extend(self.rail.iter().map(|r| format!("r{r}")));
         parts.join("|")
+    }
+}
+
+pub(crate) fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| i64::try_from(d.as_millis()).unwrap_or_default())
+        .unwrap_or_default()
+}
+
+/// One way to mute a room: what the menu says and for how long.
+#[derive(uniffi::Record)]
+pub struct MuteChoice {
+    pub label: String,
+    /// Milliseconds; 0 is until it is turned back on.
+    pub ms: u64,
+}
+
+/// The lengths a room can be muted for, shortest first (translated).
+#[uniffi::export]
+pub fn mute_choices() -> Vec<MuteChoice> {
+    morpheus_view_model::marks::MUTE_CHOICES
+        .iter()
+        .map(|(label, ms)| MuteChoice { label: morpheus_view_model::i18n::t(label), ms: u64::try_from(*ms).unwrap_or(0) })
+        .collect()
+}
+
+#[uniffi::export]
+impl Morpheus {
+    /// Mute a room (nothing notifies) for `ms` milliseconds, or until turned back on (0), on every device.
+    pub async fn mute_room(&self, room_id: String, ms: u64) -> Result<(), FfiError> {
+        let session = self.session()?;
+        let id = OwnedRoomId::try_from(room_id.as_str()).map_err(|_| FfiError::Failed { reason: format!("{room_id} is not a room id") })?;
+        session.set_notify_mode(id, morpheus_core::NotifyMode::Mute).await?;
+        if let Ok(mut now) = self.muted_now.lock() {
+            now.insert(room_id.clone(), true);
+        }
+        let until = if ms == 0 { 0 } else { now_ms() + i64::try_from(ms).unwrap_or(i64::MAX / 2) };
+        session.set_mark(morpheus_core::marks::MUTED_UNTIL, room_id, Some(until)).await?;
+        self.layout_changed.notify_one();
+        Ok(())
+    }
+
+    /// Turn a room's notifications back on.
+    pub async fn unmute_room(&self, room_id: String) -> Result<(), FfiError> {
+        let session = self.session()?;
+        let id = OwnedRoomId::try_from(room_id.as_str()).map_err(|_| FfiError::Failed { reason: format!("{room_id} is not a room id") })?;
+        session.set_notify_mode(id, morpheus_core::NotifyMode::AllMessages).await?;
+        if let Ok(mut now) = self.muted_now.lock() {
+            now.insert(room_id.clone(), false);
+        }
+        session.set_mark(morpheus_core::marks::MUTED_UNTIL, room_id, None).await?;
+        self.layout_changed.notify_one();
+        Ok(())
     }
 }
