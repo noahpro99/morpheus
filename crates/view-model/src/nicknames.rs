@@ -28,7 +28,7 @@ pub fn room_title(map: &NickMap, room: &RoomSummary) -> String {
 
 /// What the nickname dialog says under its title.
 pub fn nickname_blurb(current: &str) -> String {
-    format!("Only you see this, on all your devices. Leave it empty to use {current}'s own name.")
+    crate::i18n::tf("Only you see this, on all your devices. Leave it empty to use %{current}'s own name.", &[("current", current)])
 }
 
 /// The map after saving `nickname` for `user_id` (empty clears it).

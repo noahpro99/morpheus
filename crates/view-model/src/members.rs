@@ -33,7 +33,12 @@ pub enum Row {
 impl Row {
     /// A heading's text: "Admins — 2".
     pub fn heading(role: MemberRole, total: usize) -> String {
-        format!("{} — {total}", role.label())
+        let name = match role {
+            MemberRole::Admin => crate::i18n::t("Admins"),
+            MemberRole::Moderator => crate::i18n::t("Moderators"),
+            MemberRole::Member => crate::i18n::t("Members"),
+        };
+        format!("{name} — {}", crate::i18n::number(total as u64))
     }
 }
 

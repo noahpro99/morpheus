@@ -44,13 +44,31 @@ impl ToastList {
 }
 
 /// "Pin failed: reason": what a failed action tells the user.
+/// What can fail, as the words `failure_text` puts first (each is a key: "pin" is "fijar").
+pub const WHATS: &[&str] = &[
+    "accepting an invite", "declining an invite", "declining the call", "delete", "friend", "invite", "join room",
+    "leave", "listening for calls", "loading your marks", "opening a DM", "opening the link", "pin",
+    "saving the audio devices", "sharing the screen", "switching audio devices", "the call dropped",
+    "turning the camera on", "update check", "updating", "reorder channels", "changing the role", "kicking",
+    "unbanning", "banning", "forward", "mark unread", "mark read", "saving", "mute", "unmute",
+    "notification mode", "favorites", "block", "role change", "kick", "ban", "save prefs", "edit", "reaction",
+    "unblock",
+];
+
 pub fn failure_text(what: &str, err: &str) -> String {
-    let mut chars = what.chars();
-    let label: String = match chars.next() {
+    failure_text_in(crate::i18n::language(), what, err)
+}
+
+pub fn failure_text_in(code: &str, what: &str, err: &str) -> String {
+    let what = crate::i18n::t_in(code, what);
+    let args = [("what", what.as_str()), ("err", err)];
+    let tf = |key: &str| crate::i18n::tf_in(code, key, &args);
+    let text = tf("%{what} failed: %{err}");
+    let mut chars = text.chars();
+    match chars.next() {
         Some(first) => first.to_uppercase().chain(chars).collect(),
-        None => String::new(),
-    };
-    format!("{label} failed: {err}")
+        None => text,
+    }
 }
 
 #[cfg(test)]
@@ -70,6 +88,15 @@ mod tests {
         assert_eq!(list.items.iter().map(|t| t.id).collect::<Vec<_>>(), [b]);
         let c = list.push("c", false);
         assert!(c > b, "ids are never reused");
+    }
+
+    #[test]
+    fn a_failure_is_said_in_the_language_with_the_reason_kept() {
+        assert_eq!(failure_text_in("es", "pin", "forbidden"), "Error al fijar: forbidden");
+        assert_eq!(failure_text_in("en", "turning the camera on", "busy"), "Turning the camera on failed: busy");
+        for what in WHATS {
+            assert_ne!(failure_text_in("es", what, "x"), failure_text_in("en", what, "x"), "{what}");
+        }
     }
 
     #[test]

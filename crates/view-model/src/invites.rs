@@ -38,11 +38,7 @@ pub fn card_line(room: &RoomSummary) -> String {
 
 /// "1 member" or "N members": the join card's line.
 pub fn members_label(count: u64) -> String {
-    if count == 1 {
-        "1 member".to_owned()
-    } else {
-        format!("{count} members")
-    }
+    crate::i18n::tn("1 member", "%{count} members", count)
 }
 
 /// Whether a room has something the inbox lists: unread messages, mentions

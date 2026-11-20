@@ -69,7 +69,7 @@ pub fn parse_invitee(input: &str) -> Result<OwnedUserId, Note> {
 
 /// What the form says once the invite went out.
 pub fn invited_note(user: &OwnedUserId) -> Note {
-    Note::ok(format!("Invited {user}."))
+    Note::ok(crate::i18n::tf("Invited %{user}.", &[("user", user.as_str())]))
 }
 
 // ---- create a room ----------------------------------------------------------
@@ -77,8 +77,8 @@ pub fn invited_note(user: &OwnedUserId) -> Note {
 /// One line under "Create room": where the room will be.
 pub fn create_room_scope(space_name: Option<&str>) -> String {
     match space_name {
-        Some(space) => format!("In the {space} space."),
-        None => "Not in any space.".to_owned(),
+        Some(space) => crate::i18n::tf("In the %{space} space.", &[("space", space)]),
+        None => crate::i18n::t("Not in any space."),
     }
 }
 
@@ -133,19 +133,30 @@ pub fn create_space_blurb(is_category: bool) -> &'static str {
 // ---- leave a server -----------------------------------------------------------
 
 pub fn leave_space_title(name: Option<&str>) -> String {
-    format!("Leave {}?", name.unwrap_or("this server"))
+    match name {
+        Some(name) => crate::i18n::tf("Leave %{name}?", &[("name", name)]),
+        None => crate::i18n::t("Leave this server?"),
+    }
 }
 
 pub fn leave_space_body(rooms: usize) -> String {
-    format!("You will leave the server and its {rooms} rooms. You can be invited back later.")
+    let key = crate::i18n::plural(
+        rooms as u64,
+        "You will leave the server and its 1 room. You can be invited back later.",
+        "You will leave the server and its %{count} rooms. You can be invited back later.",
+    );
+    crate::i18n::tf(key, &[("count", &rooms.to_string())])
 }
 
 // ---- per-server profile ---------------------------------------------------------
 
 pub fn room_profile_blurb(rooms: usize) -> String {
-    format!(
-        "How you appear in this server and its {rooms} rooms. Your global profile stays as it is."
-    )
+    let key = crate::i18n::plural(
+        rooms as u64,
+        "How you appear in this server and its 1 room. Your global profile stays as it is.",
+        "How you appear in this server and its %{count} rooms. Your global profile stays as it is.",
+    );
+    crate::i18n::tf(key, &[("count", &rooms.to_string())])
 }
 
 /// The name of a picked picture's file, shown beside "Choose avatar…".

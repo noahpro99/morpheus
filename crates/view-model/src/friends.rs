@@ -41,7 +41,7 @@ pub const NEW_MESSAGE_PLACEHOLDER: &str = "Username or @name:server";
 
 /// The heading over the list.
 pub fn count_heading(count: usize) -> String {
-    format!("All friends — {count}")
+    crate::i18n::tf("All friends — %{count}", &[("count", &crate::i18n::number(count as u64))])
 }
 
 /// What a friend's row shows: the name (your nickname for them first), and

@@ -52,16 +52,12 @@ pub fn card_max_height(app: Area) -> f32 {
 
 /// "1 mutual server", "3 mutual servers".
 pub fn mutual_servers_label(count: usize) -> String {
-    if count == 1 {
-        "1 mutual server".to_owned()
-    } else {
-        format!("{count} mutual servers")
-    }
+    crate::i18n::tn("1 mutual server", "%{count} mutual servers", count as u64)
 }
 
 /// The heading of the full profile's list: "Mutual servers — 2".
 pub fn mutual_heading(count: usize) -> String {
-    format!("Mutual servers — {count}")
+    crate::i18n::tf("Mutual servers — %{count}", &[("count", &crate::i18n::number(count as u64))])
 }
 
 /// The role tag: what they are in the open room.

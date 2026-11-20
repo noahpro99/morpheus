@@ -78,7 +78,7 @@ pub fn actions(state: PaletteState) -> Vec<PaletteEntry> {
     ];
     list.extend(SettingsPage::listed(!state.no_window).into_iter().map(|page| PaletteEntry {
         action: PaletteAction::SettingsPage(page),
-        label: format!("Settings: {}", page.label()),
+        label: crate::i18n::tf("Settings: %{page}", &[("page", &crate::i18n::t(page.label()))]),
         icon: page.glyph(),
         keys: Vec::new(),
         words: "preferences options",

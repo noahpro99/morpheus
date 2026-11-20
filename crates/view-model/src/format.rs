@@ -4,8 +4,12 @@ use std::time::Duration;
 
 use jiff::{Timestamp, tz::TimeZone};
 
-/// A byte count as `12.3 MB`, `850 KB`, `40 B`, ...
+/// A byte count as `12.3 MB`, `850 KB`, `40 B`, ... (`12,3 MB` in Spanish).
 pub fn human_size(bytes: u64) -> String {
+    human_size_in(crate::i18n::language(), bytes)
+}
+
+pub fn human_size_in(code: &str, bytes: u64) -> String {
     const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
     let mut size = bytes as f64;
     let mut unit = 0;
@@ -16,7 +20,9 @@ pub fn human_size(bytes: u64) -> String {
     if unit == 0 {
         format!("{bytes} {}", UNITS[unit])
     } else {
-        format!("{size:.1} {}", UNITS[unit])
+        let number = format!("{size:.1}");
+        let number = if code == "es" { number.replace('.', ",") } else { number };
+        format!("{number} {}", UNITS[unit])
     }
 }
 
@@ -47,6 +53,93 @@ pub(crate) fn clock_time_in(timestamp_ms: u64, zone: &TimeZone) -> String {
 
 pub(crate) fn calendar_date_in(timestamp_ms: u64, zone: &TimeZone) -> String {
     zoned(timestamp_ms, zone).map_or_else(String::new, |at| at.strftime("%Y-%m-%d").to_string())
+}
+
+const MONTHS_ES: [&str; 12] = [
+    "enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre",
+    "diciembre",
+];
+const WEEKDAYS_ES: [&str; 7] = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"];
+
+/// A month's name (short or long) in `code`: the words of a date are the language's.
+fn month_name(code: &str, at: &jiff::Zoned, long: bool) -> String {
+    if code == "es" {
+        let name = MONTHS_ES[usize::try_from(at.month() - 1).unwrap_or(0)];
+        return if long { name.to_owned() } else { name.chars().take(3).collect() };
+    }
+    at.strftime(if long { "%B" } else { "%b" }).to_string()
+}
+
+fn weekday_name(code: &str, at: &jiff::Zoned) -> String {
+    if code == "es" {
+        let from_monday = at.weekday().to_monday_zero_offset();
+        return WEEKDAYS_ES[usize::try_from(from_monday).unwrap_or(0)].to_owned();
+    }
+    at.strftime("%A").to_string()
+}
+
+/// A day as people say it: "Today", "Yesterday", else "Nov 8" (this year) or
+/// "Nov 8, 2025" (in Spanish "8 nov" and "8 nov 2025"): a message's time and the
+/// date dividers share it.
+fn day_phrase(code: &str, at: &jiff::Zoned, now: &jiff::Zoned) -> String {
+    let tf = |key: &str, args: &[(&str, &str)]| crate::i18n::tf_in(code, key, args);
+    let t = |key: &str| crate::i18n::t_in(code, key);
+    if at.date() == now.date() {
+        return t("Today");
+    }
+    if now.date().yesterday().is_ok_and(|y| y == at.date()) {
+        return t("Yesterday");
+    }
+    let day = at.day().to_string();
+    let month = month_name(code, at, false);
+    if at.year() == now.year() {
+        tf("%{month} %{day}", &[("month", &month), ("day", &day)])
+    } else {
+        tf("%{month} %{day}, %{year}", &[("month", &month), ("day", &day), ("year", &at.year().to_string())])
+    }
+}
+
+pub(crate) fn message_time_lang(code: &str, timestamp_ms: u64, now_ms: u64, zone: &TimeZone) -> String {
+    let tf = |key: &str, args: &[(&str, &str)]| crate::i18n::tf_in(code, key, args);
+    let t = |key: &str| crate::i18n::t_in(code, key);
+    let age = now_ms.saturating_sub(timestamp_ms);
+    if age < MINUTE_MS {
+        return t("just now");
+    }
+    if age < HOUR_MS {
+        return tf("%{n} min ago", &[("n", &(age / MINUTE_MS).to_string())]);
+    }
+    if age < RELATIVE_LIMIT_MS {
+        return tf("%{n} hr ago", &[("n", &(age / HOUR_MS).to_string())]);
+    }
+    let (Some(at), Some(now)) = (zoned(timestamp_ms, zone), zoned(now_ms, zone)) else {
+        return String::new();
+    };
+    let clock = at.strftime("%H:%M").to_string();
+    tf("%{day} at %{clock}", &[("day", &day_phrase(code, &at, &now)), ("clock", &clock)])
+}
+
+pub(crate) fn full_time_lang(code: &str, timestamp_ms: u64, zone: &TimeZone) -> String {
+    let tf = |key: &str, args: &[(&str, &str)]| crate::i18n::tf_in(code, key, args);
+    zoned(timestamp_ms, zone).map_or_else(String::new, |at| {
+        tf(
+            "%{weekday}, %{month} %{day}, %{year} at %{clock}",
+            &[
+                ("weekday", &weekday_name(code, &at)),
+                ("month", &month_name(code, &at, true)),
+                ("day", &at.day().to_string()),
+                ("year", &at.year().to_string()),
+                ("clock", &at.strftime("%H:%M").to_string()),
+            ],
+        )
+    })
+}
+
+pub(crate) fn day_label_lang(code: &str, timestamp_ms: u64, now_ms: u64, zone: &TimeZone) -> String {
+    let (Some(at), Some(now)) = (zoned(timestamp_ms, zone), zoned(now_ms, zone)) else {
+        return String::new();
+    };
+    day_phrase(code, &at, &now)
 }
 
 #[cfg(test)]
@@ -113,17 +206,17 @@ pub fn now_ms() -> u64 {
 /// clock time on a day word: "Today at 14:05", "Yesterday at 14:05", "Mar 3
 /// at 14:05" (with the year when it is not this year's).
 pub fn message_time(timestamp_ms: u64, now_ms: u64) -> String {
-    message_time_in(timestamp_ms, now_ms, &TimeZone::system())
+    message_time_lang(crate::i18n::language(), timestamp_ms, now_ms, &TimeZone::system())
 }
 
 /// The full date and time, for a hover hint: "Monday, March 3, 2026 at 14:05".
 pub fn full_time(timestamp_ms: u64) -> String {
-    full_time_in(timestamp_ms, &TimeZone::system())
+    full_time_lang(crate::i18n::language(), timestamp_ms, &TimeZone::system())
 }
 
 /// A date divider's label: "Today", "Yesterday", else "Nov 8" or "Nov 8, 2025".
 pub fn day_label(timestamp_ms: u64, now_ms: u64) -> String {
-    day_label_in(timestamp_ms, now_ms, &TimeZone::system())
+    day_label_lang(crate::i18n::language(), timestamp_ms, now_ms, &TimeZone::system())
 }
 
 const MINUTE_MS: u64 = 60_000;
@@ -131,49 +224,19 @@ const HOUR_MS: u64 = 3_600_000;
 /// Relative times ("3 hr ago") are used up to this age.
 const RELATIVE_LIMIT_MS: u64 = 6 * HOUR_MS;
 
-/// A day as people say it: "Today", "Yesterday", else "Nov 8" (this year) or
-/// "Nov 8, 2025": a message's time and the date dividers share it.
-fn day_phrase(at: &jiff::Zoned, now: &jiff::Zoned) -> String {
-    if at.date() == now.date() {
-        "Today".to_owned()
-    } else if now.date().yesterday().is_ok_and(|y| y == at.date()) {
-        "Yesterday".to_owned()
-    } else if at.year() == now.year() {
-        at.strftime("%b %-d").to_string()
-    } else {
-        at.strftime("%b %-d, %Y").to_string()
-    }
-}
-
+#[cfg(test)]
 pub(crate) fn message_time_in(timestamp_ms: u64, now_ms: u64, zone: &TimeZone) -> String {
-    let age = now_ms.saturating_sub(timestamp_ms);
-    if age < MINUTE_MS {
-        return "just now".into();
-    }
-    if age < HOUR_MS {
-        return format!("{} min ago", age / MINUTE_MS);
-    }
-    if age < RELATIVE_LIMIT_MS {
-        return format!("{} hr ago", age / HOUR_MS);
-    }
-    let (Some(at), Some(now)) = (zoned(timestamp_ms, zone), zoned(now_ms, zone)) else {
-        return String::new();
-    };
-    let clock = at.strftime("%H:%M");
-    format!("{} at {clock}", day_phrase(&at, &now))
+    message_time_lang("en", timestamp_ms, now_ms, zone)
 }
 
+#[cfg(test)]
 pub(crate) fn full_time_in(timestamp_ms: u64, zone: &TimeZone) -> String {
-    zoned(timestamp_ms, zone).map_or_else(String::new, |at| {
-        at.strftime("%A, %B %-d, %Y at %H:%M").to_string()
-    })
+    full_time_lang("en", timestamp_ms, zone)
 }
 
+#[cfg(test)]
 pub(crate) fn day_label_in(timestamp_ms: u64, now_ms: u64, zone: &TimeZone) -> String {
-    let (Some(at), Some(now)) = (zoned(timestamp_ms, zone), zoned(now_ms, zone)) else {
-        return String::new();
-    };
-    day_phrase(&at, &now)
+    day_label_lang("en", timestamp_ms, now_ms, zone)
 }
 
 #[cfg(test)]
@@ -266,5 +329,32 @@ mod relative_tests {
         assert_eq!(label(ms(2025, 11, 8, 12, 0, 0)), "Nov 8, 2025");
         // The same wording as a message's time, minus "at 12:00".
         assert_eq!(message_time_in(ms(2025, 11, 8, 12, 0, 0), now(), UTC), "Nov 8, 2025 at 12:00");
+    }
+}
+
+#[cfg(test)]
+mod language_tests {
+    use super::*;
+
+    #[test]
+    fn dates_and_numbers_are_written_the_way_the_language_does() {
+        let utc = &TimeZone::UTC;
+        let at = |y: i16, mo: i8, d: i8, h: i8| {
+            let z = jiff::civil::date(y, mo, d).at(h, 5, 0, 0).to_zoned(TimeZone::UTC).expect("zoned");
+            u64::try_from(z.timestamp().as_millisecond()).expect("positive")
+        };
+        let now = at(2026, 3, 10, 15);
+        assert_eq!(message_time_lang("es", at(2026, 3, 3, 14), now, utc), "3 mar a las 14:05");
+        assert_eq!(message_time_lang("es", at(2025, 12, 31, 23), now, utc), "31 dic 2025 a las 23:05");
+        assert_eq!(message_time_lang("es", at(2026, 3, 9, 14), now, utc), "Ayer a las 14:05");
+        assert_eq!(message_time_lang("es", now - 5 * 60_000, now, utc), "hace 5 min");
+        assert_eq!(full_time_lang("es", at(2026, 3, 3, 14), utc), "martes, 3 de marzo de 2026, 14:05");
+        assert_eq!(day_label_lang("es", at(2026, 3, 10, 1), now, utc), "Hoy");
+        assert_eq!(human_size_in("es", 12 * 1024 * 1024 + 300 * 1024), "12,3 MB");
+        assert_eq!(crate::i18n::number_in("es", 1_234_567), "1.234.567");
+        assert_eq!(crate::i18n::number_in("en", 1_234_567), "1,234,567");
+        assert_eq!(crate::i18n::number_in("en", 999), "999");
+        assert_eq!(crate::i18n::tn_in("es", "1 member", "%{count} members", 1), "1 miembro");
+        assert_eq!(crate::i18n::tn_in("es", "1 member", "%{count} members", 2500), "2.500 miembros");
     }
 }

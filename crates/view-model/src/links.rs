@@ -11,10 +11,7 @@ pub fn preview_name(room: &LinkedRoom) -> String {
 
 /// "1 member", "12 members".
 pub fn members_line(members: u64) -> String {
-    match members {
-        1 => "1 member".to_owned(),
-        n => format!("{n} members"),
-    }
+    crate::i18n::tn("1 member", "%{count} members", members)
 }
 
 /// The topic, unless it is blank.

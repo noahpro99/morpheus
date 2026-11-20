@@ -101,14 +101,14 @@ pub fn parse_custom(number: &str, unit: TimeUnit) -> Result<u64, String> {
 
 /// A time in words, in the biggest unit that holds it whole.
 pub fn describe_secs(secs: u64) -> String {
-    let (n, unit) = if secs >= 3600 && secs % 3600 == 0 {
-        (secs / 3600, "hour")
+    use crate::i18n::tn;
+    if secs >= 3600 && secs % 3600 == 0 {
+        tn("1 hour", "%{count} hours", secs / 3600)
     } else if secs >= 60 && secs % 60 == 0 {
-        (secs / 60, "minute")
+        tn("1 minute", "%{count} minutes", secs / 60)
     } else {
-        (secs, "second")
-    };
-    format!("{n} {unit}{}", if n == 1 { "" } else { "s" })
+        tn("1 second", "%{count} seconds", secs)
+    }
 }
 
 

@@ -79,19 +79,19 @@ pub fn panel(step: &VerificationStep, incoming: bool) -> Panel {
     };
     match step {
         VerificationStep::Requested if incoming => {
-            panel.text = "Another one of your devices wants to verify this one.".into();
+            panel.text = crate::i18n::t("Another one of your devices wants to verify this one.");
             panel.buttons = vec![
                 button("Accept", Kind::Primary, Action::Accept),
                 button("Decline", Kind::Secondary, Action::Cancel),
             ];
         }
         VerificationStep::Requested => {
-            panel.text = "Waiting for your other device to accept…".into();
+            panel.text = crate::i18n::t("Waiting for your other device to accept…");
             panel.buttons = vec![button("Cancel", Kind::Secondary, Action::Cancel)];
         }
-        VerificationStep::Ready => panel.text = "Connecting…".into(),
+        VerificationStep::Ready => panel.text = crate::i18n::t("Connecting…"),
         VerificationStep::ShowQr(code) => {
-            panel.text = "Scan this code with your other device.".into();
+            panel.text = crate::i18n::t("Scan this code with your other device.");
             panel.qr = Some(code.clone());
             panel.buttons = vec![
                 Button {
@@ -113,7 +113,7 @@ pub fn panel(step: &VerificationStep, incoming: bool) -> Panel {
             ];
         }
         VerificationStep::Reciprocated => {
-            panel.text = "Scanned. Confirm on your other device…".into()
+            panel.text = crate::i18n::t("Scanned. Confirm on your other device…")
         }
         VerificationStep::Emojis(emojis) => {
             panel.text =
@@ -125,15 +125,15 @@ pub fn panel(step: &VerificationStep, incoming: bool) -> Panel {
             ];
         }
         VerificationStep::Confirmed => {
-            panel.text = "Waiting for your other device to confirm…".into()
+            panel.text = crate::i18n::t("Waiting for your other device to confirm…")
         }
         // Nothing to dismiss: the panel steps aside by itself.
         VerificationStep::Done => {
-            panel.text = "Verified. Encrypted messages will now sync between your devices.".into();
+            panel.text = crate::i18n::t("Verified. Encrypted messages will now sync between your devices.");
             panel.tone = Tone::Ok;
         }
         VerificationStep::Cancelled(reason) => {
-            panel.text = format!("Verification cancelled: {reason}");
+            panel.text = crate::i18n::tf("Verification cancelled: %{reason}", &[("reason", &reason)]);
             panel.tone = Tone::Error;
             panel.buttons = vec![button("Close", Kind::Secondary, Action::Dismiss)];
         }

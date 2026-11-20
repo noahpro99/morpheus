@@ -91,6 +91,37 @@ pub fn plural<'a>(n: u64, one: &'a str, other: &'a str) -> &'a str {
     if n == 1 { one } else { other }
 }
 
+/// A count with its noun: `tn("1 reply", "%{count} replies", n)` is the first key for 1
+/// and the second otherwise, with `%{count}` filled in (formatted for the language).
+pub fn tn(one: &str, other: &str, n: u64) -> String {
+    tn_in(language(), one, other, n)
+}
+
+pub fn tn_in(code: &str, one: &str, other: &str, n: u64) -> String {
+    tf_in(code, plural(n, one, other), &[("count", &number_in(code, n))])
+}
+
+/// A whole number with the language's thousands separator: 1,234 / 1.234.
+pub fn number_in(code: &str, n: u64) -> String {
+    let digits = n.to_string();
+    let separator = match code {
+        "es" => ".",
+        _ => ",",
+    };
+    let mut out = String::new();
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i) % 3 == 0 {
+            out.push_str(separator);
+        }
+        out.push(c);
+    }
+    out
+}
+
+pub fn number(n: u64) -> String {
+    number_in(language(), n)
+}
+
 /// What the person picked: the system's language (the default), or one of ours.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Choice {
@@ -164,6 +195,7 @@ pub fn dynamic_keys() -> Vec<&'static str> {
     keys.extend(NotificationContent::ALL.iter().map(|c| c.label()));
     keys.extend(crate::menu::translatable_labels());
     keys.extend(crate::settings::translatable_labels());
+    keys.extend(crate::toast::WHATS);
     keys
 }
 
@@ -234,7 +266,31 @@ mod tests {
     /// The functions whose first argument, when a string literal, is text the app shows
     /// (and so a key): `t` and `tf`, and the settings screens' helpers that translate
     /// what they are given.
-    const CALLS: &[&str] = &["t", "tf", "muted", "note", "section", "section_classed", "group", "label"];
+    const CALLS: &[&str] = &["t", "tf", "tn", "muted", "note", "section", "section_classed", "group", "label"];
+
+    /// The string literal whose text starts at `s` (just after its opening quote): its
+    /// value, and what follows the closing quote.
+    fn literal(s: &str) -> Option<(String, &str)> {
+        let mut key = String::new();
+        let mut chars = s.chars();
+        while let Some(c) = chars.next() {
+            match c {
+                '\\' => match chars.next() {
+                    Some('n') => key.push('\n'),
+                    Some('u') => {
+                        // \u{2019}
+                        let hex: String = chars.by_ref().skip(1).take_while(|c| *c != '}').collect();
+                        key.push(u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32).unwrap_or('?'));
+                    }
+                    Some(other) => key.push(other),
+                    None => return None,
+                },
+                '"' => return Some((key, chars.as_str())),
+                c => key.push(c),
+            }
+        }
+        None
+    }
 
     /// Every such literal in the workspace's UI code: the keys the app uses.
     pub(crate) fn keys_used() -> Vec<(String, String)> {
@@ -274,25 +330,16 @@ mod tests {
                     if bytes.get(i) != Some(&b'"') {
                         continue;
                     }
-                    let mut key = String::new();
-                    let mut chars = code[i + 1..].chars();
-                    while let Some(c) = chars.next() {
-                        match c {
-                            '\\' => match chars.next() {
-                                Some('n') => key.push('\n'),
-                                Some('u') => {
-                                    // \u{2019}
-                                    let hex: String = chars.by_ref().skip(1).take_while(|c| *c != '}').collect();
-                                    key.push(u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32).unwrap_or('?'));
-                                }
-                                Some(other) => key.push(other),
-                                None => break,
-                            },
-                            '"' => break,
-                            c => key.push(c),
-                        }
-                    }
+                    let Some((key, rest)) = literal(&code[i + 1..]) else { continue };
                     keys.push((key, file.display().to_string()));
+                    // `tn("1 reply", "%{count} replies", n)`: the plural's second key too.
+                    if *name == "tn"
+                        && let Some(rest) = rest.trim_start().strip_prefix(',')
+                        && let Some(rest) = rest.trim_start().strip_prefix('"')
+                        && let Some((other, _)) = literal(rest)
+                    {
+                        keys.push((other, file.display().to_string()));
+                    }
                 }
             }
         }

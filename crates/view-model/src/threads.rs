@@ -13,21 +13,17 @@ pub fn chip_latest(thread: &ThreadSummary) -> Option<String> {
     thread
         .latest_sender_name
         .as_ref()
-        .map(|name| format!("· last from {name}"))
+        .map(|name| crate::i18n::tf("· last from %{name}", &[("name", name)]))
 }
 
 fn plural_replies(count: u32) -> String {
-    if count == 1 {
-        "1 reply".to_owned()
-    } else {
-        format!("{count} replies")
-    }
+    crate::i18n::tn("1 reply", "%{count} replies", u64::from(count))
 }
 
 /// The line under a thread's root in its panel.
 pub fn reply_count_label(root: &Message) -> String {
     match root.thread.as_ref().map(|t| t.reply_count) {
-        None | Some(0) => "No replies yet".to_owned(),
+        None | Some(0) => crate::i18n::t("No replies yet"),
         Some(n) => plural_replies(n),
     }
 }

@@ -171,15 +171,15 @@ fn mask_para(para: &Para, mask: &dyn Fn(&str) -> String) -> Para {
 /// What the question says when a room is about to open during a share.
 pub fn open_question(name: &str, dm: bool) -> String {
     if dm {
-        format!("You're sharing your screen. Open the chat with {name}?")
+        crate::i18n::tf("You're sharing your screen. Open the chat with %{name}?", &[("name", name)])
     } else {
-        format!("You're sharing your screen. Open #{name}?")
+        crate::i18n::tf("You're sharing your screen. Open #%{name}?", &[("name", name)])
     }
 }
 
 /// The question before a server's welcome screen (it lists channels) shows.
 pub fn open_server_question(name: &str) -> String {
-    format!("You're sharing your screen. Open the server {name}?")
+    crate::i18n::tf("You're sharing your screen. Open the server %{name}?", &[("name", name)])
 }
 
 #[cfg(test)]
