@@ -55,6 +55,7 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         model.calls.appBack()
+        model.ringModel.onScreen()
     }
 
     override fun onNewIntent(intent: android.content.Intent) {
@@ -64,6 +65,12 @@ class MainActivity : ComponentActivity() {
 
     /** A tap on a notification names the room to show. */
     private fun openRoomOf(intent: android.content.Intent?) {
+        intent?.getStringExtra(Ringer.EXTRA_RING)?.let {
+            // A ring that fills the screen shows over the lock screen.
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        }
+        intent?.getStringExtra(Ringer.EXTRA_ANSWER)?.let { model.answerWhenSignedIn(it, intent.getStringExtra(Ringer.EXTRA_ANSWER_NAME).orEmpty()) }
         intent?.getStringExtra(dev.morpheus.app.push.Push.EXTRA_ROOM)?.let { model.openRoomWhenKnown(it) }
     }
 }

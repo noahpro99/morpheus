@@ -324,6 +324,8 @@ enum Next {
     Key(Option<morpheus_core::CallKey>),
     Rooms(Option<Vec<morpheus_core::VectorDiff<RoomSummary>>>),
     Command(Option<Command>),
+    /// A token for listening on another homeserver's SFU (its service, the token).
+    Focus(String, Result<morpheus_core::CallCredentials, String>),
     Tick,
 }
 
@@ -680,6 +682,38 @@ async fn run_call(
     let members = session.call_members(room_id.clone()).await.unwrap_or_default();
     let mut keyed = devices_of(&members);
     let mut members_checked = std::time::Instant::now();
+    // People on other homeservers publish on their own SFUs: this call listens on each of
+    // them too, and its own stays the one it publishes on (the desktop does the same).
+    let (focus_tx, mut focus_rx) = mpsc::unbounded_channel::<(String, Result<morpheus_core::CallCredentials, String>)>();
+    let mut focus_asked: HashMap<String, std::time::Instant> = HashMap::new();
+    let me_device = session.device_id().unwrap_or_default();
+    let me_user = session.user_id();
+    let mut sync_foci = |call: &Call, members: &[morpheus_core::CallMember], asked: &mut HashMap<String, std::time::Instant>| {
+        let Some(me) = me_user.as_ref() else { return };
+        let wanted = morpheus_core::foci_to_subscribe(members, &credentials.service_url, (me, &me_device));
+        let listening = call.listening();
+        for (service, _) in listening.iter().filter(|(s, _)| !wanted.contains(s)) {
+            runtime().spawn(call.unsubscribe(service));
+        }
+        asked.retain(|service, _| wanted.contains(service));
+        for service in wanted {
+            if listening.iter().any(|(s, live)| *s == service && *live) {
+                continue;
+            }
+            if asked.get(&service).is_some_and(|at| at.elapsed() < Duration::from_secs(5)) {
+                continue;
+            }
+            asked.insert(service.clone(), std::time::Instant::now());
+            let token = session.call_focus_token(room_id.clone(), service.clone());
+            let tx = focus_tx.clone();
+            runtime().spawn(async move {
+                let _ = tx.send((service, token.await.map_err(|e| e.to_string())));
+            });
+        }
+    };
+    if let Some(call) = &call {
+        sync_foci(call, &members, &mut focus_asked);
+    }
     let mut leaving: Option<oneshot::Sender<()>> = None;
 
     'call: loop {
@@ -699,6 +733,13 @@ async fn run_call(
             }
             .fuse();
             let rooms = async { Next::Rooms(room_updates.next().await) }.fuse();
+            let focus = async {
+                match focus_rx.recv().await {
+                    Some((service, token)) => Next::Focus(service, token),
+                    None => std::future::pending().await,
+                }
+            }
+            .fuse();
             let command = async { Next::Command(inbox.recv().await) }.fuse();
             let tick = async {
                 tokio::select! {
@@ -708,12 +749,13 @@ async fn run_call(
                 Next::Tick
             }
             .fuse();
-            futures_util::pin_mut!(event, key, rooms, command, tick);
+            futures_util::pin_mut!(event, key, rooms, command, focus, tick);
             futures_util::select_biased! {
                 next = command => next,
                 next = event => next,
                 next = key => next,
                 next = rooms => next,
+                next = focus => next,
                 next = tick => next,
             }
         };
@@ -725,10 +767,24 @@ async fn run_call(
                     runtime().spawn(share_key());
                 }
                 keyed = devices;
+                if let Some(call) = &call {
+                    sync_foci(call, &members, &mut focus_asked);
+                }
             }
         }
         match next {
             Next::Tick => {}
+            Next::Focus(service, Err(err)) => tracing::warn!(%service, %err, "no token to listen on another homeserver's call service"),
+            Next::Focus(service, Ok(token)) => {
+                if let Some(call) = &call {
+                    let connecting = call.subscribe(&service, &token.livekit_url, &token.jwt);
+                    runtime().spawn(async move {
+                        if let Err(err) = connecting.await {
+                            tracing::warn!(%service, %err, "could not listen on another homeserver's call service");
+                        }
+                    });
+                }
+            }
             Next::Rooms(None) => {}
             Next::Rooms(Some(batch)) => {
                 for diff in batch {

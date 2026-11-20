@@ -34,6 +34,7 @@ fun Root(model: AppModel) {
             .semantics { testTagsAsResourceId = true },
     ) {
         CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground) {
+        val rings by model.ringModel.rings.collectAsState()
             when (val current = screen) {
                 Screen.Loading -> CircularProgressIndicator(
                     Modifier.align(Alignment.Center).testTag("loading"),
@@ -64,6 +65,9 @@ fun Root(model: AppModel) {
                         }
                     }
                 }
+            }
+            rings.lastOrNull()?.takeIf { screen is Screen.SignedIn }?.let { ring ->
+                Box(Modifier.align(Alignment.TopCenter)) { RingCard(ring, { model.answerRing(ring) }, { model.declineRing(ring) }) }
             }
         }
     }

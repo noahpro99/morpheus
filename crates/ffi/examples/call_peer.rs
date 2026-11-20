@@ -4,6 +4,7 @@
 //! signs in as `bob`, sends a test tone for a microphone and a test pattern
 //! for its camera and screen, and does what the lines on its input say:
 //!
+//! - `callroom <room id>` joins the call of that room (a direct message rings the other person);
 //! - `join <room name>`, `mute`, `deafen`, `camera on|off`, `screen on|off`,
 //!   `leave` (then it exits);
 //! - each change of the call is a line on its output:
@@ -76,7 +77,9 @@ async fn main() {
     let homeserver = std::env::var("MORPHEUS_TEST_HOMESERVER").expect("MORPHEUS_TEST_HOMESERVER");
     let dir = tempfile::tempdir().expect("dir");
     let app = Morpheus::new(dir.path().display().to_string()).expect("app");
-    app.login(homeserver, "bob".into(), "bob-password".into()).await.expect("bob signs in");
+    // Bob, unless MORPHEUS_PEER_USER names someone else (their password is "<name>-password").
+    let user = std::env::var("MORPHEUS_PEER_USER").unwrap_or_else(|_| "bob".into());
+    app.login(homeserver, user.clone(), format!("{user}-password")).await.expect("bob signs in");
     let (tx, mut rooms) = mpsc::unbounded_channel();
     let _watch = app.watch_sidebar(Arc::new(Rooms(std::sync::Mutex::new(tx)))).await.expect("the list");
     println!("ready");
@@ -118,6 +121,17 @@ async fn main() {
                             Some(id) => call = Some(app.join_call(id, Arc::new(Calls)).await.expect("joins")),
                             None => pending = Some(rest.to_owned()),
                         }
+                    }
+                    // A room by its id.
+                    "callroom" => {
+                        // An invite to it (the DM was just made) is accepted first.
+                        for _ in 0..15 {
+                            if app.accept_invite(rest.to_owned()).await.is_ok() {
+                                break;
+                            }
+                            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                        }
+                        call = Some(app.join_call(rest.to_owned(), Arc::new(Calls)).await.expect("joins"));
                     }
                     "mute" => call.iter().for_each(|c| c.toggle_mute()),
                     "deafen" => call.iter().for_each(|c| c.toggle_deafen()),

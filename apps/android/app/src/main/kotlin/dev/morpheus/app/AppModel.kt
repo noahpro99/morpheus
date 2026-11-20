@@ -44,6 +44,33 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
     /** The call this account is in, if any (it outlives the screens). */
     val calls: CallModel = CallModel(morpheus, morpheusApp ?: error("an application"))
 
+    /** Calls ringing this account (a card on screen; the phone's notification away). */
+    val ringModel = RingModel(morpheusApp ?: error("an application"))
+    private var ringWatch: uniffi.morpheus_ffi.TaskHandle? = null
+
+    /** Answer a ring: the call joins, and the ring is done. */
+    fun answerRing(ring: uniffi.morpheus_ffi.IncomingRing) {
+        ringModel.done(ring)
+        startCall(ring.roomId, ring.caller)
+    }
+
+    fun declineRing(ring: uniffi.morpheus_ffi.IncomingRing) {
+        ringModel.done(ring)
+        viewModelScope.launch {
+            try {
+                morpheus.declineCall(ring.roomId, ring.notification)
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    /** A notification's Answer: the call joins once the account is signed in. */
+    private val pendingAnswer = MutableStateFlow<Pair<String, String>?>(null)
+
+    fun answerWhenSignedIn(roomId: String, name: String) {
+        pendingAnswer.value = roomId to name
+    }
+
     /** Asked of the activity: the microphone permission, before a call joins. */
     val needMicrophone = MutableStateFlow<Pair<String, String>?>(null)
 
@@ -85,6 +112,7 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
 
     fun open(room: RoomItem) {
         _room.value = room
+        AppState.room = room.id
         AppState.screen = "room"
     }
 
@@ -223,6 +251,7 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
 
     fun closeRoom() {
         _room.value = null
+        AppState.room = ""
         AppState.screen = _screen.value.name()
     }
 
@@ -246,6 +275,15 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
 
     private fun signedInChanged(screen: Screen) {
         securityScope?.cancel()
+        ringWatch?.cancel()
+        ringWatch = null
+        if (screen is Screen.SignedIn) viewModelScope.launch {
+            try {
+                ringWatch = morpheus.watchRings(ringModel)
+            } catch (_: Exception) {
+            }
+        }
+        pendingAnswer.value?.let { (room, name) -> if (screen is Screen.SignedIn) { pendingAnswer.value = null; startCall(room, name) } }
         if (screen is Screen.SignedIn) viewModelScope.launch {
             try {
                 People.ignored.value = morpheus.ignoredPeople().toSet()
@@ -323,6 +361,7 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         // screen is there while the server is told.
         _newOpen.value = false
         _room.value = null
+        AppState.room = ""
         _screen.value = Screen.SignedOut
         viewModelScope.launch {
             try {
@@ -362,4 +401,8 @@ object AppState {
     /** The last web link opened from a message (the debug bridge reports it). */
     @Volatile
     var lastLink: String = ""
+
+    /** The room on screen (the debug bridge reports it). */
+    @Volatile
+    var room: String = ""
 }

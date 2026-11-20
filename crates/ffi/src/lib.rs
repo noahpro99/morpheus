@@ -27,6 +27,7 @@ mod error;
 mod media;
 mod people;
 mod push;
+mod rings;
 mod room_info;
 mod security;
 mod settings;
@@ -46,6 +47,7 @@ pub use settings::{Appearance, LanguageChoice, NotifyDefaults, PaletteItem, Them
 pub use room_info::{PreviewCard, PreviewSettings, HitItem, MemberItem, MemberRow, ProfileCard, TypingListener};
 pub use people::{DirectoryItem, DirectoryPage, FriendItem, InviteItem};
 pub use push::{PushNotice, preview_push};
+pub use rings::{IncomingRing, RingListener};
 pub use security::{
     ButtonKind, IncomingVerificationListener, PanelButton, PanelCode, PanelEmoji, PanelTone, RecoveryKind,
     SecurityStatus, VerificationAction, VerificationFlow, VerificationListener, VerificationPanel,

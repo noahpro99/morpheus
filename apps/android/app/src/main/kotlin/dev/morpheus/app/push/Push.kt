@@ -86,8 +86,11 @@ object Push {
                 null
             }
         }
-        // A call is the call screen's (later); nothing worded means nothing to show.
-        if (notice?.call == true) return
+        // A call rings as the phone's: the notification that fills the screen.
+        if (notice?.call == true) {
+            dev.morpheus.app.Ringer.show(context, payload.roomId, payload.eventId, notice.sender.ifEmpty { notice.title })
+            return
+        }
         manager.createNotificationChannel(NotificationChannel(CHANNEL, "Messages", NotificationManager.IMPORTANCE_HIGH))
         val open = Intent(context, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)

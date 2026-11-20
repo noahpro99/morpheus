@@ -170,6 +170,7 @@ class TestBridge(private val app: Application) {
             JSONObject()
                 .put("screen", AppState.screen)
                 .put("last_link", AppState.lastLink)
+                .put("room", AppState.room)
                 .put("version", BuildConfig.VERSION_NAME)
         }
         else -> error("unknown op $op")

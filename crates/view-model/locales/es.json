@@ -320,6 +320,9 @@
   "Use": "Usar",
   "Username": "Usuario",
   "Verify this device to read your encrypted messages": "Verifica este dispositivo para leer tus mensajes cifrados",
+  "Answer": "Responder",
+  "Incoming call": "Llamada entrante",
+  "%{name} is calling": "%{name} te llama",
   "Verify with another device": "Verificar con otro dispositivo",
   "Your recovery key. Keep it somewhere safe: it is shown only once.": "Tu clave de recuperación. Guárdala en un lugar seguro: solo se muestra una vez."
 }
