@@ -787,39 +787,6 @@ fn sized(
     }
 }
 
-/// A card's Enlarge (or, focused, Shrink) at its top right, shown on a hover.
-fn focus_button(shell: &Shell, cx: &mut Context<Shell>, key: &str, group: &str) -> AnyElement {
-    let focused = shell.calls.focus.as_deref() == Some(key);
-    let card = key.to_owned();
-    div()
-        .id(gpui::SharedString::from(format!("enlarge-{key}")))
-        .absolute()
-        .top(px(8.0))
-        .right(px(8.0))
-        .size(px(32.0))
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded(px(theme::RADIUS_SM))
-        .bg(black(0.6))
-        .opacity(0.0)
-        .group_hover(gpui::SharedString::from(group.to_owned()), |s| {
-            s.opacity(1.0)
-        })
-        .cursor_pointer()
-        .child(
-            icon(if focused { "minimize-2" } else { "maximize-2" }, 16.0).text_color(rgb(theme::OVERLAY_TEXT)),
-        )
-        .on_click(cx.listener(move |this, _, _, cx| {
-            cx.stop_propagation();
-            this.toggle_focus(&card, cx);
-        }))
-        .tip(if focused { "Shrink" } else { "Enlarge" })
-        .e2e("button", "card-enlarge")
-        .attr("title", if focused { "Shrink" } else { "Enlarge" })
-        .into_any_element()
-}
-
 /// What a shared screen's tile shows until its first picture comes: a screen
 /// in the middle, pulsing a little.
 fn screen_skeleton() -> AnyElement {
@@ -1022,7 +989,6 @@ fn person_card(
     })
     // The ring is the card's; the picture inside has none of its own.
     .child(avatar(picture_of(shell, user, 72), &name, size, None))
-    .child(focus_button(shell, cx, &key, &group))
     .child(name_label(name, false));
     if let Some(marks) = card_marks(flags) {
         tile = tile.child(marks);
@@ -1223,7 +1189,6 @@ fn video_card(
         );
     }
     tile = tile
-        .child(focus_button(shell, cx, &key, &group))
         .child(name_label(label, feed.screen));
     // Someone else's screen with sound: how it sounds here, and its volume.
     let heard = (feed.screen && !own)
