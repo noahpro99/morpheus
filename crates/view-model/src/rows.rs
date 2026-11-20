@@ -243,6 +243,67 @@ pub fn changed_range(old: &[Row], new: &[Row]) -> (usize, usize, usize) {
     (start, old.len() - start - tail, new.len() - start - tail)
 }
 
+/// What changed from `old` to `new` as several edits, for when rows changed at both ends
+/// (older messages arriving above while something changes at the bottom): each is
+/// (`start` in `old`, `removed` old rows, `added` new rows), in order of `start`; apply them
+/// last first so the starts stay right. Rows between the edits keep their place in the list
+/// (and so their measured heights), where [`changed_range`] would replace everything between
+/// the first and the last change.
+pub fn changed_ranges(old: &[Row], new: &[Row]) -> Vec<(usize, usize, usize)> {
+    let new_at: HashMap<String, usize> = new
+        .iter()
+        .enumerate()
+        .filter_map(|(ix, row)| Some((row.key()?, ix)))
+        .collect();
+    let mut edits: Vec<(usize, usize, usize)> = Vec::new();
+    let mut push = |start: usize, removed: usize, added: usize| {
+        if let Some(last) = edits.last_mut()
+            && last.0 + last.1 == start
+        {
+            last.1 += removed;
+            last.2 += added;
+            return;
+        }
+        edits.push((start, removed, added));
+    };
+    let (mut i, mut j) = (0, 0);
+    while i < old.len() && j < new.len() {
+        if old[i] == new[j] {
+            i += 1;
+            j += 1;
+            continue;
+        }
+        let (old_key, new_key) = (old[i].key(), new[j].key());
+        match old_key.as_ref().and_then(|k| new_at.get(k)).copied() {
+            // The same row, changed.
+            Some(p) if p == j => {
+                push(i, 1, 1);
+                i += 1;
+                j += 1;
+            }
+            // The row is further down: what comes before it is new.
+            Some(p) if p > j => {
+                push(i, 0, p - j);
+                j = p;
+            }
+            // Gone (or a placeholder).
+            _ => {
+                if old_key.is_none() && new_key.is_none() {
+                    push(i, 1, 1);
+                    j += 1;
+                } else {
+                    push(i, 1, 0);
+                }
+                i += 1;
+            }
+        }
+    }
+    if i < old.len() || j < new.len() {
+        push(i, old.len() - i, new.len() - j);
+    }
+    edits
+}
+
 impl Row {
     /// What identifies this row across rebuilds (`None` for a placeholder).
     fn key(&self) -> Option<String> {
@@ -535,6 +596,23 @@ mod tests {
         assert!(to > from, "pushed down by the older messages");
     }
 
+
+    #[test]
+    fn older_rows_above_and_a_change_below_leave_the_rows_between_alone() {
+        let a = |id: &str| Row::Date(id.into(), id.len() as u64 * 7 + u64::from(id.as_bytes()[0]));
+        let (s, x, y, z, w, n) = (a("s"), a("xx"), a("yyy"), a("zzzz"), a("wwwww"), a("nnnnnn"));
+        let sk = Row::Skeleton { older: true };
+        let old = [sk.clone(), x.clone(), y.clone(), z.clone()];
+        let new = [sk.clone(), s, w, x, y, z, n];
+        let edits = changed_ranges(&old, &new);
+        assert_eq!(edits, vec![(1, 0, 2), (4, 0, 1)], "two small edits, not one over everything");
+        assert_eq!(changed_range(&old, &new), (1, 3, 6), "the single range replaces it all");
+        assert!(changed_ranges(&new, &new).is_empty());
+        assert!(changed_ranges(&[], &[]).is_empty());
+        // A row changed in place, a row dropped.
+        let changed = [sk.clone(), a("xx"), a("q")];
+        assert_eq!(changed_ranges(&[sk.clone(), a("xx"), a("yyy")], &changed), vec![(2, 1, 1)]);
+    }
     #[test]
     fn what_changed_is_the_middle() {
         let a = |id: &str| Row::Date(id.into(), id.len() as u64 * 7 + u64::from(id.as_bytes()[0]));

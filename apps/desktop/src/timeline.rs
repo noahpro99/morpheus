@@ -42,7 +42,7 @@ use crate::{
     },
     view_model::nicknames::NickMap,
     view_model::rows::{
-        MessageRow, Row, anchor_row, changed_range, first_unread_after_marker, first_unread_since,
+        MessageRow, Row, anchor_row, changed_ranges, first_unread_after_marker, first_unread_since,
         group_rows,
     },
 };
@@ -797,7 +797,10 @@ impl TimelineView {
         {
             rows.push(Row::Start);
         }
-        let (start, removed, added) = changed_range(&self.rows, &rows);
+        // Several small edits, not one over everything between the first change and the last:
+        // older rows arriving above while something changes at the bottom must not make
+        // the list forget the measured height of every row in between.
+        let edits = changed_ranges(&self.rows, &rows);
         // A view scrolled up stays on the row it was on: the list keeps its
         // place by row number, which older rows (or a replaced run of rows)
         // arriving above or around it would otherwise move.
@@ -812,8 +815,10 @@ impl TimelineView {
             let y = f32::from(rect.top() - self.list.viewport_bounds().top());
             (y > 0.5).then_some(y)
         });
-        if removed > 0 || added > 0 {
-            self.list.splice(start..start + removed, added);
+        if !edits.is_empty() {
+            for &(start, removed, added) in edits.iter().rev() {
+                self.list.splice(start..start + removed, added);
+            }
             if let Some((was, now)) = anchor {
                 if let Some(y) = below_top {
                     self.anchor_fix = Some((now, y));
