@@ -153,6 +153,42 @@ jobs:
           TAG: ${{ inputs.tag || github.ref_name }}
         run: gh release upload "$TAG" "$RELEASE_ZIP" "$RELEASE_DMG" --clobber
 
+  # A debug build (what `cargo run` makes) never asks the keychain (#159): run
+  # headless on a fresh locked keychain with every Security.framework item call
+  # logged with its call stack (scripts/keychain-trace.c); any call fails it.
+  keychain-debug:
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Rust
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - name: Metal compiler
+        run: |
+          if ! xcrun -sdk macosx metal --version >/dev/null 2>&1; then
+            xcodebuild -downloadComponent MetalToolchain || true
+          fi
+          if xcrun -sdk macosx metal --version >/dev/null 2>&1; then
+            echo "FEATURES=" >> "$GITHUB_ENV"
+          else
+            echo "FEATURES=--features runtime-shaders" >> "$GITHUB_ENV"
+          fi
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: macos-debug
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build (debug)
+        run: cargo build -p morpheus-desktop --locked $FEATURES
+
+      - name: No keychain call
+        timeout-minutes: 10
+        run: scripts/keychain-debug-check.sh target/debug/morpheus-desktop
+
   # The phone app for iPhone: an unsigned .ipa (Apple only installs apps
   # signed for the device; AltStore or SideStore sign it with the
   # installer's own Apple ID).

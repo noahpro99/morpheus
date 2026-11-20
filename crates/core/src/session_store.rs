@@ -155,6 +155,9 @@ struct OsKeychain;
 #[cfg(not(target_arch = "wasm32"))]
 impl OsKeychain {
     fn entry(account: &str) -> std::result::Result<Entry, String> {
+        // Debug builds say who asks (#159): any keychain access is a bug there.
+        #[cfg(debug_assertions)]
+        tracing::warn!(account, "keychain access from:\n{}", std::backtrace::Backtrace::force_capture());
         Entry::new(SERVICE, account).map_err(|err| err.to_string())
     }
 }
