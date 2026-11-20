@@ -114,4 +114,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     // UniFFI's Kotlin calls the library through JNA.
     implementation("net.java.dev.jna:jna:5.14.0@aar")
+    implementation("org.unifiedpush.android:connector:3.0.10")
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20231013")
 }

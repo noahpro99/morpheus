@@ -16,7 +16,7 @@ class MainActivity : ComponentActivity() {
         object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                AppModel((application as MorpheusApp).morpheus) as T
+                AppModel((application as MorpheusApp).morpheus, application as MorpheusApp) as T
         }
     }
 
@@ -29,5 +29,17 @@ class MainActivity : ComponentActivity() {
         setContent {
             MorpheusTheme { Root(model) }
         }
+        if (savedInstanceState == null) dev.morpheus.app.push.Push.start(this)
+        openRoomOf(intent)
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        openRoomOf(intent)
+    }
+
+    /** A tap on a notification names the room to show. */
+    private fun openRoomOf(intent: android.content.Intent?) {
+        intent?.getStringExtra(dev.morpheus.app.push.Push.EXTRA_ROOM)?.let { model.openRoomWhenKnown(it) }
     }
 }

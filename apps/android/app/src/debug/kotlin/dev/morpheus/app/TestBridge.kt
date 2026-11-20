@@ -152,6 +152,20 @@ class TestBridge(private val app: Application) {
             hook(request.getString("name"), request.getString("mime"), request.getString("text").toByteArray())
             true
         }
+        "push" -> {
+            dev.morpheus.app.push.Push.visible = false // as if the app were in the background
+            val bytes = request.getString("body").toByteArray()
+            thread { dev.morpheus.app.push.Push.onPush(app, bytes) }
+            true
+        }
+        "notifications" -> {
+            val manager = app.getSystemService(android.app.NotificationManager::class.java)
+            JSONArray(manager.activeNotifications.map {
+                JSONObject()
+                    .put("title", it.notification.extras.getCharSequence(android.app.Notification.EXTRA_TITLE)?.toString())
+                    .put("text", it.notification.extras.getCharSequence(android.app.Notification.EXTRA_TEXT)?.toString())
+            })
+        }
         "state" -> onMain {
             JSONObject()
                 .put("screen", AppState.screen)

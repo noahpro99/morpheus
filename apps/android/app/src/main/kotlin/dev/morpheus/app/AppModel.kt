@@ -36,7 +36,14 @@ sealed interface Screen {
 }
 
 /** Signing in, restoring and signing out; the rest of the app lives under [Screen.SignedIn]. */
-class AppModel(val morpheus: Morpheus) : ViewModel() {
+class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = null) : ViewModel() {
+    /** A room a notification asked for; opened once the channel list has it. */
+    private val pendingRoom = MutableStateFlow<String?>(null)
+
+    fun openRoomWhenKnown(roomId: String) {
+        pendingRoom.value = roomId
+    }
+
     private val _screen = MutableStateFlow<Screen>(Screen.Loading)
     val screen: StateFlow<Screen> = _screen.asStateFlow()
 
@@ -107,9 +114,16 @@ class AppModel(val morpheus: Morpheus) : ViewModel() {
 
     init {
         _screen.onEach { AppState.screen = it.name(); signedInChanged(it) }.launchIn(viewModelScope)
+        kotlinx.coroutines.flow.combine(pendingRoom, sidebar) { id, bar -> id to bar }.onEach { (id, bar) ->
+            val room = bar?.scopes?.flatMap { it.sections }?.flatMap { it.rooms }?.firstOrNull { it.id == id }
+            if (room != null) {
+                pendingRoom.value = null
+                open(room)
+            }
+        }.launchIn(viewModelScope)
         viewModelScope.launch {
             _screen.value = try {
-                morpheus.restoreSession()?.let { Screen.SignedIn(it) } ?: Screen.SignedOut
+                morpheus.restoreSession()?.let { morpheusApp?.registerPushNow(); Screen.SignedIn(it) } ?: Screen.SignedOut
             } catch (e: Exception) {
                 _error.value = e.sentence()
                 Screen.SignedOut
@@ -124,6 +138,7 @@ class AppModel(val morpheus: Morpheus) : ViewModel() {
         viewModelScope.launch {
             try {
                 _screen.value = Screen.SignedIn(morpheus.login(homeserver.trim(), username.trim(), password))
+                morpheusApp?.registerPushNow()
             } catch (e: Exception) {
                 _error.value = e.sentence()
             } finally {

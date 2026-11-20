@@ -13,6 +13,14 @@
         android:theme="@android:style/Theme.Material.NoActionBar"
         android:enableOnBackInvokedCallback="true">
 
+        <service
+            android:name=".push.MorpheusPushService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="org.unifiedpush.android.connector.PUSH_EVENT" />
+            </intent-filter>
+        </service>
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

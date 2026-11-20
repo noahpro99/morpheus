@@ -1,6 +1,7 @@
 package dev.morpheus.app
 
 import android.app.Application
+import kotlinx.coroutines.launch
 import uniffi.morpheus_ffi.Morpheus
 
 class MorpheusApp : Application() {
@@ -9,8 +10,24 @@ class MorpheusApp : Application() {
         Morpheus(filesDir.resolve("morpheus").apply { mkdirs() }.absolutePath)
     }
 
+    private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
+
+    /** Tell the homeserver where to push, when there is both a push endpoint and a signed-in account. */
+    fun registerPushNow() {
+        val endpoint = dev.morpheus.app.push.Push.endpoint(this) ?: return
+        if (morpheus.account() == null) return
+        scope.launch {
+            try {
+                morpheus.registerPush(endpoint, android.os.Build.MODEL)
+            } catch (e: Exception) {
+                android.util.Log.w("MorpheusPush", "registering the pusher failed: $e")
+            }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         DebugHooks.install(this)
+        dev.morpheus.app.push.Push.track(this)
     }
 }
