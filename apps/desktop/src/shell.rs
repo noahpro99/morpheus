@@ -403,6 +403,11 @@ impl Shell {
             },
         )
         .detach();
+        cx.subscribe(
+            &settings,
+            |this, _, imported: &crate::settings::ThemeImported, cx| this.apply_shared_theme(imported.0, cx),
+        )
+        .detach();
         cx.subscribe(&settings, |this, _, chosen: &ThemeChosen, cx| {
             this.choose_theme(chosen.0, cx)
         })

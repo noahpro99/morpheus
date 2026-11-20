@@ -535,6 +535,7 @@ impl SettingsView {
             .into_any_element(),
             self.custom_colour_section(cx).into_any_element(),
             self.glass_section(cx).into_any_element(),
+            self.share_section(cx).into_any_element(),
             self.history_section(cx).into_any_element(),
             keyboard.into_any_element(),
             previews_section.into_any_element(),
@@ -1823,7 +1824,8 @@ impl SettingsView {
             .e2e("button", "danger")
             .text("Remove picture");
         let cancel = button("cancel-picture", "Cancel", Kind::Secondary, "")
-            .child("Cancel")
+            .child(icon("x", 16.0).text_color(rgb(theme::text())))
+                                        .child("Cancel")
             .on_click(cx.listener(|this, _, _, cx| {
                 this.picked = None;
                 cx.notify();
@@ -2182,6 +2184,234 @@ impl SettingsView {
         section("Frosted glass", "glass", body, self.hl("glass"))
     }
 
+    /// The look as it is now, as a shareable code.
+    fn shared_now(&self) -> crate::view_model::theme_share::SharedTheme {
+        crate::view_model::theme_share::SharedTheme {
+            theme: self.theme,
+            colour: self.custom,
+            glass: self.glass,
+        }
+    }
+
+    /// What was typed or pasted into the import box, read: a preview or the reason not.
+    pub(super) fn read_import(&mut self, cx: &mut Context<Self>) {
+        let typed = self.import_input.read(cx).value().to_owned();
+        self.import = (!typed.trim().is_empty())
+            .then(|| crate::view_model::theme_share::SharedTheme::decode(&typed));
+        self.share_note = None;
+        cx.notify();
+    }
+
+    /// Shows `text` (a code from a message) in the import box with its preview.
+    pub fn show_theme_code(&mut self, text: &str, cx: &mut Context<Self>) {
+        let code = crate::view_model::theme_share::find_in_message(text)
+            .map(|t| t.encode())
+            .unwrap_or_else(|| text.to_owned());
+        self.import_input.update(cx, |input, cx| input.set_value(&code, cx));
+        self.read_import(cx);
+        self.redraw_inputs(cx);
+    }
+
+    fn cancel_import(&mut self, cx: &mut Context<Self>) {
+        self.import_input.update(cx, |input, cx| input.set_value("", cx));
+        self.import = None;
+        self.redraw_inputs(cx);
+        cx.notify();
+    }
+
+    fn apply_import(&mut self, cx: &mut Context<Self>) {
+        if let Some(Ok(shared)) = self.import.take() {
+            self.import_input.update(cx, |input, cx| input.set_value("", cx));
+            self.redraw_inputs(cx);
+            cx.emit(super::ThemeImported(shared));
+            cx.notify();
+        }
+    }
+
+    fn open_theme_file(&mut self, cx: &mut Context<Self>) {
+        // Tests cannot drive the system's file dialog: they name the file.
+        #[cfg(feature = "e2e")]
+        if let Ok(path) = std::env::var("MORPHEUS_E2E_PICK") {
+            self.theme_file_picked(std::path::PathBuf::from(path), cx);
+            return;
+        }
+        let picking = cx.prompt_for_paths(gpui::PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: Some("Open a theme".into()),
+        });
+        cx.spawn(async move |this, cx| {
+            let Ok(Ok(Some(paths))) = picking.await else {
+                return;
+            };
+            if let Some(path) = paths.into_iter().next() {
+                this.update(cx, |this, cx| this.theme_file_picked(path, cx)).ok();
+            }
+        })
+        .detach();
+    }
+
+    fn theme_file_picked(&mut self, path: std::path::PathBuf, cx: &mut Context<Self>) {
+        use crate::view_model::theme_share::{ThemeCodeError, from_file_text};
+        // A theme file is a line of text: a huge file is not one.
+        let read = match std::fs::metadata(&path) {
+            Ok(meta) if meta.len() <= 4096 => std::fs::read_to_string(&path).ok(),
+            _ => None,
+        };
+        let parsed = match read {
+            Some(text) => from_file_text(&text),
+            None => Err(ThemeCodeError::NotATheme),
+        };
+        let code = parsed.as_ref().map(|t| t.encode()).unwrap_or_default();
+        self.import_input.update(cx, |input, cx| input.set_value(&code, cx));
+        self.import = Some(parsed);
+        self.share_note = None;
+        self.redraw_inputs(cx);
+        cx.notify();
+    }
+
+    fn save_theme_file(&mut self, cx: &mut Context<Self>) {
+        let text = crate::view_model::theme_share::file_text(&self.shared_now());
+        let name = format!("my-theme.{}", crate::view_model::theme_share::FILE_EXTENSION);
+        #[cfg(feature = "e2e")]
+        if let Ok(path) = std::env::var("MORPHEUS_E2E_SAVE") {
+            self.theme_file_saved(std::fs::write(path, text).map_err(|e| e.to_string()), cx);
+            return;
+        }
+        let dir = dirs_home();
+        let picking = cx.prompt_for_new_path(&dir, Some(&name));
+        cx.spawn(async move |this, cx| {
+            let Ok(Ok(Some(path))) = picking.await else {
+                return;
+            };
+            let result = std::fs::write(path, text).map_err(|e| e.to_string());
+            this.update(cx, |this, cx| this.theme_file_saved(result, cx)).ok();
+        })
+        .detach();
+    }
+
+    fn theme_file_saved(&mut self, result: Result<(), String>, cx: &mut Context<Self>) {
+        self.share_note = Some(match result {
+            Ok(()) => "Saved. Anyone can open it from Settings > Appearance.".to_owned(),
+            Err(err) => format!("Could not save the file: {err}"),
+        });
+        cx.notify();
+    }
+
+    /// Appearance's sharing: the look as a code to copy or save, a box to paste one, a
+    /// button to open a file, and the preview of what was read, applied only on request.
+    fn share_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let code = self.shared_now().encode();
+        let copied = code.clone();
+        let code_row = div()
+            .flex()
+            .flex_wrap()
+            .items_center()
+            .gap(px(10.0))
+            .child(
+                div()
+                    .font_family(theme::MONO)
+                    .px(px(10.0))
+                    .py(px(6.0))
+                    .rounded(px(theme::RADIUS_SM))
+                    .bg(theme::fill_input())
+                    .child(code.clone())
+                    .e2e("code", "theme-code")
+                    .text(&code),
+            )
+            .child(
+                button("theme-copy", "Copy", Kind::Secondary, "")
+                    .child(icon("copy", 16.0).text_color(rgb(theme::text())))
+                    .child("Copy")
+                    .on_click(move |_, _, cx| {
+                        cx.write_to_clipboard(gpui::ClipboardItem::new_string(copied.clone()))
+                    })
+                    .e2e("button", "secondary theme-copy")
+                    .text("Copy"),
+            )
+            .child(
+                button("theme-save", "Save to file", Kind::Secondary, "")
+                    .child(icon("download", 16.0).text_color(rgb(theme::text())))
+                    .child("Save to file")
+                    .on_click(cx.listener(|this, _, _, cx| this.save_theme_file(cx)))
+                    .e2e("button", "secondary theme-save")
+                    .text("Save to file"),
+            );
+        let import_row = div()
+            .flex()
+            .flex_wrap()
+            .items_center()
+            .gap(px(10.0))
+            .child(div().w(px(320.0)).child(self.import_input.clone()))
+            .child(
+                button("theme-open", "Open file", Kind::Secondary, "")
+                    .child(icon("folder-open", 16.0).text_color(rgb(theme::text())))
+                    .child("Open file")
+                    .on_click(cx.listener(|this, _, _, cx| this.open_theme_file(cx)))
+                    .e2e("button", "secondary theme-open")
+                    .text("Open file"),
+            )
+            .e2e("div", "theme-import");
+        let mut children = vec![
+            muted(
+                "Your theme as a code (the theme, custom colour and glass). Send it to a friend in a message or a file; they can paste it below, or choose Apply this theme on the message.",
+                "muted",
+            )
+            .into_any_element(),
+            code_row.into_any_element(),
+            import_row.into_any_element(),
+        ];
+        if let Some(note) = &self.share_note {
+            children.push(muted(note, "muted theme-note").into_any_element());
+        }
+        match &self.import {
+            None => {}
+            Some(Err(err)) => children.push(
+                note(&err.message(), "theme-import-error", theme::danger()).into_any_element(),
+            ),
+            Some(Ok(shared)) => {
+                let p = shared.palette();
+                let summary = shared.summary();
+                children.push(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(px(8.0))
+                        .child(muted(&format!("Preview: {summary}. Nothing changes until you apply it."), "muted"))
+                        .child(
+                            div()
+                                .child(preview(p))
+                                .e2e("div", "theme-import-preview")
+                                .attr("data-bg", format!("{:06x}", p.bg_chat)),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .gap(px(10.0))
+                                .child(
+                                    button("theme-apply", "Apply", Kind::Primary, "")
+                                        .child(icon("check", 16.0).text_color(rgb(theme::on_accent_solid())))
+                                        .child("Apply")
+                                        .on_click(cx.listener(|this, _, _, cx| this.apply_import(cx)))
+                                        .e2e("button", "primary theme-apply")
+                                        .text("Apply"),
+                                )
+                                .child(
+                                    button("theme-cancel", "Cancel", Kind::Secondary, "")
+                                        .child("Cancel")
+                                        .on_click(cx.listener(|this, _, _, cx| this.cancel_import(cx)))
+                                        .e2e("button", "secondary theme-cancel")
+                                        .text("Cancel"),
+                                ),
+                        )
+                        .into_any_element(),
+                );
+            }
+        }
+        section("Share a theme", "theme-share", children, self.hl("theme-share"))
+    }
+
     /// Appearance's custom colour: a hex box, a grid to pick from and the preview.
     fn custom_colour_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = self
@@ -2309,4 +2539,12 @@ fn preview(p: crate::view_model::theme::Palette) -> impl IntoElement {
         .e2e("div", "custom-preview")
         .attr("data-bg", format!("{:06x}", p.bg_chat))
         .attr("data-color", format!("{:06x}", p.text))
+}
+
+/// Where a save dialog opens.
+fn dirs_home() -> std::path::PathBuf {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
 }

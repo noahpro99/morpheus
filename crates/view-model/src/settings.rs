@@ -65,6 +65,7 @@ impl SettingsPage {
     pub fn for_focus(focus: SettingsFocus) -> Option<SettingsPage> {
         match focus {
             SettingsFocus::None => None,
+            SettingsFocus::Appearance => Some(SettingsPage::Appearance),
             SettingsFocus::VoiceVideo | SettingsFocus::NoiseSuppression => Some(SettingsPage::VoiceVideo),
             _ => Some(SettingsPage::Security),
         }
@@ -158,6 +159,12 @@ pub const SETTINGS_INDEX: &[SettingEntry] = &[
         "appearance glass blur transparent translucent frosted see-through acrylic mica vibrancy",
         SettingsPage::Appearance,
         "glass",
+    ),
+    entry(
+        "Share a theme",
+        "appearance theme export import share code paste file colour copy apply",
+        SettingsPage::Appearance,
+        "theme-share",
     ),
     entry(
         "Vim mode",

@@ -75,6 +75,8 @@ pub enum SettingsFocus {
     SetUpBackup,
     /// The Security & Privacy page (verifying this device).
     Security,
+    /// The Appearance page.
+    Appearance,
     /// The Voice & Video page (the devices calls use).
     VoiceVideo,
     /// The noise suppression section of the Voice & Video page, flashed.

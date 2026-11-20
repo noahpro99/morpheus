@@ -64,6 +64,7 @@ pub mod search;
 pub mod text_buffer;
 pub mod theme;
 pub mod theme_history;
+pub mod theme_share;
 pub mod threads;
 pub mod toast;
 pub mod typing;

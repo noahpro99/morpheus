@@ -38,6 +38,8 @@ pub enum MenuAction {
     CopyText(String),
     CopyLink(String),
     CopyId(String),
+    /// A message carries a theme code (`theme_share`): open it in Settings to preview.
+    ApplyTheme(String),
     Report,
     Delete,
     /// Takes back each of these (our own) reactions.
@@ -365,6 +367,9 @@ pub fn message_menu(
                 MenuAction::SelectText(text.to_owned()),
             ));
         }
+        if crate::theme_share::find_in_message(text).is_some() {
+            items.push(MenuItem::new("Apply this theme", MenuAction::ApplyTheme(text.to_owned())));
+        }
         items.push(MenuItem::new(
             "Copy text",
             MenuAction::CopyText(text.to_owned()),
@@ -423,6 +428,7 @@ pub fn default_icon(label: &str) -> Option<&'static str> {
         ("Edit room", "pencil"),
         ("Privacy & encryption", "lock"),
         ("Edit profile", "pencil"),
+        ("Apply this theme", "palette"),
         ("Copy text", "copy"),
         ("Copy message link", "link"),
         ("Copy link", "link"),
@@ -669,6 +675,23 @@ mod tests {
             ]
         );
         assert!(items.iter().find(|i| i.label == "Delete message").is_some_and(|i| i.danger));
+    }
+
+    #[test]
+    fn a_message_with_a_theme_code_offers_to_apply_it_and_others_do_not() {
+        let offered = |m: &Message| {
+            labels(&message_menu(m, Some(&room()), false, &[], false)).contains(&"Apply this theme")
+        };
+        assert!(!offered(&message(false)));
+        let mut shared = message(false);
+        shared.kind = MessageKind::Text { body: "mine: morpheus-theme/1;theme=light".into(), html: None };
+        assert!(offered(&shared));
+        let items = message_menu(&shared, Some(&room()), false, &[], false);
+        let item = items.iter().find(|i| i.label == "Apply this theme").expect("offered");
+        assert_eq!(item.action, Some(MenuAction::ApplyTheme("mine: morpheus-theme/1;theme=light".into())));
+        let mut mention = message(false);
+        mention.kind = MessageKind::Text { body: "codes start with morpheus-theme/1;".into(), html: None };
+        assert!(!offered(&mention));
     }
 
     #[test]

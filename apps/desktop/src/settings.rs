@@ -59,6 +59,11 @@ pub struct GlassChosen(pub crate::view_model::glass::Glass);
 
 impl EventEmitter<GlassChosen> for SettingsView {}
 
+/// A theme code was previewed and Apply was pressed: the shell applies and keeps it.
+pub struct ThemeImported(pub crate::view_model::theme_share::SharedTheme);
+
+impl EventEmitter<ThemeImported> for SettingsView {}
+
 /// A custom theme colour (0xRRGGBB) was chosen: the shell applies and keeps it.
 pub struct CustomColourChosen(pub u32);
 
@@ -201,6 +206,11 @@ pub struct SettingsView {
     /// A slider is being dragged (the colour is shown, not yet kept).
     hsv_dragging: bool,
     colour_input: Entity<TextInput>,
+    /// Appearance > Share: where a theme code is pasted, what it reads as (None until
+    /// something is typed), and the note after saving or a failed file.
+    import_input: Entity<TextInput>,
+    pub import: Option<Result<crate::view_model::theme_share::SharedTheme, crate::view_model::theme_share::ThemeCodeError>>,
+    share_note: Option<String>,
     /// Locked chats > Custom: the typed number, its unit, whether the Custom choice is open
     /// and what is wrong with the time typed.
     lock_custom_input: Entity<TextInput>,
@@ -257,7 +267,7 @@ impl SettingsView {
     }
 
     fn redraw_inputs(&self, cx: &mut Context<Self>) {
-        for input in [&self.key_input, &self.search, &self.colour_input, &self.name_input] {
+        for input in [&self.key_input, &self.search, &self.colour_input, &self.name_input, &self.import_input] {
             input.update(cx, |_, cx| cx.notify());
         }
     }
@@ -366,6 +376,11 @@ impl SettingsView {
             }
         })
         .detach();
+        let import_input = cx.new(|cx| TextInput::new("theme-import", "Paste a theme code", false, "", cx).framed());
+        cx.subscribe(&import_input, |this, _, _: &Changed, cx| {
+            this.read_import(cx);
+        })
+        .detach();
         let lock_custom_input =
             cx.new(|cx| TextInput::new("lock-custom", "Time", false, "", cx).framed());
         cx.subscribe(&lock_custom_input, |this, _, _: &Changed, cx| this.apply_lock_custom(cx))
@@ -446,6 +461,9 @@ impl SettingsView {
             hsv: crate::view_model::theme::to_hsv(crate::view_model::theme::DARK.bg_chat),
             hsv_dragging: false,
             colour_input,
+            import_input,
+            import: None,
+            share_note: None,
             lock_custom_input,
             lock_unit,
             lock_custom_open: false,
@@ -488,6 +506,9 @@ impl SettingsView {
         });
         self.search.update(cx, |input, cx| input.set_value("", cx));
         self.highlight = None;
+        self.import = None;
+        self.share_note = None;
+        self.import_input.update(cx, |input, cx| input.set_value("", cx));
         self.on_here = notifications_enabled(&self.data_dir);
         self.sounds_here = message_sounds_enabled(&self.data_dir);
         self.leave_out_discord = crate::view_model::settings::leaves_out_discord(&self.data_dir);

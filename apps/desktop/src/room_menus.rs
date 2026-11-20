@@ -446,6 +446,12 @@ impl Shell {
             MenuAction::CopyText(text) | MenuAction::CopyLink(text) | MenuAction::CopyId(text) => {
                 cx.write_to_clipboard(ClipboardItem::new_string(text));
             }
+            MenuAction::ApplyTheme(text) => {
+                self.open_settings(crate::view_model::keys::SettingsFocus::Appearance, cx);
+                if let Some(settings) = &self.settings {
+                    settings.update(cx, |settings, cx| settings.show_theme_code(&text, cx));
+                }
+            }
             // The rest is for messages.
             MenuAction::Device(kind, id) => self.pick_device(kind, id, cx),
             MenuAction::Noise(key) => {
@@ -710,6 +716,35 @@ impl Shell {
             settings.update(cx, |settings, cx| {
                 settings.theme = theme;
                 settings.set_custom_shown(None, cx);
+            });
+        }
+        self.save_prefs(cx);
+        self.look_changed(cx);
+        cx.notify();
+    }
+}
+
+impl Shell {
+    /// Applies a theme code that was previewed (a pasted one, a file, or a message's):
+    /// the theme or custom colour and the glass, kept in the account.
+    pub fn apply_shared_theme(
+        &mut self,
+        shared: crate::view_model::theme_share::SharedTheme,
+        cx: &mut Context<Self>,
+    ) {
+        crate::theme::set(shared.theme);
+        crate::theme::set_custom(shared.colour);
+        crate::theme::set_glass(shared.glass);
+        crate::theme::sync_windows(cx);
+        cx.refresh_windows();
+        self.prefs.set_theme(shared.theme);
+        self.prefs.set_custom_colour(shared.colour);
+        self.prefs.set_glass(shared.glass);
+        if let Some(settings) = &self.settings {
+            settings.update(cx, |settings, cx| {
+                settings.theme = shared.theme;
+                settings.glass = shared.glass;
+                settings.set_custom_shown(shared.colour, cx);
             });
         }
         self.save_prefs(cx);
