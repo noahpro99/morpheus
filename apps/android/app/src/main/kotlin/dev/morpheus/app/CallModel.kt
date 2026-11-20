@@ -103,7 +103,50 @@ class CallModel(private val morpheus: Morpheus, private val context: Context) {
 
     fun toggleMute() = handle?.toggleMute()
     fun toggleDeafen() = handle?.toggleDeafen()
-    fun setCamera(on: Boolean) = handle?.setCamera(on)
+    /** Asked of the activity: the camera permission, before the camera is turned on. */
+    val needCamera = MutableStateFlow(false)
+
+    private var cameraPaused = false
+
+    /** The camera button: on (asking for the permission first when it is not allowed) or off. */
+    fun toggleCamera() {
+        val on = _snapshot.value?.camera == true
+        cameraPaused = false
+        if (on) {
+            handle?.setCamera(false)
+        } else if (cameraAllowed()) {
+            handle?.setCamera(true)
+        } else {
+            needCamera.value = true
+        }
+    }
+
+    fun cameraAnswered(granted: Boolean) {
+        needCamera.value = false
+        if (granted) handle?.setCamera(true)
+    }
+
+    private fun cameraAllowed() = androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+    /** The app left the screen (not into picture-in-picture): the camera stops, and comes back with the app. */
+    fun appLeft() {
+        if (_snapshot.value?.camera == true) {
+            cameraPaused = true
+            handle?.setCamera(false)
+        }
+    }
+
+    fun appBack() {
+        if (cameraPaused) {
+            cameraPaused = false
+            if (cameraAllowed()) handle?.setCamera(true)
+        }
+    }
+
+    /** The other camera (front or back), when the phone has both. */
+    val canFlipCamera: Boolean get() = (context.applicationContext as MorpheusApp).camera.canSwitch()
+
+    fun flipCamera() = (context.applicationContext as MorpheusApp).camera.flip()
     fun watch(userId: String, on: Boolean) = handle?.watch(userId, on)
     fun frame(feed: String) = handle?.frame(feed)
 

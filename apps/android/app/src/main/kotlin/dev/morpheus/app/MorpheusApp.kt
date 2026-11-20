@@ -10,6 +10,11 @@ class MorpheusApp : Application() {
         Morpheus(filesDir.resolve("morpheus").apply { mkdirs() }.absolutePath)
     }
 
+    /** The phone's camera, for calls. */
+    val camera: CameraFeed by lazy {
+        CameraFeed(this).also { uniffi.morpheus_ffi.callSetCameraDriver(it) }
+    }
+
     private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
 
     /** Tell the homeserver where to push, when there is both a push endpoint and a signed-in account. */
@@ -35,6 +40,7 @@ class MorpheusApp : Application() {
         } catch (e: Throwable) {
             android.util.Log.w("MorpheusCalls", "calls are not available: $e")
         }
+        camera
         DebugHooks.install(this)
         dev.morpheus.app.push.Push.track(this)
     }

@@ -9,7 +9,10 @@
 //! - each change of the call is a line on its output:
 //!   `call <phase> watchers=<n> <user>[mds] ...` where the letters say what
 //!   the person has on (m muted, d deafened, s speaking, c camera, w sharing
-//!   their screen), and `ready` once signed in.
+//!   their screen), and `ready` once signed in;
+//! - `frame <user id> <width>x<height> seq=<n>` about twice a second for each
+//!   camera or shared screen it receives (what the others' video looks like
+//!   from here).
 //!
 //! `MORPHEUS_TEST_HOMESERVER` names the homeserver.
 
@@ -18,9 +21,17 @@ use std::{io::BufRead, sync::Arc};
 use morpheus_ffi::{CallListener, CallPhase, CallSnapshot, Morpheus, Sidebar, SidebarListener};
 use tokio::sync::mpsc;
 
+/// The video feeds of the latest snapshot: (user id, feed).
+static FEEDS: std::sync::Mutex<Vec<(String, String)>> = std::sync::Mutex::new(Vec::new());
+
 struct Calls;
 impl CallListener for Calls {
     fn on_call(&self, snapshot: CallSnapshot) {
+        *FEEDS.lock().expect("lock") = snapshot
+            .cards
+            .iter()
+            .filter_map(|c| c.feed.clone().map(|f| (c.user_id.clone(), f)))
+            .collect();
         let people: Vec<String> = snapshot
             .people
             .iter()
@@ -76,12 +87,21 @@ async fn main() {
             let _ = lines_tx.send(line);
         }
     });
-    let mut call = None;
+    let mut call: Option<Arc<morpheus_ffi::CallHandle>> = None;
     let mut list: Option<Sidebar> = None;
     // A join asked for before the room is in the list waits for it.
     let mut pending: Option<String> = None;
+    let mut tick = tokio::time::interval(std::time::Duration::from_millis(500));
     loop {
         tokio::select! {
+            _ = tick.tick() => {
+                let feeds = FEEDS.lock().expect("lock").clone();
+                for (user, feed) in feeds {
+                    if let Some(frame) = call.as_ref().and_then(|c| c.frame(feed)) {
+                        println!("frame {user} {}x{} seq={}", frame.width, frame.height, frame.seq);
+                    }
+                }
+            }
             Some(sidebar) = rooms.recv() => {
                 list = Some(sidebar);
                 if let Some(name) = pending.clone() && let Some(id) = room_id(&list, &name) {

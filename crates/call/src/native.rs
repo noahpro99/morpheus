@@ -1381,6 +1381,16 @@ impl Outgoing {
             Some(preview::CallClaim::take().await)
         };
         let (feed, source) = match (mode, kind) {
+            (_, VideoKind::Camera) if platform_camera::available() => {
+                let source = NativeVideoSource::new(
+                    VideoResolution {
+                        width: 640,
+                        height: 480,
+                    },
+                    false,
+                );
+                (Feed::Platform, source)
+            }
             (AudioMode::Tone, VideoKind::Camera) => {
                 let (width, height) =
                     video::test_size("MORPHEUS_CALL_CAMERA_SIZE", video::CAMERA_PATTERN);
@@ -1404,16 +1414,6 @@ impl Outgoing {
                         quality.is_screencast(),
                     ),
                 )
-            }
-            (AudioMode::Platform, VideoKind::Camera) if platform_camera::available() => {
-                let source = NativeVideoSource::new(
-                    VideoResolution {
-                        width: 640,
-                        height: 480,
-                    },
-                    false,
-                );
-                (Feed::Platform, source)
             }
             #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
             (AudioMode::Platform, VideoKind::Camera) => {

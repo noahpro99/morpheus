@@ -26,6 +26,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        lifecycleScope.launch { model.calls.needCamera.collect { if (it) camera.launch(android.Manifest.permission.CAMERA) } }
         lifecycleScope.launch { model.needMicrophone.collect { if (it != null) microphone.launch(android.Manifest.permission.RECORD_AUDIO) } }
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
@@ -41,6 +42,19 @@ class MainActivity : ComponentActivity() {
         }
         if (savedInstanceState == null) dev.morpheus.app.push.Push.start(this)
         openRoomOf(intent)
+    }
+
+    private val camera = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { model.calls.cameraAnswered(it) }
+
+    override fun onStop() {
+        super.onStop()
+        // The camera is for a call on screen: it stops when the app is left, unless picture-in-picture keeps the call in view.
+        if (!isInPictureInPictureMode) model.calls.appLeft()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        model.calls.appBack()
     }
 
     override fun onNewIntent(intent: android.content.Intent) {

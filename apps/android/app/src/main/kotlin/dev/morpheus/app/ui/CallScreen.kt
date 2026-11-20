@@ -184,7 +184,8 @@ private fun Controls(calls: CallModel, snapshot: CallSnapshot, speaker: Boolean)
         }
         Control(if (snapshot.muted) "🔇" else "🎙️", "call-mute", snapshot.muted) { calls.toggleMute() }
         Control("🎧", "call-deafen", snapshot.deafened) { calls.toggleDeafen() }
-        if (snapshot.canSendVideo) Control("📷", "call-camera", snapshot.camera) { calls.setCamera(!snapshot.camera) }
+        if (snapshot.canSendVideo) Control("📷", "call-camera", snapshot.camera) { calls.toggleCamera() }
+        if (snapshot.camera && calls.canFlipCamera) Control("🔄", "call-camera-flip", false) { calls.flipCamera() }
         Control(if (speaker) "🔊" else "📞", "call-speaker", speaker) { calls.toggleSpeaker() }
         Box(
             Modifier.size(48.dp).clip(CircleShape).background(Palette.Danger).clickable { calls.hangUp() }.testTag("call-hangup"),

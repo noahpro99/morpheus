@@ -906,3 +906,31 @@ where
     let _ = call;
     false
 }
+
+/// The phone's camera (Camera2, in Kotlin): the call asks it to start and
+/// stop, and it hands its pictures back through [`call_camera_frame`].
+#[uniffi::export(with_foreign)]
+pub trait CameraDriver: Send + Sync {
+    /// Open the camera and start sending pictures; whether it opened.
+    fn start(&self) -> bool;
+    fn stop(&self);
+}
+
+/// Register the camera calls send from (once; later ones are ignored).
+#[uniffi::export]
+pub fn call_set_camera_driver(driver: Arc<dyn CameraDriver>) {
+    let (on, off) = (driver.clone(), driver);
+    morpheus_call::set_platform_camera(morpheus_call::PlatformCamera {
+        start: Box::new(move || on.start()),
+        stop: Box::new(move || off.stop()),
+    });
+}
+
+/// One picture from the camera, in the planes Android's YUV_420_888 gives
+/// (a pixel stride of 1 for planar chroma, 2 where U and V interleave);
+/// `rotation` is how far (0, 90, 180, 270 degrees) it must turn to stand up.
+#[uniffi::export]
+#[allow(clippy::too_many_arguments)]
+pub fn call_camera_frame(y: Vec<u8>, u: Vec<u8>, v: Vec<u8>, y_stride: u32, uv_stride: u32, uv_pixel_stride: u32, width: u32, height: u32, rotation: u32) {
+    morpheus_call::camera_frame(&y, &u, &v, y_stride as usize, uv_stride as usize, uv_pixel_stride as usize, width, height, rotation);
+}
