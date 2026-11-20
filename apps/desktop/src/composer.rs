@@ -1376,6 +1376,7 @@ mod tests {
             shield: None,
             state_kind: None,
             state_who: None,
+            read_by: Vec::new(),
         };
         let (composer, cx) = open(cx);
         focus(&composer, cx);
@@ -1430,6 +1431,7 @@ mod tests {
             shield: None,
             state_kind: None,
             state_who: None,
+            read_by: Vec::new(),
         };
         let (composer, cx) = open(cx);
         focus(&composer, cx);

@@ -1970,6 +1970,7 @@ mod widget_tests {
             shield: None,
             state_kind: None,
             state_who: None,
+            read_by: Vec::new(),
         }))
     }
 
