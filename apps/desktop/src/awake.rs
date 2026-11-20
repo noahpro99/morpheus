@@ -46,32 +46,19 @@ impl<B: Backend> Gate<B> {
     }
 }
 
-/// The real thing: an NSProcessInfo activity on macOS, gpui's switch everywhere.
+/// The real thing: morpheus_call's App Nap activity (macOS), gpui's switch everywhere.
 #[derive(Default)]
 pub struct System {
-    #[cfg(target_os = "macos")]
-    activity: Option<objc2::rc::Retained<objc2::runtime::ProtocolObject<dyn objc2_foundation::NSObjectProtocol>>>,
+    activity: Option<morpheus_call::Activity>,
 }
 
 impl Backend for System {
     fn begin(&mut self) {
-        #[cfg(target_os = "macos")]
-        {
-            use objc2_foundation::{NSActivityOptions, NSProcessInfo, NSString};
-            // User-initiated (no App Nap, no idle sleep) with low latency, so
-            // timers and capture threads are not coalesced while hidden.
-            let options = NSActivityOptions::UserInitiated | NSActivityOptions::LatencyCritical;
-            let reason = NSString::from_str("Morpheus call in progress");
-            self.activity = Some(NSProcessInfo::processInfo().beginActivityWithOptions_reason(options, &reason));
-        }
+        self.activity = morpheus_call::Activity::begin();
     }
 
     fn end(&mut self) {
-        #[cfg(target_os = "macos")]
-        if let Some(activity) = self.activity.take() {
-            // SAFETY: the object `beginActivity` returned, ended once.
-            unsafe { objc2_foundation::NSProcessInfo::processInfo().endActivity(&activity) };
-        }
+        self.activity = None;
     }
 
     fn keep_drawing(&mut self, on: bool) {

@@ -44,6 +44,12 @@ pub use volume::{
 };
 
 #[cfg(not(target_arch = "wasm32"))]
+#[path = "app_activity.rs"]
+mod app_activity;
+#[cfg(not(target_arch = "wasm32"))]
+pub use app_activity::Activity;
+
+#[cfg(not(target_arch = "wasm32"))]
 #[path = "trim.rs"]
 mod trim;
 
