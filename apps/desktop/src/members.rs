@@ -82,6 +82,19 @@ pub struct MembersView {
 }
 
 impl MembersView {
+    /// A member of the loaded list, by id.
+    pub fn member(&self, user: &OwnedUserId) -> Option<Member> {
+        let Some(Ok(members)) = &self.members else {
+            return None;
+        };
+        members.iter().find(|m| &m.user_id == user).cloned()
+    }
+
+    /// What the signed-in user may do to the members of this room.
+    pub fn permissions(&self) -> MemberPermissions {
+        self.permissions
+    }
+
     /// Drops this list's pictures from the shared copies.
     pub fn forget_pictures(&self) {
         self.images.forget_shared();

@@ -444,7 +444,7 @@ impl crate::shell::Shell {
         }
         let list = self.switch_rooms();
         let state = self.palette_state();
-        let context = self.palette_context();
+        let context = self.palette_context(cx);
         let switcher = cx.new(|cx| Switcher::new(list, state, context, cx));
         cx.subscribe(
             &switcher,
@@ -559,19 +559,36 @@ impl crate::shell::Shell {
 impl crate::shell::Shell {
     /// The right-click menu actions that apply to where you are: the open
     /// room's and its server's, from the same definitions the menus use.
-    fn palette_context(&self) -> Vec<crate::view_model::palette::ContextEntry> {
+    fn palette_context(&self, cx: &gpui::App) -> Vec<crate::view_model::palette::ContextEntry> {
         use crate::view_model::{
-            palette::contextual,
-            room_menu::{room_menu, space_menu},
+            calls::{call_card_items, call_menu},
+            members::{MemberMenuInput, member_menu},
+            palette::{contextual, contextual_call, contextual_dm},
+            room_menu::{DmState, dm_menu, room_menu, space_menu},
         };
         let mut found = Vec::new();
-        if let Some(room) = self
+        let room = self
             .selected
             .as_ref()
-            .and_then(|id| self.rooms.iter().find(|r| &r.id == id))
-            .filter(|r| !r.is_dm)
-        {
+            .and_then(|id| self.rooms.iter().find(|r| &r.id == id));
+        if let Some(room) = room.filter(|r| !r.is_dm) {
             found.extend(contextual(&room_menu(room, None), &format!("#{}", room.name)));
+        }
+        // A DM: its Pin, Close, Mute and Mark as read, from the DM menu.
+        if let Some(room) = room.filter(|r| r.is_dm)
+            && let Some(user) = room.dm_user.clone()
+        {
+            let state = DmState {
+                pinned: self.marks.is_pinned(room),
+                ignored: self.marks.ignored.contains_key(user.as_str()),
+                blocked: false,
+                muted: self.marks.is_muted(room),
+                friend: self.friends.contains(&user),
+                invite_to: Vec::new(),
+                name: room.name.clone(),
+                user,
+            };
+            found.extend(contextual_dm(&dm_menu(room, &state), &format!("@{}", room.name)));
         }
         if let crate::model::Scope::Space(id) = &self.scope
             && let Some(space) = self.rooms.iter().find(|r| &r.id == id)
@@ -580,6 +597,72 @@ impl crate::shell::Shell {
             let folders = self.prefs.folder_choices(id);
             let menu = space_menu(space, &children, self.prefs.hide_muted, &folders);
             found.extend(contextual(&menu, &space.name));
+        }
+        // The member whose profile is open: their member menu.
+        if let (Some(card), Some(room)) = (self.card.as_ref(), room) {
+            let user = card.read(cx).user.clone();
+            let known = self
+                .members
+                .as_ref()
+                .filter(|(id, _)| *id == room.id)
+                .and_then(|(_, view)| view.read(cx).member(&user));
+            let permissions = self
+                .members
+                .as_ref()
+                .filter(|(id, _)| *id == room.id)
+                .map(|(_, view)| view.read(cx).permissions())
+                .unwrap_or_default();
+            let name = self
+                .nicknames
+                .get(user.as_str())
+                .cloned()
+                .or_else(|| known.as_ref().map(|m| m.name.clone()))
+                .unwrap_or_else(|| user.localpart().to_owned());
+            let member = known.unwrap_or_else(|| morpheus_core::Member {
+                user_id: user.clone(),
+                name: name.clone(),
+                avatar: None,
+                role: morpheus_core::MemberRole::Member,
+                power_level: 0,
+                is_ignored: self.marks.ignored.contains_key(user.as_str()),
+            });
+            let own = self.session.as_ref().and_then(|s| s.user_id()).as_ref() == Some(&user);
+            let menu = member_menu(&MemberMenuInput {
+                room: &room.id,
+                member: &member,
+                permissions,
+                own,
+                friend: self.friends.contains(&user),
+                invite_to: crate::view_model::room_menu::available_invite_targets(
+                    &self.rooms,
+                    Some(&room.id),
+                    &[],
+                ),
+            });
+            found.extend(contextual(&menu, &name));
+        }
+        // The call you are in: share your screen, and each person's mute and Hide video.
+        if let Some(call) = &self.calls.state {
+            found.extend(contextual_call(&call_menu(call.screen), "call"));
+            let own = self.session.as_ref().and_then(|s| s.user_id());
+            let mut seen = Vec::new();
+            for feed in call.video.iter().filter(|f| !f.screen) {
+                if Some(&feed.user) == own.as_ref() || seen.contains(&feed.user) {
+                    continue;
+                }
+                seen.push(feed.user.clone());
+                let user = &feed.user;
+                let items = call_card_items(
+                    user,
+                    false,
+                    false,
+                    self.calls.user_volumes.get(user).copied().unwrap_or(1.0),
+                    self.calls.muted_for_me.contains(user),
+                    self.calls.hidden_video.contains(user),
+                    call.watching.contains(user),
+                );
+                found.extend(contextual_call(&items, &crate::call_ui::shown(self, user)));
+            }
         }
         found
     }

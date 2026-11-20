@@ -336,24 +336,60 @@ pub struct ContextEntry {
 /// drift): each item with an action, and the choices of a "Notifications"
 /// submenu, labelled for `subject` ("#general", "Projects").
 pub fn contextual(items: &[crate::menu::MenuItem], subject: &str) -> Vec<ContextEntry> {
+    contextual_where(items, subject, |_| true)
+}
+
+/// A DM's menu actions for the palette (`subject` is "@name"): Pin, Close DM,
+/// Mute and Mark as read, from `room_menu::dm_menu`; the rest of that menu
+/// (block, ignore, friend) is the person's, offered with the member actions.
+pub fn contextual_dm(items: &[crate::menu::MenuItem], subject: &str) -> Vec<ContextEntry> {
+    use crate::menu::MenuAction as A;
+    contextual_where(items, subject, |action| {
+        matches!(
+            action,
+            A::PinDm(..) | A::CloseDm(_) | A::Mute(..) | A::Unmute(_) | A::MarkRead(_) | A::MarkRoomUnread(_) | A::Favorite(..)
+        )
+    })
+}
+
+/// The actions of the call you are in for the palette, from
+/// `calls::call_menu` and `calls::call_card_items` (the latter named for the person).
+pub fn contextual_call(items: &[crate::menu::MenuItem], subject: &str) -> Vec<ContextEntry> {
+    contextual_where(items, subject, |_| true)
+}
+
+fn contextual_where(
+    items: &[crate::menu::MenuItem],
+    subject: &str,
+    keep: impl Fn(&crate::menu::MenuAction) -> bool,
+) -> Vec<ContextEntry> {
     let mut found = Vec::new();
     let mut add = |item: &crate::menu::MenuItem, prefix: &str| {
         let Some(action) = item.action.clone() else {
             return;
         };
+        if !keep(&action) {
+            return;
+        }
         let label = match item.label.as_str() {
             "Leave room" => format!("Leave {subject}"),
             "Leave server" => format!("Leave {subject}"),
+            other if other.contains(subject) => format!("{prefix}{other}"),
             other => format!("{prefix}{other} ({subject})"),
         };
         found.push(ContextEntry { label, icon: item.glyph().unwrap_or("chevron-right"), action });
     };
     for item in items {
         if item.has_submenu() {
-            if item.label == "Notifications" {
-                for choice in &item.children {
-                    add(choice, "Notifications: ");
-                }
+            let prefix = if item.label == "Notifications" {
+                "Notifications: "
+            } else if item.label.starts_with("Mute") {
+                "Mute: "
+            } else {
+                continue;
+            };
+            for choice in &item.children {
+                add(choice, prefix);
             }
         } else {
             add(item, "");
@@ -366,6 +402,30 @@ pub fn contextual(items: &[crate::menu::MenuItem], subject: &str) -> Vec<Context
 mod context_tests {
     use super::*;
     use crate::menu::MenuAction;
+
+    #[test]
+    fn a_dms_menu_gives_pin_close_mute_and_read_named_for_the_person() {
+        let mut room = crate::test_room::room("!dm:x", "bob");
+        room.is_dm = true;
+        let state = crate::room_menu::DmState {
+            user: morpheus_core::OwnedUserId::try_from("@bob:x").expect("id"),
+            name: "bob".into(),
+            pinned: false,
+            ignored: false,
+            blocked: false,
+            muted: false,
+            friend: false,
+            invite_to: Vec::new(),
+        };
+        let found = contextual_dm(&crate::room_menu::dm_menu(&room, &state), "@bob");
+        let labels: Vec<&str> = found.iter().map(|e| e.label.as_str()).collect();
+        assert!(labels.contains(&"Pin (@bob)"), "{labels:?}");
+        assert!(labels.contains(&"Close DM (@bob)"), "{labels:?}");
+        assert!(labels.iter().any(|l| l.starts_with("Mute: ") && l.ends_with("(@bob)")), "{labels:?}");
+        assert!(labels.iter().any(|l| l.starts_with("Mark as")), "{labels:?}");
+        // The person's own actions (block, friend) are not the DM's.
+        assert!(!labels.iter().any(|l| l.starts_with("Block") || l.contains("friend")), "{labels:?}");
+    }
 
     #[test]
     fn a_rooms_menu_gives_its_actions_named_for_the_room() {

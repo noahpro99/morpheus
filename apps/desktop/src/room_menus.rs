@@ -464,6 +464,10 @@ impl Shell {
             MenuAction::CallFocus(key) => self.toggle_focus(&key, cx),
             MenuAction::CallHideVideo(user) => self.toggle_hide_video(user, cx),
             MenuAction::CallStopWatching(user) => self.watch_share(&user, false, cx),
+            MenuAction::CallShareScreen(on) => {
+                let at = self.menu_at;
+                self.press_screen(on, at, cx)
+            }
             MenuAction::VoiceSettings => {
                 self.open_settings(crate::view_model::keys::SettingsFocus::VoiceVideo, cx)
             }

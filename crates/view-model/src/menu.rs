@@ -123,6 +123,8 @@ pub enum MenuAction {
     CallFocus(String),
     /// Hides (or shows again) this person's camera on their card.
     CallHideVideo(OwnedUserId),
+    /// Starts (true) or stops sharing this device's screen in the call (`calls::call_menu`).
+    CallShareScreen(bool),
 }
 
 /// Which device a call's quick list picks.

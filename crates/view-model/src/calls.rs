@@ -1866,3 +1866,31 @@ mod call_failure_tests {
         }
     }
 }
+
+/// The call's own actions, for the palette: share your screen, or stop.
+/// (Leaving is the palette's own "Leave call"; each person's volume, mute and
+/// "Hide video" come from [`call_card_items`].)
+pub fn call_menu(sharing_screen: bool) -> Vec<crate::menu::MenuItem> {
+    use crate::menu::{MenuAction, MenuItem};
+    vec![
+        MenuItem::new(
+            if sharing_screen { "Stop sharing" } else { "Share screen" },
+            MenuAction::CallShareScreen(!sharing_screen),
+        )
+        .icon(if sharing_screen { "screen-share-off" } else { "screen-share" }),
+    ]
+}
+
+#[cfg(test)]
+mod call_menu_tests {
+    use super::*;
+    use crate::menu::MenuAction;
+
+    #[test]
+    fn the_call_menu_shares_or_stops_the_screen() {
+        assert_eq!(call_menu(false)[0].label, "Share screen");
+        assert_eq!(call_menu(false)[0].action, Some(MenuAction::CallShareScreen(true)));
+        assert_eq!(call_menu(true)[0].label, "Stop sharing");
+        assert_eq!(call_menu(true)[0].action, Some(MenuAction::CallShareScreen(false)));
+    }
+}

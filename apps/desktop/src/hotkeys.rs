@@ -471,7 +471,14 @@ impl Shell {
             matches!(action, Hotkey::Shortcuts) && matches!(self.dialog, Some(Dialog::Help));
         let toggles_switcher = matches!(action, Hotkey::Switcher) && self.switcher.is_some();
         let toggles_diagnostics = matches!(action, Hotkey::Diagnostics);
-        if (self.modal_open(cx) && !toggles_help && !toggles_switcher && !toggles_diagnostics)
+        // The palette opens over a person's card: it offers that person's actions (#276).
+        let over_card = matches!(action, Hotkey::Switcher)
+            && self.card.is_some()
+            && self.dialog.is_none()
+            && self.menu.is_none()
+            && self.picker.is_none()
+            && self.settings.as_ref().is_none_or(|s| !s.read(cx).is_open());
+        if (self.modal_open(cx) && !toggles_help && !toggles_switcher && !toggles_diagnostics && !over_card)
             || (self.inbox_open && !matches!(action, Hotkey::Inbox | Hotkey::Diagnostics))
         {
             return false;
