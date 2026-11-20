@@ -8,6 +8,7 @@
 use std::{borrow::Cow, path::PathBuf};
 
 mod about;
+mod awake;
 mod badge;
 mod call;
 mod call_invite;

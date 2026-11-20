@@ -425,6 +425,10 @@ struct MacWindowState {
     external_files_dragged: bool,
     // Whether the next left-mouse click is also the focusing click.
     first_mouse: bool,
+    /// A window move by the app's bar going: where the press was on the screen
+    /// and the window's origin then. Followed from the mouse events, never in a
+    /// nested event loop (that blocks the main queue, and the frame clock with it).
+    window_move: Option<((f64, f64), NSPoint)>,
     fullscreen_restore_bounds: Bounds<Pixels>,
     move_tab_to_new_window_callback: Option<Box<dyn FnMut()>>,
     merge_all_windows_callback: Option<Box<dyn FnMut()>>,
@@ -489,11 +493,11 @@ impl MacWindowState {
     fn start_display_link(&mut self) {
         self.stop_display_link();
         unsafe {
-            if !self
+            let visible = self
                 .native_window
                 .occlusionState()
-                .contains(NSWindowOcclusionState::NSWindowOcclusionStateVisible)
-            {
+                .contains(NSWindowOcclusionState::NSWindowOcclusionStateVisible);
+            if !crate::frame_clock_runs(visible, crate::keep_rendering()) {
                 return;
             }
         }
@@ -734,6 +738,7 @@ impl MacWindow {
                 do_command_handled: None,
                 external_files_dragged: false,
                 first_mouse: false,
+                window_move: None,
                 fullscreen_restore_bounds: Bounds::default(),
                 move_tab_to_new_window_callback: None,
                 merge_all_windows_callback: None,
@@ -1380,7 +1385,7 @@ impl PlatformWindow for MacWindow {
     // back into the app (window moved); nothing happens if the button is
     // already up. The let-go is passed on, so the app sees the press end.
     fn start_window_move(&self) {
-        let this = self.0.lock();
+        let mut this = self.0.lock();
         let window = this.native_window;
         unsafe {
             let app = NSApplication::sharedApplication(nil);
@@ -1392,50 +1397,24 @@ impl PlatformWindow for MacWindow {
             if style & (1 << 14) != 0 {
                 return; // full screen
             }
+            let pressed: NSUInteger = msg_send![class!(NSEvent), pressedMouseButtons];
+            if pressed & 1 == 0 {
+                return;
+            }
             let at: NSPoint = msg_send![event, locationInWindow];
             // For scripts/mac-check.sh: whether a press on the bar reached it.
             if std::env::var_os("MORPHEUS_LOG_WINDOW_MOVE").is_some() {
                 eprintln!("morpheus-desktop: start_window_move at {},{}", at.x, at.y);
             }
-            // Where the press was on the screen, and the window then.
+            // Where the press was on the screen, and the window then. The
+            // mouse's drags and let-go (`follow_window_move`) do the rest: a
+            // loop waiting for them here would hold the main queue, and the
+            // frame clock with it, for the whole drag.
             let frame: NSRect = msg_send![window, frame];
-            let (start_x, start_y) = (frame.origin.x + at.x, frame.origin.y + at.y);
-            let origin = frame.origin;
-            this.executor
-                .spawn(async move {
-                    let pressed: NSUInteger = msg_send![class!(NSEvent), pressedMouseButtons];
-                    if pressed & 1 == 0 {
-                        return;
-                    }
-                    // Left mouse dragged (6) and up (2).
-                    let mask: u64 = (1 << 6) | (1 << 2);
-                    let until: id = msg_send![class!(NSDate), distantFuture];
-                    let mode = ns_string("NSEventTrackingRunLoopMode");
-                    loop {
-                        let next: id = msg_send![app, nextEventMatchingMask: mask untilDate: until inMode: mode dequeue: YES];
-                        if next.is_null() {
-                            break;
-                        }
-                        let now: NSPoint = msg_send![class!(NSEvent), mouseLocation];
-                        let mut frame: NSRect = msg_send![window, frame];
-                        frame.origin = NSPoint::new(
-                            origin.x + now.x - start_x,
-                            origin.y + now.y - start_y,
-                        );
-                        // Kept below the menu bar, as the system's own drag does.
-                        let screen: id = msg_send![window, screen];
-                        if !screen.is_null() {
-                            frame = msg_send![window, constrainFrameRect: frame toScreen: screen];
-                        }
-                        let _: () = msg_send![window, setFrameOrigin: frame.origin];
-                        let kind: NSUInteger = msg_send![next, type];
-                        if kind == 2 {
-                            let _: () = msg_send![app, sendEvent: next];
-                            break;
-                        }
-                    }
-                })
-                .detach();
+            this.window_move = Some((
+                (frame.origin.x + at.x, frame.origin.y + at.y),
+                frame.origin,
+            ));
         }
     }
 
@@ -1860,8 +1839,49 @@ extern "C" fn handle_key_event(this: &Object, native_event: id, key_equivalent: 
     }
 }
 
+/// A window move by the app's bar going (`start_window_move`): a drag of the
+/// left button puts the window where the mouse took it (and is not passed on),
+/// the let-go ends the move (and is). True when the event is used up.
+fn follow_window_move(window_state: &Arc<Mutex<MacWindowState>>, native_event: id) -> bool {
+    let (start, origin, window) = {
+        let lock = window_state.lock();
+        let Some((start, origin)) = lock.window_move else {
+            return false;
+        };
+        (start, origin, lock.native_window)
+    };
+    unsafe {
+        let kind: NSUInteger = msg_send![native_event, type];
+        match kind {
+            // Left mouse dragged.
+            6 => {
+                let now: NSPoint = msg_send![class!(NSEvent), mouseLocation];
+                let mut frame: NSRect = msg_send![window, frame];
+                frame.origin = NSPoint::new(origin.x + now.x - start.0, origin.y + now.y - start.1);
+                // Kept below the menu bar, as the system's own drag does.
+                let screen: id = msg_send![window, screen];
+                if !screen.is_null() {
+                    frame = msg_send![window, constrainFrameRect: frame toScreen: screen];
+                }
+                // Moving calls back into the app: the state is not locked here.
+                let _: () = msg_send![window, setFrameOrigin: frame.origin];
+                true
+            }
+            // Left mouse up.
+            2 => {
+                window_state.lock().window_move = None;
+                false
+            }
+            _ => false,
+        }
+    }
+}
+
 extern "C" fn handle_view_event(this: &Object, _: Sel, native_event: id) {
     let window_state = unsafe { get_window_state(this) };
+    if follow_window_move(&window_state, native_event) {
+        return;
+    }
     let weak_window_state = Arc::downgrade(&window_state);
     let mut lock = window_state.as_ref().lock();
     let window_height = lock.content_size().height;
@@ -1994,12 +2014,15 @@ extern "C" fn window_did_change_occlusion_state(this: &Object, _: Sel, _: id) {
     let window_state = unsafe { get_window_state(this) };
     let lock = &mut *window_state.lock();
     unsafe {
-        if lock
+        let visible = lock
             .native_window
             .occlusionState()
-            .contains(NSWindowOcclusionState::NSWindowOcclusionStateVisible)
-        {
+            .contains(NSWindowOcclusionState::NSWindowOcclusionStateVisible);
+        if visible {
             lock.move_traffic_light();
+            lock.start_display_link();
+        } else if crate::keep_rendering() {
+            // A call's video keeps moving in Mission Control's thumbnail.
             lock.start_display_link();
         } else {
             lock.stop_display_link();

@@ -26,6 +26,8 @@ mod input;
 mod inspector;
 mod interactive;
 mod key_dispatch;
+mod keep_rendering;
+pub use keep_rendering::{frame_clock_runs, keep_rendering, set_keep_rendering};
 mod keymap;
 mod path_builder;
 mod platform;

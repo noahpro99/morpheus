@@ -1636,6 +1636,7 @@ impl Render for Shell {
         if crate::call_ui::set_background(background) {
             cx.notify();
         }
+        crate::awake::set_in_call(self.calls.state.is_some());
         self.keep_mic_fresh(cx);
         if self.calls.audio_cache.is_none() && !self.calls.audio_reading && self.session.is_some() {
             self.refresh_audio_cache(cx);

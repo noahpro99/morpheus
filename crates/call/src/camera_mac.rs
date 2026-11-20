@@ -201,7 +201,17 @@ fn stream(device: Open, source: &NativeVideoSource, stop: &AtomicBool, key: &'st
                 }
             }
             Err(mpsc::RecvTimeoutError::Timeout)
-                if last_frame.elapsed() < Duration::from_secs(1) || open.connected() => {}
+                if last_frame.elapsed() < Duration::from_secs(1) || open.connected() =>
+            {
+                // The system stopped the session (an interruption) and the
+                // camera is still there: start it again.
+                // SAFETY: getters and start on the live session this thread owns.
+                if last_frame.elapsed() >= Duration::from_secs(1) && !unsafe { open.session.isRunning() } {
+                    warn!(name, "camera session stopped; starting it again");
+                    unsafe { open.session.startRunning() };
+                    last_frame = Instant::now();
+                }
+            }
             Err(_) => {
                 warn!(name, "camera lost; waiting for it to come back");
                 autorelease::pool(|| drop(device.take()));
