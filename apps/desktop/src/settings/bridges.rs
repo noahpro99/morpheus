@@ -5,7 +5,7 @@
 //! what the bot last said. What the replies mean is `view_model::bridges`; this sends the
 //! commands it names and draws the state.
 
-use std::{collections::HashSet, sync::Arc};
+use std::sync::Arc;
 
 use gpui::{AnyElement, Context, Entity, FontWeight, IntoElement, div, prelude::*, px, rgb};
 use morpheus_core::{OwnedUserId, TimelineHandle};
@@ -218,12 +218,12 @@ impl SettingsView {
                 }
             };
             let handle = open.handle.clone();
-            let mut seen: HashSet<String> = HashSet::new();
+            let mut seen: std::collections::HashMap<String, String> = std::collections::HashMap::new();
             // What was said before is not an answer: the first batch is the history.
             if let Some(first) = open.updates.next().await {
                 for diff in &first {
                     for message in vm::messages_in(diff, &bot) {
-                        seen.insert(message.0);
+                        seen.insert(message.0, vm::fingerprint(&message.1));
                     }
                 }
             }
@@ -242,7 +242,7 @@ impl SettingsView {
             while let Some(diffs) = open.updates.next().await {
                 for diff in &diffs {
                     for (id, kind) in vm::messages_in(diff, &bot) {
-                        if !seen.insert(id) {
+                        if seen.insert(id, vm::fingerprint(&kind)).is_some_and(|before| before == vm::fingerprint(&kind)) {
                             continue;
                         }
                         let Some((reply, media)) = vm::reply_of(&kind) else {
@@ -255,7 +255,7 @@ impl SettingsView {
                                 .ok()
                                 .flatten()
                                 .and_then(|file| super::pages::picture_from(file.bytes)),
-                            None => None,
+                            None => vm::local_qr(&reply).and_then(super::pages::picture_from),
                         };
                         let gone = this
                             .update(cx, |this, cx| this.bridge_reply(&bot, reply, picture, cx))

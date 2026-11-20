@@ -216,13 +216,123 @@ pub fn reply_of(kind: &morpheus_core::MessageKind) -> Option<(Reply, Option<morp
     use morpheus_core::MessageKind;
     match kind {
         MessageKind::Text { body, .. } | MessageKind::Notice { body, .. } => {
-            Some((Reply { text: body.clone(), image: false }, None))
+            // A QR code sent as words is drawn here as a picture.
+            let image = qr_payload_of(body).is_some();
+            Some((Reply { text: body.clone(), image }, None))
         }
         MessageKind::Image { body, media, .. } => {
             Some((Reply { text: body.clone(), image: true }, Some(media.clone())))
         }
         _ => None,
     }
+}
+
+// ---- QR codes sent as text, and edits of the bot's messages --------------------------
+
+/// The text of a QR code a bridge sent as words instead of a picture, when `text` has
+/// one: WhatsApp's `2@...,...,...` pairing string, a `tg://login?token=...` or
+/// `sgnl://linkdevice?...` link, or any other `scheme://` link without spaces (in code
+/// ticks or not). Plain prose has none.
+pub fn qr_payload_of(text: &str) -> Option<String> {
+    text.split_whitespace()
+        .map(|word| word.trim_matches(|c: char| matches!(c, '`' | '"' | '\'' | '<' | '>' | '*')))
+        .find(|word| {
+            let whatsapp = word.starts_with("2@") && word.matches(',').count() >= 2 && word.len() > 40;
+            let link = word.len() > 20
+                && word
+                    .split_once("://")
+                    .is_some_and(|(scheme, rest)| {
+                        !rest.is_empty()
+                            && !scheme.is_empty()
+                            && scheme.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+                            && !matches!(scheme, "http" | "https" | "mxc" | "matrix")
+                            || (matches!(scheme, "http" | "https") && word.contains("device") && word.contains("link"))
+                    });
+            whatsapp || link
+        })
+        .map(str::to_owned)
+}
+
+/// A PNG of the QR code for `payload` (a white margin, each square eight pixels).
+pub fn qr_png(payload: &str) -> Option<Vec<u8>> {
+    use qrcode::{Color, QrCode};
+    const SCALE: usize = 8;
+    const QUIET: usize = 4;
+    let code = QrCode::new(payload.as_bytes()).ok()?;
+    let modules = code.width();
+    let side = (modules + 2 * QUIET) * SCALE;
+    let colours = code.to_colors();
+    let mut raw = Vec::with_capacity((side + 1) * side);
+    for y in 0..side {
+        raw.push(0); // filter: none
+        for x in 0..side {
+            let (mx, my) = (x / SCALE, y / SCALE);
+            let dark = mx >= QUIET
+                && my >= QUIET
+                && mx < modules + QUIET
+                && my < modules + QUIET
+                && colours[(my - QUIET) * modules + (mx - QUIET)] == Color::Dark;
+            raw.push(if dark { 0 } else { 255 });
+        }
+    }
+    Some(png_grey(side as u32, side as u32, &raw))
+}
+
+fn crc32(bytes: &[u8]) -> u32 {
+    let mut crc = 0xffff_ffffu32;
+    for &b in bytes {
+        crc ^= u32::from(b);
+        for _ in 0..8 {
+            crc = if crc & 1 != 0 { (crc >> 1) ^ 0xedb8_8320 } else { crc >> 1 };
+        }
+    }
+    !crc
+}
+
+/// An 8-bit greyscale PNG of `raw` (each row led by its filter byte), zlib-stored.
+fn png_grey(width: u32, height: u32, raw: &[u8]) -> Vec<u8> {
+    let mut z = vec![0x78, 0x01];
+    let mut chunks = raw.chunks(65_535).peekable();
+    while let Some(chunk) = chunks.next() {
+        z.push(u8::from(chunks.peek().is_none()));
+        z.extend_from_slice(&(chunk.len() as u16).to_le_bytes());
+        z.extend_from_slice(&(!(chunk.len() as u16)).to_le_bytes());
+        z.extend_from_slice(chunk);
+    }
+    let (mut a, mut b) = (1u32, 0u32);
+    for &byte in raw {
+        a = (a + u32::from(byte)) % 65_521;
+        b = (b + a) % 65_521;
+    }
+    z.extend_from_slice(&((b << 16) | a).to_be_bytes());
+    let mut out = b"\x89PNG\r\n\x1a\n".to_vec();
+    let mut chunk = |kind: &[u8; 4], data: &[u8]| {
+        out.extend_from_slice(&(data.len() as u32).to_be_bytes());
+        let mut body = kind.to_vec();
+        body.extend_from_slice(data);
+        out.extend_from_slice(&body);
+        out.extend_from_slice(&crc32(&body).to_be_bytes());
+    };
+    let mut header = Vec::new();
+    header.extend_from_slice(&width.to_be_bytes());
+    header.extend_from_slice(&height.to_be_bytes());
+    header.extend_from_slice(&[8, 0, 0, 0, 0]);
+    chunk(b"IHDR", &header);
+    chunk(b"IDAT", &z);
+    chunk(b"IEND", &[]);
+    out
+}
+
+/// The picture to show for a reply that is a QR code sent as text (None for an image
+/// reply, whose picture is fetched, and for any other).
+pub fn local_qr(reply: &Reply) -> Option<Vec<u8>> {
+    reply.image.then(|| qr_png(&qr_payload_of(&reply.text)?)).flatten()
+}
+
+/// What a bot message is now, to tell an edit (the same message with new content, as a
+/// QR code that is replaced every twenty seconds) from a change that is no news.
+pub fn fingerprint(kind: &morpheus_core::MessageKind) -> String {
+    format!("{kind:?}")
 }
 
 /// The messages of `bot` a timeline change carries: their ids and what they are.
@@ -606,6 +716,33 @@ mod tests {
 
     fn text(t: &str) -> Reply {
         Reply { text: t.into(), image: false }
+    }
+
+    #[test]
+    fn a_qr_code_sent_as_text_is_found_and_drawn() {
+        let whatsapp = "2@AbCdEfGhIjKlMnOpQrStUvWxYz0123456789,Zm9vYmFyYmF6cXV4,YmF6cXV4Zm9vYmFy,1";
+        for (text, found) in [
+            (whatsapp.to_owned(), true),
+            (format!("Scan this with WhatsApp:\n`{whatsapp}`"), true),
+            ("tg://login?token=AAECAwQFBgcICQoLDA0ODw".to_owned(), true),
+            ("sgnl://linkdevice?uuid=abcdef0123456789&pub_key=BQabcdef".to_owned(), true),
+            ("https://signal.link/linkdevice?uuid=abcdef0123456789".to_owned(), true),
+            ("Scan the QR code below with your phone".to_owned(), false),
+            ("See https://docs.mau.fi/bridges/go/whatsapp/authentication.html for help".to_owned(), false),
+            ("mxc://example.org/abcdefghijklmnopqrstuvwx".to_owned(), false),
+        ] {
+            assert_eq!(qr_payload_of(&text).is_some(), found, "{text}");
+        }
+        let reply = Reply { text: format!("`{whatsapp}`"), image: true };
+        let png = local_qr(&reply).expect("a picture");
+        assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n");
+        assert!(png.len() > 1000);
+        assert_eq!(local_qr(&text("hello")), None);
+        // As a reply it is a QR code to scan, not a message to show.
+        let kind = morpheus_core::MessageKind::Notice { body: whatsapp.to_owned(), html: None };
+        let (reply, media) = reply_of(&kind).expect("a reply");
+        assert!(reply.image && media.is_none());
+        assert_eq!(parse_reply(&reply), Event::Qr);
     }
 
     fn qr() -> Reply {

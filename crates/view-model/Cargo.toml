@@ -9,6 +9,7 @@ license.workspace = true
 pulldown-cmark = { version = "0.13", default-features = false }
 morpheus-core = { workspace = true }
 serde_json = { workspace = true }
+qrcode = { version = "0.14", default-features = false }
 ruma-html = { workspace = true }
 jiff = "0.2"
 color-thief = "0.2.2"

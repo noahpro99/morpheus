@@ -5,7 +5,7 @@
 //! pushes what the page shows (the status, the question, the QR code's
 //! picture) as whole [`BridgeSnapshot`]s.
 
-use std::{collections::HashSet, sync::Arc};
+use std::sync::Arc;
 
 use morpheus_core::OwnedUserId;
 use morpheus_view_model::bridges::{self as vm, Login, Status};
@@ -200,7 +200,7 @@ impl Morpheus {
         let task = runtime().spawn(async move {
             let mut login = Login::new(network);
             let mut qr: Option<Vec<u8>> = None;
-            let mut seen: HashSet<String> = HashSet::new();
+            let mut seen: std::collections::HashMap<String, String> = std::collections::HashMap::new();
             let mut open: Option<(morpheus_core::TimelineHandle, morpheus_core::TimelineUpdates)> = None;
             let fail = |login: &mut Login, qr: &mut Option<Vec<u8>>, why: String| {
                 login.status = Status::Error(why);
@@ -232,7 +232,7 @@ impl Morpheus {
                                     if let Some(first) = timeline.updates.next().await {
                                         for diff in &first {
                                             for message in vm::messages_in(diff, &bot) {
-                                                seen.insert(message.0);
+                                                seen.insert(message.0, vm::fingerprint(&message.1));
                                             }
                                         }
                                     }
@@ -265,13 +265,13 @@ impl Morpheus {
                         };
                         for diff in &diffs {
                             for (id, kind) in vm::messages_in(diff, &bot) {
-                                if !seen.insert(id) {
+                                if seen.insert(id, vm::fingerprint(&kind)).is_some_and(|before| before == vm::fingerprint(&kind)) {
                                     continue;
                                 }
                                 let Some((reply, media)) = vm::reply_of(&kind) else { continue };
                                 let picture = match media {
                                     Some(media) => session.media_file(media).await.ok().flatten().map(|f| f.bytes),
-                                    None => None,
+                                    None => vm::local_qr(&reply),
                                 };
                                 if picture.is_some() {
                                     qr = picture;
