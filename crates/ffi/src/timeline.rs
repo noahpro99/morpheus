@@ -61,6 +61,10 @@ pub struct MessageItem {
     pub is_own: bool,
     pub sending: bool,
     pub edited: bool,
+    /// An own text message: its text can be replaced.
+    pub can_edit: bool,
+    /// An own message: it can be deleted.
+    pub can_delete: bool,
     pub body: MessageBody,
     pub reply_to: Option<ReplyItem>,
     pub reactions: Vec<ReactionItem>,
@@ -99,9 +103,6 @@ fn message_item(row: &MessageRow, show_header: bool, session: &Session) -> Messa
             height: *height,
         },
         kind => match kind.plain_body() {
-            Some(text) if message.is_edited => MessageBody::Text {
-                text: format!("{text} (edited)"),
-            },
             Some(text) => MessageBody::Text { text: text.to_owned() },
             None => MessageBody::Other {
                 summary: kind.summary(),
@@ -126,6 +127,8 @@ fn message_item(row: &MessageRow, show_header: bool, session: &Session) -> Messa
         is_own: message.is_own,
         sending: message.is_local_echo,
         edited: message.is_edited,
+        can_edit: message.is_own && message.can_edit,
+        can_delete: message.is_own && matches!(message.id, MessageId::Event(_)),
         body,
         reply_to: message.in_reply_to.as_ref().map(|reply| ReplyItem {
             event_id: reply.event_id.to_string(),
@@ -198,6 +201,16 @@ impl RoomTimeline {
     /// Load older messages; `true` once the start of the room is reached.
     pub async fn load_older(&self) -> Result<bool, FfiError> {
         Ok(self.handle.paginate_backwards(30).await?)
+    }
+
+    /// Replace the text of one of my messages.
+    pub async fn edit_message(&self, event_id_of: String, body: String) -> Result<(), FfiError> {
+        Ok(self.handle.edit(MessageId::Event(event_id(&event_id_of)?), body).await?)
+    }
+
+    /// Delete one of my messages.
+    pub async fn delete_message(&self, event_id_of: String) -> Result<(), FfiError> {
+        Ok(self.handle.redact(MessageId::Event(event_id(&event_id_of)?)).await?)
     }
 
     /// Tell the others the newest message is read.

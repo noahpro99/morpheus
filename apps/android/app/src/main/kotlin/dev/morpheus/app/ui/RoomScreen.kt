@@ -46,6 +46,8 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -70,6 +72,7 @@ fun RoomScreen(app: AppModel, room: RoomItem) {
     DisposableEffect(model) { onDispose { model.close() } }
     val rows by model.rows.collectAsState()
     val replyingTo by model.replyingTo.collectAsState()
+    val editing by model.editing.collectAsState()
     var actions by remember { mutableStateOf<MessageItem?>(null) }
     var viewing by remember { mutableStateOf<MediaHandle?>(null) }
 
@@ -77,6 +80,7 @@ fun RoomScreen(app: AppModel, room: RoomItem) {
         when {
             viewing != null -> viewing = null
             actions != null -> actions = null
+            editing != null -> model.edit(null)
             else -> app.closeRoom()
         }
     }
@@ -118,11 +122,20 @@ fun RoomScreen(app: AppModel, room: RoomItem) {
                     TextButton({ model.replyTo(null) }, Modifier.testTag("reply-cancel")) { Text("✕") }
                 }
             }
+            editing?.let {
+                Row(
+                    Modifier.fillMaxWidth().background(Palette.Raised).padding(start = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Editing your message", Modifier.weight(1f).testTag("edit-banner"), color = Palette.Muted, fontSize = 13.sp)
+                    TextButton({ model.edit(null) }, Modifier.testTag("edit-cancel")) { Text("✕") }
+                }
+            }
             val problem by model.error.collectAsState()
             problem?.let {
                 Text(it, Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("room-error"), color = Palette.Danger, fontSize = 13.sp)
             }
-            Composer { model.send(it) }
+            Composer(editing) { model.send(it) }
         }
         actions?.let { message ->
             Actions(
@@ -133,6 +146,14 @@ fun RoomScreen(app: AppModel, room: RoomItem) {
                 },
                 onReply = {
                     model.replyTo(message)
+                    actions = null
+                },
+                onEdit = {
+                    model.edit(message)
+                    actions = null
+                },
+                onDelete = {
+                    message.eventId?.let { model.delete(it) }
                     actions = null
                 },
                 onDismiss = { actions = null },
@@ -262,7 +283,10 @@ private fun MessageRow(
                 )
             }
             when (val body = message.body) {
-                is MessageBody.Text -> Text(body.text, Modifier.testTag("msg-body"))
+                is MessageBody.Text -> Text(
+                    if (message.edited) body.text + "  (edited)" else body.text,
+                    Modifier.testTag("msg-body"),
+                )
                 is MessageBody.Other -> Text(body.summary, Modifier.testTag("msg-body"), color = Palette.Muted)
                 is MessageBody.Image -> PictureBody(body, onImage)
             }
@@ -316,8 +340,11 @@ private fun PictureBody(body: MessageBody.Image, onImage: (MediaHandle) -> Unit)
 }
 
 @Composable
-private fun Composer(onSend: (String) -> Unit) {
+private fun Composer(editing: MessageItem?, onSend: (String) -> Unit) {
     var text by rememberSaveable { mutableStateOf("") }
+    LaunchedEffect(editing?.key) {
+        if (editing != null) text = (editing.body as? MessageBody.Text)?.text.orEmpty()
+    }
     Row(
         Modifier.fillMaxWidth().background(Palette.Background).padding(8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -338,7 +365,14 @@ private fun Composer(onSend: (String) -> Unit) {
 }
 
 @Composable
-private fun Actions(message: MessageItem, onReact: (String) -> Unit, onReply: () -> Unit, onDismiss: () -> Unit) {
+private fun Actions(
+    message: MessageItem,
+    onReact: (String) -> Unit,
+    onReply: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    onDismiss: () -> Unit,
+) {
     Box(
         Modifier
             .fillMaxSize()
@@ -370,6 +404,18 @@ private fun Actions(message: MessageItem, onReact: (String) -> Unit, onReply: ()
                 }
             }
             TextButton(onReply, Modifier.testTag("action-reply")) { Text("Reply") }
+            val clipboard = LocalClipboardManager.current
+            val text = (message.body as? MessageBody.Text)?.text
+            if (text != null) {
+                TextButton({ clipboard.setText(AnnotatedString(text)); onDismiss() }, Modifier.testTag("action-copy")) { Text("Copy text") }
+            }
+            if (message.canEdit) TextButton(onEdit, Modifier.testTag("action-edit")) { Text("Edit") }
+            if (message.canDelete) {
+                var sure by remember { mutableStateOf(false) }
+                TextButton({ if (sure) onDelete() else sure = true }, Modifier.testTag("action-delete")) {
+                    Text(if (sure) "Tap again to delete" else "Delete", color = Palette.Danger)
+                }
+            }
         }
     }
 }

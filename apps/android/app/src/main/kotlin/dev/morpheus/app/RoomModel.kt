@@ -56,7 +56,25 @@ class RoomModel(private val morpheus: Morpheus, val room: RoomItem) {
         _replyingTo.value = message
     }
 
+    private val _editing = MutableStateFlow<MessageItem?>(null)
+
+    /** The message whose text the composer is replacing, if any. */
+    val editing: StateFlow<MessageItem?> = _editing.asStateFlow()
+
+    fun edit(message: MessageItem?) {
+        _editing.value = message
+        if (message != null) _replyingTo.value = null
+    }
+
+    fun delete(eventId: String) = launchSafely { timeline?.deleteMessage(eventId) }
+
     fun send(text: String) {
+        val editing = _editing.value
+        if (editing?.eventId != null) {
+            _editing.value = null
+            launchSafely { timeline?.editMessage(editing.eventId!!, text) }
+            return
+        }
         val reply = _replyingTo.value
         _replyingTo.value = null
         launchSafely {

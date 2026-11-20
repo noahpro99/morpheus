@@ -6,7 +6,7 @@
 use std::{sync::Arc, time::Duration};
 
 use morpheus_ffi::{
-    MessageBody, Morpheus, ScopeKind, Sidebar, SidebarListener, SyncListener, TimelineListener,
+    MessageBody, MessageItem, Morpheus, ScopeKind, Sidebar, SidebarListener, SyncListener, TimelineListener,
     TimelineRow,
 };
 use tokio::{sync::mpsc, time::timeout};
@@ -196,4 +196,44 @@ async fn sign_in_lists_servers_and_rooms_opens_a_timeline_sends_replies_and_rest
     again.logout().await.expect("logout");
     let third = Morpheus::new(dir.path().display().to_string()).expect("app third");
     assert!(third.restore_session().await.expect("restore").is_none());
+}
+
+#[tokio::test]
+async fn own_messages_can_be_edited_and_deleted() {
+    let Ok(homeserver) = std::env::var("MORPHEUS_TEST_HOMESERVER") else {
+        return;
+    };
+    let dir = tempfile::tempdir().expect("dir");
+    let app = Morpheus::new(dir.path().display().to_string()).expect("app");
+    app.login(homeserver, "alice".into(), "alice-password".into()).await.expect("login");
+    let (sidebar, mut sidebar_rx) = Feed::new();
+    let _sidebar = app.watch_sidebar(sidebar).await.expect("watch sidebar");
+    let list = until(&mut sidebar_rx, "general", |s: &Sidebar| {
+        s.scopes.iter().flat_map(|s| &s.sections).flat_map(|s| &s.rooms).any(|r| r.name == "general")
+    })
+    .await;
+    let general = list.scopes.iter().flat_map(|s| &s.sections).flat_map(|s| &s.rooms).find(|r| r.name == "general").expect("general");
+    let (rows, mut rows_rx) = Feed::new();
+    let room = app.open_room(general.id.clone(), rows).await.expect("open");
+
+    let stamp = format!("ffi edit {}", std::process::id());
+    room.send_text(stamp.clone()).await.expect("send");
+    fn mine<'a>(rows: &'a [TimelineRow], text: &str) -> Option<&'a MessageItem> {
+        rows.iter().find_map(|row| match row {
+            TimelineRow::Message { message } if matches!(&message.body, MessageBody::Text { text: t } if t == text) && message.event_id.is_some() => Some(message),
+            _ => None,
+        })
+    }
+    let rows = until(&mut rows_rx, "my message with an id", |rows: &Vec<TimelineRow>| mine(rows, &stamp).is_some()).await;
+    let sent = mine(&rows, &stamp).expect("sent");
+    assert!(sent.can_edit && sent.can_delete, "own text can be edited and deleted");
+    let id = sent.event_id.clone().expect("id");
+
+    let new = format!("{stamp} fixed");
+    room.edit_message(id.clone(), new.clone()).await.expect("edit");
+    let rows = until(&mut rows_rx, "the edit", |rows: &Vec<TimelineRow>| mine(rows, &new).is_some_and(|m| m.edited)).await;
+    assert!(mine(&rows, &stamp).is_none(), "the old text is gone, and the new text has no mark in it");
+
+    room.delete_message(id).await.expect("delete");
+    until(&mut rows_rx, "the deletion", |rows: &Vec<TimelineRow>| mine(rows, &new).is_none()).await;
 }
