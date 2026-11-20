@@ -112,11 +112,12 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
     }
 
     /** The language picked; screens read it so their words change with it. */
-    private val _language = MutableStateFlow(run { morpheus.startLanguage(); morpheus.languageChoice() })
+    private val _language = MutableStateFlow(run { morpheus.startLanguage(); dev.morpheus.app.ui.Words.morpheus = morpheus; dev.morpheus.app.ui.Words.changed(); morpheus.languageChoice() })
     val language: StateFlow<String> = _language.asStateFlow()
 
     fun useLanguage(code: String) {
         morpheus.setLanguage(code)
+        dev.morpheus.app.ui.Words.changed()
         _language.value = code
     }
 

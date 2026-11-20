@@ -64,7 +64,7 @@ fun RoomInfo(app: AppModel, model: RoomModel, room: RoomItem, title: String, onC
         Column(Modifier.fillMaxSize().background(Palette.Surface)) {
             Row(Modifier.fillMaxWidth().background(Palette.Background), verticalAlignment = Alignment.CenterVertically) {
                 TextButton({ onClose() }, Modifier.testTag("info-back")) { Text("‹", fontSize = 28.sp) }
-                Text("Room details", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(t("Room details"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             }
             LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 item {
@@ -75,7 +75,7 @@ fun RoomInfo(app: AppModel, model: RoomModel, room: RoomItem, title: String, onC
                             if (room.isEncrypted) "🔒 End-to-end encrypted" else "Not encrypted",
                             Modifier.testTag("info-encryption"), color = Palette.Muted, fontSize = 13.sp,
                         )
-                        Text("NOTIFICATIONS", Modifier.padding(top = 12.dp), color = Palette.Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text(t("Notifications").uppercase(), Modifier.padding(top = 12.dp), color = Palette.Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         for ((key, words) in listOf("all" to "All messages", "mentions" to "Only mentions", "mute" to "Muted")) {
                             Row(
                                 Modifier.fillMaxWidth().clickable {
@@ -88,8 +88,8 @@ fun RoomInfo(app: AppModel, model: RoomModel, room: RoomItem, title: String, onC
                                 Text(words)
                             }
                         }
-                        Text("MEMBERS", Modifier.padding(top = 12.dp), color = Palette.Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        if (members == null && problem == null) Text("Loading…", color = Palette.Muted)
+                        Text(t("Members").uppercase(), Modifier.padding(top = 12.dp), color = Palette.Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        if (members == null && problem == null) Text(t("Loading…"), color = Palette.Muted)
                     }
                 }
                 items(members.orEmpty()) { row ->
@@ -180,7 +180,7 @@ private fun ProfileSheet(app: AppModel, card: ProfileCard, onClose: () -> Unit) 
                                 problem = e.sentence()
                             }
                         }
-                    }, Modifier.testTag("card-message")) { Text("Message") }
+                    }, Modifier.testTag("card-message")) { Text(t("Message")) }
                     TextButton({
                         scope.launch {
                             try {

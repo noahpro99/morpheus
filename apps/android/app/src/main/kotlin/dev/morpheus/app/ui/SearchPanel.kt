@@ -50,13 +50,13 @@ fun SearchPanel(model: RoomModel, onPick: (String) -> Unit) {
             OutlinedTextField(
                 query, { query = it },
                 Modifier.weight(1f).padding(end = 8.dp).testTag("search-input"),
-                placeholder = { Text("Search messages") },
+                placeholder = { Text(t("Search messages")) },
                 singleLine = true,
             )
         }
-        Text("Searches the messages this device has loaded.", Modifier.padding(horizontal = 16.dp, vertical = 6.dp), color = Palette.Muted, fontSize = 12.sp)
+        Text(t("Searches the messages this device has loaded."), Modifier.padding(horizontal = 16.dp, vertical = 6.dp), color = Palette.Muted, fontSize = 12.sp)
         val found = hits
-        if (found != null && found.isEmpty()) Text("No messages found.", Modifier.padding(16.dp).testTag("search-none"), color = Palette.Muted)
+        if (found != null && found.isEmpty()) Text(t("No messages found."), Modifier.padding(16.dp).testTag("search-none"), color = Palette.Muted)
         LazyColumn(Modifier.fillMaxSize().testTag("search-results"), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             items(found.orEmpty(), key = { it.eventId }) { hit ->
                 Column(

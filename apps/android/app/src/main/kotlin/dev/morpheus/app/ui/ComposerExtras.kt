@@ -94,7 +94,7 @@ fun EmojiPanel(model: RoomModel, onPick: (String) -> Unit) {
         OutlinedTextField(
             query, { query = it },
             Modifier.fillMaxWidth().padding(8.dp).testTag("emoji-search"),
-            placeholder = { Text("Search emoji") },
+            placeholder = { Text(t("Search emoji")) },
             singleLine = true,
         )
         LazyVerticalGrid(GridCells.Adaptive(44.dp), Modifier.fillMaxWidth()) {

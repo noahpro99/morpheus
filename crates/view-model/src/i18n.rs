@@ -295,7 +295,37 @@ mod tests {
                 }
             }
         }
+        keys.extend(kotlin_keys(&root.join("apps/android/app/src/main/kotlin")));
         keys.extend(super::dynamic_keys().into_iter().map(|k| (k.to_owned(), "a label in view-model".to_owned())));
+        keys
+    }
+
+    /// The literals the Android app gives to `t("...")` (apps/android: `Words.kt`): also keys.
+    fn kotlin_keys(dir: &Path) -> Vec<(String, String)> {
+        let mut keys = Vec::new();
+        let Ok(entries) = std::fs::read_dir(dir) else { return keys };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                keys.extend(kotlin_keys(&path));
+            } else if path.extension().is_some_and(|e| e == "kt") {
+                let text = std::fs::read_to_string(&path).unwrap_or_default();
+                let mut from = 0;
+                while let Some(found) = text[from..].find("t(\"") {
+                    let at = from + found;
+                    from = at + 3;
+                    let before = text[..at].chars().next_back();
+                    if before.is_some_and(|c| c.is_alphanumeric() || c == '_') {
+                        continue;
+                    }
+                    let Some(end) = text[from..].find('"') else { break };
+                    let key = &text[from..from + end];
+                    if !key.contains('$') && !key.contains('\\') {
+                        keys.push((key.to_owned(), path.display().to_string()));
+                    }
+                }
+            }
+        }
         keys
     }
 

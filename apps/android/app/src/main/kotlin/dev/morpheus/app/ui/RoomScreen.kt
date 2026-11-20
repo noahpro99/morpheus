@@ -180,7 +180,7 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
                     Modifier.fillMaxWidth().background(Palette.Raised).padding(start = 16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("Editing your message", Modifier.weight(1f).testTag("edit-banner"), color = Palette.Muted, fontSize = 13.sp)
+                    Text(t("Editing your message"), Modifier.weight(1f).testTag("edit-banner"), color = Palette.Muted, fontSize = 13.sp)
                     TextButton({ model.edit(null) }, Modifier.testTag("edit-cancel")) { Text("✕") }
                 }
             }
@@ -309,7 +309,7 @@ private fun Timeline(
         Button(
             { scope.launch { state.animateScrollToItem(dividerAt) } },
             Modifier.align(Alignment.TopCenter).padding(top = 8.dp).testTag("jump-unread"),
-        ) { Text("Jump to unread") }
+        ) { Text(t("Jump to unread")) }
     }
     }
 }
@@ -479,14 +479,14 @@ private fun Composer(model: RoomModel, editing: MessageItem?, onAttach: () -> Un
         OutlinedTextField(
             text, { text = it },
             Modifier.weight(1f).heightIn(max = 140.dp).testTag("composer"),
-            placeholder = { Text("Message") },
+            placeholder = { Text(t("Message")) },
             maxLines = 5,
         )
         Button(
             { onSend(text.trim()); text = ""; model.stopTyping() },
             Modifier.testTag("send"),
             enabled = text.isNotBlank(),
-        ) { Text("Send") }
+        ) { Text(t("Send")) }
     }
     if (panel) EmojiPanel(model) { text = if (it.startsWith(":")) withEmoji(text, it) else withEmoji(text, it) }
     }
@@ -533,14 +533,14 @@ private fun Actions(
                     ) { Text(emoji, fontSize = 22.sp) }
                 }
             }
-            TextButton(onReply, Modifier.testTag("action-reply")) { Text("Reply") }
+            TextButton(onReply, Modifier.testTag("action-reply")) { Text(t("Reply")) }
             if (canThread) TextButton(onThread, Modifier.testTag("action-thread")) { Text(if (message.thread == null) "Start a thread" else "Open thread") }
             val clipboard = LocalClipboardManager.current
             val text = (message.body as? MessageBody.Text)?.text
             if (text != null) {
-                TextButton({ clipboard.setText(AnnotatedString(text)); onDismiss() }, Modifier.testTag("action-copy")) { Text("Copy text") }
+                TextButton({ clipboard.setText(AnnotatedString(text)); onDismiss() }, Modifier.testTag("action-copy")) { Text(t("Copy text")) }
             }
-            if (message.canEdit) TextButton(onEdit, Modifier.testTag("action-edit")) { Text("Edit") }
+            if (message.canEdit) TextButton(onEdit, Modifier.testTag("action-edit")) { Text(t("Edit")) }
             if (message.canDelete) {
                 var sure by remember { mutableStateOf(false) }
                 TextButton({ if (sure) onDelete() else sure = true }, Modifier.testTag("action-delete")) {

@@ -82,10 +82,10 @@ fun CallScreen(calls: CallModel, snapshot: CallSnapshot) {
                 Text(snapshot.roomName, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("call-title"))
                 Text(
                     when (snapshot.phase) {
-                        CallPhase.JOINING -> "Connecting…"
-                        CallPhase.CONNECTED -> "Connected"
-                        CallPhase.FAILED -> "Not connected"
-                        CallPhase.ENDED -> "Ended"
+                        CallPhase.JOINING -> t("Connecting…")
+                        CallPhase.CONNECTED -> t("Connected")
+                        CallPhase.FAILED -> t("Not connected")
+                        CallPhase.ENDED -> t("Ended")
                     },
                     Modifier.testTag("call-state"), color = Palette.Muted, fontSize = 12.sp,
                 )
@@ -122,8 +122,8 @@ private fun Card(calls: CallModel, snapshot: CallSnapshot, card: CallCard) {
             CardKind.PERSON -> Avatar(card.avatar, card.name, 64.dp)
             CardKind.CAMERA, CardKind.SCREEN -> VideoPicture(calls, card)
             CardKind.UNWATCHED_SCREEN -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("${card.name}'s screen", color = Palette.Muted, fontSize = 13.sp)
-                Button({ calls.watch(card.userId, true) }, Modifier.testTag("watch-${card.name}")) { Text("Watch") }
+                Text(t("%{name}'s screen", "name" to card.name), color = Palette.Muted, fontSize = 13.sp)
+                Button({ calls.watch(card.userId, true) }, Modifier.testTag("watch-${card.name}")) { Text(t("Watch")) }
             }
         }
         if (card.kind == CardKind.SCREEN) {
@@ -136,7 +136,7 @@ private fun Card(calls: CallModel, snapshot: CallSnapshot, card: CallCard) {
         ) {
             if (card.speaking) Box(Modifier.size(8.dp).clip(CircleShape).background(speakingGreen).testTag("speaking-${card.name}"))
             Text(
-                if (card.kind == CardKind.SCREEN || card.kind == CardKind.UNWATCHED_SCREEN) "${card.name}'s screen" else card.name,
+                if (card.kind == CardKind.SCREEN || card.kind == CardKind.UNWATCHED_SCREEN) t("%{name}'s screen", "name" to card.name) else card.name,
                 color = Color.White, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
             if (card.kind != CardKind.SCREEN && card.kind != CardKind.UNWATCHED_SCREEN) {
@@ -179,7 +179,7 @@ private fun Controls(calls: CallModel, snapshot: CallSnapshot, speaker: Boolean)
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (snapshot.phase == CallPhase.FAILED) {
-            Button({ calls.dismiss() }, Modifier.testTag("call-dismiss")) { Text("Close") }
+            Button({ calls.dismiss() }, Modifier.testTag("call-dismiss")) { Text(t("Close")) }
             return@Row
         }
         Control(if (snapshot.muted) "🔇" else "🎙️", "call-mute", snapshot.muted) { calls.toggleMute() }
@@ -211,7 +211,7 @@ fun CallBar(calls: CallModel, snapshot: CallSnapshot) {
         Column(Modifier.weight(1f)) {
             Text(snapshot.roomName, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
-                if (snapshot.phase == CallPhase.CONNECTED) "In a call" else "Connecting…",
+                if (snapshot.phase == CallPhase.CONNECTED) t("In a call") else t("Connecting…"),
                 color = Color.White, fontSize = 12.sp, modifier = Modifier.testTag("call-bar-state"),
             )
         }

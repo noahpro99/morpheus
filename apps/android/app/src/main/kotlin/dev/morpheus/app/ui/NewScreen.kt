@@ -68,7 +68,7 @@ fun NewScreen(app: AppModel) {
     Column(Modifier.fillMaxSize().background(Palette.Surface).testTag("new-screen")) {
         Row(Modifier.fillMaxWidth().background(Palette.Background), verticalAlignment = Alignment.CenterVertically) {
             TextButton({ app.closeNew() }, Modifier.testTag("new-back")) { Text("‹", fontSize = 28.sp) }
-            Text("New", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(t("New"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
             for (t in Tab.entries) {
@@ -130,12 +130,12 @@ private fun Browse(app: AppModel, busy: Boolean, onJoin: (String, String?) -> Un
     OutlinedTextField(
         term, { term = it },
         Modifier.fillMaxWidth().testTag("directory-search"),
-        placeholder = { Text("Search public rooms") },
+        placeholder = { Text(t("Search public rooms")) },
         singleLine = true,
     )
     failure?.let { Text(it, color = Palette.Danger, fontSize = 14.sp) }
     val listed = rooms
-    if (listed != null && listed.isEmpty() && failure == null) Text("No public rooms found.", color = Palette.Muted)
+    if (listed != null && listed.isEmpty() && failure == null) Text(t("No public rooms found."), color = Palette.Muted)
     LazyColumn(Modifier.testTag("directory")) {
         items(listed.orEmpty(), key = { it.id }) { room ->
             Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -143,7 +143,7 @@ private fun Browse(app: AppModel, busy: Boolean, onJoin: (String, String?) -> Un
                     Text(room.name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("directory-name"))
                     Text(listOfNotNull(room.members, room.topic).joinToString(" · "), color = Palette.Muted, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
-                TextButton({ onJoin(room.id, null) }, Modifier.testTag("join-${room.name}"), enabled = !busy) { Text("Join") }
+                TextButton({ onJoin(room.id, null) }, Modifier.testTag("join-${room.name}"), enabled = !busy) { Text(t("Join")) }
             }
         }
     }
@@ -167,7 +167,7 @@ private fun Friends(app: AppModel, onMessage: (String) -> Unit) {
         OutlinedTextField(
             typed, { typed = it },
             Modifier.weight(1f).testTag("friend-input"),
-            placeholder = { Text("Add a friend: username or @name:server") },
+            placeholder = { Text(t("Add a friend: username or @name:server")) },
             singleLine = true,
         )
         Button({
@@ -181,11 +181,11 @@ private fun Friends(app: AppModel, onMessage: (String) -> Unit) {
                     failure = e.sentence()
                 }
             }
-        }, Modifier.testTag("friend-add"), enabled = typed.isNotBlank()) { Text("Add") }
+        }, Modifier.testTag("friend-add"), enabled = typed.isNotBlank()) { Text(t("Add")) }
     }
     failure?.let { Text(it, Modifier.testTag("friend-error"), color = Palette.Danger, fontSize = 14.sp) }
     val list = friends
-    if (list != null && list.isEmpty()) Text("No friends yet", Modifier.testTag("no-friends"), color = Palette.Muted)
+    if (list != null && list.isEmpty()) Text(t("No friends yet"), Modifier.testTag("no-friends"), color = Palette.Muted)
     if (list != null && list.isNotEmpty()) Text("All friends — ${list.size}", color = Palette.Muted, fontSize = 12.sp)
     LazyColumn(Modifier.testTag("friends")) {
         items(list.orEmpty(), key = { it.userId }) { friend ->
@@ -206,7 +206,7 @@ private fun Friends(app: AppModel, onMessage: (String) -> Unit) {
                             failure = e.sentence()
                         }
                     }
-                }, Modifier.testTag("unfriend-${friend.name}")) { Text("Remove") }
+                }, Modifier.testTag("unfriend-${friend.name}")) { Text(t("Remove")) }
             }
         }
     }

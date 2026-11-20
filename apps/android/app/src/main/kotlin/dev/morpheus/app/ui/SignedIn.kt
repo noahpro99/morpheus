@@ -57,7 +57,7 @@ fun SignedInScreen(model: AppModel, state: Screen.SignedIn, onOpenRoom: (RoomIte
         Rail(scopes, scope?.key) { model.selectScope(it.key) }
         Column(Modifier.weight(1f).fillMaxHeight()) {
             if (scope == null) {
-                Text("Loading…", Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(t("Loading…"), Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
                 ChannelList(scope, invites, model, onOpenRoom, Modifier.weight(1f))
             }
@@ -138,7 +138,7 @@ private fun ChannelList(scope: ScopeItem, invites: List<InviteItem>, model: AppM
             )
             val unreadIds = scope.sections.flatMap { it.rooms }.filter { it.unread > 0UL || it.highlights > 0UL }.map { it.id }
             if (unreadIds.isNotEmpty()) {
-                TextButton({ model.markRoomsRead(unreadIds) }, Modifier.testTag("mark-read")) { Text("Mark read", fontSize = 13.sp) }
+                TextButton({ model.markRoomsRead(unreadIds) }, Modifier.testTag("mark-read")) { Text(t("Mark read"), fontSize = 13.sp) }
             }
             TextButton({ model.openNew() }, Modifier.testTag("new-button")) { Text("＋", fontSize = 24.sp) }
         }
@@ -150,7 +150,7 @@ private fun ChannelList(scope: ScopeItem, invites: List<InviteItem>, model: AppM
             LazyColumn(Modifier.fillMaxSize().testTag("rooms-list"), state = listState) {
             if (invites.isNotEmpty()) {
                 item(key = "invites-heading") {
-                    Text("INVITES", Modifier.padding(start = 16.dp, top = 8.dp, bottom = 4.dp), color = Palette.Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text(t("Invites").uppercase(), Modifier.padding(start = 16.dp, top = 8.dp, bottom = 4.dp), color = Palette.Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
                 items(invites, key = { "invite-${it.id}" }) { invite -> InviteCard(invite, model) }
             }
@@ -225,7 +225,7 @@ private fun RoomRow(room: RoomItem, onOpen: (RoomItem) -> Unit, model: AppModel)
                     Text(if (room.pinned) "Unpin" else "Pin", fontSize = 13.sp)
                 }
                 TextButton({ menu = false; model.setDmMark(room.id, "closed", true) }, Modifier.testTag("dm-close")) {
-                    Text("Close", fontSize = 13.sp)
+                    Text(t("Close"), fontSize = 13.sp)
                 }
                 TextButton({ menu = false }, Modifier.testTag("dm-cancel")) { Text("✕", fontSize = 13.sp) }
             }
@@ -256,8 +256,8 @@ private fun Account(model: AppModel, state: Screen.SignedIn) {
             overflow = TextOverflow.Ellipsis,
             color = Palette.Muted,
         )
-        TextButton({ model.openSettings() }, Modifier.testTag("settings-button")) { Text("Settings") }
-        TextButton({ model.signOut() }, Modifier.testTag("sign-out")) { Text("Sign out") }
+        TextButton({ model.openSettings() }, Modifier.testTag("settings-button")) { Text(t("Settings")) }
+        TextButton({ model.signOut() }, Modifier.testTag("sign-out")) { Text(t("Sign out")) }
     }
 }
 
@@ -271,7 +271,7 @@ private fun SecurityBanner(model: AppModel) {
         Modifier.fillMaxWidth().background(Palette.Raised).clickable { model.openSecurity() }.padding(16.dp).testTag("verify-banner"),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("Verify this device to read your encrypted messages", Modifier.weight(1f))
+        Text(t("Verify this device to read your encrypted messages"), Modifier.weight(1f))
         Text("›", fontSize = 22.sp, color = Palette.Muted)
     }
 }
@@ -287,8 +287,8 @@ private fun InviteCard(invite: InviteItem, model: AppModel) {
         Text(invite.name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Text(invite.line, color = Palette.Muted, fontSize = 13.sp, modifier = Modifier.testTag("invite-line"))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            androidx.compose.material3.Button({ model.answerInvite(invite.id, true) }, Modifier.testTag("invite-accept-${invite.name}")) { Text("Accept") }
-            TextButton({ model.answerInvite(invite.id, false) }, Modifier.testTag("invite-decline-${invite.name}")) { Text("Decline") }
+            androidx.compose.material3.Button({ model.answerInvite(invite.id, true) }, Modifier.testTag("invite-accept-${invite.name}")) { Text(t("Accept")) }
+            TextButton({ model.answerInvite(invite.id, false) }, Modifier.testTag("invite-decline-${invite.name}")) { Text(t("Decline")) }
         }
     }
 }

@@ -48,27 +48,27 @@ fun SignInScreen(model: AppModel) {
         verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("Morpheus", style = MaterialTheme.typography.headlineLarge)
-        Text("Sign in with your Matrix account", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(t("Morpheus"), style = MaterialTheme.typography.headlineLarge)
+        Text(t("Sign in with your Matrix account"), color = MaterialTheme.colorScheme.onSurfaceVariant)
         val field = Modifier.fillMaxWidth().widthIn(max = 480.dp)
         OutlinedTextField(
             homeserver, { homeserver = it },
             field.testTag("homeserver"),
-            label = { Text("Homeserver") },
+            label = { Text(t("Homeserver")) },
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next),
         )
         OutlinedTextField(
             username, { username = it },
             field.testTag("username"),
-            label = { Text("Username") },
+            label = { Text(t("Username")) },
             singleLine = true,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
         )
         OutlinedTextField(
             password, { password = it },
             field.testTag("password"),
-            label = { Text("Password") },
+            label = { Text(t("Password")) },
             singleLine = true,
             visualTransformation = PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
