@@ -18,6 +18,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   build:
@@ -60,6 +61,11 @@ jobs:
           # Only main saves: tags and hand runs read it, so the 10 GB limit holds one
           # cache per platform.
           save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Trim older caches
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/trim-caches.sh macos-${{ matrix.target }}
 
       # OpenH264 (videos): x86 assembly for the Intel build when nasm is
       # there (plain C otherwise); the Arm build uses its NEON code as is.
@@ -182,7 +188,15 @@ jobs:
           shared-key: macos-debug
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
+      - name: Trim older caches
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/trim-caches.sh macos-debug
+
       - name: Build (debug)
+        # No debug info: the cache entry for it was 2 GB.
+        env:
+          CARGO_PROFILE_DEV_DEBUG: "0"
         run: cargo build -p morpheus-desktop --locked $FEATURES
 
       - name: No keychain call
