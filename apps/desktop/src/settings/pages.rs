@@ -1141,6 +1141,7 @@ impl SettingsView {
             }
         }
         let notes_link = button("patch-notes-link", "View release on GitHub", Kind::Secondary, "patch-notes-link")
+            .child(icon("link", 16.0).text_color(rgb(theme::text())))
             .child("View release on GitHub")
             .on_click(cx.listener(|_, _, _, cx| {
                 crate::shell::open_external(&crate::patch_notes::release_page(), cx);
