@@ -1560,6 +1560,7 @@ fn cards(
                             _ => person_card(shell, cx, room, &user, false, Fit::Strip(strip_h)),
                         };
                         let key = focused.to_owned();
+                        let is_share = matches!(c, Card::Video(feed) if feed.screen);
                         // Greyed, with a focus icon; a click on it goes through to the card
                         // (which unfocuses).
                         div()
@@ -1579,7 +1580,8 @@ fn cards(
                                     .flex()
                                     .items_center()
                                     .justify_center()
-                                    .child(icon("maximize-2", 20.0).text_color(rgb(theme::text())))
+                                    // A share's card has its screen icon already: no second icon on it.
+                                    .when(!is_share, |d| d.child(icon("maximize-2", 20.0).text_color(rgb(theme::text()))))
                                     .e2e("div", "strip-focused-mark"),
                             )
                             .e2e("div", "strip-focused")
