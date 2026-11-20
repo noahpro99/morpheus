@@ -17,6 +17,7 @@ mod call_ui;
 mod chat;
 mod chrome;
 mod composer;
+mod crop_view;
 mod diagnostics;
 mod dialogs;
 mod patch_notes;

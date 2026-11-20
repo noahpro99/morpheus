@@ -112,6 +112,16 @@ pub struct RoomDialog {
     emoji_name: Option<Entity<TextInput>>,
     renaming: Option<(String, Entity<TextInput>)>,
     emoji_note: Option<Note>,
+    /// A picture chosen and being cropped (#267), and what it is for.
+    cropping: Option<(crate::crop_view::Picked, CropFor)>,
+}
+
+/// What a cropped picture becomes.
+enum CropFor {
+    /// The profile picture, a server or room icon, a per-server picture.
+    Picture { stem: String },
+    /// A custom emoji of this name.
+    Emoji { code: String },
 }
 
 impl EventEmitter<Closed> for RoomDialog {}
@@ -243,6 +253,7 @@ impl RoomDialog {
             emoji_name: None,
             renaming: None,
             emoji_note: None,
+            cropping: None,
         };
         this.load(cx);
         this.load_powers(cx);
@@ -412,14 +423,10 @@ impl RoomDialog {
         self.load_emoji(cx);
     }
 
-    /// "Add emoji…": choose a picture, which goes up under the typed name (or
-    /// one made from the file's name).
+    /// "Add emoji…": choose a picture and crop it; it goes up under the typed
+    /// name (or one made from the file's name).
     fn add_emoji(&mut self, cx: &mut Context<Self>) {
-        let (RoomDialogKind::Edit(room), Some(pack)) = (self.kind.clone(), self.emoji_pack.clone())
-        else {
-            return;
-        };
-        if self.busy {
+        if !matches!(self.kind, RoomDialogKind::Edit(_)) || self.emoji_pack.is_none() || self.busy {
             return;
         }
         self.emoji_note = None;
@@ -434,7 +441,7 @@ impl RoomDialog {
                 directories: false,
                 multiple: false,
                 prompt: Some("Choose a picture".into()),
-            filters: crate::view_model::room_dialogs::picture_filters(),
+                filters: crate::view_model::room_dialogs::picture_filters(),
             })
         });
         cx.spawn(async move |this, cx| {
@@ -458,36 +465,22 @@ impl RoomDialog {
                 .to_owned();
             let code = morpheus_core::clean_shortcode(&typed)
                 .or_else(|| morpheus_core::shortcode_from_file_name(&file_name));
-            let mime = vm::picture_mime(&file_name);
-            let bytes = std::fs::read(&path);
-            this.update(cx, |this, cx| {
-                let (Some(code), Some(mime), Ok(bytes)) = (code, mime, bytes) else {
-                    this.emoji_note =
-                        Some(Note::error("Choose a picture (PNG, JPEG, GIF or WebP) and give it a name."));
+            this.update(cx, |this, cx| match code {
+                Some(code) if vm::picture_mime(&file_name).is_some() => {
+                    this.picture_chosen(path, Some(code), cx)
+                }
+                _ => {
+                    this.emoji_note = Some(Note::error(
+                        "Choose a picture (PNG, JPEG, GIF or WebP) and give it a name.",
+                    ));
                     cx.notify();
-                    return;
-                };
-                let adding = this.session.add_emote(
-                    Some(room),
-                    pack.state_key.clone(),
-                    code,
-                    mime.to_owned(),
-                    bytes,
-                );
-                this.run(adding, cx, |this, result, cx| match result {
-                    Ok(()) => {
-                        if let Some(name) = &this.emoji_name {
-                            name.update(cx, |name, cx| name.set_value("", cx));
-                        }
-                        this.emoji_changed(cx);
-                    }
-                    Err(err) => this.emoji_note = Some(Note::error(err)),
-                });
+                }
             })
             .ok();
         })
         .detach();
     }
+
 
     /// Start renaming the emoji `code`.
     fn start_rename(&mut self, code: &str, cx: &mut Context<Self>) {
@@ -1044,8 +1037,15 @@ impl RoomDialog {
         });
     }
 
-    /// "Change icon…" and "Choose avatar…": pick a picture.
+    /// "Change icon…" and "Choose avatar…": pick a picture, then crop it.
     fn pick_picture(&mut self, cx: &mut Context<Self>) {
+        self.note = None;
+        // Tests cannot drive the system's file dialog: they name the file.
+        #[cfg(feature = "e2e")]
+        if let Some(path) = crate::e2e::take_picked() {
+            self.picture_chosen(path, None, cx);
+            return;
+        }
         let picking = cx.prompt_for_paths(PathPromptOptions {
             files: true,
             directories: false,
@@ -1060,37 +1060,150 @@ impl RoomDialog {
             let Some(path) = paths.into_iter().next() else {
                 return;
             };
-            this.update(cx, |this, cx| match this.kind.clone() {
-                RoomDialogKind::RoomProfile(_) => {
-                    this.avatar = Some(path);
-                    cx.notify();
+            this.update(cx, |this, cx| this.picture_chosen(path, None, cx))
+                .ok();
+        })
+        .detach();
+    }
+
+    /// A file chosen for a picture, or (with `emoji`) for the emoji of that
+    /// name: it opens in the crop view, or a note says it is not a picture.
+    fn picture_chosen(&mut self, path: PathBuf, emoji: Option<String>, cx: &mut Context<Self>) {
+        let bytes = std::fs::read(&path).ok();
+        let Some(picked) = bytes.and_then(crate::crop_view::picked_from) else {
+            let note = Note::error(vm::NOT_A_PICTURE);
+            if emoji.is_some() {
+                self.emoji_note = Some(note);
+            } else {
+                self.note = Some(note);
+            }
+            cx.notify();
+            return;
+        };
+        let target = match emoji {
+            Some(code) => CropFor::Emoji { code },
+            None => CropFor::Picture {
+                stem: path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("picture")
+                    .to_owned(),
+            },
+        };
+        self.cropping = Some((picked, target));
+        self.note = None;
+        self.emoji_note = None;
+        cx.notify();
+    }
+
+    fn picked_mut(&mut self) -> Option<&mut crate::crop_view::Picked> {
+        self.cropping.as_mut().map(|(picked, _)| picked)
+    }
+
+    /// "Use picture": cut the square and set it where it was chosen for.
+    fn use_cropped(&mut self, cx: &mut Context<Self>) {
+        if self.busy {
+            return;
+        }
+        let Some((picked, target)) = self.cropping.take() else {
+            return;
+        };
+        let rect = picked.crop.source_rect();
+        let bytes = picked.image.bytes.clone();
+        let side = match target {
+            CropFor::Picture { .. } => crate::view_model::crop::OUTPUT_SIDE,
+            CropFor::Emoji { .. } => crate::view_model::crop::EMOJI_SIDE,
+        };
+        let cut = cx.background_spawn(async move { crate::crop_view::cropped_png(&bytes, rect, side) });
+        self.busy = true;
+        cx.notify();
+        cx.spawn(async move |this, cx| {
+            let png = cut.await;
+            this.update(cx, |this, cx| {
+                this.busy = false;
+                match (png, target) {
+                    (Err(err), CropFor::Emoji { .. }) => this.emoji_note = Some(Note::error(err)),
+                    (Err(err), _) => this.note = Some(Note::error(err)),
+                    (Ok(png), CropFor::Emoji { code }) => this.add_cropped_emoji(code, png, cx),
+                    (Ok(png), CropFor::Picture { stem }) => this.set_cropped_picture(&stem, png, cx),
                 }
-                RoomDialogKind::EditProfile => {
-                    let setting = this.session.set_avatar(path);
-                    this.run(setting, cx, |this, result, cx| {
-                        this.note = Some(match result {
-                            Ok(()) => {
-                                cx.emit(Done::OwnProfileChanged);
-                                Note::ok("Avatar updated.")
-                            }
-                            Err(err) => Note::error(err),
-                        });
-                    });
-                }
-                RoomDialogKind::Edit(room) => {
-                    let setting = this.session.set_room_avatar(room, path);
-                    this.run(setting, cx, |this, result, _| {
-                        this.note = Some(match result {
-                            Ok(()) => Note::ok("Icon updated."),
-                            Err(err) => Note::error(err),
-                        });
-                    });
-                }
-                _ => {}
+                cx.notify();
             })
             .ok();
         })
         .detach();
+    }
+
+    /// The cropped emoji goes up under its name.
+    fn add_cropped_emoji(&mut self, code: String, png: Vec<u8>, cx: &mut Context<Self>) {
+        let (RoomDialogKind::Edit(room), Some(pack)) = (self.kind.clone(), self.emoji_pack.clone())
+        else {
+            return;
+        };
+        let adding = self
+            .session
+            .add_emote(Some(room), pack.state_key, code, "image/png".to_owned(), png);
+        self.run(adding, cx, |this, result, cx| match result {
+            Ok(()) => {
+                if let Some(name) = &this.emoji_name {
+                    name.update(cx, |name, cx| name.set_value("", cx));
+                }
+                this.emoji_changed(cx);
+            }
+            Err(err) => this.emoji_note = Some(Note::error(err)),
+        });
+    }
+
+    /// The cropped picture is the profile picture, the room's or server's
+    /// icon, or (per-server profile) kept until Save.
+    fn set_cropped_picture(&mut self, stem: &str, png: Vec<u8>, cx: &mut Context<Self>) {
+        let dir = std::env::temp_dir().join(format!(
+            "morpheus-crop-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or_default()
+        ));
+        let path = dir.join(format!("{stem}.png"));
+        if let Err(err) = std::fs::create_dir_all(&dir).and_then(|()| std::fs::write(&path, png)) {
+            self.note = Some(Note::error(err.to_string()));
+            return;
+        }
+        let cleanup = {
+            let (dir, path) = (dir.clone(), path.clone());
+            move || {
+                let _ = std::fs::remove_file(&path);
+                let _ = std::fs::remove_dir(&dir);
+            }
+        };
+        match self.kind.clone() {
+            RoomDialogKind::RoomProfile(_) => self.avatar = Some(path),
+            RoomDialogKind::EditProfile => {
+                let setting = self.session.set_avatar(path);
+                self.run(setting, cx, move |this, result, cx| {
+                    cleanup();
+                    this.note = Some(match result {
+                        Ok(()) => {
+                            cx.emit(Done::OwnProfileChanged);
+                            Note::ok("Avatar updated.")
+                        }
+                        Err(err) => Note::error(err),
+                    });
+                });
+            }
+            RoomDialogKind::Edit(room) => {
+                let setting = self.session.set_room_avatar(room, path);
+                self.run(setting, cx, move |this, result, _| {
+                    cleanup();
+                    this.note = Some(match result {
+                        Ok(()) => Note::ok("Icon updated."),
+                        Err(err) => Note::error(err),
+                    });
+                });
+            }
+            _ => cleanup(),
+        }
     }
 }
 
@@ -1556,7 +1669,46 @@ impl RoomDialog {
     }
 
     /// The dialog's contents and its class.
+    /// The crop step of a chosen picture: frame and zoom, then "Use picture".
+    fn crop_body(&mut self, cx: &mut Context<Self>) -> (&'static str, Vec<AnyElement>) {
+        let mut parts: Vec<AnyElement> = vec![heading("Crop picture").into_any_element()];
+        if let Some((picked, _)) = &self.cropping {
+            parts.push(crate::crop_view::crop_view(picked, Self::picked_mut, cx));
+        }
+        parts.extend(self.note.as_ref().map(note_el));
+        parts.push(
+            actions(vec![
+                button(
+                    "use-picture",
+                    Some("check"),
+                    "Use picture",
+                    "primary use-picture",
+                    false,
+                    self.busy,
+                    cx.listener(|this, _, _, cx| this.use_cropped(cx)),
+                ),
+                button(
+                    "cancel-crop",
+                    None,
+                    "Cancel",
+                    "secondary cancel-crop",
+                    false,
+                    false,
+                    cx.listener(|this, _, _, cx| {
+                        this.cropping = None;
+                        cx.notify();
+                    }),
+                ),
+            ])
+            .into_any_element(),
+        );
+        ("crop-dialog", parts)
+    }
+
     fn body(&mut self, cx: &mut Context<Self>) -> (&'static str, Vec<AnyElement>) {
+        if self.cropping.is_some() {
+            return self.crop_body(cx);
+        }
         let mut parts: Vec<AnyElement> = Vec::new();
         let note = self.note.as_ref().map(note_el);
         match self.kind.clone() {

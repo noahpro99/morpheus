@@ -321,6 +321,9 @@ mod tests {
 pub const EMOJI_CANNOT_CHANGE: &str =
     "You don't have permission to change this room's emoji.";
 
+/// Said when a chosen, dropped or pasted file is not a picture that can be shown and cropped.
+pub const NOT_A_PICTURE: &str = "That file is not a picture Morpheus can show.";
+
 /// The picture type of a file name (a custom emoji is a PNG, JPEG, GIF or WebP), if it is one.
 pub fn picture_mime(file_name: &str) -> Option<&'static str> {
     let extension = file_name.rsplit_once('.')?.1.to_ascii_lowercase();

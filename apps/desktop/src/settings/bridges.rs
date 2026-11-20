@@ -255,8 +255,8 @@ impl SettingsView {
                                 .await
                                 .ok()
                                 .flatten()
-                                .and_then(|file| super::pages::picture_from(file.bytes)),
-                            None => vm::local_qr(&reply).and_then(super::pages::picture_from),
+                                .and_then(|file| crate::crop_view::picture_from(file.bytes)),
+                            None => vm::local_qr(&reply).and_then(crate::crop_view::picture_from),
                         };
                         let gone = this
                             .update(cx, |this, cx| this.bridge_reply(&bot, reply, picture, cx))

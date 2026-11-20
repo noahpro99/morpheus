@@ -12,6 +12,9 @@ pub const MAX_ZOOM: f32 = 5.0;
 /// Side of the square picture that is uploaded, in pixels.
 pub const OUTPUT_SIDE: u32 = 512;
 
+/// Side of a custom emoji cut from a picture.
+pub const EMOJI_SIDE: u32 = 128;
+
 /// The square part of a picture to keep, in the picture's own pixels.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SourceRect {
