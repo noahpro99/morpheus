@@ -8,7 +8,7 @@
 use std::{collections::HashSet, sync::Arc};
 
 use gpui::{AnyElement, Context, Entity, FontWeight, IntoElement, div, prelude::*, px, rgb};
-use morpheus_core::{MessageKind, OwnedUserId, TimelineHandle, VectorDiff};
+use morpheus_core::{OwnedUserId, TimelineHandle};
 
 use super::{Kind, SettingsView, button, muted, note, section};
 use crate::{
@@ -77,19 +77,6 @@ impl Bridges {
 
     fn row(&mut self, bot: &str) -> Option<&mut Row> {
         self.rows.iter_mut().find(|row| row.bot == bot)
-    }
-}
-
-/// What a new message of the bot is, when it is one the login cares about.
-fn reply_of(kind: &MessageKind) -> Option<(Reply, Option<morpheus_core::MediaRef>)> {
-    match kind {
-        MessageKind::Text { body, .. } | MessageKind::Notice { body, .. } => {
-            Some((Reply { text: body.clone(), image: false }, None))
-        }
-        MessageKind::Image { body, media, .. } => {
-            Some((Reply { text: body.clone(), image: true }, Some(media.clone())))
-        }
-        _ => None,
     }
 }
 
@@ -235,7 +222,7 @@ impl SettingsView {
             // What was said before is not an answer: the first batch is the history.
             if let Some(first) = open.updates.next().await {
                 for diff in &first {
-                    for message in messages_in(diff, &bot) {
+                    for message in vm::messages_in(diff, &bot) {
                         seen.insert(message.0);
                     }
                 }
@@ -254,11 +241,11 @@ impl SettingsView {
             }
             while let Some(diffs) = open.updates.next().await {
                 for diff in &diffs {
-                    for (id, kind) in messages_in(diff, &bot) {
+                    for (id, kind) in vm::messages_in(diff, &bot) {
                         if !seen.insert(id) {
                             continue;
                         }
-                        let Some((reply, media)) = reply_of(&kind) else {
+                        let Some((reply, media)) = vm::reply_of(&kind) else {
                             continue;
                         };
                         let picture = match media {
@@ -536,30 +523,3 @@ impl SettingsView {
             .into_any_element()
     }
 }
-
-/// The messages of `bot` a timeline change carries: their ids and what they are.
-fn messages_in(
-    diff: &VectorDiff<morpheus_core::TimelineEntry>,
-    bot: &str,
-) -> Vec<(String, MessageKind)> {
-    use morpheus_core::TimelineEntry;
-    let mut entries: Vec<&TimelineEntry> = Vec::new();
-    match diff {
-        VectorDiff::Append { values } | VectorDiff::Reset { values } => entries.extend(values.iter()),
-        VectorDiff::PushBack { value }
-        | VectorDiff::PushFront { value }
-        | VectorDiff::Insert { value, .. }
-        | VectorDiff::Set { value, .. } => entries.push(value),
-        _ => {}
-    }
-    entries
-        .into_iter()
-        .filter_map(|entry| match entry {
-            TimelineEntry::Message(message) if message.sender.as_str() == bot && !message.is_local_echo => {
-                Some((message.unique_id.clone(), message.kind.clone()))
-            }
-            _ => None,
-        })
-        .collect()
-}
-

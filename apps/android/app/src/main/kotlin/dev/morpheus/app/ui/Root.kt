@@ -48,6 +48,7 @@ fun Root(model: AppModel) {
                     val shown = security
                     val newOpen by model.newOpen.collectAsState()
                     val settingsOpen by model.settingsOpen.collectAsState()
+                    val bridgesOpen by model.bridgesOpen.collectAsState()
                     val reorderOpen by model.reorderOpen.collectAsState()
                     val call by model.calls.snapshot.collectAsState()
                     val callOpen by model.calls.open.collectAsState()
@@ -57,7 +58,7 @@ fun Root(model: AppModel) {
                         if (going != null) CallBar(model.calls, going)
                         Box(Modifier.weight(1f)) {
                             if (open != null) RoomScreen(model, open)
-                            else if (settingsOpen) SettingsScreen(model)
+                            else if (settingsOpen) { if (bridgesOpen) BridgesScreen(model) else SettingsScreen(model) }
                             else if (reorderOpen) ReorderScreen(model)
                             else if (newOpen) NewScreen(model)
                             else if (securityOpen && shown != null) SecurityScreen(model, shown)

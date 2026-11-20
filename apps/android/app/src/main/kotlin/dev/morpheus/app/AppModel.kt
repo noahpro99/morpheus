@@ -124,7 +124,21 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         AppState.screen = "settings"
     }
 
+    private val _bridgesOpen = MutableStateFlow(false)
+    val bridgesOpen: StateFlow<Boolean> = _bridgesOpen.asStateFlow()
+
+    fun openBridges() {
+        _bridgesOpen.value = true
+        AppState.screen = "bridges"
+    }
+
+    fun closeBridges() {
+        _bridgesOpen.value = false
+        AppState.screen = "settings"
+    }
+
     fun closeSettings() {
+        _bridgesOpen.value = false
         _settingsOpen.value = false
         AppState.screen = _screen.value.name()
     }

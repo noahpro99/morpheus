@@ -21,6 +21,7 @@
 
 #[cfg(target_os = "android")]
 mod android;
+mod bridges;
 mod calls;
 mod composer;
 mod error;
@@ -40,6 +41,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use morpheus_core::{Core, Session};
 use tokio::{runtime::Runtime, task::JoinHandle};
 
+pub use bridges::{BridgeBot, BridgeHandle, BridgeListener, BridgePhase, BridgeSnapshot};
 pub use calls::{CallCard, CallHandle, CallListener, CallListing, CallPerson, CallPhase, CallSnapshot, CameraDriver, CardKind, VideoFrame, call_camera_frame, call_set_camera_driver, call_timer, call_use_test_tone};
 pub use error::FfiError;
 pub use composer::{CustomEmojiItem, CustomEmojiSection, EmojiSection, SuggestionItem, SuggestionKind, emoji_sections, with_emoji};

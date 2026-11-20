@@ -150,6 +150,9 @@ fun SettingsScreen(app: AppModel) {
                 attempt { app.morpheus.setPreviewSettings(previews.enabled, !previews.inEncrypted); previews = app.morpheus.previewSettings() }
             }
 
+            Heading(t("Bridges"))
+            Button({ app.openBridges() }, Modifier.testTag("settings-bridges")) { Text(t("Connect a network")) }
+
             Heading(t("Account"))
             Text(account?.userId.orEmpty(), Modifier.testTag("settings-account"), color = Palette.Muted)
             Button({ app.signOut() }, Modifier.testTag("settings-sign-out")) { Text(t("Sign out")) }
