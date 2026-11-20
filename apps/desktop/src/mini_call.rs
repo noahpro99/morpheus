@@ -61,6 +61,21 @@ fn area(window: &Window) -> (f32, f32) {
 }
 
 impl Shell {
+    /// To the call's voice channel: the rail's server, the channel list and the
+    /// open room, with the window raised (#280).
+    fn go_to_call(&mut self, room: morpheus_core::OwnedRoomId, window: &mut gpui::Window, cx: &mut Context<Self>) {
+        let scope = self
+            .rooms
+            .iter()
+            .find(|r| r.id == room)
+            .map(|r| crate::model::scope_for(&self.rooms, r));
+        match scope {
+            Some(scope) => self.open_room_in(scope, room, cx),
+            None => self.open_room(room, cx),
+        }
+        window.activate_window();
+    }
+
     /// Whether the full call view is on screen: the call's room is the one
     /// open (not covered by the Friends page, a server's welcome or a lock).
     fn call_in_view(&self) -> bool {
@@ -260,7 +275,7 @@ pub fn render(
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_click(cx.listener({
             let room = room.0.clone();
-            move |this, _, _, cx| this.open_room(room.clone(), cx)
+            move |this, _, window, cx| this.go_to_call(room.clone(), window, cx)
         }))
         .e2e("button", "ghost mini-call-back")
         .attr("title", "Back to the call");
@@ -306,7 +321,7 @@ pub fn render(
         )
         .on_mouse_down(
             MouseButton::Left,
-            cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+            cx.listener(move |this, event: &gpui::MouseDownEvent, window, cx| {
                 cx.stop_propagation();
                 this.calls.mini_drag = Some(MiniDrag::Resize {
                     start: (
@@ -345,13 +360,13 @@ pub fn render(
         })
         .on_mouse_down(MouseButton::Left, {
             let room = room.0.clone();
-            cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+            cx.listener(move |this, event: &gpui::MouseDownEvent, window, cx| {
                 // A double click goes back to the call, as the back button
                 // does; the first click's press moved nothing, so nothing
                 // snaps or is saved.
                 if event.click_count >= 2 {
                     this.calls.mini_drag = None;
-                    this.open_room(room.clone(), cx);
+                    this.go_to_call(room.clone(), window, cx);
                     return;
                 }
                 let at = (
