@@ -11,6 +11,7 @@ use gpui::{AnyElement, Context, Entity, FontWeight, IntoElement, div, prelude::*
 use morpheus_core::{OwnedUserId, TimelineHandle};
 
 use super::{Kind, SettingsView, button, muted, note, section};
+use crate::icons::icon;
 use crate::{
     e2e::E2eExt as _,
     input::{Submit, TextInput},
@@ -470,6 +471,7 @@ impl SettingsView {
             let bot = bot_id.clone();
             buttons = buttons.child(
                 button(id("logout"), "Log out", Kind::Danger, "bridge-logout")
+                    .child(icon("log-out", 16.0).text_color(rgb(theme::danger())))
                     .child(t("Log out"))
                     .on_click(cx.listener(move |this, _, _, cx| this.bridge_do(&bot, Login::log_out, cx)))
                     .e2e("button", "button danger bridge-logout")
@@ -479,6 +481,7 @@ impl SettingsView {
             let bot = bot_id.clone();
             buttons = buttons.child(
                 button(id("cancel"), "Cancel", Kind::Secondary, "bridge-cancel")
+                    .child(icon("x", 16.0).text_color(rgb(theme::text())))
                     .child(t("Cancel"))
                     .on_click(cx.listener(move |this, _, _, cx| this.bridge_do(&bot, Login::cancel, cx)))
                     .e2e("button", "button secondary bridge-cancel")
@@ -489,6 +492,7 @@ impl SettingsView {
             let text = if matches!(status, Status::NeedsLogin(_)) { "Log in again" } else { "Connect" };
             buttons = buttons.child(
                 button(id("connect"), text, Kind::Primary, "bridge-connect")
+                    .child(icon("link", 16.0).text_color(rgb(theme::on_accent_solid())))
                     .child(t(text))
                     .on_click(cx.listener(move |this, _, _, cx| this.bridge_do(&bot, Login::start, cx)))
                     .e2e("button", "button primary bridge-connect")
@@ -499,6 +503,7 @@ impl SettingsView {
             let bot = bot_id.clone();
             buttons = buttons.child(
                 button(id("check"), "Check status", Kind::Secondary, "bridge-check")
+                    .child(icon("refresh-cw", 16.0).text_color(rgb(theme::text())))
                     .child(t("Check status"))
                     .on_click(cx.listener(move |this, _, _, cx| this.bridge_do(&bot, Login::check, cx)))
                     .e2e("button", "button secondary bridge-check")
