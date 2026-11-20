@@ -1809,8 +1809,16 @@ impl Shell {
                     if let Some((speakers, at)) = this.calls.audio_menu
                         && this.menu.is_some()
                     {
-                        let listed = this.menu.as_ref().is_some_and(|m| m.open.is_some());
-                        this.open_audio_menu(speakers, listed, at, cx);
+                        // Refilled in place: what the pointer had done in it stays done (a
+                        // new menu under a pointer that has moved a little must not light
+                        // its first item).
+                        let before = this.menu.as_ref().map(|m| (m.hover, m.moved, m.open));
+                        this.open_audio_menu(speakers, false, at, cx);
+                        if let (Some((hover, moved, open)), Some(menu)) = (before, this.menu.as_mut()) {
+                            menu.hover = if moved { hover } else { None };
+                            menu.moved = moved;
+                            menu.open = open;
+                        }
                     }
                 }
             })

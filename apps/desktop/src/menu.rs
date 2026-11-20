@@ -32,6 +32,8 @@ pub struct OpenMenu {
     pub open: Option<usize>,
     /// The row under the pointer: (row, row in its flyout).
     pub hover: Option<(usize, Option<usize>)>,
+    /// The pointer has moved away from where the menu opened.
+    pub moved: bool,
     /// Focus the menu on the next frame, so Escape reaches it.
     pub take_focus: bool,
     /// A long flyout scrolls.
@@ -62,6 +64,7 @@ impl OpenMenu {
             target,
             open: None,
             hover: None,
+            moved: false,
             take_focus: true,
             flyout_scroll: ScrollHandle::new(),
             row_frame: Rc::default(),
@@ -133,9 +136,14 @@ impl Shell {
     ) {
         let Some(menu) = &mut self.menu else { return };
         // A menu that opens under a still pointer highlights nothing until the
-        // pointer moves.
-        if pointer == menu.at {
-            return;
+        // pointer really moves: a real pointer jitters a pixel or two, and the
+        // window reports the position it already had.
+        if !menu.moved {
+            let (dx, dy) = (f32::from(pointer.x - menu.at.x), f32::from(pointer.y - menu.at.y));
+            if dx.abs() + dy.abs() < 6.0 {
+                return;
+            }
+            menu.moved = true;
         }
         if menu.hover == Some(path) {
             return;
@@ -367,10 +375,10 @@ fn item_el(
         .cursor_pointer()
         .text_color(rgb(if lit { theme::on(highlight) } else { colour }))
         .when(lit, |d| d.bg(rgb(highlight)))
-        .on_hover(cx.listener(move |this, hovered: &bool, window, cx| {
-            if *hovered {
-                this.menu_hover(path, window.mouse_position(), cx);
-            }
+        // Every move over the row, not the hover state: a pointer that was already
+        // on the row when the menu opened never changes that state.
+        .on_mouse_move(cx.listener(move |this, event: &gpui::MouseMoveEvent, _, cx| {
+            this.menu_hover(path, event.position, cx);
         }))
         .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
             this.menu_pick(path, event.modifiers().shift, cx)
@@ -592,10 +600,10 @@ fn menu_slider_el(
         .px(px(10.0))
         .py(px(6.0))
         .rounded(px(theme::RADIUS_SM))
-        .on_hover(cx.listener(move |this, hovered: &bool, window, cx| {
-            if *hovered {
-                this.menu_hover(path, window.mouse_position(), cx);
-            }
+        // Every move over the row, not the hover state: a pointer that was already
+        // on the row when the menu opened never changes that state.
+        .on_mouse_move(cx.listener(move |this, event: &gpui::MouseMoveEvent, _, cx| {
+            this.menu_hover(path, event.position, cx);
         }))
         .child(
             div()
