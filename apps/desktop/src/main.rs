@@ -740,6 +740,18 @@ fn next_command(commands: &Commands) -> Option<Command> {
     commands.lock().ok()?.try_recv().ok()
 }
 
+/// The embedded fonts, one at a time: gpui's macOS text system fails the whole
+/// batch when one font cannot be read (CoreGraphics cannot read the bitmap
+/// emoji font), which left every other font out and all text in the system
+/// font (#284). A font that does not load is skipped and named.
+fn load_fonts(cx: &App) {
+    for (n, font) in FONTS.iter().enumerate() {
+        if let Err(e) = cx.text_system().add_fonts(vec![Cow::Borrowed(*font)]) {
+            eprintln!("morpheus-desktop: loading embedded font {n} failed: {e}");
+        }
+    }
+}
+
 /// The window system's run: one for the whole life of the app. Closing the
 /// last window does not end it (vendor/gpui's `KEEP_RUNNING_WITHOUT_WINDOWS`,
 /// set while there is a tray to bring the window back): the shell, a call's
@@ -759,12 +771,7 @@ fn run_window(core: Core, commands: Commands, first: Option<Command>, start_hidd
         }
     });
     application.run(move |cx: &mut App| {
-        if let Err(e) = cx
-            .text_system()
-            .add_fonts(FONTS.iter().map(|f| Cow::Borrowed(*f)).collect())
-        {
-            eprintln!("morpheus-desktop: loading fonts failed: {e}");
-        }
+        load_fonts(cx);
         // macOS: the menu bar and its shortcuts.
         mac_menu::install(cx);
         // Windows and macOS: the tray icon, now that the event loop runs.

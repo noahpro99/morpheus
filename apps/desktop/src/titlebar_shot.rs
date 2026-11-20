@@ -3,7 +3,6 @@
 //! that long and quits, so CI can take a screenshot of it (apple.yml). No
 //! account, no keychain, no network.
 
-use std::borrow::Cow;
 use std::time::Duration;
 
 use gpui::{App, AppContext as _, Application};
@@ -17,12 +16,7 @@ pub fn requested() -> Option<u64> {
 
 pub fn run(seconds: u64) -> ! {
     Application::new().with_assets(crate::Assets).run(move |cx: &mut App| {
-        if let Err(e) = cx
-            .text_system()
-            .add_fonts(crate::FONTS.iter().map(|f| Cow::Borrowed(*f)).collect())
-        {
-            eprintln!("morpheus-desktop: loading fonts failed: {e}");
-        }
+        crate::load_fonts(cx);
         let options = crate::window_options(cx);
         if let Err(e) = cx.open_window(options, |_, cx| cx.new(|_| Shell::bare(None))) {
             eprintln!("morpheus-desktop: titlebar shot: opening the window failed: {e}");
