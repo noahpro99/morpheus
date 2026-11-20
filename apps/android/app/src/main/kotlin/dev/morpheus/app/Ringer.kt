@@ -39,7 +39,7 @@ object Ringer {
         val app = context.applicationContext
         val manager = app.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(
-            NotificationChannel(CHANNEL, "Calls", NotificationManager.IMPORTANCE_HIGH).apply {
+            NotificationChannel(CHANNEL, t("Calls"), NotificationManager.IMPORTANCE_HIGH).apply {
                 setSound(
                     RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE),
                     AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE).build(),

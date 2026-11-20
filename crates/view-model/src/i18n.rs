@@ -242,6 +242,7 @@ mod tests {
         let mut files = Vec::new();
         rust_files(&root.join("apps/desktop/src"), &mut files);
         rust_files(&root.join("crates/view-model/src"), &mut files);
+        rust_files(&root.join("crates/ffi/src"), &mut files);
         let mut keys = Vec::new();
         for file in files {
             let text = std::fs::read_to_string(&file).unwrap_or_default();

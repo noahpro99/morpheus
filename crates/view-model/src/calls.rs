@@ -911,6 +911,34 @@ pub fn write_person_volume(
     std::fs::write(data_dir.join(PERSON_VOLUMES), file.to_string())
 }
 
+/// What went wrong in a call, for the line the call screen shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CallStep {
+    Joining,
+    Connecting,
+    CameraOn,
+    ScreenShare,
+    Dropped,
+}
+
+/// The line for a call that failed at `step` (`why` is the error's own text), in the language in use.
+pub fn call_failure(step: CallStep, why: &str) -> String {
+    call_failure_in(crate::i18n::language(), step, why)
+}
+
+pub fn call_failure_in(code: &str, step: CallStep, why: &str) -> String {
+    use crate::i18n::tf_in;
+    let args = [("why", why)];
+    let tf = |key: &str| tf_in(code, key, &args);
+    match step {
+        CallStep::Joining => tf("Joining the call failed: %{why}"),
+        CallStep::Connecting => tf("Connecting the call failed: %{why}"),
+        CallStep::CameraOn => tf("Turning the camera on failed: %{why}"),
+        CallStep::ScreenShare => tf("Sharing the screen failed: %{why}"),
+        CallStep::Dropped => tf("The call dropped: %{why}"),
+    }
+}
+
 #[cfg(test)]
 mod person_volume_tests {
     use super::*;
@@ -1686,5 +1714,20 @@ mod call_start_tests {
         assert_eq!(call_start(NOW, &[bare, joined(2)]), Some(NOW - 9 * MIN));
         // Neither time known: not counted as a start.
         assert_eq!(call_start(NOW, &[CallMembership::default()]), None);
+    }
+}
+
+#[cfg(test)]
+mod call_failure_tests {
+    use super::*;
+
+    #[test]
+    fn a_failed_call_says_what_failed_in_the_language_with_the_reason_kept() {
+        assert_eq!(call_failure_in("en", CallStep::Joining, "no network"), "Joining the call failed: no network");
+        for step in [CallStep::Joining, CallStep::Connecting, CallStep::CameraOn, CallStep::ScreenShare, CallStep::Dropped] {
+            let spanish = call_failure_in("es", step, "sin red");
+            assert!(spanish.ends_with("sin red"), "{spanish}");
+            assert_ne!(spanish, call_failure_in("en", step, "sin red"), "{step:?} is not translated");
+        }
     }
 }

@@ -17,6 +17,7 @@ use std::{
 
 use futures_util::FutureExt;
 use morpheus_call::{AudioMode, Call, CallEvent, LOCAL_CAMERA};
+use morpheus_view_model::calls::CallStep;
 use morpheus_core::{CallMedia, OwnedRoomId, OwnedUserId, RoomSummary, Session};
 use morpheus_view_model::{
     calls::{self, CallState, Card, VoiceFlags},
@@ -622,15 +623,15 @@ async fn run_call(
     model.want_profiles(&wake);
     model.tell();
 
-    let fail = |model: &mut Model, what: &str, err: String| {
+    let fail = |model: &mut Model, step: morpheus_view_model::calls::CallStep, err: String| {
         model.phase = CallPhase::Failed;
-        model.error = Some(morpheus_view_model::toast::failure_text(what, &err));
+        model.error = Some(morpheus_view_model::calls::call_failure(step, &err));
         model.tell();
     };
 
     let credentials = match session.join_call(room_id.clone()).await {
         Ok(credentials) => credentials,
-        Err(err) => return fail(&mut model, "joining the call", err.to_string()),
+        Err(err) => return fail(&mut model, CallStep::Joining, err.to_string()),
     };
     // Keys others share, subscribed before ours goes out so no answer is missed.
     let mut keys = match &credentials.media_key {
@@ -651,7 +652,7 @@ async fn run_call(
         Ok(connected) => connected,
         Err(err) => {
             let _ = session.leave_call(room_id.clone()).await;
-            return fail(&mut model, "connecting the call", err.to_string());
+            return fail(&mut model, CallStep::Connecting, err.to_string());
         }
     };
     let mut call = Some(call);
@@ -830,7 +831,7 @@ async fn run_call(
                             model.sync_published();
                         }
                         Err(err) => {
-                            model.error = Some(morpheus_view_model::toast::failure_text("turning the camera on", &err.to_string()));
+                            model.error = Some(morpheus_view_model::calls::call_failure(CallStep::CameraOn, &err.to_string()));
                         }
                     }
                 }
@@ -844,7 +845,7 @@ async fn run_call(
                             model.sync_published();
                         }
                         Err(err) => {
-                            model.error = Some(morpheus_view_model::toast::failure_text("sharing the screen", &err.to_string()));
+                            model.error = Some(morpheus_view_model::calls::call_failure(CallStep::ScreenShare, &err.to_string()));
                         }
                     }
                 }
@@ -967,7 +968,7 @@ where
             model.state.video_event(user, key, screen, on);
         }
         CallEvent::Disconnected(reason) => {
-            model.error = Some(morpheus_view_model::toast::failure_text("the call dropped", &reason));
+            model.error = Some(morpheus_view_model::calls::call_failure(CallStep::Dropped, &reason));
             return true;
         }
         CallEvent::Screen { identity, on } => {

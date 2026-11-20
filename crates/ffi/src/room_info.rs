@@ -153,7 +153,7 @@ impl RoomTimeline {
             avatar: profile.avatar.map(|a| MediaHandle::new(a, session)),
             status: profile.status,
             role,
-            mutual_heading: format!("Mutual rooms — {}", mutual.len()),
+            mutual_heading: morpheus_view_model::i18n::tf("Mutual rooms — %{count}", &[("count", &mutual.len().to_string())]),
             mutual_rooms: mutual,
             is_friend,
             is_me: mine.as_ref() == Some(&who),

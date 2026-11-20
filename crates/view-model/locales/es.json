@@ -347,5 +347,15 @@
   "Unmute for me": "Dejar de silenciar para mí",
   "Output volume": "Volumen de salida",
   "Microphone volume": "Volumen del micrófono",
-  "Sound goes to": "El sonido va a"
+  "Sound goes to": "El sonido va a",
+  "Joining the call failed: %{why}": "No se pudo unirse a la llamada: %{why}",
+  "Connecting the call failed: %{why}": "No se pudo conectar la llamada: %{why}",
+  "Turning the camera on failed: %{why}": "No se pudo encender la cámara: %{why}",
+  "Sharing the screen failed: %{why}": "No se pudo compartir la pantalla: %{why}",
+  "The call dropped: %{why}": "La llamada se cortó: %{why}",
+  "Mutual rooms — %{count}": "Salas en común — %{count}",
+  "Ongoing calls": "Llamadas en curso",
+  "Hang up": "Colgar",
+  "Calls": "Llamadas",
+  "Call": "Llamada"
 }

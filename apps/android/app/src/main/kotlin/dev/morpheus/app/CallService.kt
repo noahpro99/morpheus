@@ -1,5 +1,6 @@
 package dev.morpheus.app
 
+import dev.morpheus.app.ui.t
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -33,7 +34,7 @@ class CallService : Service() {
                 stopSelf()
             }
             else -> {
-                val room = intent?.getStringExtra("room").orEmpty().ifEmpty { "Call" }
+                val room = intent?.getStringExtra("room").orEmpty().ifEmpty { t("Call") }
                 val notification = build(room)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     startForeground(ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
@@ -48,7 +49,7 @@ class CallService : Service() {
     private fun build(room: String): Notification {
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(
-            NotificationChannel(CHANNEL, "Ongoing calls", NotificationManager.IMPORTANCE_DEFAULT).apply { setSound(null, null) },
+            NotificationChannel(CHANNEL, t("Ongoing calls"), NotificationManager.IMPORTANCE_DEFAULT).apply { setSound(null, null) },
         )
         val hangUp = PendingIntent.getService(
             this, 1, Intent(this, CallService::class.java).setAction(HANG_UP),
@@ -68,7 +69,7 @@ class CallService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             builder.setStyle(Notification.CallStyle.forOngoingCall(Person.Builder().setName(room).build(), hangUp))
         } else {
-            builder.addAction(Notification.Action.Builder(null, "Hang up", hangUp).build())
+            builder.addAction(Notification.Action.Builder(null, t("Hang up"), hangUp).build())
         }
         return builder.build()
     }
