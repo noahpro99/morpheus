@@ -1643,7 +1643,6 @@ fn cards(
                 .rounded(px(theme::RADIUS_XL))
                 .bg(rgb(theme::bg_elevated()))
                 .cursor_pointer()
-                .hover(|s| s.bg(rgba(theme::bg_hover())))
                 .child(icon(name, 16.0).text_color(rgb(theme::text())))
                 .child(icon("users", 14.0).text_color(rgb(theme::text_muted())))
                 .on_click(cx.listener(|this, _, _, cx| {
