@@ -1618,7 +1618,7 @@ impl Render for SettingsView {
             .py(px(12.0))
             .rounded_tl(px(theme::RADIUS_XL))
             .rounded_bl(px(theme::RADIUS_XL))
-            .bg(theme::fill_sidebar())
+            .bg(theme::solid_sidebar())
             .child({
                 let (name, image) = self.own.clone();
                 let name = if name.is_empty() {
@@ -1819,7 +1819,7 @@ impl Render for SettingsView {
             .max_h(px(760.0))
             .overflow_hidden()
             .rounded(px(theme::RADIUS_XL))
-            .bg(theme::fill_chat())
+            .bg(theme::solid_chat())
             .relative()
             .shadow_lg()
             .child(nav)

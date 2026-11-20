@@ -718,7 +718,7 @@ impl Composer {
                     .items_center()
                     .justify_center()
                     .rounded(px(theme::RADIUS - 2.0))
-                    .bg(theme::fill_chat())
+                    .bg(theme::solid_chat())
                     .text_color(rgb(theme::text_muted()))
                     .child(icon("paperclip", 28.0))
                     .e2e("div", "attachment-file")

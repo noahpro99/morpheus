@@ -428,7 +428,7 @@ pub fn inbox(
         .overflow_y_scroll()
         .pb(px(6.0))
         .rounded(px(10.0))
-        .bg(theme::fill_sidebar())
+        .bg(theme::solid_sidebar())
         .border_1()
         .border_color(rgba(theme::edge()))
         .shadow_lg()

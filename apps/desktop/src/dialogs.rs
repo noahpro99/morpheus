@@ -571,7 +571,7 @@ pub(crate) fn dialog_box() -> Div {
         .max_h(relative(1.0))
         .p(px(20.0))
         .rounded(px(theme::RADIUS_XL))
-        .bg(theme::fill_sidebar())
+        .bg(theme::solid_sidebar())
         .shadow_lg()
         .text_color(rgb(theme::text()))
         .line_height(relative(theme::LINE_HEIGHT))

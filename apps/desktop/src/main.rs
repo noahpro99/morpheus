@@ -387,7 +387,7 @@ impl Render for Root {
             .size_full()
             .flex()
             .flex_col()
-            .bg(theme::fill_chat())
+            .bg(theme::fill_backdrop())
             .font_family("Inter")
             .text_size(px(theme::REM))
             .text_color(rgb(theme::text()));
@@ -421,6 +421,7 @@ impl Render for Root {
             .e2e("body", "app")
             .attr("data-font", "Inter")
             .attr("data-bg", format!("{:06x}", theme::bg_chat()))
+            .attr("data-alpha", theme::alpha_of(theme::fill_backdrop()).to_string())
             .attr("data-color", format!("{:06x}", theme::text()))
             .attr("data-lang", view_model::i18n::language())
             .attr("data-dir", view_model::i18n::direction().name())

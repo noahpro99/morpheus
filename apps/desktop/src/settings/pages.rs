@@ -2178,10 +2178,12 @@ impl SettingsView {
         )
     }
 
-    /// Appearance's frosted glass: a see-through window with translucent surfaces; the
-    /// strengths on offer are those at which text still reads over any backdrop.
+    /// Appearance's Transparent setting: a see-through window; only the window and panel
+    /// backgrounds let the desktop show, by a slider whose lowest end is where the theme's
+    /// text still reads over any backdrop.
     fn glass_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        use crate::view_model::glass;
+        use crate::view_model::glass::{self, Glass};
+        use std::rc::Rc;
         let support = theme::support();
         let palette = self.custom.map(crate::view_model::theme::derive).unwrap_or_else(|| {
             crate::view_model::theme::Palette::of(self.theme)
@@ -2192,7 +2194,7 @@ impl SettingsView {
             "glass-on".into(),
             "glass",
             "on",
-            "Frosted glass",
+            "Transparent",
             current.on,
             true,
             !supported,
@@ -2202,40 +2204,98 @@ impl SettingsView {
                 cx.notify();
             }),
         );
+        let floor = glass::floor(&palette);
         let drawn = current.opacity_for(&palette);
-        let strengths: Vec<AnyElement> = glass::strengths(&palette)
-            .into_iter()
-            .map(|percent| {
-                choice(
-                    format!("glass-{percent}"),
-                    "glass-strength",
-                    &percent.to_string(),
-                    &crate::view_model::i18n::tf("%{percent}% opaque", &[("percent", &percent.to_string())]),
-                    drawn == percent,
-                    false,
-                    !current.on || !supported,
-                    cx.listener(move |this, _, _, cx| {
-                        this.glass.opacity = percent;
-                        cx.emit(super::GlassChosen(this.glass));
-                        cx.notify();
-                    }),
-                )
-            })
-            .collect();
+        let enabled = current.on && supported;
+        let bar: Rc<std::cell::Cell<gpui::Bounds<gpui::Pixels>>> = Rc::default();
+        let at = {
+            let bar = bar.clone();
+            move |x: gpui::Pixels| -> Option<u8> {
+                let bounds = bar.get();
+                let width = f32::from(bounds.size.width);
+                (width > 0.0).then(|| Glass::opacity_at(f32::from(x - bounds.origin.x) / width, floor))
+            }
+        };
+        let move_at = at.clone();
+        let slider = div()
+            .flex()
+            .flex_col()
+            .gap(px(4.0))
+            .w_full()
+            .when(!enabled, |d| d.opacity(0.5))
+            .child(
+                div()
+                    .flex()
+                    .justify_between()
+                    .text_size(px(0.85 * theme::REM))
+                    .text_color(rgb(theme::text_muted()))
+                    .child(crate::view_model::i18n::t("Opacity"))
+                    .child(div().text_color(rgb(theme::text_faint())).child(format!("{drawn}%"))),
+            )
+            .child(
+                div()
+                    .relative()
+                    .w_full()
+                    .h(px(20.0))
+                    .flex()
+                    .items_center()
+                    .cursor_pointer()
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+                            cx.stop_propagation();
+                            if this.glass.on
+                                && let Some(percent) = at(event.position.x)
+                            {
+                                this.glass.opacity = percent;
+                                cx.emit(super::GlassChosen(this.glass));
+                                cx.notify();
+                            }
+                        }),
+                    )
+                    .on_mouse_move(cx.listener(move |this, event: &gpui::MouseMoveEvent, _, cx| {
+                        if event.pressed_button == Some(MouseButton::Left)
+                            && this.glass.on
+                            && let Some(percent) = move_at(event.position.x)
+                            && percent != this.glass.opacity
+                        {
+                            this.glass.opacity = percent;
+                            cx.emit(super::GlassChosen(this.glass));
+                            cx.notify();
+                        }
+                    }))
+                    .child(canvas(move |bounds, _, _| bar.set(bounds), |_, _, _, _| {}).absolute().inset_0())
+                    .child(
+                        div()
+                            .relative()
+                            .w_full()
+                            .h(px(6.0))
+                            .rounded_full()
+                            .bg(rgba(theme::bg_selected()))
+                            .child(
+                                div()
+                                    .absolute()
+                                    .top_0()
+                                    .left_0()
+                                    .h_full()
+                                    .w(gpui::relative(Glass::fraction_of(drawn, floor)))
+                                    .rounded_full()
+                                    .bg(rgb(theme::accent())),
+                            )
+                            .child(crate::menu::slider_handle(Glass::fraction_of(drawn, floor), 3.0)),
+                    )
+                    .e2e("div", "glass-slider")
+                    .attr("data-value", drawn.to_string())
+                    .attr("data-min", floor.to_string()),
+            );
         let mut body = vec![
             muted(
-                "A see-through window: the panels let the desktop show through, blurred where your system can. Text always stays readable, so a theme that would not read at a low opacity has a higher lowest strength.",
+                "Makes the window and its panels see-through. Text, icons, buttons, menus and pictures stay solid. The lowest opacity is where this theme's text still reads over any backdrop.",
                 "muted",
             )
             .into_any_element(),
             on,
-            div()
-                .flex()
-                .flex_wrap()
-                .gap(px(16.0))
-                .children(strengths)
-                .e2e("div", "glass-strengths")
-                .into_any_element(),
+            slider.into_any_element(),
             div().child(muted(support.note(), "muted")).e2e("div", "glass-support").attr(
                 "data-support",
                 match support {
@@ -2247,7 +2307,7 @@ impl SettingsView {
             .into_any_element(),
         ];
         body.shrink_to_fit();
-        section("Frosted glass", "glass", body, self.hl("glass"))
+        section("Transparent", "glass", body, self.hl("glass"))
     }
 
     /// The look as it is now, as a shareable code.

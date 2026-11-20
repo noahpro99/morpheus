@@ -87,7 +87,7 @@ impl Support {
     /// The note shown under the setting.
     pub fn note(self) -> &'static str {
         match self {
-            Support::Blur => "Your system blurs what is behind the window.",
+            Support::Blur => "Any blur behind the window comes from your system, not from Morpheus.",
             Support::Translucent => {
                 "Your desktop shows through. Whether it is blurred is up to your compositor (on Hyprland, its blur settings)."
             }
@@ -165,6 +165,20 @@ pub fn strengths(palette: &Palette) -> Vec<u8> {
 }
 
 impl Glass {
+    /// The opacity a slider at `fraction` (0 to 1) of its track picks: from the palette's
+    /// floor (the least that still reads) up to fully opaque.
+    pub fn opacity_at(fraction: f32, floor: u8) -> u8 {
+        let floor = floor.min(100);
+        let span = f32::from(100 - floor);
+        (f32::from(floor) + fraction.clamp(0.0, 1.0) * span).round() as u8
+    }
+
+    /// Where on the slider's track `percent` sits, 0 to 1.
+    pub fn fraction_of(percent: u8, floor: u8) -> f32 {
+        let floor = floor.min(99);
+        (f32::from(percent.clamp(floor, 100) - floor) / f32::from(100 - floor)).clamp(0.0, 1.0)
+    }
+
     /// The opacity actually drawn for `palette`: the chosen one, never below the floor.
     pub fn opacity_for(&self, palette: &Palette) -> u8 {
         self.opacity.clamp(1, 100).max(floor(palette))
@@ -267,6 +281,21 @@ mod tests {
         let a = alphas(60);
         assert!(a.raised > a.main && a.main > 0);
         assert_eq!(alphas(100), Alphas { main: 255, raised: 255 });
+    }
+
+    #[test]
+    fn the_slider_runs_from_the_floor_to_opaque() {
+        assert_eq!(Glass::opacity_at(0.0, 70), 70);
+        assert_eq!(Glass::opacity_at(1.0, 70), 100);
+        assert_eq!(Glass::opacity_at(0.5, 70), 85);
+        assert_eq!(Glass::opacity_at(-3.0, 70), 70);
+        assert_eq!(Glass::opacity_at(9.0, 70), 100);
+        for floor in [0u8, 1, 50, 72, 99, 100] {
+            for percent in floor.max(1)..=100 {
+                let back = Glass::opacity_at(Glass::fraction_of(percent, floor), floor);
+                assert_eq!(back, percent, "floor {floor}");
+            }
+        }
     }
 
     #[test]

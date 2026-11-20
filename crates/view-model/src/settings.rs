@@ -159,8 +159,8 @@ pub const SETTINGS_INDEX: &[SettingEntry] = &[
         "theme",
     ),
     entry(
-        "Frosted glass",
-        "appearance glass blur transparent translucent frosted see-through acrylic mica vibrancy",
+        "Transparent",
+        "appearance transparent transparency opacity glass blur translucent frosted see-through acrylic mica vibrancy",
         SettingsPage::Appearance,
         "glass",
     ),

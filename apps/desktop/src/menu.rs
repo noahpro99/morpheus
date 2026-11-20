@@ -253,7 +253,7 @@ fn panel(
         .min_w(px(188.0))
         .p(px(6.0))
         .rounded(px(theme::RADIUS_LG))
-        .bg(theme::fill_rail())
+        .bg(theme::solid_rail())
         .border_1()
         .border_color(rgba(theme::edge()))
         .shadow_lg()
@@ -295,6 +295,7 @@ fn panel(
     }
     column
         .e2e("div", "context-menu")
+        .attr("data-alpha", theme::alpha_of(theme::solid_rail()).to_string())
         .attr("role", "menu")
         .focusable(focus)
         .into_any_element()
@@ -511,7 +512,7 @@ fn flyout(
         .max_h(px(0.6 * height))
         .p(px(6.0))
         .rounded(px(theme::RADIUS_LG))
-        .bg(theme::fill_rail())
+        .bg(theme::solid_rail())
         .border_1()
         .border_color(rgba(theme::edge()))
         .shadow_lg()

@@ -307,6 +307,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         .relative()
         .e2e("aside", "sidebar")
         .attr("data-bg", format!("{:06x}", theme::bg_sidebar()))
+        .attr("data-alpha", theme::alpha_of(theme::fill_sidebar()).to_string())
         .attr("data-radius-tl", theme::RADIUS_LG.to_string())
 }
 

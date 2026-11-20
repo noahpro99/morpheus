@@ -312,8 +312,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         .w(px(theme::RAIL_W))
         .flex_none()
         .h_full()
-        .pb(px(8.0))
-        .bg(theme::fill_rail());
+        .pb(px(8.0));
 
     // Direct messages: the logo; its count of unread conversations.
     let dms_selected = *current == Scope::Dms;
@@ -618,6 +617,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
     ))
     .e2e("nav", "rail")
     .attr("data-bg", format!("{:06x}", theme::bg_rail()))
+    .attr("data-alpha", theme::alpha_of(theme::fill_rail()).to_string())
 }
 
 /// One top-level entry of the rail, as a slot a badge can be dropped on: the

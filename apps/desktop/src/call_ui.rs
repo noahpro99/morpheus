@@ -1729,7 +1729,7 @@ fn stage_body(
         .px(px(if voice_page { 16.0 } else { 16.0 }))
         .pt(px(if voice_page { 16.0 } else { 8.0 }))
         .pb(px(8.0))
-        .bg(rgb(theme::bg_rail()))
+        .bg(theme::fill_rail())
         .min_h(px(200.0));
     stage = if voice_page {
         stage.flex_1().min_w_0().min_h_0()
@@ -1845,7 +1845,7 @@ pub fn voice_page(
                 .items_center()
                 .justify_center()
                 .gap(px(12.0))
-                .bg(rgb(theme::bg_rail()))
+                .bg(theme::fill_rail())
                 .text_color(rgb(theme::text_muted()))
                 .child(icon("volume-2", 40.0))
                 .child(
@@ -1959,7 +1959,7 @@ pub fn voice_channel(
         .min_h_0()
         .flex()
         .flex_col()
-        .bg(rgb(theme::bg_rail()))
+        .bg(theme::fill_rail())
         .child(
             div()
                 .flex_none()
@@ -1987,7 +1987,7 @@ pub fn voice_channel(
         .min_h_0()
         .flex()
         .relative()
-        .bg(rgb(theme::bg_rail()))
+        .bg(theme::fill_rail())
         .child(call);
     if open && let Some(chat) = chat {
         // A card floating beside the call: 40% of the page, 240-380 wide.
@@ -2011,7 +2011,7 @@ pub fn voice_channel(
                         .overflow_hidden()
                         .border_1()
                         .border_color(rgba(theme::bg_selected()))
-                        .bg(rgb(theme::bg_chat()))
+                        .bg(theme::fill_chat())
                         .child(
                             div().flex_none().h(px(40.0)).px(px(8.0)).flex().items_center().justify_end().child(
                                 div()

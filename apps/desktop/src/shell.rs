@@ -1671,7 +1671,7 @@ impl Render for Shell {
             .relative()
             .flex()
             .flex_col()
-            .bg(theme::fill_chat())
+            .bg(theme::fill_backdrop())
             .track_focus(&root_focus)
             // A click on nothing in particular leaves the focus where it is (the
             // root would otherwise take it from a text box). On Windows a press

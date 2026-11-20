@@ -246,9 +246,44 @@ fills!(
     fill_rail: bg_rail, false;
     fill_sidebar: bg_sidebar, false;
     fill_chat: bg_chat, false;
-    fill_input: bg_input, true;
-    fill_elevated: bg_elevated, true;
 );
+
+macro_rules! solids {
+    ($($name:ident: $token:ident);* $(;)?) => {
+        $(
+            /// The surface colour, always opaque: menus, dialogs, inputs and buttons
+            /// stay solid whatever the window's transparency.
+            #[inline]
+            pub fn $name() -> gpui::Rgba {
+                gpui::rgba((palette().$token << 8) | 0xff)
+            }
+        )*
+    };
+}
+
+solids!(
+    solid_rail: bg_rail;
+    solid_sidebar: bg_sidebar;
+    solid_chat: bg_chat;
+    fill_input: bg_input;
+    fill_elevated: bg_elevated;
+);
+
+/// The backdrop under every region of the window: nothing when the window is transparent
+/// (each region draws its own translucent fill once, so they do not pile up into an
+/// almost opaque one), the chat colour otherwise.
+pub fn fill_backdrop() -> gpui::Rgba {
+    if glass_percent().is_some() {
+        gpui::rgba(0)
+    } else {
+        fill_chat()
+    }
+}
+
+/// How opaque a fill is, 0 to 255 (for the tests' `data-alpha`).
+pub fn alpha_of(fill: gpui::Rgba) -> u8 {
+    (fill.a * 255.0).round() as u8
+}
 
 /// The swatch of a theme's option in Settings: (sidebar, chat).
 pub fn swatch_of(theme: Theme) -> (u32, u32) {

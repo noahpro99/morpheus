@@ -950,7 +950,7 @@ impl TextInput {
             .min_w(px(188.0))
             .p(px(6.0))
             .rounded(px(theme::RADIUS_LG))
-            .bg(theme::fill_rail())
+            .bg(theme::solid_rail())
             .border_1()
             .border_color(rgba(theme::edge()))
             .shadow_lg()

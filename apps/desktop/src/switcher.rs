@@ -317,7 +317,7 @@ impl Render for Switcher {
             .flex()
             .flex_col()
             .rounded(px(theme::RADIUS_XL))
-            .bg(theme::fill_sidebar())
+            .bg(theme::solid_sidebar())
             .shadow(vec![BoxShadow {
                 color: gpui::hsla(0.0, 0.0, 0.0, 0.6),
                 offset: point(px(0.0), px(24.0)),
