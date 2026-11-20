@@ -1359,6 +1359,10 @@ pub struct PathPromptOptions {
     pub multiple: bool,
     /// The prompt to show to a user when selecting a path
     pub prompt: Option<SharedString>,
+    /// Kinds of file to offer, each a name and its extensions without the dot
+    /// (`("Pictures", ["png", "jpg"])`); empty for any file. Honoured on Linux
+    /// (the portal); the other platforms show every file for now.
+    pub filters: Vec<(String, Vec<String>)>,
 }
 
 /// What kind of prompt styling to show

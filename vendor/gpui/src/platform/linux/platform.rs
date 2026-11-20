@@ -309,16 +309,23 @@ impl<P: LinuxClient + 'static> Platform for P {
                     "Open File"
                 };
 
-                let request = match ashpd::desktop::file_chooser::OpenFileRequest::default()
+                let mut builder = ashpd::desktop::file_chooser::OpenFileRequest::default()
                     .identifier(identifier.await)
                     .modal(true)
                     .title(title)
                     .accept_label(options.prompt.as_ref().map(crate::SharedString::as_str))
                     .multiple(options.multiple)
-                    .directory(options.directories)
-                    .send()
-                    .await
-                {
+                    .directory(options.directories);
+                for (name, extensions) in &options.filters {
+                    let mut filter = ashpd::desktop::file_chooser::FileFilter::new(name);
+                    for extension in extensions {
+                        filter = filter
+                            .glob(&format!("*.{extension}"))
+                            .glob(&format!("*.{}", extension.to_uppercase()));
+                    }
+                    builder = builder.filter(filter);
+                }
+                let request = match builder.send().await {
                     Ok(request) => request,
                     Err(err) => {
                         let result = match err {

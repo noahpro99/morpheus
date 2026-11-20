@@ -345,3 +345,33 @@ mod emoji_tests {
         assert_eq!(picture_mime("png"), None);
     }
 }
+
+/// The kinds of file a picture picker (custom emoji, server or room picture,
+/// avatar) offers in the native dialog, as (name, extensions): the same types
+/// [`picture_mime`] accepts.
+pub fn picture_filters() -> Vec<(String, Vec<String>)> {
+    vec![("Pictures".to_owned(), ["png", "jpg", "jpeg", "gif", "webp"].map(String::from).to_vec())]
+}
+
+/// What the theme file picker offers.
+pub fn theme_filters() -> Vec<(String, Vec<String>)> {
+    vec![("Morpheus themes".to_owned(), vec!["morpheus-theme".to_owned()])]
+}
+
+#[cfg(test)]
+mod filter_tests {
+    use super::*;
+
+    #[test]
+    fn the_picture_filter_offers_exactly_what_a_picture_is() {
+        let filters = picture_filters();
+        let extensions = &filters[0].1;
+        for extension in extensions {
+            assert!(picture_mime(&format!("a.{extension}")).is_some(), "{extension}");
+        }
+        for accepted in ["png", "jpg", "jpeg", "gif", "webp"] {
+            assert!(extensions.iter().any(|e| e == accepted), "{accepted}");
+        }
+        assert!(picture_mime("a.pdf").is_none());
+    }
+}

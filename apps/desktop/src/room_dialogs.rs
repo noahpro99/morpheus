@@ -434,6 +434,7 @@ impl RoomDialog {
                 directories: false,
                 multiple: false,
                 prompt: Some("Choose a picture".into()),
+            filters: crate::view_model::room_dialogs::picture_filters(),
             })
         });
         cx.spawn(async move |this, cx| {
@@ -1050,6 +1051,7 @@ impl RoomDialog {
             directories: false,
             multiple: false,
             prompt: Some("Choose a picture".into()),
+            filters: crate::view_model::room_dialogs::picture_filters(),
         });
         cx.spawn(async move |this, cx| {
             let Ok(Ok(Some(paths))) = picking.await else {

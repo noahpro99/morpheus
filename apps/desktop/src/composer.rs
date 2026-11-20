@@ -595,6 +595,7 @@ impl Composer {
             directories: false,
             multiple: false,
             prompt: Some("Attach a file".into()),
+            filters: Vec::new(),
         });
         cx.spawn(async move |_, _| {
             let Ok(Ok(Some(paths))) = picking.await else {
