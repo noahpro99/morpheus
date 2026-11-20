@@ -15,6 +15,15 @@
 //!   reading falls back to the plaintext copy, or says "locked" once
 //!   [`remove_plaintext_copies`](Session::remove_plaintext_copies) emptied
 //!   it, never an empty list;
+//! - the layout and theme (`dev.morpheus.ui`) and the private marks (pinned,
+//!   closed, ignored, muted_until) are sealed the same way (#194). The emoji
+//!   packs (`im.ponies.*`) stay plaintext on purpose: they are a standard
+//!   other clients read, and are not private (room members see the same
+//!   pictures);
+//! - a Morpheus older than a kind being sealed writes plaintext again; every
+//!   sign-in on a device with the key folds such plaintext into the sealed
+//!   copy ([`merge`]) and empties it, so a stale client's edits are kept (its
+//!   removals are not) and the plaintext does not linger;
 //! - the plaintext copies are removed only on request, after the sealed ones
 //!   are written and read back equal.
 
@@ -41,10 +50,16 @@ const KEY_LEN: usize = 32;
 const NONCE_LEN: usize = 12;
 
 /// What is kept sealed.
-pub const KINDS: [&str; 3] = [
+pub const KINDS: [&str; 8] = [
     "dev.morpheus.friends",
     "dev.morpheus.nicknames",
     "dev.morpheus.notes",
+    // The layout and theme, and the private marks (#194).
+    "dev.morpheus.ui",
+    "dev.morpheus.pinned",
+    "dev.morpheus.closed",
+    "dev.morpheus.ignored",
+    "dev.morpheus.muted_until",
 ];
 
 /// Where the sealed copy of `kind` lives.
@@ -204,10 +219,15 @@ async fn any_sealed(client: &matrix_sdk::Client) -> bool {
 
 /// Seals what is still in plaintext and then empties the plaintext copies,
 /// by itself, on a device that has the account key (#195). Does nothing
-/// without the key, and once the plaintext copies are gone (writes seal
-/// from then on).
+/// without the key.
+///
+/// It runs at every sign-in, not only once: a Morpheus older than the
+/// sealing (or than a kind being sealed) writes plaintext again, and a kind
+/// added later (the layout and marks, #194) is plaintext on accounts that
+/// sealed the first three. Whatever plaintext is found is folded into the
+/// sealed copy (see [`merge`]) and emptied again.
 pub(crate) async fn settle(client: &matrix_sdk::Client, dir: &std::path::Path) -> Result<()> {
-    if load_key(dir).is_none() || plaintext_removed(client).await {
+    if load_key(dir).is_none() {
         return Ok(());
     }
     remove_plaintext(client, dir).await
@@ -278,19 +298,6 @@ pub(crate) async fn adopt_key(
     Ok(true)
 }
 
-/// Seals what each kind holds now (nothing for an empty one).
-async fn seal_all(client: &matrix_sdk::Client, dir: &std::path::Path) -> Result<()> {
-    let key = load_key(dir).ok_or(Error::PrivateDataLocked)?;
-    for kind in KINDS {
-        // The readable copy: sealed already, else the plaintext one.
-        let Some(content) = read_private(client, dir, kind).await? else {
-            continue;
-        };
-        write_raw(client, &sealed_type(kind), &seal(&key, kind, &content)?).await?;
-    }
-    Ok(())
-}
-
 /// What this device knows about the sealing of the account's data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PrivateDataState {
@@ -331,37 +338,97 @@ impl Session {
     }
 }
 
-/// Empties the plaintext copies, so only the sealed ones are left. Every
-/// kind is sealed and read back first; nothing is emptied otherwise.
-/// Devices without the key see "locked" afterwards until they have
-/// recovered with the recovery key.
-async fn remove_plaintext(client: &matrix_sdk::Client, dir: &std::path::Path) -> Result<()> {
-    let key = load_key(dir).ok_or(Error::PrivateDataLocked)?;
-            seal_all(&client, &dir).await?;
-            // Read back: each sealed copy opens to what is readable.
-            for kind in KINDS {
-                if let Some(plain) = read_value(&client, kind).await?
-                    && !is_sealed(&plain)
-                {
-                    let blob = read_value(&client, &sealed_type(kind))
-                        .await?
-                        .ok_or_else(|| Error::Other("the sealed copy did not arrive".into()))?;
-                    if open(&key, kind, &blob)? != plain {
-                        return Err(Error::Other(
-                            "the sealed copy differs from the data; nothing was removed".into(),
-                        ));
-                    }
+/// The empty content of `kind`, what its plaintext copy is emptied to.
+fn empty_content(kind: &str) -> Value {
+    if kind == "dev.morpheus.friends" {
+        json!({ "users": [] })
+    } else {
+        json!({})
+    }
+}
+
+/// Whether `content` holds nothing (an emptied copy).
+fn is_empty_content(content: &Value) -> bool {
+    match content {
+        Value::Null => true,
+        Value::Object(map) => map.values().all(is_empty_content),
+        Value::Array(items) => items.is_empty(),
+        _ => false,
+    }
+}
+
+/// `sealed` with what a plaintext copy holds folded in: the plaintext
+/// entries win (it was written later, by a client that did not know about
+/// the sealing) and lists (the friends) are joined. An older client's
+/// removals are not seen, only what it added or changed.
+pub fn merge(sealed: &Value, plain: &Value) -> Value {
+    match (sealed, plain) {
+        (Value::Object(a), Value::Object(b)) => {
+            let mut out = a.clone();
+            for (key, value) in b {
+                let merged = match out.get(key) {
+                    Some(old) => merge(old, value),
+                    None => value.clone(),
+                };
+                out.insert(key.clone(), merged);
+            }
+            Value::Object(out)
+        }
+        (Value::Array(a), Value::Array(b)) => {
+            let mut out = a.clone();
+            for item in b {
+                if !out.contains(item) {
+                    out.push(item.clone());
                 }
             }
-            write_raw(&client, STATE_TYPE, &json!({ "plaintext_removed": true })).await?;
-            for kind in KINDS {
-                let empty = if kind == "dev.morpheus.friends" {
-                    json!({ "users": [] })
-                } else {
-                    json!({})
-                };
-                write_raw(&client, kind, &empty).await?;
+            Value::Array(out)
+        }
+        (_, plain) => plain.clone(),
+    }
+}
+
+/// Seals every kind that has plaintext in it (folded into its sealed copy,
+/// if any), reads each sealed copy back, and only then empties the
+/// plaintext copies, so nothing is lost. Devices without the key see
+/// "locked" afterwards until they have recovered with the recovery key.
+async fn remove_plaintext(client: &matrix_sdk::Client, dir: &std::path::Path) -> Result<()> {
+    let key = load_key(dir).ok_or(Error::PrivateDataLocked)?;
+    let mut to_empty = Vec::new();
+    for kind in KINDS {
+        let Some(plain) = read_value(client, kind).await? else {
+            continue;
+        };
+        if is_sealed(&plain) || is_empty_content(&plain) {
+            continue;
+        }
+        let sealed = match read_value(client, &sealed_type(kind)).await? {
+            Some(blob) if is_sealed(&blob) => Some(open(&key, kind, &blob)?),
+            _ => None,
+        };
+        let merged = match &sealed {
+            Some(sealed) => merge(sealed, &plain),
+            None => plain,
+        };
+        if sealed.as_ref() != Some(&merged) {
+            write_raw(client, &sealed_type(kind), &seal(&key, kind, &merged)?).await?;
+            // Read back: the sealed copy opens to what was meant.
+            let blob = read_value(client, &sealed_type(kind))
+                .await?
+                .ok_or_else(|| Error::Other("the sealed copy did not arrive".into()))?;
+            if open(&key, kind, &blob)? != merged {
+                return Err(Error::Other(
+                    "the sealed copy differs from the data; nothing was removed".into(),
+                ));
             }
+        }
+        to_empty.push(kind);
+    }
+    if !plaintext_removed(client).await {
+        write_raw(client, STATE_TYPE, &json!({ "plaintext_removed": true })).await?;
+    }
+    for kind in to_empty {
+        write_raw(client, kind, &empty_content(kind)).await?;
+    }
     Ok(())
 }
 
@@ -386,6 +453,35 @@ mod tests {
         assert_ne!(blob["n"], again["n"], "a fresh nonce each time");
         assert!(!is_sealed(&content));
         assert_eq!(sealed_type("dev.morpheus.notes"), "dev.morpheus.notes.enc");
+    }
+
+    #[test]
+    fn plaintext_an_older_client_wrote_is_folded_into_the_sealed_copy() {
+        let sealed = json!({ "theme": "dark", "rail": ["a", "b"], "users": ["@x:y"] });
+        let plain = json!({ "theme": "light", "users": ["@x:y", "@z:y"], "new": 1 });
+        let merged = merge(&sealed, &plain);
+        assert_eq!(merged["theme"], "light", "the later write wins");
+        assert_eq!(merged["rail"], json!(["a", "b"]), "what it did not touch stays");
+        assert_eq!(merged["users"], json!(["@x:y", "@z:y"]), "lists are joined");
+        assert_eq!(merged["new"], 1);
+    }
+
+    #[test]
+    fn emptied_copies_hold_nothing() {
+        for kind in KINDS {
+            assert!(is_empty_content(&empty_content(kind)), "{kind}");
+        }
+        assert!(!is_empty_content(&json!({ "theme": "dark" })));
+        assert!(!is_empty_content(&json!({ "!r:x": 0 })));
+        assert!(!is_empty_content(&json!({ "users": ["@a:b"] })));
+    }
+
+    #[test]
+    fn the_layout_and_marks_are_sealed_but_not_emoji_packs() {
+        for kind in ["dev.morpheus.ui", "dev.morpheus.pinned", "dev.morpheus.closed", "dev.morpheus.ignored", "dev.morpheus.muted_until"] {
+            assert!(KINDS.contains(&kind), "{kind}");
+        }
+        assert!(!KINDS.iter().any(|k| k.contains("emotes")));
     }
 
     #[test]

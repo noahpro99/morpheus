@@ -2505,6 +2505,38 @@ async fn self_verification_by_qr_code_between_two_devices() {
 }
 
 /// `user`'s raw account data of `kind`, as the homeserver holds it.
+/// Writes account data as an older client would, in plaintext.
+fn put_account_data(homeserver: &str, user: &str, kind: &str, content: &serde_json::Value) {
+    let curl = |args: &[&str]| -> String {
+        let out = std::process::Command::new("curl").arg("-s").args(args).output().expect("curl");
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+    let login: serde_json::Value = serde_json::from_str(&curl(&[
+        "-X",
+        "POST",
+        &format!("{homeserver}/_matrix/client/v3/login"),
+        "-d",
+        &serde_json::json!({
+            "type": "m.login.password",
+            "identifier": { "type": "m.id.user", "user": user },
+            "password": format!("{user}-password"),
+        })
+        .to_string(),
+    ]))
+    .expect("login json");
+    let token = login["access_token"].as_str().expect("token");
+    let put = curl(&[
+        "-X",
+        "PUT",
+        "-H",
+        &format!("Authorization: Bearer {token}"),
+        &format!("{homeserver}/_matrix/client/v3/user/%40{user}%3Alocalhost/account_data/{kind}"),
+        "-d",
+        &content.to_string(),
+    ]);
+    assert_eq!(put.trim(), "{}", "put: {put}");
+}
+
 fn raw_account_data(homeserver: &str, user: &str, kind: &str) -> Option<serde_json::Value> {
     let curl = |args: &[&str]| -> Option<String> {
         let out = std::process::Command::new("curl").arg("-s").args(args).output().ok()?;
@@ -2594,6 +2626,12 @@ async fn private_account_data_is_encrypted_without_losing_anything() {
     one.set_note(bob.clone(), "owes me lunch".into())
         .await
         .expect("note");
+    one.set_ui_prefs(serde_json::json!({ "theme": "ember-secret" }))
+        .await
+        .expect("ui prefs");
+    one.set_mark(morpheus_core::marks::PINNED, "!pinned-secret:localhost".into(), Some(5))
+        .await
+        .expect("mark");
     let kind = "dev.morpheus.nicknames";
     assert!(
         raw_account_data(&env.homeserver, &user, &format!("{kind}.enc")).is_none(),
@@ -2609,6 +2647,18 @@ async fn private_account_data_is_encrypted_without_losing_anything() {
     assert_eq!(sealed["v"], 1);
     let plain = raw_account_data(&env.homeserver, &user, kind).unwrap_or_default();
     assert!(!plain.to_string().contains("Bobby"), "plaintext gone: {plain}");
+    for (kind, secret) in [("dev.morpheus.ui", "ember-secret"), ("dev.morpheus.pinned", "pinned-secret")] {
+        let sealed = raw_account_data(&env.homeserver, &user, &format!("{kind}.enc"))
+            .unwrap_or_else(|| panic!("{kind} sealed"));
+        assert!(!sealed.to_string().contains(secret), "{kind}: {sealed}");
+        let plain = raw_account_data(&env.homeserver, &user, kind).unwrap_or_default();
+        assert!(!plain.to_string().contains(secret), "{kind} plaintext gone: {plain}");
+    }
+    assert_eq!(one.ui_prefs().await.expect("ui")["theme"], "ember-secret");
+    assert_eq!(
+        one.marks(morpheus_core::marks::PINNED).await.expect("marks").get("!pinned-secret:localhost"),
+        Some(&5)
+    );
     let notes = raw_account_data(&env.homeserver, &user, "dev.morpheus.notes").unwrap_or_default();
     assert!(!notes.to_string().contains("lunch"), "notes too: {notes}");
     assert_eq!(
@@ -2638,4 +2688,19 @@ async fn private_account_data_is_encrypted_without_losing_anything() {
         one.nicknames().await.expect("read").get(bob.as_str()).map(String::as_str),
         Some("Bob")
     );
+
+    // A Morpheus older than the sealing writes plaintext again: the next
+    // sign-in (settle) keeps its edit and empties the plaintext.
+    put_account_data(
+        &env.homeserver,
+        &user,
+        "dev.morpheus.pinned",
+        &serde_json::json!({ "!old-client:localhost": 9 }),
+    );
+    one.settle_private_data().await.expect("settle");
+    let pinned = one.marks(morpheus_core::marks::PINNED).await.expect("marks");
+    assert_eq!(pinned.get("!old-client:localhost"), Some(&9), "{pinned:?}");
+    assert_eq!(pinned.get("!pinned-secret:localhost"), Some(&5), "{pinned:?}");
+    let plain = raw_account_data(&env.homeserver, &user, "dev.morpheus.pinned").unwrap_or_default();
+    assert!(!plain.to_string().contains("old-client"), "plaintext emptied again: {plain}");
 }

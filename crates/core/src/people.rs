@@ -155,18 +155,6 @@ pub(crate) async fn read_account_data(
     }
 }
 
-/// A user-id-keyed map of strings kept in private account data.
-async fn read_map(
-    client: &matrix_sdk::Client,
-    kind: &str,
-) -> crate::Result<serde_json::Map<String, Value>> {
-    let raw = read_account_data(client, kind).await?;
-    Ok(raw
-        .and_then(|raw| raw.deserialize_as::<Value>().ok())
-        .and_then(|v| v.as_object().cloned())
-        .unwrap_or_default())
-}
-
 /// [`read_map`] for what is kept sealed (see `private_data`).
 async fn read_private_map(
     client: &matrix_sdk::Client,
@@ -310,9 +298,9 @@ pub mod marks {
 impl Session {
     /// One of the [`marks`] maps.
     pub fn marks(&self, kind: &'static str) -> CoreFuture<std::collections::HashMap<String, i64>> {
-        let client = self.client.clone();
+        let (client, dir) = (self.client.clone(), self.dir.clone());
         self.core.run(async move {
-            Ok(read_map(&client, kind)
+            Ok(read_private_map(&client, &dir, kind)
                 .await?
                 .into_iter()
                 .filter_map(|(key, at)| Some((key, at.as_i64()?)))
@@ -322,20 +310,14 @@ impl Session {
 
     /// Set (`Some`) or clear one entry of a [`marks`] map.
     pub fn set_mark(&self, kind: &'static str, key: String, at: Option<i64>) -> CoreFuture<()> {
-        let client = self.client.clone();
+        let (client, dir) = (self.client.clone(), self.dir.clone());
         self.core.run(async move {
-            let mut map = read_map(&client, kind).await?;
+            let mut map = read_private_map(&client, &dir, kind).await?;
             match at {
                 Some(at) => map.insert(key, Value::from(at)),
                 None => map.remove(&key),
             };
-            let raw: Raw<AnyGlobalAccountDataEventContent> =
-                Raw::from_json(serde_json::value::to_raw_value(&Value::Object(map))?);
-            client
-                .account()
-                .set_account_data_raw(GlobalAccountDataEventType::from(kind), raw)
-                .await?;
-            Ok(())
+            crate::private_data::write_private(&client, &dir, kind, &Value::Object(map)).await
         })
     }
 

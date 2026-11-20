@@ -4,7 +4,7 @@ use matrix_sdk::ruma::{
     OwnedRoomId, OwnedUserId,
     api::client::room::create_room,
     events::{
-        AnyGlobalAccountDataEventContent, GlobalAccountDataEventType, InitialStateEvent,
+        InitialStateEvent,
         room::{
             history_visibility::{HistoryVisibility, RoomHistoryVisibilityEventContent},
             join_rules::{JoinRule, RoomJoinRulesEventContent},
@@ -258,25 +258,20 @@ impl Session {
     /// The UI preferences blob (rail order, folders, hidden muted rooms…),
     /// synced through account data so every device sees the same layout.
     pub fn ui_prefs(&self) -> CoreFuture<Value> {
-        let client = self.client.clone();
+        let (client, dir) = (self.client.clone(), self.dir.clone());
         self.core.run(async move {
-            let raw = crate::people::read_account_data(&client, UI_PREFS_TYPE).await?;
-            Ok(raw
-                .and_then(|raw| raw.deserialize_as::<Value>().ok())
+            Ok(crate::private_data::read_private(&client, &dir, UI_PREFS_TYPE)
+                .await?
                 .unwrap_or_else(|| Value::Object(Default::default())))
         })
     }
 
+    /// Sealed like the friends (see `private_data`): the homeserver does
+    /// not read the layout and theme.
     pub fn set_ui_prefs(&self, prefs: Value) -> CoreFuture<()> {
-        let client = self.client.clone();
+        let (client, dir) = (self.client.clone(), self.dir.clone());
         self.core.run(async move {
-            let raw: Raw<AnyGlobalAccountDataEventContent> =
-                Raw::from_json(serde_json::value::to_raw_value(&prefs)?);
-            client
-                .account()
-                .set_account_data_raw(GlobalAccountDataEventType::from(UI_PREFS_TYPE), raw)
-                .await?;
-            Ok(())
+            crate::private_data::write_private(&client, &dir, UI_PREFS_TYPE, &prefs).await
         })
     }
 }
