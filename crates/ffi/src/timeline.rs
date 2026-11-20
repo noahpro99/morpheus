@@ -201,6 +201,8 @@ fn rows_of(rows: &[Row], session: &Session) -> Vec<TimelineRow> {
 #[derive(uniffi::Object)]
 pub struct RoomTimeline {
     handle: TimelineHandle,
+    pub(crate) session: Session,
+    pub(crate) room_id: OwnedRoomId,
     _updates: Arc<TaskHandle>,
 }
 
@@ -214,7 +216,8 @@ fn event_id(id: &str) -> Result<OwnedEventId, FfiError> {
 impl RoomTimeline {
     /// Send a message (Markdown is formatted).
     pub async fn send_text(&self, body: String) -> Result<(), FfiError> {
-        Ok(self.handle.send_text(body).await?)
+        let emotes = self.emote_pairs().await;
+        Ok(self.handle.send_text_with(body, emotes).await?)
     }
 
     /// Upload a file (a picture, a clip, anything) and send it; the message
@@ -225,7 +228,8 @@ impl RoomTimeline {
 
     /// Send a message as a reply to the event `reply_to`.
     pub async fn send_reply(&self, body: String, reply_to: String) -> Result<(), FfiError> {
-        Ok(self.handle.send_reply(body, event_id(&reply_to)?).await?)
+        let emotes = self.emote_pairs().await;
+        Ok(self.handle.send_reply_with(body, event_id(&reply_to)?, emotes).await?)
     }
 
     /// React to a message with `key` (an emoji), or take the reaction back.
@@ -243,7 +247,8 @@ impl RoomTimeline {
 
     /// Replace the text of one of my messages.
     pub async fn edit_message(&self, event_id_of: String, body: String) -> Result<(), FfiError> {
-        Ok(self.handle.edit(MessageId::Event(event_id(&event_id_of)?), body).await?)
+        let emotes = self.emote_pairs().await;
+        Ok(self.handle.edit_with(MessageId::Event(event_id(&event_id_of)?), body, emotes).await?)
     }
 
     /// Delete one of my messages.
@@ -269,10 +274,11 @@ impl Morpheus {
         listener: Arc<dyn TimelineListener>,
     ) -> Result<Arc<RoomTimeline>, FfiError> {
         let session = self.session()?;
+        let for_timeline = session.clone();
         let room_id = OwnedRoomId::try_from(room_id.as_str()).map_err(|_| FfiError::Failed {
             reason: format!("{room_id} is not a room id"),
         })?;
-        let opened = session.timeline(room_id).await?;
+        let opened = session.timeline(room_id.clone()).await?;
         let (handle, mut updates) = (opened.handle, opened.updates);
         let task = runtime().spawn(async move {
             let mut entries: Vector<TimelineEntry> = Vector::new();
@@ -296,6 +302,8 @@ impl Morpheus {
         });
         Ok(Arc::new(RoomTimeline {
             handle,
+            session: for_timeline,
+            room_id,
             _updates: TaskHandle::new(task),
         }))
     }

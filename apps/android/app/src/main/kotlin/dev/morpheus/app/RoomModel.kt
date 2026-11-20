@@ -12,6 +12,10 @@ import uniffi.morpheus_ffi.MessageItem
 import uniffi.morpheus_ffi.Morpheus
 import uniffi.morpheus_ffi.RoomItem
 import uniffi.morpheus_ffi.RoomTimeline
+import uniffi.morpheus_ffi.CustomEmojiSection
+import uniffi.morpheus_ffi.EmojiSection
+import uniffi.morpheus_ffi.SuggestionItem
+import uniffi.morpheus_ffi.emojiSections as emojiSectionsOf
 import uniffi.morpheus_ffi.TimelineListener
 import uniffi.morpheus_ffi.TimelineRow
 
@@ -104,6 +108,20 @@ class RoomModel(private val morpheus: Morpheus, val room: RoomItem) {
 
     fun fail(message: String) {
         _error.value = message
+    }
+
+    suspend fun suggest(draft: String): List<SuggestionItem> = try {
+        timeline?.suggest(draft).orEmpty()
+    } catch (_: Exception) {
+        emptyList()
+    }
+
+    suspend fun emojiSections(query: String): List<EmojiSection> = emojiSectionsOf(query)
+
+    suspend fun customEmoji(query: String): List<CustomEmojiSection> = try {
+        timeline?.customEmoji(query).orEmpty()
+    } catch (_: Exception) {
+        emptyList()
     }
 
     fun markRead() = launchSafely { timeline?.markRead() }

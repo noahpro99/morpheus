@@ -38,6 +38,8 @@ import dev.morpheus.app.read
 import dev.morpheus.app.size
 import kotlinx.coroutines.launch
 import uniffi.morpheus_ffi.FileKind
+import uniffi.morpheus_ffi.SuggestionItem
+import uniffi.morpheus_ffi.withEmoji
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -159,7 +161,7 @@ fun RoomScreen(app: AppModel, room: RoomItem) {
             problem?.let {
                 Text(it, Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("room-error"), color = Palette.Danger, fontSize = 13.sp)
             }
-            Composer(editing, onAttach = { picker.launch("*/*") }) { model.send(it) }
+            Composer(model, editing, onAttach = { picker.launch("*/*") }) { model.send(it) }
         }
         actions?.let { message ->
             Actions(
@@ -377,17 +379,23 @@ private fun PictureBody(body: MessageBody.Image, onImage: (MediaHandle) -> Unit)
 }
 
 @Composable
-private fun Composer(editing: MessageItem?, onAttach: () -> Unit, onSend: (String) -> Unit) {
+private fun Composer(model: RoomModel, editing: MessageItem?, onAttach: () -> Unit, onSend: (String) -> Unit) {
     var text by rememberSaveable { mutableStateOf("") }
+    var panel by remember { mutableStateOf(false) }
+    var suggestions by remember { mutableStateOf<List<SuggestionItem>>(emptyList()) }
+    LaunchedEffect(text) { suggestions = model.suggest(text) }
     LaunchedEffect(editing?.key) {
         if (editing != null) text = (editing.body as? MessageBody.Text)?.text.orEmpty()
     }
+    Column(Modifier.background(Palette.Background)) {
+    SuggestionStrip(suggestions) { text = it.draftAfter; suggestions = emptyList() }
     Row(
         Modifier.fillMaxWidth().background(Palette.Background).padding(8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         TextButton(onAttach, Modifier.testTag("attach")) { Text("＋", fontSize = 24.sp) }
+        TextButton({ panel = !panel }, Modifier.testTag("emoji-button")) { Text("😀", fontSize = 22.sp) }
         OutlinedTextField(
             text, { text = it },
             Modifier.weight(1f).heightIn(max = 140.dp).testTag("composer"),
@@ -399,6 +407,8 @@ private fun Composer(editing: MessageItem?, onAttach: () -> Unit, onSend: (Strin
             Modifier.testTag("send"),
             enabled = text.isNotBlank(),
         ) { Text("Send") }
+    }
+    if (panel) EmojiPanel(model) { text = if (it.startsWith(":")) withEmoji(text, it) else withEmoji(text, it) }
     }
 }
 

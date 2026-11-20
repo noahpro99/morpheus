@@ -6,7 +6,7 @@
 use std::{sync::Arc, time::Duration};
 
 use morpheus_ffi::{
-    FileKind, MessageBody, MessageItem, Morpheus, ScopeKind, Sidebar, SidebarListener, SyncListener, TimelineListener,
+    FileKind, MessageBody, MessageItem, Morpheus, ScopeKind, SuggestionKind, emoji_sections, with_emoji, Sidebar, SidebarListener, SyncListener, TimelineListener,
     TimelineRow,
 };
 use tokio::{sync::mpsc, time::timeout};
@@ -284,4 +284,84 @@ async fn files_are_sent_listed_and_fetched_whole() {
             if matches!(&message.body, MessageBody::File { name: n, kind: FileKind::Video, .. } if *n == movie)))
     })
     .await;
+}
+
+#[tokio::test]
+async fn the_composer_suggests_members_emoji_and_custom_emoji_and_sends_the_picture() {
+    use morpheus_core::{Core, LoginRequest, SessionStoreKind};
+    let Ok(homeserver) = std::env::var("MORPHEUS_TEST_HOMESERVER") else {
+        return;
+    };
+    // A custom emoji in alice's own pack, put there by another device of hers.
+    let shortcode = format!("pk{}", std::process::id());
+    let other = Core::with_session_store(tempfile::tempdir().expect("dir").keep(), SessionStoreKind::File)
+        .expect("core")
+        .login(LoginRequest { homeserver: homeserver.clone(), username: "alice".into(), password: "alice-password".into() })
+        .await
+        .expect("login");
+    let mut png = Vec::new();
+    {
+        let img = image_png();
+        png.extend_from_slice(&img);
+    }
+    other.add_emote(None, String::new(), shortcode.clone(), "image/png".into(), png).await.expect("add emote");
+
+    let dir = tempfile::tempdir().expect("dir");
+    let app = Morpheus::new(dir.path().display().to_string()).expect("app");
+    app.login(homeserver, "alice".into(), "alice-password".into()).await.expect("login");
+    let (sidebar, mut sidebar_rx) = Feed::new();
+    let _sidebar = app.watch_sidebar(sidebar).await.expect("watch sidebar");
+    let list = until(&mut sidebar_rx, "general", |s: &Sidebar| {
+        s.scopes.iter().flat_map(|s| &s.sections).flat_map(|s| &s.rooms).any(|r| r.name == "general")
+    })
+    .await;
+    let general = list.scopes.iter().flat_map(|s| &s.sections).flat_map(|s| &s.rooms).find(|r| r.name == "general").expect("general");
+    let (rows, mut rows_rx) = Feed::new();
+    let room = app.open_room(general.id.clone(), rows).await.expect("open");
+
+    // @ finds members (by display name), and accepting writes the name in.
+    let members = room.suggest("hello @bo".into()).await;
+    let bob = members.iter().find(|s| s.kind == SuggestionKind::Member).expect("bob is suggested");
+    assert!(bob.label.to_lowercase().starts_with("bob"), "{}", bob.label);
+    assert_eq!(bob.draft_after, format!("hello @{} ", bob.label));
+    // : finds unicode emoji.
+    let emoji = room.suggest(":smil".into()).await;
+    assert!(emoji.iter().any(|s| s.kind == SuggestionKind::Emoji), "no emoji for :smil");
+    // The panel: sections with cells; a search narrows.
+    assert!(emoji_sections(String::new()).len() > 3);
+    let hearts = emoji_sections("heart".into());
+    assert!(hearts.iter().all(|s| !s.cells.is_empty()) && !hearts.is_empty());
+    assert_eq!(with_emoji("hi".into(), "😀".into()), "hi 😀 ");
+
+    // The custom emoji is found by code, listed in the panel with a picture, and sent as one.
+    let mut custom = Vec::new();
+    for _ in 0..40 {
+        custom = room.suggest(format!(":{}", &shortcode[..shortcode.len() - 1])).await;
+        if custom.iter().any(|s| s.kind == SuggestionKind::Custom) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    let found = custom.iter().find(|s| s.kind == SuggestionKind::Custom).expect("the custom emoji is suggested");
+    assert_eq!(found.label, shortcode);
+    assert!(found.media.is_some());
+    let panel = room.custom_emoji(String::new()).await;
+    assert!(panel.iter().flat_map(|p| &p.emotes).any(|e| e.shortcode == shortcode));
+    let text = format!("custom :{shortcode}: {}", std::process::id());
+    room.send_text(text.clone()).await.expect("send");
+    until(&mut rows_rx, "the sent message", |rows: &Vec<TimelineRow>| {
+        rows.iter().any(|row| matches!(row, TimelineRow::Message { message }
+            if matches!(&message.body, MessageBody::Text { text: t } if t.contains(&shortcode)) && message.event_id.is_some()))
+    })
+    .await;
+}
+
+/// A tiny valid PNG.
+fn image_png() -> Vec<u8> {
+    vec![
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01,
+        0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x44, 0x41,
+        0x54, 0x78, 0x9C, 0x63, 0xF8, 0xFF, 0xFF, 0x3F, 0x00, 0x05, 0xFE, 0x02, 0xFE, 0xA7, 0x35, 0x81, 0x84, 0x00, 0x00, 0x00,
+        0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+    ]
 }
