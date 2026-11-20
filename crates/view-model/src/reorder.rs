@@ -111,3 +111,64 @@ mod beside_tests {
         assert_eq!(dropped_beside(&all, &all, &all[1], &all[1], true), None);
     }
 }
+
+/// A container's order after `from` is dropped onto its header: at the end
+/// (`listed` channels the order does not mention yet come before it).
+pub fn dropped_last(
+    order: &[OwnedRoomId],
+    listed: &[OwnedRoomId],
+    from: &OwnedRoomId,
+) -> Vec<OwnedRoomId> {
+    let mut all = order.to_vec();
+    for id in listed {
+        if !all.contains(id) {
+            all.push(id.clone());
+        }
+    }
+    all.retain(|id| id != from);
+    all.push(from.clone());
+    all
+}
+
+/// The spaces a channel (in `parents`) leaves when it is dropped into `dest`:
+/// every other one of the server's containers (the server and its
+/// categories) it is in, so it ends up listed in one place only.
+pub fn leaving(
+    parents: &[OwnedRoomId],
+    containers: &[OwnedRoomId],
+    dest: &OwnedRoomId,
+) -> Vec<OwnedRoomId> {
+    parents
+        .iter()
+        .filter(|p| *p != dest && containers.contains(p))
+        .cloned()
+        .collect()
+}
+
+#[cfg(test)]
+mod move_tests {
+    use super::*;
+
+    fn ids(names: &[&str]) -> Vec<OwnedRoomId> {
+        names
+            .iter()
+            .map(|n| OwnedRoomId::try_from(format!("!{n}:x")).expect("room id"))
+            .collect()
+    }
+
+    #[test]
+    fn dropped_on_a_header_goes_last() {
+        let all = ids(&["a", "b"]);
+        assert_eq!(dropped_last(&all, &all, &ids(&["z"])[0]), ids(&["a", "b", "z"]));
+        assert_eq!(dropped_last(&all, &all, &all[0]), ids(&["b", "a"]));
+    }
+
+    #[test]
+    fn a_channel_dropped_into_one_container_leaves_the_others() {
+        let c = ids(&["server", "cat1", "cat2"]);
+        let parents = ids(&["server", "cat1", "elsewhere"]);
+        assert_eq!(leaving(&parents, &c, &c[2]), ids(&["server", "cat1"]));
+        assert_eq!(leaving(&parents, &c, &c[0]), ids(&["cat1"]));
+        assert_eq!(leaving(&ids(&["cat1"]), &c, &c[1]), Vec::<OwnedRoomId>::new());
+    }
+}

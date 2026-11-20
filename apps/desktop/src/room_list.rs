@@ -10,7 +10,10 @@ use crate::view_model::rail_drag;
 use crate::view_model::i18n::t;
 use std::collections::HashSet;
 
-use gpui::{AnyElement, Context, FontWeight, IntoElement, MouseButton, div, prelude::*, px, rgb};
+use gpui::{
+    Animation, AnimationExt as _, AnyElement, Context, FontWeight, IntoElement, MouseButton, Stateful, Div, div,
+    prelude::*, px, rgb,
+};
 use morpheus_core::{OwnedRoomId, RoomSummary, SpaceRoom};
 
 pub use morpheus_view_model::scopes::Sections;
@@ -67,21 +70,16 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             hidden: &shell.hidden_rooms,
         },
     );
-    // Who may reorder a server's channels can drag them (onto another one).
-    let reorder = match scope {
+    // Who may reorder a server's channels can drag them (onto another one, or
+    // into and out of its categories), and its categories by their headers.
+    let reorder: Option<OwnedRoomId> = match scope {
         Scope::Space(space)
             if shell
                 .rooms
                 .iter()
                 .any(|r| &r.id == space && r.can_edit_children) =>
         {
-            Some(std::rc::Rc::new(
-                found
-                    .channels
-                    .iter()
-                    .map(|r| r.id.clone())
-                    .collect::<Vec<_>>(),
-            ))
+            Some(space.clone())
         }
         _ => None,
     };
@@ -242,13 +240,16 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             list = list.child(row(shell, cx, room, reorder.as_ref()));
         }
     }
-    for (_, name, members) in &found.categories {
-        if members.is_empty() {
+    for (id, name, members) in &found.categories {
+        // A category you can edit shows when empty too: a channel can be dropped in.
+        let can_edit = reorder.is_some()
+            && shell.rooms.iter().any(|r| &r.id == id && r.can_edit_children);
+        if members.is_empty() && reorder.is_none() {
             continue;
         }
-        list = list.child(section(name, "category"));
+        list = list.child(category_header(shell, cx, id, name, reorder.as_ref()));
         for room in members {
-            list = list.child(row(shell, cx, room, None));
+            list = list.child(row(shell, cx, room, can_edit.then_some(id)));
         }
     }
     if !found.unjoined.is_empty() {
@@ -257,6 +258,9 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             list = list.child(unjoined_row(shell, cx, room));
         }
     }
+
+    let list = scroll_on_drag::<DraggedRoom>(list, cx);
+    let list = scroll_on_drag::<DraggedCategory>(list, cx);
 
     div()
         .flex()
@@ -404,21 +408,205 @@ fn row(
     shell: &Shell,
     cx: &mut Context<Shell>,
     room: &RoomSummary,
-    reorder: Option<&std::rc::Rc<Vec<OwnedRoomId>>>,
+    reorder: Option<&OwnedRoomId>,
 ) -> impl IntoElement {
     let call = crate::call_ui::room_call(shell, cx, room);
-    div()
+    let aside = shell.channel_drop.as_ref().filter(|(r, _)| *r == room.id && cx.has_active_drag()).map(|(_, z)| *z);
+    let mut wrap = div()
+        .relative()
         .flex()
         .flex_col()
         .child(room_button(shell, cx, room, reorder))
         .children(call)
+        .when(aside == Some(rail_drag::Zone::Before), |d| d.child(drop_line(true)))
+        .when(aside == Some(rail_drag::Zone::After), |d| d.child(drop_line(false)));
+    // The drop target is the whole row with the gap it opens, so the pointer
+    // stays on it as the row moves aside.
+    if let Some(container) = reorder {
+        let (target, container, view) = (room.id.clone(), container.clone(), cx.entity());
+        wrap = wrap
+            .on_drag_move::<DraggedRoom>({
+                let (over, view) = (target.clone(), view.clone());
+                move |event, _, cx| {
+                    if event.drag(cx).id != over {
+                        hover_edge(&view, &over, event.bounds, event.event.position, cx);
+                    }
+                }
+            })
+            .on_drag_move::<DraggedCategory>(move |event, _, cx| {
+                // A category held over a channel: no line here.
+                if event.bounds.contains(&event.event.position) {
+                    view.update(cx, |shell, cx| {
+                        if shell.channel_drop.take().is_some() {
+                            cx.notify();
+                        }
+                    });
+                }
+            })
+            .on_drop::<DraggedRoom>(cx.listener(move |this, dragged: &DraggedRoom, _, cx| {
+                let after = this.channel_drop.take().is_some_and(|(r, z)| r == target && z == rail_drag::Zone::After);
+                let drop = ChannelDrop::Beside { target: target.clone(), after };
+                this.drop_channel(dragged.id.clone(), drop, container.clone(), cx)
+            }));
+    }
+    open_gap(wrap, aside, &room.id.to_string())
+}
+
+/// Rows move aside to show where the dragged one will land: the row under the
+/// pointer opens a gap on the edge the line is on, easing open.
+fn open_gap(wrap: Div, at: Option<rail_drag::Zone>, key: &str) -> AnyElement {
+    match at {
+        Some(zone @ (rail_drag::Zone::Before | rail_drag::Zone::After)) => wrap
+            .with_animation(
+                gpui::SharedString::from(format!("gap-{key}-{zone:?}")),
+                Animation::new(std::time::Duration::from_millis(120)),
+                move |el, t| {
+                    let gap = px(DROP_GAP * t);
+                    if zone == rail_drag::Zone::Before { el.pt(gap) } else { el.pb(gap) }
+                },
+            )
+            .into_any_element(),
+        _ => wrap.into_any_element(),
+    }
+}
+
+/// The room a dragged row opens between its neighbours (px).
+const DROP_GAP: f32 = 10.0;
+
+/// The rail's white drop line, in the gap on one edge of a row or header.
+fn drop_line(at_top: bool) -> impl IntoElement {
+    let base = div()
+        .absolute()
+        .left(px(4.0))
+        .right(px(4.0))
+        .h(px(2.0))
+        .rounded(px(1.0))
+        .bg(rgb(0xffffff)); // fixed: the drop line, as on the rail
+    (if at_top { base.top(px(DROP_GAP / 2.0 - 1.0)) } else { base.bottom(px(DROP_GAP / 2.0 - 1.0)) })
+        .e2e("div", "channel-drop-line")
+        .attr("data-bg", "#ffffff")
+}
+
+/// A drag over `id` (spanning `bounds`) with the pointer at `y`: the edge it is nearer, kept in the shell.
+fn hover_edge(
+    view: &gpui::Entity<Shell>,
+    id: &OwnedRoomId,
+    bounds: gpui::Bounds<gpui::Pixels>,
+    at: gpui::Point<gpui::Pixels>,
+    cx: &mut gpui::App,
+) {
+    if !bounds.contains(&at) {
+        return;
+    }
+    let (top, bottom) = (f32::from(bounds.origin.y), f32::from(bounds.bottom()));
+    let y = f32::from(at.y);
+    let id = id.clone();
+    view.update(cx, |shell, cx| {
+        let previous = shell.channel_drop.as_ref().filter(|(r, _)| *r == id).map(|(_, z)| *z);
+        let next = Some((id, rail_drag::edge(y, top, bottom, previous)));
+        if shell.channel_drop != next {
+            shell.channel_drop = next;
+            cx.notify();
+        }
+    });
+}
+
+/// A drag held near the list's top or bottom edge scrolls it.
+fn scroll_on_drag<T: 'static>(list: Stateful<Div>, cx: &mut Context<Shell>) -> Stateful<Div> {
+    let view = cx.entity();
+    list.on_drag_move::<T>(move |event, _, cx| {
+        let (p, b) = (event.event.position, event.bounds);
+        let step = if p.x >= b.left() && p.x <= b.right() {
+            rail_drag::auto_scroll(f32::from(p.y), f32::from(b.origin.y), f32::from(b.bottom()))
+        } else {
+            0.0
+        };
+        view.update(cx, |shell, cx| shell.scroll_while_dragging(step, cx));
+    })
+}
+
+/// A category's header: the section title, dragged to reorder the categories,
+/// and a drop target for channels (into the category).
+fn category_header(
+    shell: &Shell,
+    cx: &mut Context<Shell>,
+    id: &OwnedRoomId,
+    name: &str,
+    root: Option<&OwnedRoomId>,
+) -> AnyElement {
+    let drop_at = shell.channel_drop.clone().filter(|_| cx.has_active_drag());
+    let here = |zone| drop_at == Some((id.clone(), zone));
+    let mut header = div()
+        .id(gpui::SharedString::from(format!("category-{id}")))
+        .rounded(px(theme::RADIUS_SM))
+        .mx(px(8.0))
+        .text_size(px(0.7 * theme::REM))
+        .font_weight(FontWeight::BOLD)
+        .text_color(rgb(theme::text_faint()))
+        .when(here(rail_drag::Zone::Onto), |d| d.bg(gpui::rgba(theme::bg_hover())))
+        .child(name.to_uppercase());
+    let mut wrap = div()
+        .relative()
+        .mt(px(12.0))
+        .mb(px(4.0))
+        .when(here(rail_drag::Zone::Before), |d| d.child(drop_line(true)))
+        .when(here(rail_drag::Zone::After), |d| d.child(drop_line(false)));
+    if let Some(root) = root {
+        let view = cx.entity();
+        let dragged = DraggedCategory {
+            id: id.clone(),
+            name: name.to_owned(),
+            width: (shell.sidebar_shown - 16.0).max(80.0),
+        };
+        let (over, target, root) = (id.clone(), id.clone(), root.clone());
+        header = header.on_drag(dragged, |dragged, _, _, cx| cx.new(|_| DragGhost::Category(dragged.clone())));
+        wrap = wrap
+            .on_drag_move::<DraggedCategory>({
+                let (view, over) = (view.clone(), over.clone());
+                move |event, _, cx| {
+                    if event.drag(cx).id != over {
+                        hover_edge(&view, &over, event.bounds, event.event.position, cx);
+                    }
+                }
+            })
+            .on_drop::<DraggedCategory>(cx.listener({
+                let (target, root) = (target.clone(), root.clone());
+                move |this, dragged: &DraggedCategory, _, cx| {
+                    let after = this.channel_drop.take().is_some_and(|(r, z)| r == target && z == rail_drag::Zone::After);
+                    this.drop_category(dragged.id.clone(), target.clone(), after, root.clone(), cx)
+                }
+            }));
+        {
+            // Whoever may edit the server drops channels in; the homeserver has the last word.
+            wrap = wrap
+                .on_drag_move::<DraggedRoom>(move |event, _, cx| {
+                    if !event.bounds.contains(&event.event.position) {
+                        return;
+                    }
+                    let next = Some((over.clone(), rail_drag::Zone::Onto));
+                    view.update(cx, |shell, cx| {
+                        if shell.channel_drop != next {
+                            shell.channel_drop = next;
+                            cx.notify();
+                        }
+                    });
+                })
+                .on_drop::<DraggedRoom>(cx.listener(move |this, dragged: &DraggedRoom, _, cx| {
+                    this.channel_drop = None;
+                    this.drop_channel(dragged.id.clone(), ChannelDrop::Into, target.clone(), cx)
+                }));
+        }
+    }
+    let gap = drop_at.as_ref().filter(|(r, _)| r == id).map(|(_, z)| *z);
+    let wrap = wrap.child(header.e2e("h4", "section category").attr("data-room", id.to_string()).text(name));
+    open_gap(wrap, gap.filter(|z| *z != rail_drag::Zone::Onto), &format!("header-{id}"))
 }
 
 fn room_button(
     shell: &Shell,
     cx: &mut Context<Shell>,
     room: &RoomSummary,
-    reorder: Option<&std::rc::Rc<Vec<OwnedRoomId>>>,
+    reorder: Option<&OwnedRoomId>,
 ) -> impl IntoElement {
     let selected = shell.selected.as_ref() == Some(&room.id) && !shell.friends_open;
     let locked = crate::locks::is_locked(&room.id);
@@ -503,53 +691,15 @@ fn room_button(
             }
         }));
     }
-    if let Some(listed) = reorder {
+    if reorder.is_some() {
         let dragged = DraggedRoom {
             id: room.id.clone(),
             name: room.name.clone(),
             voice: room.is_voice,
             width: (shell.sidebar_shown - 16.0).max(80.0),
         };
-        let (target, listed) = (room.id.clone(), listed.clone());
-        let (over, view) = (target.clone(), cx.entity());
-        let drop_at = shell.channel_drop.clone().filter(|_| cx.has_active_drag());
-        let line = |at_top: bool| {
-            let base = div()
-                .absolute()
-                .left(px(4.0))
-                .right(px(4.0))
-                .h(px(2.0))
-                .rounded(px(1.0))
-                .bg(rgb(0xffffff)); // fixed: the drop line, as on the rail
-            (if at_top { base.top(px(-1.0)) } else { base.bottom(px(-1.0)) })
-                .e2e("div", "channel-drop-line")
-                .attr("data-bg", "#ffffff")
-        };
         button = button
-            .relative()
-            .on_drag(dragged, |dragged, _, _, cx| cx.new(|_| DragGhost(dragged.clone())))
-            .when(drop_at == Some((target.clone(), rail_drag::Zone::Before)), |d| d.child(line(true)))
-            .when(drop_at == Some((target.clone(), rail_drag::Zone::After)), |d| d.child(line(false)))
-            .on_drag_move::<DraggedRoom>(move |event, _, cx| {
-                if !event.bounds.contains(&event.event.position) || event.drag(cx).id == over {
-                    return;
-                }
-                let (top, bottom) = (f32::from(event.bounds.origin.y), f32::from(event.bounds.bottom()));
-                let y = f32::from(event.event.position.y);
-                let id = over.clone();
-                view.update(cx, |shell, cx| {
-                    let previous = shell.channel_drop.as_ref().filter(|(r, _)| *r == id).map(|(_, z)| *z);
-                    let next = Some((id, rail_drag::edge(y, top, bottom, previous)));
-                    if shell.channel_drop != next {
-                        shell.channel_drop = next;
-                        cx.notify();
-                    }
-                });
-            })
-            .on_drop::<DraggedRoom>(cx.listener(move |this, dragged: &DraggedRoom, _, cx| {
-                let after = this.channel_drop.take().is_some_and(|(r, z)| r == target && z == rail_drag::Zone::After);
-                this.drop_channel(dragged.id.clone(), target.clone(), after, &listed, cx)
-            }));
+            .on_drag(dragged, |dragged, _, _, cx| cx.new(|_| DragGhost::Room(dragged.clone())));
     }
     let title = crate::streamer::room_title(&shell.nicknames, room);
     button = if room.is_dm {
@@ -734,14 +884,38 @@ pub struct DraggedRoom {
     width: f32,
 }
 
-/// What follows the pointer while a channel is dragged.
-struct DragGhost(DraggedRoom);
+/// A category being dragged to a new place among its server's categories.
+#[derive(Clone)]
+pub struct DraggedCategory {
+    id: OwnedRoomId,
+    name: String,
+    width: f32,
+}
+
+/// Where a dragged channel was dropped.
+enum ChannelDrop {
+    /// On this row's edge (`after`: its lower one).
+    Beside { target: OwnedRoomId, after: bool },
+    /// On a category's header: into it, last.
+    Into,
+}
+
+/// What follows the pointer while a channel or category is dragged.
+enum DragGhost {
+    Room(DraggedRoom),
+    Category(DraggedCategory),
+}
 
 impl gpui::Render for DragGhost {
     fn render(&mut self, _: &mut gpui::Window, _: &mut Context<Self>) -> impl IntoElement {
-        // The row as it is listed: its glyph and name, at its size, lifted.
+        // The row as it is listed: its glyph and name, at its size, lifted,
+        // in the UI font (the ghost is drawn outside the app's own tree).
+        let (width, glyph, name) = match self {
+            Self::Room(r) => (r.width, Some(channel_glyph(r.voice)), r.name.clone()),
+            Self::Category(c) => (c.width, None, c.name.to_uppercase()),
+        };
         div()
-            .w(px(self.0.width))
+            .w(px(width))
             .flex()
             .items_center()
             .gap(px(8.0))
@@ -751,41 +925,143 @@ impl gpui::Render for DragGhost {
             .bg(rgb(theme::bg_elevated()))
             .shadow_lg()
             .opacity(0.9)
+            .font_family("Inter")
             .text_color(rgb(theme::text()))
-            .child(channel_glyph(self.0.voice))
-            .child(div().flex_1().min_w_0().truncate().child(self.0.name.clone()))
+            .children(glyph)
+            .child(div().flex_1().min_w_0().truncate().child(name))
             .e2e("div", "channel-drag-ghost")
+            .attr("data-font", "Inter")
     }
 }
 
 impl Shell {
-    /// A channel was dropped onto another: it goes before it, for everyone.
+    /// A channel was dropped: onto a row's edge or a category's header (`dest`
+    /// is the server or category whose list that is). It is listed there, taken
+    /// out of the server's other lists, in the order everyone sees.
     fn drop_channel(
         &mut self,
         from: OwnedRoomId,
-        target: OwnedRoomId,
-        after: bool,
-        listed: &[OwnedRoomId],
+        drop: ChannelDrop,
+        dest: OwnedRoomId,
         cx: &mut Context<Self>,
     ) {
-        let Scope::Space(space) = self.scope.clone() else {
+        let Scope::Space(root) = self.scope.clone() else {
             return;
         };
         let Some(session) = self.session.clone() else {
             return;
         };
-        let order = self
+        let found = self.channel_sections();
+        let listed: Vec<OwnedRoomId> = if dest == root {
+            found.channels.iter().map(|r| r.id.clone()).collect()
+        } else {
+            found
+                .categories
+                .iter()
+                .find(|(id, _, _)| *id == dest)
+                .map(|(_, _, members)| members.iter().map(|r| r.id.clone()).collect())
+                .unwrap_or_default()
+        };
+        let order = self.children_of(&dest);
+        let new_order = match drop {
+            ChannelDrop::Beside { target, after } => {
+                crate::view_model::reorder::dropped_beside(&order, &listed, &from, &target, after)
+            }
+            ChannelDrop::Into => Some(crate::view_model::reorder::dropped_last(&order, &listed, &from)),
+        };
+        let mut containers = vec![root];
+        containers.extend(found.categories.iter().map(|(id, _, _)| id.clone()));
+        let parents = self
             .rooms
             .iter()
-            .find(|r| r.id == space)
-            .map(|r| r.space_children.clone())
+            .find(|r| r.id == from)
+            .map(|r| r.parent_spaces.clone())
             .unwrap_or_default();
+        let leaving = crate::view_model::reorder::leaving(&parents, &containers, &dest);
+        let Some(new_order) = new_order else {
+            return;
+        };
+        let ordering = session.move_space_child(dest, new_order, Some(from), leaving);
+        self.run_in_background("reorder channels", ordering, cx);
+    }
+
+    /// A category was dropped on the edge of another: it goes there among the
+    /// server's children, for everyone.
+    fn drop_category(
+        &mut self,
+        from: OwnedRoomId,
+        target: OwnedRoomId,
+        after: bool,
+        root: OwnedRoomId,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(session) = self.session.clone() else {
+            return;
+        };
+        let found = self.channel_sections();
+        let mut listed: Vec<OwnedRoomId> = found.channels.iter().map(|r| r.id.clone()).collect();
+        listed.extend(found.categories.iter().map(|(id, _, _)| id.clone()));
+        let order = self.children_of(&root);
         if let Some(order) =
-            crate::view_model::reorder::dropped_beside(&order, listed, &from, &target, after)
+            crate::view_model::reorder::dropped_beside(&order, &listed, &from, &target, after)
         {
-            let ordering = session.set_space_order(space, order);
-            self.run_in_background("reorder channels", ordering, cx);
+            let ordering = session.set_space_order(root, order);
+            self.run_in_background("reorder categories", ordering, cx);
         }
+    }
+
+    fn children_of(&self, space: &OwnedRoomId) -> Vec<OwnedRoomId> {
+        self.rooms
+            .iter()
+            .find(|r| &r.id == space)
+            .map(|r| r.space_children.clone())
+            .unwrap_or_default()
+    }
+
+    /// The channel list as it is drawn now.
+    fn channel_sections(&self) -> Sections {
+        sections(
+            &self.rooms,
+            &self.scope,
+            &self.directory,
+            &Filters {
+                hide_muted: self.prefs.hide_muted,
+                open: self.selected.as_ref(),
+                marks: &self.marks,
+                hidden: &self.hidden_rooms,
+            },
+        )
+    }
+
+    /// A drag at `step` px per frame (negative up) near the list's edge keeps
+    /// scrolling it while held, even with the pointer still.
+    pub fn scroll_while_dragging(&mut self, step: f32, cx: &mut Context<Self>) {
+        self.drag_scroll.0 = step;
+        if step == 0.0 || self.drag_scroll.1 {
+            return;
+        }
+        self.drag_scroll.1 = true;
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor().timer(std::time::Duration::from_millis(16)).await;
+                let go = this.update(cx, |shell, cx| {
+                    let step = shell.drag_scroll.0;
+                    if step == 0.0 || !cx.has_active_drag() {
+                        shell.drag_scroll = (0.0, false);
+                        return false;
+                    }
+                    let (at, max) = (shell.room_scroll.offset(), shell.room_scroll.max_offset());
+                    let y = (at.y - px(step)).clamp(-max.height, px(0.0));
+                    shell.room_scroll.set_offset(gpui::point(at.x, y));
+                    cx.notify();
+                    true
+                });
+                if !go.unwrap_or(false) {
+                    break;
+                }
+            }
+        })
+        .detach();
     }
 }
 

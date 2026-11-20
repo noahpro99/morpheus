@@ -232,6 +232,14 @@ impl Shell {
         let key = keystroke.key.as_str();
         let ringing = !self.ringing(crate::call::now_ms()).is_empty();
         if key == "escape" && !m.shift && !m.control && !m.alt {
+            // Escape drops a drag in progress (a server, channel or category being moved).
+            if cx.has_active_drag() {
+                cx.stop_active_drag(window);
+                self.channel_drop = None;
+                self.rail_drop = None;
+                cx.notify();
+                return true;
+            }
             // A message edited in place takes Escape (to cancel the edit).
             let editing = self.timeline.iter().map(|(_, t)| t.clone()).chain(self.thread.iter().map(|(_, p)| p.read(cx).timeline().0)).any(|t| t.read(cx).edit_focused(window, cx));
             if editing {

@@ -954,15 +954,35 @@ impl Session {
         space_id: OwnedRoomId,
         order: Vec<OwnedRoomId>,
     ) -> CoreFuture<()> {
+        self.move_space_child(space_id, order, None, Vec::new())
+    }
+
+    /// [`Self::set_space_order`], and in the same go `child` (a room that may
+    /// not be in `space_id` yet) is added to it and taken out of each space in
+    /// `leaving` (a channel dragged into or out of a category).
+    pub fn move_space_child(
+        &self,
+        space_id: OwnedRoomId,
+        order: Vec<OwnedRoomId>,
+        child: Option<OwnedRoomId>,
+        leaving: Vec<OwnedRoomId>,
+    ) -> CoreFuture<()> {
         let client = self.client.clone();
         self.core.run(async move {
             let space = client
                 .get_room(&space_id)
                 .ok_or_else(|| crate::Error::UnknownRoom(space_id.clone()))?;
             let children = space_children(&space).await;
+            let via: Vec<matrix_sdk::ruma::OwnedServerName> = client
+                .user_id()
+                .map(|me| vec![me.server_name().to_owned()])
+                .unwrap_or_default();
             for (place, id) in order.iter().enumerate() {
-                let Some((_, content)) = children.iter().find(|(child, _)| child == id) else {
-                    continue;
+                let existing = children.iter().find(|(known, _)| known == id);
+                let mut content = match existing {
+                    Some((_, content)) => content.clone(),
+                    None if child.as_ref() == Some(id) => SpaceChildEventContent::new(via.clone()),
+                    None => continue,
                 };
                 // Room for 26^2 places either side, in plain letters.
                 let key = format!(
@@ -970,12 +990,23 @@ impl Session {
                     char::from(b'a' + (place / 26 % 26) as u8),
                     char::from(b'a' + (place % 26) as u8)
                 );
-                if content.order.as_ref().map(|o| o.as_str()) == Some(key.as_str()) {
+                if existing.is_some()
+                    && content.order.as_ref().map(|o| o.as_str()) == Some(key.as_str())
+                {
                     continue;
                 }
-                let mut content = content.clone();
                 content.order = matrix_sdk::ruma::SpaceChildOrder::parse(&key).ok();
                 space.send_state_event_for_key(id, content).await?;
+            }
+            // Taking it out is an empty `via`, once it is in its new place.
+            if let Some(child) = &child {
+                for old in leaving {
+                    let Some(old) = client.get_room(&old) else {
+                        continue;
+                    };
+                    old.send_state_event_for_key(child, SpaceChildEventContent::new(Vec::new()))
+                        .await?;
+                }
             }
             Ok(())
         })
