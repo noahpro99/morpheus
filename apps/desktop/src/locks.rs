@@ -175,6 +175,7 @@ impl Shell {
                 self.dialog,
                 Some(
                     crate::dialogs::Dialog::Reactions(_)
+                    | crate::dialogs::Dialog::LongMessage(_)
                         | crate::dialogs::Dialog::Report(_)
                         | crate::dialogs::Dialog::Pinned(_)
                         | crate::dialogs::Dialog::Lightbox(_)

@@ -1355,12 +1355,72 @@ fn body_el(
     };
     let blocks = crate::streamer::pills(&row.blocks);
     let text = rich::text_of(&blocks);
-    blocks_el(&blocks, key, base, links)
-        .e2e(
-            if rich_html { "div" } else { "p" },
-            &format!("{class}{}", if rich_html { " rich" } else { "" }),
+    let body = blocks_el(&blocks, key, base, links).e2e(
+        if rich_html { "div" } else { "p" },
+        &format!("{class}{}", if rich_html { " rich" } else { "" }),
+    );
+    // A very long message is drawn collapsed, with a bar that opens it full
+    // screen (#104); where nothing can be opened (the thread panel) it is whole.
+    match (actions, crate::view_model::long_message::collapse(&blocks)) {
+        (Some(actions), Some(collapse)) => collapsed_el(body.text(text), collapse.shown, key, actions),
+        _ => body.text(text).into_any_element(),
+    }
+}
+
+/// The first lines of a long message, a fade, and the "Show more" bar.
+fn collapsed_el(
+    body: impl IntoElement,
+    shown: usize,
+    key: &str,
+    actions: &ActionHandler,
+) -> AnyElement {
+    let (open, bar_key) = (actions.clone(), key.to_owned());
+    div()
+        .flex()
+        .flex_col()
+        .child(
+            div()
+                .relative()
+                .max_h(rem(shown as f32 * theme::LINE_HEIGHT))
+                .overflow_hidden()
+                .child(body)
+                .child(
+                    div()
+                        .absolute()
+                        .bottom_0()
+                        .left_0()
+                        .right_0()
+                        .h(rem(3.0))
+                        .bg(gpui::linear_gradient(
+                            180.0,
+                            gpui::linear_color_stop(rgba(theme::alpha(theme::bg_chat(), 0x00)), 0.0),
+                            gpui::linear_color_stop(rgb(theme::bg_chat()), 1.0),
+                        )),
+                ),
         )
-        .text(text)
+        .child(
+            div()
+                .id(SharedString::from(format!("show-more-{key}")))
+                .mt(px(4.0))
+                .px(px(10.0))
+                .py(px(4.0))
+                .flex()
+                .items_center()
+                .gap(px(6.0))
+                .rounded(px(theme::RADIUS_SM))
+                .bg(rgb(theme::bg_input()))
+                .text_size(rem(0.85))
+                .text_color(rgb(theme::text_muted()))
+                .cursor_pointer()
+                .hover(|s| s.text_color(rgb(theme::text())))
+                .child(icon("maximize-2", 14.0))
+                .child("Show more")
+                .on_click(move |_, window, cx| open(RowAction::Expand, &bar_key, window, cx))
+                .e2e("button", "show-more")
+                .attr("title", "Show the whole message")
+                .text("Show more"),
+        )
+        .e2e("div", "collapsed-message")
         .into_any_element()
 }
 
@@ -1395,6 +1455,8 @@ pub enum RowAction {
     AvatarPress(bool),
     /// A picture clicked: opens it full size.
     OpenImage,
+    /// A long message's "Show more": the whole text full screen.
+    Expand,
     /// A reaction chip clicked: adds our reaction, or takes it back.
     Toggle(String),
     /// A file card's Download button.

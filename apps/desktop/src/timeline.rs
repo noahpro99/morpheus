@@ -103,6 +103,8 @@ pub enum TimelineEvent {
     OpenImage(Vec<crate::lightbox::GalleryImage>, usize),
     /// A video's full-window button.
     FullscreenVideo(gpui::Entity<crate::video::VideoPlayer>),
+    /// A long message's "Show more": its whole text full screen.
+    Expand(Box<Message>),
 }
 
 impl EventEmitter<TimelineEvent> for TimelineView {}
@@ -1348,6 +1350,7 @@ impl TimelineView {
                 crate::link_previews::dismiss(unique_id);
                 self.relayout(unique_id, cx);
             }
+            RowAction::Expand => cx.emit(TimelineEvent::Expand(Box::new(message))),
             RowAction::OpenImage => {
                 let gallery = self.gallery();
                 if let Some(at) = gallery.iter().position(|(id, _)| id == unique_id) {

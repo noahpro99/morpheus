@@ -56,6 +56,7 @@ pub mod streamer;
 pub mod rail_drag;
 pub mod scrollbar;
 pub mod reorder;
+pub mod long_message;
 pub mod rich;
 pub mod rows;
 pub mod search;

@@ -1121,6 +1121,7 @@ impl Shell {
                         | TimelineEvent::SenderMenu(..)
                         | TimelineEvent::Thread(..)
                         | TimelineEvent::OpenImage(..)
+                        | TimelineEvent::Expand(..)
                         | TimelineEvent::FullscreenVideo(..)
                         | TimelineEvent::Failed(..) => {}
                     })
@@ -1202,6 +1203,12 @@ impl Shell {
                     TimelineEvent::OpenImage(images, index) => {
                         this.open_lightbox(images.clone(), *index, cx)
                     }
+                    TimelineEvent::Expand(message) => this.dialog_open(
+                        crate::dialogs::Dialog::LongMessage(Box::new(
+                            crate::view_model::rows::MessageRow::new((**message).clone()),
+                        )),
+                        cx,
+                    ),
                     TimelineEvent::FullscreenVideo(player) => {
                         this.open_video(player.clone(), cx)
                     }

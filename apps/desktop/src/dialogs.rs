@@ -45,6 +45,8 @@ pub struct PinsChanged;
 pub enum Dialog {
     Confirm(Confirm, ConfirmAction),
     Reactions(Box<Message>),
+    /// A long message's whole text, full screen.
+    LongMessage(Box<crate::view_model::rows::MessageRow>),
     Report(Entity<ReportDialog>),
     Pinned(Entity<PinnedDialog>),
     Room(Entity<crate::room_dialogs::RoomDialog>),
@@ -636,7 +638,13 @@ pub fn render_dialog(
     let focus = shell.dialog_focus(cx);
     if std::mem::take(&mut shell.take_dialog_focus) {
         match &shell.dialog {
-            Some(Dialog::Confirm(..) | Dialog::Reactions(_) | Dialog::Help | Dialog::About) => {
+            Some(
+                Dialog::Confirm(..)
+                | Dialog::Reactions(_)
+                | Dialog::LongMessage(_)
+                | Dialog::Help
+                | Dialog::About,
+            ) => {
                 window.focus(&focus)
             }
             _ => {}
@@ -706,6 +714,67 @@ pub fn render_dialog(
                 .e2e("div", "message-dialog confirm-dialog")
                 .attr("role", "alertdialog")
                 .focusable(&focus);
+            Some(overlay(window, cx, boxed.into_any_element(), close))
+        }
+        Dialog::LongMessage(row) => {
+            let shell = cx.weak_entity();
+            let links: crate::message::LinkHandler = std::rc::Rc::new(move |url: &str, cx: &mut gpui::App| {
+                let url = url.to_owned();
+                shell.update(cx, |this, cx| this.open_link(&url, cx)).ok();
+            });
+            let blocks = crate::streamer::pills(&row.blocks);
+            let text = crate::view_model::rich::text_of(&blocks);
+            let copy = text.clone();
+            let base = crate::message::Base {
+                color: theme::text(),
+                italic: false,
+            };
+            let boxed = dialog_box()
+                .id("long-message-dialog")
+                .track_focus(&focus)
+                .w(px(900.0))
+                .h(relative(1.0))
+                .on_key_down(cx.listener(|this, event: &gpui::KeyDownEvent, _, cx| {
+                    if event.keystroke.key == "escape" {
+                        this.dialog_close(cx);
+                    }
+                }))
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(12.0))
+                        .pr(px(32.0))
+                        .child(heading(&row.message.sender_name))
+                        .child(
+                            div()
+                                .text_size(px(0.8 * theme::REM))
+                                .text_color(rgb(theme::text_faint()))
+                                .child(row.time.clone()),
+                        )
+                        .child(
+                            dialog_button("long-message-copy", "Copy", false)
+                                .text_color(rgb(theme::text_muted()))
+                                .on_click(cx.listener(move |_, _, _, cx| {
+                                    cx.write_to_clipboard(ClipboardItem::new_string(copy.clone()));
+                                }))
+                                .e2e("button", "long-message-copy ghost")
+                                .text("Copy"),
+                        ),
+                )
+                .child(
+                    div()
+                        .id("long-message-body")
+                        .flex_1()
+                        .min_h_0()
+                        .overflow_y_scroll()
+                        .child(
+                            crate::message::blocks_el(&blocks, "long", base, &links)
+                                .e2e("div", "long-message-text")
+                                .text(text),
+                        ),
+                )
+                .e2e("div", "message-dialog long-message-dialog");
             Some(overlay(window, cx, boxed.into_any_element(), close))
         }
         Dialog::Reactions(message) => {
