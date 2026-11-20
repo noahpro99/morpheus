@@ -403,6 +403,8 @@ async fn the_composer_suggests_members_emoji_and_custom_emoji_and_sends_the_pict
             if matches!(&message.body, MessageBody::Text { text: t, .. } if t.contains(&shortcode)) && message.event_id.is_some()))
     })
     .await;
+    // Leave alice's pack as it was: a leftover emoji comes first in every later test's panel.
+    other.remove_emote(None, String::new(), shortcode.clone()).await.expect("remove emote");
 }
 
 /// A tiny valid PNG.
