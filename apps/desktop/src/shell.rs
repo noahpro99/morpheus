@@ -1799,6 +1799,33 @@ impl Render for Shell {
                             .h_full()
                             .bg(rgb(theme::bg_rail()))
                             .child(rail::render(self, cx));
+                        // The sidebar column stays under Discover: its colour and width, so
+                        // the user bar below it is part of the layout as on every page.
+                        let side = div()
+                            .w(px(self.sidebar_shown))
+                            .flex_none()
+                            .h_full()
+                            .bg(rgb(theme::bg_sidebar()))
+                            .px(px(16.0))
+                            .py(px(14.0))
+                            .flex()
+                            .flex_col()
+                            .gap(px(4.0))
+                            .child(
+                                div()
+                                    .font_weight(gpui::FontWeight::BOLD)
+                                    .child("Discover")
+                                    .e2e("h3", "")
+                                    .text("Discover"),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(0.85 * theme::REM))
+                                    .text_color(rgb(theme::text_muted()))
+                                    .child("Public servers and rooms")
+                                    .e2e("p", "muted"),
+                            )
+                            .e2e("div", "discover-sidebar");
                         let bar = user_bar::render(self, cx);
                         d.child(
                             div()
@@ -1811,7 +1838,8 @@ impl Render for Shell {
                                         .flex_1()
                                         .min_h_0()
                                         .child(rail_col)
-.child(page),
+                                        .child(side)
+                                        .child(page),
                                 )
                                 .child(
                                     div()
