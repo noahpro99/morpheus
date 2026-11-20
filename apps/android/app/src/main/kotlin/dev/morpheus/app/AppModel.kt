@@ -37,22 +37,21 @@ sealed interface Screen {
 
 /** Signing in, restoring and signing out; the rest of the app lives under [Screen.SignedIn]. */
 class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = null) : ViewModel() {
+    init {
+        People.morpheus = morpheus
+    }
+
     /** The call this account is in, if any (it outlives the screens). */
     val calls: CallModel = CallModel(morpheus, morpheusApp ?: error("an application"))
 
     /** Asked of the activity: the microphone permission, before a call joins. */
     val needMicrophone = MutableStateFlow<Pair<String, String>?>(null)
-    private val names = MutableStateFlow<Map<String, String>>(emptyMap())
-    private val asked = HashSet<String>()
 
     /** A person's name for the call lists: their ID's local part until the profile comes. */
-    fun nameOf(userId: String, known: Map<String, String>): String = known[userId] ?: userId.trimStart('@').substringBefore(':')
-    val callNames: StateFlow<Map<String, String>> = names.asStateFlow()
+    fun nameOf(userId: String, known: Map<String, String>): String = People.nameOf(userId, known)
+    val callNames: StateFlow<Map<String, String>> = People.names
 
-    fun wantName(userId: String) {
-        if (!asked.add(userId)) return
-        viewModelScope.launch { names.value = names.value + (userId to morpheus.displayName(userId)) }
-    }
+    fun wantName(userId: String) = People.want(userId)
 
     /** Join the call in a room: after the microphone is allowed (asked first when it is not). */
     fun startCall(roomId: String, roomName: String) {
@@ -338,6 +337,21 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
 /** What the account says about people, for every screen: who is ignored. */
 object People {
     val ignored = MutableStateFlow<Set<String>>(emptySet())
+
+    /** People's names as the profiles say them, fetched once each (the screens show the ID's local part until then). */
+    val names = MutableStateFlow<Map<String, String>>(emptyMap())
+    private val asked = HashSet<String>()
+    var morpheus: Morpheus? = null
+    private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main)
+
+    fun nameOf(userId: String, known: Map<String, String>): String = known[userId] ?: userId.trimStart('@').substringBefore(':')
+
+    /** Ask for someone's name, once. */
+    fun want(userId: String) {
+        val app = morpheus ?: return
+        if (!asked.add(userId)) return
+        scope.launch { names.value = names.value + (userId to app.displayName(userId)) }
+    }
 }
 
 /** What the e2e bridge reports as the app's state (debug builds read it; nothing else does). */

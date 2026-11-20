@@ -65,6 +65,7 @@ mod tests {
                 html: None,
             },
             shield: None,
+            read_by: Vec::new(),
             state_kind: None,
             state_who: None,
         }

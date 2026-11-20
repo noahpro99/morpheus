@@ -412,6 +412,15 @@ private fun MessageRow(
                     fontSize = 13.sp,
                 )
             }
+            if (message.readBy.isNotEmpty()) {
+                val names by People.names.collectAsState()
+                message.readBy.forEach { People.want(it) }
+                Text(
+                    t("Seen by %{names}", "names" to message.readBy.joinToString(", ") { People.nameOf(it, names) }),
+                    Modifier.padding(top = 2.dp).testTag("read-by"),
+                    color = Palette.Muted, fontSize = 11.sp,
+                )
+            }
             val dismissed by model.dismissed.collectAsState()
             val url = message.previewUrl
             val eventId = message.eventId

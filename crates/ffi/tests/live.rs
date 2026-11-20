@@ -940,3 +940,47 @@ async fn ignored_people_are_listed_kept_and_given_back() {
     app.set_ignored(bob.clone(), false).await.expect("unignore");
     assert!(!app.ignored_people().await.expect("list").contains(&bob));
 }
+
+#[tokio::test]
+async fn a_message_lists_who_has_read_it() {
+    let Ok(homeserver) = std::env::var("MORPHEUS_TEST_HOMESERVER") else {
+        return;
+    };
+    let (_d1, alice) = signed_in(&homeserver, "alice").await;
+    let (_d2, bob) = signed_in(&homeserver, "bob").await;
+    let general = |app: &Arc<Morpheus>| {
+        let app = app.clone();
+        async move {
+            let (feed, mut rx) = Feed::new();
+            let _watch = app.watch_sidebar(feed).await.expect("sidebar");
+            let list = until(&mut rx, "general", |s: &Sidebar| {
+                s.scopes.iter().flat_map(|s| &s.sections).flat_map(|s| &s.rooms).any(|r| r.name == "general")
+            })
+            .await;
+            list.scopes.iter().flat_map(|s| &s.sections).flat_map(|s| &s.rooms).find(|r| r.name == "general").expect("general").id.clone()
+        }
+    };
+    let (alice_room, bob_room) = (general(&alice).await, general(&bob).await);
+    let (rows, mut alice_rows) = Feed::new();
+    let alices = alice.open_room(alice_room, rows).await.expect("alice opens");
+    let (rows, mut bob_rows) = Feed::new();
+    let bobs = bob.open_room(bob_room, rows).await.expect("bob opens");
+
+    let stamp = format!("read by {}", std::process::id());
+    alices.send_text(stamp.clone()).await.expect("send");
+    fn find<'a>(rows: &'a [TimelineRow], text: &str) -> Option<&'a MessageItem> {
+        rows.iter().find_map(|row| match row {
+            TimelineRow::Message { message } if matches!(&message.body, MessageBody::Text { text: t, .. } if t == text) && message.event_id.is_some() => Some(message),
+            _ => None,
+        })
+    }
+    // Nobody has read it yet; then Bob reads it (his receipt), and the message says so, not naming Alice.
+    let rows = until(&mut alice_rows, "the message", |rows: &Vec<TimelineRow>| find(rows, &stamp).is_some()).await;
+    assert!(find(&rows, &stamp).expect("message").read_by.is_empty(), "nobody has read it");
+    until(&mut bob_rows, "bob has it", |rows: &Vec<TimelineRow>| find(rows, &stamp).is_some()).await;
+    bobs.mark_read().await.expect("bob reads");
+    let rows = until(&mut alice_rows, "bob's receipt", |rows: &Vec<TimelineRow>| find(rows, &stamp).is_some_and(|m| !m.read_by.is_empty())).await;
+    let read_by = &find(&rows, &stamp).expect("message").read_by;
+    assert_eq!(read_by.len(), 1, "{read_by:?}");
+    assert!(read_by[0].starts_with("@bob:"), "{read_by:?}");
+}

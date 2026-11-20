@@ -8,7 +8,7 @@ use morpheus_core::{
     MessageId, MessageKind, OwnedEventId, OwnedRoomId, Session, TimelineEntry, TimelineHandle,
     Vector,
 };
-use morpheus_view_model::rows::{MessageRow, Row, first_unread_after_marker, first_unread_since, group_rows};
+use morpheus_view_model::rows::{MessageRow, Row, read_receipts, first_unread_after_marker, first_unread_since, group_rows};
 
 use crate::{FfiError, MediaHandle, Morpheus, TaskHandle, runtime};
 
@@ -97,6 +97,8 @@ pub struct MessageItem {
     pub thread: Option<ThreadChip>,
     /// The first web link of a text message: the one that may get a card.
     pub preview_url: Option<String>,
+    /// Who else has read up to this message (user IDs, not the sender or me).
+    pub read_by: Vec<String>,
 }
 
 /// The chip on a thread's root: how many replies, and from whom last.
@@ -125,7 +127,7 @@ pub trait TimelineListener: Send + Sync {
     fn on_rows(&self, rows: Vec<TimelineRow>);
 }
 
-fn message_item(row: &MessageRow, show_header: bool, session: &Session) -> MessageItem {
+fn message_item(row: &MessageRow, show_header: bool, read_by: Vec<String>, session: &Session) -> MessageItem {
     let message = &row.message;
     let body = match &message.kind {
         MessageKind::Image {
@@ -209,6 +211,7 @@ fn message_item(row: &MessageRow, show_header: bool, session: &Session) -> Messa
                 mine: r.mine,
             })
             .collect(),
+        read_by,
         preview_url: if matches!(message.kind, MessageKind::Text { .. }) {
             morpheus_view_model::link_previews::first_url(&row.blocks)
         } else {
@@ -221,11 +224,11 @@ fn message_item(row: &MessageRow, show_header: bool, session: &Session) -> Messa
     }
 }
 
-fn rows_of(rows: &[Row], session: &Session) -> Vec<TimelineRow> {
+fn rows_of(rows: &[Row], seen: &std::collections::HashMap<String, Vec<morpheus_core::OwnedUserId>>, session: &Session) -> Vec<TimelineRow> {
     rows.iter()
         .filter_map(|row| match row {
             Row::Message { row, show_header } => Some(TimelineRow::Message {
-                message: message_item(row, *show_header, session),
+                message: message_item(row, *show_header, seen.get(&row.message.unique_id).map(|users| users.iter().map(ToString::to_string).collect()).unwrap_or_default(), session),
             }),
             Row::Date(label, at) => Some(TimelineRow::Date {
                 label: label.clone(),
@@ -379,7 +382,7 @@ impl Morpheus {
                         _ => None,
                     })
                     .collect();
-                listener.on_rows(rows_of(&rows, &session));
+                listener.on_rows(rows_of(&rows, &read_receipts(&entries), &session));
             }
         });
         Ok(Arc::new(RoomTimeline {

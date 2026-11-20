@@ -169,6 +169,42 @@ pub fn group_rows(
     rows
 }
 
+/// Who has read up to each message, by `unique_id`: the SDK puts a person's
+/// read receipt on the latest event they have read, which may be their own
+/// (a join, or a message of theirs sent after reading). Each person shows on
+/// the last message of someone else at or before it, once, as the newest
+/// place they have read to.
+pub fn read_receipts(entries: &Vector<TimelineEntry>) -> HashMap<String, Vec<morpheus_core::OwnedUserId>> {
+    let messages: Vec<&Message> = entries
+        .iter()
+        .filter_map(|entry| match entry {
+            TimelineEntry::Message(message) => Some(&**message),
+            _ => None,
+        })
+        .collect();
+    // Each person's newest receipt, in the order they come.
+    let mut newest: Vec<(morpheus_core::OwnedUserId, usize)> = Vec::new();
+    for (at, message) in messages.iter().enumerate() {
+        for user in &message.read_by {
+            match newest.iter_mut().find(|(u, _)| u == user) {
+                Some(slot) => slot.1 = at,
+                None => newest.push((user.clone(), at)),
+            }
+        }
+    }
+    let mut seen: HashMap<String, Vec<morpheus_core::OwnedUserId>> = HashMap::new();
+    for (user, at) in newest {
+        let shown = messages[..=at]
+            .iter()
+            .rev()
+            .find(|m| !m.kind.is_hidden() && m.sender != user);
+        if let Some(message) = shown {
+            seen.entry(message.unique_id.clone()).or_default().push(user);
+        }
+    }
+    seen
+}
+
 /// The `unique_id` of the first message after the SDK's read-marker virtual
 /// item, i.e. the first message that was still unread when the room opened.
 pub fn first_unread_after_marker(entries: &Vector<TimelineEntry>) -> Option<String> {
@@ -262,9 +298,54 @@ mod tests {
             thread: None,
             kind,
             shield: None,
+            read_by: Vec::new(),
             state_kind: None,
             state_who: None,
         }))
+    }
+
+    fn read_by(entry: TimelineEntry, users: &[&str]) -> TimelineEntry {
+        match entry {
+            TimelineEntry::Message(mut message) => {
+                message.read_by = users.iter().map(|u| OwnedUserId::try_from(*u).expect("user id")).collect();
+                TimelineEntry::Message(message)
+            }
+            other => other,
+        }
+    }
+
+    #[test]
+    fn a_receipt_on_ones_own_message_goes_back_to_the_last_message_of_someone_else() {
+        let entries: Vector<TimelineEntry> = [
+            message_by("a1", "@alice:localhost", 1, text("did you see this")),
+            message_by("a2", "@alice:localhost", 2, text("and this")),
+            // Bob joined after reading: his receipt sits on his own join, which says he has read a2.
+            read_by(message_by("b1", "@bob:localhost", 3, MessageKind::State("bob joined".into())), &["@bob:localhost"]),
+        ]
+        .into_iter()
+        .collect();
+        let seen = read_receipts(&entries);
+        assert_eq!(seen.get("a2").map(Vec::len), Some(1), "{seen:?}");
+        assert!(seen.get("a1").is_none() && seen.get("b1").is_none(), "{seen:?}");
+    }
+
+    #[test]
+    fn a_receipt_on_a_message_stays_on_it_and_each_person_shows_once() {
+        let entries: Vector<TimelineEntry> = [
+            read_by(message_by("a1", "@alice:localhost", 1, text("one")), &["@bob:localhost"]),
+            message_by("b1", "@bob:localhost", 2, text("two")),
+            read_by(message_by("a2", "@alice:localhost", 3, text("three")), &["@carol:localhost", "@bob:localhost"]),
+        ]
+        .into_iter()
+        .collect();
+        let seen = read_receipts(&entries);
+        let names = |id: &str| {
+            let mut names = seen.get(id).map(|u| u.iter().map(|u| u.as_str().to_owned()).collect::<Vec<_>>()).unwrap_or_default();
+            names.sort();
+            names
+        };
+        assert_eq!(names("a1"), Vec::<String>::new(), "bob's newer receipt replaced the older one: {seen:?}");
+        assert_eq!(names("a2"), vec!["@bob:localhost", "@carol:localhost"]);
     }
 
     fn text(body: &str) -> MessageKind {

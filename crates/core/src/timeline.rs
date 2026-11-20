@@ -136,6 +136,9 @@ pub struct Message {
     pub state_who: Option<String>,
     /// A warning about who really sent this (encrypted rooms only).
     pub shield: Option<Shield>,
+    /// Others whose read receipt is on this event (the newest they have read; possibly their own
+    /// event, see `view_model::rows::read_receipts`), not you.
+    pub read_by: Vec<OwnedUserId>,
 }
 
 /// Summary of a thread, attached to its root message.
@@ -500,6 +503,12 @@ impl Message {
             thread,
             kind,
             shield: Shield::of(event),
+            read_by: event
+                .read_receipts()
+                .keys()
+                .filter(|user| own_user != Some(*user))
+                .cloned()
+                .collect(),
             state_kind,
             state_who,
         }
