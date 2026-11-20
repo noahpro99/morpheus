@@ -267,10 +267,17 @@ pub fn anchor_row(old: &[Row], from: usize, new: &[Row]) -> Option<(usize, usize
         .enumerate()
         .filter_map(|(ix, row)| Some((row.key()?, ix)))
         .collect();
-    old.iter()
-        .enumerate()
-        .skip(from)
-        .find_map(|(ix, row)| Some((ix, *keys.get(&row.key()?)?)))
+    // A message is what the reader looks at: a date divider that stays while older
+    // messages arrive below it is not a place to stay on.
+    let find = |messages_only: bool| {
+        old.iter().enumerate().skip(from).find_map(|(ix, row)| {
+            if messages_only && !matches!(row, Row::Message { .. }) {
+                return None;
+            }
+            Some((ix, *keys.get(&row.key()?)?))
+        })
+    };
+    find(true).or_else(|| find(false))
 }
 
 #[cfg(test)]
@@ -505,6 +512,27 @@ mod tests {
         assert_eq!(anchor_row(&old, 1, &gone), Some((2, 0)));
         // Nothing left in common: no anchor.
         assert_eq!(anchor_row(&old, 0, &rows(&["x"])), None);
+    }
+
+    #[test]
+    fn the_view_anchors_on_the_message_not_the_date_divider_above_it() {
+        let build = |ids: &[&str]| -> Vec<Row> {
+            let mut entries: Vector<TimelineEntry> = Vector::new();
+            entries.push_back(TimelineEntry::DateDivider { timestamp_ms: 1_700_000_000_000 });
+            for id in ids {
+                entries.push_back(message_by(id, "@bob:localhost", 1_700_000_000_000, text(id)));
+            }
+            group_rows(&entries, None, &HashMap::new())
+        };
+        let old = build(&["c", "d"]);
+        let new = build(&["a", "b", "c", "d"]);
+        assert!(matches!(old[0], Row::Date(..)), "a day divider leads the rows");
+        // The divider stays at the top whatever arrives: the view stays on the message.
+        let (from, to) = anchor_row(&old, 0, &new).expect("an anchor");
+        assert!(matches!(old[from], Row::Message { .. }), "anchored on a message");
+        assert!(matches!(new[to], Row::Message { .. }));
+        assert_eq!(old[from].key(), new[to].key());
+        assert!(to > from, "pushed down by the older messages");
     }
 
     #[test]

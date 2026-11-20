@@ -125,6 +125,10 @@ pub struct TimelineView {
     list: ListState,
     reached_start: bool,
     paginating: bool,
+    /// After older rows arrived above a row that was partly below the top of the view (a
+    /// placeholder row was above it): the row's index and the distance it was below the top,
+    /// restored once the new rows above it have been measured.
+    anchor_fix: Option<(usize, f32)>,
     auto_pages: u32,
     /// Messages to have loaded whether or not the list is on screen (0: none), and the pages asked for them.
     prefill: usize,
@@ -283,6 +287,7 @@ impl TimelineView {
             list,
             reached_start: false,
             paginating: false,
+            anchor_fix: None,
             auto_pages: 0,
             prefill: 0,
             prefill_pages: 0,
@@ -796,13 +801,23 @@ impl TimelineView {
         // A view scrolled up stays on the row it was on: the list keeps its
         // place by row number, which older rows (or a replaced run of rows)
         // arriving above or around it would otherwise move.
+        self.anchor_fix = None;
         let top = self.list.logical_scroll_top();
         let anchor = (top.item_ix < self.rows.len())
             .then(|| anchor_row(&self.rows, top.item_ix, &rows))
             .flatten();
+        // How far below the top of the view the row stood, to put it back there.
+        let below_top = anchor.and_then(|(was, _)| {
+            let rect = self.list.bounds_for_item(was)?;
+            let y = f32::from(rect.top() - self.list.viewport_bounds().top());
+            (y > 0.5).then_some(y)
+        });
         if removed > 0 || added > 0 {
             self.list.splice(start..start + removed, added);
             if let Some((was, now)) = anchor {
+                if let Some(y) = below_top {
+                    self.anchor_fix = Some((now, y));
+                }
                 let offset_in_item = if was == top.item_ix {
                     top.offset_in_item
                 } else {
@@ -1664,6 +1679,17 @@ impl TimelineView {
 impl Render for TimelineView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.check_history(cx);
+        if let Some((ix, want)) = self.anchor_fix {
+            // The new rows above the row the view was on are measured once drawn: scroll
+            // so the row is as far below the top as it was, not at the top.
+            if let Some(rect) = self.list.bounds_for_item(ix) {
+                self.anchor_fix = None;
+                let at = f32::from(rect.top() - self.list.viewport_bounds().top());
+                self.list.scroll_by(px(at - want));
+            } else {
+                window.request_animation_frame();
+            }
+        }
         if let Some(edit) = self.edit.as_mut().filter(|e| e.focus) {
             edit.focus = false;
             edit.input.read(cx).focus(window);
