@@ -79,8 +79,9 @@ private val quickReactions = listOf("👍", "❤️", "😂", "🎉", "😮")
 
 /** A room: its messages (newest at the bottom), a composer, and what a tap on a message offers. */
 @Composable
-fun RoomScreen(app: AppModel, room: RoomItem) {
-    val model = remember(room.id) { RoomModel(app.morpheus, room) }
+fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClose: () -> Unit = { app.closeRoom() }) {
+    val model = remember(room.id, threadRoot) { RoomModel(app.morpheus, room, threadRoot) }
+    var thread by remember { mutableStateOf<String?>(null) }
     DisposableEffect(model) { onDispose { model.close() } }
     val rows by model.rows.collectAsState()
     val replyingTo by model.replyingTo.collectAsState()
@@ -92,7 +93,7 @@ fun RoomScreen(app: AppModel, room: RoomItem) {
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) scope.launch { context.read(uri)?.let { model.sendFile(it.name, it.mime, it.bytes) } }
     }
-    DisposableEffect(model) {
+    if (threadRoot == null) DisposableEffect(model) {
         RoomHooks.attach = { name, mime, bytes -> model.sendFile(name, mime, bytes) }
         onDispose { RoomHooks.attach = null }
     }
@@ -102,24 +103,24 @@ fun RoomScreen(app: AppModel, room: RoomItem) {
             viewing != null -> viewing = null
             actions != null -> actions = null
             editing != null -> model.edit(null)
-            else -> app.closeRoom()
+            else -> onClose()
         }
     }
 
     // What is read is what is in front of the person: the newest message.
     val newest = (rows.lastOrNull { it is TimelineRow.Message } as? TimelineRow.Message)?.message?.key
-    LaunchedEffect(newest) { if (newest != null) model.markRead() }
+    LaunchedEffect(newest) { if (newest != null && threadRoot == null) model.markRead() }
 
     Box(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize().background(Palette.Surface)) {
+        if (thread == null) Column(Modifier.fillMaxSize().background(Palette.Surface)) {
             Row(
                 Modifier.fillMaxWidth().background(Palette.Background).padding(horizontal = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TextButton({ app.closeRoom() }, Modifier.testTag("back")) { Text("‹", fontSize = 28.sp) }
+                TextButton({ onClose() }, Modifier.testTag(if (threadRoot == null) "back" else "thread-back")) { Text("‹", fontSize = 28.sp) }
                 Text(
-                    room.name,
-                    Modifier.testTag("room-title"),
+                    if (threadRoot == null) room.name else "Thread",
+                    Modifier.testTag(if (threadRoot == null) "room-title" else "thread-title"),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
@@ -129,6 +130,7 @@ fun RoomScreen(app: AppModel, room: RoomItem) {
             Timeline(
                 model, rows, Modifier.weight(1f),
                 onActions = { actions = it },
+                onThread = { thread = it },
                 onImage = { viewing = it },
                 onFile = { media, name -> scope.launch { context.open(media, name)?.let { model.fail(it) } } },
             )
@@ -166,6 +168,11 @@ fun RoomScreen(app: AppModel, room: RoomItem) {
         actions?.let { message ->
             Actions(
                 message,
+                canThread = threadRoot == null && message.eventId != null,
+                onThread = {
+                    thread = message.eventId
+                    actions = null
+                },
                 onReact = { key ->
                     message.eventId?.let { model.react(it, key) }
                     actions = null
@@ -186,6 +193,9 @@ fun RoomScreen(app: AppModel, room: RoomItem) {
             )
         }
         viewing?.let { ImageViewer(it) { viewing = null } }
+        thread?.let { root ->
+            Box(Modifier.fillMaxSize().testTag("thread-panel")) { RoomScreen(app, room, root) { thread = null } }
+        }
     }
 }
 
@@ -202,6 +212,7 @@ private fun Timeline(
     rows: List<TimelineRow>,
     modifier: Modifier,
     onActions: (MessageItem) -> Unit,
+    onThread: (String) -> Unit,
     onImage: (MediaHandle) -> Unit,
     onFile: (MediaHandle, String) -> Unit,
 ) {
@@ -226,7 +237,7 @@ private fun Timeline(
     LazyColumn(modifier.testTag("timeline"), state = state, reverseLayout = true) {
         items(items, key = { rowKey(it) }) { row ->
             when (row) {
-                is TimelineRow.Message -> MessageRow(row.message, model, onActions, onImage, onFile)
+                is TimelineRow.Message -> MessageRow(row.message, model, onActions, onThread, onImage, onFile)
                 is TimelineRow.Date -> Text(
                     row.label,
                     Modifier.fillMaxWidth().padding(vertical = 12.dp).testTag("date-divider"),
@@ -265,6 +276,7 @@ private fun MessageRow(
     message: MessageItem,
     model: RoomModel,
     onActions: (MessageItem) -> Unit,
+    onThread: (String) -> Unit,
     onImage: (MediaHandle) -> Unit,
     onFile: (MediaHandle, String) -> Unit,
 ) {
@@ -327,6 +339,18 @@ private fun MessageRow(
                         .pointerInput(body) { detectTapGestures { onFile(body.media, body.name) } }
                         .padding(horizontal = 12.dp, vertical = 8.dp)
                         .testTag("msg-file"),
+                )
+            }
+            message.thread?.let { chip ->
+                Text(
+                    chip.count + (chip.latest?.let { " $it" } ?: ""),
+                    Modifier
+                        .padding(top = 4.dp)
+                        .pointerInput(message.key) { detectTapGestures { message.eventId?.let(onThread) } }
+                        .semantics { onClick("Open thread") { message.eventId?.let(onThread); true } }
+                        .testTag("thread-chip"),
+                    color = Palette.Accent,
+                    fontSize = 13.sp,
                 )
             }
             if (message.reactions.isNotEmpty()) {
@@ -415,6 +439,8 @@ private fun Composer(model: RoomModel, editing: MessageItem?, onAttach: () -> Un
 @Composable
 private fun Actions(
     message: MessageItem,
+    canThread: Boolean,
+    onThread: () -> Unit,
     onReact: (String) -> Unit,
     onReply: () -> Unit,
     onEdit: () -> Unit,
@@ -452,6 +478,7 @@ private fun Actions(
                 }
             }
             TextButton(onReply, Modifier.testTag("action-reply")) { Text("Reply") }
+            if (canThread) TextButton(onThread, Modifier.testTag("action-thread")) { Text(if (message.thread == null) "Start a thread" else "Open thread") }
             val clipboard = LocalClipboardManager.current
             val text = (message.body as? MessageBody.Text)?.text
             if (text != null) {

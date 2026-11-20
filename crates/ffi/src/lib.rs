@@ -42,7 +42,7 @@ pub use security::{
 };
 pub use sidebar::{RoomItem, ScopeItem, ScopeKind, SectionItem, Sidebar, SidebarListener};
 pub use timeline::{
-    FileKind, MessageBody, MessageItem, ReactionItem, ReplyItem, RoomTimeline, TimelineListener, TimelineRow,
+    FileKind, MessageBody, MessageItem, ReactionItem, ReplyItem, ThreadChip, RoomTimeline, TimelineListener, TimelineRow,
 };
 
 uniffi::setup_scaffolding!();

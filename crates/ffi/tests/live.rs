@@ -239,6 +239,54 @@ async fn own_messages_can_be_edited_and_deleted() {
 }
 
 #[tokio::test]
+async fn a_thread_opens_on_a_message_takes_replies_and_shows_on_its_root() {
+    let Ok(homeserver) = std::env::var("MORPHEUS_TEST_HOMESERVER") else {
+        return;
+    };
+    let dir = tempfile::tempdir().expect("dir");
+    let app = Morpheus::new(dir.path().display().to_string()).expect("app");
+    app.login(homeserver, "alice".into(), "alice-password".into()).await.expect("login");
+    let (sidebar, mut sidebar_rx) = Feed::new();
+    let _sidebar = app.watch_sidebar(sidebar).await.expect("watch sidebar");
+    let list = until(&mut sidebar_rx, "general", |s: &Sidebar| {
+        s.scopes.iter().flat_map(|s| &s.sections).flat_map(|s| &s.rooms).any(|r| r.name == "general")
+    })
+    .await;
+    let general = list.scopes.iter().flat_map(|s| &s.sections).flat_map(|s| &s.rooms).find(|r| r.name == "general").expect("general");
+    let (rows, mut rows_rx) = Feed::new();
+    let room = app.open_room(general.id.clone(), rows).await.expect("open");
+
+    let root_text = format!("ffi thread root {}", std::process::id());
+    room.send_text(root_text.clone()).await.expect("send");
+    fn find<'a>(rows: &'a [TimelineRow], text: &str) -> Option<&'a MessageItem> {
+        rows.iter().find_map(|row| match row {
+            TimelineRow::Message { message } if matches!(&message.body, MessageBody::Text { text: t } if t == text) && message.event_id.is_some() => Some(message),
+            _ => None,
+        })
+    }
+    let rows = until(&mut rows_rx, "the root with an id", |rows: &Vec<TimelineRow>| find(rows, &root_text).is_some()).await;
+    let root = find(&rows, &root_text).expect("root");
+    assert!(root.thread.is_none(), "no replies yet, no chip");
+    let root_id = root.event_id.clone().expect("id");
+
+    // The thread's own timeline: its root, then what is sent through it.
+    let (thread_rows, mut thread_rx) = Feed::new();
+    let thread = app.open_thread(general.id.clone(), root_id, thread_rows).await.expect("open thread");
+    until(&mut thread_rx, "the root in its thread", |rows: &Vec<TimelineRow>| find(rows, &root_text).is_some()).await;
+    let reply = format!("{root_text} reply");
+    thread.send_text(reply.clone()).await.expect("send in thread");
+    until(&mut thread_rx, "the reply in the thread", |rows: &Vec<TimelineRow>| find(rows, &reply).is_some()).await;
+
+    // The room shows the root with a chip (as on the desktop, the reply is listed there too).
+    let rows = until(&mut rows_rx, "the chip on the root", |rows: &Vec<TimelineRow>| {
+        find(rows, &root_text).is_some_and(|m| m.thread.is_some())
+    })
+    .await;
+    let chip = find(&rows, &root_text).and_then(|m| m.thread.as_ref()).expect("chip");
+    assert_eq!(chip.count, "1 reply");
+}
+
+#[tokio::test]
 async fn files_are_sent_listed_and_fetched_whole() {
     let Ok(homeserver) = std::env::var("MORPHEUS_TEST_HOMESERVER") else {
         return;

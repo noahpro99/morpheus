@@ -23,7 +23,7 @@ import uniffi.morpheus_ffi.TimelineRow
  * One open room: its rows (pushed by Rust whenever they change), and what the
  * screen does with them. Closed with the screen; that stops the Rust side.
  */
-class RoomModel(private val morpheus: Morpheus, val room: RoomItem) {
+class RoomModel(private val morpheus: Morpheus, val room: RoomItem, private val threadRoot: String? = null) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var timeline: RoomTimeline? = null
     private val _loadingOlder = MutableStateFlow(false)
@@ -45,11 +45,12 @@ class RoomModel(private val morpheus: Morpheus, val room: RoomItem) {
     init {
         scope.launch {
             try {
-                timeline = morpheus.openRoom(room.id, object : TimelineListener {
+                val listener = object : TimelineListener {
                     override fun onRows(rows: List<TimelineRow>) {
                         _rows.value = rows
                     }
-                })
+                }
+                timeline = if (threadRoot == null) morpheus.openRoom(room.id, listener) else morpheus.openThread(room.id, threadRoot, listener)
             } catch (e: Exception) {
                 _error.value = e.sentence()
             }

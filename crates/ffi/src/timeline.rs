@@ -82,6 +82,17 @@ pub struct MessageItem {
     pub body: MessageBody,
     pub reply_to: Option<ReplyItem>,
     pub reactions: Vec<ReactionItem>,
+    /// Replies to this message live in a thread: the chip under it.
+    pub thread: Option<ThreadChip>,
+}
+
+/// The chip on a thread's root: how many replies, and from whom last.
+#[derive(uniffi::Record)]
+pub struct ThreadChip {
+    /// "1 reply", "3 replies".
+    pub count: String,
+    /// "· last from Bob", once known.
+    pub latest: Option<String>,
 }
 
 #[derive(uniffi::Enum)]
@@ -176,6 +187,10 @@ fn message_item(row: &MessageRow, show_header: bool, session: &Session) -> Messa
                 mine: r.mine,
             })
             .collect(),
+        thread: message.thread.as_ref().map(|t| ThreadChip {
+            count: morpheus_view_model::threads::chip_count(t),
+            latest: morpheus_view_model::threads::chip_latest(t),
+        }),
     }
 }
 
@@ -273,12 +288,37 @@ impl Morpheus {
         room_id: String,
         listener: Arc<dyn TimelineListener>,
     ) -> Result<Arc<RoomTimeline>, FfiError> {
+        self.open(room_id, None, listener).await
+    }
+
+    /// Open the thread on the message `root_event_id`: the root, then its
+    /// replies. What is sent through it goes into the thread.
+    pub async fn open_thread(
+        &self,
+        room_id: String,
+        root_event_id: String,
+        listener: Arc<dyn TimelineListener>,
+    ) -> Result<Arc<RoomTimeline>, FfiError> {
+        self.open(room_id, Some(event_id(&root_event_id)?), listener).await
+    }
+}
+
+impl Morpheus {
+    async fn open(
+        &self,
+        room_id: String,
+        thread_root: Option<OwnedEventId>,
+        listener: Arc<dyn TimelineListener>,
+    ) -> Result<Arc<RoomTimeline>, FfiError> {
         let session = self.session()?;
         let for_timeline = session.clone();
         let room_id = OwnedRoomId::try_from(room_id.as_str()).map_err(|_| FfiError::Failed {
             reason: format!("{room_id} is not a room id"),
         })?;
-        let opened = session.timeline(room_id.clone()).await?;
+        let opened = match thread_root {
+            Some(root) => session.thread(room_id.clone(), root).await?,
+            None => session.timeline(room_id.clone()).await?,
+        };
         let (handle, mut updates) = (opened.handle, opened.updates);
         let task = runtime().spawn(async move {
             let mut entries: Vector<TimelineEntry> = Vector::new();
