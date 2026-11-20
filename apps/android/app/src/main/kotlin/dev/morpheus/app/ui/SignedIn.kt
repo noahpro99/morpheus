@@ -134,6 +134,10 @@ private fun ChannelList(scope: ScopeItem, invites: List<InviteItem>, model: AppM
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
             )
+            val unreadIds = scope.sections.flatMap { it.rooms }.filter { it.unread > 0UL || it.highlights > 0UL }.map { it.id }
+            if (unreadIds.isNotEmpty()) {
+                TextButton({ model.markRoomsRead(unreadIds) }, Modifier.testTag("mark-read")) { Text("Mark read", fontSize = 13.sp) }
+            }
             TextButton({ model.openNew() }, Modifier.testTag("new-button")) { Text("＋", fontSize = 24.sp) }
         }
         // Each rail entry has its own scroll position.

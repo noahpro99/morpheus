@@ -205,14 +205,15 @@ class TestBridge(private val app: Application) {
 
     private fun describe(node: SemanticsNode): JSONObject {
         val config = node.config
-        val pos = node.positionOnScreen
+        // What is visible of it: a row cut off by its list is reported (and tapped) where it can be seen.
+        val box = node.boundsInWindow
         return JSONObject()
             .put("id", node.id)
             .put("tag", config.getOrNull(SemanticsProperties.TestTag))
             .put("text", textOf(node))
             .put("description", config.getOrNull(SemanticsProperties.ContentDescription)?.joinToString(" "))
-            .put("x", pos.x).put("y", pos.y)
-            .put("width", node.size.width).put("height", node.size.height)
+            .put("x", box.left).put("y", box.top)
+            .put("width", box.width).put("height", box.height)
             .put("clickable", config.contains(SemanticsActions.OnClick))
             .put("editable", config.contains(SemanticsActions.SetText))
             .put("scrollable", config.contains(SemanticsActions.ScrollBy))
@@ -233,8 +234,8 @@ class TestBridge(private val app: Application) {
     private fun click(node: SemanticsNode): Boolean {
         val action = node.config.getOrNull(SemanticsActions.OnClick)?.action
         if (action != null) return action() ?: true
-        val center = node.positionOnScreen
-        tap(center.x + node.size.width / 2, center.y + node.size.height / 2)
+        val box = node.boundsInWindow
+        tap(box.center.x, box.center.y)
         return true
     }
 

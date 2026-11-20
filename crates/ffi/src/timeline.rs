@@ -8,7 +8,7 @@ use morpheus_core::{
     MessageId, MessageKind, OwnedEventId, OwnedRoomId, Session, TimelineEntry, TimelineHandle,
     Vector,
 };
-use morpheus_view_model::rows::{MessageRow, Row, group_rows};
+use morpheus_view_model::rows::{MessageRow, Row, first_unread_after_marker, first_unread_since, group_rows};
 
 use crate::{FfiError, MediaHandle, Morpheus, TaskHandle, runtime};
 
@@ -315,19 +315,34 @@ impl Morpheus {
         let room_id = OwnedRoomId::try_from(room_id.as_str()).map_err(|_| FfiError::Failed {
             reason: format!("{room_id} is not a room id"),
         })?;
+        let is_thread = thread_root.is_some();
         let opened = match thread_root {
             Some(root) => session.thread(room_id.clone(), root).await?,
             None => session.timeline(room_id.clone()).await?,
         };
         let (handle, mut updates) = (opened.handle, opened.updates);
+        // Where the person had read to when the room opened: the NEW divider goes
+        // above the first message after it, once, and stays.
+        let read_at = if is_thread { None } else { session.fully_read_at(room_id.clone()).await.ok().flatten() };
         let task = runtime().spawn(async move {
             let mut entries: Vector<TimelineEntry> = Vector::new();
             let mut known: HashMap<String, Arc<MessageRow>> = HashMap::new();
+            let mut marker: Option<String> = None;
+            let mut caught_up = false;
             while let Some(batch) = updates.next().await {
                 for diff in batch {
                     diff.apply(&mut entries);
                 }
-                let rows = group_rows(&entries, None, &known);
+                if marker.is_none() && !caught_up {
+                    marker = first_unread_after_marker(&entries)
+                        .or_else(|| read_at.and_then(|at| first_unread_since(&entries, at)));
+                }
+                // Sending something means being caught up.
+                if entries.iter().any(|e| matches!(e, TimelineEntry::Message(m) if m.is_own && m.is_local_echo)) {
+                    marker = None;
+                    caught_up = true;
+                }
+                let rows = group_rows(&entries, marker.as_deref(), &known);
                 known = rows
                     .iter()
                     .filter_map(|row| match row {

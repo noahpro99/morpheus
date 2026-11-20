@@ -91,6 +91,7 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
     val editing by model.editing.collectAsState()
     var actions by remember { mutableStateOf<MessageItem?>(null) }
     var info by remember(room.id) { mutableStateOf(false) }
+    var searching by remember(room.id) { mutableStateOf(false) }
     val typingLine by model.typing.collectAsState()
     var viewing by remember { mutableStateOf<MediaHandle?>(null) }
     val context = LocalContext.current
@@ -105,6 +106,7 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
 
     BackHandler {
         when {
+            searching -> searching = false
             info -> info = false
             viewing != null -> viewing = null
             actions != null -> actions = null
@@ -118,7 +120,11 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
     LaunchedEffect(newest) { if (newest != null && threadRoot == null) model.markRead() }
 
     Box(Modifier.fillMaxSize()) {
-        if (info) RoomInfo(app, model, room, title) { info = false }
+        if (searching) SearchPanel(model) { id ->
+            searching = false
+            if (id.isNotEmpty()) model.jumpTo(id)
+        }
+        else if (info) RoomInfo(app, model, room, title) { info = false }
         else if (thread == null) Column(Modifier.fillMaxSize().background(Palette.Surface)) {
             Row(
                 Modifier.fillMaxWidth().background(Palette.Background).padding(horizontal = 4.dp),
@@ -133,6 +139,7 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                if (threadRoot == null) TextButton({ searching = true }, Modifier.testTag("search-button")) { Text("🔍", fontSize = 20.sp) }
                 if (threadRoot == null) TextButton({ info = true }, Modifier.testTag("room-info-button")) { Text("ⓘ", fontSize = 22.sp) }
             }
             Timeline(
@@ -245,10 +252,27 @@ private fun Timeline(
     val newestKey = (items.firstOrNull() as? TimelineRow.Message)?.message?.key
     LaunchedEffect(newestKey) { if (state.firstVisibleItemIndex <= 1) state.animateScrollToItem(0) }
 
-    LazyColumn(modifier.testTag("timeline"), state = state, reverseLayout = true) {
+    // A search result to go to: scroll to it once it is in the list, and light it a moment.
+    val jump by model.jump.collectAsState()
+    val lit by model.highlight.collectAsState()
+    LaunchedEffect(jump, items) {
+        val target = jump ?: return@LaunchedEffect
+        val at = items.indexOfFirst { it is TimelineRow.Message && it.message.eventId == target }
+        if (at >= 0) {
+            state.animateScrollToItem(at)
+            model.highlight(target)
+            model.clearJump()
+            kotlinx.coroutines.delay(2000)
+            model.highlight(null)
+        }
+    }
+    val dividerAt = items.indexOfFirst { it is TimelineRow.New }
+    val dividerShowing by remember(dividerAt) { derivedStateOf { state.layoutInfo.visibleItemsInfo.any { it.index == dividerAt } } }
+    Box(modifier) {
+    LazyColumn(Modifier.fillMaxSize().testTag("timeline"), state = state, reverseLayout = true) {
         items(items, key = { rowKey(it) }) { row ->
             when (row) {
-                is TimelineRow.Message -> MessageRow(row.message, model, onActions, onThread, onImage, onFile)
+                is TimelineRow.Message -> MessageRow(row.message, model, onActions, onThread, onImage, onFile, lit != null && lit == row.message.eventId)
                 is TimelineRow.Date -> Text(
                     row.label,
                     Modifier.fillMaxWidth().padding(vertical = 12.dp).testTag("date-divider"),
@@ -273,6 +297,14 @@ private fun Timeline(
             }
         }
     }
+    if (dividerAt >= 0 && !dividerShowing) {
+        val scope = androidx.compose.runtime.rememberCoroutineScope()
+        Button(
+            { scope.launch { state.animateScrollToItem(dividerAt) } },
+            Modifier.align(Alignment.TopCenter).padding(top = 8.dp).testTag("jump-unread"),
+        ) { Text("Jump to unread") }
+    }
+    }
 }
 
 private fun rowKey(row: TimelineRow): String = when (row) {
@@ -290,6 +322,7 @@ private fun MessageRow(
     onThread: (String) -> Unit,
     onImage: (MediaHandle) -> Unit,
     onFile: (MediaHandle, String) -> Unit,
+    highlighted: Boolean = false,
 ) {
     // A tap anywhere on a message offers its actions. (Not `clickable`: that
     // merges the message into one semantics node, and the tests, like a
@@ -298,6 +331,7 @@ private fun MessageRow(
         Modifier
             .fillMaxWidth()
             .alpha(if (message.sending) 0.6f else 1f)
+            .background(if (highlighted) Palette.Accent.copy(alpha = 0.25f) else Color.Transparent)
             .pointerInput(message.key) { detectTapGestures { onActions(message) } }
             .semantics { onClick("Message actions") { onActions(message); true } }
             .padding(horizontal = 12.dp, vertical = if (message.showHeader) 6.dp else 1.dp),

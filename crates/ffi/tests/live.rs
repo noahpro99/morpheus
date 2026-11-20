@@ -615,3 +615,71 @@ async fn typing_members_profiles_and_a_rooms_own_settings() {
     app.leave_room(id.clone()).await.expect("leave");
     until(&mut sidebar_rx, "the room gone", |s: &Sidebar| !s.scopes.iter().flat_map(|s| &s.sections).flat_map(|s| &s.rooms).any(|r| r.id == id)).await;
 }
+
+#[tokio::test]
+async fn search_finds_messages_the_new_divider_marks_the_first_unread_and_rooms_are_marked_read() {
+    let Ok(homeserver) = std::env::var("MORPHEUS_TEST_HOMESERVER") else {
+        return;
+    };
+    use matrix_sdk::ruma::events::room::message::RoomMessageEventContent;
+    let dir = tempfile::tempdir().expect("dir");
+    let app = Morpheus::new(dir.path().display().to_string()).expect("app");
+    app.login(homeserver.clone(), "alice".into(), "alice-password".into()).await.expect("login");
+    let (sidebar, mut sidebar_rx) = Feed::new();
+    let _sidebar = app.watch_sidebar(sidebar).await.expect("watch sidebar");
+    let stamp = std::process::id();
+    let id = app.create_room(format!("ffi unread {stamp}"), String::new()).await.expect("create");
+    let unread_of = |s: &Sidebar| s.scopes.iter().flat_map(|s| &s.sections).flat_map(|s| &s.rooms).find(|r| r.id == id).map(|r| r.unread);
+    until(&mut sidebar_rx, "the room", |s: &Sidebar| unread_of(s).is_some()).await;
+
+    // Search: a word nobody else has used finds the message that has it.
+    let (rows, mut rows_rx) = Feed::new();
+    let room = app.open_room(id.clone(), rows).await.expect("open");
+    let word = format!("okapi{stamp}");
+    room.send_text(format!("an {word} in the forest")).await.expect("send");
+    room.send_text("something else".into()).await.expect("send");
+    until(&mut rows_rx, "both messages", |rows: &Vec<TimelineRow>| texts(rows).iter().any(|t| t == "something else") && texts(rows).iter().any(|t| t.contains(&word))).await;
+    let hits = timeout(WAIT, async {
+        loop {
+            let hits = room.search(word.clone()).await.expect("search");
+            if !hits.is_empty() {
+                return hits;
+            }
+            tokio::time::sleep(Duration::from_millis(400)).await;
+        }
+    })
+    .await
+    .expect("a hit");
+    assert_eq!(hits.len(), 1);
+    assert!(hits[0].body.contains(&word) && hits[0].sender == "alice" && !hits[0].event_id.is_empty());
+    assert!(room.search("   ".into()).await.expect("blank").is_empty());
+    room.mark_read().await.expect("read");
+    drop(room);
+
+    // Bob writes two messages while alice is away: she sees them as unread...
+    let bob = bob_client(&homeserver).await;
+    let room_id: matrix_sdk::ruma::OwnedRoomId = id.as_str().try_into().expect("id");
+    bob.join_room_by_id(&room_id).await.expect("bob joins");
+    let syncing = bob.clone();
+    tokio::spawn(async move { let _ = syncing.sync(matrix_sdk::config::SyncSettings::default()).await; });
+    let theirs = bob.get_room(&room_id).expect("room");
+    theirs.send(RoomMessageEventContent::text_plain("first unread")).await.expect("send");
+    theirs.send(RoomMessageEventContent::text_plain("second unread")).await.expect("send");
+    until(&mut sidebar_rx, "two unread", |s: &Sidebar| unread_of(s).unwrap_or(0) >= 2).await;
+
+    // ...and opening the room puts the NEW divider above the first of them.
+    let (rows, mut rows_rx) = Feed::new();
+    let room = app.open_room(id.clone(), rows).await.expect("open");
+    let rows = until(&mut rows_rx, "the divider", |rows: &Vec<TimelineRow>| rows.iter().any(|r| matches!(r, TimelineRow::New))).await;
+    let at = rows.iter().position(|r| matches!(r, TimelineRow::New)).expect("divider");
+    let words = |part: &[TimelineRow]| texts(part);
+    assert!(words(&rows[..at]).contains(&"something else".to_string()), "what was read is above the divider");
+    let below = words(&rows[at + 1..]);
+    assert!(below.contains(&"first unread".to_string()) && below.contains(&"second unread".to_string()), "the unread messages are below it: {below:?}");
+    assert!(!below.contains(&"something else".to_string()));
+    drop(room);
+
+    // Marking the room read takes the count away.
+    app.mark_rooms_read(vec![id.clone()]).await.expect("mark read");
+    until(&mut sidebar_rx, "read", |s: &Sidebar| unread_of(s) == Some(0)).await;
+}

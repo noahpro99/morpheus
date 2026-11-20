@@ -88,7 +88,7 @@ the same as the other phone tests. Compose has no DOM and no JS, so it reads
 the semantics tree through the Compose root view (`RootForTest`, an internal
 API: debug only) and injects input:
 
-- `tree`: each node's text, test tag, screen bounds, clickable / editable /
+- `tree`: each node's text, test tag, screen bounds, (the visible part: a row cut off by its list is reported and tapped where it shows, which was the cause of the old "rooms list / room not found" flake: the centre of a half-visible row lay under the verify banner and opened the Security screen), clickable / editable /
   scrollable / focused / enabled;
 - `tap`, `swipe`: real `MotionEvent`s sent to the window;
 - `click` (by tag or text): the node's own click action;
@@ -127,7 +127,7 @@ comes back as the core's own error sentence, so the keep rules in
 
 ## Done since
 
-Verification and recovery (#241), message menu with edit and delete (#242), files (#243), composer suggestions, emoji panel and custom emoji (#244), UnifiedPush notifications (#245), threads (#246), the New screen (message someone, join by address, create a room, browse the directory, friends) and invites on the list (#247), Typing, members, profile cards and room details (#251), Settings (#249: Appearance with themes, a custom colour and shareable theme codes, language, default notifications, account; the look and language are kept in the app folder and the whole app draws with the chosen palette, see `Palette` in `ui/Theme.kt`). The e2e bridge has `attach` (stands in for the file picker), `push` and `notifications` (hand the push service a payload, read the system notifications back). Kotlin unit tests: `gradle testDebugUnitTest`.
+Verification and recovery (#241), message menu with edit and delete (#242), files (#243), composer suggestions, emoji panel and custom emoji (#244), UnifiedPush notifications (#245), threads (#246), the New screen (message someone, join by address, create a room, browse the directory, friends) and invites on the list (#247), Search in a room with a jump to the result, "Mark read" on a list, the NEW divider and a Jump to unread button (#253), typing, members, profile cards and room details (#251), Settings (#249: Appearance with themes, a custom colour and shareable theme codes, language, default notifications, account; the look and language are kept in the app folder and the whole app draws with the chosen palette, see `Palette` in `ui/Theme.kt`). The e2e bridge has `attach` (stands in for the file picker), `push` and `notifications` (hand the push service a payload, read the system notifications back). Kotlin unit tests: `gradle testDebugUnitTest`.
 
 ## Not done yet
 

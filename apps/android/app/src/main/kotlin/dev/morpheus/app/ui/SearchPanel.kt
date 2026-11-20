@@ -1,0 +1,74 @@
+package dev.morpheus.app.ui
+
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import dev.morpheus.app.RoomModel
+import uniffi.morpheus_ffi.HitItem
+
+/** Search this room's messages; a tap on a result goes to the message. */
+@Composable
+fun SearchPanel(model: RoomModel, onPick: (String) -> Unit) {
+    var query by remember { mutableStateOf("") }
+    var hits by remember { mutableStateOf<List<HitItem>?>(null) }
+    BackHandler { onPick("") }
+    LaunchedEffect(query) {
+        if (query.isBlank()) {
+            hits = null
+            return@LaunchedEffect
+        }
+        kotlinx.coroutines.delay(250)
+        hits = model.search(query)
+    }
+    Column(Modifier.fillMaxSize().background(Palette.Surface).testTag("search-panel")) {
+        Row(Modifier.fillMaxWidth().background(Palette.Background), verticalAlignment = Alignment.CenterVertically) {
+            TextButton({ onPick("") }, Modifier.testTag("search-back")) { Text("‹", fontSize = 28.sp) }
+            OutlinedTextField(
+                query, { query = it },
+                Modifier.weight(1f).padding(end = 8.dp).testTag("search-input"),
+                placeholder = { Text("Search messages") },
+                singleLine = true,
+            )
+        }
+        Text("Searches the messages this device has loaded.", Modifier.padding(horizontal = 16.dp, vertical = 6.dp), color = Palette.Muted, fontSize = 12.sp)
+        val found = hits
+        if (found != null && found.isEmpty()) Text("No messages found.", Modifier.padding(16.dp).testTag("search-none"), color = Palette.Muted)
+        LazyColumn(Modifier.fillMaxSize().testTag("search-results"), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            items(found.orEmpty(), key = { it.eventId }) { hit ->
+                Column(
+                    Modifier.fillMaxWidth().clickable { if (hit.eventId.isNotEmpty()) onPick(hit.eventId) }.padding(horizontal = 16.dp, vertical = 8.dp).testTag("search-hit"),
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(hit.sender, fontWeight = FontWeight.Bold)
+                        Text(hit.`when`, color = Palette.Muted, fontSize = 12.sp)
+                    }
+                    Text(hit.body, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+    }
+}

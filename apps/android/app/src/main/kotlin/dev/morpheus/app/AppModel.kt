@@ -109,6 +109,17 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         openRoomWhenKnown(roomId)
     }
 
+    /** Mark these rooms read (the open list's "mark all read"). */
+    fun markRoomsRead(roomIds: List<String>) {
+        viewModelScope.launch {
+            try {
+                morpheus.markRoomsRead(roomIds)
+            } catch (e: Exception) {
+                _error.value = e.sentence()
+            }
+        }
+    }
+
     fun answerInvite(roomId: String, accept: Boolean) {
         viewModelScope.launch {
             try {

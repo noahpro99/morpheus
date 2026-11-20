@@ -39,7 +39,7 @@ pub use error::FfiError;
 pub use composer::{CustomEmojiItem, CustomEmojiSection, EmojiSection, SuggestionItem, SuggestionKind, emoji_sections, with_emoji};
 pub use media::MediaHandle;
 pub use settings::{Appearance, LanguageChoice, NotifyDefaults, PaletteItem, ThemeChoice};
-pub use room_info::{MemberItem, MemberRow, ProfileCard, TypingListener};
+pub use room_info::{HitItem, MemberItem, MemberRow, ProfileCard, TypingListener};
 pub use people::{DirectoryItem, DirectoryPage, FriendItem, InviteItem};
 pub use push::{PushNotice, preview_push};
 pub use security::{

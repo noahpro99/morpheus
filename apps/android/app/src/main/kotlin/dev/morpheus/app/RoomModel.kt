@@ -139,6 +139,37 @@ class RoomModel(private val morpheus: Morpheus, val room: RoomItem, private val 
 
     fun markRead() = launchSafely { timeline?.markRead() }
 
+    suspend fun search(query: String): List<uniffi.morpheus_ffi.HitItem> = try { timeline?.search(query).orEmpty() } catch (_: Exception) { emptyList() }
+
+    private val _jump = MutableStateFlow<String?>(null)
+
+    /** A message to scroll to (a search result), by event ID, once it is in the list. */
+    val jump: StateFlow<String?> = _jump.asStateFlow()
+    private val _highlight = MutableStateFlow<String?>(null)
+    val highlight: StateFlow<String?> = _highlight.asStateFlow()
+
+    fun clearJump() {
+        _jump.value = null
+    }
+
+    fun highlight(eventId: String?) {
+        _highlight.value = eventId
+    }
+
+    /** Page back until the message is in the list (as far as the start of the room), then ask the screen to scroll to it. */
+    fun jumpTo(eventId: String) {
+        scope.launch {
+            var tries = 0
+            fun has() = _rows.value.any { it is TimelineRow.Message && it.message.eventId == eventId }
+            while (!has() && tries < 50 && _rows.value.none { it is TimelineRow.Start }) {
+                tries++
+                try { timeline?.loadOlder() } catch (_: Exception) { break }
+                kotlinx.coroutines.delay(150)
+            }
+            _jump.value = eventId
+        }
+    }
+
     /** The person is typing: tell the room, at most every few seconds (the notice outlives that). */
     fun typing() {
         val now = System.currentTimeMillis()

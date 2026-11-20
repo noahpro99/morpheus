@@ -169,3 +169,45 @@ impl Morpheus {
         Ok(self.session()?.leave_room(id).await?)
     }
 }
+
+/// A message found by a search.
+#[derive(uniffi::Record)]
+pub struct HitItem {
+    pub event_id: String,
+    pub sender: String,
+    /// `YYYY-MM-DD HH:MM`.
+    pub when: String,
+    pub body: String,
+}
+
+#[uniffi::export]
+impl RoomTimeline {
+    /// The messages of this room that match `query` (what this device has loaded), best first.
+    pub async fn search(&self, query: String) -> Result<Vec<HitItem>, FfiError> {
+        if !morpheus_view_model::search::is_query(&query) {
+            return Ok(Vec::new());
+        }
+        let hits = self
+            .session
+            .search_room(self.room_id.clone(), query, morpheus_view_model::search::LIMIT)
+            .await?;
+        Ok(hits
+            .iter()
+            .map(morpheus_view_model::search::HitRow::new)
+            .map(|row| HitItem { event_id: row.event_id, sender: row.sender, when: row.when, body: row.body })
+            .collect())
+    }
+}
+
+#[uniffi::export]
+impl Morpheus {
+    /// Mark these rooms read (a list's "mark all read").
+    pub async fn mark_rooms_read(&self, room_ids: Vec<String>) -> Result<(), FfiError> {
+        let session = self.session()?;
+        for id in room_ids {
+            let id = morpheus_core::OwnedRoomId::try_from(id.as_str()).map_err(|_| failed(format!("{id} is not a room id")))?;
+            session.mark_room_read(id).await?;
+        }
+        Ok(())
+    }
+}
