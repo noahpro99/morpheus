@@ -256,3 +256,8 @@ hs-seed:
 # Register one user: `just hs-user dave secret [--admin]`
 hs-user name password *flags:
     dev/homeserver/register.sh {{name}} {{password}} {{flags}}
+
+# The native app's release build (R8 on) on the virtual phone: built for x86_64 and signed with the debug key (never the release key), installed, and a smoke test run against it (`just android-emulator-headless` first)
+e2e-android-native-release:
+    nix develop .#android-emulator -c bash -c 'set -euo pipefail; (cd apps/android && gradle assembleRelease -PrustAbis=x86_64 -PreleaseSigning=debug); s="${ANDROID_SERIAL:-emulator-5554}"; apk=apps/android/app/build/outputs/apk/release/app-release.apk; adb -s "$s" install -r "$apk" || { adb -s "$s" uninstall dev.morpheus.mobile; adb -s "$s" install "$apk"; }'
+    nix develop .#android-emulator -c env MORPHEUS_E2E_ANDROID_RELEASE=1 ANDROID_SERIAL="${ANDROID_SERIAL:-emulator-5554}" scripts/e2e-cargo.sh --test android_release -- --nocapture

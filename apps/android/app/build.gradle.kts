@@ -58,8 +58,18 @@ android {
 
     val keystore = File(System.getProperty("user.home"), ".config/morpheus/release.keystore")
     val keystorePassword = File(System.getProperty("user.home"), ".config/morpheus/release.keystore.password")
+    // `-PreleaseSigning=debug` signs the release build with the debug key (the e2e smoke test
+    // on the emulator), never the release key.
+    val debugSigned = findProperty("releaseSigning") == "debug"
     signingConfigs {
-        if (keystore.exists() && keystorePassword.exists()) {
+        if (debugSigned) {
+            create("release") {
+                storeFile = File(System.getProperty("user.home"), ".android/debug.keystore")
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
+        } else if (keystore.exists() && keystorePassword.exists()) {
             create("release") {
                 storeFile = keystore
                 storePassword = keystorePassword.readText().trim()

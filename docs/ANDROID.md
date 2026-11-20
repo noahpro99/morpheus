@@ -120,10 +120,7 @@ install -r` on the plugged-in phone (never the emulator; `ANDROID_SERIAL` picks
 one when several are attached). Release builds have no test bridge and no
 cleartext traffic (the dev homeserver on `http://10.0.2.2` is debug only).
 
-R8 was checked on the emulator (x86_64 release APK): the app starts, the Rust
-library loads through JNA, and a sign-in attempt reaches matrix.org over TLS and
-comes back as the core's own error sentence, so the keep rules in
-`app/proguard-rules.pro` (JNA, the generated `uniffi` package) are enough.
+R8 is checked by `just e2e-android-native-release` (#264): it builds the x86_64 release APK signed with the debug key (`-PreleaseSigning=debug`, so the release keystore is never used), installs it on the emulator and runs `morpheus-e2e/tests/android_release.rs` through adb and uiautomator (the release build has no bridge, but its test tags are resource ids): not debuggable, the sign-in screen shows, and a sign-in to a server that is not there is answered by the Rust core, so the library loaded past R8. The keep rules in `app/proguard-rules.pro` (JNA, the generated `uniffi` package, WebRTC and its `jni_zero` helper, native methods) are what that needs; without the jni_zero rule the app died in `JNI_OnLoad`.
 
 ## Done since
 
@@ -131,7 +128,7 @@ Verification and recovery (#241), message menu with edit and delete (#242), file
 
 ## Not done yet
 
-Open issues with the `android` label: calls left over (per-person volume, output volume and device choice from #256; ringing for a voice channel: only direct messages ring, as on the desktop). Not done: A release APK path (signing is wired, `assembleRelease` is untested), iOS.
+Open issues with the `android` label: calls left over (per-person volume, output volume and device choice from #256; ringing for a voice channel: only direct messages ring, as on the desktop). Not done: iOS.
 
 ## Notes from building it
 

@@ -8,3 +8,8 @@
 -keep class org.webrtc.** { *; }
 -dontwarn livekit.org.webrtc.**
 -dontwarn livekit.org.jni_zero.**
+# WebRTC's JNI helper (jni_zero) looks its Java methods up by name when the library loads: R8 renamed
+# them and the app died in JNI_OnLoad (found by the release smoke test).
+-keep class livekit.org.jni_zero.** { *; }
+-keep class org.jni_zero.** { *; }
+-keepclasseswithmembernames class * { native <methods>; }
