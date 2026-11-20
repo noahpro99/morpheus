@@ -828,6 +828,13 @@ impl Default for PersonVolume {
     }
 }
 
+impl PersonVolume {
+    /// How loud their voice plays on top of the output volume: nothing while muted for you.
+    pub fn voice_gain(&self) -> f32 {
+        if self.voice_muted { 0.0 } else { self.voice.clamp(0.0, 2.0) }
+    }
+}
+
 fn read_person_file(data_dir: &std::path::Path) -> serde_json::Value {
     std::fs::read(data_dir.join(PERSON_VOLUMES))
         .ok()
@@ -907,6 +914,15 @@ pub fn write_person_volume(
 #[cfg(test)]
 mod person_volume_tests {
     use super::*;
+
+    #[test]
+    fn a_voice_muted_for_me_plays_at_nothing_and_a_volume_is_kept_within_range() {
+        assert_eq!(PersonVolume::default().voice_gain(), 1.0);
+        let muted = PersonVolume { voice: 1.5, voice_muted: true, ..Default::default() };
+        assert_eq!(muted.voice_gain(), 0.0);
+        let loud = PersonVolume { voice: 5.0, ..Default::default() };
+        assert_eq!(loud.voice_gain(), 2.0);
+    }
 
     #[test]
     fn person_volumes_round_trip_per_account_and_defaults_are_not_stored() {

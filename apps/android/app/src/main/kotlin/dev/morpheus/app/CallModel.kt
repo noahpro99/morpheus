@@ -4,6 +4,7 @@ import android.content.Context
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Build
+import dev.morpheus.app.ui.t
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -172,6 +173,64 @@ class CallModel(private val morpheus: Morpheus, private val context: Context) {
             _open.value = false
             CallService.update(context, "", "")
             if (AppState.screen == "call") AppState.screen = "signed-in"
+        }
+    }
+
+    // ---- volumes (kept by the Rust core, as the desktop keeps them)
+
+    fun personVolume(userId: String) = morpheus.personVolume(userId)
+
+    /** How loud `userId`'s voice plays for me (0 to 2), or silent for me alone when [muted]; kept and applied now. */
+    fun setPersonVolume(userId: String, volume: Float, muted: Boolean) {
+        morpheus.keepPersonVolume(userId, volume, muted)
+        handle?.setPersonVolume(userId, if (muted) 0f else volume)
+    }
+
+    fun volumes() = morpheus.callVolumes()
+    fun setInputVolume(volume: Float) = morpheus.setCallInputVolume(volume)
+
+    fun setOutputVolume(volume: Float) {
+        morpheus.setCallOutputVolume(volume)
+        handle?.setOutputVolume(volume)
+    }
+
+    // ---- where the sound goes
+
+    /** A place the call's sound can go: the phone's loudspeaker or earpiece, or a headset. */
+    data class Route(val key: String, val label: String, val on: Boolean)
+
+
+    /** The places to pick from now (a headset appears when it is plugged in or connected). */
+    fun routes(): List<Route> {
+        val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val chosen = if (_speaker.value) "speaker" else "earpiece"
+        val out = mutableListOf(
+            Route("speaker", t("Loudspeaker"), chosen == "speaker"),
+            Route("earpiece", t("Earpiece"), chosen == "earpiece"),
+        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            for (d in audio.availableCommunicationDevices) {
+                val label = when (d.type) {
+                    AudioDeviceInfo.TYPE_BLUETOOTH_SCO, AudioDeviceInfo.TYPE_BLE_HEADSET -> d.productName.toString().ifBlank { t("Bluetooth") }
+                    AudioDeviceInfo.TYPE_WIRED_HEADSET, AudioDeviceInfo.TYPE_WIRED_HEADPHONES -> t("Headphones")
+                    AudioDeviceInfo.TYPE_USB_HEADSET, AudioDeviceInfo.TYPE_USB_DEVICE -> d.productName.toString().ifBlank { t("USB headset") }
+                    else -> continue
+                }
+                out += Route("device-${d.id}", label, audio.communicationDevice?.id == d.id)
+            }
+        }
+        return out
+    }
+
+    /** Send the call's sound to [key] (one of [routes]); a headset carries the microphone too. */
+    fun chooseRoute(key: String) {
+        when (key) {
+            "speaker" -> { _speaker.value = true; route(true) }
+            "earpiece" -> { _speaker.value = false; route(false) }
+            else -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                audio.availableCommunicationDevices.firstOrNull { "device-${it.id}" == key }?.let { audio.setCommunicationDevice(it) }
+            }
         }
     }
 

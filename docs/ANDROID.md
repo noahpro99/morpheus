@@ -128,7 +128,7 @@ Verification and recovery (#241), message menu with edit and delete (#242), file
 
 ## Not done yet
 
-Open issues with the `android` label: calls left over (per-person volume, output volume and device choice from #256; ringing for a voice channel: only direct messages ring, as on the desktop). Not done: iOS.
+Open issues with the `android` label: calls left over (ringing for a voice channel: only direct messages ring, as on the desktop). Call volumes (#261): the call's settings button shows output and microphone volume and where the sound goes (loudspeaker, earpiece, a headset), a person's speaker button their volume and "Mute for me"; kept in the desktop's files (`audio_devices.json`, `person-volumes.json`) by crates/ffi `volumes.rs`. A phone has no input list: a headset carries the microphone too. Not done: iOS.
 
 ## Notes from building it
 

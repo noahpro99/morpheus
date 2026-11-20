@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,12 +23,15 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -75,6 +79,7 @@ private val speakingGreen = Color(0xFF3BA55D)
 fun CallScreen(calls: CallModel, snapshot: CallSnapshot) {
     BackHandler { if (snapshot.phase == CallPhase.FAILED) calls.dismiss() else calls.show(false) }
     val speaker by calls.speaker.collectAsState()
+    var panel by remember { mutableStateOf<String?>(null) }
     Column(Modifier.fillMaxSize().background(Palette.Surface).testTag("call-screen")) {
         Row(Modifier.fillMaxWidth().background(Palette.Background).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             TextButton({ if (snapshot.phase == CallPhase.FAILED) calls.dismiss() else calls.show(false) }, Modifier.testTag("call-minimize")) { Text("⌄", fontSize = 26.sp) }
@@ -93,20 +98,28 @@ fun CallScreen(calls: CallModel, snapshot: CallSnapshot) {
             if (snapshot.phase == CallPhase.CONNECTED) timerText(snapshot)?.let { Text(it, Modifier.padding(end = 12.dp).testTag("call-timer"), color = Palette.Muted) }
         }
         snapshot.error?.let { Text(it, Modifier.padding(16.dp).testTag("call-error"), color = Palette.Danger) }
-        LazyVerticalGrid(
-            GridCells.Fixed(if (snapshot.cards.size <= 1) 1 else 2),
-            Modifier.weight(1f).padding(8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            items(snapshot.cards, key = { it.key }) { card -> Card(calls, snapshot, card) }
+        // The volume panels are drawn in place of the cards (not as popups, which the e2e bridge cannot see).
+        val person = panel?.let { id -> snapshot.people.firstOrNull { it.userId == id } }
+        if (panel == SETTINGS_PANEL) {
+            CallSettings(calls) { panel = null }
+        } else if (panel != null && person != null) {
+            PersonVolumePanel(calls, person) { panel = null }
+        } else {
+            LazyVerticalGrid(
+                GridCells.Fixed(if (snapshot.cards.size <= 1) 1 else 2),
+                Modifier.weight(1f).padding(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(snapshot.cards, key = { it.key }) { card -> Card(calls, snapshot, card) { panel = it } }
+            }
         }
-        Controls(calls, snapshot, speaker)
+        Controls(calls, snapshot, speaker) { panel = if (panel == SETTINGS_PANEL) null else SETTINGS_PANEL }
     }
 }
 
 @Composable
-private fun Card(calls: CallModel, snapshot: CallSnapshot, card: CallCard) {
+private fun Card(calls: CallModel, snapshot: CallSnapshot, card: CallCard, openVolume: (String) -> Unit) {
     val person = snapshot.people.firstOrNull { it.userId == card.userId }
     Box(
         Modifier
@@ -128,6 +141,9 @@ private fun Card(calls: CallModel, snapshot: CallSnapshot, card: CallCard) {
         }
         if (card.kind == CardKind.SCREEN) {
             TextButton({ calls.watch(card.userId, false) }, Modifier.align(Alignment.TopEnd).testTag("stop-watching-${card.name}")) { Text("✕", color = Color.White) }
+        }
+        if ((card.kind == CardKind.PERSON || card.kind == CardKind.CAMERA) && person != null && !person.me) {
+            TextButton({ openVolume(card.userId) }, Modifier.align(Alignment.TopEnd).testTag("person-volume-${card.name}")) { Text("🔊", fontSize = 16.sp) }
         }
         Row(
             Modifier.align(Alignment.BottomStart).padding(8.dp).background(Color(0x99000000), RoundedCornerShape(6.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
@@ -172,7 +188,7 @@ private fun VideoPicture(calls: CallModel, card: CallCard) {
 }
 
 @Composable
-private fun Controls(calls: CallModel, snapshot: CallSnapshot, speaker: Boolean) {
+private fun Controls(calls: CallModel, snapshot: CallSnapshot, speaker: Boolean, openSettings: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().background(Palette.Background).padding(vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
@@ -187,6 +203,7 @@ private fun Controls(calls: CallModel, snapshot: CallSnapshot, speaker: Boolean)
         if (snapshot.canSendVideo) Control("📷", "call-camera", snapshot.camera) { calls.toggleCamera() }
         if (snapshot.camera && calls.canFlipCamera) Control("🔄", "call-camera-flip", false) { calls.flipCamera() }
         Control(if (speaker) "🔊" else "📞", "call-speaker", speaker) { calls.toggleSpeaker() }
+        Control("⚙", "call-settings", false) { openSettings() }
         Box(
             Modifier.size(48.dp).clip(CircleShape).background(Palette.Danger).clickable { calls.hangUp() }.testTag("call-hangup"),
             contentAlignment = Alignment.Center,
@@ -218,5 +235,60 @@ fun CallBar(calls: CallModel, snapshot: CallSnapshot) {
         }
         TextButton({ calls.toggleMute() }, Modifier.testTag("bar-mute")) { Text(if (snapshot.muted) "🔇" else "🎙️", fontSize = 18.sp) }
         TextButton({ calls.hangUp() }, Modifier.testTag("bar-hangup")) { Text("✆", color = Color.White, fontSize = 18.sp) }
+    }
+}
+
+private const val SETTINGS_PANEL = "settings"
+
+/** A volume from 0 to 2 as a percentage, in steps of a tenth. */
+private fun steps(v: Float) = (Math.round(v.coerceIn(0f, 2f) * 10) / 10f)
+
+/** A volume: less, the percentage, more, and a slider; each tagged `<tag>-less`, `-label`, `-more`, `-slider`. */
+@Composable
+private fun VolumeRow(label: String, tag: String, start: Float, onChange: (Float) -> Unit) {
+    var value by remember { mutableFloatStateOf(steps(start)) }
+    Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+        Text(label, color = Palette.Muted, fontSize = 13.sp)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton({ value = steps(value - 0.1f); onChange(value) }, Modifier.testTag("$tag-less")) { Text("−", fontSize = 22.sp) }
+            Text("${Math.round(value * 100)}%", Modifier.testTag("$tag-label"))
+            TextButton({ value = steps(value + 0.1f); onChange(value) }, Modifier.testTag("$tag-more")) { Text("+", fontSize = 22.sp) }
+            Slider(value, { value = steps(it); onChange(value) }, Modifier.weight(1f).testTag("$tag-slider"), valueRange = 0f..2f)
+        }
+    }
+}
+
+/** How loud one person plays for me, and silencing them for me alone. */
+@Composable
+private fun ColumnScope.PersonVolumePanel(calls: CallModel, person: CallPerson, close: () -> Unit) {
+    val kept = remember(person.userId) { calls.personVolume(person.userId) }
+    var volume by remember(person.userId) { mutableFloatStateOf(kept.volume) }
+    var muted by remember(person.userId) { mutableStateOf(kept.muted) }
+    Column(Modifier.weight(1f).fillMaxWidth().padding(16.dp).testTag("person-volume-panel")) {
+        Text(person.name, fontWeight = FontWeight.Bold)
+        VolumeRow(t("Volume"), "person-volume", kept.volume) { volume = it; calls.setPersonVolume(person.userId, volume, muted) }
+        Button({ muted = !muted; calls.setPersonVolume(person.userId, volume, muted) }, Modifier.testTag("person-volume-mute")) {
+            Text(if (muted) t("Unmute for me") else t("Mute for me"))
+        }
+        TextButton(close, Modifier.testTag("person-volume-close")) { Text(t("Close")) }
+    }
+}
+
+/** The call's own volumes and where its sound goes. */
+@Composable
+private fun ColumnScope.CallSettings(calls: CallModel, close: () -> Unit) {
+    val kept = remember { calls.volumes() }
+    var tick by remember { mutableIntStateOf(0) }
+    Column(Modifier.weight(1f).fillMaxWidth().padding(16.dp).testTag("call-settings-panel")) {
+        VolumeRow(t("Output volume"), "output-volume", kept.output) { calls.setOutputVolume(it) }
+        VolumeRow(t("Microphone volume"), "input-volume", kept.input) { calls.setInputVolume(it) }
+        Text(t("Sound goes to"), color = Palette.Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
+        tick
+        for (route in calls.routes()) {
+            TextButton({ calls.chooseRoute(route.key); tick++ }, Modifier.testTag("route-${route.key}")) {
+                Text((if (route.on) "● " else "○ ") + route.label)
+            }
+        }
+        TextButton(close, Modifier.testTag("call-settings-close")) { Text(t("Close")) }
     }
 }

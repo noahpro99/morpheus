@@ -166,6 +166,15 @@ class TestBridge(private val app: Application) {
                     .put("text", it.notification.extras.getCharSequence(android.app.Notification.EXTRA_TEXT)?.toString())
             })
         }
+        "gain" -> {
+            // What a person's voice plays at now, and the kept microphone and speaker volumes.
+            val morpheus = (app as MorpheusApp).morpheus
+            val volumes = morpheus.callVolumes()
+            JSONObject()
+                .put("gain", morpheus.personGain(request.getString("user")).toDouble())
+                .put("input", volumes.input.toDouble())
+                .put("output", volumes.output.toDouble())
+        }
         "state" -> onMain {
             JSONObject()
                 .put("screen", AppState.screen)

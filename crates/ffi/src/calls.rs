@@ -166,6 +166,8 @@ enum Command {
     Camera(bool),
     Screen(bool),
     Watch(OwnedUserId, bool),
+    PersonVolume(String, f32),
+    OutputVolume(f32),
     Leave(oneshot::Sender<()>),
 }
 
@@ -204,6 +206,16 @@ impl CallHandle {
         if let Ok(user) = OwnedUserId::try_from(user_id) {
             let _ = self.commands.send(Command::Watch(user, on));
         }
+    }
+
+    /// Play a person's voice at this volume (0 to 2; 0 mutes them for you alone), live.
+    pub fn set_person_volume(&self, user_id: String, gain: f32) {
+        let _ = self.commands.send(Command::PersonVolume(user_id, gain));
+    }
+
+    /// Play the call at this volume (0 to 2), live.
+    pub fn set_output_volume(&self, volume: f32) {
+        let _ = self.commands.send(Command::OutputVolume(volume));
     }
 
     /// The latest picture of a camera or screen (a card's `feed`).
@@ -259,6 +271,7 @@ impl Morpheus {
             commands,
             flags: std::sync::Mutex::new(VoiceFlags::default()),
         });
+        self.apply_saved_volumes();
         runtime().spawn(run_call(session, room_id, listener, rooms, inbox));
         Ok(handle)
     }
@@ -840,6 +853,18 @@ async fn run_call(
                 model.state.set_watching(user.clone(), on);
                 if let (Some(call), Some(identity)) = (&call, model.said.share_identity.get(&user)) {
                     call.watch(identity, on);
+                }
+            }
+            Next::Command(Some(Command::PersonVolume(user, gain))) => {
+                if let Some(call) = &call {
+                    call.set_user_volume(&user, gain);
+                } else {
+                    morpheus_call::set_user_volume(&user, gain);
+                }
+            }
+            Next::Command(Some(Command::OutputVolume(volume))) => {
+                if let Some(call) = &call {
+                    call.set_output_volume(volume);
                 }
             }
             Next::Key(None) => keys = None,

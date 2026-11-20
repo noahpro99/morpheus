@@ -336,5 +336,16 @@
   "New message": "Mensaje nuevo",
   "All friends — %{count}": "Todos los amigos — %{count}",
   "Verify with another device": "Verificar con otro dispositivo",
-  "Your recovery key. Keep it somewhere safe: it is shown only once.": "Tu clave de recuperación. Guárdala en un lugar seguro: solo se muestra una vez."
+  "Your recovery key. Keep it somewhere safe: it is shown only once.": "Tu clave de recuperación. Guárdala en un lugar seguro: solo se muestra una vez.",
+  "Loudspeaker": "Altavoz",
+  "Earpiece": "Auricular",
+  "Bluetooth": "Bluetooth",
+  "Headphones": "Auriculares",
+  "USB headset": "Auriculares USB",
+  "Volume": "Volumen",
+  "Mute for me": "Silenciar para mí",
+  "Unmute for me": "Dejar de silenciar para mí",
+  "Output volume": "Volumen de salida",
+  "Microphone volume": "Volumen del micrófono",
+  "Sound goes to": "El sonido va a"
 }

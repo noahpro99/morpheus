@@ -33,6 +33,7 @@ mod security;
 mod settings;
 mod sidebar;
 mod timeline;
+mod volumes;
 
 use std::sync::{Arc, Mutex, OnceLock};
 
