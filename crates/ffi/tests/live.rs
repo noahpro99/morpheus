@@ -6,7 +6,7 @@
 use std::{sync::Arc, time::Duration};
 
 use morpheus_ffi::{
-    MessageBody, MessageItem, Morpheus, ScopeKind, Sidebar, SidebarListener, SyncListener, TimelineListener,
+    FileKind, MessageBody, MessageItem, Morpheus, ScopeKind, Sidebar, SidebarListener, SyncListener, TimelineListener,
     TimelineRow,
 };
 use tokio::{sync::mpsc, time::timeout};
@@ -236,4 +236,52 @@ async fn own_messages_can_be_edited_and_deleted() {
 
     room.delete_message(id).await.expect("delete");
     until(&mut rows_rx, "the deletion", |rows: &Vec<TimelineRow>| mine(rows, &new).is_none()).await;
+}
+
+#[tokio::test]
+async fn files_are_sent_listed_and_fetched_whole() {
+    let Ok(homeserver) = std::env::var("MORPHEUS_TEST_HOMESERVER") else {
+        return;
+    };
+    let dir = tempfile::tempdir().expect("dir");
+    let app = Morpheus::new(dir.path().display().to_string()).expect("app");
+    app.login(homeserver, "alice".into(), "alice-password".into()).await.expect("login");
+    let (sidebar, mut sidebar_rx) = Feed::new();
+    let _sidebar = app.watch_sidebar(sidebar).await.expect("watch sidebar");
+    let list = until(&mut sidebar_rx, "general", |s: &Sidebar| {
+        s.scopes.iter().flat_map(|s| &s.sections).flat_map(|s| &s.rooms).any(|r| r.name == "general")
+    })
+    .await;
+    let general = list.scopes.iter().flat_map(|s| &s.sections).flat_map(|s| &s.rooms).find(|r| r.name == "general").expect("general");
+    let (rows, mut rows_rx) = Feed::new();
+    let room = app.open_room(general.id.clone(), rows).await.expect("open");
+
+    let name = format!("notes-{}.txt", std::process::id());
+    room.send_file(name.clone(), "text/plain".into(), b"hello from the phone".to_vec()).await.expect("send the file");
+    let rows = until(&mut rows_rx, "the file row", |rows: &Vec<TimelineRow>| {
+        rows.iter().any(|row| matches!(row, TimelineRow::Message { message }
+            if matches!(&message.body, MessageBody::File { name: n, .. } if *n == name) && message.event_id.is_some()))
+    })
+    .await;
+    let (kind, size, media) = rows
+        .iter()
+        .find_map(|row| match row {
+            TimelineRow::Message { message } => match &message.body {
+                MessageBody::File { name: n, kind, size, media, .. } if *n == name => Some((*kind, *size, media.clone())),
+                _ => None,
+            },
+            _ => None,
+        })
+        .expect("the file");
+    assert_eq!(kind, FileKind::File);
+    assert_eq!(size, Some(20));
+    assert_eq!(media.file().await.expect("the whole file"), b"hello from the phone");
+
+    let movie = format!("clip-{}.mp4", std::process::id());
+    room.send_file(movie.clone(), "video/mp4".into(), vec![0; 64]).await.expect("send a video");
+    until(&mut rows_rx, "the video row", |rows: &Vec<TimelineRow>| {
+        rows.iter().any(|row| matches!(row, TimelineRow::Message { message }
+            if matches!(&message.body, MessageBody::File { name: n, kind: FileKind::Video, .. } if *n == movie)))
+    })
+    .await;
 }

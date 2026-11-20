@@ -147,6 +147,11 @@ class TestBridge(private val app: Application) {
         "back" -> onMain {
             (activity as? androidx.activity.ComponentActivity)?.onBackPressedDispatcher?.onBackPressed() ?: error("no window")
         }
+        "attach" -> {
+            val hook = RoomHooks.attach ?: error("no room is open")
+            hook(request.getString("name"), request.getString("mime"), request.getString("text").toByteArray())
+            true
+        }
         "state" -> onMain {
             JSONObject()
                 .put("screen", AppState.screen)

@@ -902,7 +902,14 @@ impl TimelineHandle {
                 .filter(|m| m.type_() != mime_guess::mime::STAR)
                 .unwrap_or_else(|| mime_guess::from_path(&filename).first_or_octet_stream());
             let config = AttachmentConfig {
-                info: crate::blur::image_info(&bytes, mime.essence_str()),
+                info: crate::blur::image_info(&bytes, mime.essence_str()).or_else(|| {
+                    // Other files say how big they are.
+                    Some(matrix_sdk::attachment::AttachmentInfo::File(
+                        matrix_sdk::attachment::BaseFileInfo {
+                            size: matrix_sdk::ruma::UInt::new(bytes.len() as u64),
+                        },
+                    ))
+                }),
                 ..AttachmentConfig::default()
             };
             timeline

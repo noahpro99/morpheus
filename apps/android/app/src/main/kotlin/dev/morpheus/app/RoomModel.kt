@@ -83,6 +83,8 @@ class RoomModel(private val morpheus: Morpheus, val room: RoomItem) {
         }
     }
 
+    fun sendFile(name: String, mime: String, bytes: ByteArray) = launchSafely { timeline?.sendFile(name, mime, bytes) }
+
     fun react(eventId: String, key: String) = launchSafely { timeline?.toggleReaction(eventId, key) }
 
     /** Older messages, one request at a time. */
@@ -98,6 +100,10 @@ class RoomModel(private val morpheus: Morpheus, val room: RoomItem) {
                 _loadingOlder.value = false
             }
         }
+    }
+
+    fun fail(message: String) {
+        _error.value = message
     }
 
     fun markRead() = launchSafely { timeline?.markRead() }

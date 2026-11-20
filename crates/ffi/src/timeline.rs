@@ -27,6 +27,13 @@ pub struct ReactionItem {
     pub mine: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum FileKind {
+    File,
+    Video,
+    Audio,
+}
+
 /// What a message says.
 #[derive(uniffi::Enum)]
 pub enum MessageBody {
@@ -39,7 +46,14 @@ pub enum MessageBody {
         width: Option<u32>,
         height: Option<u32>,
     },
-    /// A file, video, audio, deleted or unreadable message, in one line.
+    /// A file, video or audio clip: a row to tap, which fetches it whole.
+    File {
+        name: String,
+        kind: FileKind,
+        size: Option<u64>,
+        media: Arc<MediaHandle>,
+    },
+    /// A deleted or unreadable message, a state change, in one line.
     Other { summary: String },
 }
 
@@ -101,6 +115,24 @@ fn message_item(row: &MessageRow, show_header: bool, session: &Session) -> Messa
             media: MediaHandle::new(media.clone(), session),
             width: *width,
             height: *height,
+        },
+        MessageKind::File { body, media, size, .. } => MessageBody::File {
+            name: body.clone(),
+            kind: FileKind::File,
+            size: *size,
+            media: MediaHandle::new(media.clone(), session),
+        },
+        MessageKind::Audio { body, media, size, .. } => MessageBody::File {
+            name: body.clone(),
+            kind: FileKind::Audio,
+            size: *size,
+            media: MediaHandle::new(media.clone(), session),
+        },
+        MessageKind::Video { body, media, .. } => MessageBody::File {
+            name: body.clone(),
+            kind: FileKind::Video,
+            size: None,
+            media: MediaHandle::new(media.clone(), session),
         },
         kind => match kind.plain_body() {
             Some(text) => MessageBody::Text { text: text.to_owned() },
@@ -183,6 +215,12 @@ impl RoomTimeline {
     /// Send a message (Markdown is formatted).
     pub async fn send_text(&self, body: String) -> Result<(), FfiError> {
         Ok(self.handle.send_text(body).await?)
+    }
+
+    /// Upload a file (a picture, a clip, anything) and send it; the message
+    /// type follows `mime`.
+    pub async fn send_file(&self, name: String, mime: String, bytes: Vec<u8>) -> Result<(), FfiError> {
+        Ok(self.handle.send_attachment_bytes(name, mime, bytes).await?)
     }
 
     /// Send a message as a reply to the event `reply_to`.

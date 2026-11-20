@@ -26,6 +26,16 @@ impl MediaHandle {
     /// The image's bytes (PNG, JPEG, ...) at most `width`×`height` px, or the
     /// file whole when the server cannot scale it; `None` when it cannot be
     /// fetched. The core caches on disk.
+    /// The whole file; `None` when it cannot be fetched.
+    pub async fn file(&self) -> Option<Vec<u8>> {
+        self.session
+            .media_file(self.media.clone())
+            .await
+            .ok()
+            .flatten()
+            .map(|media| media.bytes)
+    }
+
     pub async fn thumbnail(&self, width: u32, height: u32) -> Option<Vec<u8>> {
         self.session
             .thumbnail(self.media.clone(), width, height)

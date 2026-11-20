@@ -27,7 +27,17 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
+import dev.morpheus.app.RoomHooks
+import dev.morpheus.app.open
+import dev.morpheus.app.read
+import dev.morpheus.app.size
+import kotlinx.coroutines.launch
+import uniffi.morpheus_ffi.FileKind
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -75,6 +85,15 @@ fun RoomScreen(app: AppModel, room: RoomItem) {
     val editing by model.editing.collectAsState()
     var actions by remember { mutableStateOf<MessageItem?>(null) }
     var viewing by remember { mutableStateOf<MediaHandle?>(null) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) scope.launch { context.read(uri)?.let { model.sendFile(it.name, it.mime, it.bytes) } }
+    }
+    DisposableEffect(model) {
+        RoomHooks.attach = { name, mime, bytes -> model.sendFile(name, mime, bytes) }
+        onDispose { RoomHooks.attach = null }
+    }
 
     BackHandler {
         when {
@@ -105,7 +124,12 @@ fun RoomScreen(app: AppModel, room: RoomItem) {
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Timeline(model, rows, Modifier.weight(1f), onActions = { actions = it }, onImage = { viewing = it })
+            Timeline(
+                model, rows, Modifier.weight(1f),
+                onActions = { actions = it },
+                onImage = { viewing = it },
+                onFile = { media, name -> scope.launch { context.open(media, name)?.let { model.fail(it) } } },
+            )
             replyingTo?.let { reply ->
                 Row(
                     Modifier.fillMaxWidth().background(Palette.Raised).padding(start = 16.dp),
@@ -135,7 +159,7 @@ fun RoomScreen(app: AppModel, room: RoomItem) {
             problem?.let {
                 Text(it, Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("room-error"), color = Palette.Danger, fontSize = 13.sp)
             }
-            Composer(editing) { model.send(it) }
+            Composer(editing, onAttach = { picker.launch("*/*") }) { model.send(it) }
         }
         actions?.let { message ->
             Actions(
@@ -166,6 +190,7 @@ fun RoomScreen(app: AppModel, room: RoomItem) {
 private fun summary(body: MessageBody): String = when (body) {
     is MessageBody.Text -> body.text
     is MessageBody.Image -> "🖼 ${body.caption}"
+    is MessageBody.File -> "📎 ${body.name}"
     is MessageBody.Other -> body.summary
 }
 
@@ -176,6 +201,7 @@ private fun Timeline(
     modifier: Modifier,
     onActions: (MessageItem) -> Unit,
     onImage: (MediaHandle) -> Unit,
+    onFile: (MediaHandle, String) -> Unit,
 ) {
     val state = rememberLazyListState()
     // Newest first: the list is laid out from the bottom.
@@ -198,7 +224,7 @@ private fun Timeline(
     LazyColumn(modifier.testTag("timeline"), state = state, reverseLayout = true) {
         items(items, key = { rowKey(it) }) { row ->
             when (row) {
-                is TimelineRow.Message -> MessageRow(row.message, model, onActions, onImage)
+                is TimelineRow.Message -> MessageRow(row.message, model, onActions, onImage, onFile)
                 is TimelineRow.Date -> Text(
                     row.label,
                     Modifier.fillMaxWidth().padding(vertical = 12.dp).testTag("date-divider"),
@@ -238,6 +264,7 @@ private fun MessageRow(
     model: RoomModel,
     onActions: (MessageItem) -> Unit,
     onImage: (MediaHandle) -> Unit,
+    onFile: (MediaHandle, String) -> Unit,
 ) {
     // A tap anywhere on a message offers its actions. (Not `clickable`: that
     // merges the message into one semantics node, and the tests, like a
@@ -289,6 +316,16 @@ private fun MessageRow(
                 )
                 is MessageBody.Other -> Text(body.summary, Modifier.testTag("msg-body"), color = Palette.Muted)
                 is MessageBody.Image -> PictureBody(body, onImage)
+                is MessageBody.File -> Text(
+                    (when (body.kind) { FileKind.VIDEO -> "🎞 "; FileKind.AUDIO -> "🎵 "; else -> "📎 " }) +
+                        body.name + (size(body.size).let { if (it.isEmpty()) "" else " ($it)" }),
+                    Modifier
+                        .padding(vertical = 2.dp)
+                        .background(Palette.Raised, RoundedCornerShape(8.dp))
+                        .pointerInput(body) { detectTapGestures { onFile(body.media, body.name) } }
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                        .testTag("msg-file"),
+                )
             }
             if (message.reactions.isNotEmpty()) {
                 Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -340,7 +377,7 @@ private fun PictureBody(body: MessageBody.Image, onImage: (MediaHandle) -> Unit)
 }
 
 @Composable
-private fun Composer(editing: MessageItem?, onSend: (String) -> Unit) {
+private fun Composer(editing: MessageItem?, onAttach: () -> Unit, onSend: (String) -> Unit) {
     var text by rememberSaveable { mutableStateOf("") }
     LaunchedEffect(editing?.key) {
         if (editing != null) text = (editing.body as? MessageBody.Text)?.text.orEmpty()
@@ -350,6 +387,7 @@ private fun Composer(editing: MessageItem?, onSend: (String) -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        TextButton(onAttach, Modifier.testTag("attach")) { Text("＋", fontSize = 24.sp) }
         OutlinedTextField(
             text, { text = it },
             Modifier.weight(1f).heightIn(max = 140.dp).testTag("composer"),
