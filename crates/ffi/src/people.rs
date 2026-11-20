@@ -214,18 +214,39 @@ impl Morpheus {
     /// Put the servers in this order (their room IDs, first to last) on every device. What else the
     /// account keeps with the layout (the desktop's folders, hidden muted rooms) is left as it is.
     pub async fn set_rail_order(&self, space_ids: Vec<String>) -> Result<(), FfiError> {
-        let session = self.session()?;
-        let mut prefs = session.ui_prefs().await?;
-        let rail: Vec<serde_json::Value> = space_ids.into_iter().map(|id| serde_json::json!({ "space": id })).collect();
-        match prefs.as_object_mut() {
-            Some(object) => {
-                object.insert("rail".into(), rail.into());
-            }
-            None => prefs = serde_json::json!({ "rail": rail }),
-        }
-        session.set_ui_prefs(prefs).await?;
-        self.layout_changed.notify_one();
-        Ok(())
+        self.change_rail(|prefs| morpheus_view_model::rail_folders::reorder(prefs, &space_ids)).await
+    }
+
+    /// The rail's entries as the account keeps them: servers and folders of servers, in order.
+    pub async fn rail_rows(&self) -> Result<Vec<RailRowItem>, FfiError> {
+        use morpheus_view_model::rail_folders::{RailRow, rows};
+        let prefs = self.session()?.ui_prefs().await?;
+        Ok(rows(&prefs)
+            .into_iter()
+            .map(|row| match row {
+                RailRow::Server(id) => RailRowItem { key: id.clone(), folder_id: None, name: String::new(), spaces: vec![id] },
+                RailRow::Folder { id, name, spaces } => RailRowItem { key: format!("folder:{id}"), folder_id: Some(id), name, spaces },
+            })
+            .collect())
+    }
+
+    /// Put a server in a folder of its own (named "New folder"), or in an existing folder.
+    pub async fn move_server_to_folder(&self, space_id: String, folder_id: Option<String>) -> Result<(), FfiError> {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or_default();
+        self.change_rail(|prefs| match &folder_id {
+            Some(folder) => morpheus_view_model::rail_folders::move_to_folder(prefs, &space_id, folder),
+            None => morpheus_view_model::rail_folders::move_to_new_folder(prefs, &space_id, now),
+        })
+        .await
+    }
+
+    /// Take a server out of its folder.
+    pub async fn move_server_out_of_folder(&self, space_id: String) -> Result<(), FfiError> {
+        self.change_rail(|prefs| morpheus_view_model::rail_folders::move_out_of_folders(prefs, &space_id)).await
+    }
+
+    pub async fn rename_folder(&self, folder_id: String, name: String) -> Result<(), FfiError> {
+        self.change_rail(|prefs| morpheus_view_model::rail_folders::rename_folder(prefs, &folder_id, &name)).await
     }
 }
 
@@ -243,5 +264,29 @@ impl Morpheus {
             .map(|d| d.as_millis() as i64)
             .unwrap_or_default();
         Ok(self.session()?.set_mark(morpheus_core::marks::IGNORED, user_id, ignored.then_some(now)).await?)
+    }
+}
+
+/// One entry of the rail: a server, or a folder of servers.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct RailRowItem {
+    /// What `set_rail_order` takes for it: the server's ID, or `folder:<id>`.
+    pub key: String,
+    /// Set for a folder.
+    pub folder_id: Option<String>,
+    /// The folder's name.
+    pub name: String,
+    /// The server (or the folder's servers), by room ID.
+    pub spaces: Vec<String>,
+}
+
+impl Morpheus {
+    async fn change_rail(&self, change: impl FnOnce(&mut serde_json::Value)) -> Result<(), FfiError> {
+        let session = self.session()?;
+        let mut prefs = session.ui_prefs().await?;
+        change(&mut prefs);
+        session.set_ui_prefs(prefs).await?;
+        self.layout_changed.notify_one();
+        Ok(())
     }
 }

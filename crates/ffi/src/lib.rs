@@ -45,7 +45,7 @@ pub use composer::{CustomEmojiItem, CustomEmojiSection, EmojiSection, Suggestion
 pub use media::MediaHandle;
 pub use settings::{Appearance, LanguageChoice, NotifyDefaults, PaletteItem, ThemeChoice};
 pub use room_info::{PreviewCard, PreviewSettings, HitItem, MemberItem, MemberRow, ProfileCard, TypingListener};
-pub use people::{DirectoryItem, DirectoryPage, FriendItem, InviteItem};
+pub use people::{RailRowItem, DirectoryItem, DirectoryPage, FriendItem, InviteItem};
 pub use push::{PushNotice, preview_push};
 pub use rings::{IncomingRing, RingListener};
 pub use security::{

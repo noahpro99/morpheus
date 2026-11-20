@@ -6,6 +6,7 @@
 //! front ends.
 
 pub mod about;
+pub mod rail_folders;
 pub mod permissions;
 pub mod spellcheck;
 pub mod release_notes;

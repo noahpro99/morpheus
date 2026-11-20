@@ -323,6 +323,9 @@
   "Answer": "Responder",
   "Incoming call": "Llamada entrante",
   "%{name} is calling": "%{name} te llama",
+  "Rename": "Renombrar",
+  "Take out": "Sacar",
+  "New folder": "Carpeta nueva",
   "Verify with another device": "Verificar con otro dispositivo",
   "Your recovery key. Keep it somewhere safe: it is shown only once.": "Tu clave de recuperación. Guárdala en un lugar seguro: solo se muestra una vez."
 }

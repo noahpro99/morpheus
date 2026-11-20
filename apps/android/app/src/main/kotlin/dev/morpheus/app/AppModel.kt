@@ -156,6 +156,7 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
 
     fun openReorder() {
         _reorderOpen.value = true
+        refreshRail()
         AppState.screen = "reorder-servers"
     }
 
@@ -164,11 +165,42 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         AppState.screen = _screen.value.name()
     }
 
-    /** Put the servers in this order (their IDs) on every device. */
+    private val _railRows = MutableStateFlow<List<uniffi.morpheus_ffi.RailRowItem>>(emptyList())
+
+    /** The rail as the account keeps it: servers and folders of servers, in order. */
+    val railRows: StateFlow<List<uniffi.morpheus_ffi.RailRowItem>> = _railRows.asStateFlow()
+
+    fun refreshRail() {
+        viewModelScope.launch {
+            try {
+                _railRows.value = morpheus.railRows()
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    /** Change the account's rail, then show what it is now. */
+    private fun changeRail(change: suspend () -> Unit) {
+        viewModelScope.launch {
+            try {
+                change()
+                _railRows.value = morpheus.railRows()
+            } catch (e: Exception) {
+                _error.value = e.sentence()
+            }
+        }
+    }
+
+    fun moveToFolder(spaceId: String, folderId: String?) = changeRail { morpheus.moveServerToFolder(spaceId, folderId) }
+    fun moveOutOfFolder(spaceId: String) = changeRail { morpheus.moveServerOutOfFolder(spaceId) }
+    fun renameFolder(folderId: String, name: String) = changeRail { morpheus.renameFolder(folderId, name) }
+
+    /** Put the rail's entries in this order (a server's ID, or `folder:<id>`) on every device. */
     fun setRailOrder(ids: List<String>) {
         viewModelScope.launch {
             try {
                 morpheus.setRailOrder(ids)
+                _railRows.value = morpheus.railRows()
             } catch (e: Exception) {
                 _error.value = e.sentence()
             }
