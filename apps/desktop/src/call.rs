@@ -40,6 +40,8 @@ pub struct Person {
 /// Everything about calls the shell keeps.
 #[derive(Default)]
 pub struct Calls {
+    /// The single click on a listed person that waits for a double click (#286).
+    pub row_click: crate::view_model::clicks::ClickGate,
     /// The call this account is in.
     pub state: Option<CallState>,
     /// Mute and deafen, kept across calls.

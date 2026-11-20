@@ -196,16 +196,36 @@ pub fn room_call(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -> 
             .cursor_pointer()
             .hover(|s| s.bg(rgba(theme::bg_hover())))
             .on_click(cx.listener(move |this, event: &gpui::ClickEvent, _, cx| {
+                cx.stop_propagation();
                 // A double click while in this call: its view, on their
                 // screen or card.
                 if event.click_count() >= 2 && this.calls.in_call(&dbl_room) {
-                    cx.stop_propagation();
+                    this.calls.row_click.double();
                     this.focus_person_in_call(dbl_room.clone(), &dbl_user, cx);
                     return;
                 }
-                cx.stop_propagation();
-                let seen = Some((seen_name.clone(), None));
-                this.open_profile(opened.clone(), Some(beside(event.position())), seen, cx)
+                if event.click_count() >= 2 {
+                    return; // the single click's profile is already on its way
+                }
+                // A single click waits out the double-click window: the card
+                // it opens must not come up under the second click.
+                let token = this.calls.row_click.single();
+                let (opened, seen_name, at) = (opened.clone(), seen_name.clone(), event.position());
+                cx.spawn(async move |this, cx| {
+                    cx.background_executor()
+                        .timer(Duration::from_millis(
+                            crate::view_model::clicks::DOUBLE_CLICK_MS,
+                        ))
+                        .await;
+                    this.update(cx, |this, cx| {
+                        if this.calls.row_click.due(token) {
+                            let seen = Some((seen_name, None));
+                            this.open_profile(opened, Some(beside(at)), seen, cx)
+                        }
+                    })
+                    .ok();
+                })
+                .detach();
             }))
             .on_mouse_down(
                 MouseButton::Right,
