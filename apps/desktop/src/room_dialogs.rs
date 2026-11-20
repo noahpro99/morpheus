@@ -1096,6 +1096,20 @@ impl RoomDialog {
         cx.notify();
     }
 
+    /// A file dropped on the dialog: for a picture target it opens in the crop
+    /// view, or a note says it is not a picture (#268). False when this
+    /// dialog takes no picture.
+    pub fn dropped(&mut self, path: PathBuf, cx: &mut Context<Self>) -> bool {
+        let takes = matches!(
+            self.kind,
+            RoomDialogKind::Edit(_) | RoomDialogKind::EditProfile | RoomDialogKind::RoomProfile(_)
+        );
+        if takes && self.cropping.is_none() && !self.busy {
+            self.picture_chosen(path, None, cx);
+        }
+        takes
+    }
+
     fn picked_mut(&mut self) -> Option<&mut crate::crop_view::Picked> {
         self.cropping.as_mut().map(|(picked, _)| picked)
     }
@@ -2083,10 +2097,17 @@ impl Render for RoomDialog {
             }
         }
         let (class, parts) = self.body(cx);
+        #[cfg(feature = "e2e")]
+        crate::e2e::on_dialog_drop(cx.weak_entity());
         let leave = matches!(self.kind, RoomDialogKind::LeaveSpace(_));
         let boxed = dialog_box()
             .id("room-dialog")
             .track_focus(&self.focus)
+            .on_drop::<gpui::ExternalPaths>(cx.listener(|this, paths: &gpui::ExternalPaths, _, cx| {
+                if let Some(path) = paths.paths().first() {
+                    this.dropped(path.clone(), cx);
+                }
+            }))
             .on_key_down(cx.listener(|_, event: &gpui::KeyDownEvent, _, cx| {
                 if event.keystroke.key == "escape" {
                     cx.emit(Closed);

@@ -207,3 +207,9 @@ pub fn query_attr(selector: &str, name: &str) -> Option<String> {
 pub fn on_attach(composer: gpui::WeakEntity<crate::composer::Composer>) {
     bridge::set_attach_target(composer);
 }
+
+/// The room dialog the bridge's `attach_file` hands a dropped file to when one is open.
+#[cfg(feature = "e2e")]
+pub fn on_dialog_drop(dialog: gpui::WeakEntity<crate::room_dialogs::RoomDialog>) {
+    bridge::set_drop_target(dialog);
+}
