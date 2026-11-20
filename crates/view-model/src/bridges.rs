@@ -200,9 +200,9 @@ pub fn candidates(home: &str, extra: &[String]) -> Vec<Candidate> {
 
 /// The bot IDs the rooms of a person name (`m.bridge`'s `bridgebot`), for
 /// finding bridges set up under other names.
-pub fn bots_in_rooms(rooms: &[RoomSummary]) -> Vec<String> {
+pub fn bots_in_rooms(bridges: &[morpheus_core::Bridge]) -> Vec<String> {
     let mut bots: Vec<String> = Vec::new();
-    for bot in rooms.iter().filter_map(|r| r.bridge.as_ref()?.bot.clone()) {
+    for bot in bridges.iter().filter_map(|b| b.bot.clone()) {
         if !bots.contains(&bot) {
             bots.push(bot);
         }
@@ -741,7 +741,8 @@ mod tests {
         assert_eq!(networks_in(&all), ["whatsapp", "discord", "zulip"]);
         assert_eq!(network_name(&all, "zulip"), "Zulip");
         assert_eq!(network_name(&all, "discord"), "Discord");
-        assert_eq!(bots_in_rooms(&all), ["@discordbot:x"]);
+        let bridges: Vec<_> = all.iter().filter_map(|r| r.bridge.clone()).collect();
+        assert_eq!(bots_in_rooms(&bridges), ["@discordbot:x"]);
     }
 
     #[test]

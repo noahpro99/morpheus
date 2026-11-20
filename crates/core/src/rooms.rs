@@ -194,7 +194,7 @@ async fn ghost_network(room: &Room) -> Option<String> {
 }
 
 /// The bridge a room is part of, from the state the device holds.
-async fn bridge_of(room: &Room) -> Option<Bridge> {
+pub(crate) async fn bridge_of(room: &Room) -> Option<Bridge> {
     use matrix_sdk::deserialized_responses::RawAnySyncOrStrippedState as Raws;
     for kind in ["m.bridge", "uk.half-shot.bridge"] {
         let Ok(events) = room

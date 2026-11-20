@@ -110,6 +110,8 @@ debug = false
 # dropped for Linux; the copy in vendor/xattr uses ENODATA (what it was).
 [patch.crates-io]
 xattr = { path = "vendor/xattr" }
+# Morpheus patch (#265): m.bridge and uk.half-shot.bridge state in the room list's required_state.
+matrix-sdk-ui = { path = "vendor/matrix-sdk-ui" }
 # GPUI 0.2.1 returns a pub(crate) type from the public Window::dispatch_event,
 # so no outside code can call it; vendor/gpui makes DispatchEventResult pub
 # (the only change) for the e2e bridge's mouse input.

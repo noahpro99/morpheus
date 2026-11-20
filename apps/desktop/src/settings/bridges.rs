@@ -107,9 +107,14 @@ impl SettingsView {
         }
         self.bridges.finding = true;
         self.bridges.looked = true;
-        let candidates = vm::candidates(me.server_name().as_str(), &self.bridges.extra);
-        let asks: Vec<_> = candidates.iter().map(|c| session.find_user(c.bot.clone())).collect();
+        let home = me.server_name().to_string();
+        let extra = self.bridges.extra.clone();
         cx.spawn(async move |this, cx| {
+            // The bots the rooms name (an m.bridge's bridgebot) too, not only the usual names.
+            let named = session.room_bridges().await.map(|b| vm::bots_in_rooms(&b)).unwrap_or_default();
+            let all: Vec<String> = extra.into_iter().chain(named).collect();
+            let candidates = vm::candidates(&home, &all);
+            let asks: Vec<_> = candidates.iter().map(|c| session.find_user(c.bot.clone())).collect();
             let answers = futures::future::join_all(asks).await;
             let found: Vec<(Candidate, bool)> = candidates
                 .into_iter()

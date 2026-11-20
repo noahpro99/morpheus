@@ -368,6 +368,21 @@ impl Session {
         })
     }
 
+    /// The bridges the joined rooms are part of (from their state), for finding the bots
+    /// bridges were set up with.
+    pub fn room_bridges(&self) -> CoreFuture<Vec<crate::rooms::Bridge>> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            let mut out = Vec::new();
+            for room in client.joined_rooms() {
+                if let Some(bridge) = crate::rooms::bridge_of(&room).await {
+                    out.push(bridge);
+                }
+            }
+            Ok(out)
+        })
+    }
+
     /// The DM room with a user, created if there is none yet.
     pub fn dm_with(&self, user_id: OwnedUserId) -> CoreFuture<OwnedRoomId> {
         let client = self.client.clone();
