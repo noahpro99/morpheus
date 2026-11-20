@@ -149,13 +149,15 @@ fn gpu_lines(section: &mut vm::Section, compact: bool) {
         (Some(info), Some((name, driver, driver_info))) => {
             let device = info.devices.iter().find(|d| &d.name == name);
             let kind = device.map(|d| d.kind.as_str()).unwrap_or(UNKNOWN);
-            let vendor = device.map(|d| format!("vendor 0x{:04x}", d.vendor_id)).unwrap_or_default();
+            let vendor = device.filter(|d| d.vendor_id != 0).map(|d| format!("vendor 0x{:04x}", d.vendor_id)).unwrap_or_default();
             if compact {
                 section.line("GPU", format!("{name} ({kind})"));
             } else {
                 section.line("GPU", name.clone());
                 section.line("GPU type", kind);
-                section.line("GPU vendor", vendor);
+                if !vendor.is_empty() {
+                    section.line("GPU vendor", vendor);
+                }
                 section.line("Driver", format!("{driver} {driver_info}").trim().to_owned());
             }
         }

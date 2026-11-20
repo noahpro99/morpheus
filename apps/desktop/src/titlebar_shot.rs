@@ -25,6 +25,21 @@ pub fn run(seconds: u64) -> ! {
         #[cfg(target_os = "macos")]
         cx.activate(true);
         eprintln!("morpheus-desktop: titlebar shot: window open");
+        // The GPU diagnostics name the GPU on this system (#277): CI greps this.
+        cx.spawn(async move |cx| {
+            cx.background_executor().timer(Duration::from_secs(3)).await;
+            let line = match gpui::gpu_info().and_then(|i| i.drawing) {
+                Some((name, driver, _)) if !name.is_empty() => format!("gpu self-check: ok: {name} ({driver})\n"),
+                _ => "gpu self-check: failed: the diagnostics say the GPU is unknown\n".to_owned(),
+            };
+            eprint!("{line}");
+            // A release build on Windows has no console: a file, if asked.
+            if let Some(out) = std::env::var_os("MORPHEUS_TITLEBAR_SHOT_OUT") {
+                let _ = std::fs::write(out, &line);
+            }
+            let _ = cx;
+        })
+        .detach();
         cx.spawn(async move |cx| {
             cx.background_executor().timer(Duration::from_secs(seconds)).await;
             cx.update(|cx| cx.quit()).ok();

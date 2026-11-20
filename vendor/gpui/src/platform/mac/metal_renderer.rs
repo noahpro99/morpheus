@@ -139,6 +139,32 @@ impl MetalRenderer {
             std::process::exit(1);
         };
 
+        // Morpheus patch (#277): tell the app's diagnostics which GPU draws.
+        {
+            let name = device.name().to_string();
+            let drawing_kind = gpu_kind(device.is_removable(), device.is_low_power(), device.has_unified_memory());
+            let driver_info = format!(
+                "registry id {}{}",
+                device.registry_id(),
+                if device.has_unified_memory() { ", unified memory" } else { "" }
+            );
+            log::info!(target: "morpheus_gpu", "GPU: drawing with {name} ({drawing_kind}, {driver_info})");
+            let found: Vec<crate::GpuDevice> = metal::Device::all()
+                .iter()
+                .map(|d| crate::GpuDevice {
+                    name: d.name().to_string(),
+                    vendor_id: 0,
+                    device_id: 0,
+                    kind: gpu_kind(d.is_removable(), d.is_low_power(), d.has_unified_memory()).to_string(),
+                    presents: None,
+                })
+                .collect();
+            crate::update_gpu_info(|info| {
+                info.drawing = Some((name, "Metal".to_string(), driver_info));
+                info.devices = found;
+            });
+        }
+
         let layer = metal::MetalLayer::new();
         layer.set_device(&device);
         layer.set_pixel_format(MTLPixelFormat::BGRA8Unorm);
@@ -1352,4 +1378,29 @@ pub struct PathSprite {
 pub struct SurfaceBounds {
     pub bounds: Bounds<ScaledPixels>,
     pub content_mask: ContentMask<ScaledPixels>,
+}
+
+/// "integrated", "discrete" or "external" for a Metal device: Apple silicon
+/// shares memory with the CPU (integrated), a removable one is an eGPU.
+fn gpu_kind(removable: bool, low_power: bool, unified_memory: bool) -> &'static str {
+    if removable {
+        "external"
+    } else if unified_memory || low_power {
+        "integrated"
+    } else {
+        "discrete"
+    }
+}
+
+#[cfg(test)]
+mod gpu_kind_tests {
+    use super::gpu_kind;
+
+    #[test]
+    fn a_metal_device_is_told_apart_by_its_memory_and_power() {
+        assert_eq!(gpu_kind(false, false, true), "integrated");
+        assert_eq!(gpu_kind(false, true, false), "integrated");
+        assert_eq!(gpu_kind(false, false, false), "discrete");
+        assert_eq!(gpu_kind(true, false, false), "external");
+    }
 }

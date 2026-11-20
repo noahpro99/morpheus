@@ -102,6 +102,17 @@ jobs:
           grep -q "^Hardware video: " "$out"
           grep -q "^Hardware decoder: " "$out"
 
+      # The GPU diagnostics name the adapter that draws (#277): the app's
+      # window opened for a few seconds on the runner (software adapter: WARP).
+      - name: GPU named
+        shell: bash
+        run: |
+          out="$RUNNER_TEMP/gpu-self-check.txt"
+          MORPHEUS_TITLEBAR_SHOT=8 MORPHEUS_TITLEBAR_SHOT_OUT="$out" MORPHEUS_DATA_DIR="$(mktemp -d)" \
+            target/x86_64-pc-windows-msvc/release/morpheus-desktop.exe || true
+          cat "$out"
+          grep -q "^gpu self-check: ok: " "$out"
+
       # Hardware video (#102): which encoder and decoder libwebrtc found, 30
       # pictures through Media Foundation's H.264 encoders, and the software
       # encoder's pictures through the Media Foundation decoder. The runner

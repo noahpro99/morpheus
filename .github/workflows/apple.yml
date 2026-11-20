@@ -153,6 +153,7 @@ jobs:
           screencapture -x shots/titlebar.png || true
           wait "$pid" || true
           cat shots/log.txt
+          grep -q "^gpu self-check: ok: " shots/log.txt
           ls -l shots
 
       - uses: actions/upload-artifact@v4
