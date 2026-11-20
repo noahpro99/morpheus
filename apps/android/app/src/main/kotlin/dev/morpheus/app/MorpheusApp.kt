@@ -27,6 +27,14 @@ class MorpheusApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // WebRTC (calls) finds its Java classes from JNI_OnLoad, which runs when the library is
+        // loaded this way (UniFFI's JNA load does not run it), and wants the app's context.
+        try {
+            System.loadLibrary("morpheus_ffi")
+            livekit.org.webrtc.ContextUtils.initialize(this)
+        } catch (e: Throwable) {
+            android.util.Log.w("MorpheusCalls", "calls are not available: $e")
+        }
         DebugHooks.install(this)
         dev.morpheus.app.push.Push.track(this)
     }

@@ -37,6 +37,39 @@ sealed interface Screen {
 
 /** Signing in, restoring and signing out; the rest of the app lives under [Screen.SignedIn]. */
 class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = null) : ViewModel() {
+    /** The call this account is in, if any (it outlives the screens). */
+    val calls: CallModel = CallModel(morpheus, morpheusApp ?: error("an application"))
+
+    /** Asked of the activity: the microphone permission, before a call joins. */
+    val needMicrophone = MutableStateFlow<Pair<String, String>?>(null)
+    private val names = MutableStateFlow<Map<String, String>>(emptyMap())
+    private val asked = HashSet<String>()
+
+    /** A person's name for the call lists: their ID's local part until the profile comes. */
+    fun nameOf(userId: String, known: Map<String, String>): String = known[userId] ?: userId.trimStart('@').substringBefore(':')
+    val callNames: StateFlow<Map<String, String>> = names.asStateFlow()
+
+    fun wantName(userId: String) {
+        if (!asked.add(userId)) return
+        viewModelScope.launch { names.value = names.value + (userId to morpheus.displayName(userId)) }
+    }
+
+    /** Join the call in a room: after the microphone is allowed (asked first when it is not). */
+    fun startCall(roomId: String, roomName: String) {
+        val app = morpheusApp ?: return
+        if (androidx.core.content.ContextCompat.checkSelfPermission(app, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            calls.join(roomId, roomName)
+        } else {
+            needMicrophone.value = roomId to roomName
+        }
+    }
+
+    fun microphoneAnswered(granted: Boolean) {
+        val (roomId, roomName) = needMicrophone.value ?: return
+        needMicrophone.value = null
+        if (granted) calls.join(roomId, roomName)
+    }
+
     /** A room a notification asked for; opened once the channel list has it. */
     private val pendingRoom = MutableStateFlow<String?>(null)
 

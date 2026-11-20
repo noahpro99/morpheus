@@ -7437,7 +7437,9 @@ name = "morpheus-ffi"
 version = "0.2.7"
 dependencies = [
  "futures-util",
+ "jni 0.21.1",
  "matrix-sdk",
+ "morpheus-call",
  "morpheus-core",
  "morpheus-view-model",
  "serde_json",
@@ -7446,6 +7448,7 @@ dependencies = [
  "tokio",
  "tracing",
  "uniffi",
+ "webrtc-sys-build",
 ]
 
 [[package]]

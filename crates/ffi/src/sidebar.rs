@@ -30,6 +30,8 @@ pub struct RoomItem {
     pub muted: bool,
     /// A DM pinned to the top of the list (on any of my devices).
     pub pinned: bool,
+    /// Who is in the room's call (a voice channel's list), with what they have on.
+    pub call: Vec<crate::CallListing>,
 }
 
 /// What a scope is: the app may draw the first three with icons.
@@ -89,6 +91,7 @@ fn room_item(room: &RoomSummary, session: &morpheus_core::Session, marks: &Marks
         highlights: room.highlight_count,
         muted: marks.is_muted(room),
         pinned: marks.is_pinned(room),
+        call: crate::calls::listing(room),
     }
 }
 

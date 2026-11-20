@@ -115,6 +115,8 @@ dependencies {
     // UniFFI's Kotlin calls the library through JNA.
     implementation("net.java.dev.jna:jna:5.14.0@aar")
     implementation("org.unifiedpush.android:connector:3.0.10")
+    // WebRTC's Java half (calls): built with crates/call, copied out by scripts/android-ffi.sh.
+    implementation(files(rustOut.map { it.file("libs/libwebrtc.jar") }).builtBy(buildRust))
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20231013")
 }

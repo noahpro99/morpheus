@@ -7,6 +7,8 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import androidx.lifecycle.ViewModelProvider
 import dev.morpheus.app.ui.MorpheusTheme
 import dev.morpheus.app.ui.Root
@@ -20,8 +22,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private val microphone = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { model.microphoneAnswered(it) }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        lifecycleScope.launch { model.needMicrophone.collect { if (it != null) microphone.launch(android.Manifest.permission.RECORD_AUDIO) } }
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),

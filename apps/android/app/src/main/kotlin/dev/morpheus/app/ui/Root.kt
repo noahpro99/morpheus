@@ -3,6 +3,7 @@ package dev.morpheus.app.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -46,11 +47,20 @@ fun Root(model: AppModel) {
                     val shown = security
                     val newOpen by model.newOpen.collectAsState()
                     val settingsOpen by model.settingsOpen.collectAsState()
-                    if (open != null) RoomScreen(model, open)
-                    else if (settingsOpen) SettingsScreen(model)
-                    else if (newOpen) NewScreen(model)
-                    else if (securityOpen && shown != null) SecurityScreen(model, shown)
-                    else SignedInScreen(model, current) { model.open(it) }
+                    val call by model.calls.snapshot.collectAsState()
+                    val callOpen by model.calls.open.collectAsState()
+                    val going = call
+                    if (going != null && callOpen) CallScreen(model.calls, going)
+                    else androidx.compose.foundation.layout.Column(Modifier.fillMaxSize()) {
+                        if (going != null) CallBar(model.calls, going)
+                        Box(Modifier.weight(1f)) {
+                            if (open != null) RoomScreen(model, open)
+                            else if (settingsOpen) SettingsScreen(model)
+                            else if (newOpen) NewScreen(model)
+                            else if (securityOpen && shown != null) SecurityScreen(model, shown)
+                            else SignedInScreen(model, current) { model.open(it) }
+                        }
+                    }
                 }
             }
         }

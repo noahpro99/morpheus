@@ -760,3 +760,136 @@ async fn pinned_and_closed_dms_and_the_servers_order_come_from_the_accounts_layo
     app.set_rail_order(now.clone()).await.expect("put back");
     until(&mut rx, "the old order", |s: &Sidebar| servers(s) == now).await;
 }
+
+struct CallFeed(std::sync::Mutex<mpsc::UnboundedSender<morpheus_ffi::CallSnapshot>>);
+impl morpheus_ffi::CallListener for CallFeed {
+    fn on_call(&self, snapshot: morpheus_ffi::CallSnapshot) {
+        let _ = self.0.lock().expect("lock").send(snapshot);
+    }
+}
+
+async fn signed_in(homeserver: &str, user: &str) -> (tempfile::TempDir, Arc<Morpheus>) {
+    let dir = tempfile::tempdir().expect("dir");
+    let app = Morpheus::new(dir.path().display().to_string()).expect("app");
+    app.login(homeserver.to_owned(), user.into(), format!("{user}-password")).await.expect("login");
+    (dir, app)
+}
+
+/// The voice channel #hangout's id, as the channel list shows it.
+async fn hangout(app: &Morpheus) -> String {
+    let (feed, mut rx) = Feed::new();
+    let _watch = app.watch_sidebar(feed).await.expect("sidebar");
+    let sidebar = until(&mut rx, "#hangout listed", |s| {
+        s.scopes.iter().any(|sc| sc.sections.iter().any(|sec| sec.rooms.iter().any(|r| r.name == "hangout")))
+    })
+    .await;
+    let room = sidebar
+        .scopes
+        .iter()
+        .flat_map(|s| s.sections.iter().flat_map(|sec| sec.rooms.iter()))
+        .find(|r| r.name == "hangout")
+        .expect("hangout");
+    assert!(room.is_voice, "hangout is a voice channel");
+    room.id.clone()
+}
+
+#[tokio::test]
+async fn a_call_is_joined_heard_muted_watched_and_left_through_the_listener() {
+    use morpheus_ffi::{CallPhase, CardKind};
+    let Ok(homeserver) = std::env::var("MORPHEUS_TEST_HOMESERVER") else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping");
+        return;
+    };
+    // Tones for microphones, test patterns for cameras and screens.
+    morpheus_ffi::call_use_test_tone();
+    let ((_d1, alice), (_d2, bob)) = (signed_in(&homeserver, "alice").await, signed_in(&homeserver, "bob").await);
+    let room = hangout(&alice).await;
+    let (alice_feed, mut alice_rx) = mpsc::unbounded_channel();
+    let (bob_feed, mut bob_rx) = mpsc::unbounded_channel();
+
+    // Alice joins: connected, listed, not muted.
+    let alice_call = alice
+        .join_call(room.clone(), Arc::new(CallFeed(std::sync::Mutex::new(alice_feed))))
+        .await
+        .expect("alice joins");
+    let first = until(&mut alice_rx, "alice connected", |s| s.phase == CallPhase::Connected).await;
+    assert_eq!(first.room_name, "hangout");
+    assert!(first.people.iter().any(|p| p.me && p.user_id.starts_with("@alice:")), "alice is listed");
+    assert!(!first.muted && !first.deafened);
+
+    // Bob joins: each sees the other, and hears them (the tone).
+    let bob_call = bob
+        .join_call(room.clone(), Arc::new(CallFeed(std::sync::Mutex::new(bob_feed))))
+        .await
+        .expect("bob joins");
+    let with_bob = until(&mut alice_rx, "alice sees bob", |s| {
+        s.people.iter().any(|p| p.user_id.starts_with("@bob:") && !p.connecting)
+    })
+    .await;
+    assert!(with_bob.people.iter().all(|p| !p.name.is_empty()));
+    until(&mut bob_rx, "bob sees alice", |s| s.people.iter().any(|p| p.user_id.starts_with("@alice:"))).await;
+    until(&mut alice_rx, "alice sees bob speak", |s| {
+        s.people.iter().any(|p| p.user_id.starts_with("@bob:") && p.speaking)
+    })
+    .await;
+
+    // Muting shows to everyone, deafening mutes, unmuting undeafens.
+    bob_call.toggle_mute();
+    until(&mut bob_rx, "bob muted", |s| s.muted && !s.deafened).await;
+    until(&mut alice_rx, "alice sees bob muted", |s| {
+        s.people.iter().any(|p| p.user_id.starts_with("@bob:") && p.muted)
+    })
+    .await;
+    bob_call.toggle_deafen();
+    until(&mut alice_rx, "alice sees bob deafened", |s| {
+        s.people.iter().any(|p| p.user_id.starts_with("@bob:") && p.deafened)
+    })
+    .await;
+    bob_call.toggle_mute();
+    until(&mut bob_rx, "bob back", |s| !s.muted && !s.deafened).await;
+
+    // Bob's camera: a tile with pictures under it.
+    bob_call.set_camera(true);
+    let with_camera = until(&mut alice_rx, "alice sees bob's camera", |s| {
+        s.cards.iter().any(|c| c.kind == CardKind::Camera && c.user_id.starts_with("@bob:"))
+    })
+    .await;
+    let feed = with_camera.cards.iter().find(|c| c.kind == CardKind::Camera).and_then(|c| c.feed.clone()).expect("a feed");
+    let picture = timeout(WAIT, async {
+        loop {
+            if let Some(frame) = alice_call.frame(feed.clone()) {
+                return frame;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await
+    .expect("a picture arrives");
+    assert_eq!(&picture.jpeg[..2], &[0xFF, 0xD8], "a JPEG");
+    bob_call.set_camera(false);
+    until(&mut alice_rx, "the camera goes", |s| !s.cards.iter().any(|c| c.kind == CardKind::Camera)).await;
+
+    // A shared screen is a card to press Watch on: nothing arrives, and the sharer sees no watchers, until asked.
+    bob_call.set_screen_share(true);
+    let share = until(&mut alice_rx, "alice sees bob's share", |s| {
+        s.cards.iter().any(|c| c.kind == CardKind::UnwatchedScreen && c.user_id.starts_with("@bob:"))
+    })
+    .await;
+    let bob_id = share.cards.iter().find(|c| c.kind == CardKind::UnwatchedScreen).expect("card").user_id.clone();
+    assert!(share.cards.iter().all(|c| c.kind != CardKind::Screen), "nothing watched yet");
+    alice_call.watch(bob_id.clone(), true);
+    let watched = until(&mut alice_rx, "the share arrives", |s| s.cards.iter().any(|c| c.kind == CardKind::Screen)).await;
+    assert!(watched.cards.iter().all(|c| c.kind != CardKind::UnwatchedScreen));
+    until(&mut bob_rx, "bob sees a watcher", |s| s.watchers == 1).await;
+    alice_call.watch(bob_id, false);
+    until(&mut bob_rx, "the watcher goes", |s| s.watchers == 0).await;
+    until(&mut alice_rx, "back to a Watch card", |s| s.cards.iter().any(|c| c.kind == CardKind::UnwatchedScreen)).await;
+    bob_call.set_screen_share(false);
+
+    // Leaving: the others no longer list the person, and the call says it ended.
+    bob_call.leave().await;
+    until(&mut bob_rx, "bob's call ends", |s| s.phase == CallPhase::Ended).await;
+    until(&mut alice_rx, "alice no longer lists bob", |s| !s.people.iter().any(|p| p.user_id.starts_with("@bob:"))).await;
+    alice_call.leave().await;
+    until(&mut alice_rx, "alice's call ends", |s| s.phase == CallPhase::Ended).await;
+}

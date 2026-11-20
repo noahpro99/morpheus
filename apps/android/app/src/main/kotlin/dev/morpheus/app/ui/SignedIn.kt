@@ -178,11 +178,12 @@ private fun RoomRow(room: RoomItem, onOpen: (RoomItem) -> Unit, model: AppModel)
     val unread = room.unread > 0UL && !room.muted
     var menu by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     Box(Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
+        Column {
         Row(
             Modifier
                 .fillMaxWidth()
                 .heightIn(min = 56.dp)
-                .combinedClickable(onClick = { onOpen(room) }, onLongClick = { if (room.isDm) menu = true })
+                .combinedClickable(onClick = { if (room.isVoice) model.startCall(room.id, room.name) else onOpen(room) }, onLongClick = { if (room.isDm) menu = true })
                 .padding(start = 12.dp, end = 72.dp)
                 .testTag("room-${room.name}"),
             verticalAlignment = Alignment.CenterVertically,
@@ -201,6 +202,21 @@ private fun RoomRow(room: RoomItem, onOpen: (RoomItem) -> Unit, model: AppModel)
                 fontWeight = if (unread) FontWeight.Bold else FontWeight.Normal,
                 color = if (unread) Palette.Text else Palette.Muted,
             )
+        }
+        if (room.call.isNotEmpty()) {
+            val names by model.callNames.collectAsState()
+            Column(Modifier.padding(start = 52.dp, bottom = 8.dp)) {
+                for (member in room.call) {
+                    androidx.compose.runtime.LaunchedEffect(member.userId) { model.wantName(member.userId) }
+                    val name = model.nameOf(member.userId, names)
+                    Text(
+                        name + if (member.deafened) " 🔇" else if (member.muted) " 🔇" else "",
+                        Modifier.testTag("in-call-${room.name}-$name"),
+                        color = Palette.Muted, fontSize = 13.sp,
+                    )
+                }
+            }
+        }
         }
         // In the tree, not a popup window: the list itself carries it (and so do the tests).
         if (menu) {

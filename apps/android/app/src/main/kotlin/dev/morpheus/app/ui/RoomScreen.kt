@@ -139,6 +139,13 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                if (threadRoot == null) {
+                    val inThis = app.calls.snapshot.collectAsState().value?.roomId == room.id
+                    TextButton(
+                        { if (inThis) app.calls.show(true) else app.startCall(room.id, title) },
+                        Modifier.testTag("call-button"),
+                    ) { Text("📞", fontSize = 20.sp) }
+                }
                 if (threadRoot == null) TextButton({ searching = true }, Modifier.testTag("search-button")) { Text("🔍", fontSize = 20.sp) }
                 if (threadRoot == null) TextButton({ info = true }, Modifier.testTag("room-info-button")) { Text("ⓘ", fontSize = 22.sp) }
             }

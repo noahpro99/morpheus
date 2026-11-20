@@ -19,6 +19,9 @@
 //! runs its own runtime, so they work on any executor; the forwarding tasks
 //! of the listeners run on this crate's own small runtime.
 
+#[cfg(target_os = "android")]
+mod android;
+mod calls;
 mod composer;
 mod error;
 mod media;
@@ -35,6 +38,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use morpheus_core::{Core, Session};
 use tokio::{runtime::Runtime, task::JoinHandle};
 
+pub use calls::{CallCard, CallHandle, CallListener, CallListing, CallPerson, CallPhase, CallSnapshot, CardKind, VideoFrame, call_timer, call_use_test_tone};
 pub use error::FfiError;
 pub use composer::{CustomEmojiItem, CustomEmojiSection, EmojiSection, SuggestionItem, SuggestionKind, emoji_sections, with_emoji};
 pub use media::MediaHandle;

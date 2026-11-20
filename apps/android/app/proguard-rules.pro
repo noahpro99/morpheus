@@ -3,3 +3,8 @@
 -keep class com.sun.jna.** { *; }
 -keep class uniffi.** { *; }
 -dontwarn java.awt.*
+# WebRTC (calls): its native half finds these classes and methods by name.
+-keep class livekit.org.webrtc.** { *; }
+-keep class org.webrtc.** { *; }
+-dontwarn livekit.org.webrtc.**
+-dontwarn livekit.org.jni_zero.**

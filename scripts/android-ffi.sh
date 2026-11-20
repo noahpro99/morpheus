@@ -39,3 +39,11 @@ done
 # The bindings are read from the library's own metadata (any ABI will do).
 cargo run -q -p morpheus-ffi --features bindgen --bin uniffi-bindgen -- \
     generate --library "$first" --language kotlin --no-format --out-dir "$out/kotlin"
+
+# WebRTC's Java classes (calls) come with the build of its native half; the
+# app compiles against them and ships them. The same jar serves every ABI.
+mkdir -p "$out/libs"
+case "$first" in */x86_64/*) flavour=android-x64 ;; *) flavour=android-arm64 ;; esac
+jar=$(find target -name libwebrtc.jar -path "*/$flavour-release-webrtc*" -printf "%T@ %p\n" 2>/dev/null | sort -rn | head -n 1 | cut -d" " -f2- || true)
+[ -n "$jar" ] || { echo "libwebrtc.jar was not built" >&2; exit 1; }
+cp "$jar" "$out/libs/libwebrtc.jar"
