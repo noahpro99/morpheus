@@ -255,6 +255,21 @@ pub fn used_in(body: &str, emotes: &[(String, String)]) -> Vec<(String, String)>
         .collect()
 }
 
+/// `body` with a lone `*` between two letters or digits (2*3*4) escaped, so
+/// markdown leaves it as typed; `a*b*` style emphasis needs a space or edge.
+fn guard_intraword_stars(body: &str) -> String {
+    let chars: Vec<char> = body.chars().collect();
+    let mut out = String::with_capacity(body.len() + 2);
+    for (i, &c) in chars.iter().enumerate() {
+        let alnum = |j: Option<usize>| j.and_then(|j| chars.get(j)).is_some_and(|c| c.is_alphanumeric());
+        if c == '*' && alnum(i.checked_sub(1)) && alnum(Some(i + 1)) && (i == 0 || chars[i - 1] != '\\') {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
 /// A message's content for markdown `body`, with `:code:` of `emotes` as
 /// pictures in its formatted body.
 pub fn message_content(
@@ -264,7 +279,10 @@ pub fn message_content(
     use matrix_sdk::ruma::events::room::message::{
         FormattedBody, MessageType, RoomMessageEventContentWithoutRelation,
     };
-    let mut content = RoomMessageEventContentWithoutRelation::text_markdown(body);
+    let mut content = RoomMessageEventContentWithoutRelation::text_markdown(guard_intraword_stars(body));
+    if let MessageType::Text(text) = &mut content.msgtype {
+        text.body = body.to_owned();
+    }
     let used = used_in(body, emotes);
     if used.is_empty() {
         return content;
@@ -555,6 +573,76 @@ async fn change_pack(
     Ok(())
 }
 
+
+#[cfg(test)]
+mod markdown_send_tests {
+    use super::*;
+
+    /// The formatted body (None when the text is sent plain).
+    fn html_of(body: &str) -> Option<String> {
+        use matrix_sdk::ruma::events::room::message::MessageType;
+        match message_content(body, &[]).msgtype {
+            MessageType::Text(t) => t.formatted.map(|f| f.body),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn every_basic_element_converts() {
+        let table: &[(&str, &str)] = &[
+            ("**b**", "<strong>b</strong>"),
+            ("*i*", "<em>i</em>"),
+            ("_i_", "<em>i</em>"),
+            ("***bi***", "<em><strong>bi</strong></em>"),
+            ("~~s~~", "<del>s</del>"),
+            ("`c`", "<code>c</code>"),
+            ("```rust\nlet x = 1;\n```", "<pre><code class=\"language-rust\">let x = 1;"),
+            ("```\nplain\n```", "<pre><code>plain"),
+            ("> q", "<blockquote>"),
+            ("- a\n- b", "<ul>"),
+            ("* a\n* b", "<ul>"),
+            ("1. a\n2. b", "<ol>"),
+            ("3. a\n4. b", "<ol start=\"3\">"),
+            ("- a\n  - b", "<li>a\n<ul>"),
+            ("# h", "<h1>h</h1>"),
+            ("## h", "<h2>h</h2>"),
+            ("### h", "<h3>h</h3>"),
+            ("[t](https://example.org)", "<a href=\"https://example.org\">t</a>"),
+            ("\\*not\\*", "*not*"),
+        ];
+        let mut failures = Vec::new();
+        for (src, want) in table {
+            let html = html_of(src).unwrap_or_default();
+            if !html.contains(want) {
+                failures.push(format!("{src:?} gave {html:?}, wanted {want:?}"));
+            }
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
+
+    #[test]
+    fn the_body_keeps_the_typed_markdown_for_edits() {
+        use matrix_sdk::ruma::events::room::message::MessageType;
+        for src in ["2*3*4 and **b**", "# h\n- a", "```rust\nx\n```"] {
+            match message_content(src, &[]).msgtype {
+                MessageType::Text(t) => assert_eq!(t.body, src),
+                _ => panic!(),
+            }
+        }
+    }
+    #[test]
+    fn plain_text_with_stray_markers_is_not_mangled() {
+        for src in ["snake_case_name", "2*3*4", "a * b * c", "5 * 3", "file_name_here.txt", "1 < 2 & 3"] {
+            let html = html_of(src);
+            let ok = match &html {
+                None => true,
+                Some(h) => !h.contains("<em>") && !h.contains("<strong>"),
+            };
+            assert!(ok, "{src:?} gave {html:?}");
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {

@@ -554,6 +554,31 @@ mod tests {
     }
 
     #[test]
+    fn every_basic_markdown_element_renders() {
+        let p = html("<p><strong>b</strong> <em>i</em> <del>s</del> <code>c</code> <a href=\"https://e.org\">t</a></p>");
+        let p = para(&p, 0);
+        assert!(styled(p, "b").bold && styled(p, "i").italic && styled(p, "s").strike);
+        assert!(styled(p, "c").code);
+        assert_eq!(p.links().len(), 1);
+        for h in 1..=3 {
+            let blocks = html(&format!("<h{h}>Head</h{h}><p>x</p>"));
+            assert!(styled(para(&blocks, 0), "Head").bold, "h{h}");
+        }
+        let blocks = html("<pre><code class=\"language-rust\">fn a() {}\n</code></pre>");
+        assert_eq!(blocks, vec![Block::Pre("fn a() {}".into())]);
+        let blocks = html("<ul>\n<li>a\n<ul>\n<li>b</li>\n</ul>\n</li>\n<li>c</li>\n</ul>");
+        match &blocks[0] {
+            Block::List { items, .. } => {
+                assert_eq!(items.len(), 2);
+                assert!(items[0].iter().any(|b| matches!(b, Block::List { .. })), "nested");
+            }
+            other => panic!("{other:?}"),
+        }
+        let blocks = html("<blockquote>\n<p>a</p>\n<p>b</p>\n</blockquote>");
+        assert!(matches!(&blocks[0], Block::Quote(inner) if inner.len() == 2));
+    }
+
+    #[test]
     fn headings_are_bold() {
         let blocks = html("<h2>Title</h2><p>text</p>");
         assert!(styled(para(&blocks, 0), "Title").bold);
