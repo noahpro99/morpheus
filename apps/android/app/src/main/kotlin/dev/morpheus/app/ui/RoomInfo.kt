@@ -34,6 +34,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.morpheus.app.AppModel
+import dev.morpheus.app.People
+import androidx.compose.runtime.collectAsState
 import dev.morpheus.app.RoomModel
 import dev.morpheus.app.sentence
 import kotlinx.coroutines.launch
@@ -191,6 +193,10 @@ private fun ProfileSheet(app: AppModel, card: ProfileCard, onClose: () -> Unit) 
                             }
                         }
                     }, Modifier.testTag("card-friend")) { Text(if (friend) "Remove friend" else "Add friend") }
+                    val ignored by People.ignored.collectAsState()
+                    TextButton({ app.setIgnored(card.userId, card.userId !in ignored) }, Modifier.testTag("card-ignore")) {
+                        Text(if (card.userId in ignored) t("Unignore") else t("Ignore"))
+                    }
                 }
             }
             problem?.let { Text(it, color = Palette.Danger, fontSize = 13.sp) }

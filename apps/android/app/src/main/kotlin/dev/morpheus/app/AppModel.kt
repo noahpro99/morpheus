@@ -200,6 +200,18 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         }
     }
 
+    /** Ignore someone (their messages fold away) or stop, on every device. */
+    fun setIgnored(userId: String, ignored: Boolean) {
+        People.ignored.value = if (ignored) People.ignored.value + userId else People.ignored.value - userId
+        viewModelScope.launch {
+            try {
+                morpheus.setIgnored(userId, ignored)
+            } catch (e: Exception) {
+                _error.value = e.sentence()
+            }
+        }
+    }
+
     fun answerInvite(roomId: String, accept: Boolean) {
         viewModelScope.launch {
             try {
@@ -235,6 +247,12 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
 
     private fun signedInChanged(screen: Screen) {
         securityScope?.cancel()
+        if (screen is Screen.SignedIn) viewModelScope.launch {
+            try {
+                People.ignored.value = morpheus.ignoredPeople().toSet()
+            } catch (_: Exception) {
+            }
+        } else People.ignored.value = emptySet()
         _securityOpen.value = false
         if (screen is Screen.SignedIn) {
             val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main)
@@ -315,6 +333,11 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
             }
         }
     }
+}
+
+/** What the account says about people, for every screen: who is ignored. */
+object People {
+    val ignored = MutableStateFlow<Set<String>>(emptySet())
 }
 
 /** What the e2e bridge reports as the app's state (debug builds read it; nothing else does). */

@@ -68,6 +68,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.morpheus.app.AppModel
+import dev.morpheus.app.People
 import dev.morpheus.app.RoomModel
 import uniffi.morpheus_ffi.MediaHandle
 import uniffi.morpheus_ffi.MessageBody
@@ -273,13 +274,22 @@ private fun Timeline(
             model.highlight(null)
         }
     }
+    // People you ignore are folded into a line that shows the message when tapped.
+    val ignored by People.ignored.collectAsState()
+    var revealed by remember { mutableStateOf(setOf<String>()) }
     val dividerAt = items.indexOfFirst { it is TimelineRow.New }
     val dividerShowing by remember(dividerAt) { derivedStateOf { state.layoutInfo.visibleItemsInfo.any { it.index == dividerAt } } }
     Box(modifier) {
     LazyColumn(Modifier.fillMaxSize().testTag("timeline"), state = state, reverseLayout = true) {
         items(items, key = { rowKey(it) }) { row ->
             when (row) {
-                is TimelineRow.Message -> MessageRow(row.message, model, onActions, onThread, onImage, onFile, lit != null && lit == row.message.eventId)
+                is TimelineRow.Message -> if (row.message.senderId in ignored && row.message.key !in revealed) {
+                    Text(
+                        t("Ignored message · Show"),
+                        Modifier.fillMaxWidth().clickable { revealed = revealed + row.message.key }.padding(horizontal = 16.dp, vertical = 8.dp).testTag("ignored-fold"),
+                        color = Palette.Muted, fontSize = 13.sp,
+                    )
+                } else MessageRow(row.message, model, onActions, onThread, onImage, onFile, lit != null && lit == row.message.eventId)
                 is TimelineRow.Date -> Text(
                     row.label,
                     Modifier.fillMaxWidth().padding(vertical = 12.dp).testTag("date-divider"),

@@ -923,3 +923,20 @@ async fn a_room_is_muted_for_a_while_unmuted_and_the_mute_ends_by_itself() {
     until(&mut rx, "muted again", |s: &Sidebar| state(s) == Some(true)).await;
     until(&mut rx, "the mute ended", |s: &Sidebar| state(s) == Some(false)).await;
 }
+
+#[tokio::test]
+async fn ignored_people_are_listed_kept_and_given_back() {
+    let Ok(homeserver) = std::env::var("MORPHEUS_TEST_HOMESERVER") else {
+        return;
+    };
+    let (_dir, app) = signed_in(&homeserver, "alice").await;
+    let bob = "@bob:localhost".to_owned();
+    assert!(!app.ignored_people().await.expect("list").contains(&bob), "nobody is ignored to start with");
+    app.set_ignored(bob.clone(), true).await.expect("ignore");
+    assert!(app.ignored_people().await.expect("list").contains(&bob));
+    // It is the account's: a second sign-in of the same person has it.
+    let (_dir2, other) = signed_in(&homeserver, "alice").await;
+    assert!(other.ignored_people().await.expect("list").contains(&bob), "another device sees it");
+    app.set_ignored(bob.clone(), false).await.expect("unignore");
+    assert!(!app.ignored_people().await.expect("list").contains(&bob));
+}

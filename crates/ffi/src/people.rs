@@ -228,3 +228,20 @@ impl Morpheus {
         Ok(())
     }
 }
+
+#[uniffi::export]
+impl Morpheus {
+    /// The people this account ignores (their messages are folded away), as the desktop keeps them.
+    pub async fn ignored_people(&self) -> Result<Vec<String>, FfiError> {
+        Ok(self.session()?.marks(morpheus_core::marks::IGNORED).await?.into_keys().collect())
+    }
+
+    /// Ignore someone, or stop, on every device.
+    pub async fn set_ignored(&self, user_id: String, ignored: bool) -> Result<(), FfiError> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or_default();
+        Ok(self.session()?.set_mark(morpheus_core::marks::IGNORED, user_id, ignored.then_some(now)).await?)
+    }
+}
