@@ -129,6 +129,30 @@ pub fn without_emote(content: Option<Value>, shortcode: &str) -> Value {
     content
 }
 
+/// `content` with the emoji `old` named `new`, its picture and other fields kept.
+/// `None` when there is no `old`, or `new` is already another emoji.
+pub fn with_renamed_emote(content: Option<Value>, old: &str, new: &str) -> Option<Value> {
+    let mut content = content.filter(Value::is_object)?;
+    let images = content.get_mut("images")?.as_object_mut()?;
+    if old == new {
+        return images.contains_key(old).then_some(content);
+    }
+    if images.contains_key(new) {
+        return None;
+    }
+    let image = images.remove(old)?;
+    images.insert(new.to_owned(), image);
+    Some(content)
+}
+
+/// A shortcode to start from for a picture file (`party parrot.png`: `party_parrot`).
+pub fn shortcode_from_file_name(file_name: &str) -> Option<String> {
+    let stem = std::path::Path::new(file_name)
+        .file_stem()
+        .and_then(|s| s.to_str())?;
+    clean_shortcode(stem)
+}
+
 /// A shortcode as typed in a field: no colons or spaces, only letters,
 /// digits, `_`, `-`; `None` when nothing is left.
 pub fn clean_shortcode(typed: &str) -> Option<String> {
@@ -420,6 +444,67 @@ impl Session {
         })
     }
 
+    /// The pack the room's own `im.ponies.room_emotes` event (empty state key)
+    /// holds, made-up empty when the room has none yet, with whether the
+    /// signed-in user may change it: what a manager shows.
+    pub fn room_emote_pack(&self, room_id: OwnedRoomId) -> CoreFuture<EmotePack> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            let room = client
+                .get_room(&room_id)
+                .ok_or_else(|| Error::UnknownRoom(room_id.clone()))?;
+            let found = room_packs(&room)
+                .await
+                .into_iter()
+                .find(|pack| pack.state_key.is_empty());
+            if let Some(pack) = found {
+                return Ok(pack);
+            }
+            Ok(EmotePack {
+                room_id: Some(room_id),
+                state_key: String::new(),
+                name: room
+                    .cached_display_name()
+                    .map(|n| n.to_string())
+                    .unwrap_or_default(),
+                avatar: None,
+                emotes: Vec::new(),
+                editable: room_can_edit(&room).await,
+            })
+        })
+    }
+
+    /// Rename the emoji `old` of a pack to `new` (its picture stays).
+    pub fn rename_emote(
+        &self,
+        room_id: Option<OwnedRoomId>,
+        state_key: String,
+        old: String,
+        new: String,
+    ) -> CoreFuture<()> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            let new = clean_shortcode(&new)
+                .ok_or_else(|| Error::Other("an emoji needs a name".to_owned()))?;
+            let mut renamed = true;
+            change_pack(&client, room_id, &state_key, |content| {
+                match with_renamed_emote(content.clone(), &old, &new) {
+                    Some(changed) => changed,
+                    None => {
+                        renamed = false;
+                        content.unwrap_or_else(|| json!({}))
+                    }
+                }
+            })
+            .await?;
+            if renamed {
+                Ok(())
+            } else {
+                Err(Error::Other(format!("there is already an emoji named :{new}:")))
+            }
+        })
+    }
+
     /// Remove the emoji `shortcode` from a pack.
     pub fn remove_emote(
         &self,
@@ -474,6 +559,24 @@ async fn change_pack(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn renaming_keeps_the_picture_and_refuses_a_taken_name() {
+        let pack = json!({ "pack": { "display_name": "P" }, "images": { "a": { "url": "mxc://x/a", "usage": ["emoticon"] }, "b": { "url": "mxc://x/b" } } });
+        let renamed = with_renamed_emote(Some(pack.clone()), "a", "c").expect("renamed");
+        assert_eq!(renamed["images"]["c"]["url"], "mxc://x/a");
+        assert!(renamed["images"].get("a").is_none());
+        assert_eq!(renamed["pack"]["display_name"], "P");
+        assert!(with_renamed_emote(Some(pack.clone()), "a", "b").is_none(), "taken");
+        assert!(with_renamed_emote(Some(pack), "zzz", "c").is_none(), "missing");
+    }
+
+    #[test]
+    fn a_file_name_suggests_a_shortcode() {
+        assert_eq!(shortcode_from_file_name("party parrot.png").as_deref(), Some("party_parrot"));
+        assert_eq!(shortcode_from_file_name(":wave:.gif").as_deref(), Some("wave"));
+        assert_eq!(shortcode_from_file_name("..png"), None);
+    }
 
     #[test]
     fn a_pack_lists_its_emoticons() {

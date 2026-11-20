@@ -145,6 +145,12 @@ impl ThreadPanel {
         self.composer.read(cx).busy()
     }
 
+    /// The custom emoji in reach changed: the message box follows.
+    pub fn set_emotes(&mut self, emotes: Vec<morpheus_core::Emote>, cx: &mut Context<Self>) {
+        self.composer
+            .update(cx, |composer, cx| composer.set_emotes(emotes, cx));
+    }
+
     /// Your nicknames changed.
     pub fn set_nicknames(&mut self, nicknames: &NickMap, cx: &mut Context<Self>) {
         self.nickname = nicknames.get(self.root.sender.as_str()).cloned();

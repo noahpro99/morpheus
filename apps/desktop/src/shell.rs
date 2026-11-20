@@ -721,6 +721,8 @@ impl Shell {
         };
         let room_id = room.clone();
         let panel = cx.new(|cx| ThreadPanel::new(session, room_id, root, root_id, &nicknames, cx));
+        let emotes = crate::custom_emoji::all(&self.emote_packs);
+        panel.update(cx, |panel, cx| panel.set_emotes(emotes, cx));
         cx.subscribe(
             &panel,
             |this: &mut Self, _, event: &ThreadEvent, cx| match event {

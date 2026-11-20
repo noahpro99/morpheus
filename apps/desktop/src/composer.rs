@@ -905,6 +905,50 @@ impl Composer {
             .border_color(rgba(theme::bg_selected()))
             .shadow_lg()
             .occlude();
+        // The custom emoji in reach first (a picture each, its shortcode on picking).
+        for emote in self.emotes.clone() {
+            let name = format!(":{}:", emote.shortcode);
+            if let Some(session) = self.session.clone() {
+                crate::custom_emoji::want(&session, &emote.url, cx);
+            }
+            let picture = crate::custom_emoji::image(&emote.url);
+            let loaded = picture.is_some();
+            let code = emote.shortcode.clone();
+            grid = grid.child(
+                div()
+                    .id(ElementId::Name(format!("emoji-custom-{code}").into()))
+                    .w(px((PANEL_W - 12.0 - 18.0) / 10.0))
+                    .h(px(30.0))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(px(theme::RADIUS_SM))
+                    .cursor_pointer()
+                    .hover(|s| s.bg(rgba(theme::bg_hover())))
+                    .child(match picture {
+                        Some(image) => div()
+                            .child(img(crate::media::drawn(image)).size(px(22.0)))
+                            .e2e("img", "emote")
+                            .attr("alt", name.clone())
+                            .attr("data-loaded", loaded.to_string())
+                            .into_any_element(),
+                        None => div()
+                            .size(px(22.0))
+                            .rounded(px(4.0))
+                            .bg(rgba(theme::bg_hover()))
+                            .into_any_element(),
+                    })
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        let text = composer::with_emoji(&this.draft(cx), &format!(":{code}:"));
+                        this.set_draft(&text, cx);
+                        this.emoji_open = false;
+                        this.pending_focus = true;
+                        cx.notify();
+                    }))
+                    .e2e("button", "emoji-custom")
+                    .attr("title", name),
+            );
+        }
         for (glyph, code) in emoji::EMOJI.iter().copied() {
             grid = grid.child(
                 div()

@@ -101,9 +101,29 @@ impl Shell {
                     let emotes = all(&this.emote_packs);
                     composer.update(cx, |composer, cx| composer.set_emotes(emotes, cx));
                 }
+                if let Some((_, panel)) = &this.thread {
+                    let emotes = all(&this.emote_packs);
+                    panel.update(cx, |panel, cx| panel.set_emotes(emotes, cx));
+                }
                 cx.notify();
             })
             .ok();
+        })
+        .detach();
+    }
+}
+
+impl Shell {
+    /// A room's or server's emoji were changed from its settings: read the
+    /// packs again now and once more after the sync has had time to bring the
+    /// change.
+    pub fn emotes_changed(&mut self, cx: &mut Context<Self>) {
+        self.refresh_emotes(cx);
+        cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(std::time::Duration::from_secs(2))
+                .await;
+            this.update(cx, |this, cx| this.refresh_emotes(cx)).ok();
         })
         .detach();
     }

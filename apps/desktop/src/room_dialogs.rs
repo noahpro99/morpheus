@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use gpui::{
     AnyElement, ClickEvent, Context, ElementId, Entity, EventEmitter, FocusHandle, FontWeight,
-    IntoElement, PathPromptOptions, Render, SharedString, Window, div, prelude::*, px, rgb, rgba,
+    IntoElement, PathPromptOptions, Render, SharedString, Window, div, img, prelude::*, px, rgb, rgba,
 };
 use morpheus_core::{History, OwnedRoomId, Privacy, RoomSummary, Session};
 
@@ -57,6 +57,8 @@ pub enum Done {
     },
     /// Your per-server profile changed: member lists read again.
     ProfileSaved,
+    /// A room's or server's emoji changed: the packs in reach are read again.
+    EmotesChanged,
     /// Your own name, picture or status changed (the footer reads them again).
     OwnProfileChanged,
     /// A lock was set: the room and the hash of its password.
@@ -75,6 +77,8 @@ pub struct RoomDialog {
     scope: Scope,
     focus: FocusHandle,
     take_focus: bool,
+    /// The contents' scroll position when taller than the window.
+    scroll: gpui::ScrollHandle,
     name: Option<Entity<TextInput>>,
     topic: Option<Entity<TextInput>>,
     user: Option<Entity<TextInput>>,
@@ -101,6 +105,12 @@ pub struct RoomDialog {
     powers: Option<morpheus_core::RoomPowers>,
     /// Edit room: the last attempt to change it failed.
     powers_note: Option<Note>,
+    /// Edit room: the room's emoji pack (#193), once read; the box for a new name,
+    /// the emoji being renamed with its box, and how the last change went.
+    emoji_pack: Option<morpheus_core::EmotePack>,
+    emoji_name: Option<Entity<TextInput>>,
+    renaming: Option<(String, Entity<TextInput>)>,
+    emoji_note: Option<Note>,
 }
 
 impl EventEmitter<Closed> for RoomDialog {}
@@ -209,6 +219,7 @@ impl RoomDialog {
             scope,
             focus: cx.focus_handle(),
             take_focus: true,
+            scroll: gpui::ScrollHandle::new(),
             name,
             topic,
             user,
@@ -227,9 +238,17 @@ impl RoomDialog {
             avatar: None,
             powers: None,
             powers_note: None,
+            emoji_pack: None,
+            emoji_name: None,
+            renaming: None,
+            emoji_note: None,
         };
         this.load(cx);
         this.load_powers(cx);
+        if matches!(this.kind, RoomDialogKind::Edit(_)) {
+            this.emoji_name = Some(cx.new(|cx| TextInput::new("emoji-name", "wave", false, "", cx).framed()));
+            this.load_emoji(cx);
+        }
         if let (Some((joined, invited)), Some(picker)) = (roster, this.picker.clone()) {
             cx.spawn(async move |_, cx| {
                 let joined: Vec<_> = joined
@@ -363,6 +382,283 @@ impl RoomDialog {
             section = section.child(note_el(note));
         }
         Some(section.e2e("div", "perm-section").into_any_element())
+    }
+
+    // ---- Edit room: the room's (or server's) custom emoji (#193) -----------------
+
+    /// Edit room: reads the room's emoji pack and whether you may change it.
+    fn load_emoji(&mut self, cx: &mut Context<Self>) {
+        let RoomDialogKind::Edit(room) = self.kind.clone() else {
+            return;
+        };
+        let reading = self.session.room_emote_pack(room);
+        cx.spawn(async move |this, cx| {
+            if let Ok(pack) = reading.await {
+                this.update(cx, |this, cx| {
+                    this.emoji_pack = Some(pack);
+                    cx.notify();
+                })
+                .ok();
+            }
+        })
+        .detach();
+    }
+
+    /// What a change to the pack leaves to do: read it again (the sync may
+    /// not have brought it yet, so it shows at once) and tell the app.
+    fn emoji_changed(&mut self, cx: &mut Context<Self>) {
+        cx.emit(Done::EmotesChanged);
+        self.load_emoji(cx);
+    }
+
+    /// "Add emoji…": choose a picture, which goes up under the typed name (or
+    /// one made from the file's name).
+    fn add_emoji(&mut self, cx: &mut Context<Self>) {
+        let (RoomDialogKind::Edit(room), Some(pack)) = (self.kind.clone(), self.emoji_pack.clone())
+        else {
+            return;
+        };
+        if self.busy {
+            return;
+        }
+        self.emoji_note = None;
+        let typed = self.text(&self.emoji_name, cx);
+        #[cfg(feature = "e2e")]
+        let hooked = crate::e2e::take_picked();
+        #[cfg(not(feature = "e2e"))]
+        let hooked: Option<PathBuf> = None;
+        let picking = hooked.is_none().then(|| {
+            cx.prompt_for_paths(PathPromptOptions {
+                files: true,
+                directories: false,
+                multiple: false,
+                prompt: Some("Choose a picture".into()),
+            })
+        });
+        cx.spawn(async move |this, cx| {
+            let path = match (hooked, picking) {
+                (Some(path), _) => path,
+                (None, Some(picking)) => {
+                    let Ok(Ok(Some(paths))) = picking.await else {
+                        return;
+                    };
+                    let Some(path) = paths.into_iter().next() else {
+                        return;
+                    };
+                    path
+                }
+                (None, None) => return,
+            };
+            let file_name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or_default()
+                .to_owned();
+            let code = morpheus_core::clean_shortcode(&typed)
+                .or_else(|| morpheus_core::shortcode_from_file_name(&file_name));
+            let mime = vm::picture_mime(&file_name);
+            let bytes = std::fs::read(&path);
+            this.update(cx, |this, cx| {
+                let (Some(code), Some(mime), Ok(bytes)) = (code, mime, bytes) else {
+                    this.emoji_note =
+                        Some(Note::error("Choose a picture (PNG, JPEG, GIF or WebP) and give it a name."));
+                    cx.notify();
+                    return;
+                };
+                let adding = this.session.add_emote(
+                    Some(room),
+                    pack.state_key.clone(),
+                    code,
+                    mime.to_owned(),
+                    bytes,
+                );
+                this.run(adding, cx, |this, result, cx| match result {
+                    Ok(()) => {
+                        if let Some(name) = &this.emoji_name {
+                            name.update(cx, |name, cx| name.set_value("", cx));
+                        }
+                        this.emoji_changed(cx);
+                    }
+                    Err(err) => this.emoji_note = Some(Note::error(err)),
+                });
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// Start renaming the emoji `code`.
+    fn start_rename(&mut self, code: &str, cx: &mut Context<Self>) {
+        let input = cx.new(|cx| TextInput::new("emoji-rename", "name", false, code, cx).framed());
+        cx.subscribe(&input, |this, _, _: &Submit, cx| this.save_rename(cx))
+            .detach();
+        self.renaming = Some((code.to_owned(), input));
+        cx.notify();
+    }
+
+    fn save_rename(&mut self, cx: &mut Context<Self>) {
+        let (RoomDialogKind::Edit(room), Some(pack), Some((old, input))) = (
+            self.kind.clone(),
+            self.emoji_pack.clone(),
+            self.renaming.clone(),
+        ) else {
+            return;
+        };
+        if self.busy {
+            return;
+        }
+        self.emoji_note = None;
+        let new = input.read(cx).value().to_owned();
+        let renaming = self
+            .session
+            .rename_emote(Some(room), pack.state_key, old, new);
+        self.run(renaming, cx, |this, result, cx| match result {
+            Ok(()) => {
+                this.renaming = None;
+                this.emoji_changed(cx);
+            }
+            Err(err) => this.emoji_note = Some(Note::error(err)),
+        });
+    }
+
+    fn remove_emoji(&mut self, code: &str, cx: &mut Context<Self>) {
+        let (RoomDialogKind::Edit(room), Some(pack)) = (self.kind.clone(), self.emoji_pack.clone())
+        else {
+            return;
+        };
+        if self.busy {
+            return;
+        }
+        self.emoji_note = None;
+        let removing = self
+            .session
+            .remove_emote(Some(room), pack.state_key, code.to_owned());
+        self.run(removing, cx, |this, result, cx| match result {
+            Ok(()) => this.emoji_changed(cx),
+            Err(err) => this.emoji_note = Some(Note::error(err)),
+        });
+    }
+
+    /// Edit room: the Emoji section: the pack's emoji, and for those who may
+    /// change it, adding, renaming and removing.
+    fn emoji_section(&mut self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let pack = self.emoji_pack.clone()?;
+        let mut section = div().flex().flex_col().gap(px(6.0)).child(
+            div()
+                .font_weight(FontWeight::BOLD)
+                .child("Emoji")
+                .e2e("h3", "")
+                .text("Emoji"),
+        );
+        if !pack.editable {
+            section = section.child(muted(vm::EMOJI_CANNOT_CHANGE, "muted emoji-note"));
+        }
+        if pack.emotes.is_empty() && !pack.editable {
+            section = section.child(muted("This room has no custom emoji.", "muted"));
+        }
+        for emote in &pack.emotes {
+            crate::custom_emoji::want(&self.session, &emote.url, cx);
+            let name = format!(":{}:", emote.shortcode);
+            let picture = match crate::custom_emoji::image(&emote.url) {
+                Some(image) => div()
+                    .child(img(crate::media::drawn(image)).size(px(28.0)))
+                    .e2e("img", "emote")
+                    .attr("alt", name.clone())
+                    .into_any_element(),
+                None => div()
+                    .size(px(28.0))
+                    .rounded(px(4.0))
+                    .bg(gpui::rgba(theme::bg_hover()))
+                    .into_any_element(),
+            };
+            let code = emote.shortcode.clone();
+            let renaming_this = self
+                .renaming
+                .as_ref()
+                .filter(|(old, _)| *old == code)
+                .map(|(_, input)| input.clone());
+            let mut row = div()
+                .flex()
+                .items_center()
+                .gap(px(10.0))
+                .child(picture);
+            row = match renaming_this {
+                Some(input) => row
+                    .child(div().flex_1().child(input))
+                    .child(button(
+                        &format!("save-emoji-{code}"),
+                        Some("check"),
+                        "Save",
+                        "save-emoji-name",
+                        false,
+                        self.busy,
+                        cx.listener(|this, _, _, cx| this.save_rename(cx)),
+                    ))
+                    .child(button(
+                        &format!("cancel-emoji-{code}"),
+                        None,
+                        "Cancel",
+                        "cancel-emoji-name",
+                        false,
+                        false,
+                        cx.listener(|this, _, _, cx| {
+                            this.renaming = None;
+                            cx.notify();
+                        }),
+                    )),
+                None => {
+                    let row = row.child(
+                        div()
+                            .flex_1()
+                            .child(name.clone())
+                            .e2e("span", "emoji-name")
+                            .text(name.clone()),
+                    );
+                    if pack.editable {
+                        let (rename, remove) = (code.clone(), code.clone());
+                        row.child(button(
+                            &format!("rename-emoji-{code}"),
+                            Some("pencil"),
+                            "Rename",
+                            "rename-emoji",
+                            false,
+                            self.busy,
+                            cx.listener(move |this, _, _, cx| this.start_rename(&rename, cx)),
+                        ))
+                        .child(button(
+                            &format!("remove-emoji-{code}"),
+                            Some("trash-2"),
+                            "Remove",
+                            "remove-emoji",
+                            false,
+                            self.busy,
+                            cx.listener(move |this, _, _, cx| this.remove_emoji(&remove, cx)),
+                        ))
+                    } else {
+                        row
+                    }
+                }
+            };
+            section = section.child(row.e2e("div", "emoji-row").text(name));
+        }
+        if pack.editable {
+            if let Some(name) = &self.emoji_name {
+                section = section.child(field("New emoji name", name));
+            }
+            section = section.child(actions(vec![button(
+                "add-emoji",
+                Some("plus"),
+                "Add emoji…",
+                "secondary add-emoji",
+                false,
+                self.busy,
+                cx.listener(|this, _, _, cx| this.add_emoji(cx)),
+            )]));
+        }
+        if let Some(note) = &self.emoji_note {
+            section = section.child(note_el(note));
+        }
+        Some(section.e2e("div", "emoji-section").into_any_element())
     }
 
     /// What the form starts from, as the server has it.
@@ -1297,6 +1593,7 @@ impl RoomDialog {
                     .into_any_element(),
                 );
                 parts.extend(self.permissions_section(cx));
+                parts.extend(self.emoji_section(cx));
                 parts.extend(note);
                 parts.push(
                     actions(vec![
@@ -1640,7 +1937,21 @@ impl Render for RoomDialog {
                     cx.emit(Closed);
                 }
             }))
-            .children(parts)
+            .child(
+                // Taller than the window (Edit room with its permissions and emoji):
+                // the contents scroll, under the close button.
+                div()
+                    .id("room-dialog-body")
+                    .flex()
+                    .flex_col()
+                    .gap(px(12.0))
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .track_scroll(&self.scroll)
+                    .children(parts)
+                    .e2e("div", "room-dialog-body")
+                    .scrollable(std::rc::Rc::new(crate::e2e::HandleProbe(self.scroll.clone()))),
+            )
             .e2e(
                 if leave { "div" } else { "form" },
                 &format!("message-dialog room-dialog {class}"),

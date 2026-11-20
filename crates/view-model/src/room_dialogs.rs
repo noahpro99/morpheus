@@ -305,3 +305,32 @@ mod tests {
         assert_eq!(parts("!room:x"), PrivacyParts { encryption: true, join_and_history: true });
     }
 }
+
+/// Edit room, Emoji: said instead of the controls to someone who may not change the pack.
+pub const EMOJI_CANNOT_CHANGE: &str =
+    "You don't have permission to change this room's emoji.";
+
+/// The picture type of a file name (a custom emoji is a PNG, JPEG, GIF or WebP), if it is one.
+pub fn picture_mime(file_name: &str) -> Option<&'static str> {
+    let extension = file_name.rsplit_once('.')?.1.to_ascii_lowercase();
+    match extension.as_str() {
+        "png" => Some("image/png"),
+        "jpg" | "jpeg" => Some("image/jpeg"),
+        "gif" => Some("image/gif"),
+        "webp" => Some("image/webp"),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod emoji_tests {
+    use super::picture_mime;
+
+    #[test]
+    fn only_pictures_are_emoji() {
+        assert_eq!(picture_mime("party.PNG"), Some("image/png"));
+        assert_eq!(picture_mime("a.b.jpeg"), Some("image/jpeg"));
+        assert_eq!(picture_mime("notes.txt"), None);
+        assert_eq!(picture_mime("png"), None);
+    }
+}

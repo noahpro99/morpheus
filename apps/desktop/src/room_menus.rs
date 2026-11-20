@@ -590,6 +590,7 @@ impl Shell {
             Done::LockSet { room, hash } => self.lock_set(room, hash.clone(), cx),
             Done::LockRemoved(room) => self.lock_removed(room, cx),
             Done::ProfileSaved => self.refresh_members(cx),
+            Done::EmotesChanged => self.emotes_changed(cx),
             Done::OwnProfileChanged => self.reload_own_profile(cx),
             Done::NicknameSaved { user, nickname } => {
                 self.dialog_close(cx);
