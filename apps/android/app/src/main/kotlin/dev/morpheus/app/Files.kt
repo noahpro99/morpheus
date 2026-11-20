@@ -34,7 +34,7 @@ suspend fun Context.read(uri: Uri): Picked? = withContext(Dispatchers.IO) {
 
 /** Fetch a file and hand it to whatever app opens it; the message when that fails. */
 suspend fun Context.open(media: MediaHandle, name: String): String? = withContext(Dispatchers.IO) {
-    val bytes = media.file() ?: return@withContext "Could not download $name"
+    val bytes = media.file() ?: return@withContext dev.morpheus.app.ui.t("Could not download %{name}", "name" to name)
     val dir = File(cacheDir, "opened").apply { mkdirs() }
     val file = File(dir, name.substringAfterLast('/').ifBlank { "file" })
     file.writeBytes(bytes)
@@ -47,7 +47,7 @@ suspend fun Context.open(media: MediaHandle, name: String): String? = withContex
         startActivity(Intent.createChooser(intent, name).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         null
     } catch (_: Exception) {
-        "No app can open $name"
+        dev.morpheus.app.ui.t("No app can open %{name}", "name" to name)
     }
 }
 
@@ -68,6 +68,6 @@ fun Context.openLink(url: String): String? {
         startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(address)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         null
     } catch (_: Exception) {
-        "No app can open $address"
+        dev.morpheus.app.ui.t("No app can open %{name}", "name" to address)
     }
 }

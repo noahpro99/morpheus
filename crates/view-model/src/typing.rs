@@ -5,9 +5,9 @@
 pub fn line(names: &[String]) -> Option<String> {
     match names {
         [] => None,
-        [one] => Some(format!("{one} is typing…")),
-        [a, b] => Some(format!("{a} and {b} are typing…")),
-        [a, b, ..] => Some(format!("{a}, {b} and others are typing…")),
+        [one] => Some(crate::i18n::tf("%{name} is typing…", &[("name", one)])),
+        [a, b] => Some(crate::i18n::tf("%{a} and %{b} are typing…", &[("a", a), ("b", b)])),
+        [a, b, ..] => Some(crate::i18n::tf("%{a}, %{b} and others are typing…", &[("a", a), ("b", b)])),
     }
 }
 

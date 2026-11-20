@@ -326,6 +326,15 @@
   "Rename": "Renombrar",
   "Take out": "Sacar",
   "New folder": "Carpeta nueva",
+  "%{name} is typing…": "%{name} está escribiendo…",
+  "%{a} and %{b} are typing…": "%{a} y %{b} están escribiendo…",
+  "%{a}, %{b} and others are typing…": "%{a}, %{b} y otros están escribiendo…",
+  "Replying to %{name}: %{text}": "Respondiendo a %{name}: %{text}",
+  "Could not download %{name}": "No se pudo descargar %{name}",
+  "No app can open %{name}": "Ninguna aplicación puede abrir %{name}",
+  "%{count} unread messages": "%{count} mensajes sin leer",
+  "New message": "Mensaje nuevo",
+  "All friends — %{count}": "Todos los amigos — %{count}",
   "Verify with another device": "Verificar con otro dispositivo",
   "Your recovery key. Keep it somewhere safe: it is shown only once.": "Tu clave de recuperación. Guárdala en un lugar seguro: solo se muestra una vez."
 }

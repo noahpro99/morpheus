@@ -166,7 +166,7 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        "Replying to ${reply.senderName}: ${summary(reply.body)}",
+                        t("Replying to %{name}: %{text}", "name" to reply.senderName.toString(), "text" to summary(reply.body)),
                         Modifier.weight(1f).testTag("reply-banner"),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,

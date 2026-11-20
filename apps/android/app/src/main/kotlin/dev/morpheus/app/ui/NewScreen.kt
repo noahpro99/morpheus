@@ -186,7 +186,7 @@ private fun Friends(app: AppModel, onMessage: (String) -> Unit) {
     failure?.let { Text(it, Modifier.testTag("friend-error"), color = Palette.Danger, fontSize = 14.sp) }
     val list = friends
     if (list != null && list.isEmpty()) Text(t("No friends yet"), Modifier.testTag("no-friends"), color = Palette.Muted)
-    if (list != null && list.isNotEmpty()) Text("All friends — ${list.size}", color = Palette.Muted, fontSize = 12.sp)
+    if (list != null && list.isNotEmpty()) Text(t("All friends — %{count}", "count" to list.size.toString()), color = Palette.Muted, fontSize = 12.sp)
     LazyColumn(Modifier.testTag("friends")) {
         items(list.orEmpty(), key = { it.userId }) { friend ->
             Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {

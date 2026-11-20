@@ -102,7 +102,7 @@ object Push {
         val builder = Notification.Builder(context, CHANNEL)
             .setSmallIcon(dev.morpheus.app.R.drawable.ic_notification)
             .setContentTitle(notice?.title ?: "Morpheus")
-            .setContentText(notice?.body ?: if (payload.unread > 1) "${payload.unread} unread messages" else "New message")
+            .setContentText(notice?.body ?: if (payload.unread > 1) dev.morpheus.app.ui.t("%{count} unread messages", "count" to payload.unread.toString()) else dev.morpheus.app.ui.t("New message"))
             .setAutoCancel(true)
             .setContentIntent(tap)
         notice?.icon?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }?.let { builder.setLargeIcon(it) }
