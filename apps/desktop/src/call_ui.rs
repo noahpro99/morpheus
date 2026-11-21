@@ -2013,13 +2013,45 @@ pub fn voice_channel(
         .bg(theme::fill_rail())
         .child(call);
     if open && let Some(chat) = chat {
-        // A card floating beside the call: 40% of the page, 240-380 wide.
+        // A card floating beside the call: 40% of the page unless dragged wider or narrower
+        // by its left edge (kept per device).
+        let page = f32::from(window.viewport_size().width) - theme::RAIL_W - shell.sidebar_shown;
+        let width = shell.calls.chat_w.map_or_else(
+            || crate::view_model::voice_panel::default_width(page),
+            |w| crate::view_model::voice_panel::clamp_width(w, page),
+        );
+        let shown = width;
+        let view = cx.entity();
+        let handle = div()
+            .absolute()
+            .top_0()
+            .bottom_0()
+            .left(px(-3.0))
+            .w(px(8.0))
+            .cursor_col_resize()
+            .hover(|s| s.bg(gpui::rgba(theme::bg_hover())))
+            .on_mouse_down(MouseButton::Left, move |event, _, cx| {
+                cx.stop_propagation();
+                let x = f32::from(event.position.x);
+                let reset = event.click_count >= 2;
+                view.update(cx, |this, cx| {
+                    if reset {
+                        this.calls.chat_w = None;
+                        this.calls.chat_drag = None;
+                        this.save_chat_width();
+                    } else {
+                        this.calls.chat_drag = Some((x, shown));
+                    }
+                    cx.notify();
+                });
+            })
+            .e2e("div", "voice-chat-resize")
+            .attr("title", "Drag to resize (double-click to reset)");
         row = row.child(
             div()
                 .flex_none()
-                .w(gpui::relative(0.4))
-                .min_w(px(248.0))
-                .max_w(px(388.0))
+                .relative()
+                .w(px(width))
                 .flex()
                 .py(px(8.0))
                 .pr(px(8.0))
@@ -2057,7 +2089,8 @@ pub fn voice_channel(
                         )
                         .child(chat)
                         .e2e("div", "voice-chat"),
-                ),
+                )
+                .child(handle),
         );
     }
     row.e2e("div", "voice-channel").into_any_element()

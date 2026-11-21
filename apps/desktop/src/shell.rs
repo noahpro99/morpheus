@@ -606,7 +606,11 @@ impl Shell {
             preview: None,
             joining: false,
             joined_here: HashSet::new(),
-            calls: crate::call::Calls::default(),
+            calls: {
+                let mut calls = crate::call::Calls::default();
+                calls.chat_w = crate::view_model::voice_panel::load(&crate::data_dir());
+                calls
+            },
             switcher: None,
             nav: Default::default(),
             pending_place: None,
@@ -1324,6 +1328,12 @@ impl Shell {
         )
     }
 
+    pub fn save_chat_width(&self) {
+        if let Err(err) = crate::view_model::voice_panel::save(&crate::data_dir(), self.calls.chat_w) {
+            eprintln!("morpheus-desktop: saving the voice chat panel's width: {err}");
+        }
+    }
+
     pub fn save_sidebar_width(&self) {
         if let Err(err) = crate::view_model::sidebar::save(&crate::data_dir(), self.sidebar_w) {
             eprintln!("morpheus-desktop: saving the channel list's width: {err}");
@@ -1721,6 +1731,12 @@ impl Render for Shell {
                         );
                         cx.notify();
                     }
+                    if let Some((x0, start)) = this.calls.chat_drag {
+                        let moved = f32::from(event.position.x) - x0;
+                        let page = f32::from(window.viewport_size().width) - theme::RAIL_W - this.sidebar_shown;
+                        this.calls.chat_w = Some(crate::view_model::voice_panel::dragged_width(start, moved, page));
+                        cx.notify();
+                    }
                     if let Some((y0, start)) = this.calls.stage_drag {
                         let chat = f32::from(window.viewport_size().height) - 32.0 - 48.0;
                         let moved = f32::from(event.position.y) - y0;
@@ -1735,6 +1751,10 @@ impl Render for Shell {
                 gpui::MouseButton::Left,
                 cx.listener(|this, _, _, cx| {
                     if this.calls.stage_drag.take().is_some() {
+                        cx.notify();
+                    }
+                    if this.calls.chat_drag.take().is_some() {
+                        this.save_chat_width();
                         cx.notify();
                     }
                     if this.sidebar_drag.take().is_some() {

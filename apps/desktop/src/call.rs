@@ -85,6 +85,10 @@ pub struct Calls {
     pub stage_measure: crate::call_ui::StageMeasure,
     /// The stage's edge being dragged: where the pointer was, the height then.
     pub stage_drag: Option<(f32, f32)>,
+    /// The voice chat panel's width once dragged (kept per device), and a drag of its
+    /// left edge: where the pointer was, and the width then.
+    pub chat_w: Option<f32>,
+    pub chat_drag: Option<(f32, f32)>,
     /// One entity per video feed shown (a new picture redraws only its card).
     pub frames: crate::call_ui::Frames,
     /// The audio devices chosen, as kept in the data directory.

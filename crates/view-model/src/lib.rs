@@ -32,6 +32,7 @@ pub mod join_address;
 pub mod capture;
 pub mod instance;
 pub mod sidebar;
+pub mod voice_panel;
 pub mod url_scheme;
 pub mod invites;
 pub mod keys;
