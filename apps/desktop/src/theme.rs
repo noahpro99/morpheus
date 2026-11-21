@@ -246,6 +246,7 @@ fills!(
     fill_rail: bg_rail, false;
     fill_sidebar: bg_sidebar, false;
     fill_chat: bg_chat, false;
+    fill_card: bg_elevated, false;
 );
 
 macro_rules! solids {

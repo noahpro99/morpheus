@@ -1668,8 +1668,18 @@ impl Render for Shell {
                     .flex()
                     .flex_1()
                     .min_h_0()
-                    .bg(theme::fill_rail())
-                    .child(rail::render(self, cx))
+                    // Opaque, the rail's colour also shows in the list's rounded corner.
+                    .when(theme::glass_percent().is_none(), |d| d.bg(theme::fill_rail()))
+                    // Each column draws its own fill once: a fill under both (the rail's
+                    // colour below the list's) stacks into a denser one when see-through.
+                    .child(
+                        div()
+                            .w(px(theme::RAIL_W))
+                            .flex_none()
+                            .h_full()
+                            .bg(theme::fill_rail())
+                            .child(rail::render(self, cx)),
+                    )
                     .child(room_list::render(self, cx)),
             )
             .child(user_bar::render(self, cx));

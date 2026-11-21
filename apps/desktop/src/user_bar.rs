@@ -3,7 +3,7 @@
 //! deafen and the settings gear. Not ported yet: the account menu behind the
 //! chip, what the buttons do (calls and settings come with their screens).
 
-use gpui::{Context, FontWeight, IntoElement, div, linear_gradient, prelude::*, px, rgb};
+use gpui::{Context, FontWeight, IntoElement, div, prelude::*, px, rgb};
 
 use crate::tooltip::TipExt as _;
 use crate::{
@@ -245,24 +245,32 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         .flex()
         .flex_col()
         .rounded(px(theme::RADIUS_LG))
-        .bg(theme::fill_elevated())
+        .bg(theme::fill_card())
         .children(crate::call_ui::join_error(shell, cx))
         .children(crate::call_ui::voice_panel(shell, cx))
         .child(row)
         .e2e("div", "user-pill");
-    // The band keeps the rail's and the sidebar's colours; the pill floats on it.
+    // The band is the rail's fill under the rail and the sidebar's under the list: the
+    // same flat fills as the columns above, so a see-through window shows no seam or
+    // extra layer; the pill floats on it.
     div()
         .w_full()
         .flex_none()
+        .relative()
         .flex()
         .flex_col()
         .px(px(8.0))
         .pb(px(theme::BOTTOM_GAP))
-        .bg(linear_gradient(
-            90.0,
-            gpui::linear_color_stop(theme::fill_rail(), 0.0),
-            gpui::linear_color_stop(theme::fill_sidebar(), 1.0),
-        ))
+        .child(
+            div()
+                .absolute()
+                .top_0()
+                .left_0()
+                .size_full()
+                .flex()
+                .child(div().w(px(theme::RAIL_W)).h_full().flex_none().bg(theme::fill_rail()))
+                .child(div().h_full().flex_1().bg(theme::fill_sidebar())),
+        )
         .child(pill)
         .e2e("footer", "sidebar-footer user-bar")
 }
