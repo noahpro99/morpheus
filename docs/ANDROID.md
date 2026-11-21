@@ -145,3 +145,9 @@ Open issues with the `android` label: calls left over (ringing for a voice chann
 - Listing older messages: the screen asks again whenever a request ends and it
   still needs more (a request made while one was out used to be dropped and the
   start of the room never showed).
+
+## Look and navigation (#274)
+
+`ui/Theme.kt` holds the tokens (`Space`, `Radius`, `Size`, `Type`, and `Palette`, whose colours come from the core's themes through ffi, with `onColour()` = `theme::on_colour` for text on any fill); `ui/Components.kt` the shared pieces (`UnreadBadge`, `MentionPill`, `IconAction`, `TopBar`, `SectionHeader`, `EmptyState`, `SkeletonRows`). New screens use these, not literal sizes or colours.
+
+The signed-in home has a bottom bar with three tabs (`AppModel.tab`): Servers (the rail and the open server's channels; tags `rail`, `rooms-list`), Direct messages (`tab-dms`, the same list for the DMs scope) and You (`tab-profile`: account, status, Settings, Security, Sign out). A room has no bar: it is a pager (`room-pager`), the chat in the middle, the rail and channels (`pane-channels`) one swipe to the right, the members (`members-pane`) one swipe to the left; the back gesture returns to the chat first, then leaves the room; from Direct messages or You it goes to Servers. Tests: `android_native` `a_bottom_bar_...` and `in_a_chat_a_swipe_...`.
