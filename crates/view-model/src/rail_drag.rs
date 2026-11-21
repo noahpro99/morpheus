@@ -61,6 +61,31 @@ pub fn edge(y: f32, top: f32, bottom: f32, previous: Option<Zone>) -> Zone {
     }
 }
 
+
+/// Where a drag over the row `id` (spanning `top..bottom`, `next` the row below it
+/// in the same run) drops, as one slot per gap (#297): the bottom edge of a row
+/// and the top edge of the row below are the same gap, so "after row N" is
+/// always reported as "before row N+1" (a last row keeps its After). `previous`
+/// is the slot held so far; the hysteresis of [`edge`] applies in slot terms.
+pub fn slot<T: PartialEq + Clone>(
+    id: &T,
+    next: Option<&T>,
+    y: f32,
+    top: f32,
+    bottom: f32,
+    previous: Option<&(T, Zone)>,
+) -> (T, Zone) {
+    let held = match previous {
+        Some((r, zone)) if r == id => Some(*zone),
+        Some((r, Zone::Before)) if Some(r) == next => Some(Zone::After),
+        _ => None,
+    };
+    match (edge(y, top, bottom, held), next) {
+        (Zone::After, Some(next)) => (next.clone(), Zone::Before),
+        (zone, _) => (id.clone(), zone),
+    }
+}
+
 /// How far from a list's top or bottom edge (px) the pointer starts scrolling
 /// it, and the scroll in px per frame at the very edge.
 pub const SCROLL_EDGE: f32 = 36.0;
@@ -126,5 +151,60 @@ mod edge_tests {
         assert!(auto_scroll(10.0, 0.0, 600.0) < 0.0);
         assert!(auto_scroll(590.0, 0.0, 600.0) > 0.0);
         assert!(auto_scroll(0.0, 0.0, 600.0) < auto_scroll(30.0, 0.0, 600.0));
+    }
+}
+
+#[cfg(test)]
+mod slot_tests {
+    use super::*;
+
+    /// Rows a, b, c stacked 40 px tall from y = 0; the slot for a pointer at `y`.
+    fn at(y: f32, previous: Option<&(char, Zone)>) -> (char, Zone) {
+        let rows = ['a', 'b', 'c'];
+        let i = ((y / 40.0) as usize).min(2);
+        slot(&rows[i], rows.get(i + 1), y, i as f32 * 40.0, i as f32 * 40.0 + 40.0, previous)
+    }
+
+    #[test]
+    fn after_a_row_is_before_the_next_one() {
+        assert_eq!(at(35.0, None), ('b', Zone::Before));
+        assert_eq!(at(45.0, None), ('b', Zone::Before));
+        assert_eq!(at(75.0, None), ('c', Zone::Before));
+        assert_eq!(at(115.0, None), ('c', Zone::After), "the last row keeps its After");
+    }
+
+    #[test]
+    fn a_slow_sweep_down_has_one_slot_per_gap() {
+        let mut held: Option<(char, Zone)> = None;
+        let mut seen: Vec<(char, Zone)> = Vec::new();
+        for step in 0..=1200 {
+            let slot = at(step as f32 / 10.0, held.as_ref());
+            if seen.last() != Some(&slot) {
+                seen.push(slot);
+            }
+            held = Some(slot);
+        }
+        assert_eq!(
+            seen,
+            [('a', Zone::Before), ('b', Zone::Before), ('c', Zone::Before), ('c', Zone::After)],
+            "top of a, the a/b gap, the b/c gap, the end: no gap twice"
+        );
+    }
+
+    #[test]
+    fn a_slow_sweep_up_has_the_same_slots() {
+        let mut held: Option<(char, Zone)> = None;
+        let mut seen: Vec<(char, Zone)> = Vec::new();
+        for step in (0..=1200).rev() {
+            let slot = at(step as f32 / 10.0, held.as_ref());
+            if seen.last() != Some(&slot) {
+                seen.push(slot);
+            }
+            held = Some(slot);
+        }
+        assert_eq!(
+            seen,
+            [('c', Zone::After), ('c', Zone::Before), ('b', Zone::Before), ('a', Zone::Before)]
+        );
     }
 }
