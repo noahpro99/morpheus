@@ -270,7 +270,9 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         .flex_none()
         .min_h_0()
         .h_full()
-        .rounded_tl(px(theme::RADIUS_LG))
+        // See-through, a rounded corner would be a notch the wallpaper shows in; square
+        // there, so the column stays one piece with the rail and title bar.
+        .when(theme::glass_percent().is_none(), |d| d.rounded_tl(px(theme::RADIUS_LG)))
         .bg(theme::fill_sidebar())
         .child(header.e2e("header", "sidebar-header"))
         .child(
