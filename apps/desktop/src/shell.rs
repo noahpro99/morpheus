@@ -46,14 +46,14 @@ use crate::{
 
 /// How often the lock state is re-read.
 const KEYS_RECHECK: std::time::Duration = std::time::Duration::from_secs(30);
-/// What is kept of rooms just left: the last 8, and at most 3000 entries (plus
+/// What is kept of rooms just left: the last 14 (the neighbours of the open room are kept warm too, #312), and at most 3000 entries (plus
 /// pictures) between them. A timeline costs about 2-4 KB an entry (message,
 /// rows, measured heights) and its pictures, so the budget is some 12 MB at
 /// most; a usual room is 40-150 entries. A room further back opens again from
 /// the SDK's event cache on disk, as on a first visit (issue #10: it was 20
 /// rooms, and their pictures stayed decoded with them).
 const TIMELINE_CACHE: crate::view_model::lru::Budget = crate::view_model::lru::Budget {
-    max_items: 8,
+    max_items: 14,
     max_weight: 3000,
 };
 
@@ -1060,6 +1060,11 @@ impl Shell {
         if self.rooms.iter().any(|room| room.id == id && room.is_space && !room.invited) {
             return self.show_welcome(id, cx);
         }
+        crate::switch_timing::start(
+            id.as_str(),
+            self.timeline.as_ref().is_some_and(|(room, _)| room == &id)
+                || self.timeline_cache.contains(&id),
+        );
         self.watch_space = Some(id.clone());
         if self.last_room_in.get(&self.scope) != Some(&id) {
             self.last_room_in.insert(self.scope.clone(), id.clone());
@@ -1198,7 +1203,60 @@ impl Shell {
         self.refresh_emotes(cx);
         self.push_nicknames(cx);
         self.refresh_pinned(cx);
+        self.preload_nearby(cx);
         cx.notify();
+    }
+
+    /// The rooms a click away are loaded in the background once the open one
+    /// is up: the two above and below in the list and up to three unread
+    /// ones, so switching to them draws at once (#312). One at a time, so the
+    /// open room is never slowed by them.
+    fn preload_nearby(&mut self, cx: &mut Context<Self>) {
+        static GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        use std::sync::atomic::Ordering;
+        let (Some(open), Some(_)) = (self.selected.clone(), self.session.as_ref()) else {
+            return;
+        };
+        let order = crate::room_list::sidebar_order(self, &self.scope.clone());
+        let usable = |r: &morpheus_core::RoomSummary| {
+            !r.is_voice && !r.is_space && !r.invited && !crate::locks::is_locked(&r.id)
+        };
+        let at = order.iter().position(|r| r.id == open);
+        let mut want: Vec<OwnedRoomId> = Vec::new();
+        if let Some(at) = at {
+            for step in 1..=2usize {
+                for ix in [at.checked_sub(step), Some(at + step)].into_iter().flatten() {
+                    if let Some(r) = order.get(ix).filter(|r| usable(r)) {
+                        want.push(r.id.clone());
+                    }
+                }
+            }
+        }
+        let unread = self
+            .rooms
+            .iter()
+            .filter(|r| usable(r) && r.id != open && (r.unread_messages > 0 || r.highlight_count > 0 || r.marked_unread))
+            .take(3)
+            .map(|r| r.id.clone());
+        for id in unread {
+            if !want.contains(&id) {
+                want.push(id);
+            }
+        }
+        want.retain(|id| !self.timeline_cache.contains(id));
+        let generation = GENERATION.fetch_add(1, Ordering::Relaxed) + 1;
+        cx.spawn(async move |this, cx| {
+            for id in want {
+                cx.background_executor().timer(std::time::Duration::from_millis(150)).await;
+                if GENERATION.load(Ordering::Relaxed) != generation {
+                    return;
+                }
+                if this.update(cx, |this, cx| this.warm_timeline(id, cx)).is_err() {
+                    return;
+                }
+            }
+        })
+        .detach();
     }
 
     /// A timeline view for `id`, wired to the shell (clicks, menus, settings).
@@ -1581,6 +1639,7 @@ pub use morpheus_view_model::diffs::apply;
 
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        crate::switch_timing::frame();
         // Going anywhere else (a server, a notification, a hotkey) ends Discover.
         if self.discover.is_some() && self.discover_place.as_ref() != Some(&self.place()) {
             self.discover = None;

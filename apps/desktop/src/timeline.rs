@@ -387,6 +387,8 @@ impl TimelineView {
         }
         if let Some(session) = session {
             cx.spawn(async move |this, cx| {
+                // The read marker is looked up beside the open, not after it (#312).
+                let read = thread_root.is_none().then(|| session.fully_read_at(room_id.clone()));
                 let opened = match thread_root.clone() {
                     Some(root) => session.thread(room_id.clone(), root).await,
                     None => session.timeline(room_id.clone()).await,
@@ -396,10 +398,9 @@ impl TimelineView {
                         handle,
                         mut updates,
                     }) => {
-                        let read_at = if thread_root.is_some() {
-                            None
-                        } else {
-                            session.fully_read_at(room_id).await.ok().flatten()
+                        let read_at = match read {
+                            Some(read) => read.await.ok().flatten(),
+                            None => None,
                         };
                         let alive = this
                             .update(cx, |this, cx| {
@@ -1122,6 +1123,9 @@ impl TimelineView {
             }
             return message::other_row(&row);
         };
+        if self.thread_root.is_none() {
+            crate::switch_timing::content(self.room_id.as_str());
+        }
         // Someone you ignore: folded away, shown on request.
         if self.ignored.contains(row.message.sender.as_str())
             && !self.revealed.contains(&row.message.unique_id)
@@ -1863,8 +1867,13 @@ impl Render for TimelineView {
                     ),
             );
         }
+        let switch = crate::switch_timing::last();
         let timeline = timeline
             .e2e("section", "timeline")
+            .attr("data-switch-room", switch.as_ref().map_or(String::new(), |s| s.0.clone()))
+            .attr("data-switch-ms", switch.as_ref().map_or(String::new(), |s| format!("{:.2}", s.1)))
+            .attr("data-switch-work-ms", switch.as_ref().map_or(String::new(), |s| format!("{:.2}", s.3)))
+            .attr("data-switch-cached", switch.as_ref().map_or(String::new(), |s| s.2.to_string()))
             .attr(
                 "data-history-requests",
                 morpheus_core::history_requests().to_string(),

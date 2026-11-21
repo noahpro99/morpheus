@@ -43,7 +43,7 @@ const INITIAL_BACKFILL: u16 = 40;
 /// How long a room's first fill of history is waited for before it is shown.
 const FIRST_FILL_WAIT: Duration = Duration::from_millis(250);
 /// How long the timeline must say nothing for the first fill to be over.
-const FIRST_FILL_QUIET: Duration = Duration::from_millis(40);
+const FIRST_FILL_QUIET: Duration = Duration::from_millis(8);
 
 /// How many times older history was asked for (a page back, or a room's
 /// first fill), since the app started: tests read it to see that returning to
@@ -1012,9 +1012,14 @@ impl Session {
             let room = client
                 .get_room(&room_id)
                 .ok_or_else(|| Error::UnknownRoom(room_id.clone()))?;
-            sync.room_list_service()
-                .set_room_subscriptions(&[&room_id])
-                .await;
+            // The subscription goes out beside the build, not before it (#312).
+            let _subscribing = {
+                let sync = sync.clone();
+                let room_id = room_id.clone();
+                core.spawn(async move {
+                    sync.room_list_service().set_room_subscriptions(&[&room_id]).await;
+                })
+            };
 
             let timeline = Arc::new(match thread_root {
                 Some(root_event_id) => {

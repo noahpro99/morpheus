@@ -8,6 +8,7 @@
 use std::{borrow::Cow, path::PathBuf};
 
 mod about;
+mod switch_timing;
 mod titlebar_shot;
 mod awake;
 mod badge;
