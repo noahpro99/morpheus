@@ -917,6 +917,8 @@ fn file_open_dialog(
         dialog_options |= FOS_PICKFOLDERS;
     }
 
+    let specs = options.filter_specs();
+
     unsafe {
         folder_dialog.SetOptions(dialog_options)?;
 
@@ -925,7 +927,6 @@ fn file_open_dialog(
             folder_dialog.SetOkButtonLabel(&HSTRING::from(prompt))?;
         }
 
-        let specs = options.filter_specs();
         if !specs.is_empty() {
             // The HSTRINGs must outlive SetFileTypes.
             let strings: Vec<(HSTRING, HSTRING)> = specs
