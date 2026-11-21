@@ -23,6 +23,7 @@ use morpheus_core::{
 
 pub(crate) mod pages;
 mod bridges;
+pub(crate) mod colour_field;
 mod video;
 
 use crate::tab::Tabbable as _;
@@ -208,6 +209,13 @@ pub struct SettingsView {
     /// A slider is being dragged (the colour is shown, not yet kept).
     hsv_dragging: bool,
     colour_input: Entity<TextInput>,
+    /// The colour picker's popover is open (#315), its focus (so Escape reaches it), the focus
+    /// still to be given, and when an outside click last closed it (the button's own click
+    /// follows that click and must not reopen it).
+    colour_open: bool,
+    colour_focus: FocusHandle,
+    colour_focus_pending: bool,
+    colour_closed_at: Option<std::time::Instant>,
     /// Appearance > Share: where a theme code is pasted, what it reads as (None until
     /// something is typed), and the note after saving or a failed file.
     import_input: Entity<TextInput>,
@@ -276,6 +284,16 @@ impl SettingsView {
         for input in [&self.key_input, &self.search, &self.colour_input, &self.name_input, &self.import_input] {
             input.update(cx, |_, cx| cx.notify());
         }
+    }
+
+    /// Open or close the colour picker's popover; an open one takes the focus.
+    pub(crate) fn set_colour_open(&mut self, open: bool, cx: &mut Context<Self>) {
+        if open == self.colour_open {
+            return;
+        }
+        self.colour_open = open;
+        self.colour_focus_pending = open;
+        cx.notify();
     }
 
     /// Show the custom colour the account has (the shell tells us).
@@ -467,6 +485,10 @@ impl SettingsView {
             hsv: crate::view_model::theme::to_hsv(crate::view_model::theme::DARK.bg_chat),
             hsv_dragging: false,
             colour_input,
+            colour_open: false,
+            colour_focus: cx.focus_handle(),
+            colour_focus_pending: false,
+            colour_closed_at: None,
             import_input,
             import: None,
             share_note: None,
@@ -1533,6 +1555,9 @@ impl Render for SettingsView {
         if !self.open {
             return div().into_any_element();
         }
+        if std::mem::take(&mut self.colour_focus_pending) {
+            window.focus(&self.colour_focus);
+        }
         if self.take_focus {
             self.take_focus = false;
             if self.focus_key || self.flow.is_some() {
@@ -1811,7 +1836,11 @@ impl Render for SettingsView {
             .track_focus(&self.focus)
             .on_key_down(cx.listener(|this, event: &gpui::KeyDownEvent, _, cx| {
                 if event.keystroke.key == "escape" {
-                    this.close(cx);
+                    if this.colour_open {
+                        this.set_colour_open(false, cx);
+                    } else {
+                        this.close(cx);
+                    }
                 }
             }))
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())

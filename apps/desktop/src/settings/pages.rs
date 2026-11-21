@@ -2328,6 +2328,50 @@ impl SettingsView {
         section("Share a theme", "theme-share", children, self.hl("theme-share"))
     }
 
+    /// The shared colour field around the custom colour: the hex box, the palette button and the
+    /// popover with the sliders and the grid.
+    fn colour_field(&self, grid: impl IntoElement, cx: &mut Context<Self>) -> AnyElement {
+        let popover = self.colour_open.then(|| {
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(10.0))
+                .child(self.hsv_sliders(cx))
+                .child(grid)
+                .into_any_element()
+        });
+        let this = cx.entity().downgrade();
+        let closer = this.clone();
+        let escaper = this.clone();
+        super::colour_field::colour_field(
+            "custom-colour-pick",
+            div().w(px(180.0)).child(self.colour_input.clone()),
+            popover,
+            &self.colour_focus,
+            move |_, _, cx| {
+                this.update(cx, |this, cx| {
+                    let recent = this
+                        .colour_closed_at
+                        .is_some_and(|at| at.elapsed() < Duration::from_millis(250));
+                    let open = !this.colour_open && !recent;
+                    this.set_colour_open(open, cx);
+                })
+                .ok();
+            },
+            move |_, cx| {
+                escaper.update(cx, |this, cx| this.set_colour_open(false, cx)).ok();
+            },
+            move |_, cx| {
+                closer
+                    .update(cx, |this, cx| {
+                        this.colour_closed_at = Some(std::time::Instant::now());
+                        this.set_colour_open(false, cx);
+                    })
+                    .ok();
+            },
+        )
+    }
+
     /// Appearance's custom colour: a hex box, a grid to pick from and the preview.
     fn custom_colour_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = self
@@ -2355,9 +2399,7 @@ impl SettingsView {
                 "One colour themes the whole app: type a hex colour or pick one. Text turns black on a light colour.",
                 "muted",
             ))
-            .child(div().w(px(180.0)).child(self.colour_input.clone()))
-            .child(self.hsv_sliders(cx))
-            .child(grid)
+            .child(self.colour_field(grid, cx))
             .e2e("div", "custom-colour");
         section(
             "Custom colour",
