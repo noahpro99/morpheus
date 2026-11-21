@@ -66,10 +66,7 @@ fun NewScreen(app: AppModel) {
     }
 
     Column(Modifier.fillMaxSize().background(Palette.Surface).testTag("new-screen")) {
-        Row(Modifier.fillMaxWidth().background(Palette.Background), verticalAlignment = Alignment.CenterVertically) {
-            TextButton({ app.closeNew() }, Modifier.testTag("new-back")) { Text("‹", fontSize = 28.sp) }
-            Text(t("New"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        }
+        TopBar(t("New"), backTag = "new-back", onBack = { app.closeNew() })
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
             for (t in Tab.entries) {
                 TextButton({ tab = t; problem = null }, Modifier.testTag("tab-${t.label}")) {

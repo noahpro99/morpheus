@@ -57,10 +57,7 @@ fun ReorderScreen(app: AppModel) {
         app.setRailOrder(next)
     }
     Column(Modifier.fillMaxSize().background(Palette.Surface).testTag("reorder-screen")) {
-        Row(Modifier.fillMaxWidth().background(Palette.Background).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            TextButton({ app.closeReorder() }, Modifier.testTag("reorder-back")) { Text("‹", fontSize = 28.sp) }
-            Text(t("Servers"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        }
+        TopBar(t("Servers"), backTag = "reorder-back", onBack = { app.closeReorder() })
         LazyColumn(Modifier.fillMaxSize()) {
             items(rows, key = { it.key }) { row ->
                 val at = rows.indexOf(row)

@@ -26,6 +26,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.ui.unit.sp
 import dev.morpheus.app.RoomModel
 import uniffi.morpheus_ffi.HitItem
@@ -46,7 +47,7 @@ fun SearchPanel(model: RoomModel, onPick: (String) -> Unit) {
     }
     Column(Modifier.fillMaxSize().background(Palette.Surface).testTag("search-panel")) {
         Row(Modifier.fillMaxWidth().background(Palette.Background), verticalAlignment = Alignment.CenterVertically) {
-            TextButton({ onPick("") }, Modifier.testTag("search-back")) { Text("‹", fontSize = 28.sp) }
+            IconAction(androidx.compose.material.icons.Icons.Default.ArrowBack, t("Back"), "search-back", { onPick("") })
             OutlinedTextField(
                 query, { query = it },
                 Modifier.weight(1f).padding(end = 8.dp).testTag("search-input"),

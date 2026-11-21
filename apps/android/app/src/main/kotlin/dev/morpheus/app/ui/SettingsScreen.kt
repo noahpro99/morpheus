@@ -6,6 +6,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -61,10 +64,7 @@ fun SettingsScreen(app: AppModel) {
     }
 
     Column(Modifier.fillMaxSize().background(Palette.Surface).testTag("settings-screen")) {
-        Row(Modifier.fillMaxWidth().background(Palette.Background), verticalAlignment = Alignment.CenterVertically) {
-            TextButton({ app.closeSettings() }, Modifier.testTag("settings-back")) { Text("‹", fontSize = 28.sp) }
-            Text(t("Settings"), Modifier.testTag("settings-title"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        }
+        TopBar(t("Settings"), backTag = "settings-back", onBack = { app.closeSettings() }, titleTag = "settings-title")
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -165,17 +165,21 @@ private fun argb(v: UInt) = Color(0xFF000000.toInt() or v.toInt())
 
 @Composable
 private fun Heading(text: String) {
-    Text(text.uppercase(), Modifier.padding(top = 12.dp), color = Palette.Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+    Text(text.uppercase(), Modifier.padding(top = Space.lg), color = Palette.Muted, style = Type.label)
 }
 
 @Composable
 private fun Choice(label: String, chosen: Boolean, tag: String, onPick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clickable { onPick() }.padding(vertical = 10.dp).testTag(tag),
+        Modifier.fillMaxWidth().heightIn(min = Size.target).clip(RoundedCornerShape(Radius.md)).clickable { onPick() }.padding(vertical = Space.sm).testTag(tag),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(Space.md),
     ) {
-        Text(if (chosen) "●" else "○", color = if (chosen) Palette.Accent else Palette.Muted)
-        Text(label)
+        // A radio: a ring, filled when it is the one.
+        Box(
+            Modifier.size(22.dp).border(2.dp, if (chosen) Palette.Accent else Palette.Muted, CircleShape).padding(4.dp)
+                .background(if (chosen) Palette.Accent else Color.Transparent, CircleShape),
+        )
+        Text(label, style = Type.body)
     }
 }

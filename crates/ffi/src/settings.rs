@@ -33,6 +33,8 @@ pub struct PaletteItem {
     /// Text on the accent.
     pub on_accent: u32,
     pub danger: u32,
+    /// Text on the danger colour (a mention pill, an unread badge).
+    pub on_danger: u32,
     /// Dark text on light surfaces: the system bars flip with it.
     pub is_light: bool,
 }
@@ -70,6 +72,12 @@ pub struct NotifyDefaults {
     pub rooms: String,
 }
 
+/// Black or white, whichever reads on `rgb` (`theme::on_colour`): the text on any fill a screen draws.
+#[uniffi::export]
+pub fn on_colour(rgb: u32) -> u32 {
+    theme::on_colour(rgb)
+}
+
 fn palette_item(p: &Palette) -> PaletteItem {
     PaletteItem {
         background: p.bg_rail,
@@ -80,6 +88,7 @@ fn palette_item(p: &Palette) -> PaletteItem {
         accent: p.accent_solid,
         on_accent: p.on_accent_solid(),
         danger: p.danger,
+        on_danger: p.on_danger(),
         is_light: theme::contrast(p.bg_chat, 0x000000) > theme::contrast(p.bg_chat, 0xffffff),
     }
 }

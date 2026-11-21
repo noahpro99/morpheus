@@ -2,6 +2,13 @@ package dev.morpheus.app.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
@@ -48,14 +55,18 @@ fun SignInScreen(model: AppModel) {
         verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(t("Morpheus"), style = MaterialTheme.typography.headlineLarge)
-        Text(t("Sign in with your Matrix account"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Box(Modifier.size(72.dp).clip(RoundedCornerShape(Radius.lg)).background(Palette.Accent), contentAlignment = Alignment.Center) {
+            Text("M", style = Type.title.copy(fontSize = 36.sp), color = onColour(Palette.Accent))
+        }
+        Text(t("Morpheus"), style = Type.title.copy(fontSize = 30.sp))
+        Text(t("Sign in with your Matrix account"), style = Type.secondary, color = Palette.Muted, modifier = Modifier.padding(bottom = Space.md))
         val field = Modifier.fillMaxWidth().widthIn(max = 480.dp)
         OutlinedTextField(
             homeserver, { homeserver = it },
             field.testTag("homeserver"),
             label = { Text(t("Homeserver")) },
             singleLine = true,
+            shape = RoundedCornerShape(Radius.md),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next),
         )
         OutlinedTextField(
@@ -63,6 +74,7 @@ fun SignInScreen(model: AppModel) {
             field.testTag("username"),
             label = { Text(t("Username")) },
             singleLine = true,
+            shape = RoundedCornerShape(Radius.md),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
         )
         OutlinedTextField(
@@ -70,6 +82,7 @@ fun SignInScreen(model: AppModel) {
             field.testTag("password"),
             label = { Text(t("Password")) },
             singleLine = true,
+            shape = RoundedCornerShape(Radius.md),
             visualTransformation = PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = { submit() }),
@@ -79,7 +92,8 @@ fun SignInScreen(model: AppModel) {
         }
         Button(
             submit,
-            field.testTag("sign-in-button"),
+            field.height(52.dp).testTag("sign-in-button"),
+            shape = RoundedCornerShape(Radius.md),
             enabled = !signingIn && username.isNotBlank() && password.isNotEmpty(),
         ) { Text(if (signingIn) "Signing in…" else "Sign in") }
     }

@@ -41,7 +41,8 @@ object Images {
 
 /** A round picture, or the first letter of the name on a colour made from it while there is none. */
 @Composable
-fun Avatar(media: MediaHandle?, name: String, size: Dp, modifier: Modifier = Modifier) {
+fun Avatar(media: MediaHandle?, name: String, size: Dp, modifier: Modifier = Modifier, square: Boolean = false) {
+    val shape = if (square) androidx.compose.ui.graphics.RectangleShape else CircleShape
     val px = with(LocalDensity.current) { size.roundToPx() }
     val bitmap by produceState<ImageBitmap?>(null, media?.key(), px) {
         value = media?.let { Images.load(it, px * 2, px * 2) }
@@ -50,17 +51,18 @@ fun Avatar(media: MediaHandle?, name: String, size: Dp, modifier: Modifier = Mod
     if (shown != null) {
         Image(
             shown, name,
-            modifier.size(size).clip(CircleShape),
+            modifier.size(size).clip(shape),
             contentScale = ContentScale.Crop,
         )
     } else {
         Box(
-            modifier.size(size).clip(CircleShape).background(colourOf(name)),
+            modifier.size(size).clip(shape).background(colourOf(name)),
             contentAlignment = Alignment.Center,
         ) {
             Text(
                 name.trimStart('#', '@', ' ').take(1).uppercase(),
-                color = Color.White,
+                color = onColour(colourOf(name)),
+                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
                 fontSize = (size.value * 0.42f).sp,
             )
         }

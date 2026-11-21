@@ -361,6 +361,13 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         _scopeKey.value = key
     }
 
+    /** The bottom bar's tab the signed-in home shows. */
+    private val _tab = MutableStateFlow(Tab.Servers)
+    val tab: StateFlow<Tab> = _tab.asStateFlow()
+
+    fun selectTab(tab: Tab) {
+        _tab.value = tab
+    }
     /** The channel list while signed in; the Rust side stops pushing when nobody collects. */
     @OptIn(ExperimentalCoroutinesApi::class)
     val sidebar: StateFlow<Sidebar?> = _screen
@@ -452,3 +459,7 @@ object AppState {
     @Volatile
     var room: String = ""
 }
+
+/** The three places of the bottom bar. */
+enum class Tab { Servers, Dms, Profile }
+

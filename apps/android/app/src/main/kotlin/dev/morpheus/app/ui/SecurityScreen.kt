@@ -55,10 +55,7 @@ fun SecurityScreen(app: AppModel, model: SecurityModel) {
     var key by rememberSaveable { mutableStateOf("") }
 
     Column(Modifier.fillMaxSize().background(Palette.Surface).testTag("security")) {
-        Row(Modifier.fillMaxWidth().background(Palette.Background).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            TextButton({ app.closeSecurity() }, Modifier.testTag("back")) { Text("‹", fontSize = 28.sp) }
-            Text(t("Encryption"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        }
+        TopBar(t("Encryption"), backTag = "back", onBack = { app.closeSecurity() })
         Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             val current = status
             if (flow != null) {

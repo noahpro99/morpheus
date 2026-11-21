@@ -14,10 +14,25 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.Send
+import androidx.compose.material3.Icon
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -105,6 +120,7 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
         onDispose { RoomHooks.attach = null }
     }
 
+    val pager = rememberPagerState(initialPage = 1) { 3 }
     BackHandler {
         when {
             searching -> searching = false
@@ -112,6 +128,7 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
             viewing != null -> viewing = null
             actions != null -> actions = null
             editing != null -> model.edit(null)
+            pager.currentPage != 1 -> scope.launch { pager.animateScrollToPage(1) }
             else -> onClose()
         }
     }
@@ -126,29 +143,20 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
             if (id.isNotEmpty()) model.jumpTo(id)
         }
         else if (info) RoomInfo(app, model, room, title) { info = false }
-        else if (thread == null) Column(Modifier.fillMaxSize().background(Palette.Surface)) {
-            Row(
-                Modifier.fillMaxWidth().background(Palette.Background).padding(horizontal = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
+        else if (thread == null) RoomPages(app, model, room, pager, threadRoot == null) { Column(Modifier.fillMaxSize().background(Palette.Surface)) {
+            val inThis = app.calls.snapshot.collectAsState().value?.roomId == room.id
+            TopBar(
+                if (threadRoot == null) title else t("Thread"),
+                backTag = if (threadRoot == null) "back" else "thread-back",
+                onBack = { onClose() },
+                titleTag = if (threadRoot == null) "room-title" else "thread-title",
+                onTitle = if (threadRoot == null) ({ info = true }) else null,
             ) {
-                TextButton({ onClose() }, Modifier.testTag(if (threadRoot == null) "back" else "thread-back")) { Text("‹", fontSize = 28.sp) }
-                Text(
-                    if (threadRoot == null) title else "Thread",
-                    Modifier.weight(1f).clickable(enabled = threadRoot == null) { info = true }.testTag(if (threadRoot == null) "room-title" else "thread-title"),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
                 if (threadRoot == null) {
-                    val inThis = app.calls.snapshot.collectAsState().value?.roomId == room.id
-                    TextButton(
-                        { if (inThis) app.calls.show(true) else app.startCall(room.id, title) },
-                        Modifier.testTag("call-button"),
-                    ) { Text("📞", fontSize = 20.sp) }
+                    IconAction(Icons.Default.Call, t("Call"), "call-button", { if (inThis) app.calls.show(true) else app.startCall(room.id, title) })
+                    IconAction(Icons.Default.Search, t("Search"), "search-button", { searching = true })
+                    IconAction(Icons.Default.Info, t("Room details"), "room-info-button", { info = true })
                 }
-                if (threadRoot == null) TextButton({ searching = true }, Modifier.testTag("search-button")) { Text("🔍", fontSize = 20.sp) }
-                if (threadRoot == null) TextButton({ info = true }, Modifier.testTag("room-info-button")) { Text("ⓘ", fontSize = 22.sp) }
             }
             Timeline(
                 model, rows, Modifier.weight(1f),
@@ -190,7 +198,7 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
                 Text(it, Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("room-error"), color = Palette.Danger, fontSize = 13.sp)
             }
             Composer(model, editing, onAttach = { picker.launch("*/*") }) { model.send(it) }
-        }
+        } }
         actions?.let { message ->
             Actions(
                 message,
@@ -290,13 +298,15 @@ private fun Timeline(
                         color = Palette.Muted, fontSize = 13.sp,
                     )
                 } else MessageRow(row.message, model, onActions, onThread, onImage, onFile, lit != null && lit == row.message.eventId)
-                is TimelineRow.Date -> Text(
-                    row.label,
-                    Modifier.fillMaxWidth().padding(vertical = 12.dp).testTag("date-divider"),
-                    textAlign = TextAlign.Center,
-                    color = Palette.Muted,
-                    fontSize = 12.sp,
-                )
+                is TimelineRow.Date -> Row(
+                    Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.md),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Space.md),
+                ) {
+                    Box(Modifier.weight(1f).height(1.dp).background(Palette.Divider))
+                    Text(row.label, Modifier.testTag("date-divider"), color = Palette.Muted, style = Type.caption.copy(fontWeight = FontWeight.SemiBold))
+                    Box(Modifier.weight(1f).height(1.dp).background(Palette.Divider))
+                }
                 TimelineRow.Start -> Text(
                     "This is the beginning of the room.",
                     Modifier.fillMaxWidth().padding(24.dp).testTag("timeline-start"),
@@ -351,13 +361,13 @@ private fun MessageRow(
             .background(if (highlighted) Palette.Accent.copy(alpha = 0.25f) else Color.Transparent)
             .pointerInput(message.key) { detectTapGestures { onActions(message) } }
             .semantics { onClick("Message actions") { onActions(message); true } }
-            .padding(horizontal = 12.dp, vertical = if (message.showHeader) 6.dp else 1.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+            .padding(horizontal = Space.md, vertical = if (message.showHeader) Space.sm else 1.dp),
+        horizontalArrangement = Arrangement.spacedBy(Space.md),
     ) {
         if (message.showHeader) {
-            Avatar(message.senderAvatar, message.senderName, 36.dp)
+            Avatar(message.senderAvatar, message.senderName, Size.avatar)
         } else {
-            Spacer(Modifier.size(36.dp))
+            Spacer(Modifier.size(Size.avatar))
         }
         Column(Modifier.weight(1f)) {
             if (message.showHeader) {
@@ -368,7 +378,7 @@ private fun MessageRow(
                         color = colourOf(message.senderId),
                         fontWeight = FontWeight.Bold,
                     )
-                    Text(message.time, Modifier.testTag("msg-time"), color = Palette.Muted, fontSize = 11.sp)
+                    Text(message.time, Modifier.testTag("msg-time"), color = Palette.Muted, style = Type.caption)
                 }
             }
             message.replyTo?.let { reply ->
@@ -489,23 +499,37 @@ private fun Composer(model: RoomModel, editing: MessageItem?, onAttach: () -> Un
     Column(Modifier.background(Palette.Background)) {
     SuggestionStrip(suggestions) { text = it.draftAfter; suggestions = emptyList() }
     Row(
-        Modifier.fillMaxWidth().background(Palette.Background).padding(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        Modifier.fillMaxWidth().padding(horizontal = Space.sm, vertical = Space.sm),
+        verticalAlignment = Alignment.Bottom,
+        horizontalArrangement = Arrangement.spacedBy(Space.xs),
     ) {
-        TextButton(onAttach, Modifier.testTag("attach")) { Text("＋", fontSize = 24.sp) }
-        TextButton({ panel = !panel }, Modifier.testTag("emoji-button")) { Text("😀", fontSize = 22.sp) }
+        IconAction(Icons.Default.Add, t("Attach a file"), "attach", onAttach, tint = Palette.Muted)
         OutlinedTextField(
             text, { text = it },
-            Modifier.weight(1f).heightIn(max = 140.dp).testTag("composer"),
-            placeholder = { Text(t("Message")) },
+            Modifier.weight(1f).heightIn(min = 48.dp, max = 140.dp).testTag("composer"),
+            placeholder = { Text(t("Message"), color = Palette.Muted) },
             maxLines = 5,
+            shape = RoundedCornerShape(24.dp),
+            textStyle = Type.body,
+            colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                focusedContainerColor = Palette.Raised, unfocusedContainerColor = Palette.Raised,
+                focusedBorderColor = Color.Transparent, unfocusedBorderColor = Color.Transparent,
+                focusedTextColor = Palette.Text, unfocusedTextColor = Palette.Text, cursorColor = Palette.Accent,
+            ),
+            trailingIcon = {
+                Text("😀", Modifier.size(40.dp).clickable { panel = !panel }.wrapContentSize().testTag("emoji-button"), style = Type.heading)
+            },
         )
-        Button(
-            { onSend(text.trim()); text = ""; model.stopTyping() },
-            Modifier.testTag("send"),
-            enabled = text.isNotBlank(),
-        ) { Text(t("Send")) }
+        val canSend = text.isNotBlank()
+        Box(
+            Modifier
+                .size(Size.target).clip(CircleShape)
+                .background(if (canSend) Palette.Accent else Palette.Raised)
+                .clickable(enabled = canSend) { onSend(text.trim()); text = ""; model.stopTyping() }
+                .semantics { contentDescription = "Send" }
+                .testTag("send"),
+            contentAlignment = Alignment.Center,
+        ) { Icon(Icons.Default.Send, null, Modifier.size(22.dp), tint = if (canSend) onColour(Palette.Accent) else Palette.Muted) }
     }
     if (panel) EmojiPanel(model) { text = if (it.startsWith(":")) withEmoji(text, it) else withEmoji(text, it) }
     }
@@ -582,5 +606,26 @@ private fun ImageViewer(media: MediaHandle, onClose: () -> Unit) {
         contentAlignment = Alignment.Center,
     ) {
         bitmap?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit) }
+    }
+}
+
+/**
+ * A room as Discord's phone app has it: the chat in the middle, the channels one swipe to the right
+ * (the rail and the list, to pick another room) and the members one swipe to the left. A thread has no panes.
+ */
+@Composable
+private fun RoomPages(app: AppModel, model: RoomModel, room: RoomItem, pager: PagerState, panes: Boolean, chat: @Composable () -> Unit) {
+    if (!panes) {
+        chat()
+        return
+    }
+    // A room picked from the channels pane is the chat to show now.
+    androidx.compose.runtime.LaunchedEffect(room.id) { if (pager.currentPage != 1) pager.scrollToPage(1) }
+    HorizontalPager(pager, Modifier.fillMaxSize().testTag("room-pager"), key = { it }) { page ->
+        when (page) {
+            0 -> Box(Modifier.fillMaxSize().testTag("pane-channels")) { ServersPane(app, { app.open(it) }, selectedRoom = room.id) }
+            1 -> chat()
+            else -> MembersPane(app, model)
+        }
     }
 }

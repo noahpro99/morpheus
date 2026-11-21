@@ -64,10 +64,7 @@ fun RoomInfo(app: AppModel, model: RoomModel, room: RoomItem, title: String, onC
 
     Box(Modifier.fillMaxSize().testTag("room-info")) {
         Column(Modifier.fillMaxSize().background(Palette.Surface)) {
-            Row(Modifier.fillMaxWidth().background(Palette.Background), verticalAlignment = Alignment.CenterVertically) {
-                TextButton({ onClose() }, Modifier.testTag("info-back")) { Text("‹", fontSize = 28.sp) }
-                Text(t("Room details"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            }
+            TopBar(t("Room details"), backTag = "info-back", onBack = { onClose() })
             LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 12.dp)) {
@@ -144,7 +141,7 @@ fun RoomInfo(app: AppModel, model: RoomModel, room: RoomItem, title: String, onC
 }
 
 @Composable
-private fun ProfileSheet(app: AppModel, card: ProfileCard, onClose: () -> Unit) {
+internal fun ProfileSheet(app: AppModel, card: ProfileCard, onClose: () -> Unit) {
     var friend by remember(card.userId) { mutableStateOf(card.isFriend) }
     var problem by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()

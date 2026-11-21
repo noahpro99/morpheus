@@ -69,10 +69,7 @@ fun BridgesScreen(app: AppModel) {
     LaunchedEffect(Unit) { find() }
 
     Column(Modifier.fillMaxSize().background(Palette.Surface).testTag("bridges-screen")) {
-        Row(Modifier.fillMaxWidth().background(Palette.Background), verticalAlignment = Alignment.CenterVertically) {
-            TextButton({ app.closeBridges() }, Modifier.testTag("bridges-back")) { Text("‹", fontSize = 28.sp) }
-            Text(t("Bridges"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        }
+        TopBar(t("Bridges"), backTag = "bridges-back", onBack = { app.closeBridges() })
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
