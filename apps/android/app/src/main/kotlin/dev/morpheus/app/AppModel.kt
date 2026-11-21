@@ -366,6 +366,8 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
     val tab: StateFlow<Tab> = _tab.asStateFlow()
 
     fun selectTab(tab: Tab) {
+        // The bar on a room's channels pane: a tab leaves the room for it.
+        if (_room.value != null) closeRoom()
         _tab.value = tab
     }
     /** The channel list while signed in; the Rust side stops pushing when nobody collects. */

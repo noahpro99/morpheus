@@ -628,7 +628,11 @@ private fun RoomPages(app: AppModel, model: RoomModel, room: RoomItem, pager: Pa
     androidx.compose.runtime.LaunchedEffect(room.id) { if (pager.currentPage != 1) pager.scrollToPage(1) }
     HorizontalPager(pager, Modifier.fillMaxSize().testTag("room-pager"), key = { it }) { page ->
         when (page) {
-            0 -> Box(Modifier.fillMaxSize().testTag("pane-channels")) { ServersPane(app, { app.open(it) }, selectedRoom = room.id) }
+            // The Servers tab as it is outside a room: its bar is here, the chat has none.
+            0 -> Column(Modifier.fillMaxSize().testTag("pane-channels")) {
+                ServersPane(app, { app.open(it) }, Modifier.weight(1f), selectedRoom = room.id)
+                BottomBar(app, dev.morpheus.app.Tab.Servers)
+            }
             1 -> chat()
             else -> MembersPane(app, model)
         }

@@ -135,7 +135,7 @@ fun DmsPane(model: AppModel, onOpenRoom: (RoomItem) -> Unit) {
 
 /** The three tabs: a pill behind the icon of the one in use, an unread mark on the ones with news. */
 @Composable
-private fun BottomBar(model: AppModel, tab: Tab) {
+fun BottomBar(model: AppModel, tab: Tab) {
     val bar by model.sidebar.collectAsState()
     val scopes = bar?.scopes.orEmpty()
     val serverNews = scopes.filter { it.kind != ScopeKind.DMS }.sumOf { it.highlights }
