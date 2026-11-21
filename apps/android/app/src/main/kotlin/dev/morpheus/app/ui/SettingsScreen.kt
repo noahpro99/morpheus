@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.fillMaxSize
@@ -175,11 +176,7 @@ private fun Choice(label: String, chosen: Boolean, tag: String, onPick: () -> Un
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.md),
     ) {
-        // A radio: a ring, filled when it is the one.
-        Box(
-            Modifier.size(22.dp).border(2.dp, if (chosen) Palette.Accent else Palette.Muted, CircleShape).padding(4.dp)
-                .background(if (chosen) Palette.Accent else Color.Transparent, CircleShape),
-        )
+        Text(if (chosen) "●" else "○", Modifier.width(24.dp), color = if (chosen) Palette.Accent else Palette.Muted, style = Type.heading)
         Text(label, style = Type.body)
     }
 }

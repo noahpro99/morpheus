@@ -81,6 +81,8 @@ import uniffi.morpheus_ffi.ScopeKind
 @Composable
 fun SignedInScreen(model: AppModel, state: Screen.SignedIn, onOpenRoom: (RoomItem) -> Unit) {
     val tab by model.tab.collectAsState()
+    // Back from Direct messages or Profile goes to Servers, the home; only from there does it leave the app.
+    androidx.activity.compose.BackHandler(enabled = tab != Tab.Servers) { model.selectTab(Tab.Servers) }
     Column(Modifier.fillMaxSize().testTag("signed-in")) {
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when (tab) {

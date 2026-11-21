@@ -207,7 +207,7 @@ private fun Controls(calls: CallModel, snapshot: CallSnapshot, speaker: Boolean,
         Box(
             Modifier.size(48.dp).clip(CircleShape).background(Palette.Danger).clickable { calls.hangUp() }.testTag("call-hangup"),
             contentAlignment = Alignment.Center,
-        ) { Text("✆", color = Color.White, fontSize = 22.sp) }
+        ) { Text("✆", color = Palette.OnDanger, fontSize = 22.sp) }
     }
 }
 
@@ -227,14 +227,14 @@ fun CallBar(calls: CallModel, snapshot: CallSnapshot) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(snapshot.roomName, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(snapshot.roomName, color = Palette.OnAccent, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
                 if (snapshot.phase == CallPhase.CONNECTED) t("In a call") else t("Connecting…"),
-                color = Color.White, fontSize = 12.sp, modifier = Modifier.testTag("call-bar-state"),
+                color = Palette.OnAccent, fontSize = 12.sp, modifier = Modifier.testTag("call-bar-state"),
             )
         }
         TextButton({ calls.toggleMute() }, Modifier.testTag("bar-mute")) { Text(if (snapshot.muted) "🔇" else "🎙️", fontSize = 18.sp) }
-        TextButton({ calls.hangUp() }, Modifier.testTag("bar-hangup")) { Text("✆", color = Color.White, fontSize = 18.sp) }
+        TextButton({ calls.hangUp() }, Modifier.testTag("bar-hangup")) { Text("✆", color = Palette.OnAccent, fontSize = 18.sp) }
     }
 }
 

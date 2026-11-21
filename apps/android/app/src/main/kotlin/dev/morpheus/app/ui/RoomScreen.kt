@@ -30,6 +30,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Search
@@ -288,6 +289,8 @@ private fun Timeline(
     val dividerAt = items.indexOfFirst { it is TimelineRow.New }
     val dividerShowing by remember(dividerAt) { derivedStateOf { state.layoutInfo.visibleItemsInfo.any { it.index == dividerAt } } }
     Box(modifier) {
+    // Nothing yet: placeholders where the messages will be.
+    if (rows.isEmpty()) Column(Modifier.align(Alignment.BottomStart).padding(bottom = Space.lg)) { SkeletonRows(7) }
     LazyColumn(Modifier.fillMaxSize().testTag("timeline"), state = state, reverseLayout = true) {
         items(items, key = { rowKey(it) }) { row ->
             when (row) {
@@ -386,13 +389,15 @@ private fun MessageRow(
                     "↩ ${reply.senderName ?: ""}: ${reply.summary ?: "…"}",
                     Modifier
                         .padding(vertical = 2.dp)
-                        .background(Palette.Raised, RoundedCornerShape(6.dp))
-                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                        .clip(RoundedCornerShape(Radius.sm))
+                        .background(Palette.Raised)
+                        .drawBehind { drawRect(Palette.Accent, size = androidx.compose.ui.geometry.Size(3.dp.toPx(), size.height)) }
+                        .padding(start = 12.dp, end = 8.dp, top = 4.dp, bottom = 4.dp)
                         .testTag("msg-reply"),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     color = Palette.Muted,
-                    fontSize = 13.sp,
+                    style = Type.secondary,
                 )
             }
             when (val body = message.body) {
@@ -448,9 +453,9 @@ private fun MessageRow(
                                 .pointerInput(reaction.key, message.key) {
                                     detectTapGestures { message.eventId?.let { model.react(it, reaction.key) } }
                                 }
-                                .padding(horizontal = 8.dp, vertical = 3.dp)
+                                .padding(horizontal = 10.dp, vertical = 4.dp)
                                 .testTag("reaction-${reaction.key}"),
-                            fontSize = 13.sp,
+                            style = Type.secondary,
                         )
                     }
                 }
@@ -526,7 +531,7 @@ private fun Composer(model: RoomModel, editing: MessageItem?, onAttach: () -> Un
                 .size(Size.target).clip(CircleShape)
                 .background(if (canSend) Palette.Accent else Palette.Raised)
                 .clickable(enabled = canSend) { onSend(text.trim()); text = ""; model.stopTyping() }
-                .semantics { contentDescription = "Send" }
+                .semantics { contentDescription = t("Send") }
                 .testTag("send"),
             contentAlignment = Alignment.Center,
         ) { Icon(Icons.Default.Send, null, Modifier.size(22.dp), tint = if (canSend) onColour(Palette.Accent) else Palette.Muted) }

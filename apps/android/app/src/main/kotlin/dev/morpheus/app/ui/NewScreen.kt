@@ -6,6 +6,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -67,10 +71,17 @@ fun NewScreen(app: AppModel) {
 
     Column(Modifier.fillMaxSize().background(Palette.Surface).testTag("new-screen")) {
         TopBar(t("New"), backTag = "new-back", onBack = { app.closeNew() })
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
             for (t in Tab.entries) {
-                TextButton({ tab = t; problem = null }, Modifier.testTag("tab-${t.label}")) {
-                    Text(t.label, fontSize = 13.sp, fontWeight = if (t == tab) FontWeight.Bold else FontWeight.Normal, color = if (t == tab) Palette.Text else Palette.Muted)
+                val on = t == tab
+                Box(
+                    Modifier.weight(1f).heightIn(min = 40.dp).clip(CircleShape)
+                        .background(if (on) Palette.Accent else Palette.Raised)
+                        .clickable { tab = t; problem = null }
+                        .testTag("tab-${t.label}"),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(t.label, style = Type.secondary, maxLines = 1, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal, color = if (on) onColour(Palette.Accent) else Palette.Muted)
                 }
             }
         }

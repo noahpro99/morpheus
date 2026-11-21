@@ -29,8 +29,8 @@ fun RingCard(ring: IncomingRing, onAnswer: () -> Unit, onDecline: () -> Unit) {
         Text(t("%{name} is calling", "name" to ring.caller), fontWeight = FontWeight.Bold, color = Palette.Text, modifier = Modifier.testTag("ring-who"))
         Text(t("Incoming call"), color = Palette.Muted)
         Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Button(onDecline, Modifier.testTag("ring-decline"), colors = ButtonDefaults.buttonColors(containerColor = Palette.Danger)) { Text(t("Decline"), color = Color.White) }
-            Button(onAnswer, Modifier.testTag("ring-answer"), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF23A559))) { Text(t("Answer"), color = Color.White) }
+            Button(onDecline, Modifier.testTag("ring-decline"), colors = ButtonDefaults.buttonColors(containerColor = Palette.Danger)) { Text(t("Decline"), color = Palette.OnDanger) }
+            Button(onAnswer, Modifier.testTag("ring-answer"), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF23A559))) { Text(t("Answer"), color = onColour(Color(0xFF23A559))) }
         }
     }
 }

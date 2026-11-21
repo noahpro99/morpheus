@@ -57,7 +57,7 @@ fun LinkedText(body: MessageBody.Text, edited: Boolean, onActions: () -> Unit) {
         }
     }
     if (body.segments.none { it.url != null }) {
-        Text(text, Modifier.testTag("msg-body"))
+        Text(text, Modifier.testTag("msg-body"), style = Type.body)
         return
     }
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
@@ -73,6 +73,7 @@ fun LinkedText(body: MessageBody.Text, edited: Boolean, onActions: () -> Unit) {
             }
             .testTag("msg-body"),
         onTextLayout = { layout = it },
+        style = Type.body,
     )
 }
 

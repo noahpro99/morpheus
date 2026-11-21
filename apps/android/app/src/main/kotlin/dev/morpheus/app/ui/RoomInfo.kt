@@ -68,13 +68,13 @@ fun RoomInfo(app: AppModel, model: RoomModel, room: RoomItem, title: String, onC
             LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 12.dp)) {
-                        Text(title, Modifier.testTag("info-name"), fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                        Text(title, Modifier.testTag("info-name"), style = Type.title)
                         room.topic?.let { Text(it, Modifier.testTag("info-topic"), color = Palette.Muted) }
                         Text(
                             if (room.isEncrypted) "🔒 End-to-end encrypted" else "Not encrypted",
                             Modifier.testTag("info-encryption"), color = Palette.Muted, fontSize = 13.sp,
                         )
-                        Text(t("Notifications").uppercase(), Modifier.padding(top = 12.dp), color = Palette.Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text(t("Notifications").uppercase(), Modifier.padding(top = Space.lg), color = Palette.Muted, style = Type.label)
                         for ((key, words) in listOf("all" to "All messages", "mentions" to "Only mentions", "mute" to "Muted")) {
                             Row(
                                 Modifier.fillMaxWidth().clickable {
@@ -87,7 +87,7 @@ fun RoomInfo(app: AppModel, model: RoomModel, room: RoomItem, title: String, onC
                                 Text(words)
                             }
                         }
-                        Text(t("Members").uppercase(), Modifier.padding(top = 12.dp), color = Palette.Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text(t("Members").uppercase(), Modifier.padding(top = Space.lg), color = Palette.Muted, style = Type.label)
                         if (members == null && problem == null) Text(t("Loading…"), color = Palette.Muted)
                     }
                 }
