@@ -229,8 +229,9 @@ private fun Rail(scopes: List<ScopeItem>, selected: String?, onReorder: (List<St
                     ),
                 contentAlignment = Alignment.Center,
             ) {
-                // The selected one is a rounded square with a bar at the edge, as on the desktop.
-                val shape = if (on) RoundedCornerShape(16.dp) else CircleShape
+                // As on the desktop's rail: every icon a rounded square (48 dp, a corner of a third of it), the selected one
+                // in the accent with a tall white mark at the edge, 8 dp for news and none otherwise.
+                val shape = RoundedCornerShape(16.dp)
                 Box(
                     Modifier
                         .size(48.dp)
@@ -255,9 +256,9 @@ private fun Rail(scopes: List<ScopeItem>, selected: String?, onReorder: (List<St
                 }
                 Box(
                     Modifier.align(Alignment.CenterStart).width(4.dp)
-                        .height(if (on) 32.dp else if (scope.hasUnread) 8.dp else 0.dp)
-                        .clip(RoundedCornerShape(topEnd = 4.dp, bottomEnd = 4.dp)).background(Palette.Text)
-                        .then(if (scope.hasUnread && !on && scope.highlights == 0UL) Modifier.testTag("dot-${scope.title}") else Modifier),
+                        .height(if (on) 40.dp else if (scope.hasUnread) 8.dp else 0.dp)
+                        .clip(RoundedCornerShape(topEnd = 4.dp, bottomEnd = 4.dp)).background(Color.White) // fixed, as the desktop's mark: white on the rail
+                        .then(if (on) Modifier.testTag("rail-pill-selected") else if (scope.hasUnread && scope.highlights == 0UL) Modifier.testTag("dot-${scope.title}") else Modifier),
                 )
                 if (scope.highlights > 0UL) {
                     MentionPill(scope.highlights, "mentions-${scope.title}", Modifier.align(Alignment.BottomEnd).padding(end = Space.sm))
