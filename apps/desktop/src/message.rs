@@ -1734,15 +1734,18 @@ pub fn message_el(
                     .flex()
                     .items_baseline()
                     .gap(px(8.0))
+                    .flex_1()
                     .min_w_0()
                     .child(
                         div()
+                            .min_w_0()
                             .child(text.clone())
                             .e2e("span", "system-text")
                             .text(text.clone()),
                     )
                     .child(
                         div()
+                            .flex_none()
                             .relative()
                             .top(px(-theme::baseline_lift(0.85, 0.75)))
                             .text_size(rem(0.75))
