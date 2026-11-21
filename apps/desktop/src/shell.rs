@@ -1763,6 +1763,8 @@ impl Render for Shell {
                     }
                 }),
             )
+            // Text selection in messages (#273): first, so the paragraphs register into a clean frame.
+            .child(crate::selection::host())
             // The mouse's back and forward buttons walk the history as Alt+Left/Right do.
             // A window-level listener, not the root's: Settings, dialogs and menus
             // occlude the root, which would never see the press.

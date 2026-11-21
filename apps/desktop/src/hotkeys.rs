@@ -230,6 +230,13 @@ impl Shell {
         let keystroke = &event.keystroke;
         let m = keystroke.modifiers;
         let key = keystroke.key.as_str();
+        // Ctrl+C with text selected in a message copies it (#273).
+        if (m.control || m.platform) && !m.alt && !m.shift && key == "c"
+            && let Some(text) = crate::selection::selected_text()
+        {
+            cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
+            return true;
+        }
         let ringing = !self.ringing(crate::call::now_ms()).is_empty();
         if key == "escape" && !m.shift && !m.control && !m.alt {
             // Escape drops a drag in progress (a server, channel or category being moved).

@@ -55,6 +55,7 @@ mod model;
 mod capture_watch;
 mod noise;
 mod scrollbar;
+mod selection;
 mod noise_model;
 mod notify;
 mod pictures;

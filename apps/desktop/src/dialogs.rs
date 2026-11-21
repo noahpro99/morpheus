@@ -148,6 +148,7 @@ impl Shell {
             .map(|room| forward_targets(&self.rooms, room))
             .unwrap_or_default();
         let items = message_menu(message, room.as_ref(), pinned, &targets, false);
+        let items = with_selection(items, crate::selection::selected_text_in(&message.unique_id));
         let powers = room.as_ref().and_then(crate::composer::known_powers);
         let items = match &powers {
             Some(powers) => crate::view_model::permissions::restrict_menu(items, powers),
@@ -1678,4 +1679,16 @@ fn open_prompt(
         .attr("role", "alertdialog")
         .focusable(focus);
     Some(boxed.into_any_element())
+}
+
+/// "Copy selection" before "Copy text" when text of the message is selected (#273).
+fn with_selection(mut items: Vec<crate::view_model::menu::MenuItem>, selected: Option<String>) -> Vec<crate::view_model::menu::MenuItem> {
+    if let Some(text) = selected {
+        let at = items
+            .iter()
+            .position(|i| i.label == "Copy text")
+            .unwrap_or(items.len());
+        items.insert(at, crate::view_model::menu::MenuItem::new("Copy selection", MenuAction::CopyText(text)));
+    }
+    items
 }

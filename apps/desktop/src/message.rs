@@ -97,7 +97,7 @@ fn hsla(color: u32) -> Hsla {
 }
 
 /// `0xRRGGBBAA` as a colour.
-fn hsla_alpha(color: u32) -> Hsla {
+pub(crate) fn hsla_alpha(color: u32) -> Hsla {
     rgba(color).into()
 }
 
@@ -177,20 +177,25 @@ fn runs_hovering(para: &Para, base: Base, hover: Option<&Range<usize>>) -> Vec<T
 /// One paragraph as text; with links, clickable ones, the one under the
 /// pointer underlined (gpui shapes text before it knows where the pointer
 /// is, so the hover is tracked here and the runs restyled).
-fn para_el(para: &Para, key: &str, base: Base, links: &LinkHandler) -> AnyElement {
+fn para_el(para: &Para, key: &str, scope: Option<&str>, base: Base, links: &LinkHandler) -> AnyElement {
     if !para.emotes().is_empty() {
         return emote_para_el(para, key, base, links);
     }
     let found = para.links();
     if found.is_empty() {
-        return StyledText::new(SharedString::from(para.text.clone()))
-            .with_runs(runs(para, base))
-            .into_any_element();
+        let source = SharedString::from(para.text.clone());
+        let text = StyledText::new(source.clone()).with_runs(runs(para, base));
+        return match scope {
+            Some(scope) => crate::selection::SelectableText::new(scope, &source, text).into_any_element(),
+            None => text.into_any_element(),
+        };
     }
+    let part = scope.map(|scope| crate::selection::Part::new(scope, &SharedString::from(para.text.clone())));
     let para = para.clone();
     let links = links.clone();
     let key = key.to_owned();
     LinkText {
+        part,
         id: ElementId::NamedInteger(SharedString::from(key.clone()), 1),
         build: Box::new(move |hovered, cell| {
             let found = para.links();
@@ -336,6 +341,7 @@ fn emote_para_el(para: &Para, key: &str, base: Base, links: &LinkHandler) -> Any
                 row = row.child(div().flex_none().child(para_el(
                     &word,
                     &format!("{key}~{part}"),
+                    None,
                     base,
                     links,
                 )));
@@ -352,6 +358,7 @@ fn emote_para_el(para: &Para, key: &str, base: Base, links: &LinkHandler) -> Any
 /// The paragraph's text and links, rebuilt every frame from the link under
 /// the pointer (kept here, in the element's state).
 struct LinkText {
+    part: Option<crate::selection::Part>,
     id: ElementId,
     build: Box<dyn Fn(Option<usize>, Rc<Cell<Option<usize>>>) -> Built>,
 }
@@ -414,12 +421,15 @@ impl Element for LinkText {
         &mut self,
         id: Option<&GlobalElementId>,
         _: Option<&InspectorElementId>,
-        _: Bounds<Pixels>,
+        bounds: Bounds<Pixels>,
         inner: &mut Built,
         window: &mut Window,
         cx: &mut App,
     ) -> Hovered {
         inner.el.prepaint(window, cx);
+        if let Some(part) = &mut self.part {
+            part.prepaint(bounds, window);
+        }
         hovered_state(id, window)
     }
 
@@ -462,6 +472,9 @@ impl Element for LinkText {
                 quad(bounds.left(), end.x, end.y);
             }
         }
+        if let Some(part) = &mut self.part {
+            part.paint(&inner.layout, window);
+        }
         inner.el.paint(window, cx);
         // The inner text sees only moves over itself: leaving it clears the link.
         let cell = cell.clone();
@@ -480,11 +493,16 @@ impl Element for LinkText {
 
 /// Blocks of formatted text: paragraphs, code blocks, quotes, lists, rules.
 pub fn blocks_el(blocks: &[Block], key: &str, base: Base, links: &LinkHandler) -> Div {
+    blocks_in(blocks, key, key, base, links)
+}
+
+/// [`blocks_el`] inside the selection scope `scope` (the whole message, nested blocks and all).
+fn blocks_in(blocks: &[Block], key: &str, scope: &str, base: Base, links: &LinkHandler) -> Div {
     let mut column = div().flex().flex_col().gap(px(4.0)).min_w_0();
     for (i, block) in blocks.iter().enumerate() {
         let key = format!("{key}.{i}");
         column = column.child(match block {
-            Block::Para(para) => para_el(para, &key, base, links),
+            Block::Para(para) => para_el(para, &key, Some(scope), base, links),
             Block::Pre(code) => div()
                 .px(px(12.0))
                 .py(px(8.0))
@@ -494,16 +512,21 @@ pub fn blocks_el(blocks: &[Block], key: &str, base: Base, links: &LinkHandler) -
                 .font_family(theme::MONO)
                 .text_size(rem(0.85))
                 .text_color(rgb(base.color))
-                .child(code.clone())
+                .child(crate::selection::SelectableText::new(
+                    scope,
+                    &SharedString::from(code.clone()),
+                    StyledText::new(SharedString::from(code.clone())),
+                ))
                 .into_any_element(),
             Block::Quote(inner) => div()
                 .my(px(4.0))
                 .pl(px(12.0))
                 .border_l(px(3.0))
                 .border_color(theme::fill_elevated())
-                .child(blocks_el(
+                .child(blocks_in(
                     inner,
                     &key,
+                    scope,
                     Base {
                         color: theme::text_muted(),
                         ..base
@@ -531,9 +554,10 @@ pub fn blocks_el(blocks: &[Block], key: &str, base: Base, links: &LinkHandler) -
                         .flex()
                         .gap(px(6.0))
                         .child(div().flex_none().min_w(px(16.0)).child(marker))
-                        .child(div().flex_1().min_w_0().child(blocks_el(
+                        .child(div().flex_1().min_w_0().child(blocks_in(
                             item,
                             &format!("{key}.{n}"),
+                            scope,
                             base,
                             links,
                         )))
