@@ -835,8 +835,8 @@ impl SettingsView {
     }
 }
 
-/// A button in the settings window.
-fn button(
+/// The shared button: filled by kind, padded, with hover and press states and a tab stop.
+pub(crate) fn button(
     id: impl Into<SharedString>,
     _label: &str,
     kind: Kind,
@@ -860,6 +860,8 @@ fn button(
         .px(px(14.0))
         .py(px(10.0))
         .rounded(px(theme::RADIUS))
+        .hover(|s| s.opacity(0.9))
+        .active(|s| s.opacity(0.75))
         .font_weight(FontWeight::SEMIBOLD)
         .cursor_pointer()
         .bg(bg)

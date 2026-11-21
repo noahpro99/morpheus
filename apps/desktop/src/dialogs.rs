@@ -896,8 +896,9 @@ pub fn render_dialog(
                 )))
                 .child(heading("Keyboard shortcuts"))
                 .child(actions(vec![
-                    dialog_button("help-report-bug", "Report a bug", false)
-                        .text_color(rgb(theme::text()))
+                    crate::settings::button("help-report-bug", "Report a bug", crate::view_model::verification::Kind::Primary, "report-bug")
+                        .child(icon("bug", 16.0).text_color(rgb(theme::on_accent_solid())))
+                        .child(t("Report a bug"))
                         .on_click(cx.listener(|this, _, window, cx| {
                             let inputs = crate::diagnostics::Inputs {
                                 session: this.session.as_ref(),
@@ -911,7 +912,7 @@ pub fn render_dialog(
                             );
                             crate::shell::open_external(&url, cx);
                         }))
-                        .e2e("a", "button secondary report-bug")
+                        .e2e("a", "button primary report-bug")
                         .text(t("Report a bug"))
                         .into_any_element(),
                 ]))
