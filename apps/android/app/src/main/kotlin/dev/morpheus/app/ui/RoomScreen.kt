@@ -626,7 +626,13 @@ private fun RoomPages(app: AppModel, model: RoomModel, room: RoomItem, pager: Pa
     }
     // A room picked from the channels pane is the chat to show now.
     androidx.compose.runtime.LaunchedEffect(room.id) { if (pager.currentPage != 1) pager.scrollToPage(1) }
-    HorizontalPager(pager, Modifier.fillMaxSize().testTag("room-pager"), key = { it }) { page ->
+    // Quick to settle (a stiff spring, about 200 ms) and quick to switch: a third of the width, or a flick, is enough.
+    val fling = androidx.compose.foundation.pager.PagerDefaults.flingBehavior(
+        state = pager,
+        snapAnimationSpec = androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 2500f),
+        snapPositionalThreshold = 0.2f,
+    )
+    HorizontalPager(pager, Modifier.fillMaxSize().testTag("room-pager"), flingBehavior = fling, key = { it }) { page ->
         when (page) {
             // The Servers tab as it is outside a room: its bar is here, the chat has none.
             0 -> Column(Modifier.fillMaxSize().testTag("pane-channels")) {

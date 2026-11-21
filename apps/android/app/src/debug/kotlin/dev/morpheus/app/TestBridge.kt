@@ -127,7 +127,7 @@ class TestBridge(private val app: Application) {
             swipe(
                 request.getDouble("x1").toFloat(), request.getDouble("y1").toFloat(),
                 request.getDouble("x2").toFloat(), request.getDouble("y2").toFloat(),
-                request.optLong("ms", 300),
+                request.optLong("ms", 300), request.optBoolean("fling", false),
             )
             true
         }
@@ -268,7 +268,7 @@ class TestBridge(private val app: Application) {
         touch(MotionEvent.ACTION_UP, down, x, y)
     }
 
-    private fun swipe(x1: Float, y1: Float, x2: Float, y2: Float, ms: Long) {
+    private fun swipe(x1: Float, y1: Float, x2: Float, y2: Float, ms: Long, fling: Boolean) {
         val down = SystemClock.uptimeMillis()
         val steps = 12
         touch(MotionEvent.ACTION_DOWN, down, x1, y1)
@@ -278,7 +278,8 @@ class TestBridge(private val app: Application) {
         }
         // Held still a moment before lifting: no fling, so a drag moves the
         // content by what it covers and no more.
-        Thread.sleep(150)
+        // A flick (`fling`) lifts while still moving, so the content gets the finger's velocity.
+        if (!fling) Thread.sleep(150)
         touch(MotionEvent.ACTION_UP, down, x2, y2)
     }
 
