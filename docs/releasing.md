@@ -1,14 +1,14 @@
 # Releasing
 
-A release is a GitHub release `vX.Y.Z` with six desktop files attached, named
+A release is a GitHub release `vX.Y.Z` with six desktop files and the Android APK attached, named
 by a GitHub milestone (`X.Y.Z`; issues that go into the release are put in it).
 The version is the workspace `version` in `Cargo.toml` (and `Cargo.lock`). The
 built-in updater reads the release's assets, so file names matter.
 
-**No phone apps in releases** (from 0.2.4): Android and iOS are not released
-until they are rebuilt natively (Swift/Kotlin over UniFFI, see
-`docs/PLAN.md`). `apple.yml` still builds the iOS ipa so the shared code keeps
-compiling for iOS, but never attaches it; the APK is not built for releases.
+**Android is the native app** (`apps/android`, Kotlin over the Rust core; see
+`docs/ANDROID.md`). It is built and signed on the release machine, since the
+signing key is not in CI. iOS is not released: `apple.yml` still builds the ipa
+so the shared code keeps compiling for iOS, but never attaches it.
 
 | Asset | Made by |
 | --- | --- |
@@ -18,11 +18,12 @@ compiling for iOS, but never attaches it; the APK is not built for releases.
 | `morpheus-X.Y.Z-macos-x86_64.zip` | `apple.yml` (macOS, x86_64) |
 | `morpheus-X.Y.Z-macos-x86_64.dmg` | `apple.yml` (macOS, x86_64; as above) |
 | `morpheus-X.Y.Z-windows-x86_64.zip` | `windows.yml` |
+| `morpheus-X.Y.Z-android-arm64.apk` | `scripts/release-android.sh`, by hand (step 6) |
 
 The desktop zips (and dmgs) are each built, run through the update self-test
 (`scripts/update-self-test.sh`) and attached by the workflow. A release is
 public the moment it is published, and clients that check for updates then
-offer it, so it is published only when all six assets are there.
+offer it, so it is published only when all seven assets are there.
 
 ## Steps
 
@@ -82,12 +83,36 @@ offer it, so it is published only when all six assets are there.
    with its tests (`git -C ../morpheus-e2e tag -a vX.Y.Z -m "Morpheus X.Y.Z"
    && git -C ../morpheus-e2e push origin vX.Y.Z`). Push both repos together.
 
-   (Android, for when phones are released again: `nix develop .#android -c
-   bash scripts/release-android.sh`, then `gh release upload`; keep
-   `~/.config/morpheus/release.keystore`, Android only updates over an app
-   signed with the same key.)
+6. **Android APK.** Built and signed locally with the release key
+   (`~/.config/morpheus/release.keystore` and `release.keystore.password`;
+   never regenerate, print, copy or commit them: Android installs an update
+   only over an app signed with the same key, and the applicationId is
+   `dev.morpheus.mobile`):
 
-6. **Check, then publish.** All six assets must be attached:
+   ```sh
+   nix develop .#android -c bash scripts/release-android.sh
+   ```
+
+   It builds `assembleRelease` for arm64 (cargo release profile, R8 on, the keep
+   rules in `app/proguard-rules.pro`) and writes
+   `target/dist/morpheus-X.Y.Z-android-arm64.apk`. The version is the
+   workspace's and `versionCode` is `major*10000 + minor*100 + patch`
+   (0.2.7 -> 207), which must be above the last release's. Before uploading,
+   compare the certificate with the previous release's APK; the SHA-256
+   digests must be identical:
+
+   ```sh
+   apksigner verify --print-certs target/dist/morpheus-X.Y.Z-android-arm64.apk
+   gh release download vPREVIOUS -p '*android*' -D /tmp/prev && apksigner verify --print-certs /tmp/prev/*.apk
+   aapt2 dump badging target/dist/morpheus-X.Y.Z-android-arm64.apk | head -1   # versionCode
+   ```
+
+   Smoke test the release build on the emulator with `just
+   e2e-android-native-release` (#264; it builds an x86_64 twin signed with the
+   debug key, the arm64 file is the one that ships). Then
+   `gh release upload vX.Y.Z target/dist/morpheus-X.Y.Z-android-arm64.apk`.
+
+7. **Check, then publish.** All seven assets (six desktop files and the APK) must be attached:
 
    ```sh
    gh release view vX.Y.Z --json assets -q '.assets[].name'
@@ -104,7 +129,7 @@ offer it, so it is published only when all six assets are there.
    offered an update with nothing to install. Do not make a release (or run
    this step) as part of unrelated work.
 
-7. **After.** Close the milestone, move any open issues to the next one, and
+8. **After.** Close the milestone, move any open issues to the next one, and
    delete the draft artifacts you no longer need (`just sweep` keeps `target/`
    small).
 

@@ -19,7 +19,7 @@ scripts/android-ffi.sh  builds crates/ffi per ABI + generates the Kotlin binding
 Application ID `dev.morpheus.mobile` and the release key
 `~/.config/morpheus/release.keystore` are the Dioxus app's, so installs update
 in place. Version code is computed from the workspace version as in
-`scripts/release-android.sh` (0.2.6 -> 206).
+`scripts/release-android.sh` (0.2.6 -> 206; that script now builds this app for releases, see docs/releasing.md).
 
 ## Build
 
