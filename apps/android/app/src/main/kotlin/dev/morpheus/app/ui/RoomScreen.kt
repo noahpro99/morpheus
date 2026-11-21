@@ -22,18 +22,12 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Call
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.Icon
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -154,9 +148,9 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
                 onTitle = if (threadRoot == null) ({ info = true }) else null,
             ) {
                 if (threadRoot == null) {
-                    IconAction(Icons.Default.Call, t("Call"), "call-button", { if (inThis) app.calls.show(true) else app.startCall(room.id, title) })
-                    IconAction(Icons.Default.Search, t("Search"), "search-button", { searching = true })
-                    IconAction(Icons.Default.Info, t("Room details"), "room-info-button", { info = true })
+                    IconAction(dev.morpheus.app.R.drawable.ic_lucide_phone, t("Call"), "call-button", { if (inThis) app.calls.show(true) else app.startCall(room.id, title) })
+                    IconAction(dev.morpheus.app.R.drawable.ic_lucide_search, t("Search"), "search-button", { searching = true })
+                    IconAction(dev.morpheus.app.R.drawable.ic_lucide_info, t("Room details"), "room-info-button", { info = true })
                 }
             }
             Timeline(
@@ -508,7 +502,7 @@ private fun Composer(model: RoomModel, editing: MessageItem?, onAttach: () -> Un
         verticalAlignment = Alignment.Bottom,
         horizontalArrangement = Arrangement.spacedBy(Space.xs),
     ) {
-        IconAction(Icons.Default.Add, t("Attach a file"), "attach", onAttach, tint = Palette.Muted)
+        IconAction(dev.morpheus.app.R.drawable.ic_lucide_paperclip, t("Attach a file"), "attach", onAttach, tint = Palette.Muted)
         OutlinedTextField(
             text, { text = it },
             Modifier.weight(1f).heightIn(min = 48.dp, max = 140.dp).testTag("composer"),
@@ -534,7 +528,7 @@ private fun Composer(model: RoomModel, editing: MessageItem?, onAttach: () -> Un
                 .semantics { contentDescription = t("Send") }
                 .testTag("send"),
             contentAlignment = Alignment.Center,
-        ) { Icon(Icons.Default.Send, null, Modifier.size(22.dp), tint = if (canSend) onColour(Palette.Accent) else Palette.Muted) }
+        ) { GlyphIcon(dev.morpheus.app.R.drawable.ic_send, size = 22.dp, tint = if (canSend) onColour(Palette.Accent) else Palette.Muted) }
     }
     if (panel) EmojiPanel(model) { text = if (it.startsWith(":")) withEmoji(text, it) else withEmoji(text, it) }
     }

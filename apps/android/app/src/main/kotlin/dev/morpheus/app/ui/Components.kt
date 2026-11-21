@@ -21,8 +21,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -67,7 +65,7 @@ private fun Pill(text: String, fill: Color, content: Color, tag: String, modifie
 
 /** An icon that is a button: a 48 dp target, described for screen readers (and the tests, by `tag`). */
 @Composable
-fun IconAction(icon: ImageVector, description: String, tag: String, onClick: () -> Unit, modifier: Modifier = Modifier, tint: Color = Palette.Text) {
+fun IconAction(@androidx.annotation.DrawableRes icon: Int, description: String, tag: String, onClick: () -> Unit, modifier: Modifier = Modifier, tint: Color = Palette.Text) {
     Box(
         modifier
             .size(Size.target)
@@ -76,7 +74,7 @@ fun IconAction(icon: ImageVector, description: String, tag: String, onClick: () 
             .semantics { contentDescription = description; role = Role.Button }
             .testTag(tag),
         contentAlignment = Alignment.Center,
-    ) { Icon(icon, null, Modifier.size(24.dp), tint = tint) }
+    ) { GlyphIcon(icon, tint = tint) }
 }
 
 /** The bar on top of a screen: back, a title, actions; the colour of the rail, a hairline below. */
@@ -95,7 +93,7 @@ fun TopBar(
             Modifier.fillMaxWidth().heightIn(min = Size.topBar).padding(horizontal = Space.xs),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (onBack != null) IconAction(Icons.Default.ArrowBack, "Back", backTag ?: "back", onBack)
+            if (onBack != null) IconAction(dev.morpheus.app.R.drawable.ic_lucide_chevron_left, "Back", backTag ?: "back", onBack)
             else Box(Modifier.width(Space.md))
             Text(
                 title,
@@ -128,14 +126,14 @@ fun SectionHeader(text: String, modifier: Modifier = Modifier) {
 
 /** Nothing here yet: an icon, what it is, and what to do about it. */
 @Composable
-fun EmptyState(icon: ImageVector, title: String, body: String, modifier: Modifier = Modifier, tag: String = "empty-state") {
+fun EmptyState(@androidx.annotation.DrawableRes icon: Int, title: String, body: String, modifier: Modifier = Modifier, tag: String = "empty-state") {
     Column(
         modifier.fillMaxSize().padding(Space.xl).testTag(tag),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(Modifier.size(72.dp).clip(CircleShape).background(Palette.Raised), contentAlignment = Alignment.Center) {
-            Icon(icon, null, Modifier.size(32.dp), tint = Palette.Muted)
+            GlyphIcon(icon, size = 32.dp, tint = Palette.Muted)
         }
         Text(title, Modifier.padding(top = Space.lg), style = Type.heading, color = Palette.Text)
         Text(body, Modifier.padding(top = Space.xs), style = Type.secondary, color = Palette.Muted, textAlign = androidx.compose.ui.text.style.TextAlign.Center)

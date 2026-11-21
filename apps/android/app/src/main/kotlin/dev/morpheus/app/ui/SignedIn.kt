@@ -25,21 +25,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountCircle
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Done
-import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.ExitToApp
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -54,6 +39,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.zIndex
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
@@ -117,9 +105,9 @@ fun ServersPane(model: AppModel, onOpenRoom: (RoomItem) -> Unit, modifier: Modif
     val scopes = bar.scopes.filter { it.kind != ScopeKind.DMS }
     val scope = scopes.firstOrNull { it.key == key } ?: scopes.firstOrNull()
     Row(modifier.fillMaxSize()) {
-        Rail(scopes, scope?.key, onReorder = { model.openReorder() }) { model.selectScope(it.key) }
+        Rail(scopes, scope?.key, onReorder = { model.setRailOrder(it) }, onManage = { model.openReorder() }) { model.selectScope(it.key) }
         if (scope == null) {
-            EmptyState(Icons.Default.Home, t("Nothing here yet"), t("Join a server or start a conversation with the + button."), Modifier.weight(1f).background(Palette.Surface))
+            EmptyState(dev.morpheus.app.R.drawable.ic_lucide_hash, t("Nothing here yet"), t("Join a server or start a conversation with the + button."), Modifier.weight(1f).background(Palette.Surface))
         } else {
             ChannelList(scope, bar.invites, model, onOpenRoom, Modifier.weight(1f), selectedRoom)
         }
@@ -200,7 +188,12 @@ private fun RowScope.TabItem(
 }
 
 @Composable
-private fun Rail(scopes: List<ScopeItem>, selected: String?, onReorder: () -> Unit, onSelect: (ScopeItem) -> Unit) {
+private fun Rail(scopes: List<ScopeItem>, selected: String?, onReorder: (List<String>) -> Unit, onManage: () -> Unit, onSelect: (ScopeItem) -> Unit) {
+    // A long press on a server picks it up: drag it to where it goes. Let go without moving and the servers screen
+    // (folders, order) opens. The order is the account's, so every device has it.
+    val step = with(androidx.compose.ui.platform.LocalDensity.current) { (Size.row + Space.sm).toPx() }
+    var dragging by remember { mutableStateOf<String?>(null) }
+    var shift by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
     LazyColumn(
         Modifier.width(Size.rail).fillMaxHeight().background(Palette.Background).testTag("rail"),
         contentPadding = PaddingValues(vertical = Space.md),
@@ -209,7 +202,33 @@ private fun Rail(scopes: List<ScopeItem>, selected: String?, onReorder: () -> Un
     ) {
         items(scopes, key = { it.key }) { scope ->
             val on = scope.key == selected
-            Box(Modifier.size(Size.rail, Size.row), contentAlignment = Alignment.Center) {
+            val dragged = dragging == scope.key
+            val index = scopes.indexOf(scope)
+            Box(
+                Modifier.size(Size.rail, Size.row)
+                    .zIndex(if (dragged) 1f else 0f)
+                    .graphicsLayer { translationY = if (dragged) shift else 0f; alpha = if (dragged) 0.85f else 1f }
+                    .then(
+                        if (scope.kind != ScopeKind.SERVER) Modifier else Modifier.pointerInput(scopes.map { it.key }) {
+                            detectDragGesturesAfterLongPress(
+                                onDragStart = { dragging = scope.key; shift = 0f },
+                                onDrag = { change, amount -> change.consume(); shift += amount.y },
+                                onDragEnd = {
+                                    val by = Math.round(shift / step)
+                                    dragging = null; shift = 0f
+                                    if (by == 0) onManage() else {
+                                        val order = scopes.toMutableList()
+                                        order.add((index + by).coerceIn(0, order.lastIndex), order.removeAt(index))
+                                        onReorder(order.filter { it.kind == ScopeKind.SERVER }.map { it.key.removePrefix("space:") })
+                                    }
+                                },
+                                // A press let go without a move ends as a cancel.
+                                onDragCancel = { val still = dragging == scope.key && shift == 0f; dragging = null; shift = 0f; if (still) onManage() },
+                            )
+                        },
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
                 // The selected one is a rounded square with a bar at the edge, as on the desktop.
                 val shape = if (on) RoundedCornerShape(16.dp) else CircleShape
                 Box(
@@ -224,13 +243,13 @@ private fun Rail(scopes: List<ScopeItem>, selected: String?, onReorder: () -> Un
                 ) {
                     when (scope.kind) {
                         ScopeKind.SERVER -> Avatar(scope.avatar, scope.title, 48.dp, square = true)
-                        else -> Icon(
+                        else -> GlyphIcon(
                             when (scope.kind) {
-                                ScopeKind.FAVORITES -> Icons.Default.Star
-                                ScopeKind.NETWORK -> Icons.Default.Share
-                                else -> Icons.Default.List
+                                ScopeKind.FAVORITES -> dev.morpheus.app.R.drawable.ic_lucide_star
+                                ScopeKind.NETWORK -> dev.morpheus.app.R.drawable.ic_lucide_link
+                                else -> dev.morpheus.app.R.drawable.ic_lucide_hash
                             },
-                            null, Modifier.size(24.dp), tint = if (on) onColour(Palette.Accent) else Palette.Text,
+                            tint = if (on) onColour(Palette.Accent) else Palette.Text,
                         )
                     }
                 }
@@ -243,11 +262,6 @@ private fun Rail(scopes: List<ScopeItem>, selected: String?, onReorder: () -> Un
                 if (scope.highlights > 0UL) {
                     MentionPill(scope.highlights, "mentions-${scope.title}", Modifier.align(Alignment.BottomEnd).padding(end = Space.sm))
                 }
-            }
-        }
-        if (scopes.count { it.kind == ScopeKind.SERVER } > 1) {
-            item(key = "reorder-servers") {
-                IconAction(Icons.Default.Menu, t("Reorder servers"), "reorder-servers", onReorder, tint = Palette.Muted)
             }
         }
     }
@@ -268,13 +282,13 @@ private fun ChannelList(
                 overflow = TextOverflow.Ellipsis,
             )
             val unreadIds = scope.sections.flatMap { it.rooms }.filter { it.unread > 0UL || it.highlights > 0UL }.map { it.id }
-            if (unreadIds.isNotEmpty()) IconAction(Icons.Default.Done, t("Mark read"), "mark-read", { model.markRoomsRead(unreadIds) }, tint = Palette.Muted)
-            IconAction(Icons.Default.Add, t("New"), "new-button", { model.openNew() })
+            if (unreadIds.isNotEmpty()) IconAction(dev.morpheus.app.R.drawable.ic_lucide_check_check, t("Mark read"), "mark-read", { model.markRoomsRead(unreadIds) }, tint = Palette.Muted)
+            IconAction(dev.morpheus.app.R.drawable.ic_lucide_plus, t("New"), "new-button", { model.openNew() })
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Divider))
         if (scope.sections.all { it.rooms.isEmpty() } && invites.isEmpty()) {
             EmptyState(
-                if (scope.kind == ScopeKind.DMS) Icons.Default.Email else Icons.Default.Home,
+                if (scope.kind == ScopeKind.DMS) dev.morpheus.app.R.drawable.ic_lucide_messages_square else dev.morpheus.app.R.drawable.ic_lucide_hash,
                 if (scope.kind == ScopeKind.DMS) t("No conversations yet") else t("No channels yet"),
                 t("Start one with the + button."),
             )
@@ -413,19 +427,19 @@ private fun ProfilePane(model: AppModel, state: Screen.SignedIn) {
             }
         }
         SectionHeader(t("Account"))
-        ProfileRow(Icons.Default.Settings, t("Settings"), "settings-button") { model.openSettings() }
-        ProfileRow(Icons.Default.Lock, t("Security"), "security-button") { model.openSecurity() }
-        Box(Modifier.padding(top = Space.lg)) { ProfileRow(Icons.Default.ExitToApp, t("Sign out"), "sign-out", danger = true) { model.signOut() } }
+        ProfileRow(dev.morpheus.app.R.drawable.ic_lucide_settings, t("Settings"), "settings-button") { model.openSettings() }
+        ProfileRow(dev.morpheus.app.R.drawable.ic_lucide_lock, t("Security"), "security-button") { model.openSecurity() }
+        Box(Modifier.padding(top = Space.lg)) { ProfileRow(dev.morpheus.app.R.drawable.ic_lucide_log_out, t("Sign out"), "sign-out", danger = true) { model.signOut() } }
     }
 }
 
 @Composable
-private fun ProfileRow(icon: ImageVector, label: String, tag: String, danger: Boolean = false, onClick: () -> Unit) {
+private fun ProfileRow(@androidx.annotation.DrawableRes icon: Int, label: String, tag: String, danger: Boolean = false, onClick: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().heightIn(min = Size.row).clickable(onClick = onClick).padding(horizontal = Space.lg).testTag(tag),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.lg),
     ) {
-        Icon(icon, null, Modifier.size(24.dp), tint = if (danger) Palette.Danger else Palette.Muted)
+        GlyphIcon(icon, tint = if (danger) Palette.Danger else Palette.Muted)
         Text(label, Modifier.weight(1f), style = Type.body, color = if (danger) Palette.Danger else Palette.Text)
     }
 }
@@ -440,9 +454,9 @@ private fun SecurityBanner(model: AppModel) {
         Modifier.fillMaxWidth().background(Palette.Raised).clickable { model.openSecurity() }.padding(Space.lg).testTag("verify-banner"),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.md),
     ) {
-        Icon(Icons.Default.Warning, null, Modifier.size(20.dp), tint = Palette.Accent)
+        GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_shield, size = 20.dp, tint = Palette.Accent)
         Text(t("Verify this device to read your encrypted messages"), Modifier.weight(1f), style = Type.secondary)
-        Icon(Icons.Default.KeyboardArrowRight, null, tint = Palette.Muted)
+        GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_chevron_right, tint = Palette.Muted)
     }
 }
 

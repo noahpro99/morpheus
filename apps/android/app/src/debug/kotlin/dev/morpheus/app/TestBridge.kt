@@ -127,7 +127,7 @@ class TestBridge(private val app: Application) {
             swipe(
                 request.getDouble("x1").toFloat(), request.getDouble("y1").toFloat(),
                 request.getDouble("x2").toFloat(), request.getDouble("y2").toFloat(),
-                request.optLong("ms", 300), request.optBoolean("fling", false),
+                request.optLong("ms", 300), request.optBoolean("fling", false), request.optLong("hold", 0),
             )
             true
         }
@@ -268,10 +268,12 @@ class TestBridge(private val app: Application) {
         touch(MotionEvent.ACTION_UP, down, x, y)
     }
 
-    private fun swipe(x1: Float, y1: Float, x2: Float, y2: Float, ms: Long, fling: Boolean) {
+    private fun swipe(x1: Float, y1: Float, x2: Float, y2: Float, ms: Long, fling: Boolean, hold: Long) {
         val down = SystemClock.uptimeMillis()
         val steps = 12
         touch(MotionEvent.ACTION_DOWN, down, x1, y1)
+        // Held still after the touch-down first: a long press, then the drag.
+        if (hold > 0) Thread.sleep(hold)
         for (i in 1..steps) {
             Thread.sleep(ms / steps)
             touch(MotionEvent.ACTION_MOVE, down, x1 + (x2 - x1) * i / steps, y1 + (y2 - y1) * i / steps)
