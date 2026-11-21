@@ -1004,6 +1004,16 @@ fn preview_src(_mime: &str, _bytes: &[u8]) -> String {
     String::new()
 }
 
+/// A button's place beside the box: as tall as a box of one line, with the button centred.
+fn slot(child: impl IntoElement) -> impl IntoElement {
+    div()
+        .flex_none()
+        .h(px(theme::BOTTOM_H))
+        .flex()
+        .items_center()
+        .child(child)
+}
+
 /// A 36 px button beside the box (attach, emoji); `enabled` false marks it
 /// `[disabled]`.
 fn tool_button(
@@ -1080,7 +1090,6 @@ impl Render for Composer {
         let banner = self.banner(cx);
         let tiles = self.tiles_el(banner.is_some(), cx);
         let above = banner.is_some() || tiles.is_some();
-        let lines = self.draft(cx).lines().count().max(1);
 
         let attach = tool_button(
             "attach",
@@ -1115,24 +1124,24 @@ impl Render for Composer {
             .bg(theme::fill_elevated())
             .text_size(rem(1.0))
             .line_height(relative(theme::LINE_HEIGHT))
-            .child(attach)
+            .child(slot(attach))
             .child(self.input.clone())
             .children(self.input.read(cx).vim_label().map(|label| {
-                div()
+                slot(div()
                     .flex_none()
                     .text_size(rem(0.7))
                     .font_weight(gpui::FontWeight::SEMIBOLD)
                     .text_color(rgb(theme::text_faint()))
                     .child(label.clone())
                     .e2e("span", "vim-mode")
-                    .text(label)
+                    .text(label))
             }))
-            .child(emoji);
-        row = if lines > 1 {
-            row.items_end().pb(px(7.0))
-        } else {
-            row.items_center()
-        };
+            .child(slot(emoji));
+        // The buttons sit at the bottom edge whatever the text does, each in a slot of
+        // the one-line box's height: centred in a box of one line, and in a wrapped
+        // placeholder or long text still beside its last line (#201: centred in the
+        // whole box they jumped to the middle of every taller one).
+        row = row.items_end();
         row = if above {
             row.rounded_b(px(theme::RADIUS_LG))
         } else {
