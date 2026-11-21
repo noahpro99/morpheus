@@ -1635,7 +1635,7 @@ impl Render for Shell {
             .clone();
         // Nothing else focused (or a closed dialog's handle left over): the
         // shortcuts still arrive here.
-        let overlay = self.modal_open(cx) || self.inbox_open;
+        let overlay = self.modal_open(cx) || self.inbox_open || self.whats_new;
         if (self.overlay_was_open && !overlay) || !root_focus.contains_focused(window, cx) {
             window.focus(&root_focus);
         }

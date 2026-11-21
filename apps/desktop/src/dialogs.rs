@@ -489,7 +489,15 @@ pub(crate) fn overlay(
     let top = modal_top(window);
     // One close for the layer's Escape, its backdrop and the box's X (#299): a
     // modal gets all three by being drawn through here, none by its own code.
-    let close: Rc<dyn Fn(&mut Window, &mut gpui::App)> = Rc::new(close);
+    // The focus goes back to the shell's root the moment it closes, not at the next
+    // render (#302): a key arriving in between found the gone layer focused and no
+    // handler at all.
+    let close: Rc<dyn Fn(&mut Window, &mut gpui::App)> = Rc::new(move |window, cx| {
+        close(window, cx);
+        if let Some(root) = cx.try_global::<crate::shell::RootFocus>().map(|r| r.0.clone()) {
+            window.focus(&root);
+        }
+    });
     cx.set_global(ModalClose(close.clone()));
     // Keys reach the layer only while focus is inside it: painted with the layer, so
     // a layer that has gone never takes the focus back.
