@@ -5,12 +5,13 @@
 //! pinned list's upkeep are here too, since they are what these serve.
 
 use crate::view_model::i18n::t;
+use std::rc::Rc;
 use std::time::Duration;
 
 use gpui::{
     AnyElement, ClipboardItem, Context, Div, ElementId, Entity, EventEmitter, FocusHandle,
     FontWeight, IntoElement, MouseButton, Render, SharedString, Stateful, WeakEntity, Window,
-    deferred, div, prelude::*, px, relative, rgb, rgba,
+    canvas, deferred, div, prelude::*, px, relative, rgb, rgba,
 };
 use morpheus_core::{
     Message, MessageId, OwnedEventId, OwnedRoomId, PinnedMessage, Session, TimelineHandle,
@@ -486,6 +487,24 @@ pub(crate) fn overlay(
 ) -> AnyElement {
     let trap = crate::tab::trap(cx);
     let top = modal_top(window);
+    // One close for the layer's Escape, its backdrop and the box's X (#299): a
+    // modal gets all three by being drawn through here, none by its own code.
+    let close: Rc<dyn Fn(&mut Window, &mut gpui::App)> = Rc::new(close);
+    cx.set_global(ModalClose(close.clone()));
+    // Keys reach the layer only while focus is inside it: painted with the layer, so
+    // a layer that has gone never takes the focus back.
+    let focus_in = {
+        let trap = trap.clone();
+        canvas(
+            |_, _, _| (),
+            move |_, _, window, cx| {
+                if !trap.contains_focused(window, cx) {
+                    window.focus(&trap);
+                }
+            },
+        )
+        .size_0()
+    };
     let layer = div()
         .absolute()
         .top_0()
@@ -501,14 +520,19 @@ pub(crate) fn overlay(
         .track_focus(&trap)
         .on_key_down({
             let trap = trap.clone();
+            let close = close.clone();
             move |event, window, cx| {
                 if crate::tab::on_key(event, Some(&trap), window, cx) {
                     cx.stop_propagation();
+                } else if event.keystroke.key == "escape" {
+                    cx.stop_propagation();
+                    close(window, cx);
                 }
             }
         })
         .on_mouse_down(MouseButton::Left, move |_, window, cx| close(window, cx))
         .child(content)
+        .child(focus_in)
         .e2e("div", "overlay");
     deferred(layer).with_priority(20).into_any_element()
 }
@@ -549,14 +573,17 @@ pub(crate) fn modal_close_at(
         .attr("title", "Close")
 }
 
-/// A modal's X when the modal closes by its own Escape handling: it sends
-/// Escape, as the keyboard does.
-fn escape_close(window: &mut Window, cx: &mut gpui::App) {
-    window.defer(cx, |window, cx| {
-        if let Ok(escape) = gpui::Keystroke::parse("escape") {
-            window.dispatch_keystroke(escape, cx);
-        }
-    });
+/// The close of the modal [`overlay`] drew last.
+struct ModalClose(Rc<dyn Fn(&mut Window, &mut gpui::App)>);
+
+impl gpui::Global for ModalClose {}
+
+/// The X of a [`dialog_box`]: the close of the overlay it sits in.
+fn overlay_close(window: &mut Window, cx: &mut gpui::App) {
+    if let Some(ModalClose(close)) = cx.try_global::<ModalClose>() {
+        let close = close.clone();
+        window.defer(cx, move |window, cx| close(window, cx));
+    }
 }
 
 /// `.message-dialog`: the box.
@@ -576,7 +603,7 @@ pub(crate) fn dialog_box() -> Div {
         .text_color(rgb(theme::text()))
         .line_height(relative(theme::LINE_HEIGHT))
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-        .child(modal_close(|_, window, cx| escape_close(window, cx)))
+        .child(modal_close(|_, window, cx| overlay_close(window, cx)))
 }
 
 pub(crate) fn heading(text: &str) -> impl IntoElement {
@@ -825,14 +852,6 @@ pub fn render_dialog(
                         )
                         .e2e("div", "reaction-row")
                 }))
-                .child(actions(vec![
-                    dialog_button("reactions-close", "Close", false)
-                        .text_color(rgb(theme::text()))
-                        .on_click(cx.listener(|this, _, _, cx| this.dialog_close(cx)))
-                        .e2e("button", "secondary")
-                        .text(t("Close"))
-                        .into_any_element(),
-                ]))
                 .e2e("div", "message-dialog reactions-dialog")
                 .focusable(&focus);
             Some(overlay(window, cx, boxed.into_any_element(), close))
@@ -1388,14 +1407,6 @@ impl Render for PinnedDialog {
             }
         }
         let boxed = boxed
-            .child(actions(vec![
-                dialog_button("pinned-close", "Close", false)
-                    .text_color(rgb(theme::text()))
-                    .on_click(cx.listener(|_, _, _, cx| cx.emit(Closed)))
-                    .e2e("button", "secondary")
-                    .text(t("Close"))
-                    .into_any_element(),
-            ]))
             .e2e("div", "message-dialog pinned-dialog")
             .focusable(&self.focus);
         let this = cx.weak_entity();

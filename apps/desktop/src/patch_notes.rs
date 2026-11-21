@@ -147,12 +147,6 @@ impl Shell {
             .e2e("button", "secondary whats-new-more")
             .text(t("View release on GitHub"))
             .into_any_element();
-        let close = dialog_button("whats-new-close", "Close", false)
-            .text_color(rgb(theme::text()))
-            .on_click(cx.listener(|this, _, _, cx| this.dismiss_whats_new(cx)))
-            .e2e("button", "secondary whats-new-close")
-            .text(t("Close"))
-            .into_any_element();
         let body = div()
             .id("whats-new-scroll")
             .max_h(px(360.0))
@@ -162,7 +156,7 @@ impl Shell {
         let boxed = dialog_box()
             .child(heading(&title))
             .child(div().child(body).e2e("div", "whats-new-body").text(text))
-            .child(actions(vec![close, more]))
+            .child(actions(vec![more]))
             .e2e("div", "message-dialog whats-new");
         let this = cx.weak_entity();
         Some(overlay(window, cx, boxed.into_any_element(), move |_, cx| {

@@ -12,7 +12,7 @@ use morpheus_core::{MemberRole, ModRoom, OwnedRoomId, OwnedUserId, Session};
 
 use crate::tab::Tabbable as _;
 use crate::{
-    dialogs::{Closed, actions, dialog_box, overlay},
+    dialogs::{Closed, dialog_box, overlay},
     e2e::E2eExt as _,
     icons::icon,
     input::TextInput,
@@ -424,18 +424,6 @@ impl Render for ModView {
                     .children(rows)
                     .e2e("div", "mod-rooms"),
             )
-            .child(actions(vec![
-                div()
-                    .id("mod-view-close")
-                    .px(px(6.0))
-                    .py(px(1.0))
-                    .cursor_pointer()
-                    .child(t("Close"))
-                    .on_click(cx.listener(|_, _, _, cx| cx.emit(Closed)))
-                    .e2e("button", "secondary")
-                    .text(t("Close"))
-                    .into_any_element(),
-            ]))
             .e2e("div", "message-dialog mod-view")
             .focusable(&self.focus);
         let this = cx.weak_entity();
