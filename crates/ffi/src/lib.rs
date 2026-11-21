@@ -33,6 +33,7 @@ mod room_info;
 mod security;
 mod settings;
 mod sidebar;
+mod sidebar_cache;
 mod timeline;
 mod volumes;
 
@@ -215,6 +216,7 @@ impl Morpheus {
             .and_then(|mut slot| slot.take())
             .ok_or(FfiError::SignedOut)?;
         session.logout().await?;
+        let _ = std::fs::remove_file(self.dir.join("sidebar-cache.json"));
         Ok(())
     }
 

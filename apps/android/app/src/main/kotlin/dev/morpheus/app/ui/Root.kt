@@ -36,10 +36,13 @@ fun Root(model: AppModel) {
         CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground) {
         val rings by model.ringModel.rings.collectAsState()
             when (val current = screen) {
-                Screen.Loading -> CircularProgressIndicator(
-                    Modifier.align(Alignment.Center).testTag("loading"),
-                )
+                Screen.Loading -> {
+                    androidx.compose.runtime.SideEffect { dev.morpheus.app.AppState.loadingSeen = true }
+                    CircularProgressIndicator(Modifier.align(Alignment.Center).testTag("loading"))
+                }
                 Screen.SignedOut -> SignInScreen(model)
+                // The last state, drawn from the cache while the session is restored behind it.
+                is Screen.Restoring -> SignedInScreen(model, Screen.SignedIn(current.account), restoring = true) { }
                 is Screen.SignedIn -> {
                     val room by model.openRoom.collectAsState()
                     val open = room

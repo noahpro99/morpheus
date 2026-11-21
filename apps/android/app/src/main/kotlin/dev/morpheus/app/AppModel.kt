@@ -24,6 +24,7 @@ sealed interface Screen {
     fun name(): String = when (this) {
         Loading -> "loading"
         SignedOut -> "signed-out"
+        is Restoring -> "restoring"
         is SignedIn -> "signed-in"
     }
 
@@ -31,6 +32,9 @@ sealed interface Screen {
     data object Loading : Screen
 
     data object SignedOut : Screen
+
+    /** A launch with a session: the last state is drawn from the cache while the session is restored (#309). */
+    data class Restoring(val account: Account) : Screen
 
     data class SignedIn(val account: Account) : Screen
 }
@@ -103,6 +107,10 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         pendingRoom.value = roomId
     }
 
+    /** What the app keeps between launches: who, the tab, the server and the room that were open. */
+    private val kept = morpheusApp?.getSharedPreferences("ui-state", android.content.Context.MODE_PRIVATE)
+    private fun keep(key: String, value: String?) { kept?.edit()?.apply { if (value == null) remove(key) else putString(key, value) }?.apply() }
+
     private val _screen = MutableStateFlow<Screen>(Screen.Loading)
     val screen: StateFlow<Screen> = _screen.asStateFlow()
 
@@ -112,6 +120,7 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
 
     fun open(room: RoomItem) {
         _room.value = room
+        keep("room", room.id)
         AppState.room = room.id
         AppState.screen = "room"
     }
@@ -297,6 +306,7 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
 
     fun closeRoom() {
         _room.value = null
+        keep("room", null)
         AppState.room = ""
         AppState.screen = _screen.value.name()
     }
@@ -354,18 +364,20 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
     val error: StateFlow<String?> = _error.asStateFlow()
 
     /** Which rail entry the channel list shows (`ScopeItem.key`). */
-    private val _scopeKey = MutableStateFlow("rooms")
+    private val _scopeKey = MutableStateFlow(kept?.getString("scope", null) ?: "rooms")
     val scopeKey: StateFlow<String> = _scopeKey.asStateFlow()
 
     fun selectScope(key: String) {
+        keep("scope", key)
         _scopeKey.value = key
     }
 
     /** The bottom bar's tab the signed-in home shows. */
-    private val _tab = MutableStateFlow(Tab.Servers)
+    private val _tab = MutableStateFlow(kept?.getString("tab", null)?.let { name -> Tab.entries.firstOrNull { it.name == name } } ?: Tab.Servers)
     val tab: StateFlow<Tab> = _tab.asStateFlow()
 
     fun selectTab(tab: Tab) {
+        keep("tab", tab.name)
         // The bar on a room's channels pane: a tab leaves the room for it.
         if (_room.value != null) closeRoom()
         _tab.value = tab
@@ -373,7 +385,14 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
     /** The channel list while signed in; the Rust side stops pushing when nobody collects. */
     @OptIn(ExperimentalCoroutinesApi::class)
     val sidebar: StateFlow<Sidebar?> = _screen
-        .flatMapLatest { if (it is Screen.SignedIn) morpheus.sidebars() else emptyFlow() }
+        .flatMapLatest {
+            when (it) {
+                is Screen.SignedIn -> morpheus.sidebars()
+                // The list of the last run, until the session is back.
+                is Screen.Restoring -> kotlinx.coroutines.flow.flow { morpheus.cachedSidebar()?.let { bar -> emit(bar) } }
+                else -> emptyFlow()
+            }
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     init {
@@ -385,13 +404,23 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
                 open(room)
             }
         }.launchIn(viewModelScope)
+        // A session and a list from the last run: draw them now, restore the session behind them.
+        kept?.getString("account", null)?.split("\n")?.takeIf { it.size == 3 }?.let { (user, server, device) ->
+            if (morpheus.cachedSidebar() != null) _screen.value = Screen.Restoring(Account(userId = user, homeserver = server, deviceId = device))
+        }
         viewModelScope.launch {
             _screen.value = try {
-                morpheus.restoreSession()?.let { morpheusApp?.registerPushNow(); Screen.SignedIn(it) } ?: Screen.SignedOut
+                morpheus.restoreSession()?.let {
+                    morpheusApp?.registerPushNow()
+                    keep("account", listOf(it.userId, it.homeserver, it.deviceId).joinToString("\n"))
+                    Screen.SignedIn(it)
+                } ?: Screen.SignedOut
             } catch (e: Exception) {
                 _error.value = e.sentence()
                 Screen.SignedOut
             }
+            // Where the last run ended: the room that was open comes back.
+            if (_screen.value is Screen.SignedIn) kept?.getString("room", null)?.let { openRoomWhenKnown(it) }
         }
     }
 
@@ -401,7 +430,9 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         _error.value = null
         viewModelScope.launch {
             try {
-                _screen.value = Screen.SignedIn(morpheus.login(homeserver.trim(), username.trim(), password))
+                val account = morpheus.login(homeserver.trim(), username.trim(), password)
+                keep("account", listOf(account.userId, account.homeserver, account.deviceId).joinToString("\n"))
+                _screen.value = Screen.SignedIn(account)
                 morpheusApp?.registerPushNow()
             } catch (e: Exception) {
                 _error.value = e.sentence()
@@ -418,6 +449,7 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         _room.value = null
         AppState.room = ""
         _screen.value = Screen.SignedOut
+        listOf("account", "room", "scope", "tab").forEach { keep(it, null) }
         viewModelScope.launch {
             try {
                 morpheus.logout()
@@ -460,6 +492,18 @@ object AppState {
     /** The room on screen (the debug bridge reports it). */
     @Volatile
     var room: String = ""
+
+    /** A spinner or skeleton was drawn since the process started (the debug bridge reports it; #309). */
+    @Volatile
+    var loadingSeen: Boolean = false
+
+    /** Milliseconds from the process start to the first channel list drawn with content (0: none yet). */
+    @Volatile
+    var firstListMs: Long = 0
+
+    fun listDrawn() {
+        if (firstListMs == 0L) firstListMs = android.os.SystemClock.elapsedRealtime() - android.os.Process.getStartElapsedRealtime()
+    }
 }
 
 /** The three places of the bottom bar. */

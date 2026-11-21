@@ -72,8 +72,10 @@ import uniffi.morpheus_ffi.ScopeKind
  * beside it, Direct messages the list of people, Profile the account.
  */
 @Composable
-fun SignedInScreen(model: AppModel, state: Screen.SignedIn, onOpenRoom: (RoomItem) -> Unit) {
-    val tab by model.tab.collectAsState()
+fun SignedInScreen(model: AppModel, state: Screen.SignedIn, restoring: Boolean = false, onOpenRoom: (RoomItem) -> Unit) {
+    val saved by model.tab.collectAsState()
+    // While the session is restored there is nothing live for You to show: the bar opens on Servers then.
+    val tab = if (restoring && saved == Tab.Profile) Tab.Servers else saved
     // Back from Direct messages or Profile goes to Servers, the home; only from there does it leave the app.
     androidx.activity.compose.BackHandler(enabled = tab != Tab.Servers) { model.selectTab(Tab.Servers) }
     Column(Modifier.fillMaxSize().testTag("signed-in")) {
@@ -146,7 +148,11 @@ fun BottomBar(model: AppModel, tab: Tab) {
             }
             TabItem(Tab.Profile, tab, t("You"), "tab-profile", onClick = { model.selectTab(Tab.Profile) }) { on ->
                 // Your own picture, ringed when this is the tab in use.
-                val me = (model.screen.collectAsState().value as? dev.morpheus.app.Screen.SignedIn)?.account?.userId.orEmpty()
+                val me = when (val s = model.screen.collectAsState().value) {
+                    is dev.morpheus.app.Screen.SignedIn -> s.account.userId
+                    is dev.morpheus.app.Screen.Restoring -> s.account.userId
+                    else -> ""
+                }
                 val names by People.names.collectAsState()
                 val name = People.nameOf(me, names)
                 Box(
@@ -273,6 +279,7 @@ private fun ChannelList(
     scope: ScopeItem, invites: List<InviteItem>, model: AppModel, onOpenRoom: (RoomItem) -> Unit,
     modifier: Modifier, selectedRoom: String?,
 ) {
+    androidx.compose.runtime.SideEffect { dev.morpheus.app.AppState.listDrawn() }
     Column(modifier.background(Palette.Surface)) {
         Row(Modifier.fillMaxWidth().padding(start = Space.lg, end = Space.xs).height(Size.topBar), verticalAlignment = Alignment.CenterVertically) {
             Text(

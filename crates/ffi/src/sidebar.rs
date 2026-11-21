@@ -153,6 +153,15 @@ pub(crate) fn sidebar_of(rooms: &[RoomSummary], session: &morpheus_core::Session
 
 #[uniffi::export]
 impl Morpheus {
+    /// The channel list as of the last run, for drawing at once while the session is restored (no pictures,
+    /// no calls, no invites); `None` on a first run or after sign-out.
+    pub fn cached_sidebar(&self) -> Option<Sidebar> {
+        crate::sidebar_cache::load(&self.dir)
+    }
+}
+
+#[uniffi::export]
+impl Morpheus {
     /// Start telling `listener` about the channel list.
     pub async fn watch_sidebar(
         &self,
@@ -160,6 +169,7 @@ impl Morpheus {
     ) -> Result<Arc<TaskHandle>, FfiError> {
         let session = self.session()?;
         let mut updates = session.room_list().await?;
+        let dir = self.dir.clone();
         let (overrides, changed) = (self.muted_now.clone(), self.layout_changed.clone());
         let task = runtime().spawn(async move {
             let mut rooms: Vec<RoomSummary> = Vec::new();
@@ -197,7 +207,9 @@ impl Morpheus {
                     }
                 }
                 told = true;
-                listener.on_sidebar(sidebar_of(&rooms, &session, &layout));
+                let sidebar = sidebar_of(&rooms, &session, &layout);
+                crate::sidebar_cache::save(&dir, &sidebar);
+                listener.on_sidebar(sidebar);
             }
         });
         Ok(TaskHandle::new(task))

@@ -156,6 +156,7 @@ fun SkeletonBar(width: androidx.compose.ui.unit.Dp, height: androidx.compose.ui.
 /** A few rows' worth of skeleton, for a list that has not come yet. */
 @Composable
 fun SkeletonRows(count: Int = 6, avatars: Boolean = true, modifier: Modifier = Modifier) {
+    androidx.compose.runtime.SideEffect { dev.morpheus.app.AppState.loadingSeen = true }
     Column(modifier.fillMaxWidth().testTag("skeleton"), verticalArrangement = Arrangement.spacedBy(Space.lg)) {
         repeat(count) { i ->
             Row(Modifier.padding(horizontal = Space.lg), horizontalArrangement = Arrangement.spacedBy(Space.md), verticalAlignment = Alignment.CenterVertically) {

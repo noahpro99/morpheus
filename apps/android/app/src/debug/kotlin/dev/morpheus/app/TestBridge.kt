@@ -180,6 +180,8 @@ class TestBridge(private val app: Application) {
                 .put("screen", AppState.screen)
                 .put("last_link", AppState.lastLink)
                 .put("room", AppState.room)
+                .put("loading_seen", AppState.loadingSeen)
+                .put("first_list_ms", AppState.firstListMs)
                 .put("version", BuildConfig.VERSION_NAME)
         }
         else -> error("unknown op $op")
