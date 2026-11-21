@@ -170,3 +170,9 @@ fun SkeletonRows(count: Int = 6, avatars: Boolean = true, modifier: Modifier = M
         }
     }
 }
+
+/** One of the desktop's icons (Lucide, generated into res/drawable by scripts/android-icons.sh), tinted. */
+@Composable
+fun GlyphIcon(@androidx.annotation.DrawableRes id: Int, modifier: Modifier = Modifier, size: androidx.compose.ui.unit.Dp = 24.dp, tint: Color = Palette.Text) {
+    Icon(androidx.compose.ui.res.painterResource(id), null, modifier.size(size), tint = tint)
+}

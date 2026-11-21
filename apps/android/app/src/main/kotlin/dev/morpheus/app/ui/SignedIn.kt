@@ -1,6 +1,7 @@
 package dev.morpheus.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -56,6 +57,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
@@ -145,23 +150,38 @@ fun BottomBar(model: AppModel, tab: Tab) {
     Column(Modifier.fillMaxWidth().background(Palette.Background)) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Divider))
         Row(Modifier.fillMaxWidth().height(Size.tabBar).testTag("tab-bar")) {
-            TabItem(Tab.Servers, tab, t("Servers"), Icons.Default.Home, "tab-servers", mentions = serverNews, dot = serverUnread) { model.selectTab(Tab.Servers) }
-            TabItem(Tab.Dms, tab, t("Messages"), Icons.Default.Email, "tab-dms", mentions = dmUnread) { model.selectTab(Tab.Dms) }
-            TabItem(Tab.Profile, tab, t("You"), Icons.Default.AccountCircle, "tab-profile") { model.selectTab(Tab.Profile) }
+            TabItem(Tab.Servers, tab, t("Servers"), "tab-servers", mentions = serverNews, dot = serverUnread, onClick = { model.selectTab(Tab.Servers) }) { on ->
+                GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_hash, tint = if (on) Palette.Accent else Palette.Muted)
+            }
+            TabItem(Tab.Dms, tab, t("Messages"), "tab-dms", mentions = dmUnread, onClick = { model.selectTab(Tab.Dms) }) { on ->
+                GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_messages_square, Modifier.testTag("tab-dms-bubble"), tint = if (on) Palette.Accent else Palette.Muted)
+            }
+            TabItem(Tab.Profile, tab, t("You"), "tab-profile", onClick = { model.selectTab(Tab.Profile) }) { on ->
+                // Your own picture, ringed when this is the tab in use.
+                val me = (model.screen.collectAsState().value as? dev.morpheus.app.Screen.SignedIn)?.account?.userId.orEmpty()
+                val names by People.names.collectAsState()
+                val name = People.nameOf(me, names)
+                Box(
+                    Modifier.size(30.dp).then(if (on) Modifier.border(2.dp, Palette.Accent, CircleShape).testTag("tab-profile-ring") else Modifier),
+                    contentAlignment = Alignment.Center,
+                ) { Avatar(null, name, 24.dp, Modifier.testTag("tab-profile-avatar")) }
+            }
         }
     }
 }
 
 @Composable
 private fun RowScope.TabItem(
-    me: Tab, current: Tab, label: String, icon: ImageVector, tag: String,
-    mentions: ULong = 0UL, dot: Boolean = false, onClick: () -> Unit,
+    me: Tab, current: Tab, label: String, tag: String,
+    mentions: ULong = 0UL, dot: Boolean = false, onClick: () -> Unit, icon: @Composable (Boolean) -> Unit,
 ) {
     val on = me == current
     Column(
         Modifier
             .weight(1f).fillMaxHeight()
-            .clickable(onClick = onClick, role = Role.Tab)
+            // Taps by pointerInput, not clickable: that would merge the icon and avatar into one node (the tests look inside).
+            .pointerInput(onClick) { detectTapGestures { onClick() } }
+            .semantics { role = Role.Tab; onClick { onClick(); true } }
             .semantics { selected = on }
             .testTag(tag),
         verticalArrangement = Arrangement.Center,
@@ -171,7 +191,7 @@ private fun RowScope.TabItem(
             Box(
                 Modifier.height(32.dp).width(60.dp).clip(CircleShape).background(if (on) Palette.Accent.copy(alpha = 0.22f) else Color.Transparent),
                 contentAlignment = Alignment.Center,
-            ) { Icon(icon, null, Modifier.size(24.dp), tint = if (on) Palette.Accent else Palette.Muted) }
+            ) { icon(on) }
             if (mentions > 0UL) MentionPill(mentions, "$tag-badge", Modifier.padding(end = Space.xs))
             else if (dot) Box(Modifier.padding(top = 4.dp, end = 14.dp).size(10.dp).clip(CircleShape).background(Palette.Text).testTag("$tag-dot"))
         }
