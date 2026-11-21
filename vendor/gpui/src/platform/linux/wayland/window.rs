@@ -1100,9 +1100,11 @@ impl PlatformWindow for WaylandWindow {
 }
 
 fn update_window(mut state: RefMut<WaylandWindowState>) {
-    let opaque = !state.is_transparent();
-
-    state.renderer.update_transparency(!opaque);
+    // The swapchain stays alpha-capable whatever the background: switching it later
+    // (Transparent turned on while running) left the compositor showing the surface as
+    // opaque until a relaunch. An opaque theme draws opaque pixels anyway, and the
+    // opaque region below still tells the compositor when nothing shows through.
+    state.renderer.update_transparency(true);
     let mut opaque_area = state.window_bounds.map(|v| v.0 as i32);
     opaque_area.inset(state.inset().0 as i32);
 
