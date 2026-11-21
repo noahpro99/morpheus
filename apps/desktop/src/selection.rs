@@ -27,10 +27,11 @@ struct Entry {
 }
 
 struct Active {
-    scope: SharedString,
+    group: SharedString,
     selection: Selection,
-    /// The scope's paragraphs when the selection last changed.
+    /// The group's paragraphs when the selection last changed, and the scope (message) of each.
     texts: Vec<String>,
+    scopes: Vec<SharedString>,
 }
 
 #[derive(Default)]
@@ -55,22 +56,47 @@ impl Active {
     }
 }
 
-/// The selected text, if any.
-pub fn selected_text() -> Option<String> {
+/// The selected text per message, in order: (scope, text), for a non-empty selection.
+pub fn selected_pieces() -> Option<Vec<(String, String)>> {
     STATE.with(|s| {
         let s = s.borrow();
         let active = s.active.as_ref().filter(|a| a.non_empty())?;
-        Some(active.selection.text(&refs(&active.texts)))
+        let mut out: Vec<(String, Vec<String>)> = Vec::new();
+        for (para, text) in active.selection.slices(&refs(&active.texts)) {
+            let scope = active.scopes.get(para).map(|s| s.to_string()).unwrap_or_default();
+            match out.last_mut() {
+                Some((last, lines)) if *last == scope => lines.push(text),
+                _ => out.push((scope, vec![text])),
+            }
+        }
+        Some(out.into_iter().map(|(scope, lines)| (scope, lines.join("\n"))).collect())
     })
 }
 
-/// The selected text when it is in `scope` (a message's key).
+/// The selected text, if any (the messages' pieces one line apart when it spans several).
+pub fn selected_text() -> Option<String> {
+    let pieces = selected_pieces()?;
+    Some(pieces.into_iter().map(|(_, text)| text).collect::<Vec<_>>().join("\n"))
+}
+
+/// The selected text when it is in `scope` (a message's key) and in it alone.
 pub fn selected_text_in(scope: &str) -> Option<String> {
-    STATE.with(|s| {
-        let s = s.borrow();
-        let active = s.active.as_ref().filter(|a| a.scope == scope && a.non_empty())?;
-        Some(active.selection.text(&refs(&active.texts)))
-    })
+    let mut pieces = selected_pieces()?;
+    (pieces.len() == 1 && pieces[0].0 == scope).then(|| pieces.remove(0).1)
+}
+
+/// Whether the selection takes in `scope` (a message's key) among others, or alone.
+pub fn selection_includes(scope: &str) -> bool {
+    selected_pieces().is_some_and(|p| p.iter().any(|(s, _)| s == scope))
+}
+
+/// Selections do not cross between these: each of the full-screen views and the notes is its
+/// own; every message of a timeline is one.
+fn group_of(scope: &str) -> &str {
+    match scope {
+        "long" | "help-notes" | "whats-new" => scope,
+        _ => "messages",
+    }
 }
 
 /// Lets go of the selection.
@@ -78,9 +104,9 @@ pub fn clear() {
     STATE.with(|s| s.borrow_mut().active = None);
 }
 
-/// The paragraphs of `scope` this frame, in order, with their entry indices.
-fn scope_entries<'a>(entries: &'a [Entry], scope: &str) -> Vec<(usize, &'a Entry)> {
-    entries.iter().enumerate().filter(|(_, e)| e.scope == scope).collect()
+/// The paragraphs of `group` this frame, in paint order, with their entry indices.
+fn scope_entries<'a>(entries: &'a [Entry], group: &str) -> Vec<(usize, &'a Entry)> {
+    entries.iter().enumerate().filter(|(_, e)| group_of(&e.scope) == group).collect()
 }
 
 /// Called as a paragraph paints: it takes part in selection, and its highlight
@@ -88,14 +114,18 @@ fn scope_entries<'a>(entries: &'a [Entry], scope: &str) -> Vec<(usize, &'a Entry
 fn register(scope: &SharedString, text: &SharedString, layout: &TextLayout, hitbox: Hitbox) -> Option<std::ops::Range<usize>> {
     STATE.with(|s| {
         let mut s = s.borrow_mut();
-        let index = s.entries.iter().filter(|e| &e.scope == scope).count();
+        let group = group_of(scope);
+        let within = s.entries.iter().filter(|e| &e.scope == scope).count();
         s.entries.push(Entry {
             scope: scope.clone(),
             text: text.clone(),
             layout: layout.clone(),
             hitbox,
         });
-        let active = s.active.as_ref().filter(|a| &a.scope == scope)?;
+        let active = s.active.as_ref().filter(|a| a.group == group)?;
+        // This paragraph is the `within`-th of its message: found by that, not by its place in the
+        // frame, which moves as the list scrolls.
+        let index = active.scopes.iter().enumerate().filter(|(_, s)| *s == scope).nth(within)?.0;
         active.selection.range_in(&refs(&active.texts), index)
     })
 }
@@ -242,7 +272,7 @@ fn root_focus(window: &mut Window, cx: &App) {
     }
 }
 
-/// The byte position the pointer is at in the paragraphs of `scope`: in the one
+/// The byte position the pointer is at in the paragraphs of a group (every message of the timeline): in the one
 /// it is over, else the nearest above or below.
 fn position_in(entries: &[(usize, &Entry)], at: gpui::Point<Pixels>) -> Option<Pos> {
     let (first, last) = (entries.first()?, entries.last()?);
@@ -272,8 +302,8 @@ fn press(event: &MouseDownEvent, window: &mut Window, cx: &mut App) {
         let Some(hit) = s.entries.iter().rposition(|e| e.hitbox.is_hovered(window)) else {
             return s.active.take().is_some();
         };
-        let scope = s.entries[hit].scope.clone();
-        let entries = scope_entries(&s.entries, &scope);
+        let group = SharedString::from(group_of(&s.entries[hit].scope).to_owned());
+        let entries = scope_entries(&s.entries, &group);
         let index = entries.iter().position(|(i, _)| *i == hit).unwrap_or(0);
         let offset = s.entries[hit]
             .layout
@@ -282,7 +312,7 @@ fn press(event: &MouseDownEvent, window: &mut Window, cx: &mut App) {
         let at = Pos::new(index, offset);
         let texts: Vec<String> = entries.iter().map(|(_, e)| e.text.to_string()).collect();
         let parts = refs(&texts);
-        let existing = s.active.as_ref().filter(|a| a.scope == scope).map(|a| a.selection);
+        let existing = s.active.as_ref().filter(|a| a.group == group).map(|a| a.selection);
         let selection = match existing {
             Some(mut selection) if event.modifiers.shift => {
                 selection.extend_to(at);
@@ -294,7 +324,8 @@ fn press(event: &MouseDownEvent, window: &mut Window, cx: &mut App) {
                 _ => Selection::paragraph(&parts, at),
             },
         };
-        s.active = Some(Active { scope, selection, texts });
+        let scopes = entries.iter().map(|(_, e)| e.scope.clone()).collect();
+        s.active = Some(Active { group, selection, texts, scopes });
         s.dragging = true;
         true
     });
@@ -316,8 +347,8 @@ fn drag(event: &MouseMoveEvent, window: &mut Window, cx: &mut App) {
             s.dragging = false;
             return None;
         }
-        let scope = s.active.as_ref()?.scope.clone();
-        let at = position_in(&scope_entries(&s.entries, &scope), event.position)?;
+        let group = s.active.as_ref()?.group.clone();
+        let at = position_in(&scope_entries(&s.entries, &group), event.position)?;
         let active = s.active.as_mut()?;
         active.selection.extend_to(at);
         Some(active.non_empty())

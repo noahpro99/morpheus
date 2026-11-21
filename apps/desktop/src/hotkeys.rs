@@ -232,7 +232,7 @@ impl Shell {
         let key = keystroke.key.as_str();
         // Ctrl+C with text selected in a message copies it (#273).
         if (m.control || m.platform) && !m.alt && !m.shift && key == "c"
-            && let Some(text) = crate::selection::selected_text()
+            && let Some(text) = self.selection_copy(cx)
         {
             cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
             return true;

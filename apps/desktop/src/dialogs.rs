@@ -132,6 +132,28 @@ impl Shell {
     }
 
     /// The menu of a message right-clicked in the open room.
+    /// What copying the selection gives when it takes in message `unique_id`: its text, or when it
+    /// spans several messages, the transcript (#303).
+    pub fn selection_copy_text(&self, unique_id: &str, cx: &gpui::App) -> Option<String> {
+        if !crate::selection::selection_includes(unique_id) {
+            return None;
+        }
+        self.selection_copy(cx)
+    }
+
+    /// What Ctrl+C copies of the selection: the text, or when it spans several messages, a
+    /// transcript with names and times.
+    pub fn selection_copy(&self, cx: &gpui::App) -> Option<String> {
+        let pieces = crate::selection::selected_pieces()?;
+        if pieces.len() > 1
+            && let Some((_, timeline)) = &self.timeline
+            && let Some(text) = timeline.read(cx).selection_transcript(&pieces)
+        {
+            return Some(text);
+        }
+        crate::selection::selected_text()
+    }
+
     pub fn open_message_menu(
         &mut self,
         message: &Message,
@@ -148,7 +170,7 @@ impl Shell {
             .map(|room| forward_targets(&self.rooms, room))
             .unwrap_or_default();
         let items = message_menu(message, room.as_ref(), pinned, &targets, false);
-        let items = with_selection(items, crate::selection::selected_text_in(&message.unique_id));
+        let items = with_selection(items, self.selection_copy_text(&message.unique_id, cx));
         let powers = room.as_ref().and_then(crate::composer::known_powers);
         let items = match &powers {
             Some(powers) => crate::view_model::permissions::restrict_menu(items, powers),

@@ -64,6 +64,7 @@ pub mod scrollbar;
 pub mod reorder;
 pub mod long_message;
 pub mod text_selection;
+pub mod transcript;
 pub mod rich;
 pub mod rows;
 pub mod search;

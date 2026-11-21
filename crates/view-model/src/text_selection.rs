@@ -188,6 +188,20 @@ impl Selection {
         (start < end).then_some(start..end)
     }
 
+    /// The selected part of each paragraph it touches, with the paragraph's index:
+    /// what [`Self::text`] joins (an empty paragraph in the middle is kept).
+    pub fn slices(&self, paras: &[&str]) -> Vec<(usize, String)> {
+        let (a, b) = self.span(paras);
+        (a.para..=b.para)
+            .map(|para| {
+                let text = text_of(paras, para);
+                let start = if para == a.para { clamp(text, a.offset) } else { 0 };
+                let end = if para == b.para { clamp(text, b.offset) } else { text.len() };
+                (para, text[start.min(end)..end].to_owned())
+            })
+            .collect()
+    }
+
     /// The selected text, paragraphs apart by a line break.
     pub fn text(&self, paras: &[&str]) -> String {
         let (a, b) = self.span(paras);
@@ -264,6 +278,16 @@ mod tests {
         let mut s = Selection::word(&PARAS, Pos::new(0, 1));
         s.extend_to(Pos::new(1, 3));
         assert_eq!(s.text(&PARAS), "Hello brave world\nsecond");
+    }
+
+    #[test]
+    fn the_slices_are_the_selected_part_of_each_paragraph() {
+        let mut s = Selection::caret(Pos::new(0, 6));
+        s.extend_to(Pos::new(2, 5));
+        assert_eq!(
+            s.slices(&PARAS),
+            vec![(0, "brave world".to_owned()), (1, "second one".to_owned()), (2, "third".to_owned())]
+        );
     }
 
     #[test]

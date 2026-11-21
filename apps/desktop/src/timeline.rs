@@ -1590,6 +1590,44 @@ impl Drop for TimelineView {
 }
 
 impl TimelineView {
+    /// What copying a selection that spans several messages gives (#303): a transcript of
+    /// the messages from the first selected to the last, each with its sender and time (the
+    /// selected text of the ones with some, whole text or a placeholder for the rest in
+    /// between). `pieces` are the selected text by message, in order.
+    pub fn selection_transcript(&self, pieces: &[(String, String)]) -> Option<String> {
+        use crate::view_model::transcript::{Body, Item, transcript};
+        let (first, last) = (&pieces.first()?.0, &pieces.last()?.0);
+        let at = |id: &String| {
+            self.rows.iter().position(|row| matches!(row, Row::Message { row, .. } if &row.message.unique_id == id))
+        };
+        let (from, to) = (at(first)?, at(last)?);
+        let mut items = Vec::new();
+        for row in self.rows.get(from..=to)? {
+            let Row::Message { row, .. } = row else { continue };
+            let m = &row.message;
+            let selected = pieces.iter().find(|(id, _)| *id == m.unique_id).map(|(_, text)| text.clone());
+            let body = match &m.kind {
+                MessageKind::Image { body, .. } => Body::Image(body.clone()),
+                MessageKind::File { body, .. } => Body::File(body.clone()),
+                MessageKind::Video { body, .. } => Body::Video(body.clone()),
+                MessageKind::Audio { body, .. } => Body::Audio(body.clone()),
+                MessageKind::Text { .. } | MessageKind::Notice { .. } | MessageKind::Emote { .. } => {
+                    Body::Text(selected.unwrap_or_else(|| crate::view_model::rich::text_of(&row.blocks)))
+                }
+                _ => continue,
+            };
+            items.push(Item {
+                sender: m.sender_name.clone(),
+                timestamp_ms: m.timestamp_ms,
+                reply_to: m.in_reply_to.as_ref().and_then(|r| r.sender_name.clone()).filter(|n| !n.is_empty()),
+                body,
+            });
+        }
+        Some(transcript(&items))
+    }
+}
+
+impl TimelineView {
     /// The scrollbar over the list (#144), if it scrolls.
     fn scrollbar_el(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Option<AnyElement> {
         use crate::view_model::scrollbar as vm;

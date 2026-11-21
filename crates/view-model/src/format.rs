@@ -42,7 +42,7 @@ pub fn calendar_date(timestamp_ms: u64) -> String {
     calendar_date_in(timestamp_ms, &TimeZone::system())
 }
 
-fn zoned(timestamp_ms: u64, zone: &TimeZone) -> Option<jiff::Zoned> {
+pub(crate) fn zoned(timestamp_ms: u64, zone: &TimeZone) -> Option<jiff::Zoned> {
     let ms = i64::try_from(timestamp_ms).ok()?;
     Some(Timestamp::from_millisecond(ms).ok()?.to_zoned(zone.clone()))
 }
@@ -62,7 +62,7 @@ const MONTHS_ES: [&str; 12] = [
 const WEEKDAYS_ES: [&str; 7] = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"];
 
 /// A month's name (short or long) in `code`: the words of a date are the language's.
-fn month_name(code: &str, at: &jiff::Zoned, long: bool) -> String {
+pub(crate) fn month_name(code: &str, at: &jiff::Zoned, long: bool) -> String {
     if code == "es" {
         let name = MONTHS_ES[usize::try_from(at.month() - 1).unwrap_or(0)];
         return if long { name.to_owned() } else { name.chars().take(3).collect() };
@@ -70,7 +70,7 @@ fn month_name(code: &str, at: &jiff::Zoned, long: bool) -> String {
     at.strftime(if long { "%B" } else { "%b" }).to_string()
 }
 
-fn weekday_name(code: &str, at: &jiff::Zoned) -> String {
+pub(crate) fn weekday_name(code: &str, at: &jiff::Zoned) -> String {
     if code == "es" {
         let from_monday = at.weekday().to_monday_zero_offset();
         return WEEKDAYS_ES[usize::try_from(from_monday).unwrap_or(0)].to_owned();
