@@ -925,6 +925,23 @@ fn file_open_dialog(
             folder_dialog.SetOkButtonLabel(&HSTRING::from(prompt))?;
         }
 
+        let specs = options.filter_specs();
+        if !specs.is_empty() {
+            // The HSTRINGs must outlive SetFileTypes.
+            let strings: Vec<(HSTRING, HSTRING)> = specs
+                .iter()
+                .map(|(name, pattern)| (HSTRING::from(name.as_str()), HSTRING::from(pattern.as_str())))
+                .collect();
+            let filters: Vec<Common::COMDLG_FILTERSPEC> = strings
+                .iter()
+                .map(|(name, pattern)| Common::COMDLG_FILTERSPEC {
+                    pszName: PCWSTR(name.as_ptr()),
+                    pszSpec: PCWSTR(pattern.as_ptr()),
+                })
+                .collect();
+            folder_dialog.SetFileTypes(&filters)?;
+        }
+
         if folder_dialog.Show(window).is_err() {
             // User cancelled
             return Ok(None);

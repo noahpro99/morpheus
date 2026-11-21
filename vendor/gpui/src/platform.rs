@@ -1361,7 +1361,7 @@ pub struct PathPromptOptions {
     pub prompt: Option<SharedString>,
     /// Kinds of file to offer, each a name and its extensions without the dot
     /// (`("Pictures", ["png", "jpg"])`); empty for any file. Honoured on Linux
-    /// (the portal); the other platforms show every file for now.
+    /// (the portal), macOS (`allowedFileTypes`) and Windows (`SetFileTypes`).
     pub filters: Vec<(String, Vec<String>)>,
 }
 
@@ -1885,5 +1885,80 @@ impl From<String> for ClipboardString {
             text: value,
             metadata: None,
         }
+    }
+}
+
+impl PathPromptOptions {
+    /// Every filter extension, lowercase, without a leading dot or `*.`,
+    /// without duplicates, in order. Empty when no filter is set.
+    #[allow(dead_code)]
+    pub(crate) fn filter_extensions(&self) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for (_, extensions) in &self.filters {
+            for extension in extensions {
+                let extension = extension
+                    .trim()
+                    .trim_start_matches("*.")
+                    .trim_start_matches('.')
+                    .to_lowercase();
+                if !extension.is_empty() && !out.contains(&extension) {
+                    out.push(extension);
+                }
+            }
+        }
+        out
+    }
+
+    /// Windows file dialog filters: a name and a pattern like `*.png;*.jpg`
+    /// per filter, skipping filters without extensions.
+    #[allow(dead_code)]
+    pub(crate) fn filter_specs(&self) -> Vec<(String, String)> {
+        self.filters
+            .iter()
+            .filter_map(|(name, extensions)| {
+                let patterns: Vec<String> = extensions
+                    .iter()
+                    .map(|e| e.trim().trim_start_matches("*.").trim_start_matches('.'))
+                    .filter(|e| !e.is_empty())
+                    .map(|e| format!("*.{e}"))
+                    .collect();
+                (!patterns.is_empty()).then(|| (name.clone(), patterns.join(";")))
+            })
+            .collect()
+    }
+}
+
+#[cfg(test)]
+mod path_prompt_filter_tests {
+    use super::*;
+
+    fn options() -> PathPromptOptions {
+        PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: None,
+            filters: vec![
+                ("Pictures".into(), vec!["PNG".into(), ".jpg".into(), "*.jpeg".into()]),
+                ("More".into(), vec!["png".into(), "webp".into()]),
+                ("Empty".into(), vec![]),
+            ],
+        }
+    }
+
+    #[test]
+    fn extensions_are_normalised_and_unique() {
+        assert_eq!(options().filter_extensions(), ["png", "jpg", "jpeg", "webp"]);
+    }
+
+    #[test]
+    fn windows_specs_join_patterns_and_skip_empty_filters() {
+        assert_eq!(
+            options().filter_specs(),
+            [
+                ("Pictures".to_string(), "*.PNG;*.jpg;*.jpeg".to_string()),
+                ("More".to_string(), "*.png;*.webp".to_string()),
+            ]
+        );
     }
 }
