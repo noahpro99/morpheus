@@ -589,6 +589,39 @@ impl StateInner {
         }
         rendered_height += padding.bottom;
 
+        // A negative offset puts the item that far BELOW the top of the view (the rows above
+        // it are laid out in this same frame, so a place kept across rows arriving above is
+        // exact on the first frame instead of one frame at the wrong place).
+        if scroll_top.offset_in_item < px(0.) {
+            let mut need = -scroll_top.offset_in_item;
+            cursor.seek(&Count(scroll_top.item_ix), Bias::Right);
+            let mut top_ix = scroll_top.item_ix;
+            while need > px(0.) {
+                cursor.prev();
+                let Some(item) = cursor.item() else { break };
+                let item_index = cursor.start().0;
+                let mut element = render_item(item_index, window, cx);
+                let element_size = element.layout_as_root(available_item_space, window, cx);
+                rendered_height += element_size.height;
+                need -= element_size.height;
+                top_ix = item_index;
+                measured_items.push_front(ListItem::Measured {
+                    size: element_size,
+                    focus_handle: item.focus_handle(),
+                });
+                item_layouts.push_front(ItemLayout {
+                    index: item_index,
+                    element,
+                    size: element_size,
+                });
+            }
+            scroll_top = ListOffset {
+                item_ix: top_ix,
+                offset_in_item: (-need).max(px(0.)),
+            };
+            self.logical_scroll_top = Some(scroll_top);
+        }
+
         // Prepare to start walking upward from the item at the scroll top.
         cursor.seek(&Count(scroll_top.item_ix), Bias::Right);
 

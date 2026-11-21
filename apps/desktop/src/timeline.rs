@@ -820,11 +820,12 @@ impl TimelineView {
                 self.list.splice(start..start + removed, added);
             }
             if let Some((was, now)) = anchor {
-                if let Some(y) = below_top {
-                    self.anchor_fix = Some((now, y));
-                }
+                // The row stays as far below the top as it was: a negative offset, which
+                // the list lays out (the new rows above it too) in the very next frame.
                 let offset_in_item = if was == top.item_ix {
                     top.offset_in_item
+                } else if let Some(y) = below_top {
+                    px(-y)
                 } else {
                     px(0.0)
                 };
