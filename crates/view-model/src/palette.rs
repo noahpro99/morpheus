@@ -358,6 +358,39 @@ pub fn contextual_call(items: &[crate::menu::MenuItem], subject: &str) -> Vec<Co
     contextual_where(items, subject, |_| true)
 }
 
+/// What a palette entry says it does, to what, and for how long (#298): the
+/// target is always named and a mute always says how long, so "Mute server" and
+/// "Notifications: Mute" never sit side by side meaning the same thing.
+fn action_label(item: &crate::menu::MenuItem, action: &crate::menu::MenuAction, prefix: &str, subject: &str) -> String {
+    use crate::menu::MenuAction as A;
+    use morpheus_core::NotifyMode;
+    let server = !subject.starts_with('#') && !subject.starts_with('@');
+    match action {
+        A::Notify(_, NotifyMode::Mute) if item.label == "Mute server" => {
+            format!("Mute the whole server {subject} (no unread dots or notifications)")
+        }
+        A::Notify(_, NotifyMode::AllMessages) if item.label == "Unmute server" => format!("Unmute the whole server {subject}"),
+        A::Notify(_, NotifyMode::Mute) if server => format!("Mute every channel in {subject} until I turn it back on"),
+        A::Notify(_, NotifyMode::Mute) => format!("Mute {subject} until I turn it back on"),
+        A::Notify(_, NotifyMode::AllMessages) if server => format!("Notify me of every message in the server {subject}"),
+        A::Notify(_, NotifyMode::AllMessages) => format!("Notify me of every message in {subject}"),
+        A::Notify(_, NotifyMode::MentionsOnly) if server => format!("Notify me only of mentions in the server {subject}"),
+        A::Notify(_, NotifyMode::MentionsOnly) => format!("Notify me only of mentions in {subject}"),
+        // "For 15 minutes" / "Until I turn it back on": the length reads on after the target.
+        A::Mute(..) => {
+            let mut length = item.label.chars();
+            let length = length.next().map(|c| c.to_lowercase().chain(length).collect::<String>()).unwrap_or_default();
+            format!("Mute {subject} {length}")
+        }
+        _ => match item.label.as_str() {
+            "Leave room" => format!("Leave {subject}"),
+            "Leave server" => format!("Leave {subject}"),
+            other if other.contains(subject) => format!("{prefix}{other}"),
+            other => format!("{prefix}{other} ({subject})"),
+        },
+    }
+}
+
 fn contextual_where(
     items: &[crate::menu::MenuItem],
     subject: &str,
@@ -371,12 +404,10 @@ fn contextual_where(
         if !keep(&action) {
             return;
         }
-        let label = match item.label.as_str() {
-            "Leave room" => format!("Leave {subject}"),
-            "Leave server" => format!("Leave {subject}"),
-            other if other.contains(subject) => format!("{prefix}{other}"),
-            other => format!("{prefix}{other} ({subject})"),
-        };
+        if found.iter().any(|e: &ContextEntry| e.action == action) {
+            return; // the same action under two names (the server item and its submenu)
+        }
+        let label = action_label(item, &action, prefix, subject);
         found.push(ContextEntry { label, icon: item.glyph().unwrap_or("chevron-right"), action });
     };
     for item in items {
@@ -421,7 +452,7 @@ mod context_tests {
         let labels: Vec<&str> = found.iter().map(|e| e.label.as_str()).collect();
         assert!(labels.contains(&"Pin (@bob)"), "{labels:?}");
         assert!(labels.contains(&"Close DM (@bob)"), "{labels:?}");
-        assert!(labels.iter().any(|l| l.starts_with("Mute: ") && l.ends_with("(@bob)")), "{labels:?}");
+        assert!(labels.contains(&"Mute @bob for 15 minutes"), "{labels:?}");
         assert!(labels.iter().any(|l| l.starts_with("Mark as")), "{labels:?}");
         // The person's own actions (block, friend) are not the DM's.
         assert!(!labels.iter().any(|l| l.starts_with("Block") || l.contains("friend")), "{labels:?}");
@@ -439,5 +470,66 @@ mod context_tests {
         let top = menu.iter().filter(|i| i.action.is_some() && !i.has_submenu()).count();
         assert!(found.len() >= top);
         assert!(found.iter().any(|e| matches!(e.action, MenuAction::Leave(..))));
+    }
+}
+
+#[cfg(test)]
+mod label_tests {
+    use super::*;
+
+    /// Everything the palette offers for a room, a DM and a server together, as shown at once.
+    fn shown() -> Vec<ContextEntry> {
+        let room = crate::test_room::room("!general:x", "general");
+        let mut dm = crate::test_room::room("!dm:x", "bob");
+        dm.is_dm = true;
+        let state = crate::room_menu::DmState {
+            user: morpheus_core::OwnedUserId::try_from("@bob:x").expect("id"),
+            name: "bob".into(),
+            pinned: false,
+            ignored: false,
+            blocked: false,
+            muted: false,
+            friend: false,
+            invite_to: Vec::new(),
+        };
+        let space = crate::test_room::room("!projects:x", "Projects");
+        let children = [room.clone(), crate::test_room::room("!news:x", "news")];
+        let mut found = contextual(&crate::room_menu::room_menu(&room, None), "#general");
+        found.extend(contextual_dm(&crate::room_menu::dm_menu(&dm, &state), "@bob"));
+        found.extend(contextual(&crate::room_menu::space_menu(&space, &children, false, &[]), "Projects"));
+        found
+    }
+
+    /// A label with its punctuation, case and the words that only group it ("Notifications", "Mute:") dropped.
+    fn essence(label: &str) -> String {
+        label
+            .to_lowercase()
+            .replace("notifications:", "")
+            .replace("mute:", "")
+            .chars()
+            .filter(|c| c.is_alphanumeric())
+            .collect()
+    }
+
+    #[test]
+    fn no_two_actions_shown_at_once_read_alike_or_do_the_same() {
+        let found = shown();
+        for (i, a) in found.iter().enumerate() {
+            for b in &found[i + 1..] {
+                assert_ne!(a.action, b.action, "two entries do the same: {:?} and {:?}", a.label, b.label);
+                assert_ne!(essence(&a.label), essence(&b.label), "{:?} and {:?} read alike", a.label, b.label);
+            }
+        }
+    }
+
+    #[test]
+    fn muting_names_its_target_and_its_length() {
+        let labels: Vec<String> = shown().into_iter().map(|e| e.label).collect();
+        let has = |text: &str| labels.iter().any(|l| l == text);
+        assert!(has("Mute #general until I turn it back on"), "{labels:?}");
+        assert!(has("Mute @bob for 15 minutes"), "{labels:?}");
+        assert!(has("Mute @bob until I turn it back on"), "{labels:?}");
+        assert!(has("Mute the whole server Projects (no unread dots or notifications)"), "{labels:?}");
+        assert!(!labels.iter().any(|l| l.starts_with("Mute: ") || l.starts_with("Notifications: ")), "{labels:?}");
     }
 }
