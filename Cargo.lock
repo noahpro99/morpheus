@@ -7440,6 +7440,7 @@ dependencies = [
  "morpheus-call",
  "morpheus-core",
  "morpheus-view-model",
+ "serde",
  "serde_json",
  "tempfile",
  "thiserror 2.0.21",
