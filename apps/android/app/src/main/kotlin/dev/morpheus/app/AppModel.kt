@@ -113,6 +113,7 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
     private val kept = morpheusApp?.getSharedPreferences("ui-state", android.content.Context.MODE_PRIVATE)
     private fun keep(key: String, value: String?) { kept?.edit()?.apply { if (value == null) remove(key) else putString(key, value) }?.apply() }
 
+    // (pages are above)
     private val _screen = MutableStateFlow<Screen>(Screen.Loading)
     val screen: StateFlow<Screen> = _screen.asStateFlow()
 
@@ -131,6 +132,19 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         keep("last-room", room.id)
         AppState.room = room.id
         AppState.screen = "room"
+    }
+
+    private val _page = MutableStateFlow<PageRequest?>(null)
+
+    /** The phone page a sheet item opened (invite, create, edit, privacy, overview, reactions, report), drawn over the screen. */
+    val page: StateFlow<PageRequest?> = _page.asStateFlow()
+
+    fun openPage(request: PageRequest) {
+        _page.value = request
+    }
+
+    fun closePage() {
+        _page.value = null
     }
 
     private var sheetIds = 0
@@ -180,11 +194,12 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         viewModelScope.launch {
             try {
                 when (val outcome = morpheus.runMenuItem(path)) {
-                    is uniffi.morpheus_ffi.MenuOutcome.Done -> {}
+                    is uniffi.morpheus_ffi.MenuOutcome.Done -> refreshRail()
                     is uniffi.morpheus_ffi.MenuOutcome.Copy -> {
                         val clipboard = morpheusApp?.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
                         clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("", outcome.text))
                     }
+                    is uniffi.morpheus_ffi.MenuOutcome.Page -> _page.value = PageRequest(outcome.kind, outcome.roomId, outcome.extra)
                     is uniffi.morpheus_ffi.MenuOutcome.NotYet -> _error.value = t("%{name} is not on the phone yet.", "name" to outcome.label)
                     else -> request.onOutcome(outcome)
                 }
@@ -652,3 +667,6 @@ class SheetRequest(
     val quickReactions: List<String>,
     val onOutcome: (uniffi.morpheus_ffi.MenuOutcome) -> Unit,
 )
+
+/** A page of the phone for a sheet item: what kind, which room (or server, or folder), a name where it matters, the message it is about. */
+class PageRequest(val kind: String, val roomId: String, val extra: String = "", val message: uniffi.morpheus_ffi.MessageItem? = null)

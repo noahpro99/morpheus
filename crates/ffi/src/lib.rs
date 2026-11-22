@@ -31,6 +31,7 @@ mod people;
 mod push;
 mod rings;
 mod room_info;
+mod room_pages;
 mod security;
 mod settings;
 mod sidebar;

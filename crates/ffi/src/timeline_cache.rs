@@ -138,7 +138,7 @@ fn back(row: Row) -> TimelineRow {
                     Body::Other { summary } => MessageBody::Other { summary },
                 },
                 reply_to: m.reply_to.map(|r| ReplyItem { event_id: r.event_id, sender_name: r.sender_name, summary: r.summary }),
-                reactions: m.reactions.into_iter().map(|r| ReactionItem { key: r.key, count: r.count, mine: r.mine }).collect(),
+                reactions: m.reactions.into_iter().map(|r| ReactionItem { key: r.key, count: r.count, mine: r.mine, senders: Vec::new() }).collect(),
                 thread: m.thread.map(|t| ThreadChip { count: t.count, latest: t.latest }),
                 preview_url: m.preview_url,
                 read_by: m.read_by,
@@ -193,7 +193,7 @@ mod tests {
                 key: format!("k{n}"), event_id: Some(format!("$e{n}")), sender_id: "@a:s".into(), sender_name: "alice".into(), sender_avatar: None,
                 time: "12:00".into(), timestamp_ms: n as u64, show_header: n == 0, is_own: false, sending: false, edited: true, can_edit: false,
                 can_delete: false, body, reply_to: Some(ReplyItem { event_id: "$r".into(), sender_name: Some("bob".into()), summary: Some("hi".into()) }),
-                reactions: vec![ReactionItem { key: "+1".into(), count: 2, mine: true }], thread: None, preview_url: None, read_by: vec!["@b:s".into()],
+                reactions: vec![ReactionItem { key: "+1".into(), count: 2, mine: true, senders: Vec::new() }], thread: None, preview_url: None, read_by: vec!["@b:s".into()],
             },
         }
     }

@@ -166,6 +166,8 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
                                 is uniffi.morpheus_ffi.MenuOutcome.Thread -> thread = message.eventId
                                 is uniffi.morpheus_ffi.MenuOutcome.React -> message.eventId?.let { model.react(it, outcome.key) }
                                 is uniffi.morpheus_ffi.MenuOutcome.Delete -> message.eventId?.let { model.delete(it) }
+                                is uniffi.morpheus_ffi.MenuOutcome.ViewReactions -> app.openPage(dev.morpheus.app.PageRequest("reactions", room.id, message = message))
+                                is uniffi.morpheus_ffi.MenuOutcome.Report -> message.eventId?.let { app.openPage(dev.morpheus.app.PageRequest("report", room.id, it)) }
                                 is uniffi.morpheus_ffi.MenuOutcome.OpenRoom -> {}
                                 else -> {}
                             }
@@ -344,6 +346,8 @@ private fun MessageRow(
     onFile: (MediaHandle, String) -> Unit,
     highlighted: Boolean = false,
 ) {
+    // The gesture lives as long as the message's key: it must see the message as it is now (a reaction that came since), not as it was.
+    val latest by androidx.compose.runtime.rememberUpdatedState(message)
     // A tap anywhere on a message offers its actions. (Not `clickable`: that
     // merges the message into one semantics node, and the tests, like a
     // screen reader, want the parts.)
@@ -352,8 +356,8 @@ private fun MessageRow(
             .fillMaxWidth()
             .alpha(if (message.sending) 0.6f else 1f)
             .background(if (highlighted) Palette.Accent.copy(alpha = 0.25f) else Color.Transparent)
-            .pointerInput(message.key) { detectTapGestures(onLongPress = { onActions(message, true) }, onTap = { onActions(message, false) }) }
-            .semantics { onClick("Message actions") { onActions(message, false); true } }
+            .pointerInput(message.key) { detectTapGestures(onLongPress = { onActions(latest, true) }, onTap = { onActions(latest, false) }) }
+            .semantics { onClick("Message actions") { onActions(latest, false); true } }
             .padding(horizontal = Space.md, vertical = if (message.showHeader) Space.sm else 1.dp),
         horizontalArrangement = Arrangement.spacedBy(Space.md),
     ) {
@@ -391,7 +395,7 @@ private fun MessageRow(
                 )
             }
             when (val body = message.body) {
-                is MessageBody.Text -> LinkedText(body, message.edited) { onActions(message, false) }
+                is MessageBody.Text -> LinkedText(body, message.edited) { onActions(latest, false) }
                 is MessageBody.Other -> Text(body.summary, Modifier.testTag("msg-body"), color = Palette.Muted)
                 is MessageBody.Image -> PictureBody(body, onImage)
                 is MessageBody.File -> Text(

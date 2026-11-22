@@ -2,6 +2,7 @@ package dev.morpheus.app.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -36,6 +37,7 @@ import uniffi.morpheus_ffi.ScopeKind
  * The servers as the account keeps them (every device's rail): in order, each with Up and Down, and
  * in folders, which are made here, renamed, and servers put in them or taken out.
  */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun ReorderScreen(app: AppModel) {
     val sidebar by app.sidebar.collectAsState()
@@ -72,7 +74,11 @@ fun ReorderScreen(app: AppModel) {
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Text("📁 ${row.name}", Modifier.weight(1f).testTag("folder-${row.name}"), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            "📁 ${row.name}",
+                            Modifier.weight(1f).testTag("folder-${row.name}").combinedClickable(onClick = {}, onLongClick = { app.openSheet(row.name) { app.morpheus.folderMenuRows(row.folderId.orEmpty(), row.name) } }),
+                            fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        )
                         TextButton({ renaming = row }, Modifier.testTag("folder-rename-${row.name}")) { Text(t("Rename")) }
                         TextButton({ move(at, -1) }, Modifier.testTag("folder-up-${row.name}"), enabled = at > 0) { Text("▲") }
                         TextButton({ move(at, 1) }, Modifier.testTag("folder-down-${row.name}"), enabled = at < rows.size - 1) { Text("▼") }

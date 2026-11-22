@@ -47,6 +47,13 @@ pub enum MenuOutcome {
     OpenRoom { room_id: String },
     /// Add `@name ` to the message being written.
     Mention { name: String },
+    /// A page of the phone for this item: `kind` is `invite`, `create`, `edit`, `privacy`, `overview` or `rename-folder`; `room_id` the
+    /// room, server or folder it is about (the server to make a room in, for `create`, empty for none), `extra` its name where that matters.
+    Page { kind: String, room_id: String, extra: String },
+    /// The reactions of the message the sheet was opened on.
+    ViewReactions,
+    /// Report the message the sheet was opened on.
+    Report,
     /// The desktop's dialog or screen for this item is not on the phone yet: its label.
     NotYet { label: String },
 }
@@ -207,6 +214,12 @@ impl Morpheus {
         Ok(self.store(&items, Some(room), None))
     }
 
+    /// The menu of a rail folder: rename it, or break it up.
+    pub async fn folder_menu_rows(&self, folder_id: String, name: String) -> Result<Vec<MenuRow>, FfiError> {
+        let items = morpheus_view_model::room_menu::folder_menu(&folder_id, &name);
+        Ok(self.store(&items, None, None))
+    }
+
     /// The menu of a message, as the desktop's right-click menu has it (with "Select text", as on a phone).
     pub async fn message_menu_rows(&self, room_id: String, message: MessageItem) -> Result<Vec<MenuRow>, FfiError> {
         let session = self.session()?;
@@ -320,6 +333,29 @@ impl Morpheus {
             MenuAction::Invite(room, user) => {
                 session.invite(room, user).await?;
                 MenuOutcome::Done
+            }
+            MenuAction::ViewReactions => MenuOutcome::ViewReactions,
+            MenuAction::Report => MenuOutcome::Report,
+            MenuAction::ServerOverview(space) => MenuOutcome::Page { kind: "overview".into(), room_id: space.to_string(), extra: String::new() },
+            MenuAction::CreateChannel(space) => MenuOutcome::Page { kind: "create".into(), room_id: space.to_string(), extra: String::new() },
+            MenuAction::Ungroup(folder) => {
+                self.ungroup_folder(folder).await?;
+                MenuOutcome::Done
+            }
+            MenuAction::RoomDialog(kind) => {
+                use morpheus_view_model::room_dialogs::RoomDialogKind as K;
+                let page = |kind: &str, room: String, extra: String| MenuOutcome::Page { kind: kind.into(), room_id: room, extra };
+                match kind {
+                    K::Invite(room) => page("invite", room.to_string(), String::new()),
+                    K::Edit(room) => page("edit", room.to_string(), String::new()),
+                    K::Privacy(room) => page("privacy", room.to_string(), String::new()),
+                    K::Create => {
+                        let parent = room.as_ref().and_then(|id| self.room_summary(id.as_str())).and_then(|r| if r.is_space { Some(r.id) } else { r.parent_spaces.first().cloned() });
+                        page("create", parent.map(|p| p.to_string()).unwrap_or_default(), String::new())
+                    }
+                    K::RenameFolder(id, name) => page("rename-folder", id, name),
+                    _ => MenuOutcome::NotYet { label: i18n::t(&label) },
+                }
             }
             MenuAction::Kick(room, user) => {
                 session.kick(room, user, None).await?;

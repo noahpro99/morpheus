@@ -110,6 +110,19 @@ pub fn reorder(prefs: &mut Value, keys: &[String]) {
     });
 }
 
+/// Break a folder up: its servers stay, in its place.
+pub fn ungroup(prefs: &mut Value, folder: &str) {
+    edit(prefs, |all| {
+        if let Some(at) = all.iter().position(|r| matches!(r, RailRow::Folder { id, .. } if id == folder))
+            && let RailRow::Folder { spaces, .. } = all.remove(at)
+        {
+            for (offset, space) in spaces.into_iter().enumerate() {
+                all.insert(at + offset, RailRow::Server(space));
+            }
+        }
+    });
+}
+
 /// Put a server in an existing folder.
 pub fn move_to_folder(prefs: &mut Value, space: &str, folder: &str) {
     edit(prefs, |all| {
@@ -177,6 +190,13 @@ mod tests {
     fn the_folders_a_server_can_move_to_say_whether_it_is_in_them() {
         assert_eq!(folder_choices(&sample(), "!b:x"), vec![("f1".to_owned(), "Work".to_owned(), true)]);
         assert_eq!(folder_choices(&sample(), "!a:x"), vec![("f1".to_owned(), "Work".to_owned(), false)]);
+    }
+
+    #[test]
+    fn ungrouping_leaves_its_servers_in_its_place() {
+        let mut prefs = sample();
+        ungroup(&mut prefs, "f1");
+        assert_eq!(rows(&prefs), vec![RailRow::Server("!a:x".into()), RailRow::Server("!b:x".into()), RailRow::Server("!c:x".into()), RailRow::Server("!d:x".into())]);
     }
 
     #[test]

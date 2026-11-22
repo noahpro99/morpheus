@@ -281,7 +281,7 @@ pub struct RailRowItem {
 }
 
 impl Morpheus {
-    async fn change_rail(&self, change: impl FnOnce(&mut serde_json::Value)) -> Result<(), FfiError> {
+    pub(crate) async fn change_rail(&self, change: impl FnOnce(&mut serde_json::Value)) -> Result<(), FfiError> {
         let session = self.session()?;
         let mut prefs = session.ui_prefs().await?;
         change(&mut prefs);

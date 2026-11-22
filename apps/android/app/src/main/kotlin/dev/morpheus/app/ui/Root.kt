@@ -71,6 +71,7 @@ fun Root(model: AppModel) {
                             else if (newOpen) NewScreen(model)
                             else if (securityOpen && shown != null) SecurityScreen(model, shown)
                             else SignedInScreen(model, signedIn, restoring = restoring) { model.open(it) }
+                            RoomPageHost(model)
                         }
                     }
                 }

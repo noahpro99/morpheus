@@ -25,6 +25,8 @@ pub struct ReactionItem {
     pub key: String,
     pub count: u32,
     pub mine: bool,
+    /// Who reacted (user IDs), for "View reactions".
+    pub senders: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
@@ -209,6 +211,7 @@ fn message_item(row: &MessageRow, show_header: bool, read_by: Vec<String>, sessi
                 key: r.key.clone(),
                 count: r.count as u32,
                 mine: r.mine,
+                senders: r.senders.iter().map(ToString::to_string).collect(),
             })
             .collect(),
         read_by,
