@@ -41,9 +41,12 @@ fun Root(model: AppModel) {
                     CircularProgressIndicator(Modifier.align(Alignment.Center).testTag("loading"))
                 }
                 Screen.SignedOut -> SignInScreen(model)
-                // The last state, drawn from the cache while the session is restored behind it.
-                is Screen.Restoring -> SignedInScreen(model, Screen.SignedIn(current.account), restoring = true) { }
-                is Screen.SignedIn -> {
+                // One branch for both: the last state is drawn from the cache while the session is restored behind it,
+                // and the screens (a room's composer with what is typed in it) stay as they are when the session is back.
+                is Screen.Restoring, is Screen.SignedIn -> {
+                    val restoring = current is Screen.Restoring
+                    val account = (current as? Screen.Restoring)?.account ?: (current as Screen.SignedIn).account
+                    val signedIn = Screen.SignedIn(account)
                     val room by model.openRoom.collectAsState()
                     val open = room
                     val securityOpen by model.securityOpen.collectAsState()
@@ -65,7 +68,7 @@ fun Root(model: AppModel) {
                             else if (reorderOpen) ReorderScreen(model)
                             else if (newOpen) NewScreen(model)
                             else if (securityOpen && shown != null) SecurityScreen(model, shown)
-                            else SignedInScreen(model, current) { model.open(it) }
+                            else SignedInScreen(model, signedIn, restoring = restoring) { model.open(it) }
                         }
                     }
                 }

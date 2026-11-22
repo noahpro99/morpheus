@@ -91,11 +91,12 @@ private val quickReactions = listOf("👍", "❤️", "😂", "🎉", "😮")
 /** A room: its messages (newest at the bottom), a composer, and what a tap on a message offers. */
 @Composable
 fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClose: () -> Unit = { app.closeRoom() }) {
-    val model = remember(room.id, threadRoot) { RoomModel(app.morpheus, room, threadRoot) }
+    val model = remember(room.id, threadRoot) { RoomModel(app.morpheus, room, threadRoot, ready = { app.awaitSession() }) }
     var thread by remember(room.id) { mutableStateOf<String?>(null) }
     DisposableEffect(model) { onDispose { model.close() } }
     val rows by model.rows.collectAsState()
     val replyingTo by model.replyingTo.collectAsState()
+    if (rows.any { it is TimelineRow.Message }) androidx.compose.runtime.SideEffect { dev.morpheus.app.AppState.roomDrawn() }
     // A room just joined is listed before its name is known: the title follows the list.
     val sidebar by app.sidebar.collectAsState()
     val title = sidebar?.scopes?.flatMap { it.sections }?.flatMap { it.rooms }?.firstOrNull { it.id == room.id }?.name ?: room.name
@@ -262,6 +263,13 @@ private fun Timeline(
     // A new message at the bottom stays in view when the person is looking at the bottom.
     val newestKey = (items.firstOrNull() as? TimelineRow.Message)?.message?.key
     LaunchedEffect(newestKey) { if (state.firstVisibleItemIndex <= 1) state.animateScrollToItem(0) }
+    // What the last run kept (#313) is drawn first and the live rows replace it: the list anchors on the message that
+    // was in view, so the first live rows would leave a person who was at the newest looking at old messages. Go back to
+    // the newest once, unless they have scrolled since.
+    val live by model.live.collectAsState()
+    var touched by remember { mutableStateOf(false) }
+    LaunchedEffect(state) { state.interactionSource.interactions.collect { if (it is androidx.compose.foundation.interaction.DragInteraction.Start) touched = true } }
+    LaunchedEffect(live) { if (live && !touched) state.scrollToItem(0) }
 
     // A search result to go to: scroll to it once it is in the list, and light it a moment.
     val jump by model.jump.collectAsState()

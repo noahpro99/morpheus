@@ -23,7 +23,13 @@ import uniffi.morpheus_ffi.TimelineRow
  * One open room: its rows (pushed by Rust whenever they change), and what the
  * screen does with them. Closed with the screen; that stops the Rust side.
  */
-class RoomModel(private val morpheus: Morpheus, val room: RoomItem, private val threadRoot: String? = null) {
+class RoomModel(
+    private val morpheus: Morpheus,
+    val room: RoomItem,
+    private val threadRoot: String? = null,
+    /** Returns once the session is up: until then the room shows what the last run kept (#313). */
+    private val ready: suspend () -> Unit = {},
+) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var timeline: RoomTimeline? = null
     private val _loadingOlder = MutableStateFlow(false)
@@ -31,10 +37,15 @@ class RoomModel(private val morpheus: Morpheus, val room: RoomItem, private val 
     /** A request for older messages is out (the screen asks again when it ends, if it still needs more). */
     val loadingOlder: StateFlow<Boolean> = _loadingOlder.asStateFlow()
 
-    private val _rows = MutableStateFlow<List<TimelineRow>>(emptyList())
+    private val _rows = MutableStateFlow<List<TimelineRow>>(if (threadRoot == null) morpheus.cachedTimeline(room.id).orEmpty() else emptyList())
 
     /** Oldest first. */
     val rows: StateFlow<List<TimelineRow>> = _rows.asStateFlow()
+
+    private val _live = MutableStateFlow(false)
+
+    /** The rows are the room's own now, not what the last run kept (#313). */
+    val live: StateFlow<Boolean> = _live.asStateFlow()
 
     private val _replyingTo = MutableStateFlow<MessageItem?>(null)
     val replyingTo: StateFlow<MessageItem?> = _replyingTo.asStateFlow()
@@ -73,9 +84,11 @@ class RoomModel(private val morpheus: Morpheus, val room: RoomItem, private val 
     init {
         scope.launch {
             try {
+                ready()
                 val listener = object : TimelineListener {
                     override fun onRows(rows: List<TimelineRow>) {
                         _rows.value = rows
+                        _live.value = true
                     }
                 }
                 timeline = if (threadRoot == null) morpheus.openRoom(room.id, listener) else morpheus.openThread(room.id, threadRoot, listener)

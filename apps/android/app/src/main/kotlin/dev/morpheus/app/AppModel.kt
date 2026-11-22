@@ -7,6 +7,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.StateFlow
@@ -113,6 +114,11 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
 
     private val _screen = MutableStateFlow<Screen>(Screen.Loading)
     val screen: StateFlow<Screen> = _screen.asStateFlow()
+
+    /** Returns once the session is restored or signed in (a room opened from the cache waits for it). */
+    suspend fun awaitSession() {
+        _screen.first { it is Screen.SignedIn }
+    }
 
     /** The room that is open, if one is. */
     private val _room = MutableStateFlow<RoomItem?>(null)
@@ -399,6 +405,7 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         if (_room.value != null) closeRoom()
         _tab.value = tab
     }
+
     /** The channel list while signed in; the Rust side stops pushing when nobody collects. */
     @OptIn(ExperimentalCoroutinesApi::class)
     val sidebar: StateFlow<Sidebar?> = _screen
@@ -413,7 +420,7 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     init {
-        _screen.onEach { AppState.screen = it.name(); signedInChanged(it) }.launchIn(viewModelScope)
+        _screen.onEach { AppState.screen = it.name(); if (it is Screen.SignedIn) AppState.sessionBack(); signedInChanged(it) }.launchIn(viewModelScope)
         kotlinx.coroutines.flow.combine(pendingRoom, sidebar) { id, bar -> id to bar }.onEach { (id, bar) ->
             val room = bar?.scopes?.flatMap { it.sections }?.flatMap { it.rooms }?.firstOrNull { it.id == id }
             if (room != null) {
@@ -423,7 +430,15 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         }.launchIn(viewModelScope)
         // A session and a list from the last run: draw them now, restore the session behind them.
         kept?.getString("account", null)?.split("\n")?.takeIf { it.size == 3 }?.let { (user, server, device) ->
-            if (morpheus.cachedSidebar() != null) _screen.value = Screen.Restoring(Account(userId = user, homeserver = server, deviceId = device))
+            val bar = morpheus.cachedSidebar() ?: return@let
+            _screen.value = Screen.Restoring(Account(userId = user, homeserver = server, deviceId = device))
+            // The room that was open is drawn from its kept rows too (#313); it goes live once the session is back.
+            kept?.getString("room", null)?.let { id ->
+                bar.scopes.flatMap { it.sections }.flatMap { it.rooms }.firstOrNull { it.id == id }?.let { room ->
+                    _room.value = room
+                    AppState.room = room.id
+                }
+            }
         }
         viewModelScope.launch {
             _screen.value = try {
@@ -437,7 +452,7 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
                 Screen.SignedOut
             }
             // Where the last run ended: the room that was open comes back.
-            if (_screen.value is Screen.SignedIn) kept?.getString("room", null)?.let { openRoomWhenKnown(it) }
+            if (_screen.value is Screen.SignedIn) kept?.getString("room", null)?.let { openRoomWhenKnown(it) } else _room.value = null
         }
     }
 
@@ -518,9 +533,26 @@ object AppState {
     @Volatile
     var firstListMs: Long = 0
 
+    /** Milliseconds from the process start to the first room drawn with messages (0: none yet; #313). */
+    @Volatile
+    var firstRoomMs: Long = 0
+
+    /** Milliseconds from the process start to the session being restored (0: not yet). */
+    @Volatile
+    var sessionMs: Long = 0
+
+    fun roomDrawn() {
+        if (firstRoomMs == 0L) firstRoomMs = android.os.SystemClock.elapsedRealtime() - android.os.Process.getStartElapsedRealtime()
+    }
+
+    fun sessionBack() {
+        if (sessionMs == 0L) sessionMs = android.os.SystemClock.elapsedRealtime() - android.os.Process.getStartElapsedRealtime()
+    }
+
     fun listDrawn() {
         if (firstListMs == 0L) firstListMs = android.os.SystemClock.elapsedRealtime() - android.os.Process.getStartElapsedRealtime()
     }
+
 }
 
 /** The three places of the bottom bar. */

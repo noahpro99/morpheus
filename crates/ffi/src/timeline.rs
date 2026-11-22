@@ -311,6 +311,12 @@ impl RoomTimeline {
 
 #[uniffi::export]
 impl Morpheus {
+    /// The newest rows this room had when the app last ran, for drawing at once while the session is
+    /// restored (no pictures); `None` when nothing is kept for it.
+    pub fn cached_timeline(&self, room_id: String) -> Option<Vec<TimelineRow>> {
+        crate::timeline_cache::load(&self.dir, &room_id)
+    }
+
     /// Open a room's timeline; `listener` hears of every change, the current
     /// rows first.
     pub async fn open_room(
@@ -354,6 +360,7 @@ impl Morpheus {
         // Where the person had read to when the room opened: the NEW divider goes
         // above the first message after it, once, and stays.
         let read_at = if is_thread { None } else { session.fully_read_at(room_id.clone()).await.ok().flatten() };
+        let (dir, cache_room) = (self.dir.clone(), room_id.to_string());
         let task = runtime().spawn(async move {
             let mut entries: Vector<TimelineEntry> = Vector::new();
             let mut known: HashMap<String, Arc<MessageRow>> = HashMap::new();
@@ -382,7 +389,12 @@ impl Morpheus {
                         _ => None,
                     })
                     .collect();
-                listener.on_rows(rows_of(&rows, &read_receipts(&entries), &session));
+                let items = rows_of(&rows, &read_receipts(&entries), &session);
+                // The open room's rows are kept for the next launch to draw at once (#313).
+                if !is_thread {
+                    crate::timeline_cache::save(&dir, &cache_room, &items);
+                }
+                listener.on_rows(items);
             }
         });
         Ok(Arc::new(RoomTimeline {
